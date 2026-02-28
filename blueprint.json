@@ -197,49 +197,49 @@
       "task": "T27: Cross-platform verification of Phase 1 modules",
       "description": "Run `make` (full suite: build + lint + test) on all 3 platforms. Verify osm:mcp, osm:mcpcallback, and stdout suppression all work correctly. Phase 0 regression tests still pass (legacy IPC code is untouched at this point — both old and new IPC coexist). Run `make lint` to verify deadcode checker finds no issues with new modules.",
       "acceptance": "`make` passes on ubuntu-latest, macos-latest, windows-latest. Zero failures. Zero deadcode findings for new modules. Phase 0 integration tests still pass.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T28: Design new mcpReportClassificationInput with unified Category objects",
       "description": "Redesign the mcpReportClassificationInput struct (currently at internal/command/mcp.go line ~198). The current design uses map[string]string (files→categories) which is nonsensical per scratch/todo.md. New structure: an array of Category objects, each with: name (string — category identifier), description (string — this IS the git commit message for the split branch), files ([]string — files belonging to this category). Define the Go struct with proper json tags, the JSON schema for MCP tool registration, and the MCP tool schema annotations in mcp.go.",
       "acceptance": "New struct definition documented in WIP.md with Go struct, JSON tags, field semantics (especially: description field = commit message, explicitly documented), and the corresponding MCP tool inputSchema JSON. Old struct identified for removal.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T29: Implement new mcpReportClassificationInput struct in mcp.go",
       "description": "Replace the old mcpReportClassificationInput struct at internal/command/mcp.go line ~198 with the new Category array structure from T28. Update the reportClassification tool handler (line ~908) to accept and process the new format. Update any mcpWriteResultFile calls (line ~939) to write the new format. The handler must validate: no empty categories, no duplicate file assignments, all files are recognized.",
       "acceptance": "reportClassification MCP tool accepts the new Category array format. Handler validates input. Result written in new structure. Old struct type is removed.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T30: Specify category descriptions as commit messages in MCP schema",
       "description": "Update the MCP tool description string for reportClassification (mcp.go ~line 905 area) and the struct's jsonschema annotations to explicitly document that the description field in each Category is the git commit message for that split branch. This ensures AI providers generate appropriate commit messages, not generic category descriptions.",
       "acceptance": "MCP tool schema's description field explicitly says 'Git commit message for the split branch' or equivalent. jsonschema annotations include this documentation. The tool's overall description string references the commit message semantics.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T31: Refactor classificationToGroups for new Category array structure",
       "description": "Modify classificationToGroups() in internal/command/pr_split_script.js (line ~3112) to accept the new Category array format (array of {name, description, files}) instead of the old map format. The function must: (1) iterate the Category array, (2) build groups with name as key, (3) preserve description as the commit message for each group, (4) handle edge cases (empty files array, duplicate files across categories).",
       "acceptance": "classificationToGroups() accepts the new format, returns groups with commit messages derived from category descriptions. All call sites updated. Edge cases handled with clear error messages.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T32: Update plan generation to use category descriptions as commit messages",
       "description": "Modify createSplitPlan/executeSplit logic in internal/command/pr_split_script.js to use the description field from each Category as the git commit message for that split branch. Trace the flow: classificationToGroups → plan creation → branch commit. The commit message must come from the AI's category description, not from generic string construction.",
       "acceptance": "`git log --format=%s` on each split branch shows the category description as the commit message. No generic/template commit messages. Test validates exact commit message content.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T33: Update renderClassificationPrompt for unified Category format",
       "description": "Modify CLASSIFICATION_PROMPT_TEMPLATE (internal/command/pr_split_script.js line ~2164) and renderClassificationPrompt() (line ~2249) to request the new Category array format from Claude/AI. Remove all references to the old map format. The prompt must instruct the AI to return an array of Category objects with name, description (commit message), and files.",
       "acceptance": "Updated prompt template requests array of Category objects. renderClassificationPrompt produces correct prompt text. Old map format references removed. Test validates prompt content includes new format instructions.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T34: Add anti-slop directives to classification prompts",
       "description": "Add explicit anti-slop instructions to CLASSIFICATION_PROMPT_TEMPLATE (pr_split_script.js line ~2164). Directives must include: (1) No placeholder commit messages like 'misc changes' or 'various updates', (2) Every category description must be specific to the actual code changes in its files, (3) Commit messages must follow conventional commit style if the project uses it, (4) No catch-all categories unless truly necessary.",
       "acceptance": "Prompt text includes anti-slop directives. Test in pr_split_prompt_test.go validates prompt content includes the directives. The directives are specific enough to measurably improve AI classification quality.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T35: Wire automatedSplit() to use osm:mcpcallback instead of pollForFile",

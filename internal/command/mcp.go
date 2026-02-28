@@ -195,10 +195,17 @@ type mcpHeartbeatInput struct {
 
 // --- MCP PR-split tool input types ---
 
+// mcpClassificationCategory represents one logical group of files for PR splitting.
+type mcpClassificationCategory struct {
+	Name        string   `json:"name" jsonschema:"Category name (e.g., 'types', 'impl', 'docs')"`
+	Description string   `json:"description" jsonschema:"Git commit message for the split branch. Must be specific to the actual code changes, not generic."`
+	Files       []string `json:"files" jsonschema:"File paths belonging to this category"`
+}
+
 type mcpReportClassificationInput struct {
-	SessionID string            `json:"sessionId" jsonschema:"Session identifier"`
-	Files     map[string]string `json:"files" jsonschema:"Map of file path to category name"`
-	Seq       int64             `json:"seq,omitempty" jsonschema:"Sequence number for idempotency (0 = no dedup)"`
+	SessionID  string                      `json:"sessionId" jsonschema:"Session identifier"`
+	Categories []mcpClassificationCategory `json:"categories" jsonschema:"Array of categories, each containing a name, description (which becomes the git commit message), and file paths"`
+	Seq        int64                       `json:"seq,omitempty" jsonschema:"Sequence number for idempotency (0 = no dedup)"`
 }
 
 type mcpReportSplitPlanInput struct {
@@ -904,13 +911,44 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 	// --- reportClassification ---
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "reportClassification",
-		Description: "Report file classification results for PR splitting. Each file is mapped to a category (e.g., 'types', 'impl', 'docs'). Call this tool to send classification results back to the orchestrating osm process.",
+		Description: "Report file classification results for PR splitting. Provide an array of categories, each grouping related files. The description field is the git commit message for the split branch — it must be specific to the actual changes, not generic.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, input mcpReportClassificationInput) (*mcp.CallToolResult, any, error) {
-		if len(input.Files) == 0 {
+		if len(input.Categories) == 0 {
 			result := &mcp.CallToolResult{}
-			result.SetError(fmt.Errorf("files map is required and must not be empty"))
+			result.SetError(fmt.Errorf("categories array is required and must not be empty"))
 			return result, nil, nil
 		}
+
+		// Validate each category
+		seenFiles := make(map[string]string) // file → owning category name
+		totalFiles := 0
+		for i, cat := range input.Categories {
+			if cat.Name == "" {
+				result := &mcp.CallToolResult{}
+				result.SetError(fmt.Errorf("category %d: name is required", i))
+				return result, nil, nil
+			}
+			if cat.Description == "" {
+				result := &mcp.CallToolResult{}
+				result.SetError(fmt.Errorf("category %q: description (commit message) is required", cat.Name))
+				return result, nil, nil
+			}
+			if len(cat.Files) == 0 {
+				result := &mcp.CallToolResult{}
+				result.SetError(fmt.Errorf("category %q: must contain at least one file", cat.Name))
+				return result, nil, nil
+			}
+			for _, f := range cat.Files {
+				if owner, dup := seenFiles[f]; dup {
+					result := &mcp.CallToolResult{}
+					result.SetError(fmt.Errorf("file %q assigned to both %q and %q — each file must appear in exactly one category", f, owner, cat.Name))
+					return result, nil, nil
+				}
+				seenFiles[f] = cat.Name
+			}
+			totalFiles += len(cat.Files)
+		}
+
 		mu.Lock()
 		sess, err := getOrCreateSession(input.SessionID)
 		if err != nil {
@@ -930,13 +968,13 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 		sess.Events = append(sess.Events, mcpSessionEvent{
 			Type:      "classification",
 			Timestamp: now,
-			Data:      input.Files,
+			Data:      input.Categories,
 		})
 		mu.Unlock()
 
 		// Write result file atomically if result-dir is set.
 		if resultDir != "" {
-			if err := mcpWriteResultFile(resultDir, "classification.json", input.Files); err != nil {
+			if err := mcpWriteResultFile(resultDir, "classification.json", input.Categories); err != nil {
 				result := &mcp.CallToolResult{}
 				result.SetError(fmt.Errorf("failed to write result file: %w", err))
 				return result, nil, nil
@@ -944,7 +982,7 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 		}
 
 		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("classification reported: %d files", len(input.Files))}},
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("classification reported: %d categories, %d files", len(input.Categories), totalFiles)}},
 		}, nil, nil
 	})
 

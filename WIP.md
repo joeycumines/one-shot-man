@@ -11,10 +11,113 @@
 - **Files:** 2 changed, pr_split_test.go (mock enhancement), blueprint.json (replan T6-T9)
 
 ## Current Task
-- **Last Commit:** 5eb0dcb — Add osm:mcpcallback module for disposable MCP IPC channels (T19-T25)
-- **Active:** T26 — Signal-safe cleanup for mcpcallback temp resources
-- **Next:** T27 — Cross-platform verification of Phase 1 modules
-- **Status:** T1-T6, T10-T25 Done (10 commits). T7/T8 superseded. T9 deferred.
+- **Last Commit:** 6c9c599 — Add signal-safe cleanup for mcpcallback temp resources (T26)
+- **Pending Commit:** T28-T34 (Phase 2 classification schema changes) — awaiting Rule of Two
+- **Active:** Building + verifying before commit
+- **Next:** T35 — Wire automatedSplit() to use osm:mcpcallback
+- **Status:** Phase 2 (Classification Schema) T28-T34 complete. 11 commits total, 12th pending.
+
+## T28 Design: Unified Category Classification Schema
+
+### Problem
+`mcpReportClassificationInput.Files` is `map[string]string` (file→category) which:
+- Has no category descriptions (no commit messages)
+- Requires `classificationToGroups()` inversion to get category→files
+- Doesn't align with `mcpSplitStage` (which has Name, Files, Message, Order)
+- Forces generic commit messages since the AI never provides per-category descriptions
+
+### New Go Struct
+
+```go
+// mcpClassificationCategory represents one logical group of files.
+type mcpClassificationCategory struct {
+    Name        string   `json:"name" jsonschema:"Category name (e.g., 'types', 'impl', 'docs')"`
+    Description string   `json:"description" jsonschema:"Git commit message for the split branch. Must be specific to the actual code changes, not generic."`
+    Files       []string `json:"files" jsonschema:"File paths belonging to this category"`
+}
+
+type mcpReportClassificationInput struct {
+    SessionID  string                      `json:"sessionId" jsonschema:"Session identifier"`
+    Categories []mcpClassificationCategory `json:"categories" jsonschema:"Array of categories, each with name, description (= commit message), and files"`
+    Seq        int64                       `json:"seq,omitempty" jsonschema:"Sequence number for idempotency (0 = no dedup)"`
+}
+```
+
+### Alignment with Existing Structures
+
+| Classification Category | → | Split Plan Stage |
+|------------------------|---|------------------|
+| `.name`                | → | `mcpSplitStage.Name` |
+| `.description`         | → | `mcpSplitStage.Message` |
+| `.files`               | → | `mcpSplitStage.Files` |
+| (auto-assigned)        | → | `mcpSplitStage.Order` |
+
+### MCP Tool Schema Changes
+
+**Tool description update:**
+```
+"Report file classification results for PR splitting. Provide an array of categories,
+each grouping related files. The description field is the git commit message for the
+split branch — it must be specific to the actual changes, not generic."
+```
+
+**Input schema (auto-generated from jsonschema tags):**
+```json
+{
+  "type": "object",
+  "properties": {
+    "sessionId": { "type": "string", "description": "Session identifier" },
+    "categories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Category name" },
+          "description": { "type": "string", "description": "Git commit message for the split branch" },
+          "files": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["name", "description", "files"]
+      }
+    },
+    "seq": { "type": "integer" }
+  },
+  "required": ["sessionId", "categories"]
+}
+```
+
+### Handler Validation Rules
+1. `categories` must not be empty
+2. Each category must have non-empty `name`, `description`, and at least 1 file
+3. No duplicate file assignments across categories (each file appears in exactly 1 category)
+4. All file paths should be recognizable (from the original diff)
+
+### JS-side classificationToGroups() Transformation
+**Old:** `classification = {filepath: category}` → inverted to `{category: [files]}`
+**New:** `classification = [{name, description, files}]` → directly to `{category: {files, description}}`
+
+```javascript
+function classificationToGroups(categories) {
+    var groups = {};
+    for (var i = 0; i < categories.length; i++) {
+        var cat = categories[i];
+        groups[cat.name] = {
+            files: cat.files,
+            description: cat.description
+        };
+    }
+    return groups;
+}
+```
+
+### Files to Modify (T29-T34)
+- `internal/command/mcp.go:198-201` — Replace struct definition
+- `internal/command/mcp.go:904-948` — Update handler validation + session event
+- `internal/command/mcp.go:1276` — mcpWriteResultFile may change (event data format)
+- `internal/command/pr_split_script.js:3150-3159` — classificationToGroups()
+- `internal/command/pr_split_script.js:2224-2251` — CLASSIFICATION_PROMPT_TEMPLATE
+- `internal/command/pr_split_script.js:2310-2323` — renderClassificationPrompt()
+- `internal/command/mcp_test.go` — All tests using old classification format
+- `internal/command/pr_split_prompt_test.go` — Prompt template tests
 
 ## T5 Integration Test Coverage Gap Analysis
 

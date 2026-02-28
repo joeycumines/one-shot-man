@@ -2081,16 +2081,19 @@ func TestMCPServer_ReportClassification(t *testing.T) {
 
 	r := env.callTool(t, "reportClassification", map[string]any{
 		"sessionId": "cls-1",
-		"files": map[string]any{
-			"cmd/main.go":     "entry-point",
-			"internal/foo.go": "impl",
-			"docs/README.md":  "docs",
+		"categories": []any{
+			map[string]any{"name": "entry-point", "description": "Add main entry point", "files": []any{"cmd/main.go"}},
+			map[string]any{"name": "impl", "description": "Implement core logic", "files": []any{"internal/foo.go"}},
+			map[string]any{"name": "docs", "description": "Update documentation", "files": []any{"docs/README.md"}},
 		},
 	})
 	if r.IsError {
 		t.Fatalf("reportClassification returned error: %s", mcpResultText(t, r))
 	}
 	text := mcpResultText(t, r)
+	if !strings.Contains(text, "3 categories") {
+		t.Errorf("text = %q, want to contain '3 categories'", text)
+	}
 	if !strings.Contains(text, "3 files") {
 		t.Errorf("text = %q, want to contain '3 files'", text)
 	}
@@ -2100,15 +2103,19 @@ func TestMCPServer_ReportClassification(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read result file: %v", err)
 	}
-	var files map[string]string
-	if err := json.Unmarshal(data, &files); err != nil {
+	var cats []map[string]any
+	if err := json.Unmarshal(data, &cats); err != nil {
 		t.Fatalf("unmarshal result: %v", err)
 	}
-	if files["cmd/main.go"] != "entry-point" {
-		t.Errorf("files[cmd/main.go] = %q, want entry-point", files["cmd/main.go"])
+	if len(cats) != 3 {
+		t.Errorf("got %d categories, want 3", len(cats))
 	}
-	if len(files) != 3 {
-		t.Errorf("got %d files, want 3", len(files))
+	// Verify first category structure
+	if cats[0]["name"] != "entry-point" {
+		t.Errorf("cats[0].name = %v, want entry-point", cats[0]["name"])
+	}
+	if cats[0]["description"] != "Add main entry point" {
+		t.Errorf("cats[0].description = %v, want 'Add main entry point'", cats[0]["description"])
 	}
 
 	// Verify event was stored in session.
@@ -2122,7 +2129,7 @@ func TestMCPServer_ReportClassification(t *testing.T) {
 	}
 }
 
-func TestMCPServer_ReportClassification_EmptyFiles(t *testing.T) {
+func TestMCPServer_ReportClassification_EmptyCategories(t *testing.T) {
 	t.Parallel()
 	env := newMCPTestEnv(t, nil)
 
@@ -2132,15 +2139,72 @@ func TestMCPServer_ReportClassification_EmptyFiles(t *testing.T) {
 	})
 
 	r := env.callTool(t, "reportClassification", map[string]any{
-		"sessionId": "cls-empty",
-		"files":     map[string]any{},
+		"sessionId":  "cls-empty",
+		"categories": []any{},
 	})
 	if !r.IsError {
-		t.Error("expected IsError for empty files map")
+		t.Error("expected IsError for empty categories")
 	}
 	text := mcpResultText(t, r)
-	if !strings.Contains(text, "files map is required") {
-		t.Errorf("error text = %q, want to contain 'files map is required'", text)
+	if !strings.Contains(text, "categories array is required") {
+		t.Errorf("error text = %q, want to contain 'categories array is required'", text)
+	}
+}
+
+func TestMCPServer_ReportClassification_Validation(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "cls-val",
+		"capabilities": []string{},
+	})
+
+	tests := []struct {
+		name       string
+		categories []any
+		wantErr    string
+	}{
+		{
+			name:       "empty category name",
+			categories: []any{map[string]any{"name": "", "description": "desc", "files": []any{"a.go"}}},
+			wantErr:    "name is required",
+		},
+		{
+			name:       "missing description",
+			categories: []any{map[string]any{"name": "impl", "description": "", "files": []any{"a.go"}}},
+			wantErr:    "description (commit message) is required",
+		},
+		{
+			name:       "empty files array",
+			categories: []any{map[string]any{"name": "impl", "description": "Implement feature", "files": []any{}}},
+			wantErr:    "must contain at least one file",
+		},
+		{
+			name: "duplicate file across categories",
+			categories: []any{
+				map[string]any{"name": "a", "description": "Category A", "files": []any{"shared.go"}},
+				map[string]any{"name": "b", "description": "Category B", "files": []any{"shared.go"}},
+			},
+			wantErr: "assigned to both",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := env.callTool(t, "reportClassification", map[string]any{
+				"sessionId":  "cls-val",
+				"categories": tt.categories,
+			})
+			if !r.IsError {
+				t.Errorf("expected error for %s", tt.name)
+				return
+			}
+			text := mcpResultText(t, r)
+			if !strings.Contains(text, tt.wantErr) {
+				t.Errorf("error text = %q, want to contain %q", text, tt.wantErr)
+			}
+		})
 	}
 }
 
@@ -2151,7 +2215,9 @@ func TestMCPServer_ReportClassification_UnknownSession(t *testing.T) {
 	// Unknown sessions are auto-created on demand.
 	r := env.callTool(t, "reportClassification", map[string]any{
 		"sessionId": "ghost",
-		"files":     map[string]any{"a.go": "impl"},
+		"categories": []any{
+			map[string]any{"name": "impl", "description": "Implement feature", "files": []any{"a.go"}},
+		},
 	})
 	if r.IsError {
 		t.Errorf("unexpected error for auto-created session: %s", mcpResultText(t, r))
@@ -2170,7 +2236,9 @@ func TestMCPServer_ReportClassification_NoResultDir(t *testing.T) {
 
 	r := env.callTool(t, "reportClassification", map[string]any{
 		"sessionId": "cls-nodir",
-		"files":     map[string]any{"a.go": "impl"},
+		"categories": []any{
+			map[string]any{"name": "impl", "description": "Implement feature", "files": []any{"a.go"}},
+		},
 	})
 	if r.IsError {
 		t.Fatalf("expected no error without result-dir: %s", mcpResultText(t, r))
@@ -2189,8 +2257,10 @@ func TestMCPServer_ReportClassification_Idempotent(t *testing.T) {
 	// First call with seq=1.
 	r := env.callTool(t, "reportClassification", map[string]any{
 		"sessionId": "cls-idem",
-		"files":     map[string]any{"a.go": "impl"},
-		"seq":       1,
+		"categories": []any{
+			map[string]any{"name": "impl", "description": "Implement feature", "files": []any{"a.go"}},
+		},
+		"seq": 1,
 	})
 	if r.IsError {
 		t.Fatalf("first call error: %s", mcpResultText(t, r))
@@ -2199,8 +2269,10 @@ func TestMCPServer_ReportClassification_Idempotent(t *testing.T) {
 	// Duplicate seq=1 — should be idempotent skip.
 	r = env.callTool(t, "reportClassification", map[string]any{
 		"sessionId": "cls-idem",
-		"files":     map[string]any{"b.go": "test"},
-		"seq":       1,
+		"categories": []any{
+			map[string]any{"name": "test", "description": "Add tests", "files": []any{"b.go"}},
+		},
+		"seq": 1,
 	})
 	if r.IsError {
 		t.Fatalf("dup call should not be error: %s", mcpResultText(t, r))
@@ -2268,17 +2340,17 @@ func TestMCPServer_PreRegisteredSession_ReportClassification(t *testing.T) {
 	// No registerSession call — session was pre-registered.
 	r := env.callTool(t, "reportClassification", map[string]any{
 		"sessionId": "preregistered-1",
-		"files": map[string]any{
-			"cmd/main.go":    "entry-point",
-			"internal/db.go": "impl",
+		"categories": []any{
+			map[string]any{"name": "entry-point", "description": "Add main entry point", "files": []any{"cmd/main.go"}},
+			map[string]any{"name": "impl", "description": "Implement database layer", "files": []any{"internal/db.go"}},
 		},
 	})
 	if r.IsError {
 		t.Fatalf("reportClassification with pre-registered session failed: %s", mcpResultText(t, r))
 	}
 	text := mcpResultText(t, r)
-	if !strings.Contains(text, "2 files") {
-		t.Errorf("text = %q, want to contain '2 files'", text)
+	if !strings.Contains(text, "2 categories") {
+		t.Errorf("text = %q, want to contain '2 categories'", text)
 	}
 
 	// Verify result file.
@@ -2286,12 +2358,12 @@ func TestMCPServer_PreRegisteredSession_ReportClassification(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read result file: %v", err)
 	}
-	var files map[string]string
-	if err := json.Unmarshal(data, &files); err != nil {
+	var categories []mcpClassificationCategory
+	if err := json.Unmarshal(data, &categories); err != nil {
 		t.Fatalf("unmarshal result: %v", err)
 	}
-	if len(files) != 2 {
-		t.Errorf("got %d files, want 2", len(files))
+	if len(categories) != 2 {
+		t.Errorf("got %d categories, want 2", len(categories))
 	}
 }
 
@@ -2305,7 +2377,9 @@ func TestMCPServer_PreRegisteredSession_UnknownAutoCreated(t *testing.T) {
 	// Calling with a different session ID should auto-create.
 	r := env.callTool(t, "reportClassification", map[string]any{
 		"sessionId": "unknown-session",
-		"files":     map[string]any{"a.go": "impl"},
+		"categories": []any{
+			map[string]any{"name": "impl", "description": "Add implementation", "files": []any{"a.go"}},
+		},
 	})
 	if r.IsError {
 		t.Errorf("unexpected error for auto-created session: %s", mcpResultText(t, r))
@@ -3422,10 +3496,10 @@ func TestMCPServer_BidirectionalWorkflow(t *testing.T) {
 	// 4. Agent reports classification result.
 	env.callTool(t, "reportClassification", map[string]any{
 		"sessionId": "workflow-1",
-		"files": map[string]any{
-			"types.go": "types",
-			"impl.go":  "impl",
-			"test.go":  "test",
+		"categories": []any{
+			map[string]any{"name": "types", "description": "Add type definitions", "files": []any{"types.go"}},
+			map[string]any{"name": "impl", "description": "Implement core logic", "files": []any{"impl.go"}},
+			map[string]any{"name": "test", "description": "Add test coverage", "files": []any{"test.go"}},
 		},
 	})
 

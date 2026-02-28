@@ -830,10 +830,17 @@ function createSplitPlan(groups, config) {
 
     for (var i = 0; i < groupNames.length; i++) {
         var name = groupNames[i];
+        var groupData = groups[name];
+        // Support both new format {files: [...], description: "..."} and
+        // legacy format (plain array of files).
+        var files = Array.isArray(groupData) ? groupData : (groupData.files || []);
+        var description = (typeof groupData === 'object' && !Array.isArray(groupData))
+            ? (groupData.description || '')
+            : '';
         splits.push({
             name: sanitizeBranchName(branchPrefix + padIndex(i + 1) + '-' + name),
-            files: groups[name].slice().sort(),
-            message: commitPrefix + name,
+            files: files.slice().sort(),
+            message: description || (commitPrefix + name),
             order: i,
             dependencies: i === 0 ? [] : [splits[i - 1].name]
         });
@@ -2242,9 +2249,19 @@ var CLASSIFICATION_PROMPT_TEMPLATE =
     '- Refactoring changes separate from feature additions\n' +
     '- Infrastructure/config changes separate from application code\n\n' +
     '{{if gt .MaxGroups 0}}Use at most {{.MaxGroups}} groups.{{end}}\n\n' +
-    '## Output\n\n' +
+    '## Output Format\n\n' +
     'Use the `reportClassification` MCP tool to report your results. ' +
-    'The `files` parameter should be a JSON object mapping each file path to its category name.\n\n' +
+    'The `categories` parameter is an array of category objects. Each category has:\n' +
+    '- `name`: Short identifier for the group (e.g., "types", "impl", "docs")\n' +
+    '- `description`: Git commit message for the split branch. This MUST be specific to the actual code changes — not generic.\n' +
+    '- `files`: Array of file paths belonging to this category\n\n' +
+    '### Commit Message Requirements\n\n' +
+    'Each category description becomes the git commit message for that split branch. Follow these rules:\n' +
+    '- Be specific: "Add user authentication middleware" not "misc changes"\n' +
+    '- Reference what changed: mention the package, module, or feature area\n' +
+    '- No placeholder messages like "various updates", "cleanup", or "other changes"\n' +
+    '- No catch-all categories unless absolutely necessary (prefer specific groupings)\n' +
+    '- If the project uses conventional commits, follow that style\n\n' +
     'Use the session ID: `{{.SessionID}}`\n\n' +
     'Also assess which groups are independent (can be merged in any order). ' +
     'If any groups can merge independently, mention this in your response.\n';
@@ -2801,19 +2818,43 @@ function automatedSplit(config) {
             return { error: pollResult.error };
         }
         // Validate: every file must be classified.
+        // Handles both legacy map format {file: category} and new categories
+        // array [{name, description, files}, ...].
         var classMap = pollResult.data;
         updateDetail('Receive classification', 'Validating ' + analysis.files.length + ' file classifications...');
+
+        // Build a file lookup function for both formats.
+        var fileIsClassified;
+        if (Array.isArray(classMap)) {
+            // New format: array of {name, description, files}
+            var fileSet = {};
+            for (var ci = 0; ci < classMap.length; ci++) {
+                var catFiles = classMap[ci].files || [];
+                for (var fi = 0; fi < catFiles.length; fi++) {
+                    fileSet[catFiles[fi]] = true;
+                }
+            }
+            fileIsClassified = function(path) { return !!fileSet[path]; };
+        } else {
+            // Legacy format: {file: category} map
+            fileIsClassified = function(path) { return !!classMap[path]; };
+        }
+
         var missing = [];
         for (var i = 0; i < analysis.files.length; i++) {
-            if (!classMap[analysis.files[i]]) {
+            if (!fileIsClassified(analysis.files[i])) {
                 missing.push(analysis.files[i]);
             }
         }
         if (missing.length > 0) {
             log.printf('auto-split: %d files not classified: %s', missing.length, missing.join(', '));
             // Assign missing files to an 'uncategorized' group.
-            for (var j = 0; j < missing.length; j++) {
-                classMap[missing[j]] = 'uncategorized';
+            if (Array.isArray(classMap)) {
+                classMap.push({ name: 'uncategorized', description: 'Uncategorized changes', files: missing });
+            } else {
+                for (var j = 0; j < missing.length; j++) {
+                    classMap[missing[j]] = 'uncategorized';
+                }
             }
         }
         report.classification = classMap;
@@ -3147,14 +3188,29 @@ function heuristicFallback(analysis, config, report) {
     return { error: report.error, report: report };
 }
 
-// classificationToGroups converts a classification map (file→category) to
-// groups map (category→[files]).
+// classificationToGroups converts a classification result to
+// groups map (category→{files: [...], description: "..."}).
+// Accepts both new format (array of {name, description, files}) and
+// legacy format ({file: category} map) for backwards compatibility.
 function classificationToGroups(classification) {
     var groups = {};
-    for (var path in classification) {
-        var cat = classification[path];
-        if (!groups[cat]) groups[cat] = [];
-        groups[cat].push(path);
+    if (Array.isArray(classification)) {
+        // New format: array of {name, description, files}
+        for (var i = 0; i < classification.length; i++) {
+            var cat = classification[i];
+            if (!cat.name) continue;
+            groups[cat.name] = {
+                files: cat.files || [],
+                description: cat.description || ''
+            };
+        }
+    } else if (classification && typeof classification === 'object') {
+        // Legacy format: {file: category} map
+        for (var path in classification) {
+            var catName = classification[path];
+            if (!groups[catName]) groups[catName] = { files: [], description: '' };
+            groups[catName].files.push(path);
+        }
     }
     return groups;
 }

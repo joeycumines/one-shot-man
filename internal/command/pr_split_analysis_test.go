@@ -234,7 +234,13 @@ func TestDetectGoModulePath(t *testing.T) {
 // TestClassificationToGroups — pure data transformation
 // ---------------------------------------------------------------------------
 
-type classGroupResult map[string][]string
+// classGroupEntry represents a single group from classificationToGroups.
+type classGroupEntry struct {
+	Files       []string `json:"files"`
+	Description string   `json:"description"`
+}
+
+type classGroupResult map[string]classGroupEntry
 
 func TestClassificationToGroups(t *testing.T) {
 	t.Parallel()
@@ -247,7 +253,7 @@ func TestClassificationToGroups(t *testing.T) {
 		check  func(t *testing.T, r classGroupResult)
 	}{
 		{
-			name: "basic classification",
+			name: "legacy_map_basic",
 			invoke: `JSON.stringify(globalThis.prSplit.classificationToGroups({
 				'config.go': 'config',
 				'session.go': 'session',
@@ -258,14 +264,20 @@ func TestClassificationToGroups(t *testing.T) {
 				if len(r) != 3 {
 					t.Fatalf("expected 3 groups, got %d: %v", len(r), r)
 				}
-				if len(r["config"]) != 2 {
-					t.Errorf("config group has %d files, want 2", len(r["config"]))
+				if len(r["config"].Files) != 2 {
+					t.Errorf("config group has %d files, want 2", len(r["config"].Files))
 				}
-				if len(r["session"]) != 1 {
-					t.Errorf("session group has %d files, want 1", len(r["session"]))
+				if len(r["session"].Files) != 1 {
+					t.Errorf("session group has %d files, want 1", len(r["session"].Files))
 				}
-				if len(r["main"]) != 1 {
-					t.Errorf("main group has %d files, want 1", len(r["main"]))
+				if len(r["main"].Files) != 1 {
+					t.Errorf("main group has %d files, want 1", len(r["main"].Files))
+				}
+				// Legacy format should have empty descriptions.
+				for name, g := range r {
+					if g.Description != "" {
+						t.Errorf("group %q: legacy format should have empty description, got %q", name, g.Description)
+					}
 				}
 			},
 		},
@@ -279,7 +291,7 @@ func TestClassificationToGroups(t *testing.T) {
 			},
 		},
 		{
-			name: "single category",
+			name: "legacy_map_single_category",
 			invoke: `JSON.stringify(globalThis.prSplit.classificationToGroups({
 				'a.go': 'refactor',
 				'b.go': 'refactor',
@@ -289,13 +301,13 @@ func TestClassificationToGroups(t *testing.T) {
 				if len(r) != 1 {
 					t.Fatalf("expected 1 group, got %d", len(r))
 				}
-				if len(r["refactor"]) != 3 {
-					t.Errorf("refactor group has %d files, want 3", len(r["refactor"]))
+				if len(r["refactor"].Files) != 3 {
+					t.Errorf("refactor group has %d files, want 3", len(r["refactor"].Files))
 				}
 			},
 		},
 		{
-			name: "many categories",
+			name: "legacy_map_many_categories",
 			invoke: `JSON.stringify(globalThis.prSplit.classificationToGroups({
 				'a.go': 'feat-auth',
 				'b.go': 'feat-db',
@@ -307,10 +319,49 @@ func TestClassificationToGroups(t *testing.T) {
 				if len(r) != 5 {
 					t.Fatalf("expected 5 groups, got %d", len(r))
 				}
-				for cat, files := range r {
-					if len(files) != 1 {
-						t.Errorf("category %q has %d files, want 1", cat, len(files))
+				for cat, g := range r {
+					if len(g.Files) != 1 {
+						t.Errorf("category %q has %d files, want 1", cat, len(g.Files))
 					}
+				}
+			},
+		},
+		{
+			name: "new_categories_array",
+			invoke: `JSON.stringify(globalThis.prSplit.classificationToGroups([
+				{name: 'types', description: 'Add type definitions', files: ['pkg/types.go', 'pkg/types_test.go']},
+				{name: 'impl', description: 'Implement core logic', files: ['pkg/impl.go']}
+			]))`,
+			check: func(t *testing.T, r classGroupResult) {
+				if len(r) != 2 {
+					t.Fatalf("expected 2 groups, got %d: %v", len(r), r)
+				}
+				if len(r["types"].Files) != 2 {
+					t.Errorf("types group has %d files, want 2", len(r["types"].Files))
+				}
+				if r["types"].Description != "Add type definitions" {
+					t.Errorf("types description = %q, want 'Add type definitions'", r["types"].Description)
+				}
+				if len(r["impl"].Files) != 1 {
+					t.Errorf("impl group has %d files, want 1", len(r["impl"].Files))
+				}
+				if r["impl"].Description != "Implement core logic" {
+					t.Errorf("impl description = %q, want 'Implement core logic'", r["impl"].Description)
+				}
+			},
+		},
+		{
+			name: "new_categories_skips_nameless",
+			invoke: `JSON.stringify(globalThis.prSplit.classificationToGroups([
+				{name: '', description: 'no name', files: ['a.go']},
+				{name: 'valid', description: 'has name', files: ['b.go']}
+			]))`,
+			check: func(t *testing.T, r classGroupResult) {
+				if len(r) != 1 {
+					t.Fatalf("expected 1 group (nameless skipped), got %d: %v", len(r), r)
+				}
+				if _, ok := r["valid"]; !ok {
+					t.Error("expected 'valid' group")
 				}
 			},
 		},

@@ -135,6 +135,26 @@ func TestRenderClassificationPrompt_BasicGo(t *testing.T) {
 	if !strings.Contains(result.Text, "internal/foo/foo.go") {
 		t.Error("prompt should list the files")
 	}
+	// T33: Prompt must request new categories array format.
+	if !strings.Contains(result.Text, "categories") {
+		t.Error("prompt should mention 'categories' parameter for new array format")
+	}
+	if !strings.Contains(result.Text, "description") {
+		t.Error("prompt should mention 'description' field (commit message)")
+	}
+	if !strings.Contains(result.Text, "Git commit message") {
+		t.Error("prompt should describe description as 'Git commit message'")
+	}
+	// T34: Anti-slop directives.
+	if !strings.Contains(result.Text, "Commit Message Requirements") {
+		t.Error("prompt should include 'Commit Message Requirements' section")
+	}
+	if !strings.Contains(result.Text, "No placeholder messages") {
+		t.Error("prompt should include anti-slop directive against placeholder messages")
+	}
+	if !strings.Contains(result.Text, "Be specific") {
+		t.Error("prompt should include anti-slop directive to be specific")
+	}
 }
 
 func TestRenderClassificationPrompt_EmptyFiles(t *testing.T) {

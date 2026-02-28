@@ -2637,7 +2637,7 @@ func TestPrSplitCommand_ClassificationToGroups(t *testing.T) {
 
 	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
 
-	// Basic: 3 files in 2 categories.
+	// Legacy map format: 3 files in 2 categories.
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.classificationToGroups({
 		"pkg/types.go": "types",
 		"pkg/impl.go": "types",
@@ -2646,15 +2646,18 @@ func TestPrSplitCommand_ClassificationToGroups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var groups map[string][]string
+	var groups map[string]struct {
+		Files       []string `json:"files"`
+		Description string   `json:"description"`
+	}
 	if err := json.Unmarshal([]byte(val.(string)), &groups); err != nil {
 		t.Fatalf("Failed to parse result: %v", err)
 	}
-	if len(groups["types"]) != 2 {
-		t.Errorf("Expected types group to have 2 files, got %d", len(groups["types"]))
+	if len(groups["types"].Files) != 2 {
+		t.Errorf("Expected types group to have 2 files, got %d", len(groups["types"].Files))
 	}
-	if len(groups["docs"]) != 1 {
-		t.Errorf("Expected docs group to have 1 file, got %d", len(groups["docs"]))
+	if len(groups["docs"].Files) != 1 {
+		t.Errorf("Expected docs group to have 1 file, got %d", len(groups["docs"].Files))
 	}
 
 	// Empty classification.
@@ -2662,7 +2665,10 @@ func TestPrSplitCommand_ClassificationToGroups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var emptyGroups map[string][]string
+	var emptyGroups map[string]struct {
+		Files       []string `json:"files"`
+		Description string   `json:"description"`
+	}
 	if err := json.Unmarshal([]byte(val.(string)), &emptyGroups); err != nil {
 		t.Fatalf("Failed to parse empty result: %v", err)
 	}
@@ -2677,11 +2683,14 @@ func TestPrSplitCommand_ClassificationToGroups(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var singleGroup map[string][]string
+	var singleGroup map[string]struct {
+		Files       []string `json:"files"`
+		Description string   `json:"description"`
+	}
 	if err := json.Unmarshal([]byte(val.(string)), &singleGroup); err != nil {
 		t.Fatalf("Failed to parse single result: %v", err)
 	}
-	if len(singleGroup) != 1 || len(singleGroup["core"]) != 1 {
+	if len(singleGroup) != 1 || len(singleGroup["core"].Files) != 1 {
 		t.Errorf("Expected 1 group with 1 file, got %v", singleGroup)
 	}
 }
@@ -8606,11 +8615,14 @@ func TestClassificationToGroups_EdgeCases(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var groups map[string][]string
+		var groups map[string]struct {
+			Files       []string `json:"files"`
+			Description string   `json:"description"`
+		}
 		if err := json.Unmarshal([]byte(val.(string)), &groups); err != nil {
 			t.Fatal(err)
 		}
-		if len(groups) != 1 || len(groups["api"]) != 1 || groups["api"][0] != "a.go" {
+		if len(groups) != 1 || len(groups["api"].Files) != 1 || groups["api"].Files[0] != "a.go" {
 			t.Errorf("unexpected groups: %v", groups)
 		}
 	})
@@ -8625,18 +8637,47 @@ func TestClassificationToGroups_EdgeCases(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var groups map[string][]string
+		var groups map[string]struct {
+			Files       []string `json:"files"`
+			Description string   `json:"description"`
+		}
 		if err := json.Unmarshal([]byte(val.(string)), &groups); err != nil {
 			t.Fatal(err)
 		}
-		if len(groups["api"]) != 2 {
-			t.Errorf("api group: expected 2 files, got %d", len(groups["api"]))
+		if len(groups["api"].Files) != 2 {
+			t.Errorf("api group: expected 2 files, got %d", len(groups["api"].Files))
 		}
-		if len(groups["db"]) != 1 {
-			t.Errorf("db group: expected 1 file, got %d", len(groups["db"]))
+		if len(groups["db"].Files) != 1 {
+			t.Errorf("db group: expected 1 file, got %d", len(groups["db"].Files))
 		}
-		if len(groups["ui"]) != 1 {
-			t.Errorf("ui group: expected 1 file, got %d", len(groups["ui"]))
+		if len(groups["ui"].Files) != 1 {
+			t.Errorf("ui group: expected 1 file, got %d", len(groups["ui"].Files))
+		}
+	})
+
+	t.Run("new_categories_array_with_descriptions", func(t *testing.T) {
+		val, err := evalJS(`JSON.stringify(classificationToGroups([
+			{name: "api", description: "Add API endpoints", files: ["a.go", "b.go"]},
+			{name: "db", description: "Add database layer", files: ["c.go"]}
+		]))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var groups map[string]struct {
+			Files       []string `json:"files"`
+			Description string   `json:"description"`
+		}
+		if err := json.Unmarshal([]byte(val.(string)), &groups); err != nil {
+			t.Fatal(err)
+		}
+		if len(groups["api"].Files) != 2 {
+			t.Errorf("api group: expected 2 files, got %d", len(groups["api"].Files))
+		}
+		if groups["api"].Description != "Add API endpoints" {
+			t.Errorf("api description = %q, want 'Add API endpoints'", groups["api"].Description)
+		}
+		if groups["db"].Description != "Add database layer" {
+			t.Errorf("db description = %q, want 'Add database layer'", groups["db"].Description)
 		}
 	})
 }

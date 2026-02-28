@@ -111,7 +111,7 @@ func NewTUIManagerWithConfig(ctx context.Context, engine *Engine, input io.Reade
 		if store == memoryBackend {
 			panic(err)
 		}
-		_, _ = fmt.Fprintf(output, "Warning: Failed to initialize state persistence (session %q): %v\n", actualSessionID, err)
+		_, _ = fmt.Fprintf(os.Stderr, "Warning: Failed to initialize state persistence (session %q): %v\n", actualSessionID, err)
 		stateManager, err = initializeStateManager(actualSessionID, memoryBackend)
 		if err != nil {
 			panic(err)

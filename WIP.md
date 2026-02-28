@@ -6,14 +6,13 @@
 - **Phase:** EXECUTING — T1-T88 in sequence
 
 ## Last Commit
-- **Hash:** 66be949
-- **Subject:** Harden pr-split pipeline: single-write sendToHandle, targeted git add
-- **Files:** 7 changed, 782 insertions, 201 deletions
-- **Rule of Two:** PASS (2 contiguous issue-free reviews + fitness review)
+- **Hash:** 4b68e2b
+- **Subject:** Enhance mock ClaudeCodeExecutor with prompt capture and assertions
+- **Files:** 2 changed, pr_split_test.go (mock enhancement), blueprint.json (replan T6-T9)
 
 ## Current Task
-- **Next:** T6+ — Continue sequential tasks
-- **Status:** Starting
+- **Next:** T11 — Design configurable stdout control for osm script
+- **Status:** T10 complete (investigation)
 
 ## T5 Integration Test Coverage Gap Analysis
 
@@ -118,6 +117,100 @@
 - `internal/builtin/claudemux/pr_split_test.go` — skips "PR split uses sh -c"
 
 ## Completed This Session
+
+## T10 Stdout Pollution Investigation — COMPLETE
+
+### Initialization Call Sequence
+```
+ScriptingCommand.Execute(ctx, stdout, stderr)
+  → PrepareEngine(ctx, stdout, stderr)
+    → NewEngineDetailed(ctx, stdout, stderr, ...)
+      → NewTerminalIOStdio()            // creates TUIWriter wrapping os.Stdout
+      → NewTUILogger(stdout, ...)        // ring buffer + optional file, NOT stdout
+      → NewTUIManagerWithConfig(ctx, ... terminalIO.TUIWriter, sessionID, store)
+        → initializeStateManager(sessionID, store)
+```
+
+### Key Architectural Finding: stdout Parameter Divorce
+The original `stdout` parameter is **NOT** passed to TUI manager. Instead:
+- `NewTerminalIOStdio()` creates a fresh `TUIWriter` → `prompt.NewStdoutWriter()` → **os.Stdout directly**
+- Engine's `TUILogger` receives original `stdout` param for log routing, but logs go to ring buffer during init
+- Result: TUI output always goes to real os.Stdout, bypassing any test buffer or redirect
+
+### Stdout Writes During Initialization
+
+| # | File | Line | Content | Stream | MCP Risk | Classification |
+|---|------|------|---------|--------|----------|----------------|
+| 1 | `tui_manager.go` | 114 | `"Warning: Failed to initialize state persistence (session %q): %v\n"` | **stdout** (via TUIWriter) | **HIGH** | Informational — can suppress |
+| 2 | `state_manager.go` | 82 | `"WARNING: Session schema version mismatch..."` | stderr (Go log.Printf) | Low | Informational — stderr OK |
+| 3 | `engine_core.go` | 482 | Panic stack trace | stderr | Low | Necessary — stderr OK |
+| 4 | Startup logger | validateModulePaths | Invalid path warnings | stderr | Low | Informational — stderr OK |
+
+### Critical Finding
+**Only ONE stdout write during init: `tui_manager.go:114`** — writes to TUIWriter (wraps os.Stdout) when primary state persistence backend fails. This is conditional (requires storage failure) but when it fires, it would corrupt MCP stdio JSON-RPC protocol.
+
+### TUILogger is Safe During Init
+- Stores logs in memory ring buffer via slog handler
+- `PrintToTUI()` writes to `l.tuiWriter` (original stdout) but is only called from user script code, not init
+- Default slog handler does NOT write to stdout — writes to file handler if configured, otherwise buffer only
+
+### Fix Strategy (for T11-T12)
+- Route tui_manager.go:114 warning through logger or stderr instead of TUIWriter
+- Consider: `--quiet-init` flag or `output.setSuppressInit(true)` JS API
+- Simplest fix: Change `fmt.Fprintf(output, ...)` to `fmt.Fprintf(os.Stderr, ...)` at line 114
+
+## T11 Design: Configurable Stdout Control for osm script
+
+### Analysis
+T10 found exactly **1 stdout write** during initialization: `tui_manager.go:114`. All other init writes already go to stderr or the log ring buffer. This substantially reduces the design scope.
+
+### Options Considered
+
+| Option | Complexity | Backward Compat | Correct? |
+|--------|-----------|-----------------|----------|
+| A: `--quiet-init` CLI flag | Medium | Yes (opt-in) | Overkill for 1 write |
+| B: `output.setSuppressInit(true)` JS API | High | Yes (opt-in) | Overkill, fires after init |
+| C: Route warning to stderr | **Minimal** | **Yes** — warnings on stderr are Unix convention | **Yes** |
+| D: Route warning through slog | Medium | Yes | Over-engineered |
+
+### Chosen: Option C — Route warning to stderr
+
+**Rationale:**
+1. There is exactly one stdout write during init. A whole suppression framework is unwarranted.
+2. The write is a WARNING about storage failure. Unix convention: warnings and errors go to stderr.
+3. No API surface changes. No config flags. No backward compatibility concerns.
+4. Existing scripts see no behavior change (they weren't expecting this warning on stdout anyway — it only fires on storage failure).
+5. MCP stdio is immediately clean — zero stdout bytes before user script.
+
+### Changes Required
+
+| File | Change |
+|------|--------|
+| `internal/scripting/tui_manager.go:114` | `fmt.Fprintf(output, "Warning: ...")` → `fmt.Fprintf(os.Stderr, "Warning: ...")` |
+
+### Initialization Sequence (After Fix)
+```
+ScriptingCommand.Execute()
+  → PrepareEngine()
+    → NewEngineDetailed()
+      → NewTerminalIOStdio()          // TUIWriter → os.Stdout
+      → NewTUILogger(stdout, ...)      // ring buffer, no stdout writes
+      → NewTUIManagerWithConfig()
+        → initializeStateManager()
+          → storage failure?
+            → YES: fmt.Fprintf(os.Stderr, "Warning:...") [STDERR, not stdout]
+            → NO: proceed silently
+      → setupGlobals()
+  → engine.ExecuteScript(script)       // FIRST stdout write is user-controlled
+```
+
+### Backward Compatibility Guarantee
+- **Before fix:** Warning goes to stdout (via TUIWriter). Only fires on storage failure (rare).
+- **After fix:** Warning goes to stderr. Any tool capturing stdout sees no behavior change for normal operation. The warning was never part of the "API surface" — it's an error condition.
+- **Test impact:** No tests rely on this warning appearing on stdout. Tests that mock storage failures would need to capture stderr to see it.
+
+### Future-Proofing
+If new stdout writes are introduced during init in the future, this design decision establishes the precedent: **all diagnostic/warning/error output during initialization goes to stderr**. The engine's stdout is reserved for user-controlled output only.
 1. Pre-T1 bug fixes (gitAddChangedFiles, sendToHandle single-write, commit error checking, test fixes)
 2. Rule of Two review gate passed
 3. Committed 66be949

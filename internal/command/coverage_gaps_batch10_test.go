@@ -65,6 +65,18 @@ func TestSessionDelete_NonexistentSession(t *testing.T) {
 	storage.SetTestPaths(dir)
 	t.Cleanup(storage.ResetPaths)
 
+	// cmd.delete acquires a lock file before attempting os.Remove. If the
+	// session file doesn't exist the lock file is left behind (by design:
+	// "close descriptor to avoid fd leaks but keep lockfile artifact").
+	// t.TempDir cleanup can race with the OS releasing the file descriptor,
+	// so explicitly remove any leftover lock artifacts.
+	t.Cleanup(func() {
+		entries, _ := os.ReadDir(dir)
+		for _, e := range entries {
+			_ = os.Remove(filepath.Join(dir, e.Name()))
+		}
+	})
+
 	cfg := config.NewConfig()
 	cmd := NewSessionCommand(cfg)
 	cmd.yes = true

@@ -17,7 +17,7 @@
     "contextManagement": "Tasks are flat and sequential. Execute in order. On session resume, read blueprint.json and WIP.md, find the first non-Done task, and continue."
   },
   "statusSection": {
-    "currentState": "T001-T060 Done. 15 commits on wip branch: 10f7d91, 25632c6, 8d14711, d71b999, 02cb61a, 585f903, 990c6a1, 7ad17ca, 89a0809, 5089b59, e15dac9, 04d2279, 496d9e8, e057f35. Expanding scope for next coverage targets.",
+    "currentState": "T001-T066 Done. 17 commits on wip branch. Expanding scope for next coverage targets.",
     "goalState": "osm pr-split works correctly with -claude-command=ollama (and all other providers). The spawn-switch-send-classify pipeline is robust: dead child detected before passthrough entry, diagnostic output surfaced, re-attach is safe (no goroutine leaks), the VTerm captures error output. Integration tests cover the full spawn-to-exit lifecycle. Zero goroutine leaks. Zero EAGAIN errors. Zero data loss on re-attach.",
     "replanLog": [
       "2026-02-28: Previous session blueprint (T001-T131, termmux rewrite) was 100% Done. This new blueprint covers the pr-split spawn/toggle failures discovered in production.",
@@ -442,6 +442,48 @@
       "id": "T060",
       "task": "Commit batch 11",
       "description": "Committed as e057f35. 3 files, 665 insertions.",
+      "acceptance": "git log shows new commit.",
+      "status": "Done"
+    },
+    {
+      "id": "T061",
+      "task": "Add table/helpbar/tick tests (batch 12)",
+      "description": "11 tests: writeResolvedTable (4), renderHelpBar (6), tickCmd (1). Also includes trailing whitespace cleanup in vt.go.",
+      "acceptance": "All 11 tests pass. make all clean.",
+      "status": "Done"
+    },
+    {
+      "id": "T062",
+      "task": "Rule of Two for batch 12",
+      "description": "Pass 1: PASS. Pass 2: PASS. Both verified lipgloss ANSI compatibility, tabwriter padding, mutex safety on direct field writes.",
+      "acceptance": "Two PASS verdicts on same diff.",
+      "status": "Done"
+    },
+    {
+      "id": "T063",
+      "task": "Commit batch 12",
+      "description": "Committed as 2bf1c73. 6 files, 256 insertions, 37 deletions.",
+      "acceptance": "git log shows new commit.",
+      "status": "Done"
+    },
+    {
+      "id": "T064",
+      "task": "Add code generator tests (batch 13)",
+      "description": "14 tests: generateKeysOutput (6), generateMouseOutput (3), extractMouseMap (3), extractKeyNamesMap (2). Also fixed flaky TestSessionDelete_NonexistentSession lock file cleanup.",
+      "acceptance": "All 14 tests pass. make all clean.",
+      "status": "Done"
+    },
+    {
+      "id": "T065",
+      "task": "Rule of Two for batch 13",
+      "description": "Pass 1: PASS. Pass 2: PASS. Both found same non-blocking dead assertion in canonical name check. Same pre-existing prefix param observation.",
+      "acceptance": "Two PASS verdicts on same diff.",
+      "status": "Done"
+    },
+    {
+      "id": "T066",
+      "task": "Commit batch 13",
+      "description": "5 files: main_test.go (new), config.mk, coverage_gaps_batch10_test.go (fix), blueprint.json, WIP.md.",
       "acceptance": "git log shows new commit.",
       "status": "Done"
     }

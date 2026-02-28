@@ -1097,6 +1097,7 @@ function verifySplit(branchName, config) {
     config = config || {};
     var dir = config.dir || '.';
     var command = config.verifyCommand || runtime.verifyCommand;
+    var timeoutMs = config.verifyTimeoutMs || 0;
 
     var co = gitExec(dir, ['checkout', branchName]);
     if (co.code !== 0) {
@@ -1108,7 +1109,28 @@ function verifySplit(branchName, config) {
         };
     }
 
-    var result = exec.execv(['sh', '-c', 'cd ' + shellQuote(dir) + ' && ' + command]);
+    var startMs = Date.now();
+    var shellCmd = 'cd ' + shellQuote(dir) + ' && ' + command;
+
+    // When a per-branch timeout is configured, wrap with the `timeout` utility.
+    // Exit code 124 signals that the command was killed by the timeout.
+    if (timeoutMs > 0) {
+        var timeoutSec = Math.ceil(timeoutMs / 1000);
+        shellCmd = 'timeout ' + timeoutSec + ' sh -c ' + shellQuote(shellCmd);
+    }
+
+    var result = exec.execv(['sh', '-c', shellCmd]);
+    var elapsedMs = Date.now() - startMs;
+
+    // Detect timeout: exit code 124 from `timeout` utility, or elapsed time exceeded.
+    if (timeoutMs > 0 && (result.code === 124 || elapsedMs >= timeoutMs)) {
+        return {
+            name: branchName,
+            passed: false,
+            output: result.stdout,
+            error: 'verify timeout after ' + elapsedMs + 'ms (limit: ' + timeoutMs + 'ms)'
+        };
+    }
 
     return {
         name: branchName,
@@ -1118,11 +1140,13 @@ function verifySplit(branchName, config) {
     };
 }
 
-function verifySplits(plan) {
+function verifySplits(plan, options) {
+    options = options || {};
     if (!plan || !plan.splits) {
         return { allPassed: false, results: [], error: 'invalid plan: missing splits' };
     }
     var dir = plan.dir || '.';
+    var verifyTimeoutMs = options.verifyTimeoutMs || 0;
     var results = [];
     var allPassed = true;
     var failedBranches = {};
@@ -1157,7 +1181,8 @@ function verifySplits(plan) {
 
         var result = verifySplit(split.name, {
             dir: dir,
-            verifyCommand: plan.verifyCommand
+            verifyCommand: plan.verifyCommand,
+            verifyTimeoutMs: verifyTimeoutMs
         });
         results.push(result);
         if (!result.passed) {
@@ -2201,7 +2226,8 @@ var AUTOMATED_DEFAULTS = {
     pollIntervalMs: 500,        // Poll every 500ms for fast cancellation response
     maxResolveRetries: 3,       // Retries per branch
     maxReSplits: 1,             // Maximum re-classification cycles
-    resolveWallClockTimeoutMs: 7200000 // 120 minutes wall-clock cap for resolveConflicts
+    resolveWallClockTimeoutMs: 7200000, // 120 minutes wall-clock cap for resolveConflicts
+    verifyTimeoutMs: 600000     // 10 minutes per branch for verify step
 };
 
 // Delay (ms) between sending prompt text and the Enter key in sendToHandle().
@@ -2688,7 +2714,9 @@ function automatedSplit(config) {
     // Step 7: Verify splits.
     var verifyResult = step('Verify splits', function() {
         updateDetail('Verify splits', 'Running tree hash verification...');
-        var verifyObj = verifySplits(plan);
+        var verifyObj = verifySplits(plan, {
+            verifyTimeoutMs: config.verifyTimeoutMs || AUTOMATED_DEFAULTS.verifyTimeoutMs
+        });
         var realFailures = [];
         var skippedResults = [];
         for (var i = 0; i < verifyObj.results.length; i++) {
@@ -4540,6 +4568,7 @@ function buildCommands(stateArg) {
                             autoConfig.classifyTimeoutMs = prSplitConfig.timeoutMs;
                             autoConfig.planTimeoutMs = prSplitConfig.timeoutMs;
                             autoConfig.resolveTimeoutMs = prSplitConfig.timeoutMs;
+                            autoConfig.verifyTimeoutMs = prSplitConfig.timeoutMs;
                         }
                         var result = automatedSplit(autoConfig);
                         if (result.error) {
@@ -4850,6 +4879,7 @@ function buildCommands(stateArg) {
                         autoConfig.classifyTimeoutMs = prSplitConfig.timeoutMs;
                         autoConfig.planTimeoutMs = prSplitConfig.timeoutMs;
                         autoConfig.resolveTimeoutMs = prSplitConfig.timeoutMs;
+                        autoConfig.verifyTimeoutMs = prSplitConfig.timeoutMs;
                     }
                     var result = automatedSplit(autoConfig);
                     if (result.error) {

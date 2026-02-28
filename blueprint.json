@@ -218,14 +218,14 @@
       "task": "Add verifySplits timeout guard",
       "description": "verifySplits() at pr_split_script.js:1120 runs verifyCommand for each branch with no per-branch or total timeout. If `make test` is long-running (e.g., 30 minutes), the total verify step can block indefinitely. Add: (1) an optional options parameter to verifySplits() with verifyTimeoutMs (default: 600000 = 10 minutes per branch), (2) wrap the verifyCommand execution in a deadline check using Date.now(), (3) if a single branch verification exceeds the timeout, mark it as failed with 'verify timeout after Xms'.",
       "acceptance": "TestVerifySplits_PerBranchTimeout creates a plan with verifyCommand 'sleep 999' and verifyTimeoutMs=1000. Verifies the branch fails with 'verify timeout' within 2 seconds, not 999 seconds. Existing tests pass with the default 10-minute timeout.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T090",
       "task": "Thread verifyTimeoutMs through automatedSplit()",
       "description": "In automatedSplit() at ~line 2565, the Step 7 'Verify splits' calls verifySplits(plan) with no timeout options. Modify to pass { verifyTimeoutMs: config.verifyTimeoutMs || AUTOMATED_DEFAULTS.verifyTimeoutMs }. Add AUTOMATED_DEFAULTS.verifyTimeoutMs = 600000 (10 minutes). When --timeout is set (prSplitConfig.timeoutMs), use it as verifyTimeoutMs too.",
       "acceptance": "TestAutoSplit_VerifyTimeout configures automatedSplit with verifyTimeoutMs=2000 and a slow verifyCommand. Verifies the pipeline reports the verify timeout within 5 seconds.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T091",

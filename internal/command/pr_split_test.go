@@ -4213,6 +4213,29 @@ func TestPrSplitCommand_ResolveConflictsWallClockDefault(t *testing.T) {
 	}
 }
 
+func TestPrSplitCommand_VerifyTimeoutDefault(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Verify AUTOMATED_DEFAULTS.verifyTimeoutMs = 600000 (10 minutes).
+	val, err := evalJS(`globalThis.prSplit.AUTOMATED_DEFAULTS.verifyTimeoutMs`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, ok := val.(int64)
+	if !ok {
+		vf, ok2 := val.(float64)
+		if !ok2 {
+			t.Fatalf("Expected numeric value, got %T: %v", val, val)
+		}
+		v = int64(vf)
+	}
+	if v != 600000 {
+		t.Errorf("Expected verifyTimeoutMs=600000, got %d", v)
+	}
+}
+
 func TestPrSplitCommand_ResolveConflictsWithClaudeWallClockTimeout(t *testing.T) {
 	t.Parallel()
 

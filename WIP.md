@@ -64,10 +64,10 @@ Rewrote blueprint.json from scratch. Preserved 3 representative Done tasks. Adde
 - **Zero failures across all termmux packages**
 
 ## Immediate Next Steps
-1. T087: Fix Windows build failures
-2. T088: Fix Linux container build failures
-3. T089: Add verifySplits timeout guard
-4. T090: Thread verifyTimeoutMs through automatedSplit()
+1. T091: Handle fileStatuses 'T' (type change) in executeSplit()
+2. T092: Add isAlive heartbeat to claude-fix strategy's pollForFile call
+3. T093: Claude auto-detection verification
+4. T094-T096: Session persistence (savePlan/loadPlan, --resume, crash recovery)
 
 ## Completed This Session
 - T067: Baseline tests documented
@@ -90,3 +90,5 @@ Rewrote blueprint.json from scratch. Preserved 3 representative Done tasks. Adde
 - T084: Audit conversationHistory — intentional (plan persistence + REPL command), documented
 - T085: Audit telemetryData — intentional (REPL 'telemetry' command + opt-in save), documented
 - T086: Audit detectLanguage() — intentional (classification prompt template), documented
+- T089: verifySplit() wraps command in `timeout` utility, detects exit code 124. verifySplits() accepts options.verifyTimeoutMs. 3 sub-tests pass.
+- T090: AUTOMATED_DEFAULTS.verifyTimeoutMs = 600000 (10 min). Threaded through automatedSplit() Step 7 + REPL propagation. Test for default value passes.

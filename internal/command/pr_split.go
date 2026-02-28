@@ -55,6 +55,9 @@ type PrSplitCommand struct {
 
 	// Resume a previously saved auto-split session.
 	resume bool
+
+	// Delete split branches if the pipeline fails.
+	cleanupOnFailure bool
 }
 
 // stringSliceFlag implements [flag.Value] for repeatable string flags.
@@ -118,6 +121,7 @@ func (c *PrSplitCommand) SetupFlags(fs *flag.FlagSet) {
 
 	fs.DurationVar(&c.timeout, "timeout", 0, "Timeout for Claude communication steps (e.g. 5m); 0 = defaults")
 	fs.BoolVar(&c.resume, "resume", false, "Resume a previously saved auto-split session")
+	fs.BoolVar(&c.cleanupOnFailure, "cleanup-on-failure", false, "Delete split branches if the pipeline fails")
 
 	c.RegisterFlags(fs)
 }
@@ -167,6 +171,9 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		if v, ok := c.config.GetCommandOption("pr-split", "resume"); ok && !c.resume {
 			c.resume = v == "true" || v == "1" || v == "yes"
 		}
+		if v, ok := c.config.GetCommandOption("pr-split", "cleanup-on-failure"); ok && !c.cleanupOnFailure {
+			c.cleanupOnFailure = v == "true" || v == "1" || v == "yes"
+		}
 	}
 
 	// Validate flags after config defaults are applied.
@@ -213,20 +220,21 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		}
 	}
 	engine.SetGlobal("prSplitConfig", map[string]interface{}{
-		"baseBranch":      c.baseBranch,
-		"strategy":        c.strategy,
-		"maxFiles":        c.maxFiles,
-		"branchPrefix":    c.branchPrefix,
-		"verifyCommand":   c.verifyCommand,
-		"dryRun":          c.dryRun,
-		"jsonOutput":      c.jsonOutput,
-		"claudeCommand":   c.claudeCommand,
-		"claudeArgs":      claudeArgsList,
-		"claudeModel":     c.claudeModel,
-		"claudeConfigDir": c.claudeConfigDir,
-		"claudeEnv":       claudeEnvMap,
-		"timeoutMs":       int64(c.timeout / time.Millisecond),
-		"resumeFromPlan":  c.resume,
+		"baseBranch":       c.baseBranch,
+		"strategy":         c.strategy,
+		"maxFiles":         c.maxFiles,
+		"branchPrefix":     c.branchPrefix,
+		"verifyCommand":    c.verifyCommand,
+		"dryRun":           c.dryRun,
+		"jsonOutput":       c.jsonOutput,
+		"claudeCommand":    c.claudeCommand,
+		"claudeArgs":       claudeArgsList,
+		"claudeModel":      c.claudeModel,
+		"claudeConfigDir":  c.claudeConfigDir,
+		"claudeEnv":        claudeEnvMap,
+		"timeoutMs":        int64(c.timeout / time.Millisecond),
+		"resumeFromPlan":   c.resume,
+		"cleanupOnFailure": c.cleanupOnFailure,
 	})
 
 	// TUI Mux — terminal multiplexer between osm and child PTY (Claude Code).

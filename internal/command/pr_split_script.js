@@ -2862,6 +2862,14 @@ function automatedSplit(config) {
     });
     if (execResult.error) {
         report.error = execResult.error;
+        // T117: Clean up partial split branches on failure if configured.
+        if (config.cleanupOnFailure && plan && plan.splits && plan.splits.length > 0) {
+            emitOutput('[auto-split] Cleaning up split branches due to execution failure...');
+            var cleanResult = cleanupBranches(plan);
+            if (cleanResult.deleted.length > 0) {
+                emitOutput('[auto-split] Deleted ' + cleanResult.deleted.length + ' branches');
+            }
+        }
         cleanupExecutor();
         return finishTUI({ error: execResult.error, report: report });
     }
@@ -3034,6 +3042,15 @@ function automatedSplit(config) {
     }
 
     cleanupExecutor();
+
+    // T117: Clean up split branches on pipeline failure if configured.
+    if (config.cleanupOnFailure && report.error && plan && plan.splits && plan.splits.length > 0) {
+        emitOutput('[auto-split] Cleaning up split branches due to pipeline failure...');
+        var cleanResult = cleanupBranches(plan);
+        if (cleanResult.deleted.length > 0) {
+            emitOutput('[auto-split] Deleted ' + cleanResult.deleted.length + ' branches');
+        }
+    }
 
     // Restore the original branch. This is critical after re-split cycles
     // where cleanupBranches may have checked out baseBranch.
@@ -4769,7 +4786,8 @@ function buildCommands(stateArg) {
                         output.print(style.info('Mode: automated (Claude detected)'));
                         var autoConfig = {
                             baseBranch: runtime.baseBranch,
-                            strategy: runtime.strategy
+                            strategy: runtime.strategy,
+                            cleanupOnFailure: prSplitConfig.cleanupOnFailure
                         };
                         // If --timeout was specified, apply to all Claude timeouts.
                         if (prSplitConfig.timeoutMs > 0) {
@@ -5080,7 +5098,8 @@ function buildCommands(stateArg) {
                     var autoConfig = {
                         baseBranch: runtime.baseBranch,
                         strategy: runtime.strategy,
-                        maxGroups: 0
+                        maxGroups: 0,
+                        cleanupOnFailure: prSplitConfig.cleanupOnFailure
                     };
                     // If --timeout was specified, apply to all Claude timeouts.
                     if (prSplitConfig.timeoutMs > 0) {

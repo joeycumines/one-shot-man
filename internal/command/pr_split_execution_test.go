@@ -918,3 +918,130 @@ func TestCleanupBranches_NullPlan(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T113: executeSplit with renamed files (R status)
+// ---------------------------------------------------------------------------
+
+func TestExecuteSplit_RenamedFile(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := evalJS(resetGitMockJS); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mock a successful execution with an 'R' status file (renamed).
+	// The new path is 'pkg/new_name.go' — executeSplit should checkout from source.
+	if _, err := evalJS(`
+		globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature');
+		globalThis._gitResponses['rev-parse --verify refs/heads/split/01-rename'] = _gitFail('not found');
+		globalThis._gitResponses['checkout main'] = _gitOk('');
+		globalThis._gitResponses['checkout -b split/01-rename'] = _gitOk('');
+		globalThis._gitResponses['checkout feature -- pkg/new_name.go'] = _gitOk('');
+		globalThis._gitResponses['add -A'] = _gitOk('');
+		globalThis._gitResponses['commit -m rename file'] = _gitOk('');
+		globalThis._gitResponses['rev-parse HEAD'] = _gitOk('ren123');
+		globalThis._gitResponses['checkout feature'] = _gitOk('');
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.executeSplit({
+		baseBranch: 'main',
+		sourceBranch: 'feature',
+		fileStatuses: {'pkg/new_name.go': 'R'},
+		splits: [
+			{name: 'split/01-rename', files: ['pkg/new_name.go'], message: 'rename file', order: 0}
+		]
+	}))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := parseExecuteSplitResult(t, raw)
+
+	if r.Error != nil {
+		t.Fatalf("unexpected error: %s", *r.Error)
+	}
+	if len(r.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(r.Results))
+	}
+	if r.Results[0].SHA != "ren123" {
+		t.Errorf("sha = %q, want 'ren123'", r.Results[0].SHA)
+	}
+	if r.Results[0].Error != nil {
+		t.Errorf("result[0] error = %s", *r.Results[0].Error)
+	}
+
+	// Verify the git checkout was called with the new (destination) path.
+	calls, err := evalJS(`JSON.stringify(globalThis._gitCalls)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	callStr := calls.(string)
+	if !strings.Contains(callStr, "pkg/new_name.go") {
+		t.Errorf("expected checkout of new path 'pkg/new_name.go', got calls: %s", callStr)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T114: executeSplit with copied files (C status)
+// ---------------------------------------------------------------------------
+
+func TestExecuteSplit_CopiedFile(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := evalJS(resetGitMockJS); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mock a successful execution with a 'C' status file (copied).
+	if _, err := evalJS(`
+		globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature');
+		globalThis._gitResponses['rev-parse --verify refs/heads/split/01-copy'] = _gitFail('not found');
+		globalThis._gitResponses['checkout main'] = _gitOk('');
+		globalThis._gitResponses['checkout -b split/01-copy'] = _gitOk('');
+		globalThis._gitResponses['checkout feature -- src/copy.go'] = _gitOk('');
+		globalThis._gitResponses['add -A'] = _gitOk('');
+		globalThis._gitResponses['commit -m copy file'] = _gitOk('');
+		globalThis._gitResponses['rev-parse HEAD'] = _gitOk('copy123');
+		globalThis._gitResponses['checkout feature'] = _gitOk('');
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.executeSplit({
+		baseBranch: 'main',
+		sourceBranch: 'feature',
+		fileStatuses: {'src/copy.go': 'C'},
+		splits: [
+			{name: 'split/01-copy', files: ['src/copy.go'], message: 'copy file', order: 0}
+		]
+	}))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := parseExecuteSplitResult(t, raw)
+
+	if r.Error != nil {
+		t.Fatalf("unexpected error: %s", *r.Error)
+	}
+	if len(r.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(r.Results))
+	}
+	if r.Results[0].SHA != "copy123" {
+		t.Errorf("sha = %q, want 'copy123'", r.Results[0].SHA)
+	}
+	if r.Results[0].Error != nil {
+		t.Errorf("result[0] error = %s", *r.Results[0].Error)
+	}
+}

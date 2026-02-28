@@ -4572,9 +4572,9 @@ func TestPrSplitCommand_ResolveConflictsWithClaudePreExistingFailure(t *testing.
 		t.Error("Expected reSplitNeeded=false for pre-existing failure")
 	}
 
-	// 2. Only 1 attempt (no retry) — sendCallCount should be 2 (text + Enter).
-	if output.SendCallCount != 2 {
-		t.Errorf("Expected 2 send calls (text + Enter), got %d", output.SendCallCount)
+	// 2. Only 1 attempt (no retry) — sendCallCount should be 1 (single-write: text+\n).
+	if output.SendCallCount != 1 {
+		t.Errorf("Expected 1 send call (single-write), got %d", output.SendCallCount)
 	}
 
 	// 3. Only 1 conflict recorded (1 attempt, not 3).
@@ -4668,51 +4668,28 @@ func TestPrSplitCommand_ResolveConflictsWithClaude_MaxAttemptsPerBranch(t *testi
 		t.Errorf("Expected 4 conflict entries (2 failures × 2 attempts), got %d", output.Report.Conflicts)
 	}
 
-	// Each attempt sends (text + Enter) = 2 send calls.
-	// 4 attempts × 2 sends = 8 send calls.
-	if output.SendCount != 8 {
-		t.Errorf("Expected 8 send calls (4 attempts × 2 sends), got %d", output.SendCount)
+	// Each attempt sends (text + \n) as a single write = 1 send call.
+	// 4 attempts × 1 send = 4 send calls.
+	if output.SendCount != 4 {
+		t.Errorf("Expected 4 send calls (4 attempts × 1 send), got %d", output.SendCount)
 	}
 }
 
-func TestPrSplitCommand_SendToHandle_ConfigurableDelay(t *testing.T) {
+func TestPrSplitCommand_SendToHandle_SingleWrite(t *testing.T) {
 	t.Parallel()
 
 	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
 
-	// Test 1: setSendEnterDelay changes the delay value and sendToHandle uses it.
-	// We can't easily measure timing in the Goja runtime, but we CAN verify
-	// that setSendEnterDelay is callable and that sendToHandle still works
-	// with a modified delay (functional correctness).
+	// Verify sendToHandle sends text+\n as a single write (no two-write pattern).
 	val, err := evalJS(`(function() {
-		// Set a custom delay of 100ms.
-		globalThis.prSplit.setSendEnterDelay(100);
-
 		var sends = [];
 		var mockHandle = {
 			send: function(text) { sends.push(text); }
 		};
 		var result = globalThis.prSplit.sendToHandle(mockHandle, 'test prompt');
-
-		// Read the current SEND_ENTER_DELAY_MS value via closure.
-		// We can't access the module var directly, but we can verify
-		// setSendEnterDelay accepted the value by calling it with 0.
-		globalThis.prSplit.setSendEnterDelay(0);
-
-		var sends2 = [];
-		var mockHandle2 = {
-			send: function(text) { sends2.push(text); }
-		};
-		var result2 = globalThis.prSplit.sendToHandle(mockHandle2, 'zero delay prompt');
-
-		// Restore default.
-		globalThis.prSplit.setSendEnterDelay(50);
-
 		return JSON.stringify({
-			result1: result,
-			sends1: sends,
-			result2: result2,
-			sends2: sends2
+			result: result,
+			sends: sends
 		});
 	})()`)
 	if err != nil {
@@ -4720,95 +4697,24 @@ func TestPrSplitCommand_SendToHandle_ConfigurableDelay(t *testing.T) {
 	}
 
 	var output struct {
-		Result1 struct {
+		Result struct {
 			Error *string `json:"error"`
-		} `json:"result1"`
-		Sends1  []string `json:"sends1"`
-		Result2 struct {
-			Error *string `json:"error"`
-		} `json:"result2"`
-		Sends2 []string `json:"sends2"`
+		} `json:"result"`
+		Sends []string `json:"sends"`
 	}
 	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
 		t.Fatalf("Failed to parse output: %v", err)
 	}
 
-	// Both sends should succeed with 2 writes each (text + Enter).
-	if output.Result1.Error != nil {
-		t.Errorf("sendToHandle with 100ms delay returned error: %s", *output.Result1.Error)
+	if output.Result.Error != nil {
+		t.Errorf("sendToHandle returned error: %s", *output.Result.Error)
 	}
-	if len(output.Sends1) != 2 {
-		t.Fatalf("Expected 2 sends with 100ms delay, got %d", len(output.Sends1))
+	// Single-write: text + \n in one send call.
+	if len(output.Sends) != 1 {
+		t.Fatalf("Expected 1 send (single-write), got %d: %v", len(output.Sends), output.Sends)
 	}
-	if output.Sends1[0] != "test prompt" {
-		t.Errorf("sends1[0] = %q, want %q", output.Sends1[0], "test prompt")
-	}
-	if output.Sends1[1] != "\r" {
-		t.Errorf("sends1[1] = %q, want %q", output.Sends1[1], "\r")
-	}
-
-	if output.Result2.Error != nil {
-		t.Errorf("sendToHandle with 0ms delay returned error: %s", *output.Result2.Error)
-	}
-	if len(output.Sends2) != 2 {
-		t.Fatalf("Expected 2 sends with 0ms delay, got %d", len(output.Sends2))
-	}
-	if output.Sends2[0] != "zero delay prompt" {
-		t.Errorf("sends2[0] = %q, want %q", output.Sends2[0], "zero delay prompt")
-	}
-}
-
-func TestPrSplitCommand_SetSendEnterDelay_EdgeCases(t *testing.T) {
-	t.Parallel()
-
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
-
-	// Edge cases: negative values, non-numbers, undefined.
-	val, err := evalJS(`(function() {
-		var results = [];
-
-		// Negative: should clamp to 0.
-		globalThis.prSplit.setSendEnterDelay(-100);
-		var sends = [];
-		var mock = { send: function(t) { sends.push(t); } };
-		var r = globalThis.prSplit.sendToHandle(mock, 'neg');
-		results.push({ sends: sends, error: r.error });
-
-		// undefined: should fall to 0.
-		globalThis.prSplit.setSendEnterDelay(undefined);
-		sends = [];
-		mock = { send: function(t) { sends.push(t); } };
-		r = globalThis.prSplit.sendToHandle(mock, 'undef');
-		results.push({ sends: sends, error: r.error });
-
-		// Restore default.
-		globalThis.prSplit.setSendEnterDelay(50);
-
-		return JSON.stringify(results);
-	})()`)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var results []struct {
-		Sends []string `json:"sends"`
-		Error *string  `json:"error"`
-	}
-	if err := json.Unmarshal([]byte(val.(string)), &results); err != nil {
-		t.Fatalf("Failed to parse output: %v", err)
-	}
-
-	if len(results) != 2 {
-		t.Fatalf("Expected 2 results, got %d", len(results))
-	}
-
-	for i, r := range results {
-		if r.Error != nil {
-			t.Errorf("results[%d]: unexpected error: %s", i, *r.Error)
-		}
-		if len(r.Sends) != 2 {
-			t.Errorf("results[%d]: expected 2 sends, got %d", i, len(r.Sends))
-		}
+	if output.Sends[0] != "test prompt\n" {
+		t.Errorf("sends[0] = %q, want %q", output.Sends[0], "test prompt\n")
 	}
 }
 
@@ -4844,14 +4750,13 @@ func TestPrSplitCommand_SendToHandle_EAGAINRetry(t *testing.T) {
 		t.Fatalf("Failed to parse output: %v", err)
 	}
 
-	// Should succeed after retry — EAGAIN on call 1, success on call 2 (text),
-	// then call 3 for Enter key.
+	// Single-write: EAGAIN on call 1, success on call 2.
 	if output.Error != nil {
 		t.Errorf("Expected success after EAGAIN retry, got error: %s", *output.Error)
 	}
-	// callCount: 1 (EAGAIN) + 1 (text retry success) + 1 (Enter) = 3
-	if output.CallCount != 3 {
-		t.Errorf("Expected 3 send calls (1 EAGAIN + 1 text success + 1 Enter), got %d", output.CallCount)
+	// callCount: 1 (EAGAIN) + 1 (text+\n retry success) = 2
+	if output.CallCount != 2 {
+		t.Errorf("Expected 2 send calls (1 EAGAIN + 1 success), got %d", output.CallCount)
 	}
 }
 
@@ -9545,6 +9450,9 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 	// Verify tree hash equivalence: merging all split branches should
 	// produce the same tree as the feature branch.
 	featureTree := strings.TrimSpace(runGitCmd(t, tp.Dir, "rev-parse", "feature^{tree}"))
+
+	// Clean up plan file left by automatedSplit to avoid blocking git checkout.
+	_ = os.Remove(filepath.Join(tp.Dir, ".pr-split-plan.json"))
 
 	// Create a merge of all splits on top of main.
 	runGitCmd(t, tp.Dir, "checkout", "main")

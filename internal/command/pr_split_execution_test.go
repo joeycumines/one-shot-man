@@ -80,7 +80,7 @@ func TestExecuteSplit(t *testing.T) {
 				globalThis._gitResponses['checkout main'] = _gitOk('');
 				globalThis._gitResponses['checkout -b split/01-config'] = _gitOk('');
 				globalThis._gitResponses['checkout feature -- config.go'] = _gitOk('');
-				globalThis._gitResponses['add -A'] = _gitOk('');
+				globalThis._gitResponses['add --'] = _gitOk('');
 				globalThis._gitResponses['commit -m split: config'] = _gitOk('');
 				globalThis._gitResponses['rev-parse HEAD'] = _gitOk('abc123');
 				globalThis._gitResponses['checkout split/01-config'] = _gitOk('');
@@ -124,7 +124,7 @@ func TestExecuteSplit(t *testing.T) {
 				globalThis._gitResponses['checkout main'] = _gitOk('');
 				globalThis._gitResponses['checkout -b split/01-cleanup'] = _gitOk('');
 				globalThis._gitResponses['rm --ignore-unmatch -f old.go'] = _gitOk('');
-				globalThis._gitResponses['add -A'] = _gitOk('');
+				globalThis._gitResponses['add --'] = _gitOk('');
 				globalThis._gitResponses['commit -m cleanup'] = _gitOk('');
 				globalThis._gitResponses['rev-parse HEAD'] = _gitOk('def456');
 				globalThis._gitResponses['checkout feature'] = _gitOk('');
@@ -209,7 +209,7 @@ func TestExecuteSplit(t *testing.T) {
 				globalThis._gitResponses['checkout main'] = _gitOk('');
 				globalThis._gitResponses['checkout -b split/01-empty'] = _gitOk('');
 				globalThis._gitResponses['checkout feature -- no-change.go'] = _gitOk('');
-				globalThis._gitResponses['add -A'] = _gitOk('');
+				globalThis._gitResponses['add --'] = _gitOk('');
 				globalThis._gitResponses['commit -m empty'] = _gitFail('nothing to commit');
 				globalThis._gitResponses['commit --allow-empty -m empty'] = _gitOk('');
 				globalThis._gitResponses['rev-parse HEAD'] = _gitOk('ghi789');
@@ -245,7 +245,7 @@ func TestExecuteSplit(t *testing.T) {
 				globalThis._gitResponses['checkout main'] = _gitOk('');
 				globalThis._gitResponses['checkout -b split/01-redo'] = _gitOk('');
 				globalThis._gitResponses['checkout feature -- a.go'] = _gitOk('');
-				globalThis._gitResponses['add -A'] = _gitOk('');
+				globalThis._gitResponses['add --'] = _gitOk('');
 				globalThis._gitResponses['commit -m redo'] = _gitOk('');
 				globalThis._gitResponses['rev-parse HEAD'] = _gitOk('jkl012');
 				globalThis._gitResponses['checkout feature'] = _gitOk('');
@@ -314,7 +314,7 @@ func TestExecuteSplit_TypeChange(t *testing.T) {
 		globalThis._gitResponses['checkout main'] = _gitOk('');
 		globalThis._gitResponses['checkout -b split/01-type'] = _gitOk('');
 		globalThis._gitResponses['checkout feature -- link.txt'] = _gitOk('');
-		globalThis._gitResponses['add -A'] = _gitOk('');
+		globalThis._gitResponses['add --'] = _gitOk('');
 		globalThis._gitResponses['commit -m type change'] = _gitOk('');
 		globalThis._gitResponses['rev-parse HEAD'] = _gitOk('tc123');
 		globalThis._gitResponses['checkout feature'] = _gitOk('');
@@ -943,7 +943,7 @@ func TestExecuteSplit_RenamedFile(t *testing.T) {
 		globalThis._gitResponses['checkout main'] = _gitOk('');
 		globalThis._gitResponses['checkout -b split/01-rename'] = _gitOk('');
 		globalThis._gitResponses['checkout feature -- pkg/new_name.go'] = _gitOk('');
-		globalThis._gitResponses['add -A'] = _gitOk('');
+		globalThis._gitResponses['add --'] = _gitOk('');
 		globalThis._gitResponses['commit -m rename file'] = _gitOk('');
 		globalThis._gitResponses['rev-parse HEAD'] = _gitOk('ren123');
 		globalThis._gitResponses['checkout feature'] = _gitOk('');
@@ -1011,7 +1011,7 @@ func TestExecuteSplit_CopiedFile(t *testing.T) {
 		globalThis._gitResponses['checkout main'] = _gitOk('');
 		globalThis._gitResponses['checkout -b split/01-copy'] = _gitOk('');
 		globalThis._gitResponses['checkout feature -- src/copy.go'] = _gitOk('');
-		globalThis._gitResponses['add -A'] = _gitOk('');
+		globalThis._gitResponses['add --'] = _gitOk('');
 		globalThis._gitResponses['commit -m copy file'] = _gitOk('');
 		globalThis._gitResponses['rev-parse HEAD'] = _gitOk('copy123');
 		globalThis._gitResponses['checkout feature'] = _gitOk('');

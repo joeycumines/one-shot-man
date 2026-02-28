@@ -704,6 +704,9 @@ func TestClaudeCodeExecutor_Resolve(t *testing.T) {
 					if (argv[0] === 'which') {
 						return _gitFail('not found');
 					}
+					if (argv[0] === 'claude' && argv[1] === '--version') {
+						return _gitOk('claude-code 1.0.0');
+					}
 					return origExecv(argv);
 				};
 				var ce = new globalThis.prSplit.ClaudeCodeExecutor({});

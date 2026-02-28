@@ -1,0 +1,585 @@
+{
+  "meta": {
+    "purpose": "PR Split IPC Refactor & Enhancement Blueprint — Exhaustive task tracker for refactoring the osm PR split system from file-polling IPC to dedicated osm:mcpcallback, restructuring classification schemas, purging legacy code, fixing bugs, enhancing UI, and adding configuration system.",
+    "source": "scratch/todo.md (primary), scratch/NOTES.md (secondary)",
+    "maintenance": "This file is the single source of truth. Update task status immediately after every sub-task. Deviations must be logged within the plan. Read this file and WIP.md at session start before any work."
+  },
+  "globalAlerts": [
+    "CROSS-PLATFORM BUILD: The build MUST pass on Linux (ubuntu-latest), Windows (windows-latest), and macOS (macos-latest). CI matrix at .github/workflows/ci.yml. No exceptions.",
+    "BUILD SYSTEM: GNU Make is the build system. `make` runs build+lint+test. Use `gmake` on macOS if system make is BSD. All verification runs through Make targets.",
+    "DEADCODE POLICY: NEVER add ignores to .deadcodeignore. If deadcode reports an unused function, wire it up in main.go / register.go / the relevant registry, or delete it. Ignoring dead code is forbidden per AGENTS.md.",
+    "WINDOWS BUILD FAILING: The Windows build is currently broken and MUST be fixed as a prerequisite (T1-T2) before any Phase 1+ work begins. Do not start IPC refactor until all 3 platforms are green.",
+    "osm:grpc SERVER SUPPORT: osm:grpc FULLY supports server-side JS implementation via goja-grpc. The inprocgrpc.Channel (created in internal/builtin/register.go ~line 118) is both google.golang.org/grpc.ClientConnInterface AND grpc.ServiceRegistrar. grpc.createServer(), server.addService(), server.start() all work from JavaScript. This is NOT an unknown — it is confirmed working infrastructure."
+  ],
+  "mandatoryDirectives": [
+    "Read blueprint.json and WIP.md at the start of every session before doing any work. Do not trust chat history or internal memory.",
+    "Update task status in blueprint.json immediately after completing each sub-task. Do not batch status updates.",
+    "Run `make` (full suite: build + lint + test) after every phase boundary (after T9, T27, T38, T46, T54, T64, T70, T88).",
+    "All integration tests must pass on macOS (real Claude tests gated behind -integration flag). Mock-based tests (integration-test-prsplit-mcp) must pass on all 3 platforms.",
+    "Subagents spawned for implementation work must NOT self-review or run the Rule of Two. The top-level orchestrator handles all review gating."
+  ],
+  "statusSection": {
+    "goalState": "The osm pr-split system uses a dedicated, secure osm:mcpcallback IPC mechanism (replacing file polling), with restructured classification schemas where category descriptions serve as commit messages, a clean MCP server with no legacy file-writing hacks, all known bugs fixed, an enhanced auto-split UI with streaming verification and per-branch status, and a guided configuration system — all passing on Linux, Windows, and macOS.",
+    "currentState": "Build GREEN on macOS. Pre-blueprint bug fixes completed: (1) eliminated git add -A contamination across all 8 sites (executeSplit + 7 auto-fix strategies + resolveConflictsWithClaude) by introducing gitAddChangedFiles() helper, (2) refactored sendToHandle() from two-write pattern (text + sleep + CR) to single atomic write (text + LF), (3) fixed TestClaudeCodeExecutor_Resolve 12min hang by adding claude --version mock, (4) fixed TestIntegration_AutoSplitMockMCP plan file cleanup before git checkout. Updated 8+ test functions. Build passes on macOS. T1-T88 not yet started.",
+    "replanLog": [
+      {
+        "trigger": "Session start: 3 test failures + 1 directive mandate discovered before T1 could begin",
+        "date": "2026-02-28",
+        "affectedRange": "Pre-T1 (infrastructure fixes)",
+        "summary": "Discovered 2 failing tests (TestIntegration_AutoSplitMockMCP, TestClaudeCodeExecutor_Resolve) and 1 directive mandate (sendToHandle single-write). Fixed all 3 bugs and refactored git add -A to targeted adds across all 8 sites. Added gitAddChangedFiles() helper function. These fixes are pre-requisite infrastructure — the build was RED before this work. No T tasks affected or rewritten; these are pre-T1 hygiene."
+      }
+    ]
+  },
+  "sequentialTasks": [
+    {
+      "task": "T1: Diagnose Windows build failure",
+      "description": "Run `make` on Windows (via hack/run-on-windows.sh or CI at .github/workflows/ci.yml). Identify all specific compilation errors and test failures. Common issues in this codebase: sh -c usage in exec.execv calls within tests, Unix Domain Socket assumptions (net.Listen('unix',...)), `which` vs `where` for command discovery, path separator differences. Check internal/termmux/, internal/session/, internal/command/pr_split_script.js (verifySplit at line ~1135 uses sh -c), and any UDS-dependent code in internal/builtin/claudemux/.",
+      "acceptance": "A complete catalog of all Windows build failures documented in WIP.md with exact file paths, line numbers, error messages, and categorized root causes (sh -c, UDS, path separators, missing binaries). No failures left undocumented.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T2: Fix Windows build failures",
+      "description": "Fix all compilation and test failures identified in T1. Add runtime.GOOS guards and build tags where platform-specific behavior is required. Use t.Skip('requires Unix') for Unix-only tests that cannot be made cross-platform. Replace sh -c with platform-appropriate commands (e.g., cmd /c on Windows) in verifySplit() (pr_split_script.js line ~1135). Add Windows transport fallbacks for UDS-dependent code. Files likely affected: internal/termmux/, internal/session/, internal/command/pr_split_script.js, internal/builtin/claudemux/control.go, any test using net.Listen('unix',...).",
+      "acceptance": "`make` passes on windows-latest CI job. All 3 platforms (ubuntu-latest, macos-latest, windows-latest) are green in CI. No new test skips without documented justification.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T3: Investigate verification 'skip' bug — establish behavioral baseline",
+      "description": "Trace verifySplit() in internal/command/pr_split_script.js (line ~1135). The function constructs a shell command and runs exec.execv(['sh', '-c', shellCmd]). Investigate three hypotheses: (1) Does git checkout fail silently before the verify command runs? Check gitExec() return value handling. (2) Does the verify command run on the wrong branch? Check branch state before exec. (3) Does the AutoSplitModel TUI (internal/termmux/ui/autosplit.go) suppress results for sub-100ms operations, making it appear skipped? Also trace verifySplits() (line ~1194) which is the loop calling verifySplit per branch.",
+      "acceptance": "Root cause documented in WIP.md with exact line references, reproduction steps, and which hypothesis was confirmed. A test case demonstrating the bug exists in pr_split_verification_test.go or pr_split_integration_test.go (can be a TODO/Skip test if the fix requires IPC refactor changes not yet available).",
+      "status": "Not Started"
+    },
+    {
+      "task": "T4: Investigate resolveConflictsWithClaude prompt sending failure — establish behavioral baseline",
+      "description": "Trace resolveConflictsWithClaude() in internal/command/pr_split_script.js (line ~3123). It calls sendToHandle() (line ~2397) which routes through autoSplitTUI.sendWithCancel() (line ~2403-2412) when in TUI mode, or falls back to direct handle.write(). Map the complete handle lifecycle: claudeExecutor.spawn() creates handle → handle used in automatedSplit() (line ~2509) → handle passed to resolveConflictsWithClaude(). Check if claudeExecutor.handle becomes null after branch operations or after the initial classification/plan loop completes. Check sendToHandle at lines ~1691, ~2741, ~2976, ~3180 for all call sites.",
+      "acceptance": "Root cause documented in WIP.md. Full handle lifecycle mapped from spawn through conflict resolution, showing where handle becomes null/undefined or where the TUI mux loses the connection. All sendToHandle call sites cataloged with their execution context.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T5: Audit existing pr_split_integration_test.go coverage gaps for auto-split flow",
+      "description": "Read internal/command/pr_split_integration_test.go (2000+ lines, 20+ test functions including TestIntegration_HeuristicSplitEndToEnd, TestIntegration_AutoSplitCancel, TestIntegration_SendToHandle_*, TestIntegration_SpawnArgs_*, TestIntegration_SpawnHealthCheck_*, TestIntegration_IsAliveGuard_*, TestIntegration_AutoSplitWithClaude_Pipeline, TestPrSplitSendWithCancel_*). Cross-reference with automatedSplit() pipeline stages in pr_split_script.js (line ~2509): analyze → spawn → classify (sendToHandle line ~2741) → receive (pollForFile line ~2759) → plan (pollForFile line ~2793) → execute → verify (verifySplits line ~1194) → resolve (resolveConflictsWithClaude line ~3123). Identify which stages have real test coverage vs. which are only exercised incidentally.",
+      "acceptance": "Written gap analysis in WIP.md showing a matrix of pipeline stages vs test functions, marking each as: covered (test directly exercises this stage), partial (test touches but doesn't assert on this stage), or missing (no test coverage). Integration-test-prsplit-mcp target (project.mk line ~38) coverage explicitly assessed.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T6: Implement mock Claude binary / test provider for integration tests",
+      "description": "Create a test helper that speaks MCP stdio protocol and responds to classification/plan tool calls with predetermined data. Place in internal/command/testdata/ or internal/testutil/. The mock must: (1) be launchable as a subprocess via --claude-command flag (the way ClaudeCodeExecutor.spawn() in pr_split_script.js launches Claude), (2) accept MCP tool calls (reportClassification, reportSplitPlan per mcp.go tool registration at lines ~905 and ~1000), (3) respond with configurable classification/plan JSON data, (4) handle the stdio MCP transport protocol correctly. Reference: existing newMCPServer() in mcp.go (line ~357) for the server-side MCP implementation pattern.",
+      "acceptance": "A reusable mock binary/script exists that can be launched by the test harness as --claude-command, successfully receives MCP tool calls, returns predetermined classification and plan data, and cleanly exits. The mock is documented with usage examples for test authors.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T7: Implement end-to-end integration test for osm pr-split --strategy auto with mock provider",
+      "description": "Add integration tests in internal/command/pr_split_integration_test.go exercising automatedSplit() with a real git repo (created via helpers like initIntegrationRepo/addIntegrationFeatureFiles if they exist, or t.TempDir()+git init) and the mock Claude provider from T6. Wire mock provider via --claude-command test flag. The test must exercise the full pipeline: analyze diff → spawn mock → send classification request → receive classification via MCP callback → generate split plan → execute split plan → verify branches exist with correct files. Run via `make integration-test-prsplit-mcp` target (project.mk line ~38).",
+      "acceptance": "At least one test function (e.g., TestIntegration_AutoSplitMockMCP_EndToEnd) runs the auto strategy end-to-end with mock provider, creates split branches in a t.TempDir() git repo, and verifies: branches exist, files are assigned to correct branches, commit messages match expected values from mock classification data.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T8: Validate integration test branch creation and MCP callback flow",
+      "description": "Extend T7 tests with deep assertions on git state in the t.TempDir() repo after auto-split completes. Assert: (1) exact file lists per branch via `git diff --name-only main..split/XX`, (2) exact commit messages via `git log --format=%s split/XX`, (3) branch naming convention matches expected pattern (e.g., split/01-category-name). These assertions validate the full MCP callback → classification → plan → execution pipeline produces correct git artifacts.",
+      "acceptance": "Tests assert exact file lists per branch, commit messages match mock classification output category descriptions, branch names follow the expected convention. Any mismatch causes test failure with descriptive error messages showing expected vs actual.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T9: Cross-platform verification of Phase 0 integration tests",
+      "description": "Run all new Phase 0 tests on all 3 platforms via CI or local cross-platform testing (hack/run-on-windows.sh for Windows, Docker for Linux per example.config.mk). Fix any Unix-specific assumptions: sh -c usage, UDS paths, `which` command, `mkdir -p`, path separators. Run `make integration-test-prsplit-mcp` (project.mk line ~38) target on each platform.",
+      "acceptance": "All Phase 0 tests pass on ubuntu-latest, macos-latest, windows-latest. `make` (full suite) passes on all 3 platforms. No regressions in existing test suite.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T10: Investigate osm script stdout pollution from session loading",
+      "description": "Trace the session loading mechanism that writes to stdout during engine initialization. Start at ScriptingCommand.Execute() or scriptCommandBase in internal/command/ (likely script_command_base.go or scripting_command.go). Follow into PrepareEngine() → NewEngineWithConfig() in internal/scripting/. Find every code path that writes to stdout (fmt.Fprintf(stdout,...), output.print(), log messages routed to stdout) during the initialization phase before the user's script gets control. This stdout pollution would corrupt stdio MCP server communication.",
+      "acceptance": "All stdout writes during session loading documented in WIP.md with exact file paths, line numbers, and the content being written. Classification of each write: necessary (must be kept but redirectable), informational (can be suppressed), or erroneous (should never go to stdout).",
+      "status": "Not Started"
+    },
+    {
+      "task": "T11: Design configurable stdout control for osm script",
+      "description": "Design a mechanism to suppress or redirect stdout writes during initialization, enabling clean stdio for MCP server communication. Must be settable before session loading begins. Consider options: (1) --quiet-init CLI flag on osm script, (2) programmatic API like output.setSuppressInit(true) callable from script preamble, (3) redirect session info to stderr or the log system. Must be backward-compatible — existing scripts that don't opt in must see no behavior change.",
+      "acceptance": "Design document in WIP.md specifying: chosen mechanism with rationale, API surface, initialization sequence showing when suppression activates, backward compatibility guarantee, and files that need modification.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T12: Implement configurable stdout suppression for osm script",
+      "description": "Implement the designed mechanism from T11. Modify ScriptingCommand.Execute() and/or PrepareEngine() in internal/command/ to support suppressing stdout during init. Route session info through the log system (log.info/debug) or stderr when suppression is active. The osm:mcp module (T17) will depend on this for clean stdio.",
+      "acceptance": "When suppression is active, stdout contains zero bytes before the user's script begins execution. Existing scripts with suppression off produce identical output to before. Session load information is still accessible (via log or stderr).",
+      "status": "Not Started"
+    },
+    {
+      "task": "T13: Write tests for stdout suppression",
+      "description": "Test stdout cleanliness with suppression on and backward compatibility with suppression off. Place in internal/command/scripting_command_test.go or script_command_base_test.go (whichever contains the modified code). Tests: (1) with suppression on, capture stdout and assert empty before script output, (2) with suppression off, assert session info still appears on stdout, (3) log messages are properly routed when suppression is active.",
+      "acceptance": "Tests confirm: clean stdout when suppressed, proper log routing, backward compat when not suppressed. All pass with -race on all platforms.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T14: Design osm:mcp module API (stdio MCP server from JS)",
+      "description": "Design the JavaScript API for creating MCP servers from JavaScript, wrapping github.com/modelcontextprotocol/go-sdk/mcp (v1.3.1 in go.mod). Reference existing usage in newMCPServer() at internal/command/mcp.go (line ~357). Design: createServer(name, version) returns server object, server.addTool(name, description, inputSchema, handler) registers tools, server.run(transport) starts serving (transport = 'stdio' initially), server.close() tears down. Study the go-sdk's mcp.NewServer(), mcp.ServerTool, mcp.StdioTransport for the Go API that will be wrapped.",
+      "acceptance": "Complete API design documented in WIP.md with: full type signatures, method lifecycle (create → addTool → run → close), error handling semantics, event loop integration strategy (how Goja callbacks are invoked safely), and JSON schema for tool registration.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T15: Implement osm:mcp native Go module skeleton",
+      "description": "Create internal/builtin/mcp/ package with Require() function following the pattern from internal/builtin/grpc/grpc.go. Export createServer function. Register in internal/builtin/register.go as prefix+'mcp' (add import and registry.RegisterNativeModule call alongside existing modules like osm:grpc at line ~122). The skeleton returns a module object with createServer that creates but does not yet fully implement the server.",
+      "acceptance": "require('osm:mcp') is importable from JavaScript and returns an object with a createServer function. Module is registered in register.go. Package compiles. `make` passes.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T16: Implement MCP server creation and tool registration in osm:mcp",
+      "description": "Implement createServer() wrapping mcp.NewServer() from go-sdk. Implement addTool() that accepts tool name, description, input schema (as JS object), and a Goja callback handler. Marshal/unmarshal between JS objects (goja.Value) and Go types (mcp.CallToolRequest/Result). Use gojaeventloop.Adapter (passed via EventLoopProvider) for async safety — tool handler callbacks must run on the event loop thread. Reference the pattern in internal/builtin/grpc/grpc.go for how goja-grpc handles async callbacks.",
+      "acceptance": "JavaScript can create an MCP server, register tools with JS callback handlers, and those handlers are invoked when an MCP client calls the tools. Callbacks run safely on the event loop. Errors in callbacks propagate as MCP tool errors to the client.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T17: Implement stdio transport binding for osm:mcp server",
+      "description": "Add run() method that binds the MCP server to stdio transport (stdin/stdout). This depends on T12 (stdout suppression) to ensure clean stdio. Implement close() for graceful shutdown. run() must block the JS event loop appropriately (likely via a Promise that resolves on server shutdown). The transport reads from os.Stdin and writes to os.Stdout (or the scripting engine's configured stdin/stdout).",
+      "acceptance": "A JS script can create an MCP server, register tools, call server.run('stdio'), and an external MCP client connecting via the process's stdio can discover and call the registered tools. server.close() cleanly shuts down. No stdout corruption from session loading.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T18: Write unit tests for osm:mcp module",
+      "description": "Tests for server creation, tool registration, tool invocation, error handling, and cleanup. Place in internal/builtin/mcp/mcp_test.go. Follow testing patterns from internal/builtin/grpc/ tests. Cover: (1) createServer returns valid object, (2) addTool registers discoverable tool, (3) tool handler invoked with correct arguments, (4) handler errors propagate as MCP errors, (5) close() cleans up resources, (6) double-close is safe, (7) run() after close() errors.",
+      "acceptance": "Tests cover create→register→invoke→close lifecycle, error propagation, cleanup safety. All pass with -race flag. No goroutine leaks verified.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T19: Design osm:mcpcallback module API and class pattern",
+      "description": "Design the disposable IPC channel module. Constructor takes an MCP server (from osm:mcp) and optional config. Returns an initializable/closable object following the ctxutil OOP pattern (see internal/builtin/ctxutil/ctxutil.go and contextManager.js). Transport: UDS on Unix (temp dir with 0700 permissions, respecting macOS 104-char socket path limit per internal/builtin/claudemux/control.go pattern), loopback TCP (127.0.0.1:0) on Windows. Script generation: produces a temporary JS file that a sub-process can run to connect back to the parent's IPC channel. init() starts the listener, close() tears down all resources.",
+      "acceptance": "Complete API design documented in WIP.md with: constructor signature new MCPCallback({server, options}), init()/close() lifecycle, transport selection logic (runtime.GOOS), script generation strategy with connection parameters, security model (UDS permissions, loopback-only TCP), and cleanup guarantees.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T20: Implement osm:mcpcallback Go module — constructor and lifecycle",
+      "description": "Create internal/builtin/mcpcallback/ package. Implement Require() function. Constructor accepts MCP server and config. init() starts the transport listener. close() tears down all resources (listener, temp dirs, temp scripts). Register in internal/builtin/register.go as prefix+'mcpcallback'. Follow the ctxutil pattern from internal/builtin/ctxutil/ctxutil.go for the object lifecycle.",
+      "acceptance": "require('osm:mcpcallback') returns a constructor. new MCPCallback({server: srv}) creates an object. init() and close() are callable. close() is idempotent. Module registered in register.go and discoverable from JS.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T21: Implement UDS transport for osm:mcpcallback (Unix)",
+      "description": "Implement Unix Domain Socket listener for the mcpcallback module. Use os.MkdirTemp() for the socket directory with 0700 permissions. net.Listen('unix', socketPath). close() must remove the socket file and temp directory. Handle macOS 104-character socket path limit (reference the pattern in internal/builtin/claudemux/control.go which already solves this). Build-tag or runtime.GOOS guard for Unix-only code.",
+      "acceptance": "On Unix (Linux/macOS), init() creates a UDS in a temp directory. close() removes socket file and temp directory. Socket path respects macOS 104-char limit. Directory permissions are 0700. Verified by test on macOS and Linux.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T22: Implement loopback TCP transport for osm:mcpcallback (Windows)",
+      "description": "Implement TCP loopback listener on 127.0.0.1:0 (OS-assigned random high port) for the mcpcallback module on Windows. net.Listen('tcp', '127.0.0.1:0'). Extract assigned port from listener.Addr() for script generation (T23). close() closes the listener. Build-tag or runtime.GOOS guard for Windows.",
+      "acceptance": "On Windows, init() binds to 127.0.0.1 with random port. Port number is retrievable for sub-process connection. close() closes the listener. Verified by test on windows-latest.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T23: Implement bootstrap JS script generation for osm:mcpcallback",
+      "description": "Generate a temporary JS file that sub-processes can execute to connect back to the parent's IPC channel. Use os.CreateTemp() with 0600 permissions. The generated script uses osm:grpc (or direct socket/TCP connection) to establish bidi communication with the parent's MCP server. Implement atomic write (write to temp file, then os.Rename, following the pattern in internal/storage/atomic_write.go). Script is cleaned up on close(). Script content must include the transport address (UDS path or TCP host:port) and necessary MCP protocol bootstrap code.",
+      "acceptance": "Generated script is valid JavaScript that, when executed by an osm script sub-process, connects to the parent's IPC channel and can make MCP tool calls. Script file has 0600 permissions. Atomic write prevents partial reads. close() deletes the script file.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T24: Implement synchronous blocking for AI tool callbacks",
+      "description": "Ensure MCP tool callbacks from the AI sub-process block synchronously until the host JS handler returns a result. Use gojaeventloop.Adapter for async safety — the handler runs on the event loop via Loop.Submit(). The goja-grpc module (internal/builtin/grpc/grpc.go) already handles this pattern: server handlers registered via grpc.createServer() run on the event loop. Errors must propagate back through proper status codes (gRPC status codes or MCP error responses). No deadlocks — the event loop must not be blocked waiting for itself.",
+      "acceptance": "When the AI sub-process calls an MCP tool, the call blocks until the host's JS handler completes and returns. Errors in the host handler propagate back to the AI as tool errors. No deadlocks under concurrent tool calls. Verified by test with synchronous and async handler patterns.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T25: Write unit tests for osm:mcpcallback module",
+      "description": "Tests in internal/builtin/mcpcallback/mcpcallback_test.go. Cover: (1) constructor with valid/invalid config, (2) init/close lifecycle (including double-close), (3) UDS transport on Unix (build-tagged or runtime.GOOS skipped), (4) TCP transport on Windows (build-tagged or runtime.GOOS skipped), (5) script generation content and permissions, (6) synchronous callback blocking, (7) error propagation from handler to caller, (8) resource cleanup after close (no leaked files/sockets), (9) cleanup on context cancellation.",
+      "acceptance": "Tests cover all lifecycle phases and both platform transports. All pass with -race flag on all 3 platforms (platform-specific tests properly skipped on non-target platforms). No goroutine leaks. No temp file leaks.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T26: Implement signal-safe cleanup for mcpcallback temp resources",
+      "description": "Ensure cleanup of temp directories, socket files, and temp scripts on context cancellation, SIGINT, and SIGTERM. Register cleanup on context.Done() channel. Use a finalizer or deferred cleanup pattern. The close() method must be idempotent and safe to call from signal handlers. On abnormal exit, best-effort cleanup of temp resources.",
+      "acceptance": "Temp resources are cleaned up after: normal close(), context cancellation, SIGINT, SIGTERM. Test confirms cleanup occurs in each scenario. close() is safe to call multiple times.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T27: Cross-platform verification of Phase 1 modules",
+      "description": "Run `make` (full suite: build + lint + test) on all 3 platforms. Verify osm:mcp, osm:mcpcallback, and stdout suppression all work correctly. Phase 0 regression tests still pass (legacy IPC code is untouched at this point — both old and new IPC coexist). Run `make lint` to verify deadcode checker finds no issues with new modules.",
+      "acceptance": "`make` passes on ubuntu-latest, macos-latest, windows-latest. Zero failures. Zero deadcode findings for new modules. Phase 0 integration tests still pass.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T28: Design new mcpReportClassificationInput with unified Category objects",
+      "description": "Redesign the mcpReportClassificationInput struct (currently at internal/command/mcp.go line ~198). The current design uses map[string]string (files→categories) which is nonsensical per scratch/todo.md. New structure: an array of Category objects, each with: name (string — category identifier), description (string — this IS the git commit message for the split branch), files ([]string — files belonging to this category). Define the Go struct with proper json tags, the JSON schema for MCP tool registration, and the MCP tool schema annotations in mcp.go.",
+      "acceptance": "New struct definition documented in WIP.md with Go struct, JSON tags, field semantics (especially: description field = commit message, explicitly documented), and the corresponding MCP tool inputSchema JSON. Old struct identified for removal.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T29: Implement new mcpReportClassificationInput struct in mcp.go",
+      "description": "Replace the old mcpReportClassificationInput struct at internal/command/mcp.go line ~198 with the new Category array structure from T28. Update the reportClassification tool handler (line ~908) to accept and process the new format. Update any mcpWriteResultFile calls (line ~939) to write the new format. The handler must validate: no empty categories, no duplicate file assignments, all files are recognized.",
+      "acceptance": "reportClassification MCP tool accepts the new Category array format. Handler validates input. Result written in new structure. Old struct type is removed.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T30: Specify category descriptions as commit messages in MCP schema",
+      "description": "Update the MCP tool description string for reportClassification (mcp.go ~line 905 area) and the struct's jsonschema annotations to explicitly document that the description field in each Category is the git commit message for that split branch. This ensures AI providers generate appropriate commit messages, not generic category descriptions.",
+      "acceptance": "MCP tool schema's description field explicitly says 'Git commit message for the split branch' or equivalent. jsonschema annotations include this documentation. The tool's overall description string references the commit message semantics.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T31: Refactor classificationToGroups for new Category array structure",
+      "description": "Modify classificationToGroups() in internal/command/pr_split_script.js (line ~3112) to accept the new Category array format (array of {name, description, files}) instead of the old map format. The function must: (1) iterate the Category array, (2) build groups with name as key, (3) preserve description as the commit message for each group, (4) handle edge cases (empty files array, duplicate files across categories).",
+      "acceptance": "classificationToGroups() accepts the new format, returns groups with commit messages derived from category descriptions. All call sites updated. Edge cases handled with clear error messages.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T32: Update plan generation to use category descriptions as commit messages",
+      "description": "Modify createSplitPlan/executeSplit logic in internal/command/pr_split_script.js to use the description field from each Category as the git commit message for that split branch. Trace the flow: classificationToGroups → plan creation → branch commit. The commit message must come from the AI's category description, not from generic string construction.",
+      "acceptance": "`git log --format=%s` on each split branch shows the category description as the commit message. No generic/template commit messages. Test validates exact commit message content.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T33: Update renderClassificationPrompt for unified Category format",
+      "description": "Modify CLASSIFICATION_PROMPT_TEMPLATE (internal/command/pr_split_script.js line ~2164) and renderClassificationPrompt() (line ~2249) to request the new Category array format from Claude/AI. Remove all references to the old map format. The prompt must instruct the AI to return an array of Category objects with name, description (commit message), and files.",
+      "acceptance": "Updated prompt template requests array of Category objects. renderClassificationPrompt produces correct prompt text. Old map format references removed. Test validates prompt content includes new format instructions.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T34: Add anti-slop directives to classification prompts",
+      "description": "Add explicit anti-slop instructions to CLASSIFICATION_PROMPT_TEMPLATE (pr_split_script.js line ~2164). Directives must include: (1) No placeholder commit messages like 'misc changes' or 'various updates', (2) Every category description must be specific to the actual code changes in its files, (3) Commit messages must follow conventional commit style if the project uses it, (4) No catch-all categories unless truly necessary.",
+      "acceptance": "Prompt text includes anti-slop directives. Test in pr_split_prompt_test.go validates prompt content includes the directives. The directives are specific enough to measurably improve AI classification quality.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T35: Wire automatedSplit() to use osm:mcpcallback instead of pollForFile",
+      "description": "This is the critical integration task. Modify automatedSplit() in internal/command/pr_split_script.js (line ~2509) to use the osm:mcpcallback IPC mechanism instead of pollForFile. Replace: (1) classification.json polling (line ~2759) with synchronous mcpcallback tool invocation, (2) split-plan.json polling (line ~2793) with synchronous mcpcallback, (3) resolution.json polling (lines ~1702, ~3191) with mcpcallback, (4) re-classification polling (line ~2984) with mcpcallback. The MCPCallback object must be created, initialized, and closed properly within the automatedSplit lifecycle.",
+      "acceptance": "automatedSplit() uses osm:mcpcallback for all classification, plan, and resolution communication. Zero pollForFile calls remain in the auto-split pipeline. The MCPCallback object is properly initialized at pipeline start and closed at pipeline end (including error paths). Integration tests from Phase 0 still pass with the new IPC.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T36: Update all existing tests for new classification structure",
+      "description": "Update all tests referencing the old map[string]string classification format to use the new Category array format. Files to update: internal/command/mcp_test.go (tests for reportClassification handler), internal/command/pr_split_integration_test.go (any test sending classification data), internal/command/pr_split_pipeline_test.go (tests using classification data), internal/command/pr_split_grouping_test.go (classificationToGroups tests), internal/command/pr_split_prompt_test.go (prompt template tests).",
+      "acceptance": "No test file uses the old map[string]string classification format. All tests use new Category array. All tests pass with -race on all platforms.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T37: Update MCP fuzz tests for new schema",
+      "description": "Update fuzz input generation in internal/command/mcp_fuzz_test.go for the new Category array format. The fuzzer must generate: (1) valid Category arrays with various sizes, (2) invalid inputs (empty arrays, missing fields, duplicate files, null values), (3) boundary cases (very long names, special characters in descriptions, thousands of files). Update the fuzz corpus to include new format examples.",
+      "acceptance": "Fuzz tests generate both valid and invalid Category arrays. Corpus updated with new format seeds. Fuzz run of at least 30 seconds finds no panics or data races.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T38: Cross-platform verification of Phase 2",
+      "description": "Run `make` on all 3 platforms. Verify the new classification schema, mcpcallback integration, and updated prompts all work correctly. Run `make integration-test-prsplit-mcp` to verify mock integration tests pass with the new IPC.",
+      "acceptance": "`make` passes on all 3 platforms. Zero failures. `make integration-test-prsplit-mcp` passes on all platforms. Integration tests validate new Category format end-to-end.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T39: Remove pollForFile function and all file polling from pr_split_script.js",
+      "description": "Delete pollForFile function (internal/command/pr_split_script.js line ~2452) and ALL 6+ call sites: classification.json polling (~2759), split-plan.json polling (~2793), resolution.json polling (~1702, ~3191), re-classification (~2984). Also remove from globalThis.prSplit exports (~3982 where pollForFile is exported). Remove any associated helper functions (e.g., pollForFile timeout/interval constants).",
+      "acceptance": "Zero references to pollForFile in pr_split_script.js. Function deleted. Export removed. grep confirms no 'pollForFile' string in any .js file. The pipeline operates entirely via osm:mcpcallback.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T40: Remove legacy file-writing tools from mcp.go",
+      "description": "Remove mcpWriteResultFile function (internal/command/mcp.go line ~1276-1279) and all file writes in tool handlers: reportClassification handler file write (line ~939), reportSplitPlan handler file write (line ~1009), resolution handler file writes (lines ~1121, ~1180). The MCP tools themselves may still exist (they're valid MCP protocol tools) but must not write to the filesystem for polling purposes. Also remove the resultDir parameter from newMCPServer() (line ~357) if it's only used for file writing.",
+      "acceptance": "mcpWriteResultFile function is deleted. No MCP tool handler writes files for polling-based IPC. resultDir parameter removed from newMCPServer() if no longer needed. `make lint` (deadcode) passes.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T41: Audit and clean up osm mcp server implementation",
+      "description": "Full audit of internal/command/mcp.go after legacy file-writing removal. Check for: (1) unused input struct types that were only used by removed file-writing code, (2) dead code paths that were only reachable via the file-polling mechanism, (3) unnecessary complexity that was only there to support dual IPC modes, (4) any remaining architectural deficiencies per scratch/todo.md's Phase 3 mandate. Simplify where possible.",
+      "acceptance": "mcp.go is clean and focused. No unused types. No dead code paths. `make lint` (deadcode) reports zero issues for mcp.go. The implementation is 'clean, targeted, and completely devoid of file-writing callback hacks' per todo.md.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T42: Reassess mcp_instance.go after IPC refactor",
+      "description": "Determine if MCPInstanceCommand (internal/command/mcp_instance.go and mcp_instance_test.go) is still needed after the IPC refactor. If the result directory mechanism that MCPInstanceCommand managed is now obsolete (replaced by osm:mcpcallback), simplify or remove the command entirely. If still needed, update its implementation to work with the new IPC. Check its registration in cmd/osm/main.go.",
+      "acceptance": "mcp_instance.go is either: (a) removed entirely with registration deleted from main.go and tests deleted, or (b) updated to work with new IPC with clear documentation of its remaining purpose. No dead code. `make lint` passes.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T43: Update mcp.go and mcp_instance.go tests for legacy removal",
+      "description": "In internal/command/mcp_test.go: delete TestMCPWriteResultFile (line ~2645), TestMCPWriteResultFile_EmptyDir (line ~2673), TestMCPWriteResultFile_CreatesDir (line ~2681), TestMCPWriteResultFile_Overwrite (line ~2703), and any other tests for removed file-writing functionality. In mcp_instance_test.go: delete tests for removed functionality. Add tests for any new behavior introduced during cleanup.",
+      "acceptance": "All removed-function tests deleted. No test references deleted functions. New behavior from audit/cleanup is tested. Full test suite passes with -race.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T44: Remove pollForFile test infrastructure",
+      "description": "Delete from internal/command/pr_split_pipeline_test.go: pollForFileResult struct (line ~71), parsePollForFileResult function (line ~76), TestPollForFile function (line ~466 area). Delete from internal/command/pr_split_pty_unix_test.go: any test code referencing pollForFile (line ~362 has a comment reference, check for associated test logic). Remove any other test utilities or helpers solely for pollForFile testing.",
+      "acceptance": "No test file references pollForFile. pollForFileResult type deleted. parsePollForFileResult deleted. TestPollForFile deleted. `make lint` (deadcode) passes.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T45: Run deadcode checker after Phase 3 purge",
+      "description": "Run `make lint` which includes deadcode checker. Per AGENTS.md: 'Never add ignores to .deadcodeignore — wire up or delete dead code.' Verify that removing pollForFile, mcpWriteResultFile, and related code did not orphan any other functions or types. If deadcode finds issues, wire up the code or delete it — do NOT add .deadcodeignore entries.",
+      "acceptance": "`make lint` passes with zero deadcode findings. No new entries in .deadcodeignore. All removed code's dependents were either also removed or updated.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T46: Cross-platform verification of Phase 3",
+      "description": "Run `make` on all 3 platforms. Verify complete legacy removal. Run `grep -r pollForFile` and `grep -r classification.json` (in the polling context) to confirm no stale references remain in source code, tests, or documentation.",
+      "acceptance": "`make` passes on all 3 platforms. Zero failures. grep confirms no pollForFile references in Go or JS source files. grep confirms no classification.json polling references (documentation references to the concept are fine if they describe the new system).",
+      "status": "Not Started"
+    },
+    {
+      "task": "T47: Re-evaluate verification 'skip' bug after IPC refactor",
+      "description": "The verification skip bug investigated in T3 may have been caused by the file-polling IPC mechanism (timing issues, lost results). Now that osm:mcpcallback provides synchronous communication, run the reproduction test from T3. If the test passes: the bug was an IPC artifact — document this and close. If it still fails: the bug is in verifySplit logic itself and needs a targeted fix.",
+      "acceptance": "Bug state documented in WIP.md. Either: (a) confirmed fixed by IPC refactor with passing test, or (b) still present with updated root cause analysis pointing to verifySplit() logic.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T48: Fix verifySplit skip bug if still present",
+      "description": "Apply a targeted fix if T47 confirms the bug persists. Potential fixes based on T3 investigation: (1) explicit error checking after git checkout in verifySplit() (pr_split_script.js line ~1135), (2) fix sh -c exit code propagation — exec.execv may swallow non-zero exits, (3) add explicit logging before and after verify command execution, (4) ensure verifySplits() (line ~1194) loop does not skip iterations on fast returns.",
+      "acceptance": "Verification runs for every branch in the plan. Never silently skipped. Test demonstrates that a sub-100ms verification still registers as completed. Error states from git checkout or verify command are caught and reported.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T49: Ensure TUI reflects quick verification runs",
+      "description": "Modify AutoSplitModel (internal/termmux/ui/autosplit.go) step reporting to handle sub-second operations. Check the stepStart/stepDone message flow. Ensure that a Running→Done transition is visible even for operations completing in <100ms. The TUI should not skip showing a step that completed very quickly — it should still show the ✓ completion state.",
+      "acceptance": "Sub-100ms verification runs show as completed (✓) in the AutoSplitModel TUI, not as skipped or invisible. Verified by test in autosplit_test.go that sends stepStart immediately followed by stepDone and asserts the View() output shows completion.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T50: Re-evaluate resolveConflictsWithClaude prompt issue after IPC refactor",
+      "description": "The prompt sending failure investigated in T4 may be affected by the IPC refactor. With osm:mcpcallback, the communication mechanism may be entirely different — check if sendToHandle() (pr_split_script.js line ~2397) is still used in the conflict resolution path, or if the new IPC replaces it. If the flow changed: document the new flow and verify it works. If sendToHandle is still used: check if the handle lifecycle bug from T4 is resolved.",
+      "acceptance": "Bug state documented in WIP.md. Either: (a) the flow was replaced by mcpcallback and works correctly, (b) sendToHandle is still used but the bug is fixed, or (c) the bug persists and needs a targeted fix in T51.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T51: Fix Claude prompt delivery if still present",
+      "description": "If T50 confirms the prompt delivery bug persists: add defensive checks for handle null/undefined state before send attempts. Add retry logic with backoff for transient failures. Provide clear error messages on failure including handle type, mux state, and connection state. Fix the root cause (handle becoming null after branch operations or after initial classification loop).",
+      "acceptance": "resolveConflictsWithClaude() sends prompts successfully to the Claude process. Handle state is validated before every send. Null/undefined handle produces a clear, actionable error message (not a silent failure). Test validates the fix.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T52: Add improved logging for prompt sending failures",
+      "description": "Add comprehensive logging in the prompt sending path: sendToHandle() (pr_split_script.js line ~2397), autoSplitTUI.sendWithCancel() references (lines ~2403-2412). Log: handle type, handle state (connected/null), send result (success/error), mux state (if TUI mode), prompt length, and timestamp. Use the log system (log.debug/info/warn) not console.log.",
+      "acceptance": "Failed send attempts produce actionable log messages showing the full state: handle type, connection state, error details, mux state. Successful sends log at debug level. All logging uses the structured log system. Test validates log output on failure.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T53: Write tests for Phase 4 bug fixes",
+      "description": "Tests for: (1) verification running on fast-completing commands (sub-100ms), (2) prompt sending with mock handle in various states (connected, null, disconnected), (3) error reporting for send failures, (4) handle lifecycle through full auto-split pipeline. Place in pr_split_integration_test.go using loadPrSplitEngineWithEval pattern.",
+      "acceptance": "Tests verify both the verification skip fix and the prompt delivery fix. Tests cover null handle, disconnected handle, and successful send. All pass with -race.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T54: Cross-platform verification of Phase 4",
+      "description": "Run `make` + `make integration-test-prsplit-mcp` on all 3 platforms. On macOS, also run `make integration-test-prsplit` (real Claude integration tests) if the test environment supports it.",
+      "acceptance": "All pass on all platforms. Bug fix tests specifically pass. Real Claude test on macOS confirms verification runs and prompts deliver correctly if environment available.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T55: Investigate exec.execv streaming capability and exec.spawn feasibility",
+      "description": "Examine internal/builtin/exec/exec.go current implementation. exec.execv() captures full output to a buffer and returns it after process completion. Investigate: (1) Can exec.execv be extended to stream output per-line via a callback? (2) Should a new exec.spawn() API be created instead? (3) What are the event loop implications — callbacks must run on the event loop thread via gojaeventloop.Adapter. (4) How does the existing exec module handle process lifecycle (kill, cancel, exit code)?",
+      "acceptance": "Documented analysis in WIP.md with: current exec.execv implementation overview, recommendation (extend vs new API), event loop integration strategy, process lifecycle management approach, and API design for the chosen approach.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T56: Implement exec.spawn or streaming exec in osm:exec module",
+      "description": "Implement the streaming exec API in internal/builtin/exec/exec.go based on T55 analysis. The API must: (1) return a handle with streaming stdout/stderr via JS callbacks, (2) support process kill/cancel, (3) integrate with the event loop (callbacks on event loop thread), (4) report exit code, (5) be usable from TUI contexts (AutoSplitModel). API: exec.spawn(cmd, args, {onStdout, onStderr, onExit}) or similar.",
+      "acceptance": "JavaScript can launch a process and receive real-time stdout/stderr output via callbacks as the process runs. Process can be killed/cancelled. Exit code is correctly reported. Event loop integration is race-safe.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T57: Write tests for streaming exec",
+      "description": "Tests in internal/builtin/exec/exec_test.go. Cover: (1) real-time stdout output received via callback, (2) stderr streaming, (3) process kill mid-execution, (4) context cancellation stops process, (5) correct exit code on success and failure, (6) large output does not deadlock, (7) multiple concurrent spawns. Test via platform-appropriate commands (echo, cat, sleep with timeouts).",
+      "acceptance": "Tests verify streaming output, cleanup, kill, cancel, exit code. All pass with -race on all 3 platforms. No goroutine leaks.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T58: Update AutoSplitModel for streaming verification output",
+      "description": "Add a new message type (e.g., AutoSplitStepOutputMsg) to internal/termmux/ui/autosplit.go for receiving streaming output during a step. Update the BubbleTea model's Update() to handle this message and append output. Update View()/renderSteps() to display the streaming output under the active step.",
+      "acceptance": "AutoSplitModel displays streaming output lines as they arrive while a step is running. Output updates are visible in the TUI without full re-render. The active step shows partial output. Test in autosplit_test.go validates the message handling and view rendering.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T59: Wire streaming exec into verifySplits for real-time output",
+      "description": "Modify verifySplit() in internal/command/pr_split_script.js (line ~1135) to use the new streaming exec API (exec.spawn from T56) instead of exec.execv. Route stdout/stderr output to autoSplitTUI.stepOutput messages for the AutoSplitModel to display. The verify command output should appear in real-time in the TUI.",
+      "acceptance": "TUI shows real-time verify command output during verifySplits execution. Output appears line-by-line, not as a full buffer after completion. Existing verify logic (exit code checking, error handling) still works correctly.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T60: Implement per-branch verification status in renderSteps",
+      "description": "Modify renderSteps() in internal/termmux/ui/autosplit.go to show individual branch verification results instead of a single aggregate step. Display format: '✓ split/01-docs (Verified)', '✗ split/02-impl (Failed: exit 1)', '○ split/03-tests (Pending)'. Each branch is a sub-step that can show status independently.",
+      "acceptance": "TUI shows per-branch status with icons (✓/✗/○/◉) and branch names. Failed branches show exit code. Pending branches show '○'. Running branch shows '◉'. Overall verification step shows aggregate status.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T61: Update pr_split_script.js to report per-branch status to TUI",
+      "description": "Modify verifySplits() loop (pr_split_script.js line ~1194) to emit per-branch TUI events. Each branch verification should emit: stepStart (branch entering verification), stepOutput (streaming output), stepDone (branch completed with success/failure). Wire these events through to the AutoSplitModel via the autoSplitTUI message channel.",
+      "acceptance": "Each branch verification emits distinct TUI events: start, output (streaming), done with status. AutoSplitModel receives and displays per-branch progress. Test validates event sequence.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T62: Implement failed branch details view in TUI",
+      "description": "Add an expandable 'Details' view for failed branches in the AutoSplitModel. Key binding (e.g., Enter on a failed branch) toggles expanded view showing the full verify command output. The details pane should be scrollable (using viewport from internal/builtin/bubbles/viewport). Store verify output per branch in the model state.",
+      "acceptance": "Press Enter on a failed branch in the TUI to see full verify output. Output is scrollable. Press Enter again (or Escape) to collapse. Each failed branch stores its own output independently. Test validates expand/collapse behavior.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T63: Write tests for Phase 5 TUI features",
+      "description": "Tests in internal/termmux/ui/autosplit_test.go. Cover: (1) streaming output message handling, (2) per-branch status display, (3) failed branch detail expansion/collapse, (4) scrolling in detail view, (5) aggregate status computation, (6) rapid step transitions (sub-100ms). Use BubbleTea testing patterns (send msgs, assert View() output).",
+      "acceptance": "Tests verify all new features: streaming output, per-branch status, detail view, scrolling. All pass with -race. No visual regressions in existing TUI tests.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T64: Cross-platform verification of Phase 5",
+      "description": "Run `make` on all 3 platforms. TUI features are terminal-dependent — verify rendering on at least macOS Terminal and a Linux terminal emulator. Windows Terminal if possible.",
+      "acceptance": "`make` passes on all 3 platforms. TUI rendering visually verified on macOS. No regressions.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T65: Design config.js module API for reusable configuration",
+      "description": "Design the JavaScript API for a reusable configuration module: config.get(key) retrieves a value, config.set(key, value) persists a value, config.prompt(key, description, defaultValue) interactively prompts user for a value. Must integrate with internal/config/Config system (dnsmasq-style format, see docs/configuration.md). Support persistence to the osm config file. Support section-scoped keys (e.g., 'pr-split.claude-command').",
+      "acceptance": "Complete API design documented in WIP.md with: full method signatures, config file integration strategy, section scoping, interactive prompt UX (TUI input), persistence semantics, and default value handling.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T66: Implement config.js module",
+      "description": "Create internal/command/config.js (go:embed'd in the command package). Implement get/set/prompt using the internal/config/Config Go API exposed through the scripting engine. TUI input for interactive prompts (via osm:bubbletea text input or simple readline). Persistence writes to the osm config file location.",
+      "acceptance": "JS scripts can use the config module for persistent configuration. config.get returns stored values. config.set persists to disk. config.prompt shows TUI input and persists the result. Config file format matches existing dnsmasq-style format.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T67: Implement guided setup flow TUI for pr-split first-time config",
+      "description": "TUI wizard triggered when auto-split is run for the first time or when critical configuration is missing (e.g., no claude-command configured). Detect missing config by checking config.get('pr-split.claude-command') at start of automatedSplit(). Present a BubbleTea form collecting: claude command path, verification command (default: make), model preference. Validate inputs (command exists, is executable). Persist via config module from T66.",
+      "acceptance": "First-run wizard activates when claude-command is missing. Presents a multi-step TUI form. Validates inputs. Persists configuration. Subsequent runs skip the wizard. Cancel exits gracefully without partial state.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T68: Write tests for config.js module",
+      "description": "Tests for get/set, persistence to disk, default values, section scoping, config system integration. Use t.TempDir() for config file isolation — NEVER read/write the user's real config. Test in internal/command/ (wherever config.js tests belong based on the embed pattern).",
+      "acceptance": "Tests verify: get returns set values, persistence survives reload, defaults work, section scoping works, invalid keys handled. All pass with -race on all platforms. t.TempDir() used for all file operations.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T69: Write tests for guided setup flow",
+      "description": "Tests for: (1) wizard triggers when config is missing, (2) wizard does NOT trigger when config exists, (3) full flow: detect → present → validate → persist, (4) cancel exits without partial state, (5) invalid inputs show validation errors. Use BubbleTea model testing pattern (construct model, send messages, assert View/Update behavior).",
+      "acceptance": "Tests verify: correct triggering, input collection, validation, persistence on completion, clean exit on cancel. All pass with -race.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T70: Cross-platform verification of Phase 6",
+      "description": "Run `make` on all 3 platforms. Verify config paths are correct per platform: ~/.config/osm/ on Unix, %APPDATA%\\osm\\ on Windows (or whatever the config system uses). Verify TUI input works across platforms.",
+      "acceptance": "`make` passes on all 3 platforms. Config persistence works with platform-appropriate paths.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T71: Implement pipeline-level timeout and watchdog for auto-split",
+      "description": "Per NOTES.md §1: 49+ minute hang observed at step 8/9 (Resolve conflicts via Claude). Implement: (1) configurable --pipeline-timeout flag (default: 120m) on pr-split auto command, (2) per-step timeout (default: 60m), (3) no-progress watchdog that detects if a step has produced no output or progress for N minutes (default: 15m). On timeout: clean termination with clear error message, not a hang. Wire into automatedSplit() lifecycle.",
+      "acceptance": "Pipeline has configurable total timeout and per-step timeout. Watchdog detects stuck steps (no progress for configurable duration) and terminates with clear error. Timeout values overridable via flags. Test validates timeout triggers clean termination.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T72: Implement heartbeat monitoring for spawned Claude process",
+      "description": "Per NOTES.md §1: heartbeat monitoring for Claude/Ollama. Use mcpSession.LastHeartbeat field in internal/command/mcp.go (line ~192, mcpHeartbeatInput). Configurable heartbeat timeout (default: 5m). If no heartbeat received within timeout: warn user, then terminate after grace period. Works with both direct Claude and Ollama-proxied models.",
+      "acceptance": "Heartbeat timeout triggers warning message in TUI/logs, followed by termination after grace period. Works with Claude and Ollama. Configurable timeout. Test validates heartbeat monitoring with mock provider.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T73: Implement dependency-aware verification bailing",
+      "description": "Per NOTES.md §2: If branch A is a dependency for branch B and branch A fails verification, skip branch B with clear reason. Implement in verifySplits() loop (pr_split_script.js line ~1194). Parse the plan's branch dependency information. When a branch fails, mark all dependents as 'skipped-dependency-failed'. Report skipped branches in TUI with reason.",
+      "acceptance": "Failed base branch → all dependent branches skipped with 'dependency failed: split/XX' message. Skipped branches shown in TUI with distinct icon (e.g., '⊘'). Test validates dependency chain: A fails → B,C (depending on A) skipped → D (independent) still verified.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T74: Fix misleading hash indicators in verification UI",
+      "description": "Per NOTES.md §2: Confusing hash indicators in verification display. Investigate what hashes are shown in the AutoSplitModel during verification (check autosplit.go View()/renderSteps()). Determine why they're misleading — possible causes: showing old commit hashes, showing hashes from wrong branch, displaying abbreviated hashes without context. Fix by either making them accurate (show current branch HEAD) or removing them if they don't add value.",
+      "acceptance": "Hash indicators in verification UI are either accurate (showing the correct branch HEAD commit) or removed. No misleading information displayed. User can understand the state from the UI alone.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T75: Implement verification target auto-discovery",
+      "description": "Per NOTES.md §2: Default verification command should be `make` (not `make test`), and the system should auto-discover appropriate targets. Implement: (1) default to `make` which runs build+lint+test, (2) detect Makefile targets if present, (3) detect CI configs (.github/workflows/*.yml) for alternative verify commands, (4) allow override via config (config.get('pr-split.verify-command')) or --verify-command flag. Log which target was selected and why.",
+      "acceptance": "Default verification is `make`. Auto-discovery detects Makefile presence. Config/flag override works. Discovery results logged. Test validates default selection and override.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T76: Validate and fix pre-existing failure handling in resolution flow",
+      "description": "Per NOTES.md §3: preExistingFailure=true is not handled correctly. The AI identifies a pre-existing failure (on main, not caused by the split) but reportResolution tool constraints prevent it from communicating 'this is not my bug.' Trace the resolution flow when preExistingFailure=true. Ensure: branches with pre-existing failures are marked 'accepted-preexisting' not 'failed', the pipeline continues past them, and the AI can report the pre-existing nature through the MCP tool.",
+      "acceptance": "preExistingFailure branches are accepted and the pipeline continues. They're marked distinctly from genuine failures. The MCP reportResolution tool accepts a 'preExistingFailure' flag. Test validates the flow: repo with pre-existing test failure → split → verify → branch marked as pre-existing → pipeline continues.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T77: Implement per-branch verification scoping to prevent AI confusion",
+      "description": "Per NOTES.md §3: Claude was confused by unrelated test failure (logiface-slog failing when verifying async-utilities split). Implement: (1) determine affected test packages from changed files in each branch, (2) scope `go test` to only affected packages (e.g., `go test ./internal/async/...` not `go test ./...`), (3) fall back to full `make` if scoping is not deterministic. This prevents the AI from seeing failures in unrelated packages.",
+      "acceptance": "Verification is scoped to packages affected by the branch's changes. Unrelated test failures don't confuse the AI. Full make is available as fallback. Test validates: branch changing pkg/X only runs tests for pkg/X, not pkg/Y.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T78: Implement MUX panel integration for verification step viewing",
+      "description": "Per NOTES.md §4: Users should be able to view and interact with verification steps via termmux panel switching. Integrate auto-split verification with the termmux panel system (internal/termmux/). Create a dedicated verification panel that shows live output from the currently running verify command. Users can switch to this panel during auto-split execution to see full output.",
+      "acceptance": "During auto-split, users can switch to a verification panel showing live command output. Panel switching works via existing termmux key bindings. Returning to the auto-split panel shows current pipeline state. Test validates panel creation and switching.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T79: Validate and implement explicit Pause/Resume for auto-split sessions",
+      "description": "Per NOTES.md §4: Users need Pause/Resume for long-running split sessions. Check if the current session persistence mechanism (internal/session/) already supports deliberate pause/resume. If not: implement explicit pause command (Ctrl-P or TUI button) that saves exact pipeline state (current step, branch state, classification results, plan). Resume restarts from exact pause point. Use session storage (internal/storage/) for state persistence.",
+      "acceptance": "Pause saves complete pipeline state persistently. Resume restarts from exact pause point — no re-running completed steps. Works across terminal disconnection/reconnection. Test validates: pause mid-verify → resume → continues from next unverified branch.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T80: Verify scrollback behavior across terminal environments",
+      "description": "Per NOTES.md §4: Terminal scrollback needs explicit verification. Test pr-split auto-split output in: (1) tmux on macOS (Terminal.app), (2) iTerm2 direct, (3) Windows Terminal, (4) Linux terminal (gnome-terminal or similar). Document scrollback behavior: does output get truncated? Can users scroll back to see earlier steps? Does BubbleTea alternate screen mode affect scrollback?",
+      "acceptance": "Test matrix documented in WIP.md showing terminal × scrollback behavior. Issues logged as follow-up tasks if found. Known-good configurations documented for users.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T81: Create real Claude API E2E integration test suite",
+      "description": "Per NOTES.md §5: Real Claude API tests are required (macOS only). Create integration tests gated behind OSM_CLAUDE_INTEGRATION env var (or the existing -integration flag). Use project.mk variables: CLAUDE_COMMAND (default: claude), INTEGRATION_MODEL. Run via `make integration-test-prsplit` target (project.mk line ~26). Tests must use real Claude to: classify a known diff, generate a split plan, verify classification quality (categories make sense, descriptions are useful commit messages).",
+      "acceptance": "At least one test calls real Claude API, sends a classification request for a known diff, validates response quality (categories exist, files assigned, descriptions are meaningful). Test gated behind -integration flag. Runs on macOS only. Documented in project.mk.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T82: Update docs/architecture-claude-mux.md after IPC refactor",
+      "description": "Update the architecture document to reflect the new IPC: osm:mcpcallback replaces file polling. The pipeline diagram (line ~476 area showing 'pollForFile(classification.json)') must be updated. Describe the new synchronous callback mechanism, the osm:mcp module, transport selection (UDS/TCP), and the bootstrap script generation pattern. Remove all references to file polling as the IPC mechanism.",
+      "acceptance": "No stale references to file polling as IPC mechanism. Pipeline diagram updated to show mcpcallback flow. New modules (osm:mcp, osm:mcpcallback) documented. Classification schema documented with Category array format.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T83: Update docs/scripting.md with osm:mcp and osm:mcpcallback module docs",
+      "description": "Add full API documentation for both new modules to docs/scripting.md. Include: (1) osm:mcp — createServer, addTool, run, close with examples, (2) osm:mcpcallback — constructor, init, close, transport selection, script generation with examples, (3) security notes (UDS permissions, loopback-only TCP), (4) lifecycle management (init/close, signal handling), (5) code examples showing a complete MCP server script and a callback setup.",
+      "acceptance": "Both modules fully documented with API reference, examples, security notes, and lifecycle documentation. Examples are runnable. No references to deprecated APIs.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T84: Update docs/reference/command.md for pr-split changes",
+      "description": "Update the command reference for pr-split to reflect: (1) new flags (--pipeline-timeout, --verify-command), (2) changed IPC (no more file polling), (3) new classification schema format, (4) guided setup flow for first-time users, (5) per-branch verification status in output, (6) pause/resume capability.",
+      "acceptance": "pr-split documentation is accurate for the current implementation. No stale references to file polling or old classification format. New flags documented with defaults and examples.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T85: Update docs/architecture.md for new IPC architecture",
+      "description": "Update the high-level architecture document to reflect the post-refactor IPC architecture. Describe how osm:mcpcallback fits into the overall system. Ensure consistency with docs/architecture-claude-mux.md (updated in T82).",
+      "acceptance": "architecture.md reflects post-refactor state. Consistent with architecture-claude-mux.md. No contradictions between documents.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T86: Add CHANGELOG.md entries for all changes",
+      "description": "Add entries under [Unreleased] in CHANGELOG.md following Keep a Changelog 1.1.0 format. Added: osm:mcp module, osm:mcpcallback module, pipeline timeout/watchdog, dependency-aware verification bailing, per-branch verification status, streaming verify output, guided setup, exec.spawn streaming API. Changed: classification schema to Category array, default verification to `make`, commit messages from category descriptions. Removed: pollForFile, legacy MCP file-writing tools. Fixed: verification skip bug, Claude prompt delivery, Windows build, misleading hash indicators, pre-existing failure handling.",
+      "acceptance": "All changes listed under [Unreleased] with correct categorization (Added/Changed/Removed/Fixed). Follows Keep a Changelog 1.1.0 format per CHANGELOG.md conventions. No entries missing. human-readable descriptions.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T87: Audit go.mod after all changes",
+      "description": "Run `go mod tidy` to clean up go.mod and go.sum. Verify no unintended new dependencies were introduced. Check that go-sdk/mcp version is appropriate. Review any new indirect dependencies for license compatibility.",
+      "acceptance": "Clean go.mod with no unused dependencies. `go mod tidy` produces no diff. No unexpected new dependencies. `make` passes after tidy.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T88: Final comprehensive cross-platform verification",
+      "description": "Run `make` (full suite) on all 3 platforms. Run `make integration-test-prsplit-mcp` on all platforms. Run `make integration-test-prsplit` on macOS (real Claude tests). Run `make lint` to verify deadcode. Verify no new .deadcodeignore entries. Final grep sweep for stale references (pollForFile, classification.json polling, old classification format).",
+      "acceptance": "All green on all 3 platforms. No new .deadcodeignore entries. No lint warnings. No stale references. Zero test failures. The goalState described in statusSection is provably achieved.",
+      "status": "Not Started"
+    }
+  ],
+  "continuousVerification": {
+    "buildCommand": "make",
+    "lintCommand": "make lint",
+    "testCommand": "make test",
+    "integrationTestCommands": [
+      "make integration-test-prsplit-mcp (all platforms — mock-based, no real AI)",
+      "make integration-test-prsplit (macOS only — requires real Claude/AI)"
+    ],
+    "platforms": [
+      "ubuntu-latest",
+      "macos-latest",
+      "windows-latest"
+    ],
+    "coveragePolicy": "100% unit test coverage for new modules (osm:mcp, osm:mcpcallback, config.js). Integration tests for all pipeline stages. Fuzz tests for MCP schema inputs. Phase boundary verification (T9, T27, T38, T46, T54, T64, T70, T88) is mandatory — never skip."
+  },
+  "finalEnforcementProtocol": [
+    "Cross-platform build MUST pass on ALL platforms (ubuntu-latest, macos-latest, windows-latest) — no exceptions, no 'it works on my machine', no platform-specific test skips without documented justification.",
+    "NEVER add to .deadcodeignore — wire up the code in main.go/register.go or delete it. Accumulated dead code is worse than temporary re-creation.",
+    "No AI Slop — every line has a reason to exist, every feature is validated, and the overall system is coherent and maintainable. Apply the anti-vaporware test to code as well as plans.",
+    "Rule of Two before any commit — two contiguous, issue-free subagent reviews. Subagents are skeptical and hostile to errors. This is the orchestrator's responsibility, not the implementing agent's.",
+    "Windows build MUST be green (T1-T2 completed) before any Phase 1+ work begins. Do not start the IPC refactor on a broken foundation."
+  ]
+}

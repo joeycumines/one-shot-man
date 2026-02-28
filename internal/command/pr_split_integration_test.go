@@ -325,9 +325,7 @@ func TestIntegration_SendToHandle_FallbackDirect(t *testing.T) {
 	// Ensure autoSplitTUI is not defined (default engine state).
 	raw, err := evalJS(`
 		(function() {
-			// sendToHandle should use the fallback path when autoSplitTUI is missing.
-			// Two-write pattern: first write is the prompt text,
-			// second write is \r (Enter key for PTY).
+			// sendToHandle uses single-write: text + \n as one write.
 			var sends = [];
 			var mockHandle = {
 				send: function(text) { sends.push(text); }
@@ -350,14 +348,12 @@ func TestIntegration_SendToHandle_FallbackDirect(t *testing.T) {
 	if result.Error != nil {
 		t.Errorf("sendToHandle returned error: %s", *result.Error)
 	}
-	if len(result.Sends) != 2 {
-		t.Fatalf("expected 2 sends, got %d: %q", len(result.Sends), result.Sends)
+	// Single-write: text + \n in one call.
+	if len(result.Sends) != 1 {
+		t.Fatalf("expected 1 send (single-write), got %d: %q", len(result.Sends), result.Sends)
 	}
-	if result.Sends[0] != "hello Claude" {
-		t.Errorf("sends[0] = %q, want %q", result.Sends[0], "hello Claude")
-	}
-	if result.Sends[1] != "\r" {
-		t.Errorf("sends[1] = %q, want %q", result.Sends[1], "\r")
+	if result.Sends[0] != "hello Claude\n" {
+		t.Errorf("sends[0] = %q, want %q", result.Sends[0], "hello Claude\n")
 	}
 }
 
@@ -368,8 +364,7 @@ func TestIntegration_SendToHandle_FallbackError(t *testing.T) {
 
 	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
 
-	// Two-write pattern: test that error on FIRST send (text) returns
-	// immediately without attempting the second send (Enter key).
+	// Single-write: error on the send returns immediately.
 	raw, err := evalJS(`
 		(function() {
 			var sendCount = 0;
@@ -407,7 +402,7 @@ func TestIntegration_SendToHandle_FallbackError(t *testing.T) {
 
 // TestIntegration_SendToHandle_TUIPath verifies the sendToHandle code path
 // that uses autoSplitTUI.sendWithCancel (when autoSplitTUI is defined with
-// that method). The TUI path sends text, sleeps 50ms, then sends '\r'.
+// that method). Single-write: sends text+\n via sendWithCancel.
 func TestIntegration_SendToHandle_TUIPath(t *testing.T) {
 	t.Parallel()
 
@@ -454,15 +449,12 @@ func TestIntegration_SendToHandle_TUIPath(t *testing.T) {
 	if result.Error != nil {
 		t.Errorf("expected no error, got: %s", *result.Error)
 	}
-	// Should have used sendWithCancel for both writes (text + Enter key).
-	if len(result.Calls) != 2 {
-		t.Fatalf("expected 2 sendWithCancel calls, got %d: %+v", len(result.Calls), result.Calls)
+	// Single-write: text+\n in one sendWithCancel call.
+	if len(result.Calls) != 1 {
+		t.Fatalf("expected 1 sendWithCancel call (single-write), got %d: %+v", len(result.Calls), result.Calls)
 	}
-	if result.Calls[0].Text != "classify these files" {
-		t.Errorf("first call text = %q, want %q", result.Calls[0].Text, "classify these files")
-	}
-	if result.Calls[1].Text != "\r" {
-		t.Errorf("second call text = %q, want %q (Enter key)", result.Calls[1].Text, "\r")
+	if result.Calls[0].Text != "classify these files\n" {
+		t.Errorf("call text = %q, want %q", result.Calls[0].Text, "classify these files\n")
 	}
 	// Should NOT have used direct send.
 	for _, c := range result.Calls {
@@ -519,7 +511,7 @@ func TestIntegration_SendToHandle_TUIPath_FirstSendError(t *testing.T) {
 		t.Errorf("error = %q, want to contain 'cancelled'", *result.Error)
 	}
 	if result.CallCount != 1 {
-		t.Errorf("callCount = %d, want 1 (should not attempt Enter key)", result.CallCount)
+		t.Errorf("callCount = %d, want 1 (single-write, error on first call)", result.CallCount)
 	}
 }
 

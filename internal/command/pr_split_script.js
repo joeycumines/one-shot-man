@@ -157,6 +157,52 @@ function shellQuote(s) {
     return "'" + s.replace(/'/g, "'\\''") + "'";
 }
 
+// gitAddChangedFiles stages modified, new, and deleted files while filtering
+// out known pr-split tool artifacts (e.g., .pr-split-plan.json). Use this
+// instead of `git add -A` to prevent stray pipeline state files from being
+// committed into user branches.
+function gitAddChangedFiles(dir) {
+    var status = gitExec(dir, ['status', '--porcelain']);
+    if (status.code !== 0 || status.stdout.trim() === '') {
+        return;
+    }
+    var EXCLUDED = ['.pr-split-plan.json'];
+    var lines = status.stdout.trim().split('\n');
+    var files = [];
+    for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (line.length < 3) continue;
+        // Porcelain format: XY <space> filename
+        // For renames: XY <space> old -> new
+        var path = line.substring(3);
+        var arrowIdx = path.indexOf(' -> ');
+        if (arrowIdx >= 0) {
+            path = path.substring(arrowIdx + 4);
+        }
+        // Strip surrounding quotes from paths with special characters.
+        if (path.charAt(0) === '"' && path.charAt(path.length - 1) === '"') {
+            path = path.substring(1, path.length - 1);
+        }
+        var excluded = false;
+        for (var e = 0; e < EXCLUDED.length; e++) {
+            if (path === EXCLUDED[e] || path.indexOf('/' + EXCLUDED[e]) >= 0) {
+                excluded = true;
+                break;
+            }
+        }
+        if (!excluded) {
+            files.push(path);
+        }
+    }
+    if (files.length > 0) {
+        var addArgs = ['add', '--'];
+        for (var f = 0; f < files.length; f++) {
+            addArgs.push(files[f]);
+        }
+        gitExec(dir, addArgs);
+    }
+}
+
 function dirname(filepath, depth) {
     depth = depth || 1;
     var parts = filepath.split('/');
@@ -1088,12 +1134,25 @@ function executeSplit(plan, options) {
             }
         }
 
-        var add = gitExec(dir, ['add', '-A']);
-        if (add.code !== 0) {
-            splitResult.error = 'git add failed: ' + add.stderr.trim();
-            results.push(splitResult);
-            gitExec(dir, ['checkout', restoreBranch]);
-            return { error: splitResult.error, results: results };
+        // Stage only this split's files — never use 'git add -A' which would
+        // pick up stray working-tree files (e.g. .pr-split-plan.json).
+        // Files are already staged by 'git checkout <src> -- <file>' and
+        // 'git rm', but explicit add for non-deleted files is defensive.
+        var addFiles = [];
+        for (var af = 0; af < split.files.length; af++) {
+            if (fileStatuses[split.files[af]] !== 'D') {
+                addFiles.push(split.files[af]);
+            }
+        }
+        if (addFiles.length > 0) {
+            var addArgs = ['add', '--'].concat(addFiles);
+            var add = gitExec(dir, addArgs);
+            if (add.code !== 0) {
+                splitResult.error = 'git add failed: ' + add.stderr.trim();
+                results.push(splitResult);
+                gitExec(dir, ['checkout', restoreBranch]);
+                return { error: splitResult.error, results: results };
+            }
         }
 
         var msg = split.message || 'split: ' + split.name;
@@ -1547,7 +1606,7 @@ var AUTO_FIX_STRATEGIES = [
             if (status.stdout.trim() === '') {
                 return { fixed: false, error: 'goimports made no changes' };
             }
-            gitExec(dir, ['add', '-A']);
+            gitAddChangedFiles(dir);
             var commit = gitExec(dir, ['commit', '-m', 'fix: goimports for split']);
             if (commit.code !== 0) {
                 return { fixed: false, error: 'commit failed: ' + commit.stderr.trim() };
@@ -1572,7 +1631,7 @@ var AUTO_FIX_STRATEGIES = [
             if (status.stdout.trim() === '') {
                 return { fixed: false, error: 'npm install made no changes' };
             }
-            gitExec(dir, ['add', '-A']);
+            gitAddChangedFiles(dir);
             var commit = gitExec(dir, ['commit', '-m', 'fix: npm install for split']);
             if (commit.code !== 0) {
                 return { fixed: false, error: 'commit failed: ' + commit.stderr.trim() };
@@ -1612,7 +1671,7 @@ var AUTO_FIX_STRATEGIES = [
             if (status.stdout.trim() === '') {
                 return { fixed: false, error: 'generate made no changes' };
             }
-            gitExec(dir, ['add', '-A']);
+            gitAddChangedFiles(dir);
             var commit = gitExec(dir, ['commit', '-m', 'fix: run code generation for split']);
             if (commit.code !== 0) {
                 return { fixed: false, error: 'commit failed: ' + commit.stderr.trim() };
@@ -1651,7 +1710,7 @@ var AUTO_FIX_STRATEGIES = [
             if (added === 0) {
                 return { fixed: false, error: 'no files could be checked out from source' };
             }
-            gitExec(dir, ['add', '-A']);
+            gitAddChangedFiles(dir);
             var commit = gitExec(dir, ['commit', '-m', 'fix: add missing files from source branch']);
             if (commit.code !== 0) {
                 return { fixed: false, error: 'commit failed: ' + commit.stderr.trim() };
@@ -1723,8 +1782,11 @@ var AUTO_FIX_STRATEGIES = [
             // Commit changes.
             var status = gitExec(dir, ['status', '--porcelain']);
             if (status.stdout.trim() !== '') {
-                gitExec(dir, ['add', '-A']);
-                gitExec(dir, ['commit', '--amend', '--no-edit']);
+                gitAddChangedFiles(dir);
+                var commit = gitExec(dir, ['commit', '--amend', '--no-edit']);
+                if (commit.code !== 0) {
+                    return { fixed: false, error: 'commit failed: ' + commit.stderr.trim() };
+                }
             }
             return { fixed: true, error: null };
         }
@@ -2358,15 +2420,6 @@ var AUTOMATED_DEFAULTS = {
     verifyTimeoutMs: 600000     // 10 minutes per branch for verify step
 };
 
-// Delay (ms) between sending prompt text and the Enter key in sendToHandle().
-// Configurable via setSendEnterDelay(). Default 50ms allows the PTY to flush
-// the paste buffer before receiving CR as an independent keypress.
-var SEND_ENTER_DELAY_MS = 50;
-
-function setSendEnterDelay(ms) {
-    SEND_ENTER_DELAY_MS = Math.max(typeof ms === 'number' ? ms : 0, 0);
-}
-
 // Spinner characters for progress display.
 var SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -2384,32 +2437,26 @@ function isForceCancelled() {
            typeof autoSplitTUI.forceCancelled === 'function' && autoSplitTUI.forceCancelled();
 }
 
-// sendToHandle writes text to a Claude handle, using the cancellation-aware
-// sendWithCancel when available (auto-split TUI mode) or falling back to the
-// direct handle.send() for non-TUI / test contexts.
+// sendToHandle writes text to a Claude handle with a trailing newline,
+// using a single atomic write. The PTY layer translates \n to the
+// appropriate line ending. This single-write pattern is deterministic —
+// it eliminates timing-dependent two-write approaches (text + sleep + \r)
+// that caused non-deterministic Enter delivery.
 //
-// Two-write pattern: sends the prompt text first, then sends \r (Enter key)
-// as a separate write. Claude Code runs its TUI in raw PTY mode where \r is
-// the Enter keypress. Sending \r inline with the text would be treated as
-// part of the pasted content, not a keypress to submit.
+// Uses the cancellation-aware sendWithCancel when available (auto-split
+// TUI mode) or falls back to the direct handle.send() for non-TUI/test
+// contexts. EAGAIN is retried up to 3 times with 10ms backoff.
 //
 // Returns { error: null } on success, { error: "message" } on failure.
 function sendToHandle(handle, text) {
-    var ENTER_KEY = '\r';
+    var payload = text + '\n';
     var EAGAIN_MAX_RETRIES = 3;
     var EAGAIN_RETRY_DELAY_MS = 10;
 
     if (typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
         typeof autoSplitTUI.sendWithCancel === 'function') {
-        // TUI path: cancellation-aware two-write.
-        var result1 = autoSplitTUI.sendWithCancel(handle, text);
-        if (result1.error) {
-            return result1;
-        }
-        if (SEND_ENTER_DELAY_MS > 0 && timemod && typeof timemod.sleep === 'function') {
-            timemod.sleep(SEND_ENTER_DELAY_MS);
-        }
-        return autoSplitTUI.sendWithCancel(handle, ENTER_KEY);
+        // TUI path: cancellation-aware single-write.
+        return autoSplitTUI.sendWithCancel(handle, payload);
     }
 
     // sendWithRetry: retries on EAGAIN/EWOULDBLOCK up to EAGAIN_MAX_RETRIES times.
@@ -2436,15 +2483,8 @@ function sendToHandle(handle, text) {
         return { error: lastErr };
     }
 
-    // Fallback: direct synchronous two-write with EAGAIN retry.
-    var r1 = sendWithRetry(text);
-    if (r1.error) {
-        return r1;
-    }
-    if (SEND_ENTER_DELAY_MS > 0 && timemod && typeof timemod.sleep === 'function') {
-        timemod.sleep(SEND_ENTER_DELAY_MS);
-    }
-    return sendWithRetry(ENTER_KEY);
+    // Fallback: direct synchronous single-write with EAGAIN retry.
+    return sendWithRetry(payload);
 }
 
 // pollForFile polls a result directory for a specific file.
@@ -3227,8 +3267,11 @@ function resolveConflictsWithClaude(failures, sessionId, resultDir, timeouts, po
                     }
                 }
                 // Commit changes.
-                gitExec('.', ['add', '-A']);
-                gitExec('.', ['commit', '--amend', '--no-edit']);
+                gitAddChangedFiles('.');
+                var patchCommit = gitExec('.', ['commit', '--amend', '--no-edit']);
+                if (patchCommit.code !== 0) {
+                    log.printf('auto-split: patch commit failed for %s: %s', fail.branch || fail.name, patchCommit.stderr.trim());
+                }
             }
 
             // Run suggested commands.
@@ -3236,8 +3279,11 @@ function resolveConflictsWithClaude(failures, sessionId, resultDir, timeouts, po
                 for (var c = 0; c < resolution.commands.length; c++) {
                     exec.execv(['sh', '-c', resolution.commands[c]]);
                 }
-                gitExec('.', ['add', '-A']);
-                gitExec('.', ['commit', '--amend', '--no-edit']);
+                gitAddChangedFiles('.');
+                var cmdCommit = gitExec('.', ['commit', '--amend', '--no-edit']);
+                if (cmdCommit.code !== 0) {
+                    log.printf('auto-split: command commit failed for %s: %s', fail.branch || fail.name, cmdCommit.stderr.trim());
+                }
             }
 
             // Re-verify this branch.
@@ -3991,7 +4037,6 @@ globalThis.prSplit = {
     classificationToGroups: classificationToGroups,
     isCancelled: isCancelled,
     sendToHandle: sendToHandle,
-    setSendEnterDelay: setSendEnterDelay,
 
     // Prompt rendering
     renderClassificationPrompt: renderClassificationPrompt,

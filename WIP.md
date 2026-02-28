@@ -64,9 +64,10 @@ Rewrote blueprint.json from scratch. Preserved 3 representative Done tasks. Adde
 - **Zero failures across all termmux packages**
 
 ## Immediate Next Steps
-1. COMMIT T080-T082 batch via Rule of Two gate
-2. T083: Update resolveConflictsWithClaude() for per-branch retry (rename maxRetries)
-3. T084-T086: Deadcode audits (conversationHistory, telemetryData, detectLanguage)
+1. T087: Fix Windows build failures
+2. T088: Fix Linux container build failures
+3. T089: Add verifySplits timeout guard
+4. T090: Thread verifyTimeoutMs through automatedSplit()
 
 ## Completed This Session
 - T067: Baseline tests documented
@@ -85,4 +86,7 @@ Rewrote blueprint.json from scratch. Preserved 3 representative Done tasks. Adde
 - T080: SEND_ENTER_DELAY_MS module-level var + setSendEnterDelay() setter, sendToHandle uses it
 - T081: EAGAIN retry in sendToHandle fallback path — 3 retries with 10ms delay
 - T082: Per-branch retry budget in resolveConflicts() — perBranchRetryBudget option, branchRetries tracking, while-loop retry wrapper
-- T075: Default verifyCommand changed from 'make test' to 'make' (Go + JS)
+- T083: Renamed maxRetries → maxAttemptsPerBranch in resolveConflictsWithClaude + test
+- T084: Audit conversationHistory — intentional (plan persistence + REPL command), documented
+- T085: Audit telemetryData — intentional (REPL 'telemetry' command + opt-in save), documented
+- T086: Audit detectLanguage() — intentional (classification prompt template), documented

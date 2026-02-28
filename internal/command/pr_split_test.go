@@ -4537,6 +4537,81 @@ func TestPrSplitCommand_ResolveConflictsWithClaudePreExistingFailure(t *testing.
 	}
 }
 
+func TestPrSplitCommand_ResolveConflictsWithClaude_MaxAttemptsPerBranch(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// 2 failures, maxAttemptsPerBranch=2, mock pollForFile to always fail.
+	// Each failure should get exactly 2 attempts (not share a global budget).
+	val, err := evalJS(`(function() {
+		var sendCount = 0;
+		claudeExecutor = {
+			handle: {
+				send: function(text) { sendCount++; },
+				isAlive: function() { return true; }
+			}
+		};
+
+		var failures = [
+			{ branch: 'split/fail-a', files: ['a.go'], error: 'test fail' },
+			{ branch: 'split/fail-b', files: ['b.go'], error: 'test fail' }
+		];
+		var report = { conflicts: [], resolutions: [], claudeInteractions: 0 };
+
+		// Use wallClockMs=0 on the SECOND call to force timeout mid-processing.
+		// Instead, use a very short resolve timeout and nonexistent resultDir so
+		// pollForFile returns timeout quickly.
+		var result = globalThis.prSplit.resolveConflictsWithClaude(
+			failures,
+			'test-session',
+			'/nonexistent-dir-for-test',
+			{ resolve: 100, wallClockMs: 30000 },
+			50,
+			2,
+			report
+		);
+		return JSON.stringify({
+			result: result,
+			report: {
+				conflicts: report.conflicts.length,
+				claudeInteractions: report.claudeInteractions
+			},
+			sendCount: sendCount
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		Result struct {
+			ReSplitNeeded bool   `json:"reSplitNeeded"`
+			ReSplitReason string `json:"reSplitReason"`
+		} `json:"result"`
+		Report struct {
+			Conflicts          int `json:"conflicts"`
+			ClaudeInteractions int `json:"claudeInteractions"`
+		} `json:"report"`
+		SendCount int `json:"sendCount"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("Failed to parse output: %v", err)
+	}
+
+	// Each failure gets 2 attempts (maxAttemptsPerBranch=2).
+	// Total conflicts = 2 failures × 2 attempts = 4.
+	if output.Report.Conflicts != 4 {
+		t.Errorf("Expected 4 conflict entries (2 failures × 2 attempts), got %d", output.Report.Conflicts)
+	}
+
+	// Each attempt sends (text + Enter) = 2 send calls.
+	// 4 attempts × 2 sends = 8 send calls.
+	if output.SendCount != 8 {
+		t.Errorf("Expected 8 send calls (4 attempts × 2 sends), got %d", output.SendCount)
+	}
+}
+
 func TestPrSplitCommand_SendToHandle_ConfigurableDelay(t *testing.T) {
 	t.Parallel()
 
@@ -4585,7 +4660,7 @@ func TestPrSplitCommand_SendToHandle_ConfigurableDelay(t *testing.T) {
 		Result1 struct {
 			Error *string `json:"error"`
 		} `json:"result1"`
-		Sends1 []string `json:"sends1"`
+		Sends1  []string `json:"sends1"`
 		Result2 struct {
 			Error *string `json:"error"`
 		} `json:"result2"`

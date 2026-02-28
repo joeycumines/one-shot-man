@@ -176,28 +176,28 @@
       "task": "Update resolveConflictsWithClaude() for per-branch retry",
       "description": "resolveConflictsWithClaude() at pr_split_script.js:2729 has its own retry loop per failure: `for (var attempt = 0; attempt < maxRetries && !fixed; attempt++)`. This is already per-failure, which is correct. However, it uses the same maxRetries for all failures. Thread perBranchRetryBudget from the caller (automatedSplit step 8). Rename the parameter from maxRetries to maxAttemptsPerBranch for clarity.",
       "acceptance": "TestResolveConflictsWithClaude_PerBranchRetryBudget creates 2 failures with maxAttemptsPerBranch=2. Mocks pollForFile to always fail. Verifies each failure gets exactly 2 attempts (total 4 poll calls, not 2).",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T084",
       "task": "Remove dead conversationHistory array",
       "description": "conversationHistory (pr_split_script.js:3274) is populated by recordConversation() (line 3278) and returned by getConversationHistory() (line 3287). It's saved in savePlan() (line 883) and restored in loadPlan() (line 945). However, the data is NEVER displayed, published to MCP, or used for decision-making during the pipeline. It only serves plan persistence for session resume (T097). DECISION: Keep conversationHistory since it serves plan persistence. Instead, evaluate whether getConversationHistory() is called from external code — check pr_split_script.js:3605 (export) and line 4797 (usage). If the export and internal usage are genuine, keep it. If the line 4797 usage is the only consumption point and it's just a debug/show command, document that explicitly.",
       "acceptance": "Audit reveals: getConversationHistory is exported at line 3605 and used at line 4797. Verify line 4797 is the interactive 'show history' command. If so, add a code comment at the declaration explaining its purpose (plan persistence + interactive display). No dead code to remove — this is intentional. If getConversationHistory is truly dead (no callers), remove the export.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T085",
       "task": "Audit and clean telemetryData — decide persist or delete",
       "description": "telemetryData at pr_split_script.js:3372 is populated by recordTelemetry() (3385), finalized by getTelemetrySummary() (3394), and can be persisted by saveTelemetry() (3402). saveTelemetry() writes to .osm/telemetry/ but is never called from automatedSplit() or any other pipeline function. Check: (1) Is saveTelemetry() called anywhere? grep for 'saveTelemetry'. (2) Is getTelemetrySummary() called anywhere besides its own definition? If neither is called, remove telemetryData, recordTelemetry, getTelemetrySummary, saveTelemetry. If saveTelemetry is called from the interactive REPL, keep it but add a comment.",
       "acceptance": "If dead: all four items removed, make-all-with-log passes, deadcode check passes. If alive: document the call site with a comment. Either way, no code exists without a caller.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T086",
       "task": "Audit detectLanguage() usage and clean if barely used",
       "description": "detectLanguage() at pr_split_script.js:2082 maps file extensions to language names. Per NOTES.md, it's 'called but result barely used in classification prompt'. Find all call sites (grep for 'detectLanguage'). Check if the return value is used meaningfully in the classification prompt template (renderClassificationPrompt). If the language detection just appears as a hint in the prompt and removing it wouldn't degrade classification quality, consider simplifying. If it's used, keep it but ensure the result is actually interpolated into the prompt.",
       "acceptance": "Audit documented in WIP.md: lists every call site for detectLanguage, what the return value is used for, and whether removing it would change behavior. If removed: deadcode passes. If kept: code comment explains its role in the classification prompt.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T087",

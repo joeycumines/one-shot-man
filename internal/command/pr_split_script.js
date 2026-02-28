@@ -2161,6 +2161,8 @@ function renderConflictPrompt(conflict) {
 }
 
 // detectLanguage guesses the primary language from file extensions.
+// Used by renderClassificationPrompt() to fill the "The repository is a {{.Language}} project"
+// template variable. Falls back to 'unknown' when no recognized extensions are found.
 function detectLanguage(files) {
     var counts = {};
     var langMap = {
@@ -2382,7 +2384,7 @@ function automatedSplit(config) {
         resolve: config.resolveTimeoutMs || AUTOMATED_DEFAULTS.resolveTimeoutMs
     };
     var pollInterval = config.pollIntervalMs || AUTOMATED_DEFAULTS.pollIntervalMs;
-    var maxRetries = config.maxResolveRetries || AUTOMATED_DEFAULTS.maxResolveRetries;
+    var maxAttemptsPerBranch = config.maxResolveRetries || AUTOMATED_DEFAULTS.maxResolveRetries;
     var maxReSplits = config.maxReSplits || AUTOMATED_DEFAULTS.maxReSplits;
 
     // Detect the auto-split BubbleTea TUI (injected from Go).
@@ -2715,7 +2717,7 @@ function automatedSplit(config) {
         var resolved = step('Resolve conflicts via Claude', function() {
             return resolveConflictsWithClaude(
                 verifyResult.failures, sessionId, resultDir,
-                timeouts, pollInterval, maxRetries, report, aliveCheckFn
+                timeouts, pollInterval, maxAttemptsPerBranch, report, aliveCheckFn
             );
         });
 
@@ -2865,14 +2867,14 @@ function classificationToGroups(classification) {
 }
 
 // resolveConflictsWithClaude attempts to fix failing splits using Claude.
-function resolveConflictsWithClaude(failures, sessionId, resultDir, timeouts, pollInterval, maxRetries, report, aliveCheckFn) {
+function resolveConflictsWithClaude(failures, sessionId, resultDir, timeouts, pollInterval, maxAttemptsPerBranch, report, aliveCheckFn) {
     var reSplitNeeded = false;
     var reSplitReason = '';
 
-    // Wall-clock timeout: cap total elapsed time. Default = resolve * maxRetries + 60s buffer, capped at 120 min.
+    // Wall-clock timeout: cap total elapsed time. Default = resolve * maxAttemptsPerBranch + 60s buffer, capped at 120 min.
     var wallClockMs = (timeouts && typeof timeouts.wallClockMs === 'number')
         ? timeouts.wallClockMs
-        : Math.min(((timeouts && timeouts.resolve) || AUTOMATED_DEFAULTS.resolveTimeoutMs) * (maxRetries || 3) + 60000,
+        : Math.min(((timeouts && timeouts.resolve) || AUTOMATED_DEFAULTS.resolveTimeoutMs) * (maxAttemptsPerBranch || 3) + 60000,
                    AUTOMATED_DEFAULTS.resolveWallClockTimeoutMs);
     var deadlineStart = Date.now();
     var deadline = deadlineStart + wallClockMs;
@@ -2892,7 +2894,7 @@ function resolveConflictsWithClaude(failures, sessionId, resultDir, timeouts, po
         var fail = failures[i];
         var fixed = false;
 
-        for (var attempt = 0; attempt < maxRetries && !fixed; attempt++) {
+        for (var attempt = 0; attempt < maxAttemptsPerBranch && !fixed; attempt++) {
             // Wall-clock deadline check inside retry loop.
             if (Date.now() >= deadline) {
                 var elapsed = Date.now() - deadlineStart;
@@ -3442,7 +3444,10 @@ function getSplitDiff(plan, splitIndex) {
 //  Claude Conversation History (T124)
 // ---------------------------------------------------------------------------
 
-// conversationHistory stores Claude's responses during a session.
+// conversationHistory stores Claude interaction prompts/responses during a session.
+// Used for: (1) plan persistence via savePlan()/loadPlan() for session resume,
+//           (2) interactive display via the 'conversation' REPL command.
+// Populated by recordConversation() from classification, re-classify, and conflict-resolution stages.
 var conversationHistory = [];
 
 // recordConversation saves a Claude interaction to the history.
@@ -3540,7 +3545,11 @@ function renderAsciiGraph(graph) {
 //  Telemetry and Analytics (T129)
 // ---------------------------------------------------------------------------
 
-// telemetryData accumulates local telemetry for this session.
+// telemetryData accumulates local telemetry counters for this session.
+// Used for: (1) interactive display via the 'telemetry' REPL command,
+//           (2) opt-in disk persistence via 'telemetry save' (writes to .osm/telemetry/).
+// Populated by recordTelemetry() from classification and conflict-resolution stages.
+// Never sent externally — all data stays local.
 var telemetryData = {
     filesAnalyzed: 0,
     splitCount: 0,

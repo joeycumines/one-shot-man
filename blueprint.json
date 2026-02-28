@@ -41,13 +41,13 @@
       "task": "T2: Fix Windows build failures",
       "description": "Fix all compilation and test failures identified in T1. Add runtime.GOOS guards and build tags where platform-specific behavior is required. Use t.Skip('requires Unix') for Unix-only tests that cannot be made cross-platform. Replace sh -c with platform-appropriate commands (e.g., cmd /c on Windows) in verifySplit() (pr_split_script.js line ~1135). Add Windows transport fallbacks for UDS-dependent code. Files likely affected: internal/termmux/, internal/session/, internal/command/pr_split_script.js, internal/builtin/claudemux/control.go, any test using net.Listen('unix',...).",
       "acceptance": "`make` passes on windows-latest CI job. All 3 platforms (ubuntu-latest, macos-latest, windows-latest) are green in CI. No new test skips without documented justification.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T3: Investigate verification 'skip' bug — establish behavioral baseline",
       "description": "Trace verifySplit() in internal/command/pr_split_script.js (line ~1135). The function constructs a shell command and runs exec.execv(['sh', '-c', shellCmd]). Investigate three hypotheses: (1) Does git checkout fail silently before the verify command runs? Check gitExec() return value handling. (2) Does the verify command run on the wrong branch? Check branch state before exec. (3) Does the AutoSplitModel TUI (internal/termmux/ui/autosplit.go) suppress results for sub-100ms operations, making it appear skipped? Also trace verifySplits() (line ~1194) which is the loop calling verifySplit per branch.",
       "acceptance": "Root cause documented in WIP.md with exact line references, reproduction steps, and which hypothesis was confirmed. A test case demonstrating the bug exists in pr_split_verification_test.go or pr_split_integration_test.go (can be a TODO/Skip test if the fix requires IPC refactor changes not yet available).",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T4: Investigate resolveConflictsWithClaude prompt sending failure — establish behavioral baseline",

@@ -1346,3 +1346,78 @@ func TestVerifySplits_PerBranchTimeout(t *testing.T) {
 		}
 	})
 }
+
+// ---------------------------------------------------------------------------
+// T3: Verify step "skip" bug — demonstrates that verifySplits returns
+// allPassed=false when branches fail or are skipped, but the automatedSplit
+// step wrapper (line ~2920) always returns error:null, causing the TUI to
+// show ✓ for the Verify step even when verification fails.
+//
+// Root cause: step('Verify splits', fn) at line 2920 returns
+//   { error: null, failures: realFailures, allPassed: false }
+// The step() wrapper at line 2600 checks result.error, sees null, and calls
+//   autoSplitTUI.stepDone(name, '', elapsed)  — empty error string = success
+// Failures are handled separately at line 2951 (if verifyResult.failures.length > 0).
+//
+// Fix target: T48 — modify step wrapper return or step() error checking.
+// ---------------------------------------------------------------------------
+
+func TestVerifySplits_FailedBranch_AllPassedFalse(t *testing.T) {
+	// This test documents the bug: verifySplits correctly returns allPassed=false
+	// on failure, but the step() wrapper in automatedSplit discards this signal.
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	if _, err := evalJS(`
+		_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+		_gitResponses['checkout'] = _gitOk('');
+		_gitResponses['!sh'] = _gitFail('COMPILE ERROR: missing import');
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+		dir: '/tmp/test',
+		sourceBranch: 'feature',
+		verifyCommand: 'make',
+		splits: [
+			{name: 'split/01-core', files: ['core.go']},
+			{name: 'split/02-util', files: ['util.go']}
+		]
+	}))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := parseVerifySplitsResult(t, raw)
+
+	// verifySplits correctly reports allPassed=false.
+	if r.AllPassed {
+		t.Error("expected allPassed=false when branches fail verification")
+	}
+
+	// Both branches were verified and both failed.
+	if len(r.Results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(r.Results))
+	}
+	for i, res := range r.Results {
+		if res.Passed {
+			t.Errorf("result[%d] (%s) should have failed", i, res.Name)
+		}
+		if res.Skipped {
+			t.Errorf("result[%d] (%s) should NOT be skipped — it ran", i, res.Name)
+		}
+		if res.Error == nil {
+			t.Errorf("result[%d] (%s) should have an error message", i, res.Name)
+		}
+	}
+
+	// BUG DOCUMENTATION: In automatedSplit() at line ~2920, this result
+	// would be wrapped by step() which returns { error: null, failures: [...] }.
+	// The step() wrapper only checks result.error and sees null → TUI shows ✓.
+	// The fix (T48) should propagate verification failures into result.error
+	// or change the step() wrapper to check result.allPassed.
+}

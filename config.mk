@@ -184,8 +184,8 @@ test-t068: ## Run T068/T069/T070 wall-clock timeout and heartbeat tests
 	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestPrSplitCommand_ResolveConflictsWallClock|TestPrSplitCommand_ResolveConflictsWithClaudeWallClock|TestPrSplitCommand_PollForFile' ./internal/command/... 2>&1 | tail -80
 
 .PHONY: test-t072
-test-t072: ## Run T072-T079 dependency tracking, verification, MCP, pre-existing, and timeout propagation tests
-	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestCreateSplitPlan|TestVerifySplits_Skips|TestPrSplitCommand_FlagDefaults|TestMCPServer_ReportResolution|TestRenderConflictPrompt|TestPrSplitCommand_ResolveConflictsWithClaudePreExisting|TestPrSplitCommand_ResolveConflicts_Timeout' ./internal/command/... 2>&1 | tail -120
+test-t072: ## Run T072-T082 dependency, verification, MCP, pre-existing, timeout, sendToHandle, EAGAIN, and per-branch retry tests
+	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestCreateSplitPlan|TestVerifySplits_Skips|TestPrSplitCommand_FlagDefaults|TestMCPServer_ReportResolution|TestRenderConflictPrompt|TestPrSplitCommand_ResolveConflictsWithClaudePreExisting|TestPrSplitCommand_ResolveConflicts_Timeout|TestPrSplitCommand_SendToHandle|TestPrSplitCommand_SetSendEnterDelay|TestPrSplitCommand_ResolveConflicts_PerBranch' ./internal/command/... 2>&1 | tail -160
 
 .PHONY: commit-t068-t075
 commit-t068-t075: ## Stage and commit T068-T075 batch
@@ -214,6 +214,22 @@ commit-t076-t079: ## Stage and commit T076-T079 batch
 		-m 'Thread resolveTimeoutMs and pollIntervalMs through resolveConflicts to strategy.fix() via a strategyOptions parameter. The claude-fix strategy now uses dynamic timeouts from the caller instead of hardcoded AUTOMATED_DEFAULTS values.' \
 		-m 'Update CONFLICT_RESOLUTION_PROMPT_TEMPLATE to document the new preExistingFailure option.' \
 		-m 'Tasks: T076, T077, T078, T079' && \
+	git log --oneline -1
+
+.PHONY: commit-t080-t082
+commit-t080-t082: ## Stage and commit T080-T082 batch
+	cd $(PROJECT_ROOT) && \
+	git add internal/command/pr_split_script.js && \
+	git add internal/command/pr_split_test.go && \
+	git add -f config.mk && \
+	git add blueprint.json && \
+	git add WIP.md && \
+	git diff --staged --stat && \
+	git commit \
+		-m 'Add configurable send delay, EAGAIN retry, per-branch retry budget' \
+		-m 'Make sendToHandle() Enter delay configurable via module-level SEND_ENTER_DELAY_MS and setSendEnterDelay() setter. Add EAGAIN retry logic to sendToHandle() fallback path with 3 retries at 10ms intervals for transient PTY write buffer errors.' \
+		-m 'Implement per-branch retry budget in resolveConflicts() via perBranchRetryBudget option (default 2). Each branch gets its own retry counter instead of sharing a global budget. A while-loop wrapper around the strategy iteration enables re-running strategies with updated verify output. Global retryBudget retained as an upper bound.' \
+		-m 'Tasks: T080, T081, T082' && \
 	git log --oneline -1
 
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`

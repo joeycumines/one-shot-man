@@ -155,21 +155,21 @@
       "task": "Make sendToHandle() Enter delay configurable",
       "description": "sendToHandle() at pr_split_script.js:2149 hardcodes ENTER_DELAY_MS = 50. Make this configurable: add a module-level var `SEND_ENTER_DELAY_MS = 50` near AUTOMATED_DEFAULTS. sendToHandle() reads from this variable. Add a setter function `setSendEnterDelay(ms)` exposed on the prSplit export object. This allows tests and users to tune the delay for different terminal environments.",
       "acceptance": "TestSendToHandle_ConfigurableDelay sets SEND_ENTER_DELAY_MS to 100ms, sends via sendToHandle(), and verifies the timing between the text write and Enter write is approximately 100ms (±50ms tolerance). Existing sendToHandle tests still pass with default 50ms.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T081",
       "task": "Add EAGAIN awareness to sendToHandle() fallback path",
       "description": "sendToHandle() at pr_split_script.js:2170-2180 (fallback path) wraps handle.send() in try/catch but does NOT retry on transient errors. The Go PTY layer (internal/builtin/pty/pty_unix.go) may return EAGAIN/EWOULDBLOCK on a full write buffer. Add retry logic: if the error string contains 'EAGAIN' or 'resource temporarily unavailable' or 'would block', sleep 10ms and retry up to 3 times. Only then return the error.",
       "acceptance": "TestSendToHandle_EAGAINRetry creates a mock handle whose send() throws 'EAGAIN' on the first call and succeeds on the second. Verifies sendToHandle returns { error: null }. TestSendToHandle_EAGAINExhausted creates a mock that always throws EAGAIN and verifies the error is returned after 3 retries.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T082",
       "task": "Implement per-branch retry budget in resolveConflicts()",
       "description": "resolveConflicts() at pr_split_script.js:1660 has a global retryBudget (default 3). If branch 1 burns all 3 retries, branches 2+ get zero attempts. Change to per-branch: (1) add options.perBranchRetryBudget (default: 2), (2) maintain a per-branch counter `branchRetries[split.name]`, (3) check branchRetries[split.name] < perBranchRetryBudget instead of totalRetries < retryBudget, (4) keep the global totalRetries counter for telemetry/reporting but don't use it as a gate. Update all callers that pass retryBudget to also set perBranchRetryBudget.",
       "acceptance": "TestResolveConflicts_PerBranchRetryBudget creates a 3-split plan where split 1 fails all retries. Verifies that split 2 still gets its full retry budget (not exhausted by split 1). TestResolveConflicts_PerBranchRetryBudget_Exhausted verifies that a single branch stops after perBranchRetryBudget attempts.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T083",

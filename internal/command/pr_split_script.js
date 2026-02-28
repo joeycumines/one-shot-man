@@ -1674,8 +1674,10 @@ function resolveConflicts(plan, options) {
     var dir = plan.dir || '.';
     var verifyCommand = options.verifyCommand || plan.verifyCommand || runtime.verifyCommand;
     var retryBudget = typeof options.retryBudget === 'number' ? options.retryBudget : (typeof runtime.retryBudget === 'number' ? runtime.retryBudget : 3);
+    var perBranchRetryBudget = typeof options.perBranchRetryBudget === 'number' ? options.perBranchRetryBudget : 2;
     var strategies = options.strategies || AUTO_FIX_STRATEGIES;
     var totalRetries = 0;
+    var branchRetries = {}; // per-branch attempt counter
 
     // Timeout options forwarded to strategies (e.g., claude-fix).
     var strategyOptions = {
@@ -1716,11 +1718,17 @@ function resolveConflicts(plan, options) {
         }
 
         if (totalRetries >= retryBudget) {
-            errorsOut.push({ name: plan.splits[i].name, error: 'retry budget exhausted (' + retryBudget + ')' });
+            errorsOut.push({ name: plan.splits[i].name, error: 'global retry budget exhausted (' + retryBudget + ')' });
             continue;
         }
 
         var split = plan.splits[i];
+        branchRetries[split.name] = branchRetries[split.name] || 0;
+        if (branchRetries[split.name] >= perBranchRetryBudget) {
+            errorsOut.push({ name: split.name, error: 'per-branch retry budget exhausted (' + perBranchRetryBudget + ')' });
+            continue;
+        }
+
         var co = gitExec(dir, ['checkout', split.name]);
         if (co.code !== 0) {
             errorsOut.push({ name: split.name, error: 'checkout failed: ' + co.stderr.trim() });
@@ -1736,34 +1744,52 @@ function resolveConflicts(plan, options) {
 
         var verifyOutput = (verifyResult.stdout || '') + '\n' + (verifyResult.stderr || '');
 
-        // Verification failed — try auto-fix strategies.
+        // Verification failed — try auto-fix strategies with per-branch retry budget.
+        // The outer while loop allows re-running the full strategy list when
+        // a strategy's fix is applied but verification still fails.
         var resolved = false;
-        for (var s = 0; s < strategies.length && totalRetries < retryBudget; s++) {
-            // Wall-clock deadline check inside strategy loop.
+        while (branchRetries[split.name] < perBranchRetryBudget && totalRetries < retryBudget && !resolved) {
+            // Wall-clock deadline check.
             if (Date.now() >= deadline) {
                 break;
             }
-            var strategy = strategies[s];
-            // Pass verifyOutput to detect for content-aware strategies.
-            if (!strategy.detect(dir, verifyOutput)) {
-                continue;
+
+            var madeProgress = false;
+            for (var s = 0; s < strategies.length && branchRetries[split.name] < perBranchRetryBudget && totalRetries < retryBudget; s++) {
+                // Wall-clock deadline check inside strategy loop.
+                if (Date.now() >= deadline) {
+                    break;
+                }
+                var strategy = strategies[s];
+                // Pass verifyOutput to detect for content-aware strategies.
+                if (!strategy.detect(dir, verifyOutput)) {
+                    continue;
+                }
+
+                totalRetries++;
+                branchRetries[split.name]++;
+                madeProgress = true;
+                var fixResult = strategy.fix(dir, split.name, plan, verifyOutput, strategyOptions);
+                if (!fixResult.fixed) {
+                    continue;
+                }
+
+                // Re-run verification.
+                var reVerify = exec.execv(['sh', '-c', 'cd ' + shellQuote(dir) + ' && ' + verifyCommand]);
+                if (reVerify.code === 0) {
+                    fixed.push({ name: split.name, strategy: strategy.name });
+                    resolved = true;
+                    break;
+                }
+                // Fix was applied but didn't resolve — update verifyOutput and retry strategies.
+                verifyOutput = (reVerify.stdout || '') + '\n' + (reVerify.stderr || '');
+                break; // Restart strategy loop with updated verifyOutput.
             }
 
-            totalRetries++;
-            var fixResult = strategy.fix(dir, split.name, plan, verifyOutput, strategyOptions);
-            if (!fixResult.fixed) {
-                continue;
-            }
-
-            // Re-run verification.
-            var reVerify = exec.execv(['sh', '-c', 'cd ' + shellQuote(dir) + ' && ' + verifyCommand]);
-            if (reVerify.code === 0) {
-                fixed.push({ name: split.name, strategy: strategy.name });
-                resolved = true;
+            // If no strategy was applied this round, stop to avoid infinite loop.
+            if (!madeProgress) {
                 break;
             }
-            // Fix was applied but didn't resolve — update verifyOutput and continue trying.
-            verifyOutput = (reVerify.stdout || '') + '\n' + (reVerify.stderr || '');
         }
 
         if (!resolved) {
@@ -1785,6 +1811,7 @@ function resolveConflicts(plan, options) {
         fixed: fixed,
         errors: errorsOut,
         totalRetries: totalRetries,
+        branchRetries: branchRetries,
         reSplitNeeded: reSplitNeeded,
         reSplitFiles: reSplitFiles,
         reSplitReason: reSplitNeeded ? 'Auto-fix strategies exhausted for: ' + errorsOut.map(function(e) { return e.name; }).join(', ') : ''
@@ -2175,6 +2202,15 @@ var AUTOMATED_DEFAULTS = {
     resolveWallClockTimeoutMs: 7200000 // 120 minutes wall-clock cap for resolveConflicts
 };
 
+// Delay (ms) between sending prompt text and the Enter key in sendToHandle().
+// Configurable via setSendEnterDelay(). Default 50ms allows the PTY to flush
+// the paste buffer before receiving CR as an independent keypress.
+var SEND_ENTER_DELAY_MS = 50;
+
+function setSendEnterDelay(ms) {
+    SEND_ENTER_DELAY_MS = Math.max(typeof ms === 'number' ? ms : 0, 0);
+}
+
 // Spinner characters for progress display.
 var SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -2204,10 +2240,8 @@ function isForceCancelled() {
 // Returns { error: null } on success, { error: "message" } on failure.
 function sendToHandle(handle, text) {
     var ENTER_KEY = '\r';
-    // Small delay between text and Enter to let the PTY process the paste
-    // before seeing the CR. Without this, terminals may treat \r as part of
-    // the pasted text block rather than an independent keypress.
-    var ENTER_DELAY_MS = 50;
+    var EAGAIN_MAX_RETRIES = 3;
+    var EAGAIN_RETRY_DELAY_MS = 10;
 
     if (typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
         typeof autoSplitTUI.sendWithCancel === 'function') {
@@ -2216,26 +2250,45 @@ function sendToHandle(handle, text) {
         if (result1.error) {
             return result1;
         }
-        if (timemod && typeof timemod.sleep === 'function') {
-            timemod.sleep(ENTER_DELAY_MS);
+        if (SEND_ENTER_DELAY_MS > 0 && timemod && typeof timemod.sleep === 'function') {
+            timemod.sleep(SEND_ENTER_DELAY_MS);
         }
         return autoSplitTUI.sendWithCancel(handle, ENTER_KEY);
     }
-    // Fallback: direct synchronous two-write.
-    try {
-        handle.send(text);
-    } catch (e) {
-        return { error: e.message || String(e) };
+
+    // sendWithRetry: retries on EAGAIN/EWOULDBLOCK up to EAGAIN_MAX_RETRIES times.
+    function sendWithRetry(data) {
+        var lastErr;
+        for (var attempt = 0; attempt <= EAGAIN_MAX_RETRIES; attempt++) {
+            try {
+                handle.send(data);
+                return { error: null };
+            } catch (e) {
+                lastErr = e.message || String(e);
+                var lower = lastErr.toLowerCase();
+                if (lower.indexOf('eagain') !== -1 ||
+                    lower.indexOf('resource temporarily unavailable') !== -1 ||
+                    lower.indexOf('would block') !== -1) {
+                    if (attempt < EAGAIN_MAX_RETRIES && timemod && typeof timemod.sleep === 'function') {
+                        timemod.sleep(EAGAIN_RETRY_DELAY_MS);
+                        continue;
+                    }
+                }
+                return { error: lastErr };
+            }
+        }
+        return { error: lastErr };
     }
-    if (timemod && typeof timemod.sleep === 'function') {
-        timemod.sleep(ENTER_DELAY_MS);
+
+    // Fallback: direct synchronous two-write with EAGAIN retry.
+    var r1 = sendWithRetry(text);
+    if (r1.error) {
+        return r1;
     }
-    try {
-        handle.send(ENTER_KEY);
-    } catch (e) {
-        return { error: e.message || String(e) };
+    if (SEND_ENTER_DELAY_MS > 0 && timemod && typeof timemod.sleep === 'function') {
+        timemod.sleep(SEND_ENTER_DELAY_MS);
     }
-    return { error: null };
+    return sendWithRetry(ENTER_KEY);
 }
 
 // pollForFile polls a result directory for a specific file.
@@ -3676,6 +3729,7 @@ globalThis.prSplit = {
     classificationToGroups: classificationToGroups,
     isCancelled: isCancelled,
     sendToHandle: sendToHandle,
+    setSendEnterDelay: setSendEnterDelay,
 
     // Prompt rendering
     renderClassificationPrompt: renderClassificationPrompt,

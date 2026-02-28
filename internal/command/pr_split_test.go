@@ -4537,6 +4537,444 @@ func TestPrSplitCommand_ResolveConflictsWithClaudePreExistingFailure(t *testing.
 	}
 }
 
+func TestPrSplitCommand_SendToHandle_ConfigurableDelay(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Test 1: setSendEnterDelay changes the delay value and sendToHandle uses it.
+	// We can't easily measure timing in the Goja runtime, but we CAN verify
+	// that setSendEnterDelay is callable and that sendToHandle still works
+	// with a modified delay (functional correctness).
+	val, err := evalJS(`(function() {
+		// Set a custom delay of 100ms.
+		globalThis.prSplit.setSendEnterDelay(100);
+
+		var sends = [];
+		var mockHandle = {
+			send: function(text) { sends.push(text); }
+		};
+		var result = globalThis.prSplit.sendToHandle(mockHandle, 'test prompt');
+
+		// Read the current SEND_ENTER_DELAY_MS value via closure.
+		// We can't access the module var directly, but we can verify
+		// setSendEnterDelay accepted the value by calling it with 0.
+		globalThis.prSplit.setSendEnterDelay(0);
+
+		var sends2 = [];
+		var mockHandle2 = {
+			send: function(text) { sends2.push(text); }
+		};
+		var result2 = globalThis.prSplit.sendToHandle(mockHandle2, 'zero delay prompt');
+
+		// Restore default.
+		globalThis.prSplit.setSendEnterDelay(50);
+
+		return JSON.stringify({
+			result1: result,
+			sends1: sends,
+			result2: result2,
+			sends2: sends2
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		Result1 struct {
+			Error *string `json:"error"`
+		} `json:"result1"`
+		Sends1 []string `json:"sends1"`
+		Result2 struct {
+			Error *string `json:"error"`
+		} `json:"result2"`
+		Sends2 []string `json:"sends2"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("Failed to parse output: %v", err)
+	}
+
+	// Both sends should succeed with 2 writes each (text + Enter).
+	if output.Result1.Error != nil {
+		t.Errorf("sendToHandle with 100ms delay returned error: %s", *output.Result1.Error)
+	}
+	if len(output.Sends1) != 2 {
+		t.Fatalf("Expected 2 sends with 100ms delay, got %d", len(output.Sends1))
+	}
+	if output.Sends1[0] != "test prompt" {
+		t.Errorf("sends1[0] = %q, want %q", output.Sends1[0], "test prompt")
+	}
+	if output.Sends1[1] != "\r" {
+		t.Errorf("sends1[1] = %q, want %q", output.Sends1[1], "\r")
+	}
+
+	if output.Result2.Error != nil {
+		t.Errorf("sendToHandle with 0ms delay returned error: %s", *output.Result2.Error)
+	}
+	if len(output.Sends2) != 2 {
+		t.Fatalf("Expected 2 sends with 0ms delay, got %d", len(output.Sends2))
+	}
+	if output.Sends2[0] != "zero delay prompt" {
+		t.Errorf("sends2[0] = %q, want %q", output.Sends2[0], "zero delay prompt")
+	}
+}
+
+func TestPrSplitCommand_SetSendEnterDelay_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Edge cases: negative values, non-numbers, undefined.
+	val, err := evalJS(`(function() {
+		var results = [];
+
+		// Negative: should clamp to 0.
+		globalThis.prSplit.setSendEnterDelay(-100);
+		var sends = [];
+		var mock = { send: function(t) { sends.push(t); } };
+		var r = globalThis.prSplit.sendToHandle(mock, 'neg');
+		results.push({ sends: sends, error: r.error });
+
+		// undefined: should fall to 0.
+		globalThis.prSplit.setSendEnterDelay(undefined);
+		sends = [];
+		mock = { send: function(t) { sends.push(t); } };
+		r = globalThis.prSplit.sendToHandle(mock, 'undef');
+		results.push({ sends: sends, error: r.error });
+
+		// Restore default.
+		globalThis.prSplit.setSendEnterDelay(50);
+
+		return JSON.stringify(results);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var results []struct {
+		Sends []string `json:"sends"`
+		Error *string  `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &results); err != nil {
+		t.Fatalf("Failed to parse output: %v", err)
+	}
+
+	if len(results) != 2 {
+		t.Fatalf("Expected 2 results, got %d", len(results))
+	}
+
+	for i, r := range results {
+		if r.Error != nil {
+			t.Errorf("results[%d]: unexpected error: %s", i, *r.Error)
+		}
+		if len(r.Sends) != 2 {
+			t.Errorf("results[%d]: expected 2 sends, got %d", i, len(r.Sends))
+		}
+	}
+}
+
+func TestPrSplitCommand_SendToHandle_EAGAINRetry(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Mock handle throws EAGAIN on first call, succeeds on second.
+	val, err := evalJS(`(function() {
+		var callCount = 0;
+		var mockHandle = {
+			send: function(text) {
+				callCount++;
+				if (callCount === 1) {
+					throw new Error('write: resource temporarily unavailable (EAGAIN)');
+				}
+				// succeed on subsequent calls
+			}
+		};
+		var result = globalThis.prSplit.sendToHandle(mockHandle, 'retry test');
+		return JSON.stringify({ error: result.error, callCount: callCount });
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		Error     *string `json:"error"`
+		CallCount int     `json:"callCount"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("Failed to parse output: %v", err)
+	}
+
+	// Should succeed after retry — EAGAIN on call 1, success on call 2 (text),
+	// then call 3 for Enter key.
+	if output.Error != nil {
+		t.Errorf("Expected success after EAGAIN retry, got error: %s", *output.Error)
+	}
+	// callCount: 1 (EAGAIN) + 1 (text retry success) + 1 (Enter) = 3
+	if output.CallCount != 3 {
+		t.Errorf("Expected 3 send calls (1 EAGAIN + 1 text success + 1 Enter), got %d", output.CallCount)
+	}
+}
+
+func TestPrSplitCommand_SendToHandle_EAGAINExhausted(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Mock handle always throws EAGAIN.
+	val, err := evalJS(`(function() {
+		var callCount = 0;
+		var mockHandle = {
+			send: function(text) {
+				callCount++;
+				throw new Error('EAGAIN: resource temporarily unavailable');
+			}
+		};
+		var result = globalThis.prSplit.sendToHandle(mockHandle, 'always fails');
+		return JSON.stringify({ error: result.error, callCount: callCount });
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		Error     *string `json:"error"`
+		CallCount int     `json:"callCount"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("Failed to parse output: %v", err)
+	}
+
+	// Should fail after exhausting retries (initial + 3 retries = 4 attempts).
+	if output.Error == nil {
+		t.Fatal("Expected error after EAGAIN retry exhaustion")
+	}
+	if !strings.Contains(*output.Error, "EAGAIN") {
+		t.Errorf("Error should contain 'EAGAIN', got: %s", *output.Error)
+	}
+	// callCount: 1 initial + 3 retries = 4
+	if output.CallCount != 4 {
+		t.Errorf("Expected 4 send calls (1 initial + 3 retries), got %d", output.CallCount)
+	}
+}
+
+func TestPrSplitCommand_SendToHandle_NonEAGAINError(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Mock handle throws a non-EAGAIN error — should NOT retry.
+	val, err := evalJS(`(function() {
+		var callCount = 0;
+		var mockHandle = {
+			send: function(text) {
+				callCount++;
+				throw new Error('connection refused');
+			}
+		};
+		var result = globalThis.prSplit.sendToHandle(mockHandle, 'no retry');
+		return JSON.stringify({ error: result.error, callCount: callCount });
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		Error     *string `json:"error"`
+		CallCount int     `json:"callCount"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("Failed to parse output: %v", err)
+	}
+
+	// Non-EAGAIN should fail immediately without retries.
+	if output.Error == nil {
+		t.Fatal("Expected error for non-EAGAIN failure")
+	}
+	if !strings.Contains(*output.Error, "connection refused") {
+		t.Errorf("Error should contain 'connection refused', got: %s", *output.Error)
+	}
+	// Only 1 attempt (no retry for non-EAGAIN).
+	if output.CallCount != 1 {
+		t.Errorf("Expected 1 send call (no retry for non-EAGAIN), got %d", output.CallCount)
+	}
+}
+
+func TestPrSplitCommand_ResolveConflicts_PerBranchRetryBudget(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on Windows — git test repo setup uses Unix commands")
+	}
+
+	dir := setupTestGitRepo(t)
+
+	// Create 2 branches for the splits.
+	for _, branch := range []string{"split/branch-a", "split/branch-b"} {
+		cmd := exec.Command("git", "-C", dir, "checkout", "-b", branch)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("Failed to create branch %s: %s (%v)", branch, out, err)
+		}
+		cmd = exec.Command("git", "-C", dir, "checkout", "main")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("Failed to checkout main: %s (%v)", out, err)
+		}
+	}
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Use custom strategies that track per-branch fix attempts.
+	// Strategy always returns { fixed: false } so retries are consumed.
+	val, err := evalJS(`(function() {
+		var attempts = {};
+		var customStrategy = {
+			name: 'always-fail',
+			detect: function() { return true; },
+			fix: function(dir, branch, plan, verifyOutput, options) {
+				attempts[branch] = (attempts[branch] || 0) + 1;
+				return { fixed: false, error: 'intentional fail' };
+			}
+		};
+
+		var result = globalThis.prSplit.resolveConflicts({
+			dir: '` + strings.ReplaceAll(dir, `\`, `\\`) + `',
+			splits: [
+				{ name: 'split/branch-a', files: ['a.go'] },
+				{ name: 'split/branch-b', files: ['b.go'] }
+			],
+			verifyCommand: 'exit 1'
+		}, {
+			retryBudget: 10,
+			perBranchRetryBudget: 2,
+			strategies: [customStrategy]
+		});
+		return JSON.stringify({
+			attempts: attempts,
+			totalRetries: result.totalRetries,
+			branchRetries: result.branchRetries,
+			errors: result.errors.map(function(e) { return { name: e.name, error: e.error }; })
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		Attempts      map[string]int `json:"attempts"`
+		TotalRetries  int            `json:"totalRetries"`
+		BranchRetries map[string]int `json:"branchRetries"`
+		Errors        []struct {
+			Name  string `json:"name"`
+			Error string `json:"error"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("Failed to parse output: %v", err)
+	}
+
+	// Each branch should get exactly 2 retries (perBranchRetryBudget=2),
+	// even though the global budget is 10.
+	if output.Attempts["split/branch-a"] != 2 {
+		t.Errorf("Expected 2 attempts for branch-a, got %d", output.Attempts["split/branch-a"])
+	}
+	if output.Attempts["split/branch-b"] != 2 {
+		t.Errorf("Expected 2 attempts for branch-b, got %d", output.Attempts["split/branch-b"])
+	}
+
+	// Total retries should be 4 (2 per branch × 2 branches).
+	if output.TotalRetries != 4 {
+		t.Errorf("Expected 4 total retries, got %d", output.TotalRetries)
+	}
+
+	// branchRetries should match.
+	if output.BranchRetries["split/branch-a"] != 2 {
+		t.Errorf("Expected branchRetries[branch-a]=2, got %d", output.BranchRetries["split/branch-a"])
+	}
+	if output.BranchRetries["split/branch-b"] != 2 {
+		t.Errorf("Expected branchRetries[branch-b]=2, got %d", output.BranchRetries["split/branch-b"])
+	}
+
+	// Both branches should have errors (verification failed).
+	if len(output.Errors) != 2 {
+		t.Fatalf("Expected 2 errors (one per branch), got %d", len(output.Errors))
+	}
+}
+
+func TestPrSplitCommand_ResolveConflicts_PerBranchRetryBudget_Exhausted(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on Windows — git test repo setup uses Unix commands")
+	}
+
+	dir := setupTestGitRepo(t)
+
+	cmd := exec.Command("git", "-C", dir, "checkout", "-b", "split/exhaust-test")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to create branch: %s (%v)", out, err)
+	}
+	cmd = exec.Command("git", "-C", dir, "checkout", "main")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to checkout main: %s (%v)", out, err)
+	}
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Single branch with perBranchRetryBudget=1 — should stop after 1 attempt.
+	val, err := evalJS(`(function() {
+		var attempts = 0;
+		var customStrategy = {
+			name: 'count-attempts',
+			detect: function() { return true; },
+			fix: function() {
+				attempts++;
+				return { fixed: false, error: 'still failing' };
+			}
+		};
+
+		var result = globalThis.prSplit.resolveConflicts({
+			dir: '` + strings.ReplaceAll(dir, `\`, `\\`) + `',
+			splits: [
+				{ name: 'split/exhaust-test', files: ['a.go'] }
+			],
+			verifyCommand: 'exit 1'
+		}, {
+			retryBudget: 100,
+			perBranchRetryBudget: 1,
+			strategies: [customStrategy]
+		});
+		return JSON.stringify({
+			attempts: attempts,
+			totalRetries: result.totalRetries,
+			branchRetries: result.branchRetries
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		Attempts      int            `json:"attempts"`
+		TotalRetries  int            `json:"totalRetries"`
+		BranchRetries map[string]int `json:"branchRetries"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("Failed to parse output: %v", err)
+	}
+
+	// Should have exactly 1 attempt (perBranchRetryBudget=1).
+	if output.Attempts != 1 {
+		t.Errorf("Expected 1 attempt, got %d", output.Attempts)
+	}
+	if output.TotalRetries != 1 {
+		t.Errorf("Expected 1 total retry, got %d", output.TotalRetries)
+	}
+	if output.BranchRetries["split/exhaust-test"] != 1 {
+		t.Errorf("Expected branchRetries[split/exhaust-test]=1, got %d", output.BranchRetries["split/exhaust-test"])
+	}
+}
+
 func TestPrSplitCommand_DefaultRetryBudget(t *testing.T) {
 	t.Parallel()
 

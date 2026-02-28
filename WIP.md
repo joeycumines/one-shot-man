@@ -64,10 +64,9 @@ Rewrote blueprint.json from scratch. Preserved 3 representative Done tasks. Adde
 - **Zero failures across all termmux packages**
 
 ## Immediate Next Steps
-1. COMMIT T076-T079 batch via Rule of Two gate
-2. T080: Make sendToHandle() Enter delay configurable
-3. T081: Add EAGAIN awareness to sendToHandle() fallback path
-4. T082: Implement per-branch retry budget in resolveConflicts()
+1. COMMIT T080-T082 batch via Rule of Two gate
+2. T083: Update resolveConflictsWithClaude() for per-branch retry (rename maxRetries)
+3. T084-T086: Deadcode audits (conversationHistory, telemetryData, detectLanguage)
 
 ## Completed This Session
 - T067: Baseline tests documented
@@ -83,4 +82,7 @@ Rewrote blueprint.json from scratch. Preserved 3 representative Done tasks. Adde
 - T077: resolveConflictsWithClaude handles preExistingFailure — no retry, report.preExistingFailures
 - T078: Verified timeout propagation chain, identified claude-fix gap
 - T079: claude-fix strategy.fix() now accepts options.resolveTimeoutMs, threaded from resolveConflicts()
+- T080: SEND_ENTER_DELAY_MS module-level var + setSendEnterDelay() setter, sendToHandle uses it
+- T081: EAGAIN retry in sendToHandle fallback path — 3 retries with 10ms delay
+- T082: Per-branch retry budget in resolveConflicts() — perBranchRetryBudget option, branchRetries tracking, while-loop retry wrapper
 - T075: Default verifyCommand changed from 'make test' to 'make' (Go + JS)

@@ -49,7 +49,3 @@ internal\builtin\bubbletea\testing.go:*: unreachable func: SyncJSRunner.RunJSSyn
 # PA-BT module exports — called from JavaScript via Goja runtime (not visible to deadcode analyzer).
 internal/builtin/pabt/*: unreachable func: *
 internal\builtin\pabt\*: unreachable func: *
-
-# allowing it... for now
-internal/termmux/ptyio/resize_unix.go:*: unreachable func: ResizePTY
-internal\termmux\ptyio\resize_unix.go:*: unreachable func: ResizePTY

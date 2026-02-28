@@ -5073,6 +5073,96 @@ func TestPrSplitCommand_ResolveConflicts_PerBranchRetryBudget_Exhausted(t *testi
 	}
 }
 
+// ---------------------------------------------------------------------------
+// T092: resolveConflicts threads aliveCheckFn to strategy options
+// ---------------------------------------------------------------------------
+
+func TestPrSplitCommand_ResolveConflicts_AliveCheckFnThreaded(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on Windows — git test repo setup uses Unix commands")
+	}
+
+	dir := setupTestGitRepo(t)
+
+	cmd := exec.Command("git", "-C", dir, "checkout", "-b", "split/alive-test")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to create branch: %s (%v)", out, err)
+	}
+	cmd = exec.Command("git", "-C", dir, "checkout", "main")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to checkout main: %s (%v)", out, err)
+	}
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Custom strategy that captures whether aliveCheckFn was threaded into options.
+	// If options.aliveCheckFn is a function, call it and return its result.
+	val, err := evalJS(`(function() {
+		var receivedAliveCheckFn = false;
+		var aliveCheckResult = null;
+		var customStrategy = {
+			name: 'check-alive-threading',
+			detect: function() { return true; },
+			fix: function(dir, branch, plan, verifyOutput, options) {
+				if (options && typeof options.aliveCheckFn === 'function') {
+					receivedAliveCheckFn = true;
+					aliveCheckResult = options.aliveCheckFn();
+				}
+				return { fixed: true };
+			}
+		};
+
+		// aliveCheckFn that returns false (process dead).
+		var aliveCheckCalled = false;
+		var aliveCheckFn = function() {
+			aliveCheckCalled = true;
+			return false;
+		};
+
+		var result = globalThis.prSplit.resolveConflicts({
+			dir: '` + strings.ReplaceAll(dir, `\`, `\\`) + `',
+			splits: [
+				{ name: 'split/alive-test', files: ['a.go'] }
+			],
+			verifyCommand: 'exit 1'
+		}, {
+			retryBudget: 1,
+			perBranchRetryBudget: 1,
+			strategies: [customStrategy],
+			aliveCheckFn: aliveCheckFn
+		});
+		return JSON.stringify({
+			receivedAliveCheckFn: receivedAliveCheckFn,
+			aliveCheckCalled: aliveCheckCalled,
+			aliveCheckResult: aliveCheckResult
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result struct {
+		ReceivedAliveCheckFn bool  `json:"receivedAliveCheckFn"`
+		AliveCheckCalled     bool  `json:"aliveCheckCalled"`
+		AliveCheckResult     *bool `json:"aliveCheckResult"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatalf("Failed to parse output: %v", err)
+	}
+
+	if !result.ReceivedAliveCheckFn {
+		t.Error("strategy did not receive aliveCheckFn in options — threading broken")
+	}
+	if !result.AliveCheckCalled {
+		t.Error("aliveCheckFn was not called by the strategy")
+	}
+	if result.AliveCheckResult == nil || *result.AliveCheckResult != false {
+		t.Errorf("aliveCheckFn return value not threaded — got %v, want false", result.AliveCheckResult)
+	}
+}
+
 func TestPrSplitCommand_DefaultRetryBudget(t *testing.T) {
 	t.Parallel()
 

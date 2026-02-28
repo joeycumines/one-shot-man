@@ -288,6 +288,85 @@ func TestExecuteSplit(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// TestExecuteSplit_TypeChange — file status 'T' logs warning and succeeds
+// ---------------------------------------------------------------------------
+
+func TestExecuteSplit_TypeChange(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := evalJS(resetGitMockJS); err != nil {
+		t.Fatal(err)
+	}
+	// Clear logs so we can check for the type-change warning.
+	if _, err := evalJS(`log.clearLogs()`); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mock a successful execution with a 'T' status file.
+	if _, err := evalJS(`
+		globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature');
+		globalThis._gitResponses['rev-parse --verify refs/heads/split/01-type'] = _gitFail('not found');
+		globalThis._gitResponses['checkout main'] = _gitOk('');
+		globalThis._gitResponses['checkout -b split/01-type'] = _gitOk('');
+		globalThis._gitResponses['checkout feature -- link.txt'] = _gitOk('');
+		globalThis._gitResponses['add -A'] = _gitOk('');
+		globalThis._gitResponses['commit -m type change'] = _gitOk('');
+		globalThis._gitResponses['rev-parse HEAD'] = _gitOk('tc123');
+		globalThis._gitResponses['checkout feature'] = _gitOk('');
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.executeSplit({
+		baseBranch: 'main',
+		sourceBranch: 'feature',
+		fileStatuses: {'link.txt': 'T'},
+		splits: [
+			{name: 'split/01-type', files: ['link.txt'], message: 'type change', order: 0}
+		]
+	}))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := parseExecuteSplitResult(t, raw)
+
+	// 1. Execution should succeed — type changes are checked out from source.
+	if r.Error != nil {
+		t.Fatalf("unexpected error: %s", *r.Error)
+	}
+	if len(r.Results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(r.Results))
+	}
+	if r.Results[0].SHA != "tc123" {
+		t.Errorf("sha = %q, want 'tc123'", r.Results[0].SHA)
+	}
+	if r.Results[0].Error != nil {
+		t.Errorf("result[0] error = %s", *r.Results[0].Error)
+	}
+
+	// 2. Log should contain the type-change warning.
+	logVal, err := evalJS(`JSON.stringify(log.searchLogs('file type change'))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logStr, ok := logVal.(string)
+	if !ok {
+		t.Fatalf("expected string, got %T", logVal)
+	}
+	if !strings.Contains(logStr, "file type change") {
+		t.Errorf("expected log to contain 'file type change', got %q", logStr)
+	}
+	if !strings.Contains(logStr, "link.txt") {
+		t.Errorf("expected log to mention file name 'link.txt', got %q", logStr)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // TestVerifySplit — single branch checkout + verify command
 // ---------------------------------------------------------------------------
 

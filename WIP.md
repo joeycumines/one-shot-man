@@ -64,10 +64,9 @@ Rewrote blueprint.json from scratch. Preserved 3 representative Done tasks. Adde
 - **Zero failures across all termmux packages**
 
 ## Immediate Next Steps
-1. T091: Handle fileStatuses 'T' (type change) in executeSplit()
-2. T092: Add isAlive heartbeat to claude-fix strategy's pollForFile call
-3. T093: Claude auto-detection verification
-4. T094-T096: Session persistence (savePlan/loadPlan, --resume, crash recovery)
+1. T093: Claude auto-detection verification
+2. T094-T096: Session persistence (savePlan/loadPlan, --resume, crash recovery)
+3. T097+: Conversation history persistence, TUI feedback, etc.
 
 ## Completed This Session
 - T067: Baseline tests documented
@@ -92,3 +91,5 @@ Rewrote blueprint.json from scratch. Preserved 3 representative Done tasks. Adde
 - T086: Audit detectLanguage() — intentional (classification prompt template), documented
 - T089: verifySplit() wraps command in `timeout` utility, detects exit code 124. verifySplits() accepts options.verifyTimeoutMs. 3 sub-tests pass.
 - T090: AUTOMATED_DEFAULTS.verifyTimeoutMs = 600000 (10 min). Threaded through automatedSplit() Step 7 + REPL propagation. Test for default value passes.
+- T091: Explicit 'T' (type change) handling in executeSplit() with log.warn. TestExecuteSplit_TypeChange passing.
+- T092: claude-fix strategy extracts aliveCheckFn from options, passes to pollForFile as 6th arg. Fixed positional arg bug (was passing to stepName slot). resolveConflicts() threads aliveCheckFn through strategyOptions. TestPrSplitCommand_ResolveConflicts_AliveCheckFnThreaded passing.

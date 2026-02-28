@@ -184,8 +184,8 @@ test-t068: ## Run T068/T069/T070 wall-clock timeout and heartbeat tests
 	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestPrSplitCommand_ResolveConflictsWallClock|TestPrSplitCommand_ResolveConflictsWithClaudeWallClock|TestPrSplitCommand_PollForFile' ./internal/command/... 2>&1 | tail -80
 
 .PHONY: test-t072
-test-t072: ## Run T072-T082 dependency, verification, MCP, pre-existing, timeout, sendToHandle, EAGAIN, and per-branch retry tests
-	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestCreateSplitPlan|TestVerifySplits_Skips|TestVerifySplits_PerBranch|TestPrSplitCommand_FlagDefaults|TestPrSplitCommand_VerifyTimeout|TestMCPServer_ReportResolution|TestRenderConflictPrompt|TestPrSplitCommand_ResolveConflictsWithClaude|TestPrSplitCommand_ResolveConflicts_Timeout|TestPrSplitCommand_SendToHandle|TestPrSplitCommand_SetSendEnterDelay|TestPrSplitCommand_ResolveConflicts_PerBranch' ./internal/command/... 2>&1 | tail -160
+test-t072: ## Run T072-T092 dependency, verification, MCP, pre-existing, timeout, sendToHandle, EAGAIN, per-branch retry, type-change, and aliveCheckFn threading tests
+	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestCreateSplitPlan|TestVerifySplits_Skips|TestVerifySplits_PerBranch|TestPrSplitCommand_FlagDefaults|TestPrSplitCommand_VerifyTimeout|TestMCPServer_ReportResolution|TestRenderConflictPrompt|TestPrSplitCommand_ResolveConflictsWithClaude|TestPrSplitCommand_ResolveConflicts_Timeout|TestPrSplitCommand_SendToHandle|TestPrSplitCommand_SetSendEnterDelay|TestPrSplitCommand_ResolveConflicts_PerBranch|TestPrSplitCommand_ResolveConflicts_AliveCheck|TestExecuteSplit_TypeChange' ./internal/command/... 2>&1 | tail -160
 
 .PHONY: commit-t068-t075
 commit-t068-t075: ## Stage and commit T068-T075 batch
@@ -256,6 +256,19 @@ commit-verify-timeout: ## Stage and commit verify timeout guard files
 	git diff --staged --stat && \
 	git commit -F scratch/commit-msg.txt && \
 	git log --oneline -1
+
+.PHONY: commit-t091-t092
+commit-t091-t092: ## Stage and commit T091-T092 batch (type-change + aliveCheckFn)
+	cd $(PROJECT_ROOT) && \
+	git add internal/command/pr_split_script.js && \
+	git add internal/command/pr_split_test.go && \
+	git add internal/command/pr_split_execution_test.go && \
+	git add -f config.mk && \
+	git add blueprint.json && \
+	git add WIP.md && \
+	git diff --staged --stat && \
+	git commit -F scratch/commit-msg-t091-t092.txt && \
+	git log --oneline -3
 
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 endif

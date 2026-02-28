@@ -1044,7 +1044,14 @@ function executeSplit(plan) {
                     return { error: splitResult.error, results: results };
                 }
             } else {
-                // File was added, modified, renamed-to, etc. — checkout from source.
+                // File was added, modified, renamed-to, copied-to, or type-changed.
+                // Type changes (T): e.g. regular file → symlink or vice versa.
+                // Checkout from source restores the new type correctly because
+                // `git checkout <branch> -- <path>` replaces the working tree
+                // entry with the exact content and type from the source branch.
+                if (status === 'T') {
+                    log.warn('pr-split: file type change for ' + file + ' — checkout from source will restore new type');
+                }
                 var checkout = gitExec(dir, ['checkout', plan.sourceBranch, '--', file]);
                 if (checkout.code !== 0) {
                     splitResult.error = 'checkout file ' + file + ': ' + checkout.stderr.trim();
@@ -1624,6 +1631,7 @@ var AUTO_FIX_STRATEGIES = [
             options = options || {};
             var resolveTimeoutMs = options.resolveTimeoutMs || AUTOMATED_DEFAULTS.resolveTimeoutMs;
             var pollIntervalMs = options.pollIntervalMs || AUTOMATED_DEFAULTS.pollIntervalMs;
+            var aliveCheckFn = typeof options.aliveCheckFn === 'function' ? options.aliveCheckFn : null;
             var promptResult = renderConflictPrompt({
                 branchName: failedBranch,
                 files: plan ? plan.splits.filter(function(s) { return s.name === failedBranch; }).reduce(function(acc, s) { return acc.concat(s.files); }, []) : [],
@@ -1647,7 +1655,7 @@ var AUTO_FIX_STRATEGIES = [
             // Delete old resolution file.
             try { exec.execv(['rm', '-f', resultDir + '/resolution.json']); } catch (e) { /* ignore */ }
             var resolutionPoll = pollForFile(resultDir, 'resolution.json',
-                resolveTimeoutMs, pollIntervalMs);
+                resolveTimeoutMs, pollIntervalMs, 'Claude fix resolution', aliveCheckFn);
             if (resolutionPoll.error) {
                 return { fixed: false, error: 'Claude resolution timeout: ' + resolutionPoll.error };
             }
@@ -1707,7 +1715,8 @@ function resolveConflicts(plan, options) {
     // Timeout options forwarded to strategies (e.g., claude-fix).
     var strategyOptions = {
         resolveTimeoutMs: options.resolveTimeoutMs || AUTOMATED_DEFAULTS.resolveTimeoutMs,
-        pollIntervalMs: options.pollIntervalMs || AUTOMATED_DEFAULTS.pollIntervalMs
+        pollIntervalMs: options.pollIntervalMs || AUTOMATED_DEFAULTS.pollIntervalMs,
+        aliveCheckFn: typeof options.aliveCheckFn === 'function' ? options.aliveCheckFn : null
     };
 
     // Wall-clock timeout: cap total elapsed time regardless of retry budget.

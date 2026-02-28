@@ -232,14 +232,14 @@
       "task": "Handle fileStatuses 'T' (type change) explicitly in executeSplit()",
       "description": "executeSplit() at pr_split_script.js:962 handles 'D' (delete) and everything else as checkout-from-source. Git status 'T' means type change (e.g., file → symlink). Currently treated as a regular modification, which happens to work because checkout from source restores the new type. However, there's no explicit handling, which is fragile. Add an explicit case for 'T' in the switch at ~line 1038: treat it the same as 'M' (checkout from source) but log a warning: 'file type change for ' + file. Add a comment explaining why 'T' is handled this way.",
       "acceptance": "TestExecuteSplit_TypeChange creates a git repo where a file's type changes (e.g., regular file → symlink or vice versa), runs executeSplit, and verifies: (1) the file is correctly checked out with the new type, (2) no error is thrown, (3) the log contains 'file type change'. This test requires a real git repo (use initIntegrationRepo pattern).",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T092",
       "task": "Add isAlive heartbeat to claude-fix strategy's pollForFile call",
       "description": "The claude-fix strategy at pr_split_script.js:~1590 calls pollForFile() but doesn't pass an aliveCheckFn (from T070). Update the claude-fix strategy to accept an options parameter containing aliveCheckFn and pass it through. This requires modifying the strategy.fix() signature to include the options bag (from T079) which already carries resolveTimeoutMs.",
       "acceptance": "After T070+T079, the claude-fix strategy's pollForFile call includes aliveCheckFn. TestClaudeFixStrategy_HeartbeatDuringPoll mocks a dead process and verifies the strategy exits with 'process exited' rather than waiting for timeout.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T093",

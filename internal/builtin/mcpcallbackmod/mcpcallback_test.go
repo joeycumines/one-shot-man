@@ -784,3 +784,127 @@ func TestMCPCallback_PropertiesBeforeInit(t *testing.T) {
 		}
 	})
 }
+
+// --- Signal/context cleanup tests ---
+
+func TestMCPCallback_ContextCancellation_TriggersCleanup(t *testing.T) {
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	parentCtx, parentCancel := context.WithCancel(context.Background())
+
+	// Set the test context as a JS global
+	runOnLoop(t, p, func() {
+		vm := p.Runtime()
+		_ = vm.Set("__parentCtx", vm.ToValue(parentCtx))
+	})
+
+	var scriptPath string
+	runAsync(t, p, `
+		srv = mcpMod.createServer('test', '1.0.0');
+		cb = mcpCbMod.MCPCallback({ server: srv, __testContext: __parentCtx });
+		await cb.init();
+		__testScriptPath = cb.scriptPath;
+	`)
+
+	runOnLoop(t, p, func() {
+		scriptPath = p.Runtime().Get("__testScriptPath").String()
+	})
+
+	// Verify resources exist before cancellation
+	tempDir := scriptPath[:strings.LastIndex(scriptPath, string(os.PathSeparator))]
+	if _, err := os.Stat(tempDir); err != nil {
+		t.Fatalf("temp dir should exist before cancellation: %v", err)
+	}
+
+	// Cancel the parent context — this should trigger automatic cleanup
+	parentCancel()
+
+	// Wait for cleanup goroutine to fire (with timeout)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(tempDir); os.IsNotExist(err) {
+			// Temp dir removed — cleanup worked
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("temp directory was not cleaned up after context cancellation within 5s")
+}
+
+func TestMCPCallback_CloseAfterContextCancel(t *testing.T) {
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	parentCtx, parentCancel := context.WithCancel(context.Background())
+
+	runOnLoop(t, p, func() {
+		vm := p.Runtime()
+		_ = vm.Set("__parentCtx", vm.ToValue(parentCtx))
+	})
+
+	runAsync(t, p, `
+		srv = mcpMod.createServer('test', '1.0.0');
+		cb = mcpCbMod.MCPCallback({ server: srv, __testContext: __parentCtx });
+		await cb.init();
+	`)
+
+	// Cancel the parent context first
+	parentCancel()
+
+	// Wait briefly for cleanup goroutine to detect cancellation
+	time.Sleep(50 * time.Millisecond)
+
+	// Calling close() after context cancellation should be idempotent (no error/panic)
+	runAsync(t, p, `await cb.close();`)
+}
+
+func TestMCPCallback_SignalCleanup_CloseIsIdempotent(t *testing.T) {
+	// Verify that close() returns cleanly even when the context watcher already cleaned up.
+	// This tests the race between signal watcher goroutine and explicit close().
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	parentCtx, parentCancel := context.WithCancel(context.Background())
+
+	runOnLoop(t, p, func() {
+		vm := p.Runtime()
+		_ = vm.Set("__parentCtx", vm.ToValue(parentCtx))
+	})
+
+	var scriptPath string
+	runAsync(t, p, `
+		srv = mcpMod.createServer('test', '1.0.0');
+		cb = mcpCbMod.MCPCallback({ server: srv, __testContext: __parentCtx });
+		await cb.init();
+		__testScriptPath = cb.scriptPath;
+	`)
+
+	runOnLoop(t, p, func() {
+		scriptPath = p.Runtime().Get("__testScriptPath").String()
+	})
+
+	tempDir := scriptPath[:strings.LastIndex(scriptPath, string(os.PathSeparator))]
+
+	// Cancel parent context
+	parentCancel()
+
+	// Wait for cleanup
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(tempDir); os.IsNotExist(err) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Now call close() multiple times — should all be idempotent
+	runAsync(t, p, `
+		await cb.close();
+		await cb.close();
+		await cb.close();
+	`)
+}

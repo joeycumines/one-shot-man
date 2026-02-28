@@ -11,9 +11,11 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/signal"
 	"path/filepath"
 	goruntime "runtime"
 	"sync"
+	"syscall"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/require"
@@ -76,11 +78,20 @@ func jsCallbackFactory(rt *goja.Runtime, adapter *gojaeventloop.Adapter, loop *g
 			}
 		}
 
+		// Extract optional test context (Go context.Context wrapped in goja)
+		var parentCtx context.Context
+		if testCtxVal := optsObj.Get("__testContext"); testCtxVal != nil && !goja.IsUndefined(testCtxVal) && !goja.IsNull(testCtxVal) {
+			if ctx, ctxOK := testCtxVal.Export().(context.Context); ctxOK {
+				parentCtx = ctx
+			}
+		}
+
 		cb := &mcpCallback{
-			server:  goServer,
-			adapter: adapter,
-			loop:    loop,
-			runtime: rt,
+			server:    goServer,
+			adapter:   adapter,
+			loop:      loop,
+			runtime:   rt,
+			parentCtx: parentCtx,
 		}
 
 		// Build JS object with methods and read-only property getters
@@ -123,10 +134,11 @@ func jsCallbackFactory(rt *goja.Runtime, adapter *gojaeventloop.Adapter, loop *g
 
 // mcpCallback holds the state for a disposable MCP IPC channel.
 type mcpCallback struct {
-	server  *mcp.Server
-	adapter *gojaeventloop.Adapter
-	loop    *goeventloop.Loop
-	runtime *goja.Runtime
+	server    *mcp.Server
+	adapter   *gojaeventloop.Adapter
+	loop      *goeventloop.Loop
+	runtime   *goja.Runtime
+	parentCtx context.Context // optional parent context; nil = context.Background()
 
 	mu            sync.Mutex
 	initialized   bool
@@ -136,8 +148,8 @@ type mcpCallback struct {
 	scriptPath    string
 	configPath    string
 	address       string
-	transportType string // "unix" or "tcp"
-	cancel        context.CancelFunc
+	transportType string             // "unix" or "tcp"
+	stop          context.CancelFunc // from signal.NotifyContext — cancels context AND deregisters signal handler
 }
 
 // jsInit returns the JS method: init() → Promise<void>
@@ -183,14 +195,31 @@ func (cb *mcpCallback) jsInit() func(call goja.FunctionCall) goja.Value {
 				return
 			}
 
-			// Start accept loop for MCP connections
-			ctx, cancel := context.WithCancel(context.Background())
+			// Start accept loop for MCP connections.
+			// Use signal.NotifyContext for automatic cleanup on SIGINT/SIGTERM.
+			parent := cb.parentCtx
+			if parent == nil {
+				parent = context.Background()
+			}
+			ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
 			cb.mu.Lock()
-			cb.cancel = cancel
+			cb.stop = stop
 			listener := cb.listener
 			cb.mu.Unlock()
 
 			go cb.acceptLoop(ctx, listener)
+
+			// Watch for context cancellation (signal or parent cancel) and auto-cleanup.
+			go func() {
+				<-ctx.Done()
+				cb.mu.Lock()
+				alreadyClosed := cb.closed
+				cb.closed = true
+				cb.mu.Unlock()
+				if !alreadyClosed {
+					cb.cleanup()
+				}
+			}()
 
 			// Resolve promise on event loop thread
 			if submitErr := cb.loop.Submit(func() {
@@ -412,19 +441,20 @@ func (cb *mcpCallback) jsClose() func(call goja.FunctionCall) goja.Value {
 }
 
 // cleanup tears down all resources synchronously.
+// Safe to call from signal handlers and from multiple goroutines concurrently.
 func (cb *mcpCallback) cleanup() {
 	cb.mu.Lock()
-	cancel := cb.cancel
+	stop := cb.stop
 	listener := cb.listener
 	tempDir := cb.tempDir
-	cb.cancel = nil
+	cb.stop = nil
 	cb.listener = nil
 	cb.tempDir = ""
 	cb.mu.Unlock()
 
-	// Cancel context first — stops Server.Connect() goroutines
-	if cancel != nil {
-		cancel()
+	// Stop signal notification and cancel context — stops Server.Connect() goroutines
+	if stop != nil {
+		stop()
 	}
 
 	// Close listener — stops Accept() loop

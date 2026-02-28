@@ -191,7 +191,7 @@
       "task": "T26: Implement signal-safe cleanup for mcpcallback temp resources",
       "description": "Ensure cleanup of temp directories, socket files, and temp scripts on context cancellation, SIGINT, and SIGTERM. Register cleanup on context.Done() channel. Use a finalizer or deferred cleanup pattern. The close() method must be idempotent and safe to call from signal handlers. On abnormal exit, best-effort cleanup of temp resources.",
       "acceptance": "Temp resources are cleaned up after: normal close(), context cancellation, SIGINT, SIGTERM. Test confirms cleanup occurs in each scenario. close() is safe to call multiple times.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T27: Cross-platform verification of Phase 1 modules",

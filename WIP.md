@@ -11,10 +11,10 @@
 - **Files:** 2 changed, pr_split_test.go (mock enhancement), blueprint.json (replan T6-T9)
 
 ## Current Task
-- **Last Commit:** a431c9a — Add osm:mcp native module for MCP server creation from JS (T14-T18)
-- **Pending Commit:** T20-T25 mcpcallbackmod — awaiting Rule of Two
-- **Next After Commit:** T26 — Signal-safe cleanup for mcpcallback temp resources
-- **Status:** T20-T25 implemented: mcpcallbackmod package + 19 tests pass with -race
+- **Last Commit:** 5eb0dcb — Add osm:mcpcallback module for disposable MCP IPC channels (T19-T25)
+- **Active:** T26 — Signal-safe cleanup for mcpcallback temp resources
+- **Next:** T27 — Cross-platform verification of Phase 1 modules
+- **Status:** T1-T6, T10-T25 Done (10 commits). T7/T8 superseded. T9 deferred.
 
 ## T5 Integration Test Coverage Gap Analysis
 

@@ -53,7 +53,7 @@
       "task": "T4: Investigate resolveConflictsWithClaude prompt sending failure — establish behavioral baseline",
       "description": "Trace resolveConflictsWithClaude() in internal/command/pr_split_script.js (line ~3123). It calls sendToHandle() (line ~2397) which routes through autoSplitTUI.sendWithCancel() (line ~2403-2412) when in TUI mode, or falls back to direct handle.write(). Map the complete handle lifecycle: claudeExecutor.spawn() creates handle → handle used in automatedSplit() (line ~2509) → handle passed to resolveConflictsWithClaude(). Check if claudeExecutor.handle becomes null after branch operations or after the initial classification/plan loop completes. Check sendToHandle at lines ~1691, ~2741, ~2976, ~3180 for all call sites.",
       "acceptance": "Root cause documented in WIP.md. Full handle lifecycle mapped from spawn through conflict resolution, showing where handle becomes null/undefined or where the TUI mux loses the connection. All sendToHandle call sites cataloged with their execution context.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T5: Audit existing pr_split_integration_test.go coverage gaps for auto-split flow",

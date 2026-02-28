@@ -12,8 +12,32 @@
 - **Rule of Two:** PASS (2 contiguous issue-free reviews + fitness review)
 
 ## Current Task
-- **Next:** T4 — Investigate prompt sending failure
+- **Next:** T5 — Audit integration test coverage
 - **Status:** Starting
+
+## T4 Root Cause: resolveConflictsWithClaude Prompt Sending Failure
+
+**Root Cause (CONFIRMED):** Missing null checks on `claudeExecutor.handle` at 3 of 4 `sendToHandle` call sites. The handle can become null/stale via two pathways:
+
+**Pathway 1 (Resume Path):** When resuming from cached plan (line ~2930), if `claudeExecutor.spawn()` fails (line ~2947), `sessionId`, `resultDir`, and `aliveCheckFn` remain `null` — but the pipeline continues into verify and resolve steps, calling `sendToHandle(claudeExecutor.handle, ...)` on a null handle.
+
+**Pathway 2 (Process Death):** Claude process can die mid-pipeline. `aliveCheckFn` only runs every 10 poll iterations (~5s). Between heartbeats, `sendToHandle()` sends to a dead process.
+
+**All 4 sendToHandle call sites:**
+| Line | Context | Null Guard |
+|------|---------|------------|
+| 1750 | `claudeExecutor.fix()` — conflict strategy | ✅ YES (line 1732) |
+| 2781 | `automatedSplit()` Step 3 — classification | ❌ NO |
+| 3016 | `resolveConflictsWithClaude()` — re-classify | ❌ NO |
+| 3220 | `resolveConflictsWithClaude()` — conflict prompt | ❌ NO |
+
+**Handle Lifecycle:**
+- Created: `claudeExecutor.spawn()` at line 2139 sets `this.handle = registry.spawn(...)`
+- Nullified: `close()` at line 2214 sets `this.handle = null`
+- Nullified: Post-spawn health check at line 2179 sets `this.handle = null` on immediate death
+- Cleanup: `cleanupExecutor()` at line 3312 calls `claudeExecutor.close()` → nullifies handle
+
+**Fix:** Add pre-send validation `if (!claudeExecutor || !claudeExecutor.handle) return { error: '...' }` at lines 2781, 3016, 3220 (matching the pattern at line 1732). Guard the resolve step entrance with `if (!sessionId || !claudeExecutor || !claudeExecutor.handle)` to skip conflict resolution entirely when Claude is unavailable.
 
 ## T3 Root Cause: Verification "Skip" Bug
 

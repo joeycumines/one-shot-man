@@ -184,8 +184,8 @@ test-t068: ## Run T068/T069/T070 wall-clock timeout and heartbeat tests
 	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestPrSplitCommand_ResolveConflictsWallClock|TestPrSplitCommand_ResolveConflictsWithClaudeWallClock|TestPrSplitCommand_PollForFile' ./internal/command/... 2>&1 | tail -80
 
 .PHONY: test-t072
-test-t072: ## Run T072-T075 dependency tracking and verification tests
-	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestCreateSplitPlan|TestVerifySplits_Skips|TestPrSplitCommand_FlagDefaults' ./internal/command/... 2>&1 | tail -80
+test-t072: ## Run T072-T079 dependency tracking, verification, MCP, pre-existing, and timeout propagation tests
+	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestCreateSplitPlan|TestVerifySplits_Skips|TestPrSplitCommand_FlagDefaults|TestMCPServer_ReportResolution|TestRenderConflictPrompt|TestPrSplitCommand_ResolveConflictsWithClaudePreExisting|TestPrSplitCommand_ResolveConflicts_Timeout' ./internal/command/... 2>&1 | tail -120
 
 .PHONY: commit-t068-t075
 commit-t068-t075: ## Stage and commit T068-T075 batch
@@ -195,6 +195,26 @@ commit-t068-t075: ## Stage and commit T068-T075 batch
 	git diff --staged --stat && \
 	git commit -F scratch/commit-msg-t068-t075.txt && \
 	git log --oneline -3
+
+.PHONY: commit-t076-t079
+commit-t076-t079: ## Stage and commit T076-T079 batch
+	cd $(PROJECT_ROOT) && \
+	git add internal/command/pr_split_script.js && \
+	git add internal/command/pr_split_test.go && \
+	git add internal/command/mcp.go && \
+	git add internal/command/mcp_test.go && \
+	git add internal/command/pr_split_prompt_test.go && \
+	git add -f config.mk && \
+	git add blueprint.json && \
+	git add WIP.md && \
+	git diff --staged --stat && \
+	git commit \
+		-m 'Add pre-existing failure support, thread timeouts to strategies' \
+		-m 'Add preExistingFailure field to reportResolution MCP tool schema, allowing Claude to indicate failures that exist on the base branch. resolveConflictsWithClaude records pre-existing failures without retrying or triggering re-split.' \
+		-m 'Thread resolveTimeoutMs and pollIntervalMs through resolveConflicts to strategy.fix() via a strategyOptions parameter. The claude-fix strategy now uses dynamic timeouts from the caller instead of hardcoded AUTOMATED_DEFAULTS values.' \
+		-m 'Update CONFLICT_RESOLUTION_PROMPT_TEMPLATE to document the new preExistingFailure option.' \
+		-m 'Tasks: T076, T077, T078, T079' && \
+	git log --oneline -1
 
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 endif

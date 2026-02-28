@@ -3114,6 +3114,27 @@ func TestMCPServer_ReportResolution_MissingBranch(t *testing.T) {
 	}
 }
 
+func TestMCPServer_ReportResolution_PreExistingFailure(t *testing.T) {
+	t.Parallel()
+	env := newMCPTestEnv(t, nil)
+
+	env.callTool(t, "registerSession", map[string]any{
+		"sessionId":    "resolve-preexisting",
+		"capabilities": []string{},
+	})
+
+	// preExistingFailure=true without patches, commands, or reSplit should succeed.
+	r := env.callTool(t, "reportResolution", map[string]any{
+		"sessionId":          "resolve-preexisting",
+		"branchName":         "split/pre-fail",
+		"preExistingFailure": true,
+		"preExistingDetails": "fails on main branch too",
+	})
+	if r.IsError {
+		t.Fatalf("reportResolution with preExistingFailure should succeed: %s", mcpResultText(t, r))
+	}
+}
+
 // --- sendInstruction ---
 
 func TestMCPServer_SendInstruction(t *testing.T) {

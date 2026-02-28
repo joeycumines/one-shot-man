@@ -267,6 +267,9 @@ func TestRenderConflictPrompt_Basic(t *testing.T) {
 	if !strings.Contains(result.Text, "reportResolution") {
 		t.Error("prompt should mention reportResolution MCP tool")
 	}
+	if !strings.Contains(result.Text, "preExistingFailure") {
+		t.Error("prompt should mention preExistingFailure option")
+	}
 	if !strings.Contains(result.Text, "split/01-infrastructure") {
 		t.Error("prompt should include branch name")
 	}

@@ -261,13 +261,15 @@ type mcpFilePatch struct {
 }
 
 type mcpReportResolutionInput struct {
-	SessionID        string         `json:"sessionId" jsonschema:"Session identifier"`
-	BranchName       string         `json:"branchName" jsonschema:"Branch being fixed"`
-	Patches          []mcpFilePatch `json:"patches,omitempty" jsonschema:"File content replacements"`
-	Commands         []string       `json:"commands,omitempty" jsonschema:"Commands to run for fix"`
-	ReSplitSuggested bool           `json:"reSplitSuggested,omitempty" jsonschema:"Suggest re-classification"`
-	ReSplitReason    string         `json:"reSplitReason,omitempty" jsonschema:"Why re-split is needed"`
-	Seq              int64          `json:"seq,omitempty" jsonschema:"Sequence number for idempotency (0 = no dedup)"`
+	SessionID          string         `json:"sessionId" jsonschema:"Session identifier"`
+	BranchName         string         `json:"branchName" jsonschema:"Branch being fixed"`
+	Patches            []mcpFilePatch `json:"patches,omitempty" jsonschema:"File content replacements"`
+	Commands           []string       `json:"commands,omitempty" jsonschema:"Commands to run for fix"`
+	ReSplitSuggested   bool           `json:"reSplitSuggested,omitempty" jsonschema:"Suggest re-classification"`
+	ReSplitReason      string         `json:"reSplitReason,omitempty" jsonschema:"Why re-split is needed"`
+	PreExistingFailure bool           `json:"preExistingFailure,omitempty" jsonschema:"Failure exists on main branch too (no fix needed)"`
+	PreExistingDetails string         `json:"preExistingDetails,omitempty" jsonschema:"Explanation of the pre-existing failure"`
+	Seq                int64          `json:"seq,omitempty" jsonschema:"Sequence number for idempotency (0 = no dedup)"`
 }
 
 type mcpSendInstructionInput struct {
@@ -1138,9 +1140,9 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 			result.SetError(fmt.Errorf("branchName is required"))
 			return result, nil, nil
 		}
-		if len(input.Patches) == 0 && len(input.Commands) == 0 && !input.ReSplitSuggested {
+		if len(input.Patches) == 0 && len(input.Commands) == 0 && !input.ReSplitSuggested && !input.PreExistingFailure {
 			result := &mcp.CallToolResult{}
-			result.SetError(fmt.Errorf("resolution must include patches, commands, or re-split suggestion"))
+			result.SetError(fmt.Errorf("resolution must include patches, commands, re-split suggestion, or preExistingFailure"))
 			return result, nil, nil
 		}
 		mu.Lock()
@@ -1163,10 +1165,11 @@ func newMCPServer(cm *scripting.ContextManager, goalRegistry GoalRegistry, versi
 			Type:      "resolution",
 			Timestamp: now,
 			Data: map[string]any{
-				"branchName":       input.BranchName,
-				"patchCount":       len(input.Patches),
-				"commandCount":     len(input.Commands),
-				"reSplitSuggested": input.ReSplitSuggested,
+				"branchName":         input.BranchName,
+				"patchCount":         len(input.Patches),
+				"commandCount":       len(input.Commands),
+				"reSplitSuggested":   input.ReSplitSuggested,
+				"preExistingFailure": input.PreExistingFailure,
 			},
 		})
 		mu.Unlock()

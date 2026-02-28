@@ -4254,6 +4254,289 @@ func TestPrSplitCommand_ResolveConflictsWithClaudeWallClockTimeout(t *testing.T)
 	}
 }
 
+func TestPrSplitCommand_ResolveConflicts_TimeoutPropagatedToStrategy(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on Windows — git test repo setup uses Unix commands")
+	}
+
+	dir := setupTestGitRepo(t)
+
+	// Create a branch that will fail verification.
+	cmd := exec.Command("git", "-C", dir, "checkout", "-b", "split/timeout-test")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to create branch: %s (%v)", out, err)
+	}
+	cmd = exec.Command("git", "-C", dir, "checkout", "main")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to checkout main: %s (%v)", out, err)
+	}
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Use a custom strategy that captures the options parameter passed by resolveConflicts.
+	// This proves the timeout chain: resolveConflicts options → strategy.fix() options.
+	val, err := evalJS(`(function() {
+		var capturedOptions = null;
+		var customStrategy = {
+			name: 'capture-timeout',
+			detect: function() { return true; },
+			fix: function(dir, branch, plan, verifyOutput, options) {
+				capturedOptions = options;
+				return { fixed: false, error: 'intentional fail to capture options' };
+			}
+		};
+
+		var result = globalThis.prSplit.resolveConflicts({
+			dir: '` + strings.ReplaceAll(dir, `\`, `\\`) + `',
+			splits: [
+				{ name: 'split/timeout-test', files: ['a.go'] }
+			],
+			verifyCommand: 'exit 1'
+		}, {
+			retryBudget: 1,
+			strategies: [customStrategy],
+			resolveTimeoutMs: 60000,
+			pollIntervalMs: 250
+		});
+		return JSON.stringify({
+			options: capturedOptions,
+			errors: result.errors
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		Options struct {
+			ResolveTimeoutMs float64 `json:"resolveTimeoutMs"`
+			PollIntervalMs   float64 `json:"pollIntervalMs"`
+		} `json:"options"`
+		Errors []struct {
+			Name  string `json:"name"`
+			Error string `json:"error"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("Failed to parse output: %v", err)
+	}
+
+	// Verify the custom timeout was propagated to the strategy.
+	if output.Options.ResolveTimeoutMs != 60000 {
+		t.Errorf("Expected resolveTimeoutMs=60000 in strategy options, got %v", output.Options.ResolveTimeoutMs)
+	}
+	if output.Options.PollIntervalMs != 250 {
+		t.Errorf("Expected pollIntervalMs=250 in strategy options, got %v", output.Options.PollIntervalMs)
+	}
+}
+
+func TestPrSplitCommand_ResolveConflicts_TimeoutDefaultsWhenNotProvided(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on Windows — git test repo setup uses Unix commands")
+	}
+
+	dir := setupTestGitRepo(t)
+
+	cmd := exec.Command("git", "-C", dir, "checkout", "-b", "split/default-test")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to create branch: %s (%v)", out, err)
+	}
+	cmd = exec.Command("git", "-C", dir, "checkout", "main")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to checkout main: %s (%v)", out, err)
+	}
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// When no resolveTimeoutMs is provided, strategy should receive AUTOMATED_DEFAULTS.
+	val, err := evalJS(`(function() {
+		var capturedOptions = null;
+		var customStrategy = {
+			name: 'capture-defaults',
+			detect: function() { return true; },
+			fix: function(dir, branch, plan, verifyOutput, options) {
+				capturedOptions = options;
+				return { fixed: false, error: 'intentional fail' };
+			}
+		};
+
+		var result = globalThis.prSplit.resolveConflicts({
+			dir: '` + strings.ReplaceAll(dir, `\`, `\\`) + `',
+			splits: [
+				{ name: 'split/default-test', files: ['a.go'] }
+			],
+			verifyCommand: 'exit 1'
+		}, {
+			retryBudget: 1,
+			strategies: [customStrategy]
+			// NOTE: no resolveTimeoutMs or pollIntervalMs
+		});
+		return JSON.stringify({
+			options: capturedOptions,
+			defaults: {
+				resolveTimeoutMs: globalThis.prSplit.AUTOMATED_DEFAULTS.resolveTimeoutMs,
+				pollIntervalMs: globalThis.prSplit.AUTOMATED_DEFAULTS.pollIntervalMs
+			}
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		Options struct {
+			ResolveTimeoutMs float64 `json:"resolveTimeoutMs"`
+			PollIntervalMs   float64 `json:"pollIntervalMs"`
+		} `json:"options"`
+		Defaults struct {
+			ResolveTimeoutMs float64 `json:"resolveTimeoutMs"`
+			PollIntervalMs   float64 `json:"pollIntervalMs"`
+		} `json:"defaults"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("Failed to parse output: %v", err)
+	}
+
+	// Strategy should receive AUTOMATED_DEFAULTS values when no overrides provided.
+	if output.Options.ResolveTimeoutMs != output.Defaults.ResolveTimeoutMs {
+		t.Errorf("Expected resolveTimeoutMs=%v (AUTOMATED_DEFAULTS), got %v",
+			output.Defaults.ResolveTimeoutMs, output.Options.ResolveTimeoutMs)
+	}
+	if output.Options.PollIntervalMs != output.Defaults.PollIntervalMs {
+		t.Errorf("Expected pollIntervalMs=%v (AUTOMATED_DEFAULTS), got %v",
+			output.Defaults.PollIntervalMs, output.Options.PollIntervalMs)
+	}
+}
+
+func TestPrSplitCommand_ResolveConflictsWithClaudePreExistingFailure(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Create a temp dir and write resolution.json with preExistingFailure.
+	resultDir := t.TempDir()
+	resolutionJSON := `{"preExistingFailure":true,"preExistingDetails":"fails on main too"}`
+	if err := os.WriteFile(filepath.Join(resultDir, "resolution.json"), []byte(resolutionJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mock claudeExecutor so sendToHandle can send prompts.
+	// Shadow exec.execv so the 'rm -f resolution.json' inside
+	// resolveConflictsWithClaude becomes a no-op — this lets the
+	// pre-written resolution.json survive until pollForFile reads it.
+	val, err := evalJS(`(function() {
+		var resultDir = ` + "`" + resultDir + "`" + `;
+		var sendCallCount = 0;
+		claudeExecutor = {
+			handle: {
+				send: function(text) { sendCallCount++; },
+				isAlive: function() { return true; }
+			}
+		};
+
+		// Shadow exec to no-op rm -f (preserves resolution.json on disk).
+		var _origExec = exec;
+		var execProxy = {
+			execv: function(args) {
+				if (args && args[0] === 'rm') return '';
+				return _origExec.execv(args);
+			}
+		};
+		// Copy any other properties from the original exec.
+		for (var k in _origExec) {
+			if (k !== 'execv') execProxy[k] = _origExec[k];
+		}
+		exec = execProxy;
+
+		var failures = [
+			{ branch: 'split/pre-existing', files: ['a.go'], error: 'test fail' }
+		];
+		var report = { conflicts: [], resolutions: [], claudeInteractions: 0 };
+		var result = globalThis.prSplit.resolveConflictsWithClaude(
+			failures,
+			'test-session',
+			resultDir,
+			{ resolve: 5000, wallClockMs: 30000 },
+			100,
+			3,
+			report
+		);
+
+		// Restore exec.
+		exec = _origExec;
+
+		return JSON.stringify({
+			result: result,
+			report: {
+				conflicts: report.conflicts,
+				resolutions: report.resolutions,
+				claudeInteractions: report.claudeInteractions,
+				preExistingFailures: report.preExistingFailures || []
+			},
+			sendCallCount: sendCallCount
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		Result struct {
+			ReSplitNeeded bool   `json:"reSplitNeeded"`
+			ReSplitReason string `json:"reSplitReason"`
+		} `json:"result"`
+		Report struct {
+			Conflicts           []interface{} `json:"conflicts"`
+			Resolutions         []interface{} `json:"resolutions"`
+			ClaudeInteractions  int           `json:"claudeInteractions"`
+			PreExistingFailures []struct {
+				Branch  string `json:"branch"`
+				Details string `json:"details"`
+			} `json:"preExistingFailures"`
+		} `json:"report"`
+		SendCallCount int `json:"sendCallCount"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("Failed to parse output: %v", err)
+	}
+
+	// 1. reSplitNeeded should be false — pre-existing failure doesn't trigger re-split.
+	if output.Result.ReSplitNeeded {
+		t.Error("Expected reSplitNeeded=false for pre-existing failure")
+	}
+
+	// 2. Only 1 attempt (no retry) — sendCallCount should be 2 (text + Enter).
+	if output.SendCallCount != 2 {
+		t.Errorf("Expected 2 send calls (text + Enter), got %d", output.SendCallCount)
+	}
+
+	// 3. Only 1 conflict recorded (1 attempt, not 3).
+	if len(output.Report.Conflicts) != 1 {
+		t.Errorf("Expected 1 conflict (no retry), got %d", len(output.Report.Conflicts))
+	}
+
+	// 4. report.preExistingFailures contains the branch.
+	if len(output.Report.PreExistingFailures) != 1 {
+		t.Fatalf("Expected 1 pre-existing failure, got %d", len(output.Report.PreExistingFailures))
+	}
+	pef := output.Report.PreExistingFailures[0]
+	if pef.Branch != "split/pre-existing" {
+		t.Errorf("Expected branch 'split/pre-existing', got %q", pef.Branch)
+	}
+	if pef.Details != "fails on main too" {
+		t.Errorf("Expected details 'fails on main too', got %q", pef.Details)
+	}
+
+	// 5. 1 Claude interaction.
+	if output.Report.ClaudeInteractions != 1 {
+		t.Errorf("Expected 1 Claude interaction, got %d", output.Report.ClaudeInteractions)
+	}
+}
+
 func TestPrSplitCommand_DefaultRetryBudget(t *testing.T) {
 	t.Parallel()
 

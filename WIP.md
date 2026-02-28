@@ -64,10 +64,10 @@ Rewrote blueprint.json from scratch. Preserved 3 representative Done tasks. Adde
 - **Zero failures across all termmux packages**
 
 ## Immediate Next Steps
-1. COMMIT T068-T075 batch via Rule of Two gate
-2. T076: Add 'pre-existing failure' outcome to reportResolution MCP tool schema
-3. T077: Handle preExistingFailure in resolution processing
-4. T078-T079: Timeout propagation to claude-fix strategy
+1. COMMIT T076-T079 batch via Rule of Two gate
+2. T080: Make sendToHandle() Enter delay configurable
+3. T081: Add EAGAIN awareness to sendToHandle() fallback path
+4. T082: Implement per-branch retry budget in resolveConflicts()
 
 ## Completed This Session
 - T067: Baseline tests documented
@@ -78,4 +78,9 @@ Rewrote blueprint.json from scratch. Preserved 3 representative Done tasks. Adde
 - T072: Dependency tracking in createSplitPlan() — dependencies field on each split
 - T073: verifySplits() skips branches when upstream dependencies fail — failedBranches set
 - T074: automatedSplit() separates skipped from real failures, report.skippedDueToDepFailure
+- T075: Default verifyCommand changed from 'make test' to 'make'
+- T076: reportResolution MCP tool accepts preExistingFailure (mcp.go + prompt)
+- T077: resolveConflictsWithClaude handles preExistingFailure — no retry, report.preExistingFailures
+- T078: Verified timeout propagation chain, identified claude-fix gap
+- T079: claude-fix strategy.fix() now accepts options.resolveTimeoutMs, threaded from resolveConflicts()
 - T075: Default verifyCommand changed from 'make test' to 'make' (Go + JS)

@@ -127,28 +127,28 @@
       "task": "Add 'pre-existing failure' outcome to reportResolution MCP tool schema",
       "description": "The reportResolution MCP tool (referenced in conflict prompt at pr_split_script.js:2016) currently requires patches, commands, or re-split suggestion — it cannot express 'this failure exists on main too'. Find the MCP tool definition (likely in internal/builtin/claudemux/ or generated MCP config). Add an optional field `preExistingFailure: boolean` with an optional `preExistingDetails: string`. When preExistingFailure is true, the tool should NOT require patches/commands/re-split. Update renderConflictPrompt() to mention this option in the prompt text.",
       "acceptance": "The MCP tool schema validation accepts a reportResolution call with { preExistingFailure: true, preExistingDetails: 'fails on main branch too' } and no patches. Unit test TestReportResolution_PreExistingFailure validates this path. The conflict prompt rendered by renderConflictPrompt() includes text explaining this option.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T077",
       "task": "Handle preExistingFailure in resolution processing",
       "description": "In resolveConflictsWithClaude() at pr_split_script.js:~2785 after parsing resolution from pollForFile, add handling for resolution.preExistingFailure: if true, mark the branch as 'pre-existing-failure' (not a real failure needing fix), add to report as { branch: name, preExisting: true, details: resolution.preExistingDetails }, and do NOT count it toward retry budget or suggest re-split. The branch remains in its current state.",
       "acceptance": "TestResolveConflictsWithClaude_PreExistingFailure mocks a resolution file with preExistingFailure=true and verifies: (1) no retry is attempted, (2) the branch is reported with preExisting flag, (3) reSplitNeeded is not triggered by this branch alone.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T078",
       "task": "Verify Go --timeout flag propagation to AUTOMATED_DEFAULTS overrides",
       "description": "pr_split.go:221 passes timeoutMs to JS. The interactive REPL at pr_split_script.js:4354-4357 propagates it to autoConfig when timeoutMs > 0. BUT: automatedSplit() at line 2262-2264 uses `config.*TimeoutMs || AUTOMATED_DEFAULTS.*TimeoutMs` — the JS `||` operator treats 0 as falsy, so a 0ms timeout would fall through to defaults (which is correct since Go sends 0 when unset). However, the REPL path only sets classify/plan/resolve — it does NOT propagate to the claude-fix strategy's internal pollForFile calls, which hardcode AUTOMATED_DEFAULTS.resolveTimeoutMs at pr_split_script.js:1598. Fix: the claude-fix strategy's fix() function should accept a resolveTimeoutMs parameter and thread it from resolveConflicts(). Add a test confirming end-to-end propagation.",
       "acceptance": "TestTimeoutPropagation_ClaudeFixStrategy sets --timeout 3m (180000ms) and traces that the claude-fix strategy's pollForFile call uses 180000ms, not the default 1800000ms. The test uses loadPrSplitEngineWithEval() to set prSplitConfig.timeoutMs and inspect AUTOMATED_DEFAULTS override behavior.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T079",
       "task": "Thread timeout through AUTO_FIX_STRATEGIES claude-fix strategy",
       "description": "The claude-fix strategy at pr_split_script.js:~1570-1600 hardcodes AUTOMATED_DEFAULTS.resolveTimeoutMs and AUTOMATED_DEFAULTS.pollIntervalMs in its pollForFile() call. Modify resolveConflicts() to pass timeouts through to strategy fix() calls: add a 5th parameter to the fix() signature: `options` containing { resolveTimeoutMs, pollIntervalMs }. Update the claude-fix strategy's fix() to use options.resolveTimeoutMs when available, falling back to AUTOMATED_DEFAULTS.resolveTimeoutMs. Other strategies don't call pollForFile so they ignore the options parameter.",
       "acceptance": "TestResolveConflicts_TimeoutPropagatedToClaudeFix verifies that when resolveConflicts is called with options.resolveTimeoutMs = 60000, the claude-fix strategy's pollForFile uses 60000ms. Mock pollForFile to capture its timeout argument.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T080",

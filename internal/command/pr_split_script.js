@@ -1589,10 +1589,16 @@ var AUTO_FIX_STRATEGIES = [
             return !!(claudeExecutor && claudeExecutor.handle && claudeExecutor.isAvailable());
         },
         // Fix: send verification error to Claude for analysis and patching.
-        fix: function(dir, failedBranch, plan, verifyOutput) {
+        // The 5th parameter `options` carries dynamic timeouts:
+        //   options.resolveTimeoutMs: per-poll timeout (from --timeout or AUTOMATED_DEFAULTS)
+        //   options.pollIntervalMs: poll interval
+        fix: function(dir, failedBranch, plan, verifyOutput, options) {
             if (!claudeExecutor || !claudeExecutor.handle) {
                 return { fixed: false, error: 'Claude executor not available' };
             }
+            options = options || {};
+            var resolveTimeoutMs = options.resolveTimeoutMs || AUTOMATED_DEFAULTS.resolveTimeoutMs;
+            var pollIntervalMs = options.pollIntervalMs || AUTOMATED_DEFAULTS.pollIntervalMs;
             var promptResult = renderConflictPrompt({
                 branchName: failedBranch,
                 files: plan ? plan.splits.filter(function(s) { return s.name === failedBranch; }).reduce(function(acc, s) { return acc.concat(s.files); }, []) : [],
@@ -1616,7 +1622,7 @@ var AUTO_FIX_STRATEGIES = [
             // Delete old resolution file.
             try { exec.execv(['rm', '-f', resultDir + '/resolution.json']); } catch (e) { /* ignore */ }
             var resolutionPoll = pollForFile(resultDir, 'resolution.json',
-                AUTOMATED_DEFAULTS.resolveTimeoutMs, AUTOMATED_DEFAULTS.pollIntervalMs);
+                resolveTimeoutMs, pollIntervalMs);
             if (resolutionPoll.error) {
                 return { fixed: false, error: 'Claude resolution timeout: ' + resolutionPoll.error };
             }
@@ -1670,6 +1676,12 @@ function resolveConflicts(plan, options) {
     var retryBudget = typeof options.retryBudget === 'number' ? options.retryBudget : (typeof runtime.retryBudget === 'number' ? runtime.retryBudget : 3);
     var strategies = options.strategies || AUTO_FIX_STRATEGIES;
     var totalRetries = 0;
+
+    // Timeout options forwarded to strategies (e.g., claude-fix).
+    var strategyOptions = {
+        resolveTimeoutMs: options.resolveTimeoutMs || AUTOMATED_DEFAULTS.resolveTimeoutMs,
+        pollIntervalMs: options.pollIntervalMs || AUTOMATED_DEFAULTS.pollIntervalMs
+    };
 
     // Wall-clock timeout: cap total elapsed time regardless of retry budget.
     var wallClockTimeoutMs = typeof options.wallClockTimeoutMs === 'number'
@@ -1738,7 +1750,7 @@ function resolveConflicts(plan, options) {
             }
 
             totalRetries++;
-            var fixResult = strategy.fix(dir, split.name, plan, verifyOutput);
+            var fixResult = strategy.fix(dir, split.name, plan, verifyOutput, strategyOptions);
             if (!fixResult.fixed) {
                 continue;
             }
@@ -2060,7 +2072,9 @@ var CONFLICT_RESOLUTION_PROMPT_TEMPLATE =
     '- File patches (full file content replacements)\n' +
     '- Commands to run (e.g., `go mod tidy`)\n' +
     '- If the split is fundamentally broken, set `reSplitSuggested: true` ' +
-    'with a reason explaining which files conflict\n';
+    'with a reason explaining which files conflict\n' +
+    '- If this failure also exists on the base branch (pre-existing), set ' +
+    '`preExistingFailure: true` with `preExistingDetails` explaining the issue\n';
 
 // ---------------------------------------------------------------------------
 //  Prompt Rendering
@@ -2874,6 +2888,20 @@ function resolveConflictsWithClaude(failures, sessionId, resultDir, timeouts, po
 
             var resolution = resolutionPoll.data;
             report.resolutions.push(resolution);
+
+            // Pre-existing failure: the failure exists on the base branch too.
+            // Mark as handled (no retry, no re-split) and record in report.
+            if (resolution.preExistingFailure) {
+                report.preExistingFailures = report.preExistingFailures || [];
+                report.preExistingFailures.push({
+                    branch: fail.branch || fail.name,
+                    details: resolution.preExistingDetails || ''
+                });
+                fixed = true;
+                output.print('[auto-split] Pre-existing failure: ' + (fail.branch || fail.name) +
+                    (resolution.preExistingDetails ? ' (' + resolution.preExistingDetails + ')' : ''));
+                break;
+            }
 
             // Check if re-split is suggested.
             if (resolution.reSplitSuggested) {

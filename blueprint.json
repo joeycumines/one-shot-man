@@ -245,7 +245,7 @@
       "task": "T35: Wire automatedSplit() to use osm:mcpcallback instead of pollForFile",
       "description": "This is the critical integration task. Modify automatedSplit() in internal/command/pr_split_script.js (line ~2509) to use the osm:mcpcallback IPC mechanism instead of pollForFile. Replace: (1) classification.json polling (line ~2759) with synchronous mcpcallback tool invocation, (2) split-plan.json polling (line ~2793) with synchronous mcpcallback, (3) resolution.json polling (lines ~1702, ~3191) with mcpcallback, (4) re-classification polling (line ~2984) with mcpcallback. The MCPCallback object must be created, initialized, and closed properly within the automatedSplit lifecycle.",
       "acceptance": "automatedSplit() uses osm:mcpcallback for all classification, plan, and resolution communication. Zero pollForFile calls remain in the auto-split pipeline. The MCPCallback object is properly initialized at pipeline start and closed at pipeline end (including error paths). Integration tests from Phase 0 still pass with the new IPC.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T36: Update all existing tests for new classification structure",

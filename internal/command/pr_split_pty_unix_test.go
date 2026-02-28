@@ -198,7 +198,7 @@ read -t 30 FIRST_LINE || true
 # Write a minimal classification — maps all files to "feature".
 if [ -n "$RESULT_DIR" ]; then
   mkdir -p "$RESULT_DIR"
-  echo '{"pkg/auth/auth.go":"auth","pkg/auth/auth_test.go":"auth","pkg/core/config.go":"core","pkg/core/config_test.go":"core","internal/util/numbers.go":"util","internal/util/numbers_test.go":"util","docs/api-reference.md":"docs","Makefile":"infra"}' > "$RESULT_DIR/classification.json"
+  echo '[{"name":"auth","description":"Add authentication module","files":["pkg/auth/auth.go","pkg/auth/auth_test.go"]},{"name":"core","description":"Add core configuration","files":["pkg/core/config.go","pkg/core/config_test.go"]},{"name":"util","description":"Add utility functions","files":["internal/util/numbers.go","internal/util/numbers_test.go"]},{"name":"docs","description":"Update API documentation","files":["docs/api-reference.md"]},{"name":"infra","description":"Update build infrastructure","files":["Makefile"]}]' > "$RESULT_DIR/classification.json"
 fi
 
 # Stay alive until killed (Claude Code stays running).

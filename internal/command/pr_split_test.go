@@ -8833,9 +8833,9 @@ func TestAutoSplit_SaveAndResume(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Pre-write classification.json.
-	classJSON, _ := json.Marshal(map[string]string{
-		"pkg/impl.go": "api",
-		"cmd/run.go":  "cli",
+	classJSON, _ := json.Marshal([]map[string]any{
+		{"name": "api", "description": "Add API implementation", "files": []string{"pkg/impl.go"}},
+		{"name": "cli", "description": "Add CLI runner", "files": []string{"cmd/run.go"}},
 	})
 	if err := os.WriteFile(filepath.Join(tp.ResultDir, "classification.json"), classJSON, 0o644); err != nil {
 		t.Fatal(err)
@@ -9043,9 +9043,9 @@ func TestAutoSplit_CrashRecovery_AfterExecute(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Pre-write classification.json.
-	classJSON, _ := json.Marshal(map[string]string{
-		"pkg/impl.go": "api",
-		"cmd/run.go":  "cli",
+	classJSON, _ := json.Marshal([]map[string]any{
+		{"name": "api", "description": "Add API implementation", "files": []string{"pkg/impl.go"}},
+		{"name": "cli", "description": "Add CLI runner", "files": []string{"cmd/run.go"}},
 	})
 	if err := os.WriteFile(filepath.Join(tp.ResultDir, "classification.json"), classJSON, 0o644); err != nil {
 		t.Fatal(err)
@@ -9264,15 +9264,16 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Pre-write classification.json — Claude's classification of changed files.
-	classification := map[string]string{
-		"pkg/handler.go":         "api",
-		"pkg/types.go":           "api",
-		"cmd/serve.go":           "cli",
-		"cmd/main.go":            "cli",
-		"internal/db/migrate.go": "database",
-		"internal/db/conn.go":    "database",
-		"docs/README.md":         "documentation",
-		"docs/api.md":            "documentation",
+	type classCategory struct {
+		Name        string   `json:"name"`
+		Description string   `json:"description"`
+		Files       []string `json:"files"`
+	}
+	classification := []classCategory{
+		{Name: "api", Description: "Add API handler and type definitions", Files: []string{"pkg/handler.go", "pkg/types.go"}},
+		{Name: "cli", Description: "Add serve subcommand to CLI", Files: []string{"cmd/serve.go", "cmd/main.go"}},
+		{Name: "database", Description: "Add database migration and connection", Files: []string{"internal/db/migrate.go", "internal/db/conn.go"}},
+		{Name: "documentation", Description: "Update project documentation", Files: []string{"docs/README.md", "docs/api.md"}},
 	}
 	classJSON, err := json.Marshal(classification)
 	if err != nil {
@@ -9385,8 +9386,12 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 				ElapsedMs int    `json:"elapsedMs"`
 				Error     string `json:"error"`
 			} `json:"steps"`
-			Classification map[string]string `json:"classification"`
-			Plan           struct {
+			Classification []struct {
+				Name        string   `json:"name"`
+				Description string   `json:"description"`
+				Files       []string `json:"files"`
+			} `json:"classification"`
+			Plan struct {
 				Splits []struct {
 					Name  string   `json:"name"`
 					Files []string `json:"files"`
@@ -9462,12 +9467,20 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 	}
 
 	// Verify classification matches what we provided.
-	if report.Report.Classification == nil {
+	if len(report.Report.Classification) == 0 {
 		t.Fatal("expected classification in report")
 	}
-	if report.Report.Classification["pkg/handler.go"] != "api" {
-		t.Errorf("expected pkg/handler.go classified as 'api', got %q",
-			report.Report.Classification["pkg/handler.go"])
+	foundAPI := false
+	for _, cat := range report.Report.Classification {
+		if cat.Name == "api" {
+			foundAPI = true
+			if len(cat.Files) == 0 {
+				t.Error("api category has no files")
+			}
+		}
+	}
+	if !foundAPI {
+		t.Error("expected 'api' category in classification")
 	}
 
 	// Verify plan has 4 splits.
@@ -9599,9 +9612,9 @@ func TestAutoSplit_AllStepsReportTiming(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Pre-write classification.json so Receive classification succeeds.
-	classJSON, _ := json.Marshal(map[string]string{
-		"pkg/impl.go": "api",
-		"cmd/run.go":  "cli",
+	classJSON, _ := json.Marshal([]map[string]any{
+		{"name": "api", "description": "Add API implementation", "files": []string{"pkg/impl.go"}},
+		{"name": "cli", "description": "Add CLI runner", "files": []string{"cmd/run.go"}},
 	})
 	if err := os.WriteFile(filepath.Join(tp.ResultDir, "classification.json"), classJSON, 0o644); err != nil {
 		t.Fatal(err)
@@ -10302,10 +10315,10 @@ func TestAutoSplit_CleanupOnFailure(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Pre-write classification.json.
-	classification := map[string]string{
-		"pkg/impl.go":   "api",
-		"cmd/run.go":    "cli",
-		"docs/guide.md": "docs",
+	classification := []map[string]any{
+		{"name": "api", "description": "Add API implementation", "files": []string{"pkg/impl.go"}},
+		{"name": "cli", "description": "Add CLI runner", "files": []string{"cmd/run.go"}},
+		{"name": "docs", "description": "Update documentation", "files": []string{"docs/guide.md"}},
 	}
 	classJSON, _ := json.Marshal(classification)
 	if err := os.WriteFile(filepath.Join(tp.ResultDir, "classification.json"), classJSON, 0o644); err != nil {
@@ -10459,10 +10472,10 @@ func TestAutoSplit_CleanupOnFailure_Disabled(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Pre-write files.
-	classification := map[string]string{
-		"pkg/impl.go":   "api",
-		"cmd/run.go":    "cli",
-		"docs/guide.md": "docs",
+	classification := []map[string]any{
+		{"name": "api", "description": "Add API implementation", "files": []string{"pkg/impl.go"}},
+		{"name": "cli", "description": "Add CLI runner", "files": []string{"cmd/run.go"}},
+		{"name": "docs", "description": "Update documentation", "files": []string{"docs/guide.md"}},
 	}
 	classJSON, _ := json.Marshal(classification)
 	if err := os.WriteFile(filepath.Join(tp.ResultDir, "classification.json"), classJSON, 0o644); err != nil {

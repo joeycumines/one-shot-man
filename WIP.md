@@ -6,16 +6,15 @@
 - **Phase:** EXECUTING — T1-T88 in sequence
 
 ## Last Commit
-- **Hash:** 4b68e2b
-- **Subject:** Enhance mock ClaudeCodeExecutor with prompt capture and assertions
-- **Files:** 2 changed, pr_split_test.go (mock enhancement), blueprint.json (replan T6-T9)
+- **Hash:** 2dccbc6
+- **Subject:** feat(mcpcallback): add Go-native tool registration and wire automatedSplit IPC
+- **Files:** 3 changed — mcpcallback.go, mcpcallback_test.go, pr_split_script.js
 
 ## Current Task
-- **Last Commit:** 6c9c599 — Add signal-safe cleanup for mcpcallback temp resources (T26)
-- **Pending Commit:** T28-T34 (Phase 2 classification schema changes) — awaiting Rule of Two
-- **Active:** Building + verifying before commit
-- **Next:** T35 — Wire automatedSplit() to use osm:mcpcallback
-- **Status:** Phase 2 (Classification Schema) T28-T34 complete. 11 commits total, 12th pending.
+- **Last Commit:** 2dccbc6 — T35: Wire automatedSplit() to use osm:mcpcallback IPC 
+- **Active:** T36 — Update all existing tests for new classification structure
+- **Next:** T36 — Update all existing tests for new classification structure
+- **Status:** Phase 2 classification schema COMPLETE (T28-T34). 12 commits total.
 
 ## T28 Design: Unified Category Classification Schema
 

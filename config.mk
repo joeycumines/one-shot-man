@@ -184,8 +184,8 @@ test-t068: ## Run T068/T069/T070 wall-clock timeout and heartbeat tests
 	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestPrSplitCommand_ResolveConflictsWallClock|TestPrSplitCommand_ResolveConflictsWithClaudeWallClock|TestPrSplitCommand_PollForFile' ./internal/command/... 2>&1 | tail -80
 
 .PHONY: test-t072
-test-t072: ## Run T072-T096 tests: dependency, verification, MCP, timeout, sendToHandle, EAGAIN, retry, type-change, aliveCheckFn, auto-detect, resume, crash-recovery
-	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestCreateSplitPlan|TestVerifySplits_Skips|TestVerifySplits_PerBranch|TestPrSplitCommand_FlagDefaults|TestPrSplitCommand_VerifyTimeout|TestMCPServer_ReportResolution|TestRenderConflictPrompt|TestPrSplitCommand_ResolveConflictsWithClaude|TestPrSplitCommand_ResolveConflicts_Timeout|TestPrSplitCommand_SendToHandle|TestPrSplitCommand_SetSendEnterDelay|TestPrSplitCommand_ResolveConflicts_PerBranch|TestPrSplitCommand_ResolveConflicts_AliveCheck|TestExecuteSplit_TypeChange|TestPrSplitCommand_ClaudeAutoDetect|TestAutoSplit_SaveAndResume|TestAutoSplit_CrashRecovery|TestPrSplitCommand_ResumeFlag' ./internal/command/... 2>&1 | tail -200
+test-t072: ## Run T072-T105 tests: dependency, verification, MCP, timeout, sendToHandle, EAGAIN, retry, type-change, aliveCheckFn, auto-detect, resume, crash-recovery, conversation persistence, verify TUI output, progress feedback, branch restore, cancellation
+	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestCreateSplitPlan|TestVerifySplits_Skips|TestVerifySplits_PerBranch|TestPrSplitCommand_FlagDefaults|TestPrSplitCommand_VerifyTimeout|TestMCPServer_ReportResolution|TestRenderConflictPrompt|TestPrSplitCommand_ResolveConflictsWithClaude|TestPrSplitCommand_ResolveConflicts_Timeout|TestPrSplitCommand_SendToHandle|TestPrSplitCommand_SetSendEnterDelay|TestPrSplitCommand_ResolveConflicts_PerBranch|TestPrSplitCommand_ResolveConflicts_AliveCheck|TestExecuteSplit_TypeChange|TestPrSplitCommand_ClaudeAutoDetect|TestAutoSplit_SaveAndResume|TestAutoSplit_CrashRecovery|TestPrSplitCommand_ResumeFlag|TestSessionPersistence_ConversationHistory|TestVerifySplit_TUIOutput|TestExecuteSplit_ProgressFeedback|TestResolveConflicts_RestoresBranchOnError|TestResolveConflicts_CancellationDuringStrategyLoop|TestExecuteSplit_CancellationMidFile' ./internal/command/... 2>&1 | tail -200
 
 .PHONY: commit-t068-t075
 commit-t068-t075: ## Stage and commit T068-T075 batch
@@ -281,6 +281,16 @@ commit-t093-t096: ## Stage and commit T093-T096 batch (auto-detect, resume, chec
 	git add WIP.md && \
 	git diff --staged --stat && \
 	git commit -F scratch/commit-msg-t093-t096.txt && \
+	git log --oneline -3
+
+.PHONY: commit-t097-t105
+commit-t097-t105: ## Stage and commit T097-T105 batch (callbacks, cancellation, persistence)
+	cd $(PROJECT_ROOT) && \
+	git add internal/command/pr_split_script.js && \
+	git add internal/command/pr_split_test.go && \
+	git add -f config.mk && \
+	git diff --staged --stat && \
+	git commit -F scratch/commit-msg-t097-t105.txt && \
 	git log --oneline -3
 
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`

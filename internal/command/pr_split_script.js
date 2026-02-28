@@ -966,9 +966,11 @@ function loadPlan(path) {
 //  Execution
 // ---------------------------------------------------------------------------
 
-function executeSplit(plan) {
+function executeSplit(plan, options) {
+    options = options || {};
     var dir = plan.dir || '.';
     var results = [];
+    var progressFn = options.progressFn || null;
 
     var validation = validatePlan(plan);
     if (!validation.valid) {
@@ -1012,6 +1014,11 @@ function executeSplit(plan) {
         var split = plan.splits[i];
         var splitResult = { name: split.name, files: split.files, sha: '', error: null };
 
+        // T099: Sub-step progress feedback.
+        if (progressFn) {
+            progressFn('Creating branch ' + (i + 1) + '/' + plan.splits.length + ': ' + split.name);
+        }
+
         var co = gitExec(dir, ['checkout', currentBase]);
         if (co.code !== 0) {
             splitResult.error = 'checkout ' + currentBase + ' failed: ' + co.stderr.trim();
@@ -1029,8 +1036,21 @@ function executeSplit(plan) {
         }
 
         for (var j = 0; j < split.files.length; j++) {
+            // T105: Cancellation check inside per-file loop.
+            if (isCancelled()) {
+                splitResult.error = 'cancelled by user after ' + j + ' of ' + split.files.length + ' files in ' + split.name;
+                results.push(splitResult);
+                gitExec(dir, ['checkout', restoreBranch]);
+                return { error: splitResult.error, results: results };
+            }
+
             var file = split.files[j];
             var status = fileStatuses[file];
+
+            // T099: Per-file progress for large branches.
+            if (progressFn && split.files.length > 5) {
+                progressFn('  ' + split.name + ': file ' + (j + 1) + '/' + split.files.length);
+            }
 
             if (!status) {
                 splitResult.error = 'file "' + file + '" has no entry in plan.fileStatuses — '
@@ -1095,6 +1115,12 @@ function executeSplit(plan) {
         splitResult.sha = sha.code === 0 ? sha.stdout.trim() : '';
 
         results.push(splitResult);
+
+        // T099: Post-commit success feedback.
+        if (progressFn) {
+            progressFn('Branch ' + (i + 1) + '/' + plan.splits.length + ' created: ' + split.name);
+        }
+
         currentBase = split.name;
     }
 
@@ -1111,6 +1137,7 @@ function verifySplit(branchName, config) {
     var dir = config.dir || '.';
     var command = config.verifyCommand || runtime.verifyCommand;
     var timeoutMs = config.verifyTimeoutMs || 0;
+    var outputFn = config.outputFn || null;
 
     var co = gitExec(dir, ['checkout', branchName]);
     if (co.code !== 0) {
@@ -1134,6 +1161,17 @@ function verifySplit(branchName, config) {
 
     var result = exec.execv(['sh', '-c', shellCmd]);
     var elapsedMs = Date.now() - startMs;
+
+    // Emit verification output line-by-line via outputFn (T098).
+    if (outputFn) {
+        var combined = (result.stdout || '') + (result.stderr || '');
+        var lines = combined.split('\n');
+        for (var li = 0; li < lines.length; li++) {
+            if (lines[li]) {
+                outputFn('  [verify ' + branchName + '] ' + lines[li]);
+            }
+        }
+    }
 
     // Detect timeout: exit code 124 from `timeout` utility, or elapsed time exceeded.
     if (timeoutMs > 0 && (result.code === 124 || elapsedMs >= timeoutMs)) {
@@ -1195,7 +1233,8 @@ function verifySplits(plan, options) {
         var result = verifySplit(split.name, {
             dir: dir,
             verifyCommand: plan.verifyCommand,
-            verifyTimeoutMs: verifyTimeoutMs
+            verifyTimeoutMs: verifyTimeoutMs,
+            outputFn: options.outputFn || null
         });
         results.push(result);
         if (!result.passed) {
@@ -1747,6 +1786,17 @@ function resolveConflicts(plan, options) {
     var reSplitFiles = [];
 
     for (var i = 0; i < plan.splits.length; i++) {
+        // T104: Cancellation check at top of outer splits loop.
+        if (isCancelled()) {
+            gitExec(dir, ['checkout', restoreBranch]);
+            return {
+                fixed: fixed, errors: errorsOut,
+                totalRetries: totalRetries, branchRetries: branchRetries,
+                reSplitNeeded: reSplitNeeded, reSplitFiles: reSplitFiles,
+                reSplitReason: '', cancelledByUser: true
+            };
+        }
+
         // Wall-clock deadline check.
         var elapsed = Date.now() - (deadline - wallClockTimeoutMs);
         if (Date.now() >= deadline) {
@@ -1793,11 +1843,19 @@ function resolveConflicts(plan, options) {
             if (Date.now() >= deadline) {
                 break;
             }
+            // T104: Cancellation check inside strategy retry loop.
+            if (isCancelled()) {
+                break;
+            }
 
             var madeProgress = false;
             for (var s = 0; s < strategies.length && branchRetries[split.name] < perBranchRetryBudget && totalRetries < retryBudget; s++) {
                 // Wall-clock deadline check inside strategy loop.
                 if (Date.now() >= deadline) {
+                    break;
+                }
+                // T104: Cancellation check before each strategy attempt.
+                if (isCancelled()) {
                     break;
                 }
                 var strategy = strategies[s];
@@ -2756,7 +2814,9 @@ function automatedSplit(config) {
             return { error: null, dryRun: true };
         }
         updateDetail('Execute split plan', plan.splits.length + ' branches to create...');
-        var result = executeSplit(plan);
+        var result = executeSplit(plan, {
+            progressFn: function(msg) { updateDetail('Execute split plan', msg); }
+        });
         if (result.error) {
             return { error: result.error };
         }
@@ -2820,7 +2880,8 @@ function automatedSplit(config) {
     var verifyResult = step('Verify splits', function() {
         updateDetail('Verify splits', 'Running tree hash verification...');
         var verifyObj = verifySplits(plan, {
-            verifyTimeoutMs: config.verifyTimeoutMs || AUTOMATED_DEFAULTS.verifyTimeoutMs
+            verifyTimeoutMs: config.verifyTimeoutMs || AUTOMATED_DEFAULTS.verifyTimeoutMs,
+            outputFn: emitOutput
         });
         var realFailures = [];
         var skippedResults = [];

@@ -211,6 +211,192 @@ ScriptingCommand.Execute()
 
 ### Future-Proofing
 If new stdout writes are introduced during init in the future, this design decision establishes the precedent: **all diagnostic/warning/error output during initialization goes to stderr**. The engine's stdout is reserved for user-controlled output only.
+
+## T14 Design: osm:mcp Module API
+
+### JavaScript API Surface
+
+```javascript
+const mcp = require('osm:mcp');
+
+// 1. Create server
+const server = mcp.createServer('my-server', '1.0.0');
+
+// 2. Register tools (before run())
+server.addTool({
+  name: 'greet',
+  description: 'Greet a user',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      name: { type: 'string', description: 'Name to greet' }
+    },
+    required: ['name']
+  }
+}, async (input) => {
+  // input.name is already parsed from JSON
+  return { text: `Hello, ${input.name}!` };
+});
+
+// 3. Start serving (blocking — returns Promise)
+await server.run('stdio');  // binds to process stdin/stdout
+
+// 4. Close (graceful shutdown)
+server.close();
+```
+
+### Type Signatures
+
+```typescript
+// Module export
+interface MCPModule {
+  createServer(name: string, version: string): MCPServer;
+}
+
+// Server object
+interface MCPServer {
+  // Register a tool. Must be called before run().
+  addTool(toolDef: ToolDefinition, handler: ToolHandler): void;
+
+  // Start serving on the given transport. Blocks (returns Promise).
+  // transport: 'stdio' (reads stdin, writes stdout)
+  run(transport: 'stdio'): Promise<void>;
+
+  // Stop the server gracefully. Resolves the run() promise.
+  close(): void;
+}
+
+interface ToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: JSONSchema;         // JSON Schema object
+}
+
+// Handler receives parsed input, returns result
+type ToolHandler = (input: Record<string, any>) => Promise<ToolResult> | ToolResult;
+
+interface ToolResult {
+  text?: string;                   // Text content response
+  error?: string;                  // Error message (mutually exclusive with text)
+  isError?: boolean;               // Explicit error flag
+}
+```
+
+### Method Lifecycle
+
+```
+createServer()  ─→  addTool() (N times)  ─→  run('stdio')  ─→  [serving]  ─→  close()
+     │                    │                       │                              │
+     │                    │                       │                              │
+  Creates Go             Builds                  Creates                    Cancels ctx,
+  mcp.Server             tool list               StdioTransport,            terminates
+  with name/ver          (stored,                calls server.Run()         server.Run()
+                         not yet                  in background
+                         registered)              goroutine. Returns
+                                                  Promise.
+```
+
+### Event Loop Integration
+
+**Problem:** MCP tool handlers are called from Go's HTTP/transport goroutine, but JS callbacks MUST run on the event loop thread (goja.Runtime is not thread-safe).
+
+**Solution:** Use `adapter.JS().NewChainedPromise()` with `adapter.Loop().Submit()`:
+
+```
+MCP client calls tool
+  → Go mcp.AddTool handler invoked (on MCP goroutine)
+    → handler creates Go channel for response
+    → adapter.Loop().Submit(func() {
+        // Now on event loop thread — safe to call JS
+        jsResult := jsHandler(input)
+        // If async: jsResult is a Promise → chain .then()
+        // Send result back via channel
+      })
+    → Block on channel (with timeout)
+    → Return *mcp.CallToolResult to MCP
+```
+
+For async JS handlers (returning Promise):
+```
+adapter.Loop().Submit(func() {
+  promise := jsHandler(input)
+  if isPromise(promise) {
+    // Use adapter to chain .then() / .catch()
+    promise.then(func(value) { resultChan <- value })
+    promise.catch(func(err) { errorChan <- err })
+  } else {
+    resultChan <- promise  // synchronous result
+  }
+})
+```
+
+### Error Handling Semantics
+
+| JS Handler Returns | MCP Result |
+|---|---|
+| `{ text: 'hello' }` | `CallToolResult{Content: [TextContent{Text: "hello"}]}` |
+| `{ error: 'bad input' }` | `CallToolResult` with `.SetError()` |
+| `{ isError: true, text: 'failed' }` | `CallToolResult{IsError: true, Content: [TextContent{Text: "failed"}]}` |
+| throws/rejects | `CallToolResult` with `.SetError()` |
+| timeout (30s) | `CallToolResult` with `.SetError("tool handler timeout")` |
+
+### JSON Schema for Tool Registration
+
+Input schemas are passed as JS objects and marshaled to JSON for the MCP SDK. The MCP SDK then handles schema validation and input parsing. Example:
+
+```javascript
+{
+  type: 'object',
+  properties: {
+    path: { type: 'string', description: 'File path' },
+    recursive: { type: 'boolean', description: 'Recurse into dirs' }
+  },
+  required: ['path']
+}
+```
+
+This is marshaled to `json.RawMessage` and set as the tool's `RawInputSchema` field.
+
+### Go Implementation Strategy
+
+**Package:** `internal/builtin/mcpmod/` (following the `fetchmod`, `grpcmod` convention)
+
+**Registration (register.go):**
+```go
+registry.RegisterNativeModule(prefix+"mcp", mcpmod.Require(
+    eventLoopProvider.Adapter(),
+    eventLoopProvider.Loop(),
+    eventLoopProvider.Runtime(),
+))
+```
+
+**Key Go types:**
+```go
+type mcpServer struct {
+  server   *mcp.MCPServer       // go-sdk server
+  tools    []toolRegistration   // pending tools (before run)
+  running  bool                 // true after run() called
+  cancel   context.CancelFunc   // stops server.Run()
+  adapter  *gojaeventloop.Adapter
+  loop     *goeventloop.Loop
+  runtime  *goja.Runtime
+}
+
+type toolRegistration struct {
+  name        string
+  description string
+  inputSchema json.RawMessage
+  handler     goja.Callable      // JS callback
+}
+```
+
+### Files to Create/Modify
+| File | Action |
+|------|--------|
+| `internal/builtin/mcpmod/mcp.go` | NEW — module implementation |
+| `internal/builtin/mcpmod/mcp_test.go` | NEW — unit tests |
+| `internal/builtin/register.go` | MODIFY — add registration |
+
 1. Pre-T1 bug fixes (gitAddChangedFiles, sendToHandle single-write, commit error checking, test fixes)
 2. Rule of Two review gate passed
 3. Committed 66be949

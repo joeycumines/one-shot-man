@@ -119,31 +119,31 @@
       "task": "T14: Design osm:mcp module API (stdio MCP server from JS)",
       "description": "Design the JavaScript API for creating MCP servers from JavaScript, wrapping github.com/modelcontextprotocol/go-sdk/mcp (v1.3.1 in go.mod). Reference existing usage in newMCPServer() at internal/command/mcp.go (line ~357). Design: createServer(name, version) returns server object, server.addTool(name, description, inputSchema, handler) registers tools, server.run(transport) starts serving (transport = 'stdio' initially), server.close() tears down. Study the go-sdk's mcp.NewServer(), mcp.ServerTool, mcp.StdioTransport for the Go API that will be wrapped.",
       "acceptance": "Complete API design documented in WIP.md with: full type signatures, method lifecycle (create → addTool → run → close), error handling semantics, event loop integration strategy (how Goja callbacks are invoked safely), and JSON schema for tool registration.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T15: Implement osm:mcp native Go module skeleton",
       "description": "Create internal/builtin/mcp/ package with Require() function following the pattern from internal/builtin/grpc/grpc.go. Export createServer function. Register in internal/builtin/register.go as prefix+'mcp' (add import and registry.RegisterNativeModule call alongside existing modules like osm:grpc at line ~122). The skeleton returns a module object with createServer that creates but does not yet fully implement the server.",
       "acceptance": "require('osm:mcp') is importable from JavaScript and returns an object with a createServer function. Module is registered in register.go. Package compiles. `make` passes.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T16: Implement MCP server creation and tool registration in osm:mcp",
       "description": "Implement createServer() wrapping mcp.NewServer() from go-sdk. Implement addTool() that accepts tool name, description, input schema (as JS object), and a Goja callback handler. Marshal/unmarshal between JS objects (goja.Value) and Go types (mcp.CallToolRequest/Result). Use gojaeventloop.Adapter (passed via EventLoopProvider) for async safety — tool handler callbacks must run on the event loop thread. Reference the pattern in internal/builtin/grpc/grpc.go for how goja-grpc handles async callbacks.",
       "acceptance": "JavaScript can create an MCP server, register tools with JS callback handlers, and those handlers are invoked when an MCP client calls the tools. Callbacks run safely on the event loop. Errors in callbacks propagate as MCP tool errors to the client.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T17: Implement stdio transport binding for osm:mcp server",
       "description": "Add run() method that binds the MCP server to stdio transport (stdin/stdout). This depends on T12 (stdout suppression) to ensure clean stdio. Implement close() for graceful shutdown. run() must block the JS event loop appropriately (likely via a Promise that resolves on server shutdown). The transport reads from os.Stdin and writes to os.Stdout (or the scripting engine's configured stdin/stdout).",
       "acceptance": "A JS script can create an MCP server, register tools, call server.run('stdio'), and an external MCP client connecting via the process's stdio can discover and call the registered tools. server.close() cleanly shuts down. No stdout corruption from session loading.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T18: Write unit tests for osm:mcp module",
       "description": "Tests for server creation, tool registration, tool invocation, error handling, and cleanup. Place in internal/builtin/mcp/mcp_test.go. Follow testing patterns from internal/builtin/grpc/ tests. Cover: (1) createServer returns valid object, (2) addTool registers discoverable tool, (3) tool handler invoked with correct arguments, (4) handler errors propagate as MCP errors, (5) close() cleans up resources, (6) double-close is safe, (7) run() after close() errors.",
       "acceptance": "Tests cover create→register→invoke→close lifecycle, error propagation, cleanup safety. All pass with -race flag. No goroutine leaks verified.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T19: Design osm:mcpcallback module API and class pattern",

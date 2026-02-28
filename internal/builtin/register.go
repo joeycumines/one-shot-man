@@ -26,6 +26,7 @@ import (
 	grpcmod "github.com/joeycumines/one-shot-man/internal/builtin/grpc"
 	jsonmod "github.com/joeycumines/one-shot-man/internal/builtin/json"
 	lipglossmod "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"
+	mcpmod "github.com/joeycumines/one-shot-man/internal/builtin/mcpmod"
 	"github.com/joeycumines/one-shot-man/internal/builtin/nextintegerid"
 	osmod "github.com/joeycumines/one-shot-man/internal/builtin/os"
 	pabtmod "github.com/joeycumines/one-shot-man/internal/builtin/pabt"
@@ -104,6 +105,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"exec", execmod.Require(ctx))
 	registry.RegisterNativeModule(prefix+"fetch", fetchmod.Require(eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"flag", flagmod.Require)
+	registry.RegisterNativeModule(prefix+"mcp", mcpmod.Require(eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
 
 	// Create shared protobuf module for gRPC and osm:protobuf.
 	// The SAME Module instance is used by both so descriptors loaded via

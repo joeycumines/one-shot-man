@@ -852,7 +852,9 @@ var DEFAULT_PLAN_PATH = '.pr-split-plan.json';
 
 // savePlan serializes the current plan, analysis, and execution state to a
 // JSON file so a future session can resume where this one left off.
-function savePlan(path) {
+// An optional second argument specifies the lastCompletedStep name for
+// crash recovery (T096). When provided, the snapshot version is bumped to 2.
+function savePlan(path, lastCompletedStep) {
     path = path || DEFAULT_PLAN_PATH;
     if (!osmod) {
         return { error: 'osm:os module not available — cannot persist plan' };
@@ -862,7 +864,7 @@ function savePlan(path) {
     }
 
     var snapshot = {
-        version: 1,
+        version: lastCompletedStep ? 2 : 1,
         savedAt: new Date().toISOString(),
         runtime: {
             baseBranch:    runtime.baseBranch,
@@ -883,6 +885,9 @@ function savePlan(path) {
         executed: executionResultCache || [],
         conversations: getConversationHistory()
     };
+    if (lastCompletedStep) {
+        snapshot.lastCompletedStep = lastCompletedStep;
+    }
 
     try {
         osmod.writeFile(path, JSON.stringify(snapshot, null, 2));
@@ -952,7 +957,8 @@ function loadPlan(path) {
         error: null,
         totalSplits: planCache.splits.length,
         executedSplits: executionResultCache.length,
-        pendingSplits: planCache.splits.length - executionResultCache.length
+        pendingSplits: planCache.splits.length - executionResultCache.length,
+        lastCompletedStep: snapshot.lastCompletedStep || null
     };
 }
 
@@ -1888,6 +1894,15 @@ ClaudeCodeExecutor.prototype.resolve = function() {
     // Auto-detect: try 'claude' first.
     var claudeCheck = exec.execv(['which', 'claude']);
     if (claudeCheck.code === 0) {
+        // Verify the binary actually works (e.g., valid install, not a stale shim).
+        var versionCheck = exec.execv(['claude', '--version']);
+        if (versionCheck.code !== 0) {
+            return {
+                error: 'Claude found at ' + claudeCheck.stdout.trim() +
+                       ' but version check failed (exit ' + versionCheck.code + '): ' +
+                       (versionCheck.stderr || versionCheck.stdout || '').trim()
+            };
+        }
         this.resolved = { command: 'claude', type: 'claude-code' };
         return { error: null };
     }
@@ -1895,6 +1910,23 @@ ClaudeCodeExecutor.prototype.resolve = function() {
     // Try 'ollama'.
     var ollamaCheck = exec.execv(['which', 'ollama']);
     if (ollamaCheck.code === 0) {
+        // Verify ollama is responsive and the requested model is available.
+        if (this.model) {
+            var listCheck = exec.execv(['ollama', 'list']);
+            if (listCheck.code !== 0) {
+                return {
+                    error: 'Ollama found but list command failed (exit ' + listCheck.code + '): ' +
+                           (listCheck.stderr || listCheck.stdout || '').trim()
+                };
+            }
+            var modelOutput = (listCheck.stdout || '');
+            if (modelOutput.indexOf(this.model) === -1) {
+                return {
+                    error: 'Ollama found but model ' + this.model + ' not available. ' +
+                           'Available models: ' + modelOutput.trim().split('\n').slice(1).join(', ')
+                };
+            }
+        }
         this.resolved = { command: 'ollama', type: 'ollama' };
         return { error: null };
     }
@@ -2504,8 +2536,22 @@ function automatedSplit(config) {
         return result;
     }
 
+    // Resume support (T094): skip Steps 1-6 if resuming from a saved plan.
+    var resuming = !!config.resumeFromPlan;
+    if (resuming) {
+        var loadResult = loadPlan(config.resumePlanPath);
+        if (loadResult.error) {
+            report.error = 'Resume failed: ' + loadResult.error;
+            return finishTUI({ error: report.error, report: report });
+        }
+        emitOutput('[auto-split] Resumed from saved plan (' + loadResult.totalSplits +
+            ' splits, ' + loadResult.executedSplits + ' already executed)');
+    }
+
     // Step 1: Analyze diff.
-    var analysis = step('Analyze diff', function() {
+    var analysis;
+    if (!resuming) {
+    analysis = step('Analyze diff', function() {
         updateDetail('Analyze diff', 'Reading git diff...');
         var result = analyzeDiff(config);
         if (!result.error && result.files) {
@@ -2522,7 +2568,13 @@ function automatedSplit(config) {
         return finishTUI({ error: report.error, report: report });
     }
     recordTelemetry('filesAnalyzed', analysis.files.length);
+    } else {
+        // Resume path: use cached analysis.
+        analysis = analysisCache || { files: [], fileStatuses: {}, baseBranch: '', currentBranch: '' };
+    }
 
+    // Steps 2-6 are skipped when resuming from a saved plan.
+    if (!resuming) {
     // Step 2: Spawn Claude (or fall back to heuristic).
     var executor = step('Spawn Claude', function() {
         updateDetail('Spawn Claude', 'Resolving Claude executable...');
@@ -2695,6 +2747,9 @@ function automatedSplit(config) {
     var plan = planResult.plan;
     planCache = plan;
 
+    // Checkpoint after plan generation (T096).
+    savePlan(null, 'Generate split plan');
+
     // Step 6: Execute split.
     var execResult = step('Execute split plan', function() {
         if (runtime.dryRun) {
@@ -2718,6 +2773,47 @@ function automatedSplit(config) {
         emitOutput('[auto-split] Dry run — skipping verification.');
         cleanupExecutor();
         return finishTUI({ error: null, report: report });
+    }
+
+    // Persist plan for crash recovery / resume (T094/T096).
+    var saveResult = savePlan(null, 'Execute split plan');
+    if (saveResult.error) {
+        log.printf('auto-split: save plan warning: %s', saveResult.error);
+    } else {
+        log.printf('auto-split: plan saved to %s', saveResult.path);
+    }
+
+    } else {
+        // Resume path: set variables from loaded cache.
+        // The var declarations inside the if-block above are hoisted to
+        // function scope, so we can assign to them here.
+        classification = { classification: groupsCache || {} };
+        plan = planCache;
+        sessionId = null;
+        resultDir = null;
+        aliveCheckFn = null;
+
+        // Try to spawn Claude for conflict resolution capability.
+        if (!claudeExecutor) {
+            claudeExecutor = new ClaudeCodeExecutor(prSplitConfig);
+        }
+        var resumeResolve = claudeExecutor.resolve();
+        if (!resumeResolve.error) {
+            var resumeSpawn = claudeExecutor.spawn();
+            if (!resumeSpawn.error) {
+                sessionId = resumeSpawn.sessionId;
+                resultDir = resumeSpawn.resultDir;
+                aliveCheckFn = function() {
+                    return claudeExecutor && claudeExecutor.handle &&
+                           typeof claudeExecutor.handle.isAlive === 'function' &&
+                           claudeExecutor.handle.isAlive();
+                };
+            } else {
+                emitOutput('[auto-split] Warning: Claude spawn failed — conflict resolution disabled.');
+            }
+        } else {
+            emitOutput('[auto-split] Claude unavailable — conflict resolution disabled for resume.');
+        }
     }
 
     // Step 7: Verify splits.
@@ -2747,6 +2843,9 @@ function automatedSplit(config) {
         report.skippedDueToDepFailure = skippedResults;
         return { error: null, failures: realFailures, allPassed: verifyObj.allPassed };
     });
+
+    // Checkpoint after verify (T096).
+    savePlan(null, 'Verify splits');
 
     // Step 8: Resolve conflicts (if any real failures — skipped branches excluded).
     var reSplitCount = 0;
@@ -2808,6 +2907,9 @@ function automatedSplit(config) {
                 }
             }
         }
+
+        // Checkpoint after resolve/re-split (T096).
+        savePlan(null, 'Resolve conflicts');
     }
 
     // Step 10: Equivalence check and report.

@@ -246,28 +246,28 @@
       "task": "Add Claude auto-detection verification (API key / model availability)",
       "description": "ClaudeCodeExecutor.resolve() at pr_split_script.js uses `which claude`/`which ollama` to detect availability but never verifies the tool actually works (e.g., valid API key, model exists). Add a lightweight verification step after resolve: for claude-code type, run `<command> --version` and check exit code 0. For ollama type, run `<command> list` and check the requested model exists in output. If verification fails, return a descriptive error: 'Claude found at <path> but version check failed: <output>' or 'Ollama found but model <model> not available'.",
       "acceptance": "TestClaudeAutoDetect_VersionCheckFails mocks a command that exists but returns exit code 1 on --version. Verifies resolve returns an error mentioning 'version check failed'. TestClaudeAutoDetect_OllamaModelMissing mocks ollama list without the requested model and verifies the error mentions 'model not available'.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T094",
       "task": "Integrate savePlan/loadPlan into automatedSplit() for session persistence",
       "description": "savePlan() (line 854) and loadPlan() (line 896) exist for manual mode but are NOT called during auto-split. Add: (1) After Step 6 (Execute split plan), call savePlan() to persist the current state, (2) At the start of automatedSplit(), check for config.resumeFromPlan — if true, call loadPlan() and skip to the verification step instead of re-analyzing and re-executing. (3) Add --resume flag to pr_split.go that sets config.resumeFromPlan=true in prSplitConfig.",
       "acceptance": "TestAutoSplit_SaveAndResume: Run automatedSplit() to the execute step (mock verification to fail), verify .pr-split-plan.json is written with the correct state. Then run automatedSplit({ resumeFromPlan: true }), verify it skips analyze/spawn/classify/plan/execute and goes directly to verify. Verify the loaded plan matches the saved plan.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T095",
       "task": "Add --resume flag to PrSplitCommand in pr_split.go",
       "description": "Add a new boolean flag `resume` to PrSplitCommand struct at pr_split.go:~40. Register in SetupFlags() as `fs.BoolVar(&c.resume, \"resume\", false, \"Resume a previously saved auto-split session\")`. Pass it to prSplitConfig: `\"resumeFromPlan\": c.resume`. Add config key `pr-split.resume` in applyConfigDefault section.",
       "acceptance": "TestPrSplitFlags_Resume parses `--resume` flag and verifies c.resume is true. Config override `pr-split.resume=true` also works. The flag appears in help text.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T096",
       "task": "Auto-save state during long-running steps for crash recovery",
       "description": "Beyond explicit --resume, add automatic state checkpointing: After each major step in automatedSplit() (steps 4, 5, 6, 7, 8), call savePlan() if the plan exists. The saved state includes a `lastCompletedStep` field in the snapshot. On resume, loadPlan() checks lastCompletedStep and skips to the appropriate step. Update the snapshot schema (version 2) to include lastCompletedStep.",
       "acceptance": "TestAutoSplit_CrashRecovery_AfterExecute: Run automatedSplit to step 6, then simulate a crash (throw from step 7). Verify the saved plan has lastCompletedStep='Execute split plan'. Reload with resumeFromPlan and verify steps 1-6 are skipped.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T097",

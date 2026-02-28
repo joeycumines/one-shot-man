@@ -52,6 +52,9 @@ type PrSplitCommand struct {
 
 	// Timeout for Claude communication steps (classify, plan, resolve).
 	timeout time.Duration
+
+	// Resume a previously saved auto-split session.
+	resume bool
 }
 
 // stringSliceFlag implements [flag.Value] for repeatable string flags.
@@ -114,6 +117,7 @@ func (c *PrSplitCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.claudeEnv, "claude-env", "", "Extra environment variables (KEY=VALUE,KEY=VALUE)")
 
 	fs.DurationVar(&c.timeout, "timeout", 0, "Timeout for Claude communication steps (e.g. 5m); 0 = defaults")
+	fs.BoolVar(&c.resume, "resume", false, "Resume a previously saved auto-split session")
 
 	c.RegisterFlags(fs)
 }
@@ -159,6 +163,9 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			if d, err := time.ParseDuration(v); err == nil && d > 0 {
 				c.timeout = d
 			}
+		}
+		if v, ok := c.config.GetCommandOption("pr-split", "resume"); ok && !c.resume {
+			c.resume = v == "true" || v == "1" || v == "yes"
 		}
 	}
 
@@ -219,6 +226,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		"claudeConfigDir": c.claudeConfigDir,
 		"claudeEnv":       claudeEnvMap,
 		"timeoutMs":       int64(c.timeout / time.Millisecond),
+		"resumeFromPlan":  c.resume,
 	})
 
 	// TUI Mux — terminal multiplexer between osm and child PTY (Claude Code).

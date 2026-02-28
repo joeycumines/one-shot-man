@@ -64,9 +64,8 @@ Rewrote blueprint.json from scratch. Preserved 3 representative Done tasks. Adde
 - **Zero failures across all termmux packages**
 
 ## Immediate Next Steps
-1. T093: Claude auto-detection verification
-2. T094-T096: Session persistence (savePlan/loadPlan, --resume, crash recovery)
-3. T097+: Conversation history persistence, TUI feedback, etc.
+1. T097: Conversation history round-trip test 
+2. T098+: TUI feedback, VTerm re-render, rate limiting, etc.
 
 ## Completed This Session
 - T067: Baseline tests documented
@@ -93,3 +92,7 @@ Rewrote blueprint.json from scratch. Preserved 3 representative Done tasks. Adde
 - T090: AUTOMATED_DEFAULTS.verifyTimeoutMs = 600000 (10 min). Threaded through automatedSplit() Step 7 + REPL propagation. Test for default value passes.
 - T091: Explicit 'T' (type change) handling in executeSplit() with log.warn. TestExecuteSplit_TypeChange passing.
 - T092: claude-fix strategy extracts aliveCheckFn from options, passes to pollForFile as 6th arg. Fixed positional arg bug (was passing to stepName slot). resolveConflicts() threads aliveCheckFn through strategyOptions. TestPrSplitCommand_ResolveConflicts_AliveCheckFnThreaded passing.
+- T093: ClaudeCodeExecutor.resolve() adds verification: `claude --version` after which succeeds (rejects stale shims), `ollama list` checks model availability when model configured. Two tests: VersionCheckFails + OllamaModelMissing.
+- T094: savePlan() after Step 6 in automatedSplit(); resume path via config.resumeFromPlan skips Steps 1-6, loads plan from disk, optionally spawns Claude for resolution. TestAutoSplit_SaveAndResume: Run 1 (8 steps) → plan saved → Run 2 (2 steps: Verify+Equivalence).
+- T095: --resume flag in PrSplitCommand: struct field, SetupFlags, config override `pr-split.resume`, prSplitConfig pass-through. TestPrSplitCommand_ResumeFlag (2 subtests).
+- T096: Auto-save with lastCompletedStep after Steps 5, 6, 7, 8. savePlan(null, stepName) sets version=2 + lastCompletedStep. loadPlan returns lastCompletedStep. Resolve checkpoint only runs when resolve actually executes. TestAutoSplit_CrashRecovery_AfterExecute.

@@ -908,3 +908,464 @@ func TestMCPCallback_SignalCleanup_CloseIsIdempotent(t *testing.T) {
 		await cb.close();
 	`)
 }
+
+// --- Tests for Go-native tool registration + synchronous IPC ---
+
+func TestMCPCallback_AddTool(t *testing.T) {
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	runAsync(t, p, `
+		var srv = mcpMod.createServer('test', '1.0.0');
+		var cb = mcpCbMod.MCPCallback({ server: srv });
+		cb.addTool('myTool', 'A test tool', {
+			type: 'object',
+			properties: {
+				message: { type: 'string' }
+			}
+		});
+		await cb.init();
+		await cb.close();
+	`)
+}
+
+func TestMCPCallback_AddTool_NoName_Panics(t *testing.T) {
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	runAsync(t, p, `
+		var srv = mcpMod.createServer('test', '1.0.0');
+		var cb = mcpCbMod.MCPCallback({ server: srv });
+		try {
+			cb.addTool('', 'desc');
+			throw new Error('should have thrown');
+		} catch (e) {
+			if (!e.message.includes('name is required')) {
+				throw new Error('unexpected error: ' + e.message);
+			}
+		}
+	`)
+}
+
+func TestMCPCallback_AddTool_DuplicateName_Panics(t *testing.T) {
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	runAsync(t, p, `
+		var srv = mcpMod.createServer('test', '1.0.0');
+		var cb = mcpCbMod.MCPCallback({ server: srv });
+		cb.addTool('myTool', 'first');
+		try {
+			cb.addTool('myTool', 'duplicate');
+			throw new Error('should have thrown');
+		} catch (e) {
+			if (!e.message.includes('already registered')) {
+				throw new Error('unexpected error: ' + e.message);
+			}
+		}
+	`)
+}
+
+func TestMCPCallback_AddTool_AfterInit_Panics(t *testing.T) {
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	runAsync(t, p, `
+		var srv = mcpMod.createServer('test', '1.0.0');
+		var cb = mcpCbMod.MCPCallback({ server: srv });
+		await cb.init();
+		try {
+			cb.addTool('lateTool', 'added after init');
+			throw new Error('should have thrown');
+		} catch (e) {
+			if (!e.message.includes('after init')) {
+				throw new Error('unexpected error: ' + e.message);
+			}
+		}
+		await cb.close();
+	`)
+}
+
+func TestMCPCallback_InitSync(t *testing.T) {
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	// initSync is synchronous — use runOnLoop
+	runOnLoop(t, p, func() {
+		vm := p.Runtime()
+		_, err := vm.RunString(`
+			var srv = mcpMod.createServer('test', '1.0.0');
+			var cb = mcpCbMod.MCPCallback({ server: srv });
+			cb.initSync();
+
+			if (!cb.address || cb.address === '') throw new Error('address should be set');
+			if (!cb.scriptPath || cb.scriptPath === '') throw new Error('scriptPath should be set');
+			if (!cb.transport || cb.transport === '') throw new Error('transport should be set');
+			if (!cb.mcpConfigPath || cb.mcpConfigPath === '') throw new Error('mcpConfigPath should be set');
+
+			cb.closeSync();
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestMCPCallback_InitSync_DoubleInit_Panics(t *testing.T) {
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	runOnLoop(t, p, func() {
+		vm := p.Runtime()
+		_, err := vm.RunString(`
+			var srv = mcpMod.createServer('test', '1.0.0');
+			var cb = mcpCbMod.MCPCallback({ server: srv });
+			cb.initSync();
+			try {
+				cb.initSync();
+				throw new Error('should have thrown');
+			} catch (e) {
+				if (!e.message.includes('already initialized')) {
+					throw new Error('unexpected error: ' + e.message);
+				}
+			}
+			cb.closeSync();
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestMCPCallback_CloseSync(t *testing.T) {
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	runOnLoop(t, p, func() {
+		vm := p.Runtime()
+		_, err := vm.RunString(`
+			var srv = mcpMod.createServer('test', '1.0.0');
+			var cb = mcpCbMod.MCPCallback({ server: srv });
+			cb.initSync();
+			cb.closeSync();
+			// Idempotent
+			cb.closeSync();
+			cb.closeSync();
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestMCPCallback_WaitFor_Timeout(t *testing.T) {
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	runOnLoop(t, p, func() {
+		vm := p.Runtime()
+		_, err := vm.RunString(`
+			var srv = mcpMod.createServer('test', '1.0.0');
+			var cb = mcpCbMod.MCPCallback({ server: srv });
+			cb.addTool('testTool', 'test');
+			cb.initSync();
+
+			var result = cb.waitFor('testTool', 200);
+			if (!result.error) throw new Error('expected timeout error');
+			if (result.error.indexOf('timeout') === -1) throw new Error('unexpected error: ' + result.error);
+			if (result.data !== null) throw new Error('data should be null on timeout');
+
+			cb.closeSync();
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestMCPCallback_WaitFor_NotRegistered(t *testing.T) {
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	runOnLoop(t, p, func() {
+		vm := p.Runtime()
+		_, err := vm.RunString(`
+			var srv = mcpMod.createServer('test', '1.0.0');
+			var cb = mcpCbMod.MCPCallback({ server: srv });
+			cb.initSync();
+
+			var result = cb.waitFor('nonExistent', 100);
+			if (!result.error) throw new Error('expected error');
+			if (result.error.indexOf('not registered') === -1) throw new Error('unexpected error: ' + result.error);
+
+			cb.closeSync();
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestMCPCallback_WaitFor_AliveCheck(t *testing.T) {
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	runOnLoop(t, p, func() {
+		vm := p.Runtime()
+		_, err := vm.RunString(`
+			var srv = mcpMod.createServer('test', '1.0.0');
+			var cb = mcpCbMod.MCPCallback({ server: srv });
+			cb.addTool('testTool', 'test');
+			cb.initSync();
+
+			var checkCount = 0;
+			var result = cb.waitFor('testTool', 5000, {
+				aliveCheck: function() {
+					checkCount++;
+					return checkCount < 3; // Die on 3rd check
+				},
+				checkIntervalMs: 100
+			});
+			if (!result.error) throw new Error('expected error');
+			if (result.error.indexOf('process exited') === -1) throw new Error('unexpected: ' + result.error);
+			if (checkCount < 3) throw new Error('expected at least 3 alive checks, got ' + checkCount);
+
+			cb.closeSync();
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestMCPCallback_ResetWaiter(t *testing.T) {
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	// Test that resetWaiter doesn't panic on empty channel
+	runOnLoop(t, p, func() {
+		vm := p.Runtime()
+		_, err := vm.RunString(`
+			var srv = mcpMod.createServer('test', '1.0.0');
+			var cb = mcpCbMod.MCPCallback({ server: srv });
+			cb.addTool('testTool', 'test');
+			cb.initSync();
+
+			// Reset on empty channel — should not panic
+			cb.resetWaiter('testTool');
+
+			cb.closeSync();
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+func TestMCPCallback_ResetWaiter_NotRegistered_Panics(t *testing.T) {
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	runOnLoop(t, p, func() {
+		vm := p.Runtime()
+		_, err := vm.RunString(`
+			var srv = mcpMod.createServer('test', '1.0.0');
+			var cb = mcpCbMod.MCPCallback({ server: srv });
+			cb.initSync();
+			try {
+				cb.resetWaiter('nope');
+				throw new Error('should have thrown');
+			} catch (e) {
+				if (!e.message.includes('not registered')) {
+					throw new Error('unexpected: ' + e.message);
+				}
+			}
+			cb.closeSync();
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+// TestMCPCallback_WaitFor_EndToEnd tests the full cycle: addTool → initSync →
+// external MCP client calls the tool → waitFor returns the data.
+func TestMCPCallback_WaitFor_EndToEnd(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires socat or Unix socket for MCP client bridge — skipped on Windows")
+	}
+
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	// Get the address and transport from JS after init
+	type connInfo struct {
+		address   string
+		transport string
+	}
+	infoCh := make(chan connInfo, 1)
+
+	// Inject helper to extract connection info from JS
+	runOnLoop(t, p, func() {
+		vm := p.Runtime()
+		_ = vm.Set("__reportConnInfo", func(addr, trans string) {
+			infoCh <- connInfo{address: addr, transport: trans}
+		})
+	})
+
+	// Run the JS that sets up server, registers tool, inits, and waits
+	resultCh := make(chan error, 1)
+	if err := p.Loop().Submit(func() {
+		vm := p.Runtime()
+		_, runErr := vm.RunString(`
+			var srv = mcpMod.createServer('test', '1.0.0');
+			var cb = mcpCbMod.MCPCallback({ server: srv });
+			cb.addTool('reportClassification', 'Report classification', {
+				type: 'object',
+				properties: {
+					categories: {
+						type: 'array',
+						items: {
+							type: 'object',
+							properties: {
+								name: { type: 'string' },
+								files: { type: 'array', items: { type: 'string' } }
+							}
+						}
+					}
+				}
+			});
+			cb.initSync();
+			__reportConnInfo(cb.address, cb.transport);
+
+			// This blocks until the tool is called or timeout
+			var result = cb.waitFor('reportClassification', 10000);
+			if (result.error) throw new Error('waitFor failed: ' + result.error);
+			if (!result.data) throw new Error('expected data');
+			if (!result.data.categories) throw new Error('expected categories in data');
+			if (result.data.categories.length !== 1) throw new Error('expected 1 category, got ' + result.data.categories.length);
+			if (result.data.categories[0].name !== 'types') throw new Error('expected name=types, got ' + result.data.categories[0].name);
+			if (result.data.categories[0].files.length !== 2) throw new Error('expected 2 files');
+
+			cb.closeSync();
+		`)
+		if runErr != nil {
+			resultCh <- runErr
+		} else {
+			resultCh <- nil
+		}
+	}); err != nil {
+		t.Fatalf("submit failed: %v", err)
+	}
+
+	// Wait for the JS to report connection info, then connect as MCP client
+	select {
+	case info := <-infoCh:
+		// Small delay to ensure waitFor is blocking
+		time.Sleep(100 * time.Millisecond)
+
+		// Connect to the MCPCallback's socket
+		var conn net.Conn
+		var err error
+		if info.transport == "unix" {
+			conn, err = net.Dial("unix", info.address)
+		} else {
+			conn, err = net.Dial("tcp", info.address)
+		}
+		if err != nil {
+			t.Fatalf("failed to connect: %v", err)
+		}
+		defer conn.Close()
+
+		// Send MCP tool call as raw JSON-RPC
+		toolArgs := `{"categories":[{"name":"types","files":["a.go","b.go"]}]}`
+		reqJSON := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}` + "\n"
+		_, err = conn.Write([]byte(reqJSON))
+		if err != nil {
+			t.Fatalf("failed to write initialize: %v", err)
+		}
+
+		// Read initialize response
+		buf := make([]byte, 8192)
+		n, err := conn.Read(buf)
+		if err != nil {
+			t.Fatalf("failed to read initialize response: %v", err)
+		}
+		_ = n // We just need to consume the response
+
+		// Send initialized notification
+		notifJSON := `{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}` + "\n"
+		_, err = conn.Write([]byte(notifJSON))
+		if err != nil {
+			t.Fatalf("failed to write initialized: %v", err)
+		}
+		time.Sleep(50 * time.Millisecond)
+
+		// Call the tool
+		callJSON := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"reportClassification","arguments":` + toolArgs + `}}` + "\n"
+		_, err = conn.Write([]byte(callJSON))
+		if err != nil {
+			t.Fatalf("failed to write tool call: %v", err)
+		}
+
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for connection info")
+	}
+
+	// Wait for the JS to complete
+	select {
+	case err := <-resultCh:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("test timed out waiting for JS completion")
+	}
+}
+
+func TestMCPCallback_WaitFor_ProgressCallback(t *testing.T) {
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	runOnLoop(t, p, func() {
+		vm := p.Runtime()
+		_, err := vm.RunString(`
+			var srv = mcpMod.createServer('test', '1.0.0');
+			var cb = mcpCbMod.MCPCallback({ server: srv });
+			cb.addTool('testTool', 'test');
+			cb.initSync();
+
+			var progressCalled = 0;
+			var result = cb.waitFor('testTool', 500, {
+				onProgress: function(elapsed, total) {
+					progressCalled++;
+					if (typeof elapsed !== 'number') throw new Error('elapsed should be number');
+					if (typeof total !== 'number') throw new Error('total should be number');
+				},
+				checkIntervalMs: 100
+			});
+			// Should timeout, but progress should have been called
+			if (!result.error) throw new Error('expected timeout');
+			if (progressCalled === 0) throw new Error('expected onProgress calls, got 0');
+
+			cb.closeSync();
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+}

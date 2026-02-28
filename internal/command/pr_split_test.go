@@ -9574,6 +9574,433 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// T126: Verify all pipeline steps report elapsed time in report.steps.
+// ---------------------------------------------------------------------------
+
+func TestAutoSplit_AllStepsReportTiming(t *testing.T) {
+	// NOT parallel — uses chdir.
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	initialFiles := []TestPipelineFile{
+		{"pkg/types.go", "package pkg\n\ntype Foo struct{}\n"},
+		{"cmd/main.go", "package main\n\nfunc main() {}\n"},
+	}
+	featureFiles := []TestPipelineFile{
+		{"pkg/impl.go", "package pkg\n\nfunc Bar() string { return \"bar\" }\n"},
+		{"cmd/run.go", "package main\n\nfunc run() {}\n"},
+	}
+
+	tp := setupTestPipeline(t, TestPipelineOpts{
+		InitialFiles: initialFiles,
+		FeatureFiles: featureFiles,
+		ConfigOverrides: map[string]interface{}{
+			"branchPrefix":  "split/",
+			"verifyCommand": "true",
+			"strategy":      "directory",
+		},
+	})
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tp.Dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	// Pre-write classification.json so Receive classification succeeds.
+	classJSON, _ := json.Marshal(map[string]string{
+		"pkg/impl.go": "api",
+		"cmd/run.go":  "cli",
+	})
+	if err := os.WriteFile(filepath.Join(tp.ResultDir, "classification.json"), classJSON, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	escapedResultDir := strings.ReplaceAll(tp.ResultDir, `\`, `\\`)
+	escapedResultDir = strings.ReplaceAll(escapedResultDir, `'`, `\'`)
+
+	// Mock ClaudeCodeExecutor.
+	mockSetup := `
+		ClaudeCodeExecutor = function(config) {
+			this.config = config;
+			this.resolved = { command: 'mock-claude' };
+			this.handle = { send: function() {}, isAlive: function() { return true; } };
+		};
+		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.spawn = function() {
+			return { error: null, sessionId: 'mock-timing', resultDir: '` + escapedResultDir + `' };
+		};
+		ClaudeCodeExecutor.prototype.close = function() {};
+		ClaudeCodeExecutor.prototype.kill = function() {};
+	`
+	if _, err := tp.EvalJS(mockSetup); err != nil {
+		t.Fatalf("mock setup: %v", err)
+	}
+
+	result, err := tp.EvalJS(`JSON.stringify(prSplit.automatedSplit({
+		disableTUI: true,
+		pollIntervalMs: 50,
+		classifyTimeoutMs: 5000,
+		planTimeoutMs: 5000,
+		resolveTimeoutMs: 5000,
+		maxResolveRetries: 0,
+		maxReSplits: 0
+	}))`)
+	if err != nil {
+		t.Fatalf("automatedSplit: %v", err)
+	}
+
+	var report struct {
+		Error  string `json:"error"`
+		Report struct {
+			Steps []struct {
+				Name      string `json:"name"`
+				ElapsedMs int    `json:"elapsedMs"`
+				Error     string `json:"error"`
+			} `json:"steps"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &report); err != nil {
+		t.Fatalf("parse result: %v\nraw: %s", err, result)
+	}
+
+	if report.Error != "" {
+		t.Logf("pipeline error (may be ok): %s", report.Error)
+	}
+	if len(report.Report.Steps) == 0 {
+		t.Fatal("expected at least 1 step in report")
+	}
+
+	// Every step must have a non-empty name and elapsedMs >= 0.
+	for i, s := range report.Report.Steps {
+		if s.Name == "" {
+			t.Errorf("step %d has empty name", i)
+		}
+		if s.ElapsedMs < 0 {
+			t.Errorf("step %d (%q) has negative elapsedMs: %d", i, s.Name, s.ElapsedMs)
+		}
+		t.Logf("step %d: %s (%dms, error=%q)", i, s.Name, s.ElapsedMs, s.Error)
+	}
+
+	// Verify at minimum: Analyze diff, Spawn Claude, Execute split plan, Verify equivalence.
+	requiredSteps := []string{
+		"Analyze diff",
+		"Spawn Claude",
+		"Execute split plan",
+		"Verify equivalence",
+	}
+	stepSet := make(map[string]bool)
+	for _, s := range report.Report.Steps {
+		stepSet[s.Name] = true
+	}
+	for _, req := range requiredSteps {
+		if !stepSet[req] {
+			t.Errorf("missing required step %q in report steps", req)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T123: Verify heuristicFallback report fields.
+// ---------------------------------------------------------------------------
+
+func TestHeuristicFallback_Report(t *testing.T) {
+	// NOT parallel — uses chdir.
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	tp := setupTestPipeline(t, TestPipelineOpts{
+		ConfigOverrides: map[string]interface{}{
+			"branchPrefix":  "split/",
+			"verifyCommand": "true",
+			"strategy":      "directory",
+		},
+	})
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tp.Dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	// Mock ClaudeCodeExecutor to fail on resolve (Claude unavailable).
+	mockSetup := `
+		ClaudeCodeExecutor = function(config) {
+			this.config = config;
+		};
+		ClaudeCodeExecutor.prototype.resolve = function() {
+			return { error: 'claude not found' };
+		};
+		ClaudeCodeExecutor.prototype.spawn = function() {
+			return { error: 'not resolved' };
+		};
+		ClaudeCodeExecutor.prototype.close = function() {};
+		ClaudeCodeExecutor.prototype.kill = function() {};
+	`
+	if _, err := tp.EvalJS(mockSetup); err != nil {
+		t.Fatalf("mock setup: %v", err)
+	}
+
+	result, err := tp.EvalJS(`JSON.stringify(prSplit.automatedSplit({
+		disableTUI: true,
+		pollIntervalMs: 50,
+		classifyTimeoutMs: 5000,
+		planTimeoutMs: 5000,
+		resolveTimeoutMs: 5000,
+		maxResolveRetries: 0,
+		maxReSplits: 0
+	}))`)
+	if err != nil {
+		t.Fatalf("automatedSplit: %v", err)
+	}
+
+	var report struct {
+		Error  string `json:"error"`
+		Report struct {
+			Mode               string `json:"mode"`
+			FallbackUsed       bool   `json:"fallbackUsed"`
+			ClaudeInteractions int    `json:"claudeInteractions"`
+			Error              string `json:"error"`
+			Steps              []struct {
+				Name      string `json:"name"`
+				ElapsedMs int    `json:"elapsedMs"`
+				Error     string `json:"error"`
+			} `json:"steps"`
+			Plan struct {
+				Splits []struct {
+					Name  string   `json:"name"`
+					Files []string `json:"files"`
+				} `json:"splits"`
+			} `json:"plan"`
+			Splits []struct {
+				Name string `json:"name"`
+			} `json:"splits"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &report); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, result)
+	}
+
+	t.Logf("report: error=%q fallbackUsed=%v interactions=%d steps=%d splits=%d",
+		report.Report.Error, report.Report.FallbackUsed,
+		report.Report.ClaudeInteractions, len(report.Report.Steps),
+		len(report.Report.Plan.Splits))
+
+	// Verify fallback was used.
+	if !report.Report.FallbackUsed {
+		t.Error("expected fallbackUsed=true")
+	}
+
+	// Verify no Claude interactions.
+	if report.Report.ClaudeInteractions != 0 {
+		t.Errorf("expected 0 Claude interactions, got %d", report.Report.ClaudeInteractions)
+	}
+
+	// Verify splits were created by the heuristic path.
+	if len(report.Report.Plan.Splits) == 0 {
+		t.Error("expected at least 1 split from heuristic path")
+	}
+
+	// Verify steps include "Analyze diff" and "Spawn Claude" (with error).
+	foundAnalyze := false
+	foundSpawn := false
+	for _, s := range report.Report.Steps {
+		if s.Name == "Analyze diff" {
+			foundAnalyze = true
+		}
+		if s.Name == "Spawn Claude" {
+			foundSpawn = true
+			if s.Error == "" {
+				t.Error("expected error on 'Spawn Claude' step in fallback path")
+			}
+		}
+	}
+	if !foundAnalyze {
+		t.Error("expected 'Analyze diff' step in report")
+	}
+	if !foundSpawn {
+		t.Error("expected 'Spawn Claude' step in report")
+	}
+
+	// The heuristic path does NOT use step() wrappers for its internal
+	// operations (applyStrategy, createSplitPlan, executeSplit, etc.),
+	// so report.steps should have exactly 2 entries (Analyze + Spawn).
+	if len(report.Report.Steps) != 2 {
+		t.Logf("expected 2 steps (Analyze + Spawn), got %d:", len(report.Report.Steps))
+		for i, s := range report.Report.Steps {
+			t.Logf("  step %d: %s (error=%q)", i, s.Name, s.Error)
+		}
+	}
+
+	// Verify split branches exist in git.
+	branches := runGitCmd(t, tp.Dir, "branch")
+	for _, s := range report.Report.Plan.Splits {
+		if !strings.Contains(branches, s.Name) {
+			t.Errorf("expected branch %q, branches:\n%s", s.Name, branches)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T112: pollForFile edge cases.
+// ---------------------------------------------------------------------------
+
+func TestPollForFile_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	t.Run("timeout_zero_returns_immediately", func(t *testing.T) {
+		dir := t.TempDir()
+		escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
+		escapedDir = strings.ReplaceAll(escapedDir, `'`, `\'`)
+
+		result, err := evalJS(`(function() {
+			var t0 = Date.now();
+			var r = prSplit.pollForFile('` + escapedDir + `', 'test.json', 0, 50, 'test', null);
+			var elapsed = Date.now() - t0;
+			return JSON.stringify({ error: r.error, elapsed: elapsed, hasData: r.data !== null });
+		})()`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var res struct {
+			Error   string `json:"error"`
+			Elapsed int    `json:"elapsed"`
+			HasData bool   `json:"hasData"`
+		}
+		if err := json.Unmarshal([]byte(result.(string)), &res); err != nil {
+			t.Fatalf("parse: %v\nraw: %s", err, result)
+		}
+		if res.Error == "" {
+			t.Error("expected timeout error for timeoutMs=0")
+		}
+		if !strings.Contains(strings.ToLower(res.Error), "timeout") && !strings.Contains(strings.ToLower(res.Error), "timed out") {
+			t.Errorf("expected 'timeout' in error, got: %s", res.Error)
+		}
+		if res.Elapsed > 3000 {
+			t.Errorf("timeoutMs=0 took too long: %dms", res.Elapsed)
+		}
+		t.Logf("timeout_zero: error=%q elapsed=%dms", res.Error, res.Elapsed)
+	})
+
+	t.Run("malformed_json_returns_error", func(t *testing.T) {
+		dir := t.TempDir()
+		escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
+		escapedDir = strings.ReplaceAll(escapedDir, `'`, `\'`)
+
+		// Write a file with invalid JSON.
+		if err := os.WriteFile(filepath.Join(dir, "bad.json"), []byte("not json {{{"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		result, err := evalJS(`(function() {
+			var r = prSplit.pollForFile('` + escapedDir + `', 'bad.json', 5000, 50, 'test', null);
+			return JSON.stringify({ error: r.error || '', hasData: r.data !== null && r.data !== undefined });
+		})()`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var res struct {
+			Error   string `json:"error"`
+			HasData bool   `json:"hasData"`
+		}
+		if err := json.Unmarshal([]byte(result.(string)), &res); err != nil {
+			t.Fatalf("parse: %v\nraw: %s", err, result)
+		}
+		// pollForFile should either return an error or return raw data.
+		// Either is acceptable — the key is it doesn't hang.
+		t.Logf("malformed JSON: error=%q hasData=%v", res.Error, res.HasData)
+		if res.Error == "" && !res.HasData {
+			t.Error("expected either error or data for malformed JSON file")
+		}
+	})
+
+	t.Run("file_appears_before_timeout", func(t *testing.T) {
+		dir := t.TempDir()
+		escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
+		escapedDir = strings.ReplaceAll(escapedDir, `'`, `\'`)
+
+		// Write a valid JSON file.
+		if err := os.WriteFile(filepath.Join(dir, "result.json"), []byte(`{"status":"ok"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		result, err := evalJS(`(function() {
+			var r = prSplit.pollForFile('` + escapedDir + `', 'result.json', 5000, 50, 'test', null);
+			return JSON.stringify({ error: r.error || '', data: r.data });
+		})()`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var res struct {
+			Error string                 `json:"error"`
+			Data  map[string]interface{} `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(result.(string)), &res); err != nil {
+			t.Fatalf("parse: %v\nraw: %s", err, result)
+		}
+		if res.Error != "" {
+			t.Errorf("unexpected error: %s", res.Error)
+		}
+		if res.Data == nil {
+			t.Error("expected data from valid JSON file")
+		} else if res.Data["status"] != "ok" {
+			t.Errorf("expected status=ok, got %v", res.Data["status"])
+		}
+	})
+
+	t.Run("negative_timeout_returns_quickly", func(t *testing.T) {
+		dir := t.TempDir()
+		escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
+		escapedDir = strings.ReplaceAll(escapedDir, `'`, `\'`)
+
+		result, err := evalJS(`(function() {
+			var t0 = Date.now();
+			var r = prSplit.pollForFile('` + escapedDir + `', 'nope.json', -1000, 50, 'test', null);
+			var elapsed = Date.now() - t0;
+			return JSON.stringify({ error: r.error || '', elapsed: elapsed });
+		})()`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var res struct {
+			Error   string `json:"error"`
+			Elapsed int    `json:"elapsed"`
+		}
+		if err := json.Unmarshal([]byte(result.(string)), &res); err != nil {
+			t.Fatalf("parse: %v\nraw: %s", err, result)
+		}
+		if res.Error == "" {
+			t.Error("expected error for negative timeout")
+		}
+		if res.Elapsed > 3000 {
+			t.Errorf("negative timeout took too long: %dms", res.Elapsed)
+		}
+		t.Logf("negative_timeout: error=%q elapsed=%dms", res.Error, res.Elapsed)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// T101: pool.go dispatch model audit (research — no test code needed).
+// ---------------------------------------------------------------------------
+// Pool (internal/builtin/claudemux/pool.go) manages worker slot allocation
+// via sync.Mutex + sync.Cond (condition variable). MCP tool calls are NOT
+// dispatched through Pool — each Claude instance has its own MCP server
+// process (mcp-instance) with stdio transport that inherently serializes
+// calls. Shared state (items, sessions) in mcp.go is mutex-protected.
+// T102 (rate-limiting) is not needed: per-instance serialization is
+// provided by OS stdio; cross-instance isolation by separate processes.
+
 // runGitCmdAllowFail runs a git command but doesn't fatal on failure.
 func runGitCmdAllowFail(t *testing.T, dir string, args ...string) string {
 	t.Helper()

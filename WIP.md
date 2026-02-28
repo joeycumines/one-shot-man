@@ -9,24 +9,32 @@
 - T001-T066: All Done (17 commits, historical)
 - T067-T096: Done (commits 2bc8d91 through 3431939)
 - T097-T105: Done (commit 11955d7 — callbacks, cancellation, persistence tests)
-- T110-T128: Done (commit pending — AUTOMATED_DEFAULTS, input validation, edge-case unit tests)
+- T110-T128: Done (commit be94463 — AUTOMATED_DEFAULTS, input validation, edge-case unit tests)
+- T101-T102, T112, T123, T126, T129-T130: Done (commit pending)
 - Deferred: T087 (Windows), T088 (Linux container), T100 (VTerm re-render)
-- Remaining: T106-T109 (integration tests), T112-T119, T123-T126, T129-T135
+- Remaining: T106-T109 (integration), T113-T119, T124-T125, T131-T135
 
 ## Latest Commit Info
-- 26 commits ahead of main on wip branch
-- Latest: 11955d7 (T097-T105)
-- Pending commit: T110-T128 batch (7 new tests, 2 JS fixes, config.mk update)
-- Total tests in test-t072: 54
+- 27 commits ahead of main on wip branch
+- Latest: be94463 (T110-T128)
+- Pending commit: T101-T130 batch (3 new tests, 1 JS doc comment, pool.go audit)
+- Total tests in test-t072: 57
 
 ## Next Steps
-- After T110-T128 commit: T112 (pollForFile edge cases), T113 (renamed files), T117 (cleanup on failure)
-- T129 (documentation) is a good wrap-up task
-- T106-T109 need complex integration setup (real git repos, mock Claude)
-- Rate-limiting MCP calls
-- Cancellation edge cases
-- Integration + unit tests for all changes
-- Timeout architecture documentation
+- T113-T114 (renamed/copied files), T117-T118 (cleanup on failure + flag)
+- T106-T109 (integration tests — real git repos, mock Claude)
+- T124 (Ollama spawn), T125 (race cancel)
+- T119 (TUI timeout display)
+- T131-T135 (final verification sweeps)
+- Deferred: T087 (Windows), T088 (Linux container), T100 (VTerm re-render)
+
+## Pool.go Dispatch Model (T101 Audit)
+- Pool (pool.go:101-150): Uses sync.Mutex + sync.Cond for worker slot allocation
+- MCP tool calls: NOT dispatched through Pool — each Claude instance has its own MCP server process
+- Per-instance serialization: stdio transport inherently serializes tool calls
+- Cross-instance: separate processes = no contention
+- Shared state in mcp.go: protected by mu sync.Mutex
+- T102 rate-limiting: NOT NEEDED — already serialized by OS stdio + per-process isolation
 
 ## Key Files
 - blueprint.json: /Users/joeyc/dev/one-shot-man/blueprint.json

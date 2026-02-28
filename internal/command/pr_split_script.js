@@ -2317,7 +2317,36 @@ function detectLanguage(files) {
 //  Automated Split Pipeline
 // ---------------------------------------------------------------------------
 
-// Default polling and timeout configuration.
+// Default polling and timeout configuration for the automated split pipeline.
+//
+// TIMEOUT ARCHITECTURE (chain from Go CLI to JS execution):
+//
+//   1. Go CLI flag: `osm pr-split --timeout 30m`
+//      → Parsed in pr_split.go as time.Duration, converted to milliseconds.
+//
+//   2. Go → JS bridge: prSplitConfig.timeoutMs (set in pr_split.go:228)
+//      → This is the user-facing master timeout. It caps the entire pipeline.
+//
+//   3. Per-step overrides: prSplitConfig.<step>TimeoutMs
+//      → config.classifyTimeoutMs, config.planTimeoutMs, config.resolveTimeoutMs
+//      → Set via config file (pr-split.classify-timeout-ms, etc.) or flags.
+//
+//   4. Fallback defaults: AUTOMATED_DEFAULTS.<step>TimeoutMs (below)
+//      → Used when neither CLI flag nor config provides a per-step timeout.
+//      → Applied in automatedSplit() via: config.X || AUTOMATED_DEFAULTS.X
+//
+//   5. Clamping: After || fallback, values are clamped:
+//      → pollInterval: min 50ms (prevent spin-loops)
+//      → maxReSplits: min 0 (prevent negative loop counts)
+//      → maxAttemptsPerBranch: min 0
+//
+//   6. Consumers: Each pipeline step reads its timeout from the resolved chain:
+//      → pollForFile(resultDir, filename, timeoutMs, intervalMs, ...)
+//      → resolveConflictsWithClaude(..., { resolveWallClockTimeoutMs })
+//      → verifySplit(..., { verifyTimeoutMs })
+//
+// In the interactive REPL, prSplitConfig.timeoutMs is propagated to the
+// auto-split JS command at pr_split_script.js:4776-4779.
 var AUTOMATED_DEFAULTS = {
     classifyTimeoutMs: 1200000, // 20 minutes for classification (user needs 10-20min)
     planTimeoutMs: 1200000,     // 20 minutes for plan generation

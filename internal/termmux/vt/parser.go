@@ -29,8 +29,7 @@ const (
 	ActionDCSEnd                    // DCS string terminated
 )
 
-// Parser is a table-driven ANSI escape sequence parser inspired by the
-// Paul Williams VT500 state machine and tmux input.c.
+// Parser is a table-driven ANSI escape sequence parser.
 type Parser struct {
 	cur       State
 	paramBuf  []byte

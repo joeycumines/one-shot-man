@@ -2424,6 +2424,8 @@ function pollForFile(resultDir, filename, timeoutMs, intervalMs, stepName, alive
     if (!osmod) {
         return { data: null, error: 'osm:os module not available for file polling' };
     }
+    // Floor: prevent spin-loops from zero/negative intervals.
+    if (intervalMs < 50) { intervalMs = 50; }
     var hasDetailUpdate = stepName && typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
                           typeof autoSplitTUI.stepDetail === 'function';
     var hasAliveCheck = typeof aliveCheckFn === 'function';
@@ -2511,6 +2513,11 @@ function automatedSplit(config) {
     var pollInterval = config.pollIntervalMs || AUTOMATED_DEFAULTS.pollIntervalMs;
     var maxAttemptsPerBranch = config.maxResolveRetries || AUTOMATED_DEFAULTS.maxResolveRetries;
     var maxReSplits = config.maxReSplits || AUTOMATED_DEFAULTS.maxReSplits;
+
+    // Clamp: negative/zero values must not cause spin-loops or nonsensical retries.
+    if (pollInterval < 50) { pollInterval = 50; }
+    if (maxReSplits < 0) { maxReSplits = 0; }
+    if (maxAttemptsPerBranch < 0) { maxAttemptsPerBranch = 0; }
 
     // Detect the auto-split BubbleTea TUI (injected from Go).
     // When available, route progress through it; when absent (tests,

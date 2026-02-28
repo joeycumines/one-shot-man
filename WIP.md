@@ -7,27 +7,22 @@
 
 ## Blueprint State
 - T001-T066: All Done (17 commits, historical)
-- T067: NEXT — Run baseline integration tests
-- T068-T135: Not Started — pipeline hardening, timeouts, heartbeats, dependency-aware verification, etc.
+- T067-T096: Done (commits 2bc8d91 through 3431939)
+- T097-T105: Done (commit 11955d7 — callbacks, cancellation, persistence tests)
+- T110-T128: Done (commit pending — AUTOMATED_DEFAULTS, input validation, edge-case unit tests)
+- Deferred: T087 (Windows), T088 (Linux container), T100 (VTerm re-render)
+- Remaining: T106-T109 (integration tests), T112-T119, T123-T126, T129-T135
 
-## Blueprint Rewrite Summary (this session)
-Rewrote blueprint.json from scratch. Preserved 3 representative Done tasks. Added 69 new tasks (T067-T135) covering:
-- Pipeline hang fixes (wall-clock timeouts in resolveConflicts + resolveConflictsWithClaude)
-- Heartbeat monitoring during pollForFile
-- Dependency-aware verification (skip downstream when upstream fails)
-- verifyCommand default change (make test → make)
-- reportResolution pre-existing failure support
-- Timeout propagation to claude-fix strategy
-- sendToHandle Enter delay configurability + EAGAIN retry
-- Per-branch retry budget
-- Deadcode audit (conversationHistory, telemetryData, detectLanguage)
-- Cross-platform build fixes (Windows, Linux)
-- Per-branch verify timeout
-- fileStatuses 'T' handling
-- Claude auto-detection verification
-- Session persistence (savePlan/loadPlan in auto-split, crash recovery)
-- TUI feedback improvements
-- VTerm re-render integration test
+## Latest Commit Info
+- 26 commits ahead of main on wip branch
+- Latest: 11955d7 (T097-T105)
+- Pending commit: T110-T128 batch (7 new tests, 2 JS fixes, config.mk update)
+- Total tests in test-t072: 54
+
+## Next Steps
+- After T110-T128 commit: T112 (pollForFile edge cases), T113 (renamed files), T117 (cleanup on failure)
+- T129 (documentation) is a good wrap-up task
+- T106-T109 need complex integration setup (real git repos, mock Claude)
 - Rate-limiting MCP calls
 - Cancellation edge cases
 - Integration + unit tests for all changes

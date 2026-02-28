@@ -149,43 +149,43 @@
       "task": "T19: Design osm:mcpcallback module API and class pattern",
       "description": "Design the disposable IPC channel module. Constructor takes an MCP server (from osm:mcp) and optional config. Returns an initializable/closable object following the ctxutil OOP pattern (see internal/builtin/ctxutil/ctxutil.go and contextManager.js). Transport: UDS on Unix (temp dir with 0700 permissions, respecting macOS 104-char socket path limit per internal/builtin/claudemux/control.go pattern), loopback TCP (127.0.0.1:0) on Windows. Script generation: produces a temporary JS file that a sub-process can run to connect back to the parent's IPC channel. init() starts the listener, close() tears down all resources.",
       "acceptance": "Complete API design documented in WIP.md with: constructor signature new MCPCallback({server, options}), init()/close() lifecycle, transport selection logic (runtime.GOOS), script generation strategy with connection parameters, security model (UDS permissions, loopback-only TCP), and cleanup guarantees.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T20: Implement osm:mcpcallback Go module — constructor and lifecycle",
       "description": "Create internal/builtin/mcpcallback/ package. Implement Require() function. Constructor accepts MCP server and config. init() starts the transport listener. close() tears down all resources (listener, temp dirs, temp scripts). Register in internal/builtin/register.go as prefix+'mcpcallback'. Follow the ctxutil pattern from internal/builtin/ctxutil/ctxutil.go for the object lifecycle.",
       "acceptance": "require('osm:mcpcallback') returns a constructor. new MCPCallback({server: srv}) creates an object. init() and close() are callable. close() is idempotent. Module registered in register.go and discoverable from JS.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T21: Implement UDS transport for osm:mcpcallback (Unix)",
       "description": "Implement Unix Domain Socket listener for the mcpcallback module. Use os.MkdirTemp() for the socket directory with 0700 permissions. net.Listen('unix', socketPath). close() must remove the socket file and temp directory. Handle macOS 104-character socket path limit (reference the pattern in internal/builtin/claudemux/control.go which already solves this). Build-tag or runtime.GOOS guard for Unix-only code.",
       "acceptance": "On Unix (Linux/macOS), init() creates a UDS in a temp directory. close() removes socket file and temp directory. Socket path respects macOS 104-char limit. Directory permissions are 0700. Verified by test on macOS and Linux.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T22: Implement loopback TCP transport for osm:mcpcallback (Windows)",
       "description": "Implement TCP loopback listener on 127.0.0.1:0 (OS-assigned random high port) for the mcpcallback module on Windows. net.Listen('tcp', '127.0.0.1:0'). Extract assigned port from listener.Addr() for script generation (T23). close() closes the listener. Build-tag or runtime.GOOS guard for Windows.",
       "acceptance": "On Windows, init() binds to 127.0.0.1 with random port. Port number is retrievable for sub-process connection. close() closes the listener. Verified by test on windows-latest.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T23: Implement bootstrap JS script generation for osm:mcpcallback",
       "description": "Generate a temporary JS file that sub-processes can execute to connect back to the parent's IPC channel. Use os.CreateTemp() with 0600 permissions. The generated script uses osm:grpc (or direct socket/TCP connection) to establish bidi communication with the parent's MCP server. Implement atomic write (write to temp file, then os.Rename, following the pattern in internal/storage/atomic_write.go). Script is cleaned up on close(). Script content must include the transport address (UDS path or TCP host:port) and necessary MCP protocol bootstrap code.",
       "acceptance": "Generated script is valid JavaScript that, when executed by an osm script sub-process, connects to the parent's IPC channel and can make MCP tool calls. Script file has 0600 permissions. Atomic write prevents partial reads. close() deletes the script file.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T24: Implement synchronous blocking for AI tool callbacks",
       "description": "Ensure MCP tool callbacks from the AI sub-process block synchronously until the host JS handler returns a result. Use gojaeventloop.Adapter for async safety — the handler runs on the event loop via Loop.Submit(). The goja-grpc module (internal/builtin/grpc/grpc.go) already handles this pattern: server handlers registered via grpc.createServer() run on the event loop. Errors must propagate back through proper status codes (gRPC status codes or MCP error responses). No deadlocks — the event loop must not be blocked waiting for itself.",
       "acceptance": "When the AI sub-process calls an MCP tool, the call blocks until the host's JS handler completes and returns. Errors in the host handler propagate back to the AI as tool errors. No deadlocks under concurrent tool calls. Verified by test with synchronous and async handler patterns.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T25: Write unit tests for osm:mcpcallback module",
       "description": "Tests in internal/builtin/mcpcallback/mcpcallback_test.go. Cover: (1) constructor with valid/invalid config, (2) init/close lifecycle (including double-close), (3) UDS transport on Unix (build-tagged or runtime.GOOS skipped), (4) TCP transport on Windows (build-tagged or runtime.GOOS skipped), (5) script generation content and permissions, (6) synchronous callback blocking, (7) error propagation from handler to caller, (8) resource cleanup after close (no leaked files/sockets), (9) cleanup on context cancellation.",
       "acceptance": "Tests cover all lifecycle phases and both platform transports. All pass with -race flag on all 3 platforms (platform-specific tests properly skipped on non-target platforms). No goroutine leaks. No temp file leaks.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T26: Implement signal-safe cleanup for mcpcallback temp resources",

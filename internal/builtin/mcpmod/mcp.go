@@ -54,6 +54,17 @@ func jsCreateServer(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop 
 		_ = obj.Set("addTool", s.jsAddTool())
 		_ = obj.Set("run", s.jsRun())
 		_ = obj.Set("close", s.jsClose())
+
+		// Expose hidden properties for cross-module access (e.g., osm:mcpcallback).
+		// __goServer: the underlying *mcp.Server for direct transport wiring.
+		// __isRunning: callable that returns true if run() has been called.
+		_ = obj.Set("__goServer", runtime.ToValue(s.server))
+		_ = obj.Set("__isRunning", func(call goja.FunctionCall) goja.Value {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			return runtime.ToValue(s.running)
+		})
+
 		return obj
 	}
 }

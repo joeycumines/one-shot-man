@@ -634,10 +634,11 @@ type createSplitPlanResult struct {
 	Dir           string `json:"dir"`
 	VerifyCommand string `json:"verifyCommand"`
 	Splits        []struct {
-		Name    string   `json:"name"`
-		Files   []string `json:"files"`
-		Message string   `json:"message"`
-		Order   int      `json:"order"`
+		Name         string   `json:"name"`
+		Files        []string `json:"files"`
+		Message      string   `json:"message"`
+		Order        int      `json:"order"`
+		Dependencies []string `json:"dependencies"`
 	} `json:"splits"`
 }
 
@@ -886,6 +887,69 @@ func TestCreateSplitPlan_EmptyAndNullGroups(t *testing.T) {
 			tt.check(t, r)
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// TestCreateSplitPlan_DependencyField — verifies the dependency chain
+// ---------------------------------------------------------------------------
+
+func TestCreateSplitPlan_DependencyField(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := evalJS(`globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feat');`); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("first split has empty dependencies, subsequent list predecessor", func(t *testing.T) {
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.createSplitPlan(
+			{'alpha': ['a.go'], 'beta': ['b.go'], 'gamma': ['c.go']},
+			{baseBranch: 'main', branchPrefix: 'split/'}
+		))`)
+		if err != nil {
+			t.Fatalf("invoke failed: %v", err)
+		}
+		r := parseCreateSplitPlanResult(t, raw)
+		if len(r.Splits) != 3 {
+			t.Fatalf("expected 3 splits, got %d", len(r.Splits))
+		}
+
+		// First split: empty dependencies.
+		if len(r.Splits[0].Dependencies) != 0 {
+			t.Errorf("split[0].dependencies = %v, want empty", r.Splits[0].Dependencies)
+		}
+
+		// Second split: depends on first.
+		if len(r.Splits[1].Dependencies) != 1 || r.Splits[1].Dependencies[0] != r.Splits[0].Name {
+			t.Errorf("split[1].dependencies = %v, want [%q]", r.Splits[1].Dependencies, r.Splits[0].Name)
+		}
+
+		// Third split: depends on second.
+		if len(r.Splits[2].Dependencies) != 1 || r.Splits[2].Dependencies[0] != r.Splits[1].Name {
+			t.Errorf("split[2].dependencies = %v, want [%q]", r.Splits[2].Dependencies, r.Splits[1].Name)
+		}
+	})
+
+	t.Run("single split has empty dependencies", func(t *testing.T) {
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.createSplitPlan(
+			{'only': ['sole.go']},
+			{baseBranch: 'main', branchPrefix: 'split/'}
+		))`)
+		if err != nil {
+			t.Fatalf("invoke failed: %v", err)
+		}
+		r := parseCreateSplitPlanResult(t, raw)
+		if len(r.Splits) != 1 {
+			t.Fatalf("expected 1 split, got %d", len(r.Splits))
+		}
+		if len(r.Splits[0].Dependencies) != 0 {
+			t.Errorf("single split dependencies = %v, want empty", r.Splits[0].Dependencies)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------

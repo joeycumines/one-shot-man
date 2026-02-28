@@ -87,7 +87,7 @@ func NewPrSplitCommand(cfg *config.Config) *PrSplitCommand {
 		strategy:      "directory",
 		maxFiles:      10,
 		branchPrefix:  "split/",
-		verifyCommand: "make test",
+		verifyCommand: "make",
 	}
 }
 
@@ -101,7 +101,7 @@ func (c *PrSplitCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.strategy, "strategy", "directory", "Grouping strategy: directory, directory-deep, extension, chunks, dependency, auto")
 	fs.IntVar(&c.maxFiles, "max", 10, "Maximum files per split")
 	fs.StringVar(&c.branchPrefix, "prefix", "split/", "Branch name prefix for splits")
-	fs.StringVar(&c.verifyCommand, "verify", "make test", "Command to verify each split")
+	fs.StringVar(&c.verifyCommand, "verify", "make", "Command to verify each split (default: make)")
 	fs.BoolVar(&c.dryRun, "dry-run", false, "Show plan without executing")
 
 	fs.BoolVar(&c.jsonOutput, "json", false, "Output results as JSON (combine with run or --dry-run)")
@@ -128,7 +128,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	//   pr-split.strategy=extension
 	//   pr-split.max=8
 	//   pr-split.prefix=split/
-	//   pr-split.verify=make test
+	//   pr-split.verify=make
 	//   pr-split.dry-run=true
 	if c.config != nil {
 		applyConfigDefault := func(key string, target *string, flagDefault string) {
@@ -144,7 +144,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			}
 		}
 		applyConfigDefault("prefix", &c.branchPrefix, "split/")
-		applyConfigDefault("verify", &c.verifyCommand, "make test")
+		applyConfigDefault("verify", &c.verifyCommand, "make")
 		if v, ok := c.config.GetCommandOption("pr-split", "dry-run"); ok && !c.dryRun {
 			c.dryRun = v == "true" || v == "1" || v == "yes"
 		}

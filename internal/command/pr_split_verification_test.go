@@ -161,10 +161,11 @@ func parseExecuteSplitResult(t *testing.T, raw interface{}) executeSplitResult {
 type verifySplitsResult struct {
 	AllPassed bool `json:"allPassed"`
 	Results   []struct {
-		Name   string  `json:"name"`
-		Passed bool    `json:"passed"`
-		Output string  `json:"output"`
-		Error  *string `json:"error"`
+		Name    string  `json:"name"`
+		Passed  bool    `json:"passed"`
+		Skipped bool    `json:"skipped"`
+		Output  string  `json:"output"`
+		Error   *string `json:"error"`
 	} `json:"results"`
 	Error *string `json:"error"`
 }
@@ -1125,4 +1126,118 @@ func TestVerifyEquivalenceDetailed_NullPlan(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Dependency-skip tests for verifySplits (T073)
+// ---------------------------------------------------------------------------
+
+func TestVerifySplits_SkipsDependencyFailures(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	t.Run("downstream_skipped_when_upstream_fails", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+
+		// First split fails verification (sh callback returns failure on first call),
+		// second and third should be skipped due to dependency chain.
+		if _, err := evalJS(`
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = _gitFail('build failed');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/01-alpha', files: ['a.go'], dependencies: []},
+				{name: 'split/02-beta',  files: ['b.go'], dependencies: ['split/01-alpha']},
+				{name: 'split/03-gamma', files: ['c.go'], dependencies: ['split/02-beta']}
+			]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifySplitsResult(t, raw)
+
+		if r.AllPassed {
+			t.Error("should not all pass when first fails")
+		}
+		if len(r.Results) != 3 {
+			t.Fatalf("expected 3 results, got %d", len(r.Results))
+		}
+
+		// First: actually failed.
+		if r.Results[0].Passed {
+			t.Error("result[0] should have failed")
+		}
+		if r.Results[0].Skipped {
+			t.Error("result[0] should NOT be skipped (actually ran)")
+		}
+
+		// Second: skipped due to dependency on first.
+		if r.Results[1].Passed {
+			t.Error("result[1] should not be passed")
+		}
+		if !r.Results[1].Skipped {
+			t.Error("result[1] should be skipped")
+		}
+		if r.Results[1].Error == nil || !strings.Contains(*r.Results[1].Error, "dependency split/01-alpha failed") {
+			t.Errorf("result[1].error = %v, want 'dependency split/01-alpha failed'", r.Results[1].Error)
+		}
+
+		// Third: skipped due to dependency on second (transitive).
+		if !r.Results[2].Skipped {
+			t.Error("result[2] should be skipped")
+		}
+		if r.Results[2].Error == nil || !strings.Contains(*r.Results[2].Error, "dependency split/02-beta failed") {
+			t.Errorf("result[2].error = %v, want 'dependency split/02-beta failed'", r.Results[2].Error)
+		}
+	})
+
+	t.Run("no_dependencies_always_runs", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = _gitOk('tests passed');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/01', files: ['a.go']}
+			]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifySplitsResult(t, raw)
+
+		if !r.AllPassed {
+			t.Error("single split without dependencies should pass")
+		}
+		if len(r.Results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(r.Results))
+		}
+		if r.Results[0].Skipped {
+			t.Error("should not be skipped when no dependencies")
+		}
+	})
 }

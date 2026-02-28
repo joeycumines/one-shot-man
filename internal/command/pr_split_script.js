@@ -127,7 +127,7 @@ var runtime = {
     strategy:      cfg.strategy      || 'directory',
     maxFiles:      cfg.maxFiles      || 10,
     branchPrefix:  cfg.branchPrefix  || 'split/',
-    verifyCommand: cfg.verifyCommand || 'make test',
+    verifyCommand: cfg.verifyCommand || 'make',
     dryRun:        cfg.dryRun        || false,
     jsonOutput:    cfg.jsonOutput    || false,
     mode:          cfg.mode          || 'heuristic',   // 'auto' or 'heuristic'
@@ -788,7 +788,8 @@ function createSplitPlan(groups, config) {
             name: sanitizeBranchName(branchPrefix + padIndex(i + 1) + '-' + name),
             files: groups[name].slice().sort(),
             message: commitPrefix + name,
-            order: i
+            order: i,
+            dependencies: i === 0 ? [] : [splits[i - 1].name]
         });
     }
 
@@ -1124,6 +1125,7 @@ function verifySplits(plan) {
     var dir = plan.dir || '.';
     var results = [];
     var allPassed = true;
+    var failedBranches = {};
 
     var saved = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
     var restoreBranch = saved.code === 0 ? saved.stdout.trim() : plan.sourceBranch;
@@ -1135,13 +1137,32 @@ function verifySplits(plan) {
             return { allPassed: false, results: results, error: 'verification cancelled by user' };
         }
 
-        var result = verifySplit(plan.splits[i].name, {
+        var split = plan.splits[i];
+
+        // Check if any dependency failed — skip if so.
+        var deps = split.dependencies || [];
+        var skipReason = '';
+        for (var d = 0; d < deps.length; d++) {
+            if (failedBranches[deps[d]]) {
+                skipReason = 'skipped: dependency ' + deps[d] + ' failed';
+                break;
+            }
+        }
+        if (skipReason) {
+            results.push({ name: split.name, passed: false, skipped: true, error: skipReason });
+            allPassed = false;
+            failedBranches[split.name] = true;
+            continue;
+        }
+
+        var result = verifySplit(split.name, {
             dir: dir,
             verifyCommand: plan.verifyCommand
         });
         results.push(result);
         if (!result.passed) {
             allPassed = false;
+            failedBranches[split.name] = true;
         }
     }
 
@@ -1650,6 +1671,12 @@ function resolveConflicts(plan, options) {
     var strategies = options.strategies || AUTO_FIX_STRATEGIES;
     var totalRetries = 0;
 
+    // Wall-clock timeout: cap total elapsed time regardless of retry budget.
+    var wallClockTimeoutMs = typeof options.wallClockTimeoutMs === 'number'
+        ? options.wallClockTimeoutMs
+        : AUTOMATED_DEFAULTS.resolveWallClockTimeoutMs;
+    var deadline = Date.now() + wallClockTimeoutMs;
+
     if (!verifyCommand || verifyCommand === 'true') {
         return { fixed: [], skipped: 'no verify command configured', errors: [], reSplitNeeded: false };
     }
@@ -1666,6 +1693,16 @@ function resolveConflicts(plan, options) {
     var reSplitFiles = [];
 
     for (var i = 0; i < plan.splits.length; i++) {
+        // Wall-clock deadline check.
+        var elapsed = Date.now() - (deadline - wallClockTimeoutMs);
+        if (Date.now() >= deadline) {
+            errorsOut.push({ name: plan.splits[i].name, error: 'wall-clock timeout after ' + elapsed + 'ms (limit: ' + wallClockTimeoutMs + 'ms)' });
+            for (var remaining = i + 1; remaining < plan.splits.length; remaining++) {
+                errorsOut.push({ name: plan.splits[remaining].name, error: 'wall-clock timeout after ' + elapsed + 'ms (limit: ' + wallClockTimeoutMs + 'ms)' });
+            }
+            break;
+        }
+
         if (totalRetries >= retryBudget) {
             errorsOut.push({ name: plan.splits[i].name, error: 'retry budget exhausted (' + retryBudget + ')' });
             continue;
@@ -1690,6 +1727,10 @@ function resolveConflicts(plan, options) {
         // Verification failed — try auto-fix strategies.
         var resolved = false;
         for (var s = 0; s < strategies.length && totalRetries < retryBudget; s++) {
+            // Wall-clock deadline check inside strategy loop.
+            if (Date.now() >= deadline) {
+                break;
+            }
             var strategy = strategies[s];
             // Pass verifyOutput to detect for content-aware strategies.
             if (!strategy.detect(dir, verifyOutput)) {
@@ -2116,7 +2157,8 @@ var AUTOMATED_DEFAULTS = {
     resolveTimeoutMs: 1800000,  // 30 minutes for conflict resolution
     pollIntervalMs: 500,        // Poll every 500ms for fast cancellation response
     maxResolveRetries: 3,       // Retries per branch
-    maxReSplits: 1              // Maximum re-classification cycles
+    maxReSplits: 1,             // Maximum re-classification cycles
+    resolveWallClockTimeoutMs: 7200000 // 120 minutes wall-clock cap for resolveConflicts
 };
 
 // Spinner characters for progress display.
@@ -2184,19 +2226,28 @@ function sendToHandle(handle, text) {
 
 // pollForFile polls a result directory for a specific file.
 // Returns { data: object|null, error: string|null }.
-function pollForFile(resultDir, filename, timeoutMs, intervalMs, stepName) {
+function pollForFile(resultDir, filename, timeoutMs, intervalMs, stepName, aliveCheckFn) {
     if (!osmod) {
         return { data: null, error: 'osm:os module not available for file polling' };
     }
     var hasDetailUpdate = stepName && typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
                           typeof autoSplitTUI.stepDetail === 'function';
+    var hasAliveCheck = typeof aliveCheckFn === 'function';
     var elapsed = 0;
     var spinnerIdx = 0;
+    var iterCount = 0;
     while (elapsed < timeoutMs) {
         // Check cancellation before each poll iteration.
         if (isCancelled()) {
             return { data: null, error: 'cancelled by user' };
         }
+        // Heartbeat check every 10 iterations (~5s at 500ms interval).
+        if (hasAliveCheck && iterCount > 0 && iterCount % 10 === 0) {
+            if (!aliveCheckFn()) {
+                return { data: null, error: 'process exited during poll for ' + filename };
+            }
+        }
+        iterCount++;
         // Emit progress on every iteration so the TUI shows activity.
         if (hasDetailUpdate) {
             var spinner = SPINNER_FRAMES[spinnerIdx % SPINNER_FRAMES.length];
@@ -2396,6 +2447,14 @@ function automatedSplit(config) {
     var sessionId = executor.sessionId;
     var resultDir = executor.resultDir;
 
+    // Heartbeat function: checks if the Claude process is still alive.
+    // Passed to pollForFile so long polls can exit early if the process dies.
+    var aliveCheckFn = function() {
+        return claudeExecutor && claudeExecutor.handle &&
+               typeof claudeExecutor.handle.isAlive === 'function' &&
+               claudeExecutor.handle.isAlive();
+    };
+
     // Attach Claude's PTY handle to tuiMux so ctrl+] can forward
     // stdin/stdout to Claude during the pipeline.
     if (claudeExecutor && claudeExecutor.handle && typeof tuiMux !== 'undefined' && tuiMux) {
@@ -2447,7 +2506,7 @@ function automatedSplit(config) {
     // Step 4: Receive classification.
     var classification = step('Receive classification', function() {
         updateDetail('Receive classification', 'Polling for response...');
-        var pollResult = pollForFile(resultDir, 'classification.json', timeouts.classify, pollInterval, 'Receive classification');
+        var pollResult = pollForFile(resultDir, 'classification.json', timeouts.classify, pollInterval, 'Receive classification', aliveCheckFn);
         if (pollResult.error) {
             return { error: pollResult.error };
         }
@@ -2481,7 +2540,7 @@ function automatedSplit(config) {
     var planResult = step('Generate split plan', function() {
         updateDetail('Generate split plan', 'Checking for Claude-generated plan...');
         // Check if Claude also provided a split plan.
-        var planPoll = pollForFile(resultDir, 'split-plan.json', 5000, 500, 'Generate split plan');
+        var planPoll = pollForFile(resultDir, 'split-plan.json', 5000, 500, 'Generate split plan', aliveCheckFn);
         if (!planPoll.error && planPoll.data) {
             // Claude provided a plan — validate it.
             var claudePlan = planPoll.data;
@@ -2561,22 +2620,35 @@ function automatedSplit(config) {
     var verifyResult = step('Verify splits', function() {
         updateDetail('Verify splits', 'Running tree hash verification...');
         var verifyObj = verifySplits(plan);
-        var failures = [];
+        var realFailures = [];
+        var skippedResults = [];
         for (var i = 0; i < verifyObj.results.length; i++) {
-            if (!verifyObj.results[i].passed) {
-                failures.push(verifyObj.results[i]);
+            var r = verifyObj.results[i];
+            if (r.skipped) {
+                skippedResults.push(r);
+            } else if (!r.passed) {
+                realFailures.push(r);
             }
         }
-        return { error: null, failures: failures, allPassed: verifyObj.allPassed };
+        if (skippedResults.length > 0) {
+            var skippedNames = [];
+            for (var j = 0; j < skippedResults.length; j++) {
+                skippedNames.push(skippedResults[j].name);
+            }
+            output.print('[auto-split] Skipped ' + skippedResults.length +
+                ' branches due to dependency failures: ' + skippedNames.join(', '));
+        }
+        report.skippedDueToDepFailure = skippedResults;
+        return { error: null, failures: realFailures, allPassed: verifyObj.allPassed };
     });
 
-    // Step 8: Resolve conflicts (if any failures).
+    // Step 8: Resolve conflicts (if any real failures — skipped branches excluded).
     var reSplitCount = 0;
     if (verifyResult.failures && verifyResult.failures.length > 0) {
         var resolved = step('Resolve conflicts via Claude', function() {
             return resolveConflictsWithClaude(
                 verifyResult.failures, sessionId, resultDir,
-                timeouts, pollInterval, maxRetries, report
+                timeouts, pollInterval, maxRetries, report, aliveCheckFn
             );
         });
 
@@ -2599,7 +2671,7 @@ function automatedSplit(config) {
                 recordConversation('re-classify', constraintPrompt, '');
                 // Delete old classification file so we wait for the new one.
                 try { exec.execv(['rm', '-f', resultDir + '/classification.json']); } catch (e) { /* ignore */ }
-                var rePoll = pollForFile(resultDir, 'classification.json', timeouts.classify, pollInterval, 'Re-classify (retry ' + reSplitCount + ')');
+                var rePoll = pollForFile(resultDir, 'classification.json', timeouts.classify, pollInterval, 'Re-classify (retry ' + reSplitCount + ')', aliveCheckFn);
                 if (rePoll.error) {
                     return { error: rePoll.error };
                 }
@@ -2726,11 +2798,25 @@ function classificationToGroups(classification) {
 }
 
 // resolveConflictsWithClaude attempts to fix failing splits using Claude.
-function resolveConflictsWithClaude(failures, sessionId, resultDir, timeouts, pollInterval, maxRetries, report) {
+function resolveConflictsWithClaude(failures, sessionId, resultDir, timeouts, pollInterval, maxRetries, report, aliveCheckFn) {
     var reSplitNeeded = false;
     var reSplitReason = '';
 
+    // Wall-clock timeout: cap total elapsed time. Default = resolve * maxRetries + 60s buffer, capped at 120 min.
+    var wallClockMs = (timeouts && typeof timeouts.wallClockMs === 'number')
+        ? timeouts.wallClockMs
+        : Math.min(((timeouts && timeouts.resolve) || AUTOMATED_DEFAULTS.resolveTimeoutMs) * (maxRetries || 3) + 60000,
+                   AUTOMATED_DEFAULTS.resolveWallClockTimeoutMs);
+    var deadlineStart = Date.now();
+    var deadline = deadlineStart + wallClockMs;
+
     for (var i = 0; i < failures.length; i++) {
+        // Wall-clock deadline check.
+        if (Date.now() >= deadline) {
+            var elapsed = Date.now() - deadlineStart;
+            return { reSplitNeeded: false, reSplitReason: 'wall-clock timeout after ' + elapsed + 'ms (limit: ' + wallClockMs + 'ms)' };
+        }
+
         // Intra-step cancellation: check between each failure resolution.
         if (isCancelled()) {
             return { reSplitNeeded: false, reSplitReason: 'cancelled by user' };
@@ -2740,6 +2826,11 @@ function resolveConflictsWithClaude(failures, sessionId, resultDir, timeouts, po
         var fixed = false;
 
         for (var attempt = 0; attempt < maxRetries && !fixed; attempt++) {
+            // Wall-clock deadline check inside retry loop.
+            if (Date.now() >= deadline) {
+                var elapsed = Date.now() - deadlineStart;
+                return { reSplitNeeded: false, reSplitReason: 'wall-clock timeout after ' + elapsed + 'ms (limit: ' + wallClockMs + 'ms)' };
+            }
             // Check cancellation between retry attempts.
             if (isCancelled()) {
                 return { reSplitNeeded: false, reSplitReason: 'cancelled by user' };
@@ -2775,7 +2866,7 @@ function resolveConflictsWithClaude(failures, sessionId, resultDir, timeouts, po
             // Wait for resolution.
             // Delete old resolution file first.
             try { exec.execv(['rm', '-f', resultDir + '/resolution.json']); } catch (e) { /* ignore */ }
-            var resolutionPoll = pollForFile(resultDir, 'resolution.json', timeouts.resolve, pollInterval, 'Resolve conflicts');
+            var resolutionPoll = pollForFile(resultDir, 'resolution.json', timeouts.resolve, pollInterval, 'Resolve conflicts', aliveCheckFn);
             if (resolutionPoll.error) {
                 log.printf('auto-split: resolution timeout for %s (attempt %d)', fail.branch || fail.name, attempt + 1);
                 continue;
@@ -3542,7 +3633,10 @@ globalThis.prSplit = {
     cleanupBranches: cleanupBranches,
     createPRs: createPRs,
     resolveConflicts: resolveConflicts,
+    resolveConflictsWithClaude: resolveConflictsWithClaude,
     AUTO_FIX_STRATEGIES: AUTO_FIX_STRATEGIES,
+    AUTOMATED_DEFAULTS: AUTOMATED_DEFAULTS,
+    pollForFile: pollForFile,
 
     // Claude Code executor
     ClaudeCodeExecutor: ClaudeCodeExecutor,

@@ -170,8 +170,8 @@ func TestPrSplitCommand_FlagDefaults(t *testing.T) {
 	if cmd.branchPrefix != "split/" {
 		t.Errorf("Expected default branchPrefix 'split/', got: %s", cmd.branchPrefix)
 	}
-	if cmd.verifyCommand != "make test" {
-		t.Errorf("Expected default verifyCommand 'make test', got: %s", cmd.verifyCommand)
+	if cmd.verifyCommand != "make" {
+		t.Errorf("Expected default verifyCommand 'make', got: %s", cmd.verifyCommand)
 	}
 	if cmd.dryRun {
 		t.Error("Expected default dryRun to be false")
@@ -4133,6 +4133,127 @@ func TestPrSplitCommand_ResolveConflictsPassingBranch(t *testing.T) {
 	}
 }
 
+func TestPrSplitCommand_ResolveConflictsWallClockTimeout(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on Windows — git test repo setup uses Unix commands")
+	}
+
+	dir := setupTestGitRepo(t)
+
+	// Create two branches that will fail verification.
+	for _, branch := range []string{"split/wc-a", "split/wc-b"} {
+		cmd := exec.Command("git", "-C", dir, "checkout", "-b", branch)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("Failed to create branch %s: %s (%v)", branch, out, err)
+		}
+	}
+	cmd := exec.Command("git", "-C", dir, "checkout", "main")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to checkout main: %s (%v)", out, err)
+	}
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// wallClockTimeoutMs=1 guarantees the deadline will be exceeded immediately.
+	val, err := evalJS(`(function() {
+		var result = globalThis.prSplit.resolveConflicts({
+			dir: '` + strings.ReplaceAll(dir, `\`, `\\`) + `',
+			splits: [
+				{ name: 'split/wc-a', files: ['a.go'] },
+				{ name: 'split/wc-b', files: ['b.go'] }
+			],
+			verifyCommand: 'exit 1'
+		}, { retryBudget: 10, wallClockTimeoutMs: 1 });
+		return JSON.stringify(result);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatalf("Failed to parse result: %v", err)
+	}
+	// Both branches should have wall-clock timeout errors.
+	errs, _ := result["errors"].([]interface{})
+	if len(errs) < 2 {
+		t.Fatalf("Expected at least 2 errors (one per branch), got %d: %v", len(errs), errs)
+	}
+	for _, e := range errs {
+		em, _ := e.(map[string]interface{})
+		errMsg, _ := em["error"].(string)
+		if !strings.Contains(errMsg, "wall-clock timeout") {
+			t.Errorf("Expected 'wall-clock timeout' in error, got: %s", errMsg)
+		}
+	}
+}
+
+func TestPrSplitCommand_ResolveConflictsWallClockDefault(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Verify the default wall-clock timeout is 7200000ms (120 minutes).
+	val, err := evalJS(`globalThis.prSplit.AUTOMATED_DEFAULTS.resolveWallClockTimeoutMs`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, ok := val.(int64)
+	if !ok {
+		// Try float64 — some JS runtimes export numbers as float.
+		vf, ok2 := val.(float64)
+		if !ok2 {
+			t.Fatalf("Expected numeric value, got %T: %v", val, val)
+		}
+		v = int64(vf)
+	}
+	if v != 7200000 {
+		t.Errorf("Expected resolveWallClockTimeoutMs=7200000, got %d", v)
+	}
+}
+
+func TestPrSplitCommand_ResolveConflictsWithClaudeWallClockTimeout(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Call resolveConflictsWithClaude with wallClockMs=0 so the deadline expires immediately.
+	// This should return the wall-clock timeout reason without trying to contact Claude.
+	val, err := evalJS(`(function() {
+		var failures = [
+			{ branch: 'split/fail-a', files: ['a.go'], error: 'test fail' },
+			{ branch: 'split/fail-b', files: ['b.go'], error: 'test fail' }
+		];
+		var report = { conflicts: [], resolutions: [], claudeInteractions: 0 };
+		var result = globalThis.prSplit.resolveConflictsWithClaude(
+			failures,
+			'test-session',
+			'/nonexistent',
+			{ resolve: 30000, wallClockMs: 0 },
+			500,
+			3,
+			report
+		);
+		return JSON.stringify(result);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatalf("Failed to parse result: %v", err)
+	}
+	// Should have reSplitNeeded=false and wall-clock timeout reason.
+	if result["reSplitNeeded"] != false {
+		t.Errorf("Expected reSplitNeeded=false, got %v", result["reSplitNeeded"])
+	}
+	reason, _ := result["reSplitReason"].(string)
+	if !strings.Contains(reason, "wall-clock timeout") {
+		t.Errorf("Expected 'wall-clock timeout' in reSplitReason, got: %s", reason)
+	}
+}
+
 func TestPrSplitCommand_DefaultRetryBudget(t *testing.T) {
 	t.Parallel()
 
@@ -4823,6 +4944,85 @@ func TestIntegration_PollFileTimeout(t *testing.T) {
 	}
 	if len(result.Errors) == 0 {
 		t.Error("expected errors when budget is 0")
+	}
+}
+
+// T070: Heartbeat check in pollForFile
+func TestPrSplitCommand_PollForFileHeartbeatExitsOnDeath(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	tmpDir := t.TempDir()
+	escapedDir := strings.ReplaceAll(tmpDir, `\`, `\\`)
+	escapedDir = strings.ReplaceAll(escapedDir, `'`, `\'`)
+
+	// aliveCheckFn returns false after 10 calls (which triggers on the 10th iteration).
+	// With intervalMs=10, 10 iterations = ~100ms. Timeout is 30s.
+	// Without heartbeat, this would wait 30s. With heartbeat, it should exit in <2s.
+	val, err := evalJS(`(function() {
+		var callCount = 0;
+		var aliveCheckFn = function() {
+			callCount++;
+			return false; // always dead — should trigger on first heartbeat check
+		};
+		var start = Date.now();
+		var result = globalThis.prSplit.pollForFile(
+			'` + escapedDir + `', 'nonexistent.json',
+			30000, 10, 'test-heartbeat', aliveCheckFn
+		);
+		var elapsed = Date.now() - start;
+		return JSON.stringify({ error: result.error, elapsedMs: elapsed, callCount: callCount });
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Error     string `json:"error"`
+		ElapsedMs int    `json:"elapsedMs"`
+		CallCount int    `json:"callCount"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatalf("Failed to parse result: %v", err)
+	}
+	if !strings.Contains(result.Error, "process exited during poll") {
+		t.Errorf("Expected 'process exited during poll' error, got: %s", result.Error)
+	}
+	// Should exit well before the 30s timeout.
+	if result.ElapsedMs > 5000 {
+		t.Errorf("Expected exit within 5s, took %dms", result.ElapsedMs)
+	}
+}
+
+func TestPrSplitCommand_PollForFileNoHeartbeatBackwardCompat(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	tmpDir := t.TempDir()
+	escapedDir := strings.ReplaceAll(tmpDir, `\`, `\\`)
+	escapedDir = strings.ReplaceAll(escapedDir, `'`, `\'`)
+
+	// Without aliveCheckFn, pollForFile should still work — it just times out normally.
+	val, err := evalJS(`(function() {
+		var result = globalThis.prSplit.pollForFile(
+			'` + escapedDir + `', 'nonexistent.json',
+			100, 10, 'test-compat'
+		);
+		return JSON.stringify({ error: result.error });
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatalf("Failed to parse result: %v", err)
+	}
+	// Should timeout normally, not crash.
+	if !strings.Contains(result.Error, "timeout waiting for") {
+		t.Errorf("Expected normal timeout error, got: %s", result.Error)
 	}
 }
 

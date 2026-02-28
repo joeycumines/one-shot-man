@@ -2,43 +2,30 @@
 
 ## Session
 - Branch: `wip` (tracking origin/wip)
-- Commits: 10f7d91, 25632c6, 8d14711, d71b999, 02cb61a, 585f903, 990c6a1, 7ad17ca, 89a0809, 5089b59, e15dac9
-- Total: 11 commits on wip branch
+- Commits: 10f7d91, 25632c6, 8d14711, d71b999, 02cb61a, 585f903, 990c6a1, 7ad17ca, 89a0809, 5089b59, e15dac9, 04d2279, 496d9e8, e057f35
+- Total: 15 commits on wip branch
 
 ## Blueprint State
-- T001-T051: All Done
-- Next: Scope expansion — find more coverage targets
+- T001-T060: All Done
+- Next: Scope expansion — find more coverage targets for batch 12
 
-## Key Files Modified This Session (batch 8)
-- `internal/termmux/vt/dispatch_coverage_test.go` — NEW FILE, 27 tests
-  - CSI CUD (3): cursor down, default param, clamp to bottom
-  - CSI CNL (2): cursor next line, clamp + col reset
-  - CSI CPL (2): cursor previous line, clamp + col reset
-  - CSI EL (3): erase line modes 0, 1, default
-  - CSI IL (1): insert lines via dispatch
-  - CSI DL (1): delete lines via dispatch
-  - CSI SU (1): scroll up via dispatch
-  - CSI SD (1): scroll down via dispatch
-  - CSI f (1): CUP alias
-  - CSI SM/RM non-private (1): no-op verification
-  - ESC IND (2): index/line feed, scroll at bottom
-  - ESC NEL (2): next line, scroll at bottom
-  - Screen EraseLine (2): modes 0 and 1
-  - Screen EraseDisplay (3): modes 1, 2, 3
-  - CSI DECRST (2): explicit cursor hide and alt screen
-- `config.mk` — +5 lines (test-batch8 target)
+## Key Files Modified (batch 11)
+- `internal/builtin/claudemux/safety_internals_test.go` — 46 tests (classifyIntent 18, assessScope 7, enforcePolicy 6, checkAllowedPaths 6, calculateRisk 4)
+- `internal/scripting/ring_buffer_test.go` — 10 tests (getFlatHistoryInternal: empty, contiguous, wrap-around, copy)
+- `config.mk` — added test-batch11 target
 
-## Coverage Audit Findings (remaining)
-- VTerm unexported: processByte, handleControl, switchToAlt, switchToPrimary (exercised indirectly)
-- PTY I/O: fcntlSetFlags (exercised indirectly)
-- Statusbar: render inner method (exercised indirectly)
-- builtin/time: Only 1 test for trivial sleep wrapper
-- getGitRefSuggestions: shells out to git, difficult to unit test in isolation
-- state_manager.go lifecycle: AddListener, RemoveListener, notifyListeners
-- InsertLines/DeleteLines CurCol=0 side effect (not asserted — minor)
+## Coverage Audit: Remaining Gaps
+1. **claude_mux.go dispatchTask()** — Complex orchestration, ZERO isolated tests
+2. **ptyio ResizePTY, watchResize** — Platform-specific PTY operations
+3. **bt/unwrap.go nodeUnwrap/tickUnwrap** — Requires Goja Bridge setup
+4. **autosplit renderSteps** — Multi-step render pipeline
+5. **matchBlockedPath** — Could test directly with glob patterns
+6. **CompositeValidator** — Has production code but no dedicated tests
+7. **buildSearchText** — Helper, tested indirectly but could have direct tests
+8. **riskLevelFromScore** — Helper for risk categorization
+9. **buildReason/buildDetails** — Output formatting helpers
 
 ## Immediate Next Steps
-1. Address InsertLines/DeleteLines CurCol=0 assertion gap (non-blocking)
-2. Audit state_manager.go listener functions
-3. Consider builtin subpackages for additional coverage
-4. Continue indefinite cycling per DIRECTIVE.txt
+1. Pick next coverage target from gap list
+2. Write tests, run full pipeline, Rule of Two, commit
+3. Continue indefinite cycling per DIRECTIVE.txt

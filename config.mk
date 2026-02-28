@@ -158,5 +158,14 @@ test-batch11: ## Run batch 11 tests (safety internals + ring buffer)
 	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestClassifyIntent_|TestAssessScope_|TestEnforcePolicy_|TestCheckAllowedPaths_|TestCalculateRisk_' ./internal/builtin/claudemux/... 2>&1 | tail -100
 	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestGetFlatHistoryInternal_' ./internal/scripting/... 2>&1 | tail -80
 
+.PHONY: test-batch12
+test-batch12: ## Run batch 12 tests (writeResolvedTable, renderHelpBar, tickCmd)
+	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestWriteResolvedTable_' ./internal/command/... 2>&1 | tail -50
+	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestRenderHelpBar_|TestTickCmd_' ./internal/termmux/ui/... 2>&1 | tail -50
+
+.PHONY: commit-batch12
+commit-batch12: ## Stage and commit batch12 test files
+	cd $(PROJECT_ROOT) && git add internal/command/coverage_gaps_batch12_table_test.go internal/termmux/ui/coverage_gaps_batch12_test.go && git add -f config.mk && git commit -F scratch/commit-msg-batch12.txt && git log --oneline -3
+
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 endif

@@ -17,7 +17,7 @@
     "contextManagement": "Tasks are flat and sequential. Execute in order. On session resume, read blueprint.json and WIP.md, find the first non-Done task, and continue."
   },
   "statusSection": {
-    "currentState": "T001-T051 Done. 11 commits on wip branch: 10f7d91, 25632c6, 8d14711, d71b999, 02cb61a, 585f903, 990c6a1, 7ad17ca, 89a0809, 5089b59, e15dac9. Expanding scope for next coverage targets.",
+    "currentState": "T001-T060 Done. 15 commits on wip branch: 10f7d91, 25632c6, 8d14711, d71b999, 02cb61a, 585f903, 990c6a1, 7ad17ca, 89a0809, 5089b59, e15dac9, 04d2279, 496d9e8, e057f35. Expanding scope for next coverage targets.",
     "goalState": "osm pr-split works correctly with -claude-command=ollama (and all other providers). The spawn-switch-send-classify pipeline is robust: dead child detected before passthrough entry, diagnostic output surfaced, re-attach is safe (no goroutine leaks), the VTerm captures error output. Integration tests cover the full spawn-to-exit lifecycle. Zero goroutine leaks. Zero EAGAIN errors. Zero data loss on re-attach.",
     "replanLog": [
       "2026-02-28: Previous session blueprint (T001-T131, termmux rewrite) was 100% Done. This new blueprint covers the pr-split spawn/toggle failures discovered in production.",
@@ -379,6 +379,69 @@
       "id": "T051",
       "task": "Commit batch 8",
       "description": "Committed as e15dac9. 4 files, 675 insertions, 16 deletions.",
+      "acceptance": "git log shows new commit.",
+      "status": "Done"
+    },
+    {
+      "id": "T052",
+      "task": "Add VTerm edge-case tests (batch 9)",
+      "description": "38 tests covering edge paths: SGRDiff transitions (16: same-state emission, flag removal reset, color kind transitions), ParseSGR (7: invalid sub-modes, truncated sequences, clear codes), Parser (9: DEL/high-byte in ground, ESC restart, OSC/DCS edge transitions), Screen (7: boundary clamping, scroll region interactions, resize cursor clamping).",
+      "acceptance": "All 38 tests pass. make all clean.",
+      "status": "Done"
+    },
+    {
+      "id": "T053",
+      "task": "Rule of Two for batch 9",
+      "description": "Pass 1: PASS. Pass 2: PASS. Two contiguous issue-free reviews. Non-blocking: strings.Contains assertions, truncated-input state unverified, some screen tests don't check untouched regions.",
+      "acceptance": "Two PASS verdicts on same diff.",
+      "status": "Done"
+    },
+    {
+      "id": "T054",
+      "task": "Commit batch 9",
+      "description": "Committed as 04d2279. 2 files changed (edge_cases_test.go, config.mk).",
+      "acceptance": "git log shows new commit.",
+      "status": "Done"
+    },
+    {
+      "id": "T055",
+      "task": "Add unit tests for control chars, scroll, diff splitter helpers (batch 10)",
+      "description": "55 tests across 2 packages: VTerm handleControl (14), scrollRegionUp/Down (8), alt screen switch (4), makeDefaultTabStops (3), splitIntoFileDiffs (6), splitFileAtHunks (6), countRelSegments (5), extractFileName (4), countLines (5).",
+      "acceptance": "All 55 tests pass. make all clean.",
+      "status": "Done"
+    },
+    {
+      "id": "T056",
+      "task": "Rule of Two for batch 10",
+      "description": "Pass 1: PASS. Pass 2: PASS. Two contiguous issue-free reviews. Non-blocking: t.Parallel() style inconsistency.",
+      "acceptance": "Two PASS verdicts on same diff.",
+      "status": "Done"
+    },
+    {
+      "id": "T057",
+      "task": "Commit batch 10",
+      "description": "Committed as 496d9e8. 3 files, 750 insertions, 4 deletions.",
+      "acceptance": "git log shows new commit.",
+      "status": "Done"
+    },
+    {
+      "id": "T058",
+      "task": "Add direct tests for safety internals and ring buffer (batch 11)",
+      "description": "56 tests across 2 packages: safety_internals_test.go (46) covering classifyIntent (18), assessScope (7), enforcePolicy (6), checkAllowedPaths (6), calculateRisk (4); ring_buffer_test.go (10) covering getFlatHistoryInternal empty, contiguous, wrap-around, and copy semantics.",
+      "acceptance": "All 56 tests pass. make all clean.",
+      "status": "Done"
+    },
+    {
+      "id": "T059",
+      "task": "Rule of Two for batch 11",
+      "description": "Pass 1: PASS. Pass 2: PASS. Two contiguous issue-free reviews. Both reviewers verified regex word boundary behavior, ring buffer modular arithmetic, threshold boundaries, and no name collisions.",
+      "acceptance": "Two PASS verdicts on same diff.",
+      "status": "Done"
+    },
+    {
+      "id": "T060",
+      "task": "Commit batch 11",
+      "description": "Committed as e057f35. 3 files, 665 insertions.",
       "acceptance": "git log shows new commit.",
       "status": "Done"
     }

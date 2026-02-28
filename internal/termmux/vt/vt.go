@@ -237,5 +237,3 @@ func (v *VTerm) String() string {
 	}
 	return string(b)
 }
-
-

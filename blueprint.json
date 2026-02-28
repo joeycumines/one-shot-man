@@ -35,7 +35,7 @@
       "task": "T1: Diagnose Windows build failure",
       "description": "Run `make` on Windows (via hack/run-on-windows.sh or CI at .github/workflows/ci.yml). Identify all specific compilation errors and test failures. Common issues in this codebase: sh -c usage in exec.execv calls within tests, Unix Domain Socket assumptions (net.Listen('unix',...)), `which` vs `where` for command discovery, path separator differences. Check internal/termmux/, internal/session/, internal/command/pr_split_script.js (verifySplit at line ~1135 uses sh -c), and any UDS-dependent code in internal/builtin/claudemux/.",
       "acceptance": "A complete catalog of all Windows build failures documented in WIP.md with exact file paths, line numbers, error messages, and categorized root causes (sh -c, UDS, path separators, missing binaries). No failures left undocumented.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T2: Fix Windows build failures",

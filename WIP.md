@@ -3,46 +3,56 @@
 ## Session Start
 - **Started:** 2026-02-28 20:36:23
 - **Mandate:** 9 hours minimum (ends ~2026-03-01 05:36:23)
-- **Phase:** PRE-COMMIT — accumulated fixes ready for Rule of Two
+- **Phase:** EXECUTING — T1-T88 in sequence
 
-## Current State
-- **Build:** GREEN (all tests pass on macOS) — verified 3 times this session
-- **Blueprint:** Updated with replanLog and currentState reflecting pre-T1 work
-- **Git:** All changes uncommitted (no commits made yet this session)
+## Last Commit
+- **Hash:** 66be949
+- **Subject:** Harden pr-split pipeline: single-write sendToHandle, targeted git add
+- **Files:** 7 changed, 782 insertions, 201 deletions
+- **Rule of Two:** PASS (2 contiguous issue-free reviews + fitness review)
 
-## Changes Made This Session (Uncommitted)
+## Current Task
+- **Next:** T2 — Fix Windows build failures
+- **Status:** Starting
 
-### 1. gitAddChangedFiles() helper — pr_split_script.js:160-203
-- NEW function that replaces ALL `git add -A` calls
-- Parses `git status --porcelain`, filters out `.pr-split-plan.json`
-- Adds only changed files with targeted `git add -- <files>`
-- **8 call sites converted:** executeSplit (1, from prior fix), 5 AUTO_FIX_STRATEGIES, 2 resolveConflictsWithClaude
+## T1 Diagnosis: Windows Build Failures
 
-### 2. sendToHandle() single-write — pr_split_script.js:~2400
-- REFACTORED from two-write (text + 50ms sleep + `\r`) to single atomic write (text + `\n`)
-- Removed `setSendEnterDelay()` function and `SEND_ENTER_DELAY_MS` constant
-- EAGAIN retry preserved on the single write
+### Category A: Missing Windows Skip Guards (TEST)
+| File | Lines | Issue |
+|------|-------|-------|
+| `internal/builtin/claudemux/coverage_gaps_test.go` | 137, 176, 194, 216 | 4 tests use `net.Listen("unix",...)` / `net.Dial("unix",...)` WITHOUT `runtime.GOOS == "windows"` skip guard. Other tests in `control_test.go` properly skip. |
 
-### 3. Test fixes — pr_split_test.go, pr_split_pipeline_test.go, pr_split_integration_test.go
-- TestIntegration_AutoSplitMockMCP: added `os.Remove(".pr-split-plan.json")` before checkout
-- TestClaudeCodeExecutor_Resolve: added mock for `['claude', '--version']`
-- 8+ test functions updated for single-write sendToHandle behavior
-- 7 execution test mocks updated from `'add -A'` to `'add --'`
+### Category B: Unguarded UDS in Production Code (RUNTIME)
+| File | Line | Issue |
+|------|------|-------|
+| `internal/builtin/claudemux/control.go` | 103 | `net.Listen("unix", s.sockPath)` has no `runtime.GOOS` guard or build tag. Will fail on Windows if UDS not supported. Note: Windows 10 1803+ supports AF_UNIX, so may work on CI (windows-latest = Server 2022). |
 
-### 4. blueprint.json — statusSection updated
-- currentState updated with all fixes
-- replanLog entry added documenting pre-T1 infrastructure work
+### Category C: `sh -c` Shell Execution (RUNTIME)
+| File | Lines (approx) | Sites |
+|------|----------------|-------|
+| `internal/command/pr_split_script.js` | 1219, 1539, 1565, 1596, 1625, 1648, 1653, 1659, 1663, 1665, 1779, 1891, 1938 | 13 sites calling `exec.execv(['sh', '-c', ...])`. Also uses `timeout` utility at line 1216. NOTE: GitHub Actions windows-latest has Git Bash in PATH, so `sh` may be available. Tests skip via pr_split_test.go guards. |
 
-## Files Modified
-1. `internal/command/pr_split_script.js` — gitAddChangedFiles helper, 8 `git add -A` → targeted adds, sendToHandle single-write
-2. `internal/command/pr_split_test.go` — 5 test functions updated for single-write
-3. `internal/command/pr_split_pipeline_test.go` — claude --version mock added
-4. `internal/command/pr_split_integration_test.go` — 3 integration tests updated for single-write
-5. `internal/command/pr_split_execution_test.go` — 7 mock entries updated `'add -A'` → `'add --'`
-6. `blueprint.json` — statusSection and replanLog updated
-7. `WIP.md` — this file
+### Category D: `which` Command Usage (RUNTIME)
+| File | Lines (approx) | Sites |
+|------|----------------|-------|
+| `internal/command/pr_split_script.js` | 1594, 2006, 2015, 2031 | 4 sites using `exec.execv(['which', ...])`. Windows uses `where.exe` instead. |
 
-## Next Immediate Steps
-1. **Rule of Two review gate** — spawn 2 serial subagent reviews
-2. **Commit** all accumulated work (after Rule of Two passes)
-3. **Begin T1** (Diagnose Windows build failure) or T3-T9 based on priority assessment
+### Category E: Unix Utilities in Shell Commands (RUNTIME)
+| File | Lines (approx) | Issue |
+|------|----------------|-------|
+| `internal/command/pr_split_script.js` | 1596 | `find . -name "*.go" -exec goimports -w {} +` — Unix-only |
+| `internal/command/pr_split_script.js` | 1653 | `grep -rl ... \| head -1` — Unix-only |
+
+### Already Properly Handled
+- `internal/termmux/` — proper `//go:build` tags (platform_windows.go, resize_windows.go)
+- `internal/storage/` — proper platform files (filelock_windows.go, atomic_write_windows.go)
+- `internal/session/` — proper platform files (session_windows.go)
+- `internal/builtin/pty/` — proper build tags (pty_windows.go returns ErrNotSupported)
+- `internal/builtin/claudemux/control_test.go` — 5 tests properly skip on Windows
+- `internal/builtin/claudemux/provider_test.go` — 3 tests properly skip (PTY)
+- `internal/builtin/claudemux/pr_split_test.go` — skips "PR split uses sh -c"
+
+## Completed This Session
+1. Pre-T1 bug fixes (gitAddChangedFiles, sendToHandle single-write, commit error checking, test fixes)
+2. Rule of Two review gate passed
+3. Committed 66be949

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -135,6 +136,9 @@ func (m *mockControlHandler) GetStatus() GetStatusResult {
 }
 
 func TestControlServer_InvalidJSON(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix sockets not available on Windows")
+	}
 	t.Parallel()
 	sockPath := tempSockPath(t)
 
@@ -174,6 +178,9 @@ func TestControlServer_InvalidJSON(t *testing.T) {
 }
 
 func TestControlServer_EmptyTask(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix sockets not available on Windows")
+	}
 	t.Parallel()
 	sockPath := tempSockPath(t)
 
@@ -192,6 +199,9 @@ func TestControlServer_EmptyTask(t *testing.T) {
 }
 
 func TestControlServer_HandlerError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix sockets not available on Windows")
+	}
 	t.Parallel()
 	sockPath := tempSockPath(t)
 
@@ -214,6 +224,9 @@ func TestControlServer_HandlerError(t *testing.T) {
 }
 
 func TestControlServer_InvalidParams(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix sockets not available on Windows")
+	}
 	t.Parallel()
 	sockPath := tempSockPath(t)
 

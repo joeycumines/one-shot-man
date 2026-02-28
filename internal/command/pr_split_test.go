@@ -9283,12 +9283,14 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 
 	// Override ClaudeCodeExecutor to mock the Claude spawn.
 	mockSetup := `
+		var _mockSentPrompts = [];
 		ClaudeCodeExecutor = function(config) {
 			this.config = config;
 			this.resolved = { command: 'mock-claude' };
 			this.handle = {
 				send: function(text) {
-					// No-op: mock doesn't need to send to Claude.
+					// Capture all text sent to Claude for assertion.
+					_mockSentPrompts.push(text);
 				}
 			};
 		};
@@ -9479,6 +9481,41 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 	}
 	if !strings.Contains(outStr, "Analyze diff") {
 		t.Error("expected 'Analyze diff' step in stdout")
+	}
+
+	// T6: Verify mock captured prompts sent to Claude.
+	promptsRaw, err := tp.EvalJS(`JSON.stringify(_mockSentPrompts)`)
+	if err != nil {
+		t.Fatalf("Failed to retrieve mock sent prompts: %v", err)
+	}
+	var sentPrompts []string
+	if err := json.Unmarshal([]byte(promptsRaw.(string)), &sentPrompts); err != nil {
+		t.Fatalf("Failed to parse mock sent prompts: %v\nRaw: %v", err, promptsRaw)
+	}
+
+	// At least one prompt should have been sent (the classification prompt).
+	if len(sentPrompts) < 1 {
+		t.Fatal("expected at least 1 prompt sent to mock Claude, got 0")
+	}
+
+	// The classification prompt should reference the changed files.
+	classPrompt := sentPrompts[0]
+	expectedFiles := []string{"pkg/handler.go", "pkg/types.go", "cmd/serve.go", "cmd/main.go",
+		"internal/db/migrate.go", "internal/db/conn.go", "docs/README.md", "docs/api.md"}
+	for _, f := range expectedFiles {
+		if !strings.Contains(classPrompt, f) {
+			t.Errorf("classification prompt should reference file %q but doesn't", f)
+		}
+	}
+
+	// The classification prompt should reference the MCP tool name.
+	if !strings.Contains(classPrompt, "reportClassification") {
+		t.Errorf("classification prompt should reference 'reportClassification' MCP tool")
+	}
+
+	// The classification prompt should include the session ID.
+	if !strings.Contains(classPrompt, "mock-session-test") {
+		t.Errorf("classification prompt should include session ID 'mock-session-test'")
 	}
 }
 

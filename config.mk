@@ -153,5 +153,10 @@ git-staged-stat: ## Show staged diff stat
 commit-batch10: ## Stage and commit batch10 test files
 	cd $(PROJECT_ROOT) && git add internal/termmux/vt/control_scroll_test.go internal/command/coverage_gaps_batch10_splitter_test.go config.mk && git commit -F scratch/commit-msg-batch10.txt && git log --oneline -1
 
+.PHONY: test-batch11
+test-batch11: ## Run batch 11 tests (safety internals + ring buffer)
+	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestClassifyIntent_|TestAssessScope_|TestEnforcePolicy_|TestCheckAllowedPaths_|TestCalculateRisk_' ./internal/builtin/claudemux/... 2>&1 | tail -100
+	$(GO) -C $(PROJECT_ROOT) test -v -race -timeout=120s -run 'TestGetFlatHistoryInternal_' ./internal/scripting/... 2>&1 | tail -80
+
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 endif

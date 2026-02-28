@@ -12,8 +12,33 @@
 - **Rule of Two:** PASS (2 contiguous issue-free reviews + fitness review)
 
 ## Current Task
-- **Next:** T5 — Audit integration test coverage
+- **Next:** T6+ — Continue sequential tasks
 - **Status:** Starting
+
+## T5 Integration Test Coverage Gap Analysis
+
+**12 test files** in internal/command/ covering pr-split, ~150+ test functions total.
+
+### Pipeline Stage Coverage Matrix
+
+| Stage | Pipeline Step | Coverage | Key Tests |
+|-------|-------------|----------|-----------|
+| 1 | Analyze Diff | PARTIAL | TestAnalyzeDiff_EdgeCases, TestIntegration_HeuristicSplitEndToEnd |
+| 2 | Spawn Claude | ✅ COVERED | 9 tests: SpawnArgs, SpawnHealthCheck, IsAliveGuard, ClaudeCodeExecutor_Resolve |
+| 3 | Send Classification | ✅ COVERED | 10 tests: SendToHandle (5), SendWithCancel (4), Pipeline (1) |
+| 4 | Receive Classification | ✅ COVERED | TestPollForFile (5 subtests), TestIntegration_AutoSplitWithClaude_Pipeline |
+| 5 | Validate Classification | PARTIAL | Only implicit validation within receive step; no standalone test |
+| 6 | Generate Split Plan | ✅ COVERED | TestValidatePlan (14 subtests), TestIntegration_HeuristicSplitEndToEnd |
+| 7 | Execute Split | ✅ COVERED | TestExecuteSplit (8), TypeChange, RenamedFile, CopiedFile, ValidationErrors |
+| 8 | Verify Splits | ✅ COVERED | TestVerifySplits_MockExec, PerBranchTimeout, SkipsDependencyFailures, FailedBranch |
+| 9 | Resolve Conflicts | PARTIAL | TestResolveConflicts (8 subtests), TestIntegration_AutoSplitCancel (cancellation only) |
+| 10 | Verify Equivalence | ✅ COVERED | 17 tests across 3 files |
+
+### Critical Gaps
+1. **Stage 5**: No standalone classification validation tests (uncategorized grouping, file assignment)
+2. **Stage 9**: Re-split triggering and multi-retry cycles not fully exercised
+3. **End-to-end**: TestIntegration_AutoSplitMockMCP (pr_split_test.go:9178) is the only mock E2E; run via `make integration-test-prsplit-mcp`
+4. **Stage 1**: Diff analysis well-covered for edge cases but classification prompt rendering tested in pr_split_prompt_test.go (11 tests)
 
 ## T4 Root Cause: resolveConflictsWithClaude Prompt Sending Failure
 

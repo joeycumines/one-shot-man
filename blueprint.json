@@ -59,7 +59,7 @@
       "task": "T5: Audit existing pr_split_integration_test.go coverage gaps for auto-split flow",
       "description": "Read internal/command/pr_split_integration_test.go (2000+ lines, 20+ test functions including TestIntegration_HeuristicSplitEndToEnd, TestIntegration_AutoSplitCancel, TestIntegration_SendToHandle_*, TestIntegration_SpawnArgs_*, TestIntegration_SpawnHealthCheck_*, TestIntegration_IsAliveGuard_*, TestIntegration_AutoSplitWithClaude_Pipeline, TestPrSplitSendWithCancel_*). Cross-reference with automatedSplit() pipeline stages in pr_split_script.js (line ~2509): analyze → spawn → classify (sendToHandle line ~2741) → receive (pollForFile line ~2759) → plan (pollForFile line ~2793) → execute → verify (verifySplits line ~1194) → resolve (resolveConflictsWithClaude line ~3123). Identify which stages have real test coverage vs. which are only exercised incidentally.",
       "acceptance": "Written gap analysis in WIP.md showing a matrix of pipeline stages vs test functions, marking each as: covered (test directly exercises this stage), partial (test touches but doesn't assert on this stage), or missing (no test coverage). Integration-test-prsplit-mcp target (project.mk line ~38) coverage explicitly assessed.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T6: Implement mock Claude binary / test provider for integration tests",

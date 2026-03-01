@@ -229,15 +229,15 @@ func TestVTerm_ConcurrentWriteResize(t *testing.T) {
 func TestVTerm_Render(t *testing.T) {
 	v := NewVTerm(24, 80)
 	v.Write([]byte("Hi"))
-	out := v.Render()
+	out := v.RenderFullScreen()
 	if !strings.Contains(out, "Hi") {
-		t.Errorf("Render() missing text; got %q", out)
+		t.Errorf("RenderFullScreen() missing text; got %q", out)
 	}
 	if !strings.Contains(out, "\x1b[0m") {
-		t.Error("Render() missing SGR reset")
+		t.Error("RenderFullScreen() missing SGR reset")
 	}
 	if !strings.Contains(out, "\x1b[?25h") {
-		t.Error("Render() missing cursor show")
+		t.Error("RenderFullScreen() missing cursor show")
 	}
 }
 
@@ -254,7 +254,7 @@ func TestVTerm_RenderConcurrent(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 500; i++ {
-			_ = v.Render()
+			_ = v.RenderFullScreen()
 		}
 	}()
 	wg.Wait()
@@ -282,7 +282,7 @@ func TestVTerm_RenderRoundTrip(t *testing.T) {
 			v1 := NewVTerm(10, 40)
 			v1.Write([]byte(tc.input))
 
-			rendered := v1.Render()
+			rendered := v1.RenderFullScreen()
 
 			v2 := NewVTerm(10, 40)
 			v2.Write([]byte(rendered))
@@ -605,10 +605,10 @@ func TestVTerm_RealClaudeCodeOutput(t *testing.T) {
 		t.Fatalf("Write returned %d; want %d", n, len(data))
 	}
 
-	// Render must not panic and produce valid UTF-8.
-	rendered := v.Render()
+	// RenderFullScreen must not panic and produce valid UTF-8.
+	rendered := v.RenderFullScreen()
 	if !utf8.ValidString(rendered) {
-		t.Error("Render() produced invalid UTF-8")
+		t.Error("RenderFullScreen() produced invalid UTF-8")
 	}
 
 	// Verify some recognizable fragments made it through.
@@ -658,9 +658,9 @@ func TestVTerm_TestDataFixtures_NoPanic(t *testing.T) {
 			if n != len(data) {
 				t.Fatalf("Write returned %d; want %d", n, len(data))
 			}
-			rendered := v.Render()
+			rendered := v.RenderFullScreen()
 			if !utf8.ValidString(rendered) {
-				t.Errorf("Render() produced invalid UTF-8 for %s", e.Name())
+				t.Errorf("RenderFullScreen() produced invalid UTF-8 for %s", e.Name())
 			}
 		})
 	}

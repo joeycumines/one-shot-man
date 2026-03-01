@@ -271,13 +271,13 @@ func TestSandbox_ExecModuleAPIBoundary(t *testing.T) {
 	engine, _, _ := newSandboxTestEngine(t)
 	script := engine.LoadScriptFromString("exec-boundary", `
 		var execmod = require('osm:exec');
-		var expected = ['exec', 'execv'];
+		var expected = ['exec', 'execv', 'spawn', 'execStream'];
 		for (var i = 0; i < expected.length; i++) {
 			if (typeof execmod[expected[i]] !== 'function') {
 				throw new Error('Missing expected export: ' + expected[i]);
 			}
 		}
-		var dangerous = ['spawn', 'fork', 'execFile', 'execSync', 'spawnSync',
+		var dangerous = ['fork', 'execFile', 'execSync', 'spawnSync',
 			'kill', 'exit', 'abort', 'system', 'popen'];
 		for (var i = 0; i < dangerous.length; i++) {
 			if (typeof execmod[dangerous[i]] !== 'undefined') {

@@ -151,6 +151,7 @@ func TestPTY_AutoSplit_SendBlockedCancelWorks(t *testing.T) {
 // This test requires the osm binary to be buildable and runs on Unix only
 // (PTY requirement). It does NOT require real AI infrastructure.
 func TestPTY_AutoSplit_EndToEnd(t *testing.T) {
+	t.Skip("skip: legacy file-writing IPC removed; uses mcpcallback E2E tests instead")
 	t.Parallel()
 
 	osmBin := buildOSMBinary(t)
@@ -351,6 +352,7 @@ sleep 3600
 //
 // This is the core regression test for the mutex deadlock bug.
 func TestPTY_AutoSplit_CancelDuringBlockedSend(t *testing.T) {
+	t.Skip("skip: legacy file-writing IPC removed; uses mcpcallback E2E tests instead")
 	t.Parallel()
 
 	osmBin := buildOSMBinary(t)
@@ -359,7 +361,7 @@ func TestPTY_AutoSplit_CancelDuringBlockedSend(t *testing.T) {
 	addIntegrationFeatureFiles(t, repoDir)
 
 	// Use `cat` as mock Claude — it echoes but never writes MCP results,
-	// so the pipeline will block at pollForFile. But crucially, cat DOES
+	// so the pipeline will block at the receive step. But crucially, cat DOES
 	// read stdin, so the send won't block. To test the blocked-send case,
 	// we use a script that sleeps before reading.
 	mockSlowClaude := filepath.Join(t.TempDir(), "slow-claude.sh")

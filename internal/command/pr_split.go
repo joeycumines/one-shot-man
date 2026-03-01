@@ -499,11 +499,30 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		"stepDetail": func(name, detail string) {
 			autoSplitModel.SendStepDetail(name, detail)
 		},
+		"branchStart": func(name string) {
+			autoSplitModel.SendBranchVerifyStart(name)
+		},
+		"branchDone": func(name string, passed bool, exitCode int, elapsedMs int64, skipped, preExisting bool) {
+			autoSplitModel.SendBranchVerifyDone(ui.AutoSplitBranchVerifyDoneMsg{
+				Branch:   name,
+				Passed:   passed,
+				ExitCode: exitCode,
+				Elapsed:  time.Duration(elapsedMs) * time.Millisecond,
+				Skipped:  skipped,
+				PreExist: preExisting,
+			})
+		},
+		"branchOutput": func(name, line string) {
+			autoSplitModel.SendBranchVerifyOutput(name, line)
+		},
 		"cancelled": func() bool {
 			return autoSplitModel.Cancelled()
 		},
 		"forceCancelled": func() bool {
 			return autoSplitModel.ForceCancelled()
+		},
+		"paused": func() bool {
+			return autoSplitModel.Paused()
 		},
 		"quit": func() {
 			autoSplitModel.Quit()

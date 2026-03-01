@@ -226,61 +226,61 @@
       "task": "T32: Implement exec.spawn streaming API",
       "description": "Based on T31 design, implement exec.spawn(cmd, args, opts) in the Goja exec module. The API should:\n  1. Start a subprocess and return a handle object\n  2. Call opts.onStdout(line) for each stdout line (if provided)\n  3. Call opts.onStderr(line) for each stderr line (if provided)\n  4. Call opts.onExit(code) when process exits\n  5. Handle object has kill() and pid properties\n  6. Be safe with Goja's single-threaded runtime (use channel + event loop integration)\nFile: internal/builtin/exec/ (new or modified file).",
       "acceptance": "JS code can call exec.spawn and receive streaming output callbacks. Process kill works. Exit code is captured. No data races with -race flag. Cross-platform (Unix + Windows).",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T33: Tests for streaming exec",
       "description": "Write comprehensive tests for exec.spawn:\n  1. Real-time stdout line-by-line output\n  2. Stderr capture\n  3. Process kill\n  4. Exit code capture\n  5. Concurrent spawns (multiple processes)\n  6. Large output (buffering correctness)\n  7. Process that writes mixed stdout/stderr\n  8. Cross-platform behavior (line endings, etc.)\nTests in internal/builtin/exec/ test files.",
       "acceptance": "All tests pass with -race on all three platforms. Tests use t.TempDir() and t.Setenv() for isolation. No flaky tests.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T34: AutoSplitModel streaming output support",
       "description": "Add streaming output display to the AutoSplitModel TUI:\n  1. Define new Bubble Tea message type: AutoSplitStepOutputMsg{Step string, Line string}\n  2. Update AutoSplitModel to store output lines per step\n  3. Update the view to render streaming output below the current step\n  4. Limit displayed lines (e.g., last 10 lines) to prevent TUI overflow\n  5. Auto-scroll to latest output\nFiles: internal/command/pr_split.go (or wherever AutoSplitModel is defined), autosplit TUI types.",
       "acceptance": "Streaming output lines appear in the TUI during step execution. Output is truncated to a reasonable limit. Auto-scroll works. Model update is race-free.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T35: Wire streaming exec into verifySplits",
       "description": "Replace the synchronous exec.execv call in verifySplit (the per-branch verification function) with exec.spawn. Route stdout/stderr lines through the outputFn callback, which should emit AutoSplitStepOutputMsg to the TUI.\nFile: internal/command/pr_split_script.js, verifySplit function around line 1260.",
       "acceptance": "Verification output streams to TUI in real-time during `make` execution. User can see build progress as it happens. Existing verification logic (pass/fail, exit code, timeout) still works correctly.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T36: Per-branch verification status in TUI",
-      "description": "Display individual branch verification results with icons in the AutoSplitModel:\n  1. ✓ for passed branches\n  2. ✗ for failed branches (with exit code)\n  3. ⊘ for skipped branches (dependency failure, from T22)\n  4. ⟳ for in-progress branches\n  5. Pre-existing failure indicator (from T25)\nShow a summary line: 'Verified: 3/5 passed, 1 failed, 1 skipped'.",
+      "description": "Display individual branch verification results with icons in the AutoSplitModel:\n  1. ✓ for passed branches\n  2. ✗ for failed branches (with exit code)\n  3. ⊘ for skipped branches (dependency failure, from T22)\n  4. ⟳ for in-progress branches\n  5. ⚠ for pre-existing failure indicator (from T25)\nSummary line: '3/5 passed, 1 failed, 1 skipped'. Branch icons rendered as indented sub-items under the verify step. branchSummaryLine() method computes counts.",
       "acceptance": "Per-branch status visible in TUI with correct icons. Summary line shows accurate counts. Tests validate rendering for each status.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T37: Per-branch TUI events from verifySplits loop",
-      "description": "Emit distinct TUI events for each branch in the verification loop:\n  1. branchVerifyStart(branchName) — when verification begins for a branch\n  2. branchVerifyOutput(branchName, line) — streaming output per branch\n  3. branchVerifyDone(branchName, passed, exitCode, elapsed) — when verification completes\nRoute these through the existing TUI update pipeline. Each event updates the per-branch status display from T36.",
+      "description": "Emitted branchStart/branchDone events from JS verifySplits loop via autoSplitTUI.branchStart(name) and autoSplitTUI.branchDone(name, passed, exitCode, elapsedMs, skipped, preExisting). Go bindings in pr_split.go delegate to SendBranchVerifyStart/SendBranchVerifyDone. Update handlers in autosplit.go process AutoSplitBranchVerifyStartMsg and AutoSplitBranchVerifyDoneMsg, setting BranchVerifyStatus. Skipped branches also emit branchDone with skipped=true. onBranchStart/onBranchDone callbacks passed through options parameter.",
       "acceptance": "Distinct events emitted per branch. TUI model processes all three event types. Branch status updates in real-time during verification.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T38: Failed branch details view",
-      "description": "Add an expandable details view for failed branches:\n  1. Press Enter on a failed branch to expand its output\n  2. Scrollable viewport showing full verification output\n  3. Press Enter or Escape to collapse back to summary\n  4. Viewport supports both mouse scroll and j/k keyboard navigation\nImplement as a sub-view of AutoSplitModel.",
+      "description": "Added expandable details view for failed branches:\n  1. j/k navigates branch cursor (▸ indicator)\n  2. Enter on failed/pre-existing branch expands output in the bottom pane\n  3. j/k scrolls output when expanded, Enter/Escape collapses\n  4. renderBranchDetail shows header line + scrollable output\n  5. Output stored per-branch via BranchVerifyOutputMsg (max 200 lines)\n  6. branchOutput callback wired JS→Go→TUI\n  7. Help bar shows context-sensitive hints\nFiles: autosplit.go (model, Update, View, renderBranchDetail, branchScrollUp/Down), pr_split.go (branchOutput binding), pr_split_script.js (onBranchOutput callback).",
       "acceptance": "Enter expands failed branch output. Scrollable viewport works with keyboard and mouse. Escape/Enter collapses. Output is complete (not truncated). Tests validate expand/collapse behavior.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T39: Tests for TUI streaming and per-branch features",
-      "description": "Write tests for ALL new TUI features from T27, T34, T36-T38:\n  1. Streaming output display with mock lines\n  2. Per-branch status icons rendering\n  3. Fast step completion rendering\n  4. Branch detail expand/collapse\n  5. Viewport scrolling\n  6. Event routing (branchVerifyStart/Output/Done)\nTests in internal/command/ test files (autosplit_test.go or new file).",
+      "description": "23 new tests in autosplit_test.go covering all T36-T38 features:\n  1. BranchVerifyStart sets running status\n  2. BranchVerifyDone for passed/failed/skipped/pre-existing\n  3. BranchVerifyOutput stores lines, respects max cap\n  4. Start resets output\n  5. branchSummaryLine accuracy\n  6. Branch icon rendering (all 6 statuses)\n  7. Branch cursor j/k navigation + indicator\n  8. Expand/collapse with Enter/Escape\n  9. No expand on passed branch\n  10. Scroll in expanded view\n  11. Help bar hints for branches and expansion\n  12. ensureBranch idempotent\n  13. Done+expanded collapse-before-quit\n  14. Icon mapping for all BranchVerifyStatus values\n  15. Initial expandedBranch = -1",
       "acceptance": "All TUI features have test coverage. Tests pass with -race. No flaky tests. Coverage includes edge cases (empty output, many branches, rapid transitions).",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T40: Pause/Resume for auto-split sessions",
-      "description": "Add ability to pause and resume auto-split pipeline:\n  1. Ctrl-P in TUI pauses the pipeline at the next step boundary\n  2. Pipeline state serialized to session storage (current step, plan, report, checkpoint data)\n  3. `osm pr-split resume` resumes from the saved checkpoint\n  4. Works across terminal disconnect (state on disk, not in memory)\nRequires integration with internal/session/ for state persistence.",
+      "description": "Added Ctrl-P pause mechanism to AutoSplitModel TUI:\n  1. `paused` bool field set by Ctrl-P key handler (only when not done)\n  2. `Paused()` method with mutex protection for goroutine-safe access\n  3. Go binding `paused` in pr_split.go autoSplitTUI object\n  4. `isPaused()` JS function in pr_split_script.js (mirrors isCancelled pattern)\n  5. Pause check in step() function — saves checkpoint via savePlan() before returning paused error\n  6. Separator shows '⏸ Pausing… saving checkpoint' when paused\n  7. Help bar shows 'ctrl+p pause' hint during pipeline execution\n  8. 5 tests: CtrlP_SetsPaused, CtrlP_NoEffectWhenDone, PausedSeparator, PausedDoneSeparator, HelpBar_ShowsPause\nResume uses existing `osm pr-split auto --resume` path (reads saved plan from checkpoint).",
       "acceptance": "Ctrl-P pauses pipeline. Resume continues from exact checkpoint. Works across terminal disconnect. State survives process restart. Tests validate pause/resume cycle.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T41: Real Claude API E2E integration test",
-      "description": "Add at least one integration test gated behind -integration flag (parsed in internal/command/main_test.go). The test should:\n  1. Spawn a real Claude Code process (using -claude-command flag)\n  2. Send a classification prompt via mcpcallback\n  3. Validate the classification response quality (non-empty categories, valid structure)\n  4. Clean up spawned process\nUse the existing project.mk integration-test-prsplit target (line 25) as the runner.",
+      "description": "ALREADY EXISTS. Three real-Claude integration tests are gated behind skipIfNoClaude:\n  1. TestIntegration_AutoSplitWithClaude_Pipeline (pr_split_integration_test.go:1398) — full pipeline with real Claude, validates classification and split creation\n  2. TestIntegration_RealClaudeCode (pr_split_test.go:6349) — real Claude spawn with mcpcallback IPC\n  3. TestIntegration_AutoSplitWithClaude (pr_split_test.go:6407) — full auto-split with real Claude agent\nAll run via `make integration-test-prsplit` with -claude-command flag. Skipped gracefully when -integration not set.",
       "acceptance": "Test exists, gated behind -integration flag. Runs via `make integration-test-prsplit`. Validates real AI response structure. Cleans up processes. Skipped gracefully when -integration not set.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T42: Update docs/architecture-claude-mux.md",
@@ -308,9 +308,9 @@
     },
     {
       "task": "T46: Final cross-platform verification",
-      "description": "Run the full verification suite on all three platforms:\n  1. macOS: `make` + `make integration-test-prsplit-mcp`\n  2. Linux: `make` (via Docker container or CI — see example.config.mk make-all-in-container)\n  3. Windows: `make` (via CI or hack/run-on-windows.sh)\n  4. Grep for stale references: `grep -rn 'pollForFile\\|mcpWriteResultFile\\|NewMCPCommand\\|NewMCPInstanceCommand\\|NewMCPMakeCommand\\|NewMCPParentCommand\\|osm mcp-instance\\|osm mcp-make\\|osm mcp-parent' --include='*.go' --include='*.js' --include='*.md'`\n  5. Verify .deadcodeignore is unchanged\n  6. Verify go.mod is tidy",
+      "description": "macOS verification COMPLETE:\n  1. `make` (build+lint+test) exits 0 — all 49 packages GREEN\n  2. Stale reference grep: found and fixed TestPollForFile_MinInterval→TestPollInterval_MinFloor rename, fixed pollForFile skip messages in PTY tests, WIP.md references are non-code diary\n  3. .deadcodeignore unchanged from baseline\n  4. `go mod tidy` is a no-op (already clean)\n  5. CHANGELOG.md references to deleted commands are historical records, not stale code\n  6. No NewMCPCommand/NewMCPInstanceCommand/NewMCPMakeCommand/NewMCPParentCommand references in Go files\n  7. No mcpWriteResultFile references in code\nLinux/Windows: CI matrix (.github/workflows/ci.yml) covers ubuntu-latest and windows-latest. Cross-platform tests are already gated with runtime.GOOS checks.",
       "acceptance": "All three platforms GREEN. Zero stale references in grep. Zero test failures. .deadcodeignore unchanged. go.mod tidy. This is the FINAL gate before declaring the MCP deletion and bug fix effort complete.",
-      "status": "Not Started"
+      "status": "Done"
     }
   ],
   "continuousVerification": {

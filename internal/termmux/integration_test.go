@@ -54,10 +54,10 @@ func TestIntegration_ToggleKeyRoundTrip(t *testing.T) {
 
 	// Verify VTerm captured child output.
 	m.mu.Lock()
-	rendered := m.vterm.Render()
+	rendered := m.vterm.RenderFullScreen()
 	m.mu.Unlock()
 	if !strings.Contains(rendered, "echoed") {
-		t.Errorf("VTerm.Render() = %q; want to contain 'echoed'", rendered)
+		t.Errorf("VTerm.RenderFullScreen() = %q; want to contain 'echoed'", rendered)
 	}
 
 	// Verify terminal state restored.
@@ -254,7 +254,7 @@ func TestIntegration_RapidToggleCycling(t *testing.T) {
 
 	// Verify VTerm is still consistent.
 	m.mu.Lock()
-	rendered := m.vterm.Render()
+	rendered := m.vterm.RenderFullScreen()
 	m.mu.Unlock()
 	_ = rendered // No panic is the test.
 
@@ -298,11 +298,11 @@ func TestIntegration_VTermCaptureAndRestore(t *testing.T) {
 
 	// Verify VTerm captured the output.
 	m.mu.Lock()
-	rendered := m.vterm.Render()
+	rendered := m.vterm.RenderFullScreen()
 	m.mu.Unlock()
 	plain := stripANSI(rendered)
 	if !strings.Contains(plain, "RED") {
-		t.Errorf("VTerm Render() missing 'RED'; plain=%q raw=%q", plain, rendered)
+		t.Errorf("VTerm RenderFullScreen() missing 'RED'; plain=%q raw=%q", plain, rendered)
 	}
 	if !strings.Contains(plain, "MOVED") {
 		t.Errorf("VTerm Render() missing 'MOVED'; plain=%q raw=%q", plain, rendered)
@@ -407,11 +407,11 @@ func TestIntegration_UTF8SplitAcrossReads(t *testing.T) {
 
 	// Verify VTerm captured the characters correctly.
 	m.mu.Lock()
-	text := m.vterm.Render()
+	text := m.vterm.RenderFullScreen()
 	m.mu.Unlock()
 
 	if !strings.Contains(text, "漢") {
-		t.Errorf("VTerm String() missing '漢'; got %q", text)
+		t.Errorf("VTerm RenderFullScreen() missing '漢'; got %q", text)
 	}
 	if !strings.Contains(text, "字") {
 		t.Errorf("VTerm String() missing '字'; got %q", text)
@@ -472,7 +472,7 @@ func TestIntegration_StatusBarWithChildOutput(t *testing.T) {
 
 	// VTerm should have captured child output (sized to 23 rows, not 24).
 	m.mu.Lock()
-	text := m.vterm.Render()
+	text := m.vterm.RenderFullScreen()
 	m.mu.Unlock()
 	if !strings.Contains(text, "line output") {
 		t.Errorf("VTerm should contain child output; got %q", text)

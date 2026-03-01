@@ -1645,3 +1645,501 @@ func TestAutoSplitModel_ToggleKey_NotTriggeredWhenCancelled(t *testing.T) {
 		}
 	}
 }
+
+// --- T39: Per-branch verification TUI tests ---
+
+func TestAutoSplitModel_BranchVerifyStart(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.Update(AutoSplitBranchVerifyStartMsg{Branch: "split/auth"})
+	if len(m.branches) != 1 {
+		t.Fatalf("branches = %d, want 1", len(m.branches))
+	}
+	if m.branches[0].Name != "split/auth" {
+		t.Errorf("name = %q, want %q", m.branches[0].Name, "split/auth")
+	}
+	if m.branches[0].Status != BranchRunning {
+		t.Errorf("status = %d, want BranchRunning(%d)", m.branches[0].Status, BranchRunning)
+	}
+}
+
+func TestAutoSplitModel_BranchVerifyDone_Passed(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.Update(AutoSplitBranchVerifyStartMsg{Branch: "split/auth"})
+	m.Update(AutoSplitBranchVerifyDoneMsg{
+		Branch: "split/auth", Passed: true, ExitCode: 0,
+		Elapsed: 1500 * time.Millisecond,
+	})
+	if m.branches[0].Status != BranchPassed {
+		t.Errorf("status = %d, want BranchPassed(%d)", m.branches[0].Status, BranchPassed)
+	}
+	if m.branches[0].Elapsed != 1500*time.Millisecond {
+		t.Errorf("elapsed = %v, want 1.5s", m.branches[0].Elapsed)
+	}
+}
+
+func TestAutoSplitModel_BranchVerifyDone_Failed(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.Update(AutoSplitBranchVerifyStartMsg{Branch: "split/db"})
+	m.Update(AutoSplitBranchVerifyDoneMsg{
+		Branch: "split/db", Passed: false, ExitCode: 2,
+		Error: "test failed", Elapsed: 3 * time.Second,
+	})
+	if m.branches[0].Status != BranchFailed {
+		t.Errorf("status = %d, want BranchFailed(%d)", m.branches[0].Status, BranchFailed)
+	}
+	if m.branches[0].ExitCode != 2 {
+		t.Errorf("exitCode = %d, want 2", m.branches[0].ExitCode)
+	}
+	if m.branches[0].Error != "test failed" {
+		t.Errorf("error = %q, want %q", m.branches[0].Error, "test failed")
+	}
+}
+
+func TestAutoSplitModel_BranchVerifyDone_Skipped(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.Update(AutoSplitBranchVerifyDoneMsg{
+		Branch: "split/api", Skipped: true,
+	})
+	if m.branches[0].Status != BranchSkipped {
+		t.Errorf("status = %d, want BranchSkipped(%d)", m.branches[0].Status, BranchSkipped)
+	}
+}
+
+func TestAutoSplitModel_BranchVerifyDone_PreExisting(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.Update(AutoSplitBranchVerifyStartMsg{Branch: "split/ui"})
+	m.Update(AutoSplitBranchVerifyDoneMsg{
+		Branch: "split/ui", Passed: false, PreExist: true, ExitCode: 1,
+	})
+	if m.branches[0].Status != BranchPreExistingFailure {
+		t.Errorf("status = %d, want BranchPreExistingFailure(%d)", m.branches[0].Status, BranchPreExistingFailure)
+	}
+}
+
+func TestAutoSplitModel_BranchVerifyOutput_StoresLines(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.Update(AutoSplitBranchVerifyStartMsg{Branch: "split/auth"})
+	m.Update(AutoSplitBranchVerifyOutputMsg{Branch: "split/auth", Line: "PASS pkg/auth"})
+	m.Update(AutoSplitBranchVerifyOutputMsg{Branch: "split/auth", Line: "PASS pkg/session"})
+	if len(m.branches[0].Output) != 2 {
+		t.Fatalf("output lines = %d, want 2", len(m.branches[0].Output))
+	}
+	if m.branches[0].Output[0] != "PASS pkg/auth" {
+		t.Errorf("output[0] = %q, want %q", m.branches[0].Output[0], "PASS pkg/auth")
+	}
+}
+
+func TestAutoSplitModel_BranchVerifyOutput_MaxCap(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.Update(AutoSplitBranchVerifyStartMsg{Branch: "b"})
+	for i := 0; i < maxBranchOutputLines+50; i++ {
+		m.Update(AutoSplitBranchVerifyOutputMsg{Branch: "b", Line: fmt.Sprintf("line %d", i)})
+	}
+	if len(m.branches[0].Output) != maxBranchOutputLines {
+		t.Errorf("output lines = %d, want %d (capped)", len(m.branches[0].Output), maxBranchOutputLines)
+	}
+}
+
+func TestAutoSplitModel_BranchVerifyStart_ResetsOutput(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.Update(AutoSplitBranchVerifyStartMsg{Branch: "b"})
+	m.Update(AutoSplitBranchVerifyOutputMsg{Branch: "b", Line: "old"})
+	// Re-start clears output.
+	m.Update(AutoSplitBranchVerifyStartMsg{Branch: "b"})
+	if len(m.branches[0].Output) != 0 {
+		t.Errorf("output should be reset on re-start, got %d lines", len(m.branches[0].Output))
+	}
+}
+
+func TestAutoSplitModel_BranchSummaryLine(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.branches = []BranchVerifyState{
+		{Name: "a", Status: BranchPassed},
+		{Name: "b", Status: BranchFailed},
+		{Name: "c", Status: BranchSkipped},
+		{Name: "d", Status: BranchPassed},
+		{Name: "e", Status: BranchRunning},
+	}
+	summary := m.branchSummaryLine()
+	if !strings.Contains(summary, "2/5 passed") {
+		t.Errorf("summary should contain '2/5 passed', got %q", summary)
+	}
+	if !strings.Contains(summary, "1 failed") {
+		t.Errorf("summary should contain '1 failed', got %q", summary)
+	}
+	if !strings.Contains(summary, "1 skipped") {
+		t.Errorf("summary should contain '1 skipped', got %q", summary)
+	}
+	if !strings.Contains(summary, "1 running") {
+		t.Errorf("summary should contain '1 running', got %q", summary)
+	}
+}
+
+func TestAutoSplitModel_BranchIcons_Rendering(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.width = 120
+	m.height = 30
+	m.Update(AutoSplitStepStartMsg{Name: "Verify splits"})
+	m.branches = []BranchVerifyState{
+		{Name: "split/passed", Status: BranchPassed, Elapsed: time.Second},
+		{Name: "split/failed", Status: BranchFailed, Error: "exit 2", Elapsed: 2 * time.Second},
+		{Name: "split/skipped", Status: BranchSkipped},
+		{Name: "split/running", Status: BranchRunning},
+		{Name: "split/preexist", Status: BranchPreExistingFailure},
+	}
+	view := m.View()
+	// Check all icons present.
+	icons := []string{"✓", "✗", "⊘", "⟳", "⚠"}
+	for _, icon := range icons {
+		if !strings.Contains(view, icon) {
+			t.Errorf("view should contain icon %q, got:\n%s", icon, view)
+		}
+	}
+	// Check branch names visible.
+	for _, br := range m.branches {
+		if !strings.Contains(view, br.Name) {
+			t.Errorf("view should contain branch name %q", br.Name)
+		}
+	}
+	// Check pre-existing marker.
+	if !strings.Contains(view, "pre-existing") {
+		t.Errorf("view should contain 'pre-existing' marker")
+	}
+}
+
+func TestAutoSplitModel_BranchCursor_JK(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.width, m.height = 80, 30
+	m.branches = []BranchVerifyState{
+		{Name: "a", Status: BranchPassed},
+		{Name: "b", Status: BranchFailed},
+		{Name: "c", Status: BranchPassed},
+	}
+	if m.branchCursor != 0 {
+		t.Fatalf("initial cursor = %d, want 0", m.branchCursor)
+	}
+	// j moves down.
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if m.branchCursor != 1 {
+		t.Errorf("after j, cursor = %d, want 1", m.branchCursor)
+	}
+	// j again.
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if m.branchCursor != 2 {
+		t.Errorf("after j×2, cursor = %d, want 2", m.branchCursor)
+	}
+	// j at end does not wrap.
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if m.branchCursor != 2 {
+		t.Errorf("after j at end, cursor = %d, want 2 (no wrap)", m.branchCursor)
+	}
+	// k moves up.
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	if m.branchCursor != 1 {
+		t.Errorf("after k, cursor = %d, want 1", m.branchCursor)
+	}
+	// k to 0.
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	if m.branchCursor != 0 {
+		t.Errorf("after k×2, cursor = %d, want 0", m.branchCursor)
+	}
+	// k at start does not go negative.
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	if m.branchCursor != 0 {
+		t.Errorf("after k at start, cursor = %d, want 0", m.branchCursor)
+	}
+}
+
+func TestAutoSplitModel_BranchCursor_Indicator(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.width, m.height = 100, 30
+	m.Update(AutoSplitStepStartMsg{Name: "Verify"})
+	m.branches = []BranchVerifyState{
+		{Name: "br-a", Status: BranchPassed},
+		{Name: "br-b", Status: BranchFailed},
+	}
+	view := m.View()
+	// Cursor should be on first branch (▸ indicator).
+	if !strings.Contains(view, "▸") {
+		t.Errorf("view should show ▸ cursor indicator:\n%s", view)
+	}
+}
+
+func TestAutoSplitModel_BranchExpand_FailedBranch(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.width, m.height = 100, 30
+	m.branches = []BranchVerifyState{
+		{Name: "pass-br", Status: BranchPassed},
+		{Name: "fail-br", Status: BranchFailed, Error: "exit 1", Output: []string{
+			"go test ./...",
+			"FAIL pkg/auth",
+			"exit status 1",
+		}},
+	}
+	// Move cursor to second branch (failed).
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if m.branchCursor != 1 {
+		t.Fatalf("cursor = %d, want 1", m.branchCursor)
+	}
+	// Press Enter to expand.
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.expandedBranch != 1 {
+		t.Fatalf("expandedBranch = %d, want 1", m.expandedBranch)
+	}
+	// View should show branch output.
+	view := m.View()
+	if !strings.Contains(view, "fail-br") {
+		t.Errorf("expanded view should show branch name:\n%s", view)
+	}
+	if !strings.Contains(view, "FAIL pkg/auth") {
+		t.Errorf("expanded view should show output, got:\n%s", view)
+	}
+}
+
+func TestAutoSplitModel_BranchExpand_PassedBranch_NoOp(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.branches = []BranchVerifyState{
+		{Name: "pass-br", Status: BranchPassed},
+	}
+	// Cursor on passed branch, Enter should NOT expand.
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.expandedBranch != -1 {
+		t.Errorf("expandedBranch = %d, want -1 (no expand on passed branch)", m.expandedBranch)
+	}
+}
+
+func TestAutoSplitModel_BranchCollapse_Escape(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.branches = []BranchVerifyState{
+		{Name: "fail-br", Status: BranchFailed, Output: []string{"line1"}},
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.expandedBranch != 0 {
+		t.Fatalf("should be expanded")
+	}
+	// Collapse with Escape.
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.expandedBranch != -1 {
+		t.Errorf("expandedBranch = %d, want -1 after Escape", m.expandedBranch)
+	}
+}
+
+func TestAutoSplitModel_BranchCollapse_Enter(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.branches = []BranchVerifyState{
+		{Name: "fail-br", Status: BranchFailed, Output: []string{"line1"}},
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.expandedBranch != 0 {
+		t.Fatalf("should be expanded")
+	}
+	// Collapse with Enter.
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.expandedBranch != -1 {
+		t.Errorf("expandedBranch = %d, want -1 after Enter collapse", m.expandedBranch)
+	}
+}
+
+func TestAutoSplitModel_BranchScroll_Expanded(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.width, m.height = 80, 20
+	lines := make([]string, 50)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("output line %d", i)
+	}
+	m.branches = []BranchVerifyState{
+		{Name: "fail", Status: BranchFailed, Output: lines},
+	}
+	// Expand.
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.expandedBranch != 0 {
+		t.Fatalf("should be expanded")
+	}
+	// Scroll up (towards older).
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	if m.branchScrollOffset != 1 {
+		t.Errorf("branchScrollOffset = %d, want 1 after k", m.branchScrollOffset)
+	}
+	// Scroll down (towards newer).
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if m.branchScrollOffset != 0 {
+		t.Errorf("branchScrollOffset = %d, want 0 after j", m.branchScrollOffset)
+	}
+}
+
+func TestAutoSplitModel_BranchHelpBar_WithBranches(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.width = 150
+	m.height = 30
+	m.Update(AutoSplitStepStartMsg{Name: "Verify"})
+	m.branches = []BranchVerifyState{
+		{Name: "b", Status: BranchFailed},
+	}
+	view := m.View()
+	if !strings.Contains(view, "branches") {
+		t.Errorf("help bar should mention 'branches' when branches exist:\n%s", view)
+	}
+	if !strings.Contains(view, "expand") {
+		t.Errorf("help bar should mention 'expand' when branches exist:\n%s", view)
+	}
+}
+
+func TestAutoSplitModel_BranchHelpBar_Expanded(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.width = 150
+	m.height = 30
+	m.Update(AutoSplitStepStartMsg{Name: "Verify"})
+	m.branches = []BranchVerifyState{
+		{Name: "b", Status: BranchFailed, Output: []string{"x"}},
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	view := m.View()
+	if !strings.Contains(view, "collapse") {
+		t.Errorf("expanded help bar should mention 'collapse':\n%s", view)
+	}
+}
+
+func TestAutoSplitModel_BranchIcon_AllStatuses(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		status BranchVerifyStatus
+		icon   string
+	}{
+		{BranchPending, "○"},
+		{BranchRunning, "⟳"},
+		{BranchPassed, "✓"},
+		{BranchFailed, "✗"},
+		{BranchSkipped, "⊘"},
+		{BranchPreExistingFailure, "⚠"},
+	}
+	for _, tt := range tests {
+		if got := branchIcon(tt.status); got != tt.icon {
+			t.Errorf("branchIcon(%d) = %q, want %q", tt.status, got, tt.icon)
+		}
+	}
+}
+
+func TestAutoSplitModel_MultipleBranches_EnsureBranchIdempotent(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.Update(AutoSplitBranchVerifyStartMsg{Branch: "a"})
+	m.Update(AutoSplitBranchVerifyStartMsg{Branch: "a"})
+	m.Update(AutoSplitBranchVerifyStartMsg{Branch: "b"})
+	if len(m.branches) != 2 {
+		t.Errorf("branches = %d, want 2 (ensureBranch deduplicates)", len(m.branches))
+	}
+}
+
+func TestAutoSplitModel_ExpandedBranch_InitialValue(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	if m.expandedBranch != -1 {
+		t.Errorf("expandedBranch = %d, want -1 initially", m.expandedBranch)
+	}
+}
+
+func TestAutoSplitModel_DoneWithExpandedBranch_CollapseFirst(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.branches = []BranchVerifyState{
+		{Name: "fail", Status: BranchFailed, Output: []string{"x"}},
+	}
+	m.Update(AutoSplitDoneMsg{Summary: "done"})
+	// Expand.
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.expandedBranch != 0 {
+		t.Fatalf("should be expanded")
+	}
+	// Enter should collapse, not quit.
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.expandedBranch != -1 {
+		t.Errorf("Enter while done+expanded should collapse, expandedBranch = %d", m.expandedBranch)
+	}
+	if cmd != nil {
+		t.Error("should not return quit cmd when collapsing")
+	}
+	if m.quitting {
+		t.Error("should not be quitting after collapse")
+	}
+}
+
+// --- T40: Pause/Resume TUI tests ---
+
+func TestAutoSplitModel_CtrlP_SetsPaused(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.Update(AutoSplitStepStartMsg{Name: "Build"})
+	if m.Paused() {
+		t.Fatal("should not be paused initially")
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	if !m.Paused() {
+		t.Error("should be paused after Ctrl-P")
+	}
+}
+
+func TestAutoSplitModel_CtrlP_NoEffectWhenDone(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.Update(AutoSplitDoneMsg{Summary: "done"})
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	if m.Paused() {
+		t.Error("should not be paused when pipeline is done")
+	}
+}
+
+func TestAutoSplitModel_PausedSeparator(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.width = 100
+	m.Update(AutoSplitStepStartMsg{Name: "Verify"})
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	sep := m.renderSeparator(100)
+	if !strings.Contains(sep, "Pausing") {
+		t.Errorf("separator should show 'Pausing' when paused, got: %s", sep)
+	}
+}
+
+func TestAutoSplitModel_PausedDoneSeparator(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.width = 100
+	m.Update(AutoSplitStepStartMsg{Name: "Build"})
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	m.Update(AutoSplitDoneMsg{Summary: "Paused"})
+	sep := m.renderSeparator(100)
+	if !strings.Contains(sep, "Paused") {
+		t.Errorf("done+paused separator should show 'Paused', got: %s", sep)
+	}
+}
+
+func TestAutoSplitModel_HelpBar_ShowsPause(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.width = 150
+	m.height = 24
+	m.Update(AutoSplitStepStartMsg{Name: "Build"})
+	view := m.View()
+	if !strings.Contains(view, "pause") {
+		t.Errorf("running help bar should mention 'pause':\n%s", view)
+	}
+}

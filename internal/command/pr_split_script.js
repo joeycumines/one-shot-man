@@ -148,6 +148,14 @@ function scopedVerifyCommand(files, fallbackCommand) {
         return fallbackCommand;
     }
 
+    // Only scope when the fallback is a known build/test runner.
+    // Custom verify commands (e.g. 'true', 'echo ok') must not be replaced.
+    var scopable = (fallbackCommand === 'make' ||
+                    (typeof fallbackCommand === 'string' && fallbackCommand.indexOf('go test') >= 0));
+    if (!scopable) {
+        return fallbackCommand;
+    }
+
     var pkgDirs = {};
     for (var i = 0; i < files.length; i++) {
         var f = files[i];
@@ -1463,26 +1471,41 @@ function verifySplit(branchName, config) {
         shellCmd = 'timeout ' + timeoutSec + ' sh -c ' + shellQuote(shellCmd);
     }
 
-    var result = exec.execv(['sh', '-c', shellCmd]);
-    var elapsedMs = Date.now() - startMs;
+    // Use execStream for real-time output streaming to TUI.
+    // Callbacks fire synchronously as chunks arrive — no buffering delay.
+    // Chunks may contain multiple lines, so we split and emit individually.
+    var stdoutBuf = '';
+    var stderrBuf = '';
+    var prefix = '  [verify ' + branchName + '] ';
 
-    // Emit verification output line-by-line via outputFn (T098).
-    if (outputFn) {
-        var combined = (result.stdout || '') + (result.stderr || '');
-        var lines = combined.split('\n');
-        for (var li = 0; li < lines.length; li++) {
-            if (lines[li]) {
-                outputFn('  [verify ' + branchName + '] ' + lines[li]);
+    function emitChunk(chunk) {
+        if (!outputFn) return;
+        var lines = chunk.split('\n');
+        for (var i = 0; i < lines.length; i++) {
+            if (lines[i]) {
+                outputFn(prefix + lines[i]);
             }
         }
     }
+
+    var result = exec.execStream(['sh', '-c', shellCmd], {
+        onStdout: function(chunk) {
+            stdoutBuf += chunk;
+            emitChunk(chunk);
+        },
+        onStderr: function(chunk) {
+            stderrBuf += chunk;
+            emitChunk(chunk);
+        }
+    });
+    var elapsedMs = Date.now() - startMs;
 
     // Detect timeout: exit code 124 from `timeout` utility, or elapsed time exceeded.
     if (timeoutMs > 0 && (result.code === 124 || elapsedMs >= timeoutMs)) {
         return {
             name: branchName,
             passed: false,
-            output: result.stdout,
+            output: stdoutBuf,
             error: 'verify timeout after ' + elapsedMs + 'ms (limit: ' + timeoutMs + 'ms)'
         };
     }
@@ -1490,8 +1513,8 @@ function verifySplit(branchName, config) {
     return {
         name: branchName,
         passed: result.code === 0,
-        output: result.stdout,
-        error: result.code !== 0 ? 'verify failed (exit ' + result.code + '): ' + result.stderr : null
+        output: stdoutBuf,
+        error: result.code !== 0 ? 'verify failed (exit ' + result.code + '): ' + stderrBuf : null
     };
 }
 
@@ -1502,6 +1525,9 @@ function verifySplits(plan, options) {
     }
     var dir = plan.dir || '.';
     var verifyTimeoutMs = options.verifyTimeoutMs || 0;
+    var onBranchStart = typeof options.onBranchStart === 'function' ? options.onBranchStart : null;
+    var onBranchDone = typeof options.onBranchDone === 'function' ? options.onBranchDone : null;
+    var onBranchOutput = typeof options.onBranchOutput === 'function' ? options.onBranchOutput : null;
     var results = [];
     var allPassed = true;
     var failedBranches = {};
@@ -1544,6 +1570,7 @@ function verifySplits(plan, options) {
             }
         }
         if (skipReason) {
+            if (onBranchDone) { onBranchDone(split.name, false, 0, 0, true, false); }
             results.push({ name: split.name, passed: false, skipped: true, error: skipReason });
             allPassed = false;
             failedBranches[split.name] = true;
@@ -1554,11 +1581,23 @@ function verifySplits(plan, options) {
         var baseCmd = plan.verifyCommand;
         var scopedCmd = scopedVerifyCommand(split.files, baseCmd);
 
+        if (onBranchStart) { onBranchStart(split.name); }
+        var branchStartTime = Date.now();
+        // T38: Wrap outputFn to also route lines to onBranchOutput.
+        var branchOutputFn = options.outputFn || null;
+        if (onBranchOutput) {
+            var baseFn = branchOutputFn;
+            var brName = split.name;
+            branchOutputFn = function(line) {
+                if (baseFn) { baseFn(line); }
+                onBranchOutput(brName, line);
+            };
+        }
         var result = verifySplit(split.name, {
             dir: dir,
             verifyCommand: scopedCmd,
             verifyTimeoutMs: verifyTimeoutMs,
-            outputFn: options.outputFn || null
+            outputFn: branchOutputFn
         });
         // Record whether scoped verification was used.
         if (scopedCmd !== baseCmd) {
@@ -1570,6 +1609,11 @@ function verifySplits(plan, options) {
         if (!result.passed && baselineFailure) {
             result.preExisting = true;
             result.error = (result.error || 'verification failed') + ' (pre-existing on ' + plan.sourceBranch + ')';
+        }
+
+        var branchElapsedMs = Date.now() - branchStartTime;
+        if (onBranchDone) {
+            onBranchDone(split.name, result.passed, result.exitCode || 0, branchElapsedMs, false, !!result.preExisting);
         }
 
         results.push(result);
@@ -2712,6 +2756,14 @@ function isCancelled() {
            typeof autoSplitTUI.cancelled === 'function' && autoSplitTUI.cancelled();
 }
 
+// isPaused checks whether the user pressed Ctrl-P to request a pause.
+// The pipeline should save a checkpoint and exit cleanly when this
+// returns true.
+function isPaused() {
+    return typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
+           typeof autoSplitTUI.paused === 'function' && autoSplitTUI.paused();
+}
+
 // isForceCancelled checks whether the user has pressed q/Ctrl+C twice,
 // signalling that child processes should be killed immediately.
 function isForceCancelled() {
@@ -2893,6 +2945,23 @@ function automatedSplit(config) {
         // Check cancellation before each step — cooperative cancellation.
         if (hasTUI && !config.disableTUI && typeof autoSplitTUI.cancelled === 'function' && autoSplitTUI.cancelled()) {
             return { error: 'cancelled by user' };
+        }
+        // T40: Check pause — save checkpoint and exit cleanly.
+        if (isPaused()) {
+            // Save a checkpoint so `osm pr-split resume` can pick up here.
+            if (planCache) {
+                var lastDone = '';
+                for (var si = report.steps.length - 1; si >= 0; si--) {
+                    if (!report.steps[si].error) {
+                        lastDone = report.steps[si].name;
+                        break;
+                    }
+                }
+                savePlan(DEFAULT_PLAN_PATH, lastDone || 'paused');
+                emitOutput('[auto-split] Paused — checkpoint saved to ' + DEFAULT_PLAN_PATH);
+                emitOutput('[auto-split] Resume with: osm pr-split --resume');
+            }
+            return { error: 'paused by user (Ctrl-P)' };
         }
         // T20: Check pipeline timeout before starting each step.
         var pipelineElapsed = Date.now() - pipelineStartTime;
@@ -3424,7 +3493,18 @@ function automatedSplit(config) {
         updateDetail('Verify splits', 'Running verification command on each branch...');
         var verifyObj = verifySplits(plan, {
             verifyTimeoutMs: config.verifyTimeoutMs || AUTOMATED_DEFAULTS.verifyTimeoutMs,
-            outputFn: emitOutput
+            outputFn: emitOutput,
+            onBranchStart: (hasTUI && !config.disableTUI && typeof autoSplitTUI.branchStart === 'function')
+                ? function(name) { autoSplitTUI.branchStart(name); }
+                : null,
+            onBranchDone: (hasTUI && !config.disableTUI && typeof autoSplitTUI.branchDone === 'function')
+                ? function(name, passed, exitCode, elapsedMs, skipped, preExisting) {
+                    autoSplitTUI.branchDone(name, passed, exitCode, elapsedMs, skipped, preExisting);
+                }
+                : null,
+            onBranchOutput: (hasTUI && !config.disableTUI && typeof autoSplitTUI.branchOutput === 'function')
+                ? function(name, line) { autoSplitTUI.branchOutput(name, line); }
+                : null
         });
         var realFailures = [];
         var skippedResults = [];

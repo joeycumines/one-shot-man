@@ -8855,7 +8855,7 @@ func TestAutoSplit_PipelineTimeout(t *testing.T) {
 // T128: pollInterval minimum floor
 // ---------------------------------------------------------------------------
 
-func TestPollForFile_MinInterval(t *testing.T) {
+func TestPollInterval_MinFloor(t *testing.T) {
 	t.Parallel()
 
 	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)

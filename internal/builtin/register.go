@@ -103,7 +103,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"json", jsonmod.Require)
 	registry.RegisterNativeModule(prefix+"nextIntegerID", nextintegerid.Require)
 	registry.RegisterNativeModule(prefix+"nextIntegerId", nextintegerid.Require) // Deprecated: use osm:nextIntegerID
-	registry.RegisterNativeModule(prefix+"exec", execmod.Require(ctx))
+	registry.RegisterNativeModule(prefix+"exec", execmod.Require(ctx, eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"fetch", fetchmod.Require(eventLoopProvider.Adapter()))
 	registry.RegisterNativeModule(prefix+"flag", flagmod.Require)
 	registry.RegisterNativeModule(prefix+"mcp", mcpmod.Require(eventLoopProvider.Adapter(), eventLoopProvider.Loop()))

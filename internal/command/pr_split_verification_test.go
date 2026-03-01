@@ -91,6 +91,16 @@ func gitMockSetupJS() string {
         // Default: success with empty output.
         return ok('');
     };
+
+    // execStream delegates to the execv mock but adapts the interface:
+    // fires onStdout/onStderr callbacks, returns {code, error, message}.
+    execMod.execStream = function(argv, opts) {
+        var r = execMod.execv(argv);
+        opts = opts || {};
+        if (opts.onStdout && r.stdout) opts.onStdout(r.stdout);
+        if (opts.onStderr && r.stderr) opts.onStderr(r.stderr);
+        return {code: r.code, error: r.error, message: r.message};
+    };
 })();`
 }
 
@@ -951,13 +961,14 @@ func TestVerifySplits_MockExec(t *testing.T) {
 		}
 
 		// Use a function response for sh commands to alternate pass/fail.
+		// T25: Call #1 is baseline check on source branch; split branches start at #2.
 		if _, err := evalJS(`
 			var _shCallCount = 0;
 			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
 			_gitResponses['checkout'] = _gitOk('');
 			_gitResponses['!sh'] = function(argv) {
 				_shCallCount++;
-				if (_shCallCount === 2) {
+				if (_shCallCount === 3) {
 					return _gitFail('build failed');
 				}
 				return _gitOk('ok');
@@ -1155,12 +1166,19 @@ func TestVerifySplits_SkipsDependencyFailures(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		// First split fails verification (sh callback returns failure on first call),
+		// First split fails verification (sh callback returns failure),
 		// second and third should be skipped due to dependency chain.
+		// T25: Call #1 is baseline on sourceBranch — must pass so failures
+		// are NOT marked pre-existing.
 		if _, err := evalJS(`
+			var _shN = 0;
 			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
 			_gitResponses['checkout'] = _gitOk('');
-			_gitResponses['!sh'] = _gitFail('build failed');
+			_gitResponses['!sh'] = function(argv) {
+				_shN++;
+				if (_shN === 1) return _gitOk('baseline ok');
+				return _gitFail('build failed');
+			};
 		`); err != nil {
 			t.Fatal(err)
 		}
@@ -1265,10 +1283,16 @@ func TestVerifySplits_PerBranchTimeout(t *testing.T) {
 			t.Fatal(err)
 		}
 		// Mock: checkout succeeds, sh returns exit code 124 (timeout utility signal).
+		// T25: Call #1 is baseline — must succeed so split failures are real.
 		if _, err := evalJS(`
+			var _shTO = 0;
 			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
 			_gitResponses['checkout'] = _gitOk('');
-			_gitResponses['!sh'] = {stdout: '', stderr: 'killed', code: 124, error: true, message: 'killed'};
+			_gitResponses['!sh'] = function(argv) {
+				_shTO++;
+				if (_shTO === 1) return _gitOk('baseline ok');
+				return {stdout: '', stderr: 'killed', code: 124, error: true, message: 'killed'};
+			};
 		`); err != nil {
 			t.Fatal(err)
 		}
@@ -1328,10 +1352,16 @@ func TestVerifySplits_PerBranchTimeout(t *testing.T) {
 			t.Fatal(err)
 		}
 		// Even with exit code 124, if no timeout configured, it's just a regular failure.
+		// T25: Call #1 is baseline — must succeed so split failures are real.
 		if _, err := evalJS(`
+			var _shNTO = 0;
 			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
 			_gitResponses['checkout'] = _gitOk('');
-			_gitResponses['!sh'] = {stdout: '', stderr: 'killed', code: 124, error: true, message: 'killed'};
+			_gitResponses['!sh'] = function(argv) {
+				_shNTO++;
+				if (_shNTO === 1) return _gitOk('baseline ok');
+				return {stdout: '', stderr: 'killed', code: 124, error: true, message: 'killed'};
+			};
 		`); err != nil {
 			t.Fatal(err)
 		}
@@ -1382,10 +1412,17 @@ func TestVerifySplits_FailedBranch_AllPassedFalse(t *testing.T) {
 		t.Fatalf("failed to install git mock: %v", err)
 	}
 
+	// T25: Call #1 is baseline on sourceBranch — must pass so split
+	// failures are NOT marked pre-existing.
 	if _, err := evalJS(`
+		var _shFB = 0;
 		_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
 		_gitResponses['checkout'] = _gitOk('');
-		_gitResponses['!sh'] = _gitFail('COMPILE ERROR: missing import');
+		_gitResponses['!sh'] = function(argv) {
+			_shFB++;
+			if (_shFB === 1) return _gitOk('baseline ok');
+			return _gitFail('COMPILE ERROR: missing import');
+		};
 	`); err != nil {
 		t.Fatal(err)
 	}
@@ -1453,10 +1490,11 @@ func TestVerifyStepReportsErrorOnFailure(t *testing.T) {
 		// branch 1 passes, branch 2 fails.
 		_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
 		_gitResponses['checkout'] = _gitOk('');
+		// T25: Call #1 is baseline on sourceBranch; split branches start at #2.
 		var _shCount = 0;
 		_gitResponses['!sh'] = function(argv) {
 			_shCount++;
-			if (_shCount === 2) return _gitFail('COMPILATION FAILED');
+			if (_shCount === 3) return _gitFail('COMPILATION FAILED');
 			return _gitOk('ok');
 		};
 
@@ -2273,6 +2311,34 @@ func TestScopedVerifyCommand(t *testing.T) {
 		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
 			['internal/cmd/a.go', 'internal/cmd/b.go', 'internal/cmd/c_test.go'],
 			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "go test -race ./internal/cmd/..."
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("non_scopable_command_not_replaced", func(t *testing.T) {
+		// Commands that are not 'make' or 'go test ...' should never be replaced.
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['internal/cmd/foo.go'],
+			'true'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "true" {
+			t.Errorf("expected fallback 'true', got %q", raw)
+		}
+	})
+
+	t.Run("go_test_command_is_scopable", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['internal/cmd/foo.go'],
+			'go test ./...'
 		)`)
 		if err != nil {
 			t.Fatal(err)

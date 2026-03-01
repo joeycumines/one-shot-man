@@ -116,10 +116,10 @@ func TestTeeLoop_VTermCapture(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	m.mu.Lock()
-	got := m.vterm.Render()
+	got := m.vterm.RenderFullScreen()
 	m.mu.Unlock()
 	if !strings.Contains(got, "Hello") {
-		t.Fatalf("VTerm Render = %q; want to contain %q", got, "Hello")
+		t.Fatalf("VTerm RenderFullScreen = %q; want to contain %q", got, "Hello")
 	}
 
 	if stdout.Len() > 0 {
@@ -567,12 +567,14 @@ func TestRunPassthrough_VTermRestore(t *testing.T) {
 	m.RunPassthrough(context.Background())
 
 	out := stdout.String()
-	// Should see clear screen followed by VTerm rendered content.
-	if !strings.Contains(out, "\x1b[2J\x1b[H") {
-		t.Errorf("expected clear screen on restore; got %q", out)
-	}
+	// RenderFullScreen writes CUP + content + EL per row (no ESC[2J clear).
+	// Verify the VTerm content appears in stdout.
 	if !strings.Contains(out, "Hello VTerm") {
 		t.Errorf("expected VTerm content 'Hello VTerm' in output; got %q", out)
+	}
+	// Verify it does NOT emit the old ESC[2J clear screen.
+	if strings.Contains(out, "\x1b[2J") {
+		t.Errorf("expected no ESC[2J (clear screen) on flicker-free restore; got %q", out)
 	}
 
 	child.Close()

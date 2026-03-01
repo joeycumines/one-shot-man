@@ -57,7 +57,7 @@ func templateTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 
 	// Register additional modules.
 	reg.RegisterNativeModule("osm:claudemux", Require(ctx))
-	reg.RegisterNativeModule("osm:exec", execmod.Require(ctx))
+	reg.RegisterNativeModule("osm:exec", execmod.Require(ctx, nil))
 	reg.RegisterNativeModule("osm:pabt", pabtmod.Require(ctx, bridge))
 
 	// Helper: run JS on event loop, fail test on error.

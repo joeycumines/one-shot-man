@@ -90,6 +90,82 @@ type AutoSplitDoneMsg struct {
 // autoSplitTickMsg is an internal tick for elapsed-time updates.
 type autoSplitTickMsg time.Time
 
+// --- Per-Branch Verification Messages ---
+
+// BranchVerifyStatus represents the verification state of a single branch.
+type BranchVerifyStatus int
+
+const (
+	// BranchPending means verification has not started.
+	BranchPending BranchVerifyStatus = iota
+	// BranchRunning means verification is in progress.
+	BranchRunning
+	// BranchPassed means verification succeeded.
+	BranchPassed
+	// BranchFailed means verification failed.
+	BranchFailed
+	// BranchSkipped means verification was skipped (dependency failure).
+	BranchSkipped
+	// BranchPreExistingFailure means the baseline check failed (T25).
+	BranchPreExistingFailure
+)
+
+// branchIcon returns the Unicode icon for a branch verification status.
+func branchIcon(s BranchVerifyStatus) string {
+	switch s {
+	case BranchPending:
+		return "○"
+	case BranchRunning:
+		return "⟳"
+	case BranchPassed:
+		return "✓"
+	case BranchFailed:
+		return "✗"
+	case BranchSkipped:
+		return "⊘"
+	case BranchPreExistingFailure:
+		return "⚠"
+	default:
+		return "?"
+	}
+}
+
+// BranchVerifyState tracks the verification state of a single branch.
+type BranchVerifyState struct {
+	Name     string
+	Status   BranchVerifyStatus
+	ExitCode int
+	Error    string
+	Elapsed  time.Duration
+	Output   []string // captured verification output lines (T38)
+}
+
+// maxBranchOutputLines is the maximum number of output lines stored per branch.
+const maxBranchOutputLines = 200
+
+// AutoSplitBranchVerifyStartMsg signals that verification of a branch started.
+type AutoSplitBranchVerifyStartMsg struct {
+	Branch string
+}
+
+// AutoSplitBranchVerifyOutputMsg carries a single line of verification
+// output for a specific branch.
+type AutoSplitBranchVerifyOutputMsg struct {
+	Branch string
+	Line   string
+}
+
+// AutoSplitBranchVerifyDoneMsg signals that verification of a branch completed.
+type AutoSplitBranchVerifyDoneMsg struct {
+	Branch   string
+	Passed   bool
+	ExitCode int
+	Error    string
+	Elapsed  time.Duration
+	Skipped  bool // dependency failure
+	PreExist bool // pre-existing failure (T25)
+}
+
 // --- Model ---
 
 // AutoSplitToggleMsg is sent when the user presses the toggle key (Ctrl+])
@@ -126,9 +202,21 @@ type AutoSplitModel struct {
 	quitting    bool
 	cancelled   bool // set on first q/Ctrl+C; polled by JS
 	forceCancel bool // set on second q/Ctrl+C; signals JS to kill children immediately
+	paused      bool // T40: set on Ctrl-P; polled by JS at step boundaries
 
 	// Pipeline timer — set on first StepStartMsg.
 	pipelineStartedAt time.Time
+
+	// Per-branch verification state (T36).
+	branches []BranchVerifyState
+
+	// T38: Expanded branch detail view.
+	// -1 means no branch is expanded; otherwise index into branches.
+	expandedBranch int
+	// Scroll offset within the expanded branch output.
+	branchScrollOffset int
+	// branchCursor is the currently highlighted branch index (-1 = none).
+	branchCursor int
 
 	// Toggle key (default Ctrl+]) for switching to Claude TUI.
 	toggleKey byte
@@ -185,10 +273,11 @@ func WithAutoSplitOnToggle(fn func()) AutoSplitOption {
 // NewAutoSplitModel creates a new auto-split progress TUI.
 func NewAutoSplitModel(opts ...AutoSplitOption) *AutoSplitModel {
 	m := &AutoSplitModel{
-		width:     80,
-		height:    24,
-		maxLines:  500,
-		toggleKey: termmux.DefaultToggleKey,
+		width:          80,
+		height:         24,
+		maxLines:       500,
+		expandedBranch: -1,
+		toggleKey:      termmux.DefaultToggleKey,
 		headerStyle: lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("86")),
@@ -260,6 +349,21 @@ func (m *AutoSplitModel) SendDone(summary string) {
 	m.send(AutoSplitDoneMsg{Summary: summary})
 }
 
+// SendBranchVerifyStart notifies the TUI that verification of a branch started.
+func (m *AutoSplitModel) SendBranchVerifyStart(branch string) {
+	m.send(AutoSplitBranchVerifyStartMsg{Branch: branch})
+}
+
+// SendBranchVerifyOutput sends a single line of verification output for a branch.
+func (m *AutoSplitModel) SendBranchVerifyOutput(branch, line string) {
+	m.send(AutoSplitBranchVerifyOutputMsg{Branch: branch, Line: line})
+}
+
+// SendBranchVerifyDone notifies the TUI that verification of a branch completed.
+func (m *AutoSplitModel) SendBranchVerifyDone(msg AutoSplitBranchVerifyDoneMsg) {
+	m.send(msg)
+}
+
 // SendStepDetail updates the sub-step progress detail for a running
 // step (e.g. "Classifying 15/42 files..."). The detail is displayed
 // inline after the step name in the progress view.
@@ -283,6 +387,14 @@ func (m *AutoSplitModel) ForceCancelled() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.forceCancel
+}
+
+// Paused returns true if the user has pressed Ctrl-P to request a
+// pause. The JS pipeline should save a checkpoint and exit cleanly.
+func (m *AutoSplitModel) Paused() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.paused
 }
 
 // Quit programmatically triggers a clean shutdown of the TUI. The
@@ -344,10 +456,83 @@ func (m *AutoSplitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		// Enter key on done screen: dismiss the TUI.
+		// T40: Pause — Ctrl-P saves checkpoint and exits cleanly.
+		if msg.Type == tea.KeyCtrlP && !m.done {
+			m.mu.Lock()
+			m.paused = true
+			m.mu.Unlock()
+			return m, nil
+		}
+
+		// Enter key on done screen: dismiss the TUI (unless branch detail is active).
 		if msg.Type == tea.KeyEnter && m.done {
+			// T38: if a branch is expanded, collapse it first.
+			if m.expandedBranch >= 0 {
+				m.expandedBranch = -1
+				m.branchScrollOffset = 0
+				return m, nil
+			}
+			// T38: if cursor is on a failed branch, expand it instead of quitting.
+			if len(m.branches) > 0 && m.branchCursor >= 0 && m.branchCursor < len(m.branches) {
+				br := m.branches[m.branchCursor]
+				if br.Status == BranchFailed || br.Status == BranchPreExistingFailure {
+					m.expandedBranch = m.branchCursor
+					m.branchScrollOffset = 0
+					return m, nil
+				}
+			}
 			m.quitting = true
 			return m, tea.Quit
+		}
+
+		// T38: Branch detail view — collapse on Escape.
+		if msg.Type == tea.KeyEsc && m.expandedBranch >= 0 {
+			m.expandedBranch = -1
+			m.branchScrollOffset = 0
+			return m, nil
+		}
+
+		// T38: Branch navigation (j/k) and expansion (Enter).
+		if len(m.branches) > 0 {
+			if m.expandedBranch >= 0 {
+				// Inside expanded view: j/k/up/down scroll output.
+				switch {
+				case msg.String() == "j" || msg.Type == tea.KeyDown:
+					m.branchScrollDown(1)
+					return m, nil
+				case msg.String() == "k" || msg.Type == tea.KeyUp:
+					m.branchScrollUp(1)
+					return m, nil
+				case msg.Type == tea.KeyEnter:
+					m.expandedBranch = -1
+					m.branchScrollOffset = 0
+					return m, nil
+				}
+			} else {
+				// Outside expanded view: j/k moves cursor, Enter expands.
+				switch {
+				case msg.String() == "j":
+					if m.branchCursor < len(m.branches)-1 {
+						m.branchCursor++
+					}
+					return m, nil
+				case msg.String() == "k":
+					if m.branchCursor > 0 {
+						m.branchCursor--
+					}
+					return m, nil
+				case msg.Type == tea.KeyEnter && !m.done:
+					// Enter only expands when cursor is on a failed/pre-existing branch.
+					if m.branchCursor >= 0 && m.branchCursor < len(m.branches) {
+						br := m.branches[m.branchCursor]
+						if br.Status == BranchFailed || br.Status == BranchPreExistingFailure {
+							m.expandedBranch = m.branchCursor
+							m.branchScrollOffset = 0
+							return m, nil
+						}
+					}
+				}
+			}
 		}
 
 		// Toggle key (default Ctrl+]) — switch to Claude TUI.
@@ -445,6 +630,50 @@ func (m *AutoSplitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case AutoSplitBranchVerifyStartMsg:
+		m.ensureBranch(msg.Branch)
+		for i := range m.branches {
+			if m.branches[i].Name == msg.Branch {
+				m.branches[i].Status = BranchRunning
+				m.branches[i].Output = nil // reset on (re-)start
+				break
+			}
+		}
+		return m, nil
+
+	case AutoSplitBranchVerifyOutputMsg:
+		m.ensureBranch(msg.Branch)
+		for i := range m.branches {
+			if m.branches[i].Name == msg.Branch {
+				if len(m.branches[i].Output) < maxBranchOutputLines {
+					m.branches[i].Output = append(m.branches[i].Output, msg.Line)
+				}
+				break
+			}
+		}
+		return m, nil
+
+	case AutoSplitBranchVerifyDoneMsg:
+		m.ensureBranch(msg.Branch)
+		for i := range m.branches {
+			if m.branches[i].Name == msg.Branch {
+				if msg.Skipped {
+					m.branches[i].Status = BranchSkipped
+				} else if msg.PreExist {
+					m.branches[i].Status = BranchPreExistingFailure
+				} else if msg.Passed {
+					m.branches[i].Status = BranchPassed
+				} else {
+					m.branches[i].Status = BranchFailed
+				}
+				m.branches[i].ExitCode = msg.ExitCode
+				m.branches[i].Error = msg.Error
+				m.branches[i].Elapsed = msg.Elapsed
+				break
+			}
+		}
+		return m, nil
+
 	case AutoSplitToggleMsg:
 		return m, nil
 
@@ -469,18 +698,25 @@ func (m *AutoSplitModel) View() string {
 	topContent := m.renderSteps(layout.topHeight, m.width)
 	separator := m.renderSeparator(m.width)
 
-	viewLines := m.outputLines
-	if m.scrollOffset > 0 && len(viewLines) > layout.bottomHeight {
-		endIdx := len(viewLines) - m.scrollOffset
-		if endIdx < layout.bottomHeight {
-			endIdx = layout.bottomHeight
+	var bottomContent string
+
+	// T38: When a branch is expanded, replace the output pane with branch details.
+	if m.expandedBranch >= 0 && m.expandedBranch < len(m.branches) {
+		bottomContent = m.renderBranchDetail(layout.bottomHeight, m.width)
+	} else {
+		viewLines := m.outputLines
+		if m.scrollOffset > 0 && len(viewLines) > layout.bottomHeight {
+			endIdx := len(viewLines) - m.scrollOffset
+			if endIdx < layout.bottomHeight {
+				endIdx = layout.bottomHeight
+			}
+			if endIdx > len(viewLines) {
+				endIdx = len(viewLines)
+			}
+			viewLines = viewLines[:endIdx]
 		}
-		if endIdx > len(viewLines) {
-			endIdx = len(viewLines)
-		}
-		viewLines = viewLines[:endIdx]
+		bottomContent = renderPane(viewLines, layout.bottomHeight, m.width)
 	}
-	bottomContent := renderPane(viewLines, layout.bottomHeight, m.width)
 
 	helpBar := m.renderHelpBar(m.width)
 
@@ -505,6 +741,41 @@ func (m *AutoSplitModel) scrollDown(n int) {
 	if m.scrollOffset < 0 {
 		m.scrollOffset = 0
 	}
+}
+
+// branchScrollUp scrolls the expanded branch output view up (towards older lines).
+func (m *AutoSplitModel) branchScrollUp(n int) {
+	if m.expandedBranch < 0 || m.expandedBranch >= len(m.branches) {
+		return
+	}
+	lines := len(m.branches[m.expandedBranch].Output)
+	viewH := m.branchDetailHeight()
+	maxOffset := lines - viewH
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	m.branchScrollOffset += n
+	if m.branchScrollOffset > maxOffset {
+		m.branchScrollOffset = maxOffset
+	}
+}
+
+// branchScrollDown scrolls the expanded branch output view down (towards newer lines).
+func (m *AutoSplitModel) branchScrollDown(n int) {
+	m.branchScrollOffset -= n
+	if m.branchScrollOffset < 0 {
+		m.branchScrollOffset = 0
+	}
+}
+
+// branchDetailHeight returns the number of visible lines for the expanded
+// branch detail pane. Defaults to the output pane height.
+func (m *AutoSplitModel) branchDetailHeight() int {
+	h := m.outputPaneHeight()
+	if h < 3 {
+		h = 3
+	}
+	return h
 }
 
 type autoSplitLayout struct {
@@ -546,6 +817,52 @@ func (m *AutoSplitModel) ensureStep(name string) {
 		Name:   name,
 		Status: StepPending,
 	})
+}
+
+func (m *AutoSplitModel) ensureBranch(name string) {
+	for _, b := range m.branches {
+		if b.Name == name {
+			return
+		}
+	}
+	m.branches = append(m.branches, BranchVerifyState{
+		Name:   name,
+		Status: BranchPending,
+	})
+}
+
+// branchSummaryLine returns a compact summary like "3/5 passed, 1 failed, 1 skipped".
+func (m *AutoSplitModel) branchSummaryLine() string {
+	var passed, failed, skipped, running, pending int
+	for _, b := range m.branches {
+		switch b.Status {
+		case BranchPassed:
+			passed++
+		case BranchFailed:
+			failed++
+		case BranchSkipped, BranchPreExistingFailure:
+			skipped++
+		case BranchRunning:
+			running++
+		case BranchPending:
+			pending++
+		}
+	}
+	total := len(m.branches)
+	parts := []string{fmt.Sprintf("%d/%d passed", passed, total)}
+	if failed > 0 {
+		parts = append(parts, fmt.Sprintf("%d failed", failed))
+	}
+	if skipped > 0 {
+		parts = append(parts, fmt.Sprintf("%d skipped", skipped))
+	}
+	if running > 0 {
+		parts = append(parts, fmt.Sprintf("%d running", running))
+	}
+	if pending > 0 {
+		parts = append(parts, fmt.Sprintf("%d pending", pending))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func (m *AutoSplitModel) renderSteps(height, width int) string {
@@ -614,8 +931,52 @@ func (m *AutoSplitModel) renderSteps(height, width int) string {
 		}
 
 		b.WriteString(truncate(line, width))
-		if i < len(steps)-1 {
+		if i < len(steps)-1 || len(m.branches) > 0 {
 			b.WriteByte('\n')
+		}
+	}
+
+	// Per-branch verification status (T36).
+	if len(m.branches) > 0 {
+		summary := m.branchSummaryLine()
+		b.WriteString(m.detailStyle.Render("    " + summary))
+		b.WriteByte('\n')
+		for bi, br := range m.branches {
+			icon := branchIcon(br.Status)
+			var bStyle lipgloss.Style
+			switch br.Status {
+			case BranchPending:
+				bStyle = m.pendingStyle
+			case BranchRunning:
+				bStyle = m.runningStyle
+			case BranchPassed:
+				bStyle = m.doneStyle
+			case BranchFailed:
+				bStyle = m.failedStyle
+			case BranchSkipped:
+				bStyle = m.pendingStyle
+			case BranchPreExistingFailure:
+				bStyle = m.runningStyle
+			}
+			// T38: Show cursor indicator for the selected branch.
+			cursor := "  "
+			if bi == m.branchCursor && m.expandedBranch < 0 {
+				cursor = "▸ "
+			}
+			bLine := bStyle.Render(fmt.Sprintf("    %s%s %s", cursor, icon, br.Name))
+			if br.Elapsed > 0 {
+				bLine += m.detailStyle.Render(fmt.Sprintf(" (%s)", formatDuration(br.Elapsed)))
+			}
+			if br.Status == BranchFailed && br.Error != "" {
+				bLine += m.failedStyle.Render(fmt.Sprintf(" — %s", br.Error))
+			}
+			if br.Status == BranchPreExistingFailure {
+				bLine += m.detailStyle.Render(" (pre-existing)")
+			}
+			b.WriteString(truncate(bLine, width))
+			if bi < len(m.branches)-1 {
+				b.WriteByte('\n')
+			}
 		}
 	}
 
@@ -643,18 +1004,23 @@ func (m *AutoSplitModel) renderSeparator(width int) string {
 
 	m.mu.Lock()
 	isCancelled := m.cancelled
+	isPaused := m.paused
 	m.mu.Unlock()
 
 	var left string
 	switch {
 	case m.done && isCancelled:
 		left = " ⏹ Cancelled"
+	case m.done && isPaused:
+		left = " ⏸ Paused — resume with osm pr-split --resume"
 	case m.done:
 		left = " ✓ Complete — press q to dismiss"
 	case isCancelled && m.forceCancel:
 		left = " ⚡ Force cancelling… killing processes"
 	case isCancelled:
 		left = " ⏳ Cancelling… (q again to force kill)"
+	case isPaused:
+		left = " ⏸ Pausing… saving checkpoint"
 	case currentStep != "":
 		left = fmt.Sprintf(" ◉ %s", currentStep)
 	default:
@@ -694,6 +1060,44 @@ func (m *AutoSplitModel) renderSeparator(width int) string {
 	return m.separatorStyle.Width(width).Render(bar)
 }
 
+// renderBranchDetail renders the expanded branch verification output (T38).
+func (m *AutoSplitModel) renderBranchDetail(height, width int) string {
+	if m.expandedBranch < 0 || m.expandedBranch >= len(m.branches) {
+		return renderPane(nil, height, width)
+	}
+	br := m.branches[m.expandedBranch]
+
+	// Header line: "▸ branch-name (failed, exit 1, 3.2s)"
+	header := m.failedStyle.Render(fmt.Sprintf("▸ %s", br.Name))
+	if br.Elapsed > 0 {
+		header += m.detailStyle.Render(fmt.Sprintf(" (%s)", formatDuration(br.Elapsed)))
+	}
+	if br.Error != "" {
+		header += m.failedStyle.Render(fmt.Sprintf(" — %s", br.Error))
+	}
+
+	lines := br.Output
+	viewH := height - 1 // minus 1 for the header line
+	if viewH < 1 {
+		viewH = 1
+	}
+
+	// Apply scroll offset (latest output at bottom like the output pane).
+	if m.branchScrollOffset > 0 && len(lines) > viewH {
+		endIdx := len(lines) - m.branchScrollOffset
+		if endIdx < viewH {
+			endIdx = viewH
+		}
+		if endIdx > len(lines) {
+			endIdx = len(lines)
+		}
+		lines = lines[:endIdx]
+	}
+
+	outputContent := renderPane(lines, viewH, width)
+	return truncate(header, width) + "\n" + outputContent
+}
+
 func (m *AutoSplitModel) renderHelpBar(width int) string {
 	helpStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("240"))
@@ -715,8 +1119,21 @@ func (m *AutoSplitModel) renderHelpBar(width int) string {
 	case isCancelled:
 		help = keyStyle.Render("q") + helpStyle.Render(" force kill")
 	default:
+		branchHint := ""
+		if len(m.branches) > 0 {
+			if m.expandedBranch >= 0 {
+				branchHint = keyStyle.Render("esc") + helpStyle.Render("/") +
+					keyStyle.Render("enter") + helpStyle.Render(" collapse  ") +
+					keyStyle.Render("j/k") + helpStyle.Render(" scroll  ")
+			} else {
+				branchHint = keyStyle.Render("j/k") + helpStyle.Render(" branches  ") +
+					keyStyle.Render("enter") + helpStyle.Render(" expand  ")
+			}
+		}
 		help = keyStyle.Render("q") + helpStyle.Render(" cancel  ") +
+			keyStyle.Render("ctrl+p") + helpStyle.Render(" pause  ") +
 			keyStyle.Render("ctrl+]") + helpStyle.Render(" claude  ") +
+			branchHint +
 			keyStyle.Render("↑↓") + helpStyle.Render(" scroll  ") +
 			keyStyle.Render("home/end") + helpStyle.Render(" jump")
 	}

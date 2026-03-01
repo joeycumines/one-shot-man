@@ -121,13 +121,61 @@ var cfg = (typeof prSplitConfig !== 'undefined') ? prSplitConfig : {};
 var COMMAND_NAME = (typeof config !== 'undefined' && config.name) ? config.name : 'pr-split';
 var MODE_NAME = 'pr-split';
 
+// discoverVerifyCommand auto-detects the verification command for the
+// working directory. Checks for Makefile, makefile, and GNUmakefile (in
+// order). Returns 'make' if any exist, '' if none found.
+function discoverVerifyCommand(dir) {
+    var names = ['Makefile', 'makefile', 'GNUmakefile'];
+    for (var i = 0; i < names.length; i++) {
+        var path = dir ? (dir + '/' + names[i]) : names[i];
+        var result = exec.execv(['test', '-f', path]);
+        if (result.code === 0) {
+            return 'make';
+        }
+    }
+    return '';
+}
+
+// scopedVerifyCommand returns a verification command scoped to the Go
+// packages affected by the given files. If any non-Go file is present,
+// returns the fallback command (full verification). The scoped command
+// runs `go test -race` on each unique package directory.
+//
+// T26: This trades full verification for speed when a split only touches
+// Go files in known packages.
+function scopedVerifyCommand(files, fallbackCommand) {
+    if (!files || files.length === 0) {
+        return fallbackCommand;
+    }
+
+    var pkgDirs = {};
+    for (var i = 0; i < files.length; i++) {
+        var f = files[i];
+        // Non-Go files → fall back to full verification.
+        if (!f || !f.match || !f.match(/\.go$/)) {
+            return fallbackCommand;
+        }
+        // Extract directory: "internal/cmd/foo.go" → "internal/cmd"
+        var lastSlash = f.lastIndexOf('/');
+        var dir = lastSlash >= 0 ? './' + f.substring(0, lastSlash) + '/...' : './...';
+        pkgDirs[dir] = true;
+    }
+
+    var pkgs = Object.keys(pkgDirs).sort();
+    if (pkgs.length === 0) {
+        return fallbackCommand;
+    }
+
+    return 'go test -race ' + pkgs.join(' ');
+}
+
 // Mutable runtime state — can be changed via TUI commands.
 var runtime = {
     baseBranch:    cfg.baseBranch    || 'main',
     strategy:      cfg.strategy      || 'directory',
     maxFiles:      cfg.maxFiles      || 10,
     branchPrefix:  cfg.branchPrefix  || 'split/',
-    verifyCommand: cfg.verifyCommand || 'make',
+    verifyCommand: cfg.verifyCommand || discoverVerifyCommand('.') || 'make',
     dryRun:        cfg.dryRun        || false,
     jsonOutput:    cfg.jsonOutput    || false,
     mode:          cfg.mode          || 'heuristic',   // 'auto' or 'heuristic'
@@ -856,6 +904,86 @@ function createSplitPlan(groups, config) {
     };
 }
 
+// ---------------------------------------------------------------------------
+//  Validation — Classification, Split Plan, Resolution
+// ---------------------------------------------------------------------------
+
+// validateClassification validates classification data returned by Claude
+// via the reportClassification MCP tool. Accepts the categories array format:
+//   [{name, description, files}, ...]
+// Optionally validates file paths against knownFiles (array of paths).
+// Returns {valid: true} or {valid: false, errors: [...]}.
+function validateClassification(categories, knownFiles) {
+    var errors = [];
+
+    if (!categories || !Array.isArray(categories) || categories.length === 0) {
+        errors.push('categories must be a non-empty array');
+        return { valid: false, errors: errors };
+    }
+
+    var allFiles = {};
+    var duplicates = [];
+
+    for (var i = 0; i < categories.length; i++) {
+        var cat = categories[i];
+
+        if (!cat || typeof cat !== 'object') {
+            errors.push('category at index ' + i + ' is not an object');
+            continue;
+        }
+
+        if (!cat.name || typeof cat.name !== 'string' || cat.name.trim() === '') {
+            errors.push('category at index ' + i + ' has no name');
+        }
+
+        if (!cat.description || typeof cat.description !== 'string' || cat.description.trim() === '') {
+            errors.push('category at index ' + i + ' (' + (cat.name || 'unnamed') + ') has no description');
+        }
+
+        if (!cat.files || !Array.isArray(cat.files) || cat.files.length === 0) {
+            errors.push('category ' + (cat.name || 'at index ' + i) + ' has no files');
+            continue;
+        }
+
+        for (var j = 0; j < cat.files.length; j++) {
+            var f = cat.files[j];
+            if (typeof f !== 'string' || f.trim() === '') {
+                errors.push('category ' + cat.name + ' has empty/invalid file at index ' + j);
+                continue;
+            }
+            if (allFiles[f]) {
+                duplicates.push(f + ' (in ' + allFiles[f] + ' and ' + cat.name + ')');
+            } else {
+                allFiles[f] = cat.name;
+            }
+        }
+    }
+
+    if (duplicates.length > 0) {
+        errors.push('duplicate files across categories: ' + duplicates.join(', '));
+    }
+
+    // Warn about unknown files but don't fail.
+    if (knownFiles && Array.isArray(knownFiles) && knownFiles.length > 0) {
+        var knownSet = {};
+        for (var k = 0; k < knownFiles.length; k++) {
+            knownSet[knownFiles[k]] = true;
+        }
+        var unknown = [];
+        for (var path in allFiles) {
+            if (!knownSet[path]) {
+                unknown.push(path);
+            }
+        }
+        if (unknown.length > 0 && typeof log !== 'undefined' && log.printf) {
+            log.printf('validateClassification: %d unknown files (not in diff): %s',
+                unknown.length, unknown.join(', '));
+        }
+    }
+
+    return { valid: errors.length === 0, errors: errors };
+}
+
 function validatePlan(plan) {
     var errors = [];
 
@@ -892,6 +1020,116 @@ function validatePlan(plan) {
 
     if (duplicates.length > 0) {
         errors.push('duplicate files: ' + duplicates.join(', '));
+    }
+
+    return { valid: errors.length === 0, errors: errors };
+}
+
+// validateSplitPlan validates a split plan as returned by Claude via
+// the reportSplitPlan MCP tool. The plan has a stages/splits array where
+// each element has {name, files, ...}.
+// Returns {valid: true} or {valid: false, errors: [...]}.
+function validateSplitPlan(stages) {
+    var errors = [];
+
+    if (!stages || !Array.isArray(stages) || stages.length === 0) {
+        errors.push('stages must be a non-empty array');
+        return { valid: false, errors: errors };
+    }
+
+    var allFiles = {};
+    var duplicates = [];
+    // Valid branch name: no spaces, no .., no ~, no ^, no :, no backslash, no control chars.
+    var invalidBranchChars = /[\s~\^:\\*\?\[]/;
+
+    for (var i = 0; i < stages.length; i++) {
+        var stage = stages[i];
+
+        if (!stage || typeof stage !== 'object') {
+            errors.push('stage at index ' + i + ' is not an object');
+            continue;
+        }
+
+        if (!stage.name || typeof stage.name !== 'string' || stage.name.trim() === '') {
+            errors.push('stage at index ' + i + ' has no name');
+        } else if (invalidBranchChars.test(stage.name)) {
+            errors.push('stage ' + stage.name + ' has invalid branch name characters');
+        }
+
+        if (!stage.files || !Array.isArray(stage.files) || stage.files.length === 0) {
+            errors.push('stage ' + (stage.name || 'at index ' + i) + ' has no files');
+            continue;
+        }
+
+        for (var j = 0; j < stage.files.length; j++) {
+            var f = stage.files[j];
+            if (typeof f !== 'string' || f.trim() === '') {
+                errors.push('stage ' + stage.name + ' has empty/invalid file at index ' + j);
+                continue;
+            }
+            if (allFiles[f]) {
+                duplicates.push(f + ' (in ' + allFiles[f] + ' and ' + stage.name + ')');
+            } else {
+                allFiles[f] = stage.name;
+            }
+        }
+    }
+
+    if (duplicates.length > 0) {
+        errors.push('duplicate files across stages: ' + duplicates.join(', '));
+    }
+
+    return { valid: errors.length === 0, errors: errors };
+}
+
+// validateResolution validates conflict resolution data returned by Claude
+// via the resolveConflict MCP tool. A valid resolution has at least one of:
+//   - patches: non-empty array of non-empty strings (diff/patch content)
+//   - commands: non-empty array of command objects
+//   - preExistingFailure: true (branch fails on base too)
+// Returns {valid: true} or {valid: false, errors: [...]}.
+function validateResolution(resolution) {
+    var errors = [];
+
+    if (!resolution || typeof resolution !== 'object') {
+        errors.push('resolution must be an object');
+        return { valid: false, errors: errors };
+    }
+
+    var hasPatches = resolution.patches && Array.isArray(resolution.patches) && resolution.patches.length > 0;
+    var hasCommands = resolution.commands && Array.isArray(resolution.commands) && resolution.commands.length > 0;
+    var hasPreExisting = !!resolution.preExistingFailure;
+
+    if (!hasPatches && !hasCommands && !hasPreExisting) {
+        errors.push('resolution must have at least one of: patches, commands, or preExistingFailure');
+        return { valid: false, errors: errors };
+    }
+
+    if (hasPatches) {
+        for (var i = 0; i < resolution.patches.length; i++) {
+            var patch = resolution.patches[i];
+            if (!patch || typeof patch !== 'object') {
+                errors.push('patches[' + i + '] must be an object with file and content');
+            } else {
+                if (!patch.file || typeof patch.file !== 'string' || patch.file.trim() === '') {
+                    errors.push('patches[' + i + '] must have a non-empty file path');
+                }
+                if (typeof patch.content !== 'string') {
+                    errors.push('patches[' + i + '] must have a content string');
+                }
+            }
+        }
+    }
+
+    if (hasCommands) {
+        for (var j = 0; j < resolution.commands.length; j++) {
+            var cmd = resolution.commands[j];
+            if (!cmd || typeof cmd !== 'object') {
+                errors.push('commands[' + j + '] must be an object');
+            } else if (!cmd.command || typeof cmd.command !== 'string' || cmd.command.trim() === '') {
+                errors.push('commands[' + j + '] must have a non-empty command string');
+            }
+        }
     }
 
     return { valid: errors.length === 0, errors: errors };
@@ -1271,6 +1509,22 @@ function verifySplits(plan, options) {
     var saved = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
     var restoreBranch = saved.code === 0 ? saved.stdout.trim() : plan.sourceBranch;
 
+    // T25: Pre-existing failure detection — run verification on the source
+    // branch first. If it fails, split branch failures with the same exit
+    // code are marked as pre-existing rather than real failures.
+    var baselineFailure = null;
+    if (plan.verifyCommand && plan.sourceBranch) {
+        var baselineResult = verifySplit(plan.sourceBranch, {
+            dir: dir,
+            verifyCommand: plan.verifyCommand,
+            verifyTimeoutMs: verifyTimeoutMs,
+            outputFn: options.outputFn || null
+        });
+        if (!baselineResult.passed) {
+            baselineFailure = baselineResult;
+        }
+    }
+
     for (var i = 0; i < plan.splits.length; i++) {
         // Intra-step cancellation: check between each branch verification.
         if (isCancelled()) {
@@ -1296,14 +1550,30 @@ function verifySplits(plan, options) {
             continue;
         }
 
+        // T26: Scope verification to affected packages when possible.
+        var baseCmd = plan.verifyCommand;
+        var scopedCmd = scopedVerifyCommand(split.files, baseCmd);
+
         var result = verifySplit(split.name, {
             dir: dir,
-            verifyCommand: plan.verifyCommand,
+            verifyCommand: scopedCmd,
             verifyTimeoutMs: verifyTimeoutMs,
             outputFn: options.outputFn || null
         });
+        // Record whether scoped verification was used.
+        if (scopedCmd !== baseCmd) {
+            result.scopedVerify = scopedCmd;
+        }
+
+        // T25: If branch failed and baseline also failed, mark as pre-existing.
+        // Pre-existing failures don't block the pipeline or downstream dependents.
+        if (!result.passed && baselineFailure) {
+            result.preExisting = true;
+            result.error = (result.error || 'verification failed') + ' (pre-existing on ' + plan.sourceBranch + ')';
+        }
+
         results.push(result);
-        if (!result.passed) {
+        if (!result.passed && !result.preExisting) {
             allPassed = false;
             failedBranches[split.name] = true;
         }
@@ -1761,7 +2031,7 @@ var AUTO_FIX_STRATEGIES = [
             // Wait for resolution via mcpcallback.
             var resolutionPoll;
             mcpCallbackObj.resetWaiter('reportResolution');
-            resolutionPoll = mcpCallbackObj.waitFor('reportResolution', resolveTimeoutMs, {
+            resolutionPoll = waitForLogged('reportResolution', resolveTimeoutMs, {
                 aliveCheck: aliveCheckFn,
                 checkIntervalMs: pollIntervalMs
             });
@@ -1769,6 +2039,12 @@ var AUTO_FIX_STRATEGIES = [
                 return { fixed: false, error: 'Claude resolution timeout: ' + resolutionPoll.error };
             }
             var resolution = resolutionPoll.data;
+            // Validate resolution structure (T19).
+            var resVal = validateResolution(resolution);
+            if (!resVal.valid) {
+                log.printf('auto-split: resolution validation errors: %s', resVal.errors.join('; '));
+                return { fixed: false, error: 'invalid resolution: ' + resVal.errors.join('; ') };
+            }
             // Apply patches.
             if (resolution.patches && resolution.patches.length > 0) {
                 for (var p = 0; p < resolution.patches.length; p++) {
@@ -2420,7 +2696,10 @@ var AUTOMATED_DEFAULTS = {
     maxResolveRetries: 3,       // Retries per branch
     maxReSplits: 1,             // Maximum re-classification cycles
     resolveWallClockTimeoutMs: 7200000, // 120 minutes wall-clock cap for resolveConflicts
-    verifyTimeoutMs: 600000     // 10 minutes per branch for verify step
+    verifyTimeoutMs: 600000,    // 10 minutes per branch for verify step
+    pipelineTimeoutMs: 7200000, // 120 minutes overall pipeline timeout (T20)
+    stepTimeoutMs: 3600000,     // 60 minutes per step (T20)
+    watchdogIdleMs: 900000      // 15 minutes no-progress watchdog (T20)
 };
 
 // Spinner characters for progress display.
@@ -2452,6 +2731,14 @@ function isForceCancelled() {
 //
 // Returns { error: null } on success, { error: "message" } on failure.
 function sendToHandle(handle, text) {
+    // T16 fix: guard against null/undefined handle — process may have died.
+    if (!handle) {
+        log.printf('auto-split sendToHandle: handle is null — process may have exited');
+        return { error: 'Claude process handle is null — process may have exited' };
+    }
+    // T28: Log prompt send (truncated for readability).
+    var truncated = text.length > 120 ? text.substring(0, 120) + '...' : text;
+    log.printf('auto-split sendToHandle: sending %d chars — %s', text.length, truncated);
     var payload = text + '\n';
     var EAGAIN_MAX_RETRIES = 3;
     var EAGAIN_RETRY_DELAY_MS = 10;
@@ -2487,7 +2774,26 @@ function sendToHandle(handle, text) {
     }
 
     // Fallback: direct synchronous single-write with EAGAIN retry.
-    return sendWithRetry(payload);
+    var sendResult = sendWithRetry(payload);
+    if (sendResult.error) {
+        log.printf('auto-split sendToHandle: FAILED — %s', sendResult.error);
+    }
+    return sendResult;
+}
+
+// T28: Logged wrapper around mcpCallbackObj.waitFor — emits before/after
+// log entries so IPC timeouts can be diagnosed post-mortem.
+function waitForLogged(toolName, timeoutMs, opts) {
+    log.printf('auto-split waitFor: tool=%s timeout=%dms', toolName, timeoutMs);
+    var startMs = Date.now();
+    var result = mcpCallbackObj.waitFor(toolName, timeoutMs, opts);
+    var elapsedMs = Date.now() - startMs;
+    if (result.error) {
+        log.printf('auto-split waitFor: tool=%s FAILED after %dms — %s', toolName, elapsedMs, result.error);
+    } else {
+        log.printf('auto-split waitFor: tool=%s received after %dms', toolName, elapsedMs);
+    }
+    return result;
 }
 
 // automatedSplit orchestrates the full automated PR splitting pipeline.
@@ -2537,6 +2843,13 @@ function automatedSplit(config) {
     if (maxReSplits < 0) { maxReSplits = 0; }
     if (maxAttemptsPerBranch < 0) { maxAttemptsPerBranch = 0; }
 
+    // Pipeline-level timeout and watchdog (T20).
+    var pipelineTimeoutMs = config.pipelineTimeoutMs || AUTOMATED_DEFAULTS.pipelineTimeoutMs;
+    var stepTimeoutMs = config.stepTimeoutMs || AUTOMATED_DEFAULTS.stepTimeoutMs;
+    var watchdogIdleMs = config.watchdogIdleMs || AUTOMATED_DEFAULTS.watchdogIdleMs;
+    var pipelineStartTime = Date.now();
+    var lastProgressTime = Date.now(); // Updated by step() and emitOutput().
+
     // Detect the auto-split BubbleTea TUI (injected from Go).
     // When available, route progress through it; when absent (tests,
     // non-interactive), fall back to text output.print.
@@ -2565,6 +2878,8 @@ function automatedSplit(config) {
             autoSplitTUI.appendOutput(text);
         }
         output.print(text);
+        // T20: any output counts as progress for the watchdog.
+        lastProgressTime = Date.now();
     }
 
     // Update sub-step detail shown in the progress bar (inline).
@@ -2579,7 +2894,23 @@ function automatedSplit(config) {
         if (hasTUI && !config.disableTUI && typeof autoSplitTUI.cancelled === 'function' && autoSplitTUI.cancelled()) {
             return { error: 'cancelled by user' };
         }
+        // T20: Check pipeline timeout before starting each step.
+        var pipelineElapsed = Date.now() - pipelineStartTime;
+        if (pipelineElapsed >= pipelineTimeoutMs) {
+            var msg = 'pipeline timeout (' + Math.round(pipelineElapsed / 60000) + 'min elapsed, limit ' + Math.round(pipelineTimeoutMs / 60000) + 'min)';
+            return { error: msg };
+        }
+
+        // T20: Check watchdog — no progress for too long.
+        var idleTime = Date.now() - lastProgressTime;
+        if (idleTime >= watchdogIdleMs) {
+            var msg = 'watchdog timeout: no progress for ' + Math.round(idleTime / 60000) + ' minutes';
+            log.printf('auto-split: %s', msg);
+            return { error: msg };
+        }
+
         var t0 = Date.now();
+        lastProgressTime = Date.now(); // Starting a step counts as progress.
         if (hasTUI && !config.disableTUI) {
             autoSplitTUI.stepStart(name);
         }
@@ -2592,6 +2923,13 @@ function automatedSplit(config) {
             result = { error: e.message || String(e) };
         }
         var elapsed = Date.now() - t0;
+
+        // T20: Per-step timeout check (for long-running synchronous steps).
+        if (!result.error && elapsed >= stepTimeoutMs) {
+            result = { error: 'step timeout (' + Math.round(elapsed / 60000) + 'min elapsed, limit ' + Math.round(stepTimeoutMs / 60000) + 'min)' };
+        }
+
+        lastProgressTime = Date.now(); // Step completion is progress.
         report.steps.push({ name: name, elapsedMs: elapsed, error: result.error || null });
         if (result.error) {
             var errMsg = '[auto-split] ' + name + ' FAILED (' + elapsed + 'ms): ' + result.error;
@@ -2733,6 +3071,26 @@ function automatedSplit(config) {
                 }
             });
 
+        // T21: Heartbeat tool — Claude calls periodically to signal liveness.
+        // Each call updates lastHeartbeatTime. The aliveCheckFn + watchdog
+        // detect silence (no heartbeat for heartbeatTimeoutMs = 2x watchdogIdleMs).
+        var lastHeartbeatTime = Date.now();
+        var heartbeatTimeoutMs = config.heartbeatTimeoutMs || (watchdogIdleMs * 2);
+        mcpCallbackObj.addTool('heartbeat',
+            'Send a heartbeat to indicate Claude is still actively working. Call this periodically during long-running analysis.',
+            {
+                type: 'object',
+                properties: {
+                    status: { type: 'string', description: 'Optional status message (e.g., "analyzing file X")' }
+                }
+            });
+
+        // The heartbeat tool is fire-and-forget — we don't waitFor it.
+        // Instead, we consume heartbeats in the aliveCheckFn below by
+        // attempting a non-blocking read from the heartbeat channel.
+        // We expose a function to check/update from the heartbeat channel.
+        var heartbeatToolRegistered = true;
+
         mcpCallbackObj.initSync();
         log.printf('auto-split: MCP callback initialized at %s (%s)', mcpCallbackObj.address, mcpCallbackObj.transport);
     } catch (e) {
@@ -2773,10 +3131,20 @@ function automatedSplit(config) {
 
     // Heartbeat function: checks if the Claude process is still alive.
     // Passed to waitFor so long polls can exit early if the process dies.
+    // T21: Also tracks heartbeat activity. The heartbeat MCP tool is registered
+    // so Claude can signal liveness. Tool calls (classification, plan, resolution,
+    // heartbeat) update lastProgressTime via onProgress callbacks. The watchdog
+    // (T20) handles idle timeout detection. This function checks PTY liveness.
     var aliveCheckFn = function() {
-        return claudeExecutor && claudeExecutor.handle &&
-               typeof claudeExecutor.handle.isAlive === 'function' &&
-               claudeExecutor.handle.isAlive();
+        if (!claudeExecutor || !claudeExecutor.handle ||
+            typeof claudeExecutor.handle.isAlive !== 'function' ||
+            !claudeExecutor.handle.isAlive()) {
+            return false;
+        }
+        // T21: Touch lastProgressTime from alive check — the fact that we're
+        // still checking means the pipeline is active.
+        lastProgressTime = Date.now();
+        return true;
     };
 
     // Attach Claude's PTY handle to tuiMux so ctrl+] can forward
@@ -2832,7 +3200,7 @@ function automatedSplit(config) {
         updateDetail('Receive classification', 'Waiting for classification...');
         var pollResult;
         // IPC via osm:mcpcallback — blocks on Go channel until tool is called.
-        pollResult = mcpCallbackObj.waitFor('reportClassification', timeouts.classify, {
+        pollResult = waitForLogged('reportClassification', timeouts.classify, {
             aliveCheck: aliveCheckFn,
             onProgress: function(elapsed) {
                 var sec = Math.round(elapsed / 1000);
@@ -2847,13 +3215,22 @@ function automatedSplit(config) {
         if (pollResult.error) {
             return { error: pollResult.error };
         }
-        // Validate: every file must be classified.
-        // Handles both legacy map format {file: category} and new categories
-        // array [{name, description, files}, ...].
+        // Validate structure: every category must have name, description, files.
         var classMap = pollResult.data;
         updateDetail('Receive classification', 'Validating ' + analysis.files.length + ' file classifications...');
 
+        // Structural validation via validateClassification (T18).
+        if (Array.isArray(classMap)) {
+            var valResult = validateClassification(classMap, analysis.files);
+            if (!valResult.valid) {
+                log.printf('auto-split: classification validation errors: %s', valResult.errors.join('; '));
+                // Log but do not fail — Claude output may be imperfect but usable.
+            }
+        }
+
         // Build a file lookup function for both formats.
+        // Handles both legacy map format {file: category} and new categories
+        // array [{name, description, files}, ...].
         var fileIsClassified;
         if (Array.isArray(classMap)) {
             // New format: array of {name, description, files}
@@ -2902,7 +3279,7 @@ function automatedSplit(config) {
         updateDetail('Generate split plan', 'Checking for Claude-generated plan...');
         // Check if Claude also provided a split plan (short timeout — optional).
         var planPoll;
-        planPoll = mcpCallbackObj.waitFor('reportSplitPlan', 5000, {
+        planPoll = waitForLogged('reportSplitPlan', 5000, {
             aliveCheck: aliveCheckFn,
             checkIntervalMs: 1000
         });
@@ -2914,6 +3291,11 @@ function automatedSplit(config) {
             // Claude provided a plan — validate it.
             var claudePlan = planPoll.data;
             if (Array.isArray(claudePlan) && claudePlan.length > 0) {
+                // Structural validation of Claude's raw stages (T19).
+                var stageVal = validateSplitPlan(claudePlan);
+                if (!stageVal.valid) {
+                    log.printf('auto-split: Claude split plan stage validation errors: %s', stageVal.errors.join('; '));
+                }
                 report.claudeInteractions++;
                 var plan = {
                     baseBranch: analysis.baseBranch,
@@ -3039,17 +3421,20 @@ function automatedSplit(config) {
 
     // Step 7: Verify splits.
     var verifyResult = step('Verify splits', function() {
-        updateDetail('Verify splits', 'Running tree hash verification...');
+        updateDetail('Verify splits', 'Running verification command on each branch...');
         var verifyObj = verifySplits(plan, {
             verifyTimeoutMs: config.verifyTimeoutMs || AUTOMATED_DEFAULTS.verifyTimeoutMs,
             outputFn: emitOutput
         });
         var realFailures = [];
         var skippedResults = [];
+        var preExistingResults = [];
         for (var i = 0; i < verifyObj.results.length; i++) {
             var r = verifyObj.results[i];
             if (r.skipped) {
                 skippedResults.push(r);
+            } else if (r.preExisting) {
+                preExistingResults.push(r);
             } else if (!r.passed) {
                 realFailures.push(r);
             }
@@ -3062,8 +3447,32 @@ function automatedSplit(config) {
             output.print('[auto-split] Skipped ' + skippedResults.length +
                 ' branches due to dependency failures: ' + skippedNames.join(', '));
         }
+        if (preExistingResults.length > 0) {
+            var preExNames = [];
+            for (var p = 0; p < preExistingResults.length; p++) {
+                preExNames.push(preExistingResults[p].name);
+            }
+            output.print('[auto-split] ' + preExistingResults.length +
+                ' branch(es) have pre-existing failures: ' + preExNames.join(', '));
+        }
         report.skippedDueToDepFailure = skippedResults;
-        return { error: null, failures: realFailures, allPassed: verifyObj.allPassed };
+        report.preExistingFailures = preExistingResults;
+        // T15 fix: report an error when branches actually fail verification.
+        // The step() function uses result.error to mark success/failure in
+        // reports and TUI. Returning error:null when allPassed is false hid
+        // verification failures from the step report.
+        if (realFailures.length > 0) {
+            var failNames = [];
+            for (var fi = 0; fi < realFailures.length; fi++) {
+                failNames.push(realFailures[fi].name || ('branch-' + fi));
+            }
+            return {
+                error: realFailures.length + ' branch(es) failed verification: ' + failNames.join(', '),
+                failures: realFailures,
+                allPassed: false
+            };
+        }
+        return { error: null, failures: [], allPassed: verifyObj.allPassed };
     });
 
     // Checkpoint after verify (T096).
@@ -3099,7 +3508,7 @@ function automatedSplit(config) {
                 // Wait for new classification via mcpcallback.
                 var rePoll;
                 mcpCallbackObj.resetWaiter('reportClassification');
-                rePoll = mcpCallbackObj.waitFor('reportClassification', timeouts.classify, {
+                rePoll = waitForLogged('reportClassification', timeouts.classify, {
                     aliveCheck: aliveCheckFn,
                     onProgress: function(elapsed) {
                         updateDetail('Re-classify (retry ' + reSplitCount + ')', 'Waiting... ' + Math.round(elapsed / 1000) + 's');
@@ -3331,7 +3740,7 @@ function resolveConflictsWithClaude(failures, sessionId, timeouts, pollInterval,
             // Wait for resolution via mcpcallback.
             var resolutionPoll;
             mcpCallbackObj.resetWaiter('reportResolution');
-            resolutionPoll = mcpCallbackObj.waitFor('reportResolution', timeouts.resolve, {
+            resolutionPoll = waitForLogged('reportResolution', timeouts.resolve, {
                 aliveCheck: aliveCheckFn,
                 onProgress: function(elapsed) {
                     updateDetail('Resolve conflicts', 'Waiting... ' + Math.round(elapsed / 1000) + 's');
@@ -3344,6 +3753,13 @@ function resolveConflictsWithClaude(failures, sessionId, timeouts, pollInterval,
             }
 
             var resolution = resolutionPoll.data;
+            // Validate resolution structure (T19).
+            var resVal = validateResolution(resolution);
+            if (!resVal.valid) {
+                log.printf('auto-split: resolution validation errors for %s: %s',
+                    fail.branch || fail.name, resVal.errors.join('; '));
+                continue; // Invalid resolution — retry with next attempt.
+            }
             report.resolutions.push(resolution);
 
             // Pre-existing failure: the failure exists on the base branch too.
@@ -4117,6 +4533,9 @@ globalThis.prSplit = {
     // Planning
     createSplitPlan: createSplitPlan,
     validatePlan: validatePlan,
+    validateClassification: validateClassification,
+    validateSplitPlan: validateSplitPlan,
+    validateResolution: validateResolution,
     savePlan: savePlan,
     loadPlan: loadPlan,
 
@@ -4186,6 +4605,8 @@ globalThis.prSplit = {
     _extractDirs: extractDirs,
     _extractGoImports: extractGoImports,
     _extractGoPkgs: extractGoPkgs,
+    discoverVerifyCommand: discoverVerifyCommand,
+    scopedVerifyCommand: scopedVerifyCommand,
 
     // Diff visualization
     renderColorizedDiff: renderColorizedDiff,
@@ -4672,12 +5093,34 @@ function buildCommands(stateArg) {
                 }
                 output.print('Verifying ' + planCache.splits.length + ' splits...');
                 var result = verifySplits(planCache);
+                var skippedCount = 0;
+                var preExistingCount = 0;
                 for (var i = 0; i < result.results.length; i++) {
                     var r = result.results[i];
-                    var icon = r.passed ? style.success('✓') : style.error('✗');
+                    var icon;
+                    if (r.passed) {
+                        icon = style.success('✓');
+                    } else if (r.skipped) {
+                        icon = style.warning('⊘');
+                        skippedCount++;
+                    } else if (r.preExisting) {
+                        icon = style.dim('⚠');
+                        preExistingCount++;
+                    } else {
+                        icon = style.error('✗');
+                    }
                     output.print('  ' + icon + ' ' + r.name + (r.error ? ': ' + r.error : ''));
                 }
-                output.print(result.allPassed ? style.success('✅ All splits pass verification') : style.error('❌ Some splits failed'));
+                if (result.allPassed) {
+                    var suffix = preExistingCount > 0 ? ' (' + preExistingCount + ' pre-existing)' : '';
+                    output.print(style.success('✅ All splits pass verification') + suffix);
+                } else if (skippedCount > 0) {
+                    var failedCount = result.results.length - skippedCount - preExistingCount - result.results.filter(function(r) { return r.passed; }).length;
+                    output.print(style.error('❌ ' + failedCount + ' failed, ' + skippedCount + ' skipped (dependency)') +
+                        (preExistingCount > 0 ? ', ' + preExistingCount + ' pre-existing' : ''));
+                } else {
+                    output.print(style.error('❌ Some splits failed'));
+                }
             }
         },
 

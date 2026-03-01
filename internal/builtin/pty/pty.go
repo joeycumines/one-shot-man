@@ -38,19 +38,23 @@ type SpawnConfig struct {
 	Cols uint16
 	// Term is the TERM environment variable (default: "xterm-256color").
 	Term string
+	// WriteTimeout is the maximum duration for a single PTY write.
+	// If zero, DefaultWriteTimeout is used. Set to a negative value to disable.
+	WriteTimeout time.Duration
 }
 
 // Process represents a running process attached to a pseudo-terminal.
 // All methods are safe for concurrent use unless otherwise noted.
 type Process struct {
-	mu       sync.Mutex
-	ptyFile  *os.File // Platform-specific PTY master file descriptor.
-	ttyFile  *os.File // Slave PTY fd, kept alive to prevent macOS EIO data loss. May be nil.
-	closed   bool
-	done     chan struct{}
-	exitCode int
-	exitErr  error
-	cmd      processHandle // Platform-specific process handle.
+	mu           sync.Mutex
+	ptyFile      *os.File // Platform-specific PTY master file descriptor.
+	ttyFile      *os.File // Slave PTY fd, kept alive to prevent macOS EIO data loss. May be nil.
+	closed       bool
+	done         chan struct{}
+	exitCode     int
+	exitErr      error
+	cmd          processHandle // Platform-specific process handle.
+	writeTimeout time.Duration // From SpawnConfig; <=0 means no deadline.
 }
 
 // processHandle is implemented per-platform (pty_unix.go, pty_windows.go).
@@ -69,9 +73,10 @@ var ErrClosed = errors.New("pty: process is closed")
 
 // Defaults for SpawnConfig.
 const (
-	DefaultRows uint16 = 24
-	DefaultCols uint16 = 80
-	DefaultTerm string = "xterm-256color"
+	DefaultRows         uint16        = 24
+	DefaultCols         uint16        = 80
+	DefaultTerm         string        = "xterm-256color"
+	DefaultWriteTimeout time.Duration = 30 * time.Second
 )
 
 // applyDefaults fills in zero values with defaults.
@@ -85,11 +90,19 @@ func (c *SpawnConfig) applyDefaults() {
 	if c.Term == "" {
 		c.Term = DefaultTerm
 	}
+	if c.WriteTimeout == 0 {
+		c.WriteTimeout = DefaultWriteTimeout
+	}
 }
 
 // Write sends data to the PTY (the child process's stdin).
 // The lock is released before the kernel write to avoid deadlocking
 // with Signal, Close, or Resize (which also acquire the lock).
+//
+// If the Process was spawned with a WriteTimeout > 0, a write deadline
+// is set before each write so a hung child cannot block the caller
+// indefinitely. EAGAIN is handled transparently by Go's runtime poller;
+// the JS layer also retries EAGAIN for defence-in-depth.
 func (p *Process) Write(data string) error {
 	// Don't hold lock during blocking write — just check closed state.
 	p.mu.Lock()
@@ -98,7 +111,17 @@ func (p *Process) Write(data string) error {
 		return ErrClosed
 	}
 	f := p.ptyFile
+	wt := p.writeTimeout
 	p.mu.Unlock()
+
+	if wt > 0 {
+		if err := f.SetWriteDeadline(time.Now().Add(wt)); err != nil {
+			// SetWriteDeadline may fail on some platforms (e.g., Windows ConPTY).
+			// Fall through to an unguarded write rather than failing outright.
+			_ = err
+		}
+		defer func() { _ = f.SetWriteDeadline(time.Time{}) }() // Clear deadline.
+	}
 
 	_, err := f.Write([]byte(data))
 	return err

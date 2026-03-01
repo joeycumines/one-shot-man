@@ -1180,88 +1180,6 @@ func TestEventToJS_NilFields(t *testing.T) {
 }
 
 // ============================================================================
-// wrapMCPInstance — JS wrapper for MCPInstanceConfig
-// ============================================================================
-
-func TestWrapMCPInstance_GettersAndClose(t *testing.T) {
-	t.Parallel()
-	rt := goja.New()
-	dir := t.TempDir()
-
-	cfg := &MCPInstanceConfig{
-		SessionID:  "test-session-123",
-		OsmBinary:  "/usr/local/bin/osm",
-		configDir:  dir,
-		configPath: dir + "/mcp-config.json",
-	}
-
-	jsVal := wrapMCPInstance(rt, cfg)
-	obj := jsVal.ToObject(rt)
-
-	// sessionId property
-	if obj.Get("sessionId").String() != "test-session-123" {
-		t.Errorf("sessionId = %q, want %q", obj.Get("sessionId").String(), "test-session-123")
-	}
-
-	// osmBinary() method
-	osmBin, _ := goja.AssertFunction(obj.Get("osmBinary"))
-	val, err := osmBin(goja.Undefined())
-	if err != nil {
-		t.Fatalf("osmBinary() threw: %v", err)
-	}
-	if val.String() != "/usr/local/bin/osm" {
-		t.Errorf("osmBinary() = %q, want %q", val.String(), "/usr/local/bin/osm")
-	}
-
-	// configPath() method
-	cfgPath, _ := goja.AssertFunction(obj.Get("configPath"))
-	val, err = cfgPath(goja.Undefined())
-	if err != nil {
-		t.Fatalf("configPath() threw: %v", err)
-	}
-	if val.String() != dir+"/mcp-config.json" {
-		t.Errorf("configPath() = %q, want %q", val.String(), dir+"/mcp-config.json")
-	}
-
-	// close() — should succeed on open config
-	closeFn, _ := goja.AssertFunction(obj.Get("close"))
-	_, err = closeFn(goja.Undefined())
-	if err != nil {
-		t.Fatalf("close() threw: %v", err)
-	}
-}
-
-func TestWrapMCPInstance_SpawnArgs(t *testing.T) {
-	t.Parallel()
-	rt := goja.New()
-	dir := t.TempDir()
-
-	cfg := &MCPInstanceConfig{
-		SessionID:  "test-sa",
-		OsmBinary:  "/usr/bin/osm",
-		configDir:  dir,
-		configPath: dir + "/mcp-config.json",
-	}
-
-	jsVal := wrapMCPInstance(rt, cfg)
-	obj := jsVal.ToObject(rt)
-
-	spawnArgs, _ := goja.AssertFunction(obj.Get("spawnArgs"))
-	val, err := spawnArgs(goja.Undefined())
-	if err != nil {
-		t.Fatalf("spawnArgs() threw: %v", err)
-	}
-	// SpawnArgs returns args including --mcp-config path.
-	var args []string
-	if err := rt.ExportTo(val, &args); err != nil {
-		t.Fatalf("ExportTo args: %v", err)
-	}
-	if len(args) == 0 {
-		t.Error("expected non-empty spawnArgs")
-	}
-}
-
-// ============================================================================
 // wrapInstance — JS wrapper for Instance
 // ============================================================================
 
@@ -2443,44 +2361,6 @@ func TestWrapMCPGuard_CheckNoCallTimeout_Fires(t *testing.T) {
 	}
 	if val == nil || goja.IsNull(val) || goja.IsUndefined(val) {
 		t.Error("checkNoCallTimeout should have fired a guard event")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// wrapMCPInstance — writeConfigFile error, validate error
-// ---------------------------------------------------------------------------
-
-func TestWrapMCPInstance_WriteConfigFile(t *testing.T) {
-	t.Parallel()
-	rt := goja.New()
-	dir := t.TempDir()
-	cfg := &MCPInstanceConfig{
-		SessionID:  "validate-test",
-		OsmBinary:  "/usr/local/bin/osm",
-		configDir:  dir,
-		configPath: dir + "/mcp-config.json",
-	}
-	obj := wrapMCPInstance(rt, cfg).ToObject(rt)
-
-	// writeConfigFile() — should succeed (writes to tempdir)
-	writeFn, _ := goja.AssertFunction(obj.Get("writeConfigFile"))
-	_, err := writeFn(goja.Undefined())
-	if err != nil {
-		t.Fatalf("writeConfigFile threw: %v", err)
-	}
-}
-
-func TestWrapMCPInstance_ValidateError(t *testing.T) {
-	t.Parallel()
-	rt := goja.New()
-	// Empty config should fail validation
-	cfg := &MCPInstanceConfig{}
-	obj := wrapMCPInstance(rt, cfg).ToObject(rt)
-
-	validateFn, _ := goja.AssertFunction(obj.Get("validate"))
-	_, err := validateFn(goja.Undefined())
-	if err == nil {
-		t.Fatal("expected error from validate() on empty config")
 	}
 }
 

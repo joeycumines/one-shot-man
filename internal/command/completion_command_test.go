@@ -698,30 +698,3 @@ func TestCompletionCommandHelpSubcommand(t *testing.T) {
 		})
 	}
 }
-
-func TestCompletionCommandIncludesMCPCommand(t *testing.T) {
-	t.Parallel()
-	cfg := config.NewConfig()
-	registry := NewRegistryWithConfig(cfg)
-	goalRegistry := newTestGoalRegistry()
-	registry.Register(NewHelpCommand(registry))
-	registry.Register(NewMCPCommand(cfg, goalRegistry, "1.0.0"))
-	completionCmd := NewCompletionCommand(registry, goalRegistry)
-
-	shells := []string{"bash", "zsh", "fish", "powershell"}
-	for _, shell := range shells {
-		t.Run(shell, func(t *testing.T) {
-			t.Parallel()
-			var output strings.Builder
-			var stderr strings.Builder
-
-			if err := completionCmd.Execute([]string{shell}, &output, &stderr); err != nil {
-				t.Fatalf("Unexpected error: %v", err)
-			}
-
-			if !strings.Contains(output.String(), "mcp") {
-				t.Errorf("%s completion should include 'mcp' command", shell)
-			}
-		})
-	}
-}

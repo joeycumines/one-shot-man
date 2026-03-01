@@ -303,37 +303,6 @@ func TestInstance_Close_NilAgent(t *testing.T) {
 	}
 }
 
-func TestInstance_WithMCPConfig(t *testing.T) {
-	t.Parallel()
-	dir := t.TempDir()
-	r, err := NewInstanceRegistry(filepath.Join(dir, "sessions"))
-	if err != nil {
-		t.Fatalf("NewInstanceRegistry: %v", err)
-	}
-
-	inst, err := r.Create("mcp-test")
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-
-	// Attach MCP config.
-	mcpCfg, err := NewMCPInstanceConfig("mcp-test")
-	if err != nil {
-		t.Fatalf("NewMCPInstanceConfig: %v", err)
-	}
-	inst.MCP = mcpCfg
-
-	// Close should clean up MCP too.
-	if err := inst.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
-	}
-
-	// MCP temp dir should be removed.
-	if _, err := os.Stat(mcpCfg.configDir); !os.IsNotExist(err) {
-		t.Errorf("MCP configDir should be removed, stat: %v", err)
-	}
-}
-
 // TestInstanceRegistry_ConcurrentCreate tests concurrent Create calls
 // to verify the sync.Map provides proper isolation.
 func TestInstanceRegistry_ConcurrentCreate(t *testing.T) {

@@ -357,6 +357,9 @@ func TestSpawn_DefaultConfig(t *testing.T) {
 	if cfg.Term != DefaultTerm {
 		t.Fatalf("expected default term %q, got %q", DefaultTerm, cfg.Term)
 	}
+	if cfg.WriteTimeout != DefaultWriteTimeout {
+		t.Fatalf("expected default write timeout %v, got %v", DefaultWriteTimeout, cfg.WriteTimeout)
+	}
 }
 
 func TestProcess_ContextCancel(t *testing.T) {
@@ -1042,6 +1045,166 @@ func TestModule_SpawnWithAllOptions(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "vt100") {
 		t.Errorf("expected TERM=vt100 in output, got %q", output.String())
+	}
+
+	closeFn, _ := goja.AssertFunction(procObj.Get("close"))
+	closeFn(goja.Undefined())
+}
+
+func TestProcess_Write_WithTimeout(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	// Normal write succeeds with timeout enabled (the default).
+	proc, err := Spawn(context.Background(), SpawnConfig{
+		Command: "cat",
+	})
+	if err != nil {
+		t.Fatalf("Spawn failed: %v", err)
+	}
+	defer proc.Close()
+
+	if proc.writeTimeout != DefaultWriteTimeout {
+		t.Fatalf("expected writeTimeout=%v, got %v", DefaultWriteTimeout, proc.writeTimeout)
+	}
+
+	// Write a small payload — should succeed instantly.
+	if err := proc.Write("hello\n"); err != nil {
+		t.Fatalf("Write with timeout failed: %v", err)
+	}
+}
+
+func TestProcess_Write_TimeoutDisabled(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	proc, err := Spawn(context.Background(), SpawnConfig{
+		Command:      "cat",
+		WriteTimeout: -1, // disable deadline
+	})
+	if err != nil {
+		t.Fatalf("Spawn failed: %v", err)
+	}
+	defer proc.Close()
+
+	if proc.writeTimeout != -1 {
+		t.Fatalf("expected writeTimeout=-1 (disabled), got %v", proc.writeTimeout)
+	}
+
+	if err := proc.Write("hello\n"); err != nil {
+		t.Fatalf("Write without timeout failed: %v", err)
+	}
+}
+
+func TestProcess_Write_CustomTimeout(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	proc, err := Spawn(context.Background(), SpawnConfig{
+		Command:      "cat",
+		WriteTimeout: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("Spawn failed: %v", err)
+	}
+	defer proc.Close()
+
+	if proc.writeTimeout != 5*time.Second {
+		t.Fatalf("expected writeTimeout=5s, got %v", proc.writeTimeout)
+	}
+
+	if err := proc.Write("custom timeout\n"); err != nil {
+		t.Fatalf("Write with custom timeout failed: %v", err)
+	}
+}
+
+func TestModule_SpawnWithWriteTimeoutMs(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	rt := goja.New()
+	mod := rt.NewObject()
+	exports := rt.NewObject()
+	_ = mod.Set("exports", exports)
+
+	loader := Require(context.Background())
+	loader(rt, mod)
+
+	exports = mod.Get("exports").(*goja.Object)
+	spawnFn, ok := goja.AssertFunction(exports.Get("spawn"))
+	if !ok {
+		t.Fatal("spawn export is not a function")
+	}
+
+	optsObj := rt.NewObject()
+	_ = optsObj.Set("writeTimeoutMs", 10000) // 10 seconds
+
+	result, err := spawnFn(goja.Undefined(),
+		rt.ToValue("cat"),
+		rt.ToValue([]string{}),
+		optsObj,
+	)
+	if err != nil {
+		t.Fatalf("spawn with writeTimeoutMs returned error: %v", err)
+	}
+
+	procObj := result.ToObject(rt)
+
+	// Verify write works with the custom timeout.
+	writeFn, ok := goja.AssertFunction(procObj.Get("write"))
+	if !ok {
+		t.Fatal("write is not a function")
+	}
+
+	_, err = writeFn(goja.Undefined(), rt.ToValue("test\n"))
+	if err != nil {
+		t.Fatalf("write via JS module with writeTimeoutMs failed: %v", err)
+	}
+
+	closeFn, _ := goja.AssertFunction(procObj.Get("close"))
+	closeFn(goja.Undefined())
+}
+
+func TestModule_SpawnWithWriteTimeoutMs_Negative(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	rt := goja.New()
+	mod := rt.NewObject()
+	exports := rt.NewObject()
+	_ = mod.Set("exports", exports)
+
+	loader := Require(context.Background())
+	loader(rt, mod)
+
+	exports = mod.Get("exports").(*goja.Object)
+	spawnFn, ok := goja.AssertFunction(exports.Get("spawn"))
+	if !ok {
+		t.Fatal("spawn export is not a function")
+	}
+
+	optsObj := rt.NewObject()
+	_ = optsObj.Set("writeTimeoutMs", -1) // disable
+
+	result, err := spawnFn(goja.Undefined(),
+		rt.ToValue("cat"),
+		rt.ToValue([]string{}),
+		optsObj,
+	)
+	if err != nil {
+		t.Fatalf("spawn with negative writeTimeoutMs returned error: %v", err)
+	}
+
+	procObj := result.ToObject(rt)
+
+	writeFn, ok := goja.AssertFunction(procObj.Get("write"))
+	if !ok {
+		t.Fatal("write is not a function")
+	}
+
+	_, err = writeFn(goja.Undefined(), rt.ToValue("test\n"))
+	if err != nil {
+		t.Fatalf("write via JS module with disabled timeout failed: %v", err)
 	}
 
 	closeFn, _ := goja.AssertFunction(procObj.Get("close"))

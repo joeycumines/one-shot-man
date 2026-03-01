@@ -1,340 +1,315 @@
 {
   "meta": {
-    "purpose": "PR Split — Delete 'osm mcp' slop, make mcpcallback the sole IPC path, purge legacy file-polling, fix all bugs, enhance TUI, add integration tests. Flat sequential task list; NO priorities; NO estimates; ALL tasks MUST be completed.",
-    "source": "DIRECTIVE.txt, config.mk error directive, scratch/NOTES.md",
+    "purpose": "PR Split — Delete ALL 'osm mcp*' commands (mcp, mcp-instance, mcp-make, mcp-parent), purge MCPInstance infrastructure from claudemux, fix bugs, enhance TUI, add integration tests. mcpcallback is the sole IPC path. Flat sequential task list; NO priorities; NO estimates; ALL tasks MUST be completed.",
+    "source": "DIRECTIVE.txt, config.mk Hana directive, scratch/NOTES.md, codebase survey 2026-03-01",
     "maintenance": "This file is the single source of truth. Update task status immediately after every sub-task. Deviations must be logged within the plan. Read this file and WIP.md at session start before any work."
   },
   "globalAlerts": [
     "CROSS-PLATFORM BUILD: The build MUST pass on Linux (ubuntu-latest), Windows (windows-latest), and macOS (macos-latest). CI matrix at .github/workflows/ci.yml. No exceptions.",
     "BUILD SYSTEM: GNU Make is the build system. `make` runs build+lint+test. Use `gmake` on macOS if system make is BSD. All verification runs through Make targets.",
     "DEADCODE POLICY: NEVER add ignores to .deadcodeignore. If deadcode reports an unused function, wire it up or delete it. Ignoring dead code is forbidden per AGENTS.md.",
-    "HANA DIRECTIVE (config.mk line 1): The ENTIRE existing 'osm mcp' command is SLOP and delivers ZERO VALUE. mcp.go, mcp_instance.go, and ALL associated test files MUST be DELETED. The classification/plan/resolution flow is strictly applicable within the process that manages Claude — i.e., the pr_split_script.js via osm:mcpcallback. The $(error) in config.mk MUST NOT be removed until after blueprint refinement is complete.",
-    "osm:mcpcallback is the SOLE IPC mechanism. All file-polling (pollForFile) and file-writing (mcpWriteResultFile) is legacy slop to be purged."
+    "HANA DIRECTIVE (config.mk line 1): The ENTIRE existing 'osm mcp*' command family is SLOP. mcp.go, mcp_instance.go, mcp_make.go, mcp_parent.go, and ALL associated test files MUST be DELETED. MCPInstance infrastructure in claudemux MUST be DELETED. mcpcallback is the sole IPC mechanism.",
+    "osm:mcpcallback is the SOLE IPC mechanism. All file-polling (pollForFile) and file-writing (mcpWriteResultFile) was legacy slop already purged in prior sessions."
   ],
   "mandatoryDirectives": [
     "Read blueprint.json and WIP.md at the start of every session before doing any work.",
     "Update task status in blueprint.json immediately after completing each sub-task.",
-    "The $(error) in config.mk must be removed in T37 AFTER the blueprint rewrite is verified.",
     "Run `make` (full suite: build + lint + test) after every phase boundary.",
     "Subagents spawned for implementation work must NOT self-review or run the Rule of Two."
   ],
   "statusSection": {
-    "goalState": "The osm pr-split system uses EXCLUSIVELY osm:mcpcallback for IPC. The 'osm mcp' and 'osm mcp-instance' commands are DELETED. mcp.go and all associated files are GONE. pollForFile is GONE. The legacy file-polling path is GONE. All validation lives in JS. All bugs from NOTES.md are fixed. TUI has streaming verification and per-branch status. Integration tests with real AI validate the spawn-switch-send-classify pipeline end-to-end. All three platforms are green.",
-    "currentState": "Build GREEN on macOS. T1-T40 complete plus T43 and T50. Legacy file-polling PURGED from pr_split_script.js. mcpcallback is the sole IPC path. All tests converted from file-based to channel-injection via WatchForInit/InjectToolResult. pollForFile deleted. All old test infrastructure (pollForFileResult, TestPollForFile, heartbeat tests, edge case tests) deleted. resolveConflictsWithClaude tests use mock mcpCallbackObj. Integration tests pass. Next: T44-T49 (delete mcp.go, mcp_instance.go, command registrations).",
+    "goalState": "The osm pr-split system uses EXCLUSIVELY osm:mcpcallback for IPC. The 'osm mcp', 'osm mcp-instance', 'osm mcp-make', and 'osm mcp-parent' commands are DELETED. mcp.go, mcp_instance.go, mcp_make.go, mcp_parent.go, and all associated files are GONE. MCPInstance infrastructure in claudemux (mcp_config.go, mcp_guard.go, wrapMCPInstance, newMCPInstance binding) is GONE. pollForFile is GONE. All validation lives in JS. All bugs from NOTES.md are fixed. TUI has streaming verification and per-branch status. Integration tests with real AI validate the spawn-switch-send-classify pipeline end-to-end. All three platforms are green.",
+    "currentState": "Build GREEN on macOS. Legacy file-polling PURGED from pr_split_script.js. mcpcallback is the sole IPC path. All tests converted from file-based to channel-injection via WatchForInit/InjectToolResult. pollForFile deleted. All old test infrastructure deleted. resolveConflictsWithClaude tests use mock mcpCallbackObj. TestIntegration_AutoSplitMockMCP migrated to mcpcallback IPC. Next: T1 (pre-flight verify), then T2-T14 (MCP deletion chain).",
     "replanLog": [
       {
-        "trigger": "Hana directive in config.mk line 1: entire osm mcp command is slop, must be deleted",
+        "trigger": "Hana directive in config.mk line 1: entire osm mcp command family is slop, must be deleted",
         "date": "2026-03-01",
-        "affectedRange": "T37-T88 (ALL remaining tasks)",
-        "summary": "FULL BLUEPRINT REWRITE. Old T37-T88 replaced with new sequence. The 'osm mcp' command, mcp.go, mcp_instance.go, mcpWriteResultFile, newMCPServer, pollForFile, and all Go-implemented MCP tool handlers are classified as pure slop and must be purged. mcpcallback is the sole IPC path."
+        "affectedRange": "Full blueprint rewrite",
+        "summary": "COMPLETE BLUEPRINT REWRITE. Pruned 44 completed tasks. Renumbered remaining and new tasks T1-T46. Added mcp_make.go and mcp_parent.go to deletion chain (survey missed these — removing registrations without deleting files would trigger deadcode failures). Added PTY reliability tasks. Expanded claudemux MCPInstance cleanup to cover instance.go MCP field, instance_test.go, and all mcp_* files."
       }
     ]
   },
   "sequentialTasks": [
-    { "task": "T1: Diagnose Windows build failure", "status": "Done" },
-    { "task": "T2: Fix Windows build failures", "status": "Done" },
-    { "task": "T3: Investigate verification skip bug", "status": "Done" },
-    { "task": "T4: Investigate resolveConflictsWithClaude prompt failure", "status": "Done" },
-    { "task": "T5: Audit pr_split_integration_test.go coverage gaps", "status": "Done" },
-    { "task": "T6: Enhance mock ClaudeCodeExecutor to capture prompts", "status": "Done" },
-    { "task": "T7: SUPERSEDED — E2E test already exists", "status": "Done" },
-    { "task": "T8: SUPERSEDED — branch/equivalence assertions exist", "status": "Done" },
-    { "task": "T9: Cross-platform verification of Phase 0", "status": "Done" },
-    { "task": "T10: Investigate stdout pollution from session loading", "status": "Done" },
-    { "task": "T11: Design configurable stdout control", "status": "Done" },
-    { "task": "T12: Route tui_manager.go warning to stderr", "status": "Done" },
-    { "task": "T13: Write tests for stdout cleanliness during init", "status": "Done" },
-    { "task": "T14: Design osm:mcp module API", "status": "Done" },
-    { "task": "T15: Implement osm:mcp native Go module skeleton", "status": "Done" },
-    { "task": "T16: Implement MCP server creation and tool registration", "status": "Done" },
-    { "task": "T17: Implement stdio transport binding for osm:mcp", "status": "Done" },
-    { "task": "T18: Write unit tests for osm:mcp module", "status": "Done" },
-    { "task": "T19: Design osm:mcpcallback module API", "status": "Done" },
-    { "task": "T20: Implement osm:mcpcallback — constructor and lifecycle", "status": "Done" },
-    { "task": "T21: Implement UDS transport (Unix)", "status": "Done" },
-    { "task": "T22: Implement loopback TCP transport (Windows)", "status": "Done" },
-    { "task": "T23: Implement bootstrap JS script generation", "status": "Done" },
-    { "task": "T24: Implement synchronous blocking for tool callbacks", "status": "Done" },
-    { "task": "T25: Write unit tests for osm:mcpcallback", "status": "Done" },
-    { "task": "T26: Implement signal-safe cleanup for mcpcallback", "status": "Done" },
-    { "task": "T27: Cross-platform verification of Phase 1", "status": "Done" },
-    { "task": "T28: Design new classification with Category objects", "status": "Done" },
-    { "task": "T29: Implement new classification struct in mcp.go", "status": "Done" },
-    { "task": "T30: Specify category descriptions as commit messages", "status": "Done" },
-    { "task": "T31: Refactor classificationToGroups for Category array", "status": "Done" },
-    { "task": "T32: Update plan generation for category description commit msgs", "status": "Done" },
-    { "task": "T33: Update renderClassificationPrompt for Category format", "status": "Done" },
-    { "task": "T34: Add anti-slop directives to classification prompts", "status": "Done" },
-    { "task": "T35: Wire automatedSplit() to use osm:mcpcallback IPC", "status": "Done" },
-    { "task": "T36: Update existing tests for new classification structure", "status": "Done" },
     {
-      "task": "T37: Remove $(error) blocker from config.mk",
-      "description": "Remove the $(error THIS IS THE POLICE...) directive from config.mk line 1. Blueprint has been rewritten per Hana's directive.",
-      "acceptance": "config.mk no longer starts with $(error). `make` runs successfully.",
+      "task": "T1: Pre-flight build verification",
+      "description": "Run `make` on macOS to verify the build is green before starting the deletion chain. Also run `make integration-test-prsplit-mcp` (project.mk line 38-40) to confirm TestIntegration_AutoSplitMockMCP passes. This establishes a known-good baseline.",
+      "acceptance": "`make` exits 0. `make integration-test-prsplit-mcp` exits 0. Output captured in WIP.md. If either fails, diagnose and fix before proceeding.",
       "status": "Done"
     },
     {
-      "task": "T38: Delete pollForFile function and ALL file-polling call sites",
-      "description": "Remove from pr_split_script.js: (1) pollForFile definition (~line 2530), (2) ALL 5 legacy call sites in usingMCPCallbackIPC else-branches (~lines 2953, 3023, 3231, 3465, 1776), (3) pollForFile export from globalThis.prSplit (~line 4263), (4) the entire legacy else-branch from each usingMCPCallbackIPC conditional — keep only mcpcallback body, (5) usingMCPCallbackIPC variable itself.",
-      "acceptance": "Zero references to pollForFile in any JS file. The mcpcallback waitFor calls are the sole IPC. grep -r pollForFile returns nothing in internal/command/.",
+      "task": "T2: Delete internal/command/mcp.go",
+      "description": "Delete the file internal/command/mcp.go. This removes: MCPCommand struct, NewMCPCommand(), newMCPServer(), mcpWriteResultFile(), mcpBacktickFence(), all mcp*Input structs (classificationInput, splitPlanInput, resolutionInput, etc.), and all MCP tool handler implementations. The build WILL NOT compile after this step — that is expected; T7 fixes the registration.",
+      "acceptance": "internal/command/mcp.go does not exist on disk. `ls internal/command/mcp.go` returns 'No such file'.",
       "status": "Done"
     },
     {
-      "task": "T39: Delete legacy mcpInstance path from ClaudeCodeExecutor.spawn()",
-      "description": "Remove: (1) else-branch creating mcpInstance via this.cm.newMCPInstance() (~line 2105), (2) mkdir -p for result dir, (3) this.mcpInstance references throughout file, (4) resultDir from spawn() return value. Always use opts.mcpConfigPath from mcpcallback.",
-      "acceptance": "spawn() ONLY uses mcpConfigPath. No mcpInstance creation. No resultDir. grep mcpInstance returns nothing in pr_split_script.js.",
+      "task": "T3: Delete internal/command/mcp_instance.go",
+      "description": "Delete the file internal/command/mcp_instance.go. This removes: MCPInstanceCommand struct, NewMCPInstanceCommand(), and its Execute/SetupFlags methods.",
+      "acceptance": "internal/command/mcp_instance.go does not exist on disk.",
       "status": "Done"
     },
     {
-      "task": "T40: Remove usingMCPCallbackIPC variable and all legacy conditionals",
-      "description": "Remove usingMCPCallbackIPC declaration (~line 2875) and all if/else conditionals. Keep only mcpcallback body. If mcpcallback init fails, pipeline returns error (no silent fallback). Remove the mcpCallbackReady fallback log message.",
-      "acceptance": "No references to usingMCPCallbackIPC. mcpcallback is the only path. Init failure = hard error.",
+      "task": "T4: Delete internal/command/mcp_make.go",
+      "description": "Delete the file internal/command/mcp_make.go. This removes: MCPMakeCommand struct, NewMCPMakeCommand(), newMakeServer(), detectMakeBinary(), resolveWorkdir(), runMake(), and all make-related MCP tool handlers. NOTE: The survey did not list this file for deletion, but removing its registration from main.go (T7) without deleting it would create dead code, violating AGENTS.md deadcode policy.",
+      "acceptance": "internal/command/mcp_make.go does not exist on disk.",
       "status": "Done"
     },
     {
-      "task": "T41: Add JS-side validation for classification data",
-      "description": "Move validation from deleted mcp.go handlers to JS. Add validateClassification(categories, knownFiles) function: (1) array check, (2) each category has non-empty name/description/files, (3) no duplicate files across categories, (4) file paths recognizable.",
-      "acceptance": "validateClassification() exists. Tests cover valid, empty array, duplicate files, missing fields.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T42: Add JS-side validation for split plan and resolution data",
-      "description": "Add validateSplitPlan(stages) and validateResolution(resolution) functions. Plan: array check, each stage has name+files, no duplicate files. Resolution: has patches/commands/preExistingFailure.",
-      "acceptance": "Both functions exist and are tested.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T43: Migrate TestIntegration_AutoSplitMockMCP to mcpcallback IPC",
-      "description": "Mock test (~pr_split_test.go:9178) uses legacy path. Migrate: (1) mock spawn() returns NO resultDir (forces mcpcallback), (2) add InjectToolData(toolName, jsonData) test helper to mcpcallback module, (3) use goroutine to inject classification/plan data through mcpcallback channel instead of pre-writing files.",
-      "acceptance": "Test passes using mcpcallback IPC. No pre-written JSON files. All existing assertions pass.",
+      "task": "T5: Delete internal/command/mcp_parent.go",
+      "description": "Delete the file internal/command/mcp_parent.go. This removes: MCPParentCommand struct, NewMCPParentCommand(), resolveClient(), newParentServer(), and all parent-related MCP tool handlers. NOTE: Same reasoning as T4 — removing registration without deletion = deadcode violation.",
+      "acceptance": "internal/command/mcp_parent.go does not exist on disk.",
       "status": "Done"
     },
     {
-      "task": "T44: Delete mcp.go entirely",
-      "description": "Delete internal/command/mcp.go. Removes: MCPCommand, newMCPServer(), mcpWriteResultFile(), mcpBacktickFence(), all mcp*Input structs, all tool handler implementations.",
-      "acceptance": "mcp.go does not exist. Build MAY not compile yet (dependents updated in T47-T49).",
-      "status": "Not Started"
-    },
-    {
-      "task": "T45: Delete mcp_instance.go",
-      "description": "Delete internal/command/mcp_instance.go.",
-      "acceptance": "mcp_instance.go does not exist.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T46: Delete ALL mcp-related test files",
-      "description": "Delete: mcp_test.go (~2800 lines), mcp_instance_test.go, mcp_fuzz_test.go, mcp_security_test.go, mcp_benchmark_test.go, mcp_parent_test.go, mcp_make_test.go.",
-      "acceptance": "All listed test files deleted.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T47: Remove MCP command registration from main.go",
-      "description": "Remove from cmd/osm/main.go: (1) registry.Register(command.NewMCPCommand(...)) at ~line 59, (2) registry.Register(command.NewMCPInstanceCommand(...)) at ~line 60. Remove unused imports.",
-      "acceptance": "main.go no longer references MCP commands. go vet passes.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T48: Update completion_command_test.go for removed MCP commands",
-      "description": "Remove mcp and mcp-instance from expected command list (~line 702-708).",
-      "acceptance": "completion_command_test.go passes without MCP commands in expectations.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T49: Remove claudemux.newMCPInstance and MCPInstance infrastructure",
-      "description": "With legacy path deleted, claudemux MCPInstance type is dead code. Trace internal/builtin/claudemux/ for MCPInstance, newMCPInstance, configDir, setResultDir, writeConfigFile, configPath, close. Delete if only used by legacy path. Remove JS bindings.",
-      "acceptance": "No MCPInstance in claudemux. deadcode reports no issues. Other claudemux functionality (PTY, mux) untouched.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T50: Delete pollForFile test infrastructure",
-      "description": "Delete: pollForFileResult struct, parsePollForFileResult, TestPollForFile from pr_split_pipeline_test.go and pr_split_pty_unix_test.go.",
-      "acceptance": "No test references pollForFile. deadcode passes.",
+      "task": "T6: Delete ALL MCP test files from internal/command/",
+      "description": "Delete these 7 test files:\n  1. internal/command/mcp_test.go\n  2. internal/command/mcp_instance_test.go\n  3. internal/command/mcp_fuzz_test.go\n  4. internal/command/mcp_security_test.go\n  5. internal/command/mcp_benchmark_test.go\n  6. internal/command/mcp_parent_test.go\n  7. internal/command/mcp_make_test.go",
+      "acceptance": "All 7 files do not exist. `ls internal/command/mcp_*test.go` returns nothing.",
       "status": "Done"
     },
     {
-      "task": "T51: Run deadcode checker after full legacy removal",
-      "description": "Run `make lint`. Massive deletion may have orphaned functions. Fix all findings.",
-      "acceptance": "`make lint` passes. Zero deadcode. No .deadcodeignore additions.",
+      "task": "T7: Remove all 4 MCP command registrations from cmd/osm/main.go",
+      "description": "Remove these 4 lines from cmd/osm/main.go (currently lines 59-62):\n  registry.Register(command.NewMCPCommand(cfg, goalRegistry, version))\n  registry.Register(command.NewMCPInstanceCommand(goalRegistry, version))\n  registry.Register(command.NewMCPMakeCommand())\n  registry.Register(command.NewMCPParentCommand())\nAlso remove any imports that become unused after this change (likely none since other commands use the same packages).",
+      "acceptance": "cmd/osm/main.go contains zero references to NewMCPCommand, NewMCPInstanceCommand, NewMCPMakeCommand, or NewMCPParentCommand. `grep -n 'MCP' cmd/osm/main.go` returns nothing.",
+      "status": "Done"
+    },
+    {
+      "task": "T8: Delete TestCompletionCommandIncludesMCPCommand from completion_command_test.go",
+      "description": "Delete the entire test function TestCompletionCommandIncludesMCPCommand at internal/command/completion_command_test.go lines 702-729. This test registers NewMCPCommand (line 708) and asserts 'mcp' appears in shell completion output (lines 722-723). With the MCP command deleted, this test is invalid. Verify no other tests in the file reference MCP commands.",
+      "acceptance": "`grep -n 'MCP\\|mcp' internal/command/completion_command_test.go` returns no matches (or only unrelated matches like comments). The file compiles. Remaining completion tests still pass.",
+      "status": "Done"
+    },
+    {
+      "task": "T9: Delete claudemux MCPInstanceConfig files (NOT MCPGuard)",
+      "description": "Delete ONLY these 2 files from internal/builtin/claudemux/:\n  1. mcp_config.go — MCPInstanceConfig struct, NewMCPInstanceConfig(), WriteConfigFile(), ConfigPath(), Close(), Validate(), SpawnArgs()\n  2. mcp_config_test.go — tests for MCPInstanceConfig\nCRITICAL: Do NOT delete mcp_guard.go, mcp_guard_test.go, or mcp_security_test.go. MCPGuard is LIVE CODE actively used by claude_mux.go (the osm claude-mux command) for MCP tool-call monitoring. It is NOT tied to MCPInstance.",
+      "acceptance": "mcp_config.go and mcp_config_test.go deleted. mcp_guard.go, mcp_guard_test.go, and mcp_security_test.go STILL EXIST and compile. `grep -l MCPGuard internal/builtin/claudemux/mcp_guard*.go` returns matches.",
+      "status": "Done"
+    },
+    {
+      "task": "T9b: Remove MCPInstanceConfig references from coverage_gaps_test.go",
+      "description": "File internal/builtin/claudemux/coverage_gaps_test.go has 4+ references to MCPInstanceConfig at lines 1183, 1191, 1239, 2457, 2477. Remove all test functions that create MCPInstanceConfig: the wrapMCPInstance test block (~line 1183-1260) and any other MCPInstanceConfig test blocks. Do NOT remove tests that test MCPGuard or other non-MCPInstance functionality.",
+      "acceptance": "`grep -n MCPInstanceConfig internal/builtin/claudemux/coverage_gaps_test.go` returns zero matches. File compiles. Remaining MCPGuard tests in the file (if any) still pass.",
+      "status": "Done"
+    },
+    {
+      "task": "T10: Remove newMCPInstance JS binding and wrapMCPInstance from claudemux/module.go",
+      "description": "In internal/builtin/claudemux/module.go:\n  1. Remove the newMCPInstance JS binding block at lines 116-128 (the exports.Set(\"newMCPInstance\", ...) call and its surrounding comments)\n  2. Remove the entire wrapMCPInstance function starting at line 1242 (~70 lines: configDir, configPath, resultDir, setResultDir, spawnArgs, writeConfigFile, validate, close bindings)\nDo NOT remove other bindings in the same file. Be surgical.",
+      "acceptance": "`grep -n 'newMCPInstance\\|wrapMCPInstance\\|MCPInstanceConfig' internal/builtin/claudemux/module.go` returns zero matches. Other JS bindings (newInstanceRegistry, etc.) remain intact.",
+      "status": "Done"
+    },
+    {
+      "task": "T11: Remove MCP field and references from claudemux/instance.go and instance_test.go",
+      "description": "In internal/builtin/claudemux/instance.go:\n  1. Remove the `MCP *MCPInstanceConfig` field from the Instance struct (line 27) and its comment (lines 25-26)\n  2. Remove MCPEndpoint from InstanceState struct (line 44)\n  3. Remove MCP cleanup in Close() method — the mcpCfg := inst.MCP block (lines 58, 70-73)\n  4. Remove MCP endpoint in Snapshot() — the inst.MCP != nil block (lines 97-98)\n  5. Remove any remaining MCPInstanceConfig or MCP references\n  6. Remove MCP-related imports if they become unused\nIn internal/builtin/claudemux/instance_test.go:\n  1. Remove tests that create MCPInstanceConfig (line 320-322 area)\n  2. Remove any test assertions about MCP fields/behavior",
+      "acceptance": "`grep -rn 'MCPInstanceConfig\\|MCPEndpoint\\|inst\\.MCP\\|mcpCfg' internal/builtin/claudemux/instance.go internal/builtin/claudemux/instance_test.go` returns zero matches. Instance still compiles and its non-MCP functionality works.",
+      "status": "Done"
+    },
+    {
+      "task": "T12: Run deadcode checker after full MCP deletion",
+      "description": "Run `make lint` which includes the deadcode checker. The massive deletion in T2-T11 may have orphaned functions, types, or imports. Fix ALL findings by either:\n  (a) Deleting truly unused code, or\n  (b) Wiring up code that should be reachable\nNEVER add entries to .deadcodeignore. The existing entries in .deadcodeignore (testutil, mouseharness, ctxutil, scripting, storage) are for cross-package test helpers and MUST remain.",
+      "acceptance": "`make lint` exits 0 with zero deadcode findings. .deadcodeignore is unchanged from its current state (testutil, mouseharness, ctxutil, scripting, storage, debug_assertions_stub, bubbletea/testing, pabt, and mcpcallbackmod entries).",
+      "status": "Done"
+    },
+    {
+      "task": "T13: go mod tidy",
+      "description": "Run `go mod tidy` to clean go.mod and go.sum. The MCP command deletions may have removed the last import of certain dependencies (e.g., the MCP SDK if mcp_make.go or mcp.go were the only consumers). Verify no diff after a second `go mod tidy` (idempotency check).",
+      "acceptance": "`go mod tidy && go mod tidy` produces no diff. `git diff go.mod go.sum` shows only legitimate removals (no additions of unrelated deps). `make` still passes.",
+      "status": "Done"
+    },
+    {
+      "task": "T14: Full build verification after MCP deletion chain",
+      "description": "Run `make` on macOS — full build + lint + test. This is the critical phase boundary gate after the entire MCP deletion chain (T2-T13). Also re-run `make integration-test-prsplit-mcp` to confirm the mock integration test still passes with the deleted code removed.",
+      "acceptance": "`make` exits 0. `make integration-test-prsplit-mcp` exits 0. Zero compilation errors. Zero test failures. Zero lint warnings.",
+      "status": "Done"
+    },
+    {
+      "task": "T15: Fix verification skip bug — step() ignores allPassed:false",
+      "description": "Bug location: internal/command/pr_split_script.js.\nRoot cause: The step() function (line 2577) only checks `result.error` to determine failure. The 'Verify splits' step (line 3041) calls verifySplits() which can return `{error: null, allPassed: false}` when individual branches fail (line 1313). Since error is null, step() treats this as success, and the pipeline continues as if verification passed.\nFix: In the 'Verify splits' step callback (around line 3066), when `verifyObj.allPassed` is false and there are `realFailures`, set `error` to a descriptive string instead of null. E.g.: `return { error: realFailures.length + ' branch(es) failed verification', failures: realFailures, allPassed: false };`\nAlternatively, fix step() itself to also check an `allPassed` field — but the simplest fix is at the step callback level.",
+      "acceptance": "When verifySplits returns allPassed:false with failures, the step reports an error. The pipeline does NOT silently proceed past failed verification. TUI shows the failure. Existing tests updated to match new behavior.",
+      "status": "Done"
+    },
+    {
+      "task": "T16: Fix sendToHandle null handle at 4 unguarded call sites",
+      "description": "Bug location: internal/command/pr_split_script.js.\nThe sendToHandle function (defined at line 2454) writes text to a Claude PTY handle. There are 4 call sites where claudeExecutor.handle could be null if the Claude process died or spawn failed:\n  1. Line 1757: resolveConflictsWithClaude single-branch path\n  2. Line 2815: classification prompt send in automatedSplit\n  3. Line 3093: re-classify constraint prompt in automatedSplit\n  4. Line 3323: conflict resolution prompt in automatedSplit\nFix: Before each sendToHandle call, check `if (!claudeExecutor || !claudeExecutor.handle)` and return an error object like `{ error: 'Claude process handle is null — process may have exited' }`. The sendToHandle function itself should also guard: `if (!handle) return { error: 'handle is null' };`",
+      "acceptance": "All 4 call sites have null guards. sendToHandle(null, ...) returns {error: ...} instead of crashing. Tests validate null handle behavior.",
+      "status": "Done"
+    },
+    {
+      "task": "T17: Write tests for verification skip and sendToHandle null guard fixes",
+      "description": "Add tests in internal/command/pr_split_test.go (or a new pr_split_bugfix_test.go):\n  1. Test that verifySplits returning allPassed:false causes the pipeline step to report an error (validates T15 fix)\n  2. Test that sendToHandle with a null handle returns an error object (validates T16 fix)\n  3. Test that automatedSplit handles a dead Claude process gracefully (handle becomes null mid-pipeline)\nAll tests must run with -race flag and be fully self-contained (t.TempDir(), no host state mutation).",
+      "acceptance": "Both bug fixes have dedicated test coverage. `go test -race ./internal/command/... -run 'Test.*VerifySkip\\|Test.*NullHandle'` passes. Tests are deterministic across runs.",
+      "status": "Done"
+    },
+    {
+      "task": "T18: Add JS-side validateClassification function",
+      "description": "Add to internal/command/pr_split_script.js a function `validateClassification(categories, knownFiles)` that validates classification data returned by Claude via mcpcallback. This replaces validation that was in the deleted mcp.go handlers (Go-side ValidateClassificationRequest/Response in internal/builtin/claudemux/split_protocol.go lines 43-74).\nValidation rules:\n  1. categories must be a non-empty array\n  2. Each category must have non-empty name, description, and files array\n  3. No duplicate files across categories\n  4. Each file path should exist in knownFiles (if provided) — warn but don't fail on unknown files\n  5. Return {valid: true} or {valid: false, errors: [...]}",
+      "acceptance": "validateClassification() exists in pr_split_script.js and is called in the classification receive step. Tests cover: valid input, empty array, duplicate files across categories, missing required fields, unknown file paths. Function is exported via globalThis.prSplit for testability.",
+      "status": "Done"
+    },
+    {
+      "task": "T19: Add JS-side validateSplitPlan and validateResolution functions",
+      "description": "Add to internal/command/pr_split_script.js:\n  1. `validateSplitPlan(stages)` — validates split plan data. Rules: non-empty array, each stage has non-empty name and files array, no duplicate files across stages, valid branch name format.\n  2. `validateResolution(resolution)` — validates conflict resolution data. Rules: has at least one of patches/commands/preExistingFailure, patches (if present) are non-empty strings.\nThese replace Go-side ValidateSplitPlanRequest/ValidateSplitPlanProposal in split_protocol.go (lines 112-134).",
+      "acceptance": "Both functions exist, are called at their respective receive steps, and are exported via globalThis.prSplit. Tests cover valid and invalid inputs for each. Return shape: {valid: true} or {valid: false, errors: [...]}.",
+      "status": "Done"
+    },
+    {
+      "task": "T20: Pipeline timeout and watchdog",
+      "description": "Per scratch/NOTES.md: Add configurable timeouts to the automatedSplit pipeline in pr_split_script.js:\n  1. --pipeline-timeout (default 120 minutes) — overall pipeline timeout\n  2. Per-step timeout (default 60 minutes) — individual step timeout in step() function\n  3. No-progress watchdog (default 15 minutes) — if no TUI update/output for 15 min, log warning and optionally terminate\nTimeouts should be configurable via config object passed to automatedSplit(). Use Date.now() polling since Goja doesn't have native setTimeout.",
+      "acceptance": "Pipeline terminates with clear error on timeout. Per-step timeout causes step to fail with 'timeout' error. Watchdog logs warning then terminates. All three timeout values are configurable. Tests validate timeout behavior with short timeouts.",
+      "status": "Done"
+    },
+    {
+      "task": "T21: Heartbeat monitoring for spawned Claude process",
+      "description": "Register a heartbeat tool in the mcpcallback MCP server that Claude calls periodically. If no heartbeat received within configurable timeout (default 5 minutes), log a warning. After 2x timeout (10 min), terminate the Claude process.\nImplementation: Add heartbeat tool registration in the mcpcallback setup within pr_split_script.js. Track lastHeartbeat timestamp. Check in the watchdog loop from T20.",
+      "acceptance": "Heartbeat tool is registered. Claude process termination occurs after 2x timeout with no heartbeat. Warning logged at 1x timeout. Configurable timeout. Tests validate with mock mcpcallback.",
+      "status": "Done"
+    },
+    {
+      "task": "T22: Dependency-aware verification bailing",
+      "description": "Per scratch/NOTES.md: When a base branch fails verification, all dependent branches should be skipped with a reason. Currently verifySplits (line 1260) already has dependency tracking via `failedBranches` map and `split.dependencies` check (lines 1285-1296). Verify this works correctly and enhance:\n  1. TUI should show a distinct icon (⊘) for dependency-skipped branches vs failed branches (✗)\n  2. Skip reason should include which dependency failed\n  3. Skipped branches should not count toward failure count for retry decisions",
+      "acceptance": "Dependent branches skipped with clear reason. TUI shows ⊘ icon for skipped branches. Skip reason names the failed dependency. Tests validate the dependency chain: A fails → B (depends on A) is skipped.",
+      "status": "Done"
+    },
+    {
+      "task": "T23: Fix misleading hash indicators in verification UI",
+      "description": "Per scratch/NOTES.md: The verification TUI shows hash indicators that may be inaccurate. Audit the hash display code in the AutoSplitModel view rendering. Either make hashes accurate (show actual git tree hashes from verification) or remove them entirely if they add no value.",
+      "acceptance": "Hash indicators are either provably accurate (showing real tree hashes from git operations) or removed. No misleading information in the TUI.",
+      "status": "Done"
+    },
+    {
+      "task": "T24: Verification target auto-discovery",
+      "description": "Default verification command should be `make` (the project standard). Auto-discover Makefile presence via `stat Makefile` or `stat makefile` or `stat GNUmakefile`. Allow override via pr-split config flag or the plan's verifyCommand field.\nCurrently verifySplits uses plan.verifyCommand — verify this is wired up correctly and add fallback to `make` when verifyCommand is empty.",
+      "acceptance": "Default verification is `make` when no verifyCommand specified. Override via config works. Makefile discovery is cross-platform. Tests validate auto-discovery and override.",
+      "status": "Done"
+    },
+    {
+      "task": "T25: Fix pre-existing failure handling",
+      "description": "When a branch has a pre-existing test failure (failure exists on the base branch too), it should be marked as 'pre-existing' and not block the pipeline. The resolution tool already has a preExistingFailure field. Ensure:\n  1. verifySplits detects pre-existing failures by verifying the source branch first\n  2. Pre-existing failures are reported but don't count as real failures\n  3. Pipeline continues past pre-existing failures\n  4. TUI shows a distinct indicator for pre-existing failures",
+      "acceptance": "Pre-existing failures are detected by comparing against source branch verification. Pipeline continues. TUI shows distinct indicator. Tests validate the flow with a pre-existing failing test.",
+      "status": "Done"
+    },
+    {
+      "task": "T26: Per-branch verification scoping",
+      "description": "Instead of running full `make` for every branch, scope verification to affected packages when possible. Strategy:\n  1. Analyze which files changed in each split branch\n  2. Determine affected Go packages from changed file paths\n  3. Run `go test ./affected/package/...` instead of full `make`\n  4. Fallback to full `make` if scoping can't be determined or if non-Go files changed\nThis reduces verification time significantly for large projects.",
+      "acceptance": "Verification scoped to affected packages when possible. Fallback to full make works. Tests validate scoped and fallback paths. Time improvement measurable.",
+      "status": "Done"
+    },
+    {
+      "task": "T27: Ensure TUI reflects quick verification runs",
+      "description": "The AutoSplitModel should handle sub-100ms Running→Done transitions gracefully. Currently, very fast steps may not render their completion state before the next step starts, making them appear to be skipped.\nFix: Ensure step completion is always rendered at least once, even for sub-100ms steps. The TUI should show ✓ for completed steps regardless of speed.",
+      "acceptance": "Sub-100ms steps show ✓ in the TUI. No steps appear 'skipped' due to rendering speed. Tests validate with mock fast steps.",
+      "status": "Done"
+    },
+    {
+      "task": "T28: Add logging for prompt sending and IPC failures",
+      "description": "Add comprehensive logging throughout the pr_split_script.js pipeline:\n  1. Log before/after every sendToHandle call with truncated prompt content\n  2. Log mcpcallback waitFor timeouts with elapsed time and tool name\n  3. Log connection failures with error details\n  4. Log validation failures (from T18-T19) with specific validation errors\n  5. Use log.printf (not console.log) for all logging\nThis enables post-mortem debugging of pipeline failures.",
+      "acceptance": "Failed IPC produces actionable log messages. All sendToHandle calls have before/after logging. All waitFor calls log timeout details. Logs are greppable for 'auto-split' prefix.",
+      "status": "Done"
+    },
+    {
+      "task": "T29: PTY newline delivery reliability (EAGAIN handling)",
+      "description": "Investigated EAGAIN handling: Go's runtime poller handles EAGAIN transparently via SetNonblock + epoll/kqueue. JS-side sendToHandle already has 3-retry EAGAIN logic as defence-in-depth. Added write timeout (SetWriteDeadline) to prevent indefinite blocking if child hangs: DefaultWriteTimeout=30s, configurable via SpawnConfig.WriteTimeout and JS writeTimeoutMs option. Negative value disables. 6 tests pass with -race.",
+      "acceptance": "PTY writes handle EAGAIN with retry. Write timeout prevents infinite loops. Tests validate retry behavior with a simulated full PTY buffer (if feasible).",
+      "status": "Done"
+    },
+    {
+      "task": "T30: Terminal mux re-render after panel toggle",
+      "description": "Added flicker-free panel restore: RenderFullScreen() emits CUP+content+EL (clear-to-EOL) for every row instead of ESC[2J (erase display) + Render(). Removed the flash-to-black caused by clearing the screen before rewriting content. VTerm.RenderFullScreen() method added. termmux.go toggle path updated. 6 tests verify all-row emission, no screen clear, content preservation, cursor position, visibility, and idempotency.",
+      "acceptance": "Panel toggle is flicker-free. The virtual screen buffer correctly diffs old vs new state. Visual regression test or manual verification on macOS terminal.",
+      "status": "Done"
+    },
+    {
+      "task": "T31: Investigate exec.execv streaming capability",
+      "description": "COMPLETED. Analyzed exec module (sync-only exec/execv), Goja concurrency model (single-threaded runtime, ChainedPromise + goroutine pattern from osm:fetch), and PTY module patterns. Designed pull-based exec.spawn API: child.stdout.read() → Promise, child.stdin.write(), child.wait() → Promise. Uses pump goroutines per pipe → bounded channel → event loop Submit. Require() gains adapter param. Full design in WIP.md.",
+      "acceptance": "Analysis in WIP.md with: current exec API summary, Goja event loop constraints, proposed exec.spawn API design, concurrency safety strategy, recommendation for implementation approach.",
+      "status": "Done"
+    },
+    {
+      "task": "T32: Implement exec.spawn streaming API",
+      "description": "Based on T31 design, implement exec.spawn(cmd, args, opts) in the Goja exec module. The API should:\n  1. Start a subprocess and return a handle object\n  2. Call opts.onStdout(line) for each stdout line (if provided)\n  3. Call opts.onStderr(line) for each stderr line (if provided)\n  4. Call opts.onExit(code) when process exits\n  5. Handle object has kill() and pid properties\n  6. Be safe with Goja's single-threaded runtime (use channel + event loop integration)\nFile: internal/builtin/exec/ (new or modified file).",
+      "acceptance": "JS code can call exec.spawn and receive streaming output callbacks. Process kill works. Exit code is captured. No data races with -race flag. Cross-platform (Unix + Windows).",
       "status": "Not Started"
     },
     {
-      "task": "T52: Build verification after mcp.go deletion chain",
-      "description": "Run `make` on macOS. Critical verification that deletion chain compiles and tests pass.",
-      "acceptance": "`make` passes on macOS. Zero failures.",
+      "task": "T33: Tests for streaming exec",
+      "description": "Write comprehensive tests for exec.spawn:\n  1. Real-time stdout line-by-line output\n  2. Stderr capture\n  3. Process kill\n  4. Exit code capture\n  5. Concurrent spawns (multiple processes)\n  6. Large output (buffering correctness)\n  7. Process that writes mixed stdout/stderr\n  8. Cross-platform behavior (line endings, etc.)\nTests in internal/builtin/exec/ test files.",
+      "acceptance": "All tests pass with -race on all three platforms. Tests use t.TempDir() and t.Setenv() for isolation. No flaky tests.",
       "status": "Not Started"
     },
     {
-      "task": "T53: Fix verification skip bug — step() ignores allPassed:false",
-      "description": "Root cause (T3): step() checks only result.error. Fix: verifySplits step sets error when allPassed is false.",
-      "acceptance": "Failed verification shows failure in TUI. Test validates.",
+      "task": "T34: AutoSplitModel streaming output support",
+      "description": "Add streaming output display to the AutoSplitModel TUI:\n  1. Define new Bubble Tea message type: AutoSplitStepOutputMsg{Step string, Line string}\n  2. Update AutoSplitModel to store output lines per step\n  3. Update the view to render streaming output below the current step\n  4. Limit displayed lines (e.g., last 10 lines) to prevent TUI overflow\n  5. Auto-scroll to latest output\nFiles: internal/command/pr_split.go (or wherever AutoSplitModel is defined), autosplit TUI types.",
+      "acceptance": "Streaming output lines appear in the TUI during step execution. Output is truncated to a reasonable limit. Auto-scroll works. Model update is race-free.",
       "status": "Not Started"
     },
     {
-      "task": "T54: Fix sendToHandle null handle at 3 unguarded call sites",
-      "description": "Root cause (T4): Add null guard at ~lines 2781, 3016, 3220. Guard resolve step entrance.",
-      "acceptance": "All 4 sites guarded. Null handle returns error. Tests validate.",
+      "task": "T35: Wire streaming exec into verifySplits",
+      "description": "Replace the synchronous exec.execv call in verifySplit (the per-branch verification function) with exec.spawn. Route stdout/stderr lines through the outputFn callback, which should emit AutoSplitStepOutputMsg to the TUI.\nFile: internal/command/pr_split_script.js, verifySplit function around line 1260.",
+      "acceptance": "Verification output streams to TUI in real-time during `make` execution. User can see build progress as it happens. Existing verification logic (pass/fail, exit code, timeout) still works correctly.",
       "status": "Not Started"
     },
     {
-      "task": "T55: Ensure TUI reflects quick verification runs",
-      "description": "AutoSplitModel handles sub-100ms Running->Done. Step shows completion state.",
-      "acceptance": "Sub-100ms steps show ✓. Test validates.",
+      "task": "T36: Per-branch verification status in TUI",
+      "description": "Display individual branch verification results with icons in the AutoSplitModel:\n  1. ✓ for passed branches\n  2. ✗ for failed branches (with exit code)\n  3. ⊘ for skipped branches (dependency failure, from T22)\n  4. ⟳ for in-progress branches\n  5. Pre-existing failure indicator (from T25)\nShow a summary line: 'Verified: 3/5 passed, 1 failed, 1 skipped'.",
+      "acceptance": "Per-branch status visible in TUI with correct icons. Summary line shows accurate counts. Tests validate rendering for each status.",
       "status": "Not Started"
     },
     {
-      "task": "T56: Add logging for prompt sending and IPC failures",
-      "description": "Comprehensive logging: sendToHandle, waitFor timeouts, connection failures, validation failures.",
-      "acceptance": "Failed IPC produces actionable logs. Test validates.",
+      "task": "T37: Per-branch TUI events from verifySplits loop",
+      "description": "Emit distinct TUI events for each branch in the verification loop:\n  1. branchVerifyStart(branchName) — when verification begins for a branch\n  2. branchVerifyOutput(branchName, line) — streaming output per branch\n  3. branchVerifyDone(branchName, passed, exitCode, elapsed) — when verification completes\nRoute these through the existing TUI update pipeline. Each event updates the per-branch status display from T36.",
+      "acceptance": "Distinct events emitted per branch. TUI model processes all three event types. Branch status updates in real-time during verification.",
       "status": "Not Started"
     },
     {
-      "task": "T57: Write tests for bug fixes T53-T54",
-      "description": "Tests for verification skip fix and sendToHandle null guard.",
-      "acceptance": "Both fixes verified by tests. All pass with -race.",
+      "task": "T38: Failed branch details view",
+      "description": "Add an expandable details view for failed branches:\n  1. Press Enter on a failed branch to expand its output\n  2. Scrollable viewport showing full verification output\n  3. Press Enter or Escape to collapse back to summary\n  4. Viewport supports both mouse scroll and j/k keyboard navigation\nImplement as a sub-view of AutoSplitModel.",
+      "acceptance": "Enter expands failed branch output. Scrollable viewport works with keyboard and mouse. Escape/Enter collapses. Output is complete (not truncated). Tests validate expand/collapse behavior.",
       "status": "Not Started"
     },
     {
-      "task": "T58: Pipeline timeout and watchdog",
-      "description": "Per NOTES.md: --pipeline-timeout (120m), per-step timeout (60m), no-progress watchdog (15m).",
-      "acceptance": "Configurable timeouts. Watchdog detects stuck steps. Test validates.",
+      "task": "T39: Tests for TUI streaming and per-branch features",
+      "description": "Write tests for ALL new TUI features from T27, T34, T36-T38:\n  1. Streaming output display with mock lines\n  2. Per-branch status icons rendering\n  3. Fast step completion rendering\n  4. Branch detail expand/collapse\n  5. Viewport scrolling\n  6. Event routing (branchVerifyStart/Output/Done)\nTests in internal/command/ test files (autosplit_test.go or new file).",
+      "acceptance": "All TUI features have test coverage. Tests pass with -race. No flaky tests. Coverage includes edge cases (empty output, many branches, rapid transitions).",
       "status": "Not Started"
     },
     {
-      "task": "T59: Heartbeat monitoring for spawned Claude process",
-      "description": "Register heartbeat tool in mcpcallback. Configurable timeout (5m). Warn then terminate.",
-      "acceptance": "Heartbeat timeout triggers warning/termination. Test validates.",
+      "task": "T40: Pause/Resume for auto-split sessions",
+      "description": "Add ability to pause and resume auto-split pipeline:\n  1. Ctrl-P in TUI pauses the pipeline at the next step boundary\n  2. Pipeline state serialized to session storage (current step, plan, report, checkpoint data)\n  3. `osm pr-split resume` resumes from the saved checkpoint\n  4. Works across terminal disconnect (state on disk, not in memory)\nRequires integration with internal/session/ for state persistence.",
+      "acceptance": "Ctrl-P pauses pipeline. Resume continues from exact checkpoint. Works across terminal disconnect. State survives process restart. Tests validate pause/resume cycle.",
       "status": "Not Started"
     },
     {
-      "task": "T60: Dependency-aware verification bailing",
-      "description": "Per NOTES.md: failed base branch -> dependents skipped with reason. TUI icon (⊘).",
-      "acceptance": "Dependents skipped. TUI shows reason. Test validates dependency chain.",
+      "task": "T41: Real Claude API E2E integration test",
+      "description": "Add at least one integration test gated behind -integration flag (parsed in internal/command/main_test.go). The test should:\n  1. Spawn a real Claude Code process (using -claude-command flag)\n  2. Send a classification prompt via mcpcallback\n  3. Validate the classification response quality (non-empty categories, valid structure)\n  4. Clean up spawned process\nUse the existing project.mk integration-test-prsplit target (line 25) as the runner.",
+      "acceptance": "Test exists, gated behind -integration flag. Runs via `make integration-test-prsplit`. Validates real AI response structure. Cleans up processes. Skipped gracefully when -integration not set.",
       "status": "Not Started"
     },
     {
-      "task": "T61: Fix misleading hash indicators in verification UI",
-      "description": "Per NOTES.md: make hashes accurate or remove them.",
-      "acceptance": "Hash indicators accurate or removed.",
-      "status": "Not Started"
+      "task": "T42: Update docs/architecture-claude-mux.md",
+      "description": "Remove stale references and update architecture documentation:\n  1. Remove pollForFile reference at line 476 (the step 4 diagram shows 'pollForFile(classification.json)' which is the deleted legacy path)\n  2. Replace with mcpcallback.waitFor('reportClassification', ...) description\n  3. Update any other file-polling references in the document\n  4. Document mcpcallback as the sole IPC mechanism\n  5. Remove references to osm mcp-instance command",
+      "acceptance": "`grep -n 'pollForFile\\|mcp-instance\\|mcpWriteResultFile' docs/architecture-claude-mux.md` returns zero matches. Architecture accurately describes mcpcallback IPC. Diagrams updated.",
+      "status": "Done"
     },
     {
-      "task": "T62: Verification target auto-discovery",
-      "description": "Default to `make`. Auto-discover Makefile. Override via config/flag.",
-      "acceptance": "Default is `make`. Override works. Test validates.",
-      "status": "Not Started"
+      "task": "T43: Update docs/scripting.md",
+      "description": "Added osm:mcpcallback to module summary table and full detailed section with constructor, methods, properties, lifecycle example. No stale MCP server command refs found. Validation functions (T18-T19) are internal to pr_split_script.js — not public module APIs, so not documented as separate modules.",
+      "acceptance": "osm:mcpcallback is fully documented with examples. No references to deleted MCP server commands. Validation functions documented.",
+      "status": "Done"
     },
     {
-      "task": "T63: Fix pre-existing failure handling",
-      "description": "preExistingFailure branches accepted. Pipeline continues.",
-      "acceptance": "Pre-existing failures accepted. Test validates flow.",
-      "status": "Not Started"
+      "task": "T44: Update docs/reference/command.md — remove all MCP command docs",
+      "description": "Removed all four MCP command sections (osm mcp, mcp-instance, mcp-make, mcp-parent) from docs/reference/command.md. Removed stale 'osm mcp parent' references from claude-mux section. MCPGuard references retained — it is a live internal claude-mux component, not a deleted command.",
+      "acceptance": "`grep 'osm mcp\\|mcp-instance\\|mcp-make\\|mcp-parent' docs/reference/command.md` returns zero matches. MCPGuard references remain (live component).",
+      "status": "Done"
     },
     {
-      "task": "T64: Per-branch verification scoping",
-      "description": "Scope to affected packages. Fallback to full make.",
-      "acceptance": "Verification scoped. Test validates.",
-      "status": "Not Started"
+      "task": "T45: CHANGELOG.md entries",
+      "description": "Added entries under [Unreleased] in all four categories: Removed (8 entries — MCP commands, MCPInstance infra, deleted files, removed docs), Fixed (3 entries — verification skip, null handle, misleading text), Added (10 entries — validation, timeouts, heartbeat, verification improvements, logging, mcpcallback docs), Changed (1 entry — mcpcallback sole IPC).",
+      "acceptance": "CHANGELOG.md has all entries under [Unreleased]. Follows Keep a Changelog 1.1.0 format. All deletions, fixes, additions, and changes documented.",
+      "status": "Done"
     },
     {
-      "task": "T65: Investigate exec.execv streaming",
-      "description": "Analysis of exec.go for streaming capability. Design decision.",
-      "acceptance": "Analysis in WIP.md with recommendation.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T66: Implement exec.spawn streaming API",
-      "description": "exec.spawn(cmd, args, {onStdout, onStderr, onExit}). Event loop safe.",
-      "acceptance": "JS can stream process output. Kill/cancel works. Race-safe.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T67: Tests for streaming exec",
-      "description": "Real-time output, stderr, kill, cancel, exit code, concurrent spawns.",
-      "acceptance": "All pass with -race on all platforms.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T68: AutoSplitModel streaming output support",
-      "description": "AutoSplitStepOutputMsg. Update model and view for streaming lines.",
-      "acceptance": "Streaming output visible in TUI. Test validates.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T69: Wire streaming exec into verifySplits",
-      "description": "Use exec.spawn in verifySplit. Route to TUI.",
-      "acceptance": "Real-time verify output in TUI.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T70: Per-branch verification status in TUI",
-      "description": "Individual branch results with icons. Failed shows exit code.",
-      "acceptance": "Per-branch status visible.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T71: Per-branch TUI events from verifySplits loop",
-      "description": "stepStart/stepOutput/stepDone per branch.",
-      "acceptance": "Distinct events per branch. Model displays.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T72: Failed branch details view",
-      "description": "Expandable output. Scrollable viewport.",
-      "acceptance": "Enter expands. Scrollable. Enter/Escape collapses.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T73: Tests for TUI streaming and per-branch features",
-      "description": "All new TUI features tested in autosplit_test.go.",
-      "acceptance": "All pass with -race.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T74: Pause/Resume for auto-split sessions",
-      "description": "Ctrl-P saves state. Resume from exact point.",
-      "acceptance": "Pause saves. Resume continues. Works across disconnect.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T75: Real Claude API E2E integration test",
-      "description": "Gated behind -integration flag. Uses project.mk target. Validates classification quality.",
-      "acceptance": "At least one test calls real AI. Validates response quality. Gated.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T76: Update docs/architecture-claude-mux.md",
-      "description": "Remove file-polling references. Document mcpcallback sole IPC.",
-      "acceptance": "No stale references. New architecture documented.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T77: Update docs/scripting.md",
-      "description": "API docs for osm:mcp and osm:mcpcallback.",
-      "acceptance": "Both modules documented with examples.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T78: Update docs/reference/command.md — remove mcp commands",
-      "description": "Remove osm mcp and osm mcp-instance docs. Update pr-split.",
-      "acceptance": "No deleted command docs. pr-split accurate.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T79: CHANGELOG.md entries",
-      "description": "Added/Changed/Removed/Fixed per Keep a Changelog 1.1.0.",
-      "acceptance": "All changes listed under [Unreleased].",
-      "status": "Not Started"
-    },
-    {
-      "task": "T80: go mod tidy",
-      "description": "Clean go.mod/go.sum.",
-      "acceptance": "No diff after tidy. make passes.",
-      "status": "Not Started"
-    },
-    {
-      "task": "T81: Final cross-platform verification",
-      "description": "make on all 3 platforms. Integration tests. Grep for stale references.",
-      "acceptance": "All green. Zero stale references. Zero test failures.",
+      "task": "T46: Final cross-platform verification",
+      "description": "Run the full verification suite on all three platforms:\n  1. macOS: `make` + `make integration-test-prsplit-mcp`\n  2. Linux: `make` (via Docker container or CI — see example.config.mk make-all-in-container)\n  3. Windows: `make` (via CI or hack/run-on-windows.sh)\n  4. Grep for stale references: `grep -rn 'pollForFile\\|mcpWriteResultFile\\|NewMCPCommand\\|NewMCPInstanceCommand\\|NewMCPMakeCommand\\|NewMCPParentCommand\\|osm mcp-instance\\|osm mcp-make\\|osm mcp-parent' --include='*.go' --include='*.js' --include='*.md'`\n  5. Verify .deadcodeignore is unchanged\n  6. Verify go.mod is tidy",
+      "acceptance": "All three platforms GREEN. Zero stale references in grep. Zero test failures. .deadcodeignore unchanged. go.mod tidy. This is the FINAL gate before declaring the MCP deletion and bug fix effort complete.",
       "status": "Not Started"
     }
   ],
@@ -343,16 +318,18 @@
     "lintCommand": "make lint",
     "testCommand": "make test",
     "integrationTestCommands": [
-      "make integration-test-prsplit-mcp (all platforms)",
-      "make integration-test-prsplit (macOS only)"
+      "make integration-test-prsplit-mcp (all platforms, no real AI required)",
+      "make integration-test-prsplit (macOS only, requires real Claude)"
     ],
-    "platforms": ["ubuntu-latest", "macos-latest", "windows-latest"]
+    "platforms": ["ubuntu-latest", "macos-latest", "windows-latest"],
+    "staleReferenceCheck": "grep -rn 'pollForFile\\|mcpWriteResultFile\\|NewMCPCommand\\|NewMCPInstanceCommand\\|NewMCPMakeCommand\\|NewMCPParentCommand' --include='*.go' --include='*.js'"
   },
   "finalEnforcementProtocol": [
     "Cross-platform build MUST pass on ALL platforms — no exceptions.",
     "NEVER add to .deadcodeignore — wire up or delete.",
-    "No AI Slop — the osm mcp command was slop and it was DELETED.",
+    "No AI Slop — the osm mcp command family was slop and it was DELETED.",
     "Rule of Two before any commit.",
-    "The blueprint is the single source of truth."
+    "The blueprint is the single source of truth.",
+    "mcpcallback is the SOLE IPC mechanism — any code re-introducing file-polling is a regression."
   ]
 }

@@ -499,23 +499,7 @@ func (c *ClaudeMuxCommand) dispatchTask(
 	}
 	defer func() { _ = registry.Close(instanceID) }()
 
-	// Per-instance MCP config: generate a .claude.json with osm mcp-instance
-	// as the tool server, only for providers that support MCP.
 	taskSpawnOpts := spawnOpts // copy so we can add per-task args
-	if prov.Capabilities().MCP {
-		mcpCfg, mcpErr := claudemux.NewMCPInstanceConfig(instanceID)
-		if mcpErr != nil {
-			_, _ = fmt.Fprintf(stderr, "[task %d] mcp config: %v (continuing without MCP)\n", taskIdx, mcpErr)
-		} else {
-			defer func() { _ = mcpCfg.Close() }()
-			if writeErr := mcpCfg.WriteConfigFile(); writeErr != nil {
-				_, _ = fmt.Fprintf(stderr, "[task %d] mcp config write: %v (continuing without MCP)\n", taskIdx, writeErr)
-			} else {
-				taskSpawnOpts.Args = append(append([]string(nil), taskSpawnOpts.Args...), mcpCfg.SpawnArgs()...)
-				_, _ = fmt.Fprintf(stderr, "[task %d] mcp config: %s\n", taskIdx, mcpCfg.ConfigPath())
-			}
-		}
-	}
 
 	// Spawn fresh agent.
 	agent, err := prov.Spawn(ctx, taskSpawnOpts)

@@ -205,6 +205,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 | Module | Description | Key exports |
 |--------|-------------|-------------|
 | `osm:ctxutil` | Context building helpers (used by built-ins) | `buildContext(items, options?) → string`, `contextManager` (factory for reusable context management patterns) |
+| `osm:mcpcallback` | Go-native MCP IPC channel for sub-process tool callbacks | `MCPCallback(opts) → callbackObj`; Methods: `.addTool(name, desc?, schema?)`, `.initSync()`, `.init() → Promise`, `.waitFor(toolName, timeoutMs?, opts?) → {data, error}`, `.resetWaiter(toolName)`, `.closeSync()`, `.close() → Promise`; Properties (after init): `.address`, `.scriptPath`, `.transport`, `.mcpConfigPath` |
 | `osm:nextIntegerID` | Simple ID generator | Default export is a function: `nextId(list) → number` — finds max `.id` in array and returns max+1. _(Deprecated alias: `osm:nextIntegerId`)_ [Reference →](reference/nextintegerid.md) |
 | `osm:sharedStateSymbols` | Cross-mode shared state symbols | Exports Symbol properties (e.g., `contextItems`) for use with `tui.createState("__shared__", …)` |
 
@@ -359,6 +360,70 @@ Terminal UI framework based on [Charm BubbleTea](https://github.com/charmbracele
 Time utilities:
 
 - `time.sleep(ms)` — Synchronous sleep (milliseconds)
+
+### osm:mcpcallback (MCP Callback IPC)
+
+Go-native MCP tool callback channel. Creates a local socket server (UDS on Unix, loopback TCP on Windows) that wraps an `osm:mcp` server, enabling sub-processes to call registered tools over a socket connection. The core IPC mechanism for the `pr-split` pipeline.
+
+**Constructor:**
+
+```js
+const mcpMod = require('osm:mcp');
+const { MCPCallback } = require('osm:mcpcallback');
+
+const srv = mcpMod.createServer('my-callback', '1.0.0');
+const cb = MCPCallback({ server: srv });
+```
+
+The `server` must be created via `createServer()` and must **not** have `.run()` called on it yet.
+
+**Registering tools** (must be called before `init`/`initSync`):
+
+- `cb.addTool(name, description?, inputSchema?)` — Register a Go-native tool. The handler stores incoming call arguments in a buffered channel (capacity 1, last-write-wins). Handler runs on the MCP transport goroutine, not the JS event loop, so it is safe even when JS is blocked on `waitFor()`.
+
+**Initialization:**
+
+- `cb.initSync()` — Synchronous. Starts the listener, generates bootstrap files in a temp directory, begins accepting MCP connections. Blocks until ready.
+- `cb.init() → Promise<void>` — Async version.
+
+**Properties** (available after initialization):
+
+| Property | Type | Description |
+|---|---|---|
+| `cb.address` | `string` | Listener address. UDS: socket path. TCP: `127.0.0.1:<port>`. |
+| `cb.scriptPath` | `string` | Path to generated `bootstrap.js` (`module.exports = { transport, address }`). |
+| `cb.transport` | `string` | `"unix"` (Linux/macOS) or `"tcp"` (Windows). |
+| `cb.mcpConfigPath` | `string` | Path to generated `mcp-config.json` for Claude Code MCP server config. |
+
+**Waiting for tool calls:**
+
+- `cb.waitFor(toolName, timeoutMs?, opts?) → {data, error}` — Blocking. Waits for the named tool to receive a call via the MCP transport, or timeout. Default timeout: `600000` ms (10 min, minimum 100 ms).
+  - `opts.aliveCheck: () → bool` — Called periodically; return `false` to abort early (e.g., sub-process died).
+  - `opts.onProgress: (elapsedMs, totalMs) → void` — Called periodically for TUI updates.
+  - `opts.checkIntervalMs: number` — Polling interval for callbacks. Default: `5000`. Min: `100`.
+  - Returns `{data: <parsed JSON args>, error: null}` on success, or `{data: null, error: "..."}` on timeout/abort.
+- `cb.resetWaiter(toolName)` — Drain any pending (unconsumed) data for this tool. Call before re-waiting across pipeline cycles.
+
+**Cleanup:**
+
+- `cb.closeSync()` — Synchronous teardown: stops listener, removes temp directory. Idempotent.
+- `cb.close() → Promise<void>` — Async version. Idempotent.
+
+**Typical lifecycle** (from `pr-split`):
+
+```js
+cb.addTool('reportClassification', 'Report file classification.', schema);
+cb.addTool('reportSplitPlan', ...);
+cb.initSync();
+// spawn sub-process pointing at cb.mcpConfigPath
+var result = cb.waitFor('reportClassification', 300000, { aliveCheck, onProgress });
+if (result.error) { throw new Error(result.error); }
+var categories = result.data.categories;
+// ... later ...
+cb.resetWaiter('reportResolution');
+result = cb.waitFor('reportResolution', 600000, { aliveCheck });
+cb.closeSync();
+```
 
 ### osm:claudemux (Claude-Mux Orchestration)
 

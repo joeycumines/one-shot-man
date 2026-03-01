@@ -160,27 +160,6 @@ func TestBinding_WrapRegistry(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// wrapMCPInstance — via newMCPInstance
-// ---------------------------------------------------------------------------
-
-func TestBinding_WrapMCPInstance(t *testing.T) {
-	t.Parallel()
-	runJS := moduleTestEnv(t)
-
-	runJS(`var mcp = cm.newMCPInstance("test-session-1234");`)
-
-	assert.Equal(t, "test-session-1234", runJS(`mcp.sessionId`).String())
-	assert.NotEmpty(t, runJS(`mcp.osmBinary()`).String())
-	assert.NotEmpty(t, runJS(`mcp.configPath()`).String())
-
-	// spawnArgs returns array.
-	assert.True(t, runJS(`Array.isArray(mcp.spawnArgs())`).ToBoolean())
-
-	// Close to clean up temp files.
-	runJS(`mcp.close();`)
-}
-
-// ---------------------------------------------------------------------------
 // wrapInstanceRegistry + wrapInstance — create, get, list, close
 // ---------------------------------------------------------------------------
 

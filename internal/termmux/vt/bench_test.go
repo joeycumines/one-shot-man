@@ -65,13 +65,13 @@ func BenchmarkVTermWrite_UTF8(b *testing.B) {
 	}
 }
 
-func BenchmarkVTermRender(b *testing.B) {
+func BenchmarkVTermRenderFullScreen(b *testing.B) {
 	vt := NewVTerm(24, 80)
 	// Fill screen with content.
 	vt.Write(benchInputANSI)
 	b.ResetTimer()
 	for b.Loop() {
-		_ = vt.Render()
+		_ = vt.RenderFullScreen()
 	}
 }
 

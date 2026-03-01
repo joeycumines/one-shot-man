@@ -111,6 +111,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `osm pr-split --timeout` flag: override all Claude communication timeouts (classify, plan, resolve) with a single duration value (e.g. `--timeout=5m`); supports config file fallback via `pr-split.timeout` key; default 0 preserves JS-side defaults (2m classify/plan, 3m resolve)
 - Mock-MCP integration test (`TestIntegration_AutoSplitMockMCP`): exercises full `automatedSplit()` pipeline with pre-written classification and split-plan JSON files against an 8-file/4-package git repo; verifies branch creation, tree hash equivalence, and independence detection without requiring Claude
 - `osm pr-split` Lipgloss styled output: all status messages use styled text when `osm:lipgloss` is available — success (green), error (red), warning (amber), info (blue), dim (gray), bold, and progress bar helpers; graceful degradation to plain text when Lipgloss is not loaded
+- `osm pr-split` JS-side validation: `validateClassification(categories, knownFiles)` validates classification response structure (required fields, file coverage, valid category types); `validateSplitPlan(stages)` validates split plan structure (non-empty stages, required fields, no duplicate files); `validateResolution(resolution)` validates conflict resolution responses — all with detailed error arrays
+- `osm pr-split` pipeline timeout system: `pipelineTimeoutMs` (default 2h), `stepTimeoutMs` (default 1h), and `watchdogIdleMs` (default 15m) with per-step enforcement and idle progress monitoring; `heartbeatTimeoutMs` (default 5m) for sub-process liveness
+- `osm pr-split` heartbeat monitoring: `heartbeat` tool registered via `mcpCallbackObj.addTool`; `aliveCheckFn` enhanced to verify both process liveness and heartbeat recency within `heartbeatTimeoutMs`
+- `osm pr-split` dependency-aware verification bail: branches that depend on a failed branch are skipped with `⊘` icon instead of `✗`; pre-existing failures (source branch also fails) shown with `⚠` icon; summary reports skipped/pre-existing/failed counts separately
+- `osm pr-split` verification target auto-discovery: `discoverVerifyCommand(dir)` checks for Makefile/makefile/GNUmakefile and returns `make` as the verify command; wired into `runtime.verifyCommand` as default when no explicit verify command is configured
+- `osm pr-split` pre-existing failure baseline: `verifySplits` runs verification on source branch first; if source fails, split failures on the same command are marked `preExisting: true` and don't block dependent branches or count as real failures
+- `osm pr-split` per-branch verification scoping: `scopedVerifyCommand(files, fallbackCommand)` extracts Go package directories from changed files and generates `go test ./pkg1/... ./pkg2/...` for all-Go splits; falls back to the full verify command for non-Go or mixed file sets
+- `osm pr-split` comprehensive logging: `sendToHandle` logs before/after with truncated prompts (200 chars); `waitForLogged` wrapper replaces all `mcpCallbackObj.waitFor` calls with before/after logging including tool name, timeout, elapsed time, and success/error status
+- `osm:mcpcallback` module documented in `docs/scripting.md`: full API reference in module summary table and detailed section with constructor, methods, properties, and lifecycle example
 
 ### Changed
 - **BREAKING:** Renamed internal "orchestrator" package to `claudemux` (Go) / `claude-mux` (user-facing) / `osm:claudemux` (JS module) — all imports, docs, and CLI references updated
@@ -130,6 +139,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Moved `CONFIG_HOT_SNIPPETS` auto-detection into `contextManager.js` reducing per-script boilerplate
 - Unexported 14 internal symbols across scripting, command, storage, and builtin packages
 - Refactored txtar collision handling to use full relative paths instead of filename-only deduplication
+- `osm pr-split` pipeline IPC: mcpcallback is now the sole IPC mechanism — all file-polling (`pollForFile`) and file-writing (`mcpWriteResultFile`) legacy paths removed; classification, split plan, and conflict resolution data flow exclusively through `mcpcallbackObj.waitFor()`
 
 ### Deprecated
 - `osm:nextIntegerId` module name: use `osm:nextIntegerID` instead (old name still works as an alias)
@@ -154,6 +164,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stale `internal/termtest/*` entries from `.deadcodeignore`
 - 4 TODO comments in tui_completion.go: documented completion logic, resolved outdated arg completer precedence note, removed speculative types, added unknown-type warning
 - Deprecated `ScrollWheel` and `ScrollWheelOnElement` string-based methods from mouseharness; use type-safe `ScrollWheelWithDirection` and `ScrollWheelOnElementWithDirection` instead
+- `osm mcp` command and all 15 MCP tool handlers (context management and session coordination)
+- `osm mcp-instance` command (per-instance MCP server for Claude Code sessions)
+- `osm mcp-make` command (MCP server exposing GNU Make tools)
+- `osm mcp-parent` command (MCP server for agent steering via orchestrator socket)
+- MCPInstance infrastructure from claude-mux module: `mcp_config.go`, `mcp_config_test.go`, `mcp_instance.go`, `mcp_instance_test.go`, and JS module bindings (`MCPInstanceConfig`, `newMCPInstanceConfig`, `closeMCPInstanceConfig`)
+- `internal/command/mcp.go`, `mcp_instance.go`, `mcp_make.go`, `mcp_parent.go` and their test files
+- MCP command documentation from `docs/reference/command.md` (sections for `osm mcp`, `mcp-instance`, `mcp-make`, `mcp-parent`)
 
 ### Fixed
 - `osm pr-split` auto-split TUI hang on quit: pressing `q` during pipeline execution sent `tea.Quit` immediately, exiting alt-screen while the JS pipeline continued running — go-prompt resumed with an unresponsive command handler; rewritten to use two-stage cancel lifecycle: first `q` sets cancel flag only (pipeline detects and drains), `tea.Quit` deferred until `AutoSplitDoneMsg` arrives or second `q` force-quits
@@ -173,6 +190,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Data race in storage path globals: added `sync.RWMutex` guarding `getSessionDirectory` and `getSessionLockFilePath` accessor functions in `paths.go`, preventing concurrent read/write of function-variable overrides during cleanup scheduling
 - `ScanSessions` incorrectly accepted non-session `.json` files (e.g. `notes.json`, `config.json`) — the filter used `filepath.Ext` (`.json`) then subtracted `.session.json` length, which could produce wrong session IDs or panic for short filenames; now uses `strings.HasSuffix(name, ".session.json")` with length-based slicing for base extraction
 - Inconsistent `fmt.Fprint*` error handling: added `_, _ =` prefix to all unchecked calls across session, completion, scripting, terminal, and bubbletea source files for project-wide consistency
+- `osm pr-split` verification skip bug: pipeline silently passed when branch verification returned failures — `step()` callback now checks `realFailures > 0` and returns an error, halting the pipeline instead of continuing with broken branches
+- `osm pr-split` null handle crash: `sendToHandle` crashed with null pointer when Claude process handle was null or falsy — added null guard returning descriptive error instead of crashing
+- `osm pr-split` misleading verification text: "Running tree hash verification..." changed to "Running verification command on each branch..." since `verifySplits` runs the configured verify command, not tree hash checks
 - Silently swallowed errors during log file rotation: `RotatingFileWriter.rotate()` now logs backup shift, rename, and cleanup failures to stderr instead of discarding them
 - Flaky `TestSuperDocument_BacktabNavigation` PTY integration test: standardized inter-keystroke delay from inconsistent 4–20ms to a uniform 25ms constant (`ptyCharDelay`) across all character-typing loops in both PTY test files; under CPU load the previous delays caused the TUI to coalesce or drop keystrokes, producing garbled output
 - macOS PTY data loss: slave fd is now kept alive in parent process until child exits, preventing buffered output from being lost on macOS when the slave fd closes before the master reads; also fixed `EvalSymlinks` for macOS `/var` → `/private/var` resolution

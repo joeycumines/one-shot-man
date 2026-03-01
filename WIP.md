@@ -1,18 +1,87 @@
 # WIP — Session State (Takumi's Desperate Diary)
 
 ## Session Start
-- **Started:** 2026-02-28 20:36:23
-- **Mandate:** 9 hours minimum (ends ~2026-03-01 05:36:23)
-- **Phase:** EXECUTING — Legacy deletion + test fixes
+- **Started:** 2026-03-01 12:57:55
+- **Mandate:** 9 hours minimum (ends ~2026-03-01 21:57:55)
+- **Start file:** scratch/.session-start (contains epoch seconds)
+- **Phase:** EXECUTING — exec.spawn streaming API (T31+)
 
 ## Last Commit
 - **Hash:** 2dccbc6
 - **Subject:** feat(mcpcallback): add Go-native tool registration and wire automatedSplit IPC
-- **Files:** 3 changed — mcpcallback.go, mcpcallback_test.go, pr_split_script.js
+
+## Blueprint State
+- **Total tasks:** 46 (T1-T46)
+- **DONE:** T1-T31, T42-T45 (37 tasks)
+- **NOT STARTED:** T32-T41, T46 (10 tasks)
+- **Critical:** MCPGuard is LIVE CODE used by claude-mux, NOT dead.
 
 ## Current Task
-- **Active:** T38-T40 combined — Delete all legacy file-polling from pr_split_script.js + fix tests
-- **Status:** All JS edits DONE. All test edits DONE. About to run build.
+- **Active:** T32 (Implement exec.spawn streaming API)
+- **Plan:** T32 → T33 → T34 → T35 → T36-T39 → T40 → T41 → T46
+- **Completed this session:**
+  - T1-T14: MCP deletion chain (13 files deleted)
+  - T15-T16: Bug fixes (verify skip, null handle)
+  - T17: Bug fix tests
+  - T18-T19: Validation functions + 30 subtests
+  - T20: Pipeline timeout/watchdog
+  - T21: Heartbeat monitoring
+  - T22: Dependency-aware verification TUI icons
+  - T23: Fixed misleading verification text
+  - T24: Verification target auto-discovery
+  - T25: Pre-existing failure baseline
+  - T26: Per-branch verification scoping
+  - T27: Verified sub-100ms rendering works
+  - T28: Comprehensive logging
+  - T29: PTY WriteTimeout + EAGAIN handling + 6 tests
+  - T30: Flicker-free panel toggle (RenderFullScreen) + 6 tests
+  - T31: exec.spawn design research (see below)
+  - T42: Architecture docs updated
+  - T43: Scripting docs updated (mcpcallback documented)
+  - T44: Command reference docs cleaned
+  - T45: CHANGELOG entries added
+
+## T31 Design — exec.spawn Streaming API
+
+### Current exec API
+`osm:exec` exposes `exec(cmd, ...args)` and `execv(argv[])` — both synchronous, blocking, buffering all stdout/stderr into `bytes.Buffer`. Returns `{stdout, stderr, code, error, message}`. Zero streaming. No event loop adapter.
+
+### Goja Concurrency Model
+`goja.Runtime` is NOT goroutine-safe. Project uses `go-eventloop` + `goja-eventloop` adapter. Pattern from `osm:fetch`:
+1. `adapter.JS().NewChainedPromise()` → (promise, resolve, reject)
+2. Spawn goroutine for blocking I/O
+3. Goroutine submits resolve/reject to event loop via `adapter.Loop().Submit(func(){})`
+4. Return `adapter.GojaWrapPromise(promise)` to JS
+SSE reader uses **pull-based** streaming: `read()` returns Promise, goroutine blocks on Next().
+
+### Proposed API
+```js
+const { spawn } = require('osm:exec');
+const child = spawn('git', ['log', '--oneline', '-20'], {
+  cwd: '/repo', env: {}, stdin: 'pipe', stdout: 'pipe', stderr: 'pipe'
+});
+// Pull-based: identical to SSE read() pattern
+const { value, done } = await child.stdout.read();
+child.stdin.write('input');
+child.stdin.close();
+const { code, signal } = await child.wait();
+child.kill();
+```
+
+### Architecture
+- Pump goroutines: 1 per pipe, reads chunks → bounded chan
+- `read()` → ChainedPromise → goroutine blocks on chan → Submit(resolve)
+- `wait()` → ChainedPromise → goroutine blocks on done channel
+- `write()` → sync (direct to pipe) 
+- `Require()` must accept `*gojaeventloop.Adapter` (like fetch does)
+- Registration: `execmod.Require(ctx, adapter)` in register.go
+
+### Files to Create/Modify
+- `internal/builtin/exec/spawn.go` — ChildProcess, SpawnChild, pump goroutine, read/write/wait/kill
+- `internal/builtin/exec/exec.go` — Update Require to accept adapter, add spawn() JS binding
+- `internal/scripting/register.go` — Pass adapter to exec.Require()
+
+## NO COMMITS YET — Rule of Two required before first commit
 
 ## Changes Made This Session (Not Yet Committed)
 

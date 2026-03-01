@@ -416,22 +416,22 @@ func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 			}
 		}
 	} else {
-		// Restore Claude's screen from VTerm buffer.
+		// Restore Claude's screen from VTerm buffer — flicker-free.
+		// Instead of clearing the screen then redrawing, we overwrite
+		// every row in-place with RenderFullScreen (CUP + content + EL).
 		m.mu.Lock()
 		vtm := m.vterm
 		m.mu.Unlock()
 		if vtm != nil {
 			// Render outside m.mu (VTerm has its own lock), then write
 			// to stdout under m.mu to avoid racing with tee goroutine.
-			rendered := vtm.Render()
+			rendered := vtm.RenderFullScreen()
 			m.mu.Lock()
-			_, _ = m.stdout.Write([]byte("\x1b[2J\x1b[H"))
 			_, _ = m.stdout.Write([]byte(rendered))
 			m.mu.Unlock()
 		}
-		// Re-render status bar after VTerm restore. The screen clear
-		// above erases the status bar, and VTerm content doesn't
-		// include status bar bytes.
+		// Re-render status bar after VTerm restore. VTerm content
+		// doesn't include status bar bytes.
 		if statusBarHeight > 0 {
 			m.mu.Lock()
 			m.statusBar.Render()

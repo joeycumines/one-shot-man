@@ -111,11 +111,12 @@ func Spawn(ctx context.Context, cfg SpawnConfig) (*Process, error) {
 	done := make(chan struct{})
 
 	proc := &Process{
-		ptyFile:  ptmx,
-		ttyFile:  tty, // keep slave alive until Close()
-		done:     done,
-		cmd:      handle,
-		exitCode: -1,
+		ptyFile:      ptmx,
+		ttyFile:      tty, // keep slave alive until Close()
+		done:         done,
+		cmd:          handle,
+		exitCode:     -1,
+		writeTimeout: cfg.WriteTimeout,
 	}
 
 	// Background goroutine to wait for process exit.

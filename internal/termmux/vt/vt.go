@@ -194,12 +194,13 @@ func (v *VTerm) reset() {
 	// Callbacks close over v, so they still reference the correct VTerm.
 }
 
-// Render produces an ANSI escape sequence string that reproduces the visual
-// state of the active screen. Thread-safe.
-func (v *VTerm) Render() string {
+// RenderFullScreen returns ANSI output that overwrites every row in-place
+// without first clearing the screen. This is the flicker-free path for
+// restoring a VTerm buffer to the terminal during panel/mode toggle.
+func (v *VTerm) RenderFullScreen() string {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	return Render(v.active)
+	return RenderFullScreen(v.active)
 }
 
 // String returns a plain-text representation of the active screen for

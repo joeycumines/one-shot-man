@@ -473,13 +473,13 @@ pipeline that combines AI classification with deterministic execution:
 │  Step  3: Send classification ───── renderClassificationPrompt() → handle.send()
 │   │
 │   ▼
-│  Step  4: Receive classification ── pollForFile('classification.json')
+│  Step  4: Receive classification ── mcpcallback.waitFor('reportClassification')
 │   │                                  │
 │   │                                  └── assigns uncategorized if files missing
 │   ▼
 │  Step  5: Generate split plan ───── classificationToGroups() → createSplitPlan()
 │   │                                  │
-│   │                                  └── also checks for Claude-provided split-plan.json
+│   │                                  └── also checks for Claude-provided split plan via mcpcallback
 │   ▼
 │  Step  6: Execute split ─────────── executeSplit(plan)  [skipped in dry-run]
 │   │
@@ -535,13 +535,15 @@ Three fallback scenarios are handled:
 
 | Config | Default | Effect |
 |--------|---------|--------|
-| `classifyTimeoutMs` | 1200000 | Max wait for classification.json (20 min) |
-| `planTimeoutMs` | 1200000 | Max wait for split-plan.json (20 min) |
+| `classifyTimeoutMs` | 1200000 | Max wait for classification via mcpcallback (20 min) |
+| `planTimeoutMs` | 1200000 | Max wait for split plan via mcpcallback (20 min) |
 | `resolveTimeoutMs` | 1800000 | Max wait per resolution attempt (30 min) |
-| `pollIntervalMs` | 1000 | File polling interval |
+| `pollIntervalMs` | 500 | mcpcallback alive-check interval |
 | `maxResolveRetries` | 3 | Max retries per failed split |
 | `maxReSplits` | 1 | Max full re-classification cycles |
 | `retryBudget` | 3 | TUI-settable resolve attempt budget |
+| `pipelineTimeoutMs` | 7200000 | Overall pipeline timeout (120 min) |
+| `heartbeatTimeoutMs` | 300000 | Claude heartbeat liveness timeout (5 min) |
 
 ---
 

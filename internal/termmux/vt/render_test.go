@@ -1,89 +1,132 @@
 package vt
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
 
-func TestRender_Empty(t *testing.T) {
-	scr := NewScreen(3, 5)
-	out := Render(scr)
-	// Should have reset, cursor position, and cursor visibility but NO cell-content CUP.
-	if !strings.Contains(out, "\x1b[0m") {
-		t.Error("missing SGR reset")
-	}
-	if !strings.Contains(out, "\x1b[1;1H") {
-		// Cursor should be at 1,1 (0,0 -> 1-indexed).
-		t.Error("missing cursor position")
-	}
-	if !strings.Contains(out, "\x1b[?25h") {
-		t.Error("missing cursor show")
-	}
-	// Should NOT have any row-positioning CUPs since all rows are blank.
-	// The only CUP should be the final cursor position.
-	cupCount := strings.Count(out, "H")
-	// We have \x1b[1;1H for cursor pos, \x1b[?25h also has 'h' not 'H'.
-	if cupCount > 1 {
-		t.Errorf("expected at most 1 CUP (cursor pos), got %d", cupCount)
-	}
-}
+// ── RenderFullScreen tests ─────────────────────────────────────────
 
-func TestRender_SimpleText(t *testing.T) {
-	scr := NewScreen(3, 5)
+func TestRenderFullScreen_EmitsAllRows(t *testing.T) {
+	scr := NewScreen(4, 10)
+	// Only put content on row 0; rows 1-3 are blank.
 	scr.PutChar('A')
-	scr.PutChar('B')
-	out := Render(scr)
-	if !strings.Contains(out, "\x1b[1;1H") {
-		t.Error("missing CUP for row 1")
+	out := RenderFullScreen(scr)
+
+	// Every row should have a CUP and EL (clear-to-EOL = \x1b[K).
+	for r := 1; r <= 4; r++ {
+		cup := fmt.Sprintf("\x1b[%d;1H", r)
+		if !strings.Contains(out, cup) {
+			t.Errorf("missing CUP for row %d: %q", r, cup)
+		}
 	}
-	if !strings.Contains(out, "AB") {
-		t.Errorf("missing text AB in output: %q", out)
-	}
-	if !strings.Contains(out, "\x1b[1;3H") {
-		t.Errorf("missing cursor position \\x1b[1;3H in output: %q", out)
+	// Check that EL appears for clearing.
+	elCount := strings.Count(out, "\x1b[K")
+	if elCount < 4 {
+		t.Errorf("expected at least 4 EL sequences (one per row), got %d", elCount)
 	}
 }
 
-func TestRender_BoldText(t *testing.T) {
+func TestRenderFullScreen_NoScreenClear(t *testing.T) {
+	scr := NewScreen(3, 5)
+	scr.PutChar('X')
+	out := RenderFullScreen(scr)
+
+	// Must NOT contain ESC[2J (erase entire display).
+	if strings.Contains(out, "\x1b[2J") {
+		t.Error("RenderFullScreen must not emit ESC[2J (erase display)")
+	}
+}
+
+func TestRenderFullScreen_PreservesContent(t *testing.T) {
+	scr := NewScreen(3, 10)
+	scr.PutChar('H')
+	scr.PutChar('i')
+	out := RenderFullScreen(scr)
+
+	if !strings.Contains(out, "Hi") {
+		t.Errorf("expected content 'Hi' in output, got %q", out)
+	}
+}
+
+func TestRenderFullScreen_CursorPosition(t *testing.T) {
+	scr := NewScreen(3, 10)
+	scr.CurRow = 1
+	scr.CurCol = 4
+	out := RenderFullScreen(scr)
+
+	if !strings.Contains(out, "\x1b[2;5H") {
+		t.Errorf("expected cursor at \\x1b[2;5H (1-indexed), got %q", out)
+	}
+}
+
+func TestRenderFullScreen_CursorVisibility(t *testing.T) {
+	scr := NewScreen(3, 5)
+	scr.CursorVisible = false
+	out := RenderFullScreen(scr)
+
+	if !strings.Contains(out, "\x1b[?25l") {
+		t.Error("should contain cursor-hide for CursorVisible=false")
+	}
+	if strings.Contains(out, "\x1b[?25h") {
+		t.Error("should NOT contain cursor-show for CursorVisible=false")
+	}
+}
+
+func TestRenderFullScreen_Idempotent(t *testing.T) {
+	scr := NewScreen(3, 10)
+	scr.PutChar('A')
+	scr.CurRow = 2
+	scr.CurCol = 0
+	scr.PutChar('Z')
+	out1 := RenderFullScreen(scr)
+	out2 := RenderFullScreen(scr)
+	if out1 != out2 {
+		t.Error("RenderFullScreen not idempotent")
+	}
+}
+
+func TestRenderFullScreen_BoldText(t *testing.T) {
 	scr := NewScreen(3, 10)
 	scr.CurAttr = Attr{Bold: true}
 	scr.PutChar('B')
-	out := Render(scr)
+	out := RenderFullScreen(scr)
 	if !strings.Contains(out, "\x1b[") {
 		t.Error("missing SGR sequence")
-	}
-	if !strings.Contains(out, "1") {
-		t.Error("missing bold code in SGR")
 	}
 	if !strings.Contains(out, "B") {
 		t.Error("missing character B")
 	}
 }
 
-func TestRender_WideChar(t *testing.T) {
+func TestRenderFullScreen_WideChar(t *testing.T) {
 	scr := NewScreen(3, 10)
 	scr.PutChar('\u6F22') // 漢 - width 2
-	out := Render(scr)
+	out := RenderFullScreen(scr)
 	count := strings.Count(out, "漢")
 	if count != 1 {
 		t.Errorf("漢 appears %d times, want 1", count)
 	}
 }
 
-func TestRender_Idempotent(t *testing.T) {
+func TestRenderFullScreen_AfterModification(t *testing.T) {
 	scr := NewScreen(5, 10)
-	scr.PutChar('X')
-	scr.PutChar('Y')
-	out1 := Render(scr)
-	out2 := Render(scr)
-	if out1 != out2 {
-		t.Errorf("Render not idempotent:\n  1: %q\n  2: %q", out1, out2)
+	scr.PutChar('A')
+	out1 := RenderFullScreen(scr)
+
+	scr.PutChar('B')
+	out2 := RenderFullScreen(scr)
+
+	if out1 == out2 {
+		t.Error("RenderFullScreen should change after screen modification")
+	}
+	if !strings.Contains(out2, "AB") {
+		t.Errorf("updated RenderFullScreen should contain AB, got %q", out2)
 	}
 }
 
-// ── T122 and T089: Consecutive Render calls are idempotent ─────────
-
-func TestRender_ConsecutiveCalls(t *testing.T) {
+func TestRenderFullScreen_ConsecutiveCalls(t *testing.T) {
 	scr := NewScreen(5, 10)
 	scr.CurAttr = Attr{Bold: true}
 	scr.PutChar('H')
@@ -93,39 +136,10 @@ func TestRender_ConsecutiveCalls(t *testing.T) {
 	scr.CurCol = 3
 	scr.PutChar('!')
 
-	out1 := Render(scr)
-	out2 := Render(scr)
-	out3 := Render(scr)
+	out1 := RenderFullScreen(scr)
+	out2 := RenderFullScreen(scr)
+	out3 := RenderFullScreen(scr)
 	if out1 != out2 || out2 != out3 {
-		t.Error("Render() not idempotent across 3 calls")
-	}
-}
-
-func TestRender_AfterModification(t *testing.T) {
-	scr := NewScreen(5, 10)
-	scr.PutChar('A')
-	out1 := Render(scr)
-
-	scr.PutChar('B')
-	out2 := Render(scr)
-
-	if out1 == out2 {
-		t.Error("Render should change after screen modification")
-	}
-	if !strings.Contains(out2, "AB") {
-		t.Errorf("updated Render should contain AB, got %q", out2)
-	}
-}
-
-func TestRender_HiddenCursor(t *testing.T) {
-	scr := NewScreen(3, 5)
-	scr.CursorVisible = false
-	scr.PutChar('T')
-	out := Render(scr)
-	if !strings.Contains(out, "\x1b[?25l") {
-		t.Error("should contain cursor-hide sequence when CursorVisible=false")
-	}
-	if strings.Contains(out, "\x1b[?25h") {
-		t.Error("should NOT contain cursor-show when CursorVisible=false")
+		t.Error("RenderFullScreen not idempotent across 3 calls")
 	}
 }

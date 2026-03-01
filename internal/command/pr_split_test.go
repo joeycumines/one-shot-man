@@ -4842,6 +4842,93 @@ func TestPrSplitCommand_SendToHandle_NonEAGAINError(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// T16: sendToHandle null/undefined handle guard
+// ---------------------------------------------------------------------------
+
+func TestPrSplitCommand_SendToHandle_NullHandle(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// T16 fix: sendToHandle(null, ...) must return {error: ...} not crash.
+	val, err := evalJS(`(function() {
+		var r1 = globalThis.prSplit.sendToHandle(null, 'hello');
+		var r2 = globalThis.prSplit.sendToHandle(undefined, 'hello');
+		return JSON.stringify({ nullResult: r1, undefinedResult: r2 });
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		NullResult struct {
+			Error *string `json:"error"`
+		} `json:"nullResult"`
+		UndefinedResult struct {
+			Error *string `json:"error"`
+		} `json:"undefinedResult"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("Failed to parse output: %v", err)
+	}
+
+	if output.NullResult.Error == nil {
+		t.Error("sendToHandle(null, ...) should return an error")
+	} else if !strings.Contains(*output.NullResult.Error, "null") {
+		t.Errorf("null handle error should mention 'null', got: %s", *output.NullResult.Error)
+	}
+
+	if output.UndefinedResult.Error == nil {
+		t.Error("sendToHandle(undefined, ...) should return an error")
+	} else if !strings.Contains(*output.UndefinedResult.Error, "null") {
+		t.Errorf("undefined handle error should mention 'null', got: %s", *output.UndefinedResult.Error)
+	}
+}
+
+func TestPrSplitCommand_SendToHandle_FalsyHandleString(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Falsy values like 0, false, empty string are also invalid handles.
+	val, err := evalJS(`(function() {
+		var r1 = globalThis.prSplit.sendToHandle(0, 'hello');
+		var r2 = globalThis.prSplit.sendToHandle(false, 'hello');
+		var r3 = globalThis.prSplit.sendToHandle('', 'hello');
+		return JSON.stringify({ zero: r1, boolFalse: r2, emptyStr: r3 });
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		Zero struct {
+			Error *string `json:"error"`
+		} `json:"zero"`
+		BoolFalse struct {
+			Error *string `json:"error"`
+		} `json:"boolFalse"`
+		EmptyStr struct {
+			Error *string `json:"error"`
+		} `json:"emptyStr"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("Failed to parse output: %v", err)
+	}
+
+	// All falsy values should be caught by the !handle guard.
+	if output.Zero.Error == nil {
+		t.Error("sendToHandle(0, ...) should return an error")
+	}
+	if output.BoolFalse.Error == nil {
+		t.Error("sendToHandle(false, ...) should return an error")
+	}
+	if output.EmptyStr.Error == nil {
+		t.Error("sendToHandle('', ...) should return an error")
+	}
+}
+
 func TestPrSplitCommand_ResolveConflicts_PerBranchRetryBudget(t *testing.T) {
 	t.Parallel()
 
@@ -8630,6 +8717,137 @@ func TestAutoSplit_NegativeMaxReSplits(t *testing.T) {
 	}
 	if val.(int64) != 1 {
 		t.Errorf("expected 1 (default) when maxReSplits=0, got %d", val.(int64))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T20: Pipeline timeout, step timeout, and watchdog defaults
+// ---------------------------------------------------------------------------
+
+func TestAutoSplit_TimeoutDefaults(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Verify the T20 defaults exist in AUTOMATED_DEFAULTS.
+	val, err := evalJS(`JSON.stringify({
+		pipelineTimeoutMs: AUTOMATED_DEFAULTS.pipelineTimeoutMs,
+		stepTimeoutMs: AUTOMATED_DEFAULTS.stepTimeoutMs,
+		watchdogIdleMs: AUTOMATED_DEFAULTS.watchdogIdleMs
+	})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		PipelineTimeoutMs int64 `json:"pipelineTimeoutMs"`
+		StepTimeoutMs     int64 `json:"stepTimeoutMs"`
+		WatchdogIdleMs    int64 `json:"watchdogIdleMs"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	if output.PipelineTimeoutMs != 7200000 {
+		t.Errorf("pipelineTimeoutMs = %d, want 7200000 (120 min)", output.PipelineTimeoutMs)
+	}
+	if output.StepTimeoutMs != 3600000 {
+		t.Errorf("stepTimeoutMs = %d, want 3600000 (60 min)", output.StepTimeoutMs)
+	}
+	if output.WatchdogIdleMs != 900000 {
+		t.Errorf("watchdogIdleMs = %d, want 900000 (15 min)", output.WatchdogIdleMs)
+	}
+}
+
+func TestAutoSplit_PipelineTimeout(t *testing.T) {
+	// NOT parallel — uses chdir.
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	initialFiles := []TestPipelineFile{
+		{"a.go", "package a\n"},
+	}
+	featureFiles := []TestPipelineFile{
+		{"b.go", "package b\n"},
+	}
+
+	tp := setupTestPipeline(t, TestPipelineOpts{
+		InitialFiles: initialFiles,
+		FeatureFiles: featureFiles,
+		ConfigOverrides: map[string]interface{}{
+			"branchPrefix":  "split/",
+			"verifyCommand": "true",
+		},
+	})
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tp.Dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	// Mock executor.
+	if _, err := tp.EvalJS(`
+		ClaudeCodeExecutor = function(config) {
+			this.config = config;
+			this.resolved = { command: 'mock-claude' };
+			this.handle = { send: function() {}, isAlive: function() { return true; } };
+		};
+		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
+			return { error: null, sessionId: 'mock-timeout' };
+		};
+		ClaudeCodeExecutor.prototype.close = function() {};
+		ClaudeCodeExecutor.prototype.kill = function() {};
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	// Inject classification via mcpcallback BUT with -1 pipeline timeout.
+	// The negative timeout guarantees that any step() call will detect
+	// elapsed >= pipelineTimeoutMs since elapsed (>= 0) is always >= -1.
+	classJSON, _ := json.Marshal(map[string]interface{}{"categories": []map[string]any{
+		{"name": "core", "description": "Core changes", "files": []string{"b.go"}},
+	}})
+
+	watchCh := mcpcallbackmod.WatchForInit()
+	go func() {
+		h := <-watchCh
+		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
+			t.Logf("inject failed: %v", err)
+		}
+	}()
+
+	// pipelineTimeoutMs = -1 — guarantees timeout on first step check.
+	result, err := tp.EvalJS(`JSON.stringify(prSplit.automatedSplit({
+		disableTUI: true,
+		pipelineTimeoutMs: -1,
+		classifyTimeoutMs: 5000,
+		planTimeoutMs: 5000,
+		resolveTimeoutMs: 5000,
+		maxResolveRetries: 0,
+		maxReSplits: 0
+	}))`)
+	if err != nil {
+		t.Fatalf("automatedSplit: %v", err)
+	}
+
+	var report struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &report); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, result)
+	}
+
+	if report.Error == "" {
+		t.Fatal("expected pipeline timeout error")
+	}
+	if !strings.Contains(report.Error, "pipeline timeout") {
+		t.Errorf("error should mention 'pipeline timeout', got: %s", report.Error)
 	}
 }
 

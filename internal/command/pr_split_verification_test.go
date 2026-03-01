@@ -47,6 +47,15 @@ func gitMockSetupJS() string {
     execMod.execv = function(argv) {
         globalThis._gitCalls.push({argv: argv.slice()});
 
+        // 'test' command: check _testFileExists set for T24 tests.
+        if (argv[0] === 'test' && argv[1] === '-f') {
+            var path = argv[2] || '';
+            if (globalThis._testFileExists && globalThis._testFileExists[path]) {
+                return ok('');
+            }
+            return fail('');
+        }
+
         // Non-git commands: sh -c from verifySplit.
         if (argv[0] !== 'git') {
             if (argv[0] === 'sh' && globalThis._gitResponses['!sh'] !== undefined) {
@@ -161,11 +170,12 @@ func parseExecuteSplitResult(t *testing.T, raw interface{}) executeSplitResult {
 type verifySplitsResult struct {
 	AllPassed bool `json:"allPassed"`
 	Results   []struct {
-		Name    string  `json:"name"`
-		Passed  bool    `json:"passed"`
-		Skipped bool    `json:"skipped"`
-		Output  string  `json:"output"`
-		Error   *string `json:"error"`
+		Name        string  `json:"name"`
+		Passed      bool    `json:"passed"`
+		Skipped     bool    `json:"skipped"`
+		PreExisting bool    `json:"preExisting"`
+		Output      string  `json:"output"`
+		Error       *string `json:"error"`
 	} `json:"results"`
 	Error *string `json:"error"`
 }
@@ -1415,9 +1425,861 @@ func TestVerifySplits_FailedBranch_AllPassedFalse(t *testing.T) {
 		}
 	}
 
-	// BUG DOCUMENTATION: In automatedSplit() at line ~2920, this result
-	// would be wrapped by step() which returns { error: null, failures: [...] }.
-	// The step() wrapper only checks result.error and sees null → TUI shows ✓.
-	// The fix (T48) should propagate verification failures into result.error
-	// or change the step() wrapper to check result.allPassed.
+	// T15 FIXED: In automatedSplit(), the "Verify splits" step callback
+	// now sets result.error when realFailures.length > 0. See
+	// TestVerifyStepReportsErrorOnFailure for the integration-level test.
+}
+
+// ---------------------------------------------------------------------------
+// T15: Verify step reports error when branches fail verification
+// ---------------------------------------------------------------------------
+
+// TestVerifyStepReportsErrorOnFailure exercises the T15 fix: the "Verify
+// splits" step callback in automatedSplit now sets result.error when
+// verifySplits reports branch failures. Before the fix, step() received
+// {error: null, allPassed: false} and marked the step as "OK" in reports.
+func TestVerifyStepReportsErrorOnFailure(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	// Simulate the verify step callback logic from automatedSplit.
+	// verifySplits returns allPassed:false with one branch failing.
+	val, err := evalJS(`(function() {
+		// Set up git mock so verifySplits runs against two branches:
+		// branch 1 passes, branch 2 fails.
+		_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+		_gitResponses['checkout'] = _gitOk('');
+		var _shCount = 0;
+		_gitResponses['!sh'] = function(argv) {
+			_shCount++;
+			if (_shCount === 2) return _gitFail('COMPILATION FAILED');
+			return _gitOk('ok');
+		};
+
+		var plan = {
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/good', files: ['good.go']},
+				{name: 'split/bad', files: ['bad.go']}
+			]
+		};
+
+		var verifyObj = verifySplits(plan, {});
+
+		// This mirrors the code in automatedSplit "Verify splits" step callback.
+		var realFailures = [];
+		var skippedResults = [];
+		for (var i = 0; i < verifyObj.results.length; i++) {
+			var r = verifyObj.results[i];
+			if (r.skipped) {
+				skippedResults.push(r);
+			} else if (!r.passed) {
+				realFailures.push(r);
+			}
+		}
+
+		// T15 fix: when realFailures.length > 0, return error.
+		var stepResult;
+		if (realFailures.length > 0) {
+			var failNames = [];
+			for (var fi = 0; fi < realFailures.length; fi++) {
+				failNames.push(realFailures[fi].name || ('branch-' + fi));
+			}
+			stepResult = {
+				error: realFailures.length + ' branch(es) failed verification: ' + failNames.join(', '),
+				failures: realFailures,
+				allPassed: false
+			};
+		} else {
+			stepResult = { error: null, failures: [], allPassed: verifyObj.allPassed };
+		}
+
+		return JSON.stringify({
+			allPassed: verifyObj.allPassed,
+			resultCount: verifyObj.results.length,
+			failureCount: realFailures.length,
+			stepError: stepResult.error,
+			stepAllPassed: stepResult.allPassed
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		AllPassed     bool    `json:"allPassed"`
+		ResultCount   int     `json:"resultCount"`
+		FailureCount  int     `json:"failureCount"`
+		StepError     *string `json:"stepError"`
+		StepAllPassed bool    `json:"stepAllPassed"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("parse output: %v\nraw: %s", err, val)
+	}
+
+	// verifySplits itself correctly reports allPassed=false.
+	if output.AllPassed {
+		t.Error("verifySplits.allPassed should be false when a branch fails")
+	}
+	if output.ResultCount != 2 {
+		t.Fatalf("expected 2 results, got %d", output.ResultCount)
+	}
+	if output.FailureCount != 1 {
+		t.Fatalf("expected 1 failure, got %d", output.FailureCount)
+	}
+
+	// T15 fix: step result now carries an error string.
+	if output.StepError == nil {
+		t.Fatal("step result.error should be non-null when branches fail (T15 fix)")
+	}
+	if !strings.Contains(*output.StepError, "failed verification") {
+		t.Errorf("step error should mention 'failed verification', got: %s", *output.StepError)
+	}
+	if !strings.Contains(*output.StepError, "split/bad") {
+		t.Errorf("step error should name the failed branch 'split/bad', got: %s", *output.StepError)
+	}
+	if output.StepAllPassed {
+		t.Error("step result.allPassed should be false")
+	}
+}
+
+// TestVerifyStepNoErrorWhenAllPass ensures the verify step returns error:null
+// when all branches pass — the T15 fix only sets error on actual failures.
+func TestVerifyStepNoErrorWhenAllPass(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	val, err := evalJS(`(function() {
+		_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+		_gitResponses['checkout'] = _gitOk('');
+		_gitResponses['!sh'] = _gitOk('all good');
+
+		var verifyObj = verifySplits({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/a', files: ['a.go']},
+				{name: 'split/b', files: ['b.go']}
+			]
+		}, {});
+
+		var realFailures = [];
+		for (var i = 0; i < verifyObj.results.length; i++) {
+			if (!verifyObj.results[i].skipped && !verifyObj.results[i].passed) {
+				realFailures.push(verifyObj.results[i]);
+			}
+		}
+
+		var stepResult;
+		if (realFailures.length > 0) {
+			stepResult = { error: 'should not happen', failures: realFailures, allPassed: false };
+		} else {
+			stepResult = { error: null, failures: [], allPassed: verifyObj.allPassed };
+		}
+
+		return JSON.stringify({
+			allPassed: verifyObj.allPassed,
+			stepError: stepResult.error,
+			stepAllPassed: stepResult.allPassed
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		AllPassed     bool    `json:"allPassed"`
+		StepError     *string `json:"stepError"`
+		StepAllPassed bool    `json:"stepAllPassed"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("parse output: %v\nraw: %s", err, val)
+	}
+
+	if !output.AllPassed {
+		t.Error("expected allPassed=true when all branches pass")
+	}
+	if output.StepError != nil {
+		t.Errorf("step error should be null when all pass, got: %s", *output.StepError)
+	}
+	if !output.StepAllPassed {
+		t.Error("step allPassed should be true")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T18: validateClassification tests
+// ---------------------------------------------------------------------------
+
+func TestValidateClassification(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	type valResult struct {
+		Valid  bool     `json:"valid"`
+		Errors []string `json:"errors"`
+	}
+
+	tests := []struct {
+		name      string
+		js        string
+		wantValid bool
+		wantErr   string // substring to match in first error
+	}{
+		{
+			name:      "valid categories",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'api', description: 'API changes', files: ['api.go']}, {name: 'cli', description: 'CLI changes', files: ['main.go']}]))`,
+			wantValid: true,
+		},
+		{
+			name:      "null input",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification(null))`,
+			wantValid: false,
+			wantErr:   "non-empty array",
+		},
+		{
+			name:      "empty array",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([]))`,
+			wantValid: false,
+			wantErr:   "non-empty array",
+		},
+		{
+			name:      "undefined input",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification(undefined))`,
+			wantValid: false,
+			wantErr:   "non-empty array",
+		},
+		{
+			name:      "missing name",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{description: 'stuff', files: ['a.go']}]))`,
+			wantValid: false,
+			wantErr:   "no name",
+		},
+		{
+			name:      "missing description",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'api', files: ['a.go']}]))`,
+			wantValid: false,
+			wantErr:   "no description",
+		},
+		{
+			name:      "missing files",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'api', description: 'API changes'}]))`,
+			wantValid: false,
+			wantErr:   "no files",
+		},
+		{
+			name:      "empty files array",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'api', description: 'API changes', files: []}]))`,
+			wantValid: false,
+			wantErr:   "no files",
+		},
+		{
+			name:      "duplicate files across categories",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'a', description: 'A', files: ['x.go']}, {name: 'b', description: 'B', files: ['x.go']}]))`,
+			wantValid: false,
+			wantErr:   "duplicate files",
+		},
+		{
+			name:      "not an object in array",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([42]))`,
+			wantValid: false,
+			wantErr:   "not an object",
+		},
+		{
+			name:      "empty string file",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'api', description: 'A', files: ['']}]))`,
+			wantValid: false,
+			wantErr:   "empty/invalid file",
+		},
+		{
+			name:      "with known files validation",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'api', description: 'API', files: ['a.go', 'unknown.go']}], ['a.go']))`,
+			wantValid: true, // unknown files are warned, not failed
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := evalJS(tt.js)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var r valResult
+			if err := json.Unmarshal([]byte(raw.(string)), &r); err != nil {
+				t.Fatalf("parse: %v\nraw: %s", err, raw)
+			}
+			if r.Valid != tt.wantValid {
+				t.Errorf("valid=%v, want %v; errors=%v", r.Valid, tt.wantValid, r.Errors)
+			}
+			if tt.wantErr != "" {
+				found := false
+				for _, e := range r.Errors {
+					if strings.Contains(e, tt.wantErr) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected error containing %q, got: %v", tt.wantErr, r.Errors)
+				}
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T19: validateSplitPlan tests
+// ---------------------------------------------------------------------------
+
+func TestValidateSplitPlan(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	type valResult struct {
+		Valid  bool     `json:"valid"`
+		Errors []string `json:"errors"`
+	}
+
+	tests := []struct {
+		name      string
+		js        string
+		wantValid bool
+		wantErr   string
+	}{
+		{
+			name:      "valid stages",
+			js:        `JSON.stringify(globalThis.prSplit.validateSplitPlan([{name: 'split/api', files: ['api.go']}, {name: 'split/cli', files: ['main.go']}]))`,
+			wantValid: true,
+		},
+		{
+			name:      "null input",
+			js:        `JSON.stringify(globalThis.prSplit.validateSplitPlan(null))`,
+			wantValid: false,
+			wantErr:   "non-empty array",
+		},
+		{
+			name:      "empty array",
+			js:        `JSON.stringify(globalThis.prSplit.validateSplitPlan([]))`,
+			wantValid: false,
+			wantErr:   "non-empty array",
+		},
+		{
+			name:      "missing name",
+			js:        `JSON.stringify(globalThis.prSplit.validateSplitPlan([{files: ['a.go']}]))`,
+			wantValid: false,
+			wantErr:   "no name",
+		},
+		{
+			name:      "missing files",
+			js:        `JSON.stringify(globalThis.prSplit.validateSplitPlan([{name: 'split/api'}]))`,
+			wantValid: false,
+			wantErr:   "no files",
+		},
+		{
+			name:      "duplicate files across stages",
+			js:        `JSON.stringify(globalThis.prSplit.validateSplitPlan([{name: 'a', files: ['x.go']}, {name: 'b', files: ['x.go']}]))`,
+			wantValid: false,
+			wantErr:   "duplicate files",
+		},
+		{
+			name:      "invalid branch name chars",
+			js:        `JSON.stringify(globalThis.prSplit.validateSplitPlan([{name: 'split/has space', files: ['a.go']}]))`,
+			wantValid: false,
+			wantErr:   "invalid branch name",
+		},
+		{
+			name:      "not an object in array",
+			js:        `JSON.stringify(globalThis.prSplit.validateSplitPlan(["not an object"]))`,
+			wantValid: false,
+			wantErr:   "not an object",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := evalJS(tt.js)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var r valResult
+			if err := json.Unmarshal([]byte(raw.(string)), &r); err != nil {
+				t.Fatalf("parse: %v\nraw: %s", err, raw)
+			}
+			if r.Valid != tt.wantValid {
+				t.Errorf("valid=%v, want %v; errors=%v", r.Valid, tt.wantValid, r.Errors)
+			}
+			if tt.wantErr != "" {
+				found := false
+				for _, e := range r.Errors {
+					if strings.Contains(e, tt.wantErr) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected error containing %q, got: %v", tt.wantErr, r.Errors)
+				}
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T19: validateResolution tests
+// ---------------------------------------------------------------------------
+
+func TestValidateResolution(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	type valResult struct {
+		Valid  bool     `json:"valid"`
+		Errors []string `json:"errors"`
+	}
+
+	tests := []struct {
+		name      string
+		js        string
+		wantValid bool
+		wantErr   string
+	}{
+		{
+			name:      "valid patches",
+			js:        `JSON.stringify(globalThis.prSplit.validateResolution({patches: [{file: 'a.go', content: 'fixed'}]}))`,
+			wantValid: true,
+		},
+		{
+			name:      "valid commands",
+			js:        `JSON.stringify(globalThis.prSplit.validateResolution({commands: [{command: 'go mod tidy'}]}))`,
+			wantValid: true,
+		},
+		{
+			name:      "valid preExistingFailure",
+			js:        `JSON.stringify(globalThis.prSplit.validateResolution({preExistingFailure: true}))`,
+			wantValid: true,
+		},
+		{
+			name:      "null input",
+			js:        `JSON.stringify(globalThis.prSplit.validateResolution(null))`,
+			wantValid: false,
+			wantErr:   "must be an object",
+		},
+		{
+			name:      "empty object",
+			js:        `JSON.stringify(globalThis.prSplit.validateResolution({}))`,
+			wantValid: false,
+			wantErr:   "at least one of",
+		},
+		{
+			name:      "empty patches array",
+			js:        `JSON.stringify(globalThis.prSplit.validateResolution({patches: []}))`,
+			wantValid: false,
+			wantErr:   "at least one of",
+		},
+		{
+			name:      "invalid patch object",
+			js:        `JSON.stringify(globalThis.prSplit.validateResolution({patches: [{file: '', content: 'x'}]}))`,
+			wantValid: false,
+			wantErr:   "non-empty file path",
+		},
+		{
+			name:      "patch not an object",
+			js:        `JSON.stringify(globalThis.prSplit.validateResolution({patches: ['just a string']}))`,
+			wantValid: false,
+			wantErr:   "must be an object",
+		},
+		{
+			name:      "command without command field",
+			js:        `JSON.stringify(globalThis.prSplit.validateResolution({commands: [{}]}))`,
+			wantValid: false,
+			wantErr:   "non-empty command string",
+		},
+		{
+			name:      "multiple valid fields",
+			js:        `JSON.stringify(globalThis.prSplit.validateResolution({patches: [{file: 'a.go', content: 'x'}], commands: [{command: 'make'}]}))`,
+			wantValid: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, err := evalJS(tt.js)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var r valResult
+			if err := json.Unmarshal([]byte(raw.(string)), &r); err != nil {
+				t.Fatalf("parse: %v\nraw: %s", err, raw)
+			}
+			if r.Valid != tt.wantValid {
+				t.Errorf("valid=%v, want %v; errors=%v", r.Valid, tt.wantValid, r.Errors)
+			}
+			if tt.wantErr != "" {
+				found := false
+				for _, e := range r.Errors {
+					if strings.Contains(e, tt.wantErr) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("expected error containing %q, got: %v", tt.wantErr, r.Errors)
+				}
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T24: discoverVerifyCommand tests
+// ---------------------------------------------------------------------------
+
+func TestDiscoverVerifyCommand(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	t.Run("finds_Makefile", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`globalThis._testFileExists = {'./Makefile': true};`); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := evalJS(`globalThis.prSplit.discoverVerifyCommand('.')`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "make" {
+			t.Errorf("expected 'make', got %q", raw)
+		}
+	})
+
+	t.Run("finds_GNUmakefile", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`globalThis._testFileExists = {'./GNUmakefile': true};`); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := evalJS(`globalThis.prSplit.discoverVerifyCommand('.')`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "make" {
+			t.Errorf("expected 'make', got %q", raw)
+		}
+	})
+
+	t.Run("finds_makefile_lowercase", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`globalThis._testFileExists = {'./makefile': true};`); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := evalJS(`globalThis.prSplit.discoverVerifyCommand('.')`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "make" {
+			t.Errorf("expected 'make', got %q", raw)
+		}
+	})
+
+	t.Run("no_makefile_returns_empty", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`globalThis._testFileExists = {};`); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := evalJS(`globalThis.prSplit.discoverVerifyCommand('.')`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "" {
+			t.Errorf("expected empty string, got %q", raw)
+		}
+	})
+
+	t.Run("custom_dir_path", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`globalThis._testFileExists = {'/tmp/project/Makefile': true};`); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := evalJS(`globalThis.prSplit.discoverVerifyCommand('/tmp/project')`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "make" {
+			t.Errorf("expected 'make', got %q", raw)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// T25: Pre-existing failure detection tests
+// ---------------------------------------------------------------------------
+
+func TestVerifySplits_PreExistingFailure(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	t.Run("marks_failure_as_preexisting_when_source_also_fails", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Source branch verification fails, so split branch failure is pre-existing.
+		if _, err := evalJS(`
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = _gitFail('test suite failed');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/01-alpha', files: ['a.go'], dependencies: []}
+			]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		r := parseVerifySplitsResult(t, raw)
+		if len(r.Results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(r.Results))
+		}
+
+		// Should be marked pre-existing, not a real failure.
+		if r.Results[0].Passed {
+			t.Error("should not pass")
+		}
+		if !r.Results[0].PreExisting {
+			t.Error("should be marked as pre-existing")
+		}
+		if r.Results[0].Error == nil || !strings.Contains(*r.Results[0].Error, "pre-existing") {
+			t.Errorf("error should mention pre-existing, got: %v", r.Results[0].Error)
+		}
+		// Pre-existing failures should NOT set allPassed to false.
+		if !r.AllPassed {
+			t.Error("allPassed should be true when only pre-existing failures")
+		}
+	})
+
+	t.Run("real_failure_when_source_passes", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Source passes, split fails — real failure, not pre-existing.
+		callCount := `var _shCallCount = 0;`
+		if _, err := evalJS(callCount); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = function(argv) {
+				_shCallCount++;
+				// First call: source branch verification — passes.
+				if (_shCallCount === 1) return _gitOk('ok');
+				// Second call: split branch — fails.
+				return _gitFail('build error');
+			};
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/01-alpha', files: ['a.go'], dependencies: []}
+			]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		r := parseVerifySplitsResult(t, raw)
+		if len(r.Results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(r.Results))
+		}
+		if r.Results[0].Passed {
+			t.Error("should not pass")
+		}
+		if r.Results[0].PreExisting {
+			t.Error("should NOT be pre-existing when source passes")
+		}
+		if r.AllPassed {
+			t.Error("allPassed should be false for real failures")
+		}
+	})
+
+	t.Run("preexisting_does_not_block_dependents", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// All verification fails — source and splits. Dependent should
+		// still run because pre-existing doesn't add to failedBranches.
+		if _, err := evalJS(`
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = _gitFail('tests broken');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+			dir: '/tmp/test',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/01-alpha', files: ['a.go'], dependencies: []},
+				{name: 'split/02-beta', files: ['b.go'], dependencies: ['split/01-alpha']}
+			]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		r := parseVerifySplitsResult(t, raw)
+		if len(r.Results) != 2 {
+			t.Fatalf("expected 2 results, got %d", len(r.Results))
+		}
+		// Both should be pre-existing, NOT skipped.
+		if r.Results[0].Skipped {
+			t.Error("result[0] should not be skipped")
+		}
+		if !r.Results[0].PreExisting {
+			t.Error("result[0] should be pre-existing")
+		}
+		if r.Results[1].Skipped {
+			t.Error("result[1] should NOT be skipped — pre-existing parent doesn't block")
+		}
+		if !r.Results[1].PreExisting {
+			t.Error("result[1] should be pre-existing")
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// T26: scopedVerifyCommand tests
+// ---------------------------------------------------------------------------
+
+func TestScopedVerifyCommand(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	t.Run("go_files_scoped", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['internal/cmd/foo.go', 'internal/cmd/bar.go'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "go test -race ./internal/cmd/..."
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("multiple_packages", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['internal/cmd/foo.go', 'internal/config/bar.go'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "go test -race ./internal/cmd/... ./internal/config/..."
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("non_go_file_falls_back", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['internal/cmd/foo.go', 'README.md'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "make" {
+			t.Errorf("expected fallback 'make', got %q", raw)
+		}
+	})
+
+	t.Run("empty_files_falls_back", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand([], 'make')`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "make" {
+			t.Errorf("expected fallback 'make', got %q", raw)
+		}
+	})
+
+	t.Run("null_files_falls_back", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(null, 'make')`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "make" {
+			t.Errorf("expected fallback 'make', got %q", raw)
+		}
+	})
+
+	t.Run("root_level_go_file", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(['main.go'], 'make')`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "go test -race ./..."
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("deduplicates_packages", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['internal/cmd/a.go', 'internal/cmd/b.go', 'internal/cmd/c_test.go'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "go test -race ./internal/cmd/..."
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
 }

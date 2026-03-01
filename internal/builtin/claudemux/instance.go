@@ -6,13 +6,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"sync"
 	"time"
 )
 
+// sessionIDSafe replaces characters unsafe for filesystem paths.
+var sessionIDSafe = regexp.MustCompile(`[^a-zA-Z0-9._-]`)
+
 // Instance represents a single isolated Claude Code instance with its own
-// state directory, MCP endpoint, and agent handle. Each instance has
+// state directory and agent handle. Each instance has
 // independent resources and no shared mutable state.
 type Instance struct {
 	// ID is the unique session identifier for this instance.
@@ -21,10 +25,6 @@ type Instance struct {
 	// StateDir is the isolated state directory for this instance
 	// (e.g., ~/.osm/claude-sessions/<id>/).
 	StateDir string
-
-	// MCP is the per-instance MCP server configuration (from T006).
-	// May be nil if MCP is not configured for this instance.
-	MCP *MCPInstanceConfig
 
 	// Agent is the PTY-backed agent handle. Set after spawning.
 	Agent AgentHandle
@@ -38,10 +38,9 @@ type Instance struct {
 
 // InstanceState is the JSON-serializable metadata written to state.json.
 type InstanceState struct {
-	ID          string    `json:"id"`
-	CreatedAt   time.Time `json:"createdAt"`
-	Status      string    `json:"status"` // "active", "closed"
-	MCPEndpoint string    `json:"mcpEndpoint,omitempty"`
+	ID        string    `json:"id"`
+	CreatedAt time.Time `json:"createdAt"`
+	Status    string    `json:"status"` // "active", "closed"
 }
 
 // Close releases all resources held by this instance: stops the agent,
@@ -55,7 +54,6 @@ func (inst *Instance) Close() error {
 	}
 	inst.closed = true
 	agent := inst.Agent
-	mcpCfg := inst.MCP
 	inst.mu.Unlock()
 
 	var errs []error
@@ -64,13 +62,6 @@ func (inst *Instance) Close() error {
 	if agent != nil {
 		if err := agent.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("close agent: %w", err))
-		}
-	}
-
-	// Close MCP endpoint (stops HTTP server, removes temp files).
-	if mcpCfg != nil {
-		if err := mcpCfg.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("close mcp: %w", err))
 		}
 	}
 
@@ -94,10 +85,6 @@ func (inst *Instance) writeState(status string) error {
 		CreatedAt: inst.CreatedAt,
 		Status:    status,
 	}
-	if inst.MCP != nil {
-		state.MCPEndpoint = inst.MCP.OsmBinary + " mcp-instance --session " + inst.MCP.SessionID
-	}
-
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal state: %w", err)
@@ -146,7 +133,7 @@ func (r *InstanceRegistry) Create(sessionID string) (*Instance, error) {
 	}
 
 	// Create isolated state directory path.
-	safe := mcpSessionIDSafe.ReplaceAllString(sessionID, "_")
+	safe := sessionIDSafe.ReplaceAllString(sessionID, "_")
 	if len(safe) > 64 {
 		safe = safe[:64]
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"time"
 
 	"github.com/dop251/goja"
 )
@@ -71,6 +72,14 @@ func parseSpawnOptions(runtime *goja.Runtime, opts *goja.Object, cfg *SpawnConfi
 			panic(runtime.NewTypeError("spawn: env must be a {string: string} object"))
 		}
 		cfg.Env = envMap
+	}
+	if v := opts.Get("writeTimeoutMs"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		ms := v.ToInteger()
+		if ms < 0 {
+			cfg.WriteTimeout = -1 // disable deadline
+		} else {
+			cfg.WriteTimeout = time.Duration(ms) * time.Millisecond
+		}
 	}
 }
 

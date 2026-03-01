@@ -113,21 +113,6 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 			return runtime.ToValue(keys)
 		})
 
-		// newMCPInstance(sessionId: string): object
-		// Creates a per-instance MCP server config for spawning a Claude Code
-		// instance with a dedicated MCP endpoint.
-		_ = exports.Set("newMCPInstance", func(call goja.FunctionCall) goja.Value {
-			if len(call.Arguments) == 0 {
-				panic(runtime.NewTypeError("newMCPInstance: sessionId argument is required"))
-			}
-			sessionID := call.Argument(0).String()
-			cfg, err := NewMCPInstanceConfig(sessionID)
-			if err != nil {
-				panic(runtime.NewGoError(err))
-			}
-			return wrapMCPInstance(runtime, cfg)
-		})
-
 		// newInstanceRegistry(baseDir: string): object
 		// Creates an instance registry for managing isolated Claude Code instances.
 		_ = exports.Set("newInstanceRegistry", func(call goja.FunctionCall) goja.Value {
@@ -1237,73 +1222,6 @@ func jsToModelMenu(runtime *goja.Runtime, val goja.Value) *ModelMenu {
 		menu.SelectedIndex = int(v.ToInteger())
 	}
 	return menu
-}
-
-// wrapMCPInstance creates a JS object wrapping an *MCPInstanceConfig.
-func wrapMCPInstance(runtime *goja.Runtime, cfg *MCPInstanceConfig) goja.Value {
-	obj := runtime.NewObject()
-
-	_ = obj.Set("sessionId", cfg.SessionID)
-
-	// osmBinary(): string — returns the path to the osm binary used in config.
-	_ = obj.Set("osmBinary", func() goja.Value {
-		return runtime.ToValue(cfg.OsmBinary)
-	})
-
-	// configDir(): string — returns the temp directory path.
-	_ = obj.Set("configDir", func() goja.Value {
-		return runtime.ToValue(cfg.configDir)
-	})
-
-	// configPath(): string — returns the config file path.
-	_ = obj.Set("configPath", func() goja.Value {
-		return runtime.ToValue(cfg.ConfigPath())
-	})
-
-	// resultDir(): string — returns the result directory path (may be empty).
-	_ = obj.Set("resultDir", func() goja.Value {
-		return runtime.ToValue(cfg.ResultDir)
-	})
-
-	// setResultDir(dir: string): void — sets the result directory for MCP tools.
-	_ = obj.Set("setResultDir", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) == 0 {
-			panic(runtime.NewTypeError("setResultDir: dir argument is required"))
-		}
-		cfg.ResultDir = call.Argument(0).String()
-		return goja.Undefined()
-	})
-
-	// spawnArgs(): string[] — returns CLI args for Claude Code.
-	_ = obj.Set("spawnArgs", func() goja.Value {
-		return runtime.ToValue(cfg.SpawnArgs())
-	})
-
-	// writeConfigFile(): void — generates the MCP config JSON file.
-	_ = obj.Set("writeConfigFile", func() goja.Value {
-		if err := cfg.WriteConfigFile(); err != nil {
-			panic(runtime.NewGoError(err))
-		}
-		return goja.Undefined()
-	})
-
-	// validate(): void — checks config is usable before spawn.
-	_ = obj.Set("validate", func() goja.Value {
-		if err := cfg.Validate(); err != nil {
-			panic(runtime.NewGoError(err))
-		}
-		return goja.Undefined()
-	})
-
-	// close(): void — stops listener, removes temp files.
-	_ = obj.Set("close", func() goja.Value {
-		if err := cfg.Close(); err != nil {
-			panic(runtime.NewGoError(err))
-		}
-		return goja.Undefined()
-	})
-
-	return obj
 }
 
 // wrapInstanceRegistry creates a JS object wrapping an *InstanceRegistry.

@@ -56,10 +56,6 @@ func run() error {
 	registry.Register(command.NewGoalCommand(cfg, goalRegistry))
 	registry.Register(command.NewSyncCommand(cfg))
 	registry.Register(command.NewLogCommand(cfg))
-	registry.Register(command.NewMCPCommand(cfg, goalRegistry, version))
-	registry.Register(command.NewMCPInstanceCommand(goalRegistry, version))
-	registry.Register(command.NewMCPMakeCommand())
-	registry.Register(command.NewMCPParentCommand())
 	registry.Register(command.NewClaudeMuxCommand(cfg))
 	registry.Register(command.NewPrSplitCommand(cfg))
 

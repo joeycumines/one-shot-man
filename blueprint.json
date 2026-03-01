@@ -1,0 +1,80 @@
+{
+    "meta": {
+        "fileName": "blueprint.json",
+        "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE.",
+        "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST — ESPECIALLY NOT TIME ESTIMATES. NEVER SPECIFY A PRIORITY OF ANY KIND."
+    },
+    "globalAlerts": [
+        {
+            "warning": "PROJECT-SPECIFIC: Local runs use the 'make' pipeline. All changes must pass 'make all' cleanly across multiple platforms. Integration tests defined in project.mk MUST pass on macOS."
+        },
+        {
+            "warning": "Ensure the Rule of Two is strictly followed. Every change MUST be verified locally with at least TWO contiguous issue-free runs of the respective tests via a #runSubagent."
+        },
+        {
+            "warning": "Bugs MUST be replicated with high-confidence integration tests BEFORE being fixed. Use purpose-built Go binaries initialized lazily via TestMain if necessary to simulate TTY/Pty environments accurately."
+        }
+    ],
+    "mandatoryDirectives": {
+        "contextManagement": "Tasks are grouped to be executed in manageable units. Do not attempt to solve all tasks in a single turn. Break work into sessions as appropriate to prevent context window exhaustion."
+    },
+    "statusSection": {
+        "currentState": "Blueprint refined. Zero bugs fixed yet. Deep integration tests must be written first.",
+        "goalState": "The `osm pr-split` pipeline functions identically to the expectations, with all previously identified UI, subprocess logging, and worktree checkout regressions completely resolved and backed by bulletproof integration tests ran via project.mk.",
+        "replanLog": []
+    },
+    "sequentialTasks": [
+        {
+            "task": "Remove `claude` and `claude-status` subcommands from `pr_split_script.js`",
+            "description": "The logic attempting to inject `mcpConfigPath` fails because exposing the `claude spawn` command to `auto-split` is fundamentally unnecessary and confusing. Completely strip out the `claude` and `claude-status` command implementations from the JavaScript script. Clean up the routing and dead code.",
+            "acceptance": "`osm pr-split` no longer exposes or supports `claude` or `claude-status`. The `mcpConfigPath is required` error disappears because the problematic codepath has been eliminated entirely. Execution remains focused solely on auto-splitting.",
+            "status": "Not Started"
+        },
+        {
+            "task": "Replicate and fix `sendToHandle` Non-blocking IO sequence for Claude prompt delivery",
+            "description": "The `sendToHandle` implementation batches text and `\\n`, causing the Claude CLI non-blocking read to treat it as a single paste event rather than an execution submission. First, exhaustively investigate via subagents to implement a purposeful integration test (e.g., a dummy Go binary acting as Claude, initialized lazily via TestMain) that strictly replicates this pasting vs. submitting TTY behavior. Execute the test via `project.mk` to confirm the failure. Then, fix `sendToHandle` in `pr_split_script.js` to correctly sequence the write of the text and the discrete Enter keystroke to ensure native execution over the PTY.",
+            "acceptance": "A high-confidence integration test exists and proves the prompt delivery issue occurs prior to the fix. After the fix is applied, the test passes via `project.mk`, and prompts sent to Claude CLI automatically trigger execution without waiting for manual human 'Enter'.",
+            "status": "Not Started"
+        },
+        {
+            "task": "Replicate and fix the Terminal UI Permission Wait Indicator and Bell",
+            "description": "When Claude hangs waiting for permissions, the TUI provides no indicator that the user must intervene, leading to perceived freezes. Replicate this state explicitly in an integration test. Then, integrate the standard terminal bell mechanism (`\\x07`) and a persistent visual UI indicator into the TUI multiplexer to signal when the subprocess is blocked needing attention.",
+            "acceptance": "A test scenario verifies that a spawned process waiting on prompt input results in immediate terminal bell propagation to the user, and the UI displays a persistent visual indicator of the hang. Users are actively alerted that authorization is required.",
+            "status": "Not Started"
+        },
+        {
+            "task": "Fix Worktree Checkout conflict in `executeSplit`",
+            "description": "`executeSplit` in `pr_split_script.js` unnecessarily attempts a generic `git checkout main`. If `main` is checked out in a completely unrelated worktree on the same machine, this fails with `fatal: 'main' is already used by worktree at...`. Reproduce this configuration by creating an unrelated worktree on `main`, running the auto-split from a branch, and observing the crash. Fix the implementation to simply create branches from the base without naively executing `git checkout main` against the active local directory.",
+            "acceptance": "Running `pr-split` from a worktree while `main` is checked out in an entirely different worktree succeeds flawlessly. The system creates the target splits directly from the commit graph without modifying the `HEAD` in a way that generates conflicts.",
+            "status": "Not Started"
+        },
+        {
+            "task": "Identify, replicate, and fix Force Kill UI implementation for orphaned child processes",
+            "description": "The 'force kill' child process reaping logic (e.g. double pressing Ctrl+C/q) no longer reliably terminates spawned executables like Node or Claude-Code. Write a rigorous test or script to spawn a long-running subprocess under `pr-split`, trigger the force-kill cancellation sequence, and assert that the subprocess illegitimately survives. Then, repair the signal handling pathways in Go/JS to ensure perfect child reaping.",
+            "acceptance": "The integration test reliably reproduces the survivability of child processes after a `Ctrl+C` kill sequence. Once the code is patched, all downstream PTY children are cleanly and brutally terminated, leaving zero orphan instances on the host system.",
+            "status": "Not Started"
+        },
+        {
+            "task": "Implement Error Pipeline Resumption and Human Intervention",
+            "description": "The auto-split pipeline successfully generates `.pr-split-plan.json` but provides no means to intervene if the `executeSplit` stage crashes, making the user wait minutes to regenerate the same plan. Implement pipeline recovery: `automatedSplit` must detect an existing `.pr-split-plan.json` in the scratch dir (or current dir), and gracefully allow the user to modify it and resume execution directly from the branch-splitting phase.",
+            "acceptance": "Upon executing `osm pr-split` when a `.pr-split-plan.json` is already present on disk, the script recognizes the artifact and successfully resumes the pipeline at the execution phase without redundantly invoking the AI classification loop.",
+            "status": "Not Started"
+        }
+    ],
+    "continuousVerification": {
+        "task": "Execute project.mk verification targets strictly on macOS before declaring any fix completed.",
+        "description": "Run `make all` and the specific `make integration-test-*` targets in `project.mk` for every code modification.",
+        "failPolicy": "If ANY test fails, STOP IMMEDIATELY and fix the issue before proceeding.",
+        "testCoverage": "Aim for high-confidence replication for all bug fixes via rigorous PTY integration testing."
+    },
+    "finalEnforcementProtocol": [
+        {
+            "type": "POST_EXECUTION_WARNING",
+            "alert": "Make sure every task's completion is updated incrementally. NEVER mark a task done before the Rule of Two passes."
+        },
+        {
+            "type": "POST_EXECUTION_WARNING_REPEATED",
+            "alert": "Bugs MUST be replicated with high-confidence integration tests BEFORE being fixed. Failure to assert the existence of the bug first means you cannot verify it was fixed."
+        }
+    ]
+}

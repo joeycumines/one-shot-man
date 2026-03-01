@@ -6,307 +6,249 @@
   },
   "globalAlerts": [
     {
-      "warning": "HARD MANDATE (NO EXCEPTIONS): For EVERY bug/regression listed in scratch/current-state.md, you MUST (1) replicate with HIGH CONFIDENCE, (2) validate that replication FAILS via a project.mk-driven integration test target on macOS, and ONLY THEN (3) apply a fix. If you cannot make the failure reproduce reliably, you must stop and deepen the harness until you can."
+      "warning": "HARD MANDATE (NO EXCEPTIONS): For EVERY bug/regression in scratch/current-state.md, you MUST (1) replicate with HIGH CONFIDENCE via a failing test, (2) validate that replication FAILS via make target, and ONLY THEN (3) apply a fix. No exceptions."
     },
     {
-      "warning": "ANTI-HALLUCINATION CONSTRAINT: Do NOT invent root causes. Do NOT describe nonexistent logic (e.g., do not hallucinate worktree logic that is not present). If you have not read the relevant code paths, the only allowed action is to add an explicit investigation task + replanning checkpoint."
+      "warning": "ANTI-HALLUCINATION CONSTRAINT: Do NOT invent root causes or describe nonexistent logic. If you have not read the relevant code paths, add an investigation task."
     },
     {
-      "warning": "TOOLING REQUIREMENT: All verification MUST be runnable through the repository’s make-based workflow. Standard cross-platform checks MUST pass (make all). macOS-only integration tests (PTY/TTY dependent, Claude-dependent, etc.) MUST be exposed as explicit project.mk targets and MUST pass on macOS."
+      "warning": "TOOLING REQUIREMENT: All verification MUST use the make-based workflow. Cross-platform checks MUST pass (make all). macOS-only integration tests via project.mk targets."
     },
     {
-      "warning": "PTY/TTY TESTING REQUIREMENT: For the prompt-delivery regression and force-kill regression, prefer purpose-built Go helper binaries (fake TUI processes) compiled once and lazily via TestMain, run under a PTY driver (e.g., creack/pty or equivalent). Avoid timing-based sleeps; use deterministic handshakes and explicit state/protocols."
+      "warning": "RULE OF TWO (COMMIT GATE): No commits until two contiguous, issue-free subagent strict reviews confirm correctness."
     },
     {
-      "warning": "RULE OF TWO (COMMIT GATE): No commits are permitted until two contiguous, issue-free #runSubagent strict reviews have verified the change-set is at a local maximum of correctness."
+      "warning": "INDEFINITE CYCLE: The task list must never become empty. Always expand scope towards True Perfection."
     },
     {
-      "warning": "INDEFINITE CYCLE: The task list must never become empty. After all tasks are done, immediately expand scope towards 'True Perfection' (more integration tests, stronger UX, more deterministic subprocess handling, clearer docs)."
+      "warning": "RESUME EXISTS: --resume flag, loadPlan() and savePlan() are ALREADY IMPLEMENTED in pr_split_script.js. Resume tasks are about IMPROVING UX, not implementing from scratch. But verify it actually works before assuming."
+    },
+    {
+      "warning": "osm:pty DISTINCTION: The JavaScript module 'osm:pty' (registered in internal/builtin/register.go, defined in internal/builtin/pty/module.go) is UNUSED dead code — safe to remove. The underlying Go package internal/builtin/pty/ is CRITICAL — used by claudemux for PTY spawning. DO NOT delete the Go package."
     }
   ],
   "mandatoryDirectives": {
-    "contextManagement": "Execute tasks strictly in sequence. Update blueprint.json incrementally after each task. If you discover any mismatch between the plan and reality, STOP, create/expand investigation tasks, and perform a replanning checkpoint before continuing.",
-    "sourceOfTruth": "Primary requirements and failure descriptions are in scratch/current-state.md. The core implementation under test is internal/command/pr_split_script.js (notably sendToHandle ~2780-2834, executeSplit checkout logic ~1316-1324, and the mcpConfigPath check ~2406-2410)."
+    "contextManagement": "Execute tasks strictly in sequence. Update blueprint.json incrementally after each task.",
+    "sourceOfTruth": "Primary: scratch/current-state.md. Code: internal/command/pr_split_script.js (sendToHandle function search 'function sendToHandle', executeSplit search 'function executeSplit', mcpConfigPath search 'mcpConfigPath is required', ClaudeCodeExecutor search 'function ClaudeCodeExecutor'). Go: internal/command/pr_split.go (prSplitSendWithCancel search 'func prSplitSendWithCancel'). PTY: internal/builtin/pty/pty_unix.go (Spawn search 'func Spawn', Signal search 'func (h *unixProcessHandle) Signal'). TUI: internal/termmux/ui/autosplit.go (AutoSplitModel, renderSeparator search 'func (m AutoSplitModel) renderSeparator'). Tests: internal/command/pr_split_integration_test.go, main_test.go.",
+    "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp."
   },
   "statusSection": {
-    "currentState": "Known regressions observed in osm pr-split --strategy auto include: (1) mcpConfigPath error triggered by interactive claude spawn command path (to be eliminated by removing claude/claude-status subcommands), (2) prompt delivery paste-vs-submit behavior due to non-blocking I/O expectations requiring distinct 'text' vs 'Enter' delivery, (3) missing bell/visual indicator when Claude prompts for permissions, (4) executeSplit failing by attempting checkout of base branch (main) when that branch is checked out in an unrelated worktree elsewhere, (5) force-kill UI path claiming to kill processes but leaving orphans, (6) poor error recovery/resumption despite .pr-split-plan.json being generated.",
-    "goalState": "On macOS, osm pr-split --strategy auto (and any execute/resume flows) reliably completes end-to-end with: (a) no claude/claude-status subcommands exposed (removing the mcpConfigPath injection failure path), (b) deterministic, non-flaky prompt submission that does not require manual Enter, (c) terminal bell propagation + persistent UI indicator when the Claude pane requires attention (especially permission prompts), (d) executeSplit never naively attempts git checkout of a base branch in a way that fails due to unrelated worktrees; split branches are created from commits directly, (e) force-cancel/force-kill reliably terminates *all* descendant processes leaving zero orphans, (f) pipeline supports human intervention and resumption from an existing .pr-split-plan.json without re-running classification, and (g) all of the above are backed by high-confidence, deterministic integration tests runnable via explicit project.mk targets (and make all remains green cross-platform).",
-    "replanLog": []
+    "currentState": "Blueprint rewritten with all critical review findings addressed. Task ordering corrected: regression replication tests come BEFORE fixes. Existing test assertion inversions explicitly documented. Ready for execution.",
+    "goalState": "On macOS, osm pr-split --strategy auto reliably completes end-to-end with all 6 regressions fixed, backed by deterministic tests, with make all green cross-platform.",
+    "replanLog": [
+      {
+        "trigger": "Investigation phase: 6 regressions validated against source code",
+        "affectedTaskRange": "All tasks",
+        "summary": "Initial blueprint rewrite with concrete file/function pointers."
+      },
+      {
+        "trigger": "Rule of Two Review 1: 3 CRITICAL issues found",
+        "affectedTaskRange": "All tasks reordered",
+        "summary": "Critical fixes: (1) Regression replication tests added BEFORE each fix. (2) sendToHandle fix moved BEFORE claude command removal. (3) Existing test assertion inversions explicitly handled. (4) T29 corrected to remove JS bindings only. (5) Mechanized tests added for REPL removal. (6) Resume verification task added."
+      }
+    ]
   },
   "sequentialTasks": [
     {
-      "task": "Investigation (mandatory): Validate scratch/current-state.md from scratch against current root code",
-      "description": "Read scratch/current-state.md from scratch and validate it against the root of the project. Ensure every regression/observation is accurately represented in this blueprint.json and aligns perfectly with the current project state (including actual implementation details).",
-      "acceptance": "current-state.md has been validated directly against the source code, and any discrepancies found are logged or used to refine the blueprint. The executor guarantees the blueprint correctly reflects project reality before proceeding.",
+      "task": "T01: Run make all to establish clean baseline",
+      "description": "Run `make make-all-with-log` to verify the build passes on macOS before any changes. Check build.log for pre-existing issues.",
+      "acceptance": "make all passes with zero failures.",
+      "status": "Done"
+    },
+    {
+      "task": "T02: Run integration-test-prsplit-mcp to validate existing mock infrastructure",
+      "description": "Run `make integration-test-prsplit-mcp` which executes TestIntegration_AutoSplitMockMCP. Requires no real AI. Validates mock MCP test infrastructure works.",
+      "acceptance": "integration-test-prsplit-mcp passes or produces an understood skip.",
+      "status": "Done"
+    },
+    {
+      "task": "T03: Regression replication — sendToHandle single-write delivers paste, not submit",
+      "description": "BEFORE fixing sendToHandle, write a test in internal/command/pr_split_integration_test.go that demonstrates the current behavior: sendToHandle sends text+newline as ONE write. This test should PASS with the current code (proving the regression exists in the code). Name it TestIntegration_SendToHandle_SingleWriteBaseline. The test should use the existing mock handle infrastructure (search for TestIntegration_SendToHandle_FallbackDirect pattern) and assert exactly 1 send call containing both text and newline concatenated. This test captures the known-broken behavior as a baseline.",
+      "acceptance": "Test passes with current code, proving sendToHandle concatenates text+newline into a single write — the documented regression behavior.",
+      "status": "Done"
+    },
+    {
+      "task": "T04: Fix sendToHandle to send text and Enter as separate writes",
+      "description": "In internal/command/pr_split_script.js, function sendToHandle (search 'function sendToHandle'): (1) Remove `var payload = text + '\\n'` pattern. (2) Send `text` first, then send `'\\n'` as a separate write. (3) For TUI path (autoSplitTUI.sendWithCancel): call twice — first with text, then with newline. (4) For fallback path (handle.send): call send(text), then send('\\n'). (5) ERROR HANDLING: If first write succeeds but second fails, treat as fatal pipeline error — log both, propagate single unified error. Do not retry just the newline. (6) Update misleading comment that claims 'single-write pattern is deterministic' to describe the two-write approach and WHY it's necessary (non-blocking TUI readers treat single-write as paste). EXISTING TESTS WILL BREAK: TestIntegration_SendToHandle_FallbackDirect (asserts 1 send), TestIntegration_SendToHandle_TUIPath (asserts 1 sendWithCancel call). These must be updated to assert 2 calls in the same commit.",
+      "acceptance": "sendToHandle sends text and newline as two distinct writes. Both TUI and fallback paths updated. Comment corrected. Existing tests updated from asserting 1 write to asserting 2 writes.",
+      "status": "In Progress"
+    },
+    {
+      "task": "T05: Run make all after sendToHandle fix",
+      "description": "Run `make make-all-with-log` and `make integration-test-prsplit-mcp`. All tests must pass including the updated sendToHandle tests.",
+      "acceptance": "All tests pass. No regressions.",
       "status": "Not Started"
     },
     {
-      "task": "Investigation (mandatory): build a concrete domain model of the pr-split auto-split pipeline and its actual entrypoints",
-      "description": "Read scratch/current-state.md and internal/command/pr_split_script.js sections referenced there (~1316-1324 executeSplit checkout, ~2406-2410 mcpConfigPath guard, ~2780-2834 sendToHandle, ~2851 automatedSplit). Create scratch/pr-split-domain-model.md describing: (1) how osm invokes pr_split_script.js, (2) how 'auto-split' triggers Claude spawn and prompt delivery, (3) where .pr-split-plan.json is written/read, (4) what knobs exist (flags/env/config) for selecting the Claude binary and/or enabling non-interactive execution, (5) what the TUI mux is and how panes are represented. Include exact function names and the concrete code paths (no speculation).",
-      "acceptance": "scratch/pr-split-domain-model.md exists and allows a cold-start agent to point at the exact code paths (functions + files) responsible for: Claude spawning, prompt sending, plan generation, executeSplit, cancellation/force-kill, and UI rendering—without guessing and without 'it’s probably in X' language.",
+      "task": "T06: Regression replication — executeSplit worktree checkout conflict",
+      "description": "BEFORE fixing executeSplit, write a test that sets up a git repo with: (1) main worktree on a feature branch, (2) additional worktree with 'main' checked out. Create a minimal split plan and call the executeSplit JS function. The test should FAIL with 'already used by worktree' error, proving the regression exists. Name it TestIntegration_ExecuteSplit_WorktreeConflict. Use t.TempDir() for all directories.",
+      "acceptance": "Test reliably reproduces the worktree checkout error from scratch/current-state.md regression #4.",
       "status": "Not Started"
     },
     {
-      "task": "Investigation (mandatory): map project.mk / config.mk verification targets and define how integration tests MUST be executed locally",
-      "description": "Read project.mk, config.mk, and example.config.mk. Create scratch/make-targets-and-conventions.md listing: (1) the canonical 'make all' pipeline and what it runs, (2) how integration tests are currently exposed (naming conventions, OS gating, tags), (3) how to add new macOS-only integration targets without breaking cross-platform make all, (4) the exact commands the agent must run to validate integration test failures and fixes (e.g., whether project.mk is included automatically or invoked via make -f). Do not invent target names; derive them from the repo’s conventions.",
-      "acceptance": "scratch/make-targets-and-conventions.md gives exact, copy/pasteable commands (as they exist in this repo) for running standard checks and the integration suite; it explicitly states how new pr-split integration targets will be named and invoked.",
+      "task": "T07: Fix executeSplit to create branches from base commit SHA",
+      "description": "In internal/command/pr_split_script.js function executeSplit (search 'function executeSplit'): (1) Before the split loop, resolve baseBranch to a commit SHA: `var baseCommit = gitExec(dir, ['rev-parse', currentBase]).stdout.trim()`. (2) Replace `git checkout currentBase` with `git checkout -b <splitBranchName> <baseCommit>` to create split branch directly from the commit without checking out the base branch name. This avoids the worktree conflict entirely because we never try to checkout the base branch by name. (3) Ensure restoreBranch logic still works — at the end, restore to the branch we were on before, not the base.",
+      "acceptance": "executeSplit succeeds when baseBranch is in another worktree. TestIntegration_ExecuteSplit_WorktreeConflict now passes.",
       "status": "Not Started"
     },
     {
-      "task": "Investigation (mandatory): locate and document the Go-side implementation for pr-split TUI mux, process spawning, and force-kill UI path",
-      "description": "Using only repo evidence (ripgrep + reading the files), locate the Go code responsible for: (1) rendering the pr-split TUI/mux, (2) spawning external processes under a PTY (Claude, node, etc.), (3) handling Ctrl+C / cancel / force cancel, and (4) printing the strings observed in scratch/current-state.md (e.g., \"⚡ Force cancelling… killing processes\" and/or \"⚡ force killing child processes…\"). Create scratch/pr-split-go-implementation-map.md listing exact files, types, and functions, plus how child processes are tracked (PIDs, process groups, sessions).",
-      "acceptance": "scratch/pr-split-go-implementation-map.md identifies the exact code locations (files + functions/types) needed to implement and test: bell propagation, attention indicators, and force-kill correctness—without relying on assumptions about process groups/worktrees.",
+      "task": "T08: Run make all after executeSplit fix",
+      "description": "Run `make make-all-with-log` and `make integration-test-prsplit-mcp`.",
+      "acceptance": "All tests pass. Worktree test passes.",
       "status": "Not Started"
     },
     {
-      "task": "Replanning checkpoint: rewrite blueprint.json to replace all remaining unknowns with concrete file/function/target names discovered in the investigation",
-      "description": "Update this blueprint.json in-place based on: scratch/pr-split-domain-model.md, scratch/make-targets-and-conventions.md, scratch/pr-split-go-implementation-map.md. Specifically: (1) replace any future 'search for' phrasing with exact file/function pointers, (2) set the exact project.mk target names that will run the new integration tests, and (3) log a replan event in statusSection.replanLog describing what changed and why.",
-      "acceptance": "blueprint.json no longer depends on guesswork for: make target names, where the TUI mux is implemented, where force-kill is implemented, or how the pr-split command is invoked/configured in tests; statusSection.replanLog includes an entry capturing the update.",
+      "task": "T09: Regression replication — force-kill leaves orphaned descendants",
+      "description": "BEFORE fixing PTY process groups, write a test that: (1) Spawns a PTY process (via internal/builtin/pty Spawn) that in turn creates a child subprocess (e.g., shell running 'sleep 3600' or a test helper that holds a lock file). (2) Sends SIGKILL via Process.Signal('SIGKILL'). (3) Asserts the child subprocess PID STILL EXISTS after the parent dies — proving orphan survival. Use deterministic PID checking (syscall.Kill(pid, 0)) with cleanup to prevent test pollution. Name it TestPTYSpawn_ForceKill_OrphanSurvival.",
+      "acceptance": "Test demonstrates child process survives parent SIGKILL — proving the force-kill orphan bug exists in current code.",
       "status": "Not Started"
     },
     {
-      "task": "Create macOS PTY-driven integration test harness: compile-once TestMain + reusable PTY session driver",
-      "description": "Implement a new Go integration test harness (per repo conventions discovered earlier) for running osm pr-split under a PTY and driving interactive keystrokes deterministically. Use TestMain to build any required test binaries once (osm itself if needed, plus helper binaries). Ensure the PTY driver can: (1) send literal keystrokes including Enter and Ctrl+C, (2) capture raw output bytes (so \\x07 terminal bell can be asserted), and (3) provide deterministic 'wait for substring' synchronization without sleeps (deadline-based read loop allowed, but avoid arbitrary delays). Place code according to repo test layout conventions discovered in scratch/make-targets-and-conventions.md.",
-      "acceptance": "There is a reusable integration harness that can start osm pr-split inside a PTY, drive at least: typing a command + Enter, switching panes if applicable, and capturing both UI text and raw control characters. This harness is sufficient to reproduce and then lock in regressions described in scratch/current-state.md.",
+      "task": "T10: Fix PTY spawn to use process groups (Setpgid)",
+      "description": "In internal/builtin/pty/pty_unix.go, function Spawn (search 'func Spawn'): (1) Before cmd.Start(), set `cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}`. This creates a new process group for the child. (2) In unixProcessHandle.Signal() (search 'func (h *unixProcessHandle) Signal'), change from `h.cmd.Process.Signal(sig)` (which sends to PID) to `syscall.Kill(-h.cmd.Process.Pid, sig.(syscall.Signal))` (which sends to process GROUP via negative PID). (3) Handle the type assertion for non-syscall.Signal types gracefully. (4) This change is Unix-only (pty_unix.go), so Windows builds are unaffected.",
+      "acceptance": "SIGKILL kills entire process group. TestPTYSpawn_ForceKill_OrphanSurvival now passes (orphan no longer survives). Clean SIGTERM shutdown still works. If sig type assertion to syscall.Signal fails, fall back to os.Process.Signal() for the individual PID — log a warning but do not panic.",
       "status": "Not Started"
     },
     {
-      "task": "Expose pr-split integration tests via project.mk targets (macOS-only) without impacting cross-platform make all",
-      "description": "Add explicit project.mk target(s) (named per scratch/make-targets-and-conventions.md) that run the new PTY-driven pr-split integration tests. Gate them to macOS (and any other required constraints) in a way consistent with the repository’s existing patterns. Ensure target output is readable and failures surface the exact reproduction evidence (captured transcript path, last N lines, etc.).",
-      "acceptance": "A developer on macOS can run a single documented project.mk make target to execute the pr-split PTY integration suite. Non-macOS environments do not fail 'make all' due to these tests; instead, they skip or are not included per repo convention.",
+      "task": "T11: Run make all + Linux container after force-kill fix",
+      "description": "Run `make make-all-with-log`, `make integration-test-prsplit-mcp`, and `make make-all-in-container` (Linux). The Setpgid change is Unix-only so Linux must also pass.",
+      "acceptance": "macOS and Linux tests pass. Force-kill test demonstrates process group cleanup.",
       "status": "Not Started"
     },
     {
-      "task": "Remove the `claude` subcommand implementation from internal/command/pr_split_script.js (per requirement) and delete all dead routing/help text",
-      "description": "In internal/command/pr_split_script.js, remove the interactive `claude` subcommand (including `claude spawn` and any related code paths) and any references in the command router/help text. This is explicitly required to eliminate the unnecessary and broken mcpConfigPath injection code path. Ensure auto-split continues to spawn Claude through its own pipeline code, not via an interactive command surface.",
-      "acceptance": "In an interactive pr-split session, the `claude` command is not available and cannot be invoked. The previously observed error \"mcpConfigPath is required (provided by osm:mcpcallback)\" cannot be triggered via the removed command surface. Auto-split behavior remains focused on auto-splitting (no user-facing regression in the auto pipeline).",
+      "task": "T12: Remove claude REPL command and add test proving removal",
+      "description": "In internal/command/pr_split_script.js, the `claude` command is registered in the REPL (search for the claude command handler near line ~5685-5747). It calls claudeExecutor.spawn() without mcpConfigPath, which was the trigger for scratch/current-state.md regression #1. ROOT CAUSE: The REPL 'claude' command was never wired to receive mcpConfigPath from osm:mcpcallback (unlike auto-split which correctly provides it). Remove the entire claude command handler. Also add a test (TestIntegration_REPL_NoClaudeCommand) that starts a pr-split REPL session and verifies 'claude' is not a recognized command.",
+      "acceptance": "'claude spawn' no longer triggers mcpConfigPath error — the command doesn't exist. Test mechanically verifies removal.",
       "status": "Not Started"
     },
     {
-      "task": "Remove the `claude-status` subcommand implementation from internal/command/pr_split_script.js and delete all dead code paths",
-      "description": "In internal/command/pr_split_script.js, remove `claude-status` command implementation and any routing/help/handler code associated with it. Ensure no other code depends on this command for auto-split execution.",
-      "acceptance": "In an interactive pr-split session, `claude-status` is not available and cannot be invoked. There is no remaining dead code that references the removed command handlers, and auto-split still functions without relying on these commands.",
+      "task": "T13: Remove claude-status REPL command and add test proving removal",
+      "description": "In internal/command/pr_split_script.js, remove the `claude-status` command handler (search for 'claude-status' in the command registry). JUSTIFICATION: claude-status is the companion command to the claude command removed in T12. It checks status of a Claude session that can only be created via the (now-removed) claude command, making it dead code. scratch/current-state.md section 'Clarification' calls out that 'There doesn't appear to be much point in exposing the claude command to auto-split—remove it entirely? Same for claude-status.' Add a test (TestIntegration_REPL_NoClaudeStatusCommand) verifying removal.",
+      "acceptance": "'claude-status' is not available in REPL. Test mechanically verifies.",
       "status": "Not Started"
     },
     {
-      "task": "Add PTY integration test: pr-split interactive command surface no longer exposes claude/claude-status and provides actionable guidance instead of mcpConfigPath errors",
-      "description": "Using the PTY harness, start an interactive pr-split session and verify: (1) help/listing output does not mention claude/claude-status, (2) attempting to type `claude spawn` (or `claude-status`) yields an 'unknown command' style response that directs the user towards the supported auto-split flow, and (3) the exact error string from scratch/current-state.md is not emitted via this path anymore. Wire this test to the macOS integration make target(s).",
-      "acceptance": "A real PTY-driven run demonstrates the removed command surface: users cannot fall into the broken mcpConfigPath injection path, and the TUI responds with guidance that keeps the workflow anchored on auto-split rather than exposing unnecessary internal commands.",
+      "task": "T14: Run make all after REPL command removal",
+      "description": "Run `make make-all-with-log` and `make integration-test-prsplit-mcp`.",
+      "acceptance": "All tests pass. No references to removed commands in test expectations.",
       "status": "Not Started"
     },
     {
-      "task": "Investigation (sendToHandle): identify the exact I/O contract between pr_split_script.js sendToHandle and the spawned Claude TUI process",
-      "description": "In internal/command/pr_split_script.js (sendToHandle ~2780-2834 plus call sites), trace how the handle is created and written to (e.g., exec/spawn/pty modules exposed to JS). Document in scratch/sendtohandle-io-contract.md: (1) handle API (write semantics, buffering, retries), (2) line ending behavior (\\n vs \\r), (3) any existing support for discrete key events, and (4) exactly where 'single atomic write' is asserted and why it was believed to be correct. No fixes yet.",
-      "acceptance": "scratch/sendtohandle-io-contract.md precisely describes how bytes flow from JS sendToHandle into the PTY and into the child process, including any abstractions that might collapse multiple writes. This document is sufficient to design a deterministic reproduction without guessing.",
+      "task": "T15: Implement bell detection in termmux VTerm output",
+      "description": "In internal/termmux/vt/ (the VTerm package), add detection of \\x07 (BEL) bytes in the terminal output stream. When BEL is encountered during output processing, emit a structured notification. This should be a general-purpose building block — not Claude-specific. Investigate the VTerm write path (search for the Write or ProcessOutput method in internal/termmux/vt/) and add BEL detection there. Emit a callback or event that the termmux layer can consume.",
+      "acceptance": "When a child PTY emits \\x07, the VTerm layer detects it and provides a notification mechanism.",
       "status": "Not Started"
     },
     {
-      "task": "Implement a purpose-built fake 'Claude TUI' Go binary that deterministically detects paste-vs-submit semantics for non-blocking reads",
-      "description": "Create a small Go test helper binary (built once in TestMain) that simulates the relevant failure mode: it must run in a terminal/PTY context, read stdin in a non-blocking style, and deliberately treat 'prompt+newline delivered as a single logical input chunk' as NOT-submitted (paste) while treating 'prompt delivered, then newline delivered as a subsequent distinct event' as submitted. It must emit an unambiguous marker on stdout/stderr (and/or exit code) allowing tests to assert which behavior occurred. Avoid timing-based heuristics; use a deterministic handshake protocol between the test harness and the helper (e.g., print READY, wait for prompt, print PASTED or SUBMITTED).",
-      "acceptance": "The fake Claude binary provides deterministic, machine-verifiable evidence of whether sendToHandle is delivering input as 'paste' vs 'submit', without depending on the real Claude CLI and without relying on brittle sleeps.",
+      "task": "T16: Implement bell propagation to outer terminal from background panes",
+      "description": "In the termmux mux layer (internal/termmux/termmux.go), when bell is detected in a background (non-focused) pane, write \\x07 to stdout to propagate to the user's terminal. When the pane IS focused, bell passes through naturally in the output stream.",
+      "acceptance": "Background pane bell reaches user's terminal. Can be verified by checking for \\x07 in captured test output.",
       "status": "Not Started"
     },
     {
-      "task": "Add failing macOS integration test to replicate the prompt delivery regression (paste instead of submit) via project.mk target",
-      "description": "Write an integration test that runs osm pr-split auto-split configured to spawn the fake Claude binary (via whatever configuration mechanism the codebase supports; if none exists, add a test-only hook that does not affect normal users). The test must assert that, under the CURRENT implementation, the fake Claude observes the 'paste' behavior (or fails to observe 'submitted') matching scratch/current-state.md: the prompt is delivered but not executed/submitted until a separate Enter is sent. Ensure the test is runnable via the project.mk integration target(s) and fails reliably before any fix is applied.",
-      "acceptance": "Running the project.mk pr-split integration target on macOS produces a reliable failing reproduction that proves the regression exists: the fake Claude process does not reach its SUBMITTED state without a distinct Enter event, matching the real-world symptom ('it just pasted the prompt').",
+      "task": "T17: Implement persistent attention indicator in AutoSplitModel",
+      "description": "In internal/termmux/ui/autosplit.go AutoSplitModel: (1) Add a 'needsAttention' bool field per pane. (2) Set it to true when bell fires from a background pane. (3) In renderSeparator (search 'func (m AutoSplitModel) renderSeparator'), add a persistent visual indicator when needsAttention is true (e.g., '🔔 Claude needs attention'). (4) Clear needsAttention when user switches to that pane (via Ctrl+] toggle). Use a distinct styling that is impossible to miss.",
+      "acceptance": "Persistent indicator appears on bell from background pane, remains until user switches to that pane, visually distinct.",
       "status": "Not Started"
     },
     {
-      "task": "Capture and archive reproduction evidence for the prompt delivery failure (pre-fix) as a test artifact",
-      "description": "Run the project.mk integration target(s) and capture the failing transcript (PTY output + fake Claude markers) into a stable, developer-accessible location (prefer a test artifact file produced by the test itself under a temp dir printed on failure, or a deterministic scratch/repros/ path if repo convention allows). Ensure the failure message points directly to the evidence location.",
-      "acceptance": "A developer can run the integration target and, upon failure, immediately inspect an emitted transcript/marker output that clearly shows 'paste' behavior (or lack of SUBMITTED) without needing to re-run with extra logging.",
+      "task": "T18: Add tests for bell propagation and attention indicator lifecycle",
+      "description": "Tests in appropriate test files: (1) Bell in background pane → \\x07 at outer terminal. (2) Attention indicator appears in rendered View() output when needsAttention is true. (3) Indicator clears on pane focus.",
+      "acceptance": "Tests prove bell/attention lifecycle works correctly.",
       "status": "Not Started"
     },
     {
-      "task": "Fix sendToHandle to deliver prompt text and Enter as distinct, deterministic events (no sleeps), and remove/replace misleading comments",
-      "description": "Modify internal/command/pr_split_script.js sendToHandle (~2780-2834) and any helper functions so that prompt submission works with non-blocking TUI readers: ensure the prompt text is written, then Enter is delivered as a separate event (distinct write or supported key-event API). Do NOT introduce timing sleeps. Update the existing comment that asserts a 'single-write pattern is deterministic' to reflect reality and prevent reintroduction of the regression. Keep the change narrowly scoped to prompt delivery mechanics.",
-      "acceptance": "In auto-split, the classification prompt is actually submitted automatically (no manual Enter required) in a PTY-driven end-to-end run. The code no longer claims incorrect determinism: comments and behavior match the observed reality of non-blocking TUI input handling.",
+      "task": "T19: Run make all after bell/attention implementation",
+      "description": "Run `make make-all-with-log`, `make integration-test-prsplit-mcp`, `make make-all-in-container`.",
+      "acceptance": "All tests pass on macOS and Linux.",
       "status": "Not Started"
     },
     {
-      "task": "Validate the sendToHandle fix via project.mk: the previously failing integration test now demonstrates SUBMITTED without manual intervention",
-      "description": "Re-run the same project.mk integration target(s) that previously reproduced the failure. Confirm the fake Claude reports SUBMITTED under the fixed sendToHandle implementation and that the auto-split pipeline progresses past prompt sending autonomously. Preserve any failure transcript improvements (clearer logs, better assertion messages).",
-      "acceptance": "The exact same integration scenario that previously failed now succeeds end-to-end without human keystrokes to 'press Enter'; the proof is the fake Claude’s unambiguous SUBMITTED marker and the pr-split pipeline moving forward automatically.",
+      "task": "T20: Verify --resume flag works end-to-end",
+      "description": "BEFORE improving error feedback, verify the existing --resume flow actually works: (1) Create a controlled test (TestIntegration_Resume_SkipsClassification) that generates a .pr-split-plan.json via the automatedSplit pipeline (can use mock MCP). (2) Force a failure during executeSplit. (3) Re-run with --resume and verify it skips classification and jumps to execution. The resume capability IS implemented (loadPlan ~4170, savePlan ~4100, --resume flag in pr_split.go). This task verifies it works, not implements it.",
+      "acceptance": "TestIntegration_Resume_SkipsClassification passes: on second run with --resume, classification is skipped and execution resumes from saved plan.",
       "status": "Not Started"
     },
     {
-      "task": "Add failing integration test to replicate the permission prompt UX regression: no bell and no persistent indicator when the Claude pane needs attention",
-      "description": "Extend the fake Claude (or create a second helper mode) to emit a realistic permission prompt text and then block waiting for user input. Create a PTY integration test that runs auto-split and asserts that, under the CURRENT implementation, the main UI provides no persistent 'needs attention' indicator and the terminal bell is not propagated to the user when the permission prompt occurs in a non-focused pane. This test must fail reliably before implementing the fix and must run via project.mk target(s).",
-      "acceptance": "Running the project.mk integration target(s) yields a reliable failing reproduction: the permission prompt occurs (visible in captured pane output), but there is no bell (\\x07) observed at the outer terminal level and no persistent UI indicator that the workflow is waiting for permission in the Claude pane.",
+      "task": "T21: Improve error feedback on pipeline failure with resume instructions",
+      "description": "In pr_split_script.js, when executeSplit or later stages fail, the error output should include: (1) Path to .pr-split-plan.json (search for DEFAULT_PLAN_PATH constant). (2) 'To resume: osm pr-split --resume'. (3) Concise description of what failed. Fix error handling in automatedSplit pipeline stages to emit these.",
+      "acceptance": "Failure output includes plan path and resume command.",
       "status": "Not Started"
     },
     {
-      "task": "Capture and archive reproduction evidence for the permission UX failure (pre-fix) as a test artifact",
-      "description": "Run the project.mk integration target(s) for the permission scenario and ensure the failure output points to a transcript showing: (1) the permission prompt was emitted by the fake Claude, (2) the main UI did not visibly indicate attention was required, and (3) no bell was propagated. Store/emit the evidence path consistently with other integration tests.",
-      "acceptance": "The permission UX regression is proven with direct evidence a developer can inspect immediately after the failing integration run, without needing manual reproduction steps.",
+      "task": "T22: Add test verifying error feedback includes resume instructions",
+      "description": "Trigger controlled executeSplit failure. Assert output includes plan file path, --resume instruction, and error description.",
+      "acceptance": "Test mechanically verifies actionable resume instructions in failure output.",
       "status": "Not Started"
     },
     {
-      "task": "Implement general-purpose terminal bell propagation + persistent pane attention indicators in the pr-split TUI mux (Claude-specific support built on top)",
-      "description": "In the Go TUI/mux implementation identified earlier, implement: (1) detection of bell (\\x07) in pane output streams, (2) propagation of bell to the user’s outer terminal even when the emitting pane is not focused, and (3) a persistent visual indicator in the main UI that a background pane requires attention (sticky until the user views/acknowledges that pane). Ensure this is a general integration feature, reusable beyond Claude, aligning with scratch/current-state.md’s requirement to avoid fragile tab-counting heuristics.",
-      "acceptance": "When any background pane emits bell or receives notable output, the user gets a terminal bell and a persistent on-screen indicator that remains until they view/acknowledge the pane. This behavior is general (not hard-coded solely for Claude) and matches standard terminal expectations.",
+      "task": "T23: Run make all after error feedback improvement",
+      "description": "Run `make make-all-with-log` and `make integration-test-prsplit-mcp`.",
+      "acceptance": "All tests pass.",
       "status": "Not Started"
     },
     {
-      "task": "Implement Claude permission-hang signaling using the general bell/attention mechanism (no shift-tab counting)",
-      "description": "Implement a robust way to trigger the attention state specifically for Claude permission prompts without relying on fragile 'press Shift-Tab N times' logic. Acceptable approaches include: matching a small set of configurable prompt patterns, recognizing an explicit marker emitted by a wrapper/helper in test mode, or other deterministic signals derived from actual observed Claude output. When triggered, ensure: bell propagation + persistent indicator explicitly states permission is required and instructs the user to switch to the Claude pane.",
-      "acceptance": "In real-world usage, when Claude requests permission, the user is actively alerted (bell + persistent UI message) and can immediately understand the workflow is waiting for authorization—without relying on brittle tab-count heuristics.",
+      "task": "T24: Clean up misleading comments in pr_split_script.js",
+      "description": "Audit for comments asserting incorrect behavior. The sendToHandle comment should have been updated in T04 — verify. Search for other PTY/write/atomicity comments that could mislead future developers.",
+      "acceptance": "No confidently-wrong comments remain.",
       "status": "Not Started"
     },
     {
-      "task": "Validate the permission UX fix via project.mk: bell is observed and the UI shows a persistent indicator until the pane is viewed/acknowledged",
-      "description": "Re-run the previously failing permission integration test via the project.mk target(s). Confirm that the outer PTY transcript includes a bell (\\x07) at the time of the permission prompt and that the main UI displays a persistent attention/permission-required indicator that clears only after user acknowledgement/pane view (as defined by the implementation).",
-      "acceptance": "The integration scenario that previously failed now demonstrably alerts the user: a bell is propagated and a persistent UI indicator is present and behaves as designed (sticky until acknowledged).",
+      "task": "T25: Remove osm:pty JavaScript module bindings (NOT the Go package)",
+      "description": "Remove the JavaScript module registration for osm:pty: (1) In internal/builtin/register.go, remove the osm:pty registration (search for 'pty' in the register function). (2) Remove internal/builtin/pty/module.go (the JS module definition). (3) Keep internal/builtin/pty/pty_unix.go, pty_windows.go, pty.go, and all Go-level PTY functionality intact — these are used by claudemux. (4) Remove any tests that specifically test the JS bindings of osm:pty (not the Go PTY spawn tests).",
+      "acceptance": "require('osm:pty') is no longer available in JS. The Go PTY package still works. claudemux still spawns processes correctly. All tests pass.",
       "status": "Not Started"
     },
     {
-      "task": "Investigation (resume): determine current behavior around .pr-split-plan.json creation, location, and whether any execute-only/resume mode already exists",
-      "description": "Inspect internal/command/pr_split_script.js automatedSplit (~2851) and any Go-side CLI flags/options to determine: (1) where .pr-split-plan.json is written, (2) whether it is always written before executeSplit, (3) whether there is any built-in support for resuming from an existing plan or executing a plan directly, and (4) how errors are reported today. Document findings in scratch/plan-resume-current-behavior.md. No implementation yet.",
-      "acceptance": "scratch/plan-resume-current-behavior.md clearly states the current resume/execute capabilities (or lack thereof) with file/function pointers and exact observed behavior when a plan file already exists.",
+      "task": "T26: Run make all after osm:pty JS removal",
+      "description": "Run `make make-all-with-log`, `make integration-test-prsplit-mcp`, `make make-all-in-container`.",
+      "acceptance": "All tests pass on macOS and Linux.",
       "status": "Not Started"
     },
     {
-      "task": "Add failing integration test to replicate the 'no resumption / no human intervention' regression: existing .pr-split-plan.json is ignored and classification repeats",
-      "description": "Create an integration test that runs auto-split once to generate .pr-split-plan.json (using fake Claude to avoid external dependency), then forces a failure before or during executeSplit (e.g., by injecting a controlled execute error), then runs the command again and asserts that the CURRENT implementation does not offer a resume path and re-runs classification unnecessarily. Ensure the test fails before implementing any resume logic and is runnable via project.mk target(s).",
-      "acceptance": "The integration run reliably proves the current deficiency: after a failure where a plan file exists, the next run still repeats the expensive classification loop instead of resuming execution from the existing plan.",
+      "task": "T27: Real AI integration test",
+      "description": "Run `make integration-test-prsplit` with appropriate configuration for available local AI. First check what's available: `which ollama`, `which claude`. If ollama is available, use CLAUDE_COMMAND=ollama with appropriate args. If neither is available, skip this task and document the requirement for the next session — this is not a blocker for the rest of the blueprint.",
+      "acceptance": "Real AI test runs and pipeline progresses through at least prompt submission. OR: If no AI tooling available, documented skip with explicit instructions for next session.",
       "status": "Not Started"
     },
     {
-      "task": "Capture and archive reproduction evidence for the resumption failure (pre-fix) as a test artifact",
-      "description": "Run the project.mk integration target(s) for the resumption scenario and ensure the failing output includes concrete evidence (logs/markers) that classification re-ran despite a pre-existing .pr-split-plan.json. For example, the fake Claude can emit a distinct 'SPAWNED' marker that can be counted across runs.",
-      "acceptance": "A developer can inspect the failure evidence and see that an existing plan was present yet the pipeline still respawned Claude/reclassified, proving the missing resumption capability.",
+      "task": "T28: Cross-platform validation: Windows",
+      "description": "Run `make make-all-run-windows` to verify full Windows CI. If the Windows runner infrastructure (hack/run-on-windows.sh) is not available, fall back to `GOOS=windows go build ./...` to at least verify compilation. Both should be attempted.",
+      "acceptance": "Windows full test suite passes via make-all-run-windows, OR at minimum GOOS=windows compilation succeeds with documented gap.",
       "status": "Not Started"
     },
     {
-      "task": "Implement pipeline resumption: detect existing .pr-split-plan.json, allow edit/intervention, and resume execution from executeSplit without reclassification",
-      "description": "Modify internal/command/pr_split_script.js automatedSplit and any associated CLI/config surface so that when .pr-split-plan.json already exists (in the expected location), the user is given a clear, safe resume path: (1) option to resume execution directly, (2) option to open/edit the plan (e.g., via $EDITOR or a documented mechanism) and then resume, and (3) option to discard/regenerate. Ensure non-interactive integration tests can force 'resume' deterministically (e.g., a flag or env var), without impacting normal UX negatively.",
-      "acceptance": "After a crash in executeSplit (or any later stage), a user can immediately resume from the saved plan file and complete the split without waiting to regenerate the exact same plan. Human intervention (editing the plan) is a first-class supported workflow, not an undocumented hack.",
+      "task": "T29: Documentation: developer guide for pr-split integration tests",
+      "description": "Add docs describing: how to run all integration test targets, how to configure AI backend flags, how to interpret failures, how to use --resume.",
+      "acceptance": "Unfamiliar developer can run and interpret all integration tests from docs alone.",
       "status": "Not Started"
     },
     {
-      "task": "Validate the resumption fix via project.mk: second run resumes execution without re-spawning fake Claude / reclassifying",
-      "description": "Re-run the previously failing resumption integration test via project.mk target(s). Confirm that, on the second run, classification does not occur (fake Claude not spawned / no classification markers), and execution resumes from the saved plan.",
-      "acceptance": "The integration scenario demonstrates real-world value: users can recover from execution-stage failures in seconds by resuming from .pr-split-plan.json, with proof that classification is not redundantly repeated.",
+      "task": "T30: Final validation suite",
+      "description": "Run: make make-all-with-log, integration-test-prsplit-mcp, make-all-in-container, integration-test-prsplit with real AI.",
+      "acceptance": "All targets pass. Codebase at verified stable state.",
       "status": "Not Started"
     },
     {
-      "task": "Add failing integration test to replicate the worktree checkout conflict: unrelated worktree has base branch checked out and executeSplit crashes attempting checkout",
-      "description": "Write a deterministic integration test that sets up a git repo with two worktrees: (1) an unrelated worktree path with baseBranch (main) checked out, and (2) the working directory where osm pr-split executeSplit runs from a different branch. Use a minimal .pr-split-plan.json and run the execute stage (prefer the new resume/execute path rather than full classification). Assert that the CURRENT implementation fails with the exact class of error observed: \"fatal: '<branch>' is already used by worktree at ...\" due to a naive git checkout of the base branch. Ensure it fails pre-fix and runs via project.mk target(s).",
-      "acceptance": "The integration run reliably reproduces the real bug: executeSplit attempts to checkout the base branch name and fails specifically because that branch is already checked out in an unrelated worktree elsewhere.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Capture and archive reproduction evidence for the worktree conflict (pre-fix) as a test artifact",
-      "description": "Run the project.mk integration target(s) for the worktree scenario and ensure the failure output includes the git fatal message and the context (two worktrees, base branch locked elsewhere). Record the reproduction paths and branch names in the test output for auditability.",
-      "acceptance": "A developer can inspect the failing test transcript and see the exact 'branch already used by worktree' failure, matching scratch/current-state.md, with no ambiguity about what caused it.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Fix executeSplit to avoid naive `git checkout <baseBranch>` that fails under worktrees; create split branches directly from the base commit",
-      "description": "Modify internal/command/pr_split_script.js executeSplit logic (~1268 and the checkout segment ~1316-1324) so it does not attempt to checkout the base branch name in the current worktree. Instead, resolve baseBranch to a commit (hash) and create/switch split branches from that commit without requiring the base branch to be checked out. Ensure restoreBranch behavior is correct and errors are reported without leaving the repo in a bad state.",
-      "acceptance": "When baseBranch is checked out in an entirely different unrelated worktree, executing the split plan still succeeds: split branches are created from the correct base commit and the current worktree is not forced to checkout the base branch name.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Validate the executeSplit worktree fix via project.mk: the previously failing worktree integration test now succeeds end-to-end",
-      "description": "Re-run the worktree integration test via project.mk target(s). Confirm executeSplit completes without attempting the forbidden checkout and that the resulting split branches exist and are based on the intended base commit.",
-      "acceptance": "The same environment that previously crashed (base branch checked out elsewhere) now produces the intended split branches without git worktree conflicts, demonstrating robust behavior in real multi-worktree setups.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Investigation (force kill): identify the exact force-cancel/force-kill code path and why orphaned child processes survive",
-      "description": "Using the Go implementation map already created, trace the cancellation flow: first Ctrl+C, subsequent force cancel, and the 'force killing child processes…' UI path. Determine whether processes are spawned in a process group/session, whether the kill targets the correct PID/PGID, and how PTY children are tracked. Produce scratch/force-kill-root-cause-notes.md with concrete findings and a falsifiable hypothesis for the survivability bug. Do not implement a fix yet.",
-      "acceptance": "scratch/force-kill-root-cause-notes.md identifies the real (code-proven) reason orphans can survive (e.g., wrong PID targeted, missing process group kill, lost handle tracking), and it points to the exact functions/files to change—without speculative storytelling.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Add failing PTY integration test to replicate the force-kill UI bug: descendant process survives after force cancellation sequence",
-      "description": "Create a helper binary (compiled once in TestMain) that spawns a clearly-identifiable long-running child process (e.g., another helper that writes a heartbeat or holds an open lock file) and exposes the child PID in a deterministic way (file, stdout marker). Run osm pr-split configured to spawn this helper as the 'Claude' process or another subprocess that pr-split manages. Then drive the documented force cancel sequence (e.g., Ctrl+C then additional keypresses) through the PTY driver. Assert that, under CURRENT behavior, the child remains alive after osm exits (repro). Ensure the test fails pre-fix and is runnable via project.mk target(s). Include strong cleanup in the test to avoid polluting the developer machine when the bug reproduces.",
-      "acceptance": "The integration run reliably proves the bug: after force cancel is invoked and osm claims it force-killed children, the helper’s descendant process is still alive (verified by deterministic evidence), matching the 'force kill failure' observed in scratch/current-state.md.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Capture and archive reproduction evidence for the force-kill orphan survival (pre-fix) as a test artifact",
-      "description": "Run the force-kill integration target(s) and ensure the failing output includes: (1) the PTY transcript showing the force-kill UI path executed, and (2) a clear statement of which PID(s) survived and how that was verified. Make the failure message actionable (where to look in code, what signal/kill path was invoked).",
-      "acceptance": "A developer can inspect the failing output and see concrete proof of orphan survival that cannot be dismissed as flaky timing (PID evidence + verification method).",
-      "status": "Not Started"
-    },
-    {
-      "task": "Fix force-kill implementation to guarantee termination of all descendant processes (process-group/session kill) and make UI truthful",
-      "description": "Implement a robust kill strategy consistent with the root-cause notes: ensure spawned subprocesses are placed into a killable unit (process group and/or session) and that force-kill targets the correct identifier (PGID/session) rather than just a parent PID. Ensure the 'force kill' UI path only reports success when the kill operations actually ran, and handle errors explicitly. Preserve the already-good behavior noted in scratch/current-state.md: SIGTERM to osm shuts down promptly and cleanly without requiring SIGKILL.",
-      "acceptance": "After invoking force cancel, there are zero orphaned descendants left on the host system, even when the child spawns its own children. The UI messaging corresponds to actual actions taken (no 'force killing...' theater), and normal graceful shutdown remains intact.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Validate the force-kill fix via project.mk: previously surviving descendant is now reliably terminated",
-      "description": "Re-run the force-kill integration test via project.mk target(s). Confirm the descendant process is gone after osm exits and that the test no longer needs its emergency cleanup path to restore system state.",
-      "acceptance": "The same forced-cancel scenario that previously left an orphan now results in complete cleanup every time, demonstrating real host-system safety (no lingering node/claude/helper processes).",
-      "status": "Not Started"
-    },
-    {
-      "task": "Improve error feedback and recovery instructions in the pr-split UI: explicitly surface plan path, next steps, and resume instructions on failure",
-      "description": "When any stage fails (especially executeSplit), update the pr-split UI and/or stderr output to include: (1) the exact location of the saved .pr-split-plan.json, (2) explicit instructions for editing and resuming (using the resume mechanism implemented earlier), and (3) a concise explanation of what failed (e.g., worktree conflict) without burying the lede. Ensure this does not require the user to 'just know' internal details. Keep messaging high-signal and non-generic.",
-      "acceptance": "A user who hits an executeSplit failure can immediately take action without re-running long stages: they can find the plan file, edit it if needed, and run the documented resume command to continue. The tool’s output makes recovery obvious and reduces perceived 'frozen/opaque' behavior.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Add integration test: on a forced execute-stage failure, pr-split prints actionable recovery instructions including the plan path and resume command",
-      "description": "Create an integration scenario that intentionally fails executeSplit (deterministically) while ensuring .pr-split-plan.json exists. Assert that the captured output includes (1) the plan file path, and (2) the concrete resume/edit instructions introduced in the previous task. Wire into project.mk target(s).",
-      "acceptance": "A PTY-driven end-to-end run proves that failure output is operationally useful: it tells the user exactly where the plan is and exactly how to resume, enabling real recovery rather than forcing regeneration.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Clean up misleading / 'AI slop' comments and assumptions in pr_split_script.js around PTY determinism and interaction (without changing semantics beyond the tested fixes)",
-      "description": "Audit internal/command/pr_split_script.js for comments that assert incorrect behavior (e.g., the sendToHandle single-write determinism comment) or that embed fragile assumptions. Replace with precise, evidence-backed explanations that match the new integration tests. Keep comments concise and anchored to the verified behaviors.",
-      "acceptance": "The codebase no longer contains confidently-wrong explanations that could mislead future refactors into reintroducing regressions; comments now reflect the behavior locked in by integration tests and are specific to the actual PTY/TUI constraints in this project.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Validate pr-split flow end-to-end with an actual AI using Ollama",
-      "description": "Ensure the pr-split command with the capabilities to specify Claude through Ollama is correctly represented and tested using the actual AI dependencies available on the local system. Use the `integration-test-prsplit` target (or similar options) to specify the local Ollama provider. This guarantees the integration tests verify the end-to-end execution with a real AI on the local system natively.",
-      "acceptance": "The pr-split command is verified using an actual local AI (Ollama) through the provided project.mk integration test targets, proving that the flow works completely end-to-end.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Documentation: add a developer-facing guide for running pr-split macOS integration tests and interpreting artifacts",
-      "description": "Add/update documentation (location per repo convention) describing: (1) how to run make all, (2) how to run the macOS-only pr-split integration targets from project.mk, (3) how to read failure artifacts/transcripts, (4) how to run the resumption flow manually, and (5) what environment variables/flags exist for selecting the fake Claude helper vs real Claude during development.",
-      "acceptance": "A developer unfamiliar with the code can reliably reproduce and verify the fixed behaviors locally on macOS using only documented make targets and can locate integration test transcripts when failures occur.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Cross-platform guardrails: enforce Windows, Linux, and macOS pass CI as a critical check locally",
-      "description": "Ensure that all three platforms (Windows, Linux, and macOS) pass CI as a critical check. It is critical that all three pass, using the targets in config.mk and example.config.mk (`make make-all-with-log`, `make make-all-in-container` for Linux, and `make make-all-run-windows` for Windows). Run these on the local system to verify that standard cross-platform checks succeed reliably.",
-      "acceptance": "macOS, Linux (via container target), and Windows (via run-windows target) tests are successfully executed on the local system and pass completely. Integration tests skip cleanly on non-macOS systems without weakening macOS coverage.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Indefinite Cycle expansion: identify and add the next frontier of pr-split quality improvements (tests + UX) and append new tasks to blueprint.json",
-      "description": "After completing all tasks above, immediately expand the blueprint by rereading scratch/current-state.md, then, as if you know NOTHING, using subagents to incrementally and completely reverify - prove - that you TRULY addressed the ENTIRE SCOPE, adding tasks to the blueprint incrementally. Then, analyse the current codebase to identify additional high-value, non-sloppy improvements tightly related to pr-split correctness and usability. Examples that must be considered (add concrete tasks if not already addressed): real-time verification visibility (streaming output during verification), richer per-branch status in renderSteps/AutoSplitModel, a failure Details view showing verify output, stronger schema validation for .pr-split-plan.json, and additional deterministic integration tests for any discovered edge cases. Add the new tasks to sequentialTasks and keep the list non-empty.",
-      "acceptance": "blueprint.json grows with new, concrete, project-specific tasks (with file/function pointers and end-to-end acceptance) that push pr-split towards higher reliability and better UX; the plan never 'ends' and does not devolve into generic filler.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Trailing task: Remove the osm:pty JavaScript module entirely",
-      "description": "As a trailing task at the very end after everything else is verified and fixed, remove the osm:pty JavaScript module entirely from the project. This includes internal/builtin/pty/ and any associated tests or documentation.",
-      "acceptance": "The osm:pty JavaScript module has been completely removed from the codebase, and all tests across platforms continue to pass.",
+      "task": "T31: Indefinite cycle expansion — identify next frontier",
+      "description": "Re-read scratch/current-state.md and diff vs main. Verify ALL regressions addressed with evidence. Identify additional improvements. Add concrete new tasks. The list must never become empty.",
+      "acceptance": "Blueprint grows with new concrete tasks.",
       "status": "Not Started"
     }
   ],
   "continuousVerification": {
-    "task": "After EVERY significant change, run the repo’s standard make pipeline and the macOS pr-split integration targets defined in project.mk",
-    "description": "Run the canonical cross-platform checks whenever code changes, enforcing that all three platforms (Windows, Linux, macOS) pass CI targets defined in config.mk / example.config.mk (`make-all-with-log`, `make-all-in-container`, `make-all-run-windows`). Additionally, on macOS, run the pr-split PTY integration targets added in this blueprint via project.mk. For each regression fix, do not proceed past the fix-validation task until the corresponding integration reproduction is observed failing pre-fix and observed passing post-fix using the project.mk targets (not ad-hoc go test invocations).",
-    "failPolicy": "If ANY check fails, STOP IMMEDIATELY and fix it before proceeding. Zero tolerance for flaky PTY tests: if a test is timing-dependent, it must be redesigned to be deterministic.",
-    "testCoverage": "Every regression in scratch/current-state.md must be covered by a high-confidence integration test that would fail without the fix and pass with it, demonstrating real end-to-end value (prompt submission, bell/indicator, resume flow, worktree robustness, orphan-free force kill)."
+    "task": "After EVERY significant change, run make pipeline and integration tests",
+    "description": "Run `make make-all-with-log` after every code change. Run `make integration-test-prsplit-mcp` after pr-split changes.",
+    "failPolicy": "If ANY check fails, STOP IMMEDIATELY and fix. Zero tolerance for flaky tests."
   },
   "finalEnforcementProtocol": [
     {
       "type": "POST_EXECUTION_WARNING",
-      "alert": "Do not claim a regression is fixed unless (1) you have a deterministic integration reproduction, (2) you validated it fails pre-fix via project.mk, and (3) you validated it passes post-fix via project.mk with inspectable evidence."
+      "alert": "Do not claim a regression is fixed without test evidence."
     },
     {
       "type": "POST_EXECUTION_WARNING_REPEATED",
-      "alert": "No commits until two contiguous, issue-free #runSubagent strict reviews confirm the change-set is at a local maximum of correctness. Update blueprint.json statuses incrementally; deviations must be logged in statusSection.replanLog."
+      "alert": "No commits until two contiguous, issue-free subagent reviews confirm correctness."
     }
   ]
 }

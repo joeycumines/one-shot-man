@@ -378,7 +378,7 @@ Preserve the original code's intent and structure where possible.`,
 ### 5.2 Custom JSON Goal Files
 
 For Tier 2 goals, provide as example JSON files following the existing
-`docs/custom-goal-example.json` pattern. These can live in a `goals/examples/`
+`docs/custom-goal-example.json` pattern. These can live in a `goals/`
 directory and be discovered via the goal autodiscovery mechanism.
 
 ### 5.3 Template Variables

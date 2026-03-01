@@ -26,7 +26,7 @@
   ],
   "mandatoryDirectives": {
     "contextManagement": "Execute tasks strictly in sequence. Update blueprint.json incrementally after each task. If you discover any mismatch between the plan and reality, STOP, create/expand investigation tasks, and perform a replanning checkpoint before continuing.",
-    "sourceOfTruth": "Primary requirements and failure descriptions are in scratch/current-state.md. Historical context and broader refinements are in scratch/past-state-old.md. The core implementation under test is internal/command/pr_split_script.js (notably sendToHandle ~2780-2834, executeSplit checkout logic ~1316-1324, and the mcpConfigPath check ~2406-2410)."
+    "sourceOfTruth": "Primary requirements and failure descriptions are in scratch/current-state.md. The core implementation under test is internal/command/pr_split_script.js (notably sendToHandle ~2780-2834, executeSplit checkout logic ~1316-1324, and the mcpConfigPath check ~2406-2410)."
   },
   "statusSection": {
     "currentState": "Known regressions observed in osm pr-split --strategy auto include: (1) mcpConfigPath error triggered by interactive claude spawn command path (to be eliminated by removing claude/claude-status subcommands), (2) prompt delivery paste-vs-submit behavior due to non-blocking I/O expectations requiring distinct 'text' vs 'Enter' delivery, (3) missing bell/visual indicator when Claude prompts for permissions, (4) executeSplit failing by attempting checkout of base branch (main) when that branch is checked out in an unrelated worktree elsewhere, (5) force-kill UI path claiming to kill processes but leaving orphans, (6) poor error recovery/resumption despite .pr-split-plan.json being generated.",
@@ -34,6 +34,12 @@
     "replanLog": []
   },
   "sequentialTasks": [
+    {
+      "task": "Investigation (mandatory): Validate scratch/current-state.md from scratch against current root code",
+      "description": "Read scratch/current-state.md from scratch and validate it against the root of the project. Ensure every regression/observation is accurately represented in this blueprint.json and aligns perfectly with the current project state (including actual implementation details).",
+      "acceptance": "current-state.md has been validated directly against the source code, and any discrepancies found are logged or used to refine the blueprint. The executor guarantees the blueprint correctly reflects project reality before proceeding.",
+      "status": "Not Started"
+    },
     {
       "task": "Investigation (mandatory): build a concrete domain model of the pr-split auto-split pipeline and its actual entrypoints",
       "description": "Read scratch/current-state.md and internal/command/pr_split_script.js sections referenced there (~1316-1324 executeSplit checkout, ~2406-2410 mcpConfigPath guard, ~2780-2834 sendToHandle, ~2851 automatedSplit). Create scratch/pr-split-domain-model.md describing: (1) how osm invokes pr_split_script.js, (2) how 'auto-split' triggers Claude spawn and prompt delivery, (3) where .pr-split-plan.json is written/read, (4) what knobs exist (flags/env/config) for selecting the Claude binary and/or enabling non-interactive execution, (5) what the TUI mux is and how panes are represented. Include exact function names and the concrete code paths (no speculation).",
@@ -257,27 +263,39 @@
       "status": "Not Started"
     },
     {
+      "task": "Validate pr-split flow end-to-end with an actual AI using Ollama",
+      "description": "Ensure the pr-split command with the capabilities to specify Claude through Ollama is correctly represented and tested using the actual AI dependencies available on the local system. Use the `integration-test-prsplit` target (or similar options) to specify the local Ollama provider. This guarantees the integration tests verify the end-to-end execution with a real AI on the local system natively.",
+      "acceptance": "The pr-split command is verified using an actual local AI (Ollama) through the provided project.mk integration test targets, proving that the flow works completely end-to-end.",
+      "status": "Not Started"
+    },
+    {
       "task": "Documentation: add a developer-facing guide for running pr-split macOS integration tests and interpreting artifacts",
       "description": "Add/update documentation (location per repo convention) describing: (1) how to run make all, (2) how to run the macOS-only pr-split integration targets from project.mk, (3) how to read failure artifacts/transcripts, (4) how to run the resumption flow manually, and (5) what environment variables/flags exist for selecting the fake Claude helper vs real Claude during development.",
       "acceptance": "A developer unfamiliar with the code can reliably reproduce and verify the fixed behaviors locally on macOS using only documented make targets and can locate integration test transcripts when failures occur.",
       "status": "Not Started"
     },
     {
-      "task": "Cross-platform guardrails: ensure non-macOS runs remain green and integration tests skip cleanly without weakening macOS coverage",
-      "description": "Verify that make all remains green across supported platforms and that macOS-only PTY integration tests are not accidentally executed (or do not fail) on Linux/Windows environments. Where necessary, add explicit build tags, runtime OS checks, or make gating consistent with repo patterns so that macOS coverage stays strong while cross-platform guarantees remain intact.",
-      "acceptance": "The project maintains its cross-platform contract (standard checks succeed everywhere) while macOS retains high-confidence PTY integration coverage for pr-split; developers are not blocked on unsupported platforms and do not get misleading red builds due to macOS-specific tests.",
+      "task": "Cross-platform guardrails: enforce Windows, Linux, and macOS pass CI as a critical check locally",
+      "description": "Ensure that all three platforms (Windows, Linux, and macOS) pass CI as a critical check. It is critical that all three pass, using the targets in config.mk and example.config.mk (`make make-all-with-log`, `make make-all-in-container` for Linux, and `make make-all-run-windows` for Windows). Run these on the local system to verify that standard cross-platform checks succeed reliably.",
+      "acceptance": "macOS, Linux (via container target), and Windows (via run-windows target) tests are successfully executed on the local system and pass completely. Integration tests skip cleanly on non-macOS systems without weakening macOS coverage.",
       "status": "Not Started"
     },
     {
       "task": "Indefinite Cycle expansion: identify and add the next frontier of pr-split quality improvements (tests + UX) and append new tasks to blueprint.json",
-      "description": "After completing all tasks above, immediately expand the blueprint by reading scratch/past-state-old.md and the current codebase to identify additional high-value, non-sloppy improvements tightly related to pr-split correctness and usability. Examples that must be considered (add concrete tasks if not already addressed): real-time verification visibility (streaming output during verification), richer per-branch status in renderSteps/AutoSplitModel, a failure Details view showing verify output, stronger schema validation for .pr-split-plan.json, and additional deterministic integration tests for any discovered edge cases. Add the new tasks to sequentialTasks and keep the list non-empty.",
+      "description": "After completing all tasks above, immediately expand the blueprint by rereading scratch/current-state.md, then, as if you know NOTHING, using subagents to incrementally and completely reverify - prove - that you TRULY addressed the ENTIRE SCOPE, adding tasks to the blueprint incrementally. Then, analyse the current codebase to identify additional high-value, non-sloppy improvements tightly related to pr-split correctness and usability. Examples that must be considered (add concrete tasks if not already addressed): real-time verification visibility (streaming output during verification), richer per-branch status in renderSteps/AutoSplitModel, a failure Details view showing verify output, stronger schema validation for .pr-split-plan.json, and additional deterministic integration tests for any discovered edge cases. Add the new tasks to sequentialTasks and keep the list non-empty.",
       "acceptance": "blueprint.json grows with new, concrete, project-specific tasks (with file/function pointers and end-to-end acceptance) that push pr-split towards higher reliability and better UX; the plan never 'ends' and does not devolve into generic filler.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Trailing task: Remove the osm:pty JavaScript module entirely",
+      "description": "As a trailing task at the very end after everything else is verified and fixed, remove the osm:pty JavaScript module entirely from the project. This includes internal/builtin/pty/ and any associated tests or documentation.",
+      "acceptance": "The osm:pty JavaScript module has been completely removed from the codebase, and all tests across platforms continue to pass.",
       "status": "Not Started"
     }
   ],
   "continuousVerification": {
     "task": "After EVERY significant change, run the repo’s standard make pipeline and the macOS pr-split integration targets defined in project.mk",
-    "description": "Run the canonical cross-platform checks (make all) whenever code changes. Additionally, on macOS, run the pr-split PTY integration targets added in this blueprint via project.mk. For each regression fix, do not proceed past the fix-validation task until the corresponding integration reproduction is observed failing pre-fix and observed passing post-fix using the project.mk targets (not ad-hoc go test invocations).",
+    "description": "Run the canonical cross-platform checks whenever code changes, enforcing that all three platforms (Windows, Linux, macOS) pass CI targets defined in config.mk / example.config.mk (`make-all-with-log`, `make-all-in-container`, `make-all-run-windows`). Additionally, on macOS, run the pr-split PTY integration targets added in this blueprint via project.mk. For each regression fix, do not proceed past the fix-validation task until the corresponding integration reproduction is observed failing pre-fix and observed passing post-fix using the project.mk targets (not ad-hoc go test invocations).",
     "failPolicy": "If ANY check fails, STOP IMMEDIATELY and fix it before proceeding. Zero tolerance for flaky PTY tests: if a test is timing-dependent, it must be redesigned to be deterministic.",
     "testCoverage": "Every regression in scratch/current-state.md must be covered by a high-confidence integration test that would fail without the fix and pass with it, demonstrating real end-to-end value (prompt submission, bell/indicator, resume flow, worktree robustness, orphan-free force kill)."
   },

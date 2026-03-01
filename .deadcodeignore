@@ -49,3 +49,13 @@ internal\builtin\bubbletea\testing.go:*: unreachable func: SyncJSRunner.RunJSSyn
 # PA-BT module exports — called from JavaScript via Goja runtime (not visible to deadcode analyzer).
 internal/builtin/pabt/*: unreachable func: *
 internal\builtin\pabt\*: unreachable func: *
+
+# mcpcallback test injection — cross-package test helpers used from command_test.
+internal/builtin/mcpcallbackmod/mcpcallback.go:*: unreachable func: WatchForInit
+internal\builtin\mcpcallbackmod\mcpcallback.go:*: unreachable func: WatchForInit
+internal/builtin/mcpcallbackmod/mcpcallback.go:*: unreachable func: Handle.InjectToolResult
+internal\builtin\mcpcallbackmod\mcpcallback.go:*: unreachable func: Handle.InjectToolResult
+internal/builtin/mcpcallbackmod/mcpcallback.go:*: unreachable func: Handle.Address
+internal\builtin\mcpcallbackmod\mcpcallback.go:*: unreachable func: Handle.Address
+internal/builtin/mcpcallbackmod/mcpcallback.go:*: unreachable func: mcpCallback.injectToolResult
+internal\builtin\mcpcallbackmod\mcpcallback.go:*: unreachable func: mcpCallback.injectToolResult

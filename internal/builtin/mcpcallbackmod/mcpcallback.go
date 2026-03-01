@@ -25,6 +25,87 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// ---------------------------------------------------------------------------
+// Test injection infrastructure
+// ---------------------------------------------------------------------------
+
+// Handle provides test-only access to an active mcpCallback instance.
+// Returned by WatchForInit. The underlying mcpCallback is unexported.
+type Handle struct {
+	cb *mcpCallback
+}
+
+// InjectToolResult sends data directly to a tool waiter channel, bypassing
+// the MCP transport. This unblocks a concurrent jsWaitFor call for the named
+// tool. For Go integration test use only.
+func (h *Handle) InjectToolResult(toolName string, data json.RawMessage) error {
+	return h.cb.injectToolResult(toolName, data)
+}
+
+// Address returns the listener address (socket path or host:port).
+func (h *Handle) Address() string {
+	h.cb.mu.Lock()
+	defer h.cb.mu.Unlock()
+	return h.cb.address
+}
+
+var (
+	watcherMu sync.Mutex
+	watchers  []chan *Handle
+)
+
+// WatchForInit returns a channel that receives a Handle to the next
+// mcpCallback that completes initialization (initSync/init). If a callback
+// is already initialized when this is called, the Handle is delivered
+// immediately. Used by Go integration tests to inject tool results while
+// the JS runtime is blocked on waitFor.
+//
+// The caller MUST drain the returned channel to avoid goroutine leaks.
+func WatchForInit() <-chan *Handle {
+	ch := make(chan *Handle, 1)
+	watcherMu.Lock()
+	watchers = append(watchers, ch)
+	watcherMu.Unlock()
+	return ch
+}
+
+// notifyWatchers is called after successful initSync/init. It delivers
+// a Handle to all registered watcher channels and clears the list.
+func notifyWatchers(cb *mcpCallback) {
+	h := &Handle{cb: cb}
+	watcherMu.Lock()
+	for _, ch := range watchers {
+		select {
+		case ch <- h:
+		default:
+		}
+	}
+	watchers = nil
+	watcherMu.Unlock()
+}
+
+// injectToolResult pushes data into the waiter channel for toolName.
+// Uses the same last-write-wins semantics as the real MCP handler.
+func (cb *mcpCallback) injectToolResult(toolName string, data json.RawMessage) error {
+	cb.toolMu.RLock()
+	w, ok := cb.toolWaiters[toolName]
+	cb.toolMu.RUnlock()
+	if !ok {
+		return fmt.Errorf("no waiter registered for tool %q", toolName)
+	}
+	// Non-blocking send with drain (same logic as addTool handler).
+	select {
+	case w.ch <- data:
+	default:
+		select {
+		case <-w.ch:
+		default:
+		}
+		w.ch <- data
+	}
+	return nil
+}
+
 // Require returns a module loader for the osm:mcpcallback module.
 // The adapter and loop are used for thread-safe JS callback invocation.
 func Require(adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) require.ModuleLoader {
@@ -237,6 +318,9 @@ func (cb *mcpCallback) jsInit() func(call goja.FunctionCall) goja.Value {
 					cb.cleanup()
 				}
 			}()
+
+			// Notify test watchers that a callback is ready for injection.
+			notifyWatchers(cb)
 
 			// Resolve promise on event loop thread
 			if submitErr := cb.loop.Submit(func() {
@@ -632,6 +716,9 @@ func (cb *mcpCallback) jsInitSync() func(call goja.FunctionCall) goja.Value {
 				cb.cleanup()
 			}
 		}()
+
+		// Notify test watchers that a callback is ready for injection.
+		notifyWatchers(cb)
 
 		return goja.Undefined()
 	}

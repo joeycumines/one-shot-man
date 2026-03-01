@@ -2,15 +2,13 @@ package command
 
 import (
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
 // ---------------------------------------------------------------------------
 // T063: Pipeline function tests — validatePlan, resolveConflicts,
-// pollForFile, ClaudeCodeExecutor.resolve
+// ClaudeCodeExecutor.resolve
 //
 // These tests exercise mid-level pipeline functions that orchestrate
 // splitting, verification, and conflict resolution. Each test group
@@ -64,24 +62,6 @@ func parseResolveConflictsResult(t *testing.T, raw interface{}) resolveConflicts
 	var r resolveConflictsResult
 	if err := json.Unmarshal([]byte(s), &r); err != nil {
 		t.Fatalf("failed to parse resolveConflicts result: %v\nraw: %s", err, s)
-	}
-	return r
-}
-
-type pollForFileResult struct {
-	Data  json.RawMessage `json:"data"`
-	Error *string         `json:"error"`
-}
-
-func parsePollForFileResult(t *testing.T, raw interface{}) pollForFileResult {
-	t.Helper()
-	s, ok := raw.(string)
-	if !ok {
-		t.Fatalf("expected string from evalJS, got %T: %v", raw, raw)
-	}
-	var r pollForFileResult
-	if err := json.Unmarshal([]byte(s), &r); err != nil {
-		t.Fatalf("failed to parse pollForFile result: %v\nraw: %s", err, s)
 	}
 	return r
 }
@@ -454,155 +434,6 @@ func TestResolveConflicts(t *testing.T) {
 				t.Fatalf("invoke failed: %v", err)
 			}
 			r := parseResolveConflictsResult(t, raw)
-			tt.check(t, r)
-		})
-	}
-}
-
-// ---------------------------------------------------------------------------
-// TestPollForFile — uses real temp dir + overridden osmod/timemod
-// ---------------------------------------------------------------------------
-
-func TestPollForFile(t *testing.T) {
-	t.Parallel()
-
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
-
-	// Create a temp dir for file polling tests.
-	tmpDir := t.TempDir()
-
-	tests := []struct {
-		name    string
-		setup   func(t *testing.T) // create files etc.
-		setupJS string             // JS setup code
-		invoke  string             // JS expression; uses tmpDir injected
-		check   func(t *testing.T, r pollForFileResult)
-	}{
-		{
-			name: "file found immediately",
-			setup: func(t *testing.T) {
-				data := `{"status":"ok","count":42}`
-				if err := os.WriteFile(filepath.Join(tmpDir, "found.json"), []byte(data), 0644); err != nil {
-					t.Fatal(err)
-				}
-			},
-			invoke: `JSON.stringify(pollForFile(_tmpDir, 'found.json', 5000, 10, ''))`,
-			check: func(t *testing.T, r pollForFileResult) {
-				if r.Error != nil {
-					t.Errorf("expected no error, got: %s", *r.Error)
-				}
-				if r.Data == nil {
-					t.Fatal("expected non-nil data")
-				}
-				var parsed map[string]interface{}
-				if err := json.Unmarshal(r.Data, &parsed); err != nil {
-					t.Fatalf("failed to parse data: %v", err)
-				}
-				if parsed["status"] != "ok" {
-					t.Errorf("expected status=ok, got %v", parsed["status"])
-				}
-			},
-		},
-		{
-			name:   "timeout when file never appears",
-			setup:  func(t *testing.T) {}, // no file created
-			invoke: `JSON.stringify(pollForFile(_tmpDir, 'never.json', 100, 20, ''))`,
-			check: func(t *testing.T, r pollForFileResult) {
-				if r.Error == nil {
-					t.Fatal("expected timeout error, got nil")
-				}
-				if !strings.Contains(*r.Error, "timeout") {
-					t.Errorf("expected timeout error, got: %s", *r.Error)
-				}
-			},
-		},
-		{
-			name: "file exists but contains invalid JSON",
-			setup: func(t *testing.T) {
-				if err := os.WriteFile(filepath.Join(tmpDir, "bad.json"), []byte("not json{{{"), 0644); err != nil {
-					t.Fatal(err)
-				}
-			},
-			invoke: `JSON.stringify(pollForFile(_tmpDir, 'bad.json', 5000, 10, ''))`,
-			check: func(t *testing.T, r pollForFileResult) {
-				if r.Error == nil {
-					t.Fatal("expected JSON parse error, got nil")
-				}
-				if !strings.Contains(*r.Error, "parse") {
-					t.Errorf("expected parse error, got: %s", *r.Error)
-				}
-			},
-		},
-		{
-			name:  "cancellation detected",
-			setup: func(t *testing.T) {}, // no file — polls until cancelled
-			setupJS: `
-				// Set up a mock autoSplitTUI with cancelled() returning true
-				globalThis.autoSplitTUI = {
-					cancelled: function() { return true; },
-					stepDetail: function() {}
-				};
-			`,
-			invoke: `JSON.stringify(pollForFile(_tmpDir, 'cancelled.json', 60000, 10, 'test step'))`,
-			check: func(t *testing.T, r pollForFileResult) {
-				if r.Error == nil {
-					t.Fatal("expected cancellation error, got nil")
-				}
-				if !strings.Contains(*r.Error, "cancelled") {
-					t.Errorf("expected 'cancelled' error, got: %s", *r.Error)
-				}
-			},
-		},
-		{
-			name: "file appears with nested JSON object",
-			setup: func(t *testing.T) {
-				data := `{"splits":[{"name":"s1","files":["a.go"]},{"name":"s2","files":["b.go"]}]}`
-				if err := os.WriteFile(filepath.Join(tmpDir, "nested.json"), []byte(data), 0644); err != nil {
-					t.Fatal(err)
-				}
-			},
-			invoke: `JSON.stringify(pollForFile(_tmpDir, 'nested.json', 5000, 10, ''))`,
-			check: func(t *testing.T, r pollForFileResult) {
-				if r.Error != nil {
-					t.Errorf("expected no error, got: %s", *r.Error)
-				}
-				var parsed map[string]interface{}
-				if err := json.Unmarshal(r.Data, &parsed); err != nil {
-					t.Fatalf("failed to parse nested data: %v", err)
-				}
-				splits, ok := parsed["splits"].([]interface{})
-				if !ok || len(splits) != 2 {
-					t.Errorf("expected 2 splits, got %v", parsed["splits"])
-				}
-			},
-		},
-	}
-
-	// Inject tmpDir as a JS global so poll references it.
-	if _, err := evalJS(`globalThis._tmpDir = ` + jsStringLiteral(tmpDir)); err != nil {
-		t.Fatal(err)
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Clean up any mock TUI from previous subtests.
-			if _, err := evalJS(`globalThis.autoSplitTUI = undefined;`); err != nil {
-				t.Fatal(err)
-			}
-
-			tt.setup(t)
-
-			if tt.setupJS != "" {
-				if _, err := evalJS(tt.setupJS); err != nil {
-					t.Fatalf("setupJS failed: %v", err)
-				}
-			}
-
-			raw, err := evalJS(tt.invoke)
-			if err != nil {
-				t.Fatalf("invoke failed: %v", err)
-			}
-			r := parsePollForFileResult(t, raw)
 			tt.check(t, r)
 		})
 	}

@@ -571,9 +571,9 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 				}
 			};
 
-			// Call spawn — it creates MCP instance via cm, then spawns provider.
+			// Call spawn with mcpConfigPath (mandatory since mcpcallback is sole IPC).
 			var originalSpawn = ClaudeCodeExecutor.prototype.spawn;
-			originalSpawn.call(executor);
+			originalSpawn.call(executor, null, { mcpConfigPath: tmpDir + '/mcp-config.json' });
 
 			if (!capturedArgs) {
 				return JSON.stringify({ error: 'spawn did not capture args' });
@@ -672,7 +672,7 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 			};
 
 			var originalSpawn = ClaudeCodeExecutor.prototype.spawn;
-			originalSpawn.call(executor);
+			originalSpawn.call(executor, null, { mcpConfigPath: tmpDir + '/mcp-config.json' });
 
 			if (!capturedArgs) {
 				return JSON.stringify({ error: 'ollama spawn did not capture args' });
@@ -747,7 +747,7 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 			};
 
 			var originalSpawn = ClaudeCodeExecutor.prototype.spawn;
-			originalSpawn.call(executor);
+			originalSpawn.call(executor, null, { mcpConfigPath: tmpDir + '/mcp-config.json' });
 
 			if (!capturedArgs) {
 				return JSON.stringify({ error: 'explicit-claude spawn did not capture args' });
@@ -821,7 +821,7 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 			};
 
 			var originalSpawn = ClaudeCodeExecutor.prototype.spawn;
-			originalSpawn.call(executor);
+			originalSpawn.call(executor, null, { mcpConfigPath: tmpDir + '/mcp-config.json' });
 
 			if (!capturedArgs) {
 				return JSON.stringify({ error: 'explicit-other spawn did not capture args' });
@@ -913,7 +913,7 @@ func TestIntegration_SpawnHealthCheck_DeadProcess(t *testing.T) {
 			};
 
 			var originalSpawn = ClaudeCodeExecutor.prototype.spawn;
-			var result = originalSpawn.call(executor);
+			var result = originalSpawn.call(executor, null, { mcpConfigPath: tmpDir + '/mcp-config.json' });
 			return JSON.stringify(result);
 		})()
 	`)
@@ -992,7 +992,7 @@ func TestIntegration_SpawnHealthCheck_AliveProcess(t *testing.T) {
 			};
 
 			var originalSpawn = ClaudeCodeExecutor.prototype.spawn;
-			var result = originalSpawn.call(executor);
+			var result = originalSpawn.call(executor, null, { mcpConfigPath: tmpDir + '/mcp-config.json' });
 			return JSON.stringify(result);
 		})()
 	`)
@@ -1003,7 +1003,6 @@ func TestIntegration_SpawnHealthCheck_AliveProcess(t *testing.T) {
 	var result struct {
 		Error     *string `json:"error"`
 		SessionID string  `json:"sessionId"`
-		ResultDir string  `json:"resultDir"`
 	}
 	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
 		t.Fatalf("parse error: %v", err)

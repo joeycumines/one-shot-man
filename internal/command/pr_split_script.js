@@ -1758,24 +1758,13 @@ var AUTO_FIX_STRATEGIES = [
             if (sendResult.error) {
                 return { fixed: false, error: 'failed to send to Claude: ' + sendResult.error };
             }
-            // Wait for resolution via mcpcallback or file polling.
+            // Wait for resolution via mcpcallback.
             var resolutionPoll;
-            if (mcpCallbackObj && (!claudeExecutor || !claudeExecutor.mcpInstance)) {
-                mcpCallbackObj.resetWaiter('reportResolution');
-                resolutionPoll = mcpCallbackObj.waitFor('reportResolution', resolveTimeoutMs, {
-                    aliveCheck: aliveCheckFn,
-                    checkIntervalMs: pollIntervalMs
-                });
-            } else {
-                var resultDir = claudeExecutor.mcpInstance ? claudeExecutor.mcpInstance.resultDir() : '';
-                if (!resultDir) {
-                    return { fixed: false, error: 'no result directory for Claude response' };
-                }
-                // Delete old resolution file.
-                try { exec.execv(['rm', '-f', resultDir + '/resolution.json']); } catch (e) { /* ignore */ }
-                resolutionPoll = pollForFile(resultDir, 'resolution.json',
-                    resolveTimeoutMs, pollIntervalMs, 'Claude fix resolution', aliveCheckFn);
-            }
+            mcpCallbackObj.resetWaiter('reportResolution');
+            resolutionPoll = mcpCallbackObj.waitFor('reportResolution', resolveTimeoutMs, {
+                aliveCheck: aliveCheckFn,
+                checkIntervalMs: pollIntervalMs
+            });
             if (resolutionPoll.error) {
                 return { fixed: false, error: 'Claude resolution timeout: ' + resolutionPoll.error };
             }
@@ -2094,24 +2083,11 @@ ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
 
     this.sessionId = sessionId || ('prsplit-' + Date.now());
 
-    // Determine MCP config path: external (mcpcallback) or internal (mcpInstance).
-    var mcpConfigPath;
-    if (opts.mcpConfigPath) {
-        // External MCP transport (osm:mcpcallback) — skip mcpInstance creation.
-        mcpConfigPath = opts.mcpConfigPath;
-    } else {
-        // Legacy: Create MCP instance with result directory.
-        try {
-            this.mcpInstance = this.cm.newMCPInstance(this.sessionId);
-            this.mcpInstance.setResultDir(this.mcpInstance.configDir() + '/results');
-            // Create result directory.
-            exec.execv(['mkdir', '-p', this.mcpInstance.resultDir()]);
-            this.mcpInstance.writeConfigFile();
-            mcpConfigPath = this.mcpInstance.configPath();
-        } catch (e) {
-            return { error: 'MCP instance creation failed: ' + (e.message || String(e)) };
-        }
+    // Determine MCP config path: provided by osm:mcpcallback (mandatory).
+    if (!opts.mcpConfigPath) {
+        return { error: 'mcpConfigPath is required (provided by osm:mcpcallback)' };
     }
+    var mcpConfigPath = opts.mcpConfigPath;
 
     // Spawn via provider registry.
     var spawnOpts;
@@ -2164,11 +2140,6 @@ ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
         registry.register(provider);
         this.handle = registry.spawn(provider.name(), spawnOpts);
     } catch (e) {
-        // Clean up MCP instance on spawn failure.
-        if (this.mcpInstance) {
-            try { this.mcpInstance.close(); } catch (e2) { /* best effort */ }
-            this.mcpInstance = null;
-        }
         // Show the full command that was attempted so the user can debug.
         var cmdDesc = this.resolved.command;
         if (spawnOpts && spawnOpts.args && spawnOpts.args.length > 0) {
@@ -2205,10 +2176,6 @@ ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
             // Clean up the dead handle.
             try { this.handle.close(); } catch (closeErr) { /* best effort */ }
             this.handle = null;
-            if (this.mcpInstance) {
-                try { this.mcpInstance.close(); } catch (mcpErr) { /* best effort */ }
-                this.mcpInstance = null;
-            }
 
             var cmdDesc = this.resolved.command;
             if (spawnOpts && spawnOpts.args && spawnOpts.args.length > 0) {
@@ -2224,7 +2191,7 @@ ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
         }
     }
 
-    return { error: null, sessionId: this.sessionId, resultDir: this.mcpInstance ? this.mcpInstance.resultDir() : '' };
+    return { error: null, sessionId: this.sessionId };
 };
 
 // isAvailable returns true if a Claude-compatible binary can be resolved.
@@ -2238,11 +2205,7 @@ ClaudeCodeExecutor.prototype.close = function() {
     if (this.handle && typeof this.handle.close === 'function') {
         try { this.handle.close(); } catch (e) { /* best effort */ }
     }
-    if (this.mcpInstance && typeof this.mcpInstance.close === 'function') {
-        try { this.mcpInstance.close(); } catch (e) { /* best effort */ }
-    }
     this.handle = null;
-    this.mcpInstance = null;
     this.sessionId = null;
     this.resolved = null;
 };
@@ -2443,7 +2406,7 @@ function detectLanguage(files) {
 //      → maxAttemptsPerBranch: min 0
 //
 //   6. Consumers: Each pipeline step reads its timeout from the resolved chain:
-//      → pollForFile(resultDir, filename, timeoutMs, intervalMs, ...)
+//      → mcpCallbackObj.waitFor(toolName, timeoutMs, opts)
 //      → resolveConflictsWithClaude(..., { resolveWallClockTimeoutMs })
 //      → verifySplit(..., { verifyTimeoutMs })
 //
@@ -2525,61 +2488,6 @@ function sendToHandle(handle, text) {
 
     // Fallback: direct synchronous single-write with EAGAIN retry.
     return sendWithRetry(payload);
-}
-
-// pollForFile polls a result directory for a specific file.
-// Returns { data: object|null, error: string|null }.
-function pollForFile(resultDir, filename, timeoutMs, intervalMs, stepName, aliveCheckFn) {
-    if (!osmod) {
-        return { data: null, error: 'osm:os module not available for file polling' };
-    }
-    // Floor: prevent spin-loops from zero/negative intervals.
-    if (intervalMs < 50) { intervalMs = 50; }
-    var hasDetailUpdate = stepName && typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
-                          typeof autoSplitTUI.stepDetail === 'function';
-    var hasAliveCheck = typeof aliveCheckFn === 'function';
-    var elapsed = 0;
-    var spinnerIdx = 0;
-    var iterCount = 0;
-    while (elapsed < timeoutMs) {
-        // Check cancellation before each poll iteration.
-        if (isCancelled()) {
-            return { data: null, error: 'cancelled by user' };
-        }
-        // Heartbeat check every 10 iterations (~5s at 500ms interval).
-        if (hasAliveCheck && iterCount > 0 && iterCount % 10 === 0) {
-            if (!aliveCheckFn()) {
-                return { data: null, error: 'process exited during poll for ' + filename };
-            }
-        }
-        iterCount++;
-        // Emit progress on every iteration so the TUI shows activity.
-        if (hasDetailUpdate) {
-            var spinner = SPINNER_FRAMES[spinnerIdx % SPINNER_FRAMES.length];
-            var elapsedSec = Math.round(elapsed / 1000);
-            var timeoutSec = Math.round(timeoutMs / 1000);
-            autoSplitTUI.stepDetail(stepName, spinner + ' polling… ' + elapsedSec + 's / ' + timeoutSec + 's');
-            spinnerIdx++;
-        }
-        var readResult = osmod.readFile(resultDir + '/' + filename);
-        if (!readResult.error) {
-            try {
-                var data = JSON.parse(readResult.content);
-                return { data: data, error: null };
-            } catch (e) {
-                return { data: null, error: 'failed to parse ' + filename + ': ' + e.message };
-            }
-        }
-        // Sleep without burning CPU. Prefer osm:time.sleep (Go time.Sleep)
-        // but fall back to exec.execv(['sleep', ...]) if unavailable.
-        if (timemod && typeof timemod.sleep === 'function') {
-            timemod.sleep(intervalMs);
-        } else {
-            exec.execv(['sleep', String(intervalMs / 1000)]);
-        }
-        elapsed += intervalMs;
-    }
-    return { data: null, error: 'timeout waiting for ' + filename + ' after ' + timeoutMs + 'ms' };
 }
 
 // automatedSplit orchestrates the full automated PR splitting pipeline.
@@ -2753,13 +2661,10 @@ function automatedSplit(config) {
         analysis = analysisCache || { files: [], fileStatuses: {}, baseBranch: '', currentBranch: '' };
     }
 
-    // Steps 2-6 are skipped when resuming from a saved plan.
-    if (!resuming) {
-    // Step 1b: Initialize MCP callback transport for Claude IPC.
+    // Initialize MCP callback transport for Claude IPC.
     // Creates a local socket server with Go-native tool handlers that bypass
-    // the JS event loop. This replaces file-polling IPC with synchronous
-    // channel-based communication.
-    var mcpCallbackReady = false;
+    // the JS event loop. mcpcallback is the sole IPC mechanism — failure is fatal.
+    // Initialized for BOTH fresh and resume paths (needed for conflict resolution).
     try {
         var mcpMod = require('osm:mcp');
         var MCPCallbackMod = require('osm:mcpcallback');
@@ -2829,13 +2734,13 @@ function automatedSplit(config) {
             });
 
         mcpCallbackObj.initSync();
-        mcpCallbackReady = true;
         log.printf('auto-split: MCP callback initialized at %s (%s)', mcpCallbackObj.address, mcpCallbackObj.transport);
     } catch (e) {
-        // MCP callback unavailable — fall back to legacy file polling.
-        log.printf('auto-split: MCP callback init failed, using file polling: %s', e.message || String(e));
-        mcpCallbackObj = null;
+        return finishTUI({ error: 'MCP callback initialization failed: ' + (e.message || String(e)), report: report });
     }
+
+    // Steps 2-6 are skipped when resuming from a saved plan.
+    if (!resuming) {
 
     // Step 2: Spawn Claude (or fall back to heuristic).
     var executor = step('Spawn Claude', function() {
@@ -2849,14 +2754,12 @@ function automatedSplit(config) {
         }
         updateDetail('Spawn Claude', 'Starting Claude process...');
         var spawnOpts = {};
-        if (mcpCallbackReady) {
-            spawnOpts.mcpConfigPath = mcpCallbackObj.mcpConfigPath;
-        }
+        spawnOpts.mcpConfigPath = mcpCallbackObj.mcpConfigPath;
         var spawnResult = claudeExecutor.spawn(null, spawnOpts);
         if (spawnResult.error) {
             return { error: spawnResult.error };
         }
-        return { error: null, sessionId: spawnResult.sessionId, resultDir: spawnResult.resultDir };
+        return { error: null, sessionId: spawnResult.sessionId };
     });
 
     // If Claude is unavailable, fall back to heuristic mode.
@@ -2867,15 +2770,9 @@ function automatedSplit(config) {
     }
 
     var sessionId = executor.sessionId;
-    var resultDir = executor.resultDir;
-
-    // Determine IPC mode: mcpcallback (channel) or legacy (file polling).
-    // When mcpCallback was used for spawn, resultDir is empty (no mcpInstance).
-    // When legacy mcpInstance was used (e.g., mock tests), resultDir is set.
-    var usingMCPCallbackIPC = mcpCallbackReady && !resultDir;
 
     // Heartbeat function: checks if the Claude process is still alive.
-    // Passed to pollForFile so long polls can exit early if the process dies.
+    // Passed to waitFor so long polls can exit early if the process dies.
     var aliveCheckFn = function() {
         return claudeExecutor && claudeExecutor.handle &&
                typeof claudeExecutor.handle.isAlive === 'function' &&
@@ -2934,23 +2831,18 @@ function automatedSplit(config) {
     var classification = step('Receive classification', function() {
         updateDetail('Receive classification', 'Waiting for classification...');
         var pollResult;
-        if (usingMCPCallbackIPC) {
-            // IPC via osm:mcpcallback — blocks on Go channel until tool is called.
-            pollResult = mcpCallbackObj.waitFor('reportClassification', timeouts.classify, {
-                aliveCheck: aliveCheckFn,
-                onProgress: function(elapsed) {
-                    var sec = Math.round(elapsed / 1000);
-                    updateDetail('Receive classification', 'Waiting... ' + sec + 's');
-                },
-                checkIntervalMs: pollInterval
-            });
-            // Extract categories from full tool arguments {sessionId, categories, seq}.
-            if (!pollResult.error && pollResult.data) {
-                pollResult = { data: pollResult.data.categories || pollResult.data, error: null };
-            }
-        } else {
-            // Legacy fallback: poll filesystem for classification.json.
-            pollResult = pollForFile(resultDir, 'classification.json', timeouts.classify, pollInterval, 'Receive classification', aliveCheckFn);
+        // IPC via osm:mcpcallback — blocks on Go channel until tool is called.
+        pollResult = mcpCallbackObj.waitFor('reportClassification', timeouts.classify, {
+            aliveCheck: aliveCheckFn,
+            onProgress: function(elapsed) {
+                var sec = Math.round(elapsed / 1000);
+                updateDetail('Receive classification', 'Waiting... ' + sec + 's');
+            },
+            checkIntervalMs: pollInterval
+        });
+        // Extract categories from full tool arguments {sessionId, categories, seq}.
+        if (!pollResult.error && pollResult.data) {
+            pollResult = { data: pollResult.data.categories || pollResult.data, error: null };
         }
         if (pollResult.error) {
             return { error: pollResult.error };
@@ -3010,17 +2902,13 @@ function automatedSplit(config) {
         updateDetail('Generate split plan', 'Checking for Claude-generated plan...');
         // Check if Claude also provided a split plan (short timeout — optional).
         var planPoll;
-        if (usingMCPCallbackIPC) {
-            planPoll = mcpCallbackObj.waitFor('reportSplitPlan', 5000, {
-                aliveCheck: aliveCheckFn,
-                checkIntervalMs: 1000
-            });
-            // Extract stages from full tool arguments.
-            if (!planPoll.error && planPoll.data) {
-                planPoll = { data: planPoll.data.stages || planPoll.data, error: null };
-            }
-        } else {
-            planPoll = pollForFile(resultDir, 'split-plan.json', 5000, 500, 'Generate split plan', aliveCheckFn);
+        planPoll = mcpCallbackObj.waitFor('reportSplitPlan', 5000, {
+            aliveCheck: aliveCheckFn,
+            checkIntervalMs: 1000
+        });
+        // Extract stages from full tool arguments.
+        if (!planPoll.error && planPoll.data) {
+            planPoll = { data: planPoll.data.stages || planPoll.data, error: null };
         }
         if (!planPoll.error && planPoll.data) {
             // Claude provided a plan — validate it.
@@ -3125,7 +3013,6 @@ function automatedSplit(config) {
         classification = { classification: groupsCache || {} };
         plan = planCache;
         sessionId = null;
-        resultDir = null;
         aliveCheckFn = null;
 
         // Try to spawn Claude for conflict resolution capability.
@@ -3134,10 +3021,9 @@ function automatedSplit(config) {
         }
         var resumeResolve = claudeExecutor.resolve();
         if (!resumeResolve.error) {
-            var resumeSpawn = claudeExecutor.spawn();
+            var resumeSpawn = claudeExecutor.spawn(null, { mcpConfigPath: mcpCallbackObj.mcpConfigPath });
             if (!resumeSpawn.error) {
                 sessionId = resumeSpawn.sessionId;
-                resultDir = resumeSpawn.resultDir;
                 aliveCheckFn = function() {
                     return claudeExecutor && claudeExecutor.handle &&
                            typeof claudeExecutor.handle.isAlive === 'function' &&
@@ -3188,7 +3074,7 @@ function automatedSplit(config) {
     if (verifyResult.failures && verifyResult.failures.length > 0) {
         var resolved = step('Resolve conflicts via Claude', function() {
             return resolveConflictsWithClaude(
-                verifyResult.failures, sessionId, resultDir,
+                verifyResult.failures, sessionId,
                 timeouts, pollInterval, maxAttemptsPerBranch, report, aliveCheckFn
             );
         });
@@ -3210,25 +3096,19 @@ function automatedSplit(config) {
                 }
                 report.claudeInteractions++;
                 recordConversation('re-classify', constraintPrompt, '');
-                // Wait for new classification via mcpcallback or file polling.
+                // Wait for new classification via mcpcallback.
                 var rePoll;
-                if (usingMCPCallbackIPC) {
-                    mcpCallbackObj.resetWaiter('reportClassification');
-                    rePoll = mcpCallbackObj.waitFor('reportClassification', timeouts.classify, {
-                        aliveCheck: aliveCheckFn,
-                        onProgress: function(elapsed) {
-                            updateDetail('Re-classify (retry ' + reSplitCount + ')', 'Waiting... ' + Math.round(elapsed / 1000) + 's');
-                        },
-                        checkIntervalMs: pollInterval
-                    });
-                    // Extract categories from full tool arguments.
-                    if (!rePoll.error && rePoll.data) {
-                        rePoll = { data: rePoll.data.categories || rePoll.data, error: null };
-                    }
-                } else {
-                    // Delete old classification file so we wait for the new one.
-                    try { exec.execv(['rm', '-f', resultDir + '/classification.json']); } catch (e) { /* ignore */ }
-                    rePoll = pollForFile(resultDir, 'classification.json', timeouts.classify, pollInterval, 'Re-classify (retry ' + reSplitCount + ')', aliveCheckFn);
+                mcpCallbackObj.resetWaiter('reportClassification');
+                rePoll = mcpCallbackObj.waitFor('reportClassification', timeouts.classify, {
+                    aliveCheck: aliveCheckFn,
+                    onProgress: function(elapsed) {
+                        updateDetail('Re-classify (retry ' + reSplitCount + ')', 'Waiting... ' + Math.round(elapsed / 1000) + 's');
+                    },
+                    checkIntervalMs: pollInterval
+                });
+                // Extract categories from full tool arguments.
+                if (!rePoll.error && rePoll.data) {
+                    rePoll = { data: rePoll.data.categories || rePoll.data, error: null };
                 }
                 if (rePoll.error) {
                     return { error: rePoll.error };
@@ -3383,7 +3263,7 @@ function classificationToGroups(classification) {
 }
 
 // resolveConflictsWithClaude attempts to fix failing splits using Claude.
-function resolveConflictsWithClaude(failures, sessionId, resultDir, timeouts, pollInterval, maxAttemptsPerBranch, report, aliveCheckFn) {
+function resolveConflictsWithClaude(failures, sessionId, timeouts, pollInterval, maxAttemptsPerBranch, report, aliveCheckFn) {
     var reSplitNeeded = false;
     var reSplitReason = '';
 
@@ -3448,22 +3328,16 @@ function resolveConflictsWithClaude(failures, sessionId, resultDir, timeouts, po
             report.claudeInteractions++;
             recordConversation('conflict-resolution', promptResult.text, '');
 
-            // Wait for resolution via mcpcallback or file polling.
+            // Wait for resolution via mcpcallback.
             var resolutionPoll;
-            if (mcpCallbackObj && (!claudeExecutor || !claudeExecutor.mcpInstance)) {
-                mcpCallbackObj.resetWaiter('reportResolution');
-                resolutionPoll = mcpCallbackObj.waitFor('reportResolution', timeouts.resolve, {
-                    aliveCheck: aliveCheckFn,
-                    onProgress: function(elapsed) {
-                        updateDetail('Resolve conflicts', 'Waiting... ' + Math.round(elapsed / 1000) + 's');
-                    },
-                    checkIntervalMs: pollInterval
-                });
-            } else {
-                // Delete old resolution file first.
-                try { exec.execv(['rm', '-f', resultDir + '/resolution.json']); } catch (e) { /* ignore */ }
-                resolutionPoll = pollForFile(resultDir, 'resolution.json', timeouts.resolve, pollInterval, 'Resolve conflicts', aliveCheckFn);
-            }
+            mcpCallbackObj.resetWaiter('reportResolution');
+            resolutionPoll = mcpCallbackObj.waitFor('reportResolution', timeouts.resolve, {
+                aliveCheck: aliveCheckFn,
+                onProgress: function(elapsed) {
+                    updateDetail('Resolve conflicts', 'Waiting... ' + Math.round(elapsed / 1000) + 's');
+                },
+                checkIntervalMs: pollInterval
+            });
             if (resolutionPoll.error) {
                 log.printf('auto-split: resolution timeout for %s (attempt %d)', fail.branch || fail.name, attempt + 1);
                 continue;
@@ -4260,7 +4134,6 @@ globalThis.prSplit = {
     resolveConflictsWithClaude: resolveConflictsWithClaude,
     AUTO_FIX_STRATEGIES: AUTO_FIX_STRATEGIES,
     AUTOMATED_DEFAULTS: AUTOMATED_DEFAULTS,
-    pollForFile: pollForFile,
 
     // Claude Code executor
     ClaudeCodeExecutor: ClaudeCodeExecutor,

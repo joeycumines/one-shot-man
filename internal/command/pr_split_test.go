@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/joeycumines/one-shot-man/internal/builtin/mcpcallbackmod"
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 )
@@ -3340,7 +3341,6 @@ func TestPrSplitCommand_Phase4ScriptContent(t *testing.T) {
 		content string
 	}{
 		{"automatedSplit function", "function automatedSplit"},
-		{"pollForFile function", "function pollForFile"},
 		{"classificationToGroups function", "function classificationToGroups"},
 		{"assessIndependence function", "function assessIndependence"},
 		{"detectLanguage function", "function detectLanguage"},
@@ -4301,7 +4301,6 @@ func TestPrSplitCommand_ResolveConflictsWithClaudeWallClockTimeout(t *testing.T)
 		var result = globalThis.prSplit.resolveConflictsWithClaude(
 			failures,
 			'test-session',
-			'/nonexistent',
 			{ resolve: 30000, wallClockMs: 0 },
 			500,
 			3,
@@ -4489,19 +4488,9 @@ func TestPrSplitCommand_ResolveConflictsWithClaudePreExistingFailure(t *testing.
 
 	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
 
-	// Create a temp dir and write resolution.json with preExistingFailure.
-	resultDir := t.TempDir()
-	resolutionJSON := `{"preExistingFailure":true,"preExistingDetails":"fails on main too"}`
-	if err := os.WriteFile(filepath.Join(resultDir, "resolution.json"), []byte(resolutionJSON), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
 	// Mock claudeExecutor so sendToHandle can send prompts.
-	// Shadow exec.execv so the 'rm -f resolution.json' inside
-	// resolveConflictsWithClaude becomes a no-op — this lets the
-	// pre-written resolution.json survive until pollForFile reads it.
+	// Mock mcpCallbackObj to return pre-existing failure resolution data.
 	val, err := evalJS(`(function() {
-		var resultDir = ` + "`" + resultDir + "`" + `;
 		var sendCallCount = 0;
 		claudeExecutor = {
 			handle: {
@@ -4510,19 +4499,19 @@ func TestPrSplitCommand_ResolveConflictsWithClaudePreExistingFailure(t *testing.
 			}
 		};
 
-		// Shadow exec to no-op rm -f (preserves resolution.json on disk).
-		var _origExec = exec;
-		var execProxy = {
-			execv: function(args) {
-				if (args && args[0] === 'rm') return '';
-				return _origExec.execv(args);
+		// Mock mcpCallbackObj to return resolution data on waitFor.
+		mcpCallbackObj = {
+			resetWaiter: function() {},
+			waitFor: function(name, timeout, opts) {
+				if (name === 'reportResolution') {
+					return {
+						data: { preExistingFailure: true, preExistingDetails: 'fails on main too' },
+						error: null
+					};
+				}
+				return { data: null, error: 'timeout' };
 			}
 		};
-		// Copy any other properties from the original exec.
-		for (var k in _origExec) {
-			if (k !== 'execv') execProxy[k] = _origExec[k];
-		}
-		exec = execProxy;
 
 		var failures = [
 			{ branch: 'split/pre-existing', files: ['a.go'], error: 'test fail' }
@@ -4531,15 +4520,11 @@ func TestPrSplitCommand_ResolveConflictsWithClaudePreExistingFailure(t *testing.
 		var result = globalThis.prSplit.resolveConflictsWithClaude(
 			failures,
 			'test-session',
-			resultDir,
 			{ resolve: 5000, wallClockMs: 30000 },
 			100,
 			3,
 			report
 		);
-
-		// Restore exec.
-		exec = _origExec;
 
 		return JSON.stringify({
 			result: result,
@@ -4614,7 +4599,7 @@ func TestPrSplitCommand_ResolveConflictsWithClaude_MaxAttemptsPerBranch(t *testi
 
 	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
 
-	// 2 failures, maxAttemptsPerBranch=2, mock pollForFile to always fail.
+	// 2 failures, maxAttemptsPerBranch=2, mcpCallbackObj always times out.
 	// Each failure should get exactly 2 attempts (not share a global budget).
 	val, err := evalJS(`(function() {
 		var sendCount = 0;
@@ -4625,19 +4610,23 @@ func TestPrSplitCommand_ResolveConflictsWithClaude_MaxAttemptsPerBranch(t *testi
 			}
 		};
 
+		// Mock mcpCallbackObj to always timeout (no resolution data).
+		mcpCallbackObj = {
+			resetWaiter: function() {},
+			waitFor: function(name, timeout, opts) {
+				return { data: null, error: 'timeout waiting for ' + name + ' after ' + timeout + 'ms' };
+			}
+		};
+
 		var failures = [
 			{ branch: 'split/fail-a', files: ['a.go'], error: 'test fail' },
 			{ branch: 'split/fail-b', files: ['b.go'], error: 'test fail' }
 		];
 		var report = { conflicts: [], resolutions: [], claudeInteractions: 0 };
 
-		// Use wallClockMs=0 on the SECOND call to force timeout mid-processing.
-		// Instead, use a very short resolve timeout and nonexistent resultDir so
-		// pollForFile returns timeout quickly.
 		var result = globalThis.prSplit.resolveConflictsWithClaude(
 			failures,
 			'test-session',
-			'/nonexistent-dir-for-test',
 			{ resolve: 100, wallClockMs: 30000 },
 			50,
 			2,
@@ -5890,7 +5879,7 @@ func TestIntegration_HeuristicFallback(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// T100: Timeout behavior — pollForFile timeout
+// T100: Timeout behavior — budget enforcement
 // ---------------------------------------------------------------------------
 
 func TestIntegration_PollFileTimeout(t *testing.T) {
@@ -5928,85 +5917,6 @@ func TestIntegration_PollFileTimeout(t *testing.T) {
 	}
 	if len(result.Errors) == 0 {
 		t.Error("expected errors when budget is 0")
-	}
-}
-
-// T070: Heartbeat check in pollForFile
-func TestPrSplitCommand_PollForFileHeartbeatExitsOnDeath(t *testing.T) {
-	t.Parallel()
-
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
-
-	tmpDir := t.TempDir()
-	escapedDir := strings.ReplaceAll(tmpDir, `\`, `\\`)
-	escapedDir = strings.ReplaceAll(escapedDir, `'`, `\'`)
-
-	// aliveCheckFn returns false after 10 calls (which triggers on the 10th iteration).
-	// With intervalMs=10, 10 iterations = ~100ms. Timeout is 30s.
-	// Without heartbeat, this would wait 30s. With heartbeat, it should exit in <2s.
-	val, err := evalJS(`(function() {
-		var callCount = 0;
-		var aliveCheckFn = function() {
-			callCount++;
-			return false; // always dead — should trigger on first heartbeat check
-		};
-		var start = Date.now();
-		var result = globalThis.prSplit.pollForFile(
-			'` + escapedDir + `', 'nonexistent.json',
-			30000, 10, 'test-heartbeat', aliveCheckFn
-		);
-		var elapsed = Date.now() - start;
-		return JSON.stringify({ error: result.error, elapsedMs: elapsed, callCount: callCount });
-	})()`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var result struct {
-		Error     string `json:"error"`
-		ElapsedMs int    `json:"elapsedMs"`
-		CallCount int    `json:"callCount"`
-	}
-	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
-		t.Fatalf("Failed to parse result: %v", err)
-	}
-	if !strings.Contains(result.Error, "process exited during poll") {
-		t.Errorf("Expected 'process exited during poll' error, got: %s", result.Error)
-	}
-	// Should exit well before the 30s timeout.
-	if result.ElapsedMs > 5000 {
-		t.Errorf("Expected exit within 5s, took %dms", result.ElapsedMs)
-	}
-}
-
-func TestPrSplitCommand_PollForFileNoHeartbeatBackwardCompat(t *testing.T) {
-	t.Parallel()
-
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
-
-	tmpDir := t.TempDir()
-	escapedDir := strings.ReplaceAll(tmpDir, `\`, `\\`)
-	escapedDir = strings.ReplaceAll(escapedDir, `'`, `\'`)
-
-	// Without aliveCheckFn, pollForFile should still work — it just times out normally.
-	val, err := evalJS(`(function() {
-		var result = globalThis.prSplit.pollForFile(
-			'` + escapedDir + `', 'nonexistent.json',
-			100, 10, 'test-compat'
-		);
-		return JSON.stringify({ error: result.error });
-	})()`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var result struct {
-		Error string `json:"error"`
-	}
-	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
-		t.Fatalf("Failed to parse result: %v", err)
-	}
-	// Should timeout normally, not crash.
-	if !strings.Contains(result.Error, "timeout waiting for") {
-		t.Errorf("Expected normal timeout error, got: %s", result.Error)
 	}
 }
 
@@ -8832,28 +8742,22 @@ func TestAutoSplit_SaveAndResume(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	// Pre-write classification.json.
-	classJSON, _ := json.Marshal([]map[string]any{
+	// Classification data injected via mcpcallback channels.
+	classJSON, _ := json.Marshal(map[string]interface{}{"categories": []map[string]any{
 		{"name": "api", "description": "Add API implementation", "files": []string{"pkg/impl.go"}},
 		{"name": "cli", "description": "Add CLI runner", "files": []string{"cmd/run.go"}},
-	})
-	if err := os.WriteFile(filepath.Join(tp.ResultDir, "classification.json"), classJSON, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	}})
 
-	escapedResultDir := strings.ReplaceAll(tp.ResultDir, `\`, `\\`)
-	escapedResultDir = strings.ReplaceAll(escapedResultDir, `'`, `\'`)
-
-	// Mock ClaudeCodeExecutor.
+	// Mock ClaudeCodeExecutor — no resultDir, mcpcallback is sole IPC.
 	mockSetup := `
 		ClaudeCodeExecutor = function(config) {
 			this.config = config;
 			this.resolved = { command: 'mock-claude' };
-			this.handle = { send: function() {} };
+			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
-		ClaudeCodeExecutor.prototype.spawn = function() {
-			return { error: null, sessionId: 'mock-resume', resultDir: '` + escapedResultDir + `' };
+		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
+			return { error: null, sessionId: 'mock-resume' };
 		};
 		ClaudeCodeExecutor.prototype.close = function() {};
 		ClaudeCodeExecutor.prototype.kill = function() {};
@@ -8861,6 +8765,15 @@ func TestAutoSplit_SaveAndResume(t *testing.T) {
 	if _, err := tp.EvalJS(mockSetup); err != nil {
 		t.Fatalf("mock setup: %v", err)
 	}
+
+	// Inject classification via mcpcallback channel.
+	watchCh := mcpcallbackmod.WatchForInit()
+	go func() {
+		h := <-watchCh
+		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
+			t.Logf("inject classification failed: %v", err)
+		}
+	}()
 
 	// ---- Run 1: Normal auto-split (should succeed and save plan) ----
 	result1, err := tp.EvalJS(`JSON.stringify(prSplit.automatedSplit({
@@ -9042,28 +8955,22 @@ func TestAutoSplit_CrashRecovery_AfterExecute(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	// Pre-write classification.json.
-	classJSON, _ := json.Marshal([]map[string]any{
+	// Classification data injected via mcpcallback channels.
+	classJSON, _ := json.Marshal(map[string]interface{}{"categories": []map[string]any{
 		{"name": "api", "description": "Add API implementation", "files": []string{"pkg/impl.go"}},
 		{"name": "cli", "description": "Add CLI runner", "files": []string{"cmd/run.go"}},
-	})
-	if err := os.WriteFile(filepath.Join(tp.ResultDir, "classification.json"), classJSON, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	}})
 
-	escapedResultDir := strings.ReplaceAll(tp.ResultDir, `\`, `\\`)
-	escapedResultDir = strings.ReplaceAll(escapedResultDir, `'`, `\'`)
-
-	// Mock ClaudeCodeExecutor.
+	// Mock ClaudeCodeExecutor — no resultDir, mcpcallback is sole IPC.
 	mockSetup := `
 		ClaudeCodeExecutor = function(config) {
 			this.config = config;
 			this.resolved = { command: 'mock-claude' };
-			this.handle = { send: function() {} };
+			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
-		ClaudeCodeExecutor.prototype.spawn = function() {
-			return { error: null, sessionId: 'mock-crash', resultDir: '` + escapedResultDir + `' };
+		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
+			return { error: null, sessionId: 'mock-crash' };
 		};
 		ClaudeCodeExecutor.prototype.close = function() {};
 		ClaudeCodeExecutor.prototype.kill = function() {};
@@ -9071,6 +8978,15 @@ func TestAutoSplit_CrashRecovery_AfterExecute(t *testing.T) {
 	if _, err := tp.EvalJS(mockSetup); err != nil {
 		t.Fatalf("mock setup: %v", err)
 	}
+
+	// Inject classification via mcpcallback channel.
+	watchCh := mcpcallbackmod.WatchForInit()
+	go func() {
+		h := <-watchCh
+		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
+			t.Logf("inject classification failed: %v", err)
+		}
+	}()
 
 	// Override verifySplits to throw — simulating a crash after Step 6.
 	if _, err := tp.EvalJS(`
@@ -9275,11 +9191,8 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 		{Name: "database", Description: "Add database migration and connection", Files: []string{"internal/db/migrate.go", "internal/db/conn.go"}},
 		{Name: "documentation", Description: "Update project documentation", Files: []string{"docs/README.md", "docs/api.md"}},
 	}
-	classJSON, err := json.Marshal(classification)
+	classJSON, err := json.Marshal(map[string]interface{}{"categories": classification})
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(tp.ResultDir, "classification.json"), classJSON, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -9311,19 +9224,13 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 			Message: "Update documentation with API reference",
 		},
 	}
-	planJSON, err := json.Marshal(splitPlan)
+	planJSON, err := json.Marshal(map[string]interface{}{"stages": splitPlan})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(tp.ResultDir, "split-plan.json"), planJSON, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	// Escape the resultDir path for embedding in JS string literals.
-	escapedResultDir := strings.ReplaceAll(tp.ResultDir, `\`, `\\`)
-	escapedResultDir = strings.ReplaceAll(escapedResultDir, `'`, `\'`)
 
 	// Override ClaudeCodeExecutor to mock the Claude spawn.
+	// No resultDir — mcpcallback is the sole IPC mechanism.
 	mockSetup := `
 		var _mockSentPrompts = [];
 		ClaudeCodeExecutor = function(config) {
@@ -9331,19 +9238,18 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 			this.resolved = { command: 'mock-claude' };
 			this.handle = {
 				send: function(text) {
-					// Capture all text sent to Claude for assertion.
 					_mockSentPrompts.push(text);
-				}
+				},
+				isAlive: function() { return true; }
 			};
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() {
 			return { error: null };
 		};
-		ClaudeCodeExecutor.prototype.spawn = function() {
+		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
 			return {
 				error: null,
-				sessionId: 'mock-session-test',
-				resultDir: '` + escapedResultDir + `'
+				sessionId: 'mock-session-test'
 			};
 		};
 		ClaudeCodeExecutor.prototype.close = function() {};
@@ -9352,6 +9258,23 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 	if _, err := tp.EvalJS(mockSetup); err != nil {
 		t.Fatalf("Failed to inject mock ClaudeCodeExecutor: %v", err)
 	}
+
+	// Set up mcpcallback injection: watch for the callback to init, then
+	// inject classification and plan data directly into the Go channels.
+	// This replaces the old file-polling approach.
+	watchCh := mcpcallbackmod.WatchForInit()
+
+	go func() {
+		h := <-watchCh
+		// Inject classification data — the pipeline will receive it via waitFor.
+		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
+			t.Logf("inject classification failed: %v", err)
+		}
+		// Inject split plan data.
+		if err := h.InjectToolResult("reportSplitPlan", planJSON); err != nil {
+			t.Logf("inject plan failed: %v", err)
+		}
+	}()
 
 	// Call automatedSplit with fast timeouts and TUI disabled.
 	result, err := tp.EvalJS(`JSON.stringify(prSplit.automatedSplit({
@@ -9611,19 +9534,13 @@ func TestAutoSplit_AllStepsReportTiming(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	// Pre-write classification.json so Receive classification succeeds.
-	classJSON, _ := json.Marshal([]map[string]any{
+	// Classification data injected via mcpcallback channels.
+	classJSON, _ := json.Marshal(map[string]interface{}{"categories": []map[string]any{
 		{"name": "api", "description": "Add API implementation", "files": []string{"pkg/impl.go"}},
 		{"name": "cli", "description": "Add CLI runner", "files": []string{"cmd/run.go"}},
-	})
-	if err := os.WriteFile(filepath.Join(tp.ResultDir, "classification.json"), classJSON, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	}})
 
-	escapedResultDir := strings.ReplaceAll(tp.ResultDir, `\`, `\\`)
-	escapedResultDir = strings.ReplaceAll(escapedResultDir, `'`, `\'`)
-
-	// Mock ClaudeCodeExecutor.
+	// Mock ClaudeCodeExecutor — no resultDir, mcpcallback is sole IPC.
 	mockSetup := `
 		ClaudeCodeExecutor = function(config) {
 			this.config = config;
@@ -9631,8 +9548,8 @@ func TestAutoSplit_AllStepsReportTiming(t *testing.T) {
 			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
-		ClaudeCodeExecutor.prototype.spawn = function() {
-			return { error: null, sessionId: 'mock-timing', resultDir: '` + escapedResultDir + `' };
+		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
+			return { error: null, sessionId: 'mock-timing' };
 		};
 		ClaudeCodeExecutor.prototype.close = function() {};
 		ClaudeCodeExecutor.prototype.kill = function() {};
@@ -9640,6 +9557,15 @@ func TestAutoSplit_AllStepsReportTiming(t *testing.T) {
 	if _, err := tp.EvalJS(mockSetup); err != nil {
 		t.Fatalf("mock setup: %v", err)
 	}
+
+	// Inject classification via mcpcallback channel.
+	watchCh := mcpcallbackmod.WatchForInit()
+	go func() {
+		h := <-watchCh
+		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
+			t.Logf("inject classification failed: %v", err)
+		}
+	}()
 
 	result, err := tp.EvalJS(`JSON.stringify(prSplit.automatedSplit({
 		disableTUI: true,
@@ -9850,146 +9776,6 @@ func TestHeuristicFallback_Report(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// T112: pollForFile edge cases.
-// ---------------------------------------------------------------------------
-
-func TestPollForFile_EdgeCases(t *testing.T) {
-	t.Parallel()
-
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
-
-	t.Run("timeout_zero_returns_immediately", func(t *testing.T) {
-		dir := t.TempDir()
-		escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
-		escapedDir = strings.ReplaceAll(escapedDir, `'`, `\'`)
-
-		result, err := evalJS(`(function() {
-			var t0 = Date.now();
-			var r = prSplit.pollForFile('` + escapedDir + `', 'test.json', 0, 50, 'test', null);
-			var elapsed = Date.now() - t0;
-			return JSON.stringify({ error: r.error, elapsed: elapsed, hasData: r.data !== null });
-		})()`)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var res struct {
-			Error   string `json:"error"`
-			Elapsed int    `json:"elapsed"`
-			HasData bool   `json:"hasData"`
-		}
-		if err := json.Unmarshal([]byte(result.(string)), &res); err != nil {
-			t.Fatalf("parse: %v\nraw: %s", err, result)
-		}
-		if res.Error == "" {
-			t.Error("expected timeout error for timeoutMs=0")
-		}
-		if !strings.Contains(strings.ToLower(res.Error), "timeout") && !strings.Contains(strings.ToLower(res.Error), "timed out") {
-			t.Errorf("expected 'timeout' in error, got: %s", res.Error)
-		}
-		if res.Elapsed > 3000 {
-			t.Errorf("timeoutMs=0 took too long: %dms", res.Elapsed)
-		}
-		t.Logf("timeout_zero: error=%q elapsed=%dms", res.Error, res.Elapsed)
-	})
-
-	t.Run("malformed_json_returns_error", func(t *testing.T) {
-		dir := t.TempDir()
-		escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
-		escapedDir = strings.ReplaceAll(escapedDir, `'`, `\'`)
-
-		// Write a file with invalid JSON.
-		if err := os.WriteFile(filepath.Join(dir, "bad.json"), []byte("not json {{{"), 0o644); err != nil {
-			t.Fatal(err)
-		}
-
-		result, err := evalJS(`(function() {
-			var r = prSplit.pollForFile('` + escapedDir + `', 'bad.json', 5000, 50, 'test', null);
-			return JSON.stringify({ error: r.error || '', hasData: r.data !== null && r.data !== undefined });
-		})()`)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var res struct {
-			Error   string `json:"error"`
-			HasData bool   `json:"hasData"`
-		}
-		if err := json.Unmarshal([]byte(result.(string)), &res); err != nil {
-			t.Fatalf("parse: %v\nraw: %s", err, result)
-		}
-		// pollForFile should either return an error or return raw data.
-		// Either is acceptable — the key is it doesn't hang.
-		t.Logf("malformed JSON: error=%q hasData=%v", res.Error, res.HasData)
-		if res.Error == "" && !res.HasData {
-			t.Error("expected either error or data for malformed JSON file")
-		}
-	})
-
-	t.Run("file_appears_before_timeout", func(t *testing.T) {
-		dir := t.TempDir()
-		escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
-		escapedDir = strings.ReplaceAll(escapedDir, `'`, `\'`)
-
-		// Write a valid JSON file.
-		if err := os.WriteFile(filepath.Join(dir, "result.json"), []byte(`{"status":"ok"}`), 0o644); err != nil {
-			t.Fatal(err)
-		}
-
-		result, err := evalJS(`(function() {
-			var r = prSplit.pollForFile('` + escapedDir + `', 'result.json', 5000, 50, 'test', null);
-			return JSON.stringify({ error: r.error || '', data: r.data });
-		})()`)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var res struct {
-			Error string                 `json:"error"`
-			Data  map[string]interface{} `json:"data"`
-		}
-		if err := json.Unmarshal([]byte(result.(string)), &res); err != nil {
-			t.Fatalf("parse: %v\nraw: %s", err, result)
-		}
-		if res.Error != "" {
-			t.Errorf("unexpected error: %s", res.Error)
-		}
-		if res.Data == nil {
-			t.Error("expected data from valid JSON file")
-		} else if res.Data["status"] != "ok" {
-			t.Errorf("expected status=ok, got %v", res.Data["status"])
-		}
-	})
-
-	t.Run("negative_timeout_returns_quickly", func(t *testing.T) {
-		dir := t.TempDir()
-		escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
-		escapedDir = strings.ReplaceAll(escapedDir, `'`, `\'`)
-
-		result, err := evalJS(`(function() {
-			var t0 = Date.now();
-			var r = prSplit.pollForFile('` + escapedDir + `', 'nope.json', -1000, 50, 'test', null);
-			var elapsed = Date.now() - t0;
-			return JSON.stringify({ error: r.error || '', elapsed: elapsed });
-		})()`)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var res struct {
-			Error   string `json:"error"`
-			Elapsed int    `json:"elapsed"`
-		}
-		if err := json.Unmarshal([]byte(result.(string)), &res); err != nil {
-			t.Fatalf("parse: %v\nraw: %s", err, result)
-		}
-		if res.Error == "" {
-			t.Error("expected error for negative timeout")
-		}
-		if res.Elapsed > 3000 {
-			t.Errorf("negative timeout took too long: %dms", res.Elapsed)
-		}
-		t.Logf("negative_timeout: error=%q elapsed=%dms", res.Error, res.Elapsed)
-	})
-}
-
-// ---------------------------------------------------------------------------
 // T109: savePlan/loadPlan round-trip — verify all state is restored.
 // ---------------------------------------------------------------------------
 
@@ -10141,59 +9927,6 @@ func TestIntegration_PlanPersistence_RoundTrip(t *testing.T) {
 // provided by OS stdio; cross-instance isolation by separate processes.
 
 // ---------------------------------------------------------------------------
-// T115: pollForFile cancellation — verify isCancelled() aborts poll loop.
-// ---------------------------------------------------------------------------
-
-func TestPollForFile_Cancellation(t *testing.T) {
-	t.Parallel()
-
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
-
-	dir := t.TempDir()
-	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
-	escapedDir = strings.ReplaceAll(escapedDir, `'`, `\'`)
-
-	// Set up a fake autoSplitTUI that cancels after the first poll iteration.
-	val, err := evalJS(`(function() {
-		var pollCount = 0;
-		autoSplitTUI = {
-			cancelled: function() {
-				pollCount++;
-				return pollCount > 1; // Cancel after first iteration.
-			},
-			stepDetail: function() {},
-			stepStart: function() {},
-			stepDone: function() {}
-		};
-		var t0 = Date.now();
-		var result = prSplit.pollForFile('` + escapedDir + `', 'never.json', 60000, 100, 'Test cancel', null);
-		var elapsed = Date.now() - t0;
-		autoSplitTUI = undefined;
-		return JSON.stringify({ error: result.error || '', elapsed: elapsed });
-	})()`)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var res struct {
-		Error   string `json:"error"`
-		Elapsed int    `json:"elapsed"`
-	}
-	if err := json.Unmarshal([]byte(val.(string)), &res); err != nil {
-		t.Fatalf("parse: %v\nraw: %s", err, val)
-	}
-
-	if res.Error != "cancelled by user" {
-		t.Errorf("expected 'cancelled by user', got %q", res.Error)
-	}
-	// Should return quickly — well under the 60s timeout.
-	if res.Elapsed > 5000 {
-		t.Errorf("cancellation took too long: %dms (expected <5000ms)", res.Elapsed)
-	}
-	t.Logf("pollForFile_cancellation: error=%q elapsed=%dms", res.Error, res.Elapsed)
-}
-
-// ---------------------------------------------------------------------------
 // T124: ClaudeCodeExecutor Ollama provider spawn path.
 // ---------------------------------------------------------------------------
 
@@ -10314,18 +10047,14 @@ func TestAutoSplit_CleanupOnFailure(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	// Pre-write classification.json.
+	// Classification and plan data injected via mcpcallback channels.
 	classification := []map[string]any{
 		{"name": "api", "description": "Add API implementation", "files": []string{"pkg/impl.go"}},
 		{"name": "cli", "description": "Add CLI runner", "files": []string{"cmd/run.go"}},
 		{"name": "docs", "description": "Update documentation", "files": []string{"docs/guide.md"}},
 	}
-	classJSON, _ := json.Marshal(classification)
-	if err := os.WriteFile(filepath.Join(tp.ResultDir, "classification.json"), classJSON, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	classJSON, _ := json.Marshal(map[string]interface{}{"categories": classification})
 
-	// Pre-write split-plan.json.
 	type splitEntry struct {
 		Name    string   `json:"name"`
 		Files   []string `json:"files"`
@@ -10336,24 +10065,18 @@ func TestAutoSplit_CleanupOnFailure(t *testing.T) {
 		{Name: "split/cli", Files: []string{"cmd/run.go"}, Message: "Add CLI run"},
 		{Name: "split/docs", Files: []string{"docs/guide.md"}, Message: "Add docs"},
 	}
-	planJSON, _ := json.Marshal(splitPlan)
-	if err := os.WriteFile(filepath.Join(tp.ResultDir, "split-plan.json"), planJSON, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	planJSON, _ := json.Marshal(map[string]interface{}{"stages": splitPlan})
 
-	escapedResultDir := strings.ReplaceAll(tp.ResultDir, `\`, `\\`)
-	escapedResultDir = strings.ReplaceAll(escapedResultDir, `'`, `\'`)
-
-	// Mock ClaudeCodeExecutor.
+	// Mock ClaudeCodeExecutor — no resultDir, mcpcallback is sole IPC.
 	mockSetup := `
 		ClaudeCodeExecutor = function(config) {
 			this.config = config;
 			this.resolved = { command: 'mock-claude' };
-			this.handle = { send: function() {} };
+			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
-		ClaudeCodeExecutor.prototype.spawn = function() {
-			return { error: null, sessionId: 'mock-session-cleanup', resultDir: '` + escapedResultDir + `' };
+		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
+			return { error: null, sessionId: 'mock-session-cleanup' };
 		};
 		ClaudeCodeExecutor.prototype.close = function() {};
 		ClaudeCodeExecutor.prototype.kill = function() {};
@@ -10361,6 +10084,18 @@ func TestAutoSplit_CleanupOnFailure(t *testing.T) {
 	if _, err := tp.EvalJS(mockSetup); err != nil {
 		t.Fatalf("mock setup failed: %v", err)
 	}
+
+	// Inject classification + plan via mcpcallback channels.
+	watchCh := mcpcallbackmod.WatchForInit()
+	go func() {
+		h := <-watchCh
+		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
+			t.Logf("inject classification failed: %v", err)
+		}
+		if err := h.InjectToolResult("reportSplitPlan", planJSON); err != nil {
+			t.Logf("inject plan failed: %v", err)
+		}
+	}()
 
 	// Override executeSplit to create one branch, then return an error.
 	// This simulates a partial execution failure where branches exist.
@@ -10471,16 +10206,13 @@ func TestAutoSplit_CleanupOnFailure_Disabled(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	// Pre-write files.
+	// Classification and plan data injected via mcpcallback channels.
 	classification := []map[string]any{
 		{"name": "api", "description": "Add API implementation", "files": []string{"pkg/impl.go"}},
 		{"name": "cli", "description": "Add CLI runner", "files": []string{"cmd/run.go"}},
 		{"name": "docs", "description": "Update documentation", "files": []string{"docs/guide.md"}},
 	}
-	classJSON, _ := json.Marshal(classification)
-	if err := os.WriteFile(filepath.Join(tp.ResultDir, "classification.json"), classJSON, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	classJSON, _ := json.Marshal(map[string]interface{}{"categories": classification})
 	type splitEntry struct {
 		Name    string   `json:"name"`
 		Files   []string `json:"files"`
@@ -10491,24 +10223,18 @@ func TestAutoSplit_CleanupOnFailure_Disabled(t *testing.T) {
 		{Name: "split/cli", Files: []string{"cmd/run.go"}, Message: "Add CLI run"},
 		{Name: "split/docs", Files: []string{"docs/guide.md"}, Message: "Add docs"},
 	}
-	planJSON, _ := json.Marshal(splitPlan)
-	if err := os.WriteFile(filepath.Join(tp.ResultDir, "split-plan.json"), planJSON, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	planJSON, _ := json.Marshal(map[string]interface{}{"stages": splitPlan})
 
-	escapedResultDir := strings.ReplaceAll(tp.ResultDir, `\`, `\\`)
-	escapedResultDir = strings.ReplaceAll(escapedResultDir, `'`, `\'`)
-
-	// Mock ClaudeCodeExecutor.
+	// Mock ClaudeCodeExecutor — no resultDir, mcpcallback is sole IPC.
 	mockSetup := `
 		ClaudeCodeExecutor = function(config) {
 			this.config = config;
 			this.resolved = { command: 'mock-claude' };
-			this.handle = { send: function() {} };
+			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
-		ClaudeCodeExecutor.prototype.spawn = function() {
-			return { error: null, sessionId: 'mock-session-noclean', resultDir: '` + escapedResultDir + `' };
+		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
+			return { error: null, sessionId: 'mock-session-noclean' };
 		};
 		ClaudeCodeExecutor.prototype.close = function() {};
 		ClaudeCodeExecutor.prototype.kill = function() {};
@@ -10516,6 +10242,18 @@ func TestAutoSplit_CleanupOnFailure_Disabled(t *testing.T) {
 	if _, err := tp.EvalJS(mockSetup); err != nil {
 		t.Fatalf("mock setup failed: %v", err)
 	}
+
+	// Inject classification + plan via mcpcallback channels.
+	watchCh := mcpcallbackmod.WatchForInit()
+	go func() {
+		h := <-watchCh
+		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
+			t.Logf("inject classification failed: %v", err)
+		}
+		if err := h.InjectToolResult("reportSplitPlan", planJSON); err != nil {
+			t.Logf("inject plan failed: %v", err)
+		}
+	}()
 
 	// Override executeSplit: create first branch, then fail.
 	overrideExec := `

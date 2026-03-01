@@ -3,7 +3,7 @@
 ## Session Start
 - **Started:** 2026-02-28 20:36:23
 - **Mandate:** 9 hours minimum (ends ~2026-03-01 05:36:23)
-- **Phase:** EXECUTING — T1-T88 in sequence
+- **Phase:** EXECUTING — Legacy deletion + test fixes
 
 ## Last Commit
 - **Hash:** 2dccbc6
@@ -11,23 +11,57 @@
 - **Files:** 3 changed — mcpcallback.go, mcpcallback_test.go, pr_split_script.js
 
 ## Current Task
-- **Last Commit:** 2dccbc6 — T35: Wire automatedSplit() to use osm:mcpcallback IPC 
-- **Active:** T36 — Update all existing tests for new classification structure
-- **Next:** T36 — Update all existing tests for new classification structure
-- **Status:** Phase 2 classification schema COMPLETE (T28-T34). 12 commits total.
+- **Active:** T38-T40 combined — Delete all legacy file-polling from pr_split_script.js + fix tests
+- **Status:** All JS edits DONE. All test edits DONE. About to run build.
 
-## T28 Design: Unified Category Classification Schema
+## Changes Made This Session (Not Yet Committed)
 
-### Problem
-`mcpReportClassificationInput.Files` is `map[string]string` (file→category) which:
-- Has no category descriptions (no commit messages)
-- Requires `classificationToGroups()` inversion to get category→files
-- Doesn't align with `mcpSplitStage` (which has Name, Files, Message, Order)
-- Forces generic commit messages since the AI never provides per-category descriptions
+### pr_split_script.js
+- DELETED pollForFile function
+- DELETED all 5 else branches (file-polling fallbacks for classify, plan, resolve, re-classify, resolve-fix)
+- DELETED resultDir from spawn return, resolveConflictsWithClaude signature, all call sites
+- DELETED mcpInstance references from spawn, close, error handling
+- DELETED usingMCPCallbackIPC flag, mcpCallbackReady pattern
+- Made mcpConfigPath mandatory (not conditional)
+- Made mcpcallback init failure a hard error
+- Moved mcpcallback init BEFORE if(!resuming) so resume path has it
+- pollForFile removed from prSplit exports
 
-### New Go Struct
+### mcpcallback.go (internal/builtin/mcpcallbackmod)
+- Added Handle type wrapping *mcpCallback
+- Added WatchForInit() — returns channel receiving next initialized Handle
+- Added Handle.InjectToolResult(toolName, jsonData) — pushes data into waiter channel
+- Added notifyWatchers(cb) — called at end of jsInitSync and async jsInit
+- Package-level initWatchers slice with mutex protection
 
-```go
+### pr_split_integration_test.go
+- Fixed 6 spawn calls to pass (sessionId, opts) with mcpConfigPath
+- Fixed health check tests to match new spawn return shape
+
+### pr_split_test.go
+- Added mcpcallbackmod import
+- Rewrote TestIntegration_AutoSplitMockMCP: WatchForInit + goroutine injection, no files
+- Rewrote TestAutoSplit_SaveAndResume: same pattern
+- Rewrote TestAutoSplit_CrashRecovery_AfterExecute: same pattern
+- Rewrote TestAutoSplit_AllStepsReportTiming: same pattern
+- Rewrote TestAutoSplit_CleanupOnFailure: injects both classification + plan
+- Rewrote TestAutoSplit_CleanupOnFailure_Disabled: injects both classification + plan
+- Fixed resolveConflictsWithClaude tests: removed resultDir param, added mock mcpCallbackObj
+- DELETED TestPollForFile_EdgeCases, TestPollForFile_Cancellation
+- DELETED TestPollForFileHeartbeatExitsOnDeath, TestPollForFileNoHeartbeatBackwardCompat
+- DELETED pollForFile from Phase4ScriptContent existence check
+- Updated stale comments
+
+### pr_split_pipeline_test.go
+- DELETED pollForFileResult struct + parsePollForFileResult function
+- DELETED TestPollForFile function (all subtests)
+- Removed unused os/filepath imports
+- Updated file header comment
+
+## Next Steps
+1. Run `make` — verify all tests pass
+2. If pass: Update blueprint.json (T38-T40 done, T50 done)
+3. Proceed to T41-T49 (delete mcp.go, mcp_instance.go, registrations, test files)
 // mcpClassificationCategory represents one logical group of files.
 type mcpClassificationCategory struct {
     Name        string   `json:"name" jsonschema:"Category name (e.g., 'types', 'impl', 'docs')"`

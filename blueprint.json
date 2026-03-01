@@ -20,7 +20,7 @@
   ],
   "statusSection": {
     "goalState": "The osm pr-split system uses EXCLUSIVELY osm:mcpcallback for IPC. The 'osm mcp' and 'osm mcp-instance' commands are DELETED. mcp.go and all associated files are GONE. pollForFile is GONE. The legacy file-polling path is GONE. All validation lives in JS. All bugs from NOTES.md are fixed. TUI has streaming verification and per-branch status. Integration tests with real AI validate the spawn-switch-send-classify pipeline end-to-end. All three platforms are green.",
-    "currentState": "Build GREEN on macOS. T1-T36 complete (Phase 0-2). osm:mcp and osm:mcpcallback modules implemented and working. mcpcallback IPC wired as primary path in automatedSplit() with legacy fallback. New Category array classification schema implemented. ARCHITECTURAL PIVOT: Hana directive mandates full deletion of mcp.go and legacy path. Blueprint rewritten to reflect new architecture.",
+    "currentState": "Build GREEN on macOS. T1-T40 complete plus T43 and T50. Legacy file-polling PURGED from pr_split_script.js. mcpcallback is the sole IPC path. All tests converted from file-based to channel-injection via WatchForInit/InjectToolResult. pollForFile deleted. All old test infrastructure (pollForFileResult, TestPollForFile, heartbeat tests, edge case tests) deleted. resolveConflictsWithClaude tests use mock mcpCallbackObj. Integration tests pass. Next: T44-T49 (delete mcp.go, mcp_instance.go, command registrations).",
     "replanLog": [
       {
         "trigger": "Hana directive in config.mk line 1: entire osm mcp command is slop, must be deleted",
@@ -71,25 +71,25 @@
       "task": "T37: Remove $(error) blocker from config.mk",
       "description": "Remove the $(error THIS IS THE POLICE...) directive from config.mk line 1. Blueprint has been rewritten per Hana's directive.",
       "acceptance": "config.mk no longer starts with $(error). `make` runs successfully.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T38: Delete pollForFile function and ALL file-polling call sites",
       "description": "Remove from pr_split_script.js: (1) pollForFile definition (~line 2530), (2) ALL 5 legacy call sites in usingMCPCallbackIPC else-branches (~lines 2953, 3023, 3231, 3465, 1776), (3) pollForFile export from globalThis.prSplit (~line 4263), (4) the entire legacy else-branch from each usingMCPCallbackIPC conditional — keep only mcpcallback body, (5) usingMCPCallbackIPC variable itself.",
       "acceptance": "Zero references to pollForFile in any JS file. The mcpcallback waitFor calls are the sole IPC. grep -r pollForFile returns nothing in internal/command/.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T39: Delete legacy mcpInstance path from ClaudeCodeExecutor.spawn()",
       "description": "Remove: (1) else-branch creating mcpInstance via this.cm.newMCPInstance() (~line 2105), (2) mkdir -p for result dir, (3) this.mcpInstance references throughout file, (4) resultDir from spawn() return value. Always use opts.mcpConfigPath from mcpcallback.",
       "acceptance": "spawn() ONLY uses mcpConfigPath. No mcpInstance creation. No resultDir. grep mcpInstance returns nothing in pr_split_script.js.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T40: Remove usingMCPCallbackIPC variable and all legacy conditionals",
       "description": "Remove usingMCPCallbackIPC declaration (~line 2875) and all if/else conditionals. Keep only mcpcallback body. If mcpcallback init fails, pipeline returns error (no silent fallback). Remove the mcpCallbackReady fallback log message.",
       "acceptance": "No references to usingMCPCallbackIPC. mcpcallback is the only path. Init failure = hard error.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T41: Add JS-side validation for classification data",
@@ -107,7 +107,7 @@
       "task": "T43: Migrate TestIntegration_AutoSplitMockMCP to mcpcallback IPC",
       "description": "Mock test (~pr_split_test.go:9178) uses legacy path. Migrate: (1) mock spawn() returns NO resultDir (forces mcpcallback), (2) add InjectToolData(toolName, jsonData) test helper to mcpcallback module, (3) use goroutine to inject classification/plan data through mcpcallback channel instead of pre-writing files.",
       "acceptance": "Test passes using mcpcallback IPC. No pre-written JSON files. All existing assertions pass.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T44: Delete mcp.go entirely",
@@ -149,7 +149,7 @@
       "task": "T50: Delete pollForFile test infrastructure",
       "description": "Delete: pollForFileResult struct, parsePollForFileResult, TestPollForFile from pr_split_pipeline_test.go and pr_split_pty_unix_test.go.",
       "acceptance": "No test references pollForFile. deadcode passes.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T51: Run deadcode checker after full legacy removal",

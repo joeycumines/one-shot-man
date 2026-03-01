@@ -174,3 +174,99 @@ func FuzzMCPSessionTools(f *testing.F) {
 		})
 	})
 }
+
+// FuzzMCPReportClassification fuzzes the reportClassification tool with random
+// Category array inputs. Seeds include valid arrays, invalid inputs (empty,
+// missing fields, duplicates), and boundary cases.
+func FuzzMCPReportClassification(f *testing.F) {
+	seeds := []string{
+		// Valid: 3 categories
+		`[{"name":"api","description":"Add API","files":["a.go","b.go"]},{"name":"cli","description":"Add CLI","files":["cmd/main.go"]},{"name":"docs","description":"Update docs","files":["README.md"]}]`,
+		// Valid: 1 category
+		`[{"name":"all","description":"Single commit","files":["x.go"]}]`,
+		// Invalid: empty array
+		`[]`,
+		// Invalid: missing name
+		`[{"name":"","description":"desc","files":["a.go"]}]`,
+		// Invalid: missing description
+		`[{"name":"api","description":"","files":["a.go"]}]`,
+		// Invalid: missing files
+		`[{"name":"api","description":"desc","files":[]}]`,
+		// Invalid: duplicate files across categories
+		`[{"name":"a","description":"A","files":["x.go"]},{"name":"b","description":"B","files":["x.go"]}]`,
+		// Invalid: null values
+		`[{"name":null,"description":"desc","files":["a.go"]}]`,
+		// Boundary: very long name
+		`[{"name":"` + strings.Repeat("x", 1000) + `","description":"desc","files":["a.go"]}]`,
+		// Boundary: special characters in description
+		`[{"name":"api","description":"fix: handle \"edge\" case\nwith newlines\ttabs","files":["a.go"]}]`,
+		// Boundary: many files
+		`[{"name":"bulk","description":"Bulk import","files":["a.go","b.go","c.go","d.go","e.go","f.go","g.go","h.go","i.go","j.go"]}]`,
+		// Invalid: not an array
+		`{"name":"api","description":"desc","files":["a.go"]}`,
+		// Invalid: malformed JSON
+		`[{"name":"api","descr`,
+	}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+
+	f.Fuzz(func(t *testing.T, payload string) {
+		cwd := t.TempDir()
+		cm, err := scripting.NewContextManager(cwd)
+		if err != nil {
+			t.Skip("failed to create context manager:", err)
+		}
+		server := newMCPServer(cm, &mcpTestGoalRegistry{}, "0.0.0-fuzz", cwd, "")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		serverTransport, clientTransport := mcp.NewInMemoryTransports()
+		serverDone := make(chan error, 1)
+		go func() {
+			serverDone <- server.Run(ctx, serverTransport)
+		}()
+
+		client := mcp.NewClient(&mcp.Implementation{Name: "fuzz-client", Version: "test"}, nil)
+		sess, err := client.Connect(ctx, clientTransport, nil)
+		if err != nil {
+			cancel()
+			t.Skip("failed to connect:", err)
+		}
+		defer func() {
+			_ = sess.Close()
+			cancel()
+			select {
+			case <-serverDone:
+			case <-time.After(3 * time.Second):
+			}
+		}()
+
+		// Register a session first (required by reportClassification).
+		_, _ = sess.CallTool(ctx, &mcp.CallToolParams{
+			Name: "registerSession",
+			Arguments: map[string]any{
+				"sessionId":    "fuzz-cls",
+				"capabilities": []string{},
+			},
+		})
+
+		// Build arguments: try to parse payload as categories array.
+		args := map[string]any{
+			"sessionId": "fuzz-cls",
+		}
+		if json.Valid([]byte(payload)) {
+			var categories any
+			if err := json.Unmarshal([]byte(payload), &categories); err == nil {
+				args["categories"] = categories
+			}
+		}
+
+		// The key invariant: no panic.
+		_, _ = sess.CallTool(ctx, &mcp.CallToolParams{
+			Name:      "reportClassification",
+			Arguments: args,
+		})
+	})
+}

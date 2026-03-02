@@ -2,6 +2,7 @@ package claudemux
 
 import (
 	"context"
+	"io"
 
 	"github.com/joeycumines/one-shot-man/internal/builtin/pty"
 )
@@ -82,4 +83,8 @@ func (h *ptyAgentHandle) Wait() (int, error) {
 
 func (h *ptyAgentHandle) Signal(sig string) error {
 	return h.proc.Signal(sig)
+}
+
+func (h *ptyAgentHandle) DrainOutput(sink io.Writer) {
+	h.proc.DrainOutput(sink)
 }

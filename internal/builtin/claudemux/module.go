@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"github.com/dop251/goja"
@@ -1158,7 +1159,39 @@ func wrapAgentHandle(runtime *goja.Runtime, h AgentHandle) goja.Value {
 		})
 	}
 
+	// Optionally expose drainOutput() for handles that support it (PTY-based).
+	// Starts a background goroutine that reads and discards all PTY output,
+	// preventing output buffer deadlocks when the caller communicates via
+	// MCP callbacks and does not read stdout directly.
+	// Drained output is logged via log.printf for post-mortem diagnostics.
+	type drainer interface {
+		DrainOutput(sink io.Writer)
+	}
+	if d, ok := h.(drainer); ok {
+		_ = obj.Set("drainOutput", func(call goja.FunctionCall) goja.Value {
+			d.DrainOutput(nil) // discard output; use drainOutputLogged for logging
+			return goja.Undefined()
+		})
+		_ = obj.Set("drainOutputLogged", func(call goja.FunctionCall) goja.Value {
+			d.DrainOutput(&logDrainWriter{})
+			return goja.Undefined()
+		})
+	}
+
 	return obj
+}
+
+// logDrainWriter is an io.Writer that logs drained PTY output to stderr
+// for post-mortem diagnostics. Used by drainOutputLogged().
+// Writes happen from a background goroutine (not the event loop), so
+// no Goja runtime access is safe here — we use fmt.Fprintf to stderr.
+type logDrainWriter struct{}
+
+func (w *logDrainWriter) Write(p []byte) (n int, err error) {
+	if len(p) > 0 {
+		fmt.Fprintf(os.Stderr, "[claude-drain] %s", string(p))
+	}
+	return len(p), nil
 }
 
 // parseSpawnOpts extracts SpawnOpts fields from a JS options object.

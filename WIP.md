@@ -1,28 +1,50 @@
-# WIP: T04a+T21-T26 Committed — Async sendToHandle, Error Feedback, osm:pty Removal
+# WIP: T32-T36 Complete — Awaiting Rule of Two + Commit
 
-## Status: COMMITTED ✅ — Rule of Two PASSED
+## Status: PRE-COMMIT — Rule of Two pending
 
-### Committed Changes (T04a + T21-T26):
+### Last Commit: 629e94a (T04a+T21-T26)
 
-1. **T04a (async sendToHandle)** — sendToHandle converted to async function.
-   10ms delay between text/newline via `await new Promise(resolve => setTimeout(resolve, 10))`.
-   All callers (resolveConflicts, automatedSplit, heuristicFallback, resolveConflictsWithClaude,
-   step(), claude-fix strategy, command handlers) converted to async/await.
-   SEND_TEXT_NEWLINE_DELAY_MS constant added.
+### Uncommitted Changes (T27-T36):
 
-2. **T21 (Already implemented)** — finishTUI already emits resume instructions.
+#### T27-T31 (done earlier this session):
+- T27: Real Claude test — infra works, timeout was config issue
+- T28: GOOS=windows build passes
+- T29: docs/pr-split-testing.md created
+- T30: make all + integration tests pass
+- T31: Scope expansion — T32-T36 added
 
-3. **T22 (Test written)** — TestAutoSplit_ErrorFeedback_ResumeInstructions.
+#### T32: Configurable evalJS timeout
+- `loadPrSplitEngineWithEval` extracts `_evalTimeout` from overrides
+- Default 60s for unit tests, 10min for real Claude tests
+- Both `evalJS` and `evalJSAsync` closures use configurable timeout
+- Updated: pr_split_test.go, pr_split_integration_test.go, pr_split_complex_project_test.go
 
-4. **T24 (Comments fixed)** — Stale sendToHandle comment block corrected.
+#### T33: Async EAGAIN retry
+- `sendWithRetry` converted from sync to `async function`
+- `timemod.sleep` replaced with `await new Promise(r => setTimeout(r, ms))`
+- Dead `timemod` import removed from pr_split_script.js
+- Callers use `await sendWithRetry(...)` 
 
-5. **T25 (osm:pty JS removed)** — module.go deleted, register.go updated, 7 tests removed,
-   docs updated.
+#### T34: Handle dies between writes test
+- TestPrSplitCommand_SendToHandle_HandleDiesBetweenWrites added
+- Verifies broken pipe on newline write returns error (2 send calls)
+
+#### T35: Newline EAGAIN retry tests
+- TestPrSplitCommand_SendToHandle_NewlineEAGAINRetry (3 calls)
+- TestPrSplitCommand_SendToHandle_NewlineEAGAINExhausted (5 calls)
+
+#### T36: Timeout architecture docs
+- Timeout Architecture section added to docs/pr-split-testing.md
+- ASCII diagram of Go↔JS↔Claude interaction
+- EAGAIN retry docs
+
+### Verification: make make-all-with-log PASS (637s command pkg, 0 failures)
 
 ### Next Steps:
-1. T27: Real AI integration test — check `which ollama`, `which claude`
-2. T28: Cross-platform validation: Windows
-3. T29: Documentation: developer guide for pr-split integration tests
+1. Rule of Two review (this changeset)
+2. Commit
+3. Indefinite cycle expansion
+4. T04b: Real E2E test with Claude (deferred — infrastructure works)
 4. T30: Final validation suite
 5. T31: Indefinite cycle expansion
 6. T04b: Real E2E test with Claude

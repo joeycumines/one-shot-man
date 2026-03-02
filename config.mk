@@ -1,10 +1,6 @@
 # Hana may steer you through a blocking error. Be prepared to address her concerns FIRST, e.g. updating blueprint.json to immediately schedule her critical requirements, before removing her error, understood, Takumi? Leverage subagents for investigations to gather context. DO NOT try and "prove" what Hana is saying - Hana is ALWAYS correct. If you failed to research the context relevant to what she was saying and misunderstood, that is a YOU problem. You have been warned, Takumi.
 
-$(warning TAKUMI, DONT FORGET YOUR INTEGRATION TESTS USING REAL CLAUDE: I mean it. Acknowledge this. See project.mk - integration-test-prsplit*)
-
-# T04a DONE: pr_split_test.go split into 12 logically-named files (~565 lines infrastructure remaining).
-# Async dispatch uses .then/.catch chaining (mcpmod pattern) instead of setTimeout(0) hack.
-# evalJS uses async IIFE with Go callback (callback that closes a Go channel).
+$(warning TAKUMI: T37-T41 scheduled per Hana mandate. Real Claude test MUST pass end-to-end. Edge cases MUST be verified. See blueprint.json T37-T41.)
 
 .DEFAULT_GOAL := all
 
@@ -87,6 +83,35 @@ git-stage-all: ## Stage all changes
 git-commit-staged: ## Commit staged changes with message from .git/COMMIT_MSG_TEMP
 	cd $(PROJECT_ROOT) && git commit -F .git/COMMIT_MSG_TEMP
 
+.PHONY: check-ai-tools
+check-ai-tools: ## Check for available AI tools (claude, ollama, socat)
+	@echo "=== AI Tool Availability ==="
+	@which claude 2>/dev/null && claude --version 2>/dev/null || echo "claude: NOT FOUND"
+	@which ollama 2>/dev/null && ollama --version 2>/dev/null || echo "ollama: NOT FOUND"
+	@echo "=== MCP Dependencies ==="
+	@which socat 2>/dev/null && socat -V 2>/dev/null | head -3 || echo "socat: NOT FOUND (required for MCP callback)"
+	@echo "=== Claude Auth ==="
+	@if [ -n "$$ANTHROPIC_API_KEY" ]; then echo "ANTHROPIC_API_KEY: SET (length=$${#ANTHROPIC_API_KEY})"; else echo "ANTHROPIC_API_KEY: NOT SET"; fi
+	@claude -p "ping" --max-turns 1 2>&1 | head -3 || echo "claude -p: FAILED (need login or API key)"
+	@echo "=== Windows Cross-Compile ==="
+	@GOOS=windows go build ./... && echo "GOOS=windows build: OK" || echo "GOOS=windows build: FAILED"
+
+.PHONY: run-real-claude-test
+run-real-claude-test: ## Run real Claude integration test for pr-split (requires 'claude login')
+	cd $(PROJECT_ROOT) && $(GO) test -race -v -count=1 -timeout=15m \
+		./internal/command/... \
+		-run 'TestIntegration_AutoSplitWithClaude_Pipeline' \
+		-integration \
+		-claude-command=claude
+
+.PHONY: run-headless-claude-test
+run-headless-claude-test: ## Run headless Claude MCP test (works with ANTHROPIC_API_KEY)
+	cd $(PROJECT_ROOT) && $(GO) test -race -v -count=1 -timeout=5m \
+		./internal/command/... \
+		-run 'TestIntegration_ClaudeMCP_Headless' \
+		-integration \
+		-claude-command=claude
+
 .PHONY: delete-mcp-slop
 delete-mcp-slop: ## T2-T6,T9: Delete ALL MCP command files + MCPInstanceConfig files
 	rm -f $(PROJECT_ROOT)/internal/command/mcp.go
@@ -158,6 +183,10 @@ git-stage-prsplit-split: ## Stage pr_split test split files + config.mk + WIP.md
 		internal/command/pr_split_autosplit_recovery_test.go \
 		WIP.md blueprint.json && \
 	git add -f config.mk
+
+.PHONY: regen-diff
+regen-diff: ## Regenerate scratch/review-diff.txt from HEAD
+	cd $(PROJECT_ROOT) && git diff HEAD > scratch/review-diff.txt && wc -l scratch/review-diff.txt
 
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 endif

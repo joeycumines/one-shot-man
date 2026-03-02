@@ -37,14 +37,6 @@ try {
     osmod = null;
 }
 
-// Optional: time module for non-busy sleep.
-var timemod;
-try {
-    timemod = require('osm:time');
-} catch (e) {
-    timemod = null;
-}
-
 // Optional: lipgloss for styled terminal output.
 var lip;
 try {
@@ -2468,8 +2460,9 @@ ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
         };
     }
 
-    log.printf('Claude executor: spawned command=%s type=%s session=%s',
-        this.resolved.command, this.resolved.type, this.sessionId);
+    log.printf('Claude executor: spawned command=%s type=%s session=%s args=%s',
+        this.resolved.command, this.resolved.type, this.sessionId,
+        JSON.stringify(spawnOpts && spawnOpts.args || []));
 
     // Post-spawn health check: wait briefly and verify the process is
     // still alive. If it died immediately (e.g., unknown flags, missing
@@ -2802,7 +2795,8 @@ async function sendToHandle(handle, text) {
     var EAGAIN_RETRY_DELAY_MS = 10;
 
     // Helper to send text with EAGAIN retry (returns {error: null|string}).
-    function sendWithRetry(data) {
+    // T33: Async — uses event-loop-friendly setTimeout for retry delay.
+    async function sendWithRetry(data) {
         var lastErr;
         for (var attempt = 0; attempt <= EAGAIN_MAX_RETRIES; attempt++) {
             try {
@@ -2825,10 +2819,10 @@ async function sendToHandle(handle, text) {
                 lower.indexOf('resource temporarily unavailable') !== -1 ||
                 lower.indexOf('would block') !== -1) {
                 if (attempt < EAGAIN_MAX_RETRIES) {
-                    // Sync retry - EAGAIN is rare, short blocking acceptable here
-                    if (timemod && typeof timemod.sleep === 'function') {
-                        timemod.sleep(EAGAIN_RETRY_DELAY_MS);
-                    }
+                    // T33: Non-blocking retry delay — yields to event loop.
+                    await new Promise(function(resolve) {
+                        setTimeout(resolve, EAGAIN_RETRY_DELAY_MS);
+                    });
                     continue;
                 }
             }
@@ -2839,7 +2833,7 @@ async function sendToHandle(handle, text) {
 
     // Step 1: Send the text.
     log.printf('auto-split sendToHandle: sending text (%d chars)', text.length);
-    var textResult = sendWithRetry(text);
+    var textResult = await sendWithRetry(text);
     if (textResult.error) {
         log.printf('auto-split sendToHandle: text write FAILED — %s', textResult.error);
         return textResult;
@@ -2854,7 +2848,7 @@ async function sendToHandle(handle, text) {
 
     // Step 3: Send the newline.
     log.printf('auto-split sendToHandle: sending newline');
-    var newlineResult = sendWithRetry('\n');
+    var newlineResult = await sendWithRetry('\n');
     if (newlineResult.error) {
         log.printf('auto-split sendToHandle: newline write FAILED (text was sent) — %s', newlineResult.error);
     }
@@ -3214,6 +3208,15 @@ async function automatedSplit(config) {
 
         mcpCallbackObj.initSync();
         log.printf('auto-split: MCP callback initialized at %s (%s)', mcpCallbackObj.address, mcpCallbackObj.transport);
+        log.printf('auto-split: MCP config path: %s', mcpCallbackObj.mcpConfigPath);
+        // T37 diagnostic: dump MCP config file for debugging
+        try {
+            var execmod = require('osm:exec');
+            var catResult = execmod.exec({ command: 'cat', args: [mcpCallbackObj.mcpConfigPath] });
+            log.printf('auto-split: MCP config contents: %s', catResult.stdout || '(empty)');
+        } catch (e) {
+            log.printf('auto-split: could not read MCP config: %s', e.message || String(e));
+        }
     } catch (e) {
         return finishTUI({ error: 'MCP callback initialization failed: ' + (e.message || String(e)), report: report });
     }
@@ -3288,6 +3291,20 @@ async function automatedSplit(config) {
                 // Non-fatal — toggle just won't work.
                 log.printf('auto-split: tuiMux attach warning: %s', e.message || String(e));
             }
+        }
+    } else if (claudeExecutor && claudeExecutor.handle &&
+               typeof claudeExecutor.handle.drainOutput === 'function') {
+        // No tuiMux (headless/test mode): drain Claude's PTY output in the
+        // background to prevent buffer deadlocks. Without this, Claude's TUI
+        // banner fills the kernel PTY output buffer, Claude blocks on stdout,
+        // stops reading stdin, and our writes deadlock.
+        // Use drainOutputLogged if available for post-mortem diagnostics.
+        if (typeof claudeExecutor.handle.drainOutputLogged === 'function') {
+            claudeExecutor.handle.drainOutputLogged();
+            log.printf('auto-split: no tuiMux — started LOGGED PTY output drain');
+        } else {
+            claudeExecutor.handle.drainOutput();
+            log.printf('auto-split: no tuiMux — started PTY output drain to prevent deadlock');
         }
     }
 

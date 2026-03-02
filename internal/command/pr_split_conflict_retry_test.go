@@ -1642,3 +1642,144 @@ func TestPrSplitCommand_GoMissingImportsFixNoGoimports(t *testing.T) {
 		t.Errorf("Expected fixed=false for nonexistent dir, got %v", result["fixed"])
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T34: sendToHandle — handle dies between text and newline writes
+// ---------------------------------------------------------------------------
+
+func TestPrSplitCommand_SendToHandle_HandleDiesBetweenWrites(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Mock handle: first send (text) succeeds, second send (newline) throws —
+	// simulates a process dying between the two writes.
+	val, err := evalJS(`(async function() {
+		var callCount = 0;
+		var mockHandle = {
+			send: function(data) {
+				callCount++;
+				if (callCount === 2) {
+					throw new Error('write: broken pipe');
+				}
+			}
+		};
+		var result = await globalThis.prSplit.sendToHandle(mockHandle, 'hello world');
+		return JSON.stringify({ error: result.error, callCount: callCount });
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		Error     *string `json:"error"`
+		CallCount int     `json:"callCount"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("Failed to parse output: %v", err)
+	}
+
+	// Text write (call 1) succeeds. Newline write (call 2) fails with broken pipe.
+	// sendToHandle should return the error from the newline write.
+	if output.Error == nil {
+		t.Fatal("Expected error when handle dies between text and newline writes")
+	}
+	if !strings.Contains(*output.Error, "broken pipe") {
+		t.Errorf("Error should contain 'broken pipe', got: %s", *output.Error)
+	}
+	// Exactly 2 calls: 1 text (success) + 1 newline (failure, non-EAGAIN so no retry).
+	if output.CallCount != 2 {
+		t.Errorf("Expected 2 send calls (text + failed newline), got %d", output.CallCount)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T35: sendToHandle — EAGAIN retry on newline write (second write path)
+// ---------------------------------------------------------------------------
+
+func TestPrSplitCommand_SendToHandle_NewlineEAGAINRetry(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Mock handle: text always succeeds (callCount 1), newline EAGAIN on first
+	// attempt (callCount 2) then succeeds on retry (callCount 3).
+	val, err := evalJS(`(async function() {
+		var callCount = 0;
+		var mockHandle = {
+			send: function(data) {
+				callCount++;
+				// Call 1 = text (success). Call 2 = newline (EAGAIN). Call 3 = newline retry (success).
+				if (callCount === 2) {
+					throw new Error('write: resource temporarily unavailable (EAGAIN)');
+				}
+			}
+		};
+		var result = await globalThis.prSplit.sendToHandle(mockHandle, 'test newline retry');
+		return JSON.stringify({ error: result.error, callCount: callCount });
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		Error     *string `json:"error"`
+		CallCount int     `json:"callCount"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("Failed to parse output: %v", err)
+	}
+
+	// Should succeed: text (1) + newline EAGAIN (2) + newline retry success (3).
+	if output.Error != nil {
+		t.Errorf("Expected success after newline EAGAIN retry, got error: %s", *output.Error)
+	}
+	if output.CallCount != 3 {
+		t.Errorf("Expected 3 send calls (text + newline EAGAIN + newline retry), got %d", output.CallCount)
+	}
+}
+
+func TestPrSplitCommand_SendToHandle_NewlineEAGAINExhausted(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Mock handle: text succeeds (callCount 1), newline always throws EAGAIN.
+	val, err := evalJS(`(async function() {
+		var callCount = 0;
+		var mockHandle = {
+			send: function(data) {
+				callCount++;
+				if (callCount > 1) {
+					throw new Error('EAGAIN: resource temporarily unavailable');
+				}
+			}
+		};
+		var result = await globalThis.prSplit.sendToHandle(mockHandle, 'exhaust newline');
+		return JSON.stringify({ error: result.error, callCount: callCount });
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		Error     *string `json:"error"`
+		CallCount int     `json:"callCount"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("Failed to parse output: %v", err)
+	}
+
+	// Text succeeds (1). Newline fails all 4 attempts (initial + 3 retries) = calls 2-5.
+	// Total: 5 calls.
+	if output.Error == nil {
+		t.Fatal("Expected error after newline EAGAIN retry exhaustion")
+	}
+	if !strings.Contains(*output.Error, "EAGAIN") {
+		t.Errorf("Error should contain 'EAGAIN', got: %s", *output.Error)
+	}
+	// 1 text success + 4 newline attempts (1 initial + 3 retries) = 5.
+	if output.CallCount != 5 {
+		t.Errorf("Expected 5 send calls (1 text + 4 newline EAGAIN), got %d", output.CallCount)
+	}
+}

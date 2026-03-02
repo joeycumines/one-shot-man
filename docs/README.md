@@ -26,6 +26,7 @@ If you just want to try it, see the [root README](../README.md).
 - [Architecture](architecture.md)
 - [Claude-Mux Architecture](architecture-claude-mux.md)
 - [Terminal Multiplexer Architecture](reference/mux-architecture.md)
+- [PR Split Integration Testing](pr-split-testing.md)
 - [Security posture](security.md)
 - [Elm commands and Goja](reference/elm-commands-and-goja.md)
 - [Planning and acting using behavior trees](reference/planning-and-acting-using-behavior-trees.md)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/builtin/pty"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // ---------------------------------------------------------------------------
@@ -1505,6 +1507,7 @@ func TestPrSplitSendWithCancel_RealPTYKill(t *testing.T) {
 //	make integration-test-prsplit
 func TestIntegration_AutoSplitWithClaude_Pipeline(t *testing.T) {
 	skipIfNoClaude(t)
+	verifyClaudeAuth(t) // T37: pre-flight check — ensures Claude is logged in + functional
 
 	repoDir := initIntegrationRepo(t)
 	addIntegrationFeatureFiles(t, repoDir)
@@ -1521,30 +1524,48 @@ func TestIntegration_AutoSplitWithClaude_Pipeline(t *testing.T) {
 		"verifyCommand": "true",
 		"claudeCommand": claudeTestCommand,
 		"claudeArgs":    claudeArgsList,
-		"timeoutMs":     int64(5 * 60 * 1000), // 5 minutes per step
+		"timeoutMs":     int64(5 * 60 * 1000), // 5 minutes per step (JS layer)
+		"_evalTimeout":  10 * time.Minute,     // T37: Go-layer evalJS timeout
 	}
 	if integrationModel != "" {
 		configOverrides["claudeModel"] = integrationModel
 	}
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, configOverrides)
+	stdoutBuf, _, evalJS, _ := loadPrSplitEngineWithEval(t, configOverrides)
+
+	// T37: Dump engine output on test completion for diagnostics.
+	t.Cleanup(func() {
+		if out := stdoutBuf.String(); out != "" {
+			t.Logf("Engine stdout:\n%s", out)
+		}
+	})
 
 	// Inject autoSplitTUI mock — no real BubbleTea (no terminal in CI),
 	// but provides the interface the pipeline expects. sendWithCancel is
 	// deliberately NOT included so the pipeline uses the direct fallback;
 	// the sendWithCancel mechanics are tested by the PTY tests above.
+	// T37: The mock now logs step events to Go's testing.T for real-time
+	// visibility even when the test times out.
 	_, err := evalJS(`
 		globalThis.autoSplitTUI = {
 			runAsync: function() {},
 			wait: function() { return null; },
-			stepStart: function(name) { log.printf('STEP START: %s', name); },
-			stepDone: function(name, err, elapsed) {
-				log.printf('STEP DONE: %s err=%s elapsed=%dms', name, err || 'ok', elapsed);
+			stepStart: function(name) {
+				log.printf('TUI STEP START: %s', name);
+				output.print('[test-tui] STEP START: ' + name);
 			},
-			appendOutput: function(text) { log.printf('OUTPUT: %s', text); },
-			appendError: function(text) { log.printf('ERROR: %s', text); },
-			done: function(summary) { log.printf('DONE: %s', summary); },
-			stepDetail: function(name, detail) { log.printf('DETAIL: %s — %s', name, detail); },
+			stepDone: function(name, err, elapsed) {
+				log.printf('TUI STEP DONE: %s err=%s elapsed=%dms', name, err || 'ok', elapsed);
+				output.print('[test-tui] STEP DONE: ' + name + ' err=' + (err || 'ok') + ' ' + elapsed + 'ms');
+			},
+			appendOutput: function(text) {
+				log.printf('TUI OUTPUT: %s', text);
+			},
+			appendError: function(text) { log.printf('TUI ERROR: %s', text); },
+			done: function(summary) { log.printf('TUI DONE: %s', summary); },
+			stepDetail: function(name, detail) {
+				log.printf('TUI DETAIL: %s — %s', name, detail);
+			},
 			cancelled: function() { return false; },
 			forceCancelled: function() { return false; },
 			quit: function() {}
@@ -1559,7 +1580,10 @@ func TestIntegration_AutoSplitWithClaude_Pipeline(t *testing.T) {
 	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.automatedSplit({
 		baseBranch: 'main',
 		dir: ` + jsString(repoDir) + `,
-		strategy: 'directory'
+		strategy: 'directory',
+		classifyTimeoutMs: 300000,
+		planTimeoutMs: 300000,
+		resolveTimeoutMs: 300000
 	}))`)
 	if err != nil {
 		t.Fatalf("automatedSplit failed: %v", err)
@@ -1598,6 +1622,225 @@ func TestIntegration_AutoSplitWithClaude_Pipeline(t *testing.T) {
 		if branchOutput == "" {
 			t.Error("pipeline reported splits created but no split/* branches found")
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Integration Test: Claude MCP Headless (no TUI login required)
+// ---------------------------------------------------------------------------
+
+// TestIntegration_ClaudeMCP_Headless validates that Claude Code can call MCP
+// tools when invoked in headless (-p) mode. Unlike the full pipeline test above
+// which requires interactive TUI login, this test works with ANTHROPIC_API_KEY
+// alone (or any valid Claude auth method).
+//
+// The test:
+//  1. Starts a minimal MCP callback server with a reportClassification tool.
+//  2. Invokes `claude -p` with a classification prompt and --mcp-config.
+//  3. Waits for Claude to call the reportClassification tool via MCP.
+//  4. Verifies the tool was called with valid data.
+//
+// Run with:
+//
+//	go test -race -v -count=1 -timeout=5m -integration \
+//	  -claude-command=claude ./internal/command/... \
+//	  -run TestIntegration_ClaudeMCP_Headless
+func TestIntegration_ClaudeMCP_Headless(t *testing.T) {
+	skipIfNoClaude(t)
+
+	// Pre-flight: socat is required for the stdio-to-unix-socket bridge.
+	if _, err := exec.LookPath("socat"); err != nil {
+		t.Skip("socat not found on PATH (required for MCP callback unix socket bridge)")
+	}
+
+	// Pre-flight: verify Claude can respond in -p mode.
+	// This catches "Not logged in" AND missing API key.
+	{
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		args := []string{"-p", "Reply with the word PONG", "--max-turns", "1"}
+		if integrationModel != "" {
+			args = append(args, "--model", integrationModel)
+		}
+		cmd := exec.CommandContext(ctx, claudeTestCommand, args...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Skipf("Claude not functional in -p mode (need 'claude login' or ANTHROPIC_API_KEY):\n  error: %v\n  output: %s",
+				err, string(out))
+		}
+		t.Logf("Claude -p mode pre-flight OK: %s", strings.TrimSpace(string(out)))
+	}
+
+	// 1. Create MCP server with a reportClassification tool.
+	srv := mcp.NewServer(&mcp.Implementation{
+		Name:    "test-mcp-headless",
+		Version: "1.0.0",
+	}, nil)
+
+	// Channel to receive the tool call arguments.
+	toolCallCh := make(chan json.RawMessage, 1)
+
+	srv.AddTool(&mcp.Tool{
+		Name:        "reportClassification",
+		Description: "Report file classification results. Call this with a categories array.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"categories": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"name": {"type": "string"},
+							"description": {"type": "string"},
+							"files": {"type": "array", "items": {"type": "string"}}
+						},
+						"required": ["name", "files"]
+					}
+				}
+			},
+			"required": ["categories"]
+		}`),
+	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		t.Logf("MCP tool called: reportClassification with %d bytes", len(req.Params.Arguments))
+		select {
+		case toolCallCh <- req.Params.Arguments:
+		default:
+		}
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: "Classification accepted."}},
+		}, nil
+	})
+
+	// 2. Listen on Unix socket.
+	tmpDir := t.TempDir()
+	sockPath := filepath.Join(tmpDir, "mcp.sock")
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	// Accept loop. Uses fmt.Fprintf(os.Stderr, ...) instead of t.Logf
+	// in goroutines because these goroutines may outlive the test function
+	// (e.g., session.Wait() returns after the test reads toolCallCh and exits).
+	// Calling t.Logf after test completion panics in Go 1.24+.
+	go func() {
+		for {
+			conn, aErr := ln.Accept()
+			if aErr != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				transport := &mcp.IOTransport{Reader: conn, Writer: conn}
+				session, sErr := srv.Connect(ctx, transport, nil)
+				if sErr != nil {
+					fmt.Fprintf(os.Stderr, "[headless-mcp] connect error: %v\n", sErr)
+					return
+				}
+				fmt.Fprintf(os.Stderr, "[headless-mcp] session established\n")
+				wErr := session.Wait()
+				fmt.Fprintf(os.Stderr, "[headless-mcp] session ended: %v\n", wErr)
+			}()
+		}
+	}()
+
+	// 3. Generate MCP config JSON.
+	mcpConfig := map[string]any{
+		"mcpServers": map[string]any{
+			"osm-callback": map[string]any{
+				"command": "socat",
+				"args":    []string{"STDIO", "UNIX-CONNECT:" + sockPath},
+			},
+		},
+	}
+	configBytes, err := json.MarshalIndent(mcpConfig, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal mcp config: %v", err)
+	}
+	configPath := filepath.Join(tmpDir, "mcp-config.json")
+	if err := os.WriteFile(configPath, configBytes, 0600); err != nil {
+		t.Fatalf("write mcp config: %v", err)
+	}
+	t.Logf("MCP config: %s → %s", configPath, string(configBytes))
+
+	// 4. Build the classification prompt.
+	prompt := `You have access to a reportClassification MCP tool.
+
+I have a small project with these changed files:
+- cmd/main.go (entry point changes)
+- internal/auth/login.go (authentication logic)
+- internal/auth/login_test.go (auth tests)
+- docs/README.md (documentation update)
+
+Please classify these files into logical groups for separate PRs.
+Each group should have a name, description (a short commit message), and list of files.
+
+You MUST call the reportClassification tool with your classification.
+Do NOT just describe the classification in text — use the tool.`
+
+	// 5. Run claude -p with the prompt and MCP config.
+	claudeArgs := []string{
+		"-p", prompt,
+		"--mcp-config", configPath,
+		"--dangerously-skip-permissions",
+		"--max-turns", "5",
+	}
+	if integrationModel != "" {
+		claudeArgs = append(claudeArgs, "--model", integrationModel)
+	}
+
+	t.Logf("Running: %s %s", claudeTestCommand, strings.Join(claudeArgs, " "))
+
+	cmd := exec.CommandContext(ctx, claudeTestCommand, claudeArgs...)
+	cmd.Dir = tmpDir
+	claudeOut, claudeErr := cmd.CombinedOutput()
+	t.Logf("Claude output (%d bytes):\n%s", len(claudeOut), string(claudeOut))
+	if claudeErr != nil {
+		t.Logf("Claude exit error: %v", claudeErr)
+		// Don't fail immediately — the tool call might have still happened.
+	}
+
+	// 6. Check if the tool was called.
+	select {
+	case data := <-toolCallCh:
+		t.Logf("Tool call received! Data: %s", string(data))
+		// Parse and validate.
+		var result struct {
+			Categories []struct {
+				Name  string   `json:"name"`
+				Files []string `json:"files"`
+			} `json:"categories"`
+		}
+		if err := json.Unmarshal(data, &result); err != nil {
+			t.Fatalf("failed to parse tool call data: %v", err)
+		}
+		if len(result.Categories) == 0 {
+			t.Error("expected at least one category in classification")
+		}
+		// Verify all 4 files are classified somewhere.
+		allFiles := make(map[string]bool)
+		for _, cat := range result.Categories {
+			t.Logf("  Category %q: %v", cat.Name, cat.Files)
+			for _, f := range cat.Files {
+				allFiles[f] = true
+			}
+		}
+		for _, expected := range []string{"cmd/main.go", "internal/auth/login.go", "internal/auth/login_test.go", "docs/README.md"} {
+			if !allFiles[expected] {
+				t.Errorf("file %q not classified", expected)
+			}
+		}
+		t.Logf("SUCCESS: Claude called reportClassification with %d categories covering %d files",
+			len(result.Categories), len(allFiles))
+
+	case <-time.After(10 * time.Second):
+		// Claude should have already finished by now (cmd.CombinedOutput completed).
+		t.Fatal("reportClassification tool was never called — Claude did not invoke the MCP tool")
 	}
 }
 

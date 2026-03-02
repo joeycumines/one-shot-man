@@ -5,6 +5,8 @@ package pty
 
 import (
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"sync"
 	"syscall"
@@ -39,6 +41,7 @@ type Process struct {
 	ptyFile      *os.File // Platform-specific PTY master file descriptor.
 	ttyFile      *os.File // Slave PTY fd, kept alive to prevent macOS EIO data loss. May be nil.
 	closed       bool
+	draining     bool
 	done         chan struct{}
 	exitCode     int
 	exitErr      error
@@ -84,14 +87,22 @@ func (c *SpawnConfig) applyDefaults() {
 	}
 }
 
+// ErrWriteTimeout is returned when a write exceeds the configured WriteTimeout
+// and SetWriteDeadline is not supported for the underlying file descriptor
+// (e.g., PTY master fds on macOS where os.File deadline support is limited
+// to network connections and pipes).
+var ErrWriteTimeout = errors.New("pty: write timed out")
+
 // Write sends data to the PTY (the child process's stdin).
 // The lock is released before the kernel write to avoid deadlocking
 // with Signal, Close, or Resize (which also acquire the lock).
 //
 // If the Process was spawned with a WriteTimeout > 0, a write deadline
 // is set before each write so a hung child cannot block the caller
-// indefinitely. EAGAIN is handled transparently by Go's runtime poller;
-// the JS layer also retries EAGAIN for defence-in-depth.
+// indefinitely. On platforms where SetWriteDeadline does not work for
+// PTY fds (macOS), a goroutine-based timeout is used as a fallback.
+// EAGAIN is handled transparently by Go's runtime poller; the JS layer
+// also retries EAGAIN for defence-in-depth.
 func (p *Process) Write(data string) error {
 	// Don't hold lock during blocking write — just check closed state.
 	p.mu.Lock()
@@ -105,15 +116,39 @@ func (p *Process) Write(data string) error {
 
 	if wt > 0 {
 		if err := f.SetWriteDeadline(time.Now().Add(wt)); err != nil {
-			// SetWriteDeadline may fail on some platforms (e.g., Windows ConPTY).
-			// Fall through to an unguarded write rather than failing outright.
-			_ = err
+			// SetWriteDeadline is not supported for this fd (e.g., PTY on macOS).
+			// Fall back to goroutine-based timeout to prevent indefinite blocking.
+			return p.writeWithGoroutineTimeout(f, data, wt)
 		}
 		defer func() { _ = f.SetWriteDeadline(time.Time{}) }() // Clear deadline.
 	}
 
 	_, err := f.Write([]byte(data))
 	return err
+}
+
+// writeWithGoroutineTimeout runs the write in a background goroutine and
+// enforces the timeout with a timer. If the timeout fires before the write
+// completes, ErrWriteTimeout is returned. The background goroutine may
+// continue to block in the kernel; it will be unblocked when the PTY fd
+// is closed (via Process.Close) or when the child process exits.
+//
+// This is the fallback path for platforms where SetWriteDeadline does not
+// work on PTY file descriptors (observed on macOS where PTY master fds
+// are not registered with the kqueue-based runtime poller).
+func (p *Process) writeWithGoroutineTimeout(f *os.File, data string, timeout time.Duration) error {
+	type writeResult struct{ err error }
+	ch := make(chan writeResult, 1)
+	go func() {
+		_, err := f.Write([]byte(data))
+		ch <- writeResult{err: err}
+	}()
+	select {
+	case res := <-ch:
+		return res.err
+	case <-time.After(timeout):
+		return fmt.Errorf("%w: write did not complete within %s (SetWriteDeadline not supported on this fd)", ErrWriteTimeout, timeout)
+	}
 }
 
 // Read reads available output from the PTY (the child process's stdout).
@@ -135,6 +170,56 @@ func (p *Process) Read() (string, error) {
 		return string(buf[:n]), err
 	}
 	return "", err
+}
+
+// DrainOutput starts a background goroutine that continuously reads and
+// discards all output from the PTY master (the child process's stdout).
+// This prevents output buffer deadlocks when the caller communicates with
+// the child via other channels (e.g., MCP callbacks) and does not read
+// the PTY output directly.
+//
+// Without draining, a child process that writes to stdout (e.g., a TUI
+// banner) can fill the kernel's PTY output buffer. Once full, the child
+// blocks on stdout writes and stops reading from stdin, causing writes
+// from the parent (via Write) to also block — a classic PTY deadlock.
+//
+// If sink is non-nil, drained output is written to it (for diagnostics).
+// Otherwise output is discarded.
+//
+// The goroutine exits when Read returns an error (typically io.EOF when
+// the PTY is closed or the process exits). DrainOutput is idempotent;
+// subsequent calls after the first are no-ops.
+//
+// WARNING: Once draining is active, Read and Receive calls from other
+// goroutines will compete with the drain goroutine for output data.
+// If you need to display the child's output (e.g., via tuiMux), do NOT
+// call DrainOutput — instead set up your own reader.
+func (p *Process) DrainOutput(sink io.Writer) {
+	p.mu.Lock()
+	if p.draining || p.closed {
+		p.mu.Unlock()
+		return
+	}
+	p.draining = true
+	f := p.ptyFile
+	p.mu.Unlock()
+
+	if sink == nil {
+		sink = io.Discard
+	}
+
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := f.Read(buf)
+			if n > 0 {
+				_, _ = sink.Write(buf[:n])
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
 }
 
 // Resize changes the PTY window dimensions, sending SIGWINCH to the child.

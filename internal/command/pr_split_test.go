@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +19,36 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 )
+
+// ---------------------------------------------------------------------------
+// safeBuffer is a thread-safe bytes.Buffer wrapper for capturing engine output
+// in tests. The JS event loop goroutine writes via TUILogger.PrintToTUI
+// while the test goroutine reads for assertions and diagnostics. Without
+// synchronization, -race detects concurrent access.
+// ---------------------------------------------------------------------------
+
+type safeBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (s *safeBuffer) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *safeBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
+}
+
+func (s *safeBuffer) Reset() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.buf.Reset()
+}
 
 // ---------------------------------------------------------------------------
 // Git repo + engine helpers for end-to-end tests
@@ -130,7 +161,7 @@ type TestPipelineFile struct {
 type TestPipeline struct {
 	Dir         string                            // git repo directory
 	ResultDir   string                            // MCP result directory
-	Stdout      *bytes.Buffer                     // captured stdout
+	Stdout      *safeBuffer                       // captured stdout (thread-safe)
 	Dispatch    func(string, []string) error      // TUI command dispatch
 	EvalJS      func(string) (interface{}, error) // evaluate JS in engine
 	EvalJSAsync func(string) (interface{}, error) // evaluate async JS (await)
@@ -394,10 +425,22 @@ func loadPrSplitEngine(t testing.TB, overrides map[string]interface{}) (*bytes.B
 	return &stdout, dispatch
 }
 
-func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]interface{}) (*bytes.Buffer, func(string, []string) error, func(string) (interface{}, error), func(string) (interface{}, error)) {
+func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]interface{}) (*safeBuffer, func(string, []string) error, func(string) (interface{}, error), func(string) (interface{}, error)) {
 	t.Helper()
 
-	var stdout, stderr bytes.Buffer
+	// T32: Extract optional eval timeout from overrides.
+	// Usage: overrides["_evalTimeout"] = 10 * time.Minute
+	// Default: 60s for unit tests (fast), configurable for real AI tests.
+	evalJSTimeout := 60 * time.Second
+	if overrides != nil {
+		if v, ok := overrides["_evalTimeout"]; ok {
+			evalJSTimeout = v.(time.Duration)
+			delete(overrides, "_evalTimeout")
+		}
+	}
+
+	var stdout safeBuffer
+	var stderr bytes.Buffer
 
 	b := scriptCommandBase{
 		config:   config.NewConfig(),
@@ -535,8 +578,8 @@ func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]interface{}) (
 		select {
 		case <-done:
 			return result, resultErr
-		case <-time.After(60 * time.Second):
-			return nil, errors.New("evalJS timed out after 60s")
+		case <-time.After(evalJSTimeout):
+			return nil, fmt.Errorf("evalJS timed out after %s", evalJSTimeout)
 		}
 	}
 
@@ -635,8 +678,8 @@ func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]interface{}) (
 		select {
 		case <-done:
 			return result, resultErr
-		case <-time.After(60 * time.Second):
-			return nil, errors.New("evalJSAsync timed out after 60s")
+		case <-time.After(evalJSTimeout):
+			return nil, fmt.Errorf("evalJSAsync timed out after %s", evalJSTimeout)
 		}
 	}
 

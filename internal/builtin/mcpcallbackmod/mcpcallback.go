@@ -488,8 +488,11 @@ func (cb *mcpCallback) acceptLoop(ctx context.Context, listener net.Listener) {
 			if errors.Is(err, net.ErrClosed) {
 				return
 			}
+			fmt.Fprintf(os.Stderr, "[mcpcallback] accept error (retrying): %v\n", err)
 			continue // Retry on temporary errors
 		}
+
+		fmt.Fprintf(os.Stderr, "[mcpcallback] accepted MCP connection from %s\n", conn.RemoteAddr())
 
 		// Serve MCP on this connection in a dedicated goroutine.
 		// Each connection gets its own Transport (SDK requirement: one Transport per Connect call).
@@ -501,9 +504,12 @@ func (cb *mcpCallback) acceptLoop(ctx context.Context, listener net.Listener) {
 			}
 			session, sErr := cb.server.Connect(ctx, transport, nil)
 			if sErr != nil {
+				fmt.Fprintf(os.Stderr, "[mcpcallback] MCP server.Connect error: %v\n", sErr)
 				return
 			}
-			_ = session.Wait()
+			fmt.Fprintf(os.Stderr, "[mcpcallback] MCP session established, waiting...\n")
+			waitErr := session.Wait()
+			fmt.Fprintf(os.Stderr, "[mcpcallback] MCP session ended: %v\n", waitErr)
 		}()
 	}
 }

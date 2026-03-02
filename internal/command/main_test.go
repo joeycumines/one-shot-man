@@ -1,9 +1,13 @@
 package command
 
 import (
+	"context"
 	"flag"
 	"os"
+	"os/exec"
+	"strings"
 	"testing"
+	"time"
 )
 
 // Package-level integration test flags, parsed by TestMain.
@@ -69,4 +73,45 @@ func skipIfNoClaude(t *testing.T) {
 	if claudeTestCommand == "" {
 		t.Skip("Claude integration tests disabled; use -claude-command=<path> to enable")
 	}
+}
+
+// verifyClaudeAuth runs a minimal Claude -p (print/headless) check to
+// verify the configured Claude command is authenticated and functional.
+// Skips the test if Claude cannot process a prompt (e.g., not logged in,
+// no API key, model unavailable).
+//
+// This catches the common failure mode where Claude Code's interactive TUI
+// shows "Not logged in · Run /login" — in TUI mode, authentication is
+// required and prompts won't be processed without it.
+func verifyClaudeAuth(t *testing.T) {
+	t.Helper()
+
+	args := []string{"-p", "Reply with exactly: AUTH_OK", "--max-turns", "1"}
+	if integrationModel != "" {
+		args = append(args, "--model", integrationModel)
+	}
+	// Copy any extra Claude args (but filter out --dangerously-skip-permissions
+	// which is for interactive mode only).
+	for _, a := range claudeTestArgs {
+		if a != "--dangerously-skip-permissions" {
+			args = append(args, a)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	t.Logf("verifyClaudeAuth: running %s %s", claudeTestCommand, strings.Join(args, " "))
+	cmd := exec.CommandContext(ctx, claudeTestCommand, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Skipf("Claude auth check failed (run 'claude login' or set ANTHROPIC_API_KEY):\n  command: %s %s\n  error: %v\n  output: %s",
+			claudeTestCommand, strings.Join(args, " "), err, string(out))
+	}
+	if !strings.Contains(string(out), "AUTH_OK") {
+		t.Logf("verifyClaudeAuth: Claude responded but did not contain AUTH_OK: %s", string(out))
+		// Still proceed — Claude is at least functional even if it didn't follow
+		// the exact instruction. The important thing is that it responded at all.
+	}
+	t.Log("verifyClaudeAuth: Claude is authenticated and functional")
 }

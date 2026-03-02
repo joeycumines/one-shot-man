@@ -1,25 +1,28 @@
-# WIP: T42-T49 Expansion Cycle COMPLETE — Expansion needed
+# WIP: T50-T55 Batch COMMITTED — T56-T60 remaining
 
-## Status: ALL DONE — Need new tasks (indefinite cycle mandate)
+## Status: T50-T55 DONE — continuing to T56+
 
 ### Commits:
 - a31a25f: T42-T48 (27 BT/template/utility tests + production fixes)
-- PENDING: T49 (pre-compute import maps in assessIndependence)
+- 5b756ac: T49 (pre-compute import maps in assessIndependence)
+- PENDING: T50-T55 (performance + portability batch)
 
 ### Blueprint State:
-- T01-T41: Done (committed through f255961)
-- T37: Blocked (Claude auth — needs `claude login` or ANTHROPIC_API_KEY)
-- T42-T48: Done (committed a31a25f)
-- T49: Done (code applied, make all PASS, Rule of Two PASS, commit pending)
+- T01-T55: Done (most committed, T50-T55 pending commit)
+- T37: Blocked (Claude auth)
+- T56-T60: Not Started (test coverage + code quality)
 
-### T49 Changes (uncommitted):
-- pr_split_script.js: assessIndependence pre-computes dirs/imports/pkgs maps once
-- pr_split_script.js: New splitsAreIndependentFromMaps() for O(N²) inner loop
-- pr_split_script.js: extractGoImports uses osmod.readFile + cat fallback (T46 pattern)
-- docs/pr-split-testing.md: New testing guide documentation
+### T50-T55 Changes:
+- T50: extractGoPkgs accepts optional modulePath param, hoisted in assessIndependence
+- T51: buildDependencyGraph uses splitsAreIndependentFromMaps with pre-computed maps
+- T52: SPINNER_FRAMES dead code removed
+- T53: saveTelemetry uses osmod.writeFile({createDirs:true}) instead of mkdir -p
+- T54: MCP diagnostic uses osmod.readFile instead of cat
+- T55: discoverVerifyCommand + 4 AUTO_FIX_STRATEGIES detect use osmod.fileExists
 
-### Next: EXPANSION
-- Task list must never be empty (INDEFINITE CYCLE mandate)
-- Need to identify next frontier of improvements
-- Previous T41 analysis identified ~20 items — only T42-T49 were added
-- Remaining candidates: extractGoPkgs caching, modulePath hoisting, more test coverage, etc.
+### Next: T56-T60
+- T56: Unit tests for AUTO_FIX_STRATEGIES detect and fix functions
+- T57: Unit tests for ClaudeCodeExecutor.resolve auto-detection
+- T58: validateSplitPlan duplicate file detection test
+- T59: selectStrategy scoring edge case tests
+- T60: cleanupBranches worktree conflict fix

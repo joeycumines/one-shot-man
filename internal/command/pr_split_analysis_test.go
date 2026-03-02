@@ -1434,26 +1434,15 @@ func TestSaveTelemetry_MkdirFails(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Override mkdir to fail.
-	if _, err := evalJS(`
-		var execModTel = require('osm:exec');
-		var _origExecvTel = execModTel.execv;
-		execModTel.execv = function(argv) {
-			if (argv[0] === 'mkdir') {
-				return {stdout: '', stderr: 'Permission denied', code: 1, error: true, message: 'Permission denied'};
-			}
-			return _origExecvTel(argv);
-		};
-	`); err != nil {
-		t.Fatal(err)
-	}
-
+	// T53: saveTelemetry now uses osmod.writeFile({ createDirs: true }) which
+	// calls Go's os.MkdirAll directly — not through mocked exec.execv.
+	// Using /bad/path which will fail with a permission/read-only error.
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.saveTelemetry('/bad/path'))`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := val.(string)
-	if !strings.Contains(s, "mkdir failed") {
-		t.Errorf("expected mkdir failed error, got: %s", s)
+	if !strings.Contains(s, `"error"`) || strings.Contains(s, `"error":null`) {
+		t.Errorf("expected non-null error for bad path, got: %s", s)
 	}
 }

@@ -1995,7 +1995,12 @@ func TestDiscoverVerifyCommand(t *testing.T) {
 		if _, err := evalJS(resetGitMockJS); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := evalJS(`globalThis._testFileExists = {'./Makefile': true};`); err != nil {
+		// T55: Mock osmod.fileExists for the osmod-first path.
+		if _, err := evalJS(`
+			globalThis._testFileExists = {'./Makefile': true};
+			var _osmod = require('osm:os');
+			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p]); };
+		`); err != nil {
 			t.Fatal(err)
 		}
 		raw, err := evalJS(`globalThis.prSplit.discoverVerifyCommand('.')`)
@@ -2011,7 +2016,11 @@ func TestDiscoverVerifyCommand(t *testing.T) {
 		if _, err := evalJS(resetGitMockJS); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := evalJS(`globalThis._testFileExists = {'./GNUmakefile': true};`); err != nil {
+		if _, err := evalJS(`
+			globalThis._testFileExists = {'./GNUmakefile': true};
+			var _osmod = require('osm:os');
+			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p]); };
+		`); err != nil {
 			t.Fatal(err)
 		}
 		raw, err := evalJS(`globalThis.prSplit.discoverVerifyCommand('.')`)
@@ -2027,7 +2036,11 @@ func TestDiscoverVerifyCommand(t *testing.T) {
 		if _, err := evalJS(resetGitMockJS); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := evalJS(`globalThis._testFileExists = {'./makefile': true};`); err != nil {
+		if _, err := evalJS(`
+			globalThis._testFileExists = {'./makefile': true};
+			var _osmod = require('osm:os');
+			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p]); };
+		`); err != nil {
 			t.Fatal(err)
 		}
 		raw, err := evalJS(`globalThis.prSplit.discoverVerifyCommand('.')`)
@@ -2043,7 +2056,11 @@ func TestDiscoverVerifyCommand(t *testing.T) {
 		if _, err := evalJS(resetGitMockJS); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := evalJS(`globalThis._testFileExists = {};`); err != nil {
+		if _, err := evalJS(`
+			globalThis._testFileExists = {};
+			var _osmod = require('osm:os');
+			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p]); };
+		`); err != nil {
 			t.Fatal(err)
 		}
 		raw, err := evalJS(`globalThis.prSplit.discoverVerifyCommand('.')`)
@@ -2059,7 +2076,11 @@ func TestDiscoverVerifyCommand(t *testing.T) {
 		if _, err := evalJS(resetGitMockJS); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := evalJS(`globalThis._testFileExists = {'/tmp/project/Makefile': true};`); err != nil {
+		if _, err := evalJS(`
+			globalThis._testFileExists = {'/tmp/project/Makefile': true};
+			var _osmod = require('osm:os');
+			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p]); };
+		`); err != nil {
 			t.Fatal(err)
 		}
 		raw, err := evalJS(`globalThis.prSplit.discoverVerifyCommand('/tmp/project')`)

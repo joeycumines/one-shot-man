@@ -33,7 +33,7 @@
     "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp."
   },
   "statusSection": {
-    "currentState": "T01-T41 DONE (committed through f255961). T42-T49 ALL DONE. make all PASS. T37 blocked by Claude auth. EXPANSION NEEDED — task list must never be empty.",
+    "currentState": "T01-T55 ALL DONE. T56-T60 remaining (test coverage + code quality). T37 blocked by Claude auth.",
     "goalState": "On macOS, osm pr-split --strategy auto reliably completes end-to-end with all 6 regressions fixed, backed by deterministic tests, with make all green cross-platform. REAL end-to-end tests via TestMain flags.",
     "replanLog": [
       {
@@ -412,6 +412,88 @@
       "status": "Done",
       "notes": "Pre-compute dirs/imports/pkgs arrays outside O(N²) loop. New splitsAreIndependentFromMaps() takes pre-computed maps. Original splitsAreIndependent() preserved for _splitsAreIndependent export. Also applied osmod.readFile portability pattern to extractGoImports (T46 pattern).",
       "contextPointers": ["pr_split_script.js:4036-4075 (assessIndependence + splitsAreIndependentFromMaps)", "pr_split_script.js:4116-4148 (extractGoImports with osmod.readFile)"]
+    },
+    {
+      "task": "T50: Hoist detectGoModulePath out of extractGoPkgs",
+      "description": "extractGoPkgs (line ~4150) calls detectGoModulePath() every invocation. In assessIndependence's pre-compute loop, this means N calls to detectGoModulePath(), each reading/parsing go.mod. Add optional modulePath parameter to extractGoPkgs; hoist the single detectGoModulePath() call into assessIndependence and buildDependencyGraph.",
+      "acceptance": "detectGoModulePath() called exactly once per assessIndependence invocation, not N times. extractGoPkgs accepts optional modulePath parameter. Existing tests pass unchanged.",
+      "status": "Done",
+      "notes": "extractGoPkgs now accepts optional modulePath param with typeof===undefined guard. assessIndependence and buildDependencyGraph both hoist detectGoModulePath() once.",
+      "contextPointers": ["pr_split_script.js:4150-4163 (extractGoPkgs)", "pr_split_script.js:4036-4060 (assessIndependence pre-compute loop)"]
+    },
+    {
+      "task": "T51: Apply T49 pre-compute pattern to buildDependencyGraph",
+      "description": "buildDependencyGraph (line ~4509) calls splitsAreIndependent in O(N²) loop — same pattern T49 fixed for assessIndependence. Pre-compute dirs/imports/pkgs arrays and use splitsAreIndependentFromMaps. Uses the hoisted modulePath from T50.",
+      "acceptance": "buildDependencyGraph pre-computes maps and uses splitsAreIndependentFromMaps. No repeated file reads in dependency graph construction. Tests pass.",
+      "status": "Done",
+      "notes": "buildDependencyGraph now pre-computes dirs/imports/pkgs arrays and uses splitsAreIndependentFromMaps with !negation for edge creation. Uses hoisted modulePath from T50.",
+      "contextPointers": ["pr_split_script.js:4509-4545 (buildDependencyGraph)"]
+    },
+    {
+      "task": "T52: Remove SPINNER_FRAMES dead code",
+      "description": "SPINNER_FRAMES (line ~2753) is declared but never referenced. It's a leftover from a removed progress display. Delete it.",
+      "acceptance": "SPINNER_FRAMES constant removed. make all passes. No grep matches for SPINNER_FRAMES.",
+      "status": "Done",
+      "notes": "Replaced with comment marker. No remaining references.",
+      "contextPointers": ["pr_split_script.js:2753"]
+    },
+    {
+      "task": "T53: saveTelemetry portability — replace mkdir -p with osmod.writeFile createDirs",
+      "description": "saveTelemetry (line ~4620) uses exec.execv(['mkdir', '-p', dir]) which doesn't exist on Windows. osmod.writeFile already supports { createDirs: true } option (internal/builtin/os/os.go:102). Replace the mkdir + writeFile pattern.",
+      "acceptance": "No exec.execv(['mkdir',...]) in saveTelemetry. Uses osmod.writeFile with createDirs: true. Existing TestSaveTelemetry tests pass.",
+      "status": "Done",
+      "notes": "Uses osmod.writeFile(filename, data, { createDirs: true }). TestSaveTelemetry_MkdirFails adapted for real-fs error path.",
+      "contextPointers": ["pr_split_script.js:4614-4628 (saveTelemetry)", "internal/builtin/os/os.go:102 (createDirs option)"]
+    },
+    {
+      "task": "T54: MCP diagnostic cat call portability",
+      "description": "Line ~3229 uses execmod.exec({ command: 'cat', args: [mcpConfigPath] }) to dump MCP config for debugging. Replace with osmod.readFile(mcpConfigPath).",
+      "acceptance": "MCP config diagnostic uses osmod.readFile instead of cat. Diagnostic logging still works in tests.",
+      "status": "Done",
+      "notes": "Uses osmod.readFile(mcpConfigPath) instead of execmod.exec({command:'cat',...}).",
+      "contextPointers": ["pr_split_script.js:3226-3232"]
+    },
+    {
+      "task": "T55: discoverVerifyCommand and AUTO_FIX_STRATEGIES detect — replace test -f with osmod.fileExists",
+      "description": "discoverVerifyCommand (line ~123) and AUTO_FIX_STRATEGIES detect functions (go-mod-tidy line 1851, go-generate-sum 1877, npm-install 1937, make-generate 1962) all use exec.execv(['test', '-f', ...]) which is Unix-only. Replace with osmod.fileExists() (or osmod.stat()) with test -f fallback.",
+      "acceptance": "All 5 locations use osmod-based file existence check. cat/test fallbacks only when osmod unavailable. Tests pass.",
+      "status": "Done",
+      "notes": "All 5 locations converted to osmod.fileExists with test -f fallback when osmod unavailable. TestDiscoverVerifyCommand mocks osmod.fileExists. 4 AUTO_FIX_STRATEGIES detect functions updated."
+    },
+    {
+      "task": "T56: Unit tests for AUTO_FIX_STRATEGIES detect and fix functions",
+      "description": "The 7 auto-fix strategies (go-mod-tidy, go-generate-sum, go-build-missing-imports, npm-install, make-generate, add-missing-files, claude-fix) have zero direct unit tests. They are exercised only indirectly via resolveConflicts pipeline tests. Add unit tests for each strategy's detect and fix functions with mock exec.execv. Create pr_split_autofix_strategy_test.go.",
+      "acceptance": "Each of the 7 strategies has at least one test for detect (true/false cases) and fix (success/failure). New test file pr_split_autofix_strategy_test.go. make all passes.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:1843-2115 (AUTO_FIX_STRATEGIES array)"]
+    },
+    {
+      "task": "T57: Unit tests for ClaudeCodeExecutor.resolve auto-detection",
+      "description": "ClaudeCodeExecutor.resolve (lines ~2330-2381) has complex auto-detection logic: explicit command → claude → ollama → error, with version checks and model availability validation. No unit tests exercise this directly. Add tests with mock exec.execv to verify each resolution path.",
+      "acceptance": "Tests cover: (1) explicit command found, (2) explicit command not found, (3) claude auto-detected + version ok, (4) claude found but version fails, (5) ollama auto-detected + model available, (6) ollama found but model missing, (7) nothing found → error.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:2330-2381 (ClaudeCodeExecutor.resolve)"]
+    },
+    {
+      "task": "T58: validateSplitPlan duplicate file detection test",
+      "description": "validatePlan (line ~998) and validateSplitPlan (line ~1043) detect duplicate files across splits. While validateClassification tests check duplicates, validatePlan and validateSplitPlan duplicate-file detection is untested. Add test where file 'foo.go' appears in two splits.",
+      "acceptance": "Test verifies that a plan with file 'foo.go' in two different splits is flagged as invalid with duplicate files error.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:998-1100 (validatePlan, validateSplitPlan)"]
+    },
+    {
+      "task": "T59: selectStrategy scoring edge case tests",
+      "description": "selectStrategy (line ~802) has a composite scoring algorithm with splitScore, maxSizeScore, and balance factors. Tests exist for basic strategy selection but not for: (a) needsConfirm when two strategies are within 0.15 score, (b) 8+ groups triggers penalty, (c) maxGroupSize exceeding maxPerGroup triggers penalty.",
+      "acceptance": "Tests verify needsConfirm: true when scores are close, and verify penalty scoring for large group counts and oversized groups.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:802-870 (selectStrategy)"]
+    },
+    {
+      "task": "T60: cleanupBranches worktree conflict fix",
+      "description": "cleanupBranches (line ~1701) calls gitExec(dir, ['checkout', plan.baseBranch]) which can fail if baseBranch is checked out in another worktree — same bug T07 fixed for executeSplit. Apply the same pattern: resolve to commit SHA first, or use git branch -D without checkout.",
+      "acceptance": "cleanupBranches doesn't fail when baseBranch is in another worktree. Test verifying this scenario added.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:1711 (checkout in cleanupBranches)", "T07 fix pattern for executeSplit worktree conflict"]
     }
   ],
   "continuousVerification": {

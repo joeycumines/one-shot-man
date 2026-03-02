@@ -116,13 +116,16 @@ var MODE_NAME = 'pr-split';
 // discoverVerifyCommand auto-detects the verification command for the
 // working directory. Checks for Makefile, makefile, and GNUmakefile (in
 // order). Returns 'make' if any exist, '' if none found.
+// T55: Use osmod.fileExists for portability (test -f is Unix-only).
 function discoverVerifyCommand(dir) {
     var names = ['Makefile', 'makefile', 'GNUmakefile'];
     for (var i = 0; i < names.length; i++) {
         var path = dir ? (dir + '/' + names[i]) : names[i];
-        var result = exec.execv(['test', '-f', path]);
-        if (result.code === 0) {
+        if (osmod && osmod.fileExists(path)) {
             return 'make';
+        } else if (!osmod) {
+            var result = exec.execv(['test', '-f', path]);
+            if (result.code === 0) return 'make';
         }
     }
     return '';
@@ -1847,8 +1850,11 @@ var AUTO_FIX_STRATEGIES = [
     {
         name: 'go-mod-tidy',
         // Detect: check if go.mod exists in the repo.
+        // T55: osmod.fileExists for portability.
         detect: function(dir) {
-            return exec.execv(['test', '-f', (dir !== '.' ? dir + '/' : '') + 'go.mod']).code === 0;
+            var path = (dir !== '.' ? dir + '/' : '') + 'go.mod';
+            if (osmod) return osmod.fileExists(path);
+            return exec.execv(['test', '-f', path]).code === 0;
         },
         // Fix: run `go mod tidy` and commit if changes were made.
         fix: function(dir) {
@@ -1873,8 +1879,11 @@ var AUTO_FIX_STRATEGIES = [
     {
         name: 'go-generate-sum',
         // Detect: go.sum exists but might be incomplete.
+        // T55: osmod.fileExists for portability.
         detect: function(dir) {
-            return exec.execv(['test', '-f', (dir !== '.' ? dir + '/' : '') + 'go.sum']).code === 0;
+            var path = (dir !== '.' ? dir + '/' : '') + 'go.sum';
+            if (osmod) return osmod.fileExists(path);
+            return exec.execv(['test', '-f', path]).code === 0;
         },
         // Fix: run `go mod download` to populate go.sum.
         fix: function(dir) {
@@ -1933,8 +1942,11 @@ var AUTO_FIX_STRATEGIES = [
     {
         name: 'npm-install',
         // Detect: package.json exists.
+        // T55: osmod.fileExists for portability.
         detect: function(dir) {
-            return exec.execv(['test', '-f', (dir !== '.' ? dir + '/' : '') + 'package.json']).code === 0;
+            var path = (dir !== '.' ? dir + '/' : '') + 'package.json';
+            if (osmod) return osmod.fileExists(path);
+            return exec.execv(['test', '-f', path]).code === 0;
         },
         // Fix: run `npm install` and commit changes to package lock.
         fix: function(dir) {
@@ -1958,8 +1970,10 @@ var AUTO_FIX_STRATEGIES = [
     {
         name: 'make-generate',
         // Detect: Makefile with 'generate' target or go generate files.
+        // T55: osmod.fileExists for portability.
         detect: function(dir) {
-            var hasMakefile = exec.execv(['test', '-f', (dir !== '.' ? dir + '/' : '') + 'Makefile']).code === 0;
+            var makPath = (dir !== '.' ? dir + '/' : '') + 'Makefile';
+            var hasMakefile = osmod ? osmod.fileExists(makPath) : exec.execv(['test', '-f', makPath]).code === 0;
             if (hasMakefile) {
                 var grep = exec.execv(['sh', '-c',
                     'cd ' + shellQuote(dir) + ' && grep -q "^generate:" Makefile']);
@@ -2749,8 +2763,7 @@ var AUTOMATED_DEFAULTS = {
     watchdogIdleMs: 900000      // 15 minutes no-progress watchdog (T20)
 };
 
-// Spinner characters for progress display.
-var SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+// T52: SPINNER_FRAMES removed — dead code (never referenced).
 
 // isCancelled checks cooperative cancellation from the auto-split TUI.
 // Returns true when the user has pressed q/Ctrl+C.
@@ -3223,11 +3236,10 @@ async function automatedSplit(config) {
         mcpCallbackObj.initSync();
         log.printf('auto-split: MCP callback initialized at %s (%s)', mcpCallbackObj.address, mcpCallbackObj.transport);
         log.printf('auto-split: MCP config path: %s', mcpCallbackObj.mcpConfigPath);
-        // T37 diagnostic: dump MCP config file for debugging
+        // T37/T54 diagnostic: dump MCP config file for debugging (osmod.readFile for portability).
         try {
-            var execmod = require('osm:exec');
-            var catResult = execmod.exec({ command: 'cat', args: [mcpCallbackObj.mcpConfigPath] });
-            log.printf('auto-split: MCP config contents: %s', catResult.stdout || '(empty)');
+            var readResult = osmod.readFile(mcpCallbackObj.mcpConfigPath);
+            log.printf('auto-split: MCP config contents: %s', (!readResult.error && readResult.content) ? readResult.content : '(empty)');
         } catch (e) {
             log.printf('auto-split: could not read MCP config: %s', e.message || String(e));
         }
@@ -4039,14 +4051,16 @@ function assessIndependence(plan, classification) {
     }
 
     // Pre-compute maps for each split — O(N) file reads total.
+    // T50: Hoist detectGoModulePath() once for all splits.
     var n = plan.splits.length;
+    var modulePath = detectGoModulePath();
     var dirs = new Array(n);
     var imports = new Array(n);
     var pkgs = new Array(n);
     for (var k = 0; k < n; k++) {
         dirs[k] = extractDirs(plan.splits[k].files);
         imports[k] = extractGoImports(plan.splits[k].files);
-        pkgs[k] = extractGoPkgs(plan.splits[k].files);
+        pkgs[k] = extractGoPkgs(plan.splits[k].files, modulePath);
     }
 
     var pairs = [];
@@ -4147,9 +4161,12 @@ function extractGoImports(files) {
 }
 
 // extractGoPkgs returns a set of Go package directories from Go files.
-function extractGoPkgs(files) {
+// T50: Accept optional modulePath to avoid repeated detectGoModulePath() calls.
+function extractGoPkgs(files, modulePath) {
     var pkgs = {};
-    var modulePath = detectGoModulePath();
+    if (typeof modulePath === 'undefined') {
+        modulePath = detectGoModulePath();
+    }
     for (var i = 0; i < (files || []).length; i++) {
         if (files[i].match(/\.go$/)) {
             var dir = dirname(files[i]);
@@ -4506,16 +4523,31 @@ function getConversationHistory() {
 // buildDependencyGraph creates an adjacency list from plan splits.
 // Each split that shares directory or import dependencies with another
 // gets an edge. Returns {nodes: [{name, index}], edges: [{from, to}]}.
+// T51: Pre-compute maps for O(N²) pairwise check, same pattern as T49 assessIndependence.
 function buildDependencyGraph(plan, classification) {
     if (!plan || !plan.splits) return { nodes: [], edges: [] };
     var nodes = [];
-    for (var i = 0; i < plan.splits.length; i++) {
+    var n = plan.splits.length;
+    for (var i = 0; i < n; i++) {
         nodes.push({ name: plan.splits[i].name, index: i });
     }
+
+    // Pre-compute maps once per split.
+    var modulePath = detectGoModulePath();
+    var dirs = new Array(n);
+    var imports = new Array(n);
+    var pkgs = new Array(n);
+    for (var k = 0; k < n; k++) {
+        dirs[k] = extractDirs(plan.splits[k].files);
+        imports[k] = extractGoImports(plan.splits[k].files);
+        pkgs[k] = extractGoPkgs(plan.splits[k].files, modulePath);
+    }
+
     var edges = [];
-    for (var a = 0; a < plan.splits.length; a++) {
-        for (var b = a + 1; b < plan.splits.length; b++) {
-            if (!splitsAreIndependent(plan.splits[a], plan.splits[b], classification)) {
+    for (var a = 0; a < n; a++) {
+        for (var b = a + 1; b < n; b++) {
+            if (!splitsAreIndependentFromMaps(dirs[a], dirs[b],
+                imports[a], imports[b], pkgs[a], pkgs[b])) {
                 edges.push({ from: a, to: b });
             }
         }
@@ -4611,17 +4643,16 @@ function getTelemetrySummary() {
 }
 
 // saveTelemetry persists telemetry to disk (opt-in, local only).
+// T53: Use osmod.writeFile with createDirs instead of exec.execv(['mkdir', '-p', ...]).
 function saveTelemetry(dir) {
     dir = dir || '.osm/telemetry';
     if (!osmod) {
         return { error: 'osm:os module not available — cannot persist telemetry' };
     }
     try {
-        var mkResult = exec.execv(['mkdir', '-p', dir]);
-        if (mkResult.code !== 0) return { error: 'mkdir failed' };
         var filename = dir + '/session-' + telemetryData.startTime.replace(/[:.]/g, '-') + '.json';
         var data = JSON.stringify(getTelemetrySummary(), null, 2);
-        osmod.writeFile(filename, data);
+        osmod.writeFile(filename, data, { createDirs: true });
         return { error: null, path: filename };
     } catch (e) {
         return { error: e.message };

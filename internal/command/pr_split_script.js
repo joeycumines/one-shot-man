@@ -1709,7 +1709,13 @@ function cleanupBranches(plan) {
     var deleted = [];
     var errors = [];
 
-    gitExec(dir, ['checkout', plan.baseBranch]);
+    // T60: Try checkout baseBranch; if it fails (e.g. baseBranch is checked
+    // out in another worktree), fall back to detaching HEAD so branch -D
+    // can still succeed on all split branches.
+    var coRes = gitExec(dir, ['checkout', plan.baseBranch]);
+    if (coRes.code !== 0) {
+        gitExec(dir, ['checkout', '--detach', 'HEAD']);
+    }
 
     for (var i = 0; i < plan.splits.length; i++) {
         var name = plan.splits[i].name;

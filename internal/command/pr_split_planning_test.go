@@ -606,6 +606,81 @@ func TestSelectStrategy(t *testing.T) {
 				}
 			},
 		},
+		{
+			// T59: 8+ groups triggers splitScore penalty (decays from 1.0 at n=7).
+			name: "many_groups_splitScore_penalty",
+			setup: `
+				globalThis._gitResponses['cat'] = function(argv) {
+					if (argv[1] === 'go.mod') return _gitOk('module m\n\ngo 1.21\n');
+					return _gitOk('package main\n\nfunc F() {}');
+				};
+			`,
+			invoke: `JSON.stringify(globalThis.prSplit.selectStrategy([
+				'a/f.go', 'b/f.go', 'c/f.go', 'd/f.go', 'e/f.go',
+				'f/f.go', 'g/f.go', 'h/f.go', 'i/f.go', 'j/f.go'
+			]))`,
+			check: func(t *testing.T, r selectStrategyResult) {
+				// 10 files in 10 dirs → directory produces 10 groups.
+				// splitScore for n=10: max(0, 1.0 - (10-7)*0.1) = 0.7
+				// splitScore for chunks (default ~25 per group): 1 group → 1/3 = 0.33
+				// The scored array should show directory(-deep) with less
+				// than perfect splitScore, and chunks should appear.
+				var dirScore float64
+				var chunksScore float64
+				for _, s := range r.Scored {
+					if s.Name == "directory" {
+						dirScore = s.Score
+					}
+					if s.Name == "chunks" {
+						chunksScore = s.Score
+					}
+				}
+				// Directory with 10 groups: splitScore=0.7 * 0.4 = 0.28
+				// plus balance and maxSize factors. Should be < 1.0.
+				if dirScore >= 1.0 {
+					t.Errorf("directory score should be < 1.0 with 10 groups, got %f", dirScore)
+				}
+				// Chunks with 1 group: splitScore=1/3 ≈ 0.33 → total ~0.3ish.
+				if chunksScore <= 0 {
+					t.Errorf("chunks should have positive score, got %f", chunksScore)
+				}
+			},
+		},
+		{
+			// T59: maxGroupSize exceeding maxPerGroup triggers maxSizeScore penalty.
+			name: "oversized_group_maxSizeScore_penalty",
+			setup: `
+				globalThis._gitResponses['cat'] = function(argv) {
+					if (argv[1] === 'go.mod') return _gitOk('module m\n\ngo 1.21\n');
+					return _gitOk('package main\n\nfunc F() {}');
+				};
+			`,
+			invoke: `JSON.stringify(globalThis.prSplit.selectStrategy([
+				'pkg/a.go', 'pkg/b.go', 'pkg/c.go', 'pkg/d.go', 'pkg/e.go',
+				'pkg/f.go', 'pkg/g.go', 'pkg/h.go', 'pkg/i.go', 'pkg/j.go',
+				'pkg/k.go', 'pkg/l.go'
+			], {maxPerGroup: 3}))`,
+			check: func(t *testing.T, r selectStrategyResult) {
+				// 12 files in 1 dir, maxPerGroup=3.
+				// directory: 1 group of 12 → maxSizeScore = max(0, 1-(12-3)*0.05) = 0.55
+				// chunks: ceil(12/3) = 4 groups → maxSizeScore = 1.0 (each ≤ 3)
+				var dirScore, chunksScore float64
+				for _, s := range r.Scored {
+					if s.Name == "directory" {
+						dirScore = s.Score
+					}
+					if s.Name == "chunks" {
+						chunksScore = s.Score
+					}
+				}
+				// directory should be penalized for oversized group.
+				// chunks should score higher than directory.
+				if chunksScore <= dirScore {
+					t.Errorf("chunks (%f) should score higher than directory (%f) with maxPerGroup=3 and 12 files in 1 dir",
+						chunksScore, dirScore)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

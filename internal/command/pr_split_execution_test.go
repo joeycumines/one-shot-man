@@ -848,6 +848,32 @@ func TestCleanupBranches(t *testing.T) {
 				}
 			},
 		},
+		{
+			// T60: When baseBranch checkout fails (e.g. worktree conflict),
+			// cleanupBranches should fall back to detach and still delete.
+			name: "worktree_conflict_fallback_to_detach",
+			setup: `
+				globalThis._gitResponses['checkout main'] = _gitFail('fatal: \'main\' is already checked out at \'/other/worktree\'');
+				globalThis._gitResponses['checkout --detach HEAD'] = _gitOk('');
+				globalThis._gitResponses['branch -D split/01-fix'] = _gitOk('');
+				globalThis._gitResponses['branch -D split/02-feat'] = _gitOk('');
+			`,
+			invoke: `JSON.stringify(globalThis.prSplit.cleanupBranches({
+				baseBranch: 'main',
+				splits: [
+					{name: 'split/01-fix'},
+					{name: 'split/02-feat'}
+				]
+			}))`,
+			check: func(t *testing.T, r cleanupResult) {
+				if len(r.Deleted) != 2 {
+					t.Fatalf("expected 2 deleted (worktree fallback should still work), got %d: %v", len(r.Deleted), r.Deleted)
+				}
+				if len(r.Errors) != 0 {
+					t.Errorf("unexpected errors: %v", r.Errors)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

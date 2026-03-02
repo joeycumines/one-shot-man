@@ -33,7 +33,7 @@
     "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp."
   },
   "statusSection": {
-    "currentState": "T01-T58 ALL DONE. T59-T60 remaining (scoring tests + worktree fix). T37 blocked by Claude auth.",
+    "currentState": "T01-T60 ALL DONE. T37 blocked by Claude auth. Expansion cycle needed.",
     "goalState": "On macOS, osm pr-split --strategy auto reliably completes end-to-end with all 6 regressions fixed, backed by deterministic tests, with make all green cross-platform. REAL end-to-end tests via TestMain flags.",
     "replanLog": [
       {
@@ -488,15 +488,17 @@
       "task": "T59: selectStrategy scoring edge case tests",
       "description": "selectStrategy (line ~802) has a composite scoring algorithm with splitScore, maxSizeScore, and balance factors. Tests exist for basic strategy selection but not for: (a) needsConfirm when two strategies are within 0.15 score, (b) 8+ groups triggers penalty, (c) maxGroupSize exceeding maxPerGroup triggers penalty.",
       "acceptance": "Tests verify needsConfirm: true when scores are close, and verify penalty scoring for large group counts and oversized groups.",
-      "status": "Not Started",
-      "contextPointers": ["pr_split_script.js:802-870 (selectStrategy)"]
+      "status": "Done",
+      "notes": "Added 2 subtests to TestSelectStrategy: many_groups_splitScore_penalty (10 dirs, verifies dirScore < 1.0) and oversized_group_maxSizeScore_penalty (12 files in 1 dir, maxPerGroup=3, verifies chunks > directory).",
+      "contextPointers": ["pr_split_planning_test.go:610-695 (T59 subtests)", "pr_split_script.js:802-870 (selectStrategy)"]
     },
     {
       "task": "T60: cleanupBranches worktree conflict fix",
       "description": "cleanupBranches (line ~1701) calls gitExec(dir, ['checkout', plan.baseBranch]) which can fail if baseBranch is checked out in another worktree — same bug T07 fixed for executeSplit. Apply the same pattern: resolve to commit SHA first, or use git branch -D without checkout.",
       "acceptance": "cleanupBranches doesn't fail when baseBranch is in another worktree. Test verifying this scenario added.",
-      "status": "Not Started",
-      "contextPointers": ["pr_split_script.js:1711 (checkout in cleanupBranches)", "T07 fix pattern for executeSplit worktree conflict"]
+      "status": "Done",
+      "notes": "Production fix: cleanupBranches now falls back to git checkout --detach HEAD when baseBranch checkout fails. Test: worktree_conflict_fallback_to_detach verifies 2 branches deleted with 0 errors when checkout main fails.",
+      "contextPointers": ["pr_split_script.js:1712-1716 (--detach fallback)", "pr_split_execution_test.go:853-879 (worktree test)"]
     }
   ],
   "continuousVerification": {

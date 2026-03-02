@@ -33,7 +33,7 @@
     "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp."
   },
   "statusSection": {
-    "currentState": "T01-T55 ALL DONE. T56-T60 remaining (test coverage + code quality). T37 blocked by Claude auth.",
+    "currentState": "T01-T58 ALL DONE. T59-T60 remaining (scoring tests + worktree fix). T37 blocked by Claude auth.",
     "goalState": "On macOS, osm pr-split --strategy auto reliably completes end-to-end with all 6 regressions fixed, backed by deterministic tests, with make all green cross-platform. REAL end-to-end tests via TestMain flags.",
     "replanLog": [
       {
@@ -464,21 +464,24 @@
       "task": "T56: Unit tests for AUTO_FIX_STRATEGIES detect and fix functions",
       "description": "The 7 auto-fix strategies (go-mod-tidy, go-generate-sum, go-build-missing-imports, npm-install, make-generate, add-missing-files, claude-fix) have zero direct unit tests. They are exercised only indirectly via resolveConflicts pipeline tests. Add unit tests for each strategy's detect and fix functions with mock exec.execv. Create pr_split_autofix_strategy_test.go.",
       "acceptance": "Each of the 7 strategies has at least one test for detect (true/false cases) and fix (success/failure). New test file pr_split_autofix_strategy_test.go. make all passes.",
-      "status": "Not Started",
+      "status": "Done",
+      "notes": "pr_split_autofix_strategy_test.go created with 7 detect tests (go-mod-tidy true/false/custom-dir, go-generate-sum true/false, go-build-missing-imports 5 cases, npm-install true/false, add-missing-files 5 cases, claude-fix no-executor) + 4 fix tests (go-mod-tidy success/no-changes, go-generate-sum success, npm-install success). All pass.",
       "contextPointers": ["pr_split_script.js:1843-2115 (AUTO_FIX_STRATEGIES array)"]
     },
     {
       "task": "T57: Unit tests for ClaudeCodeExecutor.resolve auto-detection",
       "description": "ClaudeCodeExecutor.resolve (lines ~2330-2381) has complex auto-detection logic: explicit command → claude → ollama → error, with version checks and model availability validation. No unit tests exercise this directly. Add tests with mock exec.execv to verify each resolution path.",
       "acceptance": "Tests cover: (1) explicit command found, (2) explicit command not found, (3) claude auto-detected + version ok, (4) claude found but version fails, (5) ollama auto-detected + model available, (6) ollama found but model missing, (7) nothing found → error.",
-      "status": "Not Started",
+      "status": "Done",
+      "notes": "7 resolve tests in pr_split_autofix_strategy_test.go. Config property names verified: claudeCommand, claudeModel (not command/model). All 7 test cases pass.",
       "contextPointers": ["pr_split_script.js:2330-2381 (ClaudeCodeExecutor.resolve)"]
     },
     {
       "task": "T58: validateSplitPlan duplicate file detection test",
       "description": "validatePlan (line ~998) and validateSplitPlan (line ~1043) detect duplicate files across splits. While validateClassification tests check duplicates, validatePlan and validateSplitPlan duplicate-file detection is untested. Add test where file 'foo.go' appears in two splits.",
       "acceptance": "Test verifies that a plan with file 'foo.go' in two different splits is flagged as invalid with duplicate files error.",
-      "status": "Not Started",
+      "status": "Done",
+      "notes": "Two tests: TestValidateSplitPlan_DuplicateFiles and TestValidateSplitPlan_NoDuplicates. Passes stages array directly (not object). Both pass.",
       "contextPointers": ["pr_split_script.js:998-1100 (validatePlan, validateSplitPlan)"]
     },
     {

@@ -1,28 +1,31 @@
-# WIP: T50-T55 Batch COMMITTED — T56-T60 remaining
+# WIP: T56-T58 COMMITTED — T59-T60 remaining
 
-## Status: T50-T55 DONE — continuing to T56+
+## Status: T56-T58 DONE — continuing to T59+
 
 ### Commits:
 - a31a25f: T42-T48 (27 BT/template/utility tests + production fixes)
 - 5b756ac: T49 (pre-compute import maps in assessIndependence)
-- PENDING: T50-T55 (performance + portability batch)
+- f5f2521: T50-T55 (performance + portability batch)
+- PENDING: T56-T58 (autofix strategy tests + ClaudeCodeExecutor.resolve + validateSplitPlan)
 
 ### Blueprint State:
-- T01-T55: Done (most committed, T50-T55 pending commit)
+- T01-T58: Done (most committed, T56-T58 pending commit)
 - T37: Blocked (Claude auth)
-- T56-T60: Not Started (test coverage + code quality)
+- T59-T60: Not Started (scoring tests + worktree fix)
 
-### T50-T55 Changes:
-- T50: extractGoPkgs accepts optional modulePath param, hoisted in assessIndependence
-- T51: buildDependencyGraph uses splitsAreIndependentFromMaps with pre-computed maps
-- T52: SPINNER_FRAMES dead code removed
-- T53: saveTelemetry uses osmod.writeFile({createDirs:true}) instead of mkdir -p
-- T54: MCP diagnostic uses osmod.readFile instead of cat
-- T55: discoverVerifyCommand + 4 AUTO_FIX_STRATEGIES detect use osmod.fileExists
+### T56-T58 Changes (new file):
+- pr_split_autofix_strategy_test.go (570 lines):
+  - T56: 7 detect tests + 4 fix tests for AUTO_FIX_STRATEGIES
+  - T57: 7 ClaudeCodeExecutor.resolve path tests
+  - T58: 2 validateSplitPlan duplicate file tests
 
-### Next: T56-T60
-- T56: Unit tests for AUTO_FIX_STRATEGIES detect and fix functions
-- T57: Unit tests for ClaudeCodeExecutor.resolve auto-detection
-- T58: validateSplitPlan duplicate file detection test
-- T59: selectStrategy scoring edge case tests
+### Key learnings during T56-T58:
+- Config property names are claudeCommand/claudeModel, NOT command/model
+- validateSplitPlan takes stages array directly, not object wrapper
+- detect functions build path as 'go.mod' not './go.mod' when dir='.'
+- execMockSetupJS() default fallback returns ok('') for unknown commands
+
+### Next: T59-T60
+- T59: selectStrategy scoring edge case tests (needsConfirm, penalties)
 - T60: cleanupBranches worktree conflict fix
+- Then: Expansion cycle for T61+

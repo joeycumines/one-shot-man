@@ -1,28 +1,25 @@
-# WIP: T42-T49 — Expansion cycle after T38-T41
+# WIP: T42-T49 Expansion Cycle COMPLETE — Expansion needed
 
-## Status: IN-PROGRESS — T42 starting
+## Status: ALL DONE — Need new tasks (indefinite cycle mandate)
 
-### Last Commit: f255961 (T38+T40 edge case + cancel tests)
+### Commits:
+- a31a25f: T42-T48 (27 BT/template/utility tests + production fixes)
+- PENDING: T49 (pre-compute import maps in assessIndependence)
 
 ### Blueprint State:
-- T01-T36: Done (committed)
-- T37: Blocked (Claude auth)
-- T38-T41: Done (T38+T40 committed f255961, T39 verified existing, T41 expansion complete)
-- T42-T49: Not Started (new expansion tasks)
+- T01-T41: Done (committed through f255961)
+- T37: Blocked (Claude auth — needs `claude login` or ANTHROPIC_API_KEY)
+- T42-T48: Done (committed a31a25f)
+- T49: Done (code applied, make all PASS, Rule of Two PASS, commit pending)
 
-### Current Work: T42 — BT node factory tests
-- Need to test 8 factory functions: createAnalyzeNode, createGroupNode, createPlanNode, createSplitNode, createVerifyNode, createEquivalenceNode, createSelectStrategyNode, createWorkflowTree
-- Context: pr_split_script.js ~line 4117-4275
+### T49 Changes (uncommitted):
+- pr_split_script.js: assessIndependence pre-computes dirs/imports/pkgs maps once
+- pr_split_script.js: New splitsAreIndependentFromMaps() for O(N²) inner loop
+- pr_split_script.js: extractGoImports uses osmod.readFile + cat fallback (T46 pattern)
+- docs/pr-split-testing.md: New testing guide documentation
 
-### Parallel targets (no code dependencies):
-- T44: renderColorizedDiff, getSplitDiff, buildReport behavioral tests
-- T45: Fix btCommitChanges git add -A
-- T46: Replace cat calls for Windows portability
-- T47: Log ExitReason in pr_split.go
-- T48: Log strategy failures in resolveConflicts
-
-### Files to modify:
-- internal/command/pr_split_bt_test.go (new — BT node tests)
-- internal/command/pr_split_scope_misc_test.go (enhance existing)
-- internal/command/pr_split_script.js (T45, T46, T48 fixes)
-- internal/command/pr_split.go (T47 fix)
+### Next: EXPANSION
+- Task list must never be empty (INDEFINITE CYCLE mandate)
+- Need to identify next frontier of improvements
+- Previous T41 analysis identified ~20 items — only T42-T49 were added
+- Remaining candidates: extractGoPkgs caching, modulePath hoisting, more test coverage, etc.

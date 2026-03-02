@@ -33,7 +33,7 @@
     "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp."
   },
   "statusSection": {
-    "currentState": "T01-T41 DONE (committed through f255961). T42-T48 DONE (code changes + 27 new tests). make all PASS (exit 0, ~597s). T49 remaining. T37 blocked by Claude auth.",
+    "currentState": "T01-T41 DONE (committed through f255961). T42-T49 ALL DONE. make all PASS. T37 blocked by Claude auth. EXPANSION NEEDED — task list must never be empty.",
     "goalState": "On macOS, osm pr-split --strategy auto reliably completes end-to-end with all 6 regressions fixed, backed by deterministic tests, with make all green cross-platform. REAL end-to-end tests via TestMain flags.",
     "replanLog": [
       {
@@ -409,8 +409,9 @@
       "task": "T49: Pre-compute import maps in assessIndependence",
       "description": "assessIndependence calls splitsAreIndependent O(N²) times, each invoking extractGoImports. Pre-compute import maps once.",
       "acceptance": "Import maps computed once per assessIndependence call.",
-      "status": "Not Started",
-      "contextPointers": ["pr_split_script.js:4040-4065"]
+      "status": "Done",
+      "notes": "Pre-compute dirs/imports/pkgs arrays outside O(N²) loop. New splitsAreIndependentFromMaps() takes pre-computed maps. Original splitsAreIndependent() preserved for _splitsAreIndependent export. Also applied osmod.readFile portability pattern to extractGoImports (T46 pattern).",
+      "contextPointers": ["pr_split_script.js:4036-4075 (assessIndependence + splitsAreIndependentFromMaps)", "pr_split_script.js:4116-4148 (extractGoImports with osmod.readFile)"]
     }
   ],
   "continuousVerification": {

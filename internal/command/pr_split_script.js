@@ -4031,22 +4031,48 @@ function cleanupExecutor() {
 
 // assessIndependence determines which split pairs can merge independently.
 // Returns an array of [nameA, nameB] pairs.
+// T49: Pre-computes directory, import, and package maps once per split to
+// avoid O(N²) repeated file reads and module path detection.
 function assessIndependence(plan, classification) {
     if (!plan || !plan.splits || plan.splits.length < 2) {
         return [];
     }
 
+    // Pre-compute maps for each split — O(N) file reads total.
+    var n = plan.splits.length;
+    var dirs = new Array(n);
+    var imports = new Array(n);
+    var pkgs = new Array(n);
+    for (var k = 0; k < n; k++) {
+        dirs[k] = extractDirs(plan.splits[k].files);
+        imports[k] = extractGoImports(plan.splits[k].files);
+        pkgs[k] = extractGoPkgs(plan.splits[k].files);
+    }
+
     var pairs = [];
-    for (var i = 0; i < plan.splits.length; i++) {
-        for (var j = i + 1; j < plan.splits.length; j++) {
-            var a = plan.splits[i];
-            var b = plan.splits[j];
-            if (splitsAreIndependent(a, b, classification)) {
-                pairs.push([a.name, b.name]);
+    for (var i = 0; i < n; i++) {
+        for (var j = i + 1; j < n; j++) {
+            if (splitsAreIndependentFromMaps(dirs[i], dirs[j],
+                imports[i], imports[j], pkgs[i], pkgs[j])) {
+                pairs.push([plan.splits[i].name, plan.splits[j].name]);
             }
         }
     }
     return pairs;
+}
+
+// splitsAreIndependentFromMaps checks independence using pre-computed maps.
+function splitsAreIndependentFromMaps(dirsA, dirsB, importsA, importsB, pkgsA, pkgsB) {
+    for (var d in dirsA) {
+        if (dirsB[d]) return false;
+    }
+    for (var imp in importsA) {
+        if (pkgsB[imp]) return false;
+    }
+    for (var imp2 in importsB) {
+        if (pkgsA[imp2]) return false;
+    }
+    return true;
 }
 
 // splitsAreIndependent checks if two splits have no directory overlap
@@ -4092,11 +4118,19 @@ function extractGoImports(files) {
     for (var i = 0; i < (files || []).length; i++) {
         if (files[i].match(/\.go$/)) {
             // Read file content before parsing imports.
+            // T46/T49: Use osmod.readFile for portability, cat fallback.
             var content = '';
             try {
-                var cat = exec.execv(['cat', files[i]]);
-                if (cat.code === 0) {
-                    content = cat.stdout;
+                if (osmod) {
+                    var readResult = osmod.readFile(files[i]);
+                    if (!readResult.error) {
+                        content = readResult.content;
+                    }
+                } else {
+                    var cat = exec.execv(['cat', files[i]]);
+                    if (cat.code === 0) {
+                        content = cat.stdout;
+                    }
                 }
             } catch (e) {
                 // File may not exist in working tree — skip.

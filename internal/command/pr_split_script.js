@@ -218,7 +218,10 @@ function gitAddChangedFiles(dir) {
         return;
     }
     var EXCLUDED = ['.pr-split-plan.json'];
-    var lines = status.stdout.trim().split('\n');
+    // Split on newlines and filter empty/short lines instead of trim() + split(),
+    // which would corrupt the leading XY character of the first porcelain line
+    // when X is a space (e.g., ' M file.go').
+    var lines = status.stdout.split('\n');
     var files = [];
     for (var i = 0; i < lines.length; i++) {
         var line = lines[i];
@@ -4852,6 +4855,7 @@ globalThis.prSplit = {
     _extractDirs: extractDirs,
     _extractGoImports: extractGoImports,
     _extractGoPkgs: extractGoPkgs,
+    _gitAddChangedFiles: gitAddChangedFiles,
     discoverVerifyCommand: discoverVerifyCommand,
     scopedVerifyCommand: scopedVerifyCommand,
 

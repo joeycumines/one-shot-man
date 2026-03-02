@@ -83,6 +83,10 @@ git-stage-all: ## Stage all changes
 git-commit-staged: ## Commit staged changes with message from .git/COMMIT_MSG_TEMP
 	cd $(PROJECT_ROOT) && git commit -F .git/COMMIT_MSG_TEMP
 
+.PHONY: git-amend-msg
+git-amend-msg: ## Amend last commit message from .git/COMMIT_MSG_TEMP
+	cd $(PROJECT_ROOT) && git commit --amend -F .git/COMMIT_MSG_TEMP
+
 .PHONY: check-ai-tools
 check-ai-tools: ## Check for available AI tools (claude, ollama, socat)
 	@echo "=== AI Tool Availability ==="

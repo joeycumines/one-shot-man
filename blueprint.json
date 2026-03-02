@@ -33,7 +33,7 @@
     "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp."
   },
   "statusSection": {
-    "currentState": "T01-T62 ALL DONE. T37 blocked by Claude auth. T63-T74 planned.",
+    "currentState": "T01-T64 ALL DONE. T37 blocked by Claude auth. T65-T74 planned.",
     "goalState": "On macOS, osm pr-split --strategy auto reliably completes end-to-end with all 6 regressions fixed, backed by deterministic tests, with make all green cross-platform. REAL end-to-end tests via TestMain flags.",
     "replanLog": [
       {
@@ -520,15 +520,17 @@
       "task": "T63: resolveConflicts chained-strategy retry loop test",
       "description": "resolveConflicts (line 2152) has a while loop that restarts with updated verifyOutput when strategy.fix()→{fixed:true} but re-verification fails. This restart mechanism is the core retry logic.",
       "acceptance": "Test with 2 chaining strategies: strategy1.fix→{fixed:true}, re-verify fails, strategy2.detect(newOutput)→true, strategy2.fix→{fixed:true}, re-verify passes. Verify strategy2 sees updated verifyOutput and totalRetries=2. Also: retry budget exhaustion test.",
-      "status": "Not Started",
-      "contextPointers": ["pr_split_script.js:2152-2300 (resolveConflicts while loop)"]
+      "status": "Done",
+      "notes": "3 subtests: chained_strategy_restart_sees_updated_verifyOutput (strategy1 fixes alpha, verify still fails with beta, strategy2 fixes beta → totalRetries=2). per_branch_retry_budget_limits_retries (perBranchRetryBudget=1 caps at 1). wall_clock_timeout_reports_remaining_splits (wallClockTimeoutMs=0 → immediate timeout). Also added BranchRetries and CancelledByUser fields to resolveConflictsResult struct.",
+      "contextPointers": ["pr_split_script.js:2152-2300 (resolveConflicts while loop)", "pr_split_pipeline_test.go:TestResolveConflicts"]
     },
     {
       "task": "T64: gitAddChangedFiles rename/quoted path parsing tests",
       "description": "gitAddChangedFiles (line 215) parses git status --porcelain including rename arrows and quoted paths. These parsing branches have zero test coverage.",
       "acceptance": "≥4 subtests: normal porcelain stages correctly, rename extracts new path only, quoted path strips quotes, .pr-split-plan.json excluded.",
-      "status": "Not Started",
-      "contextPointers": ["pr_split_script.js:215 (gitAddChangedFiles)"]
+      "status": "Done",
+      "notes": "5 subtests in TestGitAddChangedFiles: normal_porcelain_stages_files, rename_extracts_new_path_only, quoted_path_strips_quotes, pr-split-plan.json_excluded, empty_status_does_not_call_git_add. ALSO: Found and fixed production bug — trim() on stdout corrupted first porcelain line when X is space. Now uses split() with line-length filter. Added _gitAddChangedFiles export for testing.",
+      "contextPointers": ["pr_split_script.js:215 (gitAddChangedFiles)", "pr_split_pipeline_test.go:TestGitAddChangedFiles"]
     },
     {
       "task": "T65: executeSplit git rm failure path test",

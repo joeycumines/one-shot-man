@@ -46,11 +46,13 @@ type resolveConflictsResult struct {
 		Name  string `json:"name"`
 		Error string `json:"error"`
 	} `json:"errors"`
-	TotalRetries  int      `json:"totalRetries"`
-	ReSplitNeeded bool     `json:"reSplitNeeded"`
-	ReSplitFiles  []string `json:"reSplitFiles"`
-	ReSplitReason string   `json:"reSplitReason"`
-	Skipped       string   `json:"skipped"`
+	TotalRetries    int                `json:"totalRetries"`
+	BranchRetries   map[string]int     `json:"branchRetries"`
+	ReSplitNeeded   bool               `json:"reSplitNeeded"`
+	ReSplitFiles    []string           `json:"reSplitFiles"`
+	ReSplitReason   string             `json:"reSplitReason"`
+	Skipped         string             `json:"skipped"`
+	CancelledByUser bool               `json:"cancelledByUser"`
 }
 
 func parseResolveConflictsResult(t *testing.T, raw interface{}) resolveConflictsResult {
@@ -418,6 +420,127 @@ func TestResolveConflicts(t *testing.T) {
 				}
 			},
 		},
+		// ---- T63: Chained-strategy retry loop tests ----
+		{
+			name: "chained strategy restart sees updated verifyOutput",
+			setup: `
+				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('main');
+				globalThis._gitResponses['checkout'] = _gitOk('');
+
+				var verifyCalls = 0;
+				globalThis._gitResponses['!sh'] = function(argv) {
+					verifyCalls++;
+					// Call 1: initial verify fails with "error-alpha"
+					if (verifyCalls === 1) return _gitFail('error-alpha');
+					// Call 2: after strategy1 fix, still fails but with "error-beta"
+					if (verifyCalls === 2) return _gitFail('error-beta');
+					// Call 3: after strategy2 fix, passes
+					return _gitOk('all pass');
+				};
+
+				// Strategy1 detects "error-alpha", fixes it.
+				var strategy1 = {
+					name: 'fix-alpha',
+					detect: function(dir, output) { return output.indexOf('error-alpha') !== -1; },
+					fix: function(dir, branchName, plan, output) { return { fixed: true }; }
+				};
+				// Strategy2 detects "error-beta" (the NEW output after strategy1).
+				var strategy2 = {
+					name: 'fix-beta',
+					detect: function(dir, output) { return output.indexOf('error-beta') !== -1; },
+					fix: function(dir, branchName, plan, output) { return { fixed: true }; }
+				};
+
+				var plan = {splits: [{name: "s1", files: ["a.go"]}]};
+			`,
+			invoke: `JSON.stringify(await globalThis.prSplit.resolveConflicts(plan, {
+				verifyCommand: 'make test',
+				strategies: [strategy1, strategy2],
+				retryBudget: 5,
+				perBranchRetryBudget: 5
+			}))`,
+			check: func(t *testing.T, r resolveConflictsResult) {
+				if len(r.Fixed) != 1 {
+					t.Fatalf("expected 1 fixed split, got %d", len(r.Fixed))
+				}
+				if r.Fixed[0].Strategy != "fix-beta" {
+					t.Errorf("expected final fix from 'fix-beta', got %q", r.Fixed[0].Strategy)
+				}
+				if r.TotalRetries != 2 {
+					t.Errorf("expected 2 total retries (alpha + beta), got %d", r.TotalRetries)
+				}
+				if r.ReSplitNeeded {
+					t.Error("should not need re-split when chained strategies resolve")
+				}
+			},
+		},
+		{
+			name: "per-branch retry budget limits retries",
+			setup: `
+				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('main');
+				globalThis._gitResponses['checkout'] = _gitOk('');
+				// Verify always fails.
+				globalThis._gitResponses['!sh'] = _gitFail('compile error');
+
+				var fixAttempts = 0;
+				var alwaysDetectFix = {
+					name: 'always-detect',
+					detect: function() { return true; },
+					fix: function() { fixAttempts++; return { fixed: true }; }
+				};
+
+				var plan = {splits: [{name: "s1", files: ["a.go"]}]};
+			`,
+			invoke: `JSON.stringify(await globalThis.prSplit.resolveConflicts(plan, {
+				verifyCommand: 'make test',
+				strategies: [alwaysDetectFix],
+				retryBudget: 10,
+				perBranchRetryBudget: 1
+			}))`,
+			check: func(t *testing.T, r resolveConflictsResult) {
+				// perBranchRetryBudget=1 means only 1 attempt for s1.
+				if r.TotalRetries != 1 {
+					t.Errorf("expected 1 total retry (per-branch limit), got %d", r.TotalRetries)
+				}
+				if r.BranchRetries == nil || r.BranchRetries["s1"] != 1 {
+					t.Errorf("expected branchRetries[s1]=1, got %v", r.BranchRetries)
+				}
+				if !r.ReSplitNeeded {
+					t.Error("expected reSplitNeeded when per-branch budget exhausted")
+				}
+			},
+		},
+		{
+			name: "wall-clock timeout reports remaining splits",
+			setup: `
+				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('main');
+				globalThis._gitResponses['checkout'] = _gitOk('');
+				globalThis._gitResponses['!sh'] = _gitFail('takes too long');
+
+				var plan = {splits: [
+					{name: "s1", files: ["a.go"]},
+					{name: "s2", files: ["b.go"]},
+					{name: "s3", files: ["c.go"]}
+				]};
+			`,
+			invoke: `JSON.stringify(await globalThis.prSplit.resolveConflicts(plan, {
+				verifyCommand: 'make test',
+				strategies: [],
+				wallClockTimeoutMs: 0
+			}))`,
+			check: func(t *testing.T, r resolveConflictsResult) {
+				// With 0ms timeout, all 3 splits should get timeout errors.
+				timeoutCount := 0
+				for _, e := range r.Errors {
+					if strings.Contains(e.Error, "wall-clock timeout") {
+						timeoutCount++
+					}
+				}
+				if timeoutCount == 0 {
+					t.Errorf("expected wall-clock timeout errors, got: %+v", r.Errors)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -723,6 +846,133 @@ func TestResolveConflicts_NullPlan(t *testing.T) {
 			}
 			if !found {
 				t.Errorf("expected error containing 'invalid plan', got: %+v", r.Errors)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T64: gitAddChangedFiles rename/quoted path parsing tests
+// ---------------------------------------------------------------------------
+
+func TestGitAddChangedFiles(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Install exec mock.
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name  string
+		setup string
+		check string // JS expression that evaluates to 'ok' on success
+	}{
+		{
+			name: "normal porcelain stages files",
+			setup: `
+				globalThis._gitResponses['status --porcelain'] = _gitOk(' M src/main.go\n?? newfile.txt\n');
+				var addedFiles = null;
+				globalThis._gitResponses['add'] = function(argv) {
+					addedFiles = argv.slice(argv.indexOf('--') + 1);
+					return _gitOk('');
+				};
+			`,
+			check: `
+				globalThis.prSplit._gitAddChangedFiles('.');
+				if (!addedFiles) throw new Error('git add not called');
+				if (addedFiles.indexOf('src/main.go') === -1) throw new Error('missing src/main.go, got: ' + JSON.stringify(addedFiles));
+				if (addedFiles.indexOf('newfile.txt') === -1) throw new Error('missing newfile.txt, got: ' + JSON.stringify(addedFiles));
+				'ok'
+			`,
+		},
+		{
+			name: "rename extracts new path only",
+			setup: `
+				globalThis._gitResponses['status --porcelain'] = _gitOk('R  old.go -> new.go\n');
+				var addedFiles = null;
+				globalThis._gitResponses['add'] = function(argv) {
+					addedFiles = argv.slice(argv.indexOf('--') + 1);
+					return _gitOk('');
+				};
+			`,
+			check: `
+				globalThis.prSplit._gitAddChangedFiles('.');
+				if (!addedFiles) throw new Error('git add not called');
+				if (addedFiles.indexOf('new.go') === -1) throw new Error('expected new.go, got: ' + JSON.stringify(addedFiles));
+				if (addedFiles.indexOf('old.go') !== -1) throw new Error('should not include old.go');
+				'ok'
+			`,
+		},
+		{
+			name: "quoted path strips quotes",
+			setup: `
+				globalThis._gitResponses['status --porcelain'] = _gitOk(' M "path with spaces/file.go"\n');
+				var addedFiles = null;
+				globalThis._gitResponses['add'] = function(argv) {
+					addedFiles = argv.slice(argv.indexOf('--') + 1);
+					return _gitOk('');
+				};
+			`,
+			check: `
+				globalThis.prSplit._gitAddChangedFiles('.');
+				if (!addedFiles) throw new Error('git add not called');
+				if (addedFiles[0] !== 'path with spaces/file.go') throw new Error('expected unquoted path, got: ' + JSON.stringify(addedFiles));
+				'ok'
+			`,
+		},
+		{
+			name: "pr-split-plan.json excluded",
+			setup: `
+				globalThis._gitResponses['status --porcelain'] = _gitOk(' M src/main.go\n M .pr-split-plan.json\n M sub/.pr-split-plan.json\n');
+				var addedFiles = null;
+				globalThis._gitResponses['add'] = function(argv) {
+					addedFiles = argv.slice(argv.indexOf('--') + 1);
+					return _gitOk('');
+				};
+			`,
+			check: `
+				globalThis.prSplit._gitAddChangedFiles('.');
+				if (!addedFiles) throw new Error('git add not called');
+				if (addedFiles.length !== 1) throw new Error('expected 1 file (excluding plan files), got: ' + JSON.stringify(addedFiles));
+				if (addedFiles[0] !== 'src/main.go') throw new Error('expected src/main.go only, got: ' + JSON.stringify(addedFiles));
+				'ok'
+			`,
+		},
+		{
+			name: "empty status does not call git add",
+			setup: `
+				globalThis._gitResponses['status --porcelain'] = _gitOk('');
+				var addCalled = false;
+				globalThis._gitResponses['add'] = function(argv) {
+					addCalled = true;
+					return _gitOk('');
+				};
+			`,
+			check: `
+				globalThis.prSplit._gitAddChangedFiles('.');
+				if (addCalled) throw new Error('git add should not be called for empty status');
+				'ok'
+			`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset mock state.
+			if _, err := evalJS(resetGitMockJS); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := evalJS(tt.setup); err != nil {
+				t.Fatalf("setup failed: %v", err)
+			}
+			raw, err := evalJS(tt.check)
+			if err != nil {
+				t.Fatalf("check failed: %v", err)
+			}
+			if s, ok := raw.(string); !ok || s != "ok" {
+				t.Errorf("expected 'ok', got %v", raw)
 			}
 		})
 	}

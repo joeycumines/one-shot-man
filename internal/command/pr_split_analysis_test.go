@@ -1363,6 +1363,255 @@ func TestExtractDirs_NilInput(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// T61: _splitsAreIndependent — direct unit tests for independence checking
+// ---------------------------------------------------------------------------
+
+func TestSplitsAreIndependent(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Mock osmod.readFile for Go import testing.
+	if _, err := evalJS(`
+		var _osmod61 = require('osm:os');
+		var _origReadFile61 = _osmod61.readFile;
+		_osmod61.readFile = function(p) {
+			if (globalThis._mockFiles61 && globalThis._mockFiles61[p]) {
+				return {content: globalThis._mockFiles61[p], error: null};
+			}
+			return {content: '', error: 'not found'};
+		};
+		globalThis._mockFiles61 = {};
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	type indepResult struct {
+		Result bool `json:"result"`
+	}
+
+	tests := []struct {
+		name   string
+		setup  string
+		invoke string
+		want   bool
+	}{
+		{
+			name:  "no_dir_overlap_returns_true",
+			setup: `globalThis._mockFiles61 = {};`,
+			invoke: `JSON.stringify({result: globalThis.prSplit._splitsAreIndependent(
+				{files: ['cmd/main.go']},
+				{files: ['internal/foo.go']}
+			)})`,
+			want: true,
+		},
+		{
+			name:  "exact_dir_overlap_returns_false",
+			setup: `globalThis._mockFiles61 = {};`,
+			invoke: `JSON.stringify({result: globalThis.prSplit._splitsAreIndependent(
+				{files: ['pkg/a.go']},
+				{files: ['pkg/b.go']}
+			)})`,
+			want: false,
+		},
+		{
+			name:  "both_empty_files_returns_true",
+			setup: `globalThis._mockFiles61 = {};`,
+			invoke: `JSON.stringify({result: globalThis.prSplit._splitsAreIndependent(
+				{files: []},
+				{files: []}
+			)})`,
+			want: true,
+		},
+		{
+			name: "A_imports_B_package_returns_false",
+			setup: `globalThis._mockFiles61 = {
+				'cmd/main.go': 'package main\n\nimport "mymod/pkg"\n\nfunc main() {}',
+				'pkg/lib.go': 'package pkg\n\nfunc Foo() {}'
+			};
+			// Mock go.mod for module path detection.
+			_osmod61.readFile = function(p) {
+				if (p === 'go.mod') return {content: 'module mymod\n\ngo 1.21\n', error: null};
+				if (globalThis._mockFiles61[p]) return {content: globalThis._mockFiles61[p], error: null};
+				return {content: '', error: 'not found'};
+			};`,
+			invoke: `JSON.stringify({result: globalThis.prSplit._splitsAreIndependent(
+				{files: ['cmd/main.go']},
+				{files: ['pkg/lib.go']}
+			)})`,
+			want: false,
+		},
+		{
+			name: "B_imports_A_package_returns_false",
+			setup: `globalThis._mockFiles61 = {
+				'pkg/lib.go': 'package pkg\n\nfunc Foo() {}',
+				'cmd/main.go': 'package main\n\nimport "mymod/pkg"\n\nfunc main() {}'
+			};
+			_osmod61.readFile = function(p) {
+				if (p === 'go.mod') return {content: 'module mymod\n\ngo 1.21\n', error: null};
+				if (globalThis._mockFiles61[p]) return {content: globalThis._mockFiles61[p], error: null};
+				return {content: '', error: 'not found'};
+			};`,
+			invoke: `JSON.stringify({result: globalThis.prSplit._splitsAreIndependent(
+				{files: ['pkg/lib.go']},
+				{files: ['cmd/main.go']}
+			)})`,
+			want: false,
+		},
+		{
+			name:  "non_Go_files_dir_overlap_returns_false",
+			setup: `globalThis._mockFiles61 = {};`,
+			invoke: `JSON.stringify({result: globalThis.prSplit._splitsAreIndependent(
+				{files: ['docs/README.md']},
+				{files: ['docs/CHANGELOG.md']}
+			)})`,
+			want: false,
+		},
+		{
+			name: "no_cross_import_independent",
+			setup: `globalThis._mockFiles61 = {
+				'cmd/main.go': 'package main\n\nimport "fmt"\n\nfunc main() {}',
+				'pkg/lib.go': 'package pkg\n\nimport "os"\n\nfunc Foo() {}'
+			};
+			_osmod61.readFile = function(p) {
+				if (p === 'go.mod') return {content: 'module mymod\n\ngo 1.21\n', error: null};
+				if (globalThis._mockFiles61[p]) return {content: globalThis._mockFiles61[p], error: null};
+				return {content: '', error: 'not found'};
+			};`,
+			invoke: `JSON.stringify({result: globalThis.prSplit._splitsAreIndependent(
+				{files: ['cmd/main.go']},
+				{files: ['pkg/lib.go']}
+			)})`,
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := evalJS(tt.setup); err != nil {
+				t.Fatalf("setup failed: %v", err)
+			}
+			val, err := evalJS(tt.invoke)
+			if err != nil {
+				t.Fatalf("invoke failed: %v", err)
+			}
+			var r indepResult
+			if err := json.Unmarshal([]byte(val.(string)), &r); err != nil {
+				t.Fatalf("parse error: %v for %v", err, val)
+			}
+			if r.Result != tt.want {
+				t.Errorf("got %v, want %v", r.Result, tt.want)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T62: _extractGoPkgs — direct unit tests for Go package extraction
+// ---------------------------------------------------------------------------
+
+func TestExtractGoPkgs(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	t.Run("go_files_produce_dir_keys", func(t *testing.T) {
+		val, err := evalJS(`JSON.stringify(globalThis.prSplit._extractGoPkgs(
+			['internal/command/foo.go', 'cmd/main.go'],
+			'github.com/test/repo'
+		))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := val.(string)
+		var pkgs map[string]bool
+		if err := json.Unmarshal([]byte(s), &pkgs); err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		// Should have dir-only keys + module-qualified keys.
+		if !pkgs["internal"] {
+			t.Error("missing 'internal' dir key")
+		}
+		if !pkgs["cmd"] {
+			t.Error("missing 'cmd' dir key")
+		}
+		if !pkgs["github.com/test/repo/internal"] {
+			t.Error("missing module-qualified 'internal' key")
+		}
+		if !pkgs["github.com/test/repo/cmd"] {
+			t.Error("missing module-qualified 'cmd' key")
+		}
+	})
+
+	t.Run("non_go_files_ignored", func(t *testing.T) {
+		val, err := evalJS(`JSON.stringify(globalThis.prSplit._extractGoPkgs(
+			['docs/README.md', 'Makefile', 'go.mod'],
+			'github.com/test/repo'
+		))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if val.(string) != "{}" {
+			t.Errorf("expected empty object, got %s", val)
+		}
+	})
+
+	t.Run("null_files_returns_empty", func(t *testing.T) {
+		val, err := evalJS(`JSON.stringify(globalThis.prSplit._extractGoPkgs(null, ''))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if val.(string) != "{}" {
+			t.Errorf("expected empty object, got %s", val)
+		}
+	})
+
+	t.Run("root_level_go_file_with_modulePath", func(t *testing.T) {
+		val, err := evalJS(`JSON.stringify(globalThis.prSplit._extractGoPkgs(
+			['main.go'],
+			'github.com/test/repo'
+		))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := val.(string)
+		var pkgs map[string]bool
+		if err := json.Unmarshal([]byte(s), &pkgs); err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		// Root Go file: dir='.' → dir key '.' but NO module-qualified
+		// key because dir==='.' is excluded from module-qualified path.
+		if !pkgs["."] {
+			t.Error("missing '.' dir key for root Go file")
+		}
+		// Should NOT have 'github.com/test/repo/.' because dir==='.' is skipped.
+		if pkgs["github.com/test/repo/."] {
+			t.Error("should not have module-qualified root key")
+		}
+	})
+
+	t.Run("empty_modulePath_no_qualified_keys", func(t *testing.T) {
+		val, err := evalJS(`JSON.stringify(globalThis.prSplit._extractGoPkgs(
+			['pkg/foo.go'],
+			''
+		))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := val.(string)
+		var pkgs map[string]bool
+		if err := json.Unmarshal([]byte(s), &pkgs); err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		if !pkgs["pkg"] {
+			t.Error("missing 'pkg' dir key")
+		}
+		// Empty modulePath → no module-qualified keys.
+		if len(pkgs) != 1 {
+			t.Errorf("expected exactly 1 key, got %d: %v", len(pkgs), pkgs)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
 // saveTelemetry
 // ---------------------------------------------------------------------------
 

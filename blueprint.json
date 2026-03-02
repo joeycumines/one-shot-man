@@ -33,7 +33,7 @@
     "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp."
   },
   "statusSection": {
-    "currentState": "T01-T60 ALL DONE. T37 blocked by Claude auth. Expansion cycle needed.",
+    "currentState": "T01-T62 ALL DONE. T37 blocked by Claude auth. T63-T74 planned.",
     "goalState": "On macOS, osm pr-split --strategy auto reliably completes end-to-end with all 6 regressions fixed, backed by deterministic tests, with make all green cross-platform. REAL end-to-end tests via TestMain flags.",
     "replanLog": [
       {
@@ -499,6 +499,106 @@
       "status": "Done",
       "notes": "Production fix: cleanupBranches now falls back to git checkout --detach HEAD when baseBranch checkout fails. Test: worktree_conflict_fallback_to_detach verifies 2 branches deleted with 0 errors when checkout main fails.",
       "contextPointers": ["pr_split_script.js:1712-1716 (--detach fallback)", "pr_split_execution_test.go:853-879 (worktree test)"]
+    },
+    {
+      "task": "T61: splitsAreIndependentFromMaps direct unit tests",
+      "description": "splitsAreIndependentFromMaps (line 4085) and _splitsAreIndependent (line 4100) have zero direct test invocations — only tested indirectly through assessIndependence. The cross-direction import/package overlap check needs explicit edge case coverage: same-dir overlap, asymmetric import dependency, empty maps.",
+      "acceptance": "≥6 subtests covering: exact dir overlap → false, no overlap → true, A imports B's package → false, B imports A's package → false, both empty → true, non-Go files only (dirs overlap) → false. All via direct prSplit._splitsAreIndependent or splitsAreIndependentFromMaps call.",
+      "status": "Done",
+      "notes": "7 subtests in TestSplitsAreIndependent: no_dir_overlap_returns_true, exact_dir_overlap_returns_false, both_empty_files_returns_true, A_imports_B_package_returns_false, B_imports_A_package_returns_false, non_Go_files_dir_overlap_returns_false, no_cross_import_independent. Uses osmod.readFile mock injection for Go imports and go.mod parsing.",
+      "contextPointers": ["pr_split_script.js:4085 (splitsAreIndependentFromMaps)", "pr_split_script.js:4100 (_splitsAreIndependent)", "pr_split_analysis_test.go:TestSplitsAreIndependent"]
+    },
+    {
+      "task": "T62: extractGoPkgs direct unit tests",
+      "description": "extractGoPkgs (line 4171) builds a modulePath-qualified package set. Never tested directly. Edge cases: empty files, non-Go files, modulePath='', files at root ('.'), undefined modulePath.",
+      "acceptance": "≥5 subtests: Go files produce both dir-only and module-qualified keys, non-Go files ignored, null/empty files returns {}, root-level with modulePath, undefined modulePath triggers detectGoModulePath fallback.",
+      "status": "Done",
+      "notes": "5 subtests in TestExtractGoPkgs: go_files_produce_dir_keys (checks 4 keys: bare dirs + module-qualified), non_go_files_ignored, null_files_returns_empty, root_level_go_file_with_modulePath (dir='.' excluded from module prefix), empty_modulePath_no_qualified_keys. Uses _extractGoPkgs export.",
+      "contextPointers": ["pr_split_script.js:4171 (extractGoPkgs)", "pr_split_analysis_test.go:TestExtractGoPkgs"]
+    },
+    {
+      "task": "T63: resolveConflicts chained-strategy retry loop test",
+      "description": "resolveConflicts (line 2152) has a while loop that restarts with updated verifyOutput when strategy.fix()→{fixed:true} but re-verification fails. This restart mechanism is the core retry logic.",
+      "acceptance": "Test with 2 chaining strategies: strategy1.fix→{fixed:true}, re-verify fails, strategy2.detect(newOutput)→true, strategy2.fix→{fixed:true}, re-verify passes. Verify strategy2 sees updated verifyOutput and totalRetries=2. Also: retry budget exhaustion test.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:2152-2300 (resolveConflicts while loop)"]
+    },
+    {
+      "task": "T64: gitAddChangedFiles rename/quoted path parsing tests",
+      "description": "gitAddChangedFiles (line 215) parses git status --porcelain including rename arrows and quoted paths. These parsing branches have zero test coverage.",
+      "acceptance": "≥4 subtests: normal porcelain stages correctly, rename extracts new path only, quoted path strips quotes, .pr-split-plan.json excluded.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:215 (gitAddChangedFiles)"]
+    },
+    {
+      "task": "T65: executeSplit git rm failure path test",
+      "description": "executeSplit (line 1274) 'D' status path calls git rm. Error path when git rm returns non-zero is NOT tested.",
+      "acceptance": "Mock git rm to fail for 'D' status file. Verify error contains 'git rm', partial results include failed split, original branch restored.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:1371 (git rm in executeSplit)"]
+    },
+    {
+      "task": "T66: executeSplit double commit failure test",
+      "description": "When both normal git commit and git commit --allow-empty fail, error path needs testing.",
+      "acceptance": "Mock both commit and commit --allow-empty to fail. Verify error mentions 'git commit failed', original branch restored.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:1420-1435 (commit fallback in executeSplit)"]
+    },
+    {
+      "task": "T67: verifySplits scoped verify + callback signatures test",
+      "description": "verifySplits (line 1519) wires scopedVerifyCommand but integration with verify loop untested. Callback arguments never asserted.",
+      "acceptance": "Mock Go-only split, verify command is scoped. Assert onBranchDone receives (name, passed, exitCode, elapsedMs, skipped, preExisting). Assert onBranchOutput receives (branchName, line).",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:1519-1625 (verifySplits)"]
+    },
+    {
+      "task": "T68: createPRs first push fails immediate abort test",
+      "description": "Existing push failure test makes second push fail. First push failure should immediately return with 1 result entry.",
+      "acceptance": "Mock first push to fail. Verify error mentions first branch, results has 1 entry with pushed=false, no gh commands attempted.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:1744-1787 (createPRs push logic)"]
+    },
+    {
+      "task": "T69: Windows portability audit for sh -c and Unix commands",
+      "description": "Multiple functions construct sh -c shell commands. shellQuote uses Unix escaping. On Windows, sh unavailable. Need audit and platform guards.",
+      "acceptance": "Audit all sh -c usages documented. Tests with shell commands have platform skips. Consider platformShell() helper.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:207 (shellQuote)", "pr_split_script.js:1445 (verifySplit sh -c)"]
+    },
+    {
+      "task": "T70: loadPlan corrupted/truncated plan file edge cases",
+      "description": "loadPlan (line 1207) NOT tested for: valid JSON wrong shape, truncated JSON, zero splits, missing baseBranch.",
+      "acceptance": "≥4 subtests: wrong shape → graceful error, truncated JSON → parse error, splits=[] → loads with 0 totalSplits, missing baseBranch → loads without error.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:1207 (loadPlan)"]
+    },
+    {
+      "task": "T71: verifyEquivalenceDetailed diff enrichment for non-equivalent trees",
+      "description": "verifyEquivalenceDetailed (line 1675) populates diffFiles and diffSummary when trees don't match. Not unit-tested with mocks.",
+      "acceptance": "Mock two different tree hashes + git diff output. Verify diffFiles array and diffSummary string in result.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:1675 (verifyEquivalenceDetailed)"]
+    },
+    {
+      "task": "T72: resolveConflicts intra-strategy cancellation test",
+      "description": "Cancellation check between strategy attempts within a single branch (line 2280) not independently tested.",
+      "acceptance": "1 branch, 2 strategies. Cancel fires mid-fix. Verify cancelledByUser=true, second strategy never attempted.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:2280 (isCancelled in strategy loop)"]
+    },
+    {
+      "task": "T73: buildReport null caches test",
+      "description": "buildReport (line 4906) assembles report from module-level caches. Zero test coverage.",
+      "acceptance": "≥2 subtests: all caches null → sensible defaults, populated caches → report reflects them.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:4906 (buildReport)"]
+    },
+    {
+      "task": "T74: automatedSplit resume path with Claude spawn failure",
+      "description": "Resume path tries Claude spawn. If it fails, should warn and proceed. This path not tested.",
+      "acceptance": "Resume with saved plan, ClaudeCodeExecutor.resolve() fails. Resume continues, warning emitted, checkpoint used.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:3513-3530 (resume path Claude spawn)"]
     }
   ],
   "continuousVerification": {

@@ -2143,3 +2143,104 @@ func TestAutoSplitModel_HelpBar_ShowsPause(t *testing.T) {
 		t.Errorf("running help bar should mention 'pause':\n%s", view)
 	}
 }
+
+// --- T18: Attention indicator tests ---
+
+func TestAutoSplitModel_NeedsAttention_InitiallyFalse(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	if m.NeedsAttention() {
+		t.Error("needsAttention should be false initially")
+	}
+}
+
+func TestAutoSplitModel_SetNeedsAttention_Basic(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.SetNeedsAttention(true)
+	if !m.NeedsAttention() {
+		t.Error("needsAttention should be true after SetNeedsAttention(true)")
+	}
+	m.SetNeedsAttention(false)
+	if m.NeedsAttention() {
+		t.Error("needsAttention should be false after SetNeedsAttention(false)")
+	}
+}
+
+func TestAutoSplitModel_AttentionIndicator_AppearsInSeparator(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.width = 80
+	m.height = 24
+	m.Update(AutoSplitStepStartMsg{Name: "Build"})
+	m.SetNeedsAttention(true)
+
+	view := m.View()
+	if !strings.Contains(view, "🔔") {
+		t.Errorf("view should contain bell indicator 🔔 when needsAttention is true:\n%s", view)
+	}
+}
+
+func TestAutoSplitModel_AttentionIndicator_HiddenWhenFalse(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.width = 80
+	m.height = 24
+	m.Update(AutoSplitStepStartMsg{Name: "Build"})
+	m.SetNeedsAttention(false)
+
+	view := m.View()
+	if strings.Contains(view, "🔔") {
+		t.Errorf("view should not contain bell indicator 🔔 when needsAttention is false:\n%s", view)
+	}
+}
+
+func TestAutoSplitModel_ToggleMsg_ClearsAttention(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.SetNeedsAttention(true)
+	if !m.NeedsAttention() {
+		t.Fatal("needsAttention should be true before toggle")
+	}
+
+	// Simulate user returning from Claude TUI.
+	m.Update(AutoSplitToggleMsg{})
+
+	if m.NeedsAttention() {
+		t.Error("needsAttention should be cleared after AutoSplitToggleMsg")
+	}
+}
+
+func TestAutoSplitModel_AttentionIndicator_HiddenWhenDone(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.width = 80
+	m.height = 24
+	m.Update(AutoSplitStepStartMsg{Name: "Build"})
+	m.Update(AutoSplitStepDoneMsg{Name: "Build"})
+	m.Update(AutoSplitDoneMsg{Summary: "ok"})
+	m.SetNeedsAttention(true) // Set attention AFTER done
+
+	view := m.View()
+	// The indicator should NOT appear when pipeline is done
+	// (it's not useful at that point).
+	if strings.Contains(view, "🔔") {
+		t.Errorf("bell indicator should not appear when pipeline is done:\n%s", view)
+	}
+}
+
+func TestAutoSplitModel_AttentionIndicator_HiddenWhenCancelled(t *testing.T) {
+	t.Parallel()
+	m := NewAutoSplitModel()
+	m.width = 80
+	m.height = 24
+	m.Update(AutoSplitStepStartMsg{Name: "Build"})
+	m.SetNeedsAttention(true)
+	m.Update(tea.KeyMsg{Type: tea.KeyCtrlC}) // Cancel
+
+	view := m.View()
+	// The cancel state has priority over attention indicator.
+	if strings.Contains(view, "🔔") {
+		t.Errorf("bell indicator should not appear when pipeline is cancelled:\n%s", view)
+	}
+}

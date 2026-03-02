@@ -4566,9 +4566,9 @@ func TestPrSplitCommand_ResolveConflictsWithClaudePreExistingFailure(t *testing.
 		t.Error("Expected reSplitNeeded=false for pre-existing failure")
 	}
 
-	// 2. Only 1 attempt (no retry) — sendCallCount should be 1 (single-write: text+\n).
-	if output.SendCallCount != 1 {
-		t.Errorf("Expected 1 send call (single-write), got %d", output.SendCallCount)
+	// 2. Only 1 attempt (no retry) — sendCallCount should be 2 (two-write: text + \n).
+	if output.SendCallCount != 2 {
+		t.Errorf("Expected 2 send calls (two-write), got %d", output.SendCallCount)
 	}
 
 	// 3. Only 1 conflict recorded (1 attempt, not 3).
@@ -4666,19 +4666,19 @@ func TestPrSplitCommand_ResolveConflictsWithClaude_MaxAttemptsPerBranch(t *testi
 		t.Errorf("Expected 4 conflict entries (2 failures × 2 attempts), got %d", output.Report.Conflicts)
 	}
 
-	// Each attempt sends (text + \n) as a single write = 1 send call.
-	// 4 attempts × 1 send = 4 send calls.
-	if output.SendCount != 4 {
-		t.Errorf("Expected 4 send calls (4 attempts × 1 send), got %d", output.SendCount)
+	// Each attempt sends text + \n as two writes = 2 send calls.
+	// 4 attempts × 2 sends = 8 send calls.
+	if output.SendCount != 8 {
+		t.Errorf("Expected 8 send calls (4 attempts × 2 sends), got %d", output.SendCount)
 	}
 }
 
-func TestPrSplitCommand_SendToHandle_SingleWrite(t *testing.T) {
+func TestPrSplitCommand_SendToHandle_TwoWrite(t *testing.T) {
 	t.Parallel()
 
 	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
 
-	// Verify sendToHandle sends text+\n as a single write (no two-write pattern).
+	// Verify sendToHandle sends text and \n as two separate writes.
 	val, err := evalJS(`(function() {
 		var sends = [];
 		var mockHandle = {
@@ -4707,12 +4707,15 @@ func TestPrSplitCommand_SendToHandle_SingleWrite(t *testing.T) {
 	if output.Result.Error != nil {
 		t.Errorf("sendToHandle returned error: %s", *output.Result.Error)
 	}
-	// Single-write: text + \n in one send call.
-	if len(output.Sends) != 1 {
-		t.Fatalf("Expected 1 send (single-write), got %d: %v", len(output.Sends), output.Sends)
+	// Two-write: text first, then \n.
+	if len(output.Sends) != 2 {
+		t.Fatalf("Expected 2 sends (two-write), got %d: %v", len(output.Sends), output.Sends)
 	}
-	if output.Sends[0] != "test prompt\n" {
-		t.Errorf("sends[0] = %q, want %q", output.Sends[0], "test prompt\n")
+	if output.Sends[0] != "test prompt" {
+		t.Errorf("sends[0] = %q, want %q", output.Sends[0], "test prompt")
+	}
+	if output.Sends[1] != "\n" {
+		t.Errorf("sends[1] = %q, want %q", output.Sends[1], "\n")
 	}
 }
 
@@ -4748,13 +4751,14 @@ func TestPrSplitCommand_SendToHandle_EAGAINRetry(t *testing.T) {
 		t.Fatalf("Failed to parse output: %v", err)
 	}
 
-	// Single-write: EAGAIN on call 1, success on call 2.
+	// Two-write: EAGAIN on call 1 (text), retry text on call 2 (success),
+	// then newline on call 3 (success).
 	if output.Error != nil {
 		t.Errorf("Expected success after EAGAIN retry, got error: %s", *output.Error)
 	}
-	// callCount: 1 (EAGAIN) + 1 (text+\n retry success) = 2
-	if output.CallCount != 2 {
-		t.Errorf("Expected 2 send calls (1 EAGAIN + 1 success), got %d", output.CallCount)
+	// callCount: 1 (EAGAIN text) + 1 (text retry success) + 1 (newline) = 3
+	if output.CallCount != 3 {
+		t.Errorf("Expected 3 send calls (1 EAGAIN + 1 text success + 1 newline), got %d", output.CallCount)
 	}
 }
 
@@ -7186,150 +7190,29 @@ func TestPrSplitCommand_ClaudeCommand(t *testing.T) {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
 
-	t.Run("no_handle", func(t *testing.T) {
+	// T12: Verify 'claude' REPL command has been removed.
+	// The command was removed because it was never properly wired to
+	// mcpConfigPath from osm:mcpcallback, causing the regression described
+	// in scratch/current-state.md regression #1.
+	t.Run("command_removed", func(t *testing.T) {
 		tp := chdirTestPipeline(t, TestPipelineOpts{})
-		// Calling 'claude' without spawning should say no process running.
-		if err := tp.Dispatch("claude", nil); err != nil {
-			t.Fatalf("claude: %v", err)
+		err := tp.Dispatch("claude", nil)
+		// Command should not be found.
+		if err == nil {
+			t.Fatal("expected error: 'claude' command should have been removed")
 		}
-		out := tp.Stdout.String()
-		if !contains(out, "No Claude process") && !contains(out, "not running") && !contains(out, "spawn") {
-			t.Errorf("expected 'no process' message, got: %s", out)
+		// The error should indicate command not found.
+		errStr := err.Error()
+		if !contains(errStr, "not found") && !contains(errStr, "unknown command") {
+			t.Errorf("expected 'not found' or 'unknown command' error, got: %v", err)
 		}
 	})
 
-	t.Run("spawn_no_binary", func(t *testing.T) {
-		tp := chdirTestPipeline(t, TestPipelineOpts{
-			ConfigOverrides: map[string]interface{}{
-				// Use a command that almost certainly does not exist.
-				"claudeCommand": "no-such-binary-xyzzy-12345",
-			},
-		})
-		if err := tp.Dispatch("claude", []string{"spawn"}); err != nil {
-			t.Fatalf("claude spawn: %v", err)
-		}
-		out := tp.Stdout.String()
-		if !contains(out, "Error") && !contains(out, "not found") {
-			t.Errorf("expected error about missing binary, got: %s", out)
-		}
-	})
-
-	// T021: Verify the isAlive guard in the 'claude' command handler.
-	// When the handle exists but the process has died (e.g., bad API key,
-	// immediate crash), the guard should surface diagnostics and clean up.
-	t.Run("dead_handle_surfaces_diagnostics", func(t *testing.T) {
+	t.Run("spawn_also_removed", func(t *testing.T) {
 		tp := chdirTestPipeline(t, TestPipelineOpts{})
-
-		// Inject a mock claudeExecutor with a dead handle via evalJS.
-		// This simulates a process that was spawned but died immediately.
-		_, err := tp.EvalJS(`
-			(function() {
-				claudeExecutor = new ClaudeCodeExecutor(prSplitConfig);
-				claudeExecutor.handle = {
-					isAlive: function() { return false; },
-					receive: function() { return 'Error: invalid API key for model'; },
-					close:   function() {},
-					send:    function() {}
-				};
-				claudeExecutor.sessionId = 'dead-test-session';
-				claudeExecutor.close = function() { this.handle = null; };
-			})()
-		`)
-		if err != nil {
-			t.Fatalf("inject mock executor: %v", err)
-		}
-
-		// Clear any prior stdout before dispatching.
-		tp.Stdout.Reset()
-
-		if err := tp.Dispatch("claude", nil); err != nil {
-			t.Fatalf("claude: %v", err)
-		}
-		out := tp.Stdout.String()
-
-		// Should detect dead process and print diagnostic message.
-		if !contains(out, "Claude process has exited") {
-			t.Errorf("expected 'Claude process has exited', got: %s", out)
-		}
-		// Should surface the last output from the dead process.
-		if !contains(out, "invalid API key") {
-			t.Errorf("expected last output to contain 'invalid API key', got: %s", out)
-		}
-		// Should suggest respawn.
-		if !contains(out, "claude spawn") {
-			t.Errorf("expected restart suggestion mentioning 'claude spawn', got: %s", out)
-		}
-	})
-
-	// T021: Verify dead handle with empty receive() output still works.
-	// The guard should NOT crash when receive returns empty string.
-	t.Run("dead_handle_empty_output", func(t *testing.T) {
-		tp := chdirTestPipeline(t, TestPipelineOpts{})
-
-		_, err := tp.EvalJS(`
-			(function() {
-				claudeExecutor = new ClaudeCodeExecutor(prSplitConfig);
-				claudeExecutor.handle = {
-					isAlive: function() { return false; },
-					receive: function() { return ''; },
-					close:   function() {},
-					send:    function() {}
-				};
-				claudeExecutor.sessionId = 'dead-empty-session';
-				claudeExecutor.close = function() { this.handle = null; };
-			})()
-		`)
-		if err != nil {
-			t.Fatalf("inject mock executor: %v", err)
-		}
-
-		tp.Stdout.Reset()
-		if err := tp.Dispatch("claude", nil); err != nil {
-			t.Fatalf("claude: %v", err)
-		}
-		out := tp.Stdout.String()
-
-		// Should still print the exit message even with no output.
-		if !contains(out, "Claude process has exited") {
-			t.Errorf("expected 'Claude process has exited', got: %s", out)
-		}
-		// Should NOT print "Last output:" when there's nothing.
-		if contains(out, "Last output:") {
-			t.Errorf("should not show 'Last output:' when receive returns empty, got: %s", out)
-		}
-	})
-
-	// T021: Verify dead handle where receive() throws an error.
-	// This can happen when the PTY is fully closed.
-	t.Run("dead_handle_receive_throws", func(t *testing.T) {
-		tp := chdirTestPipeline(t, TestPipelineOpts{})
-
-		_, err := tp.EvalJS(`
-			(function() {
-				claudeExecutor = new ClaudeCodeExecutor(prSplitConfig);
-				claudeExecutor.handle = {
-					isAlive: function() { return false; },
-					receive: function() { throw new Error('EOF'); },
-					close:   function() {},
-					send:    function() {}
-				};
-				claudeExecutor.sessionId = 'dead-throw-session';
-				claudeExecutor.close = function() { this.handle = null; };
-			})()
-		`)
-		if err != nil {
-			t.Fatalf("inject mock executor: %v", err)
-		}
-
-		tp.Stdout.Reset()
-		if err := tp.Dispatch("claude", nil); err != nil {
-			t.Fatalf("claude: %v", err)
-		}
-		out := tp.Stdout.String()
-
-		// Should still print exit message — receive throwing is caught.
-		if !contains(out, "Claude process has exited") {
-			t.Errorf("expected 'Claude process has exited', got: %s", out)
+		err := tp.Dispatch("claude", []string{"spawn"})
+		if err == nil {
+			t.Fatal("expected error: 'claude spawn' should fail (command removed)")
 		}
 	})
 }
@@ -7339,35 +7222,17 @@ func TestPrSplitCommand_ClaudeStatusCommand(t *testing.T) {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
 
-	t.Run("not_initialized", func(t *testing.T) {
+	// T13: Verify 'claude-status' REPL command has been removed.
+	// This was the companion to the 'claude' command (T12).
+	t.Run("command_removed", func(t *testing.T) {
 		tp := chdirTestPipeline(t, TestPipelineOpts{})
-		if err := tp.Dispatch("claude-status", nil); err != nil {
-			t.Fatalf("claude-status: %v", err)
+		err := tp.Dispatch("claude-status", nil)
+		if err == nil {
+			t.Fatal("expected error: 'claude-status' command should have been removed")
 		}
-		out := tp.Stdout.String()
-		if !contains(out, "not initialized") {
-			t.Errorf("expected 'not initialized', got: %s", out)
-		}
-	})
-
-	t.Run("with_resolved_command", func(t *testing.T) {
-		tp := chdirTestPipeline(t, TestPipelineOpts{
-			ConfigOverrides: map[string]interface{}{
-				"claudeCommand": "/nonexistent/claude-status-test",
-			},
-		})
-		// The JS ClaudeCodeExecutor is lazily created on first use.
-		// Executing claude-status after configuring a command should
-		// show status with the configured command path.
-		if err := tp.Dispatch("claude-status", nil); err != nil {
-			t.Fatalf("claude-status: %v", err)
-		}
-		out := tp.Stdout.String()
-		// Should show either "not initialized" or "not resolved" or
-		// the command info — but NOT panic.
-		if !contains(out, "Claude") && !contains(out, "claude") &&
-			!contains(out, "not initialized") {
-			t.Errorf("expected Claude status info, got: %s", out)
+		errStr := err.Error()
+		if !contains(errStr, "not found") && !contains(errStr, "unknown command") {
+			t.Errorf("expected 'not found' or 'unknown command' error, got: %v", err)
 		}
 	})
 }

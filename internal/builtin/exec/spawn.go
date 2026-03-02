@@ -64,6 +64,14 @@ func SpawnChild(ctx context.Context, cfg SpawnConfig) (*ChildProcess, error) {
 	// Platform-specific process group setup (enables tree-kill on Unix).
 	setProcAttr(cmd)
 
+	// Override default context cancellation to kill the entire process group.
+	// Go's default CommandContext kills only the parent PID; since we set
+	// Setpgid, child processes would survive. This ensures the entire tree
+	// is killed when the context is cancelled.
+	cmd.Cancel = func() error {
+		return killProcess(cmd)
+	}
+
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err

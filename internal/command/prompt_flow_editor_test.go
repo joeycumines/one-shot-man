@@ -46,8 +46,8 @@ func TestPromptFlow_GoalCommandOpensEditor(t *testing.T) {
 	}
 	defer cp.Close()
 
-	// Wait for startup
-	requirePromptFlowExpect(t, ctx, cp, "(prompt-flow) > ", 10*time.Second)
+	// Wait for startup (use long timeout for CI environments)
+	requirePromptFlowExpect(t, ctx, cp, "(prompt-flow) > ", 30*time.Second)
 
 	// Call goal with no arguments - should trigger editor
 	snap := cp.Snapshot()
@@ -99,8 +99,8 @@ func TestPromptFlow_UseCommandOpensEditor(t *testing.T) {
 	}
 	defer cp.Close()
 
-	// Wait for startup
-	requirePromptFlowExpect(t, ctx, cp, "(prompt-flow) > ", 10*time.Second)
+	// Wait for startup (use long timeout for CI environments)
+	requirePromptFlowExpect(t, ctx, cp, "(prompt-flow) > ", 30*time.Second)
 
 	// Set a goal first
 	snap := cp.Snapshot()

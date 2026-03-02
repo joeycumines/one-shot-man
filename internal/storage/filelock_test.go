@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 func TestFileLock_AcquireAndRelease(t *testing.T) {
@@ -119,6 +121,7 @@ func TestFileLock_PermissionDenied(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows file permission model differs; skip for portability")
 	}
+	testutil.SkipIfRoot(t, testutil.DetectPlatform(t), "chmod restrictions bypassed by root")
 
 	dir := t.TempDir()
 	// Make directory read-only so file creation inside fails.
@@ -177,6 +180,7 @@ func TestAcquireLockHandle_PermissionDenied(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows file permission model differs; skip for portability")
 	}
+	testutil.SkipIfRoot(t, testutil.DetectPlatform(t), "chmod restrictions bypassed by root")
 
 	dir := t.TempDir()
 	if err := os.Chmod(dir, 0555); err != nil {

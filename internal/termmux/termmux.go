@@ -89,6 +89,22 @@ func (m *Mux) Attach(child io.ReadWriteCloser) error {
 	m.childEOF = make(chan struct{})
 	m.teeDone = make(chan struct{})
 
+	// T16: Wire bell callback. When bell fires from the child PTY
+	// and the mux is NOT in passthrough mode (background pane), propagate
+	// BEL to the user's terminal. If passthrough IS active the bell
+	// naturally reaches the terminal via stdout passthrough in teeLoop.
+	m.vterm.BellFn = func() {
+		m.mu.Lock()
+		passthrough := m.passthroughActive
+		stdout := m.stdout
+		m.mu.Unlock()
+
+		if !passthrough && stdout != nil {
+			// Background pane bell — propagate to outer terminal.
+			_, _ = stdout.Write([]byte{0x07})
+		}
+	}
+
 	// Start buffered reader with a cancellable context so Detach()
 	// can signal the ReadLoop to stop after its next successful read.
 	m.reader = ptyio.NewBufferedReader(child, 16)

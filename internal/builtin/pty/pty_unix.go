@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 
 	creackpty "github.com/creack/pty"
 )
@@ -26,6 +27,13 @@ func (h *unixProcessHandle) Signal(sig os.Signal) error {
 	if h.cmd.Process == nil {
 		return errors.New("pty: process not started")
 	}
+	// Try to send signal to the entire process group (created via Setpgid).
+	// Use negative PID to target the group. If type assertion fails,
+	// fall back to signaling the individual PID.
+	if sysSig, ok := sig.(syscall.Signal); ok {
+		return syscall.Kill(-h.cmd.Process.Pid, sysSig)
+	}
+	// Fallback for non-syscall.Signal types (e.g., custom signals).
 	return h.cmd.Process.Signal(sig)
 }
 
@@ -100,6 +108,11 @@ func Spawn(ctx context.Context, cfg SpawnConfig) (*Process, error) {
 	cmd.Stdin = tty
 	cmd.Stdout = tty
 	cmd.Stderr = tty
+
+	// Create a new process group so that signals (especially SIGKILL)
+	// can be delivered to the entire process tree, not just the parent.
+	// This prevents orphaned child processes when force-killing.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	if err := cmd.Start(); err != nil {
 		ptmx.Close()

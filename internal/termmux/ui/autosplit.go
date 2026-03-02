@@ -224,6 +224,11 @@ type AutoSplitModel struct {
 	// The callback should block until the user toggles back.
 	onToggle func()
 
+	// T17: Bell-based attention indicator. Set to true when Claude pane
+	// emits a bell while in the background; cleared when user toggles to
+	// Claude pane and returns.
+	needsAttention bool
+
 	// Internal: the running tea.Program, set after Run() is called.
 	// Used by Send* methods to deliver messages from other goroutines.
 	program *tea.Program
@@ -395,6 +400,23 @@ func (m *AutoSplitModel) Paused() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.paused
+}
+
+// SetNeedsAttention sets the attention indicator for T17. When set to
+// true, a persistent indicator appears in the separator showing that
+// Claude needs attention. The indicator is cleared when the user
+// toggles to Claude and returns (via AutoSplitToggleMsg).
+func (m *AutoSplitModel) SetNeedsAttention(v bool) {
+	m.mu.Lock()
+	m.needsAttention = v
+	m.mu.Unlock()
+}
+
+// NeedsAttention returns the current attention indicator state.
+func (m *AutoSplitModel) NeedsAttention() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.needsAttention
 }
 
 // Quit programmatically triggers a clean shutdown of the TUI. The
@@ -675,6 +697,10 @@ func (m *AutoSplitModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case AutoSplitToggleMsg:
+		// T17: User has returned from Claude TUI — clear attention indicator.
+		m.mu.Lock()
+		m.needsAttention = false
+		m.mu.Unlock()
 		return m, nil
 
 	case autoSplitTickMsg:
@@ -1005,6 +1031,7 @@ func (m *AutoSplitModel) renderSeparator(width int) string {
 	m.mu.Lock()
 	isCancelled := m.cancelled
 	isPaused := m.paused
+	needsAttention := m.needsAttention
 	m.mu.Unlock()
 
 	var left string
@@ -1025,6 +1052,11 @@ func (m *AutoSplitModel) renderSeparator(width int) string {
 		left = fmt.Sprintf(" ◉ %s", currentStep)
 	default:
 		left = " Auto-Split"
+	}
+
+	// T17: Attention indicator when Claude pane needs attention.
+	if needsAttention && !m.done && !isCancelled {
+		left += " 🔔"
 	}
 
 	var right string

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/testutil"
 )
 
 func TestNewInstanceRegistry(t *testing.T) {
@@ -457,6 +459,7 @@ func TestInstanceRegistry_Create_WriteStateFail(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("chmod-based test not reliable on Windows")
 	}
+	testutil.SkipIfRoot(t, testutil.DetectPlatform(t), "chmod restrictions bypassed by root")
 
 	dir := t.TempDir()
 	r, err := NewInstanceRegistry(filepath.Join(dir, "sessions"))

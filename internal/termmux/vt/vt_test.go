@@ -775,3 +775,65 @@ func TestVTerm_String_Concurrent(t *testing.T) {
 	wg.Wait()
 	// Race detector validates thread safety.
 }
+
+// ── T15: BellFn callback ────────────────────────────────────────────
+
+func TestVTerm_BellFn_Called(t *testing.T) {
+	v := NewVTerm(24, 80)
+	var bellCount int
+	v.BellFn = func() {
+		bellCount++
+	}
+
+	// Write text with BEL character embedded.
+	v.Write([]byte("Hello\x07World"))
+
+	// BellFn should have been called exactly once.
+	if bellCount != 1 {
+		t.Errorf("bellCount = %d; want 1", bellCount)
+	}
+
+	// Verify text was still written (BEL is a control char, not printed).
+	got := v.String()
+	if !strings.Contains(got, "HelloWorld") {
+		t.Errorf("String() = %q; want HelloWorld", got)
+	}
+}
+
+func TestVTerm_BellFn_Multiple(t *testing.T) {
+	v := NewVTerm(24, 80)
+	var bellCount int
+	v.BellFn = func() {
+		bellCount++
+	}
+
+	// Three BELs.
+	v.Write([]byte("\x07\x07\x07"))
+
+	if bellCount != 3 {
+		t.Errorf("bellCount = %d; want 3", bellCount)
+	}
+}
+
+func TestVTerm_BellFn_NilSafe(t *testing.T) {
+	v := NewVTerm(24, 80)
+	// BellFn is nil by default — should not panic.
+	v.Write([]byte("\x07"))
+}
+
+func TestVTerm_BellFn_WithCSI(t *testing.T) {
+	// Ensure BEL inside CSI parameters is parsed correctly and
+	// BEL outside CSI still triggers callback.
+	v := NewVTerm(24, 80)
+	var bellCount int
+	v.BellFn = func() {
+		bellCount++
+	}
+
+	// BEL before CSI, then CSI, then BEL after.
+	v.Write([]byte("\x07\x1b[1;31m\x07"))
+
+	if bellCount != 2 {
+		t.Errorf("bellCount = %d; want 2", bellCount)
+	}
+}

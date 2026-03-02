@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -21,6 +22,22 @@ func (errReader) Read(p []byte) (int, error) { return 0, fmt.Errorf("boom") }
 
 func TestSessionsListAndClean(t *testing.T) {
 	dir := t.TempDir()
+	// Clean up any remaining files before t.TempDir() cleanup (runs first in LIFO)
+	defer func() {
+		_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+			if err == nil && path != dir && !d.IsDir() {
+				_ = os.Remove(path)
+			}
+			return nil
+		})
+		// Remove any remaining subdirectories
+		_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+			if err == nil && path != dir && d.IsDir() {
+				_ = os.RemoveAll(path)
+			}
+			return nil
+		})
+	}()
 	storage.SetTestPaths(dir)
 	defer storage.ResetPaths()
 

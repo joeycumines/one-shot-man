@@ -77,14 +77,12 @@ func TestExecuteSplit(t *testing.T) {
 				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature');
 				globalThis._gitResponses['rev-parse --verify refs/heads/split/01-config'] = _gitFail('not found');
 				globalThis._gitResponses['rev-parse --verify refs/heads/split/02-session'] = _gitFail('not found');
-				globalThis._gitResponses['checkout main'] = _gitOk('');
-				globalThis._gitResponses['checkout -b split/01-config'] = _gitOk('');
+				globalThis._gitResponses['checkout -b split/01-config main'] = _gitOk('');
 				globalThis._gitResponses['checkout feature -- config.go'] = _gitOk('');
 				globalThis._gitResponses['add --'] = _gitOk('');
 				globalThis._gitResponses['commit -m split: config'] = _gitOk('');
 				globalThis._gitResponses['rev-parse HEAD'] = _gitOk('abc123');
-				globalThis._gitResponses['checkout split/01-config'] = _gitOk('');
-				globalThis._gitResponses['checkout -b split/02-session'] = _gitOk('');
+				globalThis._gitResponses['checkout -b split/02-session split/01-config'] = _gitOk('');
 				globalThis._gitResponses['checkout feature -- session.go'] = _gitOk('');
 				globalThis._gitResponses['commit -m split: session'] = _gitOk('');
 				globalThis._gitResponses['checkout feature'] = _gitOk('');
@@ -121,8 +119,7 @@ func TestExecuteSplit(t *testing.T) {
 			setup: `
 				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature');
 				globalThis._gitResponses['rev-parse --verify refs/heads/split/01-cleanup'] = _gitFail('not');
-				globalThis._gitResponses['checkout main'] = _gitOk('');
-				globalThis._gitResponses['checkout -b split/01-cleanup'] = _gitOk('');
+				globalThis._gitResponses['checkout -b split/01-cleanup main'] = _gitOk('');
 				globalThis._gitResponses['rm --ignore-unmatch -f old.go'] = _gitOk('');
 				globalThis._gitResponses['add --'] = _gitOk('');
 				globalThis._gitResponses['commit -m cleanup'] = _gitOk('');
@@ -154,8 +151,7 @@ func TestExecuteSplit(t *testing.T) {
 			setup: `
 				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature');
 				globalThis._gitResponses['rev-parse --verify refs/heads/split/01-x'] = _gitFail('not');
-				globalThis._gitResponses['checkout main'] = _gitOk('');
-				globalThis._gitResponses['checkout -b split/01-x'] = _gitOk('');
+				globalThis._gitResponses['checkout -b split/01-x main'] = _gitOk('');
 				globalThis._gitResponses['checkout feature'] = _gitOk('');
 			`,
 			invoke: `JSON.stringify(globalThis.prSplit.executeSplit({
@@ -180,8 +176,7 @@ func TestExecuteSplit(t *testing.T) {
 			setup: `
 				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature');
 				globalThis._gitResponses['rev-parse --verify refs/heads/split/01-fail'] = _gitFail('not');
-				globalThis._gitResponses['checkout main'] = _gitOk('');
-				globalThis._gitResponses['checkout -b split/01-fail'] = _gitFail('branch exists');
+				globalThis._gitResponses['checkout -b split/01-fail main'] = _gitFail('branch exists');
 				globalThis._gitResponses['checkout feature'] = _gitOk('');
 			`,
 			invoke: `JSON.stringify(globalThis.prSplit.executeSplit({
@@ -196,7 +191,7 @@ func TestExecuteSplit(t *testing.T) {
 				if r.Error == nil {
 					t.Fatal("expected error for branch creation failure")
 				}
-				if !strings.Contains(*r.Error, "branch creation failed") {
+				if !strings.Contains(*r.Error, "create branch") {
 					t.Errorf("error = %q", *r.Error)
 				}
 			},
@@ -206,8 +201,7 @@ func TestExecuteSplit(t *testing.T) {
 			setup: `
 				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature');
 				globalThis._gitResponses['rev-parse --verify refs/heads/split/01-empty'] = _gitFail('not');
-				globalThis._gitResponses['checkout main'] = _gitOk('');
-				globalThis._gitResponses['checkout -b split/01-empty'] = _gitOk('');
+				globalThis._gitResponses['checkout -b split/01-empty main'] = _gitOk('');
 				globalThis._gitResponses['checkout feature -- no-change.go'] = _gitOk('');
 				globalThis._gitResponses['add --'] = _gitOk('');
 				globalThis._gitResponses['commit -m empty'] = _gitFail('nothing to commit');
@@ -242,8 +236,7 @@ func TestExecuteSplit(t *testing.T) {
 				// Branch exists → will be deleted.
 				globalThis._gitResponses['rev-parse --verify refs/heads/split/01-redo'] = _gitOk('abc');
 				globalThis._gitResponses['branch -D split/01-redo'] = _gitOk('');
-				globalThis._gitResponses['checkout main'] = _gitOk('');
-				globalThis._gitResponses['checkout -b split/01-redo'] = _gitOk('');
+				globalThis._gitResponses['checkout -b split/01-redo main'] = _gitOk('');
 				globalThis._gitResponses['checkout feature -- a.go'] = _gitOk('');
 				globalThis._gitResponses['add --'] = _gitOk('');
 				globalThis._gitResponses['commit -m redo'] = _gitOk('');
@@ -311,8 +304,7 @@ func TestExecuteSplit_TypeChange(t *testing.T) {
 	if _, err := evalJS(`
 		globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature');
 		globalThis._gitResponses['rev-parse --verify refs/heads/split/01-type'] = _gitFail('not found');
-		globalThis._gitResponses['checkout main'] = _gitOk('');
-		globalThis._gitResponses['checkout -b split/01-type'] = _gitOk('');
+		globalThis._gitResponses['checkout -b split/01-type main'] = _gitOk('');
 		globalThis._gitResponses['checkout feature -- link.txt'] = _gitOk('');
 		globalThis._gitResponses['add --'] = _gitOk('');
 		globalThis._gitResponses['commit -m type change'] = _gitOk('');
@@ -940,8 +932,7 @@ func TestExecuteSplit_RenamedFile(t *testing.T) {
 	if _, err := evalJS(`
 		globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature');
 		globalThis._gitResponses['rev-parse --verify refs/heads/split/01-rename'] = _gitFail('not found');
-		globalThis._gitResponses['checkout main'] = _gitOk('');
-		globalThis._gitResponses['checkout -b split/01-rename'] = _gitOk('');
+		globalThis._gitResponses['checkout -b split/01-rename main'] = _gitOk('');
 		globalThis._gitResponses['checkout feature -- pkg/new_name.go'] = _gitOk('');
 		globalThis._gitResponses['add --'] = _gitOk('');
 		globalThis._gitResponses['commit -m rename file'] = _gitOk('');
@@ -1008,8 +999,7 @@ func TestExecuteSplit_CopiedFile(t *testing.T) {
 	if _, err := evalJS(`
 		globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature');
 		globalThis._gitResponses['rev-parse --verify refs/heads/split/01-copy'] = _gitFail('not found');
-		globalThis._gitResponses['checkout main'] = _gitOk('');
-		globalThis._gitResponses['checkout -b split/01-copy'] = _gitOk('');
+		globalThis._gitResponses['checkout -b split/01-copy main'] = _gitOk('');
 		globalThis._gitResponses['checkout feature -- src/copy.go'] = _gitOk('');
 		globalThis._gitResponses['add --'] = _gitOk('');
 		globalThis._gitResponses['commit -m copy file'] = _gitOk('');

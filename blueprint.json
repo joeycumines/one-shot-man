@@ -71,103 +71,103 @@
       "task": "T04: Fix sendToHandle to send text and Enter as separate writes",
       "description": "In internal/command/pr_split_script.js, function sendToHandle (search 'function sendToHandle'): (1) Remove `var payload = text + '\\n'` pattern. (2) Send `text` first, then send `'\\n'` as a separate write. (3) For TUI path (autoSplitTUI.sendWithCancel): call twice — first with text, then with newline. (4) For fallback path (handle.send): call send(text), then send('\\n'). (5) ERROR HANDLING: If first write succeeds but second fails, treat as fatal pipeline error — log both, propagate single unified error. Do not retry just the newline. (6) Update misleading comment that claims 'single-write pattern is deterministic' to describe the two-write approach and WHY it's necessary (non-blocking TUI readers treat single-write as paste). EXISTING TESTS WILL BREAK: TestIntegration_SendToHandle_FallbackDirect (asserts 1 send), TestIntegration_SendToHandle_TUIPath (asserts 1 sendWithCancel call). These must be updated to assert 2 calls in the same commit.",
       "acceptance": "sendToHandle sends text and newline as two distinct writes. Both TUI and fallback paths updated. Comment corrected. Existing tests updated from asserting 1 write to asserting 2 writes.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "T05: Run make all after sendToHandle fix",
       "description": "Run `make make-all-with-log` and `make integration-test-prsplit-mcp`. All tests must pass including the updated sendToHandle tests.",
       "acceptance": "All tests pass. No regressions.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T06: Regression replication — executeSplit worktree checkout conflict",
       "description": "BEFORE fixing executeSplit, write a test that sets up a git repo with: (1) main worktree on a feature branch, (2) additional worktree with 'main' checked out. Create a minimal split plan and call the executeSplit JS function. The test should FAIL with 'already used by worktree' error, proving the regression exists. Name it TestIntegration_ExecuteSplit_WorktreeConflict. Use t.TempDir() for all directories.",
       "acceptance": "Test reliably reproduces the worktree checkout error from scratch/current-state.md regression #4.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T07: Fix executeSplit to create branches from base commit SHA",
       "description": "In internal/command/pr_split_script.js function executeSplit (search 'function executeSplit'): (1) Before the split loop, resolve baseBranch to a commit SHA: `var baseCommit = gitExec(dir, ['rev-parse', currentBase]).stdout.trim()`. (2) Replace `git checkout currentBase` with `git checkout -b <splitBranchName> <baseCommit>` to create split branch directly from the commit without checking out the base branch name. This avoids the worktree conflict entirely because we never try to checkout the base branch by name. (3) Ensure restoreBranch logic still works — at the end, restore to the branch we were on before, not the base.",
       "acceptance": "executeSplit succeeds when baseBranch is in another worktree. TestIntegration_ExecuteSplit_WorktreeConflict now passes.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T08: Run make all after executeSplit fix",
       "description": "Run `make make-all-with-log` and `make integration-test-prsplit-mcp`.",
       "acceptance": "All tests pass. Worktree test passes.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T09: Regression replication — force-kill leaves orphaned descendants",
       "description": "BEFORE fixing PTY process groups, write a test that: (1) Spawns a PTY process (via internal/builtin/pty Spawn) that in turn creates a child subprocess (e.g., shell running 'sleep 3600' or a test helper that holds a lock file). (2) Sends SIGKILL via Process.Signal('SIGKILL'). (3) Asserts the child subprocess PID STILL EXISTS after the parent dies — proving orphan survival. Use deterministic PID checking (syscall.Kill(pid, 0)) with cleanup to prevent test pollution. Name it TestPTYSpawn_ForceKill_OrphanSurvival.",
       "acceptance": "Test demonstrates child process survives parent SIGKILL — proving the force-kill orphan bug exists in current code.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T10: Fix PTY spawn to use process groups (Setpgid)",
       "description": "In internal/builtin/pty/pty_unix.go, function Spawn (search 'func Spawn'): (1) Before cmd.Start(), set `cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}`. This creates a new process group for the child. (2) In unixProcessHandle.Signal() (search 'func (h *unixProcessHandle) Signal'), change from `h.cmd.Process.Signal(sig)` (which sends to PID) to `syscall.Kill(-h.cmd.Process.Pid, sig.(syscall.Signal))` (which sends to process GROUP via negative PID). (3) Handle the type assertion for non-syscall.Signal types gracefully. (4) This change is Unix-only (pty_unix.go), so Windows builds are unaffected.",
       "acceptance": "SIGKILL kills entire process group. TestPTYSpawn_ForceKill_OrphanSurvival now passes (orphan no longer survives). Clean SIGTERM shutdown still works. If sig type assertion to syscall.Signal fails, fall back to os.Process.Signal() for the individual PID — log a warning but do not panic.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T11: Run make all + Linux container after force-kill fix",
       "description": "Run `make make-all-with-log`, `make integration-test-prsplit-mcp`, and `make make-all-in-container` (Linux). The Setpgid change is Unix-only so Linux must also pass.",
       "acceptance": "macOS and Linux tests pass. Force-kill test demonstrates process group cleanup.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T12: Remove claude REPL command and add test proving removal",
       "description": "In internal/command/pr_split_script.js, the `claude` command is registered in the REPL (search for the claude command handler near line ~5685-5747). It calls claudeExecutor.spawn() without mcpConfigPath, which was the trigger for scratch/current-state.md regression #1. ROOT CAUSE: The REPL 'claude' command was never wired to receive mcpConfigPath from osm:mcpcallback (unlike auto-split which correctly provides it). Remove the entire claude command handler. Also add a test (TestIntegration_REPL_NoClaudeCommand) that starts a pr-split REPL session and verifies 'claude' is not a recognized command.",
       "acceptance": "'claude spawn' no longer triggers mcpConfigPath error — the command doesn't exist. Test mechanically verifies removal.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T13: Remove claude-status REPL command and add test proving removal",
       "description": "In internal/command/pr_split_script.js, remove the `claude-status` command handler (search for 'claude-status' in the command registry). JUSTIFICATION: claude-status is the companion command to the claude command removed in T12. It checks status of a Claude session that can only be created via the (now-removed) claude command, making it dead code. scratch/current-state.md section 'Clarification' calls out that 'There doesn't appear to be much point in exposing the claude command to auto-split—remove it entirely? Same for claude-status.' Add a test (TestIntegration_REPL_NoClaudeStatusCommand) verifying removal.",
       "acceptance": "'claude-status' is not available in REPL. Test mechanically verifies.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T14: Run make all after REPL command removal",
       "description": "Run `make make-all-with-log` and `make integration-test-prsplit-mcp`.",
       "acceptance": "All tests pass. No references to removed commands in test expectations.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T15: Implement bell detection in termmux VTerm output",
       "description": "In internal/termmux/vt/ (the VTerm package), add detection of \\x07 (BEL) bytes in the terminal output stream. When BEL is encountered during output processing, emit a structured notification. This should be a general-purpose building block — not Claude-specific. Investigate the VTerm write path (search for the Write or ProcessOutput method in internal/termmux/vt/) and add BEL detection there. Emit a callback or event that the termmux layer can consume.",
       "acceptance": "When a child PTY emits \\x07, the VTerm layer detects it and provides a notification mechanism.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T16: Implement bell propagation to outer terminal from background panes",
       "description": "In the termmux mux layer (internal/termmux/termmux.go), when bell is detected in a background (non-focused) pane, write \\x07 to stdout to propagate to the user's terminal. When the pane IS focused, bell passes through naturally in the output stream.",
       "acceptance": "Background pane bell reaches user's terminal. Can be verified by checking for \\x07 in captured test output.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T17: Implement persistent attention indicator in AutoSplitModel",
       "description": "In internal/termmux/ui/autosplit.go AutoSplitModel: (1) Add a 'needsAttention' bool field per pane. (2) Set it to true when bell fires from a background pane. (3) In renderSeparator (search 'func (m AutoSplitModel) renderSeparator'), add a persistent visual indicator when needsAttention is true (e.g., '🔔 Claude needs attention'). (4) Clear needsAttention when user switches to that pane (via Ctrl+] toggle). Use a distinct styling that is impossible to miss.",
       "acceptance": "Persistent indicator appears on bell from background pane, remains until user switches to that pane, visually distinct.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T18: Add tests for bell propagation and attention indicator lifecycle",
       "description": "Tests in appropriate test files: (1) Bell in background pane → \\x07 at outer terminal. (2) Attention indicator appears in rendered View() output when needsAttention is true. (3) Indicator clears on pane focus.",
       "acceptance": "Tests prove bell/attention lifecycle works correctly.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T19: Run make all after bell/attention implementation",
       "description": "Run `make make-all-with-log`, `make integration-test-prsplit-mcp`, `make make-all-in-container`.",
       "acceptance": "All tests pass on macOS and Linux.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T20: Verify --resume flag works end-to-end",
       "description": "BEFORE improving error feedback, verify the existing --resume flow actually works: (1) Create a controlled test (TestIntegration_Resume_SkipsClassification) that generates a .pr-split-plan.json via the automatedSplit pipeline (can use mock MCP). (2) Force a failure during executeSplit. (3) Re-run with --resume and verify it skips classification and jumps to execution. The resume capability IS implemented (loadPlan ~4170, savePlan ~4100, --resume flag in pr_split.go). This task verifies it works, not implements it.",
       "acceptance": "TestIntegration_Resume_SkipsClassification passes: on second run with --resume, classification is skipped and execution resumes from saved plan.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T21: Improve error feedback on pipeline failure with resume instructions",

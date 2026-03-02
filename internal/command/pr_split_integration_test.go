@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -233,6 +235,104 @@ func TestIntegration_HeuristicSplitEndToEnd(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Integration Test: executeSplit worktree conflict (T06 regression replication)
+// ---------------------------------------------------------------------------
+
+// TestIntegration_ExecuteSplit_WorktreeConflict verifies that executeSplit
+// succeeds even when plan.baseBranch is checked out in another worktree.
+// This was a regression (scratch/current-state.md item #4) where executeSplit
+// did `git checkout <baseBranch>` which fails. The fix uses
+// `git checkout -b <splitName> <baseBranch>`, which creates a new branch
+// from the base without checking out the base branch by name.
+func TestIntegration_ExecuteSplit_WorktreeConflict(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+
+	// Create a git repo with main branch.
+	dir := t.TempDir()
+	runGitCmd(t, dir, "init", "-b", "main")
+	runGitCmd(t, dir, "config", "user.email", "test@test.com")
+	runGitCmd(t, dir, "config", "user.name", "Test User")
+
+	// Initial commit on main.
+	if err := os.WriteFile(filepath.Join(dir, "hello.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitCmd(t, dir, "add", "-A")
+	runGitCmd(t, dir, "commit", "-m", "initial")
+
+	// Feature branch with a change.
+	runGitCmd(t, dir, "checkout", "-b", "feature")
+	if err := os.WriteFile(filepath.Join(dir, "hello.go"), []byte("package main\n\nfunc Hello() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGitCmd(t, dir, "add", "-A")
+	runGitCmd(t, dir, "commit", "-m", "feature work")
+
+	// Create a second worktree with 'main' checked out elsewhere.
+	worktreeDir := t.TempDir()
+	runGitCmd(t, dir, "worktree", "add", worktreeDir, "main")
+
+	// We are on 'feature' in the main worktree. 'main' is checked out in
+	// worktreeDir. executeSplit must succeed despite the worktree conflict.
+	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
+	escapedDir = strings.ReplaceAll(escapedDir, `'`, `\'`)
+
+	raw, err := evalJS(fmt.Sprintf(`(function() {
+		var plan = {
+			baseBranch: 'main',
+			sourceBranch: 'feature',
+			dir: '%s',
+			splits: [{
+				name: 'split/hello',
+				files: ['hello.go'],
+				message: 'Add hello function'
+			}],
+			fileStatuses: { 'hello.go': 'M' }
+		};
+		var result = globalThis.prSplit.executeSplit(plan, {});
+		return JSON.stringify(result);
+	})()`, escapedDir))
+	if err != nil {
+		t.Fatalf("executeSplit eval failed: %v", err)
+	}
+
+	var result struct {
+		Error   *string `json:"error"`
+		Results []struct {
+			Name  string  `json:"name"`
+			SHA   string  `json:"sha"`
+			Error *string `json:"error"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	// Must succeed — worktree conflict is no longer a blocker.
+	if result.Error != nil {
+		t.Fatalf("executeSplit failed: %s", *result.Error)
+	}
+	if len(result.Results) != 1 {
+		t.Fatalf("expected 1 split result, got %d", len(result.Results))
+	}
+	if result.Results[0].Error != nil {
+		t.Errorf("split error: %s", *result.Results[0].Error)
+	}
+	if result.Results[0].Name != "split/hello" {
+		t.Errorf("split name = %q, want %q", result.Results[0].Name, "split/hello")
+	}
+	if result.Results[0].SHA == "" {
+		t.Error("split SHA should not be empty")
+	}
+	t.Logf("✅ executeSplit succeeded with worktree conflict: split/hello @ %s", result.Results[0].SHA)
+}
+
+// ---------------------------------------------------------------------------
 // Integration Test: Cancellation Flow
 // ---------------------------------------------------------------------------
 
@@ -316,7 +416,8 @@ func TestIntegration_AutoSplitCancel(t *testing.T) {
 
 // TestIntegration_SendToHandle_FallbackDirect verifies that sendToHandle
 // falls back to direct handle.send() when no autoSplitTUI is present.
-// This covers the non-TUI / test-context code path.
+// Two-write: text first, then newline as a separate write so that
+// non-blocking TUI readers interpret the newline as Enter (not paste).
 func TestIntegration_SendToHandle_FallbackDirect(t *testing.T) {
 	t.Parallel()
 
@@ -325,7 +426,7 @@ func TestIntegration_SendToHandle_FallbackDirect(t *testing.T) {
 	// Ensure autoSplitTUI is not defined (default engine state).
 	raw, err := evalJS(`
 		(function() {
-			// sendToHandle uses single-write: text + \n as one write.
+			// sendToHandle uses two-write: text, then \n separately.
 			var sends = [];
 			var mockHandle = {
 				send: function(text) { sends.push(text); }
@@ -348,23 +449,27 @@ func TestIntegration_SendToHandle_FallbackDirect(t *testing.T) {
 	if result.Error != nil {
 		t.Errorf("sendToHandle returned error: %s", *result.Error)
 	}
-	// Single-write: text + \n in one call.
-	if len(result.Sends) != 1 {
-		t.Fatalf("expected 1 send (single-write), got %d: %q", len(result.Sends), result.Sends)
+	// Two-write: text first, then \n.
+	if len(result.Sends) != 2 {
+		t.Fatalf("expected 2 sends (two-write), got %d: %q", len(result.Sends), result.Sends)
 	}
-	if result.Sends[0] != "hello Claude\n" {
-		t.Errorf("sends[0] = %q, want %q", result.Sends[0], "hello Claude\n")
+	if result.Sends[0] != "hello Claude" {
+		t.Errorf("sends[0] = %q, want %q", result.Sends[0], "hello Claude")
+	}
+	if result.Sends[1] != "\n" {
+		t.Errorf("sends[1] = %q, want %q", result.Sends[1], "\n")
 	}
 }
 
 // TestIntegration_SendToHandle_FallbackError verifies that sendToHandle
-// returns an error object (not throws) when the underlying send fails.
+// returns an error object (not throws) when the first write (text) fails.
+// The second write (newline) should not be attempted.
 func TestIntegration_SendToHandle_FallbackError(t *testing.T) {
 	t.Parallel()
 
 	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
 
-	// Single-write: error on the send returns immediately.
+	// Two-write: error on first write (text) returns immediately, no newline attempt.
 	raw, err := evalJS(`
 		(function() {
 			var sendCount = 0;
@@ -396,13 +501,13 @@ func TestIntegration_SendToHandle_FallbackError(t *testing.T) {
 		t.Errorf("error = %q, want to contain 'PTY write failed'", *result.Error)
 	}
 	if result.SendCount != 1 {
-		t.Errorf("sendCount = %d, want 1 (should not attempt second send on first failure)", result.SendCount)
+		t.Errorf("sendCount = %d, want 1 (first write fails, newline not attempted)", result.SendCount)
 	}
 }
 
 // TestIntegration_SendToHandle_TUIPath verifies the sendToHandle code path
 // that uses autoSplitTUI.sendWithCancel (when autoSplitTUI is defined with
-// that method). Single-write: sends text+\n via sendWithCancel.
+// that method). Two-write: sends text via sendWithCancel, then \n separately.
 func TestIntegration_SendToHandle_TUIPath(t *testing.T) {
 	t.Parallel()
 
@@ -449,12 +554,15 @@ func TestIntegration_SendToHandle_TUIPath(t *testing.T) {
 	if result.Error != nil {
 		t.Errorf("expected no error, got: %s", *result.Error)
 	}
-	// Single-write: text+\n in one sendWithCancel call.
-	if len(result.Calls) != 1 {
-		t.Fatalf("expected 1 sendWithCancel call (single-write), got %d: %+v", len(result.Calls), result.Calls)
+	// Two-write: text first, then \n in separate sendWithCancel calls.
+	if len(result.Calls) != 2 {
+		t.Fatalf("expected 2 sendWithCancel calls (two-write), got %d: %+v", len(result.Calls), result.Calls)
 	}
-	if result.Calls[0].Text != "classify these files\n" {
-		t.Errorf("call text = %q, want %q", result.Calls[0].Text, "classify these files\n")
+	if result.Calls[0].Text != "classify these files" {
+		t.Errorf("call[0] text = %q, want %q", result.Calls[0].Text, "classify these files")
+	}
+	if result.Calls[1].Text != "\n" {
+		t.Errorf("call[1] text = %q, want %q", result.Calls[1].Text, "\n")
 	}
 	// Should NOT have used direct send.
 	for _, c := range result.Calls {
@@ -511,7 +619,7 @@ func TestIntegration_SendToHandle_TUIPath_FirstSendError(t *testing.T) {
 		t.Errorf("error = %q, want to contain 'cancelled'", *result.Error)
 	}
 	if result.CallCount != 1 {
-		t.Errorf("callCount = %d, want 1 (single-write, error on first call)", result.CallCount)
+		t.Errorf("callCount = %d, want 1 (first write fails, newline not attempted)", result.CallCount)
 	}
 }
 

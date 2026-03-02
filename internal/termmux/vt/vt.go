@@ -19,6 +19,9 @@ type VTerm struct {
 
 	rows, cols int
 	mu         sync.Mutex
+
+	// BellFn is called when BEL (0x07) is processed. Optional; if nil, bell is silently ignored.
+	BellFn func()
 }
 
 // NewVTerm creates a new virtual terminal with the given dimensions.
@@ -138,7 +141,10 @@ func (v *VTerm) processByte(b byte) {
 func (v *VTerm) handleControl(b byte) {
 	scr := v.active
 	switch b {
-	case 0x07: // BEL — ignore
+	case 0x07: // BEL
+		if v.BellFn != nil {
+			v.BellFn()
+		}
 	case 0x08: // BS — backspace
 		scr.PendingWrap = false
 		if scr.CurCol > 0 {

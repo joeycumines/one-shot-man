@@ -1318,17 +1318,9 @@ function executeSplit(plan, options) {
             progressFn('Creating branch ' + (i + 1) + '/' + plan.splits.length + ': ' + split.name);
         }
 
-        var co = gitExec(dir, ['checkout', currentBase]);
+        var co = gitExec(dir, ['checkout', '-b', split.name, currentBase]);
         if (co.code !== 0) {
-            splitResult.error = 'checkout ' + currentBase + ' failed: ' + co.stderr.trim();
-            results.push(splitResult);
-            gitExec(dir, ['checkout', restoreBranch]);
-            return { error: splitResult.error, results: results };
-        }
-
-        var br = gitExec(dir, ['checkout', '-b', split.name]);
-        if (br.code !== 0) {
-            splitResult.error = 'branch creation failed: ' + br.stderr.trim();
+            splitResult.error = 'create branch ' + split.name + ' from ' + currentBase + ' failed: ' + co.stderr.trim();
             results.push(splitResult);
             gitExec(dir, ['checkout', restoreBranch]);
             return { error: splitResult.error, results: results };
@@ -2771,17 +2763,21 @@ function isForceCancelled() {
            typeof autoSplitTUI.forceCancelled === 'function' && autoSplitTUI.forceCancelled();
 }
 
-// sendToHandle writes text to a Claude handle with a trailing newline,
-// using a single atomic write. The PTY layer translates \n to the
-// appropriate line ending. This single-write pattern is deterministic —
-// it eliminates timing-dependent two-write approaches (text + sleep + \r)
-// that caused non-deterministic Enter delivery.
+// sendToHandle writes text to a Claude handle using two separate writes:
+// first the prompt text, then a newline as a distinct write. This two-write
+// pattern is required because non-blocking TUI readers (such as BubbleTea
+// programs reading PTY output) treat a single write containing text+\n as
+// a paste operation rather than a typed-then-submitted command. Separating
+// the writes ensures the newline is interpreted as an Enter keypress.
 //
 // Uses the cancellation-aware sendWithCancel when available (auto-split
 // TUI mode) or falls back to the direct handle.send() for non-TUI/test
 // contexts. EAGAIN is retried up to 3 times with 10ms backoff.
 //
 // Returns { error: null } on success, { error: "message" } on failure.
+// If the first write (text) succeeds but the second (newline) fails,
+// the error from the second write is returned — this is a fatal pipeline
+// error since the prompt was delivered but not submitted.
 function sendToHandle(handle, text) {
     // T16 fix: guard against null/undefined handle — process may have died.
     if (!handle) {
@@ -2791,14 +2787,17 @@ function sendToHandle(handle, text) {
     // T28: Log prompt send (truncated for readability).
     var truncated = text.length > 120 ? text.substring(0, 120) + '...' : text;
     log.printf('auto-split sendToHandle: sending %d chars — %s', text.length, truncated);
-    var payload = text + '\n';
     var EAGAIN_MAX_RETRIES = 3;
     var EAGAIN_RETRY_DELAY_MS = 10;
 
     if (typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
         typeof autoSplitTUI.sendWithCancel === 'function') {
-        // TUI path: cancellation-aware single-write.
-        return autoSplitTUI.sendWithCancel(handle, payload);
+        // TUI path: cancellation-aware two-write (text, then newline).
+        var tuiTextResult = autoSplitTUI.sendWithCancel(handle, text);
+        if (tuiTextResult.error) {
+            return tuiTextResult;
+        }
+        return autoSplitTUI.sendWithCancel(handle, '\n');
     }
 
     // sendWithRetry: retries on EAGAIN/EWOULDBLOCK up to EAGAIN_MAX_RETRIES times.
@@ -2825,12 +2824,17 @@ function sendToHandle(handle, text) {
         return { error: lastErr };
     }
 
-    // Fallback: direct synchronous single-write with EAGAIN retry.
-    var sendResult = sendWithRetry(payload);
-    if (sendResult.error) {
-        log.printf('auto-split sendToHandle: FAILED — %s', sendResult.error);
+    // Fallback: direct synchronous two-write with EAGAIN retry.
+    var textResult = sendWithRetry(text);
+    if (textResult.error) {
+        log.printf('auto-split sendToHandle: text write FAILED — %s', textResult.error);
+        return textResult;
     }
-    return sendResult;
+    var newlineResult = sendWithRetry('\n');
+    if (newlineResult.error) {
+        log.printf('auto-split sendToHandle: newline write FAILED (text was sent) — %s', newlineResult.error);
+    }
+    return newlineResult;
 }
 
 // T28: Logged wrapper around mcpCallbackObj.waitFor — emits before/after
@@ -3023,6 +3027,19 @@ function automatedSplit(config) {
             try { mcpCallbackObj.closeSync(); } catch (e) { /* best effort */ }
             mcpCallbackObj = null;
         }
+
+        // T21: On error, emit resume instructions if a plan was saved.
+        if (result.error && planCache && planCache.splits && planCache.splits.length > 0) {
+            // Try to save plan for recovery (idempotent if already saved).
+            try {
+                savePlan(DEFAULT_PLAN_PATH, report.lastCompletedStep || 'error');
+            } catch (e) { /* best effort */ }
+
+            emitOutput('\n[auto-split] Pipeline failed: ' + result.error);
+            emitOutput('[auto-split] Plan saved to: ' + DEFAULT_PLAN_PATH);
+            emitOutput('[auto-split] To resume: osm pr-split --resume\n');
+        }
+
         if (hasTUI && !config.disableTUI) {
             var summary = result.error ? ('Error: ' + result.error) : 'Complete';
             autoSplitTUI.done(summary);
@@ -5682,90 +5699,10 @@ function buildCommands(stateArg) {
             }
         },
 
-        claude: {
-            description: 'Switch to Claude Code TUI (Ctrl+] to return)',
-            usage: 'claude [spawn]',
-            handler: function(args) {
-                try {
-                    // Lazy-create executor.
-                    if (!claudeExecutor) {
-                        claudeExecutor = new ClaudeCodeExecutor(prSplitConfig);
-                    }
-                    // 'claude spawn' — resolve and spawn Claude.
-                    if (args && args.length > 0 && args[0] === 'spawn') {
-                        var resolveResult = claudeExecutor.resolve();
-                        if (resolveResult.error) {
-                            output.print('Error: ' + resolveResult.error);
-                            return;
-                        }
-                        var spawnResult = claudeExecutor.spawn();
-                        if (spawnResult.error) {
-                            output.print('Error: ' + spawnResult.error);
-                            return;
-                        }
-                        output.print('Claude spawned (session: ' + spawnResult.sessionId + ')');
-                        return;
-                    }
-                    // 'claude' — switch to Claude's TUI.
-                    if (!claudeExecutor.handle) {
-                        output.print('No Claude process running. Use "claude spawn" first.');
-                        return;
-                    }
-                    // Guard: verify Claude is still alive before entering passthrough.
-                    // If it died after spawn (bad flags, API error, etc.), report diagnostics.
-                    if (typeof claudeExecutor.handle.isAlive === 'function' && !claudeExecutor.handle.isAlive()) {
-                        var lastOutput = '';
-                        if (typeof claudeExecutor.handle.receive === 'function') {
-                            try { lastOutput = claudeExecutor.handle.receive() || ''; } catch (e) { /* EOF */ }
-                        }
-                        output.print('Claude process has exited. Use "claude spawn" to restart.');
-                        if (lastOutput) {
-                            output.print('  Last output: ' + lastOutput.trim().substring(0, 300));
-                        }
-                        // Clean up the dead handle.
-                        try { claudeExecutor.close(); } catch (e) { /* best effort */ }
-                        return;
-                    }
-                    // Detach any previous session before re-attaching.
-                    try { tuiMux.detach(); } catch (e) { /* ok if nothing attached */ }
-                    tuiMux.attach(claudeExecutor.handle);
-                    output.print('Switching to Claude TUI… (Ctrl+] to return)');
-                    var result = tuiMux.switchToClaude();
-                    output.print('Back to osm. (reason: ' + result.reason + ')');
-                    if (result.error) {
-                        output.print('Error: ' + result.error);
-                    }
-                    // Surface Claude's last output when it exited unexpectedly.
-                    if (result.reason === 'child-exit' && result.childOutput) {
-                        output.print('Claude output before exit:');
-                        output.print(result.childOutput.substring(0, 500));
-                    }
-                    try { tuiMux.detach(); } catch (e) { /* best effort */ }
-                } catch (e) {
-                    output.print('Error: ' + (e && e.message ? e.message : String(e)));
-                    if (e && e.stack) { log.error('claude command error: ' + e.stack); }
-                }
-            }
-        },
-
-        'claude-status': {
-            description: 'Show Claude Code process status',
-            usage: 'claude-status',
-            handler: function() {
-                if (!claudeExecutor) {
-                    output.print('Claude: not initialized');
-                    return;
-                }
-                var resolved = claudeExecutor.resolved;
-                var handle = claudeExecutor.handle;
-                var sessionId = claudeExecutor.sessionId;
-                output.print('Claude Status:');
-                output.print('  Command:  ' + (resolved ? resolved.command + ' (' + resolved.type + ')' : 'not resolved'));
-                output.print('  Session:  ' + (sessionId || 'none'));
-                output.print('  Process:  ' + (handle ? (handle.isAlive ? (handle.isAlive() ? 'running' : 'exited') : 'unknown') : 'not spawned'));
-                output.print('  Mux:      ' + (tuiMux.isClaudeActive() ? 'Claude active' : 'osm active'));
-            }
-        },
+        // T12/T13: 'claude' and 'claude-status' REPL commands removed.
+        // These commands were never properly wired to mcpConfigPath from
+        // osm:mcpcallback, causing the regression described in scratch/current-state.md.
+        // The automated pipeline (auto-split) handles Claude spawning correctly.
 
         'auto-split': {
             description: 'Automated split via Claude Code (falls back to heuristic)',

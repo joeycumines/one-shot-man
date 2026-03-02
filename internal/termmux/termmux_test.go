@@ -1147,3 +1147,95 @@ func TestAttach_AfterDetach_Succeeds(t *testing.T) {
 	child2W.Close()
 	<-m.teeDone
 }
+
+// ── T016: Bell propagation from background pane ────────────────────
+
+func TestBellPropagation_BackgroundPane(t *testing.T) {
+	// When passthrough is NOT active (background pane), a BEL from the
+	// child should be propagated to stdout.
+	childR, childW := io.Pipe()
+	mc := &pipeMockChild{r: childR, w: io.Discard}
+
+	var stdout bytes.Buffer
+	m := New(bytes.NewReader(nil), &stdout, -1)
+	if err := m.Attach(mc); err != nil {
+		t.Fatalf("Attach error: %v", err)
+	}
+
+	// Passthrough is NOT active by default. Child sends BEL.
+	childW.Write([]byte("Hello\x07World"))
+	time.Sleep(150 * time.Millisecond) // let teeLoop + VTerm process
+
+	// BEL should have been propagated to stdout.
+	gotBytes := stdout.Bytes()
+	if !bytes.Contains(gotBytes, []byte{0x07}) {
+		t.Errorf("stdout should contain BEL; got %q", gotBytes)
+	}
+
+	childW.Close()
+	<-m.teeDone
+}
+
+func TestBellPropagation_PassthroughActive(t *testing.T) {
+	// When passthrough IS active, BEL naturally reaches stdout via the
+	// teeLoop passthrough path. The BellFn callback should NOT
+	// duplicate it. We verify by starting passthrough and confirming
+	// only one BEL arrives.
+	ts := newMockTermState(80, 24)
+	bg := &mockBlockingGuard{}
+	m, stdout, stdinW, child := newTestMux(t, ts, bg)
+
+	// Start passthrough in goroutine
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		m.RunPassthrough(context.Background())
+	}()
+
+	// Wait for passthrough to start
+	time.Sleep(50 * time.Millisecond)
+
+	// Child sends text with BEL in passthrough mode
+	child.readPW.Write([]byte("Active\x07Mode"))
+	time.Sleep(100 * time.Millisecond)
+
+	// Exit passthrough
+	stdinW.Write([]byte{DefaultToggleKey})
+	<-done
+
+	// Count BELs in output — should have exactly 1 (from passthrough only,
+	// NOT duplicated by BellFn).
+	gotBytes := stdout.Bytes()
+	bellCount := bytes.Count(gotBytes, []byte{0x07})
+	if bellCount != 1 {
+		t.Errorf("expected exactly 1 BEL in passthrough output; got %d in %q", bellCount, gotBytes)
+	}
+
+	child.Close()
+	<-m.teeDone
+}
+
+func TestBellPropagation_MultipleBells(t *testing.T) {
+	// Multiple BELs from background pane should each propagate.
+	childR, childW := io.Pipe()
+	mc := &pipeMockChild{r: childR, w: io.Discard}
+
+	var stdout bytes.Buffer
+	m := New(bytes.NewReader(nil), &stdout, -1)
+	if err := m.Attach(mc); err != nil {
+		t.Fatalf("Attach error: %v", err)
+	}
+
+	// Send 3 BELs
+	childW.Write([]byte("\x07\x07\x07"))
+	time.Sleep(150 * time.Millisecond)
+
+	gotBytes := stdout.Bytes()
+	bellCount := bytes.Count(gotBytes, []byte{0x07})
+	if bellCount != 3 {
+		t.Errorf("expected 3 BELs; got %d", bellCount)
+	}
+
+	childW.Close()
+	<-m.teeDone
+}

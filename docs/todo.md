@@ -166,7 +166,7 @@ osm should be able to orchestrate Claude Code (and potentially other TUI-based A
 
 #### Component 1: PTY Spawning and Terminal Management
 
-- **PTY Wrapper Module**: Extend `osm:exec` (or create `osm:pty`) to support spawning processes with full PTY
+- **PTY Wrapper Module**: The Go PTY package (`internal/builtin/pty`) handles spawning processes with full PTY
 - **Terminal State Preservation**: Save/restore terminal state before/after external app
 - **Signal Forwarding**: Forward SIGWINCH, SIGINT, SIGTERM to external process
 - **Input/Output Bridging**: Bridge terminal input to external process and output back to osm

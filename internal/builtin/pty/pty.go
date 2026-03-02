@@ -1,17 +1,6 @@
-// Package pty provides the osm:pty native module for spawning and managing
-// processes in pseudo-terminals. It uses creack/pty on Unix systems and
-// returns "not supported" errors on Windows (ConPTY support is a follow-up).
-//
-// The module exposes a JavaScript API:
-//
-//	const pty = require('osm:pty');
-//	const proc = pty.spawn('bash', ['-l'], { rows: 24, cols: 80 });
-//	proc.write('ls -la\n');
-//	const output = proc.read();
-//	proc.resize(48, 120);
-//	proc.signal('SIGINT');
-//	const exitCode = proc.wait();
-//	proc.close();
+// Package pty provides Go-level APIs for spawning and managing processes in
+// pseudo-terminals. It uses creack/pty on Unix systems and returns
+// "not supported" errors on Windows (ConPTY support is a follow-up).
 package pty
 
 import (

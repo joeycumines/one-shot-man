@@ -563,6 +563,12 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			}
 			return map[string]interface{}{"error": nil}
 		},
+
+		// T04a: sendTextWithEnter REMOVED — it blocked the JS event loop
+		// because time.Sleep in Go blocks the calling goroutine which blocks
+		// the JS function call. The correct approach is to use JS async/await
+		// with setTimeout for the delay (implemented in pr_split_script.js
+		// sendToHandle function). sendWithCancel is kept for individual writes.
 	})
 
 	// Plan editor — expose factory so JS can create editor instances.

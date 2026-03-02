@@ -34,7 +34,7 @@ func parseGroups(t *testing.T, raw interface{}) map[string][]string {
 
 func TestPrSplit_Dirname(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	tests := []struct {
 		name string
@@ -71,7 +71,7 @@ func TestPrSplit_Dirname(t *testing.T) {
 
 func TestPrSplit_FileExtension(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	tests := []struct {
 		name string
@@ -108,7 +108,7 @@ func TestPrSplit_FileExtension(t *testing.T) {
 
 func TestPrSplit_SanitizeBranchName(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	tests := []struct {
 		name string
@@ -144,7 +144,7 @@ func TestPrSplit_SanitizeBranchName(t *testing.T) {
 
 func TestPrSplit_PadIndex(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	tests := []struct {
 		name string
@@ -179,7 +179,7 @@ func TestPrSplit_PadIndex(t *testing.T) {
 
 func TestPrSplit_GroupByDirectory(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	t.Run("depth_1_default", func(t *testing.T) {
 		val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDirectory([
@@ -261,7 +261,7 @@ func TestPrSplit_GroupByDirectory(t *testing.T) {
 
 func TestPrSplit_GroupByExtension(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	t.Run("mixed_extensions", func(t *testing.T) {
 		val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByExtension([
@@ -337,7 +337,7 @@ func TestPrSplit_GroupByExtension(t *testing.T) {
 
 func TestPrSplit_GroupByPattern(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	t.Run("basic_matching", func(t *testing.T) {
 		val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByPattern(
@@ -432,7 +432,7 @@ func TestPrSplit_GroupByPattern(t *testing.T) {
 
 func TestPrSplit_GroupByChunks(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	t.Run("basic_chunking", func(t *testing.T) {
 		val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByChunks(
@@ -535,7 +535,7 @@ func TestPrSplit_GroupByChunks(t *testing.T) {
 
 func TestPrSplit_AnalyzeDiffStats_Success(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(execMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -599,7 +599,7 @@ func TestPrSplit_AnalyzeDiffStats_Success(t *testing.T) {
 
 func TestPrSplit_AnalyzeDiffStats_RevParseFails(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(execMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -638,7 +638,7 @@ func TestPrSplit_AnalyzeDiffStats_RevParseFails(t *testing.T) {
 
 func TestPrSplit_AnalyzeDiffStats_EmptyDiff(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(execMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -679,7 +679,7 @@ func TestPrSplit_AnalyzeDiffStats_EmptyDiff(t *testing.T) {
 
 func TestPrSplit_AnalyzeDiffStats_BinaryFiles(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(execMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -730,7 +730,7 @@ func TestPrSplit_AnalyzeDiffStats_BinaryFiles(t *testing.T) {
 
 func TestPrSplit_NullSafety_GroupByDirectory(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	for _, input := range []string{"null", "undefined"} {
 		val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDirectory(` + input + `, 1))`)
@@ -746,7 +746,7 @@ func TestPrSplit_NullSafety_GroupByDirectory(t *testing.T) {
 
 func TestPrSplit_NullSafety_GroupByExtension(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	for _, input := range []string{"null", "undefined"} {
 		val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByExtension(` + input + `))`)
@@ -762,7 +762,7 @@ func TestPrSplit_NullSafety_GroupByExtension(t *testing.T) {
 
 func TestPrSplit_NullSafety_GroupByChunks(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	for _, input := range []string{"null", "undefined"} {
 		val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByChunks(` + input + `, 3))`)
@@ -778,7 +778,7 @@ func TestPrSplit_NullSafety_GroupByChunks(t *testing.T) {
 
 func TestPrSplit_NullSafety_GroupByPattern(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// null files → empty
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByPattern(null, {}))`)
@@ -803,7 +803,7 @@ func TestPrSplit_NullSafety_GroupByPattern(t *testing.T) {
 
 func TestPrSplit_NullSafety_GroupByDependency(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	for _, input := range []string{"null", "undefined"} {
 		val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDependency(` + input + `, {}))`)
@@ -819,7 +819,7 @@ func TestPrSplit_NullSafety_GroupByDependency(t *testing.T) {
 
 func TestPrSplit_NullSafety_ApplyStrategy(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	for _, input := range []string{"null", "undefined", "[]"} {
 		val, err := evalJS(`JSON.stringify(globalThis.prSplit.applyStrategy(` + input + `, 'directory', {}))`)
@@ -835,7 +835,7 @@ func TestPrSplit_NullSafety_ApplyStrategy(t *testing.T) {
 
 func TestPrSplit_NullSafety_ParseGoImports(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	for _, input := range []string{"null", "undefined", "''"} {
 		val, err := evalJS(`JSON.stringify(globalThis.prSplit.parseGoImports(` + input + `))`)
@@ -858,7 +858,7 @@ func TestPrSplit_NullSafety_ParseGoImports(t *testing.T) {
 
 func TestPrSplit_ApplyStrategy_Directory(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.applyStrategy(
 		['cmd/main.go', 'internal/foo.go'], 'directory', {}
@@ -877,7 +877,7 @@ func TestPrSplit_ApplyStrategy_Directory(t *testing.T) {
 
 func TestPrSplit_ApplyStrategy_DirectoryDeep(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.applyStrategy(
 		['internal/foo/a.go', 'internal/bar/b.go'], 'directory-deep', {}
@@ -896,7 +896,7 @@ func TestPrSplit_ApplyStrategy_DirectoryDeep(t *testing.T) {
 
 func TestPrSplit_ApplyStrategy_Extension(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.applyStrategy(
 		['a.go', 'b.md'], 'extension', {}
@@ -915,7 +915,7 @@ func TestPrSplit_ApplyStrategy_Extension(t *testing.T) {
 
 func TestPrSplit_ApplyStrategy_Chunks(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.applyStrategy(
 		['a', 'b', 'c', 'd'], 'chunks', { maxPerGroup: 2 }
@@ -931,7 +931,7 @@ func TestPrSplit_ApplyStrategy_Chunks(t *testing.T) {
 
 func TestPrSplit_ApplyStrategy_UnknownDefaultsToDirectory(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.applyStrategy(
 		['cmd/main.go', 'internal/foo.go'], 'nonexistent-strategy', {}
@@ -947,7 +947,7 @@ func TestPrSplit_ApplyStrategy_UnknownDefaultsToDirectory(t *testing.T) {
 
 func TestPrSplit_ApplyStrategy_Auto(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`
 		(function() {
@@ -978,7 +978,7 @@ func TestPrSplit_ApplyStrategy_Auto(t *testing.T) {
 
 func TestPrSplit_ParseGoImports_SingleImport(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.parseGoImports(
 		'package main\n\nimport "fmt"\n\nfunc main() {}\n'
@@ -997,7 +997,7 @@ func TestPrSplit_ParseGoImports_SingleImport(t *testing.T) {
 
 func TestPrSplit_ParseGoImports_BlockImport(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.parseGoImports(
 		'package main\n\nimport (\n\t"fmt"\n\t"os"\n\tlog "log"\n)\n\nfunc main() {}\n'
@@ -1016,7 +1016,7 @@ func TestPrSplit_ParseGoImports_BlockImport(t *testing.T) {
 
 func TestPrSplit_ParseGoImports_StopsAtFunc(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Import-like string inside a func body should NOT be parsed.
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.parseGoImports(
@@ -1036,7 +1036,7 @@ func TestPrSplit_ParseGoImports_StopsAtFunc(t *testing.T) {
 
 func TestPrSplit_ParseGoImports_NoImports(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.parseGoImports(
 		'package main\n\nfunc main() {}\n'
@@ -1059,7 +1059,7 @@ func TestPrSplit_ParseGoImports_NoImports(t *testing.T) {
 
 func TestPrSplit_GroupByDependency_GoPackageGrouping(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDependency(
 		['internal/foo/foo.go', 'internal/foo/foo_test.go', 'internal/bar/bar.go'],
@@ -1082,7 +1082,7 @@ func TestPrSplit_GroupByDependency_GoPackageGrouping(t *testing.T) {
 
 func TestPrSplit_GroupByDependency_NonGoFallback(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// No .go files → falls back to groupByDirectory.
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDependency(

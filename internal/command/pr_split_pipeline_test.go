@@ -90,7 +90,7 @@ func parseClaudeResolveResult(t *testing.T, raw interface{}) claudeResolveResult
 func TestValidatePlan(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	tests := []struct {
 		name       string
@@ -200,7 +200,7 @@ func TestValidatePlan(t *testing.T) {
 func TestResolveConflicts(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Install exec mock.
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
@@ -218,7 +218,7 @@ func TestResolveConflicts(t *testing.T) {
 			setup: `
 				var plan = {splits: [{name: "s1", files: ["a.go"]}]};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.resolveConflicts(plan, {verifyCommand: ''}))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.resolveConflicts(plan, {verifyCommand: ''}))`,
 			check: func(t *testing.T, r resolveConflictsResult) {
 				if r.Skipped == "" {
 					t.Error("expected skipped message when no verify command")
@@ -233,7 +233,7 @@ func TestResolveConflicts(t *testing.T) {
 			setup: `
 				var plan = {splits: [{name: "s1", files: ["a.go"]}]};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.resolveConflicts(plan, {verifyCommand: 'true'}))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.resolveConflicts(plan, {verifyCommand: 'true'}))`,
 			check: func(t *testing.T, r resolveConflictsResult) {
 				if r.Skipped == "" {
 					t.Error("expected skipped message for 'true' verify command")
@@ -246,7 +246,7 @@ func TestResolveConflicts(t *testing.T) {
 				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitFail('not a repo');
 				var plan = {splits: [{name: "s1", files: ["a.go"]}]};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.resolveConflicts(plan, {verifyCommand: 'make test'}))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.resolveConflicts(plan, {verifyCommand: 'make test'}))`,
 			check: func(t *testing.T, r resolveConflictsResult) {
 				if len(r.Errors) == 0 {
 					t.Error("expected error when branch detection fails")
@@ -271,7 +271,7 @@ func TestResolveConflicts(t *testing.T) {
 				globalThis._gitResponses['!sh'] = _gitOk('all tests pass');
 				var plan = {splits: [{name: "s1", files: ["a.go"]}, {name: "s2", files: ["b.go"]}]};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.resolveConflicts(plan, {verifyCommand: 'make test'}))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.resolveConflicts(plan, {verifyCommand: 'make test'}))`,
 			check: func(t *testing.T, r resolveConflictsResult) {
 				if len(r.Fixed) != 0 {
 					t.Errorf("expected no fixes when all pass, got %d", len(r.Fixed))
@@ -297,7 +297,7 @@ func TestResolveConflicts(t *testing.T) {
 				globalThis._gitResponses['!sh'] = _gitOk('ok');
 				var plan = {splits: [{name: "s1", files: ["a.go"]}, {name: "s2", files: ["b.go"]}]};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.resolveConflicts(plan, {verifyCommand: 'make test'}))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.resolveConflicts(plan, {verifyCommand: 'make test'}))`,
 			check: func(t *testing.T, r resolveConflictsResult) {
 				if len(r.Errors) == 0 {
 					t.Error("expected error for checkout failure")
@@ -325,7 +325,7 @@ func TestResolveConflicts(t *testing.T) {
 				// Use empty strategies so no auto-fix is attempted.
 				var plan = {splits: [{name: "s1", files: ["a.go", "b.go"]}]};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.resolveConflicts(plan, {verifyCommand: 'make test', strategies: []}))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.resolveConflicts(plan, {verifyCommand: 'make test', strategies: []}))`,
 			check: func(t *testing.T, r resolveConflictsResult) {
 				if !r.ReSplitNeeded {
 					t.Error("expected reSplitNeeded=true")
@@ -360,7 +360,7 @@ func TestResolveConflicts(t *testing.T) {
 
 				var plan = {splits: [{name: "s1", files: ["a.go"]}]};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.resolveConflicts(plan, {verifyCommand: 'make test', strategies: [myStrategy]}))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.resolveConflicts(plan, {verifyCommand: 'make test', strategies: [myStrategy]}))`,
 			check: func(t *testing.T, r resolveConflictsResult) {
 				if len(r.Fixed) != 1 {
 					t.Fatalf("expected 1 fix, got %d", len(r.Fixed))
@@ -401,7 +401,7 @@ func TestResolveConflicts(t *testing.T) {
 					{name: "s3", files: ["c.go"]}
 				]};
 			`,
-			invoke: `JSON.stringify(globalThis.prSplit.resolveConflicts(plan, {verifyCommand: 'make test', strategies: [failStrategy], retryBudget: 2}))`,
+			invoke: `JSON.stringify(await globalThis.prSplit.resolveConflicts(plan, {verifyCommand: 'make test', strategies: [failStrategy], retryBudget: 2}))`,
 			check: func(t *testing.T, r resolveConflictsResult) {
 				if r.TotalRetries > 2 {
 					t.Errorf("retries should be capped at budget=2, got %d", r.TotalRetries)
@@ -457,7 +457,7 @@ func jsStringLiteral(s string) string {
 func TestClaudeCodeExecutor_Resolve(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Install exec mock.
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
@@ -645,7 +645,7 @@ func TestClaudeCodeExecutor_Resolve(t *testing.T) {
 func TestShellQuote(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// shellQuote is a top-level function in pr_split_script.js (line 156),
 	// directly callable in the Goja VM scope after loadPrSplitEngineWithEval.
@@ -688,7 +688,7 @@ func TestShellQuote(t *testing.T) {
 
 func TestResolveConflicts_NullPlan(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	tests := []struct {
 		name string
@@ -701,7 +701,7 @@ func TestResolveConflicts_NullPlan(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			raw, err := evalJS(`JSON.stringify(globalThis.prSplit.resolveConflicts(` + tt.expr + `, {verifyCommand: 'make test'}))`)
+			raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.resolveConflicts(` + tt.expr + `, {verifyCommand: 'make test'}))`)
 			if err != nil {
 				t.Fatalf("evalJS failed: %v", err)
 			}

@@ -19,7 +19,7 @@ import (
 func TestIsCancelled_NoTUI(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Without autoSplitTUI defined, isCancelled should return false.
 	val, err := evalJS(`globalThis.prSplit.isCancelled()`)
@@ -34,7 +34,7 @@ func TestIsCancelled_NoTUI(t *testing.T) {
 func TestIsCancelled_TUINotCancelled(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Define autoSplitTUI with cancelled returning false.
 	_, err := evalJS(`globalThis.autoSplitTUI = { cancelled: function() { return false; } }`)
@@ -54,7 +54,7 @@ func TestIsCancelled_TUINotCancelled(t *testing.T) {
 func TestIsCancelled_TUICancelled(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Define autoSplitTUI with cancelled returning true.
 	_, err := evalJS(`globalThis.autoSplitTUI = { cancelled: function() { return true; } }`)
@@ -74,7 +74,7 @@ func TestIsCancelled_TUICancelled(t *testing.T) {
 func TestIsCancelled_TUIWithoutCancelledMethod(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Define autoSplitTUI without cancelled function.
 	_, err := evalJS(`globalThis.autoSplitTUI = { someOtherMethod: function() {} }`)
@@ -98,7 +98,7 @@ func TestIsCancelled_TUIWithoutCancelledMethod(t *testing.T) {
 func TestRenderClassificationPrompt_BasicGo(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.renderClassificationPrompt(
 		{
@@ -160,7 +160,7 @@ func TestRenderClassificationPrompt_BasicGo(t *testing.T) {
 func TestRenderClassificationPrompt_EmptyFiles(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.renderClassificationPrompt(
 		{ baseBranch: 'main', files: [], fileStatuses: {} },
@@ -194,7 +194,7 @@ func TestRenderClassificationPrompt_EmptyFiles(t *testing.T) {
 func TestRenderSplitPlanPrompt_Basic(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.renderSplitPlanPrompt(
 		{ 'internal/foo/foo.go': 'infrastructure', 'internal/bar/bar.go': 'feature' },
@@ -226,7 +226,7 @@ func TestRenderSplitPlanPrompt_Basic(t *testing.T) {
 func TestRenderSplitPlanPrompt_DefaultConfig(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.renderSplitPlanPrompt(
 		{ 'a.go': 'core' },
@@ -259,7 +259,7 @@ func TestRenderSplitPlanPrompt_DefaultConfig(t *testing.T) {
 func TestRenderConflictPrompt_Basic(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.renderConflictPrompt({
 		branchName: 'split/01-infrastructure',
@@ -301,7 +301,7 @@ func TestRenderConflictPrompt_Basic(t *testing.T) {
 func TestRenderConflictPrompt_MinimalInput(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.renderConflictPrompt({}))`)
 	if err != nil {
@@ -334,12 +334,12 @@ func TestHeuristicFallback_DirectoryStrategy(t *testing.T) {
 
 	// dryRun: true avoids any git operations — heuristicFallback only
 	// builds groups+plan and returns immediately.
-	_, _, evalJS := loadPrSplitEngineWithEval(t, map[string]interface{}{
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]interface{}{
 		"dryRun": true,
 	})
 
 	val, err := evalJS(`
-		(function() {
+		(async function() {
 			var analysis = {
 				baseBranch: 'main',
 				currentBranch: 'feature',
@@ -355,7 +355,7 @@ func TestHeuristicFallback_DirectoryStrategy(t *testing.T) {
 				}
 			};
 			var report = { plan: null, splits: [], error: null };
-			var result = globalThis.prSplit.heuristicFallback(analysis, {
+			var result = await globalThis.prSplit.heuristicFallback(analysis, {
 				strategy: 'directory'
 			}, report);
 

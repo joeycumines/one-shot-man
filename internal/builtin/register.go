@@ -32,7 +32,6 @@ import (
 	osmod "github.com/joeycumines/one-shot-man/internal/builtin/os"
 	pabtmod "github.com/joeycumines/one-shot-man/internal/builtin/pabt"
 	pathmod "github.com/joeycumines/one-shot-man/internal/builtin/path"
-	ptymod "github.com/joeycumines/one-shot-man/internal/builtin/pty"
 	regexpmod "github.com/joeycumines/one-shot-man/internal/builtin/regexp"
 	templatemod "github.com/joeycumines/one-shot-man/internal/builtin/template"
 	scrollbarmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/scrollbar"
@@ -127,7 +126,6 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"claudemux", claudemuxmod.Require(ctx))
 	registry.RegisterNativeModule(prefix+"os", osmod.Require(ctx, tuiSink))
 	registry.RegisterNativeModule(prefix+"path", pathmod.Require)
-	registry.RegisterNativeModule(prefix+"pty", ptymod.Require(ctx))
 	registry.RegisterNativeModule(prefix+"regexp", regexpmod.Require)
 	registry.RegisterNativeModule(prefix+"time", timemod.Require)
 	registry.RegisterNativeModule(prefix+"ctxutil", ctxutils.Require(ctx))

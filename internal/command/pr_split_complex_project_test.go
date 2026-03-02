@@ -59,7 +59,7 @@ func TestIntegration_ComplexGoProject_HeuristicSplit(t *testing.T) {
 		t.Fatalf("expected feature branch, got %q", branch)
 	}
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, map[string]interface{}{
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]interface{}{
 		"baseBranch":    "main",
 		"strategy":      "directory-deep",
 		"maxFiles":      20,
@@ -310,7 +310,7 @@ func TestIntegration_AutoSplitComplexGoProject(t *testing.T) {
 		configOverrides["claudeModel"] = integrationModel
 	}
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, configOverrides)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, configOverrides)
 
 	// Inject autoSplitTUI mock for headless CI/terminal execution.
 	_, err := evalJS(`
@@ -337,7 +337,7 @@ func TestIntegration_AutoSplitComplexGoProject(t *testing.T) {
 	// Run the full auto-split pipeline with AI classification.
 	t.Log("Starting auto-split pipeline with real AI agent...")
 	t.Logf("Claude command: %s %v", claudeTestCommand, claudeArgsList)
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.automatedSplit({
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.automatedSplit({
 		baseBranch: 'main',
 		dir: ` + jsString(repoDir) + `,
 		strategy: 'directory'

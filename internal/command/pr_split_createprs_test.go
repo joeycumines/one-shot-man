@@ -164,7 +164,7 @@ type createPREntry struct {
 func TestCreatePRs_EmptySplits(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// No mock needed — createPRs short-circuits before exec calls.
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs({splits: []}))`)
@@ -183,7 +183,7 @@ func TestCreatePRs_EmptySplits(t *testing.T) {
 func TestCreatePRs_NilSplits(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs({}))`)
 	if err != nil {
@@ -198,7 +198,7 @@ func TestCreatePRs_NilSplits(t *testing.T) {
 func TestCreatePRs_GhCLINotFound(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(execMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -228,7 +228,7 @@ func TestCreatePRs_GhCLINotFound(t *testing.T) {
 func TestCreatePRs_PushOnlyMode(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(execMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -275,7 +275,7 @@ func TestCreatePRs_PushOnlyMode(t *testing.T) {
 func TestCreatePRs_NormalFlow_StackedPRs(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(execMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -380,7 +380,7 @@ func TestCreatePRs_NormalFlow_StackedPRs(t *testing.T) {
 func TestCreatePRs_NonDraftMode(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(execMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -418,7 +418,7 @@ func TestCreatePRs_NonDraftMode(t *testing.T) {
 func TestCreatePRs_CustomRemote(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(execMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -455,7 +455,7 @@ func TestCreatePRs_CustomRemote(t *testing.T) {
 func TestCreatePRs_PushFailure(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(execMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -502,7 +502,7 @@ func TestCreatePRs_PushFailure(t *testing.T) {
 func TestCreatePRs_GhPrCreateFailure_ContinuesOtherPRs(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(execMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -548,7 +548,7 @@ func TestCreatePRs_GhPrCreateFailure_ContinuesOtherPRs(t *testing.T) {
 func TestCreatePRs_AutoMerge(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(execMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -599,7 +599,7 @@ func TestCreatePRs_AutoMerge(t *testing.T) {
 func TestCreatePRs_AutoMerge_CustomMethod(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(execMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -639,7 +639,7 @@ func TestCreatePRs_AutoMerge_CustomMethod(t *testing.T) {
 func TestCreatePRs_AutoMerge_SkipsFailedPRs(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(execMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -689,7 +689,7 @@ func TestCreatePRs_AutoMerge_SkipsFailedPRs(t *testing.T) {
 func TestCreatePRs_AutoMerge_Failure(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(execMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -726,7 +726,7 @@ func TestCreatePRs_AutoMerge_Failure(t *testing.T) {
 func TestCreatePRs_PushOnlySkipsGhVersionCheck(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(execMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -754,7 +754,7 @@ func TestCreatePRs_PushOnlySkipsGhVersionCheck(t *testing.T) {
 func TestCreatePRs_SingleSplit(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(execMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -814,7 +814,7 @@ func TestCreatePRs_SingleSplit(t *testing.T) {
 func TestCreatePRs_OptionsDefaults(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(execMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -852,7 +852,7 @@ func TestCreatePRs_OptionsDefaults(t *testing.T) {
 func TestCreatePRs_PushForceFlag(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(execMockSetupJS()); err != nil {
 		t.Fatal(err)

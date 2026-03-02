@@ -10,7 +10,7 @@
 3. [Two-Channel Architecture](#3-two-channel-architecture)
 4. [Full Invocation Path](#4-full-invocation-path)
 5. [Module Reference](#5-module-reference)
-   - [osm:pty](#51-osmpty)
+   - [PTY Package](#51-pty-package-internalbuiltinpty)
    - [osm:claudemux](#52-osmclaudemux)
    - [BT Templates](#53-bt-templates)
    - [PR Splitting Workflow](#54-pr-splitting-workflow)
@@ -38,7 +38,7 @@ structured MCP feedback channels.
 ### What Claude-Mux provides
 
 - **PTY channel** — Spawn processes in pseudo-terminals for launch sequencing and
-  session lifecycle monitoring (`osm:pty`).
+  session lifecycle monitoring (`internal/builtin/pty`).
 - **MCP channel** — Structured bidirectional data exchange: progress reports, results,
   guidance requests, errors (`osm:claudemux` + extended `osm:mcp`).
 - **Output classification** — Parse agent terminal output into typed events: rate
@@ -216,33 +216,15 @@ Claude Code processes task
 
 ## 5. Module Reference
 
-### 5.1. `osm:pty`
+### 5.1. PTY Package (`internal/builtin/pty`)
 
 **Package:** `internal/builtin/pty`
 **Platform:** Unix complete (macOS + Linux). Windows: `ErrNotSupported` (ConPTY planned).
 
 Spawns processes in pseudo-terminals with full bidirectional I/O, window resizing,
-and signal delivery.
-
-#### JavaScript API
-
-```javascript
-var pty = require('osm:pty');
-
-var proc = pty.spawn('bash', ['-l'], {
-    rows: 24, cols: 80,
-    dir: '/path/to/project',
-    env: { TERM: 'xterm-256color' }
-});
-
-proc.write('echo hello\n');
-var output = proc.read();          // "" on no available data, up to 4096 bytes
-proc.resize(48, 120);
-proc.signal('SIGINT');             // 'SIGTERM', 'SIGKILL', etc.
-
-var result = proc.wait();          // { code: 0, error: null }
-proc.close();                      // SIGTERM → 5s wait → SIGKILL. Idempotent.
-```
+and signal delivery. Used internally by `osm:claudemux` for Claude Code process
+management. The JavaScript module `osm:pty` was removed (unused dead code); the
+Go package remains the authoritative PTY interface.
 
 #### Go API
 
@@ -720,7 +702,7 @@ Each Claude Code instance gets fully isolated state:
 
 | Component | macOS | Linux | Windows |
 |-----------|-------|-------|---------|
-| `osm:pty` spawn/read/write/resize/signal | ✅ | ✅ | ⬜ ErrNotSupported |
+| PTY spawn/read/write/resize/signal | ✅ | ✅ | ⬜ ErrNotSupported |
 | `osm:claudemux` parser | ✅ | ✅ | ✅ |
 | `osm:claudemux` provider/registry | ✅ | ✅ | ✅ |
 | `osm:claudemux` Claude Code provider | ✅ | ✅ | ⬜ (needs PTY) |

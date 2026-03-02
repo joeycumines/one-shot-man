@@ -209,7 +209,7 @@ func parseVerifySplitsResult(t *testing.T, raw interface{}) verifySplitsResult {
 
 func TestAnalyzeDiff_EdgeCases(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
 		t.Fatalf("failed to install git mock: %v", err)
@@ -447,7 +447,7 @@ func TestAnalyzeDiff_EdgeCases(t *testing.T) {
 
 func TestVerifyEquivalence_EdgeCases(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
 		t.Fatalf("failed to install git mock: %v", err)
@@ -620,7 +620,7 @@ func TestVerifyEquivalence_EdgeCases(t *testing.T) {
 
 func TestVerifyEquivalenceDetailed_EdgeCases(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
 		t.Fatalf("failed to install git mock: %v", err)
@@ -759,7 +759,7 @@ func TestVerifyEquivalenceDetailed_EdgeCases(t *testing.T) {
 
 func TestExecuteSplit_ValidationErrors(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
 		t.Fatalf("failed to install git mock: %v", err)
@@ -910,7 +910,7 @@ func TestExecuteSplit_ValidationErrors(t *testing.T) {
 
 func TestVerifySplits_MockExec(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
 		t.Fatalf("failed to install git mock: %v", err)
@@ -1059,7 +1059,7 @@ func TestVerifySplits_MockExec(t *testing.T) {
 
 func TestVerifySplits_NullPlan(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	tests := []struct {
 		name string
@@ -1090,7 +1090,7 @@ func TestVerifySplits_NullPlan(t *testing.T) {
 
 func TestVerifyEquivalence_NullPlan(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	tests := []struct {
 		name string
@@ -1119,7 +1119,7 @@ func TestVerifyEquivalence_NullPlan(t *testing.T) {
 
 func TestVerifyEquivalenceDetailed_NullPlan(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	tests := []struct {
 		name string
@@ -1155,7 +1155,7 @@ func TestVerifyEquivalenceDetailed_NullPlan(t *testing.T) {
 
 func TestVerifySplits_SkipsDependencyFailures(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
 		t.Fatalf("failed to install git mock: %v", err)
@@ -1272,7 +1272,7 @@ func TestVerifySplits_SkipsDependencyFailures(t *testing.T) {
 
 func TestVerifySplits_PerBranchTimeout(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
 		t.Fatalf("failed to install git mock: %v", err)
@@ -1406,7 +1406,7 @@ func TestVerifySplits_FailedBranch_AllPassedFalse(t *testing.T) {
 	// This test documents the bug: verifySplits correctly returns allPassed=false
 	// on failure, but the step() wrapper in automatedSplit discards this signal.
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
 		t.Fatalf("failed to install git mock: %v", err)
@@ -1477,7 +1477,7 @@ func TestVerifySplits_FailedBranch_AllPassedFalse(t *testing.T) {
 // {error: null, allPassed: false} and marked the step as "OK" in reports.
 func TestVerifyStepReportsErrorOnFailure(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
 		t.Fatalf("failed to install git mock: %v", err)
@@ -1591,7 +1591,7 @@ func TestVerifyStepReportsErrorOnFailure(t *testing.T) {
 // when all branches pass — the T15 fix only sets error on actual failures.
 func TestVerifyStepNoErrorWhenAllPass(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
 		t.Fatalf("failed to install git mock: %v", err)
@@ -1662,7 +1662,7 @@ func TestVerifyStepNoErrorWhenAllPass(t *testing.T) {
 
 func TestValidateClassification(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	type valResult struct {
 		Valid  bool     `json:"valid"`
@@ -1782,7 +1782,7 @@ func TestValidateClassification(t *testing.T) {
 
 func TestValidateSplitPlan(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	type valResult struct {
 		Valid  bool     `json:"valid"`
@@ -1879,7 +1879,7 @@ func TestValidateSplitPlan(t *testing.T) {
 
 func TestValidateResolution(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	type valResult struct {
 		Valid  bool     `json:"valid"`
@@ -1985,7 +1985,7 @@ func TestValidateResolution(t *testing.T) {
 
 func TestDiscoverVerifyCommand(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
 		t.Fatalf("failed to install git mock: %v", err)
@@ -2078,7 +2078,7 @@ func TestDiscoverVerifyCommand(t *testing.T) {
 
 func TestVerifySplits_PreExistingFailure(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
 		t.Fatalf("failed to install git mock: %v", err)
@@ -2233,7 +2233,7 @@ func TestVerifySplits_PreExistingFailure(t *testing.T) {
 
 func TestScopedVerifyCommand(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	t.Run("go_files_scoped", func(t *testing.T) {
 		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(

@@ -42,7 +42,6 @@ func TestRegister(t *testing.T) {
 		"osm:claudemux",
 		"osm:os",
 		"osm:path",
-		"osm:pty",
 		"osm:regexp",
 		"osm:time",
 		"osm:ctxutil",

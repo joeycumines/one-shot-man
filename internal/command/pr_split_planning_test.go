@@ -21,7 +21,7 @@ import (
 func TestParseGoImports(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	tests := []struct {
 		name    string
@@ -139,7 +139,7 @@ func parseGroupResult(t *testing.T, raw interface{}) groupResult {
 func TestGroupByDependency(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Install exec mock.
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
@@ -460,7 +460,7 @@ func parseSelectStrategyResult(t *testing.T, raw interface{}) selectStrategyResu
 func TestSelectStrategy(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Install exec mock for groupByDependency's cat/go.mod reads.
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
@@ -658,7 +658,7 @@ func parseCreateSplitPlanResult(t *testing.T, raw interface{}) createSplitPlanRe
 func TestCreateSplitPlan(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Install exec mock for rev-parse.
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
@@ -818,7 +818,7 @@ func TestCreateSplitPlan(t *testing.T) {
 
 func TestCreateSplitPlan_EmptyAndNullGroups(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -896,7 +896,7 @@ func TestCreateSplitPlan_EmptyAndNullGroups(t *testing.T) {
 func TestCreateSplitPlan_DependencyField(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -977,7 +977,7 @@ func parseSavePlanResult(t *testing.T, raw interface{}) savePlanResult {
 func TestSavePlan(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	tests := []struct {
 		name   string
@@ -1127,7 +1127,7 @@ func parseLoadPlanResult(t *testing.T, raw interface{}) loadPlanResult {
 func TestLoadPlan(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	tests := []struct {
 		name   string

@@ -177,7 +177,7 @@ Command `osm` is a scripting engine.
 
 - **Powered by Goja:** An embedded JavaScript runtime powers the core workflows.
 - **Native Bindings:** Includes native bindings for **Go Prompt** (Shell TUI), **Bubble Tea** (Arbitrary TUI), **Lipgloss** (styling), and the system clipboard.
-- **Native Modules:** `osm:fetch` (browser-compatible Fetch API with AbortController), `osm:grpc` (Promise-based gRPC), `osm:exec` (child processes), `osm:os` (filesystem), `osm:pty` (terminal), `osm:bt` (behavior trees), `osm:pabt` (planning acting).
+- **Native Modules:** `osm:fetch` (browser-compatible Fetch API with AbortController), `osm:grpc` (Promise-based gRPC), `osm:exec` (child processes), `osm:os` (filesystem), `osm:bt` (behavior trees), `osm:pabt` (planning acting).
 - **Customizable:** You can write your own interactive workflows in JavaScript that run natively in `osm`. The built-in commands (`code-review`, `goal`, etc) are actually scripts that you can inspect and modify.
 
 ### MCP Server

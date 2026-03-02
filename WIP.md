@@ -1,27 +1,29 @@
-# WIP: Test File Split + Async Rearchitecture — MAKE ALL GREEN ✅
+# WIP: T04a+T21-T26 Committed — Async sendToHandle, Error Feedback, osm:pty Removal
 
-## Status: COMPLETE — `make make-all-with-log` passes (exit code 0)
+## Status: COMMITTED ✅ — Rule of Two PASSED
 
-### Changes Made This Session:
+### Committed Changes (T04a + T21-T26):
 
-1. **dispatchAwaitPromise() helper** — New function dispatches TUI commands
-   by directly calling the handler (bypassing ExecuteCommand which discards
-   Promise returns), then chains .then/.catch on the returned Promise.
-   Includes fallback for `func(goja.FunctionCall) goja.Value` handlers via
-   `goja.AssertFunction(vm.ToValue(handler))`.
+1. **T04a (async sendToHandle)** — sendToHandle converted to async function.
+   10ms delay between text/newline via `await new Promise(resolve => setTimeout(resolve, 10))`.
+   All callers (resolveConflicts, automatedSplit, heuristicFallback, resolveConflictsWithClaude,
+   step(), claude-fix strategy, command handlers) converted to async/await.
+   SEND_TEXT_NEWLINE_DELAY_MS constant added.
 
-2. **evalJS rewrite** — Two-path approach:
-   - If JS contains `await ` → async IIFE wrapping (all await calls are exprs)
-   - If no `await ` → direct `vm.RunString(js)` (handles stmts AND exprs)
-   - Both paths detect Promise results and chain .then/.catch
+2. **T21 (Already implemented)** — finishTUI already emits resume instructions.
 
-3. **evalJSAsync** — Same two-path approach for consistency.
+3. **T22 (Test written)** — TestAutoSplit_ErrorFeedback_ResumeInstructions.
 
-4. **Test file split** — pr_split_test.go from 10,645 → ~650 lines + 12 new files.
+4. **T24 (Comments fixed)** — Stale sendToHandle comment block corrected.
 
-5. **Await fix** — TestPrSplitCommand_ClaudeFixFixWithoutExecutor: async fix().
+5. **T25 (osm:pty JS removed)** — module.go deleted, register.go updated, 7 tests removed,
+   docs updated.
 
 ### Next Steps:
-1. Rule of Two verification
-2. Update blueprint.json
-3. Continue T04a-T31
+1. T27: Real AI integration test — check `which ollama`, `which claude`
+2. T28: Cross-platform validation: Windows
+3. T29: Documentation: developer guide for pr-split integration tests
+4. T30: Final validation suite
+5. T31: Indefinite cycle expansion
+6. T04b: Real E2E test with Claude
+7. T04c: Windows verification

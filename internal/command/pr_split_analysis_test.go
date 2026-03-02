@@ -22,7 +22,7 @@ import (
 func TestDetectLanguage(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	tests := []struct {
 		name   string
@@ -130,7 +130,7 @@ func TestDetectLanguage(t *testing.T) {
 func TestDetectGoModulePath(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	tests := []struct {
 		name  string
@@ -245,7 +245,7 @@ type classGroupResult map[string]classGroupEntry
 func TestClassificationToGroups(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	tests := []struct {
 		name   string
@@ -414,7 +414,7 @@ func parseDiffAnalysisResult(t *testing.T, raw interface{}) diffAnalysisResult {
 func TestAnalyzeDiff(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Install exec mock.
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
@@ -655,7 +655,7 @@ type independencePair [2]string
 func TestAssessIndependence(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Install exec mock for cat reads in Go import analysis.
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
@@ -833,7 +833,7 @@ func TestAssessIndependence(t *testing.T) {
 
 func TestBuildDependencyGraph_IndependentSplits(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.buildDependencyGraph({
 		splits: [
@@ -868,7 +868,7 @@ func TestBuildDependencyGraph_IndependentSplits(t *testing.T) {
 
 func TestBuildDependencyGraph_DependentSplits(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.buildDependencyGraph({
 		splits: [
@@ -908,7 +908,7 @@ func TestBuildDependencyGraph_DependentSplits(t *testing.T) {
 
 func TestBuildDependencyGraph_NilPlan(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.buildDependencyGraph(null, null))`)
 	if err != nil {
@@ -933,7 +933,7 @@ func TestBuildDependencyGraph_NilPlan(t *testing.T) {
 
 func TestRenderAsciiGraph_EmptyGraph(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`globalThis.prSplit.renderAsciiGraph({nodes: [], edges: []})`)
 	if err != nil {
@@ -947,7 +947,7 @@ func TestRenderAsciiGraph_EmptyGraph(t *testing.T) {
 
 func TestRenderAsciiGraph_AllIndependent(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`globalThis.prSplit.renderAsciiGraph({
 		nodes: [{name: 'split/01-cmd', index: 0}, {name: 'split/02-docs', index: 1}],
@@ -973,7 +973,7 @@ func TestRenderAsciiGraph_AllIndependent(t *testing.T) {
 
 func TestRenderAsciiGraph_WithDeps(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`globalThis.prSplit.renderAsciiGraph({
 		nodes: [
@@ -1011,7 +1011,7 @@ func TestRenderAsciiGraph_WithDeps(t *testing.T) {
 
 func TestAnalyzeRetrospective_BalancedPlan(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.analyzeRetrospective(
 		{splits: [
@@ -1039,7 +1039,7 @@ func TestAnalyzeRetrospective_BalancedPlan(t *testing.T) {
 
 func TestAnalyzeRetrospective_Imbalanced(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.analyzeRetrospective(
 		{splits: [
@@ -1077,7 +1077,7 @@ func TestAnalyzeRetrospective_Imbalanced(t *testing.T) {
 
 func TestAnalyzeRetrospective_FailedSplits(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.analyzeRetrospective(
 		{splits: [
@@ -1114,7 +1114,7 @@ func TestAnalyzeRetrospective_FailedSplits(t *testing.T) {
 
 func TestAnalyzeRetrospective_NilPlan(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.analyzeRetrospective(null, null, null))`)
 	if err != nil {
@@ -1138,7 +1138,7 @@ func TestAnalyzeRetrospective_NilPlan(t *testing.T) {
 
 func TestAnalyzeRetrospective_NotEquivalent(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.analyzeRetrospective(
 		{splits: [
@@ -1183,7 +1183,7 @@ func TestAnalyzeRetrospective_NotEquivalent(t *testing.T) {
 
 func TestRecordTelemetry_Increment(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(`
 		globalThis.prSplit.recordTelemetry('filesAnalyzed', 10);
@@ -1212,7 +1212,7 @@ func TestRecordTelemetry_Increment(t *testing.T) {
 
 func TestRecordTelemetry_SetString(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(`
 		globalThis.prSplit.recordTelemetry('strategy', 'directory');
@@ -1236,7 +1236,7 @@ func TestRecordTelemetry_SetString(t *testing.T) {
 
 func TestGetTelemetrySummary_HasEndTime(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.getTelemetrySummary())`)
 	if err != nil {
@@ -1261,7 +1261,7 @@ func TestGetTelemetrySummary_HasEndTime(t *testing.T) {
 
 func TestConversationHistory_RecordAndRetrieve(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(`
 		globalThis.prSplit.recordConversation('classification', 'classify these', 'group A');
@@ -1299,7 +1299,7 @@ func TestConversationHistory_RecordAndRetrieve(t *testing.T) {
 
 func TestConversationHistory_EmptyByDefault(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.getConversationHistory())`)
 	if err != nil {
@@ -1317,7 +1317,7 @@ func TestConversationHistory_EmptyByDefault(t *testing.T) {
 
 func TestExtractDirs_Basic(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit._extractDirs([
 		'internal/command/foo.go',
@@ -1351,7 +1351,7 @@ func TestExtractDirs_Basic(t *testing.T) {
 
 func TestExtractDirs_NilInput(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit._extractDirs(null))`)
 	if err != nil {
@@ -1368,7 +1368,7 @@ func TestExtractDirs_NilInput(t *testing.T) {
 
 func TestSaveTelemetry_Success(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Install exec mock and osmod.writeFile mock.
 	if _, err := evalJS(execMockSetupJS()); err != nil {
@@ -1428,7 +1428,7 @@ func TestSaveTelemetry_Success(t *testing.T) {
 
 func TestSaveTelemetry_MkdirFails(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(execMockSetupJS()); err != nil {
 		t.Fatal(err)

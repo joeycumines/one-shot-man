@@ -43,7 +43,7 @@ func TestIntegration_HeuristicSplitEndToEnd(t *testing.T) {
 	}
 
 	// Set up the pr-split JS engine pointing at our temp repo.
-	_, _, evalJS := loadPrSplitEngineWithEval(t, map[string]interface{}{
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]interface{}{
 		"baseBranch":    "main",
 		"strategy":      "directory",
 		"maxFiles":      10,
@@ -250,7 +250,7 @@ func TestIntegration_ExecuteSplit_WorktreeConflict(t *testing.T) {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Create a git repo with main branch.
 	dir := t.TempDir()
@@ -346,7 +346,7 @@ func TestIntegration_AutoSplitCancel(t *testing.T) {
 	repoDir := initIntegrationRepo(t)
 	addIntegrationFeatureFiles(t, repoDir)
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, map[string]interface{}{
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]interface{}{
 		"baseBranch":    "main",
 		"strategy":      "directory",
 		"branchPrefix":  "split/",
@@ -377,7 +377,7 @@ func TestIntegration_AutoSplitCancel(t *testing.T) {
 
 	// Run auto-split — it should detect cancellation at the first step
 	// boundary and return immediately.
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.automatedSplit({
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.automatedSplit({
 		baseBranch: 'main',
 		dir: ` + jsString(repoDir) + `,
 		strategy: 'directory'
@@ -421,17 +421,17 @@ func TestIntegration_AutoSplitCancel(t *testing.T) {
 func TestIntegration_SendToHandle_FallbackDirect(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Ensure autoSplitTUI is not defined (default engine state).
 	raw, err := evalJS(`
-		(function() {
+		(async function() {
 			// sendToHandle uses two-write: text, then \n separately.
 			var sends = [];
 			var mockHandle = {
 				send: function(text) { sends.push(text); }
 			};
-			var result = globalThis.prSplit.sendToHandle(mockHandle, 'hello Claude');
+			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'hello Claude');
 			return JSON.stringify({ error: result.error, sends: sends });
 		})()
 	`)
@@ -467,11 +467,11 @@ func TestIntegration_SendToHandle_FallbackDirect(t *testing.T) {
 func TestIntegration_SendToHandle_FallbackError(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Two-write: error on first write (text) returns immediately, no newline attempt.
 	raw, err := evalJS(`
-		(function() {
+		(async function() {
 			var sendCount = 0;
 			var mockHandle = {
 				send: function(text) {
@@ -479,7 +479,7 @@ func TestIntegration_SendToHandle_FallbackError(t *testing.T) {
 					if (sendCount === 1) { throw new Error('PTY write failed'); }
 				}
 			};
-			var result = globalThis.prSplit.sendToHandle(mockHandle, 'will fail');
+			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'will fail');
 			return JSON.stringify({ error: result.error, sendCount: sendCount });
 		})()
 	`)
@@ -511,10 +511,10 @@ func TestIntegration_SendToHandle_FallbackError(t *testing.T) {
 func TestIntegration_SendToHandle_TUIPath(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	raw, err := evalJS(`
-		(function() {
+		(async function() {
 			// Define autoSplitTUI with sendWithCancel to trigger the TUI path.
 			var calls = [];
 			globalThis.autoSplitTUI = {
@@ -528,7 +528,7 @@ func TestIntegration_SendToHandle_TUIPath(t *testing.T) {
 				send: function(text) { calls.push({ directSend: text }); }
 			};
 
-			var result = globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
+			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
 
 			// Tear down to avoid leaking into other tests.
 			delete globalThis.autoSplitTUI;
@@ -578,10 +578,10 @@ func TestIntegration_SendToHandle_TUIPath(t *testing.T) {
 func TestIntegration_SendToHandle_TUIPath_FirstSendError(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	raw, err := evalJS(`
-		(function() {
+		(async function() {
 			var callCount = 0;
 			globalThis.autoSplitTUI = {
 				sendWithCancel: function(handle, text) {
@@ -594,7 +594,7 @@ func TestIntegration_SendToHandle_TUIPath_FirstSendError(t *testing.T) {
 			};
 
 			var mockHandle = { send: function() {} };
-			var result = globalThis.prSplit.sendToHandle(mockHandle, 'will cancel');
+			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'will cancel');
 
 			delete globalThis.autoSplitTUI;
 
@@ -629,7 +629,7 @@ func TestIntegration_SendToHandle_TUIPath_FirstSendError(t *testing.T) {
 func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Use t.TempDir() for mock paths to avoid host state mutation.
 	tmpDir := t.TempDir()
@@ -971,7 +971,7 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 func TestIntegration_SpawnHealthCheck_DeadProcess(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 	tmpDir := t.TempDir()
 	escapedTmpDir := strings.ReplaceAll(tmpDir, `\`, `\\`)
 	escapedTmpDir = strings.ReplaceAll(escapedTmpDir, `'`, `\'`)
@@ -1051,7 +1051,7 @@ func TestIntegration_SpawnHealthCheck_DeadProcess(t *testing.T) {
 func TestIntegration_SpawnHealthCheck_AliveProcess(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 	tmpDir := t.TempDir()
 	escapedTmpDir := strings.ReplaceAll(tmpDir, `\`, `\\`)
 	escapedTmpDir = strings.ReplaceAll(escapedTmpDir, `'`, `\'`)
@@ -1138,7 +1138,7 @@ func TestIntegration_SpawnHealthCheck_AliveProcess(t *testing.T) {
 func TestIntegration_IsAliveGuard_AutoSplitAttach(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Simulate the auto-split isAlive guard logic directly.
 	// This exercises the same conditional from automatedSplit() (~line 2405)
@@ -1200,7 +1200,7 @@ func TestIntegration_IsAliveGuard_AutoSplitAttach(t *testing.T) {
 func TestIntegration_IsAliveGuard_AutoSplitAttach_Alive(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	raw, err := evalJS(`
 		(function() {
@@ -1247,7 +1247,7 @@ func TestIntegration_IsAliveGuard_AutoSplitAttach_Alive(t *testing.T) {
 func TestIntegration_IsAliveGuard_MissingIsAlive(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	raw, err := evalJS(`
 		(function() {
@@ -1527,7 +1527,7 @@ func TestIntegration_AutoSplitWithClaude_Pipeline(t *testing.T) {
 		configOverrides["claudeModel"] = integrationModel
 	}
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, configOverrides)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, configOverrides)
 
 	// Inject autoSplitTUI mock — no real BubbleTea (no terminal in CI),
 	// but provides the interface the pipeline expects. sendWithCancel is
@@ -1556,7 +1556,7 @@ func TestIntegration_AutoSplitWithClaude_Pipeline(t *testing.T) {
 
 	// Run the full auto-split pipeline.
 	t.Log("Starting auto-split pipeline with real Claude agent...")
-	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.automatedSplit({
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.automatedSplit({
 		baseBranch: 'main',
 		dir: ` + jsString(repoDir) + `,
 		strategy: 'directory'
@@ -1924,7 +1924,7 @@ func runGit(t *testing.T, dir string, args ...string) string {
 func TestIntegration_CleanupExecutor_CloseBeforeDetach(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	raw, err := evalJS(`
 		(function() {
@@ -1990,7 +1990,7 @@ func TestIntegration_CleanupExecutor_CloseBeforeDetach(t *testing.T) {
 func TestIntegration_CleanupExecutor_ForceCancel(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	raw, err := evalJS(`
 		(function() {
@@ -2053,7 +2053,7 @@ func TestIntegration_CleanupExecutor_ForceCancel(t *testing.T) {
 func TestIntegration_CleanupExecutor_NilExecutor(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	raw, err := evalJS(`
 		(function() {

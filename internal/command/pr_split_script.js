@@ -2041,7 +2041,8 @@ var AUTO_FIX_STRATEGIES = [
         // The 5th parameter `options` carries dynamic timeouts:
         //   options.resolveTimeoutMs: per-poll timeout (from --timeout or AUTOMATED_DEFAULTS)
         //   options.pollIntervalMs: poll interval
-        fix: function(dir, failedBranch, plan, verifyOutput, options) {
+        // T04a: Made async for sendToHandle which uses setTimeout delay.
+        fix: async function(dir, failedBranch, plan, verifyOutput, options) {
             if (!claudeExecutor || !claudeExecutor.handle) {
                 return { fixed: false, error: 'Claude executor not available' };
             }
@@ -2060,7 +2061,8 @@ var AUTO_FIX_STRATEGIES = [
             if (promptResult.error) {
                 return { fixed: false, error: 'render conflict prompt failed: ' + promptResult.error };
             }
-            var sendResult = sendToHandle(claudeExecutor.handle, promptResult.text);
+            // T04a: await async sendToHandle
+            var sendResult = await sendToHandle(claudeExecutor.handle, promptResult.text);
             if (sendResult.error) {
                 return { fixed: false, error: 'failed to send to Claude: ' + sendResult.error };
             }
@@ -2123,7 +2125,8 @@ var AUTO_FIX_STRATEGIES = [
 //   retryBudget: max total fix attempts across all branches (default: runtime.retryBudget || 3)
 //   verifyCommand: override verify command
 //   strategies: override strategy list (default: AUTO_FIX_STRATEGIES)
-function resolveConflicts(plan, options) {
+// T04a: Made async because claude-fix strategy uses async sendToHandle.
+async function resolveConflicts(plan, options) {
     if (!plan || !plan.splits) {
         return { fixed: [], errors: [{ name: '(plan)', error: 'invalid plan: missing splits' }], reSplitNeeded: false, totalRetries: 0, reSplitFiles: [], reSplitReason: '' };
     }
@@ -2246,7 +2249,8 @@ function resolveConflicts(plan, options) {
                 totalRetries++;
                 branchRetries[split.name]++;
                 madeProgress = true;
-                var fixResult = strategy.fix(dir, split.name, plan, verifyOutput, strategyOptions);
+                // T04a: await - strategy.fix may be async (claude-fix uses async sendToHandle)
+                var fixResult = await strategy.fix(dir, split.name, plan, verifyOutput, strategyOptions);
                 if (!fixResult.fixed) {
                     continue;
                 }
@@ -2770,15 +2774,22 @@ function isForceCancelled() {
 // a paste operation rather than a typed-then-submitted command. Separating
 // the writes ensures the newline is interpreted as an Enter keypress.
 //
-// Uses the cancellation-aware sendWithCancel when available (auto-split
-// TUI mode) or falls back to the direct handle.send() for non-TUI/test
-// contexts. EAGAIN is retried up to 3 times with 10ms backoff.
+// A 10ms async delay (via setTimeout) is inserted between the text and
+// newline writes to defeat PTY kernel coalescing. This delay is
+// event-loop-integrated — it does NOT block the JS event loop.
 //
-// Returns { error: null } on success, { error: "message" } on failure.
+// The TUI path uses autoSplitTUI.sendWithCancel (cancellation-aware);
+// the fallback path uses direct handle.send() for non-TUI/test contexts.
+// Both paths share the same 10ms async delay between writes.
+// EAGAIN is retried up to 3 times with 10ms backoff in both paths.
+//
+// Returns Promise<{ error: null }> on success, Promise<{ error: "message" }> on failure.
 // If the first write (text) succeeds but the second (newline) fails,
 // the error from the second write is returned — this is a fatal pipeline
 // error since the prompt was delivered but not submitted.
-function sendToHandle(handle, text) {
+var SEND_TEXT_NEWLINE_DELAY_MS = 10; // Delay between text and newline to defeat PTY coalescing
+
+async function sendToHandle(handle, text) {
     // T16 fix: guard against null/undefined handle — process may have died.
     if (!handle) {
         log.printf('auto-split sendToHandle: handle is null — process may have exited');
@@ -2790,46 +2801,59 @@ function sendToHandle(handle, text) {
     var EAGAIN_MAX_RETRIES = 3;
     var EAGAIN_RETRY_DELAY_MS = 10;
 
-    if (typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
-        typeof autoSplitTUI.sendWithCancel === 'function') {
-        // TUI path: cancellation-aware two-write (text, then newline).
-        var tuiTextResult = autoSplitTUI.sendWithCancel(handle, text);
-        if (tuiTextResult.error) {
-            return tuiTextResult;
-        }
-        return autoSplitTUI.sendWithCancel(handle, '\n');
-    }
-
-    // sendWithRetry: retries on EAGAIN/EWOULDBLOCK up to EAGAIN_MAX_RETRIES times.
+    // Helper to send text with EAGAIN retry (returns {error: null|string}).
     function sendWithRetry(data) {
         var lastErr;
         for (var attempt = 0; attempt <= EAGAIN_MAX_RETRIES; attempt++) {
             try {
-                handle.send(data);
-                return { error: null };
+                // TUI path with cancellation support
+                if (typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
+                    typeof autoSplitTUI.sendWithCancel === 'function') {
+                    var res = autoSplitTUI.sendWithCancel(handle, data);
+                    if (!res.error) return { error: null };
+                    lastErr = res.error;
+                } else {
+                    // Direct send fallback
+                    handle.send(data);
+                    return { error: null };
+                }
             } catch (e) {
                 lastErr = e.message || String(e);
-                var lower = lastErr.toLowerCase();
-                if (lower.indexOf('eagain') !== -1 ||
-                    lower.indexOf('resource temporarily unavailable') !== -1 ||
-                    lower.indexOf('would block') !== -1) {
-                    if (attempt < EAGAIN_MAX_RETRIES && timemod && typeof timemod.sleep === 'function') {
-                        timemod.sleep(EAGAIN_RETRY_DELAY_MS);
-                        continue;
-                    }
-                }
-                return { error: lastErr };
             }
+            var lower = (lastErr || '').toLowerCase();
+            if (lower.indexOf('eagain') !== -1 ||
+                lower.indexOf('resource temporarily unavailable') !== -1 ||
+                lower.indexOf('would block') !== -1) {
+                if (attempt < EAGAIN_MAX_RETRIES) {
+                    // Sync retry - EAGAIN is rare, short blocking acceptable here
+                    if (timemod && typeof timemod.sleep === 'function') {
+                        timemod.sleep(EAGAIN_RETRY_DELAY_MS);
+                    }
+                    continue;
+                }
+            }
+            return { error: lastErr };
         }
         return { error: lastErr };
     }
 
-    // Fallback: direct synchronous two-write with EAGAIN retry.
+    // Step 1: Send the text.
+    log.printf('auto-split sendToHandle: sending text (%d chars)', text.length);
     var textResult = sendWithRetry(text);
     if (textResult.error) {
         log.printf('auto-split sendToHandle: text write FAILED — %s', textResult.error);
         return textResult;
     }
+
+    // Step 2: Non-blocking delay using event-loop-integrated setTimeout.
+    // This is the KEY FIX for T04a — does NOT block the event loop.
+    log.printf('auto-split sendToHandle: waiting %dms (via setTimeout, non-blocking)', SEND_TEXT_NEWLINE_DELAY_MS);
+    await new Promise(function(resolve) {
+        setTimeout(resolve, SEND_TEXT_NEWLINE_DELAY_MS);
+    });
+
+    // Step 3: Send the newline.
+    log.printf('auto-split sendToHandle: sending newline');
     var newlineResult = sendWithRetry('\n');
     if (newlineResult.error) {
         log.printf('auto-split sendToHandle: newline write FAILED (text was sent) — %s', newlineResult.error);
@@ -2856,7 +2880,8 @@ function waitForLogged(toolName, timeoutMs, opts) {
 // Steps: analyze → spawn → classify → receive → validate → plan →
 //        execute → verify → resolve → report.
 // Returns { error: string|null, report: object }.
-function automatedSplit(config) {
+// T04a: Made async to support non-blocking step() and sendToHandle operations.
+async function automatedSplit(config) {
     config = config || {};
 
     // Save the current branch so we can restore it on ALL exit paths.
@@ -2945,7 +2970,10 @@ function automatedSplit(config) {
         }
     }
 
-    function step(name, fn) {
+    // step() wrapper for pipeline steps. Supports both sync and async callbacks.
+    // If fn() returns a Promise, step() awaits it before completing.
+    // T04a: Made async-aware to support non-blocking sendToHandle with setTimeout.
+    async function step(name, fn) {
         // Check cancellation before each step — cooperative cancellation.
         if (hasTUI && !config.disableTUI && typeof autoSplitTUI.cancelled === 'function' && autoSplitTUI.cancelled()) {
             return { error: 'cancelled by user' };
@@ -2991,7 +3019,14 @@ function automatedSplit(config) {
         log.printf('auto-split step: %s', name);
         var result;
         try {
-            result = fn();
+            var fnResult = fn();
+            // T04a: If fn() returns a Promise, await it to support async callbacks.
+            // This enables non-blocking setTimeout delays in sendToHandle.
+            if (fnResult && typeof fnResult.then === 'function') {
+                result = await fnResult;
+            } else {
+                result = fnResult;
+            }
         } catch (e) {
             result = { error: e.message || String(e) };
         }
@@ -3063,7 +3098,7 @@ function automatedSplit(config) {
     // Step 1: Analyze diff.
     var analysis;
     if (!resuming) {
-    analysis = step('Analyze diff', function() {
+    analysis = await step('Analyze diff', function() {
         updateDetail('Analyze diff', 'Reading git diff...');
         var result = analyzeDiff(config);
         if (!result.error && result.files) {
@@ -3187,7 +3222,7 @@ function automatedSplit(config) {
     if (!resuming) {
 
     // Step 2: Spawn Claude (or fall back to heuristic).
-    var executor = step('Spawn Claude', function() {
+    var executor = await step('Spawn Claude', function() {
         updateDetail('Spawn Claude', 'Resolving Claude executable...');
         if (!claudeExecutor) {
             claudeExecutor = new ClaudeCodeExecutor(prSplitConfig);
@@ -3210,7 +3245,8 @@ function automatedSplit(config) {
     if (executor.error) {
         emitOutput('[auto-split] Claude unavailable — falling back to heuristic mode.');
         report.fallbackUsed = true;
-        return finishTUI(heuristicFallback(analysis, config, report));
+        // T04a: await async heuristicFallback
+        return finishTUI(await heuristicFallback(analysis, config, report));
     }
 
     var sessionId = executor.sessionId;
@@ -3256,7 +3292,8 @@ function automatedSplit(config) {
     }
 
     // Step 3: Send classification request.
-    var classifyResult = step('Send classification request', function() {
+    // T04a: Callback is async because sendToHandle uses setTimeout delay.
+    var classifyResult = await step('Send classification request', async function() {
         updateDetail('Send classification request', 'Rendering prompt (' + analysis.files.length + ' files)...');
         var renderResult = renderClassificationPrompt(analysis, {
             sessionId: sessionId, maxGroups: config.maxGroups || 0
@@ -3266,7 +3303,7 @@ function automatedSplit(config) {
         }
         // Write prompt to Claude's stdin via handle — cancellation-aware.
         updateDetail('Send classification request', 'Sending prompt to Claude...');
-        var sendResult = sendToHandle(claudeExecutor.handle, renderResult.text);
+        var sendResult = await sendToHandle(claudeExecutor.handle, renderResult.text);
         if (sendResult.error) {
             return { error: 'failed to send prompt to Claude: ' + sendResult.error };
         }
@@ -3282,7 +3319,7 @@ function automatedSplit(config) {
     }
 
     // Step 4: Receive classification.
-    var classification = step('Receive classification', function() {
+    var classification = await step('Receive classification', function() {
         updateDetail('Receive classification', 'Waiting for classification...');
         var pollResult;
         // IPC via osm:mcpcallback — blocks on Go channel until tool is called.
@@ -3361,7 +3398,7 @@ function automatedSplit(config) {
     }
 
     // Step 5: Generate plan (from Claude or locally).
-    var planResult = step('Generate split plan', function() {
+    var planResult = await step('Generate split plan', function() {
         updateDetail('Generate split plan', 'Checking for Claude-generated plan...');
         // Check if Claude also provided a split plan (short timeout — optional).
         var planPoll;
@@ -3432,7 +3469,7 @@ function automatedSplit(config) {
     savePlan(null, 'Generate split plan');
 
     // Step 6: Execute split.
-    var execResult = step('Execute split plan', function() {
+    var execResult = await step('Execute split plan', function() {
         if (runtime.dryRun) {
             return { error: null, dryRun: true };
         }
@@ -3506,7 +3543,7 @@ function automatedSplit(config) {
     }
 
     // Step 7: Verify splits.
-    var verifyResult = step('Verify splits', function() {
+    var verifyResult = await step('Verify splits', function() {
         updateDetail('Verify splits', 'Running verification command on each branch...');
         var verifyObj = verifySplits(plan, {
             verifyTimeoutMs: config.verifyTimeoutMs || AUTOMATED_DEFAULTS.verifyTimeoutMs,
@@ -3578,8 +3615,9 @@ function automatedSplit(config) {
     // Step 8: Resolve conflicts (if any real failures — skipped branches excluded).
     var reSplitCount = 0;
     if (verifyResult.failures && verifyResult.failures.length > 0) {
-        var resolved = step('Resolve conflicts via Claude', function() {
-            return resolveConflictsWithClaude(
+        // T04a: Callback is async because resolveConflictsWithClaude uses async sendToHandle.
+        var resolved = await step('Resolve conflicts via Claude', async function() {
+            return await resolveConflictsWithClaude(
                 verifyResult.failures, sessionId,
                 timeouts, pollInterval, maxAttemptsPerBranch, report, aliveCheckFn
             );
@@ -3592,11 +3630,12 @@ function automatedSplit(config) {
             // Clean up old branches.
             cleanupBranches(plan);
             // Re-classify with constraint.
-            var reClassifyResult = step('Re-classify (retry ' + reSplitCount + ')', function() {
+            // T04a: Callback is async because sendToHandle uses setTimeout delay.
+            var reClassifyResult = await step('Re-classify (retry ' + reSplitCount + ')', async function() {
                 var constraintPrompt = 'Re-classify these files with the constraint: ' +
                     resolved.reSplitReason + '\n\nUse reportClassification MCP tool ' +
                     'with session ID ' + sessionId + '.\n';
-                var sendResult = sendToHandle(claudeExecutor.handle, constraintPrompt);
+                var sendResult = await sendToHandle(claudeExecutor.handle, constraintPrompt);
                 if (sendResult.error) {
                     return { error: 'failed to send re-classify prompt: ' + sendResult.error };
                 }
@@ -3633,14 +3672,14 @@ function automatedSplit(config) {
                 });
                 planCache = plan;
                 report.plan = plan;
-                var reExec = step('Re-execute split', function() {
+                var reExec = await step('Re-execute split', function() {
                     var result = executeSplit(plan);
                     if (result.error) return { error: result.error };
                     report.splits = result.results || [];
                     return { error: null };
                 });
                 if (!reExec.error) {
-                    step('Re-verify splits', function() {
+                    await step('Re-verify splits', function() {
                         return { error: null, results: verifySplits(plan) };
                     });
                 }
@@ -3652,7 +3691,7 @@ function automatedSplit(config) {
     }
 
     // Step 10: Equivalence check and report.
-    var equivResult = step('Verify equivalence', function() {
+    var equivResult = await step('Verify equivalence', function() {
         var result = verifyEquivalence(plan);
         return { error: result.equivalent ? null : 'tree hash mismatch', result: result };
     });
@@ -3696,7 +3735,8 @@ function automatedSplit(config) {
 }
 
 // heuristicFallback runs the standard heuristic split flow.
-function heuristicFallback(analysis, config, report) {
+// T04a: Made async because resolveConflicts is async.
+async function heuristicFallback(analysis, config, report) {
     var strategy = config.strategy || runtime.strategy;
     var groups = applyStrategy(analysis.files, strategy, {
         fileStatuses: analysis.fileStatuses,
@@ -3726,7 +3766,8 @@ function heuristicFallback(analysis, config, report) {
         var verifyObj = verifySplits(plan);
         var failures = verifyObj.results.filter(function(r) { return !r.passed; });
         if (failures.length > 0) {
-            resolveConflicts(plan);
+            // T04a: await async resolveConflicts
+            await resolveConflicts(plan);
         }
 
         var equiv = verifyEquivalence(plan);
@@ -3769,7 +3810,8 @@ function classificationToGroups(classification) {
 }
 
 // resolveConflictsWithClaude attempts to fix failing splits using Claude.
-function resolveConflictsWithClaude(failures, sessionId, timeouts, pollInterval, maxAttemptsPerBranch, report, aliveCheckFn) {
+// T04a: Made async because sendToHandle uses setTimeout delay.
+async function resolveConflictsWithClaude(failures, sessionId, timeouts, pollInterval, maxAttemptsPerBranch, report, aliveCheckFn) {
     var reSplitNeeded = false;
     var reSplitReason = '';
 
@@ -3826,7 +3868,8 @@ function resolveConflictsWithClaude(failures, sessionId, timeouts, pollInterval,
                 break;
             }
 
-            var sendResult = sendToHandle(claudeExecutor.handle, promptResult.text);
+            // T04a: await async sendToHandle
+            var sendResult = await sendToHandle(claudeExecutor.handle, promptResult.text);
             if (sendResult.error) {
                 log.printf('auto-split: failed to send conflict prompt: %s', sendResult.error);
                 break;
@@ -5278,13 +5321,15 @@ function buildCommands(stateArg) {
         fix: {
             description: 'Auto-fix split branches that fail verification',
             usage: 'fix',
-            handler: function() {
+            // T04a: Made async because resolveConflicts is async.
+            handler: async function() {
                 if (!planCache) {
                     output.print('No plan — run "plan" or "run" first.');
                     return;
                 }
                 output.print('Checking splits for verification failures...');
-                var result = resolveConflicts(planCache);
+                // T04a: await async resolveConflicts
+                var result = await resolveConflicts(planCache);
                 if (result.skipped) {
                     output.print('Skipped: ' + result.skipped);
                     return;
@@ -5458,7 +5503,8 @@ function buildCommands(stateArg) {
         run: {
             description: 'Run full workflow: analyze → group → plan → execute',
             usage: 'run [--mode auto|heuristic]',
-            handler: function(args) {
+            // T04a: Made async for automatedSplit which uses async sendToHandle.
+            handler: async function(args) {
                 try {
                 // Check if automated mode should be used.
                 var useAuto = runtime.mode === 'auto';
@@ -5490,7 +5536,8 @@ function buildCommands(stateArg) {
                             autoConfig.resolveTimeoutMs = prSplitConfig.timeoutMs;
                             autoConfig.verifyTimeoutMs = prSplitConfig.timeoutMs;
                         }
-                        var result = automatedSplit(autoConfig);
+                        // T04a: await async automatedSplit
+                        var result = await automatedSplit(autoConfig);
                         if (result.error) {
                             output.print(style.error('Auto-split error: ' + result.error));
                         }
@@ -5707,7 +5754,8 @@ function buildCommands(stateArg) {
         'auto-split': {
             description: 'Automated split via Claude Code (falls back to heuristic)',
             usage: 'auto-split',
-            handler: function() {
+            // T04a: Made async for automatedSplit which uses async sendToHandle.
+            handler: async function() {
                 try {
                     var autoConfig = {
                         baseBranch: runtime.baseBranch,
@@ -5722,7 +5770,8 @@ function buildCommands(stateArg) {
                         autoConfig.resolveTimeoutMs = prSplitConfig.timeoutMs;
                         autoConfig.verifyTimeoutMs = prSplitConfig.timeoutMs;
                     }
-                    var result = automatedSplit(autoConfig);
+                    // T04a: await async automatedSplit
+                    var result = await automatedSplit(autoConfig);
                     if (result.error) {
                         output.print(style.error('Auto-split failed: ' + result.error));
                     }

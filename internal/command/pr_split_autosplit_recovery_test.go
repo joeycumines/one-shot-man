@@ -1913,3 +1913,134 @@ func TestPrSplitConfig_CleanupOnFailure(t *testing.T) {
 		t.Errorf("config propagation check failed: %v", val3)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T22: Error feedback includes resume instructions
+// ---------------------------------------------------------------------------
+
+// TestAutoSplit_ErrorFeedback_ResumeInstructions verifies that when the
+// pipeline fails AFTER a plan has been generated, the output includes:
+//   - The path to .pr-split-plan.json
+//   - The command to resume: osm pr-split --resume
+//   - A description of what failed ("Pipeline failed: ...")
+//
+// This exercises the T21 implementation in finishTUI.
+func TestAutoSplit_ErrorFeedback_ResumeInstructions(t *testing.T) {
+	// NOT parallel — uses chdir.
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	tp := setupTestPipeline(t, TestPipelineOpts{
+		ConfigOverrides: map[string]interface{}{
+			"branchPrefix":  "split/",
+			"verifyCommand": "true",
+			"strategy":      "directory",
+		},
+	})
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tp.Dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	// Mock ClaudeCodeExecutor to fail → forces heuristic fallback.
+	mockSetup := `
+		ClaudeCodeExecutor = function(config) {
+			this.config = config;
+		};
+		ClaudeCodeExecutor.prototype.resolve = function() {
+			return { error: 'claude not found' };
+		};
+		ClaudeCodeExecutor.prototype.spawn = function() {
+			return { error: 'not resolved' };
+		};
+		ClaudeCodeExecutor.prototype.close = function() {};
+		ClaudeCodeExecutor.prototype.kill = function() {};
+	`
+	if _, err := tp.EvalJS(mockSetup); err != nil {
+		t.Fatalf("mock setup: %v", err)
+	}
+
+	// Override exec.execv to fail ONLY on split branch creation.
+	// This lets analyzeDiff succeed (uses git diff, rev-parse) but
+	// causes executeSplit to fail when it tries to create branches.
+	if _, err := tp.EvalJS(`
+		var _origExecv = exec.execv;
+		exec.execv = function(cmd) {
+			for (var i = 0; i < cmd.length; i++) {
+				if (cmd[i] === 'checkout' && i + 1 < cmd.length && cmd[i+1] === '-b' &&
+					i + 2 < cmd.length && typeof cmd[i+2] === 'string' &&
+					cmd[i+2].indexOf('split/') === 0) {
+					return { code: 1, stdout: '', stderr: 'simulated: branch creation failed for testing' };
+				}
+			}
+			return _origExecv(cmd);
+		};
+	`); err != nil {
+		t.Fatalf("exec override: %v", err)
+	}
+
+	// Run automatedSplit → heuristic → executeSplit fails → finishTUI emits resume.
+	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({
+		disableTUI: true,
+		pollIntervalMs: 50,
+		classifyTimeoutMs: 5000,
+		planTimeoutMs: 5000,
+		resolveTimeoutMs: 5000,
+		maxResolveRetries: 0,
+		maxReSplits: 0
+	}))`)
+	if err != nil {
+		t.Fatalf("automatedSplit: %v", err)
+	}
+
+	var report struct {
+		Error  string `json:"error"`
+		Report struct {
+			Error        string `json:"error"`
+			FallbackUsed bool   `json:"fallbackUsed"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &report); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, result)
+	}
+
+	// Verify we did get an error.
+	if report.Error == "" {
+		t.Fatal("expected error from executeSplit in heuristic fallback path")
+	}
+	if !report.Report.FallbackUsed {
+		t.Error("expected fallbackUsed=true")
+	}
+	t.Logf("report error: %s", report.Error)
+
+	// T22 core assertions: verify stdout contains resume instructions.
+	out := tp.Stdout.String()
+	t.Logf("stdout:\n%s", out)
+
+	if !strings.Contains(out, ".pr-split-plan.json") {
+		t.Errorf("output should mention plan file path (.pr-split-plan.json)")
+	}
+	if !strings.Contains(out, "osm pr-split --resume") {
+		t.Errorf("output should include resume command (osm pr-split --resume)")
+	}
+	if !strings.Contains(out, "Pipeline failed") {
+		t.Errorf("output should include 'Pipeline failed'")
+	}
+
+	// Verify the error description is included in the pipeline failure message.
+	if !strings.Contains(out, "branch creation failed") {
+		t.Errorf("output should include the specific error description")
+	}
+
+	// Also verify the plan file was actually written (savePlan from finishTUI).
+	planPath := filepath.Join(tp.Dir, ".pr-split-plan.json")
+	if _, err := os.Stat(planPath); os.IsNotExist(err) {
+		t.Errorf("expected plan file to be written at %s", planPath)
+	}
+}

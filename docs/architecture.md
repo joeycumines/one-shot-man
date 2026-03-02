@@ -153,7 +153,6 @@ Native modules are registered via `builtin.Register()` in [internal/builtin/regi
 | `osm:fetch` | HTTP client (GET, POST, etc.) |
 | `osm:grpc` | Promise-based gRPC client/server (via goja-grpc, in-process channel) |
 | `osm:protobuf` | Protocol Buffers descriptor loading (via goja-protobuf) |
-| `osm:pty` | PTY (pseudo-terminal) spawning and management |
 
 ### Text and templates
 

@@ -71,6 +71,22 @@ check-session-time: ## Check how much time has elapsed in the session
 mv-blueprint: ## Replace blueprint.json with blueprint.json.new
 	mv $(PROJECT_ROOT)/blueprint.json.new $(PROJECT_ROOT)/blueprint.json
 
+.PHONY: run-single-test
+run-single-test: ## Run a single test: make run-single-test TEST=TestName PKG=./internal/command/...
+	$(GO) test -v -race -timeout=5m $(PKG) -run $(TEST)
+
+.PHONY: clean-test-artifacts
+clean-test-artifacts: ## Remove runtime test artifacts that should not be committed
+	rm -f $(PROJECT_ROOT)/internal/command/.pr-split-plan.json
+
+.PHONY: git-stage-all
+git-stage-all: ## Stage all changes
+	cd $(PROJECT_ROOT) && git add -A && git status --short
+
+.PHONY: git-commit-staged
+git-commit-staged: ## Commit staged changes with message from .git/COMMIT_MSG_TEMP
+	cd $(PROJECT_ROOT) && git commit -F .git/COMMIT_MSG_TEMP
+
 .PHONY: delete-mcp-slop
 delete-mcp-slop: ## T2-T6,T9: Delete ALL MCP command files + MCPInstanceConfig files
 	rm -f $(PROJECT_ROOT)/internal/command/mcp.go

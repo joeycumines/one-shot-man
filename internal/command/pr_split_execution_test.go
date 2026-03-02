@@ -22,7 +22,7 @@ import (
 func TestExecuteSplit(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Install exec mock.
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
@@ -287,7 +287,7 @@ func TestExecuteSplit(t *testing.T) {
 func TestExecuteSplit_TypeChange(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -385,7 +385,7 @@ func parseVerifySplitResult(t *testing.T, raw interface{}) verifySplitResult {
 func TestVerifySplit(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Install exec mock.
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
@@ -507,7 +507,7 @@ func TestVerifySplit(t *testing.T) {
 func TestVerifyEquivalence(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -656,7 +656,7 @@ func TestVerifyEquivalence(t *testing.T) {
 func TestVerifyEquivalenceDetailed(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -775,7 +775,7 @@ func parseCleanupResult(t *testing.T, raw interface{}) cleanupResult {
 func TestCleanupBranches(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -874,7 +874,7 @@ func TestCleanupBranches(t *testing.T) {
 
 func TestCleanupBranches_NullPlan(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	tests := []struct {
 		name string
@@ -918,7 +918,7 @@ func TestCleanupBranches_NullPlan(t *testing.T) {
 func TestExecuteSplit_RenamedFile(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
 		t.Fatal(err)
@@ -986,7 +986,7 @@ func TestExecuteSplit_RenamedFile(t *testing.T) {
 func TestExecuteSplit_CopiedFile(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS := loadPrSplitEngineWithEval(t, nil)
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
 		t.Fatal(err)

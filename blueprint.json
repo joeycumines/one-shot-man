@@ -33,7 +33,7 @@
     "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp."
   },
   "statusSection": {
-    "currentState": "TEST FILE SPLIT COMPLETE + ASYNC INFRASTRUCTURE DONE. `make make-all-with-log` passes (exit 0). pr_split_test.go split from 10,645 to ~650 lines + 12 new satellite files. dispatchAwaitPromise with proper Promise-aware dispatch. evalJS rewritten with two-path approach (await detection → async IIFE, no-await → direct RunString with Promise chaining). Handler type assertion fallback via goja.AssertFunction(vm.ToValue(handler)). REMAINING: T04a sendToHandle async conversion, T04b real E2E test, T04c Windows, T21-T31.",
+    "currentState": "T04a+T21-T26 DONE AND COMMITTED. T04a async sendToHandle with Promise-based 10ms delay via setTimeout, all callers converted to async/await. T21 error feedback already implemented. T22 resume instruction test. T24 stale comments fixed. T25 osm:pty JS bindings removed. T26 make all green. Rule of Two PASSED. REMAINING: T04b real E2E, T04c Windows, T27-T31.",
     "goalState": "On macOS, osm pr-split --strategy auto reliably completes end-to-end with all 6 regressions fixed, backed by deterministic tests, with make all green cross-platform. REAL end-to-end tests via TestMain flags.",
     "replanLog": [
       {
@@ -99,7 +99,7 @@
       "task": "T04a: REARCHITECT sendToHandle as async Promise-based function",
       "description": "The blocking time.Sleep approach (even in a spawned goroutine with select) VIOLATES the event loop contract. Go function calls from JS block the event loop until they return. CORRECT ARCHITECTURE: (1) Remove sendTextWithEnter Go function entirely. (2) In JS, make sendToHandle return a Promise. (3) Use setTimeout for the 10ms delay: return new Promise(resolve => { sendWithCancel(text); setTimeout(() => { sendWithCancel(newline); resolve({error:null}); }, 10); }). (4) Update ALL callers of sendToHandle to use await or .then() pattern. (5) This requires converting affected functions to async. Files: pr_split_script.js (sendToHandle, sendClassificationPrompt, etc.), pr_split.go (remove sendTextWithEnter binding).",
       "acceptance": "sendToHandle returns Promise. Delay uses JS setTimeout (not Go time.Sleep). Event loop never blocked. All callers use await. Tests verify async behavior.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T04b: Create REAL end-to-end integration test using TestMain -claude-command",
@@ -213,37 +213,37 @@
       "task": "T21: Improve error feedback on pipeline failure with resume instructions",
       "description": "In pr_split_script.js, when executeSplit or later stages fail, the error output should include: (1) Path to .pr-split-plan.json (search for DEFAULT_PLAN_PATH constant). (2) 'To resume: osm pr-split --resume'. (3) Concise description of what failed. Fix error handling in automatedSplit pipeline stages to emit these.",
       "acceptance": "Failure output includes plan path and resume command.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T22: Add test verifying error feedback includes resume instructions",
-      "description": "Trigger controlled executeSplit failure. Assert output includes plan file path, --resume instruction, and error description.",
+      "description": "TestAutoSplit_ErrorFeedback_ResumeInstructions: mocks ClaudeCodeExecutor.resolve to fail (heuristic fallback), overrides exec.execv to fail on split branch creation, verifies stdout contains plan path, resume command, and 'Pipeline failed' message.",
       "acceptance": "Test mechanically verifies actionable resume instructions in failure output.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T23: Run make all after error feedback improvement",
       "description": "Run `make make-all-with-log` and `make integration-test-prsplit-mcp`.",
       "acceptance": "All tests pass.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T24: Clean up misleading comments in pr_split_script.js",
-      "description": "Audit for comments asserting incorrect behavior. The sendToHandle comment should have been updated in T04 — verify. Search for other PTY/write/atomicity comments that could mislead future developers.",
+      "description": "Audited sendToHandle comment block. Fixed 3 stale references: (1) sendTextWithEnter (removed in T04a) replaced with sendWithCancel, (2) 'delay at Go layer' corrected to 'async setTimeout in JS', (3) 'fallback has no delay' corrected to 'both paths share 10ms delay'. Removed contradicting T04a appendage.",
       "acceptance": "No confidently-wrong comments remain.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T25: Remove osm:pty JavaScript module bindings (NOT the Go package)",
-      "description": "Remove the JavaScript module registration for osm:pty: (1) In internal/builtin/register.go, remove the osm:pty registration (search for 'pty' in the register function). (2) Remove internal/builtin/pty/module.go (the JS module definition). (3) Keep internal/builtin/pty/pty_unix.go, pty_windows.go, pty.go, and all Go-level PTY functionality intact — these are used by claudemux. (4) Remove any tests that specifically test the JS bindings of osm:pty (not the Go PTY spawn tests).",
+      "description": "Removed: (1) pty/module.go deleted, (2) ptymod import + registration removed from register.go, (3) 'osm:pty' removed from register_test.go expected list, (4) 7 TestModule_* tests removed from pty_test.go, (5) goja import removed from pty_test.go, (6) docs updated (README.md, architecture.md, architecture-claude-mux.md, todo.md), (7) pty.go package doc updated.",
       "acceptance": "require('osm:pty') is no longer available in JS. The Go PTY package still works. claudemux still spawns processes correctly. All tests pass.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T26: Run make all after osm:pty JS removal",
       "description": "Run `make make-all-with-log`, `make integration-test-prsplit-mcp`, `make make-all-in-container`.",
       "acceptance": "All tests pass on macOS and Linux.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "T27: Real AI integration test",

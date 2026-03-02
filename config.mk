@@ -188,5 +188,31 @@ git-stage-prsplit-split: ## Stage pr_split test split files + config.mk + WIP.md
 regen-diff: ## Regenerate scratch/review-diff.txt from HEAD
 	cd $(PROJECT_ROOT) && git diff HEAD > scratch/review-diff.txt && wc -l scratch/review-diff.txt
 
+.PHONY: test-bt-workflow-tree
+test-bt-workflow-tree: ## Run TestBTNodeFactory_CreateWorkflowTree_Type
+	cd $(PROJECT_ROOT) && $(GO) test -run TestBTNodeFactory_CreateWorkflowTree_Type -v ./internal/command/ -count=1 -timeout 120s 2>&1 | tail -20
+
+.PHONY: test-bt-template-diff
+test-bt-template-diff: ## Run BT/Template/Diff/Report tests (full output)
+	cd $(PROJECT_ROOT) && $(GO) test -run 'TestBTNodeFactory|TestBTTemplate|TestRenderColorizedDiff|TestGetSplitDiff|TestBuildReport' -v ./internal/command/ -count=1 -timeout 300s 2>&1
+
+.PHONY: test-groupby-dep
+test-groupby-dep: ## Run TestGroupByDependency tests
+	cd $(PROJECT_ROOT) && $(GO) test -run 'TestGroupByDependency' -v ./internal/command/ -count=1 -timeout 120s 2>&1
+
+.PHONY: git-stage-t42-t48
+git-stage-t42-t48: ## Stage T42-T48 changes
+	cd $(PROJECT_ROOT) && git add \
+		internal/command/pr_split_bt_test.go \
+		internal/command/pr_split_script.js \
+		internal/command/pr_split.go \
+		internal/command/pr_split_planning_test.go \
+		WIP.md blueprint.json && \
+	git add -f config.mk
+
+.PHONY: git-commit-t42-t48
+git-commit-t42-t48: ## Commit T42-T48 batch
+	cd $(PROJECT_ROOT) && git commit -F scratch/commit-msg-t42-t48.txt
+
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 endif

@@ -690,12 +690,23 @@ function groupByDependency(files, options) {
                 : '.';
 
             // Read file and parse imports.
-            var catResult = exec.execv(['cat', goFiles[i]]);
-            if (catResult.code !== 0) {
-                continue;
+            // T46: Use osmod.readFile for portability (cat is Unix-only).
+            var fileContent = '';
+            if (osmod) {
+                var readResult = osmod.readFile(goFiles[i]);
+                if (readResult.error) {
+                    continue;
+                }
+                fileContent = readResult.content;
+            } else {
+                var catResult = exec.execv(['cat', goFiles[i]]);
+                if (catResult.code !== 0) {
+                    continue;
+                }
+                fileContent = catResult.stdout;
             }
 
-            var imports = parseGoImports(catResult.stdout);
+            var imports = parseGoImports(fileContent);
             for (var j = 0; j < imports.length; j++) {
                 var imp = imports[j];
                 // Only consider intra-module imports.
@@ -2244,6 +2255,9 @@ async function resolveConflicts(plan, options) {
                 // T04a: await - strategy.fix may be async (claude-fix uses async sendToHandle)
                 var fixResult = await strategy.fix(dir, split.name, plan, verifyOutput, strategyOptions);
                 if (!fixResult.fixed) {
+                    // T48: Log each failed strategy attempt for diagnostic visibility.
+                    log.warn('strategy ' + strategy.name + ' failed for ' + split.name +
+                             (fixResult.error ? ': ' + fixResult.error : ''));
                     continue;
                 }
 
@@ -4306,10 +4320,15 @@ function btRunTests(bb, command) {
 
 function btCommitChanges(bb, message) {
     return bt.createBlockingLeafNode(function() {
-        var addResult = exec.exec('git', 'add', '-A');
-        if (addResult.code !== 0) {
-            bb.set('lastError', 'git add failed: ' + addResult.stderr);
-            return bt.failure;
+        // T45: Use gitAddChangedFiles instead of git add -A to exclude
+        // tool artifacts (.pr-split-plan.json) from commits.
+        gitAddChangedFiles('.');
+        // Check if there are staged changes.
+        var diffResult = exec.exec('git', 'diff', '--cached', '--quiet');
+        if (diffResult.code === 0) {
+            // Nothing staged — nothing to commit.
+            bb.set('committed', false);
+            return bt.success;
         }
         var commitResult = exec.exec('git', 'commit', '-m', message);
         if (commitResult.code !== 0) {

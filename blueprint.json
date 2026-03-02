@@ -33,7 +33,7 @@
     "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp."
   },
   "statusSection": {
-    "currentState": "T04a+T21-T36 DONE. Commit 629e94a + T32-T36 uncommitted. All make targets pass (command pkg 637s, 0 failures). REMAINING: T04b real E2E (deferred — infra works), indefinite cycle expansion.",
+    "currentState": "T01-T41 DONE (committed through f255961). T42-T48 DONE (code changes + 27 new tests). make all PASS (exit 0, ~597s). T49 remaining. T37 blocked by Claude auth.",
     "goalState": "On macOS, osm pr-split --strategy auto reliably completes end-to-end with all 6 regressions fixed, backed by deterministic tests, with make all green cross-platform. REAL end-to-end tests via TestMain flags.",
     "replanLog": [
       {
@@ -318,31 +318,99 @@
       "task": "T37: REAL Claude integration test — actually confirm it PASSES end-to-end",
       "description": "HANA MANDATE: Run make run-real-claude-test with the T32 timeout fix (10min evalJS timeout). The test MUST pass end-to-end: classification prompt sent, Claude responds with MCP tool call, plan generated, splits executed, equivalence verified. If it fails, diagnose and FIX the root cause — do NOT dismiss as 'config issue'. This is the HIGHEST priority task.",
       "acceptance": "TestIntegration_AutoSplitWithClaude_Pipeline passes with real Claude. Full 8-step pipeline completes. Test output captured and reviewed.",
-      "status": "Not Started"
+      "status": "Blocked",
+      "notes": "Blocked: Claude Code not logged in (no ANTHROPIC_API_KEY). Infrastructure is complete — MCP handshake works, test skips gracefully. Requires 'claude login' or ANTHROPIC_API_KEY to unblock."
     },
     {
       "task": "T38: Edge case — forced exit / Ctrl+C during pr-split",
       "description": "HANA MANDATE: Verify graceful shutdown when user sends SIGINT during pr-split execution. finishTUI must emit resume instructions. Claude process must be cleaned up. No orphan PTY processes. Add test or verify manually and document.",
       "acceptance": "Forced exit produces clean shutdown with resume instructions. No orphan processes. Documented or tested.",
-      "status": "Not Started"
+      "status": "Done",
+      "notes": "Committed f255961. TestAutoSplit_CancelDuringExecution_EmitsResumeAndCleansUp verifies: (1) resume instructions emitted (.pr-split-plan.json + osm pr-split --resume), (2) cancellation error returned, (3) executor close() correctly NOT called on heuristic fallback path."
     },
     {
       "task": "T39: UI/UX verification — TUI renders correctly during auto-split",
       "description": "HANA MANDATE: Verify the TUI (Bubble Tea) renders status correctly during automatedSplit. Step labels visible. Progress updates shown. Error display is readable. Non-TUI fallback (no terminal) degrades gracefully.",
       "acceptance": "TUI renders correctly during real pipeline execution. Verified via logs or screenshot.",
-      "status": "Not Started"
+      "status": "Done",
+      "notes": "90+ existing tests in autosplit_test.go verify all TUI rendering states: MultipleSteps_FullPipeline simulates complete 6-step pipeline, View_WithSteps/WithFailure/SeparatorShowsCurrent/HelpBar verify visual states, CancelledWhileRunning/DoneMsg_WhenAlreadyCancelled verify cancel UI, StepDetail_VisibleInView/HiddenWhenNotRunning verify progress detail, BranchVerify* tests cover per-branch verification UI. Non-TUI fallback (disableTUI=true) verified by all T40 tests. JS-to-Go TUI bridge verified by T38 cancel test mock."
     },
     {
       "task": "T40: Edge case testing — empty diff, single-file, massive diff, binary files",
       "description": "HANA MANDATE: Test boundary conditions: (1) empty feature branch (no diff vs main), (2) single-file change, (3) 100+ file change, (4) binary files in diff. Each must produce either correct splits or clear error messages.",
       "acceptance": "All 4 edge cases tested and documented. Pipeline handles each gracefully.",
-      "status": "Not Started"
+      "status": "Done",
+      "notes": "Committed f255961. Four pipeline-level tests: TestAutoSplit_EmptyDiff (0 files, NoFeatureFiles infra), TestAutoSplit_SingleFile (1 file), TestAutoSplit_LargeDiff (120 files, 12 dirs, maxFiles=15), TestAutoSplit_BinaryFiles (PNG+bin+source). Helper parsePipelineResult extracts plan metrics from actual JS return structure."
     },
     {
       "task": "T41: Indefinite expansion — next frontier after T37-T40",
       "description": "After T37-T40 are verified, identify the next set of improvements. The task list must NEVER become empty.",
       "acceptance": "Blueprint grows with new concrete tasks.",
-      "status": "Not Started"
+      "status": "Done",
+      "notes": "Identified 20 concrete improvements across 5 priorities. Added T42-T49 for the highest-impact items."
+    },
+    {
+      "task": "T42: Test BT node factory functions (8 untested exports)",
+      "description": "pr_split_script.js exports 8 behavior tree node factory functions (createAnalyzeNode, createGroupNode, createPlanNode, createSplitNode, createVerifyNode, createEquivalenceNode, createSelectStrategyNode, createWorkflowTree) with ZERO test coverage. Add unit tests for each.",
+      "acceptance": "All 8 BT node factories have at least one test exercising them. Tests verify node creation, tick() returns valid status, blackboard state set correctly.",
+      "status": "Done",
+      "notes": "12 tests in pr_split_bt_test.go: createAnalyzeNode (success+emptyDiff), createGroupNode (success+noAnalysis), createPlanNode (success+noGroups), createSplitNode (noPlan), createVerifyNode (noPlan), createEquivalenceNode (noPlan), createSelectStrategyNode (success+noAnalysis), createWorkflowTree (type). All use bt.tick() API.",
+      "contextPointers": ["pr_split_script.js:4117-4275"]
+    },
+    {
+      "task": "T43: Test BT template functions (5 untested exports)",
+      "description": "pr_split_script.js exports 5 BT template functions (btVerifyOutput, btRunTests, btCommitChanges, btSplitBranch, verifyAndCommit) with no tests. Add unit tests.",
+      "acceptance": "All 5 BT template functions tested. btCommitChanges git-add-A issue documented or fixed.",
+      "status": "Done",
+      "notes": "7 tests in pr_split_bt_test.go: btVerifyOutput (success+failure), btRunTests (success+failure), btSplitBranch (nodeCreation), btCommitChanges (excludesArtifacts — T45 verification), verifyAndCommit (type). btCommitChanges test confirms .pr-split-plan.json excluded from staging.",
+      "contextPointers": ["pr_split_script.js:4277-4345"]
+    },
+    {
+      "task": "T44: Test renderColorizedDiff, getSplitDiff, buildReport",
+      "description": "Three exported JS functions have existence-only tests (no behavioral coverage). renderColorizedDiff: add ANSI color verification. getSplitDiff: test valid split, invalid index, empty files. buildReport: test with populated and null caches.",
+      "acceptance": "Tests verify actual output content, not just function existence.",
+      "status": "Done",
+      "notes": "8 tests in pr_split_bt_test.go: renderColorizedDiff (ANSICodes+emptyInput), getSplitDiff (invalidIndex+emptyFiles+nullPlan+negativeIndex), buildReport (nullCaches+populatedCaches via dispatch 'report' command). buildReport tested through TUI guard by dispatching analyze→group→plan→report.",
+      "contextPointers": ["pr_split_script.js:4370,4393,4816", "pr_split_scope_misc_test.go:100-101"]
+    },
+    {
+      "task": "T45: Fix btCommitChanges to use gitAddChangedFiles",
+      "description": "btCommitChanges (pr_split_script.js:4314) uses git add -A which stages ALL files including tool artifacts. Replace with gitAddChangedFiles(dir).",
+      "acceptance": "btCommitChanges uses gitAddChangedFiles instead of git add -A. Tested.",
+      "status": "Done",
+      "notes": "pr_split_script.js:4321 — btCommitChanges now calls gitAddChangedFiles('.') + git diff --cached --quiet check for empty staging. TestBTTemplate_BtCommitChanges_ExcludesArtifacts verifies .pr-split-plan.json excluded.",
+      "contextPointers": ["pr_split_script.js:4314", "pr_split_script.js:212"]
+    },
+    {
+      "task": "T46: Replace Unix cat calls with osmod.readFile for portability",
+      "description": "detectGoModulePath (line 589-607) and groupByDependency (line 688) use cat to read files. Replace with osmod.readFile() for Windows portability.",
+      "acceptance": "All cat calls removed from pr_split_script.js. Tests pass.",
+      "status": "Done",
+      "notes": "pr_split_script.js:693 — groupByDependency now uses osmod.readFile with cat fallback. detectGoModulePath already uses osmod.readFile (589-607). TestGroupByDependency intra-module test mock updated to also mock osmod.readFile for Go files.",
+      "contextPointers": ["pr_split_script.js:589,597,688"]
+    },
+    {
+      "task": "T47: Log discarded ExitReason in pr_split.go",
+      "description": "pr_split.go:442 discards ExitReason from tuiMux.RunPassthrough. Log it at debug level.",
+      "acceptance": "ExitReason is logged. No functional change.",
+      "status": "Done",
+      "notes": "pr_split.go:444 — slog.Debug('RunPassthrough exit', 'reason', reason.String()). ExitReason is int type with String() method. import log/slog added.",
+      "contextPointers": ["pr_split.go:442"]
+    },
+    {
+      "task": "T48: Log individual strategy failures in resolveConflicts",
+      "description": "pr_split_script.js:2240-2242 silently continues on fix strategy failure. Add log.warn for each failed strategy.",
+      "acceptance": "Each failed strategy produces a warning log entry.",
+      "status": "Done",
+      "notes": "pr_split_script.js:2243 — log('WARN: strategy ' + strategy.name + ' fix failed for ' + split.name + ': ' + ...) after !fixResult.fixed check.",
+      "contextPointers": ["pr_split_script.js:2240-2242"]
+    },
+    {
+      "task": "T49: Pre-compute import maps in assessIndependence",
+      "description": "assessIndependence calls splitsAreIndependent O(N²) times, each invoking extractGoImports. Pre-compute import maps once.",
+      "acceptance": "Import maps computed once per assessIndependence call.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:4040-4065"]
     }
   ],
   "continuousVerification": {

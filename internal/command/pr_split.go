@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -439,7 +440,8 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			if err != nil {
 				autoSplitModel.SendError("Toggle failed: " + err.Error())
 			}
-			_ = reason
+			// T47: Log the exit reason at debug level instead of discarding.
+			slog.Debug("RunPassthrough exit", "reason", reason.String())
 
 			// Synchronously re-enter alt-screen and clear before
 			// RestoreTerminal. This ensures BubbleTea inherits a

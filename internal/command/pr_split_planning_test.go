@@ -240,6 +240,8 @@ func TestGroupByDependency(t *testing.T) {
 					var _origRF3 = osmod.readFile;
 					osmod.readFile = function(path) {
 						if (path === 'go.mod') return { content: 'module github.com/example/repo\n\ngo 1.21\n', error: null };
+						if (path === 'internal/command/cmd.go') return { content: 'package command\n\nimport (\n\t"github.com/example/repo/internal/config"\n)\n\nfunc Run() {}', error: null };
+						if (path === 'internal/config/config.go') return { content: 'package config\n\nimport "fmt"\n\nfunc Load() {}', error: null };
 						if (_origRF3) return _origRF3(path);
 						return { error: 'not found' };
 					};

@@ -208,26 +208,31 @@ func setupTestPipeline(t *testing.T, opts TestPipelineOpts) *TestPipeline {
 	runGitCmd(t, dir, "commit", "-m", "initial commit")
 
 	// Create feature branch with changes.
-	featureFiles := opts.FeatureFiles
-	if len(featureFiles) == 0 {
-		featureFiles = []TestPipelineFile{
-			{"pkg/impl.go", "package pkg\n\nfunc Bar() string { return \"bar\" }\n"},
-			{"cmd/run.go", "package main\n\nfunc run() {}\n"},
-			{"docs/guide.md", "# Guide\n\nUsage instructions.\n"},
-		}
-	}
 	runGitCmd(t, dir, "checkout", "-b", "feature")
-	for _, f := range featureFiles {
-		full := filepath.Join(dir, f.Path)
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			t.Fatal(err)
+	if opts.NoFeatureFiles {
+		// Empty commit — feature branch exists but has no file changes.
+		runGitCmd(t, dir, "commit", "--allow-empty", "-m", "feature (no changes)")
+	} else {
+		featureFiles := opts.FeatureFiles
+		if len(featureFiles) == 0 {
+			featureFiles = []TestPipelineFile{
+				{"pkg/impl.go", "package pkg\n\nfunc Bar() string { return \"bar\" }\n"},
+				{"cmd/run.go", "package main\n\nfunc run() {}\n"},
+				{"docs/guide.md", "# Guide\n\nUsage instructions.\n"},
+			}
 		}
-		if err := os.WriteFile(full, []byte(f.Content), 0o644); err != nil {
-			t.Fatal(err)
+		for _, f := range featureFiles {
+			full := filepath.Join(dir, f.Path)
+			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(full, []byte(f.Content), 0o644); err != nil {
+				t.Fatal(err)
+			}
 		}
+		runGitCmd(t, dir, "add", "-A")
+		runGitCmd(t, dir, "commit", "-m", "feature work")
 	}
-	runGitCmd(t, dir, "add", "-A")
-	runGitCmd(t, dir, "commit", "-m", "feature work")
 
 	// Set up engine with config overrides.
 	overrides := map[string]interface{}{
@@ -253,6 +258,7 @@ func setupTestPipeline(t *testing.T, opts TestPipelineOpts) *TestPipeline {
 type TestPipelineOpts struct {
 	InitialFiles    []TestPipelineFile     // files on main (nil = default set)
 	FeatureFiles    []TestPipelineFile     // files on feature branch (nil = default set)
+	NoFeatureFiles  bool                   // if true, feature branch has no file changes (empty commit)
 	ConfigOverrides map[string]interface{} // pr-split config overrides
 }
 

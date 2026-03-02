@@ -2,6 +2,9 @@ package command
 
 import (
 	"encoding/json"
+	"fmt"
+	"os"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -333,4 +336,321 @@ func TestClassificationToGroups_EdgeCases(t *testing.T) {
 			t.Errorf("db description = %q, want 'Add database layer'", groups["db"].Description)
 		}
 	})
+}
+
+// ---------------------------------------------------------------------------
+// T40: Pipeline-level boundary conditions
+// ---------------------------------------------------------------------------
+
+// pipelineResult holds parsed automatedSplit() return data.
+type pipelineResult struct {
+	Error      string
+	PlanSplits int // number of splits in report.plan.splits
+	PlanFiles  int // total files across all plan splits
+}
+
+// parsePipelineResult extracts key metrics from the automatedSplit() return
+// value, which has the structure: { error, report: { plan: { splits: [...] } } }.
+func parsePipelineResult(t *testing.T, raw interface{}) pipelineResult {
+	t.Helper()
+	var m map[string]interface{}
+	if err := json.Unmarshal([]byte(raw.(string)), &m); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, raw)
+	}
+	r := pipelineResult{}
+	if e, ok := m["error"].(string); ok {
+		r.Error = e
+	}
+	report, _ := m["report"].(map[string]interface{})
+	if report != nil {
+		plan, _ := report["plan"].(map[string]interface{})
+		if plan != nil {
+			splits, _ := plan["splits"].([]interface{})
+			r.PlanSplits = len(splits)
+			for _, s := range splits {
+				sm, _ := s.(map[string]interface{})
+				if sm != nil {
+					files, _ := sm["files"].([]interface{})
+					r.PlanFiles += len(files)
+				}
+			}
+		}
+	}
+	return r
+}
+
+// TestAutoSplit_EmptyDiff verifies the pipeline gracefully handles a feature
+// branch with no changes relative to main (empty diff).
+func TestAutoSplit_EmptyDiff(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	// Set up a repo where "feature" branch is identical to "main" (no diff).
+	tp := setupTestPipeline(t, TestPipelineOpts{
+		InitialFiles: []TestPipelineFile{
+			{"a.go", "package a\n"},
+		},
+		NoFeatureFiles: true, // feature branch has no file changes
+		ConfigOverrides: map[string]interface{}{
+			"branchPrefix":  "split/",
+			"verifyCommand": "true",
+			"strategy":      "directory",
+		},
+	})
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tp.Dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	// Mock ClaudeCodeExecutor to avoid real AI.
+	if _, err := tp.EvalJS(`
+		ClaudeCodeExecutor = function(config) { this.config = config; };
+		ClaudeCodeExecutor.prototype.resolve = function() { return { error: 'not available' }; };
+		ClaudeCodeExecutor.prototype.spawn = function() { return { error: 'not resolved' }; };
+		ClaudeCodeExecutor.prototype.close = function() {};
+		ClaudeCodeExecutor.prototype.kill = function() {};
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({
+		disableTUI: true,
+		pollIntervalMs: 50,
+		classifyTimeoutMs: 5000,
+		planTimeoutMs: 5000,
+		resolveTimeoutMs: 5000,
+		maxResolveRetries: 0,
+		maxReSplits: 0
+	}))`)
+	if err != nil {
+		t.Fatalf("automatedSplit: %v", err)
+	}
+
+	pr := parsePipelineResult(t, result)
+
+	// Should either succeed with 0 files or produce a clear error —
+	// NOT panic, hang, or produce a corrupted state.
+	t.Logf("empty diff: error=%q planFiles=%d planSplits=%d", pr.Error, pr.PlanFiles, pr.PlanSplits)
+	if pr.PlanFiles != 0 && pr.Error == "" {
+		t.Errorf("expected 0 files or an error for empty diff, got %d files", pr.PlanFiles)
+	}
+}
+
+// TestAutoSplit_SingleFile verifies the pipeline handles a single-file change.
+func TestAutoSplit_SingleFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	tp := setupTestPipeline(t, TestPipelineOpts{
+		FeatureFiles: []TestPipelineFile{
+			{"single.go", "package single\n\nfunc Alone() {}\n"},
+		},
+		ConfigOverrides: map[string]interface{}{
+			"branchPrefix":  "split/",
+			"verifyCommand": "true",
+			"strategy":      "directory",
+		},
+	})
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tp.Dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	// Mock ClaudeCodeExecutor.
+	if _, err := tp.EvalJS(`
+		ClaudeCodeExecutor = function(config) { this.config = config; };
+		ClaudeCodeExecutor.prototype.resolve = function() { return { error: 'not available' }; };
+		ClaudeCodeExecutor.prototype.spawn = function() { return { error: 'not resolved' }; };
+		ClaudeCodeExecutor.prototype.close = function() {};
+		ClaudeCodeExecutor.prototype.kill = function() {};
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({
+		disableTUI: true,
+		pollIntervalMs: 50,
+		classifyTimeoutMs: 5000,
+		planTimeoutMs: 5000,
+		resolveTimeoutMs: 5000,
+		maxResolveRetries: 0,
+		maxReSplits: 0
+	}))`)
+	if err != nil {
+		t.Fatalf("automatedSplit: %v", err)
+	}
+
+	pr := parsePipelineResult(t, result)
+
+	t.Logf("single file: error=%q planFiles=%d planSplits=%d", pr.Error, pr.PlanFiles, pr.PlanSplits)
+
+	// Single file should produce exactly 1 file in the plan.
+	if pr.Error != "" {
+		t.Logf("pipeline completed with error (acceptable for single-file edge): %s", pr.Error)
+	}
+	if pr.PlanFiles != 1 {
+		t.Errorf("expected 1 plan file, got %d", pr.PlanFiles)
+	}
+}
+
+// TestAutoSplit_LargeDiff verifies the pipeline handles a 100+ file change
+// without hanging, panicking, or producing a corrupted plan.
+func TestAutoSplit_LargeDiff(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	// Generate 120 feature files across multiple directories.
+	var featureFiles []TestPipelineFile
+	for i := 0; i < 120; i++ {
+		dir := fmt.Sprintf("pkg%d", i/10)
+		name := fmt.Sprintf("%s/f%02d.go", dir, i%10)
+		content := fmt.Sprintf("package %s\n\nfunc F%d() {}\n", dir, i)
+		featureFiles = append(featureFiles, TestPipelineFile{name, content})
+	}
+
+	tp := setupTestPipeline(t, TestPipelineOpts{
+		FeatureFiles: featureFiles,
+		ConfigOverrides: map[string]interface{}{
+			"branchPrefix":  "split/",
+			"verifyCommand": "true",
+			"strategy":      "directory",
+			"maxFiles":      15, // force splitting
+		},
+	})
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tp.Dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	// Mock ClaudeCodeExecutor.
+	if _, err := tp.EvalJS(`
+		ClaudeCodeExecutor = function(config) { this.config = config; };
+		ClaudeCodeExecutor.prototype.resolve = function() { return { error: 'not available' }; };
+		ClaudeCodeExecutor.prototype.spawn = function() { return { error: 'not resolved' }; };
+		ClaudeCodeExecutor.prototype.close = function() {};
+		ClaudeCodeExecutor.prototype.kill = function() {};
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({
+		disableTUI: true,
+		pollIntervalMs: 50,
+		classifyTimeoutMs: 5000,
+		planTimeoutMs: 5000,
+		resolveTimeoutMs: 5000,
+		maxResolveRetries: 0,
+		maxReSplits: 0
+	}))`)
+	if err != nil {
+		t.Fatalf("automatedSplit: %v", err)
+	}
+
+	pr := parsePipelineResult(t, result)
+
+	t.Logf("large diff: error=%q planFiles=%d planSplits=%d", pr.Error, pr.PlanFiles, pr.PlanSplits)
+
+	// Must detect all 120 files.
+	if pr.PlanFiles != 120 {
+		t.Errorf("expected 120 plan files, got %d", pr.PlanFiles)
+	}
+	// With 120 files across 12 directories and maxFiles=15, expect multiple splits.
+	if pr.PlanSplits < 2 {
+		t.Errorf("expected at least 2 plan splits for 120 files, got %d", pr.PlanSplits)
+	}
+}
+
+// TestAutoSplit_BinaryFiles verifies the pipeline handles binary files in the
+// diff without crashing. Binary files show as "-\t-\tfilename" in --numstat
+// and should be grouped and split like any other file.
+func TestAutoSplit_BinaryFiles(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	// Create a repo with binary files on the feature branch.
+	tp := setupTestPipeline(t, TestPipelineOpts{
+		FeatureFiles: []TestPipelineFile{
+			{"images/logo.png", string([]byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00})}, // PNG header
+			{"data/config.bin", string([]byte{0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE, 0xFD})},
+			{"src/app.go", "package src\n\nfunc App() {}\n"}, // normal file alongside binary
+		},
+		ConfigOverrides: map[string]interface{}{
+			"branchPrefix":  "split/",
+			"verifyCommand": "true",
+			"strategy":      "directory",
+		},
+	})
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tp.Dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	// Mock ClaudeCodeExecutor.
+	if _, err := tp.EvalJS(`
+		ClaudeCodeExecutor = function(config) { this.config = config; };
+		ClaudeCodeExecutor.prototype.resolve = function() { return { error: 'not available' }; };
+		ClaudeCodeExecutor.prototype.spawn = function() { return { error: 'not resolved' }; };
+		ClaudeCodeExecutor.prototype.close = function() {};
+		ClaudeCodeExecutor.prototype.kill = function() {};
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify git sees the binary files.
+	diffOut, err := tp.EvalJS(`gitExec('` + strings.ReplaceAll(tp.Dir, `\`, `\\`) + `',
+		['diff', '--numstat', 'main...feature']).stdout`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("numstat output:\n%s", diffOut)
+
+	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({
+		disableTUI: true,
+		pollIntervalMs: 50,
+		classifyTimeoutMs: 5000,
+		planTimeoutMs: 5000,
+		resolveTimeoutMs: 5000,
+		maxResolveRetries: 0,
+		maxReSplits: 0
+	}))`)
+	if err != nil {
+		t.Fatalf("automatedSplit: %v", err)
+	}
+
+	pr := parsePipelineResult(t, result)
+
+	t.Logf("binary files: error=%q planFiles=%d planSplits=%d", pr.Error, pr.PlanFiles, pr.PlanSplits)
+
+	// Should detect all 3 files (2 binary + 1 source).
+	if pr.PlanFiles != 3 {
+		t.Errorf("expected 3 plan files (2 binary + 1 source), got %d", pr.PlanFiles)
+	}
+	// With 3 files across 3 directories, expect at least 1 split.
+	if pr.PlanSplits < 1 {
+		t.Errorf("expected at least 1 plan split, got %d", pr.PlanSplits)
+	}
 }

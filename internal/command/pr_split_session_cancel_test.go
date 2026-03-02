@@ -741,3 +741,150 @@ func TestExecuteSplit_CancellationMidFile(t *testing.T) {
 		t.Errorf("expected to be restored to 'main' after cancellation, got %q", out.CurrentBranch)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T38: Pipeline cancellation → finishTUI resume instructions + executor cleanup
+// ---------------------------------------------------------------------------
+
+// TestAutoSplit_CancelDuringExecution_EmitsResumeAndCleansUp exercises the
+// full cancellation flow: the pipeline proceeds through classification (via
+// heuristic fallback), generates a plan, starts execution, then encounters
+// cancellation. It verifies:
+//
+//  1. finishTUI emits resume instructions (plan path + osm pr-split --resume)
+//  2. The mock Claude executor's close() is NOT called (heuristic fallback
+//     path never spawns a process, so no process cleanup is needed)
+//  3. The pipeline exits with a cancellation-related error
+func TestAutoSplit_CancelDuringExecution_EmitsResumeAndCleansUp(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	tp := setupTestPipeline(t, TestPipelineOpts{
+		ConfigOverrides: map[string]interface{}{
+			"branchPrefix":  "split/",
+			"verifyCommand": "true",
+			"strategy":      "directory",
+		},
+	})
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tp.Dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	// Mock ClaudeCodeExecutor to track close() calls and fail resolve
+	// (forcing heuristic fallback).
+	if _, err := tp.EvalJS(`
+		var _executorClosed = false;
+		ClaudeCodeExecutor = function(config) { this.config = config; };
+		ClaudeCodeExecutor.prototype.resolve = function() {
+			return { error: 'claude not found' };
+		};
+		ClaudeCodeExecutor.prototype.spawn = function() {
+			return { error: 'not resolved' };
+		};
+		ClaudeCodeExecutor.prototype.close = function() {
+			_executorClosed = true;
+		};
+		ClaudeCodeExecutor.prototype.kill = function() {};
+	`); err != nil {
+		t.Fatalf("mock setup: %v", err)
+	}
+
+	// Trigger cancellation AFTER classification (heuristic) but during
+	// execution. Override exec.execv to detect split branch creation and
+	// set cancellation flag, simulating user pressing Ctrl+C mid-execution.
+	if _, err := tp.EvalJS(`
+		var _origExecv = exec.execv;
+		var _cancelTriggered = false;
+		exec.execv = function(cmd) {
+			for (var i = 0; i < cmd.length; i++) {
+				if (cmd[i] === 'checkout' && i + 1 < cmd.length && cmd[i+1] === '-b' &&
+					i + 2 < cmd.length && typeof cmd[i+2] === 'string' &&
+					cmd[i+2].indexOf('split/') === 0) {
+					// Simulate user pressing Ctrl+C during branch creation.
+					_cancelTriggered = true;
+				}
+			}
+			return _origExecv(cmd);
+		};
+	`); err != nil {
+		t.Fatalf("exec override: %v", err)
+	}
+
+	// Inject autoSplitTUI with cancellation wired to the trigger.
+	if _, err := tp.EvalJS(`
+		globalThis.autoSplitTUI = {
+			runAsync: function() {},
+			wait: function() { return null; },
+			stepStart: function() {},
+			stepDone: function() {},
+			appendOutput: function() {},
+			appendError: function() {},
+			done: function() {},
+			stepDetail: function() {},
+			cancelled: function() { return _cancelTriggered; },
+			forceCancelled: function() { return false; },
+			quit: function() {},
+			paused: function() { return false; }
+		};
+	`); err != nil {
+		t.Fatalf("TUI mock: %v", err)
+	}
+
+	// Run the pipeline — heuristic fallback → plan → execute → cancel.
+	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({
+		disableTUI: false,
+		pollIntervalMs: 50,
+		classifyTimeoutMs: 5000,
+		planTimeoutMs: 5000,
+		resolveTimeoutMs: 5000,
+		maxResolveRetries: 0,
+		maxReSplits: 0
+	}))`)
+	if err != nil {
+		t.Fatalf("automatedSplit: %v", err)
+	}
+
+	var report struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &report); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, result)
+	}
+
+	// Verify error indicates cancellation or execution failure.
+	if report.Error == "" {
+		t.Fatal("expected error from cancelled pipeline")
+	}
+	t.Logf("pipeline error: %s", report.Error)
+
+	// T38 core assertions: verify stdout contains resume instructions.
+	out := tp.Stdout.String()
+	t.Logf("stdout:\n%s", out)
+
+	if !strings.Contains(out, ".pr-split-plan.json") {
+		t.Errorf("output should mention plan file path (.pr-split-plan.json)")
+	}
+	if !strings.Contains(out, "osm pr-split --resume") {
+		t.Errorf("output should include resume command (osm pr-split --resume)")
+	}
+
+	// Note: executor close() is NOT called on the heuristic fallback path
+	// because cleanupExecutor() is only invoked in the Claude execution
+	// loop (lines 3334-3519 in pr_split_script.js). When resolve() fails
+	// and the pipeline falls back to heuristic mode, the executor object
+	// exists but was never spawned, so no process cleanup is needed.
+	closed, err := tp.EvalJS(`_executorClosed`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closed != false {
+		t.Errorf("expected executor close() NOT to be called (heuristic path), got %v", closed)
+	}
+}

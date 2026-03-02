@@ -536,15 +536,17 @@
       "task": "T65: executeSplit git rm failure path test",
       "description": "executeSplit (line 1274) 'D' status path calls git rm. Error path when git rm returns non-zero is NOT tested.",
       "acceptance": "Mock git rm to fail for 'D' status file. Verify error contains 'git rm', partial results include failed split, original branch restored.",
-      "status": "Not Started",
-      "contextPointers": ["pr_split_script.js:1371 (git rm in executeSplit)"]
+      "status": "Done",
+      "notes": "Subtest: git_rm_failure_returns_error_and_restores_branch. Mock rm --ignore-unmatch -f → permission denied. Verifies error contains 'git rm' + stderr, 1 partial result with error, checkout restoreBranch.",
+      "contextPointers": ["pr_split_script.js:1371 (git rm in executeSplit)", "pr_split_execution_test.go:TestExecuteSplit"]
     },
     {
       "task": "T66: executeSplit double commit failure test",
       "description": "When both normal git commit and git commit --allow-empty fail, error path needs testing.",
       "acceptance": "Mock both commit and commit --allow-empty to fail. Verify error mentions 'git commit failed', original branch restored.",
-      "status": "Not Started",
-      "contextPointers": ["pr_split_script.js:1420-1435 (commit fallback in executeSplit)"]
+      "status": "Done",
+      "notes": "Subtest: both_commit_and_allow_empty_commit_fail_returns_error. First commit → 'nothing to commit', allow-empty → 'lock error'. Error contains 'git commit failed' + allow-empty stderr. 1 partial result.",
+      "contextPointers": ["pr_split_script.js:1420-1435 (commit fallback in executeSplit)", "pr_split_execution_test.go:TestExecuteSplit"]
     },
     {
       "task": "T67: verifySplits scoped verify + callback signatures test",
@@ -571,8 +573,9 @@
       "task": "T70: loadPlan corrupted/truncated plan file edge cases",
       "description": "loadPlan (line 1207) NOT tested for: valid JSON wrong shape, truncated JSON, zero splits, missing baseBranch.",
       "acceptance": "≥4 subtests: wrong shape → graceful error, truncated JSON → parse error, splits=[] → loads with 0 totalSplits, missing baseBranch → loads without error.",
-      "status": "Not Started",
-      "contextPointers": ["pr_split_script.js:1207 (loadPlan)"]
+      "status": "Done",
+      "notes": "2 new subtests (other cases already covered by existing tests): zero_splits_loads_with_totalSplits_zero (splits=[] → totalSplits=0, pendingSplits=0), missing_baseBranch_in_runtime_loads_without_error (baseBranch falls back to runtime default). 'wrong shape' covered by existing 'unsupported plan version' test, 'truncated JSON' by 'invalid JSON' test.",
+      "contextPointers": ["pr_split_script.js:1207 (loadPlan)", "pr_split_planning_test.go:TestLoadPlan"]
     },
     {
       "task": "T71: verifyEquivalenceDetailed diff enrichment for non-equivalent trees",

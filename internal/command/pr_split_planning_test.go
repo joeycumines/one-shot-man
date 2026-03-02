@@ -1383,6 +1383,65 @@ func TestLoadPlan(t *testing.T) {
 				// This test checks runtime restoration — parse the wrapper.
 			},
 		},
+		// ---- T70: loadPlan corrupted/truncated edge cases ----
+		{
+			name: "zero splits loads with totalSplits zero",
+			setup: `
+				var emptyPlan = JSON.stringify({
+					version: 1,
+					runtime: { baseBranch: 'main' },
+					plan: {
+						baseBranch: 'main',
+						sourceBranch: 'feature',
+						splits: []
+					}
+				});
+				if (osmod) {
+					osmod.readFile = function(path) {
+						return { content: emptyPlan, error: null };
+					};
+				}
+			`,
+			invoke: `JSON.stringify(globalThis.prSplit.loadPlan())`,
+			check: func(t *testing.T, r loadPlanResult) {
+				if r.Error != nil {
+					t.Errorf("expected no error for empty splits, got: %s", *r.Error)
+				}
+				if r.TotalSplits != 0 {
+					t.Errorf("totalSplits = %d, want 0", r.TotalSplits)
+				}
+				if r.PendingSplits != 0 {
+					t.Errorf("pendingSplits = %d, want 0", r.PendingSplits)
+				}
+			},
+		},
+		{
+			name: "missing baseBranch in runtime loads without error",
+			setup: `
+				var noBranch = JSON.stringify({
+					version: 1,
+					runtime: { strategy: 'directory' },
+					plan: {
+						sourceBranch: 'feature',
+						splits: [{name: 's1', files: ['a.go'], message: 'm', order: 0}]
+					}
+				});
+				if (osmod) {
+					osmod.readFile = function(path) {
+						return { content: noBranch, error: null };
+					};
+				}
+			`,
+			invoke: `JSON.stringify(globalThis.prSplit.loadPlan())`,
+			check: func(t *testing.T, r loadPlanResult) {
+				if r.Error != nil {
+					t.Errorf("expected no error for missing baseBranch, got: %s", *r.Error)
+				}
+				if r.TotalSplits != 1 {
+					t.Errorf("totalSplits = %d, want 1", r.TotalSplits)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

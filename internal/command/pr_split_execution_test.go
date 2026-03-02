@@ -260,6 +260,78 @@ func TestExecuteSplit(t *testing.T) {
 				}
 			},
 		},
+		// ---- T65: git rm failure path ----
+		{
+			name: "git rm failure returns error and restores branch",
+			setup: `
+				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature');
+				globalThis._gitResponses['rev-parse --verify refs/heads/split/01-del'] = _gitFail('not');
+				globalThis._gitResponses['checkout -b split/01-del main'] = _gitOk('');
+				globalThis._gitResponses['rm --ignore-unmatch -f deleted.go'] = _gitFail('permission denied');
+				globalThis._gitResponses['checkout feature'] = _gitOk('');
+			`,
+			invoke: `JSON.stringify(globalThis.prSplit.executeSplit({
+				baseBranch: 'main',
+				sourceBranch: 'feature',
+				fileStatuses: {'deleted.go': 'D'},
+				splits: [
+					{name: 'split/01-del', files: ['deleted.go'], message: 'del', order: 0}
+				]
+			}))`,
+			check: func(t *testing.T, r executeSplitResult) {
+				if r.Error == nil {
+					t.Fatal("expected error for git rm failure")
+				}
+				if !strings.Contains(*r.Error, "git rm") {
+					t.Errorf("expected error to mention 'git rm', got: %s", *r.Error)
+				}
+				if !strings.Contains(*r.Error, "permission denied") {
+					t.Errorf("expected error to include stderr, got: %s", *r.Error)
+				}
+				if len(r.Results) != 1 {
+					t.Fatalf("expected 1 partial result, got %d", len(r.Results))
+				}
+				if r.Results[0].Error == nil {
+					t.Error("expected result[0] to have error")
+				}
+			},
+		},
+		// ---- T66: double commit failure (both normal and --allow-empty) ----
+		{
+			name: "both commit and allow-empty commit fail returns error",
+			setup: `
+				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature');
+				globalThis._gitResponses['rev-parse --verify refs/heads/split/01-broken'] = _gitFail('not');
+				globalThis._gitResponses['checkout -b split/01-broken main'] = _gitOk('');
+				globalThis._gitResponses['checkout feature -- broken.go'] = _gitOk('');
+				globalThis._gitResponses['add --'] = _gitOk('');
+				globalThis._gitResponses['commit -m broken'] = _gitFail('nothing to commit');
+				globalThis._gitResponses['commit --allow-empty -m broken'] = _gitFail('lock error');
+				globalThis._gitResponses['checkout feature'] = _gitOk('');
+			`,
+			invoke: `JSON.stringify(globalThis.prSplit.executeSplit({
+				baseBranch: 'main',
+				sourceBranch: 'feature',
+				fileStatuses: {'broken.go': 'M'},
+				splits: [
+					{name: 'split/01-broken', files: ['broken.go'], message: 'broken', order: 0}
+				]
+			}))`,
+			check: func(t *testing.T, r executeSplitResult) {
+				if r.Error == nil {
+					t.Fatal("expected error for double commit failure")
+				}
+				if !strings.Contains(*r.Error, "git commit failed") {
+					t.Errorf("expected 'git commit failed', got: %s", *r.Error)
+				}
+				if !strings.Contains(*r.Error, "lock error") {
+					t.Errorf("expected allow-empty stderr in error, got: %s", *r.Error)
+				}
+				if len(r.Results) != 1 {
+					t.Fatalf("expected 1 partial result, got %d", len(r.Results))
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

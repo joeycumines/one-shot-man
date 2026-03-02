@@ -1,0 +1,386 @@
+package command
+
+import (
+	"bytes"
+	"flag"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/joeycumines/one-shot-man/internal/config"
+)
+
+func TestPrSplitCommand_NonInteractive(t *testing.T) {
+	cfg := config.NewConfig()
+	cmd := NewPrSplitCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+
+	cmd.testMode = true
+	cmd.interactive = false
+	cmd.store = "memory"
+	cmd.session = t.Name()
+
+	err := cmd.Execute([]string{}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+
+	output := stdout.String()
+	if !contains(output, "PR Split") {
+		t.Errorf("Expected PR Split initial message in output, got: %s", output)
+	}
+}
+
+func TestPrSplitCommand_Name(t *testing.T) {
+	cfg := config.NewConfig()
+	cmd := NewPrSplitCommand(cfg)
+
+	if cmd.Name() != "pr-split" {
+		t.Errorf("Expected command name 'pr-split', got: %s", cmd.Name())
+	}
+}
+
+func TestPrSplitCommand_Description(t *testing.T) {
+	cfg := config.NewConfig()
+	cmd := NewPrSplitCommand(cfg)
+
+	expected := "Split a large PR into reviewable stacked branches"
+	if cmd.Description() != expected {
+		t.Errorf("Expected description '%s', got: %s", expected, cmd.Description())
+	}
+}
+
+func TestPrSplitCommand_Usage(t *testing.T) {
+	cfg := config.NewConfig()
+	cmd := NewPrSplitCommand(cfg)
+
+	expected := "pr-split [options]"
+	if cmd.Usage() != expected {
+		t.Errorf("Expected usage '%s', got: %s", expected, cmd.Usage())
+	}
+}
+
+func TestPrSplitCommand_SetupFlags(t *testing.T) {
+	cfg := config.NewConfig()
+	cmd := NewPrSplitCommand(cfg)
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+
+	cmd.SetupFlags(fs)
+
+	// Verify all expected flags are registered
+	expectedFlags := []string{
+		"interactive", "i",
+		"base", "strategy", "max", "prefix", "verify", "dry-run",
+		"json",
+		"test", "session", "store", "log-level", "log-file", "log-buffer",
+		"claude-command", "claude-arg", "claude-model", "claude-config-dir", "claude-env",
+		"timeout",
+	}
+
+	for _, name := range expectedFlags {
+		if fs.Lookup(name) == nil {
+			t.Errorf("Expected '%s' flag to be defined", name)
+		}
+	}
+}
+
+func TestPrSplitCommand_FlagParsing(t *testing.T) {
+	cfg := config.NewConfig()
+	cmd := NewPrSplitCommand(cfg)
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetupFlags(fs)
+
+	err := fs.Parse([]string{
+		"--base", "develop",
+		"--strategy", "extension",
+		"--max", "5",
+		"--prefix", "pr/",
+		"--verify", "go test ./...",
+		"--dry-run",
+		"--test",
+	})
+	if err != nil {
+		t.Fatalf("Failed to parse flags: %v", err)
+	}
+
+	if cmd.baseBranch != "develop" {
+		t.Errorf("Expected baseBranch 'develop', got: %s", cmd.baseBranch)
+	}
+	if cmd.strategy != "extension" {
+		t.Errorf("Expected strategy 'extension', got: %s", cmd.strategy)
+	}
+	if cmd.maxFiles != 5 {
+		t.Errorf("Expected maxFiles 5, got: %d", cmd.maxFiles)
+	}
+	if cmd.branchPrefix != "pr/" {
+		t.Errorf("Expected branchPrefix 'pr/', got: %s", cmd.branchPrefix)
+	}
+	if cmd.verifyCommand != "go test ./..." {
+		t.Errorf("Expected verifyCommand 'go test ./...', got: %s", cmd.verifyCommand)
+	}
+	if !cmd.dryRun {
+		t.Error("Expected dryRun to be true")
+	}
+	if !cmd.testMode {
+		t.Error("Expected testMode to be true after parsing --test flag")
+	}
+}
+
+func TestPrSplitCommand_FlagShortForm(t *testing.T) {
+	cfg := config.NewConfig()
+	cmd := NewPrSplitCommand(cfg)
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetupFlags(fs)
+
+	err := fs.Parse([]string{"-i"})
+	if err != nil {
+		t.Fatalf("Failed to parse -i flag: %v", err)
+	}
+
+	if !cmd.interactive {
+		t.Error("Expected interactive to be true after parsing -i flag")
+	}
+}
+
+func TestPrSplitCommand_FlagDefaults(t *testing.T) {
+	cfg := config.NewConfig()
+	cmd := NewPrSplitCommand(cfg)
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetupFlags(fs)
+
+	// Don't parse any flags — check defaults
+	if cmd.baseBranch != "main" {
+		t.Errorf("Expected default baseBranch 'main', got: %s", cmd.baseBranch)
+	}
+	if cmd.strategy != "directory" {
+		t.Errorf("Expected default strategy 'directory', got: %s", cmd.strategy)
+	}
+	if cmd.maxFiles != 10 {
+		t.Errorf("Expected default maxFiles 10, got: %d", cmd.maxFiles)
+	}
+	if cmd.branchPrefix != "split/" {
+		t.Errorf("Expected default branchPrefix 'split/', got: %s", cmd.branchPrefix)
+	}
+	if cmd.verifyCommand != "make" {
+		t.Errorf("Expected default verifyCommand 'make', got: %s", cmd.verifyCommand)
+	}
+	if cmd.dryRun {
+		t.Error("Expected default dryRun to be false")
+	}
+	if cmd.resume {
+		t.Error("Expected default resume to be false")
+	}
+}
+
+// TestPrSplitCommand_ResumeFlag verifies the --resume flag is parsed
+// and the config override works.
+func TestPrSplitCommand_ResumeFlag(t *testing.T) {
+	t.Parallel()
+
+	t.Run("flag sets resume", func(t *testing.T) {
+		t.Parallel()
+		cfg := config.NewConfig()
+		cmd := NewPrSplitCommand(cfg)
+		fs := flag.NewFlagSet("test", flag.ContinueOnError)
+		cmd.SetupFlags(fs)
+		if err := fs.Parse([]string{"--resume"}); err != nil {
+			t.Fatal(err)
+		}
+		if !cmd.resume {
+			t.Error("expected resume to be true after --resume flag")
+		}
+	})
+
+	t.Run("config override sets resume", func(t *testing.T) {
+		t.Parallel()
+		cfg := config.NewConfig()
+		cfg.SetCommandOption("pr-split", "resume", "true")
+		cmd := NewPrSplitCommand(cfg)
+		fs := flag.NewFlagSet("test", flag.ContinueOnError)
+		cmd.SetupFlags(fs)
+		if err := fs.Parse(nil); err != nil {
+			t.Fatal(err)
+		}
+		// The config defaults are applied in Run(), not SetupFlags().
+		// Verify the config key is recognized and retrievable.
+		if v, ok := cfg.GetCommandOption("pr-split", "resume"); !ok || v != "true" {
+			t.Errorf("config should have pr-split.resume=true, got ok=%v v=%q", ok, v)
+		}
+	})
+}
+
+func TestPrSplitCommand_FlagValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		setup   func(cmd *PrSplitCommand)
+		wantErr string
+	}{
+		{
+			name: "invalid strategy",
+			setup: func(cmd *PrSplitCommand) {
+				cmd.strategy = "bogus"
+			},
+			wantErr: `invalid --strategy "bogus"`,
+		},
+		{
+			name: "max files zero",
+			setup: func(cmd *PrSplitCommand) {
+				cmd.maxFiles = 0
+			},
+			wantErr: "invalid --max 0: must be at least 1",
+		},
+		{
+			name: "max files negative",
+			setup: func(cmd *PrSplitCommand) {
+				cmd.maxFiles = -5
+			},
+			wantErr: "invalid --max -5: must be at least 1",
+		},
+		{
+			name: "negative timeout",
+			setup: func(cmd *PrSplitCommand) {
+				cmd.timeout = -1 * time.Second
+			},
+			wantErr: "invalid --timeout",
+		},
+		{
+			name: "valid defaults pass",
+			setup: func(cmd *PrSplitCommand) {
+				// defaults should be valid — no changes
+			},
+			wantErr: "",
+		},
+		{
+			name: "valid auto strategy",
+			setup: func(cmd *PrSplitCommand) {
+				cmd.strategy = "auto"
+			},
+			wantErr: "",
+		},
+		{
+			name: "valid dependency strategy",
+			setup: func(cmd *PrSplitCommand) {
+				cmd.strategy = "dependency"
+			},
+			wantErr: "",
+		},
+		{
+			name: "valid positive timeout",
+			setup: func(cmd *PrSplitCommand) {
+				cmd.timeout = 5 * time.Minute
+			},
+			wantErr: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.NewConfig()
+			cmd := NewPrSplitCommand(cfg)
+			cmd.testMode = true
+			cmd.interactive = false
+			cmd.store = "memory"
+			cmd.session = t.Name()
+			tt.setup(cmd)
+
+			var stdout, stderr bytes.Buffer
+			err := cmd.Execute(nil, &stdout, &stderr)
+
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("expected no error, got: %v", err)
+				}
+			} else {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("expected error containing %q, got: %v", tt.wantErr, err)
+				}
+			}
+		})
+	}
+}
+
+func TestPrSplitCommand_ExecuteWithArgs(t *testing.T) {
+	cfg := config.NewConfig()
+	cmd := NewPrSplitCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+
+	cmd.testMode = true
+	cmd.interactive = false
+	cmd.store = "memory"
+	cmd.session = t.Name()
+
+	args := []string{"arg1", "arg2"}
+	err := cmd.Execute(args, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Expected no error with args, got: %v", err)
+	}
+
+	output := stdout.String()
+	if !contains(output, "PR Split") {
+		t.Errorf("Expected PR Split message with args, got: %s", output)
+	}
+}
+
+func TestPrSplitCommand_ConfigColorOverrides(t *testing.T) {
+	cfg := config.NewConfig()
+	cfg.Global = map[string]string{
+		"prompt.color.input":  "green",
+		"prompt.color.prefix": "cyan",
+		"other.setting":       "value",
+	}
+
+	cmd := NewPrSplitCommand(cfg)
+
+	var stdout, stderr bytes.Buffer
+
+	cmd.testMode = true
+	cmd.interactive = false
+	cmd.store = "memory"
+	cmd.session = t.Name()
+
+	err := cmd.Execute([]string{}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Expected no error with color config, got: %v", err)
+	}
+
+	output := stdout.String()
+	if !contains(output, "PR Split") {
+		t.Errorf("Expected PR Split message with color config, got: %s", output)
+	}
+}
+
+func TestPrSplitCommand_NilConfig(t *testing.T) {
+	cmd := NewPrSplitCommand(nil)
+
+	var stdout, stderr bytes.Buffer
+
+	cmd.testMode = true
+	cmd.interactive = false
+	cmd.store = "memory"
+	cmd.session = t.Name()
+
+	err := cmd.Execute([]string{}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("Expected no error with nil config, got: %v", err)
+	}
+
+	output := stdout.String()
+	if !contains(output, "PR Split") {
+		t.Errorf("Expected PR Split message with nil config, got: %s", output)
+	}
+}
+
+func TestPrSplitCommand_EmbeddedContent(t *testing.T) {
+	if len(prSplitTemplate) == 0 {
+		t.Error("Expected prSplitTemplate to be non-empty")
+	}
+
+	if len(prSplitScript) == 0 {
+		t.Error("Expected prSplitScript to be non-empty")
+	}
+}

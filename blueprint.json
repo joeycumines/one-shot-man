@@ -33,8 +33,8 @@
     "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp."
   },
   "statusSection": {
-    "currentState": "Blueprint rewritten with all critical review findings addressed. Task ordering corrected: regression replication tests come BEFORE fixes. Existing test assertion inversions explicitly documented. Ready for execution.",
-    "goalState": "On macOS, osm pr-split --strategy auto reliably completes end-to-end with all 6 regressions fixed, backed by deterministic tests, with make all green cross-platform.",
+    "currentState": "TEST FILE SPLIT COMPLETE + ASYNC INFRASTRUCTURE DONE. `make make-all-with-log` passes (exit 0). pr_split_test.go split from 10,645 to ~650 lines + 12 new satellite files. dispatchAwaitPromise with proper Promise-aware dispatch. evalJS rewritten with two-path approach (await detection → async IIFE, no-await → direct RunString with Promise chaining). Handler type assertion fallback via goja.AssertFunction(vm.ToValue(handler)). REMAINING: T04a sendToHandle async conversion, T04b real E2E test, T04c Windows, T21-T31.",
+    "goalState": "On macOS, osm pr-split --strategy auto reliably completes end-to-end with all 6 regressions fixed, backed by deterministic tests, with make all green cross-platform. REAL end-to-end tests via TestMain flags.",
     "replanLog": [
       {
         "trigger": "Investigation phase: 6 regressions validated against source code",
@@ -45,10 +45,32 @@
         "trigger": "Rule of Two Review 1: 3 CRITICAL issues found",
         "affectedTaskRange": "All tasks reordered",
         "summary": "Critical fixes: (1) Regression replication tests added BEFORE each fix. (2) sendToHandle fix moved BEFORE claude command removal. (3) Existing test assertion inversions explicitly handled. (4) T29 corrected to remove JS bindings only. (5) Mechanized tests added for REPL removal. (6) Resume verification task added."
+      },
+      {
+        "trigger": "HANA-SAN CRITICAL REVIEW: sendToHandle STILL BROKEN",
+        "affectedTaskRange": "Revert T04 status to In Progress, insert T04a-T04c for coalescing fix",
+        "summary": "T04 claimed done but ACTUAL behavior: PTY coalesces two rapid writes. Need (1) inter-write delay or (2) fsync-like flush. Also: End-to-end test with REAL Claude mandatory. Windows verification skipped. Inserting T04a: Add delay. T04b: Create real E2E test using -claude-command. T04c: Run make-all-run-windows."
+      }
+      {
+        "trigger": "Session: Test file split + async infrastructure overhaul",
+        "affectedTaskRange": "New TSplit-1/TSplit-2 inserted before T04a",
+        "summary": "pr_split_test.go split into 12 new satellite files. dispatchAwaitPromise, evalJS, evalJSAsync rewritten for proper Promise-aware dispatch. Handler type assertion fallback added. All ~97 failures resolved → make all green."
       }
     ]
   },
   "sequentialTasks": [
+    {
+      "task": "TSplit-1: Split pr_split_test.go into manageable files",
+      "description": "Split the 10,645-line pr_split_test.go into ~650 lines infrastructure-only + 12 new satellite test files: pr_split_cmd_meta_test.go, pr_split_heuristic_run_test.go, pr_split_claude_config_test.go, pr_split_template_unit_test.go, pr_split_mode_autofix_test.go, pr_split_conflict_retry_test.go, pr_split_local_integration_test.go, pr_split_scope_misc_test.go, pr_split_tui_subcommands_test.go, pr_split_session_cancel_test.go, pr_split_edge_hardening_test.go, pr_split_autosplit_recovery_test.go.",
+      "acceptance": "pr_split_test.go contains only infrastructure (git helpers, TestPipeline, dispatch/eval functions). All test functions moved to appropriate satellite files. make all passes.",
+      "status": "Done"
+    },
+    {
+      "task": "TSplit-2: Async dispatch + evalJS infrastructure for Promise-aware testing",
+      "description": "Rewrote dispatchAwaitPromise (duck-typed .then/.catch Promise chaining with handler type fallback via goja.AssertFunction). Rewrote evalJS with two-path approach: await-containing JS → async IIFE wrapper, statement/expression JS without await → direct vm.RunString with Promise detection. Fixed evalJSAsync for consistency. Fixed TestPrSplitCommand_ClaudeFixFixWithoutExecutor to await async claude-fix strategy. Files: pr_split_test.go (infrastructure), pr_split_mode_autofix_test.go (await fix).",
+      "acceptance": "All ~200 pr-split tests pass. dispatchAwaitPromise properly awaits async command handlers. evalJS handles statements, expressions, and await expressions. make make-all-with-log exit 0.",
+      "status": "Done"
+    },
     {
       "task": "T01: Run make all to establish clean baseline",
       "description": "Run `make make-all-with-log` to verify the build passes on macOS before any changes. Check build.log for pre-existing issues.",
@@ -71,13 +93,31 @@
       "task": "T04: Fix sendToHandle to send text and Enter as separate writes",
       "description": "In internal/command/pr_split_script.js, function sendToHandle (search 'function sendToHandle'): (1) Remove `var payload = text + '\\n'` pattern. (2) Send `text` first, then send `'\\n'` as a separate write. (3) For TUI path (autoSplitTUI.sendWithCancel): call twice — first with text, then with newline. (4) For fallback path (handle.send): call send(text), then send('\\n'). (5) ERROR HANDLING: If first write succeeds but second fails, treat as fatal pipeline error — log both, propagate single unified error. Do not retry just the newline. (6) Update misleading comment that claims 'single-write pattern is deterministic' to describe the two-write approach and WHY it's necessary (non-blocking TUI readers treat single-write as paste). EXISTING TESTS WILL BREAK: TestIntegration_SendToHandle_FallbackDirect (asserts 1 send), TestIntegration_SendToHandle_TUIPath (asserts 1 sendWithCancel call). These must be updated to assert 2 calls in the same commit.",
       "acceptance": "sendToHandle sends text and newline as two distinct writes. Both TUI and fallback paths updated. Comment corrected. Existing tests updated from asserting 1 write to asserting 2 writes.",
-      "status": "Done"
+      "status": "Incomplete - PTY coalesces writes, need delay"
+    },
+    {
+      "task": "T04a: REARCHITECT sendToHandle as async Promise-based function",
+      "description": "The blocking time.Sleep approach (even in a spawned goroutine with select) VIOLATES the event loop contract. Go function calls from JS block the event loop until they return. CORRECT ARCHITECTURE: (1) Remove sendTextWithEnter Go function entirely. (2) In JS, make sendToHandle return a Promise. (3) Use setTimeout for the 10ms delay: return new Promise(resolve => { sendWithCancel(text); setTimeout(() => { sendWithCancel(newline); resolve({error:null}); }, 10); }). (4) Update ALL callers of sendToHandle to use await or .then() pattern. (5) This requires converting affected functions to async. Files: pr_split_script.js (sendToHandle, sendClassificationPrompt, etc.), pr_split.go (remove sendTextWithEnter binding).",
+      "acceptance": "sendToHandle returns Promise. Delay uses JS setTimeout (not Go time.Sleep). Event loop never blocked. All callers use await. Tests verify async behavior.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T04b: Create REAL end-to-end integration test using TestMain -claude-command",
+      "description": "Create TestIntegration_AutoSplit_RealE2E that: (1) Requires -integration and -claude-command flags. (2) Uses the TestMain flags -claude-command=ollama -claude-arg=launch -claude-arg=claude -claude-arg=--model=minimax-m2.5:cloud -claude-arg=-- (or similar). (3) Sets up a real git repo with feature branch. (4) Runs automatedSplit() with the REAL Claude binary. (5) Verifies prompt is SUBMITTED (not pasted) by checking Claude responds coherently. (6) This test MUST use skipIfNoClaude(t) and have explicit timeout. Run via make integration-test-prsplit.",
+      "acceptance": "Real Claude integration test exists that exercises actual prompt submission. Test passes with configured Claude command. Test skips gracefully when Claude not available.",
+      "status": "Not Started"
+    },
+    {
+      "task": "T04c: Verify Windows build via make-all-run-windows",
+      "description": "Run `make make-all-run-windows` to verify full Windows CI passes. If Windows runner infrastructure unavailable, at minimum run `GOOS=windows go build ./...` and document the gap.",
+      "acceptance": "Windows tests pass OR documented gap with cross-compile verification.",
+      "status": "Not Started"
     },
     {
       "task": "T05: Run make all after sendToHandle fix",
       "description": "Run `make make-all-with-log` and `make integration-test-prsplit-mcp`. All tests must pass including the updated sendToHandle tests.",
       "acceptance": "All tests pass. No regressions.",
-      "status": "Done"
+      "status": "Blocked - depends on T04a-T04c completion"
     },
     {
       "task": "T06: Regression replication — executeSplit worktree checkout conflict",

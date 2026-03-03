@@ -598,3 +598,127 @@ func TestPrSplitCommand_RenderConflictPrompt(t *testing.T) {
 		t.Error("Rendered prompt should mention reportResolution")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T95: renderPrompt direct unit tests (non-exported template engine)
+// ---------------------------------------------------------------------------
+
+func TestRenderPrompt(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	tests := []struct {
+		name      string
+		js        string
+		wantText  string
+		wantError string
+	}{
+		{
+			name:     "simple variable substitution",
+			js:       `JSON.stringify(renderPrompt('Hello {{.Name}}!', {Name: 'World'}))`,
+			wantText: "Hello World!",
+		},
+		{
+			name:     "multiple variables",
+			js:       `JSON.stringify(renderPrompt('{{.A}} and {{.B}}', {A: 'foo', B: 'bar'}))`,
+			wantText: "foo and bar",
+		},
+		{
+			name:     "empty template",
+			js:       `JSON.stringify(renderPrompt('', {Name: 'X'}))`,
+			wantText: "",
+		},
+		{
+			name:     "no variables in template",
+			js:       `JSON.stringify(renderPrompt('static text', {}))`,
+			wantText: "static text",
+		},
+		{
+			name:     "numeric value",
+			js:       `JSON.stringify(renderPrompt('count: {{.Count}}', {Count: 42}))`,
+			wantText: "count: 42",
+		},
+		{
+			name:      "malformed template syntax",
+			js:        `JSON.stringify(renderPrompt('{{.Unclosed', {Foo: 1}))`,
+			wantError: "template render failed:",
+		},
+		{
+			name:     "special characters in value",
+			js:       `JSON.stringify(renderPrompt('val={{.V}}', {V: '<script>alert("xss")</script>'}))`,
+			wantText: `<script>alert("xss")</script>`, // text/template does NOT escape HTML
+		},
+		{
+			name:     "empty data object",
+			js:       `JSON.stringify(renderPrompt('no vars here', null))`,
+			wantText: "no vars here",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			val, err := evalJS(tt.js)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var result struct {
+				Text  string `json:"text"`
+				Error string `json:"error"`
+			}
+			if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+				t.Fatalf("parse: %v\nraw: %s", err, val)
+			}
+
+			if tt.wantError != "" {
+				if result.Error == "" {
+					t.Errorf("expected error containing %q, got no error (text=%q)", tt.wantError, result.Text)
+				} else if !strings.Contains(result.Error, tt.wantError) {
+					t.Errorf("error %q does not contain %q", result.Error, tt.wantError)
+				}
+				return
+			}
+
+			if result.Error != "" {
+				t.Fatalf("unexpected error: %s", result.Error)
+			}
+			if tt.wantText != "" && !strings.Contains(result.Text, tt.wantText) {
+				t.Errorf("text %q does not contain %q", result.Text, tt.wantText)
+			}
+		})
+	}
+}
+
+func TestRenderPrompt_TemplateModuleUnavailable(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Temporarily null out the template module and test the guard.
+	val, err := evalJS(`
+		var savedTemplate = template;
+		template = null;
+		var result = JSON.stringify(renderPrompt('hello {{.Name}}', {Name: 'World'}));
+		template = savedTemplate;
+		result;
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result struct {
+		Text  string `json:"text"`
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, val)
+	}
+
+	if result.Error == "" {
+		t.Fatal("expected error when template module is null")
+	}
+	if !strings.Contains(result.Error, "osm:text/template module not available") {
+		t.Errorf("expected 'not available' error, got: %s", result.Error)
+	}
+}

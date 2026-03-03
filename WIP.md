@@ -1,6 +1,6 @@
-# WIP: T91+T92+T93 committing — expansion cycle 3 nearly complete
+# WIP: Expansion cycle 4 — T95-T103 ready to commit
 
-## Status: T91+T92+T93 implemented and verified. Committing now.
+## Status: Cycle 4 tests written and full suite green. Awaiting Rule of Two.
 
 ### Commits:
 - 5b3dea6: T61-T62 (splitsAreIndependent + extractGoPkgs tests)
@@ -12,18 +12,23 @@
 - b363d9b: T76+T77+T78 (fix strategies, pause, step timeout)
 - 37c83b3: T81+T83+T84 (verifyAndCommit BT, already-covered notes)
 - 6c1e3a2: T85+T86+T88+T94 (extractGoImports, waitForLogged, cleanupExecutor)
-- PENDING: T91+T92+T93 commit
+- a2e90f8: T91+T92+T93 (parseClaudeEnv, timeout config, tree-hash-mismatch)
+- PENDING: T95-T100+T102+T103 (cycle 4: renderPrompt, splitsAreIndependentFromMaps, sendWithCancel 2s fallback, config max parsing, uncategorized files, validatePlan fallback, buildCommands dispatch, detectLanguage)
+
+### Cycle 4 Test Files Changed:
+- pr_split_template_unit_test.go: T95 — TestRenderPrompt (8 subtests) + TestRenderPrompt_TemplateModuleUnavailable
+- pr_split_grouping_test.go: T96 — TestSplitsAreIndependentFromMaps (6 subtests)
+- pr_split_integration_test.go: T97 — TestPrSplitSendWithCancel_KillTimeoutFallback + _ForceKillTimeoutFallback
+- pr_split_cmd_meta_test.go: T98 — TestPrSplitCommand_MaxConfigParsing (7 subtests)
+- pr_split_analysis_test.go: T99 — 3 uncategorized file tests + T100 — TestValidatePlan_FallbackToLocal
+- pr_split_tui_subcommands_test.go: T102 — TestPrSplitCommand_BuildCommandsAllDispatchable + TestPrSplitCommand_UnknownCommandError
+- T103: detectLanguage — already covered (15+ subtests)
+- T101: Deferred — complex MCP re-split cycle mock
 
 ### Blueprint State:
-- T01-T94: Done (except T37 blocked, T87/T89/T90 not started)
-- All 80 exported prSplit functions confirmed tested
-
-### Files Modified (uncommitted):
-- pr_split.go: Extracted parseClaudeEnv as standalone function
-- pr_split_cmd_meta_test.go: T91 (10 subtests) + T92 (7 subtests)
-- pr_split_prompt_test.go: T93 TestHeuristicFallback_TreeHashMismatch
-- blueprint.json: T91/T92/T93 → Done
+- T01-T100,T102,T103: Done (except T37 blocked, T101 deferred)
+- Full suite: make all — PASS (0 FAIL, command pkg 678.9s)
 
 ### Next:
-- Commit T91+T92+T93
-- Plan expansion cycle 4 (T87/T89/T90 deep pipeline tests or new scope)
+- Rule of Two → commit cycle 4
+- Plan expansion cycle 5

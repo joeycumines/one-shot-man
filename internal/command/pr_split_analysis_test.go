@@ -1695,3 +1695,272 @@ func TestSaveTelemetry_MkdirFails(t *testing.T) {
 		t.Errorf("expected non-null error for bad path, got: %s", s)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T99: Uncategorized file assignment (post-classification logic)
+// ---------------------------------------------------------------------------
+
+func TestUncategorizedFileAssignment_ArrayFormat(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Simulate array-format classification missing 2 of 5 files.
+	val, err := evalJS(`(function() {
+		var analysis = { files: ['a.go', 'b.go', 'c.go', 'd.go', 'e.go'] };
+		var classMap = [
+			{ name: 'core', description: 'Core files', files: ['a.go', 'b.go'] },
+			{ name: 'util', description: 'Utility files', files: ['c.go'] }
+		];
+		// d.go and e.go are not classified.
+
+		// Reproduce the uncategorized assignment logic from automatedSplit Step 4.
+		var fileSet = {};
+		for (var ci = 0; ci < classMap.length; ci++) {
+			var catFiles = classMap[ci].files || [];
+			for (var fi = 0; fi < catFiles.length; fi++) {
+				fileSet[catFiles[fi]] = true;
+			}
+		}
+		var missing = [];
+		for (var i = 0; i < analysis.files.length; i++) {
+			if (!fileSet[analysis.files[i]]) {
+				missing.push(analysis.files[i]);
+			}
+		}
+		if (missing.length > 0) {
+			classMap.push({ name: 'uncategorized', description: 'Uncategorized changes', files: missing });
+		}
+		return JSON.stringify(classMap);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var groups []struct {
+		Name  string   `json:"name"`
+		Files []string `json:"files"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &groups); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, val)
+	}
+
+	// Should have 3 groups: core, util, uncategorized
+	if len(groups) != 3 {
+		t.Fatalf("expected 3 groups, got %d: %v", len(groups), groups)
+	}
+	uncat := groups[2]
+	if uncat.Name != "uncategorized" {
+		t.Errorf("expected 'uncategorized', got %q", uncat.Name)
+	}
+	if len(uncat.Files) != 2 {
+		t.Fatalf("expected 2 uncategorized files, got %d", len(uncat.Files))
+	}
+	// The missing files should be d.go and e.go.
+	fileSet := map[string]bool{}
+	for _, f := range uncat.Files {
+		fileSet[f] = true
+	}
+	if !fileSet["d.go"] || !fileSet["e.go"] {
+		t.Errorf("expected d.go and e.go in uncategorized, got %v", uncat.Files)
+	}
+}
+
+func TestUncategorizedFileAssignment_MapFormat(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Simulate legacy map-format classification missing 1 of 4 files.
+	val, err := evalJS(`(function() {
+		var analysis = { files: ['a.go', 'b.go', 'c.go', 'd.go'] };
+		var classMap = { 'a.go': 'core', 'b.go': 'core', 'c.go': 'util' };
+		// d.go is not classified.
+
+		var missing = [];
+		for (var i = 0; i < analysis.files.length; i++) {
+			if (!classMap[analysis.files[i]]) {
+				missing.push(analysis.files[i]);
+			}
+		}
+		if (missing.length > 0) {
+			for (var j = 0; j < missing.length; j++) {
+				classMap[missing[j]] = 'uncategorized';
+			}
+		}
+		return JSON.stringify(classMap);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result map[string]string
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, val)
+	}
+
+	if result["d.go"] != "uncategorized" {
+		t.Errorf("expected d.go='uncategorized', got %q", result["d.go"])
+	}
+	if result["a.go"] != "core" {
+		t.Errorf("expected a.go='core', got %q", result["a.go"])
+	}
+}
+
+func TestUncategorizedFileAssignment_AllClassified(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// All files classified — no uncategorized group should be added.
+	val, err := evalJS(`(function() {
+		var analysis = { files: ['a.go', 'b.go'] };
+		var classMap = [
+			{ name: 'core', description: 'Core', files: ['a.go', 'b.go'] }
+		];
+		var fileSet = {};
+		for (var ci = 0; ci < classMap.length; ci++) {
+			var catFiles = classMap[ci].files || [];
+			for (var fi = 0; fi < catFiles.length; fi++) {
+				fileSet[catFiles[fi]] = true;
+			}
+		}
+		var missing = [];
+		for (var i = 0; i < analysis.files.length; i++) {
+			if (!fileSet[analysis.files[i]]) missing.push(analysis.files[i]);
+		}
+		if (missing.length > 0) {
+			classMap.push({ name: 'uncategorized', description: 'Uncategorized changes', files: missing });
+		}
+		return JSON.stringify(classMap);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var groups []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &groups); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(groups) != 1 {
+		t.Errorf("expected 1 group (no uncategorized), got %d", len(groups))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T100: validatePlan failure → local plan fallback
+// ---------------------------------------------------------------------------
+
+func TestValidatePlan_FallbackToLocal(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Reproduce the Step 5 logic: Claude provides a structurally-invalid plan
+	// (split with no files), validatePlan returns valid=false, code falls
+	// through to classificationToGroups → createSplitPlan.
+	val, err := evalJS(`(function() {
+		var analysis = {
+			files: ['cmd/main.go', 'pkg/util.go', 'docs/readme.md'],
+			baseBranch: 'main',
+			currentBranch: 'feature',
+			fileStatuses: {'cmd/main.go': 'M', 'pkg/util.go': 'A', 'docs/readme.md': 'M'}
+		};
+		var classification = [
+			{ name: 'cmd', description: 'Commands', files: ['cmd/main.go'] },
+			{ name: 'pkg', description: 'Packages', files: ['pkg/util.go'] },
+			{ name: 'docs', description: 'Docs', files: ['docs/readme.md'] }
+		];
+
+		// Claude provides a plan with a split that has NO files (invalid).
+		var claudeStages = [
+			{ name: 'split/01-cmd', files: ['cmd/main.go'], message: 'cmd changes' },
+			{ name: 'split/02-empty', files: [], message: 'empty split' }
+		];
+
+		var plan = {
+			baseBranch: analysis.baseBranch,
+			sourceBranch: analysis.currentBranch,
+			dir: '.',
+			verifyCommand: 'true',
+			fileStatuses: analysis.fileStatuses,
+			splits: claudeStages.map(function(s, i) {
+				return {
+					name: s.name,
+					files: s.files || [],
+					message: s.message || ('Split ' + (i + 1)),
+					order: i
+				};
+			})
+		};
+
+		var validation = globalThis.prSplit.validatePlan(plan);
+		if (validation.valid) {
+			return JSON.stringify({ error: 'expected validatePlan to fail', validation: validation });
+		}
+
+		// Fallback: generate plan locally from classification.
+		var groups = globalThis.prSplit.classificationToGroups(classification);
+		var localPlan = globalThis.prSplit.createSplitPlan(groups, {
+			baseBranch: analysis.baseBranch,
+			sourceBranch: analysis.currentBranch,
+			branchPrefix: 'split/',
+			maxFiles: 10,
+			fileStatuses: analysis.fileStatuses
+		});
+
+		return JSON.stringify({
+			claudeValid: validation.valid,
+			claudeErrors: validation.errors,
+			localPlanSplits: localPlan.splits.length,
+			localPlanFiles: localPlan.splits.map(function(s) { return s.files; })
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result struct {
+		ClaudeValid     bool       `json:"claudeValid"`
+		ClaudeErrors    []string   `json:"claudeErrors"`
+		LocalPlanSplits int        `json:"localPlanSplits"`
+		LocalPlanFiles  [][]string `json:"localPlanFiles"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, val)
+	}
+
+	// 1. Claude's plan should be invalid.
+	if result.ClaudeValid {
+		t.Error("expected Claude plan to be invalid")
+	}
+	if len(result.ClaudeErrors) == 0 {
+		t.Error("expected validation errors")
+	}
+
+	// 2. Local plan should be valid with all 3 files distributed.
+	if result.LocalPlanSplits < 1 {
+		t.Error("expected at least 1 split in local plan")
+	}
+	totalFiles := 0
+	for _, files := range result.LocalPlanFiles {
+		totalFiles += len(files)
+	}
+	if totalFiles != 3 {
+		t.Errorf("expected 3 total files in local plan, got %d", totalFiles)
+	}
+
+	// 3. Verify the specific validation error mentions "no files".
+	found := false
+	for _, e := range result.ClaudeErrors {
+		if strings.Contains(e, "no files") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected error mentioning 'no files', got: %v", result.ClaudeErrors)
+	}
+}

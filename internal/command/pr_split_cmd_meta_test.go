@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"flag"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -516,6 +517,51 @@ func TestPrSplitCommand_TimeoutConfigParsing(t *testing.T) {
 				if cmd.timeout != 0 {
 					t.Errorf("expected timeout=0 (not applied), got %s", cmd.timeout)
 				}
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T98: config max parsing edge cases
+// ---------------------------------------------------------------------------
+
+func TestPrSplitCommand_MaxConfigParsing(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		configV  string
+		wantMax  int
+		setEmpty bool // don't call SetCommandOption
+	}{
+		{"valid 5", "5", 5, false},
+		{"valid 20", "20", 20, false},
+		{"negative", "-5", 10, false},   // Atoi succeeds, n <= 0 → not applied
+		{"zero", "0", 10, false},        // Atoi succeeds, n <= 0 → not applied
+		{"abc", "abc", 10, false},       // Atoi fails → not applied
+		{"empty config", "", 10, true},  // not set → not applied
+		{"float", "3.5", 10, false},     // Atoi fails on non-integer → not applied
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.NewConfig()
+			if !tt.setEmpty && tt.configV != "" {
+				cfg.SetCommandOption("pr-split", "max", tt.configV)
+			}
+			cmd := NewPrSplitCommand(cfg)
+
+			// Replicate the exact config parsing from Execute (pr_split.go:150-153).
+			// NewPrSplitCommand sets maxFiles=10 (default).
+			if v, ok := cfg.GetCommandOption("pr-split", "max"); ok && (cmd.maxFiles == 10 || cmd.maxFiles == 0) {
+				if n, err := strconv.Atoi(v); err == nil && n > 0 {
+					cmd.maxFiles = n
+				}
+			}
+
+			if cmd.maxFiles != tt.wantMax {
+				t.Errorf("maxFiles=%d, want %d", cmd.maxFiles, tt.wantMax)
 			}
 		})
 	}

@@ -329,3 +329,59 @@ func TestPrSplitCommand_RetroCommand(t *testing.T) {
 		}
 	})
 }
+
+// ---------------------------------------------------------------------------
+// T102: buildCommands dispatch edge cases
+// ---------------------------------------------------------------------------
+
+func TestPrSplitCommand_BuildCommandsAllDispatchable(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	// Verify every command registered in buildCommands is dispatchable.
+	// Using the engine's commands() function which calls buildCommands(state).
+	tp := chdirTestPipeline(t, TestPipelineOpts{})
+
+	// Dispatch "help" to get the command list printed in stdout.
+	if err := tp.Dispatch("help", nil); err != nil {
+		t.Fatalf("help: %v", err)
+	}
+	output := tp.Stdout.String()
+
+	// Every one of these commands should appear in help output,
+	// meaning buildCommands returned them and dispatch resolved them.
+	// Note: "claude" and "claude-status" are NOT buildCommands entries —
+	// they are handled separately by the TUI dispatcher, so we exclude
+	// them from this structural check.
+	expectedCmds := []string{
+		"analyze", "stats", "group", "plan", "preview",
+		"execute", "verify", "equivalence", "fix",
+		"cleanup", "create-prs", "run", "auto-split",
+		"help", "copy", "move", "rename", "merge",
+		"reorder", "edit-plan", "diff", "conversation",
+		"graph", "telemetry", "retro", "set", "report",
+		"save-plan", "load-plan",
+	}
+	for _, cmd := range expectedCmds {
+		if !contains(output, cmd) {
+			t.Errorf("buildCommands missing expected command %q in help output", cmd)
+		}
+	}
+}
+
+func TestPrSplitCommand_UnknownCommandError(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	tp := chdirTestPipeline(t, TestPipelineOpts{})
+
+	// Dispatching an unknown command should return an error.
+	err := tp.Dispatch("nonexistent-command-xyz", nil)
+	if err == nil {
+		t.Fatal("expected error for unknown command, got nil")
+	}
+	// Accept any non-nil error — the specific message format varies.
+	t.Logf("unknown command error (expected): %v", err)
+}

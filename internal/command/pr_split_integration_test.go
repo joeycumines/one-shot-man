@@ -1419,6 +1419,98 @@ func TestPrSplitSendWithCancel_ForceCancel(t *testing.T) {
 	t.Logf("force cancel completed in %v", elapsed)
 }
 
+// ---------------------------------------------------------------------------
+// T97: prSplitSendWithCancel — kill does NOT unblock send (2s fallback)
+// ---------------------------------------------------------------------------
+
+// TestPrSplitSendWithCancel_KillTimeoutFallback verifies the 2s fallback
+// after kill(). If kill() does not unblock the send goroutine (e.g., orphaned
+// PTY fd in a blocked kernel state), the function must still return within
+// ~2.5s via the time.After(2 * time.Second) branch.
+func TestPrSplitSendWithCancel_KillTimeoutFallback(t *testing.T) {
+	t.Parallel()
+
+	var cancelFlag int32
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		atomic.StoreInt32(&cancelFlag, 1)
+	}()
+
+	// send() blocks forever — kill() is a no-op that does NOT unblock it.
+	// This simulates the pathological case where SIGKILL fails to unblock
+	// the PTY write.
+	blockForever := make(chan struct{})
+	t.Cleanup(func() { close(blockForever) }) // prevent goroutine leak after test
+
+	start := time.Now()
+	sendErr := prSplitSendWithCancel(
+		func() error {
+			<-blockForever // blocks until test cleanup
+			return errors.New("should not reach here during test")
+		},
+		func() { /* no-op kill — does not unblock send */ },
+		func() bool { return atomic.LoadInt32(&cancelFlag) == 1 },
+		func() bool { return false },
+	)
+	elapsed := time.Since(start)
+
+	if sendErr == nil {
+		t.Fatal("expected cancel error, got nil")
+	}
+	if !strings.Contains(sendErr.Error(), "cancelled by user") {
+		t.Errorf("expected 'cancelled by user' error, got: %v", sendErr)
+	}
+	// Should take ~2.3-2.5s: 300ms cancel delay + 200ms poll + 2s timeout.
+	if elapsed < 2*time.Second {
+		t.Errorf("expected at least 2s (kill timeout), got: %v", elapsed)
+	}
+	if elapsed > 5*time.Second {
+		t.Errorf("took too long: %v (expected < 5s)", elapsed)
+	}
+	t.Logf("kill-timeout fallback completed in %v", elapsed)
+}
+
+// TestPrSplitSendWithCancel_ForceKillTimeoutFallback is the same as above
+// but for the force-cancel path.
+func TestPrSplitSendWithCancel_ForceKillTimeoutFallback(t *testing.T) {
+	t.Parallel()
+
+	var forceFlag int32
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		atomic.StoreInt32(&forceFlag, 1)
+	}()
+
+	blockForever := make(chan struct{})
+	t.Cleanup(func() { close(blockForever) })
+
+	start := time.Now()
+	sendErr := prSplitSendWithCancel(
+		func() error {
+			<-blockForever
+			return errors.New("should not reach here during test")
+		},
+		func() { /* no-op kill */ },
+		func() bool { return false },
+		func() bool { return atomic.LoadInt32(&forceFlag) == 1 },
+	)
+	elapsed := time.Since(start)
+
+	if sendErr == nil {
+		t.Fatal("expected force cancel error, got nil")
+	}
+	if !strings.Contains(sendErr.Error(), "force cancelled") {
+		t.Errorf("expected 'force cancelled' error, got: %v", sendErr)
+	}
+	if elapsed < 2*time.Second {
+		t.Errorf("expected at least 2s (kill timeout), got: %v", elapsed)
+	}
+	if elapsed > 5*time.Second {
+		t.Errorf("took too long: %v (expected < 5s)", elapsed)
+	}
+	t.Logf("force-kill-timeout fallback completed in %v", elapsed)
+}
+
 // TestPrSplitSendWithCancel_RealPTYKill spawns a real child process (sleep)
 // in a PTY and verifies that the SIGKILL path works correctly. On macOS the
 // PTY buffer is large enough to absorb 1MB without blocking, so the cancel

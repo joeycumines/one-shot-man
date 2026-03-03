@@ -1266,3 +1266,81 @@ func TestPrSplit_GroupByDependency_NonGoFallback(t *testing.T) {
 		t.Error("expected 'config' group for non-Go fallback")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T96: splitsAreIndependentFromMaps direct unit tests
+// ---------------------------------------------------------------------------
+
+func TestSplitsAreIndependentFromMaps(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	tests := []struct {
+		name string
+		js   string
+		want string
+	}{
+		{
+			name: "no overlap returns true",
+			js: `String(splitsAreIndependentFromMaps(
+				{cmd: true}, {pkg: true},
+				{'fmt': true}, {'os': true},
+				{'mypkg': true}, {'otherpkg': true}
+			))`,
+			want: "true",
+		},
+		{
+			name: "dir overlap returns false",
+			js: `String(splitsAreIndependentFromMaps(
+				{cmd: true, internal: true}, {internal: true, docs: true},
+				{}, {}, {}, {}
+			))`,
+			want: "false",
+		},
+		{
+			name: "A imports pkg that B modifies returns false",
+			js: `String(splitsAreIndependentFromMaps(
+				{}, {},
+				{'github.com/x/y': true}, {},
+				{}, {'github.com/x/y': true}
+			))`,
+			want: "false",
+		},
+		{
+			name: "B imports pkg that A modifies returns false",
+			js: `String(splitsAreIndependentFromMaps(
+				{}, {},
+				{}, {'github.com/x/z': true},
+				{'github.com/x/z': true}, {}
+			))`,
+			want: "false",
+		},
+		{
+			name: "empty maps returns true",
+			js:   `String(splitsAreIndependentFromMaps({}, {}, {}, {}, {}, {}))`,
+			want: "true",
+		},
+		{
+			name: "import overlap without pkg overlap returns true",
+			js: `String(splitsAreIndependentFromMaps(
+				{}, {},
+				{'fmt': true}, {'fmt': true},
+				{}, {}
+			))`,
+			want: "true",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			val, err := evalJS(tt.js)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if val != tt.want {
+				t.Errorf("got %v, want %s", val, tt.want)
+			}
+		})
+	}
+}

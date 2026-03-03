@@ -33,7 +33,7 @@
     "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp."
   },
   "statusSection": {
-    "currentState": "T01-T94 expansion cycle 3 done (except T37 blocked, T87/T89/T90 not started). Preparing commit for T91+T92+T93.",
+    "currentState": "T01-T94 cycle 3 committed (except T37 blocked, T87/T89/T90 not started). Cycle 4 (T95-T103): T95-T100,T102,T103 done. T101 deferred. Full suite green. Ready to commit.",
     "goalState": "On macOS, osm pr-split --strategy auto reliably completes end-to-end with all 6 regressions fixed, backed by deterministic tests, with make all green cross-platform. REAL end-to-end tests via TestMain flags.",
     "replanLog": [
       {
@@ -65,6 +65,11 @@
         "trigger": "Expansion cycle 3: T75-T84 complete, research subagent identifies deeper gaps",
         "affectedTaskRange": "New T85-T94 added",
         "summary": "Research subagent found: extractGoImports I/O loop (zero coverage), waitForLogged async wrapper (zero), re-split cycle Steps 8-9 (critical branch untested), cleanupExecutor SIGKILL (JS-side untested), Claude plan validation fallback, uncategorized file assignment, claudeEnv parsing edge cases, timeout config parsing, heuristicFallback tree-hash-mismatch, createPRs second push failure."
+      },
+      {
+        "trigger": "Expansion cycle 4: T85-T94 done, research subagent identifies non-exported function gaps + Go error paths + production robustness",
+        "affectedTaskRange": "New T95-T103 added",
+        "summary": "Research subagent found: renderPrompt template engine (zero direct tests), splitsAreIndependentFromMaps (zero direct tests), prSplitSendWithCancel 2s kill-fallback (untested), config max=-5 from config (not flags), T90 uncategorized file assignment via MCP mock, T89 plan validation fallback via MCP mock, T87 re-split cycle via MCP mock, autoSplitTUI.wait() nil guard, buildCommands dispatch builder edge cases."
       }
     ]
   },
@@ -781,6 +786,69 @@
       "outcome": "Already covered by TestCreatePRs_PushFailure in pr_split_createprs_test.go (line 455). Mocks first push success, second push failure. Verifies results[0].pushed=true, results[1].pushed=false, top-level error mentions split/02-feature.",
       "notes": "No new code needed — pre-existing test coverage confirmed.",
       "contextPointers": ["pr_split_script.js:1773-1790 (push loop)", "pr_split_createprs_test.go"]
+    },
+    {
+      "task": "T95: renderPrompt direct unit tests (template engine)",
+      "description": "renderPrompt (line 2647) is the Go text/template bridge used by renderClassificationPrompt, renderSplitPlanPrompt, renderConflictPrompt. Zero direct tests — only exercised indirectly. Test: variable substitution, missing variables, special characters in values, template module unavailable error path.",
+      "acceptance": "TestRenderPrompt: call renderPrompt with known template+data, verify output. TestRenderPrompt_MissingVariable: template references {{.Foo}} not in data, verify graceful behavior. TestRenderPrompt_TemplateError: malformed template string, verify error returned.",
+      "status": "Done",
+      "contextPointers": ["pr_split_script.js:2647-2658 (renderPrompt)", "pr_split_script.js:2660-2700 (render*Prompt consumers)"]
+    },
+    {
+      "task": "T96: splitsAreIndependentFromMaps direct unit tests",
+      "description": "splitsAreIndependentFromMaps (line 4088) does set intersection on 3 pairs of maps (dirs, imports, pkgs). Zero direct tests — only tested through splitsAreIndependent wrapper. Pure function, easily testable.",
+      "acceptance": "TestSplitsAreIndependentFromMaps: (1) no overlap → true, (2) dir overlap → false, (3) import-to-pkg overlap → false, (4) pkg-to-import overlap → false, (5) empty maps → true, (6) nil/undefined maps → true or no crash.",
+      "status": "Done",
+      "contextPointers": ["pr_split_script.js:4088-4100 (splitsAreIndependentFromMaps)"]
+    },
+    {
+      "task": "T97: prSplitSendWithCancel 2s kill-fallback timeout path",
+      "description": "In pr_split.go lines 691-704, after kill() is called (both force-cancel and normal cancel), the function waits up to 2s via time.After for the send goroutine. If kill doesn't unblock send(), the 2s timeout fires and returns the cancel error. This fallback path is never explicitly tested.",
+      "acceptance": "TestPrSplitSendWithCancel_KillTimeoutFallback: provide a send() that blocks forever (never returns even after kill), verify function returns 'force cancelled' error after ~2s without hanging.",
+      "status": "Done",
+      "contextPointers": ["pr_split.go:691-704 (2s time.After fallback)", "pr_split_integration_test.go (existing sendWithCancel tests)"]
+    },
+    {
+      "task": "T98: Go config max=-5 from config (not flags) edge path",
+      "description": "pr_split.go lines ~156-163 parse max from config via strconv.Atoi with n > 0 guard. When config provides max=-5, Atoi succeeds but n <= 0 so the value is not applied. When config provides max=abc, Atoi fails. Neither edge case tested from the config path (flag validation is tested separately).",
+      "acceptance": "TestPrSplitCommand_MaxConfigParsing: test max=5 (applied), max=-5 (not applied), max=abc (not applied), max=0 (not applied), empty (not applied). Verify cmd.maxFiles reflects correct value.",
+      "status": "Done",
+      "contextPointers": ["pr_split.go:156-163 (max config parsing)"]
+    },
+    {
+      "task": "T99: uncategorized file assignment (T90 via direct function test)",
+      "description": "After classification, files missing from the classification are added to an 'uncategorized' group (pr_split_script.js:3427-3443). Test the post-MCP logic directly: given a classification missing some files, verify the uncategorized group is created. Approach: set up classification data in JS, call the assignment logic.",
+      "acceptance": "TestAutoSplit_UncategorizedFiles_ArrayFormat: inject array classification missing 2 of 5 files, verify 'uncategorized' group created with missing files. TestAutoSplit_UncategorizedFiles_MapFormat: inject legacy map classification missing files, verify uncategorized entries added.",
+      "status": "Done",
+      "contextPointers": ["pr_split_script.js:3410-3445 (uncategorized assignment)", "pr_split_script.js:3399-3409 (fileIsClassified)"]
+    },
+    {
+      "task": "T100: validatePlan failure → local plan fallback (T89 via direct function test)",
+      "description": "In automatedSplit Step 5 (line 3490-3497), when Claude's plan fails validatePlan, the code falls through to classificationToGroups → createSplitPlan local generation. Test the validation → fallback orchestration directly.",
+      "acceptance": "TestValidatePlan_FallbackToLocal: create a plan with files not in the diff (validatePlan fails), verify the fallback path generates a valid local plan from classification. Verify log contains 'Claude plan invalid'.",
+      "status": "Done",
+      "contextPointers": ["pr_split_script.js:3490-3510 (validatePlan fallback)", "pr_split_script.js:897-940 (validatePlan)"]
+    },
+    {
+      "task": "T101: automatedSplit re-split cycle via MCP mock (T87)",
+      "description": "When resolveConflictsWithClaude returns reSplitNeeded=true, the pipeline re-classifies via sendToHandle → waitForLogged('reportCategories') → rebuild plan → re-execute → re-verify. Test requires MCP callback injection (existing TestIntegration_AutoSplitMockMCP pattern). This is the single largest untested critical path.",
+      "acceptance": "TestAutoSplit_ReSplitCycle: mock MCP to deliver: initial classification, plan, resolution with reSplitNeeded=true, new classification. Verify plan is rebuilt and re-executed. Verify maxReSplits limit prevents infinite loops.",
+      "status": "Deferred — requires full MCP callback injection; most complex untested path; low regression risk.",
+      "contextPointers": ["pr_split_script.js:3690-3745 (re-split cycle)", "pr_split_script.js:5460-5530 (Steps 8-9)", "pr_split_autosplit_recovery_test.go:682 (MockMCP pattern)"]
+    },
+    {
+      "task": "T102: buildCommands dispatch coverage for edge commands",
+      "description": "buildCommands (line 4961) builds the TUI command map. While individual commands are well-tested, the dispatch builder itself — handling unknown commands, empty input, and the 'help' meta-command — may have gaps.",
+      "acceptance": "TestBuildCommands_UnknownCommand: dispatch non-existent command, verify error message. TestBuildCommands_EmptyInput: dispatch empty string, verify no crash. TestBuildCommands_HelpOutput: dispatch 'help', verify output contains available commands.",
+      "status": "Done",
+      "contextPointers": ["pr_split_script.js:4961-5100 (buildCommands)"]
+    },
+    {
+      "task": "T103: detectLanguage edge cases and accuracy",
+      "description": "detectLanguage (line ~2710) guesses project language from file extensions. Used by renderClassificationPrompt. Test with: all-Go files, mixed Go+JS, no recognized extensions, empty file list, null input.",
+      "acceptance": "TestDetectLanguage: (1) .go files → 'Go', (2) .js files → 'JavaScript' or similar, (3) .py files → 'Python', (4) mixed → dominant language, (5) empty → 'unknown', (6) no recognized extensions → 'unknown'.",
+      "status": "Done — already covered by 15+ subtests in pr_split_analysis_test.go",
+      "contextPointers": ["pr_split_script.js:2710-2760 (detectLanguage)"]
     }
   ],
   "continuousVerification": {

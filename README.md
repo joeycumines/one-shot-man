@@ -180,6 +180,8 @@ Command `osm` is a scripting engine.
 - **Native Modules:** `osm:fetch` (browser-compatible Fetch API with AbortController), `osm:grpc` (Promise-based gRPC), `osm:exec` (child processes), `osm:os` (filesystem), `osm:bt` (behavior trees), `osm:pabt` (planning acting).
 - **Customizable:** You can write your own interactive workflows in JavaScript that run natively in `osm`. The built-in commands (`code-review`, `goal`, etc) are actually scripts that you can inspect and modify.
 
+**Philosophy:** Go code exposes reusable primitives (accessible via `osm script`), while all application-specific logic lives in JavaScript. Exposing the building blocks to build your own, custom implementations.
+
 ### MCP Server
 
 `osm mcp` exposes an [MCP](https://modelcontextprotocol.io/) server over stdio with 15 tools for context management and session coordination. This is the primary integration point for IDE-based workflows (e.g., Claude Code, VS Code Copilot).

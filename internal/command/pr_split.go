@@ -25,6 +25,86 @@ var prSplitTemplate string
 //go:embed pr_split_script.js
 var prSplitScript string
 
+// Chunked script files — loaded in sequence as an alternative to the monolith.
+// Each chunk is an IIFE that attaches exports to globalThis.prSplit.
+//
+//go:embed pr_split_00_core.js
+var prSplitChunk00Core string
+
+//go:embed pr_split_01_analysis.js
+var prSplitChunk01Analysis string
+
+//go:embed pr_split_02_grouping.js
+var prSplitChunk02Grouping string
+
+//go:embed pr_split_03_planning.js
+var prSplitChunk03Planning string
+
+//go:embed pr_split_04_validation.js
+var prSplitChunk04Validation string
+
+//go:embed pr_split_05_execution.js
+var prSplitChunk05Execution string
+
+//go:embed pr_split_06_verification.js
+var prSplitChunk06Verification string
+
+//go:embed pr_split_07_prcreation.js
+var prSplitChunk07PRCreation string
+
+//go:embed pr_split_08_conflict.js
+var prSplitChunk08Conflict string
+
+//go:embed pr_split_09_claude.js
+var prSplitChunk09Claude string
+
+//go:embed pr_split_10_pipeline.js
+var prSplitChunk10Pipeline string
+
+//go:embed pr_split_11_utilities.js
+var prSplitChunk11Utilities string
+
+//go:embed pr_split_12_exports.js
+var prSplitChunk12Exports string
+
+//go:embed pr_split_13_tui.js
+var prSplitChunk13TUI string
+
+// prSplitChunks defines the ordered sequence of chunk files for the split
+// architecture. Each entry is (name, source) loaded in order.
+var prSplitChunks = []struct {
+	name   string
+	source *string
+}{
+	{"00_core", &prSplitChunk00Core},
+	{"01_analysis", &prSplitChunk01Analysis},
+	{"02_grouping", &prSplitChunk02Grouping},
+	{"03_planning", &prSplitChunk03Planning},
+	{"04_validation", &prSplitChunk04Validation},
+	{"05_execution", &prSplitChunk05Execution},
+	{"06_verification", &prSplitChunk06Verification},
+	{"07_prcreation", &prSplitChunk07PRCreation},
+	{"08_conflict", &prSplitChunk08Conflict},
+	{"09_claude", &prSplitChunk09Claude},
+	{"10_pipeline", &prSplitChunk10Pipeline},
+	{"11_utilities", &prSplitChunk11Utilities},
+	{"12_exports", &prSplitChunk12Exports},
+	{"13_tui", &prSplitChunk13TUI},
+}
+
+// loadChunkedScript loads all pr-split chunk files in order into the engine.
+// Each chunk is loaded as a separate script with error reporting per-chunk.
+func loadChunkedScript(engine *scripting.Engine) error {
+	for _, chunk := range prSplitChunks {
+		name := "pr-split/" + chunk.name
+		script := engine.LoadScriptFromString(name, *chunk.source)
+		if err := engine.ExecuteScript(script); err != nil {
+			return fmt.Errorf("failed to load pr-split chunk %s: %w", chunk.name, err)
+		}
+	}
+	return nil
+}
+
 // PrSplitCommand splits a large PR into reviewable stacked branches.
 // Supports heuristic grouping strategies including directory, extension,
 // chunks, dependency (Go import graph), and auto.
@@ -59,6 +139,10 @@ type PrSplitCommand struct {
 
 	// Delete split branches if the pipeline fails.
 	cleanupOnFailure bool
+
+	// Use chunked script loading (14 chunks) instead of monolith.
+	// Enabled via PR_SPLIT_CHUNKED=1 env var during migration.
+	useChunkedScript bool
 }
 
 // stringSliceFlag implements [flag.Value] for repeatable string flags.
@@ -197,6 +281,11 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		return err
 	}
 	defer cleanup()
+
+	// Check env var for chunked script loading (migration toggle).
+	if v := os.Getenv("PR_SPLIT_CHUNKED"); v == "1" || v == "true" {
+		c.useChunkedScript = true
+	}
 
 	// Inject command name for state namespacing
 	const commandName = "pr-split"
@@ -632,10 +721,16 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		},
 	})
 
-	// Load the embedded script
-	script := engine.LoadScriptFromString("pr-split", prSplitScript)
-	if err := engine.ExecuteScript(script); err != nil {
-		return fmt.Errorf("failed to execute pr-split script: %w", err)
+	// Load the embedded script(s)
+	if c.useChunkedScript {
+		if err := loadChunkedScript(engine); err != nil {
+			return err
+		}
+	} else {
+		script := engine.LoadScriptFromString("pr-split", prSplitScript)
+		if err := engine.ExecuteScript(script); err != nil {
+			return fmt.Errorf("failed to execute pr-split script: %w", err)
+		}
 	}
 
 	// Only run interactive mode if requested and not in test mode

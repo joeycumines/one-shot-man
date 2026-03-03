@@ -37,7 +37,7 @@
     "chunkArchitecture": "14 JS chunk files loaded in order by pr_split.go. Each chunk is an IIFE that attaches exports to globalThis.prSplit (initialized by chunk 00). Chunks may reference symbols from earlier chunks via globalThis.prSplit. Go-injected globals (autoSplitTUI, tuiMux, splitView, planEditorFactory, prSplitConfig) are available to all chunks."
   },
   "statusSection": {
-    "currentState": "REARCHITECTURE TRIGGERED by Hana intervention (scratch/pr-split-auto-split-completely-broken.md). Old monolith implementation (6225-line pr_split_script.js) to be split into 14 chunks. Cycles 1-6 unit test work (T01-T117) committed through db95f10. Cycle 6 tests (T114-T117) written but uncommitted. R-series rearchitecture tasks planned.",
+    "currentState": "R01 DONE: Archive created at scratch/archive/pr-split-v1/ (29 files). Cycle 6 committed as d4afd27. R02 next: design chunk architecture doc. Originals in internal/command/ remain functional — rearchitecture is incremental.",
     "goalState": "pr_split_script.js monolith replaced by 14 independently-testable chunk files. Each chunk is under 500 lines. Go code provides reusable modules, JS provides app-specific logic. End-to-end validation passes with REAL Claude. Terminal output is clean (no mangling). Process exits cleanly on q/Ctrl+C. make all green cross-platform. Every line has a reason to exist.",
     "replanLog": [
       {
@@ -77,19 +77,22 @@
       "task": "R01: Archive current implementation to scratch/archive/pr-split-v1/",
       "description": "Copy (not move) the entire current pr-split implementation to scratch/archive/pr-split-v1/ for reference. Files to copy: internal/command/pr_split.go, internal/command/pr_split_script.js, internal/command/pr_split_template.md, and all 27 test files matching internal/command/pr_split_*_test.go. The originals MUST remain in place and functional until the new chunked implementation is ready to replace them. Verify make all still passes after the copy.",
       "acceptance": "scratch/archive/pr-split-v1/ contains complete copies of pr_split.go (726 lines), pr_split_script.js (6225 lines), pr_split_template.md, and all 27 test files. The originals remain untouched. make all passes unchanged.",
-      "status": "Not Started"
+      "status": "Done",
+      "notes": "29 files copied to scratch/archive/pr-split-v1/. go.mod added to prevent parent module build intrusion. project.mk updated with GO_MODULE_PATHS_EXCLUDE_PATTERNS for scratch/. make build + lint + test PASS."
     },
     {
       "task": "R02: Design chunk architecture — boundary definitions, loading order, shared state contract",
       "description": "Create docs/architecture-pr-split-chunks.md documenting: (1) The 14 chunk files (pr_split_00_core.js through pr_split_13_tui.js) with exact function-to-chunk mapping based on the 29 sections in pr_split_script.js. (2) The loading order and why it matters (each chunk may reference symbols from prior chunks via globalThis.prSplit). (3) The shared state contract — what each chunk reads from and writes to globalThis.prSplit, what Go-injected globals each chunk expects (prSplitConfig, autoSplitTUI, tuiMux, splitView, planEditorFactory, etc.). (4) The chunk boundaries mapped to monolith line ranges: 00_core (1-292), 01_analysis (293-445), 02_grouping (446-873), 03_planning (874-924+1156-1273), 04_validation (925-1155), 05_execution (1274-1444), 06_verification (1445-1736), 07_prcreation (1737-1852), 08_conflict (1853-2331), 09_claude (2332-2727), 10_pipeline (2728-4049), 11_utilities (4050-4762), 12_exports (4763-4888+6220-6225), 13_tui (4889-6219). (5) Each chunk is wrapped in an IIFE that attaches exports to globalThis.prSplit (initialized by chunk 00).",
       "acceptance": "docs/architecture-pr-split-chunks.md exists with: function-to-chunk mapping for all 82 functions, loading order with dependency justification, shared state contract (reads/writes per chunk), Go-injected globals required per chunk. Specific enough that a cold-start agent can implement any single chunk without reading the monolith.",
-      "status": "Not Started"
+      "status": "Done",
+      "notes": "Complete design doc with 14 chunk specs, per-function line mappings, cross-chunk dependency resolution (late-binding via globalThis.prSplit), IIFE wrapper pattern, shared state contract, Go-injected globals table, testing strategy, and migration plan. Identified isCancelled/isPaused/isForceCancelled must move to chunk 00 to resolve cross-chunk dependency."
     },
     {
       "task": "R03: Create chunk loading infrastructure in pr_split.go",
       "description": "Modify internal/command/pr_split.go to: (1) Add 14 separate //go:embed directives for pr_split_00_core.js through pr_split_13_tui.js alongside the existing pr_split_script.js embed. (2) Create loadChunkedScript(engine) error that loads each chunk in sequence with per-chunk error wrapping. (3) Add a build tag or config flag to switch between monolith and chunked loading (allowing incremental migration). (4) Create all 14 .js files with 'use strict'; and section header comments. (5) Keep pr_split_script.js functioning as the default until all chunks are populated.",
       "acceptance": "pr_split.go has 14 //go:embed directives for chunk files. loadChunkedScript() loads them in order 00-13 with error messages. All 14 stub .js files exist. make build succeeds. Monolith still functions as default. Switching to chunked mode produces clear errors (stubs are empty).",
-      "status": "Not Started"
+      "status": "Done",
+      "notes": "14 embed directives, prSplitChunks ordered slice, loadChunkedScript(), PR_SPLIT_CHUNKED=1 env var toggle (c.useChunkedScript field). 14 IIFE-wrapped stub files created. make build + lint PASS. Monolith remains default."
     },
     {
       "task": "R04: Extract pr_split_00_core.js — config, runtime, gitExec, helpers",

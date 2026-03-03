@@ -1,25 +1,27 @@
-# WIP: T01-T66, T70 ALL DONE — Continuing expansion cycle
+# WIP: T01-T68, T70-T73 ALL DONE — Continuing expansion cycle
 
-## Status: T65-T66-T70 COMPLETED (Rule of Two PASSED)
+## Status: T67-T68-T71-T72-T73 COMPLETED (Rule of Two PASSED)
 
 ### Commits:
 - 5b3dea6: T61-T62 (splitsAreIndependent + extractGoPkgs tests)
 - daf4711: T63-T64 (resolveConflicts strategies + gitAddChangedFiles parsing + production fix)
-- PENDING: T65-T66-T70 commit
+- 0988922: T65-T66-T70 (error-path and edge-case coverage)
+- PENDING: T67-T68-T71-T72-T73 commit
 
 ### Blueprint State:
-- T01-T66, T70: Done
+- T01-T68, T70-T73: Done
 - T37: Blocked (Claude auth)
-- T67-T69, T71-T74: Not Started
+- T69, T74: Not Started
 
-### T65-T66-T70 Implementation:
-- T65: git_rm_failure_returns_error_with_partial_results (TestExecuteSplit)
-- T66: both_commit_and_allow_empty_commit_fail_returns_error (TestExecuteSplit)
-- T70: zero_splits + missing_baseBranch (TestLoadPlan, 2 subtests)
-- All 3 tests added as table-driven subtests to existing test arrays
+### T67-T68-T71-T72-T73 Implementation:
+- T67: TestVerifySplits_ScopedVerify (2 subtests) + TestVerifySplits_CallbackSignatures (3 subtests)
+- T68: TestCreatePRs_FirstPushFailure_ImmediateAbort (1 test)
+- T71: Already covered by existing TestVerifyEquivalenceDetailed
+- T72: intra-strategy cancellation (1 subtest in TestResolveConflicts table)
+- T73: TestBuildReport (2 subtests) + _buildReport export
+- Production: Added globalThis.prSplit._buildReport = buildReport in TUI guard
 
 ### Next:
-- T67: verifySplits scoped verify + callback signatures
-- T68: createPRs first push fails immediate abort
 - T69: Windows portability audit for sh -c
-- T71-T74: See blueprint.json
+- T74: automatedSplit resume path with Claude spawn failure
+- Then: scope expansion — identify new untested areas for T75+

@@ -2249,6 +2249,324 @@ func TestVerifySplits_PreExistingFailure(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// T67: verifySplits scoped verify + callback signatures
+// ---------------------------------------------------------------------------
+
+func TestVerifySplits_ScopedVerify(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	t.Run("go_files_use_scoped_verify_command", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+
+		// Mock: capture the shell command passed to !sh, verify it is scoped.
+		if _, err := evalJS(`
+			globalThis._capturedShCommands = [];
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = function(argv) {
+				globalThis._capturedShCommands.push(argv.join(' '));
+				return _gitOk('ok');
+			};
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+			dir: '.',
+			sourceBranch: 'feature',
+			verifyCommand: 'go test ./...',
+			splits: [
+				{name: 'split/01-pkg', files: ['internal/cmd/foo.go', 'internal/cmd/bar.go']}
+			]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifySplitsResult(t, raw)
+		if !r.AllPassed {
+			t.Error("expected allPassed=true")
+		}
+
+		// Verify the sh command was scoped to the specific package.
+		captured, err := evalJS(`JSON.stringify(globalThis._capturedShCommands)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmdsJSON, ok := captured.(string)
+		if !ok {
+			t.Fatalf("expected string, got %T", captured)
+		}
+		var cmds []string
+		if err := json.Unmarshal([]byte(cmdsJSON), &cmds); err != nil {
+			t.Fatalf("parse captured commands: %v", err)
+		}
+
+		// We expect 2 sh calls: 1 for baseline verification on source branch,
+		// 1 for the split branch. The split branch command should be scoped.
+		if len(cmds) < 2 {
+			t.Fatalf("expected at least 2 sh commands, got %d: %v", len(cmds), cmds)
+		}
+		// The second command (split branch) should contain scoped package path.
+		splitCmd := cmds[1]
+		if !strings.Contains(splitCmd, "./internal/cmd/...") {
+			t.Errorf("expected scoped verify command containing './internal/cmd/...', got: %s", splitCmd)
+		}
+		if strings.Contains(splitCmd, "./...") && !strings.Contains(splitCmd, "./internal/cmd/...") {
+			t.Errorf("expected scoped command, but got unscoped: %s", splitCmd)
+		}
+	})
+
+	t.Run("non_go_files_use_fallback_command", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := evalJS(`
+			globalThis._capturedShCommands = [];
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = function(argv) {
+				globalThis._capturedShCommands.push(argv.join(' '));
+				return _gitOk('ok');
+			};
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+			dir: '.',
+			sourceBranch: 'feature',
+			verifyCommand: 'go test ./...',
+			splits: [
+				{name: 'split/01-docs', files: ['README.md', 'docs/guide.md']}
+			]
+		}))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifySplitsResult(t, raw)
+		if !r.AllPassed {
+			t.Error("expected allPassed=true")
+		}
+
+		// Non-go files: scopedVerifyCommand returns fallback, so the
+		// split branch command should contain 'go test ./...' not a scoped path.
+		captured, err := evalJS(`JSON.stringify(globalThis._capturedShCommands)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cmds []string
+		if err := json.Unmarshal([]byte(captured.(string)), &cmds); err != nil {
+			t.Fatal(err)
+		}
+		if len(cmds) < 2 {
+			t.Fatalf("expected at least 2 sh commands, got %d", len(cmds))
+		}
+		splitCmd := cmds[1]
+		if !strings.Contains(splitCmd, "go test ./...") {
+			t.Errorf("expected fallback command 'go test ./...' in split cmd, got: %s", splitCmd)
+		}
+	})
+}
+
+func TestVerifySplits_CallbackSignatures(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	t.Run("onBranchStart_receives_name", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := evalJS(`
+			globalThis._startCalls = [];
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = _gitOk('ok');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := evalJS(`globalThis.prSplit.verifySplits({
+			dir: '.',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/01-a', files: ['a.go']},
+				{name: 'split/02-b', files: ['b.go']}
+			]
+		}, {
+			onBranchStart: function(name) {
+				globalThis._startCalls.push(name);
+			}
+		})`)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis._startCalls)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		if err := json.Unmarshal([]byte(raw.(string)), &names); err != nil {
+			t.Fatal(err)
+		}
+		if len(names) != 2 {
+			t.Fatalf("expected 2 onBranchStart calls, got %d: %v", len(names), names)
+		}
+		if names[0] != "split/01-a" || names[1] != "split/02-b" {
+			t.Errorf("onBranchStart names = %v", names)
+		}
+	})
+
+	t.Run("onBranchDone_receives_all_args", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := evalJS(`
+			globalThis._doneCalls = [];
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = _gitOk('ok');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := evalJS(`globalThis.prSplit.verifySplits({
+			dir: '.',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/01-a', files: ['a.go']}
+			]
+		}, {
+			onBranchDone: function(name, passed, exitCode, elapsedMs, skipped, preExisting) {
+				globalThis._doneCalls.push({
+					name: name,
+					passed: passed,
+					exitCode: exitCode,
+					elapsedMs: elapsedMs,
+					skipped: skipped,
+					preExisting: preExisting
+				});
+			}
+		})`)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis._doneCalls)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		type doneCall struct {
+			Name        string `json:"name"`
+			Passed      bool   `json:"passed"`
+			ExitCode    int    `json:"exitCode"`
+			ElapsedMs   int    `json:"elapsedMs"`
+			Skipped     bool   `json:"skipped"`
+			PreExisting bool   `json:"preExisting"`
+		}
+		var calls []doneCall
+		if err := json.Unmarshal([]byte(raw.(string)), &calls); err != nil {
+			t.Fatal(err)
+		}
+		if len(calls) != 1 {
+			t.Fatalf("expected 1 onBranchDone call, got %d", len(calls))
+		}
+		c := calls[0]
+		if c.Name != "split/01-a" {
+			t.Errorf("name = %q", c.Name)
+		}
+		if !c.Passed {
+			t.Error("expected passed=true")
+		}
+		if c.ExitCode != 0 {
+			t.Errorf("expected exitCode=0, got %d", c.ExitCode)
+		}
+		if c.ElapsedMs < 0 {
+			t.Errorf("expected elapsedMs >= 0, got %d", c.ElapsedMs)
+		}
+		if c.Skipped {
+			t.Error("expected skipped=false")
+		}
+		if c.PreExisting {
+			t.Error("expected preExisting=false")
+		}
+	})
+
+	t.Run("onBranchOutput_receives_name_and_line", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := evalJS(`
+			globalThis._outputCalls = [];
+			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+			_gitResponses['checkout'] = _gitOk('');
+			_gitResponses['!sh'] = _gitOk('line1\nline2\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := evalJS(`globalThis.prSplit.verifySplits({
+			dir: '.',
+			sourceBranch: 'feature',
+			verifyCommand: 'make test',
+			splits: [
+				{name: 'split/01-a', files: ['a.go']}
+			]
+		}, {
+			onBranchOutput: function(branchName, line) {
+				globalThis._outputCalls.push({branch: branchName, line: line});
+			}
+		})`)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis._outputCalls)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		type outputCall struct {
+			Branch string `json:"branch"`
+			Line   string `json:"line"`
+		}
+		var calls []outputCall
+		if err := json.Unmarshal([]byte(raw.(string)), &calls); err != nil {
+			t.Fatal(err)
+		}
+		if len(calls) == 0 {
+			t.Fatal("expected at least 1 onBranchOutput call")
+		}
+		// All calls should have the correct branch name.
+		for _, c := range calls {
+			if c.Branch != "split/01-a" {
+				t.Errorf("expected branch='split/01-a', got %q", c.Branch)
+			}
+			if c.Line == "" {
+				t.Error("expected non-empty line")
+			}
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
 // T26: scopedVerifyCommand tests
 // ---------------------------------------------------------------------------
 
@@ -2367,6 +2685,123 @@ func TestScopedVerifyCommand(t *testing.T) {
 		want := "go test -race ./internal/cmd/..."
 		if raw != want {
 			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// T73: buildReport null caches and populated caches
+// ---------------------------------------------------------------------------
+
+type buildReportResult struct {
+	Version    string      `json:"version"`
+	BaseBranch string      `json:"baseBranch"`
+	Strategy   string      `json:"strategy"`
+	DryRun     bool        `json:"dryRun"`
+	Analysis   interface{} `json:"analysis"`
+	Groups     interface{} `json:"groups"`
+	Plan       interface{} `json:"plan"`
+}
+
+func parseBuildReportResult(t *testing.T, raw interface{}) buildReportResult {
+	t.Helper()
+	s, ok := raw.(string)
+	if !ok {
+		t.Fatalf("expected string from evalJS, got %T: %v", raw, raw)
+	}
+	var r buildReportResult
+	if err := json.Unmarshal([]byte(s), &r); err != nil {
+		t.Fatalf("failed to parse buildReport result: %v\nraw: %s", err, s)
+	}
+	return r
+}
+
+func TestBuildReport(t *testing.T) {
+	t.Parallel()
+
+	t.Run("null_caches_returns_sensible_defaults", func(t *testing.T) {
+		_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+		if _, err := evalJS(gitMockSetupJS()); err != nil {
+			t.Fatal(err)
+		}
+
+		// buildReport is defined inside TUI guard — exposed via _buildReport.
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit._buildReport())`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseBuildReportResult(t, raw)
+
+		if r.Version == "" {
+			t.Error("expected non-empty version")
+		}
+		if r.BaseBranch == "" {
+			t.Error("expected non-empty baseBranch from runtime defaults")
+		}
+		if r.Strategy == "" {
+			t.Error("expected non-empty strategy from runtime defaults")
+		}
+		if r.Analysis != nil {
+			t.Errorf("expected null analysis when cache is empty, got %v", r.Analysis)
+		}
+		if r.Groups != nil {
+			t.Errorf("expected null groups when cache is empty, got %v", r.Groups)
+		}
+		if r.Plan != nil {
+			t.Errorf("expected null plan when cache is empty, got %v", r.Plan)
+		}
+	})
+
+	t.Run("populated_caches_reflected_in_report", func(t *testing.T) {
+		_, dispatch, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+		if _, err := evalJS(gitMockSetupJS()); err != nil {
+			t.Fatal(err)
+		}
+
+		// Mock git responses needed by analyzeDiff (called via 'analyze' command).
+		if _, err := evalJS(`
+			globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature-branch');
+			globalThis._gitResponses['merge-base main feature-branch'] = _gitOk('abc123');
+			globalThis._gitResponses['diff --name-status abc123 feature-branch'] = _gitOk('M\tinternal/cmd/foo.go\nA\tinternal/cmd/bar.go\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		// Dispatch 'analyze' to populate analysisCache.
+		if err := dispatch("analyze", nil); err != nil {
+			t.Fatalf("dispatch analyze failed: %v", err)
+		}
+
+		// Dispatch 'group' to populate groupsCache.
+		if err := dispatch("group", nil); err != nil {
+			t.Fatalf("dispatch group failed: %v", err)
+		}
+
+		// Now build the report — analysisCache and groupsCache should be populated.
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit._buildReport())`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseBuildReportResult(t, raw)
+
+		if r.Version == "" {
+			t.Error("expected non-empty version")
+		}
+		if r.BaseBranch != "main" {
+			t.Errorf("expected baseBranch='main', got %q", r.BaseBranch)
+		}
+		if r.Strategy != "directory" {
+			t.Errorf("expected strategy='directory', got %q", r.Strategy)
+		}
+		// Analysis should be populated now.
+		if r.Analysis == nil {
+			t.Error("expected non-nil analysis after running 'analyze' command")
+		}
+		// Groups should be populated now.
+		if r.Groups == nil {
+			t.Error("expected non-nil groups after running 'group' command")
 		}
 	})
 }

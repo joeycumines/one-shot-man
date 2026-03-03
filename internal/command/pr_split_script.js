@@ -4955,6 +4955,9 @@ function buildReport() {
     return report;
 }
 
+// Expose buildReport for testing (defined inside TUI guard, so late-bind).
+globalThis.prSplit._buildReport = buildReport;
+
 function buildCommands(stateArg) {
     return {
         analyze: {

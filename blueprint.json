@@ -552,15 +552,17 @@
       "task": "T67: verifySplits scoped verify + callback signatures test",
       "description": "verifySplits (line 1519) wires scopedVerifyCommand but integration with verify loop untested. Callback arguments never asserted.",
       "acceptance": "Mock Go-only split, verify command is scoped. Assert onBranchDone receives (name, passed, exitCode, elapsedMs, skipped, preExisting). Assert onBranchOutput receives (branchName, line).",
-      "status": "Not Started",
-      "contextPointers": ["pr_split_script.js:1519-1625 (verifySplits)"]
+      "status": "Done",
+      "notes": "TestVerifySplits_ScopedVerify (2 subtests): go files scope to specific package, non-go files fall back. TestVerifySplits_CallbackSignatures (3 subtests): onBranchStart name, onBranchDone all 6 args, onBranchOutput branch+line.",
+      "contextPointers": ["pr_split_script.js:1519-1625 (verifySplits)", "pr_split_verification_test.go:TestVerifySplits_ScopedVerify", "pr_split_verification_test.go:TestVerifySplits_CallbackSignatures"]
     },
     {
       "task": "T68: createPRs first push fails immediate abort test",
       "description": "Existing push failure test makes second push fail. First push failure should immediately return with 1 result entry.",
       "acceptance": "Mock first push to fail. Verify error mentions first branch, results has 1 entry with pushed=false, no gh commands attempted.",
-      "status": "Not Started",
-      "contextPointers": ["pr_split_script.js:1744-1787 (createPRs push logic)"]
+      "status": "Done",
+      "notes": "TestCreatePRs_FirstPushFailure_ImmediateAbort: mock git:push:1 → fail, verify 1 result with pushed=false, error mentions split/01-infra, 0 gh pr calls (gh --version excluded by argv[1]==='pr' filter).",
+      "contextPointers": ["pr_split_script.js:1744-1787 (createPRs push logic)", "pr_split_createprs_test.go:TestCreatePRs_FirstPushFailure_ImmediateAbort"]
     },
     {
       "task": "T69: Windows portability audit for sh -c and Unix commands",
@@ -581,22 +583,25 @@
       "task": "T71: verifyEquivalenceDetailed diff enrichment for non-equivalent trees",
       "description": "verifyEquivalenceDetailed (line 1675) populates diffFiles and diffSummary when trees don't match. Not unit-tested with mocks.",
       "acceptance": "Mock two different tree hashes + git diff output. Verify diffFiles array and diffSummary string in result.",
-      "status": "Not Started",
-      "contextPointers": ["pr_split_script.js:1675 (verifyEquivalenceDetailed)"]
+      "status": "Done",
+      "notes": "Already covered by existing TestVerifyEquivalenceDetailed subtest 'non-equivalent trees include diff details'. No new code needed.",
+      "contextPointers": ["pr_split_script.js:1675 (verifyEquivalenceDetailed)", "pr_split_execution_test.go:TestVerifyEquivalenceDetailed"]
     },
     {
       "task": "T72: resolveConflicts intra-strategy cancellation test",
       "description": "Cancellation check between strategy attempts within a single branch (line 2280) not independently tested.",
       "acceptance": "1 branch, 2 strategies. Cancel fires mid-fix. Verify cancelledByUser=true, second strategy never attempted.",
-      "status": "Not Started",
-      "contextPointers": ["pr_split_script.js:2280 (isCancelled in strategy loop)"]
+      "status": "Done",
+      "notes": "Added to TestResolveConflicts table: intra-strategy cancellation stops before second strategy. Strategy-1 fix() sets autoSplitTUI.cancelled()=true. Verifies totalRetries≤1 (strategy-2 never ran).",
+      "contextPointers": ["pr_split_script.js:2280 (isCancelled in strategy loop)", "pr_split_pipeline_test.go:TestResolveConflicts"]
     },
     {
       "task": "T73: buildReport null caches test",
       "description": "buildReport (line 4906) assembles report from module-level caches. Zero test coverage.",
       "acceptance": "≥2 subtests: all caches null → sensible defaults, populated caches → report reflects them.",
-      "status": "Not Started",
-      "contextPointers": ["pr_split_script.js:4906 (buildReport)"]
+      "status": "Done",
+      "notes": "Exported _buildReport on globalThis.prSplit inside TUI guard. TestBuildReport 2 subtests: null_caches_returns_sensible_defaults (version, baseBranch, strategy from runtime, analysis/groups/plan = nil), populated_caches_reflected_in_report (dispatch analyze+group populates closure caches, report.analysis and report.groups non-nil).",
+      "contextPointers": ["pr_split_script.js:4906 (buildReport)", "pr_split_script.js:4959 (_buildReport export)", "pr_split_verification_test.go:TestBuildReport"]
     },
     {
       "task": "T74: automatedSplit resume path with Claude spawn failure",

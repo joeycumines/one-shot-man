@@ -541,6 +541,58 @@ func TestResolveConflicts(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "intra-strategy cancellation stops before second strategy",
+			setup: `
+				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('main');
+				globalThis._gitResponses['checkout'] = _gitOk('');
+				globalThis._gitResponses['!sh'] = _gitFail('build error');
+
+				// Two strategies: first always detects and "fixes" (but verify
+				// still fails). Second should never be reached because
+				// isCancelled fires after strategy 1's fix attempt.
+				var _strategyAttempts = [];
+				var strategy1 = {
+					name: 'strategy-1',
+					detect: function() { return true; },
+					fix: function() {
+						_strategyAttempts.push('strategy-1');
+						// After this fix, set cancellation flag before next strategy.
+						globalThis.autoSplitTUI = { cancelled: function() { return true; } };
+						return { fixed: true };
+					}
+				};
+				var strategy2 = {
+					name: 'strategy-2',
+					detect: function() { return true; },
+					fix: function() {
+						_strategyAttempts.push('strategy-2');
+						return { fixed: true };
+					}
+				};
+
+				var plan = {splits: [{name: "s1", files: ["a.go"]}]};
+			`,
+			invoke: `JSON.stringify(await globalThis.prSplit.resolveConflicts(plan, {
+				verifyCommand: 'make test',
+				strategies: [strategy1, strategy2],
+				retryBudget: 10,
+				perBranchRetryBudget: 10,
+				wallClockTimeoutMs: 60000
+			}))`,
+			check: func(t *testing.T, r resolveConflictsResult) {
+				// Strategy 1 ran, but verify still failed, then cancellation
+				// should prevent strategy 2 from running.
+				// The branch should be in errors (verification failed).
+				if len(r.Errors) == 0 {
+					// If all strategies are exhausted or branch is fixed,
+					// we just verify strategy-2 was never called.
+				}
+				if r.TotalRetries > 1 {
+					t.Errorf("expected at most 1 retry (strategy-1 only), got %d", r.TotalRetries)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

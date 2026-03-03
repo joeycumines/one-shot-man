@@ -886,6 +886,74 @@ func TestCreatePRs_PushForceFlag(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// T68: First push failure causes immediate abort
+// ---------------------------------------------------------------------------
+
+func TestCreatePRs_FirstPushFailure_ImmediateAbort(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(execMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	// First push fails.
+	if _, err := evalJS(`globalThis._execResponses['git:push:1'] = _execFail('remote: permission denied')`); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := testPlanJS("main", ".")
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := parseCreatePRsResult(t, val)
+
+	// Top-level error should mention the first branch.
+	if r.Error == nil {
+		t.Fatal("expected error from first push failure")
+	}
+	if !strings.Contains(*r.Error, "push failed") {
+		t.Errorf("expected 'push failed' in error, got: %s", *r.Error)
+	}
+	if !strings.Contains(*r.Error, "split/01-infra") {
+		t.Errorf("error should mention first branch 'split/01-infra', got: %s", *r.Error)
+	}
+
+	// Only 1 result entry — second push never attempted.
+	if len(r.Results) != 1 {
+		t.Fatalf("expected 1 result (immediate abort), got %d", len(r.Results))
+	}
+	if r.Results[0].Pushed {
+		t.Error("first result should show pushed=false")
+	}
+	if r.Results[0].Error == nil || !strings.Contains(*r.Results[0].Error, "push failed") {
+		t.Errorf("first result error should mention push failure, got: %v", r.Results[0].Error)
+	}
+
+	// No gh PR creation commands should have been attempted.
+	// Note: gh --version IS called (to verify gh CLI is available),
+	// but gh pr create should never be called.
+	ghPrCalls, err := evalJS(`globalThis._execCalls.filter(function(c) {
+		return c.argv[0] === 'gh' && c.argv.length >= 3 && c.argv[1] === 'pr';
+	}).length`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ghPrCount, ok := ghPrCalls.(int64)
+	if !ok {
+		// Try float64 (Goja sometimes returns float64).
+		if f, ok := ghPrCalls.(float64); ok {
+			ghPrCount = int64(f)
+		}
+	}
+	if ghPrCount != 0 {
+		t.Errorf("expected 0 gh pr calls after first push failure, got %d", ghPrCount)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 

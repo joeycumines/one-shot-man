@@ -2044,3 +2044,216 @@ func TestAutoSplit_ErrorFeedback_ResumeInstructions(t *testing.T) {
 		t.Errorf("expected plan file to be written at %s", planPath)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T74: Resume path — ClaudeCodeExecutor.resolve() fails
+// ---------------------------------------------------------------------------
+
+// TestAutoSplit_ResumeClaudeResolveFails verifies that when a resume is
+// attempted but ClaudeCodeExecutor.resolve() returns an error, the pipeline:
+//   - emits a warning about Claude being unavailable
+//   - continues with verify/equivalence steps (does not abort)
+//   - completes without a fatal error
+func TestAutoSplit_ResumeClaudeResolveFails(t *testing.T) {
+	// NOT parallel — uses chdir.
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	initialFiles := []TestPipelineFile{
+		{"pkg/types.go", "package pkg\n\ntype Foo struct{}\n"},
+		{"cmd/main.go", "package main\n\nfunc main() {}\n"},
+	}
+	featureFiles := []TestPipelineFile{
+		{"pkg/impl.go", "package pkg\n\nfunc Bar() string { return \"bar\" }\n"},
+		{"cmd/run.go", "package main\n\nfunc run() {}\n"},
+	}
+
+	tp := setupTestPipeline(t, TestPipelineOpts{
+		InitialFiles: initialFiles,
+		FeatureFiles: featureFiles,
+		ConfigOverrides: map[string]interface{}{
+			"branchPrefix":  "split/",
+			"verifyCommand": "true",
+			"strategy":      "directory",
+		},
+	})
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tp.Dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	// Classification data for Run 1.
+	classJSON, _ := json.Marshal(map[string]interface{}{"categories": []map[string]any{
+		{"name": "api", "description": "Add API implementation", "files": []string{"pkg/impl.go"}},
+		{"name": "cli", "description": "Add CLI runner", "files": []string{"cmd/run.go"}},
+	}})
+
+	// Mock ClaudeCodeExecutor — successful for Run 1.
+	if _, err := tp.EvalJS(`
+		ClaudeCodeExecutor = function(config) {
+			this.config = config;
+			this.resolved = { command: 'mock-claude' };
+			this.handle = { send: function() {}, isAlive: function() { return true; } };
+		};
+		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
+			return { error: null, sessionId: 'mock-session' };
+		};
+		ClaudeCodeExecutor.prototype.close = function() {};
+		ClaudeCodeExecutor.prototype.kill = function() {};
+	`); err != nil {
+		t.Fatalf("mock setup: %v", err)
+	}
+
+	// Inject classification via mcpcallback channel.
+	watchCh := mcpcallbackmod.WatchForInit()
+	go func() {
+		h := <-watchCh
+		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
+			t.Logf("inject classification failed: %v", err)
+		}
+	}()
+
+	// ---- Run 1: Normal auto-split to create a saved plan. ----
+	result1, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({
+		disableTUI: true,
+		pollIntervalMs: 50,
+		classifyTimeoutMs: 5000,
+		planTimeoutMs: 5000,
+		resolveTimeoutMs: 5000,
+		maxResolveRetries: 0,
+		maxReSplits: 0
+	}))`)
+	if err != nil {
+		t.Fatalf("run 1 failed: %v", err)
+	}
+
+	var r1 struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(result1.(string)), &r1); err != nil {
+		t.Fatalf("parse run 1: %v\nraw: %s", err, result1)
+	}
+	t.Logf("Run 1 error: %q", r1.Error)
+
+	// Verify plan file was written.
+	planPath := filepath.Join(tp.Dir, ".pr-split-plan.json")
+	if _, statErr := os.Stat(planPath); os.IsNotExist(statErr) {
+		t.Fatal("plan file not written by Run 1")
+	}
+
+	// ---- Run 2: Resume with ClaudeCodeExecutor.resolve() failing. ----
+	// Reset caches so resume loads from disk.
+	if _, err := tp.EvalJS(`planCache = null; analysisCache = null; groupsCache = null; executionResultCache = []; conversationHistory = [];`); err != nil {
+		t.Fatal(err)
+	}
+
+	// Re-mock ClaudeCodeExecutor: resolve() returns error.
+	if _, err := tp.EvalJS(`
+		ClaudeCodeExecutor = function(config) { this.config = config; };
+		ClaudeCodeExecutor.prototype.resolve = function() {
+			return { error: 'claude binary not found' };
+		};
+		ClaudeCodeExecutor.prototype.spawn = function() {
+			return { error: 'not resolved' };
+		};
+		ClaudeCodeExecutor.prototype.close = function() {};
+		ClaudeCodeExecutor.prototype.kill = function() {};
+	`); err != nil {
+		t.Fatalf("mock re-setup: %v", err)
+	}
+
+	// Checkout back to feature branch.
+	runGitCmd(t, tp.Dir, "checkout", "feature")
+
+	// Clear captured stdout before resume run.
+	tp.Stdout.Reset()
+
+	result2, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({
+		disableTUI: true,
+		resumeFromPlan: true,
+		pollIntervalMs: 50,
+		classifyTimeoutMs: 5000,
+		planTimeoutMs: 5000,
+		resolveTimeoutMs: 5000,
+		maxResolveRetries: 0,
+		maxReSplits: 0
+	}))`)
+	if err != nil {
+		t.Fatalf("run 2 (resume) failed: %v", err)
+	}
+
+	var r2 struct {
+		Error  string `json:"error"`
+		Report struct {
+			Steps []struct {
+				Name  string `json:"name"`
+				Error string `json:"error"`
+			} `json:"steps"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal([]byte(result2.(string)), &r2); err != nil {
+		t.Fatalf("parse run 2: %v\nraw: %s", err, result2)
+	}
+	t.Logf("Run 2 steps: %d, error: %q", len(r2.Report.Steps), r2.Error)
+	for i, s := range r2.Report.Steps {
+		t.Logf("  Step %d: %s (error: %q)", i, s.Name, s.Error)
+	}
+
+	// 1. Warning about Claude being unavailable must appear in output.
+	out := tp.Stdout.String()
+	t.Logf("stdout:\n%s", out)
+	if !strings.Contains(out, "Claude unavailable") {
+		t.Error("expected warning about Claude being unavailable in resume output")
+	}
+
+	// 2. Steps 1-6 should be skipped (resume path).
+	skippedSteps := map[string]bool{
+		"Analyze diff":                true,
+		"Spawn Claude":                true,
+		"Send classification request": true,
+		"Receive classification":      true,
+		"Generate split plan":         true,
+		"Execute split plan":          true,
+	}
+	for _, s := range r2.Report.Steps {
+		if skippedSteps[s.Name] {
+			t.Errorf("resume should have skipped step %q but it was executed", s.Name)
+		}
+	}
+
+	// 3. Verify splits step must have been executed.
+	var verifyRan bool
+	for _, s := range r2.Report.Steps {
+		if s.Name == "Verify splits" {
+			verifyRan = true
+			break
+		}
+	}
+	if !verifyRan {
+		t.Error("resume did not execute 'Verify splits' step")
+	}
+
+	// 4. Verify equivalence step ran (pipeline reaches completion).
+	var equivRan bool
+	for _, s := range r2.Report.Steps {
+		if s.Name == "Verify equivalence" {
+			equivRan = true
+			break
+		}
+	}
+	if !equivRan {
+		t.Error("resume did not execute 'Verify equivalence' step")
+	}
+
+	// 5. Auto-Split Complete summary should appear.
+	if !strings.Contains(out, "Auto-Split Complete") {
+		t.Error("expected 'Auto-Split Complete' summary in output")
+	}
+}

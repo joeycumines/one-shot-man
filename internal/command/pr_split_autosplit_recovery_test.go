@@ -2453,3 +2453,189 @@ func TestAutoSplit_StepTimeout(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T86: waitForLogged — thin wrapper around mcpCallbackObj.waitFor with logging
+// ---------------------------------------------------------------------------
+
+func TestWaitForLogged_Success(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`(function() {
+		// Set up mock mcpCallbackObj.
+		mcpCallbackObj = {
+			waitFor: function(name, timeout, opts) {
+				return { data: { result: 42 }, error: null };
+			}
+		};
+		var result = waitForLogged('testTool', 5000, {});
+		return JSON.stringify(result);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["error"] != nil {
+		t.Errorf("expected nil error, got %v", result["error"])
+	}
+	data, ok := result["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected data map, got %T", result["data"])
+	}
+	if data["result"] != float64(42) {
+		t.Errorf("expected result=42, got %v", data["result"])
+	}
+}
+
+func TestWaitForLogged_Timeout(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`(function() {
+		mcpCallbackObj = {
+			waitFor: function(name, timeout, opts) {
+				return { data: null, error: 'timeout waiting for ' + name };
+			}
+		};
+		var result = waitForLogged('reportClassification', 1000, {});
+		return JSON.stringify(result);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatal(err)
+	}
+	errStr, _ := result["error"].(string)
+	if !strings.Contains(errStr, "timeout") {
+		t.Errorf("expected timeout error, got %q", errStr)
+	}
+	if result["data"] != nil {
+		t.Errorf("expected nil data on timeout, got %v", result["data"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T88: cleanupExecutor — resource cleanup sequence
+// ---------------------------------------------------------------------------
+
+func TestCleanupExecutor_NormalClose(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`(function() {
+		var calls = [];
+		claudeExecutor = {
+			handle: {
+				signal: function(sig) { calls.push('signal:' + sig); }
+			},
+			close: function() { calls.push('close'); }
+		};
+		// No force cancel — normal shutdown.
+		autoSplitTUI = { forceCancelled: function() { return false; } };
+		cleanupExecutor();
+		return JSON.stringify(calls);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var calls []string
+	if err := json.Unmarshal([]byte(val.(string)), &calls); err != nil {
+		t.Fatal(err)
+	}
+
+	// Normal close should NOT send SIGKILL, just call close.
+	if len(calls) != 1 || calls[0] != "close" {
+		t.Errorf("expected [close], got %v", calls)
+	}
+}
+
+func TestCleanupExecutor_ForceCancel(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`(function() {
+		var calls = [];
+		claudeExecutor = {
+			handle: {
+				signal: function(sig) { calls.push('signal:' + sig); }
+			},
+			close: function() { calls.push('close'); }
+		};
+		// Force cancel path.
+		autoSplitTUI = { forceCancelled: function() { return true; } };
+		cleanupExecutor();
+		return JSON.stringify(calls);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var calls []string
+	if err := json.Unmarshal([]byte(val.(string)), &calls); err != nil {
+		t.Fatal(err)
+	}
+
+	// Force cancel should send SIGKILL then close.
+	if len(calls) != 2 || calls[0] != "signal:SIGKILL" || calls[1] != "close" {
+		t.Errorf("expected [signal:SIGKILL, close], got %v", calls)
+	}
+}
+
+func TestCleanupExecutor_NilExecutor(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// When claudeExecutor is null, cleanupExecutor should be a no-op.
+	_, err := evalJS(`(function() {
+		claudeExecutor = null;
+		cleanupExecutor();
+	})()`)
+	if err != nil {
+		t.Fatalf("cleanupExecutor with null executor should not throw: %v", err)
+	}
+}
+
+func TestCleanupExecutor_WithTuiMuxDetach(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`(function() {
+		var calls = [];
+		claudeExecutor = {
+			handle: { signal: function() {} },
+			close: function() { calls.push('close'); }
+		};
+		autoSplitTUI = { forceCancelled: function() { return false; } };
+		tuiMux = { detach: function() { calls.push('detach'); } };
+		cleanupExecutor();
+		return JSON.stringify(calls);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var calls []string
+	if err := json.Unmarshal([]byte(val.(string)), &calls); err != nil {
+		t.Fatal(err)
+	}
+
+	// Should close executor then detach tuiMux.
+	if len(calls) != 2 || calls[0] != "close" || calls[1] != "detach" {
+		t.Errorf("expected [close, detach], got %v", calls)
+	}
+}

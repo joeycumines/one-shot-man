@@ -33,7 +33,7 @@
     "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp."
   },
   "statusSection": {
-    "currentState": "T01-T84 Done (except T37 blocked by Claude auth). T81 passing, pending Rule of Two + commit. T83/T84 already covered by existing tests.",
+    "currentState": "T01-T88 Done (except T37 blocked by Claude auth, T87/T89/T90/T91/T92/T93 not started). T94 already covered. Preparing commit for T85+T86+T88.",
     "goalState": "On macOS, osm pr-split --strategy auto reliably completes end-to-end with all 6 regressions fixed, backed by deterministic tests, with make all green cross-platform. REAL end-to-end tests via TestMain flags.",
     "replanLog": [
       {
@@ -60,6 +60,11 @@
         "trigger": "Expansion cycle: T01-T74 complete, research subagent identifies 15 gaps",
         "affectedTaskRange": "New T75-T84 added",
         "summary": "Research subagent analyzed pr_split_script.js + all 26 test files. Found: AUTO_FIX_STRATEGIES .fix() methods (CRITICAL, zero unit tests), isPaused/step timeouts (HIGH), gitAddChangedFiles edge cases (HIGH), getSplitDiff fallback, verifyAndCommit, loadPlan V2, resolveConflictsWithClaude wall-clock, createPRs mergeError field."
+      },
+      {
+        "trigger": "Expansion cycle 3: T75-T84 complete, research subagent identifies deeper gaps",
+        "affectedTaskRange": "New T85-T94 added",
+        "summary": "Research subagent found: extractGoImports I/O loop (zero coverage), waitForLogged async wrapper (zero), re-split cycle Steps 8-9 (critical branch untested), cleanupExecutor SIGKILL (JS-side untested), Claude plan validation fallback, uncategorized file assignment, claudeEnv parsing edge cases, timeout config parsing, heuristicFallback tree-hash-mismatch, createPRs second push failure."
       }
     ]
   },
@@ -698,6 +703,81 @@
       "outcome": "Already covered by TestCreatePRs_AutoMerge_Failure in pr_split_createprs_test.go (line 689). Mocks gh pr merge to fail with 'merge queue not enabled', verifies mergeError field contains that exact stderr. Research subagent missed existing coverage.",
       "notes": "No new code needed — pre-existing test coverage confirmed.",
       "contextPointers": ["pr_split_script.js:1980 (createPRs auto-merge)", "pr_split_createprs_test.go:689 (TestCreatePRs_AutoMerge_Failure)"]
+    },
+    {
+      "task": "T85: extractGoImports I/O loop, osmod fallback, error-skip",
+      "description": "extractGoImports (exposed as _extractGoImports on prSplit) reads .go files via osmod.readFile with cat fallback, calls parseGoImports on each, aggregates. Zero test coverage on the I/O loop including: osmod read success, osmod read failure with cat fallback, read error skip (continue), empty-content guard.",
+      "acceptance": "TestExtractGoImports: call _extractGoImports with real .go files in temp dir, verify aggregated imports. TestExtractGoImports_ReadErrorSkip: mock osmod.readFile to fail for one file, verify function continues with remaining files. TestExtractGoImports_EmptyContent: pass file with no imports, verify empty/default return.",
+      "status": "Done",
+      "outcome": "4 tests: TestExtractGoImports_WithRealFiles (real .go files with known imports), _NonexistentFile (error-skip path), _NonGoFiles (.md/.json filtered), _EmptyList (null/undefined/empty array). All in pr_split_grouping_test.go.",
+      "contextPointers": ["pr_split_script.js:4139 (extractGoImports)", "pr_split_script.js:4100-4135 (parseGoImports)"]
+    },
+    {
+      "task": "T86: waitForLogged timeout logging and success return",
+      "description": "waitForLogged wraps mcpCallbackObj.waitFor() adding logging-based timeout messages. Used in 5 places inside automatedSplit. Never called directly in any test. A bug breaks the entire automated Claude pipeline.",
+      "acceptance": "TestWaitForLogged_Success: mock mcpCallbackObj.waitFor to return data, verify waitForLogged returns it. TestWaitForLogged_Timeout: mock mcpCallbackObj.waitFor to return error (timeout), verify appropriate error returned with logging.",
+      "status": "Done",
+      "outcome": "2 tests: TestWaitForLogged_Success (mock waitFor returns data, verify passthrough), TestWaitForLogged_Timeout (mock returns error, verify error propagation). Both in pr_split_autosplit_recovery_test.go.",
+      "contextPointers": ["pr_split_script.js:2896 (waitForLogged)"]
+    },
+    {
+      "task": "T87: automatedSplit re-split cycle (Steps 8-9)",
+      "description": "When resolveConflictsWithClaude returns reSplitNeeded=true, the pipeline re-classifies via sendToHandle → waitForLogged('reportCategories') → classificationToGroups → createSplitPlan → executeSplit → verifySplits. This ~50-line async chain has never run in tests.",
+      "acceptance": "TestAutoSplit_ReSplitCycle: force reSplitNeeded=true from resolution, verify the re-classify → re-execute → re-verify chain actually runs. Verify maxReSplits limit prevents infinite loops.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:3690-3745 (re-split cycle)", "pr_split_script.js:5460-5530 (Step 8-9)"]
+    },
+    {
+      "task": "T88: cleanupExecutor JS-side SIGKILL escalation",
+      "description": "cleanupExecutor() calls executor.close() + executor.kill('SIGKILL') after grace period, checks isForceCancelled(), handles _executorSpawned flag. No direct unit test — only exercised implicitly during automatedSplit error paths.",
+      "acceptance": "TestCleanupExecutor: mock executor with close/kill methods, call cleanupExecutor, verify close then kill sequence. TestCleanupExecutor_NotSpawned: verify no-op when _executorSpawned=false.",
+      "status": "Done",
+      "outcome": "4 tests: TestCleanupExecutor_NormalClose (normal close without SIGKILL), _ForceCancel (SIGKILL then close sequence), _NilExecutor (no-op on null), _WithTuiMuxDetach (close then detach order). All in pr_split_autosplit_recovery_test.go.",
+      "contextPointers": ["pr_split_script.js:4041-4090 (cleanupExecutor)"]
+    },
+    {
+      "task": "T89: automatedSplit Step 5 — Claude plan validation failure fallback",
+      "description": "When Claude provides a structurally-valid plan that fails validatePlan(), the code falls through to local plan generation. This fallback-from-Claude path has no test coverage.",
+      "acceptance": "TestAutoSplit_ClaudePlanValidationFallback: inject classification that produces an invalid plan (e.g., missing files), verify local plan generation runs as fallback.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:3460-3500 (Step 5 plan validation fallback)"]
+    },
+    {
+      "task": "T90: automatedSplit Step 4 — uncategorized file assignment",
+      "description": "When Claude classifies files but misses some, unclassified files are appended to an 'uncategorized' group. Neither array nor legacy map format is tested.",
+      "acceptance": "TestAutoSplit_UncategorizedFiles: inject classification missing some files, verify 'uncategorized' category created with missing files.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:3430-3445 (uncategorized file assignment)"]
+    },
+    {
+      "task": "T91: Go Execute() claudeEnv parsing edge cases",
+      "description": "config claude-env=KEY1=val1,KEY2=val2 is parsed by strings.Cut. Untested: malformed input like =val, KEY=, ,,, empty pairs. The strings.Cut loop silently drops k=='' entries.",
+      "acceptance": "TestPrSplitConfig_ClaudeEnvMalformed: test KEY=, =val, empty pairs, verify no crash and correct key filtering.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split.go:220-228 (claudeEnv parsing)"]
+    },
+    {
+      "task": "T92: Go Execute() timeout config parsing",
+      "description": "time.ParseDuration from config is untested. Invalid duration strings like 'abc' or '-10s' silently fall through.",
+      "acceptance": "TestPrSplitConfig_TimeoutParsing: test valid duration, invalid duration, negative duration, verify correct behavior.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split.go:175-180 (timeout config parsing)"]
+    },
+    {
+      "task": "T93: heuristicFallback tree-hash-mismatch error path",
+      "description": "The tree-hash-mismatch error path (report.error = 'tree hash mismatch after heuristic split') inside heuristicFallback is never explicitly triggered in tests.",
+      "acceptance": "TestHeuristicFallback_TreeHashMismatch: mock verifyEquivalence to return mismatch, verify error contains 'tree hash mismatch'.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:3790-3840 (heuristicFallback tree-hash-mismatch)"]
+    },
+    {
+      "task": "T94: createPRs second push failure in stacked PRs",
+      "description": "When the 2nd push in a stack fails, verify the 1st PR result is preserved and error message includes which branch failed. Current tests only test first push failure.",
+      "acceptance": "TestCreatePRs_SecondPushFailure: mock first push success, second push failure, verify results[0] has pushed=true, results[1] has error, top-level error mentions the failed branch.",
+      "status": "Done",
+      "outcome": "Already covered by TestCreatePRs_PushFailure in pr_split_createprs_test.go (line 455). Mocks first push success, second push failure. Verifies results[0].pushed=true, results[1].pushed=false, top-level error mentions split/02-feature.",
+      "notes": "No new code needed — pre-existing test coverage confirmed.",
+      "contextPointers": ["pr_split_script.js:1773-1790 (push loop)", "pr_split_createprs_test.go"]
     }
   ],
   "continuousVerification": {

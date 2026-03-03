@@ -2,6 +2,8 @@ package command
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -1050,6 +1052,170 @@ func TestPrSplit_ParseGoImports_NoImports(t *testing.T) {
 	}
 	if len(imports) != 0 {
 		t.Errorf("expected 0 imports, got %v", imports)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T85: extractGoImports I/O loop (reads real .go files)
+// ---------------------------------------------------------------------------
+
+// TestExtractGoImports_WithRealFiles creates temp .go files and calls
+// _extractGoImports to verify the I/O loop, osmod.readFile path, and
+// import aggregation across multiple files.
+func TestExtractGoImports_WithRealFiles(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	// Create go files with known imports.
+	files := map[string]string{
+		"main.go": `package main
+
+import (
+	"fmt"
+	"os"
+)
+
+func main() { fmt.Println(os.Args) }
+`,
+		"util.go": `package main
+
+import "strings"
+
+func clean(s string) string { return strings.TrimSpace(s) }
+`,
+		"no_imports.go": `package main
+
+func noop() {}
+`,
+	}
+
+	var filePaths []string
+	for name, content := range files {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		filePaths = append(filePaths, p)
+	}
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Build JS array of absolute paths.
+	jsFiles := "["
+	for i, f := range filePaths {
+		if i > 0 {
+			jsFiles += ","
+		}
+		jsFiles += jsString(f)
+	}
+	jsFiles += "]"
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit._extractGoImports(` + jsFiles + `))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var imports map[string]bool
+	if err := json.Unmarshal([]byte(val.(string)), &imports); err != nil {
+		t.Fatal(err)
+	}
+
+	// Should contain fmt, os, strings from the 3 files.
+	expected := []string{"fmt", "os", "strings"}
+	for _, imp := range expected {
+		if !imports[imp] {
+			t.Errorf("expected import %q in result, got: %v", imp, imports)
+		}
+	}
+
+	// no_imports.go contributes nothing — total should be exactly 3.
+	if len(imports) != len(expected) {
+		t.Errorf("expected %d imports, got %d: %v", len(expected), len(imports), imports)
+	}
+}
+
+// TestExtractGoImports_NonexistentFile verifies extractGoImports skips
+// files that don't exist (the catch/continue path).
+func TestExtractGoImports_NonexistentFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	// Create one real file.
+	realPath := filepath.Join(dir, "real.go")
+	if err := os.WriteFile(realPath, []byte(`package foo
+import "net/http"
+func handler() { _ = http.ListenAndServe }
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// One nonexistent file.
+	fakePath := filepath.Join(dir, "nonexistent.go")
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit._extractGoImports([` +
+		jsString(realPath) + `, ` + jsString(fakePath) + `]))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var imports map[string]bool
+	if err := json.Unmarshal([]byte(val.(string)), &imports); err != nil {
+		t.Fatal(err)
+	}
+
+	// Should still have the import from the real file.
+	if !imports["net/http"] {
+		t.Errorf("expected 'net/http' import from real file, got: %v", imports)
+	}
+}
+
+// TestExtractGoImports_NonGoFiles verifies extractGoImports ignores
+// non-.go files in the input list.
+func TestExtractGoImports_NonGoFiles(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit._extractGoImports([
+		'README.md', 'package.json', 'Makefile'
+	]))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var imports map[string]bool
+	if err := json.Unmarshal([]byte(val.(string)), &imports); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(imports) != 0 {
+		t.Errorf("expected empty imports for non-.go files, got: %v", imports)
+	}
+}
+
+// TestExtractGoImports_EmptyList verifies extractGoImports handles
+// empty/nil input gracefully.
+func TestExtractGoImports_EmptyList(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	for _, input := range []string{"[]", "null", "undefined"} {
+		val, err := evalJS(`JSON.stringify(globalThis.prSplit._extractGoImports(` + input + `))`)
+		if err != nil {
+			t.Fatalf("extractGoImports(%s) threw: %v", input, err)
+		}
+		var imports map[string]bool
+		if err := json.Unmarshal([]byte(val.(string)), &imports); err != nil {
+			t.Fatalf("extractGoImports(%s) parse: %v", input, err)
+		}
+		if len(imports) != 0 {
+			t.Errorf("extractGoImports(%s): expected empty, got %v", input, imports)
+		}
 	}
 }
 

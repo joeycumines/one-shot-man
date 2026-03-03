@@ -1,25 +1,33 @@
-# WIP: Expansion cycle 5 — T107+T108+T110 ready to commit
+# WIP: Rearchitecture triggered — Cycle 6 tests + replan ready to commit
 
-## Status: Cycle 5 tests written. Awaiting full suite + Rule of Two.
+## Status: Hana intervention addressed. Blueprint replanned with R01-R28. Cycle 6 tests pass. Full suite green.
 
-### Commits:
-- 5b3dea6: T61-T62 (splitsAreIndependent + extractGoPkgs tests)
-- daf4711: T63-T64 (resolveConflicts strategies + gitAddChangedFiles parsing + production fix)
-- 0988922: T65-T66-T70 (error-path and edge-case coverage)
-- 2750715: T67-T68-T71-T72-T73 (verification, createPRs, cancellation, buildReport)
-- 371cb5e: T69+T74 (Windows audit + resume Claude resolve failure)
-- 78aeacf: T75+T79+T80+T82 (autofix detect, getSplitDiff, loadPlan V2, gitAddChangedFiles)
-- b363d9b: T76+T77+T78 (fix strategies, pause, step timeout)
-- 37c83b3: T81+T83+T84 (verifyAndCommit BT, already-covered notes)
-- 6c1e3a2: T85+T86+T88+T94 (extractGoImports, waitForLogged, cleanupExecutor)
-- a2e90f8: T91+T92+T93 (parseClaudeEnv, timeout config, tree-hash-mismatch)
-- b3e0529: T95-T100+T102+T103 (cycle 4)
-- PENDING: T107+T108+T110 (cycle 5)
+### Commits (historical, all on split/api):
+- db95f10: Cycle 5 (T107+T108+T110)
+- b3e0529: Cycle 4 (T95-T100+T102+T103)
+- (earlier cycles: T01-T94)
 
-### Cycle 5 Changes:
-- pr_split_cmd_meta_test.go: T107 TestPlanEditorFactory_ConversionRoundTrip (6 subtests) + T108 TestPrSplitCommand_PrepareEngineFailure
-- pr_split_verification_test.go: T110 — 4 new subtests added to TestValidateClassification
+### Cycle 6 Changes (UNCOMMITTED):
+- pr_split_session_cancel_test.go: T114 — TestVerifySplits_CancellationMidIteration
+- pr_split_integration_test.go: T115 — TestClaudeCodeExecutor_SpawnHealthCheck_DeadProcess
+- pr_split_autosplit_recovery_test.go: T117 — TestAutoSplit_WatchdogTimeout
+- pr_split_conflict_retry_test.go: T116 — TestResolveConflictsWithClaude_SuccessfulFix
+- blueprint.json: COMPLETELY REPLANNED per Hana intervention (R01-R28)
+- config.mk: Blocking $(error) removed after compliance, run-current updated
+- WIP.md: Updated for rearchitecture plan
 
-### Next:
-- Full suite → Rule of Two → commit cycle 5
-- Plan expansion cycle 6
+### Rearchitecture Plan (R01-R28):
+Hana intervention (scratch/pr-split-auto-split-completely-broken.md) mandates:
+1. R01: Archive monolith to scratch/archive/pr-split-v1/
+2. R02: Design chunk architecture (14 chunks)
+3. R03: Chunk loading infrastructure in pr_split.go
+4. R04-R17: Extract each chunk with independent tests
+5. R18-R19: Wire test infra to chunks, remove monolith
+6. R20-R22: Cull AI slop (JS, Go, tests)
+7. R23-R26: Integration testing (mock MCP + REAL Claude)
+8. R27-R28: Final verification + documentation
+
+### Next Steps:
+1. Rule of Two on cycle 6 changes
+2. Commit cycle 6
+3. Begin R01: Archive existing implementation

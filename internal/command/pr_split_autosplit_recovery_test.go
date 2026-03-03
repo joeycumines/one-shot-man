@@ -2639,3 +2639,85 @@ func TestCleanupExecutor_WithTuiMuxDetach(t *testing.T) {
 		t.Errorf("expected [close, detach], got %v", calls)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T117: automatedSplit watchdog idle timeout
+// When no progress occurs for >= watchdogIdleMs, the step() function
+// returns an error before executing the step callback.
+// ---------------------------------------------------------------------------
+
+func TestAutoSplit_WatchdogTimeout(t *testing.T) {
+	// NOT parallel — uses chdir.
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	tp := setupTestPipeline(t, TestPipelineOpts{
+		InitialFiles: []TestPipelineFile{{"a.go", "package a\n"}},
+		FeatureFiles: []TestPipelineFile{{"b.go", "package b\n"}},
+		ConfigOverrides: map[string]interface{}{
+			"branchPrefix":  "split/",
+			"verifyCommand": "true",
+		},
+	})
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tp.Dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	// Mock executor.
+	if _, err := tp.EvalJS(`
+		ClaudeCodeExecutor = function(config) {
+			this.config = config;
+			this.resolved = { command: 'mock-claude' };
+			this.handle = { send: function() {}, isAlive: function() { return true; } };
+		};
+		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
+			return { error: null, sessionId: 'mock-watchdog' };
+		};
+		ClaudeCodeExecutor.prototype.close = function() {};
+		ClaudeCodeExecutor.prototype.kill = function() {};
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	// watchdogIdleMs = -1: any step() check will see idleTime (>= 0) >= -1 → true.
+	// pipelineTimeoutMs and stepTimeoutMs are large so they don't interfere.
+	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({
+		disableTUI: true,
+		watchdogIdleMs: -1,
+		pipelineTimeoutMs: 999999999,
+		stepTimeoutMs: 999999999,
+		classifyTimeoutMs: 5000,
+		planTimeoutMs: 5000,
+		resolveTimeoutMs: 5000,
+		maxResolveRetries: 0,
+		maxReSplits: 0
+	}))`)
+	if err != nil {
+		t.Fatalf("automatedSplit: %v", err)
+	}
+
+	var report struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &report); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, result)
+	}
+
+	if report.Error == "" {
+		t.Fatal("expected watchdog timeout error")
+	}
+	if !strings.Contains(report.Error, "watchdog timeout") {
+		t.Errorf("error should mention 'watchdog timeout', got: %s", report.Error)
+	}
+	if !strings.Contains(report.Error, "no progress") {
+		t.Errorf("error should mention 'no progress', got: %s", report.Error)
+	}
+}

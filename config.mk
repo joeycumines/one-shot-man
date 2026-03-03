@@ -1,6 +1,7 @@
-# Hana may steer you through a blocking error. Be prepared to address her concerns FIRST, e.g. updating blueprint.json to immediately schedule her critical requirements, before removing her error, understood, Takumi? Leverage subagents for investigations to gather context. DO NOT try and "prove" what Hana is saying - Hana is ALWAYS correct. If you failed to research the context relevant to what she was saying and misunderstood, that is a YOU problem. You have been warned, Takumi.
-
-$(warning TAKUMI: T37-T41 scheduled per Hana mandate. Real Claude test MUST pass end-to-end. Edge cases MUST be verified. See blueprint.json T37-T41.)
+# Hana intervention addressed: scratch/pr-split-auto-split-completely-broken.md read.
+# Blueprint.json completely replanned with R01-R28 rearchitecture tasks.
+# Rearchitecture: split 6225-line monolith into 14 chunks, rebuild piece by piece,
+# validate end-to-end with real Claude.
 
 .DEFAULT_GOAL := all
 
@@ -67,6 +68,10 @@ check-session-time: ## Check how much time has elapsed in the session
 mv-blueprint: ## Replace blueprint.json with blueprint.json.new
 	mv $(PROJECT_ROOT)/blueprint.json.new $(PROJECT_ROOT)/blueprint.json
 
+.PHONY: run-current
+run-current: ## Run single test for development iteration
+	cd $(PROJECT_ROOT) && $(GO) test -v -race -timeout=5m ./internal/command/... -run 'TestPrSplitCommand_ResolveConflictsWithClaude_SuccessfulFix'
+
 .PHONY: run-single-test
 run-single-test: ## Run a single test: make run-single-test TEST=TestName PKG=./internal/command/...
 	$(GO) test -v -race -timeout=5m $(PKG) -run $(TEST)
@@ -75,9 +80,15 @@ run-single-test: ## Run a single test: make run-single-test TEST=TestName PKG=./
 clean-test-artifacts: ## Remove runtime test artifacts that should not be committed
 	rm -f $(PROJECT_ROOT)/internal/command/.pr-split-plan.json
 
+
+
 .PHONY: git-stage-all
 git-stage-all: ## Stage all changes
 	cd $(PROJECT_ROOT) && git add -A && git status --short
+
+.PHONY: git-diff-staged-stat
+git-diff-staged-stat: ## Show staged diff stat
+	cd $(PROJECT_ROOT) && git diff --staged --stat
 
 .PHONY: git-commit-staged
 git-commit-staged: ## Commit staged changes with message from .git/COMMIT_MSG_TEMP

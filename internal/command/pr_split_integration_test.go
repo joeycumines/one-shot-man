@@ -2426,3 +2426,111 @@ func TestIntegration_CleanupExecutor_NilExecutor(t *testing.T) {
 		t.Errorf("expected only ['detach'], got: %v", result.CallOrder)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T115: ClaudeCodeExecutor.spawn() post-health-check — process dies immediately
+// When the spawned process exits immediately (e.g., invalid API key, unknown
+// flags), spawn() should detect via isAlive()=false, capture last output,
+// clean up the handle, and return a diagnostic error.
+// ---------------------------------------------------------------------------
+
+func TestClaudeCodeExecutor_SpawnHealthCheck_DeadProcess(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	tmpDir := t.TempDir()
+	escapedTmpDir := strings.ReplaceAll(tmpDir, `\`, `\\`)
+	escapedTmpDir = strings.ReplaceAll(escapedTmpDir, `'`, `\'`)
+
+	raw, err := evalJS(`
+		(function() {
+			var tmpDir = '` + escapedTmpDir + `';
+
+			var executor = new ClaudeCodeExecutor({
+				claudeCommand: 'fake-claude',
+				claudeArgs: []
+			});
+
+			// Pre-set resolved so spawn doesn't call resolve().
+			executor.resolved = { command: 'fake-claude', type: 'claude-code' };
+			executor.resolve = function() { return { error: null }; };
+			executor.sessionId = 'test-health-check';
+
+			// Mock cm: registry.spawn returns a handle that is immediately dead.
+			var mockHandle = {
+				isAlive: function() { return false; },
+				receive: function() { return 'Error: Invalid API key. Please run claude login first.\n'; },
+				close: function() { /* no-op */ },
+				send: function() {}
+			};
+
+			var mockRegistry = {
+				register: function() {},
+				spawn: function(name, opts) { return mockHandle; }
+			};
+
+			executor.cm = {
+				claudeCode: function() { return { name: function() { return 'mock-provider'; } }; },
+				ollama: function() { return { name: function() { return 'mock-provider'; } }; },
+				newRegistry: function() { return mockRegistry; },
+				newMCPInstance: function() {
+					return {
+						configPath: function() { return tmpDir + '/mcp.json'; },
+						resultDir: function() { return tmpDir + '/results'; },
+						configDir: function() { return tmpDir; },
+						setResultDir: function() {},
+						writeConfigFile: function() {},
+						close: function() {}
+					};
+				}
+			};
+
+			var originalSpawn = ClaudeCodeExecutor.prototype.spawn;
+			var result = originalSpawn.call(executor, null, {
+				mcpConfigPath: tmpDir + '/mcp.json'
+			});
+
+			return JSON.stringify({
+				error: result.error || null,
+				handleIsNull: executor.handle === null
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("spawn health check test failed: %v", err)
+	}
+
+	var result struct {
+		Error        *string `json:"error"`
+		HandleIsNull bool    `json:"handleIsNull"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse error: %v\nraw: %s", err, raw)
+	}
+
+	// Error should be returned (process died).
+	if result.Error == nil {
+		t.Fatal("expected error when process dies immediately, got nil")
+	}
+
+	// Error should contain the diagnostic message.
+	errStr := *result.Error
+	if !strings.Contains(errStr, "exited immediately after spawn") {
+		t.Errorf("error should mention 'exited immediately after spawn', got: %s", errStr)
+	}
+	if !strings.Contains(errStr, "Invalid API key") {
+		t.Errorf("error should include process output ('Invalid API key'), got: %s", errStr)
+	}
+	if !strings.Contains(errStr, "fake-claude") {
+		t.Errorf("error should include command name ('fake-claude'), got: %s", errStr)
+	}
+	if !strings.Contains(errStr, "claude-code") {
+		t.Errorf("error should include provider type ('claude-code'), got: %s", errStr)
+	}
+
+	// Handle should be cleaned up (set to null).
+	if !result.HandleIsNull {
+		t.Error("expected handle to be null after health check cleanup")
+	}
+}

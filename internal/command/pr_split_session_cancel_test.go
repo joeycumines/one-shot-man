@@ -888,3 +888,97 @@ func TestAutoSplit_CancelDuringExecution_EmitsResumeAndCleansUp(t *testing.T) {
 		t.Errorf("expected executor close() NOT to be called (heuristic path), got %v", closed)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T114: verifySplits cancellation mid-iteration
+// When isCancelled() returns true between branch verifications, verifySplits
+// should return partial results with error 'verification cancelled by user'
+// and restore the original branch.
+// ---------------------------------------------------------------------------
+
+func TestVerifySplits_CancellationMidIteration(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := evalJS(resetGitMockJS); err != nil {
+		t.Fatal(err)
+	}
+
+	// Set up: 3 splits. isCancelled returns false for the first split, then
+	// true before the second. The first split should complete; the second and
+	// third should be skipped due to cancellation.
+	if _, err := evalJS(`
+		var _cancelCount = 0;
+		var _origIsCancelled = isCancelled;
+		isCancelled = function() {
+			_cancelCount++;
+			// First call (before split 0): allow
+			// Second call (before split 1): cancel
+			return _cancelCount >= 2;
+		};
+
+		_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
+		_gitResponses['checkout'] = _gitOk('');
+		_gitResponses['!sh'] = _gitOk('ok');
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifySplits({
+		dir: '/tmp/test',
+		sourceBranch: 'feature',
+		verifyCommand: 'make test',
+		splits: [
+			{name: 'split/01-first', files: ['a.go']},
+			{name: 'split/02-second', files: ['b.go']},
+			{name: 'split/03-third', files: ['c.go']}
+		]
+	}))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Restore isCancelled to avoid polluting subsequent tests.
+	if _, err := evalJS(`isCancelled = _origIsCancelled`); err != nil {
+		t.Fatal(err)
+	}
+
+	var result struct {
+		AllPassed bool `json:"allPassed"`
+		Results   []struct {
+			Name   string  `json:"name"`
+			Passed bool    `json:"passed"`
+			Error  *string `json:"error"`
+		} `json:"results"`
+		Error *string `json:"error"`
+	}
+	s, ok := raw.(string)
+	if !ok {
+		t.Fatalf("expected string, got %T", raw)
+	}
+	if err := json.Unmarshal([]byte(s), &result); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, s)
+	}
+
+	// verifySplits should report not all passed.
+	if result.AllPassed {
+		t.Error("expected allPassed=false when cancelled mid-iteration")
+	}
+
+	// Should have exactly 1 result (the first split that completed before cancellation).
+	if len(result.Results) != 1 {
+		t.Errorf("expected 1 partial result (first split completed), got %d", len(result.Results))
+	}
+
+	// Top-level error should indicate cancellation.
+	if result.Error == nil {
+		t.Fatal("expected top-level error for cancellation")
+	}
+	if !strings.Contains(*result.Error, "verification cancelled by user") {
+		t.Errorf("error = %q, expected 'verification cancelled by user'", *result.Error)
+	}
+}

@@ -6,7 +6,7 @@
   },
   "globalAlerts": [
     {
-      "warning": "HARD MANDATE (NO EXCEPTIONS): For EVERY bug/regression in scratch/current-state.md, you MUST (1) replicate with HIGH CONFIDENCE via a failing test, (2) validate that replication FAILS via make target, and ONLY THEN (3) apply a fix. No exceptions."
+      "warning": "HARD MANDATE (NO EXCEPTIONS): For EVERY bug/regression, you MUST (1) replicate with HIGH CONFIDENCE via a failing test, (2) validate that replication FAILS via make target, and ONLY THEN (3) apply a fix. No exceptions."
     },
     {
       "warning": "ANTI-HALLUCINATION CONSTRAINT: Do NOT invent root causes or describe nonexistent logic. If you have not read the relevant code paths, add an investigation task."
@@ -21,7 +21,10 @@
       "warning": "INDEFINITE CYCLE: The task list must never become empty. Always expand scope towards True Perfection."
     },
     {
-      "warning": "RESUME EXISTS: --resume flag, loadPlan() and savePlan() are ALREADY IMPLEMENTED in pr_split_script.js. Resume tasks are about IMPROVING UX, not implementing from scratch. But verify it actually works before assuming."
+      "warning": "REARCHITECTURE IN PROGRESS: The monolith pr_split_script.js (6225 lines) is being split into 14 chunks loaded in sequence. Old implementation archived in scratch/archive/pr-split-v1/. Reference the archive when extracting chunks — do not hallucinate behavior."
+    },
+    {
+      "warning": "END-TO-END VALIDATION MANDATORY: Mock MCP tests are necessary but INSUFFICIENT. Real Claude integration test (make integration-test-prsplit) MUST pass. The implementation must work when users run `osm pr-split -claude-command=ollama -claude-arg=launch ...`."
     },
     {
       "warning": "osm:pty DISTINCTION: The JavaScript module 'osm:pty' (registered in internal/builtin/register.go, defined in internal/builtin/pty/module.go) is UNUSED dead code — safe to remove. The underlying Go package internal/builtin/pty/ is CRITICAL — used by claudemux for PTY spawning. DO NOT delete the Go package."
@@ -29,12 +32,13 @@
   ],
   "mandatoryDirectives": {
     "contextManagement": "Execute tasks strictly in sequence. Update blueprint.json incrementally after each task.",
-    "sourceOfTruth": "Primary: scratch/current-state.md. Code: internal/command/pr_split_script.js (sendToHandle function search 'function sendToHandle', executeSplit search 'function executeSplit', mcpConfigPath search 'mcpConfigPath is required', ClaudeCodeExecutor search 'function ClaudeCodeExecutor'). Go: internal/command/pr_split.go (prSplitSendWithCancel search 'func prSplitSendWithCancel'). PTY: internal/builtin/pty/pty_unix.go (Spawn search 'func Spawn', Signal search 'func (h *unixProcessHandle) Signal'). TUI: internal/termmux/ui/autosplit.go (AutoSplitModel, renderSeparator search 'func (m AutoSplitModel) renderSeparator'). Tests: internal/command/pr_split_integration_test.go, main_test.go.",
-    "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp."
+    "sourceOfTruth": "Archive reference: scratch/archive/pr-split-v1/ (the original monolith). Live chunks: internal/command/pr_split_00_core.js through pr_split_13_tui.js. Go bridge: internal/command/pr_split.go. Tests: internal/command/pr_split_*_test.go. TUI: internal/termmux/ui/autosplit.go (AutoSplitModel). Design doc: docs/architecture-pr-split-chunks.md.",
+    "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp.",
+    "chunkArchitecture": "14 JS chunk files loaded in order by pr_split.go. Each chunk is an IIFE that attaches exports to globalThis.prSplit (initialized by chunk 00). Chunks may reference symbols from earlier chunks via globalThis.prSplit. Go-injected globals (autoSplitTUI, tuiMux, splitView, planEditorFactory, prSplitConfig) are available to all chunks."
   },
   "statusSection": {
-    "currentState": "T01-T103 cycle 4 committed. Cycle 5 (T104-T110): T107,T108,T110 done. T109 already covered. T104-T106 deferred (terminal context). Ready to commit.",
-    "goalState": "On macOS, osm pr-split --strategy auto reliably completes end-to-end with all 6 regressions fixed, backed by deterministic tests, with make all green cross-platform. REAL end-to-end tests via TestMain flags.",
+    "currentState": "REARCHITECTURE TRIGGERED by Hana intervention (scratch/pr-split-auto-split-completely-broken.md). Old monolith implementation (6225-line pr_split_script.js) to be split into 14 chunks. Cycles 1-6 unit test work (T01-T117) committed through db95f10. Cycle 6 tests (T114-T117) written but uncommitted. R-series rearchitecture tasks planned.",
+    "goalState": "pr_split_script.js monolith replaced by 14 independently-testable chunk files. Each chunk is under 500 lines. Go code provides reusable modules, JS provides app-specific logic. End-to-end validation passes with REAL Claude. Terminal output is clean (no mangling). Process exits cleanly on q/Ctrl+C. make all green cross-platform. Every line has a reason to exist.",
     "replanLog": [
       {
         "trigger": "Investigation phase: 6 regressions validated against source code",
@@ -44,863 +48,203 @@
       {
         "trigger": "Rule of Two Review 1: 3 CRITICAL issues found",
         "affectedTaskRange": "All tasks reordered",
-        "summary": "Critical fixes: (1) Regression replication tests added BEFORE each fix. (2) sendToHandle fix moved BEFORE claude command removal. (3) Existing test assertion inversions explicitly handled. (4) T29 corrected to remove JS bindings only. (5) Mechanized tests added for REPL removal. (6) Resume verification task added."
+        "summary": "Critical fixes: (1) Regression replication tests added BEFORE each fix. (2) sendToHandle fix moved BEFORE claude command removal. (3) Existing test assertion inversions explicitly handled."
       },
       {
         "trigger": "HANA-SAN CRITICAL REVIEW: sendToHandle STILL BROKEN",
-        "affectedTaskRange": "Revert T04 status to In Progress, insert T04a-T04c for coalescing fix",
-        "summary": "T04 claimed done but ACTUAL behavior: PTY coalesces two rapid writes. Need (1) inter-write delay or (2) fsync-like flush. Also: End-to-end test with REAL Claude mandatory. Windows verification skipped. Inserting T04a: Add delay. T04b: Create real E2E test using -claude-command. T04c: Run make-all-run-windows."
+        "affectedTaskRange": "Revert T04 status, insert T04a-T04c",
+        "summary": "T04 claimed done but ACTUAL behavior: PTY coalesces two rapid writes. Need inter-write delay. End-to-end test with REAL Claude mandatory."
       },
       {
         "trigger": "Session: Test file split + async infrastructure overhaul",
-        "affectedTaskRange": "New TSplit-1/TSplit-2 inserted before T04a",
-        "summary": "pr_split_test.go split into 12 new satellite files. dispatchAwaitPromise, evalJS, evalJSAsync rewritten for proper Promise-aware dispatch. Handler type assertion fallback added. All ~97 failures resolved → make all green."
+        "affectedTaskRange": "TSplit-1/TSplit-2 inserted before T04a",
+        "summary": "pr_split_test.go split into 12 new satellite files. dispatchAwaitPromise, evalJS, evalJSAsync rewritten for proper Promise-aware dispatch."
       },
       {
-        "trigger": "Expansion cycle: T01-T74 complete, research subagent identifies 15 gaps",
-        "affectedTaskRange": "New T75-T84 added",
-        "summary": "Research subagent analyzed pr_split_script.js + all 26 test files. Found: AUTO_FIX_STRATEGIES .fix() methods (CRITICAL, zero unit tests), isPaused/step timeouts (HIGH), gitAddChangedFiles edge cases (HIGH), getSplitDiff fallback, verifyAndCommit, loadPlan V2, resolveConflictsWithClaude wall-clock, createPRs mergeError field."
+        "trigger": "Expansion cycles 1-6: T01-T117 completed",
+        "affectedTaskRange": "T01-T117 (all Done, except T37 blocked by Claude auth, T101/T104-T106 deferred)",
+        "summary": "Six expansion cycles of unit/mock test improvements. Added ~200 tests across 27 satellite files. Coverage improved for: sendToHandle, executeSplit, verifySplits, resolveConflicts, automatedSplit, ClaudeCodeExecutor, prompt rendering, BT nodes, and more. All committed through db95f10."
       },
       {
-        "trigger": "Expansion cycle 3: T75-T84 complete, research subagent identifies deeper gaps",
-        "affectedTaskRange": "New T85-T94 added",
-        "summary": "Research subagent found: extractGoImports I/O loop (zero coverage), waitForLogged async wrapper (zero), re-split cycle Steps 8-9 (critical branch untested), cleanupExecutor SIGKILL (JS-side untested), Claude plan validation fallback, uncategorized file assignment, claudeEnv parsing edge cases, timeout config parsing, heuristicFallback tree-hash-mismatch, createPRs second push failure."
-      },
-      {
-        "trigger": "Expansion cycle 4: T85-T94 done, research subagent identifies non-exported function gaps + Go error paths + production robustness",
-        "affectedTaskRange": "New T95-T103 added",
-        "summary": "Research subagent found: renderPrompt template engine (zero direct tests), splitsAreIndependentFromMaps (zero direct tests), prSplitSendWithCancel 2s kill-fallback (untested), config max=-5 from config (not flags), T90 uncategorized file assignment via MCP mock, T89 plan validation fallback via MCP mock, T87 re-split cycle via MCP mock, autoSplitTUI.wait() nil guard, buildCommands dispatch builder edge cases."
-      },
-      {
-        "trigger": "Expansion cycle 5: T95-T103 done (T101 deferred), research subagent identifies Go-side closure gaps + type-assertion branches + factory conversion",
-        "affectedTaskRange": "New T104-T110 added",
-        "summary": "Research subagent found: splitView closures (zero tests), tuiMux closures (zero tests), tuiMux.attach type-assertion branches (3 paths, none Go-tested), planEditorFactory conversion (pure Go, untested), Execute PrepareEngine failure path, sendToHandle EAGAIN retry on newline, validateClassification knownFiles edge cases."
+        "trigger": "HANA INTERVENTION: pr-split auto-split completely broken (scratch/pr-split-auto-split-completely-broken.md)",
+        "affectedTaskRange": "COMPLETE REPLAN — R01-R28 replace T01-T117 as active work",
+        "summary": "Auto-split pipeline non-functional end-to-end (never spawned Claude, mangled terminal, no graceful exit). Hana mandates: (1) Move monolith to scratch, rebuild piece by piece. (2) Split 6225-line script into 14 chunks evaluated in sequence. (3) Go = reusable modules, JS = app-specific. (4) Proper async/Promises. (5) End-to-end validation with REAL Claude. (6) Cull all AI slop. (7) Each piece independently reasoned about and tested. Old T01-T117 work preserved in git history and scratch/archive/. New R-series tasks cover the complete rearchitecture from archive through final validation."
       }
     ]
   },
   "sequentialTasks": [
     {
-      "task": "TSplit-1: Split pr_split_test.go into manageable files",
-      "description": "Split the 10,645-line pr_split_test.go into ~650 lines infrastructure-only + 12 new satellite test files: pr_split_cmd_meta_test.go, pr_split_heuristic_run_test.go, pr_split_claude_config_test.go, pr_split_template_unit_test.go, pr_split_mode_autofix_test.go, pr_split_conflict_retry_test.go, pr_split_local_integration_test.go, pr_split_scope_misc_test.go, pr_split_tui_subcommands_test.go, pr_split_session_cancel_test.go, pr_split_edge_hardening_test.go, pr_split_autosplit_recovery_test.go.",
-      "acceptance": "pr_split_test.go contains only infrastructure (git helpers, TestPipeline, dispatch/eval functions). All test functions moved to appropriate satellite files. make all passes.",
-      "status": "Done"
-    },
-    {
-      "task": "TSplit-2: Async dispatch + evalJS infrastructure for Promise-aware testing",
-      "description": "Rewrote dispatchAwaitPromise (duck-typed .then/.catch Promise chaining with handler type fallback via goja.AssertFunction). Rewrote evalJS with two-path approach: await-containing JS → async IIFE wrapper, statement/expression JS without await → direct vm.RunString with Promise detection. Fixed evalJSAsync for consistency. Fixed TestPrSplitCommand_ClaudeFixFixWithoutExecutor to await async claude-fix strategy. Files: pr_split_test.go (infrastructure), pr_split_mode_autofix_test.go (await fix).",
-      "acceptance": "All ~200 pr-split tests pass. dispatchAwaitPromise properly awaits async command handlers. evalJS handles statements, expressions, and await expressions. make make-all-with-log exit 0.",
-      "status": "Done"
-    },
-    {
-      "task": "T01: Run make all to establish clean baseline",
-      "description": "Run `make make-all-with-log` to verify the build passes on macOS before any changes. Check build.log for pre-existing issues.",
-      "acceptance": "make all passes with zero failures.",
-      "status": "Done"
-    },
-    {
-      "task": "T02: Run integration-test-prsplit-mcp to validate existing mock infrastructure",
-      "description": "Run `make integration-test-prsplit-mcp` which executes TestIntegration_AutoSplitMockMCP. Requires no real AI. Validates mock MCP test infrastructure works.",
-      "acceptance": "integration-test-prsplit-mcp passes or produces an understood skip.",
-      "status": "Done"
-    },
-    {
-      "task": "T03: Regression replication — sendToHandle single-write delivers paste, not submit",
-      "description": "BEFORE fixing sendToHandle, write a test in internal/command/pr_split_integration_test.go that demonstrates the current behavior: sendToHandle sends text+newline as ONE write. This test should PASS with the current code (proving the regression exists in the code). Name it TestIntegration_SendToHandle_SingleWriteBaseline. The test should use the existing mock handle infrastructure (search for TestIntegration_SendToHandle_FallbackDirect pattern) and assert exactly 1 send call containing both text and newline concatenated. This test captures the known-broken behavior as a baseline.",
-      "acceptance": "Test passes with current code, proving sendToHandle concatenates text+newline into a single write — the documented regression behavior.",
-      "status": "Done"
-    },
-    {
-      "task": "T04: Fix sendToHandle to send text and Enter as separate writes",
-      "description": "In internal/command/pr_split_script.js, function sendToHandle (search 'function sendToHandle'): (1) Remove `var payload = text + '\\n'` pattern. (2) Send `text` first, then send `'\\n'` as a separate write. (3) For TUI path (autoSplitTUI.sendWithCancel): call twice — first with text, then with newline. (4) For fallback path (handle.send): call send(text), then send('\\n'). (5) ERROR HANDLING: If first write succeeds but second fails, treat as fatal pipeline error — log both, propagate single unified error. Do not retry just the newline. (6) Update misleading comment that claims 'single-write pattern is deterministic' to describe the two-write approach and WHY it's necessary (non-blocking TUI readers treat single-write as paste). EXISTING TESTS WILL BREAK: TestIntegration_SendToHandle_FallbackDirect (asserts 1 send), TestIntegration_SendToHandle_TUIPath (asserts 1 sendWithCancel call). These must be updated to assert 2 calls in the same commit.",
-      "acceptance": "sendToHandle sends text and newline as two distinct writes. Both TUI and fallback paths updated. Comment corrected. Existing tests updated from asserting 1 write to asserting 2 writes.",
-      "status": "Incomplete - PTY coalesces writes, need delay"
-    },
-    {
-      "task": "T04a: REARCHITECT sendToHandle as async Promise-based function",
-      "description": "The blocking time.Sleep approach (even in a spawned goroutine with select) VIOLATES the event loop contract. Go function calls from JS block the event loop until they return. CORRECT ARCHITECTURE: (1) Remove sendTextWithEnter Go function entirely. (2) In JS, make sendToHandle return a Promise. (3) Use setTimeout for the 10ms delay: return new Promise(resolve => { sendWithCancel(text); setTimeout(() => { sendWithCancel(newline); resolve({error:null}); }, 10); }). (4) Update ALL callers of sendToHandle to use await or .then() pattern. (5) This requires converting affected functions to async. Files: pr_split_script.js (sendToHandle, sendClassificationPrompt, etc.), pr_split.go (remove sendTextWithEnter binding).",
-      "acceptance": "sendToHandle returns Promise. Delay uses JS setTimeout (not Go time.Sleep). Event loop never blocked. All callers use await. Tests verify async behavior.",
-      "status": "Done"
-    },
-    {
-      "task": "T04b: Create REAL end-to-end integration test using TestMain -claude-command",
-      "description": "Create TestIntegration_AutoSplit_RealE2E that: (1) Requires -integration and -claude-command flags. (2) Uses the TestMain flags -claude-command=ollama -claude-arg=launch -claude-arg=claude -claude-arg=--model=minimax-m2.5:cloud -claude-arg=-- (or similar). (3) Sets up a real git repo with feature branch. (4) Runs automatedSplit() with the REAL Claude binary. (5) Verifies prompt is SUBMITTED (not pasted) by checking Claude responds coherently. (6) This test MUST use skipIfNoClaude(t) and have explicit timeout. Run via make integration-test-prsplit.",
-      "acceptance": "Real Claude integration test exists that exercises actual prompt submission. Test passes with configured Claude command. Test skips gracefully when Claude not available.",
+      "task": "R01: Archive current implementation to scratch/archive/pr-split-v1/",
+      "description": "Copy (not move) the entire current pr-split implementation to scratch/archive/pr-split-v1/ for reference. Files to copy: internal/command/pr_split.go, internal/command/pr_split_script.js, internal/command/pr_split_template.md, and all 27 test files matching internal/command/pr_split_*_test.go. The originals MUST remain in place and functional until the new chunked implementation is ready to replace them. Verify make all still passes after the copy.",
+      "acceptance": "scratch/archive/pr-split-v1/ contains complete copies of pr_split.go (726 lines), pr_split_script.js (6225 lines), pr_split_template.md, and all 27 test files. The originals remain untouched. make all passes unchanged.",
       "status": "Not Started"
     },
     {
-      "task": "T04c: Verify Windows build via make-all-run-windows",
-      "description": "Run `make make-all-run-windows` to verify full Windows CI passes. If Windows runner infrastructure unavailable, at minimum run `GOOS=windows go build ./...` and document the gap.",
-      "acceptance": "Windows tests pass OR documented gap with cross-compile verification.",
+      "task": "R02: Design chunk architecture — boundary definitions, loading order, shared state contract",
+      "description": "Create docs/architecture-pr-split-chunks.md documenting: (1) The 14 chunk files (pr_split_00_core.js through pr_split_13_tui.js) with exact function-to-chunk mapping based on the 29 sections in pr_split_script.js. (2) The loading order and why it matters (each chunk may reference symbols from prior chunks via globalThis.prSplit). (3) The shared state contract — what each chunk reads from and writes to globalThis.prSplit, what Go-injected globals each chunk expects (prSplitConfig, autoSplitTUI, tuiMux, splitView, planEditorFactory, etc.). (4) The chunk boundaries mapped to monolith line ranges: 00_core (1-292), 01_analysis (293-445), 02_grouping (446-873), 03_planning (874-924+1156-1273), 04_validation (925-1155), 05_execution (1274-1444), 06_verification (1445-1736), 07_prcreation (1737-1852), 08_conflict (1853-2331), 09_claude (2332-2727), 10_pipeline (2728-4049), 11_utilities (4050-4762), 12_exports (4763-4888+6220-6225), 13_tui (4889-6219). (5) Each chunk is wrapped in an IIFE that attaches exports to globalThis.prSplit (initialized by chunk 00).",
+      "acceptance": "docs/architecture-pr-split-chunks.md exists with: function-to-chunk mapping for all 82 functions, loading order with dependency justification, shared state contract (reads/writes per chunk), Go-injected globals required per chunk. Specific enough that a cold-start agent can implement any single chunk without reading the monolith.",
       "status": "Not Started"
     },
     {
-      "task": "T05: Run make all after sendToHandle fix",
-      "description": "Run `make make-all-with-log` and `make integration-test-prsplit-mcp`. All tests must pass including the updated sendToHandle tests.",
-      "acceptance": "All tests pass. No regressions.",
-      "status": "Blocked - depends on T04a-T04c completion"
+      "task": "R03: Create chunk loading infrastructure in pr_split.go",
+      "description": "Modify internal/command/pr_split.go to: (1) Add 14 separate //go:embed directives for pr_split_00_core.js through pr_split_13_tui.js alongside the existing pr_split_script.js embed. (2) Create loadChunkedScript(engine) error that loads each chunk in sequence with per-chunk error wrapping. (3) Add a build tag or config flag to switch between monolith and chunked loading (allowing incremental migration). (4) Create all 14 .js files with 'use strict'; and section header comments. (5) Keep pr_split_script.js functioning as the default until all chunks are populated.",
+      "acceptance": "pr_split.go has 14 //go:embed directives for chunk files. loadChunkedScript() loads them in order 00-13 with error messages. All 14 stub .js files exist. make build succeeds. Monolith still functions as default. Switching to chunked mode produces clear errors (stubs are empty).",
+      "status": "Not Started"
     },
     {
-      "task": "T06: Regression replication — executeSplit worktree checkout conflict",
-      "description": "BEFORE fixing executeSplit, write a test that sets up a git repo with: (1) main worktree on a feature branch, (2) additional worktree with 'main' checked out. Create a minimal split plan and call the executeSplit JS function. The test should FAIL with 'already used by worktree' error, proving the regression exists. Name it TestIntegration_ExecuteSplit_WorktreeConflict. Use t.TempDir() for all directories.",
-      "acceptance": "Test reliably reproduces the worktree checkout error from scratch/current-state.md regression #4.",
-      "status": "Done"
+      "task": "R04: Extract pr_split_00_core.js — config, runtime, gitExec, helpers",
+      "description": "From the archive (scratch/archive/pr-split-v1/pr_split_script.js lines 1-292), extract into internal/command/pr_split_00_core.js: (1) Module require()s (osm:bt, osm:exec, osm:text/template, osm:sharedStateSymbols, osm:os, osm:lipgloss — all with try/catch). (2) Style helpers. (3) Constants: COMMAND_NAME, MODE_NAME. (4) Runtime config from prSplitConfig. (5) All internal helpers: gitExec, shellQuote, gitAddChangedFiles, dirname, fileExtension, sanitizeBranchName, padIndex, discoverVerifyCommand, scopedVerifyCommand. (6) Initialize globalThis.prSplit = {} and attach helpers. Clean up: remove dead comments, add JSDoc, verify gitExec returns {stdout, stderr, code} consistently. Tests: pr_split_00_core_test.go.",
+      "acceptance": "pr_split_00_core.js is independently loadable, initializes globalThis.prSplit, exports all helper functions. Tests verify gitExec (success+failure), shellQuote (special chars), dirname, fileExtension, sanitizeBranchName, padIndex, gitAddChangedFiles. Tests pass in isolation.",
+      "status": "Not Started"
     },
     {
-      "task": "T07: Fix executeSplit to create branches from base commit SHA",
-      "description": "In internal/command/pr_split_script.js function executeSplit (search 'function executeSplit'): (1) Before the split loop, resolve baseBranch to a commit SHA: `var baseCommit = gitExec(dir, ['rev-parse', currentBase]).stdout.trim()`. (2) Replace `git checkout currentBase` with `git checkout -b <splitBranchName> <baseCommit>` to create split branch directly from the commit without checking out the base branch name. This avoids the worktree conflict entirely because we never try to checkout the base branch by name. (3) Ensure restoreBranch logic still works — at the end, restore to the branch we were on before, not the base.",
-      "acceptance": "executeSplit succeeds when baseBranch is in another worktree. TestIntegration_ExecuteSplit_WorktreeConflict now passes.",
-      "status": "Done"
+      "task": "R05: Extract pr_split_01_analysis.js — analyzeDiff, analyzeDiffStats",
+      "description": "From archive lines 293-445, extract into internal/command/pr_split_01_analysis.js: analyzeDiff(config) and analyzeDiffStats(config). Both reference gitExec from chunk 00 via globalThis.prSplit._gitExec. Clean up: verify error paths return {error: string} consistently. Tests: pr_split_01_analysis_test.go with real git repos.",
+      "acceptance": "pr_split_01_analysis.js exports analyzeDiff and analyzeDiffStats. Tests prove correct results for known diffs, correct error handling for missing branches. Tests pass loading chunks 00+01.",
+      "status": "Not Started"
     },
     {
-      "task": "T08: Run make all after executeSplit fix",
-      "description": "Run `make make-all-with-log` and `make integration-test-prsplit-mcp`.",
-      "acceptance": "All tests pass. Worktree test passes.",
-      "status": "Done"
+      "task": "R06: Extract pr_split_02_grouping.js — grouping strategies + strategy selection",
+      "description": "From archive lines 446-873, extract into internal/command/pr_split_02_grouping.js: groupByDirectory, groupByExtension, groupByPattern, groupByChunks, parseGoImports, detectGoModulePath, groupByDependency, applyStrategy, selectStrategy. Tests: pr_split_02_grouping_test.go covering each strategy.",
+      "acceptance": "All 9 functions exported. Tests cover each strategy with known inputs, selectStrategy auto-detection, edge cases. Tests pass loading chunks 00-02.",
+      "status": "Not Started"
     },
     {
-      "task": "T09: Regression replication — force-kill leaves orphaned descendants",
-      "description": "BEFORE fixing PTY process groups, write a test that: (1) Spawns a PTY process (via internal/builtin/pty Spawn) that in turn creates a child subprocess (e.g., shell running 'sleep 3600' or a test helper that holds a lock file). (2) Sends SIGKILL via Process.Signal('SIGKILL'). (3) Asserts the child subprocess PID STILL EXISTS after the parent dies — proving orphan survival. Use deterministic PID checking (syscall.Kill(pid, 0)) with cleanup to prevent test pollution. Name it TestPTYSpawn_ForceKill_OrphanSurvival.",
-      "acceptance": "Test demonstrates child process survives parent SIGKILL — proving the force-kill orphan bug exists in current code.",
-      "status": "Done"
+      "task": "R07: Extract pr_split_03_planning.js — createSplitPlan, savePlan, loadPlan",
+      "description": "From archive lines 874-924 and 1156-1273, extract into internal/command/pr_split_03_planning.js: createSplitPlan, savePlan (with osmod.writeFile), loadPlan (with V1→V2 migration). Tests: pr_split_03_planning_test.go.",
+      "acceptance": "Exports createSplitPlan, savePlan, loadPlan. Tests prove correct branch naming, round-trip persistence, V1 migration, corrupt JSON handling. Tests pass loading chunks 00-03.",
+      "status": "Not Started"
     },
     {
-      "task": "T10: Fix PTY spawn to use process groups (Setpgid)",
-      "description": "In internal/builtin/pty/pty_unix.go, function Spawn (search 'func Spawn'): (1) Before cmd.Start(), set `cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}`. This creates a new process group for the child. (2) In unixProcessHandle.Signal() (search 'func (h *unixProcessHandle) Signal'), change from `h.cmd.Process.Signal(sig)` (which sends to PID) to `syscall.Kill(-h.cmd.Process.Pid, sig.(syscall.Signal))` (which sends to process GROUP via negative PID). (3) Handle the type assertion for non-syscall.Signal types gracefully. (4) This change is Unix-only (pty_unix.go), so Windows builds are unaffected.",
-      "acceptance": "SIGKILL kills entire process group. TestPTYSpawn_ForceKill_OrphanSurvival now passes (orphan no longer survives). Clean SIGTERM shutdown still works. If sig type assertion to syscall.Signal fails, fall back to os.Process.Signal() for the individual PID — log a warning but do not panic.",
-      "status": "Done"
+      "task": "R08: Extract pr_split_04_validation.js — all validate* functions",
+      "description": "From archive lines 925-1155, extract into internal/command/pr_split_04_validation.js: validateClassification, validatePlan, validateSplitPlan, validateResolution. All return {valid: bool, errors: string[]}. Tests: pr_split_04_validation_test.go.",
+      "acceptance": "All 4 validators exported with consistent interface. Tests cover valid/invalid/edge cases for each. Tests pass loading chunks 00-04.",
+      "status": "Not Started"
     },
     {
-      "task": "T11: Run make all + Linux container after force-kill fix",
-      "description": "Run `make make-all-with-log`, `make integration-test-prsplit-mcp`, and `make make-all-in-container` (Linux). The Setpgid change is Unix-only so Linux must also pass.",
-      "acceptance": "macOS and Linux tests pass. Force-kill test demonstrates process group cleanup.",
-      "status": "Done"
+      "task": "R09: Extract pr_split_05_execution.js — executeSplit",
+      "description": "From archive lines 1274-1444, extract into internal/command/pr_split_05_execution.js: executeSplit with base-SHA approach (T07 fix), deleted file handling (D status → git rm). Tests: pr_split_05_execution_test.go with real git repos.",
+      "acceptance": "executeSplit creates branches from base SHA (not branch name), handles deleted files via git rm, reports errors per-split. Tests pass loading chunks 00-05.",
+      "status": "Not Started"
     },
     {
-      "task": "T12: Remove claude REPL command and add test proving removal",
-      "description": "In internal/command/pr_split_script.js, the `claude` command is registered in the REPL (search for the claude command handler near line ~5685-5747). It calls claudeExecutor.spawn() without mcpConfigPath, which was the trigger for scratch/current-state.md regression #1. ROOT CAUSE: The REPL 'claude' command was never wired to receive mcpConfigPath from osm:mcpcallback (unlike auto-split which correctly provides it). Remove the entire claude command handler. Also add a test (TestIntegration_REPL_NoClaudeCommand) that starts a pr-split REPL session and verifies 'claude' is not a recognized command.",
-      "acceptance": "'claude spawn' no longer triggers mcpConfigPath error — the command doesn't exist. Test mechanically verifies removal.",
-      "status": "Done"
+      "task": "R10: Extract pr_split_06_verification.js — verify, equivalence, cleanup",
+      "description": "From archive lines 1445-1736, extract into internal/command/pr_split_06_verification.js: verifySplit, verifySplits, verifyEquivalence, verifyEquivalenceDetailed, cleanupBranches. Tests: pr_split_06_verification_test.go.",
+      "acceptance": "All 5 functions exported. Tests prove: verifySplit pass/fail/timeout, verifySplits cancellation, verifyEquivalence match/mismatch, cleanupBranches idempotent. Tests pass loading chunks 00-06.",
+      "status": "Not Started"
     },
     {
-      "task": "T13: Remove claude-status REPL command and add test proving removal",
-      "description": "In internal/command/pr_split_script.js, remove the `claude-status` command handler (search for 'claude-status' in the command registry). JUSTIFICATION: claude-status is the companion command to the claude command removed in T12. It checks status of a Claude session that can only be created via the (now-removed) claude command, making it dead code. scratch/current-state.md section 'Clarification' calls out that 'There doesn't appear to be much point in exposing the claude command to auto-split—remove it entirely? Same for claude-status.' Add a test (TestIntegration_REPL_NoClaudeStatusCommand) verifying removal.",
-      "acceptance": "'claude-status' is not available in REPL. Test mechanically verifies.",
-      "status": "Done"
+      "task": "R11: Extract pr_split_07_prcreation.js — createPRs",
+      "description": "From archive lines 1737-1852, extract into internal/command/pr_split_07_prcreation.js: createPRs with stacking, draft mode, auto-merge. Tests: pr_split_07_prcreation_test.go with mock exec.",
+      "acceptance": "createPRs exported. Tests prove correct stacking order, draft flag, per-branch error reporting, missing gh CLI error. Tests pass loading chunks 00-07.",
+      "status": "Not Started"
     },
     {
-      "task": "T14: Run make all after REPL command removal",
-      "description": "Run `make make-all-with-log` and `make integration-test-prsplit-mcp`.",
-      "acceptance": "All tests pass. No references to removed commands in test expectations.",
-      "status": "Done"
+      "task": "R12: Extract pr_split_08_conflict.js — AUTO_FIX_STRATEGIES, resolveConflicts",
+      "description": "From archive lines 1853-2331, extract into internal/command/pr_split_08_conflict.js: AUTO_FIX_STRATEGIES (5 strategies), resolveConflicts (local strategies). Note: resolveConflictsWithClaude moves to chunk 09. Tests: pr_split_08_conflict_test.go.",
+      "acceptance": "AUTO_FIX_STRATEGIES and resolveConflicts exported. Tests cover each strategy detect/fix, resolveConflicts happy path and escalation. Tests pass loading chunks 00-08.",
+      "status": "Not Started"
     },
     {
-      "task": "T15: Implement bell detection in termmux VTerm output",
-      "description": "In internal/termmux/vt/ (the VTerm package), add detection of \\x07 (BEL) bytes in the terminal output stream. When BEL is encountered during output processing, emit a structured notification. This should be a general-purpose building block — not Claude-specific. Investigate the VTerm write path (search for the Write or ProcessOutput method in internal/termmux/vt/) and add BEL detection there. Emit a callback or event that the termmux layer can consume.",
-      "acceptance": "When a child PTY emits \\x07, the VTerm layer detects it and provides a notification mechanism.",
-      "status": "Done"
+      "task": "R13: Extract pr_split_09_claude.js — ClaudeCodeExecutor, prompts, resolveConflictsWithClaude",
+      "description": "From archive lines 2332-2727 plus resolveConflictsWithClaude from the conflict section, extract into internal/command/pr_split_09_claude.js: ClaudeCodeExecutor constructor, prompt templates, renderPrompt, render*Prompt functions, detectLanguage, resolveConflictsWithClaude. Tests: pr_split_09_claude_test.go.",
+      "acceptance": "ClaudeCodeExecutor, prompt templates, render functions, detectLanguage, resolveConflictsWithClaude all exported. Tests prove ClaudeCodeExecutor construction, prompt rendering, detectLanguage, and resolveConflictsWithClaude with mock executor. Tests pass loading chunks 00-09.",
+      "status": "Not Started"
     },
     {
-      "task": "T16: Implement bell propagation to outer terminal from background panes",
-      "description": "In the termmux mux layer (internal/termmux/termmux.go), when bell is detected in a background (non-focused) pane, write \\x07 to stdout to propagate to the user's terminal. When the pane IS focused, bell passes through naturally in the output stream.",
-      "acceptance": "Background pane bell reaches user's terminal. Can be verified by checking for \\x07 in captured test output.",
-      "status": "Done"
+      "task": "R14: Extract pr_split_10_pipeline.js — automatedSplit pipeline",
+      "description": "From archive lines 2728-4049, extract into internal/command/pr_split_10_pipeline.js: AUTOMATED_DEFAULTS, isCancelled, isPaused, isForceCancelled, sendToHandle (async, T04a), waitForLogged, automatedSplit (the main pipeline), heuristicFallback, classificationToGroups, cleanupExecutor. This is the largest chunk (~1300 lines) — special care to ensure all async/await chains are correct. Tests: pr_split_10_pipeline_test.go.",
+      "acceptance": "All pipeline functions exported. sendToHandle uses async/await with separate text+newline writes. automatedSplit mock-MCP test completes all pipeline stages. heuristicFallback produces valid plan. Tests pass loading chunks 00-10.",
+      "status": "Not Started"
     },
     {
-      "task": "T17: Implement persistent attention indicator in AutoSplitModel",
-      "description": "In internal/termmux/ui/autosplit.go AutoSplitModel: (1) Add a 'needsAttention' bool field per pane. (2) Set it to true when bell fires from a background pane. (3) In renderSeparator (search 'func (m AutoSplitModel) renderSeparator'), add a persistent visual indicator when needsAttention is true (e.g., '🔔 Claude needs attention'). (4) Clear needsAttention when user switches to that pane (via Ctrl+] toggle). Use a distinct styling that is impossible to miss.",
-      "acceptance": "Persistent indicator appears on bell from background pane, remains until user switches to that pane, visually distinct.",
-      "status": "Done"
+      "task": "R15: Extract pr_split_11_utilities.js — independence, BT nodes, viz, telemetry",
+      "description": "From archive lines 4050-4762, extract into internal/command/pr_split_11_utilities.js: Independence detection (assessIndependence, splitsAreIndependent, extract*), BT nodes (createAnalyzeNode through createWorkflowTree), BT templates (btVerifyOutput through verifyAndCommit), diff viz (renderColorizedDiff, getSplitDiff), conversation history, dependency graph, telemetry. Tests: pr_split_11_utilities_test.go.",
+      "acceptance": "All utility functions exported. Tests cover assessIndependence, extractGoImports, BT node creation, renderColorizedDiff, buildDependencyGraph. Tests pass loading chunks 00-11.",
+      "status": "Not Started"
     },
     {
-      "task": "T18: Add tests for bell propagation and attention indicator lifecycle",
-      "description": "Tests in appropriate test files: (1) Bell in background pane → \\x07 at outer terminal. (2) Attention indicator appears in rendered View() output when needsAttention is true. (3) Indicator clears on pane focus.",
-      "acceptance": "Tests prove bell/attention lifecycle works correctly.",
-      "status": "Done"
+      "task": "R16: Extract pr_split_12_exports.js — globalThis.prSplit final manifest",
+      "description": "From archive lines 4763-4888 and 6220-6225, extract into internal/command/pr_split_12_exports.js: The export verification layer — validates all expected exports exist on globalThis.prSplit set by chunks 00-11, sets VERSION, provides CommonJS module.exports. Tests: verify export manifest matches expectations.",
+      "acceptance": "Loading chunks 00-12 produces a complete globalThis.prSplit object matching the expected 73+ export manifest. A test asserts every expected export name exists.",
+      "status": "Not Started"
     },
     {
-      "task": "T19: Run make all after bell/attention implementation",
-      "description": "Run `make make-all-with-log`, `make integration-test-prsplit-mcp`, `make make-all-in-container`.",
-      "acceptance": "All tests pass on macOS and Linux.",
-      "status": "Done"
+      "task": "R17: Extract pr_split_13_tui.js — TUI commands, mode registration",
+      "description": "From archive lines 4889-6219, extract into internal/command/pr_split_13_tui.js: TUI guard, module-local caches, buildReport(), buildCommands(state) with ~25 TUI commands, mode registration. All command handlers must reference functions from chunks 00-11 via globalThis.prSplit. Tests: smoke test dispatching 'help'.",
+      "acceptance": "Complete TUI mode with all commands. 'help' output matches available commands. Mode registration succeeds when tui/ctx/output globals present. Tests pass loading chunks 00-13.",
+      "status": "Not Started"
     },
     {
-      "task": "T20: Verify --resume flag works end-to-end",
-      "description": "BEFORE improving error feedback, verify the existing --resume flow actually works: (1) Create a controlled test (TestIntegration_Resume_SkipsClassification) that generates a .pr-split-plan.json via the automatedSplit pipeline (can use mock MCP). (2) Force a failure during executeSplit. (3) Re-run with --resume and verify it skips classification and jumps to execution. The resume capability IS implemented (loadPlan ~4170, savePlan ~4100, --resume flag in pr_split.go). This task verifies it works, not implements it.",
-      "acceptance": "TestIntegration_Resume_SkipsClassification passes: on second run with --resume, classification is skipped and execution resumes from saved plan.",
-      "status": "Done"
+      "task": "R18: Update test infrastructure for chunked loading",
+      "description": "Modify internal/command/pr_split_test.go: Replace single pr_split_script.js loading in loadPrSplitEngine/loadPrSplitEngineWithEval with sequential chunk loading (14 chunks). Update embed variables. Ensure all 27 satellite test files pass without modification — they use evalJS which is engine-level. Run make all to verify.",
+      "acceptance": "Test infrastructure loads all 14 chunks in sequence. All existing tests pass unchanged. The pr_split_script.js embed is removed from test infra. make all passes.",
+      "status": "Not Started"
     },
     {
-      "task": "T21: Improve error feedback on pipeline failure with resume instructions",
-      "description": "In pr_split_script.js, when executeSplit or later stages fail, the error output should include: (1) Path to .pr-split-plan.json (search for DEFAULT_PLAN_PATH constant). (2) 'To resume: osm pr-split --resume'. (3) Concise description of what failed. Fix error handling in automatedSplit pipeline stages to emit these.",
-      "acceptance": "Failure output includes plan path and resume command.",
-      "status": "Done"
+      "task": "R19: Remove monolith pr_split_script.js",
+      "description": "Delete internal/command/pr_split_script.js (6225 lines). Remove //go:embed pr_split_script.js from pr_split.go. Remove var prSplitScript string. Run make all + make lint. Archive in scratch/ remains.",
+      "acceptance": "pr_split_script.js no longer exists in internal/command/. No references to it. make all passes. make lint shows no dead code. Archive copy in scratch/archive/ remains.",
+      "status": "Not Started"
     },
     {
-      "task": "T22: Add test verifying error feedback includes resume instructions",
-      "description": "TestAutoSplit_ErrorFeedback_ResumeInstructions: mocks ClaudeCodeExecutor.resolve to fail (heuristic fallback), overrides exec.execv to fail on split branch creation, verifies stdout contains plan path, resume command, and 'Pipeline failed' message.",
-      "acceptance": "Test mechanically verifies actionable resume instructions in failure output.",
-      "status": "Done"
+      "task": "R20: Cull AI slop from JS chunks",
+      "description": "Review each chunk against AGENTS.md slop criteria: (1) Functions with zero live callers → remove or justify. (2) Unused telemetry/conversation/retrospective features → remove if never called by pipeline or TUI. (3) Over-engineered BT node factories → simplify if automatedSplit doesn't use them. (4) Vestigial task-number comments (T04a, T12, T55, etc.) → replace with architectural comments. (5) Duplicate logic (verifyEquivalence vs verifyEquivalenceDetailed) → merge. Document each removal in scratch/pr-split-slop-removed.md.",
+      "acceptance": "Every function in every chunk has at least one live caller. No vestigial task comments. No duplicate implementations. Slop removal documented. make all passes.",
+      "status": "Not Started"
     },
     {
-      "task": "T23: Run make all after error feedback improvement",
-      "description": "Run `make make-all-with-log` and `make integration-test-prsplit-mcp`.",
-      "acceptance": "All tests pass.",
-      "status": "Done"
+      "task": "R21: Cull AI slop from Go code — pr_split.go",
+      "description": "Review pr_split.go: (1) Audit tuiMux.attach() 3-path type assertion — remove unused paths. (2) Audit splitView — is it used by any chunk? Remove if dead. (3) Audit planEditorFactory — is edit-plan useful? (4) Audit prSplitSendWithCancel 2s kill-fallback. (5) Ensure all Go-injected globals have JS consumers.",
+      "acceptance": "Every Go function and global injection has a verified JS consumer. No dead assertion paths. No unused globals. make all + make lint pass.",
+      "status": "Not Started"
     },
     {
-      "task": "T24: Clean up misleading comments in pr_split_script.js",
-      "description": "Audited sendToHandle comment block. Fixed 3 stale references: (1) sendTextWithEnter (removed in T04a) replaced with sendWithCancel, (2) 'delay at Go layer' corrected to 'async setTimeout in JS', (3) 'fallback has no delay' corrected to 'both paths share 10ms delay'. Removed contradicting T04a appendage.",
-      "acceptance": "No confidently-wrong comments remain.",
-      "status": "Done"
+      "task": "R22: Cull AI slop from tests",
+      "description": "Review all test files: (1) Remove existence-only tests (just checking function returns something). (2) Consolidate redundant tests into parameterized subtests. (3) Replace implementation-detail assertions with behavioral assertions. (4) Remove unused test helpers. Target: 50% fewer test functions, 100% better behavioral coverage. Run make cover.",
+      "acceptance": "No test merely checks existence. Redundant tests consolidated. All tests assert meaningful behavior. make all passes. make cover shows >= previous coverage on critical paths.",
+      "status": "Not Started"
     },
     {
-      "task": "T25: Remove osm:pty JavaScript module bindings (NOT the Go package)",
-      "description": "Removed: (1) pty/module.go deleted, (2) ptymod import + registration removed from register.go, (3) 'osm:pty' removed from register_test.go expected list, (4) 7 TestModule_* tests removed from pty_test.go, (5) goja import removed from pty_test.go, (6) docs updated (README.md, architecture.md, architecture-claude-mux.md, todo.md), (7) pty.go package doc updated.",
-      "acceptance": "require('osm:pty') is no longer available in JS. The Go PTY package still works. claudemux still spawns processes correctly. All tests pass.",
-      "status": "Done"
+      "task": "R23: Full pipeline smoke test with chunked loading",
+      "description": "Create pr_split_integration_smoke_test.go: (1) Heuristic 'run' end-to-end with real git (10+ files, 3+ dirs). (2) Interactive command sequence (analyze → group → plan → execute → verify → equivalence → cleanup). Both tests verify chunked loading works.",
+      "acceptance": "Two smoke tests pass: full 'run' and individual command sequence. Both use chunked loading. make all passes.",
+      "status": "Not Started"
     },
     {
-      "task": "T26: Run make all after osm:pty JS removal",
-      "description": "Run `make make-all-with-log`, `make integration-test-prsplit-mcp`, `make make-all-in-container`.",
-      "acceptance": "All tests pass on macOS and Linux.",
-      "status": "Done"
+      "task": "R24: Run integration-test-prsplit-mcp — mock MCP end-to-end",
+      "description": "Run `make integration-test-prsplit-mcp` (TestIntegration_AutoSplitMockMCP). Verify: mock pipeline completes analyze → classify → plan → execute → verify → equivalence. autoSplitTUI callbacks fire correctly. sendToHandle sends separate writes. If it fails, debug and fix.",
+      "acceptance": "make integration-test-prsplit-mcp passes. Mock MCP end-to-end pipeline completes all stages. No regressions.",
+      "status": "Not Started"
     },
     {
-      "task": "T27: Real AI integration test",
-      "description": "Run `make integration-test-prsplit` with appropriate configuration for available local AI. First check what's available: `which ollama`, `which claude`. If ollama is available, use CLAUDE_COMMAND=ollama with appropriate args. If neither is available, skip this task and document the requirement for the next session — this is not a blocker for the rest of the blueprint.",
-      "acceptance": "Real AI test runs and pipeline progresses through at least prompt submission. OR: If no AI tooling available, documented skip with explicit instructions for next session.",
-      "status": "Done",
-      "notes": "Claude 2.1.63 available. Test spawned Claude via PTY, connected MCP callback, sent classification prompt. Timed out at 60s waiting for response. Infrastructure works — timeout is config issue. Mock MCP test passes full end-to-end."
+      "task": "R25: Run integration-test-prsplit with REAL Claude — end-to-end validation",
+      "description": "Run `make integration-test-prsplit` with configured AI provider. This exercises REAL PTY spawn, REAL prompt submission (text + newline as separate writes), REAL response parsing. If this test doesn't exist yet, create TestIntegration_AutoSplit_RealE2E. This is THE test Hana demanded.",
+      "acceptance": "Real Claude integration test passes end-to-end. Terminal output clean (no mangling). Process exits cleanly on q. The original bugs from scratch/pr-split-auto-split-completely-broken.md are fixed.",
+      "status": "Not Started"
     },
     {
-      "task": "T28: Cross-platform validation: Windows",
-      "description": "Run `make make-all-run-windows` to verify full Windows CI. If the Windows runner infrastructure (hack/run-on-windows.sh) is not available, fall back to `GOOS=windows go build ./...` to at least verify compilation. Both should be attempted.",
-      "acceptance": "Windows full test suite passes via make-all-run-windows, OR at minimum GOOS=windows compilation succeeds with documented gap.",
-      "status": "Done",
-      "notes": "GOOS=windows go build ./... passes. Full Windows test suite requires Windows runner (hack/run-on-windows.sh) which is not available locally."
+      "task": "R26: Fix issues found in end-to-end testing",
+      "description": "Catch-all for bugs from R24/R25: terminal rendering, sendToHandle timing, response parsing, state management, exit handling. For each: failing test first, then fix, then verify.",
+      "acceptance": "All issues from R24/R25 resolved with regression tests. make all + integration tests pass.",
+      "status": "Not Started"
     },
     {
-      "task": "T29: Documentation: developer guide for pr-split integration tests",
-      "description": "Add docs describing: how to run all integration test targets, how to configure AI backend flags, how to interpret failures, how to use --resume.",
-      "acceptance": "Unfamiliar developer can run and interpret all integration tests from docs alone.",
-      "status": "Done"
+      "task": "R27: Final verification — make all, lint, integration, Rule of Two",
+      "description": "Full sweep: (1) make all — zero failures. (2) make lint — zero warnings. (3) make integration-test-prsplit-mcp — passes. (4) make integration-test-prsplit — passes with real Claude. (5) Rule of Two: two consecutive subagent reviews, zero issues each.",
+      "acceptance": "Two contiguous, issue-free subagent reviews confirm all checks green. Implementation production-ready.",
+      "status": "Not Started"
     },
     {
-      "task": "T30: Final validation suite",
-      "description": "Run: make make-all-with-log, integration-test-prsplit-mcp, make-all-in-container, integration-test-prsplit with real AI.",
-      "acceptance": "All targets pass. Codebase at verified stable state.",
-      "status": "Done",
-      "notes": "make make-all-with-log: PASS (all cached/clean). integration-test-prsplit-mcp: PASS (1.22s, 8 steps, 4 splits, equivalence OK). Real Claude: spawned successfully but classification timed out (infra works). GOOS=windows build: OK."
-    },
-    {
-      "task": "T31: Indefinite cycle expansion — identify next frontier",
-      "description": "Re-read scratch/current-state.md and diff vs main. Verify ALL regressions addressed with evidence. Identify additional improvements. Add concrete new tasks. The list must never become empty.",
-      "acceptance": "Blueprint grows with new concrete tasks.",
-      "status": "Done",
-      "notes": "7/7 regressions verified ADDRESSED with test evidence. 5 new tasks added (T32-T36)."
-    },
-    {
-      "task": "T32: Make evalJS/evalJSAsync timeout configurable",
-      "description": "Both evalJS (line 538) and evalJSAsync (line 637) in pr_split_test.go use hardcoded time.After(60s). The real Claude test passes timeoutMs to JS but evalJS kills at 60s before JS timeout fires. Add optional timeout parameter to loadPrSplitEngineWithEval closures; real Claude tests use 10min.",
-      "acceptance": "TestIntegration_AutoSplitWithClaude_Pipeline uses 10min evalJS timeout. Unit tests still use 60s default. make test passes.",
-      "status": "Done",
-      "notes": "_evalTimeout key extracted from overrides in loadPrSplitEngineWithEval. Both evalJS and evalJSAsync use configurable timeout. Real Claude tests set 10min. Unit tests default 60s. make all PASS."
-    },
-    {
-      "task": "T33: Convert sendWithRetry EAGAIN delay from blocking to async",
-      "description": "In sendToHandle (pr_split_script.js), sendWithRetry uses timemod.sleep(10ms) — blocking Go call inside async JS, violating T04a principle. Convert sendWithRetry to async function using await new Promise(r => setTimeout(r, EAGAIN_RETRY_DELAY_MS)).",
-      "acceptance": "No timemod.sleep in sendToHandle. EAGAIN tests in pr_split_conflict_retry_test.go pass. make test passes.",
-      "status": "Done",
-      "notes": "sendWithRetry converted to async. timemod import removed (dead code). Callers use await. All EAGAIN tests pass."
-    },
-    {
-      "task": "T34: Test handle dying between text write and newline write",
-      "description": "10ms setTimeout gap between text and newline writes creates race window. If Claude process dies during delay, newline write hits dead handle. No existing test covers this. Add TestPrSplitCommand_SendToHandle_HandleDiesBetweenWrites in pr_split_conflict_retry_test.go.",
-      "acceptance": "Test proves error is reported correctly when handle dies after text but before newline. make test passes.",
-      "status": "Done",
-      "notes": "TestPrSplitCommand_SendToHandle_HandleDiesBetweenWrites added. Verifies broken pipe error on newline write with 2 send calls."
-    },
-    {
-      "task": "T35: Add EAGAIN retry test for the newline write",
-      "description": "Existing EAGAIN test only covers text write. EAGAIN can also hit newline write independently. Add TestPrSplitCommand_SendToHandle_NewlineEAGAINRetry and NewlineEAGAINExhausted in pr_split_conflict_retry_test.go.",
-      "acceptance": "Tests cover EAGAIN on second write (newline). Both retry-success and retry-exhaustion paths tested. make test passes.",
-      "status": "Done",
-      "notes": "NewlineEAGAINRetry (3 calls: text+EAGAIN+success) and NewlineEAGAINExhausted (5 calls: 1 text + 4 EAGAIN) both added and passing."
-    },
-    {
-      "task": "T36: Document dual-layer timeout architecture",
-      "description": "Add 'Timeout Architecture' section to docs/pr-split-testing.md explaining three timeout layers: go test -timeout, Go evalJS time.After(60s), JS AUTOMATED_DEFAULTS.*TimeoutMs. Explain which killed the T27 real Claude test and how to configure for slow models.",
-      "acceptance": "Developer can configure timeouts for slow AI models from docs alone. make test passes.",
-      "status": "Done",
-      "notes": "Timeout Architecture section added to docs/pr-split-testing.md with ASCII diagram, layer descriptions, interaction analysis, and EAGAIN retry docs."
-    },
-    {
-      "task": "T37: REAL Claude integration test — actually confirm it PASSES end-to-end",
-      "description": "HANA MANDATE: Run make run-real-claude-test with the T32 timeout fix (10min evalJS timeout). The test MUST pass end-to-end: classification prompt sent, Claude responds with MCP tool call, plan generated, splits executed, equivalence verified. If it fails, diagnose and FIX the root cause — do NOT dismiss as 'config issue'. This is the HIGHEST priority task.",
-      "acceptance": "TestIntegration_AutoSplitWithClaude_Pipeline passes with real Claude. Full 8-step pipeline completes. Test output captured and reviewed.",
-      "status": "Blocked",
-      "notes": "Blocked: Claude Code not logged in (no ANTHROPIC_API_KEY). Infrastructure is complete — MCP handshake works, test skips gracefully. Requires 'claude login' or ANTHROPIC_API_KEY to unblock."
-    },
-    {
-      "task": "T38: Edge case — forced exit / Ctrl+C during pr-split",
-      "description": "HANA MANDATE: Verify graceful shutdown when user sends SIGINT during pr-split execution. finishTUI must emit resume instructions. Claude process must be cleaned up. No orphan PTY processes. Add test or verify manually and document.",
-      "acceptance": "Forced exit produces clean shutdown with resume instructions. No orphan processes. Documented or tested.",
-      "status": "Done",
-      "notes": "Committed f255961. TestAutoSplit_CancelDuringExecution_EmitsResumeAndCleansUp verifies: (1) resume instructions emitted (.pr-split-plan.json + osm pr-split --resume), (2) cancellation error returned, (3) executor close() correctly NOT called on heuristic fallback path."
-    },
-    {
-      "task": "T39: UI/UX verification — TUI renders correctly during auto-split",
-      "description": "HANA MANDATE: Verify the TUI (Bubble Tea) renders status correctly during automatedSplit. Step labels visible. Progress updates shown. Error display is readable. Non-TUI fallback (no terminal) degrades gracefully.",
-      "acceptance": "TUI renders correctly during real pipeline execution. Verified via logs or screenshot.",
-      "status": "Done",
-      "notes": "90+ existing tests in autosplit_test.go verify all TUI rendering states: MultipleSteps_FullPipeline simulates complete 6-step pipeline, View_WithSteps/WithFailure/SeparatorShowsCurrent/HelpBar verify visual states, CancelledWhileRunning/DoneMsg_WhenAlreadyCancelled verify cancel UI, StepDetail_VisibleInView/HiddenWhenNotRunning verify progress detail, BranchVerify* tests cover per-branch verification UI. Non-TUI fallback (disableTUI=true) verified by all T40 tests. JS-to-Go TUI bridge verified by T38 cancel test mock."
-    },
-    {
-      "task": "T40: Edge case testing — empty diff, single-file, massive diff, binary files",
-      "description": "HANA MANDATE: Test boundary conditions: (1) empty feature branch (no diff vs main), (2) single-file change, (3) 100+ file change, (4) binary files in diff. Each must produce either correct splits or clear error messages.",
-      "acceptance": "All 4 edge cases tested and documented. Pipeline handles each gracefully.",
-      "status": "Done",
-      "notes": "Committed f255961. Four pipeline-level tests: TestAutoSplit_EmptyDiff (0 files, NoFeatureFiles infra), TestAutoSplit_SingleFile (1 file), TestAutoSplit_LargeDiff (120 files, 12 dirs, maxFiles=15), TestAutoSplit_BinaryFiles (PNG+bin+source). Helper parsePipelineResult extracts plan metrics from actual JS return structure."
-    },
-    {
-      "task": "T41: Indefinite expansion — next frontier after T37-T40",
-      "description": "After T37-T40 are verified, identify the next set of improvements. The task list must NEVER become empty.",
-      "acceptance": "Blueprint grows with new concrete tasks.",
-      "status": "Done",
-      "notes": "Identified 20 concrete improvements across 5 priorities. Added T42-T49 for the highest-impact items."
-    },
-    {
-      "task": "T42: Test BT node factory functions (8 untested exports)",
-      "description": "pr_split_script.js exports 8 behavior tree node factory functions (createAnalyzeNode, createGroupNode, createPlanNode, createSplitNode, createVerifyNode, createEquivalenceNode, createSelectStrategyNode, createWorkflowTree) with ZERO test coverage. Add unit tests for each.",
-      "acceptance": "All 8 BT node factories have at least one test exercising them. Tests verify node creation, tick() returns valid status, blackboard state set correctly.",
-      "status": "Done",
-      "notes": "12 tests in pr_split_bt_test.go: createAnalyzeNode (success+emptyDiff), createGroupNode (success+noAnalysis), createPlanNode (success+noGroups), createSplitNode (noPlan), createVerifyNode (noPlan), createEquivalenceNode (noPlan), createSelectStrategyNode (success+noAnalysis), createWorkflowTree (type). All use bt.tick() API.",
-      "contextPointers": ["pr_split_script.js:4117-4275"]
-    },
-    {
-      "task": "T43: Test BT template functions (5 untested exports)",
-      "description": "pr_split_script.js exports 5 BT template functions (btVerifyOutput, btRunTests, btCommitChanges, btSplitBranch, verifyAndCommit) with no tests. Add unit tests.",
-      "acceptance": "All 5 BT template functions tested. btCommitChanges git-add-A issue documented or fixed.",
-      "status": "Done",
-      "notes": "7 tests in pr_split_bt_test.go: btVerifyOutput (success+failure), btRunTests (success+failure), btSplitBranch (nodeCreation), btCommitChanges (excludesArtifacts — T45 verification), verifyAndCommit (type). btCommitChanges test confirms .pr-split-plan.json excluded from staging.",
-      "contextPointers": ["pr_split_script.js:4277-4345"]
-    },
-    {
-      "task": "T44: Test renderColorizedDiff, getSplitDiff, buildReport",
-      "description": "Three exported JS functions have existence-only tests (no behavioral coverage). renderColorizedDiff: add ANSI color verification. getSplitDiff: test valid split, invalid index, empty files. buildReport: test with populated and null caches.",
-      "acceptance": "Tests verify actual output content, not just function existence.",
-      "status": "Done",
-      "notes": "8 tests in pr_split_bt_test.go: renderColorizedDiff (ANSICodes+emptyInput), getSplitDiff (invalidIndex+emptyFiles+nullPlan+negativeIndex), buildReport (nullCaches+populatedCaches via dispatch 'report' command). buildReport tested through TUI guard by dispatching analyze→group→plan→report.",
-      "contextPointers": ["pr_split_script.js:4370,4393,4816", "pr_split_scope_misc_test.go:100-101"]
-    },
-    {
-      "task": "T45: Fix btCommitChanges to use gitAddChangedFiles",
-      "description": "btCommitChanges (pr_split_script.js:4314) uses git add -A which stages ALL files including tool artifacts. Replace with gitAddChangedFiles(dir).",
-      "acceptance": "btCommitChanges uses gitAddChangedFiles instead of git add -A. Tested.",
-      "status": "Done",
-      "notes": "pr_split_script.js:4321 — btCommitChanges now calls gitAddChangedFiles('.') + git diff --cached --quiet check for empty staging. TestBTTemplate_BtCommitChanges_ExcludesArtifacts verifies .pr-split-plan.json excluded.",
-      "contextPointers": ["pr_split_script.js:4314", "pr_split_script.js:212"]
-    },
-    {
-      "task": "T46: Replace Unix cat calls with osmod.readFile for portability",
-      "description": "detectGoModulePath (line 589-607) and groupByDependency (line 688) use cat to read files. Replace with osmod.readFile() for Windows portability.",
-      "acceptance": "All cat calls removed from pr_split_script.js. Tests pass.",
-      "status": "Done",
-      "notes": "pr_split_script.js:693 — groupByDependency now uses osmod.readFile with cat fallback. detectGoModulePath already uses osmod.readFile (589-607). TestGroupByDependency intra-module test mock updated to also mock osmod.readFile for Go files.",
-      "contextPointers": ["pr_split_script.js:589,597,688"]
-    },
-    {
-      "task": "T47: Log discarded ExitReason in pr_split.go",
-      "description": "pr_split.go:442 discards ExitReason from tuiMux.RunPassthrough. Log it at debug level.",
-      "acceptance": "ExitReason is logged. No functional change.",
-      "status": "Done",
-      "notes": "pr_split.go:444 — slog.Debug('RunPassthrough exit', 'reason', reason.String()). ExitReason is int type with String() method. import log/slog added.",
-      "contextPointers": ["pr_split.go:442"]
-    },
-    {
-      "task": "T48: Log individual strategy failures in resolveConflicts",
-      "description": "pr_split_script.js:2240-2242 silently continues on fix strategy failure. Add log.warn for each failed strategy.",
-      "acceptance": "Each failed strategy produces a warning log entry.",
-      "status": "Done",
-      "notes": "pr_split_script.js:2243 — log('WARN: strategy ' + strategy.name + ' fix failed for ' + split.name + ': ' + ...) after !fixResult.fixed check.",
-      "contextPointers": ["pr_split_script.js:2240-2242"]
-    },
-    {
-      "task": "T49: Pre-compute import maps in assessIndependence",
-      "description": "assessIndependence calls splitsAreIndependent O(N²) times, each invoking extractGoImports. Pre-compute import maps once.",
-      "acceptance": "Import maps computed once per assessIndependence call.",
-      "status": "Done",
-      "notes": "Pre-compute dirs/imports/pkgs arrays outside O(N²) loop. New splitsAreIndependentFromMaps() takes pre-computed maps. Original splitsAreIndependent() preserved for _splitsAreIndependent export. Also applied osmod.readFile portability pattern to extractGoImports (T46 pattern).",
-      "contextPointers": ["pr_split_script.js:4036-4075 (assessIndependence + splitsAreIndependentFromMaps)", "pr_split_script.js:4116-4148 (extractGoImports with osmod.readFile)"]
-    },
-    {
-      "task": "T50: Hoist detectGoModulePath out of extractGoPkgs",
-      "description": "extractGoPkgs (line ~4150) calls detectGoModulePath() every invocation. In assessIndependence's pre-compute loop, this means N calls to detectGoModulePath(), each reading/parsing go.mod. Add optional modulePath parameter to extractGoPkgs; hoist the single detectGoModulePath() call into assessIndependence and buildDependencyGraph.",
-      "acceptance": "detectGoModulePath() called exactly once per assessIndependence invocation, not N times. extractGoPkgs accepts optional modulePath parameter. Existing tests pass unchanged.",
-      "status": "Done",
-      "notes": "extractGoPkgs now accepts optional modulePath param with typeof===undefined guard. assessIndependence and buildDependencyGraph both hoist detectGoModulePath() once.",
-      "contextPointers": ["pr_split_script.js:4150-4163 (extractGoPkgs)", "pr_split_script.js:4036-4060 (assessIndependence pre-compute loop)"]
-    },
-    {
-      "task": "T51: Apply T49 pre-compute pattern to buildDependencyGraph",
-      "description": "buildDependencyGraph (line ~4509) calls splitsAreIndependent in O(N²) loop — same pattern T49 fixed for assessIndependence. Pre-compute dirs/imports/pkgs arrays and use splitsAreIndependentFromMaps. Uses the hoisted modulePath from T50.",
-      "acceptance": "buildDependencyGraph pre-computes maps and uses splitsAreIndependentFromMaps. No repeated file reads in dependency graph construction. Tests pass.",
-      "status": "Done",
-      "notes": "buildDependencyGraph now pre-computes dirs/imports/pkgs arrays and uses splitsAreIndependentFromMaps with !negation for edge creation. Uses hoisted modulePath from T50.",
-      "contextPointers": ["pr_split_script.js:4509-4545 (buildDependencyGraph)"]
-    },
-    {
-      "task": "T52: Remove SPINNER_FRAMES dead code",
-      "description": "SPINNER_FRAMES (line ~2753) is declared but never referenced. It's a leftover from a removed progress display. Delete it.",
-      "acceptance": "SPINNER_FRAMES constant removed. make all passes. No grep matches for SPINNER_FRAMES.",
-      "status": "Done",
-      "notes": "Replaced with comment marker. No remaining references.",
-      "contextPointers": ["pr_split_script.js:2753"]
-    },
-    {
-      "task": "T53: saveTelemetry portability — replace mkdir -p with osmod.writeFile createDirs",
-      "description": "saveTelemetry (line ~4620) uses exec.execv(['mkdir', '-p', dir]) which doesn't exist on Windows. osmod.writeFile already supports { createDirs: true } option (internal/builtin/os/os.go:102). Replace the mkdir + writeFile pattern.",
-      "acceptance": "No exec.execv(['mkdir',...]) in saveTelemetry. Uses osmod.writeFile with createDirs: true. Existing TestSaveTelemetry tests pass.",
-      "status": "Done",
-      "notes": "Uses osmod.writeFile(filename, data, { createDirs: true }). TestSaveTelemetry_MkdirFails adapted for real-fs error path.",
-      "contextPointers": ["pr_split_script.js:4614-4628 (saveTelemetry)", "internal/builtin/os/os.go:102 (createDirs option)"]
-    },
-    {
-      "task": "T54: MCP diagnostic cat call portability",
-      "description": "Line ~3229 uses execmod.exec({ command: 'cat', args: [mcpConfigPath] }) to dump MCP config for debugging. Replace with osmod.readFile(mcpConfigPath).",
-      "acceptance": "MCP config diagnostic uses osmod.readFile instead of cat. Diagnostic logging still works in tests.",
-      "status": "Done",
-      "notes": "Uses osmod.readFile(mcpConfigPath) instead of execmod.exec({command:'cat',...}).",
-      "contextPointers": ["pr_split_script.js:3226-3232"]
-    },
-    {
-      "task": "T55: discoverVerifyCommand and AUTO_FIX_STRATEGIES detect — replace test -f with osmod.fileExists",
-      "description": "discoverVerifyCommand (line ~123) and AUTO_FIX_STRATEGIES detect functions (go-mod-tidy line 1851, go-generate-sum 1877, npm-install 1937, make-generate 1962) all use exec.execv(['test', '-f', ...]) which is Unix-only. Replace with osmod.fileExists() (or osmod.stat()) with test -f fallback.",
-      "acceptance": "All 5 locations use osmod-based file existence check. cat/test fallbacks only when osmod unavailable. Tests pass.",
-      "status": "Done",
-      "notes": "All 5 locations converted to osmod.fileExists with test -f fallback when osmod unavailable. TestDiscoverVerifyCommand mocks osmod.fileExists. 4 AUTO_FIX_STRATEGIES detect functions updated."
-    },
-    {
-      "task": "T56: Unit tests for AUTO_FIX_STRATEGIES detect and fix functions",
-      "description": "The 7 auto-fix strategies (go-mod-tidy, go-generate-sum, go-build-missing-imports, npm-install, make-generate, add-missing-files, claude-fix) have zero direct unit tests. They are exercised only indirectly via resolveConflicts pipeline tests. Add unit tests for each strategy's detect and fix functions with mock exec.execv. Create pr_split_autofix_strategy_test.go.",
-      "acceptance": "Each of the 7 strategies has at least one test for detect (true/false cases) and fix (success/failure). New test file pr_split_autofix_strategy_test.go. make all passes.",
-      "status": "Done",
-      "notes": "pr_split_autofix_strategy_test.go created with 7 detect tests (go-mod-tidy true/false/custom-dir, go-generate-sum true/false, go-build-missing-imports 5 cases, npm-install true/false, add-missing-files 5 cases, claude-fix no-executor) + 4 fix tests (go-mod-tidy success/no-changes, go-generate-sum success, npm-install success). All pass.",
-      "contextPointers": ["pr_split_script.js:1843-2115 (AUTO_FIX_STRATEGIES array)"]
-    },
-    {
-      "task": "T57: Unit tests for ClaudeCodeExecutor.resolve auto-detection",
-      "description": "ClaudeCodeExecutor.resolve (lines ~2330-2381) has complex auto-detection logic: explicit command → claude → ollama → error, with version checks and model availability validation. No unit tests exercise this directly. Add tests with mock exec.execv to verify each resolution path.",
-      "acceptance": "Tests cover: (1) explicit command found, (2) explicit command not found, (3) claude auto-detected + version ok, (4) claude found but version fails, (5) ollama auto-detected + model available, (6) ollama found but model missing, (7) nothing found → error.",
-      "status": "Done",
-      "notes": "7 resolve tests in pr_split_autofix_strategy_test.go. Config property names verified: claudeCommand, claudeModel (not command/model). All 7 test cases pass.",
-      "contextPointers": ["pr_split_script.js:2330-2381 (ClaudeCodeExecutor.resolve)"]
-    },
-    {
-      "task": "T58: validateSplitPlan duplicate file detection test",
-      "description": "validatePlan (line ~998) and validateSplitPlan (line ~1043) detect duplicate files across splits. While validateClassification tests check duplicates, validatePlan and validateSplitPlan duplicate-file detection is untested. Add test where file 'foo.go' appears in two splits.",
-      "acceptance": "Test verifies that a plan with file 'foo.go' in two different splits is flagged as invalid with duplicate files error.",
-      "status": "Done",
-      "notes": "Two tests: TestValidateSplitPlan_DuplicateFiles and TestValidateSplitPlan_NoDuplicates. Passes stages array directly (not object). Both pass.",
-      "contextPointers": ["pr_split_script.js:998-1100 (validatePlan, validateSplitPlan)"]
-    },
-    {
-      "task": "T59: selectStrategy scoring edge case tests",
-      "description": "selectStrategy (line ~802) has a composite scoring algorithm with splitScore, maxSizeScore, and balance factors. Tests exist for basic strategy selection but not for: (a) needsConfirm when two strategies are within 0.15 score, (b) 8+ groups triggers penalty, (c) maxGroupSize exceeding maxPerGroup triggers penalty.",
-      "acceptance": "Tests verify needsConfirm: true when scores are close, and verify penalty scoring for large group counts and oversized groups.",
-      "status": "Done",
-      "notes": "Added 2 subtests to TestSelectStrategy: many_groups_splitScore_penalty (10 dirs, verifies dirScore < 1.0) and oversized_group_maxSizeScore_penalty (12 files in 1 dir, maxPerGroup=3, verifies chunks > directory).",
-      "contextPointers": ["pr_split_planning_test.go:610-695 (T59 subtests)", "pr_split_script.js:802-870 (selectStrategy)"]
-    },
-    {
-      "task": "T60: cleanupBranches worktree conflict fix",
-      "description": "cleanupBranches (line ~1701) calls gitExec(dir, ['checkout', plan.baseBranch]) which can fail if baseBranch is checked out in another worktree — same bug T07 fixed for executeSplit. Apply the same pattern: resolve to commit SHA first, or use git branch -D without checkout.",
-      "acceptance": "cleanupBranches doesn't fail when baseBranch is in another worktree. Test verifying this scenario added.",
-      "status": "Done",
-      "notes": "Production fix: cleanupBranches now falls back to git checkout --detach HEAD when baseBranch checkout fails. Test: worktree_conflict_fallback_to_detach verifies 2 branches deleted with 0 errors when checkout main fails.",
-      "contextPointers": ["pr_split_script.js:1712-1716 (--detach fallback)", "pr_split_execution_test.go:853-879 (worktree test)"]
-    },
-    {
-      "task": "T61: splitsAreIndependentFromMaps direct unit tests",
-      "description": "splitsAreIndependentFromMaps (line 4085) and _splitsAreIndependent (line 4100) have zero direct test invocations — only tested indirectly through assessIndependence. The cross-direction import/package overlap check needs explicit edge case coverage: same-dir overlap, asymmetric import dependency, empty maps.",
-      "acceptance": "≥6 subtests covering: exact dir overlap → false, no overlap → true, A imports B's package → false, B imports A's package → false, both empty → true, non-Go files only (dirs overlap) → false. All via direct prSplit._splitsAreIndependent or splitsAreIndependentFromMaps call.",
-      "status": "Done",
-      "notes": "7 subtests in TestSplitsAreIndependent: no_dir_overlap_returns_true, exact_dir_overlap_returns_false, both_empty_files_returns_true, A_imports_B_package_returns_false, B_imports_A_package_returns_false, non_Go_files_dir_overlap_returns_false, no_cross_import_independent. Uses osmod.readFile mock injection for Go imports and go.mod parsing.",
-      "contextPointers": ["pr_split_script.js:4085 (splitsAreIndependentFromMaps)", "pr_split_script.js:4100 (_splitsAreIndependent)", "pr_split_analysis_test.go:TestSplitsAreIndependent"]
-    },
-    {
-      "task": "T62: extractGoPkgs direct unit tests",
-      "description": "extractGoPkgs (line 4171) builds a modulePath-qualified package set. Never tested directly. Edge cases: empty files, non-Go files, modulePath='', files at root ('.'), undefined modulePath.",
-      "acceptance": "≥5 subtests: Go files produce both dir-only and module-qualified keys, non-Go files ignored, null/empty files returns {}, root-level with modulePath, undefined modulePath triggers detectGoModulePath fallback.",
-      "status": "Done",
-      "notes": "5 subtests in TestExtractGoPkgs: go_files_produce_dir_keys (checks 4 keys: bare dirs + module-qualified), non_go_files_ignored, null_files_returns_empty, root_level_go_file_with_modulePath (dir='.' excluded from module prefix), empty_modulePath_no_qualified_keys. Uses _extractGoPkgs export.",
-      "contextPointers": ["pr_split_script.js:4171 (extractGoPkgs)", "pr_split_analysis_test.go:TestExtractGoPkgs"]
-    },
-    {
-      "task": "T63: resolveConflicts chained-strategy retry loop test",
-      "description": "resolveConflicts (line 2152) has a while loop that restarts with updated verifyOutput when strategy.fix()→{fixed:true} but re-verification fails. This restart mechanism is the core retry logic.",
-      "acceptance": "Test with 2 chaining strategies: strategy1.fix→{fixed:true}, re-verify fails, strategy2.detect(newOutput)→true, strategy2.fix→{fixed:true}, re-verify passes. Verify strategy2 sees updated verifyOutput and totalRetries=2. Also: retry budget exhaustion test.",
-      "status": "Done",
-      "notes": "3 subtests: chained_strategy_restart_sees_updated_verifyOutput (strategy1 fixes alpha, verify still fails with beta, strategy2 fixes beta → totalRetries=2). per_branch_retry_budget_limits_retries (perBranchRetryBudget=1 caps at 1). wall_clock_timeout_reports_remaining_splits (wallClockTimeoutMs=0 → immediate timeout). Also added BranchRetries and CancelledByUser fields to resolveConflictsResult struct.",
-      "contextPointers": ["pr_split_script.js:2152-2300 (resolveConflicts while loop)", "pr_split_pipeline_test.go:TestResolveConflicts"]
-    },
-    {
-      "task": "T64: gitAddChangedFiles rename/quoted path parsing tests",
-      "description": "gitAddChangedFiles (line 215) parses git status --porcelain including rename arrows and quoted paths. These parsing branches have zero test coverage.",
-      "acceptance": "≥4 subtests: normal porcelain stages correctly, rename extracts new path only, quoted path strips quotes, .pr-split-plan.json excluded.",
-      "status": "Done",
-      "notes": "5 subtests in TestGitAddChangedFiles: normal_porcelain_stages_files, rename_extracts_new_path_only, quoted_path_strips_quotes, pr-split-plan.json_excluded, empty_status_does_not_call_git_add. ALSO: Found and fixed production bug — trim() on stdout corrupted first porcelain line when X is space. Now uses split() with line-length filter. Added _gitAddChangedFiles export for testing.",
-      "contextPointers": ["pr_split_script.js:215 (gitAddChangedFiles)", "pr_split_pipeline_test.go:TestGitAddChangedFiles"]
-    },
-    {
-      "task": "T65: executeSplit git rm failure path test",
-      "description": "executeSplit (line 1274) 'D' status path calls git rm. Error path when git rm returns non-zero is NOT tested.",
-      "acceptance": "Mock git rm to fail for 'D' status file. Verify error contains 'git rm', partial results include failed split, original branch restored.",
-      "status": "Done",
-      "notes": "Subtest: git_rm_failure_returns_error_and_restores_branch. Mock rm --ignore-unmatch -f → permission denied. Verifies error contains 'git rm' + stderr, 1 partial result with error, checkout restoreBranch.",
-      "contextPointers": ["pr_split_script.js:1371 (git rm in executeSplit)", "pr_split_execution_test.go:TestExecuteSplit"]
-    },
-    {
-      "task": "T66: executeSplit double commit failure test",
-      "description": "When both normal git commit and git commit --allow-empty fail, error path needs testing.",
-      "acceptance": "Mock both commit and commit --allow-empty to fail. Verify error mentions 'git commit failed', original branch restored.",
-      "status": "Done",
-      "notes": "Subtest: both_commit_and_allow_empty_commit_fail_returns_error. First commit → 'nothing to commit', allow-empty → 'lock error'. Error contains 'git commit failed' + allow-empty stderr. 1 partial result.",
-      "contextPointers": ["pr_split_script.js:1420-1435 (commit fallback in executeSplit)", "pr_split_execution_test.go:TestExecuteSplit"]
-    },
-    {
-      "task": "T67: verifySplits scoped verify + callback signatures test",
-      "description": "verifySplits (line 1519) wires scopedVerifyCommand but integration with verify loop untested. Callback arguments never asserted.",
-      "acceptance": "Mock Go-only split, verify command is scoped. Assert onBranchDone receives (name, passed, exitCode, elapsedMs, skipped, preExisting). Assert onBranchOutput receives (branchName, line).",
-      "status": "Done",
-      "notes": "TestVerifySplits_ScopedVerify (2 subtests): go files scope to specific package, non-go files fall back. TestVerifySplits_CallbackSignatures (3 subtests): onBranchStart name, onBranchDone all 6 args, onBranchOutput branch+line.",
-      "contextPointers": ["pr_split_script.js:1519-1625 (verifySplits)", "pr_split_verification_test.go:TestVerifySplits_ScopedVerify", "pr_split_verification_test.go:TestVerifySplits_CallbackSignatures"]
-    },
-    {
-      "task": "T68: createPRs first push fails immediate abort test",
-      "description": "Existing push failure test makes second push fail. First push failure should immediately return with 1 result entry.",
-      "acceptance": "Mock first push to fail. Verify error mentions first branch, results has 1 entry with pushed=false, no gh commands attempted.",
-      "status": "Done",
-      "notes": "TestCreatePRs_FirstPushFailure_ImmediateAbort: mock git:push:1 → fail, verify 1 result with pushed=false, error mentions split/01-infra, 0 gh pr calls (gh --version excluded by argv[1]==='pr' filter).",
-      "contextPointers": ["pr_split_script.js:1744-1787 (createPRs push logic)", "pr_split_createprs_test.go:TestCreatePRs_FirstPushFailure_ImmediateAbort"]
-    },
-    {
-      "task": "T69: Windows portability audit for sh -c and Unix commands",
-      "description": "Multiple functions construct sh -c shell commands. shellQuote uses Unix escaping. On Windows, sh unavailable. Need audit and platform guards.",
-      "acceptance": "Audit all sh -c usages documented. Tests with shell commands have platform skips. Consider platformShell() helper.",
-      "status": "Done",
-      "notes": "AUDIT COMPLETE: 14 sh -c usages found in pr_split_script.js. CRITICAL: verifySplit (line 1466,1492), resolveConflicts verify (2237,2288), Claude resolution cmds (2124,3997). MEDIUM: 6 AUTO_FIX_STRATEGIES fix/detect functions, shellQuote POSIX-only (line 207). GUARDED: all test -f (5) and cat (3) usages have osmod fallback. SKIPS: existing tests use runtime.GOOS=='windows' skips extensively. New mocked tests (T67,T68,T72,T73) are platform-safe (no real sh invocation). RECOMMENDATION: platformShell() helper would need to target cmd.exe /c or pwsh -Command on Windows, but would require shellQuote rewrite too. Deferred to dedicated Windows support task.",
-      "contextPointers": ["pr_split_script.js:207 (shellQuote)", "pr_split_script.js:1445 (verifySplit sh -c)", "pr_split_script.js:2237 (resolveConflicts sh -c)", "pr_split_script.js:2510 (sleep 0.3)"]
-    },
-    {
-      "task": "T70: loadPlan corrupted/truncated plan file edge cases",
-      "description": "loadPlan (line 1207) NOT tested for: valid JSON wrong shape, truncated JSON, zero splits, missing baseBranch.",
-      "acceptance": "≥4 subtests: wrong shape → graceful error, truncated JSON → parse error, splits=[] → loads with 0 totalSplits, missing baseBranch → loads without error.",
-      "status": "Done",
-      "notes": "2 new subtests (other cases already covered by existing tests): zero_splits_loads_with_totalSplits_zero (splits=[] → totalSplits=0, pendingSplits=0), missing_baseBranch_in_runtime_loads_without_error (baseBranch falls back to runtime default). 'wrong shape' covered by existing 'unsupported plan version' test, 'truncated JSON' by 'invalid JSON' test.",
-      "contextPointers": ["pr_split_script.js:1207 (loadPlan)", "pr_split_planning_test.go:TestLoadPlan"]
-    },
-    {
-      "task": "T71: verifyEquivalenceDetailed diff enrichment for non-equivalent trees",
-      "description": "verifyEquivalenceDetailed (line 1675) populates diffFiles and diffSummary when trees don't match. Not unit-tested with mocks.",
-      "acceptance": "Mock two different tree hashes + git diff output. Verify diffFiles array and diffSummary string in result.",
-      "status": "Done",
-      "notes": "Already covered by existing TestVerifyEquivalenceDetailed subtest 'non-equivalent trees include diff details'. No new code needed.",
-      "contextPointers": ["pr_split_script.js:1675 (verifyEquivalenceDetailed)", "pr_split_execution_test.go:TestVerifyEquivalenceDetailed"]
-    },
-    {
-      "task": "T72: resolveConflicts intra-strategy cancellation test",
-      "description": "Cancellation check between strategy attempts within a single branch (line 2280) not independently tested.",
-      "acceptance": "1 branch, 2 strategies. Cancel fires mid-fix. Verify cancelledByUser=true, second strategy never attempted.",
-      "status": "Done",
-      "notes": "Added to TestResolveConflicts table: intra-strategy cancellation stops before second strategy. Strategy-1 fix() sets autoSplitTUI.cancelled()=true. Verifies totalRetries≤1 (strategy-2 never ran).",
-      "contextPointers": ["pr_split_script.js:2280 (isCancelled in strategy loop)", "pr_split_pipeline_test.go:TestResolveConflicts"]
-    },
-    {
-      "task": "T73: buildReport null caches test",
-      "description": "buildReport (line 4906) assembles report from module-level caches. Zero test coverage.",
-      "acceptance": "≥2 subtests: all caches null → sensible defaults, populated caches → report reflects them.",
-      "status": "Done",
-      "notes": "Exported _buildReport on globalThis.prSplit inside TUI guard. TestBuildReport 2 subtests: null_caches_returns_sensible_defaults (version, baseBranch, strategy from runtime, analysis/groups/plan = nil), populated_caches_reflected_in_report (dispatch analyze+group populates closure caches, report.analysis and report.groups non-nil).",
-      "contextPointers": ["pr_split_script.js:4906 (buildReport)", "pr_split_script.js:4959 (_buildReport export)", "pr_split_verification_test.go:TestBuildReport"]
-    },
-    {
-      "task": "T74: automatedSplit resume path with Claude spawn failure",
-      "description": "Resume path tries Claude spawn. If it fails, should warn and proceed. This path not tested.",
-      "acceptance": "Resume with saved plan, ClaudeCodeExecutor.resolve() fails. Resume continues, warning emitted, checkpoint used.",
-      "status": "Done",
-      "notes": "TestAutoSplit_ResumeClaudeResolveFails in pr_split_autosplit_recovery_test.go. Run 1 creates saved plan, Run 2 mocks ClaudeCodeExecutor.resolve() to return error. Verifies: warning emitted ('Claude unavailable'), Steps 1-6 skipped, Verify splits + Verify equivalence steps run, Auto-Split Complete summary appears, pipeline completes without error.",
-      "contextPointers": ["pr_split_script.js:3513-3530 (resume path Claude spawn)", "pr_split_autosplit_recovery_test.go:TestAutoSplit_ResumeClaudeResolveFails"]
-    },
-    {
-      "task": "T75: AUTO_FIX_STRATEGIES .fix() methods unit tests — go-mod-tidy, go-generate-sum, add-missing-files",
-      "description": "ALL .detect() methods are tested but NONE of the .fix() methods for the 6 non-Claude strategies have unit tests. The fix() functions execute shell commands, commit changes, etc. Start with go-mod-tidy, go-generate-sum, and add-missing-files as highest-value.",
-      "acceptance": "TestAutoFixStrategy_GoModTidy_Fix: 4 subtests (success, no changes, tidy fails, commit fails). TestAutoFixStrategy_GoGenerateSum_Fix: 2 subtests (success, download fails). TestAutoFixStrategy_AddMissingFiles_Fix: 4 subtests (success, no source branch, no candidates, all checkouts fail).",
-      "status": "Done",
-      "notes": "10 subtests across 3 functions added to pr_split_autofix_strategy_test.go. Uses gitMockSetupJS() to mock exec.execv for both sh -c (shell commands) and git commands. Added autoFixResult struct + parseAutoFixResult helper.",
-      "contextPointers": ["pr_split_script.js:1890-2100 (AUTO_FIX_STRATEGIES)", "pr_split_autofix_strategy_test.go:TestAutoFixStrategy_GoModTidy_Fix"]
-    },
-    {
-      "task": "T76: AUTO_FIX_STRATEGIES .fix() — npm-install, make-generate, go-build-missing-imports",
-      "description": "Remaining 3 non-Claude fix strategies. npm-install runs npm install + commits. make-generate runs make generate. go-build-missing-imports runs goimports.",
-      "acceptance": "At least one success + one failure test per strategy. Verify shell commands issued, commit logic, and {fixed:false} on no-change.",
-      "status": "Done",
-      "outcome": "3 test functions, 10 subtests total: GoBuildMissingImports_Fix (fix_success_with_goimports, fix_goimports_not_available, fix_goimports_no_changes), NpmInstall_Fix (fix_success, fix_npm_install_fails, fix_no_changes), MakeGenerate_Fix (fix_make_generate_success, fix_go_generate_fallback, fix_generate_fails, fix_no_changes). Extended gitMockSetupJS() with generic non-git command routing via '!' + argv[0] pattern. All 32 autofix strategy tests pass.",
-      "contextPointers": ["pr_split_script.js:1890-2100 (AUTO_FIX_STRATEGIES)", "pr_split_autofix_strategy_test.go", "pr_split_verification_test.go (gitMockSetupJS)"]
-    },
-    {
-      "task": "T77: isPaused() and step() pause checkpoint test",
-      "description": "The isPaused() function and the 'Ctrl-P pause' code path in step() are never exercised. Mock autoSplitTUI.paused() returning true, verify checkpoint saved and error returned.",
-      "acceptance": "TestAutoSplit_PauseDuringStep: mock autoSplitTUI.paused()=true inside a step, verify return has error 'paused by user (Ctrl-P)'.",
-      "status": "Done",
-      "outcome": "TestAutoSplit_PauseDuringStep: Injects autoSplitTUI mock with paused()=true. Pipeline detects pause at first step boundary (before planCache exists), returns 'paused by user (Ctrl-P)' error. Checkpoint save only occurs when planCache is populated (later steps); first-step pause returns error without checkpoint message. PASS (0.28s).",
-      "contextPointers": ["pr_split_script.js:2715 (isPaused)", "pr_split_script.js:3180-3195 (pause in step)", "pr_split_autosplit_recovery_test.go:TestAutoSplit_PauseDuringStep"]
-    },
-    {
-      "task": "T78: step() per-step timeout and watchdog idle timeout",
-      "description": "The per-step timeout (stepTimeoutMs exceeded) and watchdog idle timeout (no progress for watchdogIdleMs) inside step() are never triggered in tests.",
-      "acceptance": "TestAutoSplit_StepTimeout: configure very short stepTimeoutMs, run a step that takes longer, verify error 'step timeout'.",
-      "status": "Done",
-      "outcome": "TestAutoSplit_StepTimeout: Uses setupTestPipeline + mock ClaudeCodeExecutor + mcpcallbackmod MCP injection. stepTimeoutMs=1 triggers post-step timeout on 'Analyze diff' step (takes >1ms for MCP communication). Verifies 'step timeout (0min elapsed, limit 0min)' error. PASS (0.30s). Watchdog idle test deferred — requires long-running step with no progress, complex to mock deterministically.",
-      "contextPointers": ["pr_split_script.js:3210-3220 (watchdog/step timeout in step)", "pr_split_autosplit_recovery_test.go:TestAutoSplit_StepTimeout"]
-    },
-    {
-      "task": "T79: gitAddChangedFiles edge cases — rename arrows, quoted paths, artifact exclusion",
-      "description": "Already covered by existing TestGitAddChangedFiles table-driven test in pr_split_pipeline_test.go.",
-      "acceptance": "Already covered: rename_extracts_new_path_only, quoted_path_strips_quotes, pr-split-plan.json_excluded, empty_status, normal_porcelain.",
-      "status": "Done",
-      "notes": "Research subagent missed existing coverage. TestGitAddChangedFiles already covers all 5 edge cases with proper mocks.",
-      "contextPointers": ["pr_split_pipeline_test.go:910-1030 (TestGitAddChangedFiles)"]
-    },
-    {
-      "task": "T80: getSplitDiff fallback path and success path",
-      "description": "getSplitDiff has a fallback when first 'git diff baseBranch...splitName' fails (code !== 0), falling back to 'git diff baseBranch -- files'. Neither fallback nor success path tested.",
-      "acceptance": "TestGetSplitDiff_SuccessWithDiff, TestGetSplitDiff_FallbackOnThreeDotFailure, TestGetSplitDiff_BothDiffsFail.",
-      "status": "Done",
-      "notes": "3 new test functions added to pr_split_bt_test.go. Uses gitMockSetupJS() with function-based responses to count diff calls and control per-invocation behavior. Verifies: primary diff returns content, fallback triggers on primary failure, both diffs fail returns error.",
-      "contextPointers": ["pr_split_script.js:4472-4500 (getSplitDiff)", "pr_split_bt_test.go:TestGetSplitDiff_SuccessWithDiff"]
-    },
-    {
-      "task": "T81: verifyAndCommit composite BT function",
-      "description": "verifyAndCommit() is exported on globalThis.prSplit but has zero test coverage. Test both with-verifyCommand (3-node sequence) and without (2-node test→commit).",
-      "acceptance": "TestVerifyAndCommit_WithVerifyCommand: set verifyCommand, verify runs test then verify then commit. TestVerifyAndCommit_TestOnlyPath: no verifyCommand, verify only test then commit.",
-      "status": "Done",
-      "outcome": "TestVerifyAndCommit_BTExecution: 3 subtests in real git repo. with_verify_command: ticks 3-node sequence (test→verify→commit), all pass. test_only_path: ticks 2-node sequence, verified=false, committed=true. test_failure_aborts_sequence: test fails (exit 1), sequence aborts before verify/commit. All PASS.",
-      "contextPointers": ["pr_split_script.js:4490 (verifyAndCommit)", "pr_split_bt_test.go:TestVerifyAndCommit_BTExecution"]
-    },
-    {
-      "task": "T82: loadPlan V2 snapshot with lastCompletedStep",
-      "description": "loadPlan unit test for V2 snapshot format which includes lastCompletedStep field. Integration tests exercise V2 but no direct unit test.",
-      "acceptance": "TestLoadPlan_V2Snapshot: write V2 JSON with lastCompletedStep, load it, verify lastCompletedStep returned in result.",
-      "status": "Done",
-      "outcome": "Added V2 snapshot test entry to TestLoadPlan table in pr_split_planning_test.go. Updated loadPlanResult struct with LastCompletedStep *string field. Test verifies lastCompletedStep='Verify splits' is returned correctly. PASS.",
-      "contextPointers": ["pr_split_script.js:1210-1270 (loadPlan)"]
-    },
-    {
-      "task": "T83: resolveConflictsWithClaude wall-clock timeout direct test",
-      "description": "resolveConflictsWithClaude has wall-clock deadline checks inside its loop. The resolveConflicts wrapper tests wall-clock timeout but the inner function's check is not directly tested.",
-      "acceptance": "TestResolveConflictsWithClaude_WallClockTimeout: configure wallClockMs=0 or very short, call with failures, verify returns reSplitReason containing 'wall-clock timeout'.",
-      "status": "Done",
-      "outcome": "Already covered by TestPrSplitCommand_ResolveConflictsWithClaudeWallClockTimeout in pr_split_conflict_retry_test.go (line 522). Directly calls resolveConflictsWithClaude with wallClockMs=0, verifies 'wall-clock timeout' in reSplitReason. Research subagent missed existing coverage.",
-      "notes": "No new code needed — pre-existing test coverage confirmed.",
-      "contextPointers": ["pr_split_script.js:3866-3900 (resolveConflictsWithClaude wall-clock)", "pr_split_conflict_retry_test.go:522 (TestPrSplitCommand_ResolveConflictsWithClaudeWallClockTimeout)"]
-    },
-    {
-      "task": "T84: createPRs auto-merge mergeError field content verification",
-      "description": "When gh pr merge fails, the mergeError field is set. Existing tests verify skip logic but not the exact mergeError field content.",
-      "acceptance": "TestCreatePRs_AutoMerge_MergeErrorContent: mock gh pr merge to fail with specific stderr, verify mergeError field contains that stderr content.",
-      "status": "Done",
-      "outcome": "Already covered by TestCreatePRs_AutoMerge_Failure in pr_split_createprs_test.go (line 689). Mocks gh pr merge to fail with 'merge queue not enabled', verifies mergeError field contains that exact stderr. Research subagent missed existing coverage.",
-      "notes": "No new code needed — pre-existing test coverage confirmed.",
-      "contextPointers": ["pr_split_script.js:1980 (createPRs auto-merge)", "pr_split_createprs_test.go:689 (TestCreatePRs_AutoMerge_Failure)"]
-    },
-    {
-      "task": "T85: extractGoImports I/O loop, osmod fallback, error-skip",
-      "description": "extractGoImports (exposed as _extractGoImports on prSplit) reads .go files via osmod.readFile with cat fallback, calls parseGoImports on each, aggregates. Zero test coverage on the I/O loop including: osmod read success, osmod read failure with cat fallback, read error skip (continue), empty-content guard.",
-      "acceptance": "TestExtractGoImports: call _extractGoImports with real .go files in temp dir, verify aggregated imports. TestExtractGoImports_ReadErrorSkip: mock osmod.readFile to fail for one file, verify function continues with remaining files. TestExtractGoImports_EmptyContent: pass file with no imports, verify empty/default return.",
-      "status": "Done",
-      "outcome": "4 tests: TestExtractGoImports_WithRealFiles (real .go files with known imports), _NonexistentFile (error-skip path), _NonGoFiles (.md/.json filtered), _EmptyList (null/undefined/empty array). All in pr_split_grouping_test.go.",
-      "contextPointers": ["pr_split_script.js:4139 (extractGoImports)", "pr_split_script.js:4100-4135 (parseGoImports)"]
-    },
-    {
-      "task": "T86: waitForLogged timeout logging and success return",
-      "description": "waitForLogged wraps mcpCallbackObj.waitFor() adding logging-based timeout messages. Used in 5 places inside automatedSplit. Never called directly in any test. A bug breaks the entire automated Claude pipeline.",
-      "acceptance": "TestWaitForLogged_Success: mock mcpCallbackObj.waitFor to return data, verify waitForLogged returns it. TestWaitForLogged_Timeout: mock mcpCallbackObj.waitFor to return error (timeout), verify appropriate error returned with logging.",
-      "status": "Done",
-      "outcome": "2 tests: TestWaitForLogged_Success (mock waitFor returns data, verify passthrough), TestWaitForLogged_Timeout (mock returns error, verify error propagation). Both in pr_split_autosplit_recovery_test.go.",
-      "contextPointers": ["pr_split_script.js:2896 (waitForLogged)"]
-    },
-    {
-      "task": "T87: automatedSplit re-split cycle (Steps 8-9)",
-      "description": "When resolveConflictsWithClaude returns reSplitNeeded=true, the pipeline re-classifies via sendToHandle → waitForLogged('reportCategories') → classificationToGroups → createSplitPlan → executeSplit → verifySplits. This ~50-line async chain has never run in tests.",
-      "acceptance": "TestAutoSplit_ReSplitCycle: force reSplitNeeded=true from resolution, verify the re-classify → re-execute → re-verify chain actually runs. Verify maxReSplits limit prevents infinite loops.",
-      "status": "Not Started",
-      "contextPointers": ["pr_split_script.js:3690-3745 (re-split cycle)", "pr_split_script.js:5460-5530 (Step 8-9)"]
-    },
-    {
-      "task": "T88: cleanupExecutor JS-side SIGKILL escalation",
-      "description": "cleanupExecutor() calls executor.close() + executor.kill('SIGKILL') after grace period, checks isForceCancelled(), handles _executorSpawned flag. No direct unit test — only exercised implicitly during automatedSplit error paths.",
-      "acceptance": "TestCleanupExecutor: mock executor with close/kill methods, call cleanupExecutor, verify close then kill sequence. TestCleanupExecutor_NotSpawned: verify no-op when _executorSpawned=false.",
-      "status": "Done",
-      "outcome": "4 tests: TestCleanupExecutor_NormalClose (normal close without SIGKILL), _ForceCancel (SIGKILL then close sequence), _NilExecutor (no-op on null), _WithTuiMuxDetach (close then detach order). All in pr_split_autosplit_recovery_test.go.",
-      "contextPointers": ["pr_split_script.js:4041-4090 (cleanupExecutor)"]
-    },
-    {
-      "task": "T89: automatedSplit Step 5 — Claude plan validation failure fallback",
-      "description": "When Claude provides a structurally-valid plan that fails validatePlan(), the code falls through to local plan generation. This fallback-from-Claude path has no test coverage.",
-      "acceptance": "TestAutoSplit_ClaudePlanValidationFallback: inject classification that produces an invalid plan (e.g., missing files), verify local plan generation runs as fallback.",
-      "status": "Not Started",
-      "contextPointers": ["pr_split_script.js:3460-3500 (Step 5 plan validation fallback)"]
-    },
-    {
-      "task": "T90: automatedSplit Step 4 — uncategorized file assignment",
-      "description": "When Claude classifies files but misses some, unclassified files are appended to an 'uncategorized' group. Neither array nor legacy map format is tested.",
-      "acceptance": "TestAutoSplit_UncategorizedFiles: inject classification missing some files, verify 'uncategorized' category created with missing files.",
-      "status": "Not Started",
-      "contextPointers": ["pr_split_script.js:3430-3445 (uncategorized file assignment)"]
-    },
-    {
-      "task": "T91: Go Execute() claudeEnv parsing edge cases",
-      "description": "config claude-env=KEY1=val1,KEY2=val2 is parsed by strings.Cut. Untested: malformed input like =val, KEY=, ,,, empty pairs. The strings.Cut loop silently drops k=='' entries.",
-      "acceptance": "TestPrSplitConfig_ClaudeEnvMalformed: test KEY=, =val, empty pairs, verify no crash and correct key filtering.",
-      "status": "Done",
-      "outcome": "10 subtests for parseClaudeEnv: normal pairs, empty string, key with empty value, empty key drop, trailing/leading comma, whitespace, double comma, value with equals, no equals dropped. Extracted parseClaudeEnv as standalone function in pr_split.go. Tests in pr_split_cmd_meta_test.go.",
-      "contextPointers": ["pr_split.go:220-228 (claudeEnv parsing)"]
-    },
-    {
-      "task": "T92: Go Execute() timeout config parsing",
-      "description": "time.ParseDuration from config is untested. Invalid duration strings like 'abc' or '-10s' silently fall through.",
-      "acceptance": "TestPrSplitConfig_TimeoutParsing: test valid duration, invalid duration, negative duration, verify correct behavior.",
-      "status": "Done",
-      "outcome": "7 subtests for timeout config parsing: valid duration/seconds/hours, invalid string, negative duration, zero duration, empty string. Tests in pr_split_cmd_meta_test.go.",
-      "contextPointers": ["pr_split.go:175-180 (timeout config parsing)"]
-    },
-    {
-      "task": "T93: heuristicFallback tree-hash-mismatch error path",
-      "description": "The tree-hash-mismatch error path (report.error = 'tree hash mismatch after heuristic split') inside heuristicFallback is never explicitly triggered in tests.",
-      "acceptance": "TestHeuristicFallback_TreeHashMismatch: mock verifyEquivalence to return mismatch, verify error contains 'tree hash mismatch'.",
-      "status": "Done",
-      "outcome": "TestHeuristicFallback_TreeHashMismatch: overrides verifyEquivalence to return {equivalent:false}, runs heuristicFallback in real repo, verifies report.error contains 'tree hash mismatch'. In pr_split_prompt_test.go.",
-      "contextPointers": ["pr_split_script.js:3790-3840 (heuristicFallback tree-hash-mismatch)"]
-    },
-    {
-      "task": "T94: createPRs second push failure in stacked PRs",
-      "description": "When the 2nd push in a stack fails, verify the 1st PR result is preserved and error message includes which branch failed. Current tests only test first push failure.",
-      "acceptance": "TestCreatePRs_SecondPushFailure: mock first push success, second push failure, verify results[0] has pushed=true, results[1] has error, top-level error mentions the failed branch.",
-      "status": "Done",
-      "outcome": "Already covered by TestCreatePRs_PushFailure in pr_split_createprs_test.go (line 455). Mocks first push success, second push failure. Verifies results[0].pushed=true, results[1].pushed=false, top-level error mentions split/02-feature.",
-      "notes": "No new code needed — pre-existing test coverage confirmed.",
-      "contextPointers": ["pr_split_script.js:1773-1790 (push loop)", "pr_split_createprs_test.go"]
-    },
-    {
-      "task": "T95: renderPrompt direct unit tests (template engine)",
-      "description": "renderPrompt (line 2647) is the Go text/template bridge used by renderClassificationPrompt, renderSplitPlanPrompt, renderConflictPrompt. Zero direct tests — only exercised indirectly. Test: variable substitution, missing variables, special characters in values, template module unavailable error path.",
-      "acceptance": "TestRenderPrompt: call renderPrompt with known template+data, verify output. TestRenderPrompt_MissingVariable: template references {{.Foo}} not in data, verify graceful behavior. TestRenderPrompt_TemplateError: malformed template string, verify error returned.",
-      "status": "Done",
-      "contextPointers": ["pr_split_script.js:2647-2658 (renderPrompt)", "pr_split_script.js:2660-2700 (render*Prompt consumers)"]
-    },
-    {
-      "task": "T96: splitsAreIndependentFromMaps direct unit tests",
-      "description": "splitsAreIndependentFromMaps (line 4088) does set intersection on 3 pairs of maps (dirs, imports, pkgs). Zero direct tests — only tested through splitsAreIndependent wrapper. Pure function, easily testable.",
-      "acceptance": "TestSplitsAreIndependentFromMaps: (1) no overlap → true, (2) dir overlap → false, (3) import-to-pkg overlap → false, (4) pkg-to-import overlap → false, (5) empty maps → true, (6) nil/undefined maps → true or no crash.",
-      "status": "Done",
-      "contextPointers": ["pr_split_script.js:4088-4100 (splitsAreIndependentFromMaps)"]
-    },
-    {
-      "task": "T97: prSplitSendWithCancel 2s kill-fallback timeout path",
-      "description": "In pr_split.go lines 691-704, after kill() is called (both force-cancel and normal cancel), the function waits up to 2s via time.After for the send goroutine. If kill doesn't unblock send(), the 2s timeout fires and returns the cancel error. This fallback path is never explicitly tested.",
-      "acceptance": "TestPrSplitSendWithCancel_KillTimeoutFallback: provide a send() that blocks forever (never returns even after kill), verify function returns 'force cancelled' error after ~2s without hanging.",
-      "status": "Done",
-      "contextPointers": ["pr_split.go:691-704 (2s time.After fallback)", "pr_split_integration_test.go (existing sendWithCancel tests)"]
-    },
-    {
-      "task": "T98: Go config max=-5 from config (not flags) edge path",
-      "description": "pr_split.go lines ~156-163 parse max from config via strconv.Atoi with n > 0 guard. When config provides max=-5, Atoi succeeds but n <= 0 so the value is not applied. When config provides max=abc, Atoi fails. Neither edge case tested from the config path (flag validation is tested separately).",
-      "acceptance": "TestPrSplitCommand_MaxConfigParsing: test max=5 (applied), max=-5 (not applied), max=abc (not applied), max=0 (not applied), empty (not applied). Verify cmd.maxFiles reflects correct value.",
-      "status": "Done",
-      "contextPointers": ["pr_split.go:156-163 (max config parsing)"]
-    },
-    {
-      "task": "T99: uncategorized file assignment (T90 via direct function test)",
-      "description": "After classification, files missing from the classification are added to an 'uncategorized' group (pr_split_script.js:3427-3443). Test the post-MCP logic directly: given a classification missing some files, verify the uncategorized group is created. Approach: set up classification data in JS, call the assignment logic.",
-      "acceptance": "TestAutoSplit_UncategorizedFiles_ArrayFormat: inject array classification missing 2 of 5 files, verify 'uncategorized' group created with missing files. TestAutoSplit_UncategorizedFiles_MapFormat: inject legacy map classification missing files, verify uncategorized entries added.",
-      "status": "Done",
-      "contextPointers": ["pr_split_script.js:3410-3445 (uncategorized assignment)", "pr_split_script.js:3399-3409 (fileIsClassified)"]
-    },
-    {
-      "task": "T100: validatePlan failure → local plan fallback (T89 via direct function test)",
-      "description": "In automatedSplit Step 5 (line 3490-3497), when Claude's plan fails validatePlan, the code falls through to classificationToGroups → createSplitPlan local generation. Test the validation → fallback orchestration directly.",
-      "acceptance": "TestValidatePlan_FallbackToLocal: create a plan with files not in the diff (validatePlan fails), verify the fallback path generates a valid local plan from classification. Verify log contains 'Claude plan invalid'.",
-      "status": "Done",
-      "contextPointers": ["pr_split_script.js:3490-3510 (validatePlan fallback)", "pr_split_script.js:897-940 (validatePlan)"]
-    },
-    {
-      "task": "T101: automatedSplit re-split cycle via MCP mock (T87)",
-      "description": "When resolveConflictsWithClaude returns reSplitNeeded=true, the pipeline re-classifies via sendToHandle → waitForLogged('reportCategories') → rebuild plan → re-execute → re-verify. Test requires MCP callback injection (existing TestIntegration_AutoSplitMockMCP pattern). This is the single largest untested critical path.",
-      "acceptance": "TestAutoSplit_ReSplitCycle: mock MCP to deliver: initial classification, plan, resolution with reSplitNeeded=true, new classification. Verify plan is rebuilt and re-executed. Verify maxReSplits limit prevents infinite loops.",
-      "status": "Deferred — requires full MCP callback injection; most complex untested path; low regression risk.",
-      "contextPointers": ["pr_split_script.js:3690-3745 (re-split cycle)", "pr_split_script.js:5460-5530 (Steps 8-9)", "pr_split_autosplit_recovery_test.go:682 (MockMCP pattern)"]
-    },
-    {
-      "task": "T102: buildCommands dispatch coverage for edge commands",
-      "description": "buildCommands (line 4961) builds the TUI command map. While individual commands are well-tested, the dispatch builder itself — handling unknown commands, empty input, and the 'help' meta-command — may have gaps.",
-      "acceptance": "TestBuildCommands_UnknownCommand: dispatch non-existent command, verify error message. TestBuildCommands_EmptyInput: dispatch empty string, verify no crash. TestBuildCommands_HelpOutput: dispatch 'help', verify output contains available commands.",
-      "status": "Done",
-      "contextPointers": ["pr_split_script.js:4961-5100 (buildCommands)"]
-    },
-    {
-      "task": "T103: detectLanguage edge cases and accuracy",
-      "description": "detectLanguage (line ~2710) guesses project language from file extensions. Used by renderClassificationPrompt. Test with: all-Go files, mixed Go+JS, no recognized extensions, empty file list, null input.",
-      "acceptance": "TestDetectLanguage: (1) .go files → 'Go', (2) .js files → 'JavaScript' or similar, (3) .py files → 'Python', (4) mixed → dominant language, (5) empty → 'unknown', (6) no recognized extensions → 'unknown'.",
-      "status": "Done — already covered by 15+ subtests in pr_split_analysis_test.go",
-      "contextPointers": ["pr_split_script.js:2710-2760 (detectLanguage)"]
-    },
-    {
-      "task": "T104: splitView closures unit tests",
-      "description": "The splitView global (pr_split.go:350-365) exposes appendOsm, appendClaude, setClaudeStatus, setRatio, activePane, and run closures to JS. Zero test coverage. Test each closure doesn't panic and delegates correctly when no ui.SplitView is available (nil guard).",
-      "acceptance": "TestPrSplitCommand_SplitViewClosures: verify each closure is callable from JS without crash. Verify return values or side effects where observable.",
-      "status": "Deferred — requires full Execute() with terminal context; not testable via loadPrSplitEngineWithEval"
-    },
-    {
-      "task": "T105: tuiMux closures unit tests",
-      "description": "The tuiMux global (pr_split.go:292-348) exposes switchToClaude, isClaudeActive, setStatus, setToggleKey, setStatusEnabled, setResizeFunc closures. Zero test coverage. Test each closure is accessible and callable without crash.",
-      "acceptance": "TestPrSplitCommand_TuiMuxClosures: verify each closure is callable from JS. Verify isClaudeActive returns boolean. Verify setStatus/setToggleKey accept string args without crash.",
-      "status": "Deferred — requires full Execute() with termmux.Mux context"
-    },
-    {
-      "task": "T106: tuiMux.attach type-assertion branches",
-      "description": "tuiMux.attach (pr_split.go:268-296) has three distinct code paths: (1) direct StringIO, (2) map with _goHandle→StringIO, (3) map with _goHandle→io.ReadWriteCloser. Only path tested indirectly through JS integration. Test each Go-level type-assertion branch directly.",
-      "acceptance": "TestTuiMuxAttach_DirectStringIO, TestTuiMuxAttach_MapGoHandle, TestTuiMuxAttach_MapRWC: verify each branch creates correct child attachment.",
-      "status": "Deferred — requires full Execute() with termmux.Mux context"
-    },
-    {
-      "task": "T107: planEditorFactory round-trip fidelity",
-      "description": "planEditorFactory.create (pr_split.go:558-614) converts []interface{} → []ui.PlanEditorItem. Edge cases: missing name key, wrong type for files, empty arrays, round-trip back to JS maps. Pure Go logic, easily testable.",
-      "acceptance": "TestPlanEditorFactory_Conversion: verify correct map→PlanEditorItem conversion. TestPlanEditorFactory_MissingKeys: verify graceful handling of missing name/files. TestPlanEditorFactory_EmptyPlan: verify empty input doesn't crash.",
-      "status": "Done"
-    },
-    {
-      "task": "T108: Execute PrepareEngine failure path",
-      "description": "pr_split.go:207-210: If PrepareEngine returns an error, Execute returns immediately. No test triggers this path. Would require injecting a broken scripting config or mocking PrepareEngine.",
-      "acceptance": "TestPrSplitCommand_PrepareEngineFailure: arrange for PrepareEngine to fail (e.g., corrupt script content), verify Execute returns the error without panicking.",
-      "status": "Done"
-    },
-    {
-      "task": "T109: sendToHandle EAGAIN retry on newline write",
-      "description": "The second sendWithRetry call in sendToHandle (pr_split_script.js:2893-2895) retries on EAGAIN for the newline write. The existing EAGAIN test only covers the first write. Test: mock handle where text write succeeds but newline hits EAGAIN once then succeeds on retry.",
-      "acceptance": "TestPrSplitCommand_SendToHandle_NewlineEAGAINRetry: mock handle returns EAGAIN on first newline write, succeeds on retry. Verify full send completes without error.",
-      "status": "Done — already covered by TestPrSplitCommand_SendToHandle_NewlineEAGAINRetry and NewlineEAGAINExhausted"
-    },
-    {
-      "task": "T110: validateClassification knownFiles edge cases",
-      "description": "validateClassification (pr_split_script.js:933-1003) with knownFiles: classification missing files from knownFiles should mark as invalid or add to uncategorized. Edge cases: empty knownFiles array, undefined knownFiles, knownFiles with extra files not in classification.",
-      "acceptance": "TestValidateClassification_MissingFromKnownFiles: classification missing 2 files from knownFiles list, verify result.valid behavior. TestValidateClassification_EmptyKnownFiles: empty array, verify no crash.",
-      "status": "Done"
+      "task": "R28: Update documentation for chunk architecture",
+      "description": "Update: (1) docs/architecture.md — chunk loading pattern. (2) docs/architecture-pr-split-chunks.md — current with implementation. (3) AGENTS.md sourceOfTruth — reference chunks not monolith. (4) CHANGELOG.md — rearchitecture entry. (5) docs/reference/command.md — if interface changed. (6) Remove all references to pr_split_script.js as a single file.",
+      "acceptance": "All documentation current. CHANGELOG has rearchitecture entry. No stale references to monolith.",
+      "status": "Not Started"
     }
   ],
   "continuousVerification": {
     "task": "After EVERY significant change, run make pipeline and integration tests",
-    "description": "Run `make make-all-with-log` after every code change. Run `make integration-test-prsplit-mcp` after pr-split changes.",
+    "description": "Run `make make-all-with-log` after every code change. Run `make integration-test-prsplit-mcp` after pr-split changes. Run `make integration-test-prsplit` periodically for real Claude validation.",
     "failPolicy": "If ANY check fails, STOP IMMEDIATELY and fix. Zero tolerance for flaky tests."
   },
   "finalEnforcementProtocol": [
@@ -911,6 +255,10 @@
     {
       "type": "POST_EXECUTION_WARNING_REPEATED",
       "alert": "No commits until two contiguous, issue-free subagent reviews confirm correctness."
+    },
+    {
+      "type": "REARCHITECTURE_REMINDER",
+      "alert": "The old monolith is in scratch/archive/pr-split-v1/. Reference it when extracting chunks. Do NOT hallucinate function signatures or behavior — READ the archive."
     }
   ]
 }

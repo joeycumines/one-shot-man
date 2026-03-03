@@ -1783,3 +1783,197 @@ func TestPrSplitCommand_SendToHandle_NewlineEAGAINExhausted(t *testing.T) {
 		t.Errorf("Expected 5 send calls (1 text + 4 newline EAGAIN), got %d", output.CallCount)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T116: resolveConflictsWithClaude — successful fix path
+// ---------------------------------------------------------------------------
+
+func TestPrSplitCommand_ResolveConflictsWithClaude_SuccessfulFix(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Install git mock so gitExec / exec.execStream are captured.
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Exercise the successful fix path:
+	//  1. sendToHandle sends prompt → increment counter
+	//  2. mcpCallbackObj.waitFor returns resolution with patches
+	//  3. osmod.writeFile applies each patch
+	//  4. gitAddChangedFiles stages modified files → gitExec(['status', '--porcelain']), gitExec(['add', '--', ...])
+	//  5. git commit --amend --no-edit
+	//  6. verifySplit: gitExec(['checkout', branch]) + exec.execStream(['sh', '-c', ...]) → passed
+	//  7. Result: fixed=true, reSplitNeeded=false, 1 claude interaction, 1 resolution recorded
+	val, err := evalJS(`(async function() {
+		// --- Track osmod.writeFile calls without real filesystem ---
+		var writeFileCalls = [];
+		var origWriteFile = osmod.writeFile;
+		osmod.writeFile = function(path, content) {
+			writeFileCalls.push({ file: path, content: content });
+		};
+
+		// --- Mock claudeExecutor ---
+		var sendCallCount = 0;
+		claudeExecutor = {
+			handle: {
+				send: function(text) { sendCallCount++; },
+				isAlive: function() { return true; }
+			}
+		};
+
+		// --- Mock mcpCallbackObj: return a resolution with one patch ---
+		mcpCallbackObj = {
+			resetWaiter: function() {},
+			waitFor: function(name, timeout, opts) {
+				if (name === 'reportResolution') {
+					return {
+						data: {
+							patches: [
+								{ file: 'pkg/handler.go', content: 'package handler\n\nfunc Handle() {}\n' }
+							]
+						},
+						error: null
+					};
+				}
+				return { data: null, error: 'timeout' };
+			}
+		};
+
+		// --- Configure git mock responses ---
+		// gitAddChangedFiles calls: status --porcelain, add -- <files>
+		globalThis._gitResponses['status --porcelain'] = _gitOk(' M pkg/handler.go');
+		// add, commit, checkout all succeed via default _gitOk
+		// verifySplit: exec.execStream(['sh', '-c', ...]) routes through !sh
+		globalThis._gitResponses['!sh'] = function(argv) { return _gitOk('all tests passed'); };
+
+		// --- Call resolveConflictsWithClaude ---
+		var failures = [
+			{ branch: 'split/fix-me', files: ['pkg/handler.go'], error: 'test fail: handler_test.go:42' }
+		];
+		var report = { conflicts: [], resolutions: [], claudeInteractions: 0 };
+		var result = await globalThis.prSplit.resolveConflictsWithClaude(
+			failures,
+			'test-session-fix',
+			{ resolve: 5000, wallClockMs: 30000 },
+			100,
+			3,
+			report
+		);
+
+		// Restore osmod.writeFile (good hygiene).
+		osmod.writeFile = origWriteFile;
+
+		// Collect git calls for assertion.
+		var gitCallSummary = globalThis._gitCalls.map(function(c) { return c.argv.join(' '); });
+
+		return JSON.stringify({
+			result: result,
+			report: {
+				conflicts: report.conflicts.length,
+				resolutions: report.resolutions.length,
+				claudeInteractions: report.claudeInteractions
+			},
+			sendCallCount: sendCallCount,
+			writeFileCalls: writeFileCalls,
+			gitCallSummary: gitCallSummary
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		Result struct {
+			ReSplitNeeded bool   `json:"reSplitNeeded"`
+			ReSplitReason string `json:"reSplitReason"`
+		} `json:"result"`
+		Report struct {
+			Conflicts          int `json:"conflicts"`
+			Resolutions        int `json:"resolutions"`
+			ClaudeInteractions int `json:"claudeInteractions"`
+		} `json:"report"`
+		SendCallCount  int `json:"sendCallCount"`
+		WriteFileCalls []struct {
+			File    string `json:"file"`
+			Content string `json:"content"`
+		} `json:"writeFileCalls"`
+		GitCallSummary []string `json:"gitCallSummary"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("Failed to parse output: %v", err)
+	}
+
+	// 1. Successful fix → reSplitNeeded=false, no reSplitReason.
+	if output.Result.ReSplitNeeded {
+		t.Error("Expected reSplitNeeded=false after successful fix")
+	}
+	if output.Result.ReSplitReason != "" {
+		t.Errorf("Expected empty reSplitReason, got %q", output.Result.ReSplitReason)
+	}
+
+	// 2. One attempt, one resolution: 1 conflict, 1 resolution, 1 interaction.
+	if output.Report.Conflicts != 1 {
+		t.Errorf("Expected 1 conflict entry, got %d", output.Report.Conflicts)
+	}
+	if output.Report.Resolutions != 1 {
+		t.Errorf("Expected 1 resolution (fix accepted), got %d", output.Report.Resolutions)
+	}
+	if output.Report.ClaudeInteractions != 1 {
+		t.Errorf("Expected 1 Claude interaction, got %d", output.Report.ClaudeInteractions)
+	}
+
+	// 3. sendToHandle: 2 send calls (two-write: text + newline).
+	if output.SendCallCount != 2 {
+		t.Errorf("Expected 2 send calls (two-write), got %d", output.SendCallCount)
+	}
+
+	// 4. osmod.writeFile called once with correct patch.
+	if len(output.WriteFileCalls) != 1 {
+		t.Fatalf("Expected 1 writeFile call (1 patch), got %d", len(output.WriteFileCalls))
+	}
+	if output.WriteFileCalls[0].File != "pkg/handler.go" {
+		t.Errorf("writeFile file = %q, want %q", output.WriteFileCalls[0].File, "pkg/handler.go")
+	}
+	if !strings.Contains(output.WriteFileCalls[0].Content, "func Handle()") {
+		t.Errorf("writeFile content should contain patched function, got %q", output.WriteFileCalls[0].Content)
+	}
+
+	// 5. Git calls include the expected sequence:
+	//    - git status --porcelain (gitAddChangedFiles)
+	//    - git add -- pkg/handler.go (staging)
+	//    - git commit --amend --no-edit (amend commit)
+	//    - git checkout split/fix-me (verifySplit)
+	//    - sh -c ... (verify command)
+	var hasStatusPorcelain, hasAdd, hasCommitAmend, hasCheckout, hasShVerify bool
+	for _, call := range output.GitCallSummary {
+		switch {
+		case strings.Contains(call, "status --porcelain"):
+			hasStatusPorcelain = true
+		case strings.Contains(call, "add --") && strings.Contains(call, "pkg/handler.go"):
+			hasAdd = true
+		case strings.Contains(call, "commit --amend --no-edit"):
+			hasCommitAmend = true
+		case strings.Contains(call, "checkout split/fix-me"):
+			hasCheckout = true
+		case strings.HasPrefix(call, "sh -c"):
+			hasShVerify = true
+		}
+	}
+	if !hasStatusPorcelain {
+		t.Error("Expected git status --porcelain call (from gitAddChangedFiles)")
+	}
+	if !hasAdd {
+		t.Error("Expected git add -- pkg/handler.go call")
+	}
+	if !hasCommitAmend {
+		t.Error("Expected git commit --amend --no-edit call")
+	}
+	if !hasCheckout {
+		t.Error("Expected git checkout split/fix-me call (from verifySplit)")
+	}
+	if !hasShVerify {
+		t.Error("Expected sh -c verify command call (from verifySplit)")
+	}
+}

@@ -33,7 +33,7 @@
     "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp."
   },
   "statusSection": {
-    "currentState": "T01-T82 Done (except T37 blocked by Claude auth). T75+T79+T80+T82 committed (78aeacf). T76+T77+T78 passing, pending Rule of Two + commit.",
+    "currentState": "T01-T84 Done (except T37 blocked by Claude auth). T81 passing, pending Rule of Two + commit. T83/T84 already covered by existing tests.",
     "goalState": "On macOS, osm pr-split --strategy auto reliably completes end-to-end with all 6 regressions fixed, backed by deterministic tests, with make all green cross-platform. REAL end-to-end tests via TestMain flags.",
     "replanLog": [
       {
@@ -669,8 +669,9 @@
       "task": "T81: verifyAndCommit composite BT function",
       "description": "verifyAndCommit() is exported on globalThis.prSplit but has zero test coverage. Test both with-verifyCommand (3-node sequence) and without (2-node test→commit).",
       "acceptance": "TestVerifyAndCommit_WithVerifyCommand: set verifyCommand, verify runs test then verify then commit. TestVerifyAndCommit_TestOnlyPath: no verifyCommand, verify only test then commit.",
-      "status": "Not Started",
-      "contextPointers": ["pr_split_script.js:4490 (verifyAndCommit)"]
+      "status": "Done",
+      "outcome": "TestVerifyAndCommit_BTExecution: 3 subtests in real git repo. with_verify_command: ticks 3-node sequence (test→verify→commit), all pass. test_only_path: ticks 2-node sequence, verified=false, committed=true. test_failure_aborts_sequence: test fails (exit 1), sequence aborts before verify/commit. All PASS.",
+      "contextPointers": ["pr_split_script.js:4490 (verifyAndCommit)", "pr_split_bt_test.go:TestVerifyAndCommit_BTExecution"]
     },
     {
       "task": "T82: loadPlan V2 snapshot with lastCompletedStep",
@@ -684,15 +685,19 @@
       "task": "T83: resolveConflictsWithClaude wall-clock timeout direct test",
       "description": "resolveConflictsWithClaude has wall-clock deadline checks inside its loop. The resolveConflicts wrapper tests wall-clock timeout but the inner function's check is not directly tested.",
       "acceptance": "TestResolveConflictsWithClaude_WallClockTimeout: configure wallClockMs=0 or very short, call with failures, verify returns reSplitReason containing 'wall-clock timeout'.",
-      "status": "Not Started",
-      "contextPointers": ["pr_split_script.js:3866-3900 (resolveConflictsWithClaude wall-clock)"]
+      "status": "Done",
+      "outcome": "Already covered by TestPrSplitCommand_ResolveConflictsWithClaudeWallClockTimeout in pr_split_conflict_retry_test.go (line 522). Directly calls resolveConflictsWithClaude with wallClockMs=0, verifies 'wall-clock timeout' in reSplitReason. Research subagent missed existing coverage.",
+      "notes": "No new code needed — pre-existing test coverage confirmed.",
+      "contextPointers": ["pr_split_script.js:3866-3900 (resolveConflictsWithClaude wall-clock)", "pr_split_conflict_retry_test.go:522 (TestPrSplitCommand_ResolveConflictsWithClaudeWallClockTimeout)"]
     },
     {
       "task": "T84: createPRs auto-merge mergeError field content verification",
       "description": "When gh pr merge fails, the mergeError field is set. Existing tests verify skip logic but not the exact mergeError field content.",
       "acceptance": "TestCreatePRs_AutoMerge_MergeErrorContent: mock gh pr merge to fail with specific stderr, verify mergeError field contains that stderr content.",
-      "status": "Not Started",
-      "contextPointers": ["pr_split_script.js:1980 (createPRs auto-merge)"]
+      "status": "Done",
+      "outcome": "Already covered by TestCreatePRs_AutoMerge_Failure in pr_split_createprs_test.go (line 689). Mocks gh pr merge to fail with 'merge queue not enabled', verifies mergeError field contains that exact stderr. Research subagent missed existing coverage.",
+      "notes": "No new code needed — pre-existing test coverage confirmed.",
+      "contextPointers": ["pr_split_script.js:1980 (createPRs auto-merge)", "pr_split_createprs_test.go:689 (TestCreatePRs_AutoMerge_Failure)"]
     }
   ],
   "continuousVerification": {

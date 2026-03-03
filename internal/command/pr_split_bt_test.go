@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -815,6 +816,191 @@ func TestBTTemplate_VerifyAndCommit_Type(t *testing.T) {
 	if !result.Seq3Defined {
 		t.Error("expected verifyAndCommit (with verify) to return a node")
 	}
+}
+
+// ---------------------------------------------------------------------------
+//  T81: verifyAndCommit BT Execution (tick-level verification)
+// ---------------------------------------------------------------------------
+
+// TestVerifyAndCommit_BTExecution ticks verifyAndCommit sequences in a real
+// git repo to verify the BT nodes execute test, verify, and commit steps.
+// Uses os.Chdir — must NOT be t.Parallel.
+func TestVerifyAndCommit_BTExecution(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	repoDir := initIntegrationRepo(t)
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	t.Run("with_verify_command", func(t *testing.T) {
+		// Create a file change that can be committed.
+		if err := os.WriteFile(filepath.Join(repoDir, "verify-test.txt"), []byte("verify content\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+		val, err := evalJS(`
+			(function() {
+				var bb = new bt.Blackboard();
+				var node = prSplit.verifyAndCommit(bb, {
+					testCommand: 'echo tests-pass',
+					verifyCommand: 'echo verified-ok',
+					message: 'commit with verify'
+				});
+				var status = bt.tick(node);
+				return JSON.stringify({
+					status: status,
+					testsPassed: bb.get('testsPassed') || false,
+					verified: bb.get('verified') || false,
+					committed: bb.get('committed') || false,
+					lastError: bb.get('lastError') || ''
+				});
+			})()
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var result struct {
+			Status      string `json:"status"`
+			TestsPassed bool   `json:"testsPassed"`
+			Verified    bool   `json:"verified"`
+			Committed   bool   `json:"committed"`
+			LastError   string `json:"lastError"`
+		}
+		if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+			t.Fatal(err)
+		}
+		if result.Status != "success" {
+			t.Errorf("expected success, got %q (error: %s)", result.Status, result.LastError)
+		}
+		if !result.TestsPassed {
+			t.Error("expected testsPassed=true")
+		}
+		if !result.Verified {
+			t.Error("expected verified=true (verifyCommand should set verified)")
+		}
+		if !result.Committed {
+			t.Error("expected committed=true")
+		}
+	})
+
+	t.Run("test_only_path", func(t *testing.T) {
+		// Create a new file to commit.
+		if err := os.WriteFile(filepath.Join(repoDir, "test-only.txt"), []byte("test only content\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+		val, err := evalJS(`
+			(function() {
+				var bb = new bt.Blackboard();
+				var node = prSplit.verifyAndCommit(bb, {
+					testCommand: 'echo tests-pass',
+					message: 'commit without verify'
+				});
+				var status = bt.tick(node);
+				return JSON.stringify({
+					status: status,
+					testsPassed: bb.get('testsPassed') || false,
+					verified: bb.get('verified') || false,
+					committed: bb.get('committed') || false,
+					lastError: bb.get('lastError') || ''
+				});
+			})()
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var result struct {
+			Status      string `json:"status"`
+			TestsPassed bool   `json:"testsPassed"`
+			Verified    bool   `json:"verified"`
+			Committed   bool   `json:"committed"`
+			LastError   string `json:"lastError"`
+		}
+		if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+			t.Fatal(err)
+		}
+		if result.Status != "success" {
+			t.Errorf("expected success, got %q (error: %s)", result.Status, result.LastError)
+		}
+		if !result.TestsPassed {
+			t.Error("expected testsPassed=true")
+		}
+		if result.Verified {
+			t.Error("expected verified=false (no verifyCommand)")
+		}
+		if !result.Committed {
+			t.Error("expected committed=true")
+		}
+	})
+
+	t.Run("test_failure_aborts_sequence", func(t *testing.T) {
+		// Create a file — but test will fail, so it shouldn't be committed.
+		if err := os.WriteFile(filepath.Join(repoDir, "not-committed.txt"), []byte("should not commit\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+		val, err := evalJS(`
+			(function() {
+				var bb = new bt.Blackboard();
+				var node = prSplit.verifyAndCommit(bb, {
+					testCommand: 'exit 1',
+					verifyCommand: 'echo should-not-run',
+					message: 'should not commit'
+				});
+				var status = bt.tick(node);
+				return JSON.stringify({
+					status: status,
+					testsPassed: bb.get('testsPassed') || false,
+					verified: bb.get('verified') || false,
+					committed: bb.get('committed') || false,
+					lastError: bb.get('lastError') || ''
+				});
+			})()
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var result struct {
+			Status      string `json:"status"`
+			TestsPassed bool   `json:"testsPassed"`
+			Verified    bool   `json:"verified"`
+			Committed   bool   `json:"committed"`
+			LastError   string `json:"lastError"`
+		}
+		if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+			t.Fatal(err)
+		}
+		if result.Status != "failure" {
+			t.Errorf("expected failure, got %q", result.Status)
+		}
+		if result.TestsPassed {
+			t.Error("expected testsPassed=false")
+		}
+		if result.Verified {
+			t.Error("expected verified=false (sequence should abort before verify)")
+		}
+		if result.Committed {
+			t.Error("expected committed=false (sequence should abort before commit)")
+		}
+		if !strings.Contains(result.LastError, "tests failed") {
+			t.Errorf("expected 'tests failed' error, got %q", result.LastError)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
-# WIP: T76+T77+T78 DONE — Pending Rule of Two + commit
+# WIP: T81 DONE, T83/T84 already covered — Pending commit
 
-## Status: T76+T77+T78 passing. Running full suite for Rule of Two.
+## Status: T75-T84 expansion cycle COMPLETE. T81 passing, pending Rule of Two.
 
 ### Commits:
 - 5b3dea6: T61-T62 (splitsAreIndependent + extractGoPkgs tests)
@@ -9,23 +9,20 @@
 - 2750715: T67-T68-T71-T72-T73 (verification, createPRs, cancellation, buildReport)
 - 371cb5e: T69+T74 (Windows audit + resume Claude resolve failure)
 - 78aeacf: T75+T79+T80+T82 (autofix detect, getSplitDiff, loadPlan V2, gitAddChangedFiles)
-- PENDING: T76+T77+T78 commit
+- b363d9b: T76+T77+T78 (fix strategies, pause, step timeout)
+- PENDING: T81 commit (+ T83/T84 already-covered notes in blueprint)
 
 ### Blueprint State:
-- T01-T82: Done (except T37: Blocked by Claude auth)
-- T81: Not Started — verifyAndCommit BT composite
-- T83: Not Started — resolveConflictsWithClaude wall-clock timeout
-- T84: Not Started — createPRs mergeError field content
+- T01-T84: ALL Done (except T37: Blocked by Claude auth)
+- T83/T84: Already covered by existing tests (no new code)
 
 ### Files Modified (uncommitted):
-- pr_split_autofix_strategy_test.go: T76 — 3 test functions (10 subtests) for remaining fix() strategies
-- pr_split_verification_test.go: Extended gitMockSetupJS with generic non-git command routing
-- pr_split_autosplit_recovery_test.go: T77 (PauseDuringStep) + T78 (StepTimeout)
-- blueprint.json: T76/T77/T78 → Done
+- pr_split_bt_test.go: T81 — TestVerifyAndCommit_BTExecution (3 subtests)
+- blueprint.json: T81/T83/T84 → Done
+- WIP.md: Updated
 - config.mk: Has temp run-current target (MUST clean before commit)
 
 ### Next:
 - Rule of Two verification (full suite)
-- Commit T76+T77+T78
-- T81: verifyAndCommit BT composite
-- T83-T84: Wall-clock timeout + mergeError
+- Commit T81
+- Expansion cycle -> need new tasks or done?

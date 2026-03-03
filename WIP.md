@@ -1,22 +1,25 @@
-# WIP: T01-T74 ALL DONE — Expansion cycle next
+# WIP: T75+T79+T80+T82 DONE — Expansion cycle continues
 
-## Status: T69+T74 COMPLETED — awaiting Rule of Two + commit
+## Status: T75+T79+T80+T82 ready to commit. T76-T78, T81, T83-T84 next.
 
 ### Commits:
 - 5b3dea6: T61-T62 (splitsAreIndependent + extractGoPkgs tests)
 - daf4711: T63-T64 (resolveConflicts strategies + gitAddChangedFiles parsing + production fix)
 - 0988922: T65-T66-T70 (error-path and edge-case coverage)
 - 2750715: T67-T68-T71-T72-T73 (verification, createPRs, cancellation, buildReport)
-- PENDING: T69+T74 commit
+- 371cb5e: T69+T74 (Windows audit + resume Claude resolve failure)
+- PENDING: T75+T79+T80+T82 commit
 
 ### Blueprint State:
-- T01-T74: Done (except T37: Blocked by Claude auth)
-
-### T69+T74 Implementation:
-- T69: Windows portability audit — documented 14 sh -c usages, shellQuote POSIX-only, all test -f/cat guarded by osmod, which→where.exe needed. No code changes needed (tests use JS mocks).
-- T74: TestAutoSplit_ResumeClaudeResolveFails in pr_split_autosplit_recovery_test.go. Verifies resume path when ClaudeCodeExecutor.resolve() fails: warning emitted, Steps 1-6 skipped, pipeline completes with Verify+Equivalence steps.
+- T01-T82: Done (except T37: Blocked by Claude auth)
+- T76: Not Started — isPaused() checkpoint path
+- T77: Not Started — step() per-step timeout
+- T78: Not Started — step() watchdog idle timeout
+- T81: Not Started — verifyAndCommit BT composite
+- T83: Not Started — resolveConflictsWithClaude wall-clock timeout
+- T84: Not Started — createPRs mergeError field content
 
 ### Next:
-- Run Rule of Two (build + lint + full test suite)
-- Commit T69+T74
-- Spawn research subagent for T75+ expansion
+- T76-T78: Timeout and checkpoint tests
+- T81: verifyAndCommit BT composite
+- T83-T84: Wall-clock timeout + mergeError

@@ -1181,11 +1181,12 @@ func TestSavePlan(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 type loadPlanResult struct {
-	Path           string  `json:"path"`
-	Error          *string `json:"error"`
-	TotalSplits    int     `json:"totalSplits"`
-	ExecutedSplits int     `json:"executedSplits"`
-	PendingSplits  int     `json:"pendingSplits"`
+	Path              string  `json:"path"`
+	Error             *string `json:"error"`
+	TotalSplits       int     `json:"totalSplits"`
+	ExecutedSplits    int     `json:"executedSplits"`
+	PendingSplits     int     `json:"pendingSplits"`
+	LastCompletedStep *string `json:"lastCompletedStep"`
 }
 
 func parseLoadPlanResult(t *testing.T, raw interface{}) loadPlanResult {
@@ -1439,6 +1440,50 @@ func TestLoadPlan(t *testing.T) {
 				}
 				if r.TotalSplits != 1 {
 					t.Errorf("totalSplits = %d, want 1", r.TotalSplits)
+				}
+			},
+		},
+		// ---- T82: loadPlan V2 snapshot with lastCompletedStep ----
+		{
+			name: "V2 snapshot returns lastCompletedStep",
+			setup: `
+				var v2Snapshot = JSON.stringify({
+					version: 2,
+					lastCompletedStep: 'Verify splits',
+					runtime: { baseBranch: 'main', strategy: 'directory' },
+					plan: {
+						baseBranch: 'main',
+						sourceBranch: 'feature',
+						splits: [
+							{name: 's1', files: ['a.go'], message: 'first', order: 0},
+							{name: 's2', files: ['b.go'], message: 'second', order: 1}
+						]
+					},
+					executed: [{name: 's1', status: 'ok'}]
+				});
+				if (osmod) {
+					osmod.readFile = function(path) {
+						return { content: v2Snapshot, error: null };
+					};
+				}
+			`,
+			invoke: `JSON.stringify(globalThis.prSplit.loadPlan())`,
+			check: func(t *testing.T, r loadPlanResult) {
+				if r.Error != nil {
+					t.Errorf("expected no error, got: %s", *r.Error)
+				}
+				if r.TotalSplits != 2 {
+					t.Errorf("totalSplits = %d, want 2", r.TotalSplits)
+				}
+				if r.ExecutedSplits != 1 {
+					t.Errorf("executedSplits = %d, want 1", r.ExecutedSplits)
+				}
+				if r.LastCompletedStep == nil || *r.LastCompletedStep != "Verify splits" {
+					var got string
+					if r.LastCompletedStep != nil {
+						got = *r.LastCompletedStep
+					}
+					t.Errorf("lastCompletedStep = %q, want 'Verify splits'", got)
 				}
 			},
 		},

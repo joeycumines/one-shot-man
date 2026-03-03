@@ -46,13 +46,13 @@ type resolveConflictsResult struct {
 		Name  string `json:"name"`
 		Error string `json:"error"`
 	} `json:"errors"`
-	TotalRetries    int                `json:"totalRetries"`
-	BranchRetries   map[string]int     `json:"branchRetries"`
-	ReSplitNeeded   bool               `json:"reSplitNeeded"`
-	ReSplitFiles    []string           `json:"reSplitFiles"`
-	ReSplitReason   string             `json:"reSplitReason"`
-	Skipped         string             `json:"skipped"`
-	CancelledByUser bool               `json:"cancelledByUser"`
+	TotalRetries    int            `json:"totalRetries"`
+	BranchRetries   map[string]int `json:"branchRetries"`
+	ReSplitNeeded   bool           `json:"reSplitNeeded"`
+	ReSplitFiles    []string       `json:"reSplitFiles"`
+	ReSplitReason   string         `json:"reSplitReason"`
+	Skipped         string         `json:"skipped"`
+	CancelledByUser bool           `json:"cancelledByUser"`
 }
 
 func parseResolveConflictsResult(t *testing.T, raw interface{}) resolveConflictsResult {

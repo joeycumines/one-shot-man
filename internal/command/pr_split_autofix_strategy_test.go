@@ -1,6 +1,7 @@
 package command
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -567,4 +568,317 @@ func TestValidateSplitPlan_NoDuplicates(t *testing.T) {
 	if strings.Contains(s, "duplicate") {
 		t.Errorf("expected no duplicate errors, got: %s", s)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// T75: AUTO_FIX_STRATEGIES .fix() unit tests — go-mod-tidy + add-missing-files
+// ---------------------------------------------------------------------------
+
+// autoFixResult captures the return from a fix() call.
+type autoFixResult struct {
+	Fixed bool   `json:"fixed"`
+	Error string `json:"error"`
+}
+
+func parseAutoFixResult(t *testing.T, raw interface{}) autoFixResult {
+	t.Helper()
+	var r autoFixResult
+	if err := json.Unmarshal([]byte(raw.(string)), &r); err != nil {
+		t.Fatalf("parse autofix result: %v\nraw: %s", err, raw)
+	}
+	return r
+}
+
+func TestAutoFixStrategy_GoModTidy_Fix(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(strategiesAccessJS); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("fix_success", func(t *testing.T) {
+		// Reset mock state.
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Mock: sh -c (go mod tidy) succeeds, status shows changes,
+		// add & commit succeed (defaults to ok).
+		if _, err := evalJS(`
+			globalThis._gitResponses['!sh'] = _gitOk('');
+			globalThis._gitResponses['status --porcelain go.mod go.sum'] = _gitOk(' M go.mod\n M go.sum\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(getStrategy('go-mod-tidy').fix('.'))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseAutoFixResult(t, val)
+		if !r.Fixed {
+			t.Errorf("expected fixed=true, got false; error=%q", r.Error)
+		}
+
+		// Verify shell command was called.
+		val, err = evalJS(`JSON.stringify(_gitCalls.filter(function(c) { return c.argv[0] === 'sh'; }))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(val.(string), "go mod tidy") {
+			t.Errorf("expected 'go mod tidy' in sh calls, got: %s", val)
+		}
+
+		// Verify commit was called.
+		val, err = evalJS(`JSON.stringify(_gitCalls.filter(function(c) { return c.argv[0] === 'git' && c.argv.indexOf('commit') >= 0; }))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(val.(string), "commit") {
+			t.Errorf("expected commit call, got: %s", val)
+		}
+	})
+
+	t.Run("fix_no_changes", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// go mod tidy succeeds but status is empty (no changes).
+		if _, err := evalJS(`
+			globalThis._gitResponses['!sh'] = _gitOk('');
+			globalThis._gitResponses['status --porcelain go.mod go.sum'] = _gitOk('');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(getStrategy('go-mod-tidy').fix('.'))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseAutoFixResult(t, val)
+		if r.Fixed {
+			t.Error("expected fixed=false when no changes")
+		}
+		if !strings.Contains(r.Error, "no changes") {
+			t.Errorf("expected 'no changes' error, got: %q", r.Error)
+		}
+	})
+
+	t.Run("fix_tidy_fails", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// go mod tidy fails.
+		if _, err := evalJS(`
+			globalThis._gitResponses['!sh'] = _gitFail('go.mod parse error');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(getStrategy('go-mod-tidy').fix('.'))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseAutoFixResult(t, val)
+		if r.Fixed {
+			t.Error("expected fixed=false when tidy fails")
+		}
+		if !strings.Contains(r.Error, "go mod tidy failed") {
+			t.Errorf("expected 'go mod tidy failed' in error, got: %q", r.Error)
+		}
+	})
+
+	t.Run("fix_commit_fails", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// go mod tidy succeeds, status shows changes, but commit fails.
+		if _, err := evalJS(`
+			globalThis._gitResponses['!sh'] = _gitOk('');
+			globalThis._gitResponses['status --porcelain go.mod go.sum'] = _gitOk(' M go.mod\n');
+			globalThis._gitResponses['commit'] = _gitFail('nothing to commit');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(getStrategy('go-mod-tidy').fix('.'))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseAutoFixResult(t, val)
+		if r.Fixed {
+			t.Error("expected fixed=false when commit fails")
+		}
+		if !strings.Contains(r.Error, "commit failed") {
+			t.Errorf("expected 'commit failed' in error, got: %q", r.Error)
+		}
+	})
+}
+
+func TestAutoFixStrategy_GoGenerateSum_Fix(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(strategiesAccessJS); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("fix_success", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			globalThis._gitResponses['!sh'] = _gitOk('');
+			globalThis._gitResponses['status --porcelain go.sum'] = _gitOk(' M go.sum\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(getStrategy('go-generate-sum').fix('.'))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseAutoFixResult(t, val)
+		if !r.Fixed {
+			t.Errorf("expected fixed=true, got false; error=%q", r.Error)
+		}
+	})
+
+	t.Run("fix_download_fails", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			globalThis._gitResponses['!sh'] = _gitFail('network error');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(getStrategy('go-generate-sum').fix('.'))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseAutoFixResult(t, val)
+		if r.Fixed {
+			t.Error("expected fixed=false when download fails")
+		}
+		if !strings.Contains(r.Error, "go mod download failed") {
+			t.Errorf("expected 'go mod download failed' in error, got: %q", r.Error)
+		}
+	})
+}
+
+func TestAutoFixStrategy_AddMissingFiles_Fix(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(strategiesAccessJS); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("fix_success", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Mock: git diff finds candidate files, checkout succeeds, porcelain shows changes.
+		if _, err := evalJS(`
+			globalThis._gitResponses['diff --name-only'] = _gitOk('missing.go\nother.go\n');
+			globalThis._gitResponses['checkout'] = _gitOk('');
+			globalThis._gitResponses['status --porcelain'] = _gitOk(' A missing.go\n A other.go\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(
+			getStrategy('add-missing-files').fix('.', 'split/01-api', {sourceBranch: 'feature', splits: []}, 'no such file or directory')
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseAutoFixResult(t, val)
+		if !r.Fixed {
+			t.Errorf("expected fixed=true, got false; error=%q", r.Error)
+		}
+	})
+
+	t.Run("fix_no_source_branch", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		val, err := evalJS(`JSON.stringify(
+			getStrategy('add-missing-files').fix('.', 'branch-1', {splits: []}, 'file not found')
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseAutoFixResult(t, val)
+		if r.Fixed {
+			t.Error("expected fixed=false without source branch")
+		}
+		if !strings.Contains(r.Error, "source branch") {
+			t.Errorf("expected 'source branch' error, got: %q", r.Error)
+		}
+	})
+
+	t.Run("fix_no_candidate_files", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// git diff returns empty.
+		if _, err := evalJS(`
+			globalThis._gitResponses['diff --name-only'] = _gitOk('');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(
+			getStrategy('add-missing-files').fix('.', 'split/01', {sourceBranch: 'feature', splits: []}, 'no such file')
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseAutoFixResult(t, val)
+		if r.Fixed {
+			t.Error("expected fixed=false with no candidate files")
+		}
+		if !strings.Contains(r.Error, "no candidate files") {
+			t.Errorf("expected 'no candidate files' error, got: %q", r.Error)
+		}
+	})
+
+	t.Run("fix_all_checkouts_fail", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// git diff returns files, but all checkouts fail.
+		if _, err := evalJS(`
+			globalThis._gitResponses['diff --name-only'] = _gitOk('missing.go\n');
+			globalThis._gitResponses['checkout'] = _gitFail('pathspec not found');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(
+			getStrategy('add-missing-files').fix('.', 'split/01', {sourceBranch: 'feature', splits: []}, 'no such file')
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseAutoFixResult(t, val)
+		if r.Fixed {
+			t.Error("expected fixed=false when all checkouts fail")
+		}
+		if !strings.Contains(r.Error, "no files could be checked out") {
+			t.Errorf("expected 'no files could be checked out' error, got: %q", r.Error)
+		}
+	})
 }

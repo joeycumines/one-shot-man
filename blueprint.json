@@ -33,7 +33,7 @@
     "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp."
   },
   "statusSection": {
-    "currentState": "T01-T74 ALL DONE (except T37 blocked by Claude auth). Ready for expansion cycle.",
+    "currentState": "T01-T82 Done (except T37 blocked by Claude auth). T75+T79+T80+T82 uncommitted, pending Rule of Two.",
     "goalState": "On macOS, osm pr-split --strategy auto reliably completes end-to-end with all 6 regressions fixed, backed by deterministic tests, with make all green cross-platform. REAL end-to-end tests via TestMain flags.",
     "replanLog": [
       {
@@ -55,6 +55,11 @@
         "trigger": "Session: Test file split + async infrastructure overhaul",
         "affectedTaskRange": "New TSplit-1/TSplit-2 inserted before T04a",
         "summary": "pr_split_test.go split into 12 new satellite files. dispatchAwaitPromise, evalJS, evalJSAsync rewritten for proper Promise-aware dispatch. Handler type assertion fallback added. All ~97 failures resolved → make all green."
+      },
+      {
+        "trigger": "Expansion cycle: T01-T74 complete, research subagent identifies 15 gaps",
+        "affectedTaskRange": "New T75-T84 added",
+        "summary": "Research subagent analyzed pr_split_script.js + all 26 test files. Found: AUTO_FIX_STRATEGIES .fix() methods (CRITICAL, zero unit tests), isPaused/step timeouts (HIGH), gitAddChangedFiles edge cases (HIGH), getSplitDiff fallback, verifyAndCommit, loadPlan V2, resolveConflictsWithClaude wall-clock, createPRs mergeError field."
       }
     ]
   },
@@ -611,6 +616,80 @@
       "status": "Done",
       "notes": "TestAutoSplit_ResumeClaudeResolveFails in pr_split_autosplit_recovery_test.go. Run 1 creates saved plan, Run 2 mocks ClaudeCodeExecutor.resolve() to return error. Verifies: warning emitted ('Claude unavailable'), Steps 1-6 skipped, Verify splits + Verify equivalence steps run, Auto-Split Complete summary appears, pipeline completes without error.",
       "contextPointers": ["pr_split_script.js:3513-3530 (resume path Claude spawn)", "pr_split_autosplit_recovery_test.go:TestAutoSplit_ResumeClaudeResolveFails"]
+    },
+    {
+      "task": "T75: AUTO_FIX_STRATEGIES .fix() methods unit tests — go-mod-tidy, go-generate-sum, add-missing-files",
+      "description": "ALL .detect() methods are tested but NONE of the .fix() methods for the 6 non-Claude strategies have unit tests. The fix() functions execute shell commands, commit changes, etc. Start with go-mod-tidy, go-generate-sum, and add-missing-files as highest-value.",
+      "acceptance": "TestAutoFixStrategy_GoModTidy_Fix: 4 subtests (success, no changes, tidy fails, commit fails). TestAutoFixStrategy_GoGenerateSum_Fix: 2 subtests (success, download fails). TestAutoFixStrategy_AddMissingFiles_Fix: 4 subtests (success, no source branch, no candidates, all checkouts fail).",
+      "status": "Done",
+      "notes": "10 subtests across 3 functions added to pr_split_autofix_strategy_test.go. Uses gitMockSetupJS() to mock exec.execv for both sh -c (shell commands) and git commands. Added autoFixResult struct + parseAutoFixResult helper.",
+      "contextPointers": ["pr_split_script.js:1890-2100 (AUTO_FIX_STRATEGIES)", "pr_split_autofix_strategy_test.go:TestAutoFixStrategy_GoModTidy_Fix"]
+    },
+    {
+      "task": "T76: AUTO_FIX_STRATEGIES .fix() — npm-install, make-generate, go-build-missing-imports",
+      "description": "Remaining 3 non-Claude fix strategies. npm-install runs npm install + commits. make-generate runs make generate. go-build-missing-imports runs goimports.",
+      "acceptance": "At least one success + one failure test per strategy. Verify shell commands issued, commit logic, and {fixed:false} on no-change.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:1890-2100 (AUTO_FIX_STRATEGIES)"]
+    },
+    {
+      "task": "T77: isPaused() and step() pause checkpoint test",
+      "description": "The isPaused() function and the 'Ctrl-P pause' code path in step() are never exercised. Mock autoSplitTUI.paused() returning true, verify checkpoint saved and error returned.",
+      "acceptance": "TestAutoSplit_PauseDuringStep: mock autoSplitTUI.paused()=true inside a step, verify output contains 'Paused — checkpoint saved', verify return has error 'paused by user (Ctrl-P)'.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:2715 (isPaused)", "pr_split_script.js:3180-3195 (pause in step)"]
+    },
+    {
+      "task": "T78: step() per-step timeout and watchdog idle timeout",
+      "description": "The per-step timeout (stepTimeoutMs exceeded) and watchdog idle timeout (no progress for watchdogIdleMs) inside step() are never triggered in tests.",
+      "acceptance": "TestAutoSplit_StepTimeout: configure very short stepTimeoutMs, run a step that takes longer, verify error 'step timeout'. TestAutoSplit_WatchdogIdle: configure short watchdogIdleMs, run step without progress updates, verify error 'watchdog timeout'.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:3210-3220 (watchdog/step timeout in step)"]
+    },
+    {
+      "task": "T79: gitAddChangedFiles edge cases — rename arrows, quoted paths, artifact exclusion",
+      "description": "Already covered by existing TestGitAddChangedFiles table-driven test in pr_split_pipeline_test.go.",
+      "acceptance": "Already covered: rename_extracts_new_path_only, quoted_path_strips_quotes, pr-split-plan.json_excluded, empty_status, normal_porcelain.",
+      "status": "Done",
+      "notes": "Research subagent missed existing coverage. TestGitAddChangedFiles already covers all 5 edge cases with proper mocks.",
+      "contextPointers": ["pr_split_pipeline_test.go:910-1030 (TestGitAddChangedFiles)"]
+    },
+    {
+      "task": "T80: getSplitDiff fallback path and success path",
+      "description": "getSplitDiff has a fallback when first 'git diff baseBranch...splitName' fails (code !== 0), falling back to 'git diff baseBranch -- files'. Neither fallback nor success path tested.",
+      "acceptance": "TestGetSplitDiff_SuccessWithDiff, TestGetSplitDiff_FallbackOnThreeDotFailure, TestGetSplitDiff_BothDiffsFail.",
+      "status": "Done",
+      "notes": "3 new test functions added to pr_split_bt_test.go. Uses gitMockSetupJS() with function-based responses to count diff calls and control per-invocation behavior. Verifies: primary diff returns content, fallback triggers on primary failure, both diffs fail returns error.",
+      "contextPointers": ["pr_split_script.js:4472-4500 (getSplitDiff)", "pr_split_bt_test.go:TestGetSplitDiff_SuccessWithDiff"]
+    },
+    {
+      "task": "T81: verifyAndCommit composite BT function",
+      "description": "verifyAndCommit() is exported on globalThis.prSplit but has zero test coverage. Test both with-verifyCommand (3-node sequence) and without (2-node test→commit).",
+      "acceptance": "TestVerifyAndCommit_WithVerifyCommand: set verifyCommand, verify runs test then verify then commit. TestVerifyAndCommit_TestOnlyPath: no verifyCommand, verify only test then commit.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:4490 (verifyAndCommit)"]
+    },
+    {
+      "task": "T82: loadPlan V2 snapshot with lastCompletedStep",
+      "description": "loadPlan unit test for V2 snapshot format which includes lastCompletedStep field. Integration tests exercise V2 but no direct unit test.",
+      "acceptance": "TestLoadPlan_V2Snapshot: write V2 JSON with lastCompletedStep, load it, verify lastCompletedStep returned in result.",
+      "status": "Done",
+      "outcome": "Added V2 snapshot test entry to TestLoadPlan table in pr_split_planning_test.go. Updated loadPlanResult struct with LastCompletedStep *string field. Test verifies lastCompletedStep='Verify splits' is returned correctly. PASS.",
+      "contextPointers": ["pr_split_script.js:1210-1270 (loadPlan)"]
+    },
+    {
+      "task": "T83: resolveConflictsWithClaude wall-clock timeout direct test",
+      "description": "resolveConflictsWithClaude has wall-clock deadline checks inside its loop. The resolveConflicts wrapper tests wall-clock timeout but the inner function's check is not directly tested.",
+      "acceptance": "TestResolveConflictsWithClaude_WallClockTimeout: configure wallClockMs=0 or very short, call with failures, verify returns reSplitReason containing 'wall-clock timeout'.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:3866-3900 (resolveConflictsWithClaude wall-clock)"]
+    },
+    {
+      "task": "T84: createPRs auto-merge mergeError field content verification",
+      "description": "When gh pr merge fails, the mergeError field is set. Existing tests verify skip logic but not the exact mergeError field content.",
+      "acceptance": "TestCreatePRs_AutoMerge_MergeErrorContent: mock gh pr merge to fail with specific stderr, verify mergeError field contains that stderr content.",
+      "status": "Not Started",
+      "contextPointers": ["pr_split_script.js:1980 (createPRs auto-merge)"]
     }
   ],
   "continuousVerification": {

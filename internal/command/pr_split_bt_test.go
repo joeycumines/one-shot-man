@@ -986,6 +986,144 @@ func TestGetSplitDiff_NegativeIndex(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// T80: getSplitDiff success + fallback path tests
+// ---------------------------------------------------------------------------
+
+// TestGetSplitDiff_SuccessWithDiff verifies getSplitDiff returns diff content
+// when the primary git diff (baseBranch...splitName) succeeds.
+func TestGetSplitDiff_SuccessWithDiff(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mock: primary diff returns content.
+	if _, err := evalJS(`
+		globalThis._gitResponses['diff'] = _gitOk('diff --git a/f.go b/f.go\n+new line\n');
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := evalJS(`JSON.stringify(prSplit.getSplitDiff({
+		baseBranch: 'main',
+		splits: [{name: 'split/01', files: ['f.go']}]
+	}, 0))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Error *string `json:"error"`
+		Diff  string  `json:"diff"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Error != nil {
+		t.Errorf("expected no error, got: %s", *result.Error)
+	}
+	if !strings.Contains(result.Diff, "+new line") {
+		t.Errorf("expected diff content, got: %q", result.Diff)
+	}
+}
+
+// TestGetSplitDiff_FallbackOnThreeDotFailure verifies that when the primary
+// git diff (baseBranch...splitName) fails, getSplitDiff falls back to
+// git diff baseBranch -- files.
+func TestGetSplitDiff_FallbackOnThreeDotFailure(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mock: primary diff (baseBranch...splitName) fails.
+	// Fallback diff (baseBranch -- files) succeeds.
+	if _, err := evalJS(`
+		var diffCallCount = 0;
+		globalThis._gitResponses['diff'] = function(argv) {
+			diffCallCount++;
+			// First call: three-dot diff — fail.
+			if (diffCallCount === 1) {
+				return _gitFail('unknown revision');
+			}
+			// Second call: fallback — succeed.
+			return _gitOk('diff --git a/f.go b/f.go\n+fallback content\n');
+		};
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := evalJS(`JSON.stringify(prSplit.getSplitDiff({
+		baseBranch: 'main',
+		splits: [{name: 'split/01', files: ['f.go']}]
+	}, 0))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Error *string `json:"error"`
+		Diff  string  `json:"diff"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Error != nil {
+		t.Errorf("expected no error (fallback success), got: %s", *result.Error)
+	}
+	if !strings.Contains(result.Diff, "+fallback content") {
+		t.Errorf("expected fallback diff content, got: %q", result.Diff)
+	}
+
+	// Verify fallback was used (2 diff calls).
+	countVal, err := evalJS(`diffCallCount`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if countVal.(int64) != 2 {
+		t.Errorf("expected 2 diff calls (primary + fallback), got %d", countVal.(int64))
+	}
+}
+
+// TestGetSplitDiff_BothDiffsFail verifies getSplitDiff returns error when
+// both primary and fallback diffs fail.
+func TestGetSplitDiff_BothDiffsFail(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Mock: both diffs fail.
+	if _, err := evalJS(`
+		globalThis._gitResponses['diff'] = _gitFail('fatal: bad object');
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := evalJS(`JSON.stringify(prSplit.getSplitDiff({
+		baseBranch: 'main',
+		splits: [{name: 'split/01', files: ['f.go']}]
+	}, 0))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Error string `json:"error"`
+		Diff  string `json:"diff"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.Error, "git diff failed") {
+		t.Errorf("expected 'git diff failed' error, got: %q", result.Error)
+	}
+}
+
 // TestBuildReport_WithNullCaches verifies the 'report' command outputs valid
 // JSON when no caches are populated (no analyze/group/plan has been run).
 func TestBuildReport_WithNullCaches(t *testing.T) {

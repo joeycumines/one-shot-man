@@ -2257,3 +2257,199 @@ func TestAutoSplit_ResumeClaudeResolveFails(t *testing.T) {
 		t.Error("expected 'Auto-Split Complete' summary in output")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T77: isPaused() checkpoint path — pipeline detects pause and exits
+// ---------------------------------------------------------------------------
+
+// TestAutoSplit_PauseDuringStep verifies that when autoSplitTUI.paused()
+// returns true, the step() function returns 'paused by user (Ctrl-P)'.
+// On first step (before planCache exists), checkpoint save is skipped.
+func TestAutoSplit_PauseDuringStep(t *testing.T) {
+	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	repoDir := initIntegrationRepo(t)
+	addIntegrationFeatureFiles(t, repoDir)
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]interface{}{
+		"baseBranch":    "main",
+		"strategy":      "directory",
+		"branchPrefix":  "split/",
+		"verifyCommand": "true",
+	})
+
+	// Inject autoSplitTUI mock where paused() returns true immediately.
+	_, err := evalJS(`
+		globalThis.autoSplitTUI = {
+			runAsync: function() {},
+			wait: function() { return null; },
+			stepStart: function() {},
+			stepDone: function() {},
+			appendOutput: function() {},
+			appendError: function() {},
+			done: function() {},
+			stepDetail: function() {},
+			cancelled: function() { return false; },
+			paused: function() { return true; },
+			forceCancelled: function() { return false; },
+			quit: function() {}
+		};
+	`)
+	if err != nil {
+		t.Fatalf("failed to inject mock autoSplitTUI: %v", err)
+	}
+
+	// Run auto-split — it should detect pause at first step boundary.
+	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.automatedSplit({
+		baseBranch: 'main',
+		dir: ` + jsString(repoDir) + `,
+		strategy: 'directory'
+	}))`)
+	if err != nil {
+		t.Fatalf("automatedSplit failed: %v", err)
+	}
+
+	var result struct {
+		Error  *string `json:"error"`
+		Report struct {
+			Error *string `json:"error"`
+			Steps []struct {
+				Name  string  `json:"name"`
+				Error *string `json:"error"`
+			} `json:"steps"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse result: %v", err)
+	}
+
+	// Should have paused error.
+	if result.Error == nil || !strings.Contains(*result.Error, "paused by user") {
+		t.Errorf("expected 'paused by user' error, got: %v", result.Error)
+	}
+
+	// First step in report should contain the pause error.
+	if len(result.Report.Steps) > 0 && result.Report.Steps[0].Error != nil {
+		if !strings.Contains(*result.Report.Steps[0].Error, "paused by user") {
+			t.Errorf("expected first step error to mention 'paused by user', got: %s",
+				*result.Report.Steps[0].Error)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T78: Step timeout — step() check after fn() completes
+// ---------------------------------------------------------------------------
+
+// TestAutoSplit_StepTimeout verifies that when stepTimeoutMs is very short
+// and a step takes longer, the post-step timeout check fires.
+func TestAutoSplit_StepTimeout(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	initialFiles := []TestPipelineFile{
+		{"a.go", "package a\n"},
+	}
+	featureFiles := []TestPipelineFile{
+		{"b.go", "package b\n"},
+	}
+
+	tp := setupTestPipeline(t, TestPipelineOpts{
+		InitialFiles: initialFiles,
+		FeatureFiles: featureFiles,
+		ConfigOverrides: map[string]interface{}{
+			"branchPrefix":  "split/",
+			"verifyCommand": "true",
+		},
+	})
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tp.Dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	// Mock ClaudeCodeExecutor so no real Claude spawns.
+	if _, err := tp.EvalJS(`
+		ClaudeCodeExecutor = function(config) {
+			this.config = config;
+			this.resolved = { command: 'mock-claude' };
+			this.handle = { send: function() {}, isAlive: function() { return true; } };
+		};
+		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
+			return { error: null, sessionId: 'mock-timeout' };
+		};
+		ClaudeCodeExecutor.prototype.close = function() {};
+		ClaudeCodeExecutor.prototype.kill = function() {};
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	// Inject classification via mcpcallback. The Classify step needs MCP.
+	classJSON, _ := json.Marshal(map[string]interface{}{"categories": []map[string]any{
+		{"name": "core", "description": "Core changes", "files": []string{"b.go"}},
+	}})
+
+	watchCh := mcpcallbackmod.WatchForInit()
+	go func() {
+		h := <-watchCh
+		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
+			t.Logf("inject failed: %v", err)
+		}
+	}()
+
+	// stepTimeoutMs = 1 — any step taking > 1ms triggers post-step timeout.
+	// pipelineTimeoutMs left large so pipeline timeout doesn't fire first.
+	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({
+		disableTUI: true,
+		stepTimeoutMs: 1,
+		classifyTimeoutMs: 30000,
+		planTimeoutMs: 30000,
+		resolveTimeoutMs: 30000,
+		maxResolveRetries: 0,
+		maxReSplits: 0
+	}))`)
+	if err != nil {
+		t.Fatalf("automatedSplit: %v", err)
+	}
+
+	var report struct {
+		Error  string `json:"error"`
+		Report struct {
+			Steps []struct {
+				Name  string `json:"name"`
+				Error string `json:"error"`
+			} `json:"steps"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &report); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, result)
+	}
+
+	// With stepTimeoutMs=1, the Classify step should take > 1ms
+	// (it involves MCP communication), triggering step timeout.
+	foundStepTimeout := false
+	for _, s := range report.Report.Steps {
+		if strings.Contains(s.Error, "step timeout") {
+			foundStepTimeout = true
+			t.Logf("Step timeout triggered on: %s — %s", s.Name, s.Error)
+			break
+		}
+	}
+	if !foundStepTimeout {
+		// As a fallback, check the top-level error.
+		if strings.Contains(report.Error, "step timeout") {
+			t.Logf("Pipeline exited with step timeout: %s", report.Error)
+		} else {
+			t.Errorf("expected step timeout error somewhere, got error=%q", report.Error)
+		}
+	}
+}

@@ -882,3 +882,317 @@ func TestAutoFixStrategy_AddMissingFiles_Fix(t *testing.T) {
 		}
 	})
 }
+
+// ---------------------------------------------------------------------------
+// T76: AUTO_FIX_STRATEGIES .fix() — go-build-missing-imports, npm-install,
+//      make-generate
+// ---------------------------------------------------------------------------
+
+func TestAutoFixStrategy_GoBuildMissingImports_Fix(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(strategiesAccessJS); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("fix_success_with_goimports", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Mock: which goimports → ok, sh -c (find/goimports) → ok,
+		// status shows changes, add+commit succeed (default ok).
+		if _, err := evalJS(`
+			globalThis._gitResponses['!which'] = _gitOk('/usr/local/bin/goimports');
+			globalThis._gitResponses['!sh'] = _gitOk('');
+			globalThis._gitResponses['status --porcelain'] = _gitOk(' M api.go\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(getStrategy('go-build-missing-imports').fix('.'))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseAutoFixResult(t, val)
+		if !r.Fixed {
+			t.Errorf("expected fixed=true, got false; error=%q", r.Error)
+		}
+
+		// Verify goimports was invoked via sh.
+		val, err = evalJS(`JSON.stringify(_gitCalls.filter(function(c) { return c.argv[0] === 'sh'; }))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(val.(string), "goimports") {
+			t.Errorf("expected 'goimports' in sh calls, got: %s", val)
+		}
+	})
+
+	t.Run("fix_goimports_not_available", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// which goimports fails.
+		if _, err := evalJS(`
+			globalThis._gitResponses['!which'] = _gitFail('');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(getStrategy('go-build-missing-imports').fix('.'))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseAutoFixResult(t, val)
+		if r.Fixed {
+			t.Error("expected fixed=false when goimports not available")
+		}
+		if !strings.Contains(r.Error, "goimports not available") {
+			t.Errorf("expected 'goimports not available' error, got: %q", r.Error)
+		}
+	})
+
+	t.Run("fix_goimports_no_changes", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// goimports runs but makes no changes.
+		if _, err := evalJS(`
+			globalThis._gitResponses['!which'] = _gitOk('/usr/local/bin/goimports');
+			globalThis._gitResponses['!sh'] = _gitOk('');
+			globalThis._gitResponses['status --porcelain'] = _gitOk('');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(getStrategy('go-build-missing-imports').fix('.'))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseAutoFixResult(t, val)
+		if r.Fixed {
+			t.Error("expected fixed=false when goimports made no changes")
+		}
+		if !strings.Contains(r.Error, "goimports made no changes") {
+			t.Errorf("expected 'goimports made no changes' error, got: %q", r.Error)
+		}
+	})
+}
+
+func TestAutoFixStrategy_NpmInstall_Fix(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(strategiesAccessJS); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("fix_success", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// npm install succeeds, status shows changes.
+		if _, err := evalJS(`
+			globalThis._gitResponses['!sh'] = _gitOk('added 42 packages');
+			globalThis._gitResponses['status --porcelain'] = _gitOk(' M package-lock.json\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(getStrategy('npm-install').fix('.'))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseAutoFixResult(t, val)
+		if !r.Fixed {
+			t.Errorf("expected fixed=true, got false; error=%q", r.Error)
+		}
+
+		// Verify npm install was in sh calls.
+		val, err = evalJS(`JSON.stringify(_gitCalls.filter(function(c) { return c.argv[0] === 'sh'; }))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(val.(string), "npm install") {
+			t.Errorf("expected 'npm install' in sh calls, got: %s", val)
+		}
+	})
+
+	t.Run("fix_npm_install_fails", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			globalThis._gitResponses['!sh'] = _gitFail('ERR! code ERESOLVE');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(getStrategy('npm-install').fix('.'))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseAutoFixResult(t, val)
+		if r.Fixed {
+			t.Error("expected fixed=false on npm install failure")
+		}
+		if !strings.Contains(r.Error, "npm install failed") {
+			t.Errorf("expected 'npm install failed' error, got: %q", r.Error)
+		}
+	})
+
+	t.Run("fix_no_changes", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			globalThis._gitResponses['!sh'] = _gitOk('up to date');
+			globalThis._gitResponses['status --porcelain'] = _gitOk('');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(getStrategy('npm-install').fix('.'))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseAutoFixResult(t, val)
+		if r.Fixed {
+			t.Error("expected fixed=false when npm install made no changes")
+		}
+		if !strings.Contains(r.Error, "npm install made no changes") {
+			t.Errorf("expected 'npm install made no changes' error, got: %q", r.Error)
+		}
+	})
+}
+
+func TestAutoFixStrategy_MakeGenerate_Fix(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(strategiesAccessJS); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("fix_make_generate_success", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Mock: grep for Makefile target → found, make generate → ok,
+		// status shows changes, add+commit default ok.
+		if _, err := evalJS(`
+			var shCallCount = 0;
+			globalThis._gitResponses['!sh'] = function(argv) {
+				shCallCount++;
+				return _gitOk('');
+			};
+			globalThis._gitResponses['status --porcelain'] = _gitOk(' M generated.go\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(getStrategy('make-generate').fix('.'))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseAutoFixResult(t, val)
+		if !r.Fixed {
+			t.Errorf("expected fixed=true, got false; error=%q", r.Error)
+		}
+	})
+
+	t.Run("fix_go_generate_fallback", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Mock: grep for Makefile target → not found (first sh call fails),
+		// go generate → ok (second sh call succeeds), status shows changes.
+		if _, err := evalJS(`
+			var genCallCount = 0;
+			globalThis._gitResponses['!sh'] = function(argv) {
+				genCallCount++;
+				// First call: grep for Makefile generate target.
+				if (genCallCount === 1) return _gitFail('');
+				// Second call: go generate.
+				return _gitOk('');
+			};
+			globalThis._gitResponses['status --porcelain'] = _gitOk(' M gen.go\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(getStrategy('make-generate').fix('.'))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseAutoFixResult(t, val)
+		if !r.Fixed {
+			t.Errorf("expected fixed=true via go generate fallback, got false; error=%q", r.Error)
+		}
+	})
+
+	t.Run("fix_generate_fails", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Both grep and generate succeed but generate returns error.
+		if _, err := evalJS(`
+			var gfCallCount = 0;
+			globalThis._gitResponses['!sh'] = function(argv) {
+				gfCallCount++;
+				// First call: grep → found.
+				if (gfCallCount === 1) return _gitOk('');
+				// Second call: make generate → fails.
+				return _gitFail('make: *** No rule to make target');
+			};
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(getStrategy('make-generate').fix('.'))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseAutoFixResult(t, val)
+		if r.Fixed {
+			t.Error("expected fixed=false when generate fails")
+		}
+		if !strings.Contains(r.Error, "generate failed") {
+			t.Errorf("expected 'generate failed' error, got: %q", r.Error)
+		}
+	})
+
+	t.Run("fix_no_changes", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			globalThis._gitResponses['!sh'] = _gitOk('');
+			globalThis._gitResponses['status --porcelain'] = _gitOk('');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(getStrategy('make-generate').fix('.'))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseAutoFixResult(t, val)
+		if r.Fixed {
+			t.Error("expected fixed=false when generate made no changes")
+		}
+		if !strings.Contains(r.Error, "generate made no changes") {
+			t.Errorf("expected 'generate made no changes' error, got: %q", r.Error)
+		}
+	})
+}

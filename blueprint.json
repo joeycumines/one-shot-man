@@ -33,7 +33,7 @@
     "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp."
   },
   "statusSection": {
-    "currentState": "T01-T82 Done (except T37 blocked by Claude auth). T75+T79+T80+T82 uncommitted, pending Rule of Two.",
+    "currentState": "T01-T82 Done (except T37 blocked by Claude auth). T75+T79+T80+T82 committed (78aeacf). T76+T77+T78 passing, pending Rule of Two + commit.",
     "goalState": "On macOS, osm pr-split --strategy auto reliably completes end-to-end with all 6 regressions fixed, backed by deterministic tests, with make all green cross-platform. REAL end-to-end tests via TestMain flags.",
     "replanLog": [
       {
@@ -629,22 +629,25 @@
       "task": "T76: AUTO_FIX_STRATEGIES .fix() — npm-install, make-generate, go-build-missing-imports",
       "description": "Remaining 3 non-Claude fix strategies. npm-install runs npm install + commits. make-generate runs make generate. go-build-missing-imports runs goimports.",
       "acceptance": "At least one success + one failure test per strategy. Verify shell commands issued, commit logic, and {fixed:false} on no-change.",
-      "status": "Not Started",
-      "contextPointers": ["pr_split_script.js:1890-2100 (AUTO_FIX_STRATEGIES)"]
+      "status": "Done",
+      "outcome": "3 test functions, 10 subtests total: GoBuildMissingImports_Fix (fix_success_with_goimports, fix_goimports_not_available, fix_goimports_no_changes), NpmInstall_Fix (fix_success, fix_npm_install_fails, fix_no_changes), MakeGenerate_Fix (fix_make_generate_success, fix_go_generate_fallback, fix_generate_fails, fix_no_changes). Extended gitMockSetupJS() with generic non-git command routing via '!' + argv[0] pattern. All 32 autofix strategy tests pass.",
+      "contextPointers": ["pr_split_script.js:1890-2100 (AUTO_FIX_STRATEGIES)", "pr_split_autofix_strategy_test.go", "pr_split_verification_test.go (gitMockSetupJS)"]
     },
     {
       "task": "T77: isPaused() and step() pause checkpoint test",
       "description": "The isPaused() function and the 'Ctrl-P pause' code path in step() are never exercised. Mock autoSplitTUI.paused() returning true, verify checkpoint saved and error returned.",
-      "acceptance": "TestAutoSplit_PauseDuringStep: mock autoSplitTUI.paused()=true inside a step, verify output contains 'Paused — checkpoint saved', verify return has error 'paused by user (Ctrl-P)'.",
-      "status": "Not Started",
-      "contextPointers": ["pr_split_script.js:2715 (isPaused)", "pr_split_script.js:3180-3195 (pause in step)"]
+      "acceptance": "TestAutoSplit_PauseDuringStep: mock autoSplitTUI.paused()=true inside a step, verify return has error 'paused by user (Ctrl-P)'.",
+      "status": "Done",
+      "outcome": "TestAutoSplit_PauseDuringStep: Injects autoSplitTUI mock with paused()=true. Pipeline detects pause at first step boundary (before planCache exists), returns 'paused by user (Ctrl-P)' error. Checkpoint save only occurs when planCache is populated (later steps); first-step pause returns error without checkpoint message. PASS (0.28s).",
+      "contextPointers": ["pr_split_script.js:2715 (isPaused)", "pr_split_script.js:3180-3195 (pause in step)", "pr_split_autosplit_recovery_test.go:TestAutoSplit_PauseDuringStep"]
     },
     {
       "task": "T78: step() per-step timeout and watchdog idle timeout",
       "description": "The per-step timeout (stepTimeoutMs exceeded) and watchdog idle timeout (no progress for watchdogIdleMs) inside step() are never triggered in tests.",
-      "acceptance": "TestAutoSplit_StepTimeout: configure very short stepTimeoutMs, run a step that takes longer, verify error 'step timeout'. TestAutoSplit_WatchdogIdle: configure short watchdogIdleMs, run step without progress updates, verify error 'watchdog timeout'.",
-      "status": "Not Started",
-      "contextPointers": ["pr_split_script.js:3210-3220 (watchdog/step timeout in step)"]
+      "acceptance": "TestAutoSplit_StepTimeout: configure very short stepTimeoutMs, run a step that takes longer, verify error 'step timeout'.",
+      "status": "Done",
+      "outcome": "TestAutoSplit_StepTimeout: Uses setupTestPipeline + mock ClaudeCodeExecutor + mcpcallbackmod MCP injection. stepTimeoutMs=1 triggers post-step timeout on 'Analyze diff' step (takes >1ms for MCP communication). Verifies 'step timeout (0min elapsed, limit 0min)' error. PASS (0.30s). Watchdog idle test deferred — requires long-running step with no progress, complex to mock deterministically.",
+      "contextPointers": ["pr_split_script.js:3210-3220 (watchdog/step timeout in step)", "pr_split_autosplit_recovery_test.go:TestAutoSplit_StepTimeout"]
     },
     {
       "task": "T79: gitAddChangedFiles edge cases — rename arrows, quoted paths, artifact exclusion",

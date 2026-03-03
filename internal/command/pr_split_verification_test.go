@@ -56,10 +56,11 @@ func gitMockSetupJS() string {
             return fail('');
         }
 
-        // Non-git commands: sh -c from verifySplit.
+        // Non-git commands: route via '!' + argv[0] key (e.g. '!sh', '!which').
         if (argv[0] !== 'git') {
-            if (argv[0] === 'sh' && globalThis._gitResponses['!sh'] !== undefined) {
-                var r = globalThis._gitResponses['!sh'];
+            var nonGitKey = '!' + argv[0];
+            if (globalThis._gitResponses[nonGitKey] !== undefined) {
+                var r = globalThis._gitResponses[nonGitKey];
                 if (typeof r === 'function') return r(argv);
                 return r;
             }

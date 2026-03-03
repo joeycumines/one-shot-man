@@ -1746,6 +1746,26 @@ func TestValidateClassification(t *testing.T) {
 			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'api', description: 'API', files: ['a.go', 'unknown.go']}], ['a.go']))`,
 			wantValid: true, // unknown files are warned, not failed
 		},
+		{
+			name:      "with empty known files array",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'api', description: 'API', files: ['a.go']}], []))`,
+			wantValid: true, // empty knownFiles means no unknown-file check
+		},
+		{
+			name:      "known files missing from classification",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'api', description: 'API', files: ['a.go']}], ['a.go', 'b.go', 'c.go']))`,
+			wantValid: true, // missing files are not flagged by validateClassification
+		},
+		{
+			name:      "known files null",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'api', description: 'API', files: ['a.go']}], null))`,
+			wantValid: true, // null knownFiles is safe
+		},
+		{
+			name:      "single category multiple files all known",
+			js:        `JSON.stringify(globalThis.prSplit.validateClassification([{name: 'core', description: 'Core', files: ['a.go', 'b.go']}], ['a.go', 'b.go']))`,
+			wantValid: true,
+		},
 	}
 
 	for _, tt := range tests {

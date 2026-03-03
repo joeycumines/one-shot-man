@@ -218,5 +218,9 @@ git-stage-t42-t48: ## Stage T42-T48 changes
 git-commit-t42-t48: ## Commit T42-T48 batch
 	cd $(PROJECT_ROOT) && git commit -F scratch/commit-msg-t42-t48.txt
 
+.PHONY: diff-cycle5-report
+diff-cycle5-report: ## Export diff to scratch and report stats
+	cd $(PROJECT_ROOT) && git diff HEAD > scratch/review-diff-cycle5.txt && echo "=== wc -l ===" && wc -l scratch/review-diff-cycle5.txt && echo "=== git diff --stat HEAD ===" && git diff --stat HEAD
+
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 endif

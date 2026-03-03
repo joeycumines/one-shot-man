@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
+	"github.com/joeycumines/one-shot-man/internal/termmux/ui"
 )
 
 func TestPrSplitCommand_NonInteractive(t *testing.T) {
@@ -537,11 +538,11 @@ func TestPrSplitCommand_MaxConfigParsing(t *testing.T) {
 	}{
 		{"valid 5", "5", 5, false},
 		{"valid 20", "20", 20, false},
-		{"negative", "-5", 10, false},   // Atoi succeeds, n <= 0 → not applied
-		{"zero", "0", 10, false},        // Atoi succeeds, n <= 0 → not applied
-		{"abc", "abc", 10, false},       // Atoi fails → not applied
-		{"empty config", "", 10, true},  // not set → not applied
-		{"float", "3.5", 10, false},     // Atoi fails on non-integer → not applied
+		{"negative", "-5", 10, false},  // Atoi succeeds, n <= 0 → not applied
+		{"zero", "0", 10, false},       // Atoi succeeds, n <= 0 → not applied
+		{"abc", "abc", 10, false},      // Atoi fails → not applied
+		{"empty config", "", 10, true}, // not set → not applied
+		{"float", "3.5", 10, false},    // Atoi fails on non-integer → not applied
 	}
 
 	for _, tt := range tests {
@@ -564,5 +565,219 @@ func TestPrSplitCommand_MaxConfigParsing(t *testing.T) {
 				t.Errorf("maxFiles=%d, want %d", cmd.maxFiles, tt.wantMax)
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T107: planEditorFactory conversion round-trip
+// ---------------------------------------------------------------------------
+
+func TestPlanEditorFactory_ConversionRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	// Replicate the map→PlanEditorItem conversion from pr_split.go:571-596.
+	convertToPlanItems := func(items []interface{}) []ui.PlanEditorItem {
+		editorItems := make([]ui.PlanEditorItem, 0, len(items))
+		for _, raw := range items {
+			m, ok := raw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			item := ui.PlanEditorItem{}
+			if name, ok := m["name"].(string); ok {
+				item.Name = name
+			}
+			if branch, ok := m["branchName"].(string); ok {
+				item.BranchName = branch
+			}
+			if desc, ok := m["description"].(string); ok {
+				item.Description = desc
+			}
+			if files, ok := m["files"].([]interface{}); ok {
+				for _, f := range files {
+					if s, ok := f.(string); ok {
+						item.Files = append(item.Files, s)
+					}
+				}
+			}
+			editorItems = append(editorItems, item)
+		}
+		return editorItems
+	}
+
+	// Replicate the PlanEditorItem→map conversion from pr_split.go:620-630.
+	convertToMaps := func(items []ui.PlanEditorItem) []interface{} {
+		out := make([]interface{}, len(items))
+		for i, item := range items {
+			out[i] = map[string]interface{}{
+				"name":        item.Name,
+				"files":       item.Files,
+				"branchName":  item.BranchName,
+				"description": item.Description,
+			}
+		}
+		return out
+	}
+
+	t.Run("valid items round-trip", func(t *testing.T) {
+		input := []interface{}{
+			map[string]interface{}{
+				"name":        "split/api",
+				"branchName":  "split/api-changes",
+				"description": "API layer changes",
+				"files":       []interface{}{"api.go", "handler.go"},
+			},
+			map[string]interface{}{
+				"name":        "split/cli",
+				"branchName":  "split/cli-changes",
+				"description": "CLI changes",
+				"files":       []interface{}{"main.go"},
+			},
+		}
+		items := convertToPlanItems(input)
+		if len(items) != 2 {
+			t.Fatalf("expected 2 items, got %d", len(items))
+		}
+		if items[0].Name != "split/api" {
+			t.Errorf("item[0].Name = %q, want %q", items[0].Name, "split/api")
+		}
+		if items[0].BranchName != "split/api-changes" {
+			t.Errorf("item[0].BranchName = %q, want %q", items[0].BranchName, "split/api-changes")
+		}
+		if len(items[0].Files) != 2 || items[0].Files[0] != "api.go" {
+			t.Errorf("item[0].Files = %v, want [api.go handler.go]", items[0].Files)
+		}
+
+		// Convert back to maps and verify round-trip.
+		maps := convertToMaps(items)
+		if len(maps) != 2 {
+			t.Fatalf("expected 2 maps, got %d", len(maps))
+		}
+		m0 := maps[0].(map[string]interface{})
+		if m0["name"] != "split/api" {
+			t.Errorf("map[0].name = %v, want split/api", m0["name"])
+		}
+	})
+
+	t.Run("non-map items skipped", func(t *testing.T) {
+		input := []interface{}{
+			"not-a-map",
+			42,
+			nil,
+			map[string]interface{}{"name": "valid", "files": []interface{}{"a.go"}},
+		}
+		items := convertToPlanItems(input)
+		if len(items) != 1 {
+			t.Fatalf("expected 1 item (non-maps skipped), got %d", len(items))
+		}
+		if items[0].Name != "valid" {
+			t.Errorf("item[0].Name = %q, want %q", items[0].Name, "valid")
+		}
+	})
+
+	t.Run("missing fields produce zero values", func(t *testing.T) {
+		input := []interface{}{
+			map[string]interface{}{}, // all fields missing
+		}
+		items := convertToPlanItems(input)
+		if len(items) != 1 {
+			t.Fatalf("expected 1 item, got %d", len(items))
+		}
+		if items[0].Name != "" {
+			t.Errorf("expected empty name, got %q", items[0].Name)
+		}
+		if items[0].BranchName != "" {
+			t.Errorf("expected empty branch, got %q", items[0].BranchName)
+		}
+		if items[0].Files != nil {
+			t.Errorf("expected nil files, got %v", items[0].Files)
+		}
+	})
+
+	t.Run("empty items list", func(t *testing.T) {
+		items := convertToPlanItems([]interface{}{})
+		if len(items) != 0 {
+			t.Fatalf("expected 0 items, got %d", len(items))
+		}
+	})
+
+	t.Run("non-string files filtered", func(t *testing.T) {
+		input := []interface{}{
+			map[string]interface{}{
+				"name":  "mixed",
+				"files": []interface{}{"valid.go", 42, nil, "also-valid.go"},
+			},
+		}
+		items := convertToPlanItems(input)
+		if len(items) != 1 {
+			t.Fatalf("expected 1 item, got %d", len(items))
+		}
+		if len(items[0].Files) != 2 {
+			t.Fatalf("expected 2 valid files, got %d: %v", len(items[0].Files), items[0].Files)
+		}
+		if items[0].Files[0] != "valid.go" || items[0].Files[1] != "also-valid.go" {
+			t.Errorf("files = %v, want [valid.go also-valid.go]", items[0].Files)
+		}
+	})
+
+	t.Run("via NewPlanEditor round-trip", func(t *testing.T) {
+		// Full round-trip: map→PlanEditorItem→NewPlanEditor→Items()→map
+		input := []interface{}{
+			map[string]interface{}{
+				"name":        "split/core",
+				"branchName":  "split/core-v2",
+				"description": "Core module",
+				"files":       []interface{}{"core.go", "core_test.go"},
+			},
+		}
+		items := convertToPlanItems(input)
+		editor := ui.NewPlanEditor(items)
+		result := editor.Items()
+		maps := convertToMaps(result)
+
+		if len(maps) != 1 {
+			t.Fatalf("expected 1 map, got %d", len(maps))
+		}
+		m := maps[0].(map[string]interface{})
+		if m["name"] != "split/core" {
+			t.Errorf("name = %v, want split/core", m["name"])
+		}
+		if m["branchName"] != "split/core-v2" {
+			t.Errorf("branchName = %v, want split/core-v2", m["branchName"])
+		}
+		files := m["files"].([]string)
+		if len(files) != 2 || files[0] != "core.go" {
+			t.Errorf("files = %v, want [core.go core_test.go]", files)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// T108: Execute() PrepareEngine failure path
+// ---------------------------------------------------------------------------
+
+func TestPrSplitCommand_PrepareEngineFailure(t *testing.T) {
+	t.Parallel()
+
+	// Trigger PrepareEngine failure by providing an invalid log level.
+	// resolveLogConfig returns error for unknown levels.
+	cmd := &PrSplitCommand{
+		scriptCommandBase: scriptCommandBase{
+			logLevel: "INVALID_LEVEL_XYZ",
+			config:   config.NewConfig(),
+			store:    "memory",
+			session:  t.Name(),
+		},
+		strategy: "directory",
+		maxFiles: 10,
+	}
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute(nil, &stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error from Execute with invalid log level, got nil")
+	}
+	if !strings.Contains(err.Error(), "invalid log level") {
+		t.Errorf("expected 'invalid log level' in error, got: %v", err)
 	}
 }

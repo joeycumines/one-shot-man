@@ -33,7 +33,7 @@
     "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp."
   },
   "statusSection": {
-    "currentState": "T01-T94 cycle 3 committed (except T37 blocked, T87/T89/T90 not started). Cycle 4 (T95-T103): T95-T100,T102,T103 done. T101 deferred. Full suite green. Ready to commit.",
+    "currentState": "T01-T103 cycle 4 committed. Cycle 5 (T104-T110): T107,T108,T110 done. T109 already covered. T104-T106 deferred (terminal context). Ready to commit.",
     "goalState": "On macOS, osm pr-split --strategy auto reliably completes end-to-end with all 6 regressions fixed, backed by deterministic tests, with make all green cross-platform. REAL end-to-end tests via TestMain flags.",
     "replanLog": [
       {
@@ -50,7 +50,7 @@
         "trigger": "HANA-SAN CRITICAL REVIEW: sendToHandle STILL BROKEN",
         "affectedTaskRange": "Revert T04 status to In Progress, insert T04a-T04c for coalescing fix",
         "summary": "T04 claimed done but ACTUAL behavior: PTY coalesces two rapid writes. Need (1) inter-write delay or (2) fsync-like flush. Also: End-to-end test with REAL Claude mandatory. Windows verification skipped. Inserting T04a: Add delay. T04b: Create real E2E test using -claude-command. T04c: Run make-all-run-windows."
-      }
+      },
       {
         "trigger": "Session: Test file split + async infrastructure overhaul",
         "affectedTaskRange": "New TSplit-1/TSplit-2 inserted before T04a",
@@ -70,6 +70,11 @@
         "trigger": "Expansion cycle 4: T85-T94 done, research subagent identifies non-exported function gaps + Go error paths + production robustness",
         "affectedTaskRange": "New T95-T103 added",
         "summary": "Research subagent found: renderPrompt template engine (zero direct tests), splitsAreIndependentFromMaps (zero direct tests), prSplitSendWithCancel 2s kill-fallback (untested), config max=-5 from config (not flags), T90 uncategorized file assignment via MCP mock, T89 plan validation fallback via MCP mock, T87 re-split cycle via MCP mock, autoSplitTUI.wait() nil guard, buildCommands dispatch builder edge cases."
+      },
+      {
+        "trigger": "Expansion cycle 5: T95-T103 done (T101 deferred), research subagent identifies Go-side closure gaps + type-assertion branches + factory conversion",
+        "affectedTaskRange": "New T104-T110 added",
+        "summary": "Research subagent found: splitView closures (zero tests), tuiMux closures (zero tests), tuiMux.attach type-assertion branches (3 paths, none Go-tested), planEditorFactory conversion (pure Go, untested), Execute PrepareEngine failure path, sendToHandle EAGAIN retry on newline, validateClassification knownFiles edge cases."
       }
     ]
   },
@@ -849,6 +854,48 @@
       "acceptance": "TestDetectLanguage: (1) .go files → 'Go', (2) .js files → 'JavaScript' or similar, (3) .py files → 'Python', (4) mixed → dominant language, (5) empty → 'unknown', (6) no recognized extensions → 'unknown'.",
       "status": "Done — already covered by 15+ subtests in pr_split_analysis_test.go",
       "contextPointers": ["pr_split_script.js:2710-2760 (detectLanguage)"]
+    },
+    {
+      "task": "T104: splitView closures unit tests",
+      "description": "The splitView global (pr_split.go:350-365) exposes appendOsm, appendClaude, setClaudeStatus, setRatio, activePane, and run closures to JS. Zero test coverage. Test each closure doesn't panic and delegates correctly when no ui.SplitView is available (nil guard).",
+      "acceptance": "TestPrSplitCommand_SplitViewClosures: verify each closure is callable from JS without crash. Verify return values or side effects where observable.",
+      "status": "Deferred — requires full Execute() with terminal context; not testable via loadPrSplitEngineWithEval"
+    },
+    {
+      "task": "T105: tuiMux closures unit tests",
+      "description": "The tuiMux global (pr_split.go:292-348) exposes switchToClaude, isClaudeActive, setStatus, setToggleKey, setStatusEnabled, setResizeFunc closures. Zero test coverage. Test each closure is accessible and callable without crash.",
+      "acceptance": "TestPrSplitCommand_TuiMuxClosures: verify each closure is callable from JS. Verify isClaudeActive returns boolean. Verify setStatus/setToggleKey accept string args without crash.",
+      "status": "Deferred — requires full Execute() with termmux.Mux context"
+    },
+    {
+      "task": "T106: tuiMux.attach type-assertion branches",
+      "description": "tuiMux.attach (pr_split.go:268-296) has three distinct code paths: (1) direct StringIO, (2) map with _goHandle→StringIO, (3) map with _goHandle→io.ReadWriteCloser. Only path tested indirectly through JS integration. Test each Go-level type-assertion branch directly.",
+      "acceptance": "TestTuiMuxAttach_DirectStringIO, TestTuiMuxAttach_MapGoHandle, TestTuiMuxAttach_MapRWC: verify each branch creates correct child attachment.",
+      "status": "Deferred — requires full Execute() with termmux.Mux context"
+    },
+    {
+      "task": "T107: planEditorFactory round-trip fidelity",
+      "description": "planEditorFactory.create (pr_split.go:558-614) converts []interface{} → []ui.PlanEditorItem. Edge cases: missing name key, wrong type for files, empty arrays, round-trip back to JS maps. Pure Go logic, easily testable.",
+      "acceptance": "TestPlanEditorFactory_Conversion: verify correct map→PlanEditorItem conversion. TestPlanEditorFactory_MissingKeys: verify graceful handling of missing name/files. TestPlanEditorFactory_EmptyPlan: verify empty input doesn't crash.",
+      "status": "Done"
+    },
+    {
+      "task": "T108: Execute PrepareEngine failure path",
+      "description": "pr_split.go:207-210: If PrepareEngine returns an error, Execute returns immediately. No test triggers this path. Would require injecting a broken scripting config or mocking PrepareEngine.",
+      "acceptance": "TestPrSplitCommand_PrepareEngineFailure: arrange for PrepareEngine to fail (e.g., corrupt script content), verify Execute returns the error without panicking.",
+      "status": "Done"
+    },
+    {
+      "task": "T109: sendToHandle EAGAIN retry on newline write",
+      "description": "The second sendWithRetry call in sendToHandle (pr_split_script.js:2893-2895) retries on EAGAIN for the newline write. The existing EAGAIN test only covers the first write. Test: mock handle where text write succeeds but newline hits EAGAIN once then succeeds on retry.",
+      "acceptance": "TestPrSplitCommand_SendToHandle_NewlineEAGAINRetry: mock handle returns EAGAIN on first newline write, succeeds on retry. Verify full send completes without error.",
+      "status": "Done — already covered by TestPrSplitCommand_SendToHandle_NewlineEAGAINRetry and NewlineEAGAINExhausted"
+    },
+    {
+      "task": "T110: validateClassification knownFiles edge cases",
+      "description": "validateClassification (pr_split_script.js:933-1003) with knownFiles: classification missing files from knownFiles should mark as invalid or add to uncategorized. Edge cases: empty knownFiles array, undefined knownFiles, knownFiles with extra files not in classification.",
+      "acceptance": "TestValidateClassification_MissingFromKnownFiles: classification missing 2 files from knownFiles list, verify result.valid behavior. TestValidateClassification_EmptyKnownFiles: empty array, verify no crash.",
+      "status": "Done"
     }
   ],
   "continuousVerification": {

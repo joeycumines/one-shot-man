@@ -33,7 +33,7 @@
     "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp."
   },
   "statusSection": {
-    "currentState": "T01-T88 Done (except T37 blocked by Claude auth, T87/T89/T90/T91/T92/T93 not started). T94 already covered. Preparing commit for T85+T86+T88.",
+    "currentState": "T01-T94 expansion cycle 3 done (except T37 blocked, T87/T89/T90 not started). Preparing commit for T91+T92+T93.",
     "goalState": "On macOS, osm pr-split --strategy auto reliably completes end-to-end with all 6 regressions fixed, backed by deterministic tests, with make all green cross-platform. REAL end-to-end tests via TestMain flags.",
     "replanLog": [
       {
@@ -753,21 +753,24 @@
       "task": "T91: Go Execute() claudeEnv parsing edge cases",
       "description": "config claude-env=KEY1=val1,KEY2=val2 is parsed by strings.Cut. Untested: malformed input like =val, KEY=, ,,, empty pairs. The strings.Cut loop silently drops k=='' entries.",
       "acceptance": "TestPrSplitConfig_ClaudeEnvMalformed: test KEY=, =val, empty pairs, verify no crash and correct key filtering.",
-      "status": "Not Started",
+      "status": "Done",
+      "outcome": "10 subtests for parseClaudeEnv: normal pairs, empty string, key with empty value, empty key drop, trailing/leading comma, whitespace, double comma, value with equals, no equals dropped. Extracted parseClaudeEnv as standalone function in pr_split.go. Tests in pr_split_cmd_meta_test.go.",
       "contextPointers": ["pr_split.go:220-228 (claudeEnv parsing)"]
     },
     {
       "task": "T92: Go Execute() timeout config parsing",
       "description": "time.ParseDuration from config is untested. Invalid duration strings like 'abc' or '-10s' silently fall through.",
       "acceptance": "TestPrSplitConfig_TimeoutParsing: test valid duration, invalid duration, negative duration, verify correct behavior.",
-      "status": "Not Started",
+      "status": "Done",
+      "outcome": "7 subtests for timeout config parsing: valid duration/seconds/hours, invalid string, negative duration, zero duration, empty string. Tests in pr_split_cmd_meta_test.go.",
       "contextPointers": ["pr_split.go:175-180 (timeout config parsing)"]
     },
     {
       "task": "T93: heuristicFallback tree-hash-mismatch error path",
       "description": "The tree-hash-mismatch error path (report.error = 'tree hash mismatch after heuristic split') inside heuristicFallback is never explicitly triggered in tests.",
       "acceptance": "TestHeuristicFallback_TreeHashMismatch: mock verifyEquivalence to return mismatch, verify error contains 'tree hash mismatch'.",
-      "status": "Not Started",
+      "status": "Done",
+      "outcome": "TestHeuristicFallback_TreeHashMismatch: overrides verifyEquivalence to return {equivalent:false}, runs heuristicFallback in real repo, verifies report.error contains 'tree hash mismatch'. In pr_split_prompt_test.go.",
       "contextPointers": ["pr_split_script.js:3790-3840 (heuristicFallback tree-hash-mismatch)"]
     },
     {

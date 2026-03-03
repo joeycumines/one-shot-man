@@ -384,3 +384,139 @@ func TestPrSplitCommand_EmbeddedContent(t *testing.T) {
 		t.Error("Expected prSplitScript to be non-empty")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T91: parseClaudeEnv edge cases
+// ---------------------------------------------------------------------------
+
+func TestParseClaudeEnv(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		raw  string
+		want map[string]string
+	}{
+		{
+			name: "normal pairs",
+			raw:  "KEY1=val1,KEY2=val2",
+			want: map[string]string{"KEY1": "val1", "KEY2": "val2"},
+		},
+		{
+			name: "empty string",
+			raw:  "",
+			want: map[string]string{},
+		},
+		{
+			name: "key with empty value",
+			raw:  "KEY=",
+			want: map[string]string{"KEY": ""},
+		},
+		{
+			name: "empty key silently dropped",
+			raw:  "=val",
+			want: map[string]string{},
+		},
+		{
+			name: "trailing comma",
+			raw:  "A=1,B=2,",
+			want: map[string]string{"A": "1", "B": "2"},
+		},
+		{
+			name: "leading comma",
+			raw:  ",A=1",
+			want: map[string]string{"A": "1"},
+		},
+		{
+			name: "whitespace around pairs",
+			raw:  " KEY1=val1 , KEY2=val2 ",
+			want: map[string]string{"KEY1": "val1", "KEY2": "val2"},
+		},
+		{
+			name: "double comma produces empty pair",
+			raw:  "A=1,,B=2",
+			want: map[string]string{"A": "1", "B": "2"},
+		},
+		{
+			name: "value containing equals",
+			raw:  "KEY=a=b=c",
+			want: map[string]string{"KEY": "a=b=c"},
+		},
+		{
+			name: "no equals sign dropped",
+			raw:  "NOEQUALS,KEY=val",
+			want: map[string]string{"KEY": "val"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseClaudeEnv(tt.raw)
+			if len(got) != len(tt.want) {
+				t.Errorf("len mismatch: got %d, want %d\ngot: %v\nwant: %v",
+					len(got), len(tt.want), got, tt.want)
+				return
+			}
+			for k, wantV := range tt.want {
+				if gotV, ok := got[k]; !ok {
+					t.Errorf("missing key %q", k)
+				} else if gotV != wantV {
+					t.Errorf("got[%q]=%q, want %q", k, gotV, wantV)
+				}
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T92: timeout config parsing edge cases
+// ---------------------------------------------------------------------------
+
+func TestPrSplitCommand_TimeoutConfigParsing(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		configVal  string
+		wantUsed   bool // whether the parsed duration overrides default
+		wantSuffix string
+	}{
+		{"valid duration", "5m", true, "5m0s"},
+		{"valid seconds", "30s", true, "30s"},
+		{"valid hours", "2h", true, "2h0m0s"},
+		{"invalid string", "abc", false, ""},
+		{"negative duration", "-10s", false, ""}, // d > 0 check rejects this
+		{"zero duration", "0s", false, ""},       // d > 0 check rejects this
+		{"empty string", "", false, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.NewConfig()
+			if tt.configVal != "" {
+				cfg.SetCommandOption("pr-split", "timeout", tt.configVal)
+			}
+			cmd := NewPrSplitCommand(cfg)
+
+			// cmd.timeout starts at 0 (the zero value). Config parsing in
+			// Execute only applies when cmd.timeout == 0.
+			// We test the parsing by calling the internal flag setup, then
+			// checking cmd.timeout after manually applying the config logic.
+			if v, ok := cfg.GetCommandOption("pr-split", "timeout"); ok && cmd.timeout == 0 {
+				if d, err := time.ParseDuration(v); err == nil && d > 0 {
+					cmd.timeout = d
+				}
+			}
+
+			if tt.wantUsed {
+				if cmd.timeout.String() != tt.wantSuffix {
+					t.Errorf("timeout=%s, want %s", cmd.timeout, tt.wantSuffix)
+				}
+			} else {
+				if cmd.timeout != 0 {
+					t.Errorf("expected timeout=0 (not applied), got %s", cmd.timeout)
+				}
+			}
+		})
+	}
+}

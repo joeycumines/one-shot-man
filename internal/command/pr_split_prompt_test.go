@@ -2,6 +2,8 @@ package command
 
 import (
 	"encoding/json"
+	"os"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -390,5 +392,72 @@ func TestHeuristicFallback_DirectoryStrategy(t *testing.T) {
 	if len(result.Report.Plan.Splits) < 2 {
 		t.Errorf("expected at least 2 splits for files in different directories, got %d",
 			len(result.Report.Plan.Splits))
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T93: heuristicFallback tree-hash-mismatch error path
+// ---------------------------------------------------------------------------
+
+func TestHeuristicFallback_TreeHashMismatch(t *testing.T) {
+	// NOT parallel — OS state (chdir) is shared.
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	tp := setupTestPipeline(t, TestPipelineOpts{
+		ConfigOverrides: map[string]interface{}{
+			"branchPrefix":  "split/",
+			"verifyCommand": "true",
+			"strategy":      "directory",
+		},
+	})
+
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tp.Dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	// Override verifyEquivalence to always return a mismatch.
+	if _, err := tp.EvalJS(`
+		verifyEquivalence = function(plan) {
+			return { equivalent: false, splitTree: 'aaa', sourceTree: 'bbb', error: null };
+		};
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := tp.EvalJS(`(async function() {
+		var analysis = globalThis.prSplit.analyzeDiff();
+		var report = { plan: null, splits: [], error: null };
+		var result = await globalThis.prSplit.heuristicFallback(analysis, {
+			strategy: 'directory'
+		}, report);
+		return JSON.stringify(result);
+	})()`)
+	if err != nil {
+		t.Fatalf("heuristicFallback: %v", err)
+	}
+
+	var result struct {
+		Error  *string `json:"error"`
+		Report struct {
+			Error string `json:"error"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, val)
+	}
+
+	// The error should mention tree hash mismatch.
+	if result.Error == nil {
+		t.Fatal("expected error from tree hash mismatch")
+	}
+	if !strings.Contains(*result.Error, "tree hash mismatch") {
+		t.Errorf("expected error containing 'tree hash mismatch', got: %s", *result.Error)
 	}
 }

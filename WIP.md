@@ -1,6 +1,6 @@
-# WIP: T85+T86+T88 implemented — Pending Rule of Two + commit
+# WIP: T91+T92+T93 committing — expansion cycle 3 nearly complete
 
-## Status: T85+T86+T88 tests written and passing. T94 already covered.
+## Status: T91+T92+T93 implemented and verified. Committing now.
 
 ### Commits:
 - 5b3dea6: T61-T62 (splitsAreIndependent + extractGoPkgs tests)
@@ -11,22 +11,19 @@
 - 78aeacf: T75+T79+T80+T82 (autofix detect, getSplitDiff, loadPlan V2, gitAddChangedFiles)
 - b363d9b: T76+T77+T78 (fix strategies, pause, step timeout)
 - 37c83b3: T81+T83+T84 (verifyAndCommit BT, already-covered notes)
-- PENDING: T85+T86+T88+T94 commit
+- 6c1e3a2: T85+T86+T88+T94 (extractGoImports, waitForLogged, cleanupExecutor)
+- PENDING: T91+T92+T93 commit
 
 ### Blueprint State:
-- T01-T88: Done (except T37: Blocked by Claude auth)
-- T89-T93: Not Started (pipeline-deep integration paths)
-- T94: Already covered (TestCreatePRs_PushFailure, line 455)
+- T01-T94: Done (except T37 blocked, T87/T89/T90 not started)
+- All 80 exported prSplit functions confirmed tested
 
 ### Files Modified (uncommitted):
-- pr_split_grouping_test.go: T85 — 4 TestExtractGoImports tests
-- pr_split_autosplit_recovery_test.go: T86+T88 — 2 TestWaitForLogged + 4 TestCleanupExecutor tests
-- blueprint.json: T85/T86/T88/T94 → Done
-- WIP.md: Updated
-- config.mk: Has temp run-current target (MUST clean before commit)
+- pr_split.go: Extracted parseClaudeEnv as standalone function
+- pr_split_cmd_meta_test.go: T91 (10 subtests) + T92 (7 subtests)
+- pr_split_prompt_test.go: T93 TestHeuristicFallback_TreeHashMismatch
+- blueprint.json: T91/T92/T93 → Done
 
 ### Next:
-- Clean config.mk run-current target
-- Rule of Two verification (full suite)
-- Commit T85+T86+T88+T94
-- Continue T87/T89/T90/T91/T92/T93 or new expansion cycle
+- Commit T91+T92+T93
+- Plan expansion cycle 4 (T87/T89/T90 deep pipeline tests or new scope)

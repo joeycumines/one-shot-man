@@ -211,15 +211,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	// Expose split configuration to JS
 	claudeArgsList := make([]string, len(c.claudeArgs))
 	copy(claudeArgsList, c.claudeArgs)
-	claudeEnvMap := map[string]string{}
-	if c.claudeEnv != "" {
-		for _, pair := range strings.Split(c.claudeEnv, ",") {
-			pair = strings.TrimSpace(pair)
-			if k, v, ok := strings.Cut(pair, "="); ok && k != "" {
-				claudeEnvMap[k] = v
-			}
-		}
-	}
+	claudeEnvMap := parseClaudeEnv(c.claudeEnv)
 	engine.SetGlobal("prSplitConfig", map[string]interface{}{
 		"baseBranch":       c.baseBranch,
 		"strategy":         c.strategy,
@@ -714,4 +706,20 @@ func prSplitSendWithCancel(
 			}
 		}
 	}
+}
+
+// parseClaudeEnv parses a comma-separated KEY=VALUE string into a map.
+// Empty keys are silently dropped. Whitespace around pairs is trimmed.
+func parseClaudeEnv(raw string) map[string]string {
+	m := map[string]string{}
+	if raw == "" {
+		return m
+	}
+	for _, pair := range strings.Split(raw, ",") {
+		pair = strings.TrimSpace(pair)
+		if k, v, ok := strings.Cut(pair, "="); ok && k != "" {
+			m[k] = v
+		}
+	}
+	return m
 }

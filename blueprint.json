@@ -26,7 +26,7 @@
   ],
   "mandatoryDirectives": {
     "contextManagement": "Execute tasks strictly in sequence. Update blueprint.json incrementally after each task.",
-    "sourceOfTruth": "Live chunks: internal/command/pr_split_00_core.js through pr_split_13_tui.js. Go bridge: internal/command/pr_split.go. Tests: internal/command/pr_split_*_test.go. Chunk test helper: loadChunkEngine() in pr_split_00_core_test.go. Full engine helpers: loadPrSplitEngine()/loadPrSplitEngineWithEval() in pr_split_test.go. TUI: internal/termmux/ui/autosplit.go (AutoSplitModel). Design doc: docs/architecture-pr-split-chunks.md.",
+    "sourceOfTruth": "Live chunks: internal/command/pr_split_00_core.js through pr_split_13_tui.js. Go bridge: internal/command/pr_split.go. Tests: internal/command/pr_split_*_test.go. Chunk test helper: loadChunkEngine() in pr_split_00_core_test.go. Full engine helpers: loadPrSplitEngine()/loadPrSplitEngineWithEval() in pr_split_test.go. TUI: internal/command/prsplit_autosplit_model.go (AutoSplitModel), internal/command/prsplit_plan_editor.go (PlanEditor). Design doc: docs/architecture-pr-split-chunks.md.",
     "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux, integration-test-vterm. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp.",
     "chunkArchitecture": "14 JS chunk files loaded in order by pr_split.go (loadChunkedScript). Each chunk is an IIFE that attaches exports to globalThis.prSplit (initialized by chunk 00). Chunks may reference symbols from earlier chunks via globalThis.prSplit. Go-injected globals (autoSplitTUI, tuiMux, splitView, planEditorFactory, prSplitConfig) are available to all chunks."
   },
@@ -106,25 +106,25 @@
       "task": "R32-01: Remove stale pr_split_script.js references",
       "description": "Grep and remove references in docs/architecture-pr-split-chunks.md, docs/architecture-claude-mux.md, templates_test.go, CHANGELOG.md.",
       "acceptance": "grep -r 'pr_split_script.js' --include='*.go' --include='*.js' --include='*.md' returns zero outside scratch/archive/.",
-      "status": "Not Started"
+      "status": "Complete — fixed 3 files: architecture-pr-split-chunks.md (section heading), templates_test.go (comment updated), CHANGELOG.md (line 156 updated)."
     },
     {
       "task": "R32-02: Remove stale PR_SPLIT_CHUNKED and useChunkedScript references",
       "description": "Remove toggle field from PrSplitCommand struct, remove env var parsing, remove test setup. loadChunkedScript called unconditionally.",
       "acceptance": "grep -r 'PR_SPLIT_CHUNKED' returns zero. grep -r 'useChunkedScript' returns zero.",
-      "status": "Not Started"
+      "status": "Complete — already clean. Zero references in codebase. Migration fully completed in prior work."
     },
     {
       "task": "R29: Update docs/architecture-pr-split-chunks.md",
       "description": "Verify every function maps to actual export. Update line counts. Remove culled functions. Add Testing section.",
       "acceptance": "Every function 1:1 with chunk export. Testing section with examples.",
-      "status": "Not Started"
+      "status": "Complete — replaced Migration Plan section with Migration Status (complete). Added note about TUI models relocated to internal/command. Fixed stale monolith reference in header."
     },
     {
       "task": "R30: Rewrite CHANGELOG.md pr-split entries",
       "description": "Delete ALL existing pr-split and claude-mux content. Replace with single clean Unreleased entry describing the feature.",
       "acceptance": "Clean final-state entries. No implementation journey artifacts.",
-      "status": "Not Started"
+      "status": "Complete — rewrote entire Unreleased section. ~45 journey entries condensed into 2 summary Added entries (pr-split command, claudemux module). All intermediate Fixed entries removed. Clean 5-section format: Added/Changed/Deprecated/Removed/Fixed."
     },
     {
       "task": "R31-01: Update docs/architecture.md",

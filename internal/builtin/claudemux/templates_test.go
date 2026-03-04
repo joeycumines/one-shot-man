@@ -75,8 +75,7 @@ func templateTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 }
 
 // templatePath returns the path to a temporary JS file that concatenates all
-// pr-split chunk files with a module.exports tail. Replaces the former
-// direct path to pr_split_script.js.
+// pr-split chunk files with a module.exports tail.
 func templatePath(t *testing.T) string {
 	t.Helper()
 	return combinedChunkScript(t)

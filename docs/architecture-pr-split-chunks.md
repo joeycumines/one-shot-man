@@ -1,11 +1,11 @@
 # pr-split Chunk Architecture
 
-> Design document for splitting `pr_split_script.js` (6225 lines, 82+ functions)
-> into 14 independently-loadable chunk files.
+> Design document for the 14 independently-loadable chunk files
+> that implement the `osm pr-split` pipeline.
 
 ## Overview
 
-The monolith `internal/command/pr_split_script.js` is split into 14 IIFE-wrapped
+The `osm pr-split` JavaScript implementation consists of 14 IIFE-wrapped
 chunk files loaded sequentially by `pr_split.go`. Each chunk attaches its exports
 to `globalThis.prSplit`, which is initialized by chunk 00. Later chunks may
 reference symbols from earlier chunks via `globalThis.prSplit`.
@@ -77,6 +77,9 @@ These globals are set by `pr_split.go` Execute() before any JS chunk loads:
 | `ctx` | Object | Scripting runtime | 13 (guard check) |
 | `output` | Object | Scripting runtime | 10, 13 |
 | `log` | Function | Scripting runtime | 08, 09, 10 |
+
+The TUI models (`AutoSplitModel`, `PlanEditor`) live in `internal/command/`
+alongside `pr_split.go` (`prsplit_autosplit_model.go`, `prsplit_plan_editor.go`).
 
 ---
 
@@ -594,14 +597,8 @@ chunks in order, with proper error reporting per-chunk.
 
 ---
 
-## Migration Plan
+## Migration Status
 
-The migration is incremental — each chunk is extracted, tested, and verified
-before moving to the next. The monolith remains functional until all chunks
-are populated. See blueprint.json tasks R03-R19 for the complete sequence.
-
-**Phase 1 (R03):** Create Go loading infrastructure + 14 stub files.
-**Phase 2 (R04-R17):** Extract each chunk from the monolith.
-**Phase 3 (R18-R19):** Update test infrastructure + delete monolith.
-**Phase 4 (R20-R22):** Cull AI slop from all code.
-**Phase 5 (R23-R28):** Validate end-to-end + document.
+The chunked architecture is fully implemented. All 14 chunk files are populated
+and the monolith `pr_split_script.js` has been deleted. Line numbers in the
+chunk specifications below reference the original monolith for traceability.

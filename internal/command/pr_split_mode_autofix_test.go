@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -405,7 +406,7 @@ func TestPrSplitCommand_NpmInstallDetectWithPackageJson(t *testing.T) {
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	val, err := evalJS(`globalThis.prSplit.AUTO_FIX_STRATEGIES[3].detect('` + dir + `')`)
+	val, err := evalJS(`globalThis.prSplit.AUTO_FIX_STRATEGIES[3].detect('` + filepath.ToSlash(dir) + `')`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -431,6 +432,9 @@ func TestPrSplitCommand_MakeGenerateDetect(t *testing.T) {
 
 func TestPrSplitCommand_MakeGenerateDetectWithMakefile(t *testing.T) {
 	t.Parallel()
+	if runtime.GOOS == "windows" {
+		t.Skip("make-generate detect uses sh -c and grep; skipping on Windows")
+	}
 
 	// Create a temp dir with a Makefile that has a generate target.
 	dir := t.TempDir()
@@ -440,7 +444,7 @@ func TestPrSplitCommand_MakeGenerateDetectWithMakefile(t *testing.T) {
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	val, err := evalJS(`globalThis.prSplit.AUTO_FIX_STRATEGIES[4].detect('` + dir + `')`)
+	val, err := evalJS(`globalThis.prSplit.AUTO_FIX_STRATEGIES[4].detect('` + filepath.ToSlash(dir) + `')`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -453,6 +457,9 @@ func TestPrSplitCommand_MakeGenerateDetectWithGoGenerate(t *testing.T) {
 	t.Parallel()
 
 	// Create a temp dir with a Go file that has a //go:generate directive.
+	if runtime.GOOS == "windows" {
+		t.Skip("make-generate detect uses sh -c and grep; skipping on Windows")
+	}
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "gen.go"), []byte("package main\n//go:generate echo hello\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -460,7 +467,7 @@ func TestPrSplitCommand_MakeGenerateDetectWithGoGenerate(t *testing.T) {
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	val, err := evalJS(`globalThis.prSplit.AUTO_FIX_STRATEGIES[4].detect('` + dir + `')`)
+	val, err := evalJS(`globalThis.prSplit.AUTO_FIX_STRATEGIES[4].detect('` + filepath.ToSlash(dir) + `')`)
 	if err != nil {
 		t.Fatal(err)
 	}

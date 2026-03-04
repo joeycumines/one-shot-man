@@ -306,7 +306,10 @@ func validateFilePath(path string) error {
 	if path == "" {
 		return errors.New("empty path")
 	}
-	if filepath.IsAbs(path) {
+	// filepath.IsAbs is platform-specific: on Windows it requires a drive
+	// letter or UNC prefix, so a Unix-style "/foo" is NOT considered absolute.
+	// Explicitly reject "/"-prefixed paths on all platforms for consistency.
+	if filepath.IsAbs(path) || strings.HasPrefix(path, "/") {
 		return errors.New("absolute paths not allowed")
 	}
 	if strings.Contains(path, "..") {

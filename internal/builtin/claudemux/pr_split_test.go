@@ -138,7 +138,8 @@ func initTestGitRepo(t *testing.T) string {
 
 	dir := t.TempDir()
 
-	runGit(t, dir, "init", "-b", "main")
+	runGit(t, dir, "init")
+	runGit(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
 	runGit(t, dir, "config", "user.email", "test@test.com")
 	runGit(t, dir, "config", "user.name", "Test User")
 
@@ -742,7 +743,8 @@ func initCompilableGitRepo(t *testing.T) string {
 
 	dir := t.TempDir()
 
-	runGit(t, dir, "init", "-b", "main")
+	runGit(t, dir, "init")
+	runGit(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
 	runGit(t, dir, "config", "user.email", "test@test.com")
 	runGit(t, dir, "config", "user.name", "Test User")
 

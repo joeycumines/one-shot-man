@@ -302,7 +302,8 @@ func TestIntegration_ExecuteSplit_WorktreeConflict(t *testing.T) {
 
 	// Create a git repo with main branch.
 	dir := t.TempDir()
-	runGitCmd(t, dir, "init", "-b", "main")
+	runGitCmd(t, dir, "init")
+	runGitCmd(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
 	runGitCmd(t, dir, "config", "user.email", "test@test.com")
 	runGitCmd(t, dir, "config", "user.name", "Test User")
 
@@ -2654,7 +2655,8 @@ func initIntegrationRepo(t *testing.T) string {
 		t.Skip("git not available — skipping integration test")
 	}
 
-	runGit(t, dir, "init", "-b", "main")
+	runGit(t, dir, "init")
+	runGit(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
 	runGit(t, dir, "config", "user.email", "integration-test@osm.dev")
 	runGit(t, dir, "config", "user.name", "OSM Integration Test")
 

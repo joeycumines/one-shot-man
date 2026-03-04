@@ -139,7 +139,8 @@ func TestIntegration_RefactoringBranch(t *testing.T) {
 	dir := t.TempDir()
 
 	// Initialize repo with files that will be renamed/deleted.
-	runGitCmd(t, dir, "init", "-b", "main")
+	runGitCmd(t, dir, "init")
+	runGitCmd(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
 	runGitCmd(t, dir, "config", "user.email", "test@test.com")
 	runGitCmd(t, dir, "config", "user.name", "Test User")
 

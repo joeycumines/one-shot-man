@@ -3,6 +3,7 @@ package command
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -1691,8 +1692,14 @@ func TestSaveTelemetry_MkdirFails(t *testing.T) {
 
 	// T53: saveTelemetry now uses osmod.writeFile({ createDirs: true }) which
 	// calls Go's os.MkdirAll directly — not through mocked exec.execv.
-	// Using /bad/path which will fail with a permission/read-only error.
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit.saveTelemetry('/bad/path'))`)
+	// Create a regular file, then try to create a subdirectory inside it.
+	// This fails on all platforms (can't mkdir inside a regular file).
+	blocker := filepath.Join(t.TempDir(), "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	badPath := filepath.ToSlash(filepath.Join(blocker, "nested"))
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.saveTelemetry('` + badPath + `'))`)
 	if err != nil {
 		t.Fatal(err)
 	}

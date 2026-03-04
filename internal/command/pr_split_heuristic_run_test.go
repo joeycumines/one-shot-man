@@ -92,7 +92,8 @@ func TestPrSplitCommand_RunZeroChanges(t *testing.T) {
 
 	// Create a repo with NO feature branch changes (stay on main).
 	dir := t.TempDir()
-	runGitCmd(t, dir, "init", "-b", "main")
+	runGitCmd(t, dir, "init")
+	runGitCmd(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
 	runGitCmd(t, dir, "config", "user.email", "test@test.com")
 	runGitCmd(t, dir, "config", "user.name", "Test User")
 	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Test\n"), 0o644); err != nil {
@@ -294,7 +295,8 @@ func setupTestGitRepoWithDeletions(t *testing.T) string {
 
 	dir := t.TempDir()
 
-	runGitCmd(t, dir, "init", "-b", "main")
+	runGitCmd(t, dir, "init")
+	runGitCmd(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
 	runGitCmd(t, dir, "config", "user.email", "test@test.com")
 	runGitCmd(t, dir, "config", "user.name", "Test User")
 
@@ -449,7 +451,8 @@ func setupTestGitRepoExtension(t *testing.T) string {
 
 	dir := t.TempDir()
 
-	runGitCmd(t, dir, "init", "-b", "main")
+	runGitCmd(t, dir, "init")
+	runGitCmd(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
 	runGitCmd(t, dir, "config", "user.email", "test@test.com")
 	runGitCmd(t, dir, "config", "user.name", "Test User")
 
@@ -548,7 +551,8 @@ func setupTestGitRepoWithModifications(t *testing.T) string {
 
 	dir := t.TempDir()
 
-	runGitCmd(t, dir, "init", "-b", "main")
+	runGitCmd(t, dir, "init")
+	runGitCmd(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
 	runGitCmd(t, dir, "config", "user.email", "test@test.com")
 	runGitCmd(t, dir, "config", "user.name", "Test User")
 
@@ -661,7 +665,8 @@ func setupCompilableGoRepo(t *testing.T) string {
 
 	dir := t.TempDir()
 
-	runGitCmd(t, dir, "init", "-b", "main")
+	runGitCmd(t, dir, "init")
+	runGitCmd(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
 	runGitCmd(t, dir, "config", "user.email", "test@test.com")
 	runGitCmd(t, dir, "config", "user.name", "Test User")
 

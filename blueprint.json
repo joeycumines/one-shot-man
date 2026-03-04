@@ -166,12 +166,18 @@
       "task": "R39-01: Linux container validation",
       "description": "Run make make-all-in-container. Fix failures. Focus: path separators, git output parsing, shellQuote differences.",
       "acceptance": "make make-all-in-container exits 0.",
-      "status": "Not Started"
+      "status": "Complete — make make-all-in-container exits 0 (640s). golang:1.26.0 container. All packages pass including internal/scripting (478s), internal/command, internal/termmux."
     },
     {
       "task": "R39-02: Windows validation",
       "description": "Run make make-all-run-windows. Document legitimate skips. Fix unexpected failures.",
       "acceptance": "make make-all-run-windows exits 0 or justified skips documented.",
+      "status": "Complete — make make-all-run-windows exits 0 (136s). Fixed: (1) syscall.Kill in pty_test.go moved to build-tagged pty_unix_test.go, (2) git init -b main replaced with init + symbolic-ref in 24 sites for old git compat, (3) validateFilePath now rejects /-prefixed paths on Windows, (4) JS autofix tests escape backslash paths via filepath.ToSlash, (5) saveTelemetry test uses file-blocker path instead of Unix /bad/path, (6) followFile defer closure captures reassigned f, (7) make-generate detect tests skip on Windows (sh -c + grep dependency)."
+    },
+    {
+      "task": "B00: Fix test git state mutation issue",
+      "description": "Investigate and fix a critical bug where running tests mutates the git state (detaching HEAD, modifying local worktree). The test cache likely hid this previously. Verify using the newly added `run-all-tests-no-cache` target in `config.mk` which runs tests with `-count=1` to defeat the test cache.",
+      "acceptance": "Running `make run-all-tests-no-cache` completes successfully. Follow-up `git status` shows a clean tree with no detached HEAD. The fix must be verified rigorously under the Rule of Two.",
       "status": "Not Started"
     },
     {

@@ -21,6 +21,7 @@
 - (none currently identified)
 
 ### Next Step
+- B00: Fix test git state mutation issue (critical bug where HEAD detaches, verify via `run-all-tests-no-cache`)
 - Commit R31 + misc fixes with Rule of Two
 - R00a: Verify git state isolation in tests
 - B01: Fix dodgy terminal output (literal ANSI escape codes)

@@ -180,7 +180,9 @@ func followFile(ctx context.Context, f *os.File, logPath string, pos int64, stdo
 	reader := bufio.NewReader(f)
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
-	defer f.Close()
+	// Use a closure so f.Close() targets the latest reassignment
+	// after rotation, not the original file captured at defer-time.
+	defer func() { _ = f.Close() }()
 
 	for {
 		select {

@@ -438,7 +438,8 @@ func initComplexGoRepo(t *testing.T) string {
 		t.Skip("git not available — skipping integration test")
 	}
 
-	runGit(t, dir, "init", "-b", "main")
+	runGit(t, dir, "init")
+	runGit(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
 	runGit(t, dir, "config", "user.email", "test@osm.dev")
 	runGit(t, dir, "config", "user.name", "OSM Test")
 

@@ -367,7 +367,8 @@ func TestChunk00_GitExec(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	runGitCmd(t, dir, "init", "-b", "main")
+	runGitCmd(t, dir, "init")
+	runGitCmd(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
 	runGitCmd(t, dir, "config", "user.email", "test@test.com")
 	runGitCmd(t, dir, "config", "user.name", "Test")
 
@@ -417,7 +418,8 @@ func TestChunk00_GitAddChangedFiles(t *testing.T) {
 	}
 
 	dir := t.TempDir()
-	runGitCmd(t, dir, "init", "-b", "main")
+	runGitCmd(t, dir, "init")
+	runGitCmd(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
 	runGitCmd(t, dir, "config", "user.email", "test@test.com")
 	runGitCmd(t, dir, "config", "user.name", "Test")
 

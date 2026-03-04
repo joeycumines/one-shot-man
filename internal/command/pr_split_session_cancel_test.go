@@ -169,7 +169,8 @@ func TestVerifySplit_TUIOutput(t *testing.T) {
 
 	// Set up git repo with a branch to verify.
 	for _, cmd := range [][]string{
-		{"git", "-C", tmpDir, "init", "-b", "main"},
+		{"git", "-C", tmpDir, "init"},
+		{"git", "-C", tmpDir, "symbolic-ref", "HEAD", "refs/heads/main"},
 		{"git", "-C", tmpDir, "config", "user.email", "test@test.com"},
 		{"git", "-C", tmpDir, "config", "user.name", "Test"},
 	} {
@@ -280,7 +281,8 @@ func TestExecuteSplit_ProgressFeedback(t *testing.T) {
 
 	// Set up a git repo with many files on a source branch.
 	for _, cmd := range [][]string{
-		{"git", "-C", tmpDir, "init", "-b", "main"},
+		{"git", "-C", tmpDir, "init"},
+		{"git", "-C", tmpDir, "symbolic-ref", "HEAD", "refs/heads/main"},
 		{"git", "-C", tmpDir, "config", "user.email", "test@test.com"},
 		{"git", "-C", tmpDir, "config", "user.name", "Test"},
 	} {
@@ -448,7 +450,8 @@ func TestResolveConflicts_RestoresBranchOnError(t *testing.T) {
 
 	// Set up git repo with main and a source branch.
 	for _, cmd := range [][]string{
-		{"git", "-C", tmpDir, "init", "-b", "main"},
+		{"git", "-C", tmpDir, "init"},
+		{"git", "-C", tmpDir, "symbolic-ref", "HEAD", "refs/heads/main"},
 		{"git", "-C", tmpDir, "config", "user.email", "test@test.com"},
 		{"git", "-C", tmpDir, "config", "user.name", "Test"},
 	} {
@@ -534,7 +537,8 @@ func TestResolveConflicts_CancellationDuringStrategyLoop(t *testing.T) {
 
 	// Set up git repo with a branch that has a failing verify command.
 	for _, cmd := range [][]string{
-		{"git", "-C", tmpDir, "init", "-b", "main"},
+		{"git", "-C", tmpDir, "init"},
+		{"git", "-C", tmpDir, "symbolic-ref", "HEAD", "refs/heads/main"},
 		{"git", "-C", tmpDir, "config", "user.email", "test@test.com"},
 		{"git", "-C", tmpDir, "config", "user.name", "Test"},
 	} {
@@ -639,7 +643,8 @@ func TestExecuteSplit_CancellationMidFile(t *testing.T) {
 
 	// Set up git repo with many files on source branch.
 	for _, cmd := range [][]string{
-		{"git", "-C", tmpDir, "init", "-b", "main"},
+		{"git", "-C", tmpDir, "init"},
+		{"git", "-C", tmpDir, "symbolic-ref", "HEAD", "refs/heads/main"},
 		{"git", "-C", tmpDir, "config", "user.email", "test@test.com"},
 		{"git", "-C", tmpDir, "config", "user.name", "Test"},
 	} {

@@ -489,7 +489,10 @@ func TestChunk03_DefaultPlanPath(t *testing.T) {
 func initGitRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	gitCmd(t, dir, "init", "-b", "main")
+	// Use init + symbolic-ref instead of init -b for compatibility
+	// with git versions older than 2.28 (e.g. Windows CI).
+	gitCmd(t, dir, "init")
+	gitCmd(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
 	gitCmd(t, dir, "config", "user.email", "test@test.com")
 	gitCmd(t, dir, "config", "user.name", "Test")
 	return dir

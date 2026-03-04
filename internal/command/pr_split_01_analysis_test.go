@@ -37,7 +37,8 @@ func gitInit(t testing.TB, dir string) {
 			t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, out)
 		}
 	}
-	run("init", "-b", "main", dir)
+	run("init")
+	run("symbolic-ref", "HEAD", "refs/heads/main")
 	// Create initial commit so main exists.
 	initial := filepath.Join(dir, ".gitkeep")
 	if err := os.WriteFile(initial, []byte(""), 0644); err != nil {

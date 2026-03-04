@@ -18,12 +18,14 @@
 - R30: CHANGELOG.md Unreleased section rewritten (45 entries → 2 summary entries + kept infrastructure)
 
 ### Known Issues (Fix Later)
-- 2 stale comments at lines 783 and 898 of pr_split_conflict_retry_test.go (say \n, behavior is \r)
-- installRequireCycleDetection in module_hardening.go ~line 236 missing defer tracker.leave() on cycle path
+- (none currently identified)
 
 ### Next Step
-- Commit R29+R30+R32 with Rule of Two
-- R31-01: Update docs/architecture.md 
-- R31-02: Update AGENTS.md sourceOfTruth
-- R31-03: Update docs/reference/command.md for pr-split
+- Commit R31 + misc fixes with Rule of Two
 - R00a: Verify git state isolation in tests
+- R39-01: Linux container validation
+- R39-02: Windows validation
+- R28.1-R28.4: Termmux resize signal investigation and fix
+- R41: Chunk architecture ADR
+- R42: Git-ignored files handling in pr-split
+- W00+: Wizard UI phase (termmux facade, state machine, etc.)

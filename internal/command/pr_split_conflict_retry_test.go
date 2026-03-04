@@ -780,7 +780,7 @@ func TestPrSplitCommand_ResolveConflictsWithClaudePreExistingFailure(t *testing.
 		t.Error("Expected reSplitNeeded=false for pre-existing failure")
 	}
 
-	// 2. Only 1 attempt (no retry) — sendCallCount should be 2 (two-write: text + \n).
+	// 2. Only 1 attempt (no retry) — sendCallCount should be 2 (two-write: text + \r).
 	if output.SendCallCount != 2 {
 		t.Errorf("Expected 2 send calls (two-write), got %d", output.SendCallCount)
 	}
@@ -895,7 +895,7 @@ func TestPrSplitCommand_SendToHandle_TwoWrite(t *testing.T) {
 
 	_, _, _, evalJSAsync := loadPrSplitEngineWithEval(t, nil)
 
-	// Verify sendToHandle sends text and \n as two separate writes.
+	// Verify sendToHandle sends text and \r as two separate writes.
 	// NOTE: sendToHandle is async (uses setTimeout for inter-write delay).
 	// The outer await is needed because evalJSAsync wraps this in another async IIFE.
 	val, err := evalJSAsync(`await (async function() {

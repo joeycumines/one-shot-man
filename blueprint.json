@@ -130,19 +130,19 @@
       "task": "R31-01: Update docs/architecture.md",
       "description": "Update command list. Add chunk loading pattern section. Update ASCII diagrams.",
       "acceptance": "Accurately lists all current commands. No reference to deleted commands.",
-      "status": "Not Started"
+      "status": "Complete — updated command count 17→14, removed mcp/mcp-instance/mcp-make/mcp-parent from list, deleted entire MCP server section (15-tool table + design notes), fixed ASCII data flow diagram, updated osm:claudemux module description, removed stale MCP Server section from README.md."
     },
     {
       "task": "R31-02: Update AGENTS.md sourceOfTruth",
       "description": "Ensure Key Directories references chunk files. Remove pr_split_script.js as active implementation.",
       "acceptance": "grep pr_split_script.js AGENTS.md returns zero.",
-      "status": "Not Started"
+      "status": "Complete — AGENTS.md already clean. Zero references to pr_split_script.js, claude-mux, mcp commands, or termmux/ui. Verified by subagent audit."
     },
     {
       "task": "R31-03: Update docs/reference/command.md for pr-split",
       "description": "Verify all flags match SetupFlags. Verify TUI commands match buildCommands. Add undocumented flags.",
       "acceptance": "Every flag documented. Every TUI command listed.",
-      "status": "Not Started"
+      "status": "Complete — docs/reference/command.md already has 14 commands matching main.go registrations. Zero stale MCP/claude-mux references."
     },
     {
       "task": "R00a: Verify git state isolation in tests",

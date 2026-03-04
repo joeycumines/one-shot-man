@@ -14,8 +14,8 @@ This document describes the internal architecture of `osm` — how the major sub
 
 3. **Goal subsystem.** `command.NewGoalDiscovery(cfg)` builds the discovery engine, then `command.NewDynamicGoalRegistry(builtIns, discovery)` merges built-in goals with user-discovered goals.
 
-4. **Command registration.** All 17 built-in commands are registered:
-   `help`, `version`, `config`, `init`, `script`, `session`, `prompt-flow`, `code-review`, `super-document`, `completion`, `goal`, `sync`, `log`, `mcp`, `mcp-instance`, `mcp-make`, `mcp-parent`, `pr-split`. The completion command receives both the registry and goal registry for tab-completion data.
+4. **Command registration.** All 14 built-in commands are registered:
+   `help`, `version`, `config`, `init`, `script`, `session`, `prompt-flow`, `code-review`, `super-document`, `completion`, `goal`, `sync`, `log`, `pr-split`. The completion command receives both the registry and goal registry for tab-completion data.
 
 5. **Flag parsing.** A global `FlagSet` parses top-level `-h`/`-help`; remaining args identify the command name and its arguments. Each command gets its own `FlagSet` (with `ContinueOnError`) so `SetupFlags` can register command-specific flags before `fs.Parse(cmdArgs)`.
 
@@ -196,7 +196,7 @@ Native modules are registered via `builtin.Register()` in [internal/builtin/regi
 
 | Module | Description |
 |--------|-------------|
-| `osm:claudemux` | Claude Code multiplexer — PTY-based agent spawning, MCP integration, safety validation |
+| `osm:claudemux` | Claude Code process management — PTY output parsing, guard rails, error recovery, instance pooling, safety validation |
 
 ### Context management
 
@@ -387,43 +387,6 @@ Source: [internal/command/sync.go](../internal/command/sync.go), [internal/comma
 
 ---
 
-## MCP server
-
-The `mcp` command starts a Model Context Protocol server over stdio, enabling external MCP clients (Claude Desktop, VS Code Copilot, etc.) to use osm's context management and prompt building programmatically.
-
-### Architecture
-
-The server is implemented as a pure Go command (no scripting engine). It creates a `ContextManager` rooted at the working directory and exposes fifteen tools:
-
-| Tool | Description |
-|------|-------------|
-| `addFile` | Add files/directories via `ContextManager.AddPath` |
-| `addDiff` | Store diffs in an in-memory list |
-| `addNote` | Store notes in an in-memory list |
-| `removeFile` | Remove file/directory via `ContextManager.RemovePath` |
-| `listContext` | Return JSON listing of files and items |
-| `clearContext` | Clear all files (via `ContextManager.Clear`) and in-memory items |
-| `buildPrompt` | Assemble prompt from goal instructions + notes/diffs + txtar context |
-| `getGoals` | Return JSON array of available goals |
-| `registerSession` | Register a new agent session with capabilities |
-| `reportProgress` | Report progress (status, percentage, message) from an agent session |
-| `reportResult` | Report task completion (success, output, changed files) from an agent session |
-| `requestGuidance` | Request human guidance (question, options, context) from an agent session |
-| `getSession` | Get session info and drain queued events for a given session |
-| `listSessions` | List all registered agent sessions with summary info |
-| `heartbeat` | Update session heartbeat timestamp (keepalive) |
-
-### Design
-
-- **`newMCPServer()`** is an unexported factory function that creates the configured `*mcp.Server`. It is separated from `Execute()` for testability — tests use `mcp.NewInMemoryTransports()` to create paired transports without stdio.
-- **Thread safety:** Notes, diffs, and the session registry are stored in-memory behind a single `sync.Mutex`. File context is managed by the existing `ContextManager`.
-- **Session registry:** Active agent sessions are tracked in a map keyed by session ID. Each session stores capabilities, status, progress, last update time, and an event queue. Events (progress, result, guidance) are queued per session and drained on `getSession` read, enabling a polling pattern for orchestration scripts.
-- **Error handling:** Application-level errors (missing file, empty input, unknown session) use `CallToolResult.SetError()` so the MCP client sees `isError: true` without the transport disconnecting. Only transport-level errors return Go errors.
-
-Source: [internal/command/mcp.go](../internal/command/mcp.go)
-
----
-
 ## Data flow
 
 ```
@@ -438,10 +401,9 @@ CLI args → main.go → Registry.Get(cmd)
         Go commands              JS commands
      (config, session,      (script, prompt-flow,
       init, version,         code-review, goal,
-      help, log, mcp,       super-document,
-      mcp-instance,          pr-split)
-      mcp-make, mcp-parent,
-      sync, completion)      ↓
+      help, log,             super-document,
+      sync, completion)      pr-split)
+              │                       ↓
                            PrepareEngine()
                                   ↓
                           Engine created with:

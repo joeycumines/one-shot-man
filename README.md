@@ -182,12 +182,6 @@ Command `osm` is a scripting engine.
 
 **Philosophy:** Go code exposes reusable primitives (accessible via `osm script`), while all application-specific logic lives in JavaScript. Exposing the building blocks to build your own, custom implementations.
 
-### MCP Server
-
-`osm mcp` exposes an [MCP](https://modelcontextprotocol.io/) server over stdio with 15 tools for context management and session coordination. This is the primary integration point for IDE-based workflows (e.g., Claude Code, VS Code Copilot).
-
-Tools: `addFile`, `addDiff`, `addNote`, `removeFile`, `listContext`, `clearContext`, `buildPrompt`, `getGoals`, `registerSession`, `reportProgress`, `reportResult`, `requestGuidance`, `getSession`, `listSessions`, `heartbeat`.
-
 Future functionality based on merits.
 Fair warning: This may include features* which expand the scope of functionality.
 See also [docs/todo.md](docs/todo.md).

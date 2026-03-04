@@ -236,6 +236,14 @@ type AsyncJSRunner interface {
 	RunOnLoop(fn func(*goja.Runtime)) bool
 }
 
+// TrySyncJSRunner extends JSRunner with deadlock-safe synchronous execution.
+// TryRunOnLoopSync executes the callback directly when already on the event
+// loop goroutine, and otherwise schedules-and-waits on the loop.
+type TrySyncJSRunner interface {
+	JSRunner
+	TryRunOnLoopSync(currentVM *goja.Runtime, fn func(*goja.Runtime) error) error
+}
+
 // Manager holds bubbletea-related state per engine instance.
 type Manager struct {
 	ctx          context.Context
@@ -505,6 +513,19 @@ func (m *jsModel) registerCommand(id uint64) {
 	m.validCmdIDs[id] = true
 }
 
+// runJSSync executes fn on the JS event loop and waits for completion.
+// If the runner supports TryRunOnLoopSync, recursion on the event-loop
+// goroutine is executed directly to avoid self-deadlock.
+func (m *jsModel) runJSSync(fn func(*goja.Runtime) error) error {
+	if m.jsRunner == nil {
+		return fmt.Errorf("bubbletea: js runner is nil")
+	}
+	if tr, ok := m.jsRunner.(TrySyncJSRunner); ok {
+		return tr.TryRunOnLoopSync(m.runtime, fn)
+	}
+	return m.jsRunner.RunJSSync(fn)
+}
+
 // Init implements tea.Model.
 // CRITICAL: This is called from BubbleTea's goroutine, NOT the event loop goroutine.
 // JSRunner MUST be set to safely marshal JS execution to the event loop.
@@ -520,7 +541,7 @@ func (m *jsModel) Init() tea.Cmd {
 	}
 
 	var cmd tea.Cmd
-	err := m.jsRunner.RunJSSync(func(vm *goja.Runtime) error {
+	err := m.runJSSync(func(vm *goja.Runtime) error {
 		cmd = m.initDirect()
 		return nil
 	})
@@ -611,7 +632,7 @@ func (m *jsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	var cmd tea.Cmd
-	err := m.jsRunner.RunJSSync(func(vm *goja.Runtime) error {
+	err := m.runJSSync(func(vm *goja.Runtime) error {
 		cmd = m.updateDirect(jsMsg)
 		return nil
 	})
@@ -729,7 +750,7 @@ func (m *jsModel) View() string {
 	}
 
 	var viewStr string
-	err := m.jsRunner.RunJSSync(func(vm *goja.Runtime) error {
+	err := m.runJSSync(func(vm *goja.Runtime) error {
 		viewStr = m.viewDirect()
 		return nil
 	})
@@ -928,7 +949,7 @@ func (m *jsModel) valueToCmd(val goja.Value) (ret tea.Cmd) {
 
 	case "setWindowTitle":
 		titleVal := obj.Get("title")
-		if goja.IsUndefined(titleVal) || goja.IsNull(titleVal) {
+		if titleVal == nil || goja.IsUndefined(titleVal) || goja.IsNull(titleVal) {
 			return nil
 		}
 		return tea.SetWindowTitle(titleVal.String())
@@ -1254,7 +1275,12 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 				return createError(ErrCodeInvalidArgs, "newModel requires a config object")
 			}
 
-			config := call.Argument(0).ToObject(runtime)
+			configArg := call.Argument(0)
+			if configArg == nil || goja.IsUndefined(configArg) || goja.IsNull(configArg) {
+				return createError(ErrCodeInvalidArgs, "config must be an object")
+			}
+
+			config := configArg.ToObject(runtime)
 			if config == nil {
 				return createError(ErrCodeInvalidArgs, "config must be an object")
 			}
@@ -1354,7 +1380,7 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 					stackTrace := debug.Stack()
 					// Log detailed error to stderr if available
 					if manager != nil && manager.stderr != nil {
-						fmt.Fprintf(manager.stderr, "\n[PANIC] in bubbletea.run(): %v\n\nStack:\n%s\n", r, string(stackTrace))
+						_, _ = fmt.Fprintf(manager.stderr, "\n[PANIC] in bubbletea.run(): %v\n\nStack:\n%s\n", r, string(stackTrace))
 					}
 					result = createError(ErrCodePanic, fmt.Sprintf("panic in run: %v", r))
 				}
@@ -1364,7 +1390,11 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 				return createError(ErrCodeInvalidArgs, "run requires a model")
 			}
 
-			modelWrapper := call.Argument(0).ToObject(runtime)
+			argVal := call.Argument(0)
+			if goja.IsUndefined(argVal) || goja.IsNull(argVal) {
+				return createError(ErrCodeInvalidModel, "model must be an object")
+			}
+			modelWrapper := argVal.ToObject(runtime)
 			if modelWrapper == nil {
 				return createError(ErrCodeInvalidModel, "model must be an object")
 			}

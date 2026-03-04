@@ -7,6 +7,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"syscall"
 	"testing"
 	"time"
 
@@ -79,12 +80,19 @@ func TestRunProgram_Lifecycle(t *testing.T) {
 
 	master, slave := openPty(t)
 	defer master.Close()
-	defer slave.Close()
+	// NOTE: slave is NOT closed via defer to avoid a data race with bubbletea's
+	// internal handleResize goroutine, which may call slave.Fd() briefly after
+	// Program.Run() returns. Instead, we close it explicitly after the program
+	// exits using a dup'd FD so the original is safe to close at any time.
+	slaveFd, dupErr := syscall.Dup(int(slave.Fd()))
+	require.NoError(t, dupErr)
+	slaveForBT := os.NewFile(uintptr(slaveFd), slave.Name())
+	slave.Close() // Close original immediately; bubbletea uses the dup
 
-	// Run program in goroutine using PTY slave for input/output
+	// Run program in goroutine using dup'd PTY slave for input/output
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- manager.runProgram(model, tea.WithInput(slave), tea.WithOutput(slave))
+		errCh <- manager.runProgram(model, tea.WithInput(slaveForBT), tea.WithOutput(slaveForBT))
 	}()
 
 	// Wait for lifecycle events with timeout
@@ -95,8 +103,10 @@ func TestRunProgram_Lifecycle(t *testing.T) {
 	select {
 	case <-initCalled:
 	case err := <-errCh:
+		slaveForBT.Close()
 		t.Fatalf("runProgram failed: %v", err)
 	case <-timeout.C:
+		slaveForBT.Close()
 		t.Fatal("Timeout waiting for Init")
 	}
 
@@ -104,6 +114,7 @@ func TestRunProgram_Lifecycle(t *testing.T) {
 	select {
 	case <-viewCalled:
 	case <-timeout.C:
+		slaveForBT.Close()
 		t.Fatal("Timeout waiting for View")
 	}
 
@@ -123,8 +134,16 @@ func TestRunProgram_Lifecycle(t *testing.T) {
 	// 4. Program should exit
 	select {
 	case err := <-errCh:
+		// Allow bubbletea's internal goroutines (handleResize) to finish
+		// before closing the PTY fd. bubbletea.Run() may return before all
+		// its internal goroutines have exited, so closing the fd immediately
+		// races with handleResize calling Fd().
+		time.Sleep(50 * time.Millisecond)
+		slaveForBT.Close()
 		require.NoError(t, err)
 	case <-time.NewTimer(1 * time.Second).C:
+		time.Sleep(50 * time.Millisecond)
+		slaveForBT.Close()
 		t.Fatal("Program did not exit")
 	}
 }
@@ -225,23 +244,30 @@ func TestRunProgram_AlreadyRunning(t *testing.T) {
 
 	master, slave := openPty(t)
 	defer master.Close()
-	defer slave.Close()
+	// Use dup'd FD for bubbletea to avoid data race between Close and
+	// bubbletea's internal handleResize goroutine calling Fd().
+	slaveFd, dupErr := syscall.Dup(int(slave.Fd()))
+	require.NoError(t, dupErr)
+	slaveForBT := os.NewFile(uintptr(slaveFd), slave.Name())
+	slave.Close()
 
 	startErrCh := make(chan error, 1)
 	go func() {
-		startErrCh <- manager.runProgram(model, tea.WithInput(slave), tea.WithOutput(slave))
+		startErrCh <- manager.runProgram(model, tea.WithInput(slaveForBT), tea.WithOutput(slaveForBT))
 	}()
 
 	select {
 	case <-firstProgramStarted:
 	case err := <-startErrCh:
+		slaveForBT.Close()
 		t.Fatalf("failed to start first program: %v", err)
 	case <-time.After(2 * time.Second):
+		slaveForBT.Close()
 		t.Fatal("Timeout waiting for first program to start")
 	}
 
 	// Try starting second program while the first holds the lock
-	err := manager.runProgram(model, tea.WithInput(slave), tea.WithOutput(slave))
+	err := manager.runProgram(model, tea.WithInput(slaveForBT), tea.WithOutput(slaveForBT))
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "already running")
 
@@ -252,8 +278,10 @@ func TestRunProgram_AlreadyRunning(t *testing.T) {
 	// Wait for first program to exit
 	select {
 	case err := <-startErrCh:
+		slaveForBT.Close()
 		require.NoError(t, err)
 	case <-time.After(2 * time.Second):
+		slaveForBT.Close()
 		t.Fatal("first program didn't exit")
 	}
 }
@@ -285,17 +313,23 @@ func TestSendStateRefresh_Integration(t *testing.T) {
 
 	master, slave := openPty(t)
 	defer master.Close()
-	defer slave.Close()
+	// Use dup'd FD for bubbletea to avoid data race between Close and
+	// bubbletea's internal handleResize goroutine calling Fd().
+	slaveFd, dupErr := syscall.Dup(int(slave.Fd()))
+	require.NoError(t, dupErr)
+	slaveForBT := os.NewFile(uintptr(slaveFd), slave.Name())
+	slave.Close()
 
 	startErrCh := make(chan error, 1)
 	go func() {
-		startErrCh <- manager.runProgram(model, tea.WithInput(slave), tea.WithOutput(slave))
+		startErrCh <- manager.runProgram(model, tea.WithInput(slaveForBT), tea.WithOutput(slaveForBT))
 	}()
 
 	// wait for start (or immediate failure)
 	select {
 	case err := <-startErrCh:
 		if err != nil {
+			slaveForBT.Close()
 			t.Fatalf("runProgram failed to start: %v", err)
 		}
 	case <-time.After(100 * time.Millisecond):
@@ -309,14 +343,17 @@ func TestSendStateRefresh_Integration(t *testing.T) {
 	case key := <-refreshReceived:
 		assert.Equal(t, "testKey", key)
 	case <-time.After(2 * time.Second):
+		slaveForBT.Close()
 		t.Fatal("Timeout waiting for state refresh")
 	}
 
 	// Wait for program to exit
 	select {
 	case err := <-startErrCh:
+		slaveForBT.Close()
 		require.NoError(t, err)
 	case <-time.After(2 * time.Second):
+		slaveForBT.Close()
 		t.Fatal("program didn't exit")
 	}
 }

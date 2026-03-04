@@ -2,6 +2,7 @@ package command
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -1677,6 +1678,11 @@ func TestSaveTelemetry_Success(t *testing.T) {
 
 func TestSaveTelemetry_MkdirFails(t *testing.T) {
 	t.Parallel()
+
+	if os.Getuid() == 0 {
+		t.Skip("running as root — mkdir /bad/path succeeds, cannot test permission failure")
+	}
+
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	if _, err := evalJS(execMockSetupJS()); err != nil {

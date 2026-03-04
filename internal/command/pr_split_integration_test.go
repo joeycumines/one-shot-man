@@ -671,6 +671,156 @@ func TestIntegration_SendToHandle_TUIPath_FirstSendError(t *testing.T) {
 	}
 }
 
+// TestIntegration_SendToHandle_TUIPath_ObservedSubmissionRetry verifies
+// sendToHandle retries newline submission when terminal output does not
+// change after the first Enter, and succeeds once output change is observed.
+func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionRetry(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	raw, err := evalJS(`
+		(async function() {
+			var calls = [];
+			var screen = 'idle-screen';
+			var newlineCount = 0;
+
+			globalThis.autoSplitTUI = {
+				sendWithCancel: function(handle, text) {
+					calls.push(text);
+					if (text === '\n') {
+						newlineCount++;
+						// First Enter has no visible effect; second Enter causes
+						// observable output change, simulating delayed submit ack.
+						if (newlineCount >= 2) {
+							screen = 'Claude processing request...';
+						}
+					}
+					return { error: null };
+				}
+			};
+			globalThis.tuiMux = {
+				screenshot: function() { return screen; }
+			};
+
+			prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 0;
+			prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS = 5;
+			prSplit.SEND_SUBMIT_ACK_POLL_MS = 1;
+			prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS = 3;
+
+			var result = await globalThis.prSplit.sendToHandle({}, 'classify these files');
+
+			delete globalThis.autoSplitTUI;
+			delete globalThis.tuiMux;
+
+			return JSON.stringify({
+				error: result.error,
+				calls: calls,
+				newlineCount: newlineCount,
+				screen: screen
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("observed submission retry test failed: %v", err)
+	}
+
+	var result struct {
+		Error        *string  `json:"error"`
+		Calls        []string `json:"calls"`
+		NewlineCount int      `json:"newlineCount"`
+		Screen       string   `json:"screen"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("expected success after retry, got error: %s", *result.Error)
+	}
+	if len(result.Calls) != 3 {
+		t.Fatalf("expected text + two newlines (3 sends), got %d: %+v", len(result.Calls), result.Calls)
+	}
+	if result.Calls[0] != "classify these files" {
+		t.Errorf("first call = %q, want prompt text", result.Calls[0])
+	}
+	if result.Calls[1] != "\n" || result.Calls[2] != "\n" {
+		t.Errorf("expected second and third calls to be newline, got: %+v", result.Calls)
+	}
+	if result.NewlineCount != 2 {
+		t.Errorf("newlineCount = %d, want 2", result.NewlineCount)
+	}
+	if !strings.Contains(result.Screen, "processing") {
+		t.Errorf("screen = %q, want observed processing state", result.Screen)
+	}
+}
+
+// TestIntegration_SendToHandle_TUIPath_ObservedSubmissionFailure verifies
+// sendToHandle fails when newline retries never produce an observable
+// terminal output change.
+func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionFailure(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	raw, err := evalJS(`
+		(async function() {
+			var calls = [];
+			var screen = 'idle-screen';
+
+			globalThis.autoSplitTUI = {
+				sendWithCancel: function(handle, text) {
+					calls.push(text);
+					return { error: null };
+				}
+			};
+			globalThis.tuiMux = {
+				screenshot: function() { return screen; }
+			};
+
+			prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 0;
+			prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS = 5;
+			prSplit.SEND_SUBMIT_ACK_POLL_MS = 1;
+			prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS = 2;
+
+			var result = await globalThis.prSplit.sendToHandle({}, 'classify these files');
+
+			delete globalThis.autoSplitTUI;
+			delete globalThis.tuiMux;
+
+			return JSON.stringify({
+				error: result.error,
+				calls: calls
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("observed submission failure test failed: %v", err)
+	}
+
+	var result struct {
+		Error *string  `json:"error"`
+		Calls []string `json:"calls"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if result.Error == nil {
+		t.Fatal("expected unconfirmed submission error")
+	}
+	if !strings.Contains(*result.Error, "prompt submission unconfirmed") {
+		t.Fatalf("error = %q, want unconfirmed submission", *result.Error)
+	}
+	if len(result.Calls) != 3 {
+		t.Fatalf("expected text + two newline attempts (3 sends), got %d: %+v", len(result.Calls), result.Calls)
+	}
+	if result.Calls[0] != "classify these files" {
+		t.Errorf("first call = %q, want prompt text", result.Calls[0])
+	}
+	if result.Calls[1] != "\n" || result.Calls[2] != "\n" {
+		t.Errorf("expected newline attempts, got: %+v", result.Calls)
+	}
+}
+
 // TestIntegration_SpawnArgs_DangerouslySkipPermissions verifies that
 // ClaudeCodeExecutor.spawn prepends --dangerously-skip-permissions for
 // claude-code type providers but NOT for ollama type providers.

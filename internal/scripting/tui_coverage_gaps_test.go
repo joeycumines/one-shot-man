@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dop251/goja"
 	"github.com/joeycumines/go-prompt"
@@ -1706,6 +1707,91 @@ func TestExecuteCommand_JSHandler_Panic(t *testing.T) {
 	err := tm.ExecuteCommand("panic-cmd", nil)
 	if err == nil {
 		t.Fatalf("expected error from panicking handler")
+	}
+}
+
+// TestExecuteCommand_JSAsyncHandlerAwaited ensures ExecuteCommand waits for
+// Promise-returning JS handlers to settle before returning.
+func TestExecuteCommand_JSAsyncHandlerAwaited(t *testing.T) {
+	ctx := context.Background()
+	var buf bytes.Buffer
+	eng := mustNewEngine(t, ctx, &buf, &buf)
+	tm := eng.GetTUIManager()
+
+	script := eng.LoadScriptFromString("setup", `
+		var asyncOrder = [];
+		tui.registerCommand({
+			name: "async-cmd-test",
+			description: "test",
+			handler: async function(args) {
+				asyncOrder.push("start");
+				await new Promise(function(resolve) { setTimeout(resolve, 75); });
+				asyncOrder.push("after-await");
+			}
+		});
+	`)
+	if err := eng.ExecuteScript(script); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	start := time.Now()
+	if err := tm.ExecuteCommand("async-cmd-test", nil); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed < 50*time.Millisecond {
+		t.Fatalf("expected ExecuteCommand to wait for async handler, elapsed=%v", elapsed)
+	}
+
+	var got string
+	evalDone := make(chan error, 1)
+	submitErr := eng.Loop().Submit(func() {
+		val, err := eng.Runtime().RunString("asyncOrder.join(',')")
+		if err != nil {
+			evalDone <- err
+			return
+		}
+		got = val.String()
+		evalDone <- nil
+	})
+	if submitErr != nil {
+		t.Fatalf("submit eval: %v", submitErr)
+	}
+	if err := <-evalDone; err != nil {
+		t.Fatalf("eval asyncOrder: %v", err)
+	}
+	if got != "start,after-await" {
+		t.Fatalf("expected async handler to complete, got %q", got)
+	}
+}
+
+// TestExecuteCommand_JSAsyncHandlerRejected ensures Promise rejections are
+// surfaced as ExecuteCommand errors.
+func TestExecuteCommand_JSAsyncHandlerRejected(t *testing.T) {
+	ctx := context.Background()
+	var buf bytes.Buffer
+	eng := mustNewEngine(t, ctx, &buf, &buf)
+	tm := eng.GetTUIManager()
+
+	script := eng.LoadScriptFromString("setup", `
+		tui.registerCommand({
+			name: "async-reject-cmd",
+			description: "test",
+			handler: async function(args) {
+				await Promise.resolve();
+				throw new Error("async boom");
+			}
+		});
+	`)
+	if err := eng.ExecuteScript(script); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	err := tm.ExecuteCommand("async-reject-cmd", nil)
+	if err == nil {
+		t.Fatalf("expected error from rejected async handler")
+	}
+	if !strings.Contains(err.Error(), "promise rejected") {
+		t.Fatalf("expected promise rejection error, got: %v", err)
 	}
 }
 

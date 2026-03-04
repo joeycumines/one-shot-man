@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -161,6 +162,17 @@ func typeToPrompt(ptmx *os.File, text string) error {
 		time.Sleep(20 * time.Millisecond)
 	}
 	return nil
+}
+
+func readFileForDiag(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Sprintf("<read error: %v>", err)
+	}
+	if len(data) == 0 {
+		return "<empty>"
+	}
+	return string(data)
 }
 
 // ---------------------------------------------------------------------------
@@ -427,6 +439,141 @@ func TestIntegration_AutoSplitClaude_VTermObservation(t *testing.T) {
 		} else {
 			t.Logf("Split branches created:\n%s", branchOutput)
 		}
+	}
+}
+
+// TestIntegration_PrSplit_VTerm_AutoSplitOllamaExactCommand reproduces the
+// exact user-reported invocation path:
+//
+//	osm pr-split --log-file=<temp> --log-level=debug \
+//	  -claude-command=ollama -claude-arg=launch -claude-arg=claude \
+//	  -claude-arg=--model=minimax-m2.5:cloud -claude-arg=--
+//
+// It captures textual terminal screenshots via VTerm and asserts:
+//  1. Auto-split progresses beyond Analyze diff into Spawn Claude.
+//  2. Ctrl+] does not report "No Claude process attached".
+//  3. q / q force-cancel returns to (pr-split) prompt.
+func TestIntegration_PrSplit_VTerm_AutoSplitOllamaExactCommand(t *testing.T) {
+	skipIfNotIntegration(t)
+
+	if runtime.GOOS == "windows" {
+		t.Skip("pty integration is unix-only")
+	}
+	if _, err := exec.LookPath("ollama"); err != nil {
+		t.Skip("ollama not found on PATH")
+	}
+
+	osmBin := buildOSMBinary(t)
+	repoDir := initIntegrationRepo(t)
+	addIntegrationFeatureFiles(t, repoDir)
+
+	logPath := filepath.Join(t.TempDir(), "pr-split-debug.log")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+
+	args := []string{
+		"pr-split",
+		"--log-file=" + logPath,
+		"--log-level=debug",
+		"-claude-command=ollama",
+		"-claude-arg=launch",
+		"-claude-arg=claude",
+		"-claude-arg=--model=minimax-m2.5:cloud",
+		"-claude-arg=--",
+	}
+	cmd := exec.CommandContext(ctx, osmBin, args...)
+	cmd.Dir = repoDir
+	cmd.Env = append(os.Environ(),
+		"TERM=xterm-256color",
+		"HOME="+t.TempDir(),
+		"OSM_CONFIG=",
+	)
+
+	const (
+		termRows = 40
+		termCols = 120
+	)
+
+	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: termRows, Cols: termCols})
+	if err != nil {
+		t.Fatalf("pty.StartWithSize: %v", err)
+	}
+	defer func() {
+		_ = ptmx.Close()
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}()
+
+	obs := newVTermObserver(termRows, termCols)
+	go obs.pumpPTY(ptmx)
+	stopSnap := obs.startSnapshotter(400 * time.Millisecond)
+	defer stopSnap()
+
+	screen, ok := obs.waitFor("pr-split", 30*time.Second)
+	if !ok {
+		t.Fatalf("prompt did not appear.\nVTerm:\n%s\nLog:\n%s", screen, readFileForDiag(logPath))
+	}
+	t.Logf("Screenshot (prompt):\n%s", screen)
+
+	time.Sleep(500 * time.Millisecond)
+	if err := typeToPrompt(ptmx, "auto-split\r"); err != nil {
+		t.Fatalf("failed to send auto-split: %v", err)
+	}
+
+	analyzeScreen, analyzeOK := obs.waitFor("Analyze diff", 45*time.Second)
+	if !analyzeOK && !obs.containsInHistory("Analyze diff") {
+		t.Fatalf("Analyze diff step never appeared.\nVTerm:\n%s\nLog:\n%s", analyzeScreen, readFileForDiag(logPath))
+	}
+	t.Logf("Screenshot (after analyze trigger):\n%s", obs.screen())
+
+	spawnScreen, spawnOK := obs.waitFor("Spawn Claude", 60*time.Second)
+	if !spawnOK && !obs.containsInHistory("Spawn Claude") {
+		t.Fatalf("Spawn Claude step never appeared.\nVTerm:\n%s\nLog:\n%s", spawnScreen, readFileForDiag(logPath))
+	}
+
+	spawnOKScreen, spawnDone := obs.waitFor("Spawn Claude OK", 30*time.Second)
+	if !spawnDone && !obs.containsInHistory("Spawn Claude OK") {
+		t.Fatalf("Spawn Claude never reached OK state.\nVTerm:\n%s\nLog:\n%s", spawnOKScreen, readFileForDiag(logPath))
+	}
+
+	// Toggle to Claude pane once (Ctrl+]) and ensure we don't get the
+	// "No Claude process attached" error spam.
+	_, _ = ptmx.Write([]byte{0x1d})
+	time.Sleep(1200 * time.Millisecond)
+	toggleScreen := obs.screen()
+	t.Logf("Screenshot (after Ctrl+] toggle):\n%s", toggleScreen)
+	if strings.Contains(toggleScreen, "No Claude process attached") || obs.containsInHistory("No Claude process attached") {
+		t.Fatalf("toggle reported no attached Claude process.\nVTerm:\n%s\nLog:\n%s", toggleScreen, readFileForDiag(logPath))
+	}
+	// Toggle back to auto-split TUI before issuing q/q cancel.
+	_, _ = ptmx.Write([]byte{0x1d})
+	if backScreen, ok := obs.waitFor("Auto-Split", 10*time.Second); !ok {
+		t.Fatalf("failed to toggle back from Claude pane.\nVTerm:\n%s\nLog:\n%s", backScreen, readFileForDiag(logPath))
+	}
+
+	// Two-phase cancel (q then q) must always return to prompt.
+	_, _ = ptmx.Write([]byte("q"))
+	if _, ok := obs.waitFor("pr-split", 15*time.Second); !ok {
+		_, _ = ptmx.Write([]byte("q"))
+		if _, ok2 := obs.waitFor("pr-split", 20*time.Second); !ok2 {
+			t.Fatalf("prompt did not return after q/q force-cancel.\nVTerm:\n%s\nLog:\n%s", obs.screen(), readFileForDiag(logPath))
+		}
+	}
+	t.Logf("Screenshot (prompt returned):\n%s", obs.screen())
+
+	// Exit shell mode cleanly.
+	time.Sleep(300 * time.Millisecond)
+	if err := typeToPrompt(ptmx, "exit\r"); err != nil {
+		t.Fatalf("failed to send exit: %v", err)
+	}
+
+	exitCh := make(chan error, 1)
+	go func() { exitCh <- cmd.Wait() }()
+	select {
+	case <-exitCh:
+	case <-time.After(20 * time.Second):
+		t.Fatalf("process did not exit after exit command.\nVTerm:\n%s\nLog:\n%s", obs.screen(), readFileForDiag(logPath))
 	}
 }
 

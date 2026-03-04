@@ -75,28 +75,94 @@
 
     // Delay between text and newline writes to defeat PTY coalescing.
     var SEND_TEXT_NEWLINE_DELAY_MS = 10;
+    // Chunk large prompts into smaller writes so PTY consumers read them
+    // incrementally instead of one giant burst.
+    var SEND_TEXT_CHUNK_BYTES = 4096;
+    // After pressing Enter, require observable terminal output change (when
+    // tuiMux screenshot is available) to confirm prompt submission.
+    var SEND_SUBMIT_ACK_TIMEOUT_MS = 1500;
+    var SEND_SUBMIT_ACK_POLL_MS = 50;
+    var SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS = 3;
 
     // -----------------------------------------------------------------------
     //  sendToHandle — PTY double-write with async delay
     // -----------------------------------------------------------------------
 
-    // sendToHandle writes text to a Claude handle using two separate writes:
-    // first the prompt text, then a newline as a distinct write. This two-write
-    // pattern is required because non-blocking TUI readers treat a single write
-    // containing text+\n as a paste operation rather than a typed-then-submitted
-    // command. Separating the writes ensures the newline is interpreted as an
-    // Enter keypress.
+    function numberOrDefault(value, fallback, minValue) {
+        var n = Number(value);
+        if (!isFinite(n)) return fallback;
+        n = Math.floor(n);
+        if (minValue !== undefined && n < minValue) return fallback;
+        return n;
+    }
+
+    function resolveSendConfig() {
+        return {
+            textNewlineDelayMs: numberOrDefault(prSplit.SEND_TEXT_NEWLINE_DELAY_MS, SEND_TEXT_NEWLINE_DELAY_MS, 0),
+            textChunkBytes: numberOrDefault(prSplit.SEND_TEXT_CHUNK_BYTES, SEND_TEXT_CHUNK_BYTES, 1),
+            submitAckTimeoutMs: numberOrDefault(prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS, SEND_SUBMIT_ACK_TIMEOUT_MS, 1),
+            submitAckPollMs: numberOrDefault(prSplit.SEND_SUBMIT_ACK_POLL_MS, SEND_SUBMIT_ACK_POLL_MS, 1),
+            submitMaxNewlineAttempts: numberOrDefault(prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS, SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS, 1)
+        };
+    }
+
+    function getCancellationError() {
+        if (typeof prSplit._isForceCancelled === 'function' && prSplit._isForceCancelled()) {
+            return 'force cancelled by user';
+        }
+        if (typeof prSplit.isCancelled === 'function' && prSplit.isCancelled()) {
+            return 'cancelled by user';
+        }
+        return null;
+    }
+
+    function safeScreenshot() {
+        if (typeof tuiMux === 'undefined' || !tuiMux || typeof tuiMux.screenshot !== 'function') {
+            return null;
+        }
+        try {
+            var shot = tuiMux.screenshot();
+            if (shot === null || shot === undefined) return '';
+            return String(shot);
+        } catch (e) {
+            log.printf('auto-split sendToHandle: screenshot read failed — %s', e.message || String(e));
+            return null;
+        }
+    }
+
+    async function waitForScreenshotChange(previous, timeoutMs, pollMs) {
+        if (previous === null) {
+            return { observed: false, changed: false, latest: null, error: null };
+        }
+        var startMs = Date.now();
+        while (Date.now() - startMs < timeoutMs) {
+            var cancelErr = getCancellationError();
+            if (cancelErr) {
+                return { observed: true, changed: false, latest: previous, error: cancelErr };
+            }
+            var current = safeScreenshot();
+            if (current !== null && current !== previous) {
+                return { observed: true, changed: true, latest: current, error: null };
+            }
+            await new Promise(function(resolve) { setTimeout(resolve, pollMs); });
+        }
+        return { observed: true, changed: false, latest: previous, error: null };
+    }
+
+    // sendToHandle writes prompt text and submits it with Enter. It uses:
+    //  1) chunked text writes (to reduce giant single-write fragility),
+    //  2) newline as a distinct write (not text+\n in one write),
+    //  3) terminal-output observation via tuiMux.screenshot() to confirm
+    //     Claude reacted to submission, retrying newline if needed.
     //
-    // A 10ms async delay (via setTimeout) is inserted between the text and
-    // newline writes to defeat PTY kernel coalescing. This delay is
-    // event-loop-integrated — it does NOT block the JS event loop.
-    //
-    // Returns Promise<{ error: null }> on success, Promise<{ error: "message" }> on failure.
+    // Returns Promise<{ error: null }> on success,
+    // Promise<{ error: "message" }> on failure.
     async function sendToHandle(handle, text) {
         if (!handle) {
             log.printf('auto-split sendToHandle: handle is null — process may have exited');
             return { error: 'Claude process handle is null — process may have exited' };
         }
+        var config = resolveSendConfig();
         var truncated = text.length > 120 ? text.substring(0, 120) + '...' : text;
         log.printf('auto-split sendToHandle: sending %d chars — %s', text.length, truncated);
 
@@ -138,27 +204,75 @@
             return { error: lastErr };
         }
 
-        // Step 1: Send the text.
-        log.printf('auto-split sendToHandle: sending text (%d chars)', text.length);
-        var textResult = await sendWithRetry(text);
-        if (textResult.error) {
-            log.printf('auto-split sendToHandle: text write FAILED — %s', textResult.error);
-            return textResult;
+        // Step 1: Send text in chunks.
+        var sentChunks = 0;
+        for (var offset = 0; offset < text.length; offset += config.textChunkBytes) {
+            var cancelErr = getCancellationError();
+            if (cancelErr) {
+                return { error: cancelErr };
+            }
+            var chunk = text.substring(offset, offset + config.textChunkBytes);
+            var textResult = await sendWithRetry(chunk);
+            if (textResult.error) {
+                log.printf('auto-split sendToHandle: text write FAILED at chunk %d — %s', sentChunks + 1, textResult.error);
+                return textResult;
+            }
+            sentChunks++;
         }
+        if (text.length === 0) sentChunks = 1;
+        log.printf('auto-split sendToHandle: text written in %d chunk(s)', sentChunks);
 
         // Step 2: Non-blocking delay using event-loop-integrated setTimeout.
-        log.printf('auto-split sendToHandle: waiting %dms (via setTimeout, non-blocking)', SEND_TEXT_NEWLINE_DELAY_MS);
+        log.printf('auto-split sendToHandle: waiting %dms (via setTimeout, non-blocking)', config.textNewlineDelayMs);
         await new Promise(function(resolve) {
-            setTimeout(resolve, SEND_TEXT_NEWLINE_DELAY_MS);
+            setTimeout(resolve, config.textNewlineDelayMs);
         });
 
-        // Step 3: Send the newline.
-        log.printf('auto-split sendToHandle: sending newline');
-        var newlineResult = await sendWithRetry('\n');
-        if (newlineResult.error) {
-            log.printf('auto-split sendToHandle: newline write FAILED (text was sent) — %s', newlineResult.error);
+        // Step 3: Submit with newline, retrying until we observe Claude output
+        // change (when screenshot observation is available).
+        var baselineShot = safeScreenshot();
+        var observedTransport = baselineShot !== null;
+        for (var attempt = 1; attempt <= config.submitMaxNewlineAttempts; attempt++) {
+            var attemptCancelErr = getCancellationError();
+            if (attemptCancelErr) {
+                return { error: attemptCancelErr };
+            }
+            log.printf('auto-split sendToHandle: sending newline attempt %d/%d',
+                attempt, config.submitMaxNewlineAttempts);
+            var newlineResult = await sendWithRetry('\n');
+            if (newlineResult.error) {
+                log.printf('auto-split sendToHandle: newline write FAILED (attempt %d) — %s', attempt, newlineResult.error);
+                return newlineResult;
+            }
+
+            // If no screenshot transport is available, we cannot observe acceptance.
+            // Keep existing behavior: a successful newline write is considered success.
+            if (!observedTransport) {
+                log.printf('auto-split sendToHandle: screenshot transport unavailable; submit acknowledged by successful write only');
+                return { error: null };
+            }
+
+            var watch = await waitForScreenshotChange(
+                baselineShot,
+                config.submitAckTimeoutMs,
+                config.submitAckPollMs
+            );
+            if (watch.error) {
+                return { error: watch.error };
+            }
+            if (watch.changed) {
+                log.printf('auto-split sendToHandle: observed terminal change after newline attempt %d', attempt);
+                return { error: null };
+            }
+
+            log.printf('auto-split sendToHandle: no terminal change observed after newline attempt %d (%dms window)',
+                attempt, config.submitAckTimeoutMs);
+            baselineShot = watch.latest;
         }
-        return newlineResult;
+        return {
+            error: 'prompt submission unconfirmed: no observable Claude terminal response after ' +
+                   config.submitMaxNewlineAttempts + ' newline attempts'
+        };
     }
 
     // -----------------------------------------------------------------------
@@ -169,10 +283,45 @@
     // post-mortem.
     function waitForLogged(toolName, timeoutMs, opts) {
         var mcpCb = prSplit._mcpCallbackObj;
+        if (!mcpCb || typeof mcpCb.waitFor !== 'function') {
+            return { data: null, error: 'MCP callback not initialized' };
+        }
+
+        opts = opts || {};
+        var userAliveCheck = (typeof opts.aliveCheck === 'function') ? opts.aliveCheck : null;
+        var cancelledByUser = false;
+        var forceCancelledByUser = false;
+        var wrappedOpts = {};
+        for (var k in opts) {
+            if (Object.prototype.hasOwnProperty.call(opts, k)) {
+                wrappedOpts[k] = opts[k];
+            }
+        }
+        wrappedOpts.aliveCheck = function() {
+            if (typeof prSplit._isForceCancelled === 'function' && prSplit._isForceCancelled()) {
+                forceCancelledByUser = true;
+                return false;
+            }
+            if (typeof prSplit.isCancelled === 'function' && prSplit.isCancelled()) {
+                cancelledByUser = true;
+                return false;
+            }
+            if (userAliveCheck) {
+                return !!userAliveCheck();
+            }
+            return true;
+        };
+
         log.printf('auto-split waitFor: tool=%s timeout=%dms', toolName, timeoutMs);
         var startMs = Date.now();
-        var result = mcpCb.waitFor(toolName, timeoutMs, opts);
+        var result = mcpCb.waitFor(toolName, timeoutMs, wrappedOpts);
         var elapsedMs = Date.now() - startMs;
+        if (forceCancelledByUser) {
+            return { data: null, error: 'force cancelled by user' };
+        }
+        if (cancelledByUser) {
+            return { data: null, error: 'cancelled by user' };
+        }
         if (result.error) {
             log.printf('auto-split waitFor: tool=%s FAILED after %dms — %s', toolName, elapsedMs, result.error);
         } else {
@@ -1313,6 +1462,10 @@
 
     prSplit.AUTOMATED_DEFAULTS = AUTOMATED_DEFAULTS;
     prSplit.SEND_TEXT_NEWLINE_DELAY_MS = SEND_TEXT_NEWLINE_DELAY_MS;
+    prSplit.SEND_TEXT_CHUNK_BYTES = SEND_TEXT_CHUNK_BYTES;
+    prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS = SEND_SUBMIT_ACK_TIMEOUT_MS;
+    prSplit.SEND_SUBMIT_ACK_POLL_MS = SEND_SUBMIT_ACK_POLL_MS;
+    prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS = SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS;
     prSplit.sendToHandle = sendToHandle;
     prSplit.waitForLogged = waitForLogged;
     prSplit.classificationToGroups = classificationToGroups;

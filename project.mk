@@ -28,13 +28,15 @@ integration-test-prsplit: ## Run pr-split integration tests with real Claude/AI 
 integration-test-prsplit: CLAUDE_COMMAND ?= claude
 integration-test-prsplit: CLAUDE_ARGS ?=
 integration-test-prsplit: INTEGRATION_MODEL ?= gpt-oss:20b-cloud
+integration-test-prsplit: PRSPLIT_TEST_RUN ?= TestIntegration_(.*Claude|AutoSplitComplex|PrSplit_VTerm)
 integration-test-prsplit:
 	$(GO) test -race -v -count=1 -timeout=15m \
+  		-run '$(PRSPLIT_TEST_RUN)' \
+		./internal/command/... \
 		-integration \
 		-claude-command=$(CLAUDE_COMMAND) \
 		$(foreach arg,$(CLAUDE_ARGS),-claude-arg=$(arg)) \
-		-integration-model=$(INTEGRATION_MODEL) \
-		./internal/command/... -run 'TestIntegration_(.*Claude|AutoSplitComplex|PrSplit_VTerm)'
+		-integration-model=$(INTEGRATION_MODEL)
 
 .PHONY: integration-test-prsplit-mcp
 integration-test-prsplit-mcp: ## Run pr-split MCP mock integration tests (no real AI required)

@@ -517,83 +517,135 @@ func (tm *TUIManager) executeCommand(cmd Command, args []string) (execErr error)
 		}
 		return fmt.Errorf("invalid Go command handler for %s", cmd.Name)
 	} else {
-		// Handle JavaScript function; temporarily expose a minimal ctx.
-		//
-		// Ensure we restore the previous context object after execution...
-		parentCtxObj := tm.engine.vm.Get(jsGlobalContextName)
-		defer tm.engine.vm.Set(jsGlobalContextName, parentCtxObj)
-		// ... then set up a new execution context for this command.
-		execCtx := &ExecutionContext{engine: tm.engine, name: "cmd:" + cmd.Name}
-		if err := tm.engine.setExecutionContext(execCtx); err != nil {
-			// Treat as fatal: we cannot safely execute the command without ctx
-			panic(fmt.Sprintf("unrecoverable error setting command execution context: %v", err))
+		if tm.engine == nil || tm.engine.Loop() == nil {
+			return fmt.Errorf("javascript runtime unavailable for %s", cmd.Name)
 		}
 
-		// Convert args to JavaScript array
-		argsJS := tm.engine.vm.NewArray()
-		for i, arg := range args {
-			_ = argsJS.Set(strconv.Itoa(i), arg)
-		}
+		done := make(chan error, 1)
+		submitErr := tm.engine.Loop().Submit(func() {
+			vm := tm.engine.Runtime()
+			if vm == nil {
+				done <- fmt.Errorf("javascript runtime unavailable for %s", cmd.Name)
+				return
+			}
 
-		// Execute the command handler with panic protection, then run defers.
-		// Note: State is accessed via closure from the commands builder function,
-		// so we don't inject it here (removing redundant code).
-		var execErr error
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					execErr = fmt.Errorf("command panicked: %v", r)
-				}
-			}()
+			// Temporarily expose a command-scoped ctx and restore it after completion.
+			parentCtxObj := vm.Get(jsGlobalContextName)
+			defer vm.Set(jsGlobalContextName, parentCtxObj)
+
+			execCtx := &ExecutionContext{engine: tm.engine, name: "cmd:" + cmd.Name}
+			if err := tm.engine.setExecutionContext(execCtx); err != nil {
+				done <- fmt.Errorf("unrecoverable error setting command execution context: %w", err)
+				return
+			}
+
+			// Convert args to JavaScript array.
+			argsJS := vm.NewArray()
+			for i, arg := range args {
+				_ = argsJS.Set(strconv.Itoa(i), arg)
+			}
+
+			var handlerCallable goja.Callable
 			switch handler := cmd.Handler.(type) {
 			case goja.Callable:
-				_, execErr = handler(goja.Undefined(), argsJS)
+				handlerCallable = handler
 			case func(goja.FunctionCall) goja.Value:
-				// Create a function call with the arguments
-				call := goja.FunctionCall{
-					This:      goja.Undefined(),
-					Arguments: []goja.Value{argsJS},
+				handlerCallable = func(this goja.Value, argv ...goja.Value) (goja.Value, error) {
+					call := goja.FunctionCall{This: this, Arguments: argv}
+					return handler(call), nil
 				}
-				handler(call)
 			default:
-				// Try to call it as a general function
-				if tm.engine != nil && tm.engine.vm != nil {
-					val := tm.engine.vm.ToValue(handler)
-					if callable, ok := goja.AssertFunction(val); ok {
-						_, execErr = callable(goja.Undefined(), argsJS)
-						return
+				val := vm.ToValue(handler)
+				if callable, ok := goja.AssertFunction(val); ok {
+					handlerCallable = callable
+				} else {
+					done <- fmt.Errorf("invalid JavaScript command handler for %s: %T", cmd.Name, handler)
+					return
+				}
+			}
+
+			finalized := false
+			finalize := func(execErr error) {
+				if finalized {
+					return
+				}
+				finalized = true
+
+				dErr := func() (err error) {
+					defer func() {
+						if r := recover(); r != nil {
+							err = fmt.Errorf("deferred panic: %v", r)
+						}
+					}()
+					return execCtx.runDeferred()
+				}()
+				if dErr != nil {
+					if execErr != nil {
+						execErr = fmt.Errorf("%w; deferred error: %w", execErr, dErr)
+					} else {
+						execErr = dErr
 					}
 				}
-				execErr = fmt.Errorf("invalid JavaScript command handler for %s: %T", cmd.Name, handler)
-			}
-		}()
 
-		// Always run deferred functions collected by execCtx
-		// runDeferred is expected to recover its deferred panics, but guard
-		// again at this callsite so any unexpected panic is converted into
-		// an error rather than bringing down the whole TUI manager.
-		dErr := func() (err error) {
-			defer func() {
-				if r := recover(); r != nil {
-					err = fmt.Errorf("deferred panic: %v", r)
+				if execErr == nil {
+					tm.captureHistorySnapshot(cmd.Name, args)
 				}
-			}()
-			return execCtx.runDeferred()
-		}()
-		if dErr != nil {
-			if execErr != nil {
-				execErr = fmt.Errorf("%w; deferred error: %w", execErr, dErr)
-			} else {
-				execErr = dErr
+				done <- execErr
 			}
+
+			var (
+				result  goja.Value
+				callErr error
+			)
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						callErr = fmt.Errorf("command panicked: %v", r)
+					}
+				}()
+				result, callErr = handlerCallable(goja.Undefined(), argsJS)
+			}()
+			if callErr != nil {
+				finalize(callErr)
+				return
+			}
+
+			if result == nil || goja.IsUndefined(result) || goja.IsNull(result) {
+				finalize(nil)
+				return
+			}
+			obj := result.ToObject(vm)
+			if obj == nil {
+				finalize(nil)
+				return
+			}
+			thenProp := obj.Get("then")
+			thenFn, ok := goja.AssertFunction(thenProp)
+			if !ok {
+				finalize(nil)
+				return
+			}
+
+			// Promise-like return value: wait for settlement before completing
+			// command execution so async handlers don't stop after the first await.
+			onFulfilled := vm.ToValue(func(call goja.FunctionCall) goja.Value {
+				finalize(nil)
+				return goja.Undefined()
+			})
+			onRejected := vm.ToValue(func(call goja.FunctionCall) goja.Value {
+				reason := call.Argument(0)
+				finalize(fmt.Errorf("promise rejected: %v", reason.Export()))
+				return goja.Undefined()
+			})
+			if _, err := thenFn(result, onFulfilled, onRejected); err != nil {
+				finalize(err)
+			}
+		})
+		if submitErr != nil {
+			return submitErr
 		}
 
-		// Capture history snapshot after successful command execution
-		if execErr == nil {
-			tm.captureHistorySnapshot(cmd.Name, args)
-		}
-
-		return execErr
+		return <-done
 	}
 }
 

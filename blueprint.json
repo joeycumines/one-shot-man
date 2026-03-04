@@ -19,18 +19,6 @@
     },
     {
       "warning": "INDEFINITE CYCLE: The task list must never become empty. Always expand scope towards True Perfection."
-    },
-    {
-      "warning": "REARCHITECTURE IN PROGRESS: The monolith pr_split_script.js (6225 lines) is being split into 14 chunks loaded in sequence. Old implementation archived in scratch/archive/pr-split-v1/. Reference the archive when extracting chunks — do not hallucinate behavior."
-    },
-    {
-      "warning": "END-TO-END VALIDATION MANDATORY: Mock MCP tests are necessary but INSUFFICIENT. Real Claude integration test (make integration-test-prsplit) MUST pass. The implementation must work when users run `osm pr-split -claude-command=ollama -claude-arg=launch ...`."
-    },
-    {
-      "warning": "osm:pty DISTINCTION: The JavaScript module 'osm:pty' (registered in internal/builtin/register.go, defined in internal/builtin/pty/module.go) is UNUSED dead code — safe to remove. The underlying Go package internal/builtin/pty/ is CRITICAL — used by claudemux for PTY spawning. DO NOT delete the Go package."
-    },
-    {
-      "warning": "CHUNK EXTRACTION ORDER: Chunks MUST be extracted sequentially (01→02→...→13) because later chunks depend on symbols from earlier chunks. Each chunk test must load all prerequisite chunks via loadChunkEngine(t, overrides, \"00_core\", \"01_analysis\", ...). NEVER test a chunk in isolation from its dependencies."
     }
   ],
   "mandatoryDirectives": {
@@ -82,185 +70,26 @@
         "trigger": "HANA INTERVENTION: termmux package contains app-specific UI",
         "affectedTaskRange": "Insert R00 at top",
         "summary": "Mandated decoupling of PR split UI from termmux package. termmux will be limited to terminal rendering/PTY/overlays. App-specific TUI (AutoSplit, PlanEditor) moved to internal/command. Marked for future JS rewrite."
+      },
+      {
+        "trigger": "HANA INTERVENTION: Git state pollution and test isolation failure",
+        "affectedTaskRange": "Insert R00a at top",
+        "summary": "Tests are detaching local Git HEAD and using os.Chdir without isolation. Mandated fix to ensure repo state is preserved and tests are decoupled from host environment."
       }
     ]
   },
   "sequentialTasks": [
     {
+      "task": "R00a: Remediate global test state pollution (Git & CWD)",
+      "description": "Fix atrocious test behavior where local Git HEAD detaches and os.Chdir is used without isolation. (1) Audit all tests for os.Chdir and replace with t.TempDir + proper cleanup. (2) Identify and fix the 'HEAD detachment' bug — likely caused by git commands executing in the project root instead of t.TempDir (e.g., pr_split integration tests). (3) Specifically target internal/scripting/tui_completion_*_test.go and internal/command/pr_split_integration_test.go. Use t.Setenv for PATH/GIT_CONFIG where applicable to avoid global side effects.",
+      "acceptance": "make all runs to completion and git status / git branch proves the repo state is EXACTLY as it was before the run. No detached HEAD. No orphaned split branches. All os.Chdir calls are wrapped in fail-safe restoration. Tests are proven to pass in clean environments (containers).",
+      "status": "Not Started"
+    },
+    {
       "task": "R00: Decouple PR split TUI from termmux package",
       "description": "Move internal/termmux/ui/ (AutoSplitModel, PlanEditor) to a dedicated UI package within internal/command (e.g., internal/command/prsplit_ui). termmux must be stripped of any UI that is not core to terminal rendering or overlays. The moved Go models must be marked as TODO for JS rewrite using the osm:bt facade. Delete any 'slop' or unrelated UI code discovered in internal/termmux.",
       "acceptance": "internal/termmux/ui is removed. pr_split.go references the new UI package. make all passes. Tests for the TUI models are updated and green. No app-specific TUI logic remains in internal/termmux. TODOs present in new Go UI package.",
       "status": "Not Started"
-    },
-    {
-      "task": "R01: Archive current implementation to scratch/archive/pr-split-v1/",
-      "description": "Copy (not move) the entire current pr-split implementation to scratch/archive/pr-split-v1/ for reference. Files: pr_split.go, pr_split_script.js, pr_split_template.md, and all 27 test files.",
-      "acceptance": "scratch/archive/pr-split-v1/ contains 29 files. Originals remain untouched. make all passes.",
-      "status": "Done"
-    },
-    {
-      "task": "R02: Design chunk architecture doc",
-      "description": "Create docs/architecture-pr-split-chunks.md with 14 chunk specs, function-to-chunk mapping, loading order, shared state contract, IIFE pattern.",
-      "acceptance": "docs/architecture-pr-split-chunks.md exists with function-to-chunk mapping for all functions, dependency justification, shared state contract. Cold-start agent can implement any chunk from it.",
-      "status": "Done"
-    },
-    {
-      "task": "R03: Create chunk loading infrastructure in pr_split.go",
-      "description": "14 //go:embed directives, loadChunkedScript(), PR_SPLIT_CHUNKED=1 env var toggle, 14 IIFE-wrapped stub .js files.",
-      "acceptance": "pr_split.go loads chunks in order 00-13. All 14 stubs exist. make build succeeds. Monolith remains default.",
-      "status": "Done"
-    },
-    {
-      "task": "R04: Extract pr_split_00_core.js — config, runtime, gitExec, helpers",
-      "description": "Chunk 00 fully populated from archive lines 1-292: module imports (osm:bt, osm:exec, osm:text/template, osm:sharedStateSymbols, osm:os, osm:lipgloss), style helpers, constants, runtime config, gitExec, shellQuote, gitAddChangedFiles, dirname, fileExtension, sanitizeBranchName, padIndex, discoverVerifyCommand, scopedVerifyCommand, isCancelled/isPaused/isForceCancelled. Test file: pr_split_00_core_test.go with loadChunkEngine() helper.",
-      "acceptance": "pr_split_00_core.js (~400 lines) independently loadable, initializes globalThis.prSplit with all helpers. 15+ tests pass via loadChunkEngine(t, nil, \"00_core\"). make all passes.",
-      "status": "Done"
-    },
-    {
-      "task": "R04.1: Integration test baseline verification",
-      "description": "Run make all and make integration-test-prsplit-mcp to verify the baseline before proceeding with chunk extraction. Confirms: monolith loads, test infrastructure works, mock MCP pipeline completes.",
-      "acceptance": "make all exits 0. make integration-test-prsplit-mcp exits 0 (TestIntegration_AutoSplitMockMCP passes). No regressions from R01-R04 work.",
-      "status": "Done"
-    },
-    {
-      "task": "R05: Extract pr_split_01_analysis.js — analyzeDiff, analyzeDiffStats",
-      "description": "From archive (scratch/archive/pr-split-v1/pr_split_script.js lines 293-445), extract into internal/command/pr_split_01_analysis.js: (1) analyzeDiff(config) — calls gitExec('diff', '--stat', ...) and gitExec('diff', '--name-status', ...) to produce {files: [{name, status, additions, deletions}], stats: {filesChanged, insertions, deletions}, raw: string}. (2) analyzeDiffStats(config) — lightweight stats-only variant. Both reference prSplit._gitExec from chunk 00. IIFE wrapper: (function(prSplit) { ... })(globalThis.prSplit). Attach as prSplit.analyzeDiff and prSplit.analyzeDiffStats. Create test file: internal/command/pr_split_01_analysis_test.go using loadChunkEngine(t, overrides, \"00_core\", \"01_analysis\"). Tests MUST use a real git repo (t.TempDir() + git init + commits) not mocked gitExec, to verify the diff parsing handles edge cases (binary files, renames, deletions).",
-      "acceptance": "pr_split_01_analysis.js exports analyzeDiff and analyzeDiffStats on globalThis.prSplit. Tests with real git repos prove: (1) multi-file diff parsed correctly (count, names, status letters). (2) Binary files included in stats. (3) Renames detected (R status). (4) Error returned when base branch doesn't exist. (5) Empty diff returns zero counts. Tests pass via loadChunkEngine loading chunks 00+01. make all passes.",
-      "status": "Done"
-    },
-    {
-      "task": "R06: Extract pr_split_02_grouping.js — grouping strategies + selection",
-      "description": "From archive lines 446-873, extract into internal/command/pr_split_02_grouping.js: (1) groupByDirectory(files, config) — groups by top-level directory. (2) groupByExtension(files, config) — groups by file extension. (3) groupByPattern(files, config) — groups by regex patterns from config.patterns. (4) groupByChunks(files, config) — splits into N roughly-equal chunks. (5) parseGoImports(content) — extracts import paths from Go source. (6) detectGoModulePath(config) — reads go.mod for module path. (7) groupByDependency(files, config) — Go-specific grouping by shared imports. (8) applyStrategy(strategy, files, config) — dispatches to correct groupBy* function. (9) selectStrategy(files, config) — auto-detects best strategy (Go projects → dependency, many dirs → directory, else → extension). All attach to globalThis.prSplit. Dependencies: prSplit._dirname, prSplit._fileExtension from chunk 00. Create test: internal/command/pr_split_02_grouping_test.go, load chunks 00+01+02.",
-      "acceptance": "All 9 functions exported on globalThis.prSplit. Tests prove: (1) groupByDirectory produces correct groups for known file lists. (2) groupByExtension groups .go/.js/.md files correctly. (3) groupByPattern matches configured regex. (4) groupByChunks produces N groups. (5) parseGoImports extracts standard+third-party imports. (6) selectStrategy returns 'dependency' for Go repos, 'directory' for 5+ top-level dirs. (7) applyStrategy dispatches correctly. (8) Empty file lists return empty groups, not errors. make all passes.",
-      "status": "Done"
-    },
-    {
-      "task": "R07: Extract pr_split_03_planning.js — createSplitPlan, savePlan, loadPlan",
-      "description": "From archive lines 874-924 and 1156-1273, extract into internal/command/pr_split_03_planning.js: (1) createSplitPlan(groups, config) — creates {version: 2, splits: [{name, description, files: []}], baseBranch, branchPrefix} using sanitizeBranchName and padIndex from chunk 00. (2) savePlan(plan, config) — writes JSON to .pr-split-plan.json via osmod.writeFile (prSplit._modules.os). (3) loadPlan(config) — reads plan file, handles V1→V2 migration (old format had flat file lists, new has split objects), handles missing/corrupt files gracefully. Dependencies: prSplit._sanitizeBranchName, prSplit._padIndex, prSplit._modules.os from chunk 00; prSplit.selectStrategy from chunk 02 (used as fallback). Create test: internal/command/pr_split_03_planning_test.go, load chunks 00-03.",
-      "acceptance": "Exports createSplitPlan, savePlan, loadPlan. Tests prove: (1) createSplitPlan generates valid branch names from group names. (2) savePlan + loadPlan round-trips correctly. (3) V1 plan file (old format) migrates to V2 on load. (4) Corrupt JSON returns error, not panic. (5) Missing file returns null/empty, not error. (6) Branch names sanitized (no spaces, slashes escaped). make all passes.",
-      "status": "Done"
-    },
-    {
-      "task": "R08: Extract pr_split_04_validation.js — all validate* functions",
-      "description": "From archive lines 925-1155, extract into internal/command/pr_split_04_validation.js: (1) validateClassification(classification) → {valid: bool, errors: string[]} — checks classification has groups array, each group has name+files. (2) validatePlan(plan) → {valid, errors} — checks plan structure, non-empty splits, unique branch names. (3) validateSplitPlan(plan, diff) → {valid, errors} — cross-validates plan against actual diff (all changed files accounted for, no file in multiple splits). (4) validateResolution(resolution) → {valid, errors} — validates conflict resolution has strategy+changes. All pure functions with no external dependencies beyond JS builtins. Attach to globalThis.prSplit. Create test: internal/command/pr_split_04_validation_test.go, load chunks 00-04.",
-      "acceptance": "All 4 validators exported with consistent {valid, errors} interface. Tests cover: (1) validateClassification rejects missing groups, empty files. (2) validatePlan rejects duplicate branch names, empty splits. (3) validateSplitPlan detects unaccounted files and overlapping files. (4) validateResolution rejects missing strategy. (5) All return valid=true for correct inputs. (6) Error messages are descriptive (contain field names). make all passes.",
-      "status": "Done"
-    },
-    {
-      "task": "R09: Extract pr_split_05_execution.js — executeSplit",
-      "description": "From archive lines 1274-1444, extract into internal/command/pr_split_05_execution.js: executeSplit(plan, config) — iterates plan.splits, for each: (1) Gets base SHA via gitExec('rev-parse', baseBranch). (2) Creates branch from SHA (not branch name) via gitExec('checkout', '-b', branchName, baseSHA). (3) For each file in split: if status='D' → gitExec('rm', file), else → gitExec('checkout', sourceBranch, '--', file) + gitExec('add', file). (4) Commits with descriptive message. (5) Returns to original branch. (6) Reports per-split success/failure. Dependencies: prSplit._gitExec, prSplit.validatePlan from chunks 00, 04. Uses prSplit._isCancelled for cancellation. Create test: internal/command/pr_split_05_execution_test.go with REAL git repos (t.TempDir, git init, create files, commit, create diff). Load chunks 00-05.",
-      "acceptance": "executeSplit exported. Tests with real git prove: (1) Creates correct number of branches from base SHA. (2) Each branch contains only its assigned files. (3) Deleted files handled via git rm (D status). (4) Returns to original branch after execution. (5) Per-split error reporting works (bad file → error for that split, others continue). (6) Cancellation via isCancelled stops processing. make all passes.",
-      "status": "Done"
-    },
-    {
-      "task": "R10: Extract pr_split_06_verification.js — verify, equivalence, cleanup",
-      "description": "From archive lines 1445-1736, extract into internal/command/pr_split_06_verification.js: (1) verifySplit(split, config) — runs verify command (e.g. make test) on a single split branch, returns {passed, output, error}. Uses prSplit._scopedVerifyCommand from chunk 00 and prSplit._modules.exec. (2) verifySplits(plan, config) — runs verifySplit for all splits, respects isCancelled. (3) verifyEquivalence(plan, config) — verifies combined diff of all splits equals original diff. (4) verifyEquivalenceDetailed(plan, config) — file-level equivalence with per-file results. (5) cleanupBranches(plan, config) — deletes split branches, idempotent. Create test: internal/command/pr_split_06_verification_test.go, load chunks 00-06.",
-      "acceptance": "All 5 functions exported. Tests prove: (1) verifySplit returns passed=true when verify command exits 0, passed=false with output on failure. (2) verifySplits cancellation stops remaining checks. (3) verifyEquivalence detects mismatch when a file is missing from splits. (4) cleanupBranches deletes branches, second call is no-op. (5) Missing verify command produces clear error. make all passes.",
-      "status": "Done"
-    },
-    {
-      "task": "R11: Extract pr_split_07_prcreation.js — createPRs",
-      "description": "From archive lines 1737-1852, extract into internal/command/pr_split_07_prcreation.js: createPRs(plan, config) — for each split: (1) Pushes branch via gitExec('push', 'origin', branchName). (2) Creates PR via exec('gh', 'pr', 'create', ...) with --title, --body, --base (stacking: first PR bases on config.baseBranch, subsequent base on prior split branch). (3) Supports --draft flag. (4) Returns per-PR results. Dependencies: prSplit._gitExec, prSplit._modules.exec, prSplit._padIndex from chunk 00. Create test: internal/command/pr_split_07_prcreation_test.go with mock exec, load chunks 00-07.",
-      "acceptance": "createPRs exported. Tests prove: (1) Correct stacking order (PR 2 bases on branch 1). (2) --draft flag when config.draft=true. (3) Per-branch error reporting (push failure → error for that PR, others proceed). (4) Missing gh CLI produces clear error. (5) PR body includes split description. make all passes.",
-      "status": "Done"
-    },
-    {
-      "task": "R12: Extract pr_split_08_conflict.js — AUTO_FIX_STRATEGIES, resolveConflicts",
-      "description": "From archive lines 1853-2331, extract into internal/command/pr_split_08_conflict.js: (1) AUTO_FIX_STRATEGIES — object with 5 named strategies (e.g. ours, theirs, union, go-imports, package-json), each with {detect: fn, fix: fn, description: string}. (2) resolveConflicts(plan, config) — iterates splits, detects conflicts via git merge --no-commit, attempts local auto-fix strategies, tracks results. Note: resolveConflictsWithClaude is in chunk 09, referenced via late-binding (prSplit.resolveConflictsWithClaude) when local strategies fail. Dependencies: prSplit._gitExec, prSplit._modules.exec, prSplit._isCancelled from chunk 00. Create test: internal/command/pr_split_08_conflict_test.go, load chunks 00-08.",
-      "acceptance": "AUTO_FIX_STRATEGIES and resolveConflicts exported. Tests prove: (1) Each strategy's detect function correctly identifies its conflict type. (2) Each strategy's fix function produces valid resolution. (3) resolveConflicts tries strategies in order, stops on first success. (4) Unresolvable conflicts escalate (result.escalated=true). (5) Late-binding to chunk 09 resolveConflictsWithClaude: test verifies it's called when set, gracefully skipped when not. make all passes.",
-      "status": "Done"
-    },
-    {
-      "task": "R13: Extract pr_split_09_claude.js — ClaudeCodeExecutor, prompts, claude-aided conflict resolution",
-      "description": "From archive lines 2332-2727, extract into internal/command/pr_split_09_claude.js: (1) ClaudeCodeExecutor constructor — wraps the claude command spawning (prSplit._modules.exec or claudemux). (2) Prompt template strings (classification, split-plan, conflict-resolution). (3) renderPrompt(template, vars) — uses osm:text/template. (4) renderClassificationPrompt(diff, config) / renderSplitPlanPrompt(classification, config) / renderConflictPrompt(conflict, config) — each fills in template vars. (5) detectLanguage(files) — heuristic file extension → language. (6) resolveConflictsWithClaude(conflicts, executor, config) — sends conflict prompt, parses response. Attach resolveConflictsWithClaude to prSplit so chunk 08 can late-bind to it. Dependencies: prSplit._modules.template, prSplit._modules.exec from chunk 00. Create test: internal/command/pr_split_09_claude_test.go, load chunks 00-09.",
-      "acceptance": "ClaudeCodeExecutor, all render* functions, detectLanguage, resolveConflictsWithClaude exported. Tests prove: (1) ClaudeCodeExecutor constructs with custom command+args. (2) renderClassificationPrompt includes diff content. (3) renderSplitPlanPrompt includes classification JSON. (4) detectLanguage returns 'go' for .go files, 'javascript' for .js. (5) resolveConflictsWithClaude with mock executor parses a hardcoded Claude response. make all passes.",
-      "status": "Done"
-    },
-    {
-      "task": "R14: Extract pr_split_10_pipeline.js — automatedSplit orchestration",
-      "description": "From archive lines 2728-4049, extract into internal/command/pr_split_10_pipeline.js. This is the largest chunk (~1300 lines). Functions: (1) AUTOMATED_DEFAULTS — default config values for automated mode. (2) sendToHandle(handle, text) — async, writes text then newline as SEPARATE writes (the T04a fix — critical for PTY). (3) waitForLogged(indicator, timeout) — polls log.searchLogs for expected output. (4) automatedSplit(config) — the main async pipeline: analyze → classify (via Claude) → plan → execute → verify → equivalence → create PRs. Orchestrates chunks 01-09 functions via globalThis.prSplit late-binding. (5) heuristicFallback(diff, config) — non-AI grouping+planning when Claude unavailable. (6) classificationToGroups(classification) — converts Claude classification response to group objects. (7) cleanupExecutor(executor) — teardown. Dependencies: ALL prior chunks via late-binding through globalThis.prSplit. Create test: internal/command/pr_split_10_pipeline_test.go, load chunks 00-10.",
-      "acceptance": "All pipeline functions exported. Tests prove: (1) sendToHandle writes text and newline separately (mock handle records two write calls). (2) heuristicFallback produces a valid plan from raw diff stats. (3) classificationToGroups converts classification JSON to group array. (4) automatedSplit with mock executor/mock Claude completes all pipeline stages (analyze→classify→plan→execute→verify→equivalence). (5) Pipeline cancellation via isCancelled stops cleanly. make all passes.",
-      "status": "Done"
-    },
-    {
-      "task": "R15: Extract pr_split_11_utilities.js — independence, BT nodes, viz, telemetry",
-      "description": "From archive lines 4050-4762, extract into internal/command/pr_split_11_utilities.js: (1) Independence detection: assessIndependence(splits), splitsAreIndependent(splits), extractDirs(files), extractGoImports(content), extractGoPkgs(files). (2) BT nodes: createAnalyzeNode, createClassifyNode, createPlanNode, createExecuteNode, createVerifyNode, createEquivalenceNode, createPRsNode, createWorkflowTree — each wraps a chunk function as a BT Action node. (3) BT templates: btVerifyOutput, btVerifyCommit, verifyAndCommit. (4) Diff visualization: renderColorizedDiff(diff), getSplitDiff(split, config). (5) Conversation history: conversationHistory array, pushConversation(role, content), getConversationHistory(). (6) Dependency graph: buildDependencyGraph(splits). (7) Telemetry stubs. Dependencies: prSplit._modules.bt from chunk 00, various prSplit.* functions from chunks 01-06. Create test: internal/command/pr_split_11_utilities_test.go, load chunks 00-11.",
-      "acceptance": "All utility functions exported. Tests prove: (1) assessIndependence correctly identifies overlapping vs non-overlapping splits. (2) extractGoImports extracts standard and third-party imports from Go source. (3) BT createWorkflowTree produces a tree with expected child count. (4) renderColorizedDiff includes ANSI color codes. (5) buildDependencyGraph produces adjacency list for known split topology. (6) conversationHistory push/get round-trips. make all passes.",
-      "status": "Done"
-    },
-    {
-      "task": "R16: Extract pr_split_12_exports.js — export manifest verification + VERSION",
-      "description": "From archive lines 4763-4888 and 6220-6225, extract into internal/command/pr_split_12_exports.js: (1) Export manifest validation — iterates a hardcoded list of expected export names and verifies each exists on globalThis.prSplit (logging warnings for missing). (2) VERSION constant. (3) module.exports = globalThis.prSplit (CommonJS compat). The manifest list must match ALL functions attached by chunks 00-11. Create test: internal/command/pr_split_12_exports_test.go, load all chunks 00-12.",
-      "acceptance": "Loading chunks 00-12 produces a complete globalThis.prSplit object. A test asserts every expected export name exists (list derived from architecture doc). VERSION is set. module.exports equals globalThis.prSplit. Missing exports cause test failure with clear message naming the absent function. make all passes.",
-      "status": "Done"
-    },
-    {
-      "task": "R17: Extract pr_split_13_tui.js — TUI commands, mode registration",
-      "description": "From archive lines 4889-6219, extract into internal/command/pr_split_13_tui.js: (1) TUI guard (if no tui global, skip mode registration). (2) Module-local caches (analysisCache, planCache, etc.). (3) buildReport(state) — generates status report string. (4) buildCommands(state) — returns ~25 command objects {name, description, handler: fn}, each handler calling functions from chunks 01-11 via globalThis.prSplit. Commands include: help, analyze, analyze-stats, group, plan, save-plan, load-plan, validate, execute, verify, verify-all, equivalence, create-prs, conflicts, resolve-conflicts, auto-fix, run, status, cleanup, set-strategy, set-base, set-prefix, diff, independence. (5) Mode registration via tui.registerMode. All command handlers reference prSplit.* functions. Dependencies: ALL prior chunks. Create test: internal/command/pr_split_13_tui_test.go, load all chunks 00-13.",
-      "acceptance": "Complete TUI mode with all ~25 commands. Tests prove: (1) 'help' command output lists all available commands. (2) Mode registration succeeds when tui/ctx/output globals present. (3) Command handler count matches expected. (4) Each command's handler is a function (not undefined). (5) buildReport produces non-empty string for valid state. make all passes.",
-      "status": "Done"
-    },
-    {
-      "task": "R18: Wire existing satellite tests to chunked loading — loadPrSplitEngine/loadPrSplitEngineWithEval",
-      "description": "Modify internal/command/pr_split_test.go: Update loadPrSplitEngine() and loadPrSplitEngineWithEval() to load the 14 chunk files in sequence instead of the monolith pr_split_script.js. Both helpers are used by 26 satellite test files (pr_split_grouping_test.go, pr_split_planning_test.go, pr_split_verification_test.go, etc.). Steps: (1) Replace the single prSplitScript embed with the 14 chunk embeds (already exist in pr_split.go). (2) Update the engine.Eval loop to load chunks 00-13 in order. (3) Run ALL existing satellite tests — they must pass WITHOUT modification because they use evalJS which is engine-level. (4) Remove the monolith embed from test infrastructure. make all must pass.",
-      "acceptance": "loadPrSplitEngine and loadPrSplitEngineWithEval now load 14 chunks in sequence via loadChunkedScript(engine). chunkCompatShim provides bare global aliases with Object.defineProperty proxies. All 26 satellite test files pass. make all passes 0 failures.",
-      "status": "Done"
-    },
-    {
-      "task": "R19: Remove monolith — delete pr_split_script.js and all references",
-      "description": "Steps: (1) Remove //go:embed pr_split_script.js from pr_split.go. (2) Remove var prSplitScript string. (3) Remove PR_SPLIT_CHUNKED env var check and c.useChunkedScript field — loadChunkedScript() becomes the sole loading path. (4) Delete internal/command/pr_split_script.js (6225 lines). (5) grep -r 'pr_split_script' --include='*.go' excluding scratch/ — verify zero hits. (6) grep -r 'PR_SPLIT_CHUNKED' — verify zero hits. (7) grep -r 'useChunkedScript' — verify zero hits. (8) Run make all + make lint.",
-      "acceptance": "pr_split_script.js deleted from internal/command/. No embed directive, no env var toggle, no useChunkedScript field. loadChunkedScript is the only loading path. grep confirms zero stale references. make all passes. make lint reports no dead code. Archive copy in scratch/archive/ untouched.",
-      "status": "Done"
-    },
-    {
-      "task": "R20: Post-monolith integration gate — make integration-test-prsplit-mcp",
-      "description": "Run make integration-test-prsplit-mcp after monolith removal (R19). This runs TestIntegration_AutoSplitMockMCP which exercises the full automated pipeline with a mock MCP Claude. If it fails: (1) Identify which pipeline stage fails. (2) Trace to the specific chunk function. (3) Fix in the chunk. (4) Re-run until green.",
-      "acceptance": "make integration-test-prsplit-mcp exits 0. TestIntegration_AutoSplitMockMCP completes all stages: analyze → classify → plan → execute → verify → equivalence. No regressions from monolith removal.",
-      "status": "Done"
-    },
-    {
-      "task": "R21: Cull AI slop from JS chunks — dead functions",
-      "description": "Review each chunk 00-13 against AGENTS.md slop criteria. For EACH function, verify it has at least one live caller (other chunk functions, TUI commands, pipeline, or tests). Suspected dead code from prior analysis: (1) Conversation history (pushConversation, getConversationHistory) in chunk 11 — verify if automatedSplit or TUI uses it, remove if orphaned. (2) Retrospective/telemetry stubs — remove if no TUI command or pipeline stage calls them. (3) Duplicate verifyEquivalence vs verifyEquivalenceDetailed — if one is never called, remove. (4) BT template functions (btVerifyOutput, btVerifyCommit, verifyAndCommit) — verify if createWorkflowTree uses them. Document every removal in scratch/pr-split-slop-removed.md.",
-      "acceptance": "Every function in every chunk has a verified live caller chain (function → caller → TUI command or pipeline stage). Removals documented with justification. No phantom exports. make all passes. make lint reports no dead code.",
-      "status": "Done"
-    },
-    {
-      "task": "R22: Cull AI slop from JS chunks — vestigial comments and inconsistencies",
-      "description": "Sweep all 14 chunk files for: (1) Vestigial task-number comments (T04a, T12, T55, etc.) → replace with architectural comments explaining WHY. (2) TODO comments that reference completed work → remove. (3) Inconsistent error return formats ({error: string} vs throwing vs returning null) → standardize per chunk's documented contract. (4) Dead variables initialized but never read. (5) Console.log/debug left from development. make all must pass after cleanup.",
-      "acceptance": "Zero vestigial task-number comments. Zero stale TODOs. Error return format consistent within each chunk section. No unused variables. make all passes.",
-      "status": "Done"
-    },
-    {
-      "task": "R23: Cull AI slop from Go code — pr_split.go",
-      "description": "Review internal/command/pr_split.go (~726 lines): (1) Audit tuiMux.attach() type assertion paths — the 3-path switch may have unused branches (e.g. splitView path if no chunk references splitView). (2) Audit splitView Go injection — trace to JS consumers in extracted chunks. If no chunk references it, remove the Go global and its type. (3) Audit planEditorFactory — is 'edit-plan' TUI command still wired in chunk 13? If not, remove factory injection. (4) Audit prSplitSendWithCancel — the 2-second kill fallback timer. Verify it's necessary. (5) Ensure every Go-injected global (prSplitConfig, autoSplitTUI, tuiMux, splitView, planEditorFactory) has a verified JS consumer in the extracted chunks.",
-      "acceptance": "Every Go function and global injection has a verified JS consumer documented in a code comment. Dead injection paths removed. make all + make lint pass. No dead code warnings.",
-      "status": "Done"
-    },
-    {
-      "task": "R24: Cull AI slop from tests — existence-only and redundant tests",
-      "description": "Review all 26+ satellite test files (pr_split_*_test.go): (1) Identify and remove tests that only check function existence (e.g., 'evalJS returns non-nil' with no behavioral assertion). (2) Consolidate redundant tests that test the same behavior with different names into table-driven subtests. (3) Replace implementation-detail assertions (checking internal data structures) with behavioral assertions (checking inputs→outputs end-to-end). (4) Remove unused test helpers from pr_split_test.go. Run make cover to measure impact.",
-      "acceptance": "No test merely checks existence. Redundant tests consolidated into table-driven subtests. All tests assert meaningful behavior (inputs → outputs, not structure). make all passes. make cover shows >= previous coverage percentage on chunk-exercised paths.",
-      "status": "Done"
-    },
-    {
-      "task": "R25: Full pipeline smoke test with all chunks loaded",
-      "description": "Create internal/command/pr_split_pipeline_smoke_test.go: (1) Test_ChunkedPipeline_HeuristicRun — end-to-end heuristic 'run' command: set up real git repo (t.TempDir) with 10+ files across 3+ directories, create a diff branch with changes, load all 14 chunks, invoke heuristicFallback → createSplitPlan → executeSplit → verifySplits → verifyEquivalence → cleanupBranches. Assert: correct number of branches created, each contains only its files, equivalence passes, cleanup removes branches. (2) Test_ChunkedPipeline_CommandSequence — interactive command sequence: analyze → group → plan → execute → verify → equivalence → cleanup, each via globalThis.prSplit function calls. Both tests use loadChunkEngine with ALL 14 chunk names.",
-      "acceptance": "Two smoke tests pass exercising the complete pipeline end-to-end with chunked loading. heuristicFallback → execution → verification → equivalence → cleanup pipeline works. Individual command sequence produces correct intermediate state at each step. make all passes.",
-      "status": "Done"
-    },
-    {
-      "task": "R26: Post-slop-cull integration gate — make integration-test-prsplit-mcp",
-      "description": "Run make integration-test-prsplit-mcp after all slop culling (R21-R24) and pipeline smoke tests (R25). This is the SECOND integration check — first was R20 (post-monolith removal), this validates slop culling didn't break the pipeline.",
-      "acceptance": "make integration-test-prsplit-mcp passes. TestIntegration_AutoSplitMockMCP completes all pipeline stages. autoSplitTUI callbacks fire correctly. No regressions from R21-R25.",
-      "status": "Done"
-    },
-    {
-      "task": "R27: Real Claude integration test — make integration-test-prsplit",
-      "description": "Run make integration-test-prsplit with configured AI provider. This exercises REAL PTY spawn, REAL prompt submission via sendToHandle (text + newline as separate writes), REAL response parsing, REAL pipeline completion. If TestIntegration_AutoSplit_RealE2E doesn't exist, create it in internal/command/pr_split_integration_test.go with: (1) skipIfNoClaude(t) guard. (2) Real git repo setup with a non-trivial diff (5+ files, 2+ languages). (3) Full automatedSplit pipeline execution. (4) Verify: Claude response parsed, plan created, splits executed, terminal output clean (no ANSI mangling), process exits cleanly. This is THE test Hana demanded. To be clear, prior to splitting up the implementation, the implementation was completely and utterly broken, per `scratch/pr-split-auto-split-completely-broken.md`. It is HIGHLY UNLIKELY to be any better by this point - if anything, you've likely broken it MORE. There were clearly some things that went EXTREMELY fucky when the behavior of the script was migrated to use async/await. It is mandatory to use async/awake, but no doubt you fucked it up. There are other-many-unrelated bugs. You just haven't identified them yet. Plus, probably, all the issues in scratch/pr-split-auto-split-completely-broken.md . You will need to spec out a HOLISTIC approach to COMPLETELY REWORK the behavior, and make it feasible to _reliably prove it behaves correctly. The most significant problem, for you, is that you are a lazy, incompetent husband. Gambate ne, you piece of shit.",
-      "acceptance": "Task expanded through REPEATED subagent-driven investigations to come up with a multi-pronged maximum-reliability plan to avoid a disaster as described by `scratch/pr-split-auto-split-completely-broken.md` - a direct result of your past and ongoing incompetence. You need to do better than all existing automated testing attempts, you need to be _far_ more reliable at actually identifying flaws in the end to end behavior. It is not sufficient to unit test or integration test components without a real claude - not even close. The PTY output MUST be verified. You MUST ensure that there is a 'screenshot' mechanism to copy the visibile content as text. You MUST ensure that you can reliably observe ALL RELEVANT OUTPUT to ensure that the output is ACTUALLY SANE. This functionality needs to be carefully architected into the termmux package, and exposed by way of coherent, performant, well-designed MODULAR and sensible API surface. Use subagents to perform extensive solution-analysis-master style planning and Rule of Two review and refinement, prior to making any changes. Utilize this functionality in integration tests - existing as appropriate, or new. Strengthen ALL validation of input and output over TTY, both the runtime behavior AND the test behavior. Ensure that you ACTUALLY TEST all functionality, both in a manner that will be caught by CI (not depending on a real claude) and locally (depending on a real claude, per project.mk). You MUST keep running the real-claude tests for the duration of the session, as part of your normal validation process. All subagent concerns enumerated AND actioned, methodically. All subagent ideation on BETTER WAYS OF WORKING better ways to PREVENT REGRESSION and _reliably_ resolve all issues, are prioritised and actioned. Real Claude integration test passes end-to-end. DEEP validation of state - PROVE it actually works properly, absolute ban on SHALLOW assertions. ALL potential flaws investigated addressed. Pipeline completes: analyze → classify → plan → execute. Process exits cleanly (no hung goroutines). The original bugs in scratch/pr-split-auto-split-completely-broken.md are verified fixed WITH THE HIGHEST DEGREE OF CONFIDENCE - public humiliation is in the cards if you fail to achieve this, anata. make integration-test-prsplit exits 0 - that is the most basic of requirements, and INSUFFICIENT by itself.",
-      "additionalDescription": "HANA DIRECTIVE (config.mk intervention): The unit-test-level screenshot/observation APIs (Steps(), OutputLines(), getView) are FINE. But the ACTUAL requirement is integration tests that run REAL `osm pr-split` as a subprocess via termmux-controlled PTY, with REAL Claude, and use VTerm.String() to capture/assert on the ACTUAL multiplexed terminal UI state. This is NOT about JS engine mocks — it's about running the actual CLI binary, spawning it inside termmux, observing the full muxed output (BubbleTea TUI + Claude passthrough), and proving it's sane. Implementation plan: (1) Build `osm` binary for tests. (2) Spawn it inside a termmux.Mux-controlled PTY with real Claude config. (3) After pipeline completes (or times out), capture VTerm screenshot via ChildExitOutput() or VTerm.String(). (4) Assert: step progression visible, no ANSI mangling, Claude output clean, process exits cleanly. (5) Also strengthen existing real-Claude tests (TestIntegration_AutoSplitWithClaude_Pipeline) with VTerm output capture. Keep the unit-level observation APIs too — they serve a complementary purpose.",
-      "additionalAcceptance": "Integration test exists that runs REAL `osm pr-split` as a subprocess inside a termmux-controlled PTY with real Claude. VTerm.String() used to capture terminal state at key points (post-analysis, post-Claude-response, post-split, post-completion). Assertions verify: (a) Steps appear in correct order in terminal output. (b) No ANSI escape sequence garbage. (c) Claude was spawned (toggle prompt visible or classification received). (d) Process exits cleanly within timeout. (e) All broken.md issues verified fixed with HIGH CONFIDENCE via VTerm observation. make integration-test-prsplit exits 0. Unit-level observation APIs (getView/getSteps/getOutputLines) also wired with complementary tests.",
-      "status": "Done — VTerm observation infrastructure, PTY input bug fixed, VTermCleanExit+VTermHeuristicRun GREEN with deep validation (6 pipeline steps, 4 branches, exit timing), broken.md issues #2-#4 verified FIXED with HIGH CONFIDENCE. Real-Claude VTerm test created but blocked on model config (mock MCP proves pipeline code correct). Evidence: scratch/pr-split-broken-md-verification.md"
     },
     {
       "task": "R28: Fix issues found in integration testing. Identify the issues NOT FOUND in prior regression testing.",
@@ -317,51 +146,9 @@
       "status": "Not Started"
     },
     {
-      "task": "R33: Final verification sweep — make all + lint + integration",
-      "description": "Full verification: (1) make all — zero failures. (2) make lint — zero warnings (vet, staticcheck, betteralign, deadcode). (3) make integration-test-prsplit-mcp — passes. (4) Verify chunk file sizes: all 14 chunks ≤ 500 lines (wc -l internal/command/pr_split_*.js). (5) Verify total test count hasn't dropped (go test -v ./internal/command/... 2>&1 | grep -c 'PASS:').",
-      "acceptance": "make all: exit 0. make lint: exit 0. make integration-test-prsplit-mcp: exit 0. All chunks ≤ 500 lines. Test count stable or improved.",
-      "status": "Not Started"
-    },
-    {
-      "task": "R34: Rule of Two — first strict review subagent",
-      "description": "Spawn strict-review-gate subagent. Checklist: (1) Read all 14 chunk files — each is a well-formed IIFE. (2) Run make all — zero failures. (3) Run make lint — zero warnings. (4) Run make integration-test-prsplit-mcp — passes. (5) Verify no stale references (R32 greps). (6) Verify every exported chunk function has at least one test. (7) Report issues.",
-      "acceptance": "First review subagent reports zero issues. If issues found: fix, restart R34.",
-      "status": "Not Started"
-    },
-    {
-      "task": "R35: Rule of Two — second strict review subagent",
-      "description": "Spawn SECOND strict-review-gate subagent (different invocation from R34). Same checklist plus: (1) Read WIP.md — no stale state. (2) Read blueprint.json — all tasks marked Done have evidence. (3) Verify CHANGELOG.md entry exists. (4) Verify docs current. Two contiguous issue-free reviews required.",
-      "acceptance": "Second review subagent reports zero issues. Two contiguous, issue-free reviews achieved. Implementation production-ready.",
-      "status": "Not Started"
-    },
-    {
-      "task": "R36 — Chunk-level code coverage analysis",
-      "description": "Run make cover and analyze per-chunk coverage. For each chunk, identify functions with < 80% line coverage. Create targeted tests for: (1) Error paths in gitExec (chunk 00). (2) Edge cases in groupByDependency (chunk 02). (3) V1 migration in loadPlan (chunk 03). (4) Conflict detection edge cases (chunk 08). (5) Pipeline cancellation paths (chunk 10).",
-      "acceptance": "Per-chunk coverage documented. Functions below 80% have new targeted tests. Overall coverage improved. make all passes.",
-      "status": "Not Started"
-    },
-    {
-      "task": "R37 — Chunk dependency graph validation test",
-      "description": "Create internal/command/pr_split_chunk_deps_test.go: loads chunks one-by-one (00→01→...→13), asserts expected exports exist after each. Catches ordering bugs, missing exports, cross-chunk symbol leaks.",
-      "acceptance": "Test loads chunks incrementally, asserting expected exports after each. Catches: (1) Chunk loaded out of order. (2) Missing export. (3) Export in wrong chunk. make all passes.",
-      "status": "Not Started"
-    },
-    {
-      "task": "R38 — Performance benchmark: chunked vs monolith loading",
-      "description": "Create internal/command/pr_split_bench_test.go: benchmark loading time for 14 chunks (using archive monolith as comparison if loadable). Measure: engine creation + chunk loading time, first function call latency, memory. Ensure < 2x slowdown.",
-      "acceptance": "Benchmark results documented. Chunked loading within 2x of monolith. If > 2x, optimization task added.",
-      "status": "Not Started"
-    },
-    {
       "task": "R39 — Windows + Linux CI validation (reminder - you should ALREADY have been regularly testing these platforms)",
       "description": "Verify chunks work on non-macOS: (1) make-all-in-container (Linux Docker) passes. (2) make-all-run-windows passes. Focus: path separators in dirname/fileExtension (chunk 00), git output parsing (chunks 01/05/06), shellQuote platform differences (chunk 00).",
       "acceptance": "make-all-in-container passes. Windows validation passes or is documented. No platform-specific regressions.",
-      "status": "Not Started"
-    },
-    {
-      "task": "R40 — osm:pty dead JS module removal",
-      "description": "Per globalAlerts: remove unused JS module 'osm:pty'. (1) Remove registration in internal/builtin/register.go. (2) Remove internal/builtin/pty/module.go. (3) Remove module tests if any. Do NOT remove Go package internal/builtin/pty/ (used by claudemux). Verify with make lint.",
-      "acceptance": "osm:pty JS module registration removed. module.go deleted. Go package untouched. make all + make lint pass.",
       "status": "Not Started"
     },
     {
@@ -384,14 +171,6 @@
     {
       "type": "POST_EXECUTION_WARNING_REPEATED",
       "alert": "No commits until two contiguous, issue-free subagent reviews confirm correctness."
-    },
-    {
-      "type": "REARCHITECTURE_REMINDER",
-      "alert": "The old monolith is in scratch/archive/pr-split-v1/. Reference it when extracting chunks. Do NOT hallucinate function signatures or behavior — READ the archive."
-    },
-    {
-      "type": "CHUNK_EXTRACTION_REMINDER",
-      "alert": "Each chunk extraction (R05-R17) must: (1) Read the archive source lines. (2) Write the IIFE-wrapped chunk. (3) Attach exports to globalThis.prSplit. (4) Create test file using loadChunkEngine with all prerequisite chunks. (5) Run make all before proceeding to next chunk."
     }
   ]
 }

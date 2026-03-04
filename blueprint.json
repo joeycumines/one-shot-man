@@ -164,50 +164,56 @@
     },
     {
       "task": "W00: Termmux JavaScript Facade (Builtin)",
-      "description": "Expose `internal/termmux` functionality to JavaScript so that UI components like those using `osm:bt` can be wired up with termmux directly. This facade MUST be placed in an independent `internal/builtin/termmux` package (or similar), alongside other goja bindings. The `internal/termmux` package MUST NOT contain goja bindings and MUST remain completely independent. Signal handling (e.g., resizing) and panel swapping must be orchestratable from JavaScript.",
-      "acceptance": "A JavaScript facade for termmux is implemented in `internal/builtin/termmux` (or similar). JavaScript code can orchestrate termmux behavior without polluting the core termmux module with goja bindings. The dependency graph places the facade cleanly between JS execution and termmux.",
+      "description": "Expose `internal/termmux` functionality to JavaScript so that UI components like those using `osm:bt` can be wired up with termmux directly. This facade MUST be placed in an independent `internal/builtin/termmux` package (or similar). It MUST ONLY expose the pure termmux abstractions (panes, swapping, resizing). The core `internal/termmux` package MUST NOT contain any goja bindings—these bindings must live entirely within `internal/builtin/termmux`. This ensures termmux remains transportable/independent. Note: You must evaluate signal handling and `try-lock` behavior. If the current termmux detachment behavior is flawed, refactor it here.",
+      "acceptance": "A JavaScript facade for termmux is implemented in `internal/builtin/termmux`. JavaScript code can orchestrate termmux behavior without polluting the core termmux module with goja bindings. All termmux bindings are localized to `internal/builtin/termmux`.",
       "status": "Not Started"
     },
     {
       "task": "W01: Wizard UI Phase 1 - State Machine Design & Types",
-      "description": "Design the state machine for the new guided wizard UI flow for the PR auto-split functionality in `internal/command/pr_split_13_tui.js`. MUST BE IMPLEMENTED ENTIRELY IN JAVASCRIPT, including the usage of the existing `osm:bt` (BubbleTea) and `osm:bubbles` facades. Introduce structures to track distinct, resettable states: (1) Config Validating, (2) Plan Generation, (3) Plan Review, (4) Branch Building & Verifying, (5) Interactive Error Resolution, (6) Finalization. Define the pause/resume boundaries necessary allowing user interaction mid-pipeline (e.g. `AutoSplitPauseMsg`). Update `docs/architecture-pr-split-chunks.md` to document the new wizard phases.",
-      "acceptance": "JavaScript structures and state definitions for Wizard phases are implemented in the JS chunk. The `osm:bt` and `osm:bubbles` facades are correctly utilized. Architectural documentation reflects the guided wizard model, specifically detailing how retries and error-overrides function.",
+      "description": "Design the state machine for the new guided wizard UI flow for the PR auto-split functionality in `internal/command/pr_split_13_tui.js`. MUST BE IMPLEMENTED ENTIRELY IN JAVASCRIPT, including the usage of the existing `osm:bt` (BubbleTea), `osm:bubbles`, and `osm:bubblezone` facades. Introduce structures to track distinct, resettable states: (1) Config Validating, (2) Plan Generation, (3) Plan Review, (4) Branch Building & Verifying, (5) Interactive Error Resolution, (6) Finalization. Define the pause/resume boundaries necessary allowing user interaction mid-pipeline (e.g. `AutoSplitPauseMsg`). Update `docs/architecture-pr-split-chunks.md` to document the new wizard phases.",
+      "acceptance": "JavaScript structures and state definitions for Wizard phases are implemented in the JS chunk. The `osm:bt`, `osm:bubbles`, and `osm:bubblezone` facades are correctly utilized. Architectural documentation reflects the guided wizard model.",
       "status": "Not Started"
     },
     {
       "task": "W02: Wizard UI Phase 2 - Interactive Configuration & Baseline Validation",
-      "description": "Implement the configuration stage in the wizard UI flow. Before generating any splits, run the verification command on the baseline branch interactively. If it fails, pause the process. Present an intuitive UI screen (built with JS and formatting facades like `osm:lipgloss`) clearly detailing that the verification mechanism is incorrectly configured or the baseline is broken. Allow the user to manually override the verification command on the spot, or abort, without fully restarting the `osm` pipeline.",
-      "acceptance": "If the baseline verification command fails, the user is presented with a clear menu of options rendered via JS. The user can override the command, the JS wizard re-evaluates the baseline, and only proceeds to generation once baseline passes.",
+      "description": "Implement the configuration stage in the wizard UI flow. Before generating any splits, run the verification command on the baseline branch interactively. If it fails, pause the process. Present an intuitive UI screen (built with JS and formatting facades like `osm:lipgloss`) clearly detailing that the verification mechanism is incorrectly configured or the baseline is broken. Allow the user to manually override the verification command on the spot, or abort.",
+      "acceptance": "If the baseline verification command fails, the user is presented with a clear menu of options rendered via JS. The JS wizard re-evaluates the baseline upon override, proceeding only on success.",
       "status": "Not Started"
     },
     {
       "task": "W03: Wizard UI Phase 3 - Interactive Plan Review Editor",
-      "description": "Port the `PlanEditor` to JS (replacing `internal/termmux/ui/planeditor.go`) and wire the plan generation output into it. Use `osm:bt` and `osm:bubbles` to construct the editor view. After Claude generates the split assignment plan, automatically detect schema invalidity or glaring omissions. Regardless of validity, pause execution and render the generated plan interactively. Allow the user to intuitively request Claude to retry generation with specific text feedback (e.g. \"Group X and Y together better\"), or manually override file assignments and commit messages. Make it brainless.",
-      "acceptance": "The user is forced to review the generated split plan in a pure-JS TUI screen. The UI supports an 'Auto-Retry with Feedback' action that prompts Claude again, and manual overrides that directly mutate the plan payload before moving to branch creation.",
+      "description": "Port the `PlanEditor` to JS (replacing `internal/termmux/ui/planeditor.go`) and wire the plan generation output into it. Use `osm:bt`, `osm:bubbles`, and `osm:bubblezone` to construct the editor view. After Claude generates the split assignment plan, automatically detect schema invalidity or glaring omissions. Regardless of validity, pause execution and render the generated plan interactively. Allow the user to intuitively request Claude to retry generation with specific text feedback, or manually override file assignments and commit messages.",
+      "acceptance": "The user is forced to review the generated split plan in a pure-JS TUI screen. The UI supports an 'Auto-Retry with Feedback' action and manual overrides that directly mutate the plan payload.",
       "status": "Not Started"
     },
     {
       "task": "W04: Wizard UI Phase 4 - Granular Branch Check Pipeline",
-      "description": "Refactor branch generation to evaluate sequentially or concurrently but with strict isolation, managed by JS chunks. For every branch chunk formed from the plan, create the branch from baseline, apply the patch, and execute the verification mechanism to ensure it compiles and passes all checks. Report the distinct pass/fail status to the JS UI components.",
+      "description": "Refactor branch generation to evaluate sequentially or concurrently but with strict isolation, managed by JS chunks. For every branch chunk formed from the plan, create the branch from baseline, apply the patch, and execute the verification mechanism. Report the distinct pass/fail status to the JS UI components.",
       "acceptance": "Branches are individually evaluated via JS orchestration. Output clearly denotes which branches pass validation and which contain compilation or logic errors on the JS UI. The process does not prematurely crash if one branch fails its check.",
       "status": "Not Started"
     },
     {
       "task": "W05: Wizard UI Phase 5 - Interactive Error Resolution Engine",
-      "description": "Implement the error resolution wizard screen for branches that fail verification, written in JS. When a branch compiling/testing fails, halt its progression and display an intuitive diff/error log over the JS TUI. Present a menu of intuitive options: [1] Auto-Resolve (send the exact test/compiler error to Claude to generate an in-place patch), [2] Manual Fix (drop to shell or await file-system changes), [3] Abort. This must empower the user to confidently unblock the split pipeline.",
+      "description": "Implement the error resolution wizard screen for branches that fail verification, written in JS. When a branch compiling/testing fails, halt its progression and display an intuitive diff/error log over the JS TUI. Present a menu of intuitive options: [1] Auto-Resolve (send the exact test/compiler error to Claude to generate an in-place patch), [2] Manual Fix (drop to shell or await file-system changes), [3] Abort.",
       "acceptance": "When a split branch evaluation fails, the JS UI pauses and offers 'Auto-Resolve'. If chosen, Claude is passed the error block and branch context, proposing a patch. The patch applies and the JS wizard retries evaluating the branch automatically.",
       "status": "Not Started"
     },
     {
       "task": "W06: Wizard UI Phase 6 - End-to-End Orchestration & Summary",
       "description": "Finalize the overall JS orchestration loop and output handling. Once all branches successfully pass verification in `internal/command/pr_split_00_core.js` and subsequent chunks, summarize the outcome via the JS UI. Terminate cleanly, ensuring a validated set of branches—with proper commit messages—is present and logical. Complete any decoupling tasks (like R00) missed previously during wiring, specifically ensuring the old Go UI code is deleted in favoure of the javascript rewrite.",
-      "acceptance": "Running `osm pr-split` seamlessly navigates from baseline check -> plan review -> branch evaluation -> error correction -> finish, resulting in purely validated branch outputs. The flow is driven entirely by JS. Old Go TUI logic (like `internal/termmux/ui`) is successfully removed. All final commits have the correct messages.",
+      "acceptance": "Running `osm pr-split` seamlessly navigates from baseline check -> plan review -> branch evaluation -> error correction -> finish, resulting in purely validated branch outputs. The flow is driven entirely by JS. Old Go TUI logic (like `internal/termmux/ui`) is successfully removed.",
       "status": "Not Started"
     },
     {
       "task": "W07: Wizard E2E Integration Testing",
       "description": "Introduce end-to-end integration tests mimicking standard and hostile wizard UI flows. Create instances of `TestIntegration_WizardBaselineRetry`, `TestIntegration_WizardPlanFeedback`, and `TestIntegration_WizardAutoResolve`. Test the new JS implementation against these mocked flows.",
       "acceptance": "At least 3 complete simulation tests (happy path + 2 error-correction paths) exist and pass reliably on `make all`. All mock behavior accurately reflects reality and proves the JS implementation is robust.",
+      "status": "Not Started"
+    },
+    {
+      "task": "W08: Review and Verify API Tidy & Breaking Changes",
+      "description": "As part of exposing the APIs to JS, take the opportunity to assess ALL internal APIs (like `termmux`). Review for rough edges, breaking changes (ensure breaking changes ARE made if they increase quality), and ensure the architecture is solid. Specifically check Mac OS integration and Windows integration for signals. All changes must be extremely robust. Note: This sits at the end of the W-series to signify a final holistic review across all the Wizard changes.",
+      "acceptance": "All internal APIs and their bindings are clean. Integration tests prove stability across Mac OS and Windows. Breaking internal changes are embraced if they result in higher quality code.",
       "status": "Not Started"
     }
   ],

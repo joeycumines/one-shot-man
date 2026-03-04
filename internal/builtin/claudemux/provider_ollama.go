@@ -3,7 +3,7 @@ package claudemux
 import (
 	"context"
 
-	"github.com/joeycumines/one-shot-man/internal/builtin/pty"
+	"github.com/joeycumines/one-shot-man/internal/termmux/pty"
 )
 
 // OllamaProvider launches Claude Code via `ollama launch claude`.

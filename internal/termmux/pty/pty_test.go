@@ -3,10 +3,12 @@ package pty
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -706,6 +708,77 @@ func TestProcess_CloseWhileWriteBlocked(t *testing.T) {
 		t.Logf("Write completed after Close, err=%v", err)
 	case <-time.After(5 * time.Second):
 		t.Fatal("Write goroutine did not unblock after Close")
+	}
+}
+
+type stuckHandle struct {
+	mu      sync.Mutex
+	signals []os.Signal
+}
+
+func (h *stuckHandle) Wait() error { select {} }
+
+func (h *stuckHandle) Signal(sig os.Signal) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.signals = append(h.signals, sig)
+	return nil
+}
+
+func (h *stuckHandle) Pid() int { return 12345 }
+
+func (h *stuckHandle) SignalCount(sig os.Signal) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	count := 0
+	for _, s := range h.signals {
+		if s == sig {
+			count++
+		}
+	}
+	return count
+}
+
+// TestProcess_Close_ForceKillWaitTimeout verifies Close does not block forever
+// when the process never reports exit after SIGKILL.
+func TestProcess_Close_ForceKillWaitTimeout(t *testing.T) {
+	t.Parallel()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+
+	handle := &stuckHandle{}
+	proc := &Process{
+		ptyFile:  r,
+		ttyFile:  w,
+		done:     make(chan struct{}), // never closed => process appears alive forever
+		exitCode: -1,
+		cmd:      handle,
+	}
+
+	start := time.Now()
+	closeErr := proc.Close()
+	elapsed := time.Since(start)
+
+	// Leave wider slack for busy CI runners; this test validates bounded
+	// shutdown semantics, not tight wall-clock precision.
+	maxExpected := closeGracefulWait + closeForceWait + 5*time.Second
+	if elapsed > maxExpected {
+		t.Fatalf("Close took too long: %v (max expected ~%v)", elapsed, maxExpected)
+	}
+	if closeErr == nil {
+		t.Fatal("expected timeout error when process never exits after SIGKILL")
+	}
+	if !strings.Contains(closeErr.Error(), "force-kill wait timed out") {
+		t.Fatalf("unexpected error: %v", closeErr)
+	}
+	if handle.SignalCount(syscall.SIGTERM) != 1 {
+		t.Fatalf("expected exactly one SIGTERM, got %d", handle.SignalCount(syscall.SIGTERM))
+	}
+	if handle.SignalCount(syscall.SIGKILL) != 1 {
+		t.Fatalf("expected exactly one SIGKILL, got %d", handle.SignalCount(syscall.SIGKILL))
 	}
 }
 

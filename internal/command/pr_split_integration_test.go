@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/builtin/mcpcallbackmod"
-	"github.com/joeycumines/one-shot-man/internal/builtin/pty"
+	"github.com/joeycumines/one-shot-man/internal/termmux/pty"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -464,8 +464,8 @@ func TestIntegration_AutoSplitCancel(t *testing.T) {
 
 // TestIntegration_SendToHandle_FallbackDirect verifies that sendToHandle
 // falls back to direct handle.send() when no autoSplitTUI is present.
-// Two-write: text first, then newline as a separate write so that
-// non-blocking TUI readers interpret the newline as Enter (not paste).
+// Two-write: text first, then Enter (\r) as a separate write so that
+// non-blocking TUI readers interpret it as submission.
 func TestIntegration_SendToHandle_FallbackDirect(t *testing.T) {
 	t.Parallel()
 
@@ -474,7 +474,7 @@ func TestIntegration_SendToHandle_FallbackDirect(t *testing.T) {
 	// Ensure autoSplitTUI is not defined (default engine state).
 	raw, err := evalJS(`
 		(async function() {
-			// sendToHandle uses two-write: text, then \n separately.
+			// sendToHandle uses two-write: text, then \r separately.
 			var sends = [];
 			var mockHandle = {
 				send: function(text) { sends.push(text); }
@@ -497,27 +497,27 @@ func TestIntegration_SendToHandle_FallbackDirect(t *testing.T) {
 	if result.Error != nil {
 		t.Errorf("sendToHandle returned error: %s", *result.Error)
 	}
-	// Two-write: text first, then \n.
+	// Two-write: text first, then \r.
 	if len(result.Sends) != 2 {
 		t.Fatalf("expected 2 sends (two-write), got %d: %q", len(result.Sends), result.Sends)
 	}
 	if result.Sends[0] != "hello Claude" {
 		t.Errorf("sends[0] = %q, want %q", result.Sends[0], "hello Claude")
 	}
-	if result.Sends[1] != "\n" {
-		t.Errorf("sends[1] = %q, want %q", result.Sends[1], "\n")
+	if result.Sends[1] != "\r" {
+		t.Errorf("sends[1] = %q, want %q", result.Sends[1], "\r")
 	}
 }
 
 // TestIntegration_SendToHandle_FallbackError verifies that sendToHandle
 // returns an error object (not throws) when the first write (text) fails.
-// The second write (newline) should not be attempted.
+// The second write (Enter) should not be attempted.
 func TestIntegration_SendToHandle_FallbackError(t *testing.T) {
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	// Two-write: error on first write (text) returns immediately, no newline attempt.
+	// Two-write: error on first write (text) returns immediately, no Enter attempt.
 	raw, err := evalJS(`
 		(async function() {
 			var sendCount = 0;
@@ -549,13 +549,13 @@ func TestIntegration_SendToHandle_FallbackError(t *testing.T) {
 		t.Errorf("error = %q, want to contain 'PTY write failed'", *result.Error)
 	}
 	if result.SendCount != 1 {
-		t.Errorf("sendCount = %d, want 1 (first write fails, newline not attempted)", result.SendCount)
+		t.Errorf("sendCount = %d, want 1 (first write fails, Enter not attempted)", result.SendCount)
 	}
 }
 
 // TestIntegration_SendToHandle_TUIPath verifies the sendToHandle code path
 // that uses autoSplitTUI.sendWithCancel (when autoSplitTUI is defined with
-// that method). Two-write: sends text via sendWithCancel, then \n separately.
+// that method). Two-write: sends text via sendWithCancel, then \r separately.
 func TestIntegration_SendToHandle_TUIPath(t *testing.T) {
 	t.Parallel()
 
@@ -602,15 +602,15 @@ func TestIntegration_SendToHandle_TUIPath(t *testing.T) {
 	if result.Error != nil {
 		t.Errorf("expected no error, got: %s", *result.Error)
 	}
-	// Two-write: text first, then \n in separate sendWithCancel calls.
+	// Two-write: text first, then \r in separate sendWithCancel calls.
 	if len(result.Calls) != 2 {
 		t.Fatalf("expected 2 sendWithCancel calls (two-write), got %d: %+v", len(result.Calls), result.Calls)
 	}
 	if result.Calls[0].Text != "classify these files" {
 		t.Errorf("call[0] text = %q, want %q", result.Calls[0].Text, "classify these files")
 	}
-	if result.Calls[1].Text != "\n" {
-		t.Errorf("call[1] text = %q, want %q", result.Calls[1].Text, "\n")
+	if result.Calls[1].Text != "\r" {
+		t.Errorf("call[1] text = %q, want %q", result.Calls[1].Text, "\r")
 	}
 	// Should NOT have used direct send.
 	for _, c := range result.Calls {
@@ -667,13 +667,13 @@ func TestIntegration_SendToHandle_TUIPath_FirstSendError(t *testing.T) {
 		t.Errorf("error = %q, want to contain 'cancelled'", *result.Error)
 	}
 	if result.CallCount != 1 {
-		t.Errorf("callCount = %d, want 1 (first write fails, newline not attempted)", result.CallCount)
+		t.Errorf("callCount = %d, want 1 (first write fails, Enter not attempted)", result.CallCount)
 	}
 }
 
 // TestIntegration_SendToHandle_TUIPath_ObservedSubmissionRetry verifies
-// sendToHandle retries newline submission when terminal output does not
-// change after the first Enter, and succeeds once output change is observed.
+// sendToHandle retries Enter submission when terminal output does not change
+// after the first Enter, and succeeds once output change is observed.
 func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionRetry(t *testing.T) {
 	t.Parallel()
 
@@ -682,18 +682,18 @@ func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionRetry(t *testing.T) 
 	raw, err := evalJS(`
 		(async function() {
 			var calls = [];
-			var screen = 'Claude shell\\n❯ classify these files';
-			var newlineCount = 0;
+			var screen = 'Claude shell\n❯ classify these files';
+			var enterCount = 0;
 
 			globalThis.autoSplitTUI = {
 				sendWithCancel: function(handle, text) {
 					calls.push(text);
-					if (text === '\n') {
-						newlineCount++;
+					if (text === '\r') {
+						enterCount++;
 						// First Enter has no visible effect; second Enter causes
 						// observable output change, simulating delayed submit ack.
-						if (newlineCount >= 2) {
-							screen = 'Claude processing request...\\n❯ ';
+						if (enterCount >= 2) {
+							screen = 'Claude processing request...\n❯ ';
 						}
 					}
 					return { error: null };
@@ -720,7 +720,7 @@ func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionRetry(t *testing.T) 
 			return JSON.stringify({
 				error: result.error,
 				calls: calls,
-				newlineCount: newlineCount,
+				enterCount: enterCount,
 				screen: screen
 			});
 		})()
@@ -730,10 +730,10 @@ func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionRetry(t *testing.T) 
 	}
 
 	var result struct {
-		Error        *string  `json:"error"`
-		Calls        []string `json:"calls"`
-		NewlineCount int      `json:"newlineCount"`
-		Screen       string   `json:"screen"`
+		Error      *string  `json:"error"`
+		Calls      []string `json:"calls"`
+		EnterCount int      `json:"enterCount"`
+		Screen     string   `json:"screen"`
 	}
 	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
 		t.Fatalf("parse error: %v", err)
@@ -742,16 +742,16 @@ func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionRetry(t *testing.T) 
 		t.Fatalf("expected success after retry, got error: %s", *result.Error)
 	}
 	if len(result.Calls) != 3 {
-		t.Fatalf("expected text + two newlines (3 sends), got %d: %+v", len(result.Calls), result.Calls)
+		t.Fatalf("expected text + two Enter keys (3 sends), got %d: %+v", len(result.Calls), result.Calls)
 	}
 	if result.Calls[0] != "classify these files" {
 		t.Errorf("first call = %q, want prompt text", result.Calls[0])
 	}
-	if result.Calls[1] != "\n" || result.Calls[2] != "\n" {
-		t.Errorf("expected second and third calls to be newline, got: %+v", result.Calls)
+	if result.Calls[1] != "\r" || result.Calls[2] != "\r" {
+		t.Errorf("expected second and third calls to be Enter (\\r), got: %+v", result.Calls)
 	}
-	if result.NewlineCount != 2 {
-		t.Errorf("newlineCount = %d, want 2", result.NewlineCount)
+	if result.EnterCount != 2 {
+		t.Errorf("enterCount = %d, want 2", result.EnterCount)
 	}
 	if !strings.Contains(result.Screen, "processing") {
 		t.Errorf("screen = %q, want observed processing state", result.Screen)
@@ -759,7 +759,7 @@ func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionRetry(t *testing.T) 
 }
 
 // TestIntegration_SendToHandle_TUIPath_ObservedSubmissionFailure verifies
-// sendToHandle fails when newline retries never produce an observable
+// sendToHandle fails when Enter retries never produce an observable
 // terminal output change.
 func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionFailure(t *testing.T) {
 	t.Parallel()
@@ -769,7 +769,7 @@ func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionFailure(t *testing.T
 	raw, err := evalJS(`
 		(async function() {
 			var calls = [];
-			var screen = 'Claude shell\\n❯ classify these files';
+			var screen = 'Claude shell\n❯ classify these files';
 
 			globalThis.autoSplitTUI = {
 				sendWithCancel: function(handle, text) {
@@ -819,13 +819,218 @@ func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionFailure(t *testing.T
 		t.Fatalf("error = %q, want unconfirmed submission", *result.Error)
 	}
 	if len(result.Calls) != 3 {
-		t.Fatalf("expected text + two newline attempts (3 sends), got %d: %+v", len(result.Calls), result.Calls)
+		t.Fatalf("expected text + two Enter attempts (3 sends), got %d: %+v", len(result.Calls), result.Calls)
 	}
 	if result.Calls[0] != "classify these files" {
 		t.Errorf("first call = %q, want prompt text", result.Calls[0])
 	}
-	if result.Calls[1] != "\n" || result.Calls[2] != "\n" {
-		t.Errorf("expected newline attempts, got: %+v", result.Calls)
+	if result.Calls[1] != "\r" || result.Calls[2] != "\r" {
+		t.Errorf("expected Enter attempts, got: %+v", result.Calls)
+	}
+}
+
+// TestIntegration_SendToHandle_TUIPath_PromptReadyTimeout verifies that
+// sendToHandle fails before any write when no Claude prompt marker appears.
+func TestIntegration_SendToHandle_TUIPath_PromptReadyTimeout(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	raw, err := evalJS(`
+		(async function() {
+			var calls = [];
+			var screen = 'Claude booting...';
+
+			globalThis.autoSplitTUI = {
+				sendWithCancel: function(handle, text) {
+					calls.push(text);
+					return { error: null };
+				}
+			};
+			globalThis.tuiMux = {
+				screenshot: function() { return screen; }
+			};
+
+			prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 20;
+			prSplit.SEND_PROMPT_READY_POLL_MS = 1;
+			prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 1;
+
+			var result = await globalThis.prSplit.sendToHandle({}, 'classify these files');
+
+			delete globalThis.autoSplitTUI;
+			delete globalThis.tuiMux;
+
+			return JSON.stringify({
+				error: result.error,
+				calls: calls
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("prompt ready timeout test failed: %v", err)
+	}
+
+	var result struct {
+		Error *string  `json:"error"`
+		Calls []string `json:"calls"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if result.Error == nil {
+		t.Fatal("expected prompt-ready timeout error")
+	}
+	if !strings.Contains(*result.Error, "prompt not ready") {
+		t.Fatalf("error = %q, want prompt-ready timeout", *result.Error)
+	}
+	if len(result.Calls) != 0 {
+		t.Fatalf("expected no sends before prompt ready, got %d: %+v", len(result.Calls), result.Calls)
+	}
+}
+
+// TestIntegration_SendToHandle_TUIPath_PromptSetupBlocker verifies that
+// first-run setup screens are detected and reported as actionable errors.
+func TestIntegration_SendToHandle_TUIPath_PromptSetupBlocker(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	raw, err := evalJS(`
+		(async function() {
+			var calls = [];
+			var screen = [
+				"Let's get started.",
+				"Choose the text style that looks best with your terminal",
+				"❯ 1. Dark mode"
+			].join('\n');
+
+			globalThis.autoSplitTUI = {
+				sendWithCancel: function(handle, text) {
+					calls.push(text);
+					return { error: null };
+				}
+			};
+			globalThis.tuiMux = {
+				screenshot: function() { return screen; }
+			};
+
+			prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 50;
+			prSplit.SEND_PROMPT_READY_POLL_MS = 1;
+			prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 1;
+
+			var result = await globalThis.prSplit.sendToHandle({}, 'classify these files');
+
+			delete globalThis.autoSplitTUI;
+			delete globalThis.tuiMux;
+
+			return JSON.stringify({
+				error: result.error,
+				calls: calls
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("prompt setup blocker test failed: %v", err)
+	}
+
+	var result struct {
+		Error *string  `json:"error"`
+		Calls []string `json:"calls"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if result.Error == nil {
+		t.Fatal("expected setup blocker error")
+	}
+	if !strings.Contains(*result.Error, "first-run setup") {
+		t.Fatalf("error = %q, want first-run setup message", *result.Error)
+	}
+	if len(result.Calls) != 0 {
+		t.Fatalf("expected no sends when blocked by setup screen, got %d: %+v", len(result.Calls), result.Calls)
+	}
+}
+
+// TestIntegration_SendToHandle_TUIPath_PromptReadyDelayed verifies that
+// sendToHandle waits for prompt readiness before writing.
+func TestIntegration_SendToHandle_TUIPath_PromptReadyDelayed(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	raw, err := evalJS(`
+		(async function() {
+			var calls = [];
+			var screenshotCalls = 0;
+			var screen = 'Claude booting...';
+
+			globalThis.autoSplitTUI = {
+				sendWithCancel: function(handle, text) {
+					calls.push(text);
+					if (text === 'classify these files') {
+						screen = 'Claude shell\n❯ classify these files';
+					} else if (text === '\r') {
+						screen = 'Claude processing request...\n❯ ';
+					}
+					return { error: null };
+				}
+			};
+			globalThis.tuiMux = {
+				screenshot: function() {
+					screenshotCalls++;
+					if (screenshotCalls >= 3 && screen === 'Claude booting...') {
+						screen = 'Claude shell\n❯ ';
+					}
+					return screen;
+				}
+			};
+
+			prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 200;
+			prSplit.SEND_PROMPT_READY_POLL_MS = 1;
+			prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 1;
+			prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 0;
+			prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 25;
+			prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS = 1;
+			prSplit.SEND_PRE_SUBMIT_STABLE_SAMPLES = 1;
+			prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS = 25;
+			prSplit.SEND_SUBMIT_ACK_POLL_MS = 1;
+			prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES = 1;
+
+			var result = await globalThis.prSplit.sendToHandle({}, 'classify these files');
+
+			delete globalThis.autoSplitTUI;
+			delete globalThis.tuiMux;
+
+			return JSON.stringify({
+				error: result.error,
+				calls: calls,
+				screenshotCalls: screenshotCalls
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("prompt ready delayed test failed: %v", err)
+	}
+
+	var result struct {
+		Error           *string  `json:"error"`
+		Calls           []string `json:"calls"`
+		ScreenshotCalls int      `json:"screenshotCalls"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("expected success after delayed prompt readiness, got error: %s", *result.Error)
+	}
+	if len(result.Calls) != 2 {
+		t.Fatalf("expected text + Enter (2 sends), got %d: %+v", len(result.Calls), result.Calls)
+	}
+	if result.Calls[0] != "classify these files" || result.Calls[1] != "\r" {
+		t.Fatalf("unexpected send sequence: %+v", result.Calls)
+	}
+	if result.ScreenshotCalls < 3 {
+		t.Fatalf("expected multiple screenshot polls before prompt readiness, got %d", result.ScreenshotCalls)
 	}
 }
 
@@ -2734,77 +2939,63 @@ func runGit(t *testing.T, dir string, args ...string) string {
 // Integration Test: cleanupExecutor ordering (T029)
 // ---------------------------------------------------------------------------
 
-// TestIntegration_CleanupExecutor_CloseBeforeDetach verifies that
-// cleanupExecutor() calls claudeExecutor.close() BEFORE tuiMux.detach().
-// The correct ordering is critical: closing the executor first makes the
-// child PTY fd release, so the Mux reader goroutine sees EOF and exits.
-// Only then can Detach() return (it waits for the reader to finish).
+// TestIntegration_CleanupExecutor_CloseBeforeDetach verifies the real
+// cleanupExecutor implementation closes the Claude executor and does not call
+// tuiMux.detach synchronously.
 func TestIntegration_CleanupExecutor_CloseBeforeDetach(t *testing.T) {
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	raw, err := evalJS(`
-		(function() {
-			var callOrder = [];
+			(function() {
+				var callOrder = [];
 
-			// Mock claudeExecutor with observable close().
-			var claudeExecutor = {
-				handle: {
-					signal: function(sig) { callOrder.push('signal:' + sig); }
-				},
-				close: function() { callOrder.push('close'); }
-			};
+				claudeExecutor = {
+					handle: {
+						signal: function(sig) { callOrder.push('signal:' + sig); }
+					},
+					close: function() { callOrder.push('close'); }
+				};
 
-			// Mock tuiMux with observable detach().
-			var tuiMux = {
-				detach: function() { callOrder.push('detach'); }
-			};
+				tuiMux = {
+					detach: function() { callOrder.push('detach'); }
+				};
+				prSplit._isForceCancelled = function() { return false; };
 
-			// Replicate cleanupExecutor logic inline (the real function
-			// references script-level vars we can't easily override).
-			if (claudeExecutor) {
-				try { claudeExecutor.close(); } catch (e) {}
-			}
-			if (typeof tuiMux !== 'undefined' && tuiMux) {
-				try { tuiMux.detach(); } catch (e) {}
-			}
+				cleanupExecutor();
 
-			return JSON.stringify({
-				callOrder: callOrder,
-				closeBeforeDetach: callOrder.indexOf('close') < callOrder.indexOf('detach')
-			});
-		})()
-	`)
+				return JSON.stringify({
+					callOrder: callOrder
+				});
+			})()
+		`)
 	if err != nil {
 		t.Fatalf("cleanupExecutor ordering test failed: %v", err)
 	}
 
 	var result struct {
-		CallOrder         []string `json:"callOrder"`
-		CloseBeforeDetach bool     `json:"closeBeforeDetach"`
+		CallOrder []string `json:"callOrder"`
 	}
 	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
 
-	if len(result.CallOrder) != 2 {
-		t.Fatalf("expected 2 calls, got %d: %v", len(result.CallOrder), result.CallOrder)
+	if len(result.CallOrder) != 1 {
+		t.Fatalf("expected 1 call, got %d: %v", len(result.CallOrder), result.CallOrder)
 	}
 	if result.CallOrder[0] != "close" {
 		t.Errorf("first call should be 'close', got %q", result.CallOrder[0])
 	}
-	if result.CallOrder[1] != "detach" {
-		t.Errorf("second call should be 'detach', got %q", result.CallOrder[1])
-	}
-	if !result.CloseBeforeDetach {
-		t.Error("close must happen before detach to avoid Detach() blocking on reader goroutine")
+	for _, call := range result.CallOrder {
+		if call == "detach" {
+			t.Fatalf("cleanupExecutor should not call tuiMux.detach synchronously, got calls: %v", result.CallOrder)
+		}
 	}
 }
 
-// TestIntegration_CleanupExecutor_ForceCancel verifies that when
-// isForceCancelled returns true, cleanupExecutor sends SIGKILL before
-// calling close(), then detaches.
+// TestIntegration_CleanupExecutor_ForceCancel verifies the real
+// cleanupExecutor implementation sends SIGKILL before close when force-cancelled.
 func TestIntegration_CleanupExecutor_ForceCancel(t *testing.T) {
 	t.Parallel()
 
@@ -2814,34 +3005,23 @@ func TestIntegration_CleanupExecutor_ForceCancel(t *testing.T) {
 		(function() {
 			var callOrder = [];
 
-			var claudeExecutor = {
-				handle: {
-					signal: function(sig) { callOrder.push('signal:' + sig); }
-				},
-				close: function() { callOrder.push('close'); }
-			};
+				claudeExecutor = {
+					handle: {
+						signal: function(sig) { callOrder.push('signal:' + sig); }
+					},
+					close: function() { callOrder.push('close'); }
+				};
 
-			var tuiMux = {
-				detach: function() { callOrder.push('detach'); }
-			};
+				tuiMux = {
+					detach: function() { callOrder.push('detach'); }
+				};
 
-			// Simulate force-cancel path.
-			var forceCancelled = true;
+				prSplit._isForceCancelled = function() { return true; };
+				cleanupExecutor();
 
-			if (claudeExecutor) {
-				if (forceCancelled && claudeExecutor.handle &&
-					typeof claudeExecutor.handle.signal === 'function') {
-					try { claudeExecutor.handle.signal('SIGKILL'); } catch (e) {}
-				}
-				try { claudeExecutor.close(); } catch (e) {}
-			}
-			if (typeof tuiMux !== 'undefined' && tuiMux) {
-				try { tuiMux.detach(); } catch (e) {}
-			}
-
-			return JSON.stringify({
-				callOrder: callOrder
-			});
+				return JSON.stringify({
+					callOrder: callOrder
+				});
 		})()
 	`)
 	if err != nil {
@@ -2855,7 +3035,7 @@ func TestIntegration_CleanupExecutor_ForceCancel(t *testing.T) {
 		t.Fatalf("parse error: %v", err)
 	}
 
-	expected := []string{"signal:SIGKILL", "close", "detach"}
+	expected := []string{"signal:SIGKILL", "close"}
 	if len(result.CallOrder) != len(expected) {
 		t.Fatalf("expected %d calls, got %d: %v", len(expected), len(result.CallOrder), result.CallOrder)
 	}
@@ -2867,7 +3047,7 @@ func TestIntegration_CleanupExecutor_ForceCancel(t *testing.T) {
 }
 
 // TestIntegration_CleanupExecutor_NilExecutor verifies that cleanupExecutor
-// handles a nil claudeExecutor gracefully (only detach is called).
+// handles a nil claudeExecutor gracefully.
 func TestIntegration_CleanupExecutor_NilExecutor(t *testing.T) {
 	t.Parallel()
 
@@ -2875,25 +3055,17 @@ func TestIntegration_CleanupExecutor_NilExecutor(t *testing.T) {
 
 	raw, err := evalJS(`
 		(function() {
-			var callOrder = [];
+				var callOrder = [];
+				claudeExecutor = null;
+				tuiMux = {
+					detach: function() { callOrder.push('detach'); }
+				};
+				prSplit._isForceCancelled = function() { return false; };
+				cleanupExecutor();
 
-			var claudeExecutor = null;
-
-			var tuiMux = {
-				detach: function() { callOrder.push('detach'); }
-			};
-
-			// Replicate cleanupExecutor logic.
-			if (claudeExecutor) {
-				try { claudeExecutor.close(); } catch (e) {}
-			}
-			if (typeof tuiMux !== 'undefined' && tuiMux) {
-				try { tuiMux.detach(); } catch (e) {}
-			}
-
-			return JSON.stringify({ callOrder: callOrder });
-		})()
-	`)
+				return JSON.stringify({ callOrder: callOrder });
+			})()
+		`)
 	if err != nil {
 		t.Fatalf("cleanupExecutor nil executor test failed: %v", err)
 	}
@@ -2905,8 +3077,8 @@ func TestIntegration_CleanupExecutor_NilExecutor(t *testing.T) {
 		t.Fatalf("parse error: %v", err)
 	}
 
-	if len(result.CallOrder) != 1 || result.CallOrder[0] != "detach" {
-		t.Errorf("expected only ['detach'], got: %v", result.CallOrder)
+	if len(result.CallOrder) != 0 {
+		t.Errorf("expected no calls with nil executor, got: %v", result.CallOrder)
 	}
 }
 

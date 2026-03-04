@@ -69,6 +69,8 @@ const (
 	DefaultCols         uint16        = 80
 	DefaultTerm         string        = "xterm-256color"
 	DefaultWriteTimeout time.Duration = 30 * time.Second
+	closeGracefulWait                 = 5 * time.Second
+	closeForceWait                    = 2 * time.Second
 )
 
 // applyDefaults fills in zero values with defaults.
@@ -293,6 +295,7 @@ func (p *Process) Close() error {
 	p.mu.Unlock()
 
 	// Try graceful shutdown first.
+	forceKillTimedOut := false
 	if p.IsAlive() {
 		_ = cmd.Signal(syscall.SIGTERM)
 
@@ -300,10 +303,16 @@ func (p *Process) Close() error {
 		select {
 		case <-p.done:
 			// Process exited gracefully.
-		case <-time.After(5 * time.Second):
+		case <-time.After(closeGracefulWait):
 			// Force kill.
 			_ = cmd.Signal(syscall.SIGKILL)
-			<-p.done
+			select {
+			case <-p.done:
+			case <-time.After(closeForceWait):
+				// Do not block forever — the process may be wedged
+				// in an unreapable state on some platforms.
+				forceKillTimedOut = true
+			}
 		}
 	}
 
@@ -311,7 +320,14 @@ func (p *Process) Close() error {
 	if tty != nil {
 		_ = tty.Close()
 	}
-	return f.Close()
+	closeErr := f.Close()
+	if forceKillTimedOut {
+		if closeErr != nil {
+			return fmt.Errorf("pty: force-kill wait timed out after %s: %w", closeForceWait, closeErr)
+		}
+		return fmt.Errorf("pty: force-kill wait timed out after %s", closeForceWait)
+	}
+	return closeErr
 }
 
 // parseSignal converts a signal name string to an os.Signal.

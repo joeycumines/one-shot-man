@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/joeycumines/one-shot-man/internal/builtin/pty"
+	"github.com/joeycumines/one-shot-man/internal/termmux/pty"
 )
 
 // osmBinaryPath caches the built binary path across tests.

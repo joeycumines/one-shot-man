@@ -236,6 +236,14 @@ type AsyncJSRunner interface {
 	RunOnLoop(fn func(*goja.Runtime)) bool
 }
 
+// TrySyncJSRunner extends JSRunner with deadlock-safe synchronous execution.
+// TryRunOnLoopSync executes the callback directly when already on the event
+// loop goroutine, and otherwise schedules-and-waits on the loop.
+type TrySyncJSRunner interface {
+	JSRunner
+	TryRunOnLoopSync(currentVM *goja.Runtime, fn func(*goja.Runtime) error) error
+}
+
 // Manager holds bubbletea-related state per engine instance.
 type Manager struct {
 	ctx          context.Context
@@ -505,6 +513,19 @@ func (m *jsModel) registerCommand(id uint64) {
 	m.validCmdIDs[id] = true
 }
 
+// runJSSync executes fn on the JS event loop and waits for completion.
+// If the runner supports TryRunOnLoopSync, recursion on the event-loop
+// goroutine is executed directly to avoid self-deadlock.
+func (m *jsModel) runJSSync(fn func(*goja.Runtime) error) error {
+	if m.jsRunner == nil {
+		return fmt.Errorf("bubbletea: js runner is nil")
+	}
+	if tr, ok := m.jsRunner.(TrySyncJSRunner); ok {
+		return tr.TryRunOnLoopSync(m.runtime, fn)
+	}
+	return m.jsRunner.RunJSSync(fn)
+}
+
 // Init implements tea.Model.
 // CRITICAL: This is called from BubbleTea's goroutine, NOT the event loop goroutine.
 // JSRunner MUST be set to safely marshal JS execution to the event loop.
@@ -520,7 +541,7 @@ func (m *jsModel) Init() tea.Cmd {
 	}
 
 	var cmd tea.Cmd
-	err := m.jsRunner.RunJSSync(func(vm *goja.Runtime) error {
+	err := m.runJSSync(func(vm *goja.Runtime) error {
 		cmd = m.initDirect()
 		return nil
 	})
@@ -611,7 +632,7 @@ func (m *jsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	var cmd tea.Cmd
-	err := m.jsRunner.RunJSSync(func(vm *goja.Runtime) error {
+	err := m.runJSSync(func(vm *goja.Runtime) error {
 		cmd = m.updateDirect(jsMsg)
 		return nil
 	})
@@ -729,7 +750,7 @@ func (m *jsModel) View() string {
 	}
 
 	var viewStr string
-	err := m.jsRunner.RunJSSync(func(vm *goja.Runtime) error {
+	err := m.runJSSync(func(vm *goja.Runtime) error {
 		viewStr = m.viewDirect()
 		return nil
 	})

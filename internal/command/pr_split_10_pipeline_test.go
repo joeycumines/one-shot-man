@@ -178,14 +178,14 @@ func TestPipelineChunk_SendToHandle_MockHandle(t *testing.T) {
 		t.Fatalf("expected no error, got: %v", m["error"])
 	}
 
-	// Should have sent text then newline.
+	// Should have sent text then Enter (\r).
 	val, err = evalJS(`__mockSends.length`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	count := toInt64(val)
 	if count != 2 {
-		t.Fatalf("expected 2 sends (text + newline), got %d", count)
+		t.Fatalf("expected 2 sends (text + Enter), got %d", count)
 	}
 
 	val, err = evalJS(`__mockSends[0]`)
@@ -200,8 +200,8 @@ func TestPipelineChunk_SendToHandle_MockHandle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if val != "\n" {
-		t.Errorf("second send should be newline, got: %v", val)
+	if val != "\r" {
+		t.Errorf("second send should be Enter (\\r), got: %v", val)
 	}
 }
 

@@ -318,7 +318,9 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	attachChild := func(child io.ReadWriteCloser) error {
 		err := tuiMux.Attach(child)
 		if err != nil && errors.Is(err, termmux.ErrAlreadyAttached) {
-			_ = tuiMux.Detach()
+			if detachErr := tuiMux.Detach(); detachErr != nil {
+				return fmt.Errorf("tuiMux.detach before reattach: %w", detachErr)
+			}
 			err = tuiMux.Attach(child)
 		}
 		return err
@@ -355,10 +357,9 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			panic("tuiMux.attach: argument must implement Send/Receive/Close (or be a wrapped AgentHandle with _goHandle)")
 		},
 		"detach": func() {
-			err := tuiMux.Detach()
-			// Detach returns nil when no child is attached (idempotent).
-			// Only panic on real errors like ErrPassthroughActive (logic bug).
-			if err != nil {
+			if err := tuiMux.Detach(); err != nil {
+				// Detach returns nil when no child is attached (idempotent).
+				// Only panic on real errors like ErrPassthroughActive.
 				panic(err.Error())
 			}
 		},

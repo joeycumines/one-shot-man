@@ -167,7 +167,13 @@ func (m *Mux) teeLoop(reader *ptyio.BufferedReader, teeDone, childEOF chan struc
 
 // Detach disconnects the child process from the mux.
 func (m *Mux) Detach() error {
-	m.mu.Lock()
+	deadline := time.Now().Add(m.detachTimeout)
+	for !m.mu.TryLock() {
+		if time.Now().After(deadline) {
+			return ErrDetachTimeout
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if m.passthroughActive {
 		m.mu.Unlock()
 		return ErrPassthroughActive

@@ -18,4 +18,8 @@ var (
 	// ErrDetached is returned when the mux has been detached and cannot
 	// perform the requested operation.
 	ErrDetached = errors.New("termmux: mux is detached")
+
+	// ErrDetachTimeout is returned when Detach cannot acquire internal
+	// state lock within the configured detach timeout.
+	ErrDetachTimeout = errors.New("termmux: detach timed out acquiring lock")
 )

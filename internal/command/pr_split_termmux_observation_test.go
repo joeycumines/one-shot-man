@@ -548,6 +548,24 @@ func TestIntegration_PrSplit_VTerm_AutoSplitOllamaExactCommand(t *testing.T) {
 		t.Fatalf("failed to toggle back from Claude pane.\nVTerm:\n%s\nLog:\n%s", backScreen, readFileForDiag(logPath))
 	}
 
+	// Ensure Step 3 does not hang indefinitely. It may end as OK or FAILED
+	// depending on local Claude readiness/auth/setup, but it must terminate.
+	if sendStartScreen, ok := obs.waitFor("Send classification request...", 30*time.Second); !ok &&
+		!obs.containsInHistory("Send classification request...") {
+		t.Fatalf("Send classification request step never started.\nVTerm:\n%s\nLog:\n%s",
+			sendStartScreen, readFileForDiag(logPath))
+	}
+	matchedSendEnd, sendEndScreen, sendEndOK := obs.waitForAny([]string{
+		"Send classification request OK",
+		"Send classification request FAILED",
+	}, 30*time.Second)
+	if !sendEndOK && !obs.containsInHistory("Send classification request OK") &&
+		!obs.containsInHistory("Send classification request FAILED") {
+		t.Fatalf("Send classification request step did not finish (possible hang).\nVTerm:\n%s\nLog:\n%s",
+			sendEndScreen, readFileForDiag(logPath))
+	}
+	t.Logf("Screenshot (send classification terminal: %s):\n%s", matchedSendEnd, sendEndScreen)
+
 	// Two-phase cancel (q then q) must always return to prompt.
 	_, _ = ptmx.Write([]byte("q"))
 	if _, ok := obs.waitFor("pr-split", 15*time.Second); !ok {

@@ -92,6 +92,11 @@
     var SEND_SUBMIT_ACK_POLL_MS = 50;
     var SEND_SUBMIT_ACK_STABLE_SAMPLES = 2;
     var SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS = 3;
+    // Wait for Claude prompt marker before sending text. This prevents
+    // early writes into startup/setup screens where input is not ready.
+    var SEND_PROMPT_READY_TIMEOUT_MS = 10000;
+    var SEND_PROMPT_READY_POLL_MS = 100;
+    var SEND_PROMPT_READY_STABLE_SAMPLES = 2;
 
     // -----------------------------------------------------------------------
     //  sendToHandle — PTY double-write with async delay
@@ -117,7 +122,10 @@
             submitAckTimeoutMs: numberOrDefault(prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS, SEND_SUBMIT_ACK_TIMEOUT_MS, 1),
             submitAckPollMs: numberOrDefault(prSplit.SEND_SUBMIT_ACK_POLL_MS, SEND_SUBMIT_ACK_POLL_MS, 1),
             submitAckStableSamples: numberOrDefault(prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES, SEND_SUBMIT_ACK_STABLE_SAMPLES, 1),
-            submitMaxNewlineAttempts: numberOrDefault(prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS, SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS, 1)
+            submitMaxNewlineAttempts: numberOrDefault(prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS, SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS, 1),
+            promptReadyTimeoutMs: numberOrDefault(prSplit.SEND_PROMPT_READY_TIMEOUT_MS, SEND_PROMPT_READY_TIMEOUT_MS, 1),
+            promptReadyPollMs: numberOrDefault(prSplit.SEND_PROMPT_READY_POLL_MS, SEND_PROMPT_READY_POLL_MS, 1),
+            promptReadyStableSamples: numberOrDefault(prSplit.SEND_PROMPT_READY_STABLE_SAMPLES, SEND_PROMPT_READY_STABLE_SAMPLES, 1)
         };
     }
 
@@ -164,22 +172,42 @@
         return trimmed;
     }
 
-    function lineEndIndex(screen, idx) {
-        if (idx < 0) return -1;
-        var nl = screen.indexOf('\n', idx);
-        if (nl === -1) return screen.length;
-        return nl;
+    function trimLeadingPromptSpace(s) {
+        return String(s || '').replace(/^[\s\u00a0]+/, '');
     }
 
-    function findPromptMarkerBottom(screen) {
+    function isPromptMarkerLine(line) {
+        var trimmed = trimLeadingPromptSpace(line);
+        if (!trimmed) return false;
+        var first = trimmed.charAt(0);
+        if (first !== '❯' && first !== '>') return false;
+        var rest = trimLeadingPromptSpace(trimmed.substring(1));
+        // Exclude setup menu selectors like "❯ 1. Dark mode".
+        if (/^\d+\./.test(rest)) return false;
+        return true;
+    }
+
+    function detectPromptBlocker(screen) {
+        var lower = String(screen || '').toLowerCase();
+        if (lower.indexOf('choose the text style') !== -1 &&
+            lower.indexOf("let's get started") !== -1) {
+            return 'Claude is waiting on first-run setup (theme selection); complete setup in Claude first.';
+        }
+        return '';
+    }
+
+    function findPromptMarker(screen) {
         var lines = screen.split('\n');
         var offset = 0;
-        var best = -1;
+        var best = null;
         for (var i = 0; i < lines.length; i++) {
             var line = lines[i];
-            var trimmed = line.replace(/^\s+/, '');
-            if (trimmed.indexOf('❯') === 0 || trimmed.indexOf('>') === 0) {
-                best = offset + line.length;
+            if (isPromptMarkerLine(line)) {
+                best = {
+                    bottom: offset + line.length,
+                    lineIndex: i,
+                    lineText: line
+                };
             }
             offset += line.length + 1;
         }
@@ -192,28 +220,110 @@
             return { observed: false };
         }
         var tail = textTailAnchor(text, cfg.inputAnchorTailChars);
-        var tailIdx = tail ? screen.lastIndexOf(tail) : -1;
-        var pastedIdx = screen.lastIndexOf('[Pasted text');
-        if (pastedIdx === -1) {
-            pastedIdx = screen.lastIndexOf('[Pasted');
+        var prompt = findPromptMarker(screen);
+        var blocker = detectPromptBlocker(screen);
+
+        var lines = screen.split('\n');
+        var offset = 0;
+        var lastTailCandidate = null;
+        var lastPasteCandidate = null;
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            var bottom = offset + line.length;
+
+            if (tail && line.indexOf(tail) !== -1) {
+                lastTailCandidate = {
+                    bottom: bottom,
+                    lineIndex: i,
+                    type: 'tail'
+                };
+            }
+            if (line.indexOf('[Pasted text') !== -1 || line.indexOf('[Pasted') !== -1) {
+                lastPasteCandidate = {
+                    bottom: bottom,
+                    lineIndex: i,
+                    type: 'paste'
+                };
+            }
+            offset += line.length + 1;
         }
+
+        var candidate = null;
+        if (prompt && (lastTailCandidate || lastPasteCandidate)) {
+            var nearTail = (lastTailCandidate &&
+                Math.abs(lastTailCandidate.lineIndex - prompt.lineIndex) <= 2) ? lastTailCandidate : null;
+            var nearPaste = (lastPasteCandidate &&
+                Math.abs(lastPasteCandidate.lineIndex - prompt.lineIndex) <= 2) ? lastPasteCandidate : null;
+            candidate = nearTail || nearPaste || lastTailCandidate || lastPasteCandidate;
+        } else {
+            candidate = lastTailCandidate || lastPasteCandidate;
+        }
+
         var inputBottom = -1;
         var inputType = '';
-        if (tailIdx !== -1) {
-            inputBottom = lineEndIndex(screen, tailIdx);
-            inputType = 'tail';
-        } else if (pastedIdx !== -1) {
-            inputBottom = lineEndIndex(screen, pastedIdx);
-            inputType = 'paste';
+        var inputLineIndex = -1;
+        if (candidate) {
+            inputBottom = candidate.bottom;
+            inputType = candidate.type;
+            inputLineIndex = candidate.lineIndex;
         }
-        var promptBottom = findPromptMarkerBottom(screen);
+        var promptBottom = prompt ? prompt.bottom : -1;
+        var promptLineIndex = prompt ? prompt.lineIndex : -1;
+
         return {
             observed: true,
             screen: screen,
+            blocker: blocker,
             promptBottom: promptBottom,
+            promptLineIndex: promptLineIndex,
             inputBottom: inputBottom,
+            inputLineIndex: inputLineIndex,
             inputType: inputType,
             stableKey: String(promptBottom) + '|' + String(inputBottom)
+        };
+    }
+
+    async function waitForPromptReady(cfg) {
+        var startMs = Date.now();
+        var lastKey = '';
+        var stableCount = 0;
+        var lastState = null;
+        while (Date.now() - startMs < cfg.promptReadyTimeoutMs) {
+            var cancelErr = getCancellationError();
+            if (cancelErr) {
+                return { error: cancelErr, observed: true, state: null };
+            }
+
+            var state = captureInputAnchors('', cfg);
+            if (!state.observed) {
+                return { error: null, observed: false, state: null };
+            }
+            lastState = state;
+            if (state.blocker) {
+                return { error: state.blocker, observed: true, state: state };
+            }
+            if (state.promptBottom !== -1) {
+                var key = String(state.promptBottom) + '|' + String(state.promptLineIndex);
+                if (key === lastKey) {
+                    stableCount++;
+                } else {
+                    stableCount = 1;
+                    lastKey = key;
+                }
+                if (stableCount >= cfg.promptReadyStableSamples) {
+                    return { error: null, observed: true, state: state };
+                }
+            } else {
+                stableCount = 0;
+                lastKey = '';
+            }
+
+            await new Promise(function(resolve) { setTimeout(resolve, cfg.promptReadyPollMs); });
+        }
+        return {
+            error: 'Claude prompt not ready before send: prompt marker not found',
+            observed: true,
+            state: lastState
         };
     }
 
@@ -238,14 +348,23 @@
                 stableCount = 1;
                 lastKey = state.stableKey;
             }
-            var anchorsReady = (state.inputBottom !== -1);
+            var anchorsReady = (state.inputBottom !== -1 &&
+                                state.promptBottom !== -1 &&
+                                state.inputLineIndex !== -1 &&
+                                state.promptLineIndex !== -1 &&
+                                Math.abs(state.inputLineIndex - state.promptLineIndex) <= 2);
             if (anchorsReady && stableCount >= cfg.preSubmitStableSamples) {
                 return { error: null, state: state, observed: true };
             }
             await new Promise(function(resolve) { setTimeout(resolve, cfg.preSubmitStablePollMs); });
         }
 
-        if (lastState && lastState.inputBottom !== -1) {
+        if (lastState &&
+            lastState.inputBottom !== -1 &&
+            lastState.promptBottom !== -1 &&
+            lastState.inputLineIndex !== -1 &&
+            lastState.promptLineIndex !== -1 &&
+            Math.abs(lastState.inputLineIndex - lastState.promptLineIndex) <= 2) {
             return { error: null, state: lastState, observed: true };
         }
         return {
@@ -276,12 +395,26 @@
             }
             latest = state;
 
+            // Acknowledge only on meaningful movement:
+            // - input anchor cleared,
+            // - input anchor moved substantially (not minor reflow jitter),
+            // - or prompt anchor moved while input is cleared.
             var anchorChanged = false;
-            if (baselineState.inputBottom !== -1 && state.inputBottom !== baselineState.inputBottom) {
-                anchorChanged = true;
+            if (baselineState.inputBottom !== -1) {
+                if (state.inputBottom === -1) {
+                    anchorChanged = true;
+                } else if (Math.abs(state.inputBottom - baselineState.inputBottom) >= 8) {
+                    anchorChanged = true;
+                } else if (state.inputType !== baselineState.inputType &&
+                           state.inputBottom !== baselineState.inputBottom) {
+                    anchorChanged = true;
+                }
             }
-            if (!anchorChanged && baselineState.promptBottom !== -1 &&
-                state.promptBottom !== baselineState.promptBottom) {
+            if (!anchorChanged &&
+                baselineState.promptBottom !== -1 &&
+                state.promptBottom !== -1 &&
+                state.promptBottom !== baselineState.promptBottom &&
+                state.inputBottom === -1) {
                 anchorChanged = true;
             }
 
@@ -324,6 +457,11 @@
 
         var EAGAIN_MAX_RETRIES = 3;
         var EAGAIN_RETRY_DELAY_MS = 10;
+        var promptReady = await waitForPromptReady(config);
+        if (promptReady.error) {
+            return { error: promptReady.error };
+        }
+        var observedTransport = promptReady.observed;
 
         // Helper to send text with EAGAIN retry (returns {error: null|string}).
         async function sendWithRetry(data) {
@@ -388,7 +526,7 @@
         if (stableAnchors.error) {
             return { error: stableAnchors.error };
         }
-        var observedTransport = stableAnchors.observed;
+        observedTransport = observedTransport || stableAnchors.observed;
         var baselineState = stableAnchors.state;
         if (observedTransport && baselineState) {
             log.printf('auto-split sendToHandle: stable anchors ready (promptBottom=%d inputBottom=%d type=%s)',
@@ -409,7 +547,7 @@
             }
             log.printf('auto-split sendToHandle: sending newline attempt %d/%d',
                 attempt, config.submitMaxNewlineAttempts);
-            var newlineResult = await sendWithRetry('\n');
+            var newlineResult = await sendWithRetry('\r');
             if (newlineResult.error) {
                 log.printf('auto-split sendToHandle: newline write FAILED (attempt %d) — %s', attempt, newlineResult.error);
                 return newlineResult;
@@ -544,19 +682,35 @@
     function cleanupExecutor() {
         var isForceCancelled = prSplit._isForceCancelled;
         var claudeExec = prSplit._state.claudeExecutor;
+        var forceNow = false;
+        try { forceNow = !!isForceCancelled(); } catch (e) { forceNow = false; }
+        log.printf('auto-split cleanupExecutor: start force=%s hasExecutor=%s', forceNow ? 'true' : 'false', claudeExec ? 'true' : 'false');
 
         // Close the executor FIRST so the child PTY fd is released.
         if (claudeExec) {
-            if (isForceCancelled() && claudeExec.handle &&
+            if (forceNow && claudeExec.handle &&
                 typeof claudeExec.handle.signal === 'function') {
-                try { claudeExec.handle.signal('SIGKILL'); } catch (e) { /* best effort */ }
+                log.printf('auto-split cleanupExecutor: sending SIGKILL to Claude handle before close');
+                try { claudeExec.handle.signal('SIGKILL'); } catch (e) {
+                    log.printf('auto-split cleanupExecutor: pre-close SIGKILL error: %s', e.message || String(e));
+                }
             }
-            try { claudeExec.close(); } catch (e) { /* best effort */ }
+            log.printf('auto-split cleanupExecutor: closing Claude executor');
+            try {
+                claudeExec.close();
+                log.printf('auto-split cleanupExecutor: Claude executor closed');
+            } catch (e) {
+                log.printf('auto-split cleanupExecutor: Claude close error: %s', e.message || String(e));
+            }
         }
-        // Detach after close.
+        // Avoid synchronous detach here — in some PTY edge cases Detach can
+        // stall while terminal I/O is still unwinding. The child is already
+        // closed above, so leaving mux detach for the next attach path keeps
+        // cleanup non-blocking.
         if (typeof tuiMux !== 'undefined' && tuiMux) {
-            try { tuiMux.detach(); } catch (e) { /* best effort */ }
+            log.printf('auto-split cleanupExecutor: skipping immediate tuiMux.detach (non-blocking cleanup)');
         }
+        log.printf('auto-split cleanupExecutor: done');
     }
 
     // -----------------------------------------------------------------------
@@ -1191,17 +1345,16 @@
 
         // Attach Claude's PTY handle to tuiMux so ctrl+] can forward.
         if (claudeExecutor && claudeExecutor.handle && typeof tuiMux !== 'undefined' && tuiMux) {
-            if (typeof claudeExecutor.handle.isAlive === 'function' && !claudeExecutor.handle.isAlive()) {
-                log.printf('auto-split: Claude process died between spawn and attach — ctrl+] will not work');
-                emitOutput('[auto-split] Warning: Claude process exited unexpectedly. Toggle (Ctrl+]) unavailable.');
-            } else {
-                try {
-                    try { tuiMux.detach(); } catch (e) { /* ok if nothing attached */ }
-                    tuiMux.attach(claudeExecutor.handle);
-                    log.printf('auto-split: attached Claude handle to tuiMux for ctrl+] toggle');
-                } catch (e) {
-                    log.printf('auto-split: tuiMux attach warning: %s', e.message || String(e));
-                }
+	            if (typeof claudeExecutor.handle.isAlive === 'function' && !claudeExecutor.handle.isAlive()) {
+	                log.printf('auto-split: Claude process died between spawn and attach — ctrl+] will not work');
+	                emitOutput('[auto-split] Warning: Claude process exited unexpectedly. Toggle (Ctrl+]) unavailable.');
+	            } else {
+	                try {
+	                    tuiMux.attach(claudeExecutor.handle);
+	                    log.printf('auto-split: attached Claude handle to tuiMux for ctrl+] toggle');
+	                } catch (e) {
+	                    log.printf('auto-split: tuiMux attach warning: %s', e.message || String(e));
+	                }
             }
         } else if (claudeExecutor && claudeExecutor.handle &&
                    typeof claudeExecutor.handle.drainOutput === 'function') {

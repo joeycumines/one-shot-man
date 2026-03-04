@@ -2651,7 +2651,7 @@ func TestCleanupExecutor_NilExecutor(t *testing.T) {
 	}
 }
 
-func TestCleanupExecutor_WithTuiMuxDetach(t *testing.T) {
+func TestCleanupExecutor_WithTuiMux_NoSynchronousDetach(t *testing.T) {
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -2676,9 +2676,9 @@ func TestCleanupExecutor_WithTuiMuxDetach(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Should close executor then detach tuiMux.
-	if len(calls) != 2 || calls[0] != "close" || calls[1] != "detach" {
-		t.Errorf("expected [close, detach], got %v", calls)
+	// Cleanup must close executor without blocking on synchronous detach.
+	if len(calls) != 1 || calls[0] != "close" {
+		t.Errorf("expected [close], got %v", calls)
 	}
 }
 

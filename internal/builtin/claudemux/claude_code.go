@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/joeycumines/one-shot-man/internal/builtin/pty"
+	"github.com/joeycumines/one-shot-man/internal/termmux/pty"
 )
 
 // ClaudeCodeProvider implements Provider for Claude Code via PTY.

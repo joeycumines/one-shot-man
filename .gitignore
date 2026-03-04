@@ -42,7 +42,8 @@ go.work.sum
 
 # Test artifacts and temporary files
 test-scripts/
-/scratch/
+/scratch/*
+!/scratch/.gitkeep
 .pr-split-plan.json
 
 # Log file for use w/ custom targets

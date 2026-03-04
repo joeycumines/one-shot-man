@@ -14,21 +14,21 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/creack/pty v1.1.24
-	github.com/dop251/goja v0.0.0-20260216154549-8b74ce4618c5
+	github.com/dop251/goja v0.0.0-20260226184354-913bd86fb70c
 	github.com/dop251/goja_nodejs v0.0.0-20260212111938-1f56ff5bcf14
 	github.com/expr-lang/expr v1.17.8
-	github.com/go-git/go-git/v6 v6.0.0-20260217223433-8b943fe3eb84
+	github.com/go-git/go-git/v6 v6.0.0-20260303221140-ee63665a1010
 	github.com/google/uuid v1.6.0
 	github.com/joeycumines/go-behaviortree v1.11.0
-	github.com/joeycumines/go-eventloop v0.0.0-20260218170455-c2bbded118fe
-	github.com/joeycumines/go-inprocgrpc v0.0.0-20260218170531-ae6e64c702a6
+	github.com/joeycumines/go-eventloop v0.0.0-20260228171504-11d0b71e95d7
+	github.com/joeycumines/go-inprocgrpc v0.0.0-20260228171536-0b3b2f75648d
 	github.com/joeycumines/go-pabt v0.2.0
-	github.com/joeycumines/go-prompt v0.0.0-20260218230448-b4014dead4ea
-	github.com/joeycumines/goja-eventloop v0.0.0-20260218170510-72bd5e8f518b
-	github.com/joeycumines/goja-grpc v0.0.0-20260218230359-a7374a476055
-	github.com/joeycumines/goja-protobuf v0.0.0-20260218170518-e9a6a30d7a98
+	github.com/joeycumines/go-prompt v0.0.0-20260304162249-9415ea3fb38c
+	github.com/joeycumines/goja-eventloop v0.0.0-20260228171514-d892036a792a
+	github.com/joeycumines/goja-grpc v0.0.0-20260228171518-7fff4a3467f2
+	github.com/joeycumines/goja-protobuf v0.0.0-20260228171522-20e2a0e30124
 	github.com/lrstanley/bubblezone v1.0.0
-	github.com/modelcontextprotocol/go-sdk v1.3.1
+	github.com/modelcontextprotocol/go-sdk v1.4.0
 	github.com/muesli/termenv v0.16.0
 	github.com/rivo/uniseg v0.4.7
 	github.com/stretchr/testify v1.11.1
@@ -41,14 +41,14 @@ require (
 require (
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/ProtonMail/go-crypto v1.3.0 // indirect
+	github.com/ProtonMail/go-crypto v1.4.0 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/colorprofile v0.4.2 // indirect
 	github.com/charmbracelet/x/ansi v0.11.6 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.15 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
-	github.com/clipperhouse/displaywidth v0.10.0 // indirect
+	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
@@ -57,13 +57,13 @@ require (
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/go-git/gcfg/v2 v2.0.2 // indirect
-	github.com/go-git/go-billy/v6 v6.0.0-20260209124918-37866f83c2d3 // indirect
+	github.com/go-git/go-billy/v6 v6.0.0-20260226131633-45bd0956d66f // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/google/jsonschema-go v0.4.2 // indirect
-	github.com/google/pprof v0.0.0-20260202012954-cb029daf43ef // indirect
+	github.com/google/pprof v0.0.0-20260302011040-a15ffb7f9dcc // indirect
 	github.com/joeycumines/go-bigbuff v1.21.0 // indirect
-	github.com/joeycumines/go-catrate v0.0.0-20260218170450-94df13f979e9 // indirect
+	github.com/joeycumines/go-catrate v0.0.0-20260228071149-ca3b62cde775 // indirect
 	github.com/joeycumines/logiface v0.5.0 // indirect
 	github.com/joeycumines/simple-command-output-filter v0.2.1 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
@@ -79,6 +79,7 @@ require (
 	github.com/pjbgf/sha1cd v0.5.0 // indirect
 	github.com/pkg/term v1.2.0-beta.2 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/segmentio/encoding v0.5.3 // indirect
 	github.com/sergi/go-diff v1.4.0 // indirect
@@ -89,13 +90,13 @@ require (
 	golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa // indirect
 	golang.org/x/exp/typeparams v0.0.0-20260218203240-3dfff04db8fa // indirect
 	golang.org/x/mod v0.33.0 // indirect
-	golang.org/x/net v0.50.0 // indirect
+	golang.org/x/net v0.51.0 // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/telemetry v0.0.0-20260213145524-e0ab670178e1 // indirect
+	golang.org/x/telemetry v0.0.0-20260304144227-18da59047661 // indirect
 	golang.org/x/tools/cmd/godoc v0.1.0-deprecated // indirect
 	golang.org/x/tools/godoc v0.1.0-deprecated // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260217215200-42d3e9bedb6d // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260226221140-a57be14db171 // indirect
 	google.golang.org/grpc v1.79.1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

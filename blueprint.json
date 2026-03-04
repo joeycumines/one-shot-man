@@ -77,10 +77,21 @@
         "trigger": "Blueprint rewrite: R04 verified done, integration baseline verified, expand to full extraction plan",
         "affectedTaskRange": "R04 marked Done, R05-R17 rewritten with exact function lists, new tasks R18-R42 for wiring/slop/integration/docs/expansion",
         "summary": "Chunk 00 fully populated (~400 lines, 15+ tests via loadChunkEngine). Chunks 01-13 confirmed stubs. make all + make integration-test-prsplit-mcp both pass. Blueprint rewritten with per-chunk function extraction details, dependency chains, behavioral acceptance criteria, and expansion scope."
+      },
+      {
+        "trigger": "HANA INTERVENTION: termmux package contains app-specific UI",
+        "affectedTaskRange": "Insert R00 at top",
+        "summary": "Mandated decoupling of PR split UI from termmux package. termmux will be limited to terminal rendering/PTY/overlays. App-specific TUI (AutoSplit, PlanEditor) moved to internal/command. Marked for future JS rewrite."
       }
     ]
   },
   "sequentialTasks": [
+    {
+      "task": "R00: Decouple PR split TUI from termmux package",
+      "description": "Move internal/termmux/ui/ (AutoSplitModel, PlanEditor) to a dedicated UI package within internal/command (e.g., internal/command/prsplit_ui). termmux must be stripped of any UI that is not core to terminal rendering or overlays. The moved Go models must be marked as TODO for JS rewrite using the osm:bt facade. Delete any 'slop' or unrelated UI code discovered in internal/termmux.",
+      "acceptance": "internal/termmux/ui is removed. pr_split.go references the new UI package. make all passes. Tests for the TUI models are updated and green. No app-specific TUI logic remains in internal/termmux. TODOs present in new Go UI package.",
+      "status": "Not Started"
+    },
     {
       "task": "R01: Archive current implementation to scratch/archive/pr-split-v1/",
       "description": "Copy (not move) the entire current pr-split implementation to scratch/archive/pr-split-v1/ for reference. Files: pr_split.go, pr_split_script.js, pr_split_template.md, and all 27 test files.",
@@ -256,6 +267,30 @@
       "description": "It is IMPERATIVE that you assume all past work, including tests, are COMPLETE TRASH, and will fail to prove anything works correctly. With that as your basis, rigorously force each test to PROVE itself as actually validating what it needs to validate - in detail - to PROVE it is a valuable test. It is CRITICAL that the end to end behavior _works_, and it is SO FUCKING COMPLEX that you have REPEATEDLY failed to achieve this (context: `osm pr-split` is on its fourth iteration - you incompetent dog). Catch-all for bugs discovered in R26/R27, as part of this. For EACH bug: (1) Write a failing test first (per globalAlerts mandate). (2) Validate the test fails via make all. (3) Apply fix in the appropriate chunk file. (4) Validate make all passes. Common expected issues: (a) sendToHandle timing — PTY may coalesce writes. (b) Response parsing — Claude response format varies. (c) TUI callbacks — autoSplitTUI.updateProgress called with unexpected args. (d) Exit handling — goroutine leak or hung Promise. Each fix gets a regression test.",
       "acceptance": "All bugs from R26/R27 resolved. Each fix has a regression test that existed before the fix was applied. make all passes. make integration-test-prsplit-mcp passes. make integration-test-prsplit passes (if Claude available). ALL tests must be excecuted with the chunked loading (no monolith). No regressions from R28 fixes. No regressions at all, on ANY platform. Verify that ALL tests TRUELY got excecuted without ANY skipping. The optional / host-dependency-having tests included, for macOS (this host has all dependencies required for all tests). Linux and Windows MUST PASS per the checks in example.config.mk",
       "status": "In Progress — Test quality audit complete. Shallow assertions strengthened (integration, validation tests). Dead PTY tests removed (2 legacy t.Skip tests, 519→146 lines). Pre-existing test timeout bugs fixed (subprocess contexts, race suppression, per-pattern termtest timeouts). make all GREEN (675s). make lint GREEN. make integration-test-vterm GREEN. Remaining: Linux container check, Windows check."
+    },
+    {
+      "task": "R28.1: Investigation: Audit termmux/TUI resizing signal flow",
+      "description": "Examine internal/termmux and internal/termmux/ui/autosplit.go to identify why resize signals are missed during visibility swaps. Verify if SIGWINCH is lost when BubbleTea is in ReleaseTerminal mode or when Mux is not in Passthrough (Claude) mode. This requires checking where watchResize is instantiated and how dimensions are propagated.",
+      "acceptance": "Root cause identified: specific sequence where resize is ignored during swap confirmed. Audit notes added to scratch/termmux-resize-audit.md.",
+      "status": "Not Started"
+    },
+    {
+      "task": "R28.2: Replicate termmux resizing failure via test",
+      "description": "Create a test case in internal/termmux/termmux_test.go that simulates a terminal resize while one side is inactive/hidden, then toggles visibility. The test must fail if the newly visible side (especially Claude's PTY) uses stale dimensions. Use a mock ResizeFn to track calls.",
+      "acceptance": "Test fails reliably when resize occurs during hidden state and toggle follows. Test name: TestMux_ResizeDuringHiddenState.",
+      "status": "Not Started"
+    },
+    {
+      "task": "R28.3: Implement 'Dirty' Resize Pattern in termmux.Mux",
+      "description": "Modify termmux.Mux to track the last known terminal size persistently. Introduce a mechanism to mark fixed-size components (like VTerm or the TUI) as needing a resize update if a signal was received while they were backgrounded. Ensure that when swapping to Claude, the child PTY is immediately nudged with the latest dimensions if they changed.",
+      "acceptance": "termmux.Mux.handleResize updates internal state and marks sides as dirty. RunPassthrough checks this state on entry. TUI receives a WindowSizeMsg (or equivalent signal) upon return if size changed. Child PTY resizeFn called on every relevant toggle.",
+      "status": "Not Started"
+    },
+    {
+      "task": "R28.4: Verify termmux resizing fix and strengthen TUI resize handling",
+      "description": "Run the replication test from R28.2. Additionally, ensure AutoSplitModel in internal/termmux/ui/autosplit.go correctly handles the WindowSizeMsg after a terminal restoration. Verify that no 'AI slop' was introduced in the fix.",
+      "acceptance": "Replication test passes. Manual verification confirms Claude and TUI resize correctly after multiple swaps and resizing at different stages. make all passes.",
+      "status": "Not Started"
     },
     {
       "task": "R29: Update docs/architecture-pr-split-chunks.md to match final implementation",

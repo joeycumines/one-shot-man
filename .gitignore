@@ -1,6 +1,9 @@
 # If you prefer the allow list template instead of the deny list, see community template:
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
 #
+# macOS metadata
+.DS_Store
+
 # Binaries for programs and plugins
 *.exe
 *.exe~
@@ -14,6 +17,7 @@
 # Code coverage profiles and other test artifacts
 *.out
 coverage.*
+coverage-*
 *.coverprofile
 profile.cov
 
@@ -23,9 +27,6 @@ profile.cov
 # Go workspace file
 go.work
 go.work.sum
-
-# env file
-.env
 
 # Editor/IDE
 /.vscode
@@ -41,7 +42,9 @@ go.work.sum
 
 # Test artifacts and temporary files
 test-scripts/
-/scratch/
+/scratch/*
+!/scratch/.gitkeep
+.pr-split-plan.json
 
 # Log file for use w/ custom targets
 /build.log
@@ -49,4 +52,16 @@ test-scripts/
 # ignore gif files - upload these to an issue to host them on https://user-images.githubusercontent.com/
 /docs/visuals/gifs/*.gif
 
+*.log
+
+/DIRECTIVE.txt
+/.session-start
+/.session-timer
 /.claude/*.local.*
+/.github/copilot-instructions.md
+/.claude/agents
+/.github/agents
+/.claude/skills/mcp-builder
+/.claude/skills/skill-database-go
+/.claude/skills/slopless-researcher
+/.claude/skills/takumi-prompting

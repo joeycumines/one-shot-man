@@ -411,25 +411,3 @@ func TestPrSplitCommand_ClaudeEnvParsing(t *testing.T) {
 		})
 	}
 }
-
-// ---------------------------------------------------------------------------
-// T047: ClaudeCodeExecutor resolution tests (JS-level)
-// ---------------------------------------------------------------------------
-
-func TestPrSplitCommand_ClaudeCodeExecutorExported(t *testing.T) {
-	// Verify ClaudeCodeExecutor is exported in prSplit globals.
-	stdout, dispatch := loadPrSplitEngine(t, nil)
-
-	// The 'report' command outputs JSON with current state — it exercises
-	// the engine enough to verify exports loaded correctly. But more
-	// directly, we can check that the executor type exists.
-	err := dispatch("report", nil)
-	if err != nil {
-		t.Fatalf("report command failed: %v", err)
-	}
-
-	output := stdout.String()
-	t.Logf("report output (executor export check):\n%s", output)
-	// If the script loaded without errors and report works, ClaudeCodeExecutor
-	// was exported successfully.
-}

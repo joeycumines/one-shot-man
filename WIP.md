@@ -1,33 +1,31 @@
-# WIP: Rearchitecture triggered — Cycle 6 tests + replan ready to commit
+# WIP: R21 DONE — Dead BT functions culled from chunks.
 
-## Status: Hana intervention addressed. Blueprint replanned with R01-R28. Cycle 6 tests pass. Full suite green.
+## Status: R01-R21 Done (22 tasks). R22 next: vestigial comments + inconsistencies.
 
-### Commits (historical, all on split/api):
-- db95f10: Cycle 5 (T107+T108+T110)
-- b3e0529: Cycle 4 (T95-T100+T102+T103)
-- (earlier cycles: T01-T94)
+### Session: 2026-03-04 06:46:25 (9-hour mandate)
+### Branch: main (working directory has uncommitted changes)
 
-### Cycle 6 Changes (UNCOMMITTED):
-- pr_split_session_cancel_test.go: T114 — TestVerifySplits_CancellationMidIteration
-- pr_split_integration_test.go: T115 — TestClaudeCodeExecutor_SpawnHealthCheck_DeadProcess
-- pr_split_autosplit_recovery_test.go: T117 — TestAutoSplit_WatchdogTimeout
-- pr_split_conflict_retry_test.go: T116 — TestResolveConflictsWithClaude_SuccessfulFix
-- blueprint.json: COMPLETELY REPLANNED per Hana intervention (R01-R28)
-- config.mk: Blocking $(error) removed after compliance, run-current updated
-- WIP.md: Updated for rearchitecture plan
+### What R21 did:
+1. **Removed 13 dead BT functions from pr_split_11_utilities.js:**
+   - 8 BT node factories: createAnalyzeNode, createGroupNode, createPlanNode,
+     createSplitNode, createVerifyNode, createEquivalenceNode,
+     createSelectStrategyNode, createWorkflowTree
+   - 5 BT templates: btVerifyOutput, btRunTests, btCommitChanges,
+     btSplitBranch, verifyAndCommit
+2. **Updated pr_split_12_exports.js:** Removed 13 dead names from EXPECTED_EXPORTS
+3. **Recreated pr_split_bt_test.go:** Only 11 surviving tests (visualization/diff/report)
+4. **Cleaned pr_split_11_utilities_test.go:** Removed BTNodeFactories test,
+   cleaned AllExportsPresent expected map
+5. **Cleaned chunkCompatShim in pr_split_test.go:** Removed 13 dead proxy entries
+6. **Cleaned claudemux/pr_split_test.go:** Removed BTWorkflow_WithCompilation,
+   CreateWorkflowTree, and BT factory names from ExportedFunctions
+7. **Cleaned claudemux/templates_test.go:** Removed 12 dead BT template tests,
+   only TestTemplates_ModuleLoads survives
+8. **Documented in scratch/pr-split-slop-removed.md**
+9. **Verified:** go build passes, 594 command tests GREEN, 721 claudemux tests GREEN
 
-### Rearchitecture Plan (R01-R28):
-Hana intervention (scratch/pr-split-auto-split-completely-broken.md) mandates:
-1. R01: Archive monolith to scratch/archive/pr-split-v1/
-2. R02: Design chunk architecture (14 chunks)
-3. R03: Chunk loading infrastructure in pr_split.go
-4. R04-R17: Extract each chunk with independent tests
-5. R18-R19: Wire test infra to chunks, remove monolith
-6. R20-R22: Cull AI slop (JS, Go, tests)
-7. R23-R26: Integration testing (mock MCP + REAL Claude)
-8. R27-R28: Final verification + documentation
-
-### Next Steps:
-1. Rule of Two on cycle 6 changes
-2. Commit cycle 6
-3. Begin R01: Archive existing implementation
+### Next Task: R22 — Vestigial comments and inconsistencies in JS chunks
+- Sweep all 14 chunk files for stale task-number comments (T04a, T12, T55, etc.)
+- Remove completed TODOs
+- Standardize error return formats
+- Remove dead variables and console.log statements

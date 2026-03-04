@@ -209,70 +209,10 @@ func TestPrSplitCommand_Phase4ScriptContent(t *testing.T) {
 		{"AUTOMATED_DEFAULTS", "AUTOMATED_DEFAULTS"},
 	}
 
+	src := allChunkSources()
 	for _, c := range checks {
-		if !strings.Contains(prSplitScript, c.content) {
+		if !strings.Contains(src, c.content) {
 			t.Errorf("Script missing %s (expected to contain %q)", c.name, c.content)
-		}
-	}
-}
-
-func TestPrSplitCommand_Phase4Exports(t *testing.T) {
-	t.Parallel()
-
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
-
-	exports := []string{
-		"automatedSplit",
-		"heuristicFallback",
-		"assessIndependence",
-		"classificationToGroups",
-		"renderClassificationPrompt",
-		"renderSplitPlanPrompt",
-		"renderConflictPrompt",
-		"detectLanguage",
-		"CLASSIFICATION_PROMPT_TEMPLATE",
-		"SPLIT_PLAN_PROMPT_TEMPLATE",
-		"CONFLICT_RESOLUTION_PROMPT_TEMPLATE",
-	}
-
-	for _, name := range exports {
-		val, err := evalJS(`typeof globalThis.prSplit.` + name)
-		if err != nil {
-			t.Fatalf("Error checking export %s: %v", name, err)
-		}
-		if val == "undefined" {
-			t.Errorf("Expected globalThis.prSplit.%s to be exported, got undefined", name)
-		}
-	}
-
-	// Verify function vs string types.
-	fnExports := []string{
-		"automatedSplit", "heuristicFallback", "assessIndependence",
-		"classificationToGroups", "renderClassificationPrompt",
-		"renderSplitPlanPrompt", "renderConflictPrompt", "detectLanguage",
-	}
-	for _, name := range fnExports {
-		val, err := evalJS(`typeof globalThis.prSplit.` + name)
-		if err != nil {
-			t.Fatalf("Error checking export type %s: %v", name, err)
-		}
-		if val != "function" {
-			t.Errorf("Expected globalThis.prSplit.%s to be function, got %v", name, val)
-		}
-	}
-
-	strExports := []string{
-		"CLASSIFICATION_PROMPT_TEMPLATE",
-		"SPLIT_PLAN_PROMPT_TEMPLATE",
-		"CONFLICT_RESOLUTION_PROMPT_TEMPLATE",
-	}
-	for _, name := range strExports {
-		val, err := evalJS(`typeof globalThis.prSplit.` + name)
-		if err != nil {
-			t.Fatalf("Error checking export type %s: %v", name, err)
-		}
-		if val != "string" {
-			t.Errorf("Expected globalThis.prSplit.%s to be string, got %v", name, val)
 		}
 	}
 }

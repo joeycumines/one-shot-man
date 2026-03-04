@@ -78,18 +78,57 @@ func prSplitTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 	return bridge, runJS
 }
 
-// prSplitScriptPath returns the absolute path to
-// internal/command/pr_split_script.js relative to this package.
+// prSplitScriptPath returns the path to a temporary JS file that
+// concatenates all pr-split chunk files with a module.exports tail, allowing
+// require(path) to work identically to the former monolith.
 func prSplitScriptPath(t *testing.T) string {
+	t.Helper()
+	return combinedChunkScript(t)
+}
+
+// prSplitChunkFiles lists all pr-split chunk files in load order.
+var prSplitChunkFiles = []string{
+	"pr_split_00_core.js",
+	"pr_split_01_analysis.js",
+	"pr_split_02_grouping.js",
+	"pr_split_03_planning.js",
+	"pr_split_04_validation.js",
+	"pr_split_05_execution.js",
+	"pr_split_06_verification.js",
+	"pr_split_07_prcreation.js",
+	"pr_split_08_conflict.js",
+	"pr_split_09_claude.js",
+	"pr_split_10_pipeline.js",
+	"pr_split_11_utilities.js",
+	"pr_split_12_exports.js",
+	"pr_split_13_tui.js",
+}
+
+// combinedChunkScript concatenates all pr-split chunk files from
+// internal/command/ into a temporary JS file with module.exports =
+// globalThis.prSplit appended. The returned path is suitable for require().
+func combinedChunkScript(t *testing.T) string {
 	t.Helper()
 	wd, err := os.Getwd()
 	require.NoError(t, err)
-	p := filepath.Join(wd, "..", "..", "command", "pr_split_script.js")
-	absP, err := filepath.Abs(p)
+	dir := filepath.Join(wd, "..", "..", "command")
+	absDir, err := filepath.Abs(dir)
 	require.NoError(t, err)
-	_, err = os.Stat(absP)
-	require.NoError(t, err, "pr_split_script.js not found at %s", absP)
-	return absP
+
+	var buf strings.Builder
+	for _, name := range prSplitChunkFiles {
+		content, err := os.ReadFile(filepath.Join(absDir, name))
+		require.NoError(t, err, "failed to read chunk %s at %s", name, absDir)
+		buf.Write(content)
+		buf.WriteByte('\n')
+	}
+	buf.WriteString("module.exports = globalThis.prSplit;\n")
+
+	tmpDir := t.TempDir()
+	tmpFile := filepath.Join(tmpDir, "pr_split_combined.js")
+	err = os.WriteFile(tmpFile, []byte(buf.String()), 0644)
+	require.NoError(t, err)
+	return tmpFile
 }
 
 // initTestGitRepo creates a temporary git repo with an initial commit
@@ -164,7 +203,7 @@ func TestPRSplit_ModuleLoads(t *testing.T) {
 
 	runJS(`var prSplit = require('` + sp + `');`)
 	val := runJS(`prSplit.VERSION`)
-	assert.Equal(t, "5.0.0", val.String())
+	assert.Equal(t, "6.0.0", val.String())
 }
 
 func TestPRSplit_ExportedFunctions(t *testing.T) {
@@ -181,10 +220,6 @@ func TestPRSplit_ExportedFunctions(t *testing.T) {
 		"executeSplit",
 		"verifySplit", "verifySplits", "verifyEquivalence", "verifyEquivalenceDetailed",
 		"cleanupBranches",
-		"createAnalyzeNode", "createGroupNode", "createPlanNode",
-		"createSplitNode", "createVerifyNode", "createEquivalenceNode",
-		"createSelectStrategyNode",
-		"createWorkflowTree",
 	}
 	for _, fn := range fns {
 		val := runJS(`typeof prSplit.` + fn)
@@ -576,66 +611,6 @@ func TestPRSplit_CleanupBranches(t *testing.T) {
 	assert.NotContains(t, branchesAfter, "split/03-pkg")
 }
 
-// ---------------------------------------------------------------------------
-//  BT integration tests
-// ---------------------------------------------------------------------------
-
-func TestPRSplit_CreateWorkflowTree(t *testing.T) {
-	t.Parallel()
-	_, runJS := prSplitTestEnv(t)
-	sp := prSplitScriptPath(t)
-	runJS(`var prSplit = require('` + sp + `');`)
-	runJS(`var bt = require('osm:bt');`)
-
-	// Create a workflow tree (doesn't execute, just builds the BT node).
-	runJS(`var bb = new bt.Blackboard();`)
-	runJS(`var tree = prSplit.createWorkflowTree(bb, {baseBranch: 'main'});`)
-
-	// Verify tree is a valid BT node (returned as callable function).
-	treeType := runJS(`typeof tree`)
-	assert.Equal(t, "function", treeType.String())
-}
-
-func TestPRSplit_BTWorkflow_EndToEnd(t *testing.T) {
-	t.Parallel()
-	bridge, runJS := prSplitTestEnv(t)
-	sp := prSplitScriptPath(t)
-
-	// E2E test runs many git commands; increase timeout to avoid flakes under load.
-	bridge.SetTimeout(30 * time.Second)
-
-	dir := initTestGitRepo(t)
-	addFeatureFiles(t, dir)
-
-	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
-	runJS(`var prSplit = require('` + sp + `');`)
-	runJS(`var bt = require('osm:bt');`)
-
-	// Build BT workflow tree.
-	runJS(`var bb = new bt.Blackboard();`)
-	runJS(`var tree = prSplit.createWorkflowTree(bb, {
-		baseBranch: 'main',
-		dir: '` + escapedDir + `',
-		groupStrategy: 'directory',
-		branchPrefix: 'bt-split/',
-		verifyCommand: 'true'
-	});`)
-
-	// Tick the tree — should succeed (all steps complete).
-	statusVal := runJS(`bt.tick(tree)`)
-	assert.Equal(t, "success", statusVal.String())
-
-	// Verify equivalence was stored on blackboard.
-	equivVal := runJS(`bb.get('equivalence').equivalent`)
-	assert.Equal(t, true, equivVal.ToBoolean())
-
-	// Verify branches were created.
-	branches := runGit(t, dir, "branch")
-	assert.Contains(t, branches, "bt-split/01-cmd")
-	assert.Contains(t, branches, "bt-split/02-docs")
-	assert.Contains(t, branches, "bt-split/03-pkg")
-}
-
 func TestPRSplit_AnalyzeDiff_NoChanges(t *testing.T) {
 	t.Parallel()
 	_, runJS := prSplitTestEnv(t)
@@ -921,51 +896,6 @@ func TestPRSplit_EndToEnd_WithCompilation(t *testing.T) {
 	assert.Equal(t, "feature", currentBranch)
 
 	t.Log("T209 PASS: Full PR split workflow with real compilation verification")
-}
-
-// TestPRSplit_EndToEnd_BTWorkflow_WithCompilation runs the BT-based workflow
-// with real go build verification, proving the behavior tree integration
-// works end-to-end with compilable projects.
-func TestPRSplit_EndToEnd_BTWorkflow_WithCompilation(t *testing.T) {
-	t.Parallel()
-	bridge, runJS := prSplitTestEnv(t)
-
-	bridge.SetTimeout(60 * time.Second)
-
-	sp := prSplitScriptPath(t)
-
-	dir := initCompilableGitRepo(t)
-	addCompilableFeatureFiles(t, dir)
-
-	escapedDir := strings.ReplaceAll(dir, `\`, `\\`)
-	runJS(`var prSplit = require('` + sp + `');`)
-	runJS(`var bt = require('osm:bt');`)
-
-	// Build BT workflow tree with real compilation verification.
-	runJS(`var bb = new bt.Blackboard();`)
-	runJS(`var tree = prSplit.createWorkflowTree(bb, {
-		baseBranch: 'main',
-		dir: '` + escapedDir + `',
-		groupStrategy: 'directory',
-		branchPrefix: 'bt-compile/',
-		verifyCommand: 'go build ./...'
-	});`)
-
-	// Tick the tree — should succeed (all steps complete).
-	statusVal := runJS(`bt.tick(tree)`)
-	assert.Equal(t, "success", statusVal.String(), "BT workflow should succeed")
-
-	// Verify equivalence was stored on blackboard.
-	equivVal := runJS(`bb.get('equivalence').equivalent`)
-	assert.True(t, equivVal.ToBoolean(), "BT workflow tree equivalence should hold")
-
-	// Verify branches were created.
-	branches := runGit(t, dir, "branch")
-	assert.Contains(t, branches, "bt-compile/01-cmd")
-	assert.Contains(t, branches, "bt-compile/02-docs")
-	assert.Contains(t, branches, "bt-compile/03-pkg")
-
-	t.Log("T209 BT PASS: BT workflow with real compilation verification")
 }
 
 func TestPRSplit_ExecuteSplit_MissingFile(t *testing.T) {

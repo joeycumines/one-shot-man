@@ -382,8 +382,8 @@ func TestPrSplitCommand_EmbeddedContent(t *testing.T) {
 		t.Error("Expected prSplitTemplate to be non-empty")
 	}
 
-	if len(prSplitScript) == 0 {
-		t.Error("Expected prSplitScript to be non-empty")
+	if len(allChunkSources()) == 0 {
+		t.Error("Expected chunk sources to be non-empty")
 	}
 }
 

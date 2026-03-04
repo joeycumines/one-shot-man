@@ -1041,6 +1041,48 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 	if !strings.Contains(classPrompt, "mock-session-test") {
 		t.Errorf("classification prompt should include session ID 'mock-session-test'")
 	}
+
+	// -----------------------------------------------------------------------
+	// Deep output sanity validation — verify no ANSI garbage, correct step
+	// ordering, and clean pipeline progression in stdout.
+	// -----------------------------------------------------------------------
+
+	// Verify all expected pipeline steps appear in stdout.
+	expectedStepNames := []string{
+		"Analyze diff",
+		"Spawn Claude",
+		"Send classification request",
+		"Receive classification",
+		"Generate split plan",
+		"Execute split plan",
+		"Verify splits",
+		"Verify equivalence",
+	}
+	for _, step := range expectedStepNames {
+		if !strings.Contains(outStr, step) {
+			t.Errorf("expected step %q in stdout, not found.\nStdout:\n%s", step, outStr)
+		}
+	}
+
+	// Verify no raw ANSI escape sequences leaked into the report output.
+	// The test runs with disableTUI:true, so no alt-screen codes should appear.
+	// Check for common ANSI CSI sequences that indicate terminal mangling.
+	ansiPatterns := []string{
+		"\x1b[?1049h", // enter alt-screen
+		"\x1b[?1049l", // exit alt-screen
+		"\x1b[2J",     // clear screen
+	}
+	for _, pattern := range ansiPatterns {
+		if strings.Contains(outStr, pattern) {
+			t.Errorf("found raw ANSI sequence %q in stdout — terminal output mangling detected", pattern)
+		}
+	}
+
+	// Verify "OK" suffixes appear for successful steps (the pipeline
+	// emits "[auto-split] <Step> OK" for completed steps).
+	if !strings.Contains(outStr, "OK") {
+		t.Error("expected at least one 'OK' step completion marker in stdout")
+	}
 }
 
 // ---------------------------------------------------------------------------

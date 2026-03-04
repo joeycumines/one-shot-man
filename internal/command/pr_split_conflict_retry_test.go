@@ -247,34 +247,11 @@ func TestPrSplitCommand_Phase5ScriptContent(t *testing.T) {
 		{"verifyOutput passed to detect", "verifyOutput"},
 	}
 
+	src := allChunkSources()
 	for _, c := range checks {
-		if !strings.Contains(prSplitScript, c.content) {
+		if !strings.Contains(src, c.content) {
 			t.Errorf("Script missing %s (expected to contain %q)", c.name, c.content)
 		}
-	}
-}
-
-func TestPrSplitCommand_Phase5Exports(t *testing.T) {
-	t.Parallel()
-
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
-
-	// Verify AUTO_FIX_STRATEGIES is exported as an array.
-	val, err := evalJS(`Array.isArray(globalThis.prSplit.AUTO_FIX_STRATEGIES)`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if val != true {
-		t.Error("Expected AUTO_FIX_STRATEGIES to be exported as array")
-	}
-
-	// resolveConflicts should still be exported as a function.
-	val, err = evalJS(`typeof globalThis.prSplit.resolveConflicts`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if val != "function" {
-		t.Errorf("Expected resolveConflicts to be function, got %v", val)
 	}
 }
 

@@ -1,7 +1,388 @@
 'use strict';
 // pr_split_09_claude.js — Claude Code Executor & prompt system
 // Dependencies: chunks 00, 02 must be loaded first
+// Late-binds: exec (00), template (00), detectGoModulePath (02), fileExtension (00), runtime (00)
+//
+// Exports: ClaudeCodeExecutor, renderPrompt, renderClassificationPrompt,
+//          renderSplitPlanPrompt, renderConflictPrompt, detectLanguage,
+//          CLASSIFICATION_PROMPT_TEMPLATE, SPLIT_PLAN_PROMPT_TEMPLATE,
+//          CONFLICT_RESOLUTION_PROMPT_TEMPLATE
 
 (function(prSplit) {
-    // TODO: Extract from monolith (lines 2332-2778)
+
+    // -----------------------------------------------------------------------
+    //  ClaudeCodeExecutor
+    // -----------------------------------------------------------------------
+
+    function ClaudeCodeExecutor(config) {
+        this.command = config.claudeCommand || '';
+        this.args = config.claudeArgs || [];
+        this.model = config.claudeModel || '';
+        this.configDir = config.claudeConfigDir || '';
+        this.env = config.claudeEnv || {};
+        this.resolved = null;
+        this.handle = null;
+        this.sessionId = null;
+        this.cm = null;
+    }
+
+    // resolve determines which Claude binary to use.
+    // Priority: explicit config > 'claude' on PATH > 'ollama' on PATH > error.
+    ClaudeCodeExecutor.prototype.resolve = function() {
+        var exec = prSplit._modules.exec;
+        if (this.command) {
+            var check = exec.execv(['which', this.command]);
+            if (check.code !== 0) {
+                return { error: 'Claude command not found: ' + this.command };
+            }
+            this.resolved = { command: this.command, type: 'explicit' };
+            return { error: null };
+        }
+
+        var claudeCheck = exec.execv(['which', 'claude']);
+        if (claudeCheck.code === 0) {
+            var versionCheck = exec.execv(['claude', '--version']);
+            if (versionCheck.code !== 0) {
+                return {
+                    error: 'Claude found at ' + claudeCheck.stdout.trim() +
+                           ' but version check failed (exit ' + versionCheck.code + '): ' +
+                           (versionCheck.stderr || versionCheck.stdout || '').trim()
+                };
+            }
+            this.resolved = { command: 'claude', type: 'claude-code' };
+            return { error: null };
+        }
+
+        var ollamaCheck = exec.execv(['which', 'ollama']);
+        if (ollamaCheck.code === 0) {
+            if (this.model) {
+                var listCheck = exec.execv(['ollama', 'list']);
+                if (listCheck.code !== 0) {
+                    return {
+                        error: 'Ollama found but list command failed (exit ' + listCheck.code + '): ' +
+                               (listCheck.stderr || listCheck.stdout || '').trim()
+                    };
+                }
+                var modelOutput = (listCheck.stdout || '');
+                if (modelOutput.indexOf(this.model) === -1) {
+                    return {
+                        error: 'Ollama found but model ' + this.model + ' not available. ' +
+                               'Available models: ' + modelOutput.trim().split('\n').slice(1).join(', ')
+                    };
+                }
+            }
+            this.resolved = { command: 'ollama', type: 'ollama' };
+            return { error: null };
+        }
+
+        return {
+            error: 'No Claude-compatible binary found. Install Claude Code CLI ' +
+                   '(claude) or Ollama (ollama), or set --claude-command explicitly.'
+        };
+    };
+
+    // spawn creates an MCP session and launches the Claude process.
+    ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
+        var exec = prSplit._modules.exec;
+        opts = opts || {};
+
+        if (!this.cm) {
+            try {
+                this.cm = require('osm:claudemux');
+            } catch (e) {
+                return { error: 'osm:claudemux module not available: ' + e.message };
+            }
+        }
+
+        var resolveResult = this.resolve();
+        if (resolveResult.error) {
+            return { error: resolveResult.error };
+        }
+
+        this.sessionId = sessionId || ('prsplit-' + Date.now());
+
+        if (!opts.mcpConfigPath) {
+            return { error: 'mcpConfigPath is required (provided by osm:mcpcallback)' };
+        }
+        var mcpConfigPath = opts.mcpConfigPath;
+
+        var spawnOpts;
+        try {
+            var registry = this.cm.newRegistry();
+            var provider;
+            var baseArgs = (this.args || []).concat(['--mcp-config', mcpConfigPath]);
+
+            if (this.resolved.type === 'claude-code') {
+                baseArgs = ['--dangerously-skip-permissions'].concat(baseArgs);
+                provider = this.cm.claudeCode({
+                    command: this.resolved.command,
+                    mcp: true
+                });
+            } else if (this.resolved.type === 'explicit') {
+                var basename = this.resolved.command.replace(/^.*[\/\\]/, '');
+                if (basename.indexOf('claude') !== -1) {
+                    baseArgs = ['--dangerously-skip-permissions'].concat(baseArgs);
+                }
+                provider = this.cm.claudeCode({
+                    command: this.resolved.command,
+                    mcp: true
+                });
+            } else if (this.resolved.type === 'ollama') {
+                provider = this.cm.ollama({
+                    command: this.resolved.command,
+                    model: this.model || '',
+                    mcp: true
+                });
+            } else {
+                return { error: 'unknown provider type: ' + this.resolved.type };
+            }
+
+            spawnOpts = {
+                model: this.model || undefined,
+                env: this.env || {},
+                args: baseArgs
+            };
+
+            registry.register(provider);
+            this.handle = registry.spawn(provider.name(), spawnOpts);
+        } catch (e) {
+            var cmdDesc = this.resolved.command;
+            if (spawnOpts && spawnOpts.args && spawnOpts.args.length > 0) {
+                cmdDesc += ' ' + spawnOpts.args.join(' ');
+            }
+            return {
+                error: 'Claude spawn failed: ' + (e.message || String(e)) +
+                       '\n  Command attempted: ' + cmdDesc +
+                       '\n  Provider type: ' + this.resolved.type
+            };
+        }
+
+        log.printf('Claude executor: spawned command=%s type=%s session=%s args=%s',
+            this.resolved.command, this.resolved.type, this.sessionId,
+            JSON.stringify(spawnOpts && spawnOpts.args || []));
+
+        // Post-spawn health check: verify process is still alive.
+        if (this.handle && typeof this.handle.isAlive === 'function') {
+            exec.execv(['sleep', '0.3']);
+            if (!this.handle.isAlive()) {
+                var lastOutput = '';
+                if (typeof this.handle.receive === 'function') {
+                    try {
+                        var chunk = this.handle.receive();
+                        if (chunk) { lastOutput = chunk; }
+                    } catch (readErr) { /* EOF expected for dead process */ }
+                }
+                try { this.handle.close(); } catch (closeErr) { /* best effort */ }
+                this.handle = null;
+
+                var cmdDesc2 = this.resolved.command;
+                if (spawnOpts && spawnOpts.args && spawnOpts.args.length > 0) {
+                    cmdDesc2 += ' ' + spawnOpts.args.join(' ');
+                }
+                var diagnostic = 'Claude process exited immediately after spawn.';
+                if (lastOutput) {
+                    diagnostic += '\n  Process output: ' + lastOutput.trim().substring(0, 500);
+                }
+                diagnostic += '\n  Command: ' + cmdDesc2;
+                diagnostic += '\n  Provider: ' + this.resolved.type;
+                return { error: diagnostic };
+            }
+        }
+
+        return { error: null, sessionId: this.sessionId };
+    };
+
+    ClaudeCodeExecutor.prototype.isAvailable = function() {
+        var result = this.resolve();
+        return !result.error;
+    };
+
+    ClaudeCodeExecutor.prototype.close = function() {
+        if (this.handle && typeof this.handle.close === 'function') {
+            try { this.handle.close(); } catch (e) { /* best effort */ }
+        }
+        this.handle = null;
+        this.sessionId = null;
+        this.resolved = null;
+    };
+
+    // -----------------------------------------------------------------------
+    //  Prompt Templates (Go text/template syntax)
+    // -----------------------------------------------------------------------
+
+    var CLASSIFICATION_PROMPT_TEMPLATE =
+        'You are a code reviewer helping split a large pull request into smaller, ' +
+        'reviewable stacked PRs.\n\n' +
+        'The repository is a {{.Language}} project' +
+        '{{if .ModulePath}} with module path `{{.ModulePath}}`{{end}}.\n' +
+        'The base branch is `{{.BaseBranch}}`.\n\n' +
+        '## Changed Files\n\n' +
+        'The following files have been modified (status: A=added, M=modified, D=deleted, R=renamed):\n\n' +
+        '{{range $path, $status := .FileStatuses}}' +
+        '- `{{$path}}` ({{$status}})\n' +
+        '{{end}}\n' +
+        '## Task\n\n' +
+        'Classify each file into a logical group for PR splitting. Group related changes together:\n' +
+        '- Files in the same package/module that are tightly coupled\n' +
+        '- Test files with the code they test\n' +
+        '- Documentation with the features they document\n' +
+        '- Refactoring changes separate from feature additions\n' +
+        '- Infrastructure/config changes separate from application code\n\n' +
+        '{{if gt .MaxGroups 0}}Use at most {{.MaxGroups}} groups.{{end}}\n\n' +
+        '## Output Format\n\n' +
+        'Use the `reportClassification` MCP tool to report your results. ' +
+        'The `categories` parameter is an array of category objects. Each category has:\n' +
+        '- `name`: Short identifier for the group (e.g., "types", "impl", "docs")\n' +
+        '- `description`: Git commit message for the split branch. This MUST be specific to the actual code changes — not generic.\n' +
+        '- `files`: Array of file paths belonging to this category\n\n' +
+        '### Commit Message Requirements\n\n' +
+        'Each category description becomes the git commit message for that split branch. Follow these rules:\n' +
+        '- Be specific: "Add user authentication middleware" not "misc changes"\n' +
+        '- Reference what changed: mention the package, module, or feature area\n' +
+        '- No placeholder messages like "various updates", "cleanup", or "other changes"\n' +
+        '- No catch-all categories unless absolutely necessary (prefer specific groupings)\n' +
+        '- If the project uses conventional commits, follow that style\n\n' +
+        'Use the session ID: `{{.SessionID}}`\n\n' +
+        'Also assess which groups are independent (can be merged in any order). ' +
+        'If any groups can merge independently, mention this in your response.\n';
+
+    var SPLIT_PLAN_PROMPT_TEMPLATE =
+        'Based on the file classification below, create an ordered split plan for stacked PRs.\n\n' +
+        '## Classification\n\n' +
+        '{{range $path, $category := .Classification}}' +
+        '- `{{$path}}` → {{$category}}\n' +
+        '{{end}}\n' +
+        '## Constraints\n\n' +
+        '- Branch prefix: `{{.BranchPrefix}}`\n' +
+        '{{if gt .MaxFilesPerSplit 0}}- Maximum {{.MaxFilesPerSplit}} files per split\n{{end}}' +
+        '{{if .PreferIndependent}}- Prefer independently mergeable splits when possible\n{{end}}\n' +
+        '## Task\n\n' +
+        'Create an ordered plan where:\n' +
+        '1. Each stage is a coherent, reviewable unit\n' +
+        '2. Earlier stages should be foundations that later stages build on\n' +
+        '3. Minimize cross-stage dependencies to reduce merge conflicts\n' +
+        '4. Each stage should build and pass tests independently (when stacked)\n\n' +
+        'Use the `reportSplitPlan` MCP tool with session ID `{{.SessionID}}`. ' +
+        'Each stage needs: name, files array, commit message, and order (0-based).\n';
+
+    var CONFLICT_RESOLUTION_PROMPT_TEMPLATE =
+        'A split branch failed verification. Help fix it.\n\n' +
+        '## Branch: `{{.BranchName}}`\n\n' +
+        '### Files in this branch\n' +
+        '{{range .Files}}- `{{.}}`\n{{end}}\n' +
+        '### Verification Error (exit code {{.ExitCode}})\n\n' +
+        '```\n{{.ErrorOutput}}\n```\n\n' +
+        '{{if .GoModContent}}### go.mod content\n\n```\n{{.GoModContent}}\n```\n\n{{end}}' +
+        '## Task\n\n' +
+        'Analyze the error and propose a fix using the `reportResolution` MCP tool ' +
+        'with session ID `{{.SessionID}}` and branch `{{.BranchName}}`.\n\n' +
+        'You can suggest:\n' +
+        '- File patches (full file content replacements)\n' +
+        '- Commands to run (e.g., `go mod tidy`)\n' +
+        '- If the split is fundamentally broken, set `reSplitSuggested: true` ' +
+        'with a reason explaining which files conflict\n' +
+        '- If this failure also exists on the base branch (pre-existing), set ' +
+        '`preExistingFailure: true` with `preExistingDetails` explaining the issue\n';
+
+    // -----------------------------------------------------------------------
+    //  Prompt Rendering
+    // -----------------------------------------------------------------------
+
+    function renderPrompt(tmplStr, data) {
+        var template = prSplit._modules.template;
+        if (!template) {
+            return { text: '', error: 'osm:text/template module not available' };
+        }
+        try {
+            var text = template.execute(tmplStr, data);
+            return { text: text, error: null };
+        } catch (e) {
+            return { text: '', error: 'template render failed: ' + (e.message || String(e)) };
+        }
+    }
+
+    function renderClassificationPrompt(analysis, config) {
+        config = config || {};
+        var detectGoModulePath = prSplit.detectGoModulePath;
+        var runtime = prSplit.runtime;
+        var modulePath = detectGoModulePath ? detectGoModulePath() : '';
+        var language = modulePath ? 'Go' : detectLanguage(analysis.files);
+        return renderPrompt(CLASSIFICATION_PROMPT_TEMPLATE, {
+            Language: language,
+            ModulePath: modulePath,
+            BaseBranch: analysis.baseBranch || runtime.baseBranch,
+            FileStatuses: analysis.fileStatuses || {},
+            MaxGroups: config.maxGroups || 0,
+            SessionID: config.sessionId || ''
+        });
+    }
+
+    function renderSplitPlanPrompt(classification, config) {
+        config = config || {};
+        var runtime = prSplit.runtime;
+        return renderPrompt(SPLIT_PLAN_PROMPT_TEMPLATE, {
+            Classification: classification,
+            BranchPrefix: config.branchPrefix || runtime.branchPrefix || 'split/',
+            MaxFilesPerSplit: config.maxFilesPerSplit || runtime.maxFiles || 0,
+            PreferIndependent: config.preferIndependent || false,
+            SessionID: config.sessionId || ''
+        });
+    }
+
+    function renderConflictPrompt(conflict) {
+        return renderPrompt(CONFLICT_RESOLUTION_PROMPT_TEMPLATE, {
+            BranchName: conflict.branchName || '',
+            Files: conflict.files || [],
+            ExitCode: conflict.exitCode || 1,
+            ErrorOutput: conflict.errorOutput || '',
+            GoModContent: conflict.goModContent || '',
+            SessionID: conflict.sessionId || ''
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    //  Language Detection
+    // -----------------------------------------------------------------------
+
+    function detectLanguage(files) {
+        var fileExtension = prSplit._fileExtension;
+        var counts = {};
+        var langMap = {
+            '.go': 'Go', '.js': 'JavaScript', '.ts': 'TypeScript',
+            '.py': 'Python', '.rb': 'Ruby', '.rs': 'Rust',
+            '.java': 'Java', '.c': 'C', '.cpp': 'C++',
+            '.cs': 'C#', '.swift': 'Swift', '.kt': 'Kotlin'
+        };
+        for (var i = 0; i < (files || []).length; i++) {
+            var ext = fileExtension(files[i]);
+            var lang = langMap[ext];
+            if (lang) {
+                counts[lang] = (counts[lang] || 0) + 1;
+            }
+        }
+        var best = 'unknown';
+        var bestCount = 0;
+        for (var k in counts) {
+            if (counts[k] > bestCount) {
+                best = k;
+                bestCount = counts[k];
+            }
+        }
+        return best;
+    }
+
+    // -----------------------------------------------------------------------
+    //  Exports
+    // -----------------------------------------------------------------------
+
+    prSplit.ClaudeCodeExecutor = ClaudeCodeExecutor;
+    prSplit.renderPrompt = renderPrompt;
+    prSplit.renderClassificationPrompt = renderClassificationPrompt;
+    prSplit.renderSplitPlanPrompt = renderSplitPlanPrompt;
+    prSplit.renderConflictPrompt = renderConflictPrompt;
+    prSplit.detectLanguage = detectLanguage;
+    prSplit.CLASSIFICATION_PROMPT_TEMPLATE = CLASSIFICATION_PROMPT_TEMPLATE;
+    prSplit.SPLIT_PLAN_PROMPT_TEMPLATE = SPLIT_PLAN_PROMPT_TEMPLATE;
+    prSplit.CONFLICT_RESOLUTION_PROMPT_TEMPLATE = CONFLICT_RESOLUTION_PROMPT_TEMPLATE;
+
 })(globalThis.prSplit);

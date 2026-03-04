@@ -877,7 +877,7 @@ func TestAutoSplit_CancelDuringExecution_EmitsResumeAndCleansUp(t *testing.T) {
 
 	// Note: executor close() is NOT called on the heuristic fallback path
 	// because cleanupExecutor() is only invoked in the Claude execution
-	// loop (lines 3334-3519 in pr_split_script.js). When resolve() fails
+	// loop (in the pipeline chunk). When resolve() fails
 	// and the pipeline falls back to heuristic mode, the executor object
 	// exists but was never spawned, so no process cleanup is needed.
 	closed, err := tp.EvalJS(`_executorClosed`)

@@ -1,7 +1,309 @@
 'use strict';
-// pr_split_06_verification.js — Verification & cleanup
-// Dependencies: chunks 00 must be loaded first
+// pr_split_06_verification.js — Verification, equivalence check, and cleanup
+// Dependencies: chunks 00 (_gitExec, _shellQuote, isCancelled, scopedVerifyCommand,
+//   runtime, _modules.exec).
+// Attaches to prSplit: verifySplit, verifySplits, verifyEquivalence,
+//   verifyEquivalenceDetailed, cleanupBranches.
 
 (function(prSplit) {
-    // TODO: Extract from monolith (lines 1445-1736)
+    var gitExec = prSplit._gitExec;
+    var shellQuote = prSplit._shellQuote;
+    var scopedVerifyCommand = prSplit.scopedVerifyCommand;
+    var exec = prSplit._modules.exec;
+
+    // -----------------------------------------------------------------------
+    //  verifySplit — runs verify command on a single branch
+    // -----------------------------------------------------------------------
+    function verifySplit(branchName, config) {
+        config = config || {};
+        var dir = config.dir || '.';
+        var command = config.verifyCommand || prSplit.runtime.verifyCommand;
+        var timeoutMs = config.verifyTimeoutMs || 0;
+        var outputFn = config.outputFn || null;
+
+        var co = gitExec(dir, ['checkout', branchName]);
+        if (co.code !== 0) {
+            return {
+                name: branchName,
+                passed: false,
+                output: '',
+                error: 'checkout failed: ' + co.stderr.trim()
+            };
+        }
+
+        var startMs = Date.now();
+        var shellCmd = 'cd ' + shellQuote(dir) + ' && ' + command;
+
+        if (timeoutMs > 0) {
+            var timeoutSec = Math.ceil(timeoutMs / 1000);
+            shellCmd = 'timeout ' + timeoutSec + ' sh -c ' + shellQuote(shellCmd);
+        }
+
+        var stdoutBuf = '';
+        var stderrBuf = '';
+        var prefix = '  [verify ' + branchName + '] ';
+
+        function emitChunk(chunk) {
+            if (!outputFn) return;
+            var lines = chunk.split('\n');
+            for (var i = 0; i < lines.length; i++) {
+                if (lines[i]) {
+                    outputFn(prefix + lines[i]);
+                }
+            }
+        }
+
+        var result = exec.execStream(['sh', '-c', shellCmd], {
+            onStdout: function(chunk) {
+                stdoutBuf += chunk;
+                emitChunk(chunk);
+            },
+            onStderr: function(chunk) {
+                stderrBuf += chunk;
+                emitChunk(chunk);
+            }
+        });
+        var elapsedMs = Date.now() - startMs;
+
+        if (timeoutMs > 0 && (result.code === 124 || elapsedMs >= timeoutMs)) {
+            return {
+                name: branchName,
+                passed: false,
+                output: stdoutBuf,
+                error: 'verify timeout after ' + elapsedMs + 'ms (limit: ' + timeoutMs + 'ms)'
+            };
+        }
+
+        return {
+            name: branchName,
+            passed: result.code === 0,
+            output: stdoutBuf,
+            error: result.code !== 0 ? 'verify failed (exit ' + result.code + '): ' + stderrBuf : null
+        };
+    }
+
+    // -----------------------------------------------------------------------
+    //  verifySplits — runs verification for all splits, respects cancellation
+    // -----------------------------------------------------------------------
+    function verifySplits(plan, options) {
+        options = options || {};
+        if (!plan || !plan.splits) {
+            return { allPassed: false, results: [], error: 'invalid plan: missing splits' };
+        }
+        var dir = plan.dir || '.';
+        var verifyTimeoutMs = options.verifyTimeoutMs || 0;
+        var onBranchStart = typeof options.onBranchStart === 'function' ? options.onBranchStart : null;
+        var onBranchDone = typeof options.onBranchDone === 'function' ? options.onBranchDone : null;
+        var onBranchOutput = typeof options.onBranchOutput === 'function' ? options.onBranchOutput : null;
+        var results = [];
+        var allPassed = true;
+        var failedBranches = {};
+
+        var saved = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+        var restoreBranch = saved.code === 0 ? saved.stdout.trim() : plan.sourceBranch;
+
+        // Pre-existing failure detection: run verification on the source
+        // branch first. If it fails, split branch failures are flagged as
+        // pre-existing rather than new regressions.
+        var baselineFailure = null;
+        if (plan.verifyCommand && plan.sourceBranch) {
+            var baselineResult = verifySplit(plan.sourceBranch, {
+                dir: dir,
+                verifyCommand: plan.verifyCommand,
+                verifyTimeoutMs: verifyTimeoutMs,
+                outputFn: options.outputFn || null
+            });
+            if (!baselineResult.passed) {
+                baselineFailure = baselineResult;
+            }
+        }
+
+        for (var i = 0; i < plan.splits.length; i++) {
+            if (prSplit.isCancelled()) {
+                gitExec(dir, ['checkout', restoreBranch]);
+                return { allPassed: false, results: results, error: 'verification cancelled by user' };
+            }
+
+            var split = plan.splits[i];
+
+            // Skip if any dependency failed.
+            var deps = split.dependencies || [];
+            var skipReason = '';
+            for (var d = 0; d < deps.length; d++) {
+                if (failedBranches[deps[d]]) {
+                    skipReason = 'skipped: dependency ' + deps[d] + ' failed';
+                    break;
+                }
+            }
+            if (skipReason) {
+                if (onBranchDone) { onBranchDone(split.name, false, 0, 0, true, false); }
+                results.push({ name: split.name, passed: false, skipped: true, error: skipReason });
+                allPassed = false;
+                failedBranches[split.name] = true;
+                continue;
+            }
+
+            var baseCmd = plan.verifyCommand;
+            var scopedCmd = scopedVerifyCommand(split.files, baseCmd);
+
+            if (onBranchStart) { onBranchStart(split.name); }
+            var branchStartTime = Date.now();
+
+            var branchOutputFn = options.outputFn || null;
+            if (onBranchOutput) {
+                var baseFn = branchOutputFn;
+                var brName = split.name;
+                branchOutputFn = function(line) {
+                    if (baseFn) { baseFn(line); }
+                    onBranchOutput(brName, line);
+                };
+            }
+            var result = verifySplit(split.name, {
+                dir: dir,
+                verifyCommand: scopedCmd,
+                verifyTimeoutMs: verifyTimeoutMs,
+                outputFn: branchOutputFn
+            });
+            if (scopedCmd !== baseCmd) {
+                result.scopedVerify = scopedCmd;
+            }
+
+            // Mark pre-existing failures.
+            if (!result.passed && baselineFailure) {
+                result.preExisting = true;
+                result.error = (result.error || 'verification failed') + ' (pre-existing on ' + plan.sourceBranch + ')';
+            }
+
+            var branchElapsedMs = Date.now() - branchStartTime;
+            if (onBranchDone) {
+                onBranchDone(split.name, result.passed, result.exitCode || 0, branchElapsedMs, false, !!result.preExisting);
+            }
+
+            results.push(result);
+            if (!result.passed && !result.preExisting) {
+                allPassed = false;
+                failedBranches[split.name] = true;
+            }
+        }
+
+        gitExec(dir, ['checkout', restoreBranch]);
+        return { allPassed: allPassed, results: results, error: null };
+    }
+
+    // -----------------------------------------------------------------------
+    //  verifyEquivalence — tree-SHA comparison between splits and source
+    // -----------------------------------------------------------------------
+    function verifyEquivalence(plan) {
+        if (!plan) {
+            return { equivalent: false, splitTree: '', sourceTree: '', error: 'invalid plan' };
+        }
+        var dir = plan.dir || '.';
+
+        if (!plan.splits || plan.splits.length === 0) {
+            return { equivalent: false, splitTree: '', sourceTree: '', error: 'no splits in plan' };
+        }
+
+        var lastSplit = plan.splits[plan.splits.length - 1].name;
+
+        var splitTreeResult = gitExec(dir, ['rev-parse', lastSplit + '^{tree}']);
+        if (splitTreeResult.code !== 0) {
+            return {
+                equivalent: false,
+                splitTree: '',
+                sourceTree: '',
+                error: 'failed to get split tree: ' + splitTreeResult.stderr.trim()
+            };
+        }
+        var splitTree = splitTreeResult.stdout.trim();
+
+        var sourceTreeResult = gitExec(dir, ['rev-parse', plan.sourceBranch + '^{tree}']);
+        if (sourceTreeResult.code !== 0) {
+            return {
+                equivalent: false,
+                splitTree: splitTree,
+                sourceTree: '',
+                error: 'failed to get source tree: ' + sourceTreeResult.stderr.trim()
+            };
+        }
+        var sourceTree = sourceTreeResult.stdout.trim();
+
+        return {
+            equivalent: splitTree === sourceTree,
+            splitTree: splitTree,
+            sourceTree: sourceTree,
+            error: null
+        };
+    }
+
+    // -----------------------------------------------------------------------
+    //  verifyEquivalenceDetailed — adds per-file diff info on mismatch
+    // -----------------------------------------------------------------------
+    function verifyEquivalenceDetailed(plan) {
+        if (!plan) {
+            return { equivalent: false, splitTree: '', sourceTree: '', error: 'invalid plan', diffFiles: [], diffSummary: '' };
+        }
+        var dir = plan.dir || '.';
+        var base = verifyEquivalence(plan);
+
+        if (base.error || base.equivalent) {
+            base.diffFiles = [];
+            base.diffSummary = '';
+            return base;
+        }
+
+        var lastSplit = plan.splits[plan.splits.length - 1].name;
+        var diffResult = gitExec(dir, ['diff', '--stat', lastSplit, plan.sourceBranch]);
+        base.diffSummary = diffResult.code === 0 ? diffResult.stdout.trim() : '';
+
+        var diffNamesResult = gitExec(dir, ['diff', '--name-only', lastSplit, plan.sourceBranch]);
+        if (diffNamesResult.code === 0 && diffNamesResult.stdout.trim() !== '') {
+            base.diffFiles = diffNamesResult.stdout.trim().split('\n').filter(function(f) {
+                return f !== '';
+            });
+        } else {
+            base.diffFiles = [];
+        }
+
+        return base;
+    }
+
+    // -----------------------------------------------------------------------
+    //  cleanupBranches — deletes split branches
+    // -----------------------------------------------------------------------
+    function cleanupBranches(plan) {
+        if (!plan || !plan.splits) {
+            return { deleted: [], errors: ['invalid plan: missing splits'] };
+        }
+        var dir = plan.dir || '.';
+        var deleted = [];
+        var errors = [];
+
+        // Try to checkout baseBranch; fall back to detaching HEAD so
+        // branch -D can still succeed.
+        var coRes = gitExec(dir, ['checkout', plan.baseBranch]);
+        if (coRes.code !== 0) {
+            gitExec(dir, ['checkout', '--detach', 'HEAD']);
+        }
+
+        for (var i = 0; i < plan.splits.length; i++) {
+            var name = plan.splits[i].name;
+            var result = gitExec(dir, ['branch', '-D', name]);
+            if (result.code === 0) {
+                deleted.push(name);
+            } else {
+                errors.push(name + ': ' + result.stderr.trim());
+            }
+        }
+
+        return { deleted: deleted, errors: errors };
+    }
+
+    // -----------------------------------------------------------------------
+    //  Exports
+    // -----------------------------------------------------------------------
+    prSplit.verifySplit = verifySplit;
+    prSplit.verifySplits = verifySplits;
+    prSplit.verifyEquivalence = verifyEquivalence;
+    prSplit.verifyEquivalenceDetailed = verifyEquivalenceDetailed;
+    prSplit.cleanupBranches = cleanupBranches;
 })(globalThis.prSplit);

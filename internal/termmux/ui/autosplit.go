@@ -446,6 +446,28 @@ func (m *AutoSplitModel) Program() *tea.Program {
 	return m.program
 }
 
+// Steps returns a snapshot of all registered pipeline steps for
+// observation by integration tests and diagnostic tools. The returned
+// slice is a copy — mutations do not affect the model. Goroutine-safe.
+func (m *AutoSplitModel) Steps() []AutoSplitStep {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]AutoSplitStep, len(m.steps))
+	copy(out, m.steps)
+	return out
+}
+
+// OutputLines returns a snapshot of the live output pane contents for
+// observation by integration tests. The returned slice is a copy —
+// mutations do not affect the model. Goroutine-safe.
+func (m *AutoSplitModel) OutputLines() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]string, len(m.outputLines))
+	copy(out, m.outputLines)
+	return out
+}
+
 // --- tea.Model implementation ---
 
 // Init implements tea.Model. Starts the elapsed-time ticker.

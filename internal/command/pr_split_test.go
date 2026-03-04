@@ -149,6 +149,164 @@ func setupTestGitRepo(t *testing.T) string {
 // TestPipeline — configurable harness for integration tests
 // ---------------------------------------------------------------------------
 
+// chunkCompatShim is a JavaScript snippet that, when evaluated after loading
+// chunks 00-13, re-exports the monolith's formerly-global symbols onto
+// globalThis.  This lets the ~25 satellite test files (written for the
+// monolith's flat namespace) run unchanged against the chunked architecture.
+//
+// For functions: Object.defineProperty with get/set proxies so that
+//
+//	`executeSplit = function() {...}` transparently updates prSplit.executeSplit.
+//
+// For state vars: same get/set proxy pointing at prSplit._state.
+// For modules:    Object.defineProperty proxies so that test overrides
+//
+//	like `exec = newProxy` propagate to prSplit._modules.exec.
+const chunkCompatShim = `
+(function() {
+    var ps = globalThis.prSplit;
+    if (!ps) return;
+    var st = ps._state || {};
+    var mods = ps._modules || {};
+
+    // --- Module proxies (get/set → prSplit._modules.*) ---
+    // Tests override the entire module object (e.g. exec = mockProxy)
+    // and chunks read prSplit._modules.exec; both must stay in sync.
+    var modNames = ['bt', 'exec', 'osmod', 'template', 'shared', 'lip'];
+    modNames.forEach(function(m) {
+        if (!mods[m]) return;
+        try {
+            Object.defineProperty(globalThis, m, {
+                get: function() { return mods[m]; },
+                set: function(v) { mods[m] = v; },
+                configurable: true,
+                enumerable: false
+            });
+        } catch(e) {}
+    });
+
+    // --- Function proxies (get/set → prSplit.*) ---
+    var funcNames = [
+        'analyzeDiff', 'analyzeDiffStats',
+        'groupByDirectory', 'groupByExtension', 'groupByPattern',
+        'groupByChunks', 'groupByDependency', 'applyStrategy', 'selectStrategy',
+        'parseGoImports', 'detectGoModulePath',
+        'createSplitPlan', 'savePlan', 'loadPlan',
+        'validateClassification', 'validatePlan', 'validateSplitPlan', 'validateResolution',
+        'executeSplit',
+        'verifySplit', 'verifySplits', 'verifyEquivalence', 'verifyEquivalenceDetailed',
+        'cleanupBranches',
+        'createPRs',
+        'resolveConflicts',
+        'ClaudeCodeExecutor',
+        'renderClassificationPrompt', 'renderSplitPlanPrompt', 'renderConflictPrompt',
+        'renderPrompt',
+        'detectLanguage',
+        'automatedSplit', 'heuristicFallback', 'sendToHandle', 'waitForLogged',
+        'classificationToGroups',
+        'assessIndependence', 'splitsAreIndependent', 'splitsAreIndependentFromMaps',
+        'recordConversation', 'getConversationHistory',
+        'recordTelemetry', 'getTelemetrySummary', 'saveTelemetry',
+        'renderColorizedDiff', 'getSplitDiff',
+        'buildDependencyGraph', 'renderAsciiGraph',
+        'analyzeRetrospective',
+        'cleanupExecutor'
+    ];
+
+    funcNames.forEach(function(k) {
+        if (typeof ps[k] === 'undefined') return;
+        try {
+            Object.defineProperty(globalThis, k, {
+                get: function() { return ps[k]; },
+                set: function(v) { ps[k] = v; },
+                configurable: true,
+                enumerable: false
+            });
+        } catch(e) { /* skip if already defined */ }
+    });
+
+    // --- Internal helpers with _ prefix (monolith had bare names) ---
+    var internalNames = {
+        'gitExec':           '_gitExec',
+        'shellQuote':        '_shellQuote',
+        'gitAddChangedFiles':'_gitAddChangedFiles',
+        'dirname':           '_dirname',
+        'fileExtension':     '_fileExtension',
+        'sanitizeBranchName':'_sanitizeBranchName',
+        'padIndex':          '_padIndex',
+        'isCancelled':       'isCancelled',
+        'isPaused':          '_isPaused',
+        'isForceCancelled':  '_isForceCancelled'
+    };
+    Object.keys(internalNames).forEach(function(bare) {
+        var real = internalNames[bare];
+        if (typeof ps[real] === 'undefined') return;
+        try {
+            Object.defineProperty(globalThis, bare, {
+                get: function() { return ps[real]; },
+                set: function(v) { ps[real] = v; },
+                configurable: true,
+                enumerable: false
+            });
+        } catch(e) {}
+    });
+
+    // --- Constants ---
+    if (ps.AUTOMATED_DEFAULTS) globalThis.AUTOMATED_DEFAULTS = ps.AUTOMATED_DEFAULTS;
+    if (ps.AUTO_FIX_STRATEGIES) globalThis.AUTO_FIX_STRATEGIES = ps.AUTO_FIX_STRATEGIES;
+    if (ps.DEFAULT_PLAN_PATH) globalThis.DEFAULT_PLAN_PATH = ps.DEFAULT_PLAN_PATH;
+    if (ps.CLASSIFICATION_PROMPT_TEMPLATE) globalThis.CLASSIFICATION_PROMPT_TEMPLATE = ps.CLASSIFICATION_PROMPT_TEMPLATE;
+    if (ps.SPLIT_PLAN_PROMPT_TEMPLATE) globalThis.SPLIT_PLAN_PROMPT_TEMPLATE = ps.SPLIT_PLAN_PROMPT_TEMPLATE;
+    if (ps.CONFLICT_RESOLUTION_PROMPT_TEMPLATE) globalThis.CONFLICT_RESOLUTION_PROMPT_TEMPLATE = ps.CONFLICT_RESOLUTION_PROMPT_TEMPLATE;
+
+    // --- runtime proxy (bare global → prSplit.runtime) ---
+    try {
+        Object.defineProperty(globalThis, 'runtime', {
+            get: function() { return ps.runtime; },
+            set: function(v) { ps.runtime = v; },
+            configurable: true,
+            enumerable: false
+        });
+    } catch(e) {}
+
+    // --- State variable proxies (get/set → prSplit._state.*) ---
+    var stateNames = [
+        'analysisCache', 'groupsCache', 'planCache',
+        'executionResultCache', 'conversationHistory',
+        'claudeExecutor', 'mcpCallbackObj'
+    ];
+    stateNames.forEach(function(k) {
+        try {
+            Object.defineProperty(globalThis, k, {
+                get: function() { return st[k]; },
+                set: function(v) { st[k] = v; },
+                configurable: true,
+                enumerable: false
+            });
+        } catch(e) {}
+    });
+
+    // --- _mcpCallbackObj bridge: chunks read prSplit._mcpCallbackObj,
+    //     tests set mcpCallbackObj as bare global → prSplit._state ---
+    try {
+        Object.defineProperty(ps, '_mcpCallbackObj', {
+            get: function() { return st.mcpCallbackObj; },
+            set: function(v) { st.mcpCallbackObj = v; },
+            configurable: true
+        });
+    } catch(e) {}
+
+    // --- _extract* aliases (monolith exported with _, chunks without) ---
+    if (ps.extractDirs) ps._extractDirs = ps.extractDirs;
+    if (ps.extractGoPkgs) ps._extractGoPkgs = ps.extractGoPkgs;
+    if (ps.extractGoImports) ps._extractGoImports = ps.extractGoImports;
+
+    // --- Also expose verify helpers that were in monolith scope ---
+    if (ps.discoverVerifyCommand) globalThis.discoverVerifyCommand = ps.discoverVerifyCommand;
+    if (ps.scopedVerifyCommand) globalThis.scopedVerifyCommand = ps.scopedVerifyCommand;
+})();
+`
+
 // TestPipelineFile describes a file to create in the git repo.
 type TestPipelineFile struct {
 	Path    string
@@ -157,7 +315,7 @@ type TestPipelineFile struct {
 
 // TestPipeline provides a complete setup for pr-split integration testing:
 // temp git repo with configurable files, the Goja engine loaded with
-// pr_split_script.js, and a result directory for mock MCP responses.
+// pr-split chunk files (00-13), and a result directory for mock MCP responses.
 type TestPipeline struct {
 	Dir         string                            // git repo directory
 	ResultDir   string                            // MCP result directory
@@ -370,9 +528,28 @@ func dispatchAwaitPromise(engine *scripting.Engine, tm *scripting.TUIManager, na
 	}
 }
 
-// loadPrSplitEngine creates a scripting engine with the pr_split_script.js
+// allChunkSources returns the concatenated source of all pr-split chunk files.
+// Used by tests that need to inspect the raw JS source for expected content
+// (function declarations, constant names, etc.) — the chunk equivalent of the
+// former monolith prSplitScript variable.
+func allChunkSources() string {
+	var b strings.Builder
+	for _, chunk := range prSplitChunks {
+		b.WriteString(*chunk.source)
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// loadPrSplitEngine creates a scripting engine with the pr-split chunks
 // loaded and ready to dispatch commands. It configures all the global
 // variables that PrSplitCommand.Execute would set.
+//
+// After loading chunks, a compatibility shim exposes formerly-global monolith
+// names (bt, exec, osmod, gitExec, executeSplit, cache vars, etc.) on
+// globalThis with Object.defineProperty get/set proxies so that satellite
+// tests that assign to bare names (e.g. executeSplit = function(){})
+// transparently update the prSplit.* namespace used by chunk code.
 func loadPrSplitEngine(t testing.TB, overrides map[string]interface{}) (*bytes.Buffer, func(name string, args []string) error) {
 	t.Helper()
 
@@ -413,9 +590,14 @@ func loadPrSplitEngine(t testing.TB, overrides map[string]interface{}) (*bytes.B
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("prSplitTemplate", prSplitTemplate)
 
-	script := engine.LoadScriptFromString("pr-split", prSplitScript)
-	if err := engine.ExecuteScript(script); err != nil {
-		t.Fatalf("Failed to load pr-split script: %v", err)
+	if err := loadChunkedScript(engine); err != nil {
+		t.Fatal(err)
+	}
+
+	// Install compat shim: re-expose monolith globals for satellite tests.
+	shim := engine.LoadScriptFromString("pr-split/compat-shim", chunkCompatShim)
+	if err := engine.ExecuteScript(shim); err != nil {
+		t.Fatalf("compat shim failed: %v", err)
 	}
 
 	// Return a function that dispatches mode commands.
@@ -482,9 +664,14 @@ func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]interface{}) (
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("prSplitTemplate", prSplitTemplate)
 
-	script := engine.LoadScriptFromString("pr-split", prSplitScript)
-	if err := engine.ExecuteScript(script); err != nil {
-		t.Fatalf("Failed to load pr-split script: %v", err)
+	if err := loadChunkedScript(engine); err != nil {
+		t.Fatal(err)
+	}
+
+	// Install compat shim: re-expose monolith globals for satellite tests.
+	shim := engine.LoadScriptFromString("pr-split/compat-shim", chunkCompatShim)
+	if err := engine.ExecuteScript(shim); err != nil {
+		t.Fatalf("compat shim failed: %v", err)
 	}
 
 	tm := engine.GetTUIManager()

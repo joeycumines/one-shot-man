@@ -822,7 +822,7 @@ func TestShellQuote(t *testing.T) {
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	// shellQuote is a top-level function in pr_split_script.js (line 156),
+	// shellQuote is defined in pr_split_00_core.js (chunk 00),
 	// directly callable in the Goja VM scope after loadPrSplitEngineWithEval.
 
 	tests := []struct {

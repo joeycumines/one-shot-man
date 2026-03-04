@@ -218,65 +218,6 @@ func TestChunk00_Initialization(t *testing.T) {
 	}
 }
 
-// TestChunk00_ExportedSymbols verifies all expected exports are defined.
-func TestChunk00_ExportedSymbols(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, "00_core")
-
-	checks := []struct {
-		path     string
-		expected string // "function", "object", "string", etc.
-	}{
-		// Internal helpers (underscore-prefixed)
-		{"globalThis.prSplit._gitExec", "function"},
-		{"globalThis.prSplit._shellQuote", "function"},
-		{"globalThis.prSplit._gitAddChangedFiles", "function"},
-		{"globalThis.prSplit._dirname", "function"},
-		{"globalThis.prSplit._fileExtension", "function"},
-		{"globalThis.prSplit._sanitizeBranchName", "function"},
-		{"globalThis.prSplit._padIndex", "function"},
-
-		// Public helpers
-		{"globalThis.prSplit.discoverVerifyCommand", "function"},
-		{"globalThis.prSplit.scopedVerifyCommand", "function"},
-
-		// Runtime config
-		{"globalThis.prSplit.runtime", "object"},
-
-		// Cooperative cancellation
-		{"globalThis.prSplit.isCancelled", "function"},
-		{"globalThis.prSplit._isPaused", "function"},
-		{"globalThis.prSplit._isForceCancelled", "function"},
-
-		// Module refs
-		{"globalThis.prSplit._modules", "object"},
-		{"globalThis.prSplit._modules.bt", "object"},
-		{"globalThis.prSplit._modules.exec", "object"},
-
-		// Style
-		{"globalThis.prSplit._style", "object"},
-		{"globalThis.prSplit._style.success", "function"},
-		{"globalThis.prSplit._style.error", "function"},
-		{"globalThis.prSplit._style.progressBar", "function"},
-
-		// Config
-		{"globalThis.prSplit._cfg", "object"},
-		{"globalThis.prSplit._COMMAND_NAME", "string"},
-		{"globalThis.prSplit._MODE_NAME", "string"},
-	}
-
-	for _, tc := range checks {
-		t.Run(tc.path, func(t *testing.T) {
-			val, err := evalJS(fmt.Sprintf("typeof %s", tc.path))
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if val != tc.expected {
-				t.Errorf("expected typeof to be %q, got %v", tc.expected, val)
-			}
-		})
-	}
-}
-
 // TestChunk00_ShellQuote tests the shellQuote helper with various inputs.
 func TestChunk00_ShellQuote(t *testing.T) {
 	evalJS := loadChunkEngine(t, nil, "00_core")

@@ -222,26 +222,27 @@ func TestPrSplitCommand_TemplateContent(t *testing.T) {
 }
 
 func TestPrSplitCommand_ScriptContent(t *testing.T) {
-	// Verify the script has expected functions
-	if !contains(prSplitScript, "function analyzeDiff") {
+	// Verify the chunked script source has expected functions
+	src := allChunkSources()
+	if !contains(src, "function analyzeDiff") {
 		t.Error("Expected script to contain analyzeDiff function")
 	}
-	if !contains(prSplitScript, "function groupByDirectory") {
+	if !contains(src, "function groupByDirectory") {
 		t.Error("Expected script to contain groupByDirectory function")
 	}
-	if !contains(prSplitScript, "function createSplitPlan") {
+	if !contains(src, "function createSplitPlan") {
 		t.Error("Expected script to contain createSplitPlan function")
 	}
-	if !contains(prSplitScript, "function executeSplit") {
+	if !contains(src, "function executeSplit") {
 		t.Error("Expected script to contain executeSplit function")
 	}
-	if !contains(prSplitScript, "function verifyEquivalence") {
+	if !contains(src, "function verifyEquivalence") {
 		t.Error("Expected script to contain verifyEquivalence function")
 	}
-	if !contains(prSplitScript, "tui.registerMode") {
+	if !contains(src, "tui.registerMode") {
 		t.Error("Expected script to register TUI mode")
 	}
-	if !contains(prSplitScript, "VERSION") {
+	if !contains(src, "VERSION") {
 		t.Error("Expected script to contain VERSION constant")
 	}
 }

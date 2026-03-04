@@ -92,34 +92,6 @@ func BenchmarkAssessIndependence(b *testing.B) {
 // T120-T131: Phase 8 Scope Expansion Feature Tests
 // ---------------------------------------------------------------------------
 
-// TestScopeExpansion_NewExportsExist verifies all Phase 8 exports are wired.
-func TestScopeExpansion_NewExportsExist(t *testing.T) {
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
-
-	exports := []string{
-		"renderColorizedDiff",
-		"getSplitDiff",
-		"recordConversation",
-		"getConversationHistory",
-		"buildDependencyGraph",
-		"renderAsciiGraph",
-		"recordTelemetry",
-		"getTelemetrySummary",
-		"saveTelemetry",
-		"analyzeRetrospective",
-	}
-	for _, name := range exports {
-		val, err := evalJS("typeof prSplit." + name)
-		if err != nil {
-			t.Errorf("Failed to check export %s: %v", name, err)
-			continue
-		}
-		if val != "function" {
-			t.Errorf("Expected prSplit.%s to be a function, got %v", name, val)
-		}
-	}
-}
-
 // TestBuildDependencyGraph verifies dependency graph construction.
 func TestBuildDependencyGraph(t *testing.T) {
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)

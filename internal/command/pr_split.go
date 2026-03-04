@@ -22,9 +22,6 @@ import (
 //go:embed pr_split_template.md
 var prSplitTemplate string
 
-//go:embed pr_split_script.js
-var prSplitScript string
-
 // Chunked script files — loaded in sequence as an alternative to the monolith.
 // Each chunk is an IIFE that attaches exports to globalThis.prSplit.
 //
@@ -139,10 +136,6 @@ type PrSplitCommand struct {
 
 	// Delete split branches if the pipeline fails.
 	cleanupOnFailure bool
-
-	// Use chunked script loading (14 chunks) instead of monolith.
-	// Enabled via PR_SPLIT_CHUNKED=1 env var during migration.
-	useChunkedScript bool
 }
 
 // stringSliceFlag implements [flag.Value] for repeatable string flags.
@@ -282,11 +275,6 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	}
 	defer cleanup()
 
-	// Check env var for chunked script loading (migration toggle).
-	if v := os.Getenv("PR_SPLIT_CHUNKED"); v == "1" || v == "true" {
-		c.useChunkedScript = true
-	}
-
 	// Inject command name for state namespacing
 	const commandName = "pr-split"
 	engine.SetGlobal("config", map[string]interface{}{
@@ -294,7 +282,6 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	})
 
 	// Set up global variables
-	engine.SetGlobal("args", args)
 	engine.SetGlobal("prSplitTemplate", prSplitTemplate)
 
 	// Expose split configuration to JS
@@ -411,40 +398,14 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 				return nil
 			})
 		},
-	})
-
-	// Split-view TUI — dual-pane BubbleTea model.
-	splitView := ui.NewSplitView(
-		ui.WithSplitRatio(0.5),
-		ui.WithMaxLines(1000),
-		ui.WithToggleKey(termmux.DefaultToggleKey),
-		ui.WithClaudeWriter(func(data []byte) error {
-			// Forward to child PTY if attached.
-			_, err := tuiMux.WriteToChild(data)
-			return err
-		}),
-	)
-	engine.SetGlobal("splitView", map[string]interface{}{
-		"appendOsm": func(text string) {
-			splitView.AppendOsmOutput(text)
-		},
-		"appendClaude": func(text string) {
-			splitView.AppendClaudeOutput(text)
-		},
-		"setClaudeStatus": func(status string) {
-			splitView.SetClaudeStatus(status)
-		},
-		"setRatio": func(ratio float64) {
-			splitView.SetSplitRatio(ratio)
-		},
-		"activePane": func() string {
-			if splitView.ActivePane() == ui.PaneClaude {
-				return "claude"
-			}
-			return "osm"
-		},
-		"run": func() error {
-			return splitView.Run()
+		// screenshot returns the current VTerm buffer content as plain
+		// text (ANSI-stripped). This provides a "terminal screenshot"
+		// for integration tests to verify output sanity — the returned
+		// text is suitable for string assertions and ANSI-garbage
+		// detection. Returns "" if no child is attached or no VTerm
+		// is allocated. Goroutine-safe (VTerm uses internal mutex).
+		"screenshot": func() string {
+			return tuiMux.ChildExitOutput()
 		},
 	})
 
@@ -610,6 +571,36 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		"quit": func() {
 			autoSplitModel.Quit()
 		},
+		// getView returns the current BubbleTea-rendered output as a
+		// string for visual verification. Contains step icons, elapsed
+		// times, and the output pane. Only meaningful when BubbleTea is
+		// running (runAsync called) or after it exits (wait returned).
+		"getView": func() string {
+			return autoSplitModel.View()
+		},
+		// getSteps returns a snapshot of all pipeline step states for
+		// programmatic inspection by integration tests. Each step is a
+		// map with name, status (0=pending,1=running,2=done,3=failed),
+		// error, detail, and elapsedMs. Call after wait() for final state.
+		"getSteps": func() []map[string]interface{} {
+			steps := autoSplitModel.Steps()
+			out := make([]map[string]interface{}, len(steps))
+			for i, s := range steps {
+				out[i] = map[string]interface{}{
+					"name":      s.Name,
+					"status":    int(s.Status),
+					"error":     s.Error,
+					"detail":    s.Detail,
+					"elapsedMs": s.Elapsed.Milliseconds(),
+				}
+			}
+			return out
+		},
+		// getOutputLines returns a snapshot of the output pane lines
+		// for content verification. Call after wait() for final state.
+		"getOutputLines": func() []string {
+			return autoSplitModel.OutputLines()
+		},
 		// sendWithCancel writes text to a Claude handle's PTY stdin
 		// in a background goroutine, polling for cancellation every
 		// 200ms. Delegates to prSplitSendWithCancel for testability.
@@ -650,7 +641,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		// T04a: sendTextWithEnter REMOVED — it blocked the JS event loop
 		// because time.Sleep in Go blocks the calling goroutine which blocks
 		// the JS function call. The correct approach is to use JS async/await
-		// with setTimeout for the delay (implemented in pr_split_script.js
+		// with setTimeout for the delay (implemented in the sendToHandle
 		// sendToHandle function). sendWithCancel is kept for individual writes.
 	})
 
@@ -721,16 +712,9 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		},
 	})
 
-	// Load the embedded script(s)
-	if c.useChunkedScript {
-		if err := loadChunkedScript(engine); err != nil {
-			return err
-		}
-	} else {
-		script := engine.LoadScriptFromString("pr-split", prSplitScript)
-		if err := engine.ExecuteScript(script); err != nil {
-			return fmt.Errorf("failed to execute pr-split script: %w", err)
-		}
+	// Load the chunked script files
+	if err := loadChunkedScript(engine); err != nil {
+		return err
 	}
 
 	// Only run interactive mode if requested and not in test mode

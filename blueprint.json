@@ -136,6 +136,12 @@
       "status": "Not Started"
     },
     {
+      "task": "R42: Handle Git-Ignored Files in PR-Split Plan Execution",
+      "description": "Fix the PR-split pipeline failure that occurs when Claude includes a git-ignored file in a generated plan, causing `git add` to fail with a fatal error. Introduce robust handling: optionally use `git check-ignore` as a pre-validation step, or handle the `git add` failure gracefully (e.g., skipping the file with a warning, or applying `git add -f` if appropriate). The pipeline must not crash and abort the entire split.",
+      "acceptance": "If a PR split plan includes an explicitly ignored file (like in `.claude/skills`), the pipeline processes it deterministically without failing the overarching split operation. An integration test verifies that `git add` failures due to gitignore are handled gracefully.",
+      "status": "Not Started"
+    },
+    {
       "task": "W00: Termmux JavaScript Facade (Builtin)",
       "description": "Expose `internal/termmux` functionality to JavaScript so that UI components like those using `osm:bt` can be wired up with termmux directly. This facade MUST be placed in an independent `internal/builtin/termmux` package (or similar). It MUST ONLY expose the pure termmux abstractions (panes, swapping, resizing). The core `internal/termmux` package MUST NOT contain any goja bindings\u2014these bindings must live entirely within `internal/builtin/termmux`. This ensures termmux remains transportable/independent. Note: You must evaluate signal handling and `try-lock` behavior. If the current termmux detachment behavior is flawed, refactor it here.",
       "acceptance": "A JavaScript facade for termmux is implemented in `internal/builtin/termmux`. JavaScript code can orchestrate termmux behavior without polluting the core termmux module with goja bindings. All termmux bindings are localized to `internal/builtin/termmux`.",
@@ -199,6 +205,18 @@
       "task": "W10: Termmux Mouse Support & Draggable UI (Investigation & Implementation)",
       "description": "Extend `internal/termmux` to handle BubbleTea mouse events (`tea.MouseMsg` exposed through JS API) to enable mouse interaction with the multiplexer UI. Implement the ability for the user to click the HUD or specific UI regions to instantly swap between the Claude terminal and the primary application view without keyboard input. Implement draggable logic allowing the user to click and reposition the HUD overlay anywhere on the screen.",
       "acceptance": "If the terminal emulator supports mouse reporting, the user can click a visual button or the HUD to toggle terminal panes. Mouse events are reliably captured and propagated without interfering with standard terminal copy/paste. The HUD overlay dynamically updates its (X, Y) rendering coordinates based on drag events, allowing the user to move it.",
+      "status": "Not Started"
+    },
+    {
+      "task": "W10a: Remove Session Determination from Auto-Split MCP Communications",
+      "description": "Remove all traces of session determination passed by the agent in the auto-split functionality back to the host PR-split process. This session ID is an artifact from a time when the API was surfaced more indirectly. Currently, the PR-split process is the only process accessing or using that socket, representing a guaranteed one-to-one communication mechanism. Strip the session metadata from the payloads and the validation logic on the Go host side and the JS/Claude agent side.",
+      "acceptance": "Agent callbacks to the host process no longer include session identifiers in their payload. The PR-split process successfully processes callbacks purely via socket connection identity. Integration tests prove the PR-split agent functionality works without requiring session IDs. Unused session generation/validation garbage is completely deleted.",
+      "status": "Not Started"
+    },
+    {
+      "task": "W10b: Remove socat Dependency and Implement Native Windows IPC",
+      "description": "Remove the dependency on the external `socat` utility for bridging communications between the agent and the host process. Replace it with a native, cross-platform implementation natively within Go (e.g., named pipes or direct TCP/Unix sockets). Ensure this functionality works flawlessly on Windows. The Windows verification must be multifaceted, explicitly testing terminal multiplexing (`termmux`), the bidirectional communication mechanism (MCP callbacks), and all other related internal areas.",
+      "acceptance": "The `osm pr-split` command executes successfully natively without requiring `socat`. The agent communicates with the host process correctly. Multiplexing behaves perfectly on Windows. `make integration-test-prsplit` and `make all` run green on all supported platforms including Windows without hanging or requiring external unix toolchains.",
       "status": "Not Started"
     },
     {

@@ -28,9 +28,6 @@ profile.cov
 go.work
 go.work.sum
 
-# env file
-.env
-
 # Editor/IDE
 /.vscode
 /.idea
@@ -55,8 +52,7 @@ test-scripts/
 /docs/visuals/gifs/*.gif
 
 *.log
-*.test
-*.out
+
 /DIRECTIVE.txt
 /.session-start
 /.session-timer
@@ -64,9 +60,7 @@ test-scripts/
 /.github/copilot-instructions.md
 /.claude/agents
 /.github/agents
-/.claude/skills
-!/.claude/skills/blueprint-json
-!/.claude/skills/changelog-md
-!/.claude/skills/git-commit
-!/.claude/skills/solution-analysis-master
-!/.claude/skills/strict-review-gate
+/.claude/skills/mcp-builder
+/.claude/skills/skill-database-go
+/.claude/skills/slopless-researcher
+/.claude/skills/takumi-prompting

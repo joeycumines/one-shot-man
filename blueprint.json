@@ -64,6 +64,11 @@
       "status": "Not Started"
     },
     {
+      "task": "R00b: Delete unused claude mux javascript module components",
+      "description": "Delete the entirety of the claude mux javascript module and all related dependencies that are unrelated to auto split (PR split). Retain only the MCP used by auto split and the functionality for the auto split command. Everything else around claude must be outright deleted, including documentation that is not used by the auto split functionality.",
+      "status": "Not Started"
+    },
+    {
       "task": "R00: Decouple PR split TUI from termmux package",
       "description": "Move internal/termmux/ui/ (AutoSplitModel, PlanEditor) to a dedicated UI package within internal/command (e.g., internal/command/prsplit_ui). termmux must be stripped of any UI that is not core to terminal rendering or overlays. The moved Go models must be marked as TODO for JS rewrite using the osm:bt facade. Delete any 'slop' or unrelated UI code discovered in internal/termmux.",
       "acceptance": "internal/termmux/ui is removed. pr_split.go references the new UI package. make all passes. Tests for the TUI models are updated and green. No app-specific TUI logic remains in internal/termmux. TODOs present in new Go UI package.",

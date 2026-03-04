@@ -16,7 +16,6 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 	"github.com/joeycumines/one-shot-man/internal/termmux"
-	"github.com/joeycumines/one-shot-man/internal/termmux/ui"
 )
 
 //go:embed pr_split_template.md
@@ -452,11 +451,11 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	//
 	// Pre-declare so the closure can reference autoSplitModel (the variable
 	// is assigned on the very next line, before the closure is ever called).
-	var autoSplitModel *ui.AutoSplitModel
-	autoSplitModel = ui.NewAutoSplitModel(
-		ui.WithAutoSplitMaxLines(1000),
-		ui.WithAutoSplitToggleKey(termmux.DefaultToggleKey),
-		ui.WithAutoSplitOnToggle(func() {
+	var autoSplitModel *AutoSplitModel
+	autoSplitModel = NewAutoSplitModel(
+		WithAutoSplitMaxLines(1000),
+		WithAutoSplitToggleKey(termmux.DefaultToggleKey),
+		WithAutoSplitOnToggle(func() {
 			// Check if a child is attached before switching — if not,
 			// there's nothing to show and we'd just blank the screen.
 			if !tuiMux.HasChild() {
@@ -548,7 +547,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			autoSplitModel.SendBranchVerifyStart(name)
 		},
 		"branchDone": func(name string, passed bool, exitCode int, elapsedMs int64, skipped, preExisting bool) {
-			autoSplitModel.SendBranchVerifyDone(ui.AutoSplitBranchVerifyDoneMsg{
+			autoSplitModel.SendBranchVerifyDone(AutoSplitBranchVerifyDoneMsg{
 				Branch:   name,
 				Passed:   passed,
 				ExitCode: exitCode,
@@ -650,13 +649,13 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 
 	engine.SetGlobal("planEditorFactory", map[string]interface{}{
 		"create": func(items []interface{}) map[string]interface{} {
-			editorItems := make([]ui.PlanEditorItem, 0, len(items))
+			editorItems := make([]PlanEditorItem, 0, len(items))
 			for _, raw := range items {
 				m, ok := raw.(map[string]interface{})
 				if !ok {
 					continue
 				}
-				item := ui.PlanEditorItem{}
+				item := PlanEditorItem{}
 				if name, ok := m["name"].(string); ok {
 					item.Name = name
 				}
@@ -675,7 +674,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 				}
 				editorItems = append(editorItems, item)
 			}
-			editor := ui.NewPlanEditor(editorItems, ui.WithOnChange(func(updated []ui.PlanEditorItem) {
+			editor := NewPlanEditor(editorItems, WithOnChange(func(updated []PlanEditorItem) {
 				// Silently accept changes — JS can query items after run.
 			}))
 			return map[string]interface{}{

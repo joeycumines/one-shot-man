@@ -88,19 +88,19 @@
       "task": "R00-01: Move autosplit.go from termmux/ui to internal/command",
       "description": "Move internal/termmux/ui/autosplit.go to internal/command/prsplit_autosplit_model.go. Change package. Update imports in pr_split.go.",
       "acceptance": "internal/termmux/ui/autosplit.go deleted. pr_split.go no longer imports termmux/ui. make all passes.",
-      "status": "Not Started"
+      "status": "Complete — git mv'd to prsplit_autosplit_model.go. Package changed. All ui. prefixes stripped from pr_split.go."
     },
     {
       "task": "R00-02: Move planeditor.go from termmux/ui to internal/command",
       "description": "Move planeditor.go + planeditor_test.go + helpers.go to internal/command/. Update package declaration and imports.",
       "acceptance": "Moved files compile as package command. make all passes.",
-      "status": "Not Started"
+      "status": "Complete — git mv'd planeditor.go, planeditor_test.go, helpers.go, check_test.go, coverage_gaps_batch12_test.go. All package declarations changed."
     },
     {
       "task": "R00-03: Clean up termmux/ui package remnants",
       "description": "After R00-01 and R00-02, audit and delete remaining content in internal/termmux/ui/ if empty.",
       "acceptance": "No import of internal/termmux/ui exists outside internal/termmux/ itself.",
-      "status": "Not Started"
+      "status": "Complete — directory eliminated. doc.go deleted. Zero termmux/ui imports remain in any .go file."
     },
     {
       "task": "R32-01: Remove stale pr_split_script.js references",

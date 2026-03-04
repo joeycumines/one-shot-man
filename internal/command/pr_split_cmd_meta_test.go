@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
-	"github.com/joeycumines/one-shot-man/internal/termmux/ui"
 )
 
 func TestPrSplitCommand_NonInteractive(t *testing.T) {
@@ -576,14 +575,14 @@ func TestPlanEditorFactory_ConversionRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	// Replicate the map→PlanEditorItem conversion from pr_split.go:571-596.
-	convertToPlanItems := func(items []interface{}) []ui.PlanEditorItem {
-		editorItems := make([]ui.PlanEditorItem, 0, len(items))
+	convertToPlanItems := func(items []interface{}) []PlanEditorItem {
+		editorItems := make([]PlanEditorItem, 0, len(items))
 		for _, raw := range items {
 			m, ok := raw.(map[string]interface{})
 			if !ok {
 				continue
 			}
-			item := ui.PlanEditorItem{}
+			item := PlanEditorItem{}
 			if name, ok := m["name"].(string); ok {
 				item.Name = name
 			}
@@ -606,7 +605,7 @@ func TestPlanEditorFactory_ConversionRoundTrip(t *testing.T) {
 	}
 
 	// Replicate the PlanEditorItem→map conversion from pr_split.go:620-630.
-	convertToMaps := func(items []ui.PlanEditorItem) []interface{} {
+	convertToMaps := func(items []PlanEditorItem) []interface{} {
 		out := make([]interface{}, len(items))
 		for i, item := range items {
 			out[i] = map[string]interface{}{
@@ -731,7 +730,7 @@ func TestPlanEditorFactory_ConversionRoundTrip(t *testing.T) {
 			},
 		}
 		items := convertToPlanItems(input)
-		editor := ui.NewPlanEditor(items)
+		editor := NewPlanEditor(items)
 		result := editor.Items()
 		maps := convertToMaps(result)
 

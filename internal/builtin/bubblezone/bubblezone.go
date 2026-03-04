@@ -127,7 +127,11 @@ func Require(manager *Manager) func(runtime *goja.Runtime, module *goja.Object) 
 				return runtime.ToValue(false)
 			}
 			id := call.Argument(0).String()
-			msgObj := call.Argument(1).ToObject(runtime)
+			msgArg := call.Argument(1)
+			if msgArg == nil || goja.IsUndefined(msgArg) || goja.IsNull(msgArg) {
+				return runtime.ToValue(false)
+			}
+			msgObj := msgArg.ToObject(runtime)
 			if msgObj == nil {
 				return runtime.ToValue(false)
 			}
@@ -135,7 +139,7 @@ func Require(manager *Manager) func(runtime *goja.Runtime, module *goja.Object) 
 			// Extract x, y from mouse message
 			xVal := msgObj.Get("x")
 			yVal := msgObj.Get("y")
-			if goja.IsUndefined(xVal) || goja.IsUndefined(yVal) {
+			if xVal == nil || goja.IsUndefined(xVal) || yVal == nil || goja.IsUndefined(yVal) {
 				return runtime.ToValue(false)
 			}
 			x := int(xVal.ToInteger())

@@ -534,7 +534,7 @@ func createTickerJSWrapper(bridge *Bridge, runtime *goja.Runtime, ticker bt.Tick
 					if bridge.loop != nil {
 						// Force execution on the loop to settle the promise
 						// Note: This bypasses the bridge.stopped check intentionally
-						bridge.loop.RunOnLoop(resolveFn)
+						bridge.loop.Submit(func() { resolveFn(bridge.vm) }) //nolint:errcheck
 					} else {
 						// No loop available - promise will remain pending
 						// Note: Logging limitation as we're outside event loop goroutine
@@ -651,7 +651,7 @@ func createManagerJSWrapper(bridge *Bridge, runtime *goja.Runtime, manager bt.Ma
 					if bridge.loop != nil {
 						// Force execution on the loop to settle the promise
 						// Note: This bypasses the bridge.stopped check intentionally
-						bridge.loop.RunOnLoop(resolveFn)
+						bridge.loop.Submit(func() { resolveFn(bridge.vm) }) //nolint:errcheck
 					} else {
 						// No loop available - promise will remain pending
 						// Note: Logging limitation as we're outside event loop context

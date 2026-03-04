@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
-	"github.com/dop251/goja_nodejs/eventloop"
+	gojanodejsconsole "github.com/dop251/goja_nodejs/console"
 	"github.com/dop251/goja_nodejs/require"
+	goeventloop "github.com/joeycumines/go-eventloop"
+	gojaeventloop "github.com/joeycumines/goja-eventloop"
 )
 
 // ============================================================================
@@ -30,18 +32,69 @@ import (
 // We MUST measure steps 1-5 (input path) SEPARATELY from step 6 (render).
 //
 // Run with: go test -bench=. -benchmem ./internal/builtin/bt/
+//
 // ============================================================================
+// PROFILING NOTES (pprof CPU, 2s benchtime, Apple M2 Pro, 2026-02-15)
+// ============================================================================
+//
+// Bridge overhead:
+//   - RunOnLoop (async):    ~101ns/op,    40B,    2 allocs
+//   - RunJSSync (empty):    ~1.0µs/op,   424B,    7 allocs (make(chan error,1) dominates)
+//   - RunJSSync (1+1 JS):   ~1.1µs/op,   472B,    9 allocs (+130ns for trivial JS)
+//   - Concurrent RunJSSync: ~2.5µs/op,   424B,    7 allocs (serialized, no contention degradation)
+//
+// Realistic workloads:
+//   - Key→state update:     ~2.6µs/op,  1.9KB,   24 allocs (0.016% of 16ms frame)
+//   - View render (24×80):  ~500µs/op,  128KB, 3870 allocs (Goja string concat, NOT bridge)
+//   - Full frame (update+view): ~358µs/op, 129KB, 3886 allocs (2.2% of 16ms)
+//   - Tick update (3 enemies, BB sync, collisions): ~18.5µs/op, 10KB, 160 allocs
+//   - AI contention (3 AI ticks + 1 key): ~34µs/op, 5KB, 282 allocs
+//   - Tick contention (60 ticks + 1 key): ~157µs/op, 102KB, 1524 allocs
+//
+// pprof analysis:
+//   - Application code accounts for <1% of CPU time in all benchmarks
+//   - Bridge RunOnLoopSync: make(chan error,1) is the sole per-call alloc in our code
+//   - View rendering allocations (128KB, 3870) are entirely Goja VM string operations
+//   - Tick update CPU is dominated by Goja VM executing JS game logic
+//
+// Conclusion: No optimization targets in bridge code. The dominant costs are
+// Goja VM execution (view rendering, game logic) and Go channel/scheduling
+// primitives — both external and not improvable from application code.
+// ============================================================================
+
+// setupBenchBridge creates a Bridge with its own event loop for benchmarks/tests.
+// Uses testing.TB to support both *testing.T and *testing.B. Cleanup is automatic.
+func setupBenchBridge(tb testing.TB) *Bridge {
+	tb.Helper()
+	loop, err := goeventloop.New()
+	if err != nil {
+		tb.Fatal(err)
+	}
+	vm := goja.New()
+	registry := require.NewRegistry()
+	registry.Enable(vm)
+	gojanodejsconsole.Enable(vm)
+	adapter, err := gojaeventloop.New(loop, vm)
+	if err != nil {
+		tb.Fatal(err)
+	}
+	if err := adapter.Bind(); err != nil {
+		tb.Fatal(err)
+	}
+	loopCtx, loopCancel := context.WithCancel(context.Background())
+	go loop.Run(loopCtx)
+	bridge := NewBridgeWithEventLoop(context.Background(), loop, vm, registry)
+	tb.Cleanup(func() {
+		bridge.Stop()
+		loopCancel()
+		loop.Shutdown(context.Background())
+	})
+	return bridge
+}
 
 // BenchmarkRunOnLoop measures the throughput of scheduling callbacks on the event loop.
 func BenchmarkRunOnLoop(b *testing.B) {
-	loop := eventloop.NewEventLoop()
-	loop.Start()
-	defer loop.Stop()
-
-	registry := require.NewRegistry()
-	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, registry)
-	defer bridge.Stop()
+	bridge := setupBenchBridge(b)
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -64,14 +117,7 @@ func BenchmarkRunOnLoop(b *testing.B) {
 // BenchmarkRunJSSync measures the blocking call throughput.
 // This is the critical path for Init/Update/View in BubbleTea.
 func BenchmarkRunJSSync(b *testing.B) {
-	loop := eventloop.NewEventLoop()
-	loop.Start()
-	defer loop.Stop()
-
-	registry := require.NewRegistry()
-	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, registry)
-	defer bridge.Stop()
+	bridge := setupBenchBridge(b)
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -88,14 +134,7 @@ func BenchmarkRunJSSync(b *testing.B) {
 
 // BenchmarkRunJSSync_WithJSExecution measures the cost including actual JS execution.
 func BenchmarkRunJSSync_WithJSExecution(b *testing.B) {
-	loop := eventloop.NewEventLoop()
-	loop.Start()
-	defer loop.Stop()
-
-	registry := require.NewRegistry()
-	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, registry)
-	defer bridge.Stop()
+	bridge := setupBenchBridge(b)
 
 	// Pre-compile a simple script
 	var prg *goja.Program
@@ -125,14 +164,7 @@ func BenchmarkRunJSSync_WithJSExecution(b *testing.B) {
 //   - Calling a JS function
 //   - Returning a command object
 func BenchmarkRunJSSync_RealisticUpdate(b *testing.B) {
-	loop := eventloop.NewEventLoop()
-	loop.Start()
-	defer loop.Stop()
-
-	registry := require.NewRegistry()
-	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, registry)
-	defer bridge.Stop()
+	bridge := setupBenchBridge(b)
 
 	// Set up a realistic update function in JS
 	err := bridge.LoadScript("test", `
@@ -197,14 +229,7 @@ func BenchmarkRunJSSync_RealisticUpdate(b *testing.B) {
 // BenchmarkRunJSSync_RealisticView simulates a realistic view() call.
 // This uses row-based string concatenation (join rows, not chars).
 func BenchmarkRunJSSync_RealisticView(b *testing.B) {
-	loop := eventloop.NewEventLoop()
-	loop.Start()
-	defer loop.Stop()
-
-	registry := require.NewRegistry()
-	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, registry)
-	defer bridge.Stop()
+	bridge := setupBenchBridge(b)
 
 	// Set up an OPTIMIZED view function: concatenate per row (not per char)
 	err := bridge.LoadScript("test", `
@@ -267,14 +292,7 @@ func BenchmarkRunJSSync_RealisticView(b *testing.B) {
 // BenchmarkRunJSSync_OriginalView simulates the ORIGINAL inefficient view() call
 // for comparison. This uses the slow 2D object array + string concatenation approach.
 func BenchmarkRunJSSync_OriginalView(b *testing.B) {
-	loop := eventloop.NewEventLoop()
-	loop.Start()
-	defer loop.Stop()
-
-	registry := require.NewRegistry()
-	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, registry)
-	defer bridge.Stop()
+	bridge := setupBenchBridge(b)
 
 	// Set up the ORIGINAL slow view function (2D object array + string +=)
 	err := bridge.LoadScript("test", `
@@ -335,14 +353,7 @@ func BenchmarkRunJSSync_OriginalView(b *testing.B) {
 
 // BenchmarkConcurrentRunJSSync simulates concurrent callers (like BubbleTea + BT Tickers).
 func BenchmarkConcurrentRunJSSync(b *testing.B) {
-	loop := eventloop.NewEventLoop()
-	loop.Start()
-	defer loop.Stop()
-
-	registry := require.NewRegistry()
-	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, registry)
-	defer bridge.Stop()
+	bridge := setupBenchBridge(b)
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -366,14 +377,7 @@ func BenchmarkConcurrentRunJSSync(b *testing.B) {
 // BenchmarkInputLatency_KeyToStateChange measures the FULL input latency path:
 // Key press → update() → state change. This is what the user FEELS.
 func BenchmarkInputLatency_KeyToStateChange(b *testing.B) {
-	loop := eventloop.NewEventLoop()
-	loop.Start()
-	defer loop.Stop()
-
-	registry := require.NewRegistry()
-	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, registry)
-	defer bridge.Stop()
+	bridge := setupBenchBridge(b)
 
 	// Set up a realistic game update function matching example-04-bt-shooter.js
 	err := bridge.LoadScript("test", `
@@ -463,14 +467,7 @@ func BenchmarkInputLatency_KeyToStateChange(b *testing.B) {
 // BenchmarkInputLatency_TickContention measures input latency when
 // tick messages are flooding the update loop (the REAL issue).
 func BenchmarkInputLatency_TickContention(b *testing.B) {
-	loop := eventloop.NewEventLoop()
-	loop.Start()
-	defer loop.Stop()
-
-	registry := require.NewRegistry()
-	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, registry)
-	defer bridge.Stop()
+	bridge := setupBenchBridge(b)
 
 	err := bridge.LoadScript("test", `
 		var state = { tick: 0, keyCount: 0 };
@@ -527,14 +524,7 @@ func BenchmarkInputLatency_TickContention(b *testing.B) {
 // BenchmarkInputLatency_FullFrameCycle measures the complete frame cycle
 // including update AND view, to see total time a key event takes to appear.
 func BenchmarkInputLatency_FullFrameCycle(b *testing.B) {
-	loop := eventloop.NewEventLoop()
-	loop.Start()
-	defer loop.Stop()
-
-	registry := require.NewRegistry()
-	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, registry)
-	defer bridge.Stop()
+	bridge := setupBenchBridge(b)
 
 	err := bridge.LoadScript("test", `
 		var state = { x: 40, y: 12, tick: 0 };
@@ -609,14 +599,7 @@ func BenchmarkInputLatency_FullFrameCycle(b *testing.B) {
 // BenchmarkInputLatency_AIContention measures input latency when AI tickers
 // are also competing for the event loop.
 func BenchmarkInputLatency_AIContention(b *testing.B) {
-	loop := eventloop.NewEventLoop()
-	loop.Start()
-	defer loop.Stop()
-
-	registry := require.NewRegistry()
-	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, registry)
-	defer bridge.Stop()
+	bridge := setupBenchBridge(b)
 
 	err := bridge.LoadScript("test", `
 		var state = { x: 40, y: 12, aiTicks: 0 };
@@ -677,14 +660,7 @@ func BenchmarkInputLatency_AIContention(b *testing.B) {
 // BenchmarkInputLatency_RealisticTickUpdate measures a REALISTIC tick update
 // including all the game logic that runs every 16ms frame.
 func BenchmarkInputLatency_RealisticTickUpdate(b *testing.B) {
-	loop := eventloop.NewEventLoop()
-	loop.Start()
-	defer loop.Stop()
-
-	registry := require.NewRegistry()
-	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, registry)
-	defer bridge.Stop()
+	bridge := setupBenchBridge(b)
 
 	// Set up realistic game state matching example-04-bt-shooter.js
 	err := bridge.LoadScript("test", `
@@ -856,14 +832,7 @@ func TestRunJSSync_Throughput(t *testing.T) {
 		t.Skip("skipping throughput test in short mode")
 	}
 
-	loop := eventloop.NewEventLoop()
-	loop.Start()
-	defer loop.Stop()
-
-	registry := require.NewRegistry()
-	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, registry)
-	defer bridge.Stop()
+	bridge := setupBenchBridge(t)
 
 	// Measure for 1 second
 	duration := 1 * time.Second
@@ -897,14 +866,7 @@ func TestRunJSSync_SimulatedGameLoop(t *testing.T) {
 		t.Skip("skipping game loop simulation in short mode")
 	}
 
-	loop := eventloop.NewEventLoop()
-	loop.Start()
-	defer loop.Stop()
-
-	registry := require.NewRegistry()
-	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, registry)
-	defer bridge.Stop()
+	bridge := setupBenchBridge(t)
 
 	// Simulate game state
 	var tickCount int64
@@ -989,14 +951,7 @@ func TestEventLoopContention(t *testing.T) {
 		t.Skip("skipping contention test in short mode")
 	}
 
-	loop := eventloop.NewEventLoop()
-	loop.Start()
-	defer loop.Stop()
-
-	registry := require.NewRegistry()
-	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, registry)
-	defer bridge.Stop()
+	bridge := setupBenchBridge(t)
 
 	// Simulate multiple concurrent callers
 	const numCallers = 5

@@ -682,7 +682,7 @@ func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionRetry(t *testing.T) 
 	raw, err := evalJS(`
 		(async function() {
 			var calls = [];
-			var screen = 'idle-screen';
+			var screen = 'Claude shell\\n❯ classify these files';
 			var newlineCount = 0;
 
 			globalThis.autoSplitTUI = {
@@ -693,7 +693,7 @@ func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionRetry(t *testing.T) 
 						// First Enter has no visible effect; second Enter causes
 						// observable output change, simulating delayed submit ack.
 						if (newlineCount >= 2) {
-							screen = 'Claude processing request...';
+							screen = 'Claude processing request...\\n❯ ';
 						}
 					}
 					return { error: null };
@@ -704,8 +704,12 @@ func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionRetry(t *testing.T) 
 			};
 
 			prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 0;
+			prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 25;
+			prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS = 1;
+			prSplit.SEND_PRE_SUBMIT_STABLE_SAMPLES = 1;
 			prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS = 5;
 			prSplit.SEND_SUBMIT_ACK_POLL_MS = 1;
+			prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES = 1;
 			prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS = 3;
 
 			var result = await globalThis.prSplit.sendToHandle({}, 'classify these files');
@@ -765,7 +769,7 @@ func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionFailure(t *testing.T
 	raw, err := evalJS(`
 		(async function() {
 			var calls = [];
-			var screen = 'idle-screen';
+			var screen = 'Claude shell\\n❯ classify these files';
 
 			globalThis.autoSplitTUI = {
 				sendWithCancel: function(handle, text) {
@@ -778,8 +782,12 @@ func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionFailure(t *testing.T
 			};
 
 			prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 0;
+			prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 25;
+			prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS = 1;
+			prSplit.SEND_PRE_SUBMIT_STABLE_SAMPLES = 1;
 			prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS = 5;
 			prSplit.SEND_SUBMIT_ACK_POLL_MS = 1;
+			prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES = 1;
 			prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS = 2;
 
 			var result = await globalThis.prSplit.sendToHandle({}, 'classify these files');

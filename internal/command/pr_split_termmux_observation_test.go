@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -456,9 +455,6 @@ func TestIntegration_AutoSplitClaude_VTermObservation(t *testing.T) {
 func TestIntegration_PrSplit_VTerm_AutoSplitOllamaExactCommand(t *testing.T) {
 	skipIfNotIntegration(t)
 
-	if runtime.GOOS == "windows" {
-		t.Skip("pty integration is unix-only")
-	}
 	if _, err := exec.LookPath("ollama"); err != nil {
 		t.Skip("ollama not found on PATH")
 	}

@@ -77,11 +77,20 @@
     var SEND_TEXT_NEWLINE_DELAY_MS = 10;
     // Chunk large prompts into smaller writes so PTY consumers read them
     // incrementally instead of one giant burst.
-    var SEND_TEXT_CHUNK_BYTES = 4096;
-    // After pressing Enter, require observable terminal output change (when
-    // tuiMux screenshot is available) to confirm prompt submission.
+    var SEND_TEXT_CHUNK_BYTES = 512;
+    // Delay between chunk writes to reduce PTY coalescing into a single
+    // read burst on the Claude side.
+    var SEND_TEXT_CHUNK_DELAY_MS = 2;
+    // Wait for prompt/input anchors to stabilize before pressing Enter.
+    var SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 1500;
+    var SEND_PRE_SUBMIT_STABLE_POLL_MS = 50;
+    var SEND_PRE_SUBMIT_STABLE_SAMPLES = 3;
+    var SEND_INPUT_ANCHOR_TAIL_CHARS = 28;
+    // After pressing Enter, require anchor movement (prompt/input) that is
+    // stable for multiple polls.
     var SEND_SUBMIT_ACK_TIMEOUT_MS = 1500;
     var SEND_SUBMIT_ACK_POLL_MS = 50;
+    var SEND_SUBMIT_ACK_STABLE_SAMPLES = 2;
     var SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS = 3;
 
     // -----------------------------------------------------------------------
@@ -100,8 +109,14 @@
         return {
             textNewlineDelayMs: numberOrDefault(prSplit.SEND_TEXT_NEWLINE_DELAY_MS, SEND_TEXT_NEWLINE_DELAY_MS, 0),
             textChunkBytes: numberOrDefault(prSplit.SEND_TEXT_CHUNK_BYTES, SEND_TEXT_CHUNK_BYTES, 1),
+            textChunkDelayMs: numberOrDefault(prSplit.SEND_TEXT_CHUNK_DELAY_MS, SEND_TEXT_CHUNK_DELAY_MS, 0),
+            preSubmitStableTimeoutMs: numberOrDefault(prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS, SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS, 1),
+            preSubmitStablePollMs: numberOrDefault(prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS, SEND_PRE_SUBMIT_STABLE_POLL_MS, 1),
+            preSubmitStableSamples: numberOrDefault(prSplit.SEND_PRE_SUBMIT_STABLE_SAMPLES, SEND_PRE_SUBMIT_STABLE_SAMPLES, 1),
+            inputAnchorTailChars: numberOrDefault(prSplit.SEND_INPUT_ANCHOR_TAIL_CHARS, SEND_INPUT_ANCHOR_TAIL_CHARS, 4),
             submitAckTimeoutMs: numberOrDefault(prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS, SEND_SUBMIT_ACK_TIMEOUT_MS, 1),
             submitAckPollMs: numberOrDefault(prSplit.SEND_SUBMIT_ACK_POLL_MS, SEND_SUBMIT_ACK_POLL_MS, 1),
+            submitAckStableSamples: numberOrDefault(prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES, SEND_SUBMIT_ACK_STABLE_SAMPLES, 1),
             submitMaxNewlineAttempts: numberOrDefault(prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS, SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS, 1)
         };
     }
@@ -130,23 +145,164 @@
         }
     }
 
-    async function waitForScreenshotChange(previous, timeoutMs, pollMs) {
-        if (previous === null) {
-            return { observed: false, changed: false, latest: null, error: null };
+    function textTailAnchor(text, maxChars) {
+        var s = String(text || '');
+        var lines = s.split('\n');
+        for (var i = lines.length - 1; i >= 0; i--) {
+            var line = (lines[i] || '').trim();
+            if (!line) continue;
+            if (line.length > maxChars) {
+                return line.substring(line.length - maxChars);
+            }
+            return line;
         }
+        var trimmed = s.trim();
+        if (!trimmed) return '';
+        if (trimmed.length > maxChars) {
+            return trimmed.substring(trimmed.length - maxChars);
+        }
+        return trimmed;
+    }
+
+    function lineEndIndex(screen, idx) {
+        if (idx < 0) return -1;
+        var nl = screen.indexOf('\n', idx);
+        if (nl === -1) return screen.length;
+        return nl;
+    }
+
+    function findPromptMarkerBottom(screen) {
+        var lines = screen.split('\n');
+        var offset = 0;
+        var best = -1;
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            var trimmed = line.replace(/^\s+/, '');
+            if (trimmed.indexOf('❯') === 0 || trimmed.indexOf('>') === 0) {
+                best = offset + line.length;
+            }
+            offset += line.length + 1;
+        }
+        return best;
+    }
+
+    function captureInputAnchors(text, cfg) {
+        var screen = safeScreenshot();
+        if (screen === null) {
+            return { observed: false };
+        }
+        var tail = textTailAnchor(text, cfg.inputAnchorTailChars);
+        var tailIdx = tail ? screen.lastIndexOf(tail) : -1;
+        var pastedIdx = screen.lastIndexOf('[Pasted text');
+        if (pastedIdx === -1) {
+            pastedIdx = screen.lastIndexOf('[Pasted');
+        }
+        var inputBottom = -1;
+        var inputType = '';
+        if (tailIdx !== -1) {
+            inputBottom = lineEndIndex(screen, tailIdx);
+            inputType = 'tail';
+        } else if (pastedIdx !== -1) {
+            inputBottom = lineEndIndex(screen, pastedIdx);
+            inputType = 'paste';
+        }
+        var promptBottom = findPromptMarkerBottom(screen);
+        return {
+            observed: true,
+            screen: screen,
+            promptBottom: promptBottom,
+            inputBottom: inputBottom,
+            inputType: inputType,
+            stableKey: String(promptBottom) + '|' + String(inputBottom)
+        };
+    }
+
+    async function waitForStableInputAnchors(text, cfg) {
         var startMs = Date.now();
-        while (Date.now() - startMs < timeoutMs) {
+        var lastKey = '';
+        var stableCount = 0;
+        var lastState = null;
+        while (Date.now() - startMs < cfg.preSubmitStableTimeoutMs) {
             var cancelErr = getCancellationError();
             if (cancelErr) {
-                return { observed: true, changed: false, latest: previous, error: cancelErr };
+                return { error: cancelErr, state: null, observed: true };
             }
-            var current = safeScreenshot();
-            if (current !== null && current !== previous) {
-                return { observed: true, changed: true, latest: current, error: null };
+            var state = captureInputAnchors(text, cfg);
+            if (!state.observed) {
+                return { error: null, state: null, observed: false };
             }
-            await new Promise(function(resolve) { setTimeout(resolve, pollMs); });
+            lastState = state;
+            if (state.stableKey === lastKey) {
+                stableCount++;
+            } else {
+                stableCount = 1;
+                lastKey = state.stableKey;
+            }
+            var anchorsReady = (state.inputBottom !== -1);
+            if (anchorsReady && stableCount >= cfg.preSubmitStableSamples) {
+                return { error: null, state: state, observed: true };
+            }
+            await new Promise(function(resolve) { setTimeout(resolve, cfg.preSubmitStablePollMs); });
         }
-        return { observed: true, changed: false, latest: previous, error: null };
+
+        if (lastState && lastState.inputBottom !== -1) {
+            return { error: null, state: lastState, observed: true };
+        }
+        return {
+            error: 'unable to locate stable prompt/input anchors before submit',
+            state: lastState,
+            observed: true
+        };
+    }
+
+    async function waitForSubmitAck(baselineState, text, cfg) {
+        if (!baselineState || !baselineState.observed) {
+            return { acknowledged: false, observed: false, state: null, error: null };
+        }
+        var startMs = Date.now();
+        var stableCount = 0;
+        var lastChangeKey = '';
+        var latest = baselineState;
+
+        while (Date.now() - startMs < cfg.submitAckTimeoutMs) {
+            var cancelErr = getCancellationError();
+            if (cancelErr) {
+                return { acknowledged: false, observed: true, state: latest, error: cancelErr };
+            }
+
+            var state = captureInputAnchors(text, cfg);
+            if (!state.observed) {
+                return { acknowledged: false, observed: false, state: null, error: null };
+            }
+            latest = state;
+
+            var anchorChanged = false;
+            if (baselineState.inputBottom !== -1 && state.inputBottom !== baselineState.inputBottom) {
+                anchorChanged = true;
+            }
+            if (!anchorChanged && baselineState.promptBottom !== -1 &&
+                state.promptBottom !== baselineState.promptBottom) {
+                anchorChanged = true;
+            }
+
+            if (anchorChanged) {
+                if (state.stableKey === lastChangeKey) {
+                    stableCount++;
+                } else {
+                    stableCount = 1;
+                    lastChangeKey = state.stableKey;
+                }
+                if (stableCount >= cfg.submitAckStableSamples) {
+                    return { acknowledged: true, observed: true, state: state, error: null };
+                }
+            } else {
+                stableCount = 0;
+                lastChangeKey = '';
+            }
+
+            await new Promise(function(resolve) { setTimeout(resolve, cfg.submitAckPollMs); });
+        }
+        return { acknowledged: false, observed: true, state: latest, error: null };
     }
 
     // sendToHandle writes prompt text and submits it with Enter. It uses:
@@ -218,20 +374,34 @@
                 return textResult;
             }
             sentChunks++;
+            if (config.textChunkDelayMs > 0) {
+                await new Promise(function(resolve) {
+                    setTimeout(resolve, config.textChunkDelayMs);
+                });
+            }
         }
         if (text.length === 0) sentChunks = 1;
         log.printf('auto-split sendToHandle: text written in %d chunk(s)', sentChunks);
 
-        // Step 2: Non-blocking delay using event-loop-integrated setTimeout.
+        // Step 2: Wait for stable prompt/input anchors before Enter.
+        var stableAnchors = await waitForStableInputAnchors(text, config);
+        if (stableAnchors.error) {
+            return { error: stableAnchors.error };
+        }
+        var observedTransport = stableAnchors.observed;
+        var baselineState = stableAnchors.state;
+        if (observedTransport && baselineState) {
+            log.printf('auto-split sendToHandle: stable anchors ready (promptBottom=%d inputBottom=%d type=%s)',
+                baselineState.promptBottom, baselineState.inputBottom, baselineState.inputType || '?');
+        }
+
+        // Step 3: Non-blocking delay using event-loop-integrated setTimeout.
         log.printf('auto-split sendToHandle: waiting %dms (via setTimeout, non-blocking)', config.textNewlineDelayMs);
         await new Promise(function(resolve) {
             setTimeout(resolve, config.textNewlineDelayMs);
         });
 
-        // Step 3: Submit with newline, retrying until we observe Claude output
-        // change (when screenshot observation is available).
-        var baselineShot = safeScreenshot();
-        var observedTransport = baselineShot !== null;
+        // Step 4: Submit with newline, retrying until prompt/input anchors move.
         for (var attempt = 1; attempt <= config.submitMaxNewlineAttempts; attempt++) {
             var attemptCancelErr = getCancellationError();
             if (attemptCancelErr) {
@@ -252,25 +422,30 @@
                 return { error: null };
             }
 
-            var watch = await waitForScreenshotChange(
-                baselineShot,
-                config.submitAckTimeoutMs,
-                config.submitAckPollMs
-            );
+            // Re-capture stable anchors if baseline is missing (e.g., first pass
+            // did not have enough context, but transport is now available).
+            if (!baselineState) {
+                var recapture = await waitForStableInputAnchors(text, config);
+                if (recapture.error) {
+                    return { error: recapture.error };
+                }
+                baselineState = recapture.state;
+            }
+            var watch = await waitForSubmitAck(baselineState, text, config);
             if (watch.error) {
                 return { error: watch.error };
             }
-            if (watch.changed) {
-                log.printf('auto-split sendToHandle: observed terminal change after newline attempt %d', attempt);
+            if (watch.acknowledged) {
+                log.printf('auto-split sendToHandle: observed submit acknowledgment after newline attempt %d', attempt);
                 return { error: null };
             }
 
-            log.printf('auto-split sendToHandle: no terminal change observed after newline attempt %d (%dms window)',
+            log.printf('auto-split sendToHandle: no submit acknowledgment after newline attempt %d (%dms window)',
                 attempt, config.submitAckTimeoutMs);
-            baselineShot = watch.latest;
+            baselineState = watch.state || baselineState;
         }
         return {
-            error: 'prompt submission unconfirmed: no observable Claude terminal response after ' +
+            error: 'prompt submission unconfirmed: prompt/input anchors did not move after ' +
                    config.submitMaxNewlineAttempts + ' newline attempts'
         };
     }
@@ -1032,13 +1207,8 @@
                    typeof claudeExecutor.handle.drainOutput === 'function') {
             // No tuiMux (headless/test mode): drain Claude's PTY output to
             // prevent buffer deadlocks.
-            if (typeof claudeExecutor.handle.drainOutputLogged === 'function') {
-                claudeExecutor.handle.drainOutputLogged();
-                log.printf('auto-split: no tuiMux — started LOGGED PTY output drain');
-            } else {
-                claudeExecutor.handle.drainOutput();
-                log.printf('auto-split: no tuiMux — started PTY output drain to prevent deadlock');
-            }
+            claudeExecutor.handle.drainOutput();
+            log.printf('auto-split: no tuiMux — started PTY output drain to prevent deadlock');
         }
 
         // Step 3: Send classification request.
@@ -1463,8 +1633,14 @@
     prSplit.AUTOMATED_DEFAULTS = AUTOMATED_DEFAULTS;
     prSplit.SEND_TEXT_NEWLINE_DELAY_MS = SEND_TEXT_NEWLINE_DELAY_MS;
     prSplit.SEND_TEXT_CHUNK_BYTES = SEND_TEXT_CHUNK_BYTES;
+    prSplit.SEND_TEXT_CHUNK_DELAY_MS = SEND_TEXT_CHUNK_DELAY_MS;
+    prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS;
+    prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS = SEND_PRE_SUBMIT_STABLE_POLL_MS;
+    prSplit.SEND_PRE_SUBMIT_STABLE_SAMPLES = SEND_PRE_SUBMIT_STABLE_SAMPLES;
+    prSplit.SEND_INPUT_ANCHOR_TAIL_CHARS = SEND_INPUT_ANCHOR_TAIL_CHARS;
     prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS = SEND_SUBMIT_ACK_TIMEOUT_MS;
     prSplit.SEND_SUBMIT_ACK_POLL_MS = SEND_SUBMIT_ACK_POLL_MS;
+    prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES = SEND_SUBMIT_ACK_STABLE_SAMPLES;
     prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS = SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS;
     prSplit.sendToHandle = sendToHandle;
     prSplit.waitForLogged = waitForLogged;

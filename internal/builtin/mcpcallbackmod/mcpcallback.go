@@ -14,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	goruntime "runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -67,6 +68,25 @@ func WatchForInit() <-chan *Handle {
 	watchers = append(watchers, ch)
 	watcherMu.Unlock()
 	return ch
+}
+
+func mcpCallbackDebugEnabled() bool {
+	v := strings.TrimSpace(os.Getenv("OSM_MCP_CALLBACK_DEBUG"))
+	if v == "" {
+		return false
+	}
+	switch strings.ToLower(v) {
+	case "0", "false", "no", "off":
+		return false
+	}
+	return true
+}
+
+func mcpCallbackDebugf(format string, args ...any) {
+	if !mcpCallbackDebugEnabled() {
+		return
+	}
+	_, _ = fmt.Fprintf(os.Stderr, "[mcpcallback] "+format+"\n", args...)
 }
 
 // notifyWatchers is called after successful initSync/init. It delivers
@@ -488,11 +508,11 @@ func (cb *mcpCallback) acceptLoop(ctx context.Context, listener net.Listener) {
 			if errors.Is(err, net.ErrClosed) {
 				return
 			}
-			fmt.Fprintf(os.Stderr, "[mcpcallback] accept error (retrying): %v\n", err)
+			mcpCallbackDebugf("accept error (retrying): %v", err)
 			continue // Retry on temporary errors
 		}
 
-		fmt.Fprintf(os.Stderr, "[mcpcallback] accepted MCP connection from %s\n", conn.RemoteAddr())
+		mcpCallbackDebugf("accepted MCP connection from %s", conn.RemoteAddr())
 
 		// Serve MCP on this connection in a dedicated goroutine.
 		// Each connection gets its own Transport (SDK requirement: one Transport per Connect call).
@@ -504,12 +524,12 @@ func (cb *mcpCallback) acceptLoop(ctx context.Context, listener net.Listener) {
 			}
 			session, sErr := cb.server.Connect(ctx, transport, nil)
 			if sErr != nil {
-				fmt.Fprintf(os.Stderr, "[mcpcallback] MCP server.Connect error: %v\n", sErr)
+				mcpCallbackDebugf("MCP server.Connect error: %v", sErr)
 				return
 			}
-			fmt.Fprintf(os.Stderr, "[mcpcallback] MCP session established, waiting...\n")
+			mcpCallbackDebugf("MCP session established, waiting...")
 			waitErr := session.Wait()
-			fmt.Fprintf(os.Stderr, "[mcpcallback] MCP session ended: %v\n", waitErr)
+			mcpCallbackDebugf("MCP session ended: %v", waitErr)
 		}()
 	}
 }

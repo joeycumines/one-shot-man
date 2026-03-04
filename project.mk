@@ -30,9 +30,9 @@ integration-test-prsplit: CLAUDE_ARGS ?=
 integration-test-prsplit: INTEGRATION_MODEL ?= gpt-oss:20b-cloud
 integration-test-prsplit: PRSPLIT_TEST_RUN ?= TestIntegration_(.*Claude|AutoSplitComplex|PrSplit_VTerm)
 integration-test-prsplit:
-	$(GO) test -race -v -count=1 -timeout=15m \
-  		-run '$(PRSPLIT_TEST_RUN)' \
+	$(GO) test -race -count=1 -timeout=15m \
 		./internal/command/... \
+		-run '$(PRSPLIT_TEST_RUN)' \
 		-integration \
 		-claude-command=$(CLAUDE_COMMAND) \
 		$(foreach arg,$(CLAUDE_ARGS),-claude-arg=$(arg)) \

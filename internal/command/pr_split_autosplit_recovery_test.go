@@ -779,6 +779,9 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 	// Override ClaudeCodeExecutor to mock the Claude spawn.
 	// No resultDir — mcpcallback is the sole IPC mechanism.
 	mockSetup := `
+		// Prevent text chunking so _mockSentPrompts captures full prompt text per send.
+		prSplit.SEND_TEXT_CHUNK_BYTES = 1000000;
+
 		var _mockSentPrompts = [];
 		ClaudeCodeExecutor = function(config) {
 			this.config = config;

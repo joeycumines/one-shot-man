@@ -702,6 +702,9 @@ func TestPrSplitCommand_ResolveConflictsWithClaudePreExistingFailure(t *testing.
 	// Mock claudeExecutor so sendToHandle can send prompts.
 	// Mock mcpCallbackObj to return pre-existing failure resolution data.
 	val, err := evalJS(`(async function() {
+		// Prevent text chunking — tests count raw send() calls.
+		prSplit.SEND_TEXT_CHUNK_BYTES = 1000000;
+
 		var sendCallCount = 0;
 		claudeExecutor = {
 			handle: {
@@ -813,6 +816,9 @@ func TestPrSplitCommand_ResolveConflictsWithClaude_MaxAttemptsPerBranch(t *testi
 	// 2 failures, maxAttemptsPerBranch=2, mcpCallbackObj always times out.
 	// Each failure should get exactly 2 attempts (not share a global budget).
 	val, err := evalJS(`(async function() {
+		// Prevent text chunking — tests count raw send() calls.
+		prSplit.SEND_TEXT_CHUNK_BYTES = 1000000;
+
 		var sendCount = 0;
 		claudeExecutor = {
 			handle: {
@@ -920,15 +926,15 @@ func TestPrSplitCommand_SendToHandle_TwoWrite(t *testing.T) {
 	if output.Result.Error != nil {
 		t.Errorf("sendToHandle returned error: %s", *output.Result.Error)
 	}
-	// Two-write: text first, then \n.
+	// Two-write: text first, then \r (carriage return = Enter key in PTY).
 	if len(output.Sends) != 2 {
 		t.Fatalf("Expected 2 sends (two-write), got %d: %v", len(output.Sends), output.Sends)
 	}
 	if output.Sends[0] != "test prompt" {
 		t.Errorf("sends[0] = %q, want %q", output.Sends[0], "test prompt")
 	}
-	if output.Sends[1] != "\n" {
-		t.Errorf("sends[1] = %q, want %q", output.Sends[1], "\n")
+	if output.Sends[1] != "\r" {
+		t.Errorf("sends[1] = %q, want %q", output.Sends[1], "\r")
 	}
 }
 
@@ -1762,6 +1768,159 @@ func TestPrSplitCommand_SendToHandle_NewlineEAGAINExhausted(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// sendToHandle edge cases: empty text, cancellation, boundary chunking
+// ---------------------------------------------------------------------------
+
+func TestPrSplitCommand_SendToHandle_EmptyText(t *testing.T) {
+	t.Parallel()
+
+	_, _, _, evalJSAsync := loadPrSplitEngineWithEval(t, nil)
+
+	// sendToHandle with empty string should skip the chunk loop entirely and
+	// only send the carriage return (\r) for submission.
+	val, err := evalJSAsync(`await (async function() {
+		var sends = [];
+		var mockHandle = {
+			send: function(text) { sends.push(text); }
+		};
+		var result = await globalThis.prSplit.sendToHandle(mockHandle, '');
+		return JSON.stringify({
+			result: result,
+			sends: sends
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		Result struct {
+			Error *string `json:"error"`
+		} `json:"result"`
+		Sends []string `json:"sends"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("Failed to parse output: %v", err)
+	}
+
+	if output.Result.Error != nil {
+		t.Errorf("sendToHandle('') returned error: %s", *output.Result.Error)
+	}
+	// Empty text: chunk loop body should not execute, only \r is sent.
+	if len(output.Sends) != 1 {
+		t.Fatalf("Expected 1 send (only \\r), got %d: %v", len(output.Sends), output.Sends)
+	}
+	if output.Sends[0] != "\r" {
+		t.Errorf("sends[0] = %q, want %q", output.Sends[0], "\r")
+	}
+}
+
+func TestPrSplitCommand_SendToHandle_CancellationBeforeChunk(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Set cancellation flag before calling sendToHandle.
+	// getCancellationError() checks prSplit.isCancelled() which delegates to
+	// autoSplitTUI.cancelled().
+	val, err := evalJS(`(async function() {
+		globalThis.autoSplitTUI = {
+			cancelled: function() { return true; },
+			forceCancelled: function() { return false; }
+		};
+		var sends = [];
+		var mockHandle = {
+			send: function(text) { sends.push(text); }
+		};
+		var result = await globalThis.prSplit.sendToHandle(mockHandle, 'should not send');
+		return JSON.stringify({
+			error: result.error,
+			sendCount: sends.length
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		Error     *string `json:"error"`
+		SendCount int     `json:"sendCount"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("Failed to parse output: %v", err)
+	}
+
+	if output.Error == nil {
+		t.Fatal("Expected cancellation error, got nil")
+	}
+	if !strings.Contains(*output.Error, "cancelled") {
+		t.Errorf("Error should mention cancellation, got: %s", *output.Error)
+	}
+	if output.SendCount != 0 {
+		t.Errorf("Expected 0 sends (cancelled before write), got %d", output.SendCount)
+	}
+}
+
+func TestPrSplitCommand_SendToHandle_ExactChunkBoundary(t *testing.T) {
+	t.Parallel()
+
+	_, _, _, evalJSAsync := loadPrSplitEngineWithEval(t, nil)
+
+	// Send text whose length exactly equals SEND_TEXT_CHUNK_BYTES (512).
+	// Should produce exactly 1 text chunk + 1 \r = 2 sends total.
+	val, err := evalJSAsync(`await (async function() {
+		var sends = [];
+		var mockHandle = {
+			send: function(text) { sends.push(text); }
+		};
+		// Build a string of exactly 512 characters.
+		var text = '';
+		for (var i = 0; i < 512; i++) { text += 'A'; }
+		var result = await globalThis.prSplit.sendToHandle(mockHandle, text);
+		return JSON.stringify({
+			result: result,
+			sendCount: sends.length,
+			firstSendLen: sends.length > 0 ? sends[0].length : -1,
+			lastSend: sends.length > 0 ? sends[sends.length - 1] : null
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var output struct {
+		Result struct {
+			Error *string `json:"error"`
+		} `json:"result"`
+		SendCount    int     `json:"sendCount"`
+		FirstSendLen int     `json:"firstSendLen"`
+		LastSend     *string `json:"lastSend"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &output); err != nil {
+		t.Fatalf("Failed to parse output: %v", err)
+	}
+
+	if output.Result.Error != nil {
+		t.Errorf("sendToHandle returned error: %s", *output.Result.Error)
+	}
+	// Exactly 512 bytes = exactly 1 chunk (offset 0..511, then offset 512 >= len → loop exits).
+	// Total sends: 1 text chunk + 1 \r = 2.
+	if output.SendCount != 2 {
+		t.Errorf("Expected 2 sends (1 chunk + \\r), got %d", output.SendCount)
+	}
+	if output.FirstSendLen != 512 {
+		t.Errorf("First send length = %d, want 512", output.FirstSendLen)
+	}
+	if output.LastSend == nil || *output.LastSend != "\r" {
+		last := "<nil>"
+		if output.LastSend != nil {
+			last = *output.LastSend
+		}
+		t.Errorf("Last send = %q, want %q", last, "\r")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // T116: resolveConflictsWithClaude — successful fix path
 // ---------------------------------------------------------------------------
 
@@ -1790,6 +1949,9 @@ func TestPrSplitCommand_ResolveConflictsWithClaude_SuccessfulFix(t *testing.T) {
 		osmod.writeFile = function(path, content) {
 			writeFileCalls.push({ file: path, content: content });
 		};
+
+		// Prevent text chunking — tests count raw send() calls.
+		prSplit.SEND_TEXT_CHUNK_BYTES = 1000000;
 
 		// --- Mock claudeExecutor ---
 		var sendCallCount = 0;

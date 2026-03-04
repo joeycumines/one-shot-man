@@ -14,8 +14,8 @@ This document describes the internal architecture of `osm` — how the major sub
 
 3. **Goal subsystem.** `command.NewGoalDiscovery(cfg)` builds the discovery engine, then `command.NewDynamicGoalRegistry(builtIns, discovery)` merges built-in goals with user-discovered goals.
 
-4. **Command registration.** All 18 built-in commands are registered:
-   `help`, `version`, `config`, `init`, `script`, `session`, `prompt-flow`, `code-review`, `super-document`, `completion`, `goal`, `sync`, `log`, `mcp`, `mcp-instance`, `mcp-make`, `mcp-parent`, `claude-mux`. The completion command receives both the registry and goal registry for tab-completion data.
+4. **Command registration.** All 17 built-in commands are registered:
+   `help`, `version`, `config`, `init`, `script`, `session`, `prompt-flow`, `code-review`, `super-document`, `completion`, `goal`, `sync`, `log`, `mcp`, `mcp-instance`, `mcp-make`, `mcp-parent`, `pr-split`. The completion command receives both the registry and goal registry for tab-completion data.
 
 5. **Flag parsing.** A global `FlagSet` parses top-level `-h`/`-help`; remaining args identify the command name and its arguments. Each command gets its own `FlagSet` (with `ContinueOnError`) so `SetupFlags` can register command-specific flags before `fs.Parse(cmdArgs)`.
 
@@ -438,11 +438,10 @@ CLI args → main.go → Registry.Get(cmd)
         Go commands              JS commands
      (config, session,      (script, prompt-flow,
       init, version,         code-review, goal,
-      help, log, mcp,       super-document)
-      mcp-instance,
+      help, log, mcp,       super-document,
+      mcp-instance,          pr-split)
       mcp-make, mcp-parent,
-      sync, completion,
-      claude-mux)            ↓
+      sync, completion)      ↓
                            PrepareEngine()
                                   ↓
                           Engine created with:

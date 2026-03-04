@@ -136,10 +136,6 @@ _osm_completion() {
             COMPREPLY=($(compgen -W "tail follow" -- ${cur}))
             return 0
             ;;
-        claude-mux)
-            COMPREPLY=($(compgen -W "status start stop submit" -- ${cur}))
-            return 0
-            ;;
         pr-split)
             COMPREPLY=($(compgen -W "--base --strategy --max --prefix --verify --dry-run --json --interactive --test --session --store --log-level --log-file --log-buffer --claude-command --claude-arg --claude-model --claude-config-dir --claude-env" -- ${cur}))
             return 0
@@ -247,9 +243,6 @@ _osm() {
                 log)
                     _values 'log-subcommand' 'tail' 'follow'
                     ;;
-                claude-mux)
-                    _values 'claude-mux-subcommand' 'status' 'start' 'stop' 'submit'
-                    ;;
                 pr-split)
                     _arguments \
                         '--base[Base branch]:branch:' \
@@ -355,9 +348,6 @@ complete -c osm -n '__fish_seen_subcommand_from schema' -a '--json' -d 'Output s
 
 # Completion for 'log' subcommand
 complete -c osm -n '__fish_seen_subcommand_from log' -a 'tail follow' -d 'Log subcommands'
-
-# Completion for 'claude-mux' subcommand
-complete -c osm -n '__fish_seen_subcommand_from claude-mux' -a 'status start stop submit' -d 'Claude-mux subcommands'
 
 # Completion for 'pr-split' flags
 complete -c osm -n '__fish_seen_subcommand_from pr-split' -l base -d 'Base branch'
@@ -496,14 +486,6 @@ Register-ArgumentCompleter -Native -CommandName osm -ScriptBlock {
 
     if ($tokenCount -eq 3 -and $command -eq 'log') {
         $subs = @('tail','follow')
-        $subs | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
-            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
-        }
-        return
-    }
-
-    if ($tokenCount -eq 3 -and $command -eq 'claude-mux') {
-        $subs = @('status','start','stop','submit')
         $subs | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
             [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
         }

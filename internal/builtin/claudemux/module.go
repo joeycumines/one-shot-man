@@ -114,6 +114,26 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 			return runtime.ToValue(keys)
 		})
 
+		// isLauncherMenu(menu: object): boolean
+		// Returns true if the menu is an Ollama launcher screen (e.g. "Run a model").
+		_ = exports.Set("isLauncherMenu", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("isLauncherMenu: menu argument is required"))
+			}
+			menu := jsToModelMenu(runtime, call.Argument(0))
+			return runtime.ToValue(IsLauncherMenu(menu))
+		})
+
+		// dismissLauncherKeys(menu: object): string
+		// Returns keystrokes to dismiss the Ollama launcher and reach the model menu.
+		_ = exports.Set("dismissLauncherKeys", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) == 0 {
+				panic(runtime.NewTypeError("dismissLauncherKeys: menu argument is required"))
+			}
+			menu := jsToModelMenu(runtime, call.Argument(0))
+			return runtime.ToValue(DismissLauncherKeys(menu))
+		})
+
 		// newInstanceRegistry(baseDir: string): object
 		// Creates an instance registry for managing isolated Claude Code instances.
 		_ = exports.Set("newInstanceRegistry", func(call goja.FunctionCall) goja.Value {

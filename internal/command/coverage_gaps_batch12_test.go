@@ -12,7 +12,7 @@ import (
 )
 
 // ============================================================================
-// Batch 12: command coverage gaps — builtin.go + claude_mux.go
+// Batch 12: command coverage gaps — builtin.go
 // ============================================================================
 
 // TestConfigReset_Key_NoConfigPath verifies executeResetKey when the

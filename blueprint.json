@@ -70,19 +70,19 @@
       "task": "R00b-01: Audit claudemux imports used by pr-split",
       "description": "Grep all 14 chunks + pr_split.go + register.go for claudemux references. Categorize files as: used by pr-split, used only by claude-mux command, or orphaned.",
       "acceptance": "Definitive categorization documented in WIP.md.",
-      "status": "Not Started"
+      "status": "Complete — audit found: module (parser, guard, pool, panel, session, safety, choice, navigation) used by pr-split JS via require('osm:claudemux'). Command (claude_mux.go) and RPC (control.go) orphaned. IsLauncherMenu/DismissLauncherKeys only called in tests — wired into JS module."
     },
     {
       "task": "R00b-02: Delete orphaned claudemux files",
       "description": "Based on R00b-01 findings, delete files NOT required by any live code path. Remove claude_mux.go, claude_mux_test.go, registration in main.go if orphaned.",
       "acceptance": "Deleted files gone. No broken imports. make all + deadcode pass.",
-      "status": "Not Started"
+      "status": "Complete — deleted: claude_mux.go (1051L), claude_mux_test.go (1805L), coverage_gaps_batch11_test.go (166L), control.go (348L), control_test.go (585L). Removed registration from main.go. Removed shell completion stubs. Wired IsLauncherMenu/DismissLauncherKeys into module.go JS bindings. All cascading test references cleaned."
     },
     {
       "task": "R00b-03: Delete orphaned claudemux documentation",
       "description": "Delete or update: docs/reference/claude-mux.md, docs/architecture-claude-mux.md, docs/scripting.md osm:claudemux section, docs/reference/command.md claude-mux section.",
       "acceptance": "grep -r 'claude-mux' docs/ returns zero results except archive.",
-      "status": "Not Started"
+      "status": "Complete — deleted architecture-claude-mux.md (959L), reference/claude-mux.md (151L). Updated docs/README.md, architecture.md (17 commands, diagram), reference/command.md, scripting.md (section header + dead link), scripts/README.md."
     },
     {
       "task": "R00-01: Move autosplit.go from termmux/ui to internal/command",

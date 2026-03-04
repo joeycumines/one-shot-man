@@ -14,7 +14,6 @@ If you just want to try it, see the [root README](../README.md).
 ## Reference
 
 - [Command reference](reference/command.md)
-- [Claude-Mux reference](reference/claude-mux.md)
 - [Goal reference](reference/goal.md)
 - [Configuration reference](reference/config.md)
 - [TUI API reference](reference/tui-api.md)
@@ -24,7 +23,6 @@ If you just want to try it, see the [root README](../README.md).
 ## Architecture & internals
 
 - [Architecture](architecture.md)
-- [Claude-Mux Architecture](architecture-claude-mux.md)
 - [Terminal Multiplexer Architecture](reference/mux-architecture.md)
 - [PR Split Integration Testing](pr-split-testing.md)
 - [Security posture](security.md)

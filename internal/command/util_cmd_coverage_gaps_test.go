@@ -1046,26 +1046,6 @@ func TestScriptDiscovery_TraverseForGitRepos_NoGitRepo(t *testing.T) {
 	}
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// claude_mux.go coverage gaps
-// ─────────────────────────────────────────────────────────────────────
-
-func TestValueOrNone_Empty(t *testing.T) {
-	t.Parallel()
-	got := valueOrNone("")
-	if got != "(none)" {
-		t.Fatalf("expected (none), got %q", got)
-	}
-}
-
-func TestValueOrNone_NonEmpty(t *testing.T) {
-	t.Parallel()
-	got := valueOrNone("hello")
-	if got != "hello" {
-		t.Fatalf("expected hello, got %q", got)
-	}
-}
-
 func TestBaseCommand_SetupFlags_Noop(t *testing.T) {
 	t.Parallel()
 	cmd := &BaseCommand{}

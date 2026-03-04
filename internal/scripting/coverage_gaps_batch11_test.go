@@ -384,13 +384,6 @@ func TestRotatingFileWriter_Write_RotateError(t *testing.T) {
 }
 
 // ============================================================================
-// T143: Command controlAdapter — InterruptCurrent + GetStatus + EnqueueTask
-// (Test only the adapter struct since it's unexported but accessible in-package)
-// ============================================================================
-// Note: controlAdapter tests are in internal/command/ package, not here.
-// They will be in a separate file.
-
-// ============================================================================
 // T146: module_hardening.go — validateModulePaths additional coverage
 // Tests for basic paths (empty, nonexistent, file-not-dir, valid, mixed) are
 // already in module_hardening_test.go. These tests cover the symlink-specific

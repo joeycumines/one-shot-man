@@ -56,7 +56,6 @@ func run() error {
 	registry.Register(command.NewGoalCommand(cfg, goalRegistry))
 	registry.Register(command.NewSyncCommand(cfg))
 	registry.Register(command.NewLogCommand(cfg))
-	registry.Register(command.NewClaudeMuxCommand(cfg))
 	registry.Register(command.NewPrSplitCommand(cfg))
 
 	// Parse global flags and command. Avoid manual inspection of args for

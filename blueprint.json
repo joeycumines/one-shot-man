@@ -148,6 +148,18 @@
       "task": "R00a: Verify git state isolation in tests",
       "description": "Run make all then verify git status + git branch. Audit remaining os.Chdir calls in tests.",
       "acceptance": "After make all: clean git state, no detached HEAD, no orphaned branches.",
+      "status": "Complete — git status clean after make all. Branch: wip (not detached). os.Chdir calls (30+) all in tui_completion_unit_test.go with proper defer os.Chdir(orig) restore. No test-created orphan branches. Note: Go 1.26 supports t.Chdir() — modernization deferred."
+    },
+    {
+      "task": "B01: Fix dodgy terminal output (literal ANSI escape codes)",
+      "description": "Investigate and fix literal ANSI escape codes appearing in output during PR split subcommands and other TUI commands. The terminal gets reset on execution of the command and it is not the same terminal mode as the go-prompt command. Ensure the terminal mode is correctly configured so colors/formatting are applied and not printed as literal escape sequences like `?[1;38...`. Ensure that `osm:lipgloss` (a JS module exposed to scripts) is mandated for styling.",
+      "acceptance": "Commands printing ANSI escape codes display actual colors/formatting instead of literal sequences, and styling specifically relies on the `osm:lipgloss` JS module.",
+      "status": "Not Started"
+    },
+    {
+      "task": "B02: Fix gh pr create GraphQL error (No commits between base and head)",
+      "description": "Investigate and fix 'gh pr create failed: GraphQL: Head sha can't be blank, Base sha can't be blank, No commits between main and branch' error. This needs to be a separate task from B01.",
+      "acceptance": "PR creation process either succeeds gracefully or provides a clear, actionable error/warning without crashing due to GraphQL validation errors.",
       "status": "Not Started"
     },
     {

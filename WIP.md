@@ -23,6 +23,8 @@
 ### Next Step
 - Commit R31 + misc fixes with Rule of Two
 - R00a: Verify git state isolation in tests
+- B01: Fix dodgy terminal output (literal ANSI escape codes)
+- B02: Fix gh pr create GraphQL error
 - R39-01: Linux container validation
 - R39-02: Windows validation
 - R28.1-R28.4: Termmux resize signal investigation and fix

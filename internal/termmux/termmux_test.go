@@ -162,15 +162,6 @@ func TestTeeLoop_PassthroughForwarding(t *testing.T) {
 	<-m.teeDone
 }
 
-func TestWriteToChild_NoChild(t *testing.T) {
-	var stdin, stdout bytes.Buffer
-	m := New(&stdin, &stdout, -1)
-	_, err := m.WriteToChild([]byte("x"))
-	if err != ErrNoChild {
-		t.Fatalf("err = %v; want ErrNoChild", err)
-	}
-}
-
 func TestAccessors(t *testing.T) {
 	var stdin, stdout bytes.Buffer
 	m := New(&stdin, &stdout, -1)
@@ -761,44 +752,6 @@ func TestRunPassthrough_NegativeTermFd(t *testing.T) {
 
 	child.Close()
 	<-m.teeDone
-}
-
-// ── T095: Concurrent WriteToChild under load ───────────────────────
-
-func TestWriteToChild_Concurrent(t *testing.T) {
-	ts := newMockTermState(80, 24)
-	bg := &mockBlockingGuard{}
-	m, _, stdinW, child := newTestMux(t, ts, bg)
-	defer stdinW.Close()
-	defer child.Close()
-
-	const workers = 10
-	const iters = 100
-	msg := []byte("AAAA")
-
-	var wg sync.WaitGroup
-	wg.Add(workers)
-	for w := 0; w < workers; w++ {
-		go func() {
-			defer wg.Done()
-			for i := 0; i < iters; i++ {
-				_, err := m.WriteToChild(msg)
-				if err != nil {
-					return // child closed during test teardown
-				}
-			}
-		}()
-	}
-	wg.Wait()
-
-	// Verify total byte count
-	child.writeMu.Lock()
-	got := child.writeBuf.Len()
-	child.writeMu.Unlock()
-	want := workers * iters * len(msg)
-	if got != want {
-		t.Errorf("child received %d bytes, want %d", got, want)
-	}
 }
 
 // ── T096: Status bar update during passthrough ─────────────────────

@@ -34,7 +34,7 @@ integration-test-prsplit:
 		-claude-command=$(CLAUDE_COMMAND) \
 		$(foreach arg,$(CLAUDE_ARGS),-claude-arg=$(arg)) \
 		-integration-model=$(INTEGRATION_MODEL) \
-		./internal/command/... -run 'TestIntegration_(.*Claude|AutoSplitComplex)'
+		./internal/command/... -run 'TestIntegration_(.*Claude|AutoSplitComplex|PrSplit_VTerm)'
 
 .PHONY: integration-test-prsplit-mcp
 integration-test-prsplit-mcp: ## Run pr-split MCP mock integration tests (no real AI required)

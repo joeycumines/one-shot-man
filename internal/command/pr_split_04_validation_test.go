@@ -71,6 +71,9 @@ func TestChunk04_ValidateClassification_Null(t *testing.T) {
 	if vr.Valid {
 		t.Error("expected invalid for null")
 	}
+	if len(vr.Errors) == 0 {
+		t.Error("expected at least one error message for null input")
+	}
 }
 
 func TestChunk04_ValidateClassification_MissingName(t *testing.T) {
@@ -132,6 +135,18 @@ func TestChunk04_ValidateClassification_EmptyFiles(t *testing.T) {
 	if vr.Valid {
 		t.Error("expected invalid for empty files array")
 	}
+	if len(vr.Errors) == 0 {
+		t.Error("expected at least one error for empty files")
+	}
+	found := false
+	for _, e := range vr.Errors {
+		if strings.Contains(e, "files") || strings.Contains(e, "empty") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error mentioning 'files' or 'empty', got: %v", vr.Errors)
+	}
 }
 
 // ---- validatePlan ---------------------------------------------------------
@@ -183,6 +198,15 @@ func TestChunk04_ValidatePlan_DuplicateFiles(t *testing.T) {
 	if vr.Valid {
 		t.Error("expected invalid for dup files")
 	}
+	found := false
+	for _, e := range vr.Errors {
+		if strings.Contains(e, "duplicate") || strings.Contains(e, "dup.go") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error mentioning 'duplicate' or 'dup.go', got: %v", vr.Errors)
+	}
 }
 
 func TestChunk04_ValidatePlan_MissingName(t *testing.T) {
@@ -197,6 +221,18 @@ func TestChunk04_ValidatePlan_MissingName(t *testing.T) {
 	if vr.Valid {
 		t.Error("expected invalid for missing split name")
 	}
+	if len(vr.Errors) == 0 {
+		t.Error("expected at least one error for missing name")
+	}
+	found := false
+	for _, e := range vr.Errors {
+		if strings.Contains(e, "name") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error mentioning 'name', got: %v", vr.Errors)
+	}
 }
 
 func TestChunk04_ValidatePlan_Null(t *testing.T) {
@@ -208,6 +244,9 @@ func TestChunk04_ValidatePlan_Null(t *testing.T) {
 	`)
 	if vr.Valid {
 		t.Error("expected invalid for null plan")
+	}
+	if len(vr.Errors) == 0 {
+		t.Error("expected at least one error for null plan")
 	}
 }
 
@@ -237,6 +276,9 @@ func TestChunk04_ValidateSplitPlan_EmptyStages(t *testing.T) {
 	`)
 	if vr.Valid {
 		t.Error("expected invalid for empty stages")
+	}
+	if len(vr.Errors) == 0 {
+		t.Error("expected at least one error for empty stages")
 	}
 }
 
@@ -275,6 +317,15 @@ func TestChunk04_ValidateSplitPlan_DuplicateFiles(t *testing.T) {
 	`)
 	if vr.Valid {
 		t.Error("expected invalid for dup files across stages")
+	}
+	found := false
+	for _, e := range vr.Errors {
+		if strings.Contains(e, "duplicate") || strings.Contains(e, "dup.go") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error mentioning duplicate, got: %v", vr.Errors)
 	}
 }
 

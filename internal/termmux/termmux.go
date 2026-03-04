@@ -235,17 +235,6 @@ func (m *Mux) SetClaudeStatus(status string) {
 	m.statusBar.SetStatus(status)
 }
 
-// WriteToChild writes data to the child process.
-func (m *Mux) WriteToChild(data []byte) (int, error) {
-	m.mu.Lock()
-	child := m.child
-	m.mu.Unlock()
-	if child == nil {
-		return 0, ErrNoChild
-	}
-	return child.Write(data)
-}
-
 // ChildExitOutput returns the content captured in the VTerm buffer as
 // plain text. This is useful for diagnostics when the child process
 // exits unexpectedly — the buffer contains whatever the process wrote

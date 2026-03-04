@@ -1,6 +1,7 @@
 package command
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -964,11 +965,17 @@ cmd/server → internal/api → internal/db → internal/models
 }
 
 // verifyGoBuild runs `go build ./...` in the given directory and fails the
-// test if compilation fails.
+// test if compilation fails. Uses a 2-minute timeout and suppresses race
+// detector inheritance to avoid inflated compile times in synthetic projects.
 func verifyGoBuild(t *testing.T, dir string) {
 	t.Helper()
-	cmd := exec.Command("go", "build", "./...")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "go", "build", "./...")
 	cmd.Dir = dir
+	// Suppress race detector — this synthetic project does not need it,
+	// and -race multiplies compile time significantly.
+	cmd.Env = append(filterEnv(os.Environ(), "GOFLAGS"), "GOFLAGS=")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("go build ./... failed in %s:\n%v\n%s", dir, err, out)
@@ -976,15 +983,32 @@ func verifyGoBuild(t *testing.T, dir string) {
 }
 
 // verifyGoTest runs `go test ./...` in the given directory and fails the
-// test if any test fails.
+// test if any test fails. Uses a 2-minute timeout and suppresses race
+// detector inheritance.
 func verifyGoTest(t *testing.T, dir string) {
 	t.Helper()
-	cmd := exec.Command("go", "test", "./...")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "go", "test", "-timeout=60s", "./...")
 	cmd.Dir = dir
+	// Suppress race detector — same rationale as verifyGoBuild.
+	cmd.Env = append(filterEnv(os.Environ(), "GOFLAGS"), "GOFLAGS=")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("go test ./... failed in %s:\n%v\n%s", dir, err, out)
 	}
+}
+
+// filterEnv returns a copy of environ with all entries matching key removed.
+func filterEnv(environ []string, key string) []string {
+	prefix := key + "="
+	out := make([]string, 0, len(environ))
+	for _, e := range environ {
+		if !strings.HasPrefix(e, prefix) {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // splitBranchNames parses `git branch --list` output into cleaned branch names.

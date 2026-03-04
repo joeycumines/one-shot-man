@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 	"unsafe"
 
 	"github.com/dop251/goja"
@@ -233,8 +234,20 @@ func (tm *TUIManager) stopWriter() {
 	}
 	tm.queueMu.Unlock()
 
-	// 3. Wait for writer to finish current task and cleanup
-	<-tm.writerDone
+	// 3. Wait for writer to finish current task and cleanup, with timeout.
+	// If the writer goroutine is stuck (e.g., in a blocking task), waiting
+	// indefinitely would hang the entire process on exit. A 5-second timeout
+	// ensures the process always terminates, logging a diagnostic stack trace
+	// so the root cause can be investigated.
+	select {
+	case <-tm.writerDone:
+		// Writer exited cleanly.
+	case <-time.After(5 * time.Second):
+		// Writer goroutine is stuck. Dump all goroutine stacks for diagnosis.
+		buf := make([]byte, 256*1024)
+		n := runtime.Stack(buf, true)
+		_, _ = fmt.Fprintf(os.Stderr, "WARNING: stopWriter timed out after 5s waiting for writer goroutine.\nGoroutine dump:\n%s\n", buf[:n])
+	}
 }
 
 // RegisterMode registers a new script mode.

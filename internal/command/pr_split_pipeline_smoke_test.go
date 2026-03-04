@@ -425,7 +425,7 @@ func Test_ChunkedPipeline_CommandSequence(t *testing.T) {
 	t.Log("equivalence: PASS")
 
 	// cmd: cleanup
-	raw, err = evalJS(`JSON.stringify(globalThis.prSplit.cleanupBranches({
+	_, err = evalJS(`JSON.stringify(globalThis.prSplit.cleanupBranches({
 		baseBranch: 'main',
 		dir: '` + escaped + `',
 		splits: ` + string(plan.Splits) + `

@@ -39,6 +39,15 @@ func TestSessionDelete_HappyPath(t *testing.T) {
 	storage.SetTestPaths(dir)
 	t.Cleanup(storage.ResetPaths)
 
+	// cmd.delete acquires a lock file — ensure leftover lock artifacts are
+	// removed before t.TempDir cleanup runs RemoveAll.
+	t.Cleanup(func() {
+		entries, _ := os.ReadDir(dir)
+		for _, e := range entries {
+			_ = os.Remove(filepath.Join(dir, e.Name()))
+		}
+	})
+
 	id := "happy-delete"
 	// Create a fake session file.
 	sessionFile := filepath.Join(dir, id+".session.json")

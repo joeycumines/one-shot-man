@@ -9,6 +9,6 @@
 //   - ptyio: Buffered PTY reader/writer with EAGAIN retry, backpressure,
 //     and platform-specific blocking guard.
 //   - statusbar: Status bar renderer with scroll region management.
-//   - ui: BubbleTea UI models (AutoSplit, SplitView, PlanEditor)
+//   - ui: BubbleTea UI models (AutoSplit, PlanEditor)
 //     migrated from the old mux package.
 package termmux

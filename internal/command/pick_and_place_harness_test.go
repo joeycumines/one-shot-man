@@ -143,21 +143,28 @@ func NewPickAndPlaceHarness(ctx context.Context, t *testing.T, config PickAndPla
 	// First wait for TUI to enter alternate screen mode and render
 	// The debug JSON markers only appear in the TUI alternate screen, not in console output
 	// This ensures we're seeing actual TUI output, not just the pre-startup console.log
+	//
+	// Use per-pattern timeouts (15s each) rather than the harness-level context
+	// because termtest's Expect may not reliably respect context cancellation.
 	debugPatterns := []string{"__place_debug_start__", `"m":"`, "__place_debug_end__"}
 	found := false
 	for _, pattern := range debugPatterns {
-		if err := h.console.Expect(h.ctx, snap, termtest.Contains(pattern), "debug overlay"); err == nil {
+		patternCtx, patternCancel := context.WithTimeout(h.ctx, 15*time.Second)
+		if err := h.console.Expect(patternCtx, snap, termtest.Contains(pattern), "debug overlay"); err == nil {
 			t.Logf("Simulator started, detected debug pattern: %s", pattern)
 			found = true
+			patternCancel()
 			break
 		}
+		patternCancel()
 	}
 
 	// Fallback to original patterns if debug overlay not found
 	if !found {
 		menuPatterns := []string{"PICK-AND-PLACE", "Mode:", "@", "█"}
 		for _, pattern := range menuPatterns {
-			if err := h.console.Expect(h.ctx, snap, termtest.Contains(pattern), "simulator start"); err == nil {
+			patternCtx, patternCancel := context.WithTimeout(h.ctx, 10*time.Second)
+			if err := h.console.Expect(patternCtx, snap, termtest.Contains(pattern), "simulator start"); err == nil {
 				t.Logf("Simulator started, detected: %s", pattern)
 				// Poll for TUI to stabilize after alternate screen entry — wait for
 				// at least one debug state to be available
@@ -166,8 +173,10 @@ func NewPickAndPlaceHarness(ctx context.Context, t *testing.T, config PickAndPla
 					return state != nil
 				}, 3*time.Second, 50*time.Millisecond)
 				found = true
+				patternCancel()
 				break
 			}
+			patternCancel()
 		}
 	}
 
@@ -213,7 +222,9 @@ func BuildPickAndPlaceTestBinary(t *testing.T) string {
 	projectDir := filepath.Dir(filepath.Dir(filepath.Dir(thisFile)))
 
 	binaryPath := filepath.Join(t.TempDir(), "osm-pickplace-test")
-	cmd := exec.Command("go", "build", "-tags=integration", "-o", binaryPath, "./cmd/osm")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "go", "build", "-tags=integration", "-o", binaryPath, "./cmd/osm")
 	cmd.Dir = projectDir // Critical: set working directory to project root
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

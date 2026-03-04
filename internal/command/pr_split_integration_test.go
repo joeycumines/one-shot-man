@@ -84,6 +84,23 @@ func TestIntegration_HeuristicSplitEndToEnd(t *testing.T) {
 	if len(analysis.Files) == 0 {
 		t.Fatal("analyzeDiff returned no files")
 	}
+	// Deep validation: every file must be non-empty, and statuses must map to real files.
+	for _, f := range analysis.Files {
+		if f == "" {
+			t.Error("analyzeDiff produced an empty-string file name")
+		}
+	}
+	if len(analysis.FileStatuses) == 0 {
+		t.Error("analyzeDiff returned no file statuses")
+	}
+	for name, status := range analysis.FileStatuses {
+		if name == "" {
+			t.Error("file status map contains empty key")
+		}
+		if status == "" {
+			t.Errorf("file %q has empty status", name)
+		}
+	}
 	t.Logf("Analyzed %d files: %v", len(analysis.Files), analysis.Files)
 	t.Logf("File statuses: %v", analysis.FileStatuses)
 
@@ -106,6 +123,24 @@ func TestIntegration_HeuristicSplitEndToEnd(t *testing.T) {
 	}
 	if len(groups) == 0 {
 		t.Fatal("applyStrategy returned no groups")
+	}
+	// Deep validation: every group must have files, and all files must appear in analysis.
+	analysisFileSet := make(map[string]bool)
+	for _, f := range analysis.Files {
+		analysisFileSet[f] = true
+	}
+	for gName, gFiles := range groups {
+		if gName == "" {
+			t.Error("applyStrategy produced a group with empty name")
+		}
+		if len(gFiles) == 0 {
+			t.Errorf("group %q has no files", gName)
+		}
+		for _, f := range gFiles {
+			if !analysisFileSet[f] {
+				t.Errorf("group %q contains file %q not present in analysis", gName, f)
+			}
+		}
 	}
 	t.Logf("Groups: %v", groups)
 
@@ -142,8 +177,18 @@ func TestIntegration_HeuristicSplitEndToEnd(t *testing.T) {
 	if len(plan.Splits) == 0 {
 		t.Fatal("createSplitPlan produced no splits")
 	}
+	// Deep validation: every split must have a name, files, and message.
 	t.Logf("Plan: %d splits", len(plan.Splits))
 	for i, s := range plan.Splits {
+		if s.Name == "" {
+			t.Errorf("split %d has empty name", i)
+		}
+		if len(s.Files) == 0 {
+			t.Errorf("split %d (%s) has no files", i, s.Name)
+		}
+		if s.Message == "" {
+			t.Errorf("split %d (%s) has empty commit message", i, s.Name)
+		}
 		t.Logf("  Split %d: %s (%d files: %v)", i+1, s.Name, len(s.Files), s.Files)
 	}
 
@@ -1760,6 +1805,20 @@ func TestIntegration_AutoSplitMockMCP_TUIObservation(t *testing.T) {
 	if len(stepStarts) < 4 {
 		t.Errorf("expected at least 4 step starts, got %d: %v", len(stepStarts), stepStarts)
 	}
+	// Deep validation: verify expected pipeline step names appear.
+	expectedStepKeywords := []string{"nalyze", "lassif", "lan", "xecut"}
+	for _, keyword := range expectedStepKeywords {
+		found := false
+		for _, step := range stepStarts {
+			if strings.Contains(strings.ToLower(step), strings.ToLower(keyword)) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected step matching %q in step starts: %v", keyword, stepStarts)
+		}
+	}
 
 	// 2. Step dones were recorded with correct names and no errors.
 	donesRaw, err := tp.EvalJS(`JSON.stringify(_tuiStepDones)`)
@@ -1801,6 +1860,16 @@ func TestIntegration_AutoSplitMockMCP_TUIObservation(t *testing.T) {
 	}
 	if len(outputs) == 0 {
 		t.Error("expected at least one output line from the pipeline")
+	}
+	// Deep validation: verify output contains success indicators.
+	// Output lines use "[auto-split] Analyze diff..." format.
+	joinedOutput := strings.Join(outputs, "\n")
+	successIndicators := []string{"Analyze diff", "split", "OK"}
+	for _, indicator := range successIndicators {
+		if !strings.Contains(joinedOutput, indicator) {
+			t.Errorf("expected %q in TUI output lines, not found. First 5 lines: %v",
+				indicator, outputs[:min(5, len(outputs))])
+		}
 	}
 
 	// 4. No errors were recorded.

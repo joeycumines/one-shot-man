@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"golang.org/x/term"
 )
@@ -29,6 +30,25 @@ func NewTerminal(ctx context.Context, engine *Engine) *Terminal {
 // Run starts the interactive terminal with rich TUI support.
 // Phase 4.5: Added signal handling for graceful shutdown and state persistence.
 func (t *Terminal) Run() {
+	// Diagnostic trace file for debugging exit hangs. Enabled via
+	// OSM_EXIT_TRACE environment variable (set to a file path).
+	var traceExit func(string)
+	if tracePath := os.Getenv("OSM_EXIT_TRACE"); tracePath != "" {
+		f, err := os.OpenFile(tracePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+		if err == nil {
+			defer f.Close()
+			traceExit = func(msg string) {
+				_, _ = fmt.Fprintf(f, "[%s] %s\n", time.Now().Format("15:04:05.000"), msg)
+				_ = f.Sync()
+			}
+		}
+	}
+	if traceExit == nil {
+		traceExit = func(string) {} // no-op
+	}
+
+	traceExit("Terminal.Run() starting")
+
 	// Save terminal state before starting TUI operations
 	// This ensures we can restore the terminal to a clean state on exit
 	var origTermState *term.State
@@ -49,34 +69,47 @@ func (t *Terminal) Run() {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		traceExit("tuiManager.Run() starting")
 		t.tuiManager.Run()
+		traceExit("tuiManager.Run() returned")
 	}()
 
 	// Wait for either TUI completion or a signal
 	select {
 	case <-done:
-		// TUI exited normally (e.g., 'exit' command or Ctrl+D).
+		traceExit("TUI exited normally (done channel closed)")
 	case sig := <-sigChan:
 		// Signal received. Trigger a graceful exit of the prompt.
+		traceExit(fmt.Sprintf("signal received: %v", sig))
 		_, _ = fmt.Fprintf(t.tuiManager.writer, "\n\nReceived signal %v, shutting down...\n", sig)
 		t.tuiManager.TriggerExit()
 		<-done // Wait for the TUI goroutine to fully stop.
+		traceExit("TUI stopped after signal")
 	}
 
 	// Persist session on ANY exit path (clean or signal-based).
 	// This centralizes the save logic.
+	traceExit("starting session persistence")
 	if t.tuiManager.stateManager != nil {
 		_, _ = fmt.Fprintln(t.tuiManager.writer, "Saving session...")
 		if err := t.tuiManager.stateManager.PersistSession(); err != nil {
 			_, _ = fmt.Fprintf(t.tuiManager.writer, "Warning: Failed to persist session: %v\n", err)
+			traceExit(fmt.Sprintf("PersistSession error: %v", err))
 		} else {
 			_, _ = fmt.Fprintln(t.tuiManager.writer, "Session saved successfully.")
+			traceExit("PersistSession OK")
 		}
+	} else {
+		traceExit("no stateManager, skip persistence")
 	}
 
 	// Ensure resources are released on all exit paths.
+	traceExit("starting TUI manager Close()")
 	if err := t.tuiManager.Close(); err != nil {
 		_, _ = fmt.Fprintf(t.tuiManager.writer, "Warning: Failed to close TUI manager: %v\n", err)
+		traceExit(fmt.Sprintf("Close error: %v", err))
+	} else {
+		traceExit("Close() OK")
 	}
 
 	// Restore terminal state after all TUI operations complete.
@@ -85,4 +118,5 @@ func (t *Terminal) Run() {
 	if origTermState != nil {
 		_ = term.Restore(int(os.Stdin.Fd()), origTermState)
 	}
+	traceExit("Terminal.Run() complete")
 }

@@ -1,31 +1,50 @@
-# WIP: R21 DONE — Dead BT functions culled from chunks.
+# WIP: R27 IN PROGRESS — VTerm observation tests working, exit hang FIXED
 
-## Status: R01-R21 Done (22 tasks). R22 next: vestigial comments + inconsistencies.
+## Status: R01-R26 Done. R27 In Progress. R28-R42 Not Started.
 
-### Session: 2026-03-04 06:46:25 (9-hour mandate)
-### Branch: main (working directory has uncommitted changes)
+### Session: 2026-03-04 (continuing)
 
-### What R21 did:
-1. **Removed 13 dead BT functions from pr_split_11_utilities.js:**
-   - 8 BT node factories: createAnalyzeNode, createGroupNode, createPlanNode,
-     createSplitNode, createVerifyNode, createEquivalenceNode,
-     createSelectStrategyNode, createWorkflowTree
-   - 5 BT templates: btVerifyOutput, btRunTests, btCommitChanges,
-     btSplitBranch, verifyAndCommit
-2. **Updated pr_split_12_exports.js:** Removed 13 dead names from EXPECTED_EXPORTS
-3. **Recreated pr_split_bt_test.go:** Only 11 surviving tests (visualization/diff/report)
-4. **Cleaned pr_split_11_utilities_test.go:** Removed BTNodeFactories test,
-   cleaned AllExportsPresent expected map
-5. **Cleaned chunkCompatShim in pr_split_test.go:** Removed 13 dead proxy entries
-6. **Cleaned claudemux/pr_split_test.go:** Removed BTWorkflow_WithCompilation,
-   CreateWorkflowTree, and BT factory names from ExportedFunctions
-7. **Cleaned claudemux/templates_test.go:** Removed 12 dead BT template tests,
-   only TestTemplates_ModuleLoads survives
-8. **Documented in scratch/pr-split-slop-removed.md**
-9. **Verified:** go build passes, 594 command tests GREEN, 721 claudemux tests GREEN
+### What's been accomplished in R27:
+1. **VTerm observation infrastructure** (pr_split_termmux_observation_test.go):
+   - `vtermObserver` struct: wraps VTerm, collects periodic snapshots
+   - `typeToPrompt()` helper: sends bytes one-by-one with 20ms delay
+   - `snapshotsContain()`, `vtermObservationSummary()` helpers
+   - `newVTermObserver()`, `pumpPTY()`, `startSnapshotter()`, etc.
 
-### Next Task: R22 — Vestigial comments and inconsistencies in JS chunks
-- Sweep all 14 chunk files for stale task-number comments (T04a, T12, T55, etc.)
-- Remove completed TODOs
-- Standardize error return formats
-- Remove dead variables and console.log statements
+2. **PTY input bug ROOT CAUSED AND FIXED**:
+   - go-prompt's readBuffer reads in bulk from raw PTY
+   - Multi-byte input treated as single unrecognized key → text insertion
+   - Fix: `typeToPrompt()` sends byte-by-byte with delays
+   - All 5 multi-byte PTY write sites updated
+
+3. **Exit hang FIXED**:
+   - Added OSM_EXIT_TRACE instrumentation to terminal.go (opt-in, zero-cost)
+   - Added 5s timeout to stopWriter() in tui_manager.go (defense-in-depth)
+   - Trace proves clean shutdown: tuiManager.Run() → session save → Close() → done
+
+4. **Test results**:
+   - `TestIntegration_PrSplit_VTermCleanExit` — **PASS** (exit in 32ms)
+   - `TestIntegration_PrSplit_VTermHeuristicRun` — **PASS** (4 branches, equivalence OK)
+   - `TestIntegration_AutoSplitClaude_VTermObservation` — NOT YET RUN (needs real Claude)
+   - `make all` — **GREEN**
+   - `make integration-test-vterm` — **GREEN** (both VTerm tests pass)
+
+5. **Flaky test fix**: TestSessionDelete_HappyPath — added lock artifact cleanup
+
+### What remains for R27:
+- Run real-Claude `AutoSplitClaude_VTermObservation` test
+- Strengthen all validation of input/output over TTY
+- Verify broken.md issues fixed with HIGH CONFIDENCE via VTerm observation
+- Deep validation of state — PROVE it actually works properly
+- Consider strengthening existing real-Claude tests with VTerm capture
+
+### Key files modified:
+- `internal/command/pr_split_termmux_observation_test.go` (NEW, ~700 lines)
+- `internal/scripting/terminal.go` (OSM_EXIT_TRACE instrumentation)
+- `internal/scripting/tui_manager.go` (stopWriter timeout)
+- `internal/command/coverage_gaps_batch10_test.go` (flaky test fix)
+- `config.mk` (integration-test-vterm target)
+
+### Next Action:
+Run real-Claude integration test: `make integration-test-prsplit`
+Then continue R27 deeper validation mandate.

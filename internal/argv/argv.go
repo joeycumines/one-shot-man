@@ -2,8 +2,84 @@ package argv
 
 import (
 	"iter"
+	"strings"
 	"unicode/utf8"
 )
+
+// ShellQuote returns s quoted for safe use in a POSIX shell command line.
+// The output is also designed to roundtrip through [ParseSlice].
+//
+//   - Empty strings produce ”.
+//   - Strings containing only safe characters (alphanumeric, - . _ / : @ % + , =)
+//     are returned unmodified.
+//   - Strings WITHOUT embedded single quotes are single-quoted (no escaping needed).
+//   - Strings WITH embedded single quotes are double-quoted, with $, `, ", and \
+//     escaped via backslash.
+func ShellQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	safe := true
+	hasSingleQuote := false
+	for _, r := range s {
+		if !isSafeRune(r) {
+			safe = false
+		}
+		if r == '\'' {
+			hasSingleQuote = true
+		}
+	}
+	if safe {
+		return s
+	}
+	var sb strings.Builder
+	if hasSingleQuote {
+		// Double-quote mode: escape chars that are special inside double quotes.
+		escapes := strings.Count(s, `\`) + strings.Count(s, `"`) + strings.Count(s, "$") + strings.Count(s, "`")
+		sb.Grow(len(s) + 2 + escapes)
+		sb.WriteByte('"')
+		for _, r := range s {
+			switch r {
+			case '$', '`', '"', '\\':
+				sb.WriteByte('\\')
+			}
+			sb.WriteRune(r)
+		}
+		sb.WriteByte('"')
+	} else {
+		// Single-quote mode: contents are literal, no escaping needed.
+		sb.Grow(len(s) + 2)
+		sb.WriteByte('\'')
+		sb.WriteString(s)
+		sb.WriteByte('\'')
+	}
+	return sb.String()
+}
+
+// isSafeRune reports whether r can appear unquoted in a POSIX shell token.
+func isSafeRune(r rune) bool {
+	if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+		return true
+	}
+	switch r {
+	case '-', '.', '_', '/', ':', '@', '%', '+', ',', '=':
+		return true
+	}
+	return false
+}
+
+// ShellQuoteJoin quotes each element of args with [ShellQuote] and joins them
+// with single spaces.
+func ShellQuoteJoin(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	quoted := make([]string, len(args))
+	for i, a := range args {
+		quoted[i] = ShellQuote(a)
+	}
+	return strings.Join(quoted, " ")
+}
 
 // Token represents a parsed argument token, with its logical text and bounds in rune indices.
 // Start is the rune index of the logical content (after an opening quote if present), End is the

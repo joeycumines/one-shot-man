@@ -6,6 +6,9 @@
   },
   "globalAlerts": [
     {
+      "warning": "CRITICAL LOCAL INTEGRATION REQUIREMENT: The agent is running on a machine that has the 'claude' CLI installed. You absolutely MUST run `make integration-test-prsplit` and other integration targets defined in `project.mk` during development. Standard checks like `make all` are insufficient on their own because they skip these tests."
+    },
+    {
       "warning": "HARD MANDATE (NO EXCEPTIONS): For EVERY bug/regression, you MUST (1) replicate with HIGH CONFIDENCE via a failing test, (2) validate that replication FAILS via make target, and ONLY THEN (3) apply a fix. No exceptions."
     },
     {
@@ -203,12 +206,30 @@
       "description": "As part of exposing the APIs to JS, take the opportunity to assess ALL internal APIs (like `termmux`). Review for rough edges, breaking changes (ensure breaking changes ARE made if they increase quality), and ensure the architecture is solid. Specifically check Mac OS integration and Windows integration for signals. All changes must be extremely robust. Note: This sits at the end of the W-series to signify a final holistic review across all the Wizard changes.",
       "acceptance": "All internal APIs and their bindings are clean. Integration tests prove stability across Mac OS and Windows. Breaking internal changes are embraced if they result in higher quality code.",
       "status": "Not Started"
+    },
+    {
+      "task": "W12: Investigate and Implement Git Worktree Isolation for PR-Split Operations",
+      "description": "Investigate git operations in the JS chunks (branch creation/switching, diff generation). If feasible, refactor to use a pure temporary git worktree (e.g., via `git worktree add /tmp/...`) during all split validations, ensuring the user's CWD is never touched. This prevents detaching HEAD or mutating local untracked files. If isolation is already perfect across all modes, document the findings and close this task.",
+      "acceptance": "A separate git worktree is consistently used for background operations if mutation risk exists. The user's active CWD remains entirely undisturbed. Integration tests prove that running a split branch verification with unstaged changes in CWD does not overwrite or lose data.",
+      "status": "Not Started"
+    },
+    {
+      "task": "W13: Elevate Wizard Error Handing to Surpass Interactive Git Rebase",
+      "description": "Enhance the wizard UI to treat error handling as a primary feature, providing support >= interactive git rebase. Intercept all git, build, and test failures. The UI must provide a robust, interactive resolution menu. Options must include: auto-retry with Claude patch, drop to interactive subshell (like `git rebase -i`), or skip branch.",
+      "acceptance": "When encountering a failure, the wizard pauses and prompts the user with detailed context and interactive resolution options. The user can drop into a subshell to manually fix files, then exit to resume the wizard smoothly. Extended error paths are handled intelligently and robustly without ever crashing the main state machine.",
+      "status": "Not Started"
+    },
+    {
+      "task": "W14: Full Integration Testing for Wizard Error Recovery Paths",
+      "description": "Develop a comprehensive integration test suite targeting the specific error flows built in W13, to the maximum extent. Ensure that error handling is prioritized and ACTUALLY integration tested. Create deterministic mocked failures (e.g. forced compiler error) to trigger error recovery. Tests must programmatically inspect the TUI to ensure different resolution paths behave correctly.",
+      "acceptance": "Integration tests exist and pass flawlessly for all error resolution paths covered by W13. The test suite proves that entering an error state, resolving it via subshell/patch, and resuming does not corrupt the state machine. Achieves near-maximum coverage of error handling logic.",
+      "status": "Not Started"
     }
   ],
   "continuousVerification": {
-    "task": "After EVERY significant change, run make pipeline and integration tests",
-    "description": "Run `make all` after every code change. Run `make integration-test-prsplit-mcp` after pr-split changes. Run `make integration-test-prsplit` periodically for real Claude validation. Verify chunk file sizes stay \u2264 500 lines.",
-    "failPolicy": "If ANY check fails, STOP IMMEDIATELY and fix. Zero tolerance for flaky tests."
+    "task": "CRITICAL: Run make pipeline AND ALL LOCAL CLAUDE INTEGRATION TESTS after EVERY significant change",
+    "description": "CRITICAL MANDATE: You MUST run `make integration-test-prsplit` (which executes real Claude commands) to validate end-to-end functionality. Claude is installed locally on this machine. Running these tests is a CRITICAL CONCERN and NON-NEGOTIABLE. The standard `make all` suite does NOT run them. You must actively run `make all` AND `make integration-test-prsplit` AND `make integration-test-termmux` AND any other integration profiles defined in `project.mk`.",
+    "failPolicy": "If ANY check fails, including the local Claude integration tests, STOP IMMEDIATELY and fix. Zero tolerance for flaky tests or bypassing integration."
   },
   "finalEnforcementProtocol": [
     {

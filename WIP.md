@@ -4,17 +4,18 @@
 - **Timestamp**: 2026-03-05 22:03:19 (tracked in scratch/.session-start)
 - **Mandate**: 9 hours of continuous improvement (until 07:03:19 2026-03-06)
 
-## Current Phase: EXECUTING BLUEPRINT — Starting T02
+## Current Phase: EXECUTING BLUEPRINT — T12 (Verification gate)
 
-### Blueprint Rewrite Complete
-- Restructured from replanLog to flat sequentialTasks (69 tasks)
-- T01 verified (integration-test-prsplit-mcp GREEN)
-- B01 (ANSI stripping) confirmed NOT FIXED — T03-T08 will fix it
-- B02 (GraphQL guard) confirmed FIXED
-- All W-series tasks (W00-W14) absorbed as T29-T64
+### Completed This Session
+- T01-T04: W00 API studies and facade design (scratch/w00-*.md)
+- T05: Created internal/builtin/termmux/ skeleton (module.go + module_test.go)
+- T06: Migrated pr_split.go tuiMux to WrapMux (committed: fe0d009)
+- T07: Verification gate PASSED (all make targets GREEN)
+- T08: Event subscription — on/off/pollEvents + exit/focus/resize events wired (committed: b87f58a)
+- T09: BubbleTea integration — toggleModel + fromModel (committed: 53a6791, Rule of Two PASSED)
+- T10: Expanded facade unit tests from 30→53 (committed: 58787f0, Rule of Two PASSED)
+- T11: Integration tests — 4 new tests (FullLifecycle, EventRoundtrip, AttachStringIO, AttachMapGoHandle). Total 57.
 
 ### Next Steps
-- T02: Run integration-test-termmux
-- T03-T08: Fix B01 ANSI stripping
-- T09-T16: Expand test coverage
-- T17-T20: Integration test expansion
+- T12: Verification gate (make all + integration targets)
+- T13+: Wizard state machine

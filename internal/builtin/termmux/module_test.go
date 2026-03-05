@@ -1075,7 +1075,7 @@ type mockStringIO struct {
 	closed   bool
 }
 
-func (m *mockStringIO) Send(input string) error { m.lastSent = input; return nil }
+func (m *mockStringIO) Send(input string) error  { m.lastSent = input; return nil }
 func (m *mockStringIO) Receive() (string, error) { return "", fmt.Errorf("eof") }
 func (m *mockStringIO) Close() error             { m.closed = true; return nil }
 
@@ -1087,3 +1087,195 @@ type mockRWC struct {
 func (m *mockRWC) Read(p []byte) (int, error)  { return 0, fmt.Errorf("eof") }
 func (m *mockRWC) Write(p []byte) (int, error) { return len(p), nil }
 func (m *mockRWC) Close() error                { m.closed = true; return nil }
+
+// --- T11: Full facade lifecycle integration test ---
+// Exercises the complete JS → facade → Mux lifecycle without needing a real
+// terminal. Tests attach, hasChild, setStatus, setToggleKey, setStatusEnabled,
+// event subscription, detach, and fromModel in a single coherent flow.
+
+func TestModule_FullLifecycle(t *testing.T) {
+	runtime, _ := testRequire(t)
+	child := &mockRWC{}
+	_ = runtime.Set("__child", child)
+
+	v, err := runtime.RunString(`
+		var tmux = require('osm:termmux');
+		var m = tmux.newMux({ toggleKey: 0x1D, statusEnabled: true, initialStatus: 'init' });
+		var log = [];
+
+		// 1. Initial state
+		log.push('hasChild:' + m.hasChild());
+		log.push('activeSide:' + m.activeSide());
+		log.push('screenshot:' + m.screenshot());
+
+		// 2. Attach child
+		m.attach(__child);
+		log.push('attached:' + m.hasChild());
+
+		// 3. Configure
+		m.setStatus('working...');
+		m.setToggleKey(0x1C);
+		m.setStatusEnabled(false);
+		m.setStatusEnabled(true);
+
+		// 4. Event subscription
+		var focusEvents = [];
+		var exitEvents = [];
+		var focusId = m.on('focus', function(data) {
+			focusEvents.push(data.side);
+		});
+		var exitId = m.on('exit', function(data) {
+			exitEvents.push(data.reason || 'no-reason');
+		});
+		log.push('focusId:' + (focusId > 0));
+		log.push('exitId:' + (exitId > 0));
+
+		// 5. pollEvents — no events pending
+		var polled = m.pollEvents();
+		log.push('polled:' + polled);
+
+		// 6. Unsubscribe exit, verify focus still works
+		var offResult = m.off(exitId);
+		log.push('off:' + offResult);
+		var offAgain = m.off(exitId);
+		log.push('offAgain:' + offAgain);
+
+		// 7. fromModel
+		var fakeModel = { _type: 'model', _id: 1 };
+		var tf = m.fromModel(fakeModel);
+		log.push('fromModel.model:' + (tf.model === fakeModel));
+		log.push('fromModel.altScreen:' + tf.options.altScreen);
+		log.push('fromModel.onToggle:' + (typeof tf.options.onToggle));
+
+		// 8. Detach
+		m.detach();
+		log.push('detached:' + m.hasChild());
+
+		// 9. Detach again — idempotent
+		m.detach();
+		log.push('detachAgain:' + m.hasChild());
+
+		log.join('|');
+	`)
+	if err != nil {
+		t.Fatalf("FullLifecycle RunString: %v", err)
+	}
+
+	got := v.String()
+	want := "hasChild:false|activeSide:osm|screenshot:|attached:true|focusId:true|exitId:true|polled:0|off:true|offAgain:false|fromModel.model:true|fromModel.altScreen:true|fromModel.onToggle:function|detached:false|detachAgain:false"
+	if got != want {
+		t.Errorf("lifecycle log:\n  got:  %s\n  want: %s", got, want)
+	}
+}
+
+// TestModule_EventListenerRegistration_ViaJS tests that event listeners can be
+// registered, polled, and unregistered through the full JS → WrapMux path.
+// Uses a real parent.Mux (created via Go API) wrapped with WrapMux.
+// NOTE: This does NOT test the resize-callback-to-event-queue pipeline because
+// the mux's resize func is only invoked during RunPassthrough (requires a real
+// PTY). Instead it verifies: listener registration, setResizeFunc installation,
+// pollEvents with empty queue, and multiple listener cleanup.
+func TestModule_EventListenerRegistration_ViaJS(t *testing.T) {
+	runtime, _ := testRequire(t)
+
+	mux := parent.New(nil, nil, -1)
+	muxObj := WrapMux(context.Background(), runtime, mux)
+	_ = runtime.Set("__mux", muxObj)
+
+	v, err := runtime.RunString(`
+		var m = __mux;
+		var resizeData = [];
+		var focusData = [];
+
+		// Register listeners for resize and focus events.
+		var rid = m.on('resize', function(d) { resizeData.push(d.rows + 'x' + d.cols); });
+		var fid = m.on('focus', function(d) { focusData.push(d.side); });
+
+		// Install a resize handler — verifies setResizeFunc doesn't throw.
+		var resizeCalls = [];
+		m.setResizeFunc(function(rows, cols) {
+			resizeCalls.push(rows + 'x' + cols);
+		});
+
+		// No events have fired, so pollEvents should return 0.
+		var polled = m.pollEvents();
+
+		// Unsubscribe both.
+		var rOff = m.off(rid);
+		var fOff = m.off(fid);
+
+		JSON.stringify({
+			ridPositive: rid > 0,
+			fidPositive: fid > 0,
+			polled: polled,
+			resizeData: resizeData,
+			focusData: focusData,
+			rOff: rOff,
+			fOff: fOff,
+		});
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+
+	got := v.String()
+	want := `{"ridPositive":true,"fidPositive":true,"polled":0,"resizeData":[],"focusData":[],"rOff":true,"fOff":true}`
+	if got != want {
+		t.Errorf("EventListenerRegistration:\n  got:  %s\n  want: %s", got, want)
+	}
+}
+
+// TestModule_AttachStringIO_ViaJS tests the full StringIO attach path through JS.
+func TestModule_AttachStringIO_ViaJS(t *testing.T) {
+	runtime, _ := testRequire(t)
+	sio := &mockStringIO{}
+	_ = runtime.Set("__sio", sio)
+
+	v, err := runtime.RunString(`
+		var m = require('osm:termmux').newMux();
+		m.attach(__sio);
+		var has = m.hasChild();
+		m.detach();
+		var after = m.hasChild();
+		JSON.stringify({has: has, after: after});
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	got := v.String()
+	want := `{"has":true,"after":false}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestModule_AttachMapWithGoHandle_ViaJS tests the AgentHandle pattern (map with _goHandle).
+func TestModule_AttachMapWithGoHandle_ViaJS(t *testing.T) {
+	runtime, _ := testRequire(t)
+
+	// Create a Go map that mimics what Goja exports for an AgentHandle
+	sio := &mockStringIO{}
+	handle := map[string]interface{}{
+		"_goHandle": sio,
+		"send":      func(s string) {},
+		"receive":   func() string { return "" },
+		"close":     func() {},
+	}
+	_ = runtime.Set("__handle", handle)
+
+	v, err := runtime.RunString(`
+		var m = require('osm:termmux').newMux();
+		m.attach(__handle);
+		var has = m.hasChild();
+		m.detach();
+		JSON.stringify({has: has});
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	got := v.String()
+	want := `{"has":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}

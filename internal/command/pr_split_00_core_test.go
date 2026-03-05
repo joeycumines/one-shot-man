@@ -598,7 +598,7 @@ func TestChunk00_StyleDegracesGracefully(t *testing.T) {
 	evalJS := loadChunkEngine(t, nil, "00_core")
 
 	// Style helpers should at minimum return the input string.
-	for _, fn := range []string{"success", "error", "warning", "info", "header", "dim", "bold"} {
+	for _, fn := range []string{"success", "error", "warning", "info", "header", "dim", "bold", "diffAdd", "diffRemove", "diffHunk", "diffMeta", "diffContext"} {
 		val, err := evalJS(fmt.Sprintf(`globalThis.prSplit._style.%s("test")`, fn))
 		if err != nil {
 			t.Fatalf("_style.%s: unexpected error: %v", fn, err)

@@ -255,24 +255,26 @@
     // -----------------------------------------------------------------------
 
     // renderColorizedDiff takes raw diff text and returns a styled version.
-    // Uses ANSI codes: green for additions, red for deletions, etc.
+    // Uses lipgloss styles via prSplit._style for terminal-capability-aware
+    // rendering. Falls back to plain text when lipgloss is not available.
     function renderColorizedDiff(diffText) {
         if (!diffText) return '';
+        var s = prSplit._style;
         var lines = diffText.split('\n');
         var result = [];
         for (var i = 0; i < lines.length; i++) {
             var line = lines[i];
             if (line.indexOf('+') === 0 && line.indexOf('+++') !== 0) {
-                result.push('\x1b[32m' + line + '\x1b[0m'); // green
+                result.push(s.diffAdd(line));
             } else if (line.indexOf('-') === 0 && line.indexOf('---') !== 0) {
-                result.push('\x1b[31m' + line + '\x1b[0m'); // red
+                result.push(s.diffRemove(line));
             } else if (line.indexOf('@@') === 0) {
-                result.push('\x1b[36m' + line + '\x1b[0m'); // cyan
+                result.push(s.diffHunk(line));
             } else if (line.indexOf('diff ') === 0 || line.indexOf('index ') === 0 ||
                        line.indexOf('---') === 0 || line.indexOf('+++') === 0) {
-                result.push('\x1b[1m' + line + '\x1b[0m'); // bold
+                result.push(s.diffMeta(line));
             } else {
-                result.push('\x1b[90m' + line + '\x1b[0m'); // gray
+                result.push(s.diffContext(line));
             }
         }
         return result.join('\n');

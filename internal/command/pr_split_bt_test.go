@@ -15,9 +15,10 @@ import (
 //  T44: Behavioral Tests for renderColorizedDiff, getSplitDiff, buildReport
 // ---------------------------------------------------------------------------
 
-// TestRenderColorizedDiff_ANSICodes verifies renderColorizedDiff produces
-// ANSI-colored output for additions, deletions, hunks, and context.
-func TestRenderColorizedDiff_ANSICodes(t *testing.T) {
+// TestRenderColorizedDiff_ContentPreserved verifies renderColorizedDiff
+// produces output containing all input lines in order. Styling depends on
+// terminal capability (lipgloss), so we verify content, not ANSI sequences.
+func TestRenderColorizedDiff_ContentPreserved(t *testing.T) {
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`
@@ -36,11 +37,11 @@ func TestRenderColorizedDiff_ANSICodes(t *testing.T) {
 			].join('\n');
 			var result = prSplit.renderColorizedDiff(diff);
 			return JSON.stringify({
-				hasGreen: result.indexOf('\x1b[32m') >= 0,
-				hasRed: result.indexOf('\x1b[31m') >= 0,
-				hasCyan: result.indexOf('\x1b[36m') >= 0,
-				hasBold: result.indexOf('\x1b[1m') >= 0,
-				hasReset: result.indexOf('\x1b[0m') >= 0,
+				hasAddLine: result.indexOf('+func new() {}') >= 0,
+				hasRemoveLine: result.indexOf('-func old() {}') >= 0,
+				hasHunkHeader: result.indexOf('@@ -1,3 +1,4 @@') >= 0,
+				hasDiffHeader: result.indexOf('diff --git a/foo.go b/foo.go') >= 0,
+				hasContext: result.indexOf('package foo') >= 0,
 				lineCount: result.split('\n').length,
 				notEmpty: result.length > 0
 			});
@@ -50,31 +51,31 @@ func TestRenderColorizedDiff_ANSICodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	var result struct {
-		HasGreen  bool `json:"hasGreen"`
-		HasRed    bool `json:"hasRed"`
-		HasCyan   bool `json:"hasCyan"`
-		HasBold   bool `json:"hasBold"`
-		HasReset  bool `json:"hasReset"`
-		LineCount int  `json:"lineCount"`
-		NotEmpty  bool `json:"notEmpty"`
+		HasAddLine    bool `json:"hasAddLine"`
+		HasRemoveLine bool `json:"hasRemoveLine"`
+		HasHunkHeader bool `json:"hasHunkHeader"`
+		HasDiffHeader bool `json:"hasDiffHeader"`
+		HasContext     bool `json:"hasContext"`
+		LineCount     int  `json:"lineCount"`
+		NotEmpty      bool `json:"notEmpty"`
 	}
 	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
 		t.Fatal(err)
 	}
-	if !result.HasGreen {
-		t.Error("expected green ANSI code for additions")
+	if !result.HasAddLine {
+		t.Error("expected addition line content preserved")
 	}
-	if !result.HasRed {
-		t.Error("expected red ANSI code for deletions")
+	if !result.HasRemoveLine {
+		t.Error("expected removal line content preserved")
 	}
-	if !result.HasCyan {
-		t.Error("expected cyan ANSI code for hunk headers")
+	if !result.HasHunkHeader {
+		t.Error("expected hunk header content preserved")
 	}
-	if !result.HasBold {
-		t.Error("expected bold ANSI code for diff/index/---/+++ lines")
+	if !result.HasDiffHeader {
+		t.Error("expected diff header content preserved")
 	}
-	if !result.HasReset {
-		t.Error("expected reset ANSI codes")
+	if !result.HasContext {
+		t.Error("expected context line content preserved")
 	}
 	if result.LineCount != 10 {
 		t.Errorf("expected 10 lines, got %d", result.LineCount)

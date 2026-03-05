@@ -62,6 +62,11 @@
                 header: function(s) { return s; },
                 dim: function(s) { return s; },
                 bold: function(s) { return s; },
+                diffAdd: function(s) { return s; },
+                diffRemove: function(s) { return s; },
+                diffHunk: function(s) { return s; },
+                diffMeta: function(s) { return s; },
+                diffContext: function(s) { return s; },
                 progressBar: function(current, total, width) {
                     width = width || 20;
                     var filled = total > 0 ? Math.round((current / total) * width) : 0;
@@ -84,6 +89,13 @@
         var barFilledStyle = lip.newStyle().foreground('#22c55e');
         var barEmptyStyle = lip.newStyle().foreground('#374151');
 
+        // Diff-specific styles — replaces hardcoded ANSI codes.
+        var diffAddStyle = lip.newStyle().foreground('#22c55e');    // green
+        var diffRemoveStyle = lip.newStyle().foreground('#ef4444'); // red
+        var diffHunkStyle = lip.newStyle().foreground('#06b6d4');   // cyan
+        var diffMetaStyle = lip.newStyle().bold();                  // bold
+        var diffContextStyle = lip.newStyle().foreground('#6b7280');// gray
+
         return {
             success: function(s) { return successStyle.render(s); },
             error: function(s) { return errorStyle.render(s); },
@@ -92,6 +104,11 @@
             header: function(s) { return headerStyle.render(s); },
             dim: function(s) { return dimStyle.render(s); },
             bold: function(s) { return boldStyle.render(s); },
+            diffAdd: function(s) { return diffAddStyle.render(s); },
+            diffRemove: function(s) { return diffRemoveStyle.render(s); },
+            diffHunk: function(s) { return diffHunkStyle.render(s); },
+            diffMeta: function(s) { return diffMetaStyle.render(s); },
+            diffContext: function(s) { return diffContextStyle.render(s); },
             progressBar: function(current, total, width) {
                 width = width || 20;
                 var filled = total > 0 ? Math.round((current / total) * width) : 0;

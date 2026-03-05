@@ -35,339 +35,122 @@
     "goalState": "14 independently-testable chunk files (all populated, no stubs). All orphaned claude-mux code deleted. TUI decoupled from termmux. All stale monolith references removed. Documentation current. Cross-platform validated. Wizard UI (W-series) implemented in JS. Every line has a reason to exist.",
     "replanLog": [
       {
-        "trigger": "Session 2026-03-05: Build RED on main, 6 test failures diagnosed and fixed",
-        "affectedTaskRange": "All tasks renumbered and restructured into 43-task flat plan",
-        "summary": "Root causes: (1) sendToHandle sends \\r not \\n — test expected wrong character. (2) SEND_TEXT_CHUNK_BYTES=512 causes conflict prompts to chunk into 2+ sends — tests expected single-chunk behavior. (3) TUI harness close timeout under race detector — go-prompt PTY reader goroutine hangs. (4) Completion test WaitExit timeout — no ExitChecker configured. All fixed. Blueprint rewritten from scratch with acceptance criteria and context pointers."
+        "task": "W00: Termmux JavaScript Facade (Builtin)",
+        "description": "Expose internal/termmux to JS via internal/builtin/termmux/ package. Pane management, visibility, resize. Core termmux MUST NOT contain goja bindings.",
+        "acceptance": "JS facade implemented. Bindings localized to internal/builtin/termmux. All code is covered via new automated tests / checks and all checks pass. Design the API surface carefully, taking note of the other implementations, e.g. for osm:bubbletea, osm:bt, osm:pabt, etc, as past examples of similarly complex, Go-heavy integrations. It must be possible to implement POWERFULL JAVASCRIPT-DEFINED BEHAVIOR that is **properly non-blocking in JavaScript** (i.e. does not rely on blocking calls to Go) using this API. This is critical for the success of the Wizard UI, which will run entirely in JS and must be able to orchestrate complex interactions with termmux without blocking the JS event loop. The API should be designed with an event-driven architecture in mind, allowing JS code to subscribe to termmux events and react accordingly, rather than relying on synchronous calls that could lead to a poor user experience. Additionally, ideally, bubbletea is able to integrate _directly_ with termmux panes via this facade, allowing for a more seamless UI experience. This may require some careful design to ensure that the event handling and state management between termmux and bubbletea are well-coordinated. Examples of challenging aspects include signal handling. It may be necessary to integrate with the event loop. N.B. Integrating with bubbletea is a critical part of realising the maximum potential of this implementation. Spare no expense.",
+        "status": "Not Started"
+      },
+      {
+        "task": "W01: Wizard UI Phase 1 - State Machine Design",
+        "description": "Design state machine in pr_split_13_tui.js using osm:bt/bubbles/bubblezone. States: Config, Plan Gen, Plan Review, Branch Building, Error Resolution, Finalization.",
+        "acceptance": "JS state definitions implemented. Docs updated. All code is covered via new automated tests / checks and all checks pass.",
+        "status": "Not Started"
+      },
+      {
+        "task": "W02: Wizard UI Phase 2 - Configuration & Baseline Validation",
+        "description": "Configuration stage. Run baseline verification interactively. On failure: pause with clear UI, allow override or abort.",
+        "acceptance": "Baseline failure shows clear JS menu. Re-evaluates on override. All code is covered via new automated tests / checks and all checks pass.",
+        "status": "Not Started"
+      },
+      {
+        "task": "W03: Wizard UI Phase 3 - Interactive Plan Review Editor",
+        "description": "Port PlanEditor to JS. Wire plan generation. Detect schema invalidity. Allow retry with feedback or manual override.",
+        "acceptance": "User reviews plan in pure-JS TUI. Auto-Retry and manual overrides work. All code is covered via new automated tests / checks and all checks pass.",
+        "status": "Not Started"
+      },
+      {
+        "task": "W04: Wizard UI Phase 4 - Granular Branch Check Pipeline",
+        "description": "Sequential/concurrent branch evaluation via JS. Create, apply, verify per branch. Report pass/fail to JS UI.",
+        "acceptance": "Individual branch evaluation. Clear pass/fail status. All code is covered via new automated tests / checks and all checks pass .",
+        "status": "Not Started"
+      },
+      {
+        "task": "W05: Wizard UI Phase 5 - Interactive Error Resolution",
+        "description": "Error resolution for failed branches in JS TUI. Menu: Auto-Resolve, Manual Fix, Abort.",
+        "acceptance": "Failed branch shows resolution menu. Auto-Resolve applies patch and retries. All code is covered via new automated tests / checks and all checks pass .",
+        "status": "Not Started"
+      },
+      {
+        "task": "W06: Wizard UI Phase 6 - End-to-End Orchestration",
+        "description": "Finalize JS orchestration. Clean termination. Delete old Go TUI code.",
+        "acceptance": "osm pr-split navigates full flow via JS. Old Go TUI removed. All code is covered via new automated tests / checks and all checks pass  .",
+        "status": "Not Started"
+      },
+      {
+        "task": "W07: Wizard E2E Integration Testing",
+        "description": "TestIntegration_WizardBaselineRetry, WizardPlanFeedback, WizardAutoResolve.",
+        "acceptance": "3+ simulation tests pass on make all. All code is covered via new automated tests / checks and all checks pass  .",
+        "status": "Not Started"
+      },
+      {
+        "task": "W08: Termmux Bell Interception & OS Notification",
+        "description": "Intercept ASCII BELL in termmux. OS notification + visual TUI indicator. Expose to JS Facade.",
+        "acceptance": "Bell intercepted. OS notification fires. Integration tests prove propagation. All code is covered via new automated tests / checks and all checks pass   .",
+        "status": "Not Started"
+      },
+      {
+        "task": "W09: Termmux Process State HUD",
+        "description": "Persistent overlay showing hidden Claude process state. Activity indicators from PTY writes.",
+        "acceptance": "HUD renders. State accurately reflected. Clean rendering. All code is covered via new automated tests / checks and all checks pass  .",
+        "status": "Not Started"
+      },
+      {
+        "task": "W10: Termmux Mouse Support",
+        "description": "BubbleTea mouse events in termmux. Click HUD to swap. Draggable overlay.",
+        "acceptance": "Mouse click toggles panes. Drag repositions. All code is covered via new automated tests / checks and all checks pass    .",
+        "status": "Not Started"
+      },
+      {
+        "task": "W10a: Remove Session ID from Auto-Split MCP",
+        "description": "Strip session metadata from MCP payloads. Process callbacks via socket identity only.",
+        "acceptance": "No session IDs in payloads. Integration tests prove functionality. All code is covered via new automated tests / checks and all checks pass  .",
+        "status": "Not Started"
+      },
+      {
+        "task": "W10b: Remove socat, Native Windows IPC",
+        "description": "Replace socat with native Go IPC. Named pipes or direct sockets. Must work on Windows.",
+        "acceptance": "osm pr-split works without socat. All platforms pass integration tests. All code is covered via new automated tests / checks and all checks pass   .",
+        "status": "Not Started"
+      },
+      {
+        "task": "W11: API Tidy & Breaking Changes Review",
+        "description": "Holistic review across all Wizard changes. Signal handling. Embrace breaking internal changes for quality.",
+        "acceptance": "All internal APIs clean. Integration tests stable. All code is covered via new automated tests / checks and all checks pass  .",
+        "status": "Not Started"
+      },
+      {
+        "task": "W12: Git Worktree Isolation",
+        "description": "Use temporary git worktree for split validations. User CWD never touched.",
+        "acceptance": "Separate worktree used. User CWD undisturbed. Integration test proves safety. All code is covered via new automated tests / checks and all checks pass  .",
+        "status": "Not Started"
+      },
+      {
+        "task": "W13: Wizard Error Handling Beyond Git Rebase",
+        "description": "Error handling as primary feature. Auto-retry with Claude, drop to subshell, skip branch.",
+        "acceptance": "Wizard pauses on failure with options. Subshell drop-in works. State machine uncorrupted. All code is covered via new automated tests / checks and all checks pass  .",
+        "status": "Not Started"
+      },
+      {
+        "task": "W14: Integration Tests for Error Recovery Paths",
+        "description": "Comprehensive tests for W13 error flows. Deterministic mocked failures. TUI inspection.",
+        "acceptance": "All error resolution paths tested. Near-maximum coverage. All code is covered via new automated tests / checks and all checks pass  .",
+        "status": "Not Started"
+      }
+    ],
+    "continuousVerification": {
+      "task": "CRITICAL: Run make pipeline AND ALL LOCAL INTEGRATION TESTS after EVERY significant change",
+      "description": "MANDATORY: Run make all AND make integration-test-prsplit-mcp AND make integration-test-vterm AND make integration-test-termmux after every change batch. For real-Claude tests: make integration-test-prsplit. For Linux: make make-all-in-container.",
+      "failPolicy": "If ANY check fails, STOP IMMEDIATELY and fix. Zero tolerance for flaky tests."
+    },
+    "finalEnforcementProtocol": [
+      {
+        "type": "POST_EXECUTION_WARNING",
+        "alert": "Do not claim a regression is fixed without test evidence."
+      },
+      {
+        "type": "POST_EXECUTION_WARNING_REPEATED",
+        "alert": "No commits until two contiguous, issue-free subagent reviews confirm correctness."
       }
     ]
-  },
-  "sequentialTasks": [
-    {
-      "task": "G01: Commit verified test fixes",
-      "description": "Commit the 4 test fixes applied this session: (1) pr_split_conflict_retry_test.go — sendToHandle assertion \\r not \\n plus SEND_TEXT_CHUNK_BYTES=1000000 in 3 tests. (2) pr_split_autosplit_recovery_test.go — SEND_TEXT_CHUNK_BYTES=1000000 in mock setup. (3) tui_test.go — h.Close() Fatalf to Logf. (4) tui_completion_integration_test.go — WaitExit to Close.",
-      "acceptance": "git log shows clean commit. make all passes. git status is clean.",
-      "status": "Complete — fixes already committed by prior session. make all GREEN (640s). git clean."
-    },
-    {
-      "task": "R28-T01: Add test for TUI callback invocation (autoSplitTUI.updateProgress)",
-      "description": "Add test using loadPrSplitEngineWithEval() with mock autoSplitTUI. Assert updateProgress called with correct step name and status during pipeline execution.",
-      "acceptance": "Test exists and passes. make all passes.",
-      "status": "Complete — TestIntegration_AutoSplitMockMCP_TUIObservation already validates stepStart/stepDone/appendOutput/appendError/done callbacks. Verified only skipped on Windows (legitimate sh -c dependency)."
-    },
-    {
-      "task": "R28-T02: Add test for sendToHandle timing edge cases",
-      "description": "Add subtests: (1) cancellation mid-write, (2) empty text, (3) text exactly at SEND_TEXT_CHUNK_BYTES boundary.",
-      "acceptance": "3 new subtests under TestPrSplitCommand_SendToHandle_EdgeCases. All pass under -race.",
-      "status": "Complete — 3 tests added: EmptyText (verifies only \\r sent), CancellationBeforeChunk (verifies 0 sends), ExactChunkBoundary (verifies single 512-byte chunk). make all GREEN."
-    },
-    {
-      "task": "R28-T03: Audit test skip patterns on macOS",
-      "description": "Run tests and capture PASS/SKIP/FAIL counts. For each skip, determine if valid on macOS. Document findings.",
-      "acceptance": "Zero unexpected skips on macOS documented.",
-      "status": "Complete — 1001 PASS, 12 SKIP, 0 FAIL. All 12 skips valid: 1 Windows-only (TestIsExecutable_WindowsPaths), 11 integration-only (require -integration flag). Zero unexpected skips on macOS."
-    },
-    {
-      "task": "R00b-01: Audit claudemux imports used by pr-split",
-      "description": "Grep all 14 chunks + pr_split.go + register.go for claudemux references. Categorize files as: used by pr-split, used only by claude-mux command, or orphaned.",
-      "acceptance": "Definitive categorization documented in WIP.md.",
-      "status": "Complete — audit found: module (parser, guard, pool, panel, session, safety, choice, navigation) used by pr-split JS via require('osm:claudemux'). Command (claude_mux.go) and RPC (control.go) orphaned. IsLauncherMenu/DismissLauncherKeys only called in tests — wired into JS module."
-    },
-    {
-      "task": "R00b-02: Delete orphaned claudemux files",
-      "description": "Based on R00b-01 findings, delete files NOT required by any live code path. Remove claude_mux.go, claude_mux_test.go, registration in main.go if orphaned.",
-      "acceptance": "Deleted files gone. No broken imports. make all + deadcode pass.",
-      "status": "Complete — deleted: claude_mux.go (1051L), claude_mux_test.go (1805L), coverage_gaps_batch11_test.go (166L), control.go (348L), control_test.go (585L). Removed registration from main.go. Removed shell completion stubs. Wired IsLauncherMenu/DismissLauncherKeys into module.go JS bindings. All cascading test references cleaned."
-    },
-    {
-      "task": "R00b-03: Delete orphaned claudemux documentation",
-      "description": "Delete or update: docs/reference/claude-mux.md, docs/architecture-claude-mux.md, docs/scripting.md osm:claudemux section, docs/reference/command.md claude-mux section.",
-      "acceptance": "grep -r 'claude-mux' docs/ returns zero results except archive.",
-      "status": "Complete — deleted architecture-claude-mux.md (959L), reference/claude-mux.md (151L). Updated docs/README.md, architecture.md (17 commands, diagram), reference/command.md, scripting.md (section header + dead link), scripts/README.md."
-    },
-    {
-      "task": "R00-01: Move autosplit.go from termmux/ui to internal/command",
-      "description": "Move internal/termmux/ui/autosplit.go to internal/command/prsplit_autosplit_model.go. Change package. Update imports in pr_split.go.",
-      "acceptance": "internal/termmux/ui/autosplit.go deleted. pr_split.go no longer imports termmux/ui. make all passes.",
-      "status": "Complete — git mv'd to prsplit_autosplit_model.go. Package changed. All ui. prefixes stripped from pr_split.go."
-    },
-    {
-      "task": "R00-02: Move planeditor.go from termmux/ui to internal/command",
-      "description": "Move planeditor.go + planeditor_test.go + helpers.go to internal/command/. Update package declaration and imports.",
-      "acceptance": "Moved files compile as package command. make all passes.",
-      "status": "Complete — git mv'd planeditor.go, planeditor_test.go, helpers.go, check_test.go, coverage_gaps_batch12_test.go. All package declarations changed."
-    },
-    {
-      "task": "R00-03: Clean up termmux/ui package remnants",
-      "description": "After R00-01 and R00-02, audit and delete remaining content in internal/termmux/ui/ if empty.",
-      "acceptance": "No import of internal/termmux/ui exists outside internal/termmux/ itself.",
-      "status": "Complete — directory eliminated. doc.go deleted. Zero termmux/ui imports remain in any .go file."
-    },
-    {
-      "task": "R32-01: Remove stale pr_split_script.js references",
-      "description": "Grep and remove references in docs/architecture-pr-split-chunks.md, docs/architecture-claude-mux.md, templates_test.go, CHANGELOG.md.",
-      "acceptance": "grep -r 'pr_split_script.js' --include='*.go' --include='*.js' --include='*.md' returns zero outside scratch/archive/.",
-      "status": "Complete — fixed 3 files: architecture-pr-split-chunks.md (section heading), templates_test.go (comment updated), CHANGELOG.md (line 156 updated)."
-    },
-    {
-      "task": "R32-02: Remove stale PR_SPLIT_CHUNKED and useChunkedScript references",
-      "description": "Remove toggle field from PrSplitCommand struct, remove env var parsing, remove test setup. loadChunkedScript called unconditionally.",
-      "acceptance": "grep -r 'PR_SPLIT_CHUNKED' returns zero. grep -r 'useChunkedScript' returns zero.",
-      "status": "Complete — already clean. Zero references in codebase. Migration fully completed in prior work."
-    },
-    {
-      "task": "R29: Update docs/architecture-pr-split-chunks.md",
-      "description": "Verify every function maps to actual export. Update line counts. Remove culled functions. Add Testing section.",
-      "acceptance": "Every function 1:1 with chunk export. Testing section with examples.",
-      "status": "Complete — replaced Migration Plan section with Migration Status (complete). Added note about TUI models relocated to internal/command. Fixed stale monolith reference in header."
-    },
-    {
-      "task": "R30: Rewrite CHANGELOG.md pr-split entries",
-      "description": "Delete ALL existing pr-split and claude-mux content. Replace with single clean Unreleased entry describing the feature.",
-      "acceptance": "Clean final-state entries. No implementation journey artifacts.",
-      "status": "Complete — rewrote entire Unreleased section. ~45 journey entries condensed into 2 summary Added entries (pr-split command, claudemux module). All intermediate Fixed entries removed. Clean 5-section format: Added/Changed/Deprecated/Removed/Fixed."
-    },
-    {
-      "task": "R31-01: Update docs/architecture.md",
-      "description": "Update command list. Add chunk loading pattern section. Update ASCII diagrams.",
-      "acceptance": "Accurately lists all current commands. No reference to deleted commands.",
-      "status": "Complete — updated command count 17→14, removed mcp/mcp-instance/mcp-make/mcp-parent from list, deleted entire MCP server section (15-tool table + design notes), fixed ASCII data flow diagram, updated osm:claudemux module description, removed stale MCP Server section from README.md."
-    },
-    {
-      "task": "R31-02: Update AGENTS.md sourceOfTruth",
-      "description": "Ensure Key Directories references chunk files. Remove pr_split_script.js as active implementation.",
-      "acceptance": "grep pr_split_script.js AGENTS.md returns zero.",
-      "status": "Complete — AGENTS.md already clean. Zero references to pr_split_script.js, claude-mux, mcp commands, or termmux/ui. Verified by subagent audit."
-    },
-    {
-      "task": "R31-03: Update docs/reference/command.md for pr-split",
-      "description": "Verify all flags match SetupFlags. Verify TUI commands match buildCommands. Add undocumented flags.",
-      "acceptance": "Every flag documented. Every TUI command listed.",
-      "status": "Complete — docs/reference/command.md already has 14 commands matching main.go registrations. Zero stale MCP/claude-mux references."
-    },
-    {
-      "task": "R00a: Verify git state isolation in tests",
-      "description": "Run make all then verify git status + git branch. Audit remaining os.Chdir calls in tests.",
-      "acceptance": "After make all: clean git state, no detached HEAD, no orphaned branches.",
-      "status": "Complete — git status clean after make all. Branch: wip (not detached). os.Chdir calls (30+) all in tui_completion_unit_test.go with proper defer os.Chdir(orig) restore. No test-created orphan branches. Note: Go 1.26 supports t.Chdir() — modernization deferred."
-    },
-    {
-      "task": "B01: Fix dodgy terminal output (literal ANSI escape codes)",
-      "description": "Investigate and fix literal ANSI escape codes appearing in output during PR split subcommands and other TUI commands. The terminal gets reset on execution of the command and it is not the same terminal mode as the go-prompt command. Ensure the terminal mode is correctly configured so colors/formatting are applied and not printed as literal escape sequences like `?[1;38...`. Ensure that `osm:lipgloss` (a JS module exposed to scripts) is mandated for styling.",
-      "acceptance": "Commands printing ANSI escape codes display actual colors/formatting instead of literal sequences, and styling specifically relies on the `osm:lipgloss` JS module.",
-      "status": "Complete — renderColorizedDiff() refactored from hardcoded ANSI to lipgloss styles via prSplit._style (diffAdd, diffRemove, diffHunk, diffMeta, diffContext). 5 style functions added to pr_split_00_core.js with color fallbacks. Tests updated to check content preservation. All 200+ pr-split tests pass."
-    },
-    {
-      "task": "B02: Fix gh pr create GraphQL error (No commits between base and head)",
-      "description": "Investigate and fix 'gh pr create failed: GraphQL: Head sha can't be blank, Base sha can't be blank, No commits between main and branch' error. This needs to be a separate task from B01.",
-      "acceptance": "PR creation process either succeeds gracefully or provides a clear, actionable error/warning without crashing due to GraphQL validation errors.",
-      "status": "Complete — Added pre-flight base branch validation (git ls-remote), empty diff detection (git diff --quiet) to skip PRs with no changes, and mock updates for test coverage. 3 new tests: BaseBranchNotOnRemote, BaseBranchCheckSkippedForPushOnly, EmptyDiffSkipsPR."
-    },
-    {
-      "task": "R39-01: Linux container validation",
-      "description": "Run make make-all-in-container. Fix failures. Focus: path separators, git output parsing, shellQuote differences.",
-      "acceptance": "make make-all-in-container exits 0.",
-      "status": "Complete — make make-all-in-container exits 0 (640s). golang:1.26.0 container. All packages pass including internal/scripting (478s), internal/command, internal/termmux."
-    },
-    {
-      "task": "R39-02: Windows validation",
-      "description": "Run make make-all-run-windows. Document legitimate skips. Fix unexpected failures.",
-      "acceptance": "make make-all-run-windows exits 0 or justified skips documented.",
-      "status": "Complete — make make-all-run-windows exits 0 (136s). Fixed: (1) syscall.Kill in pty_test.go moved to build-tagged pty_unix_test.go, (2) git init -b main replaced with init + symbolic-ref in 24 sites for old git compat, (3) validateFilePath now rejects /-prefixed paths on Windows, (4) JS autofix tests escape backslash paths via filepath.ToSlash, (5) saveTelemetry test uses file-blocker path instead of Unix /bad/path, (6) followFile defer closure captures reassigned f, (7) make-generate detect tests skip on Windows (sh -c + grep dependency)."
-    },
-    {
-      "task": "B00: Fix test git state mutation issue",
-      "description": "Investigate and fix a critical bug where running tests mutates the git state (detaching HEAD). Root cause: tests with os.Chdir(tmpDir) + dir:'.' in JS caused gitExec('.') to run bare git in go test CWD. Fix (5 layers): (1) runtime.dir config field — tests inject absolute temp dir, (2) resolveDir() uses runtime.dir with no exec.execv fallback, (3) all gitExec callers go through resolveDir, (4) chdirTestPipeline LIFO ordering fix + 12 autosplit patterns converted, (5) loadChunkEngine injects t.TempDir() when no dir configured.",
-      "acceptance": "Running `make run-all-tests-no-cache` completes successfully. Follow-up `git status` shows a clean tree with no detached HEAD. The fix must be verified rigorously under the Rule of Two.",
-      "status": "Complete — commit e655943. All 200+ pr-split tests pass. Branch=wip before and after. 15 files changed: pr_split_00_core.js (resolveDir + runtime.dir), 8 chunk JS files (resolveDir import+usage), pr_split_test.go (LIFO fix + setupTestPipeline auto-dir), pr_split_00_core_test.go (loadChunkEngine auto-dir), pr_split_autosplit_recovery_test.go (12 patterns converted)."
-    },
-    {
-      "task": "R28.1: Audit termmux resize signal flow",
-      "description": "Read termmux handleResize, RunPassthrough, watchResize. Document full signal flow. Identify resize drops.",
-      "acceptance": "Root cause in scratch/termmux-resize-audit.md. Specific file+line identified.",
-      "status": "Complete — Root cause: RunPassthrough() second-swap branch (termmux.go ~line 432) restores VTerm but skips resizeFn call. Terminal may resize while OSM TUI is visible; child PTY never learns new dimensions on re-enter. Documented in scratch/termmux-resize-audit.md."
-    },
-    {
-      "task": "R28.2: Replicate termmux resize failure via test",
-      "description": "Add TestMux_ResizeDuringHiddenState. Mock PTY + mock TUI. Must FAIL before R28.3.",
-      "acceptance": "Test exists and fails reliably before fix.",
-      "status": "Complete — TestMux_ResizeDuringHiddenState added to termmux_test.go. Confirmed FAIL before fix: 'second swap resize = 24x80; want 40x120'."
-    },
-    {
-      "task": "R28.3: Implement dirty resize pattern",
-      "description": "Add resizeFn call in second-swap else branch of RunPassthrough, after VTerm restore and status bar re-render.",
-      "acceptance": "TestMux_ResizeDuringHiddenState passes. make all passes.",
-      "status": "Complete — Added resizeFn call at end of else branch in RunPassthrough(). Also fixed pre-existing data races in TestBellPropagation_BackgroundPane and TestBellPropagation_MultipleBells. Updated TestRunPassthrough_SecondSwapDoesNotClear to verify new correct resize-on-second-swap behavior."
-    },
-    {
-      "task": "R28.4: Verify termmux resize fix end-to-end",
-      "description": "Run R28.2 test. Verify AutoSplitModel handles WindowSizeMsg. Run make integration-test-termmux.",
-      "acceptance": "All resize tests pass. make integration-test-termmux passes.",
-      "status": "Complete — make test-termmux: ALL 37 termmux tests pass, 0 data races, 0 failures. Subpackages (pty, ptyio, statusbar, vt) all green. Awaiting Rule of Two full-suite verification."
-    },
-    {
-      "task": "R28.5: Add defensive underflow guard to inline resize calls",
-      "description": "Both first-swap and second-swap branches in RunPassthrough computed h-statusBarLines without clamping. If terminal shrinks while OSM TUI is active, statusBarLines (captured at setup) stays 1 but h could drop to 1, making childH = 0. Added if childH < 1 { childH = 1 } to both branches, matching handleResize pattern. Test TestMux_ResizeClampsTinyTerminal validates: start at 24 rows with status, shrink to 1 row mid-session, assert clamped to 1.",
-      "acceptance": "TestMux_ResizeClampsTinyTerminal passes. Both swap branches have underflow guard. make test-termmux passes.",
-      "status": "Complete — Guard added to both swap branches. TestMux_ResizeClampsTinyTerminal passes. Rule of Two PASS×2. Committed as 0fe8cb3."
-    },
-    {
-      "task": "R28.6: Add entry-point dimension clamps to handleResize",
-      "description": "Add rows/cols clamp to 1 at the top of handleResize(), before storing dimensions or passing to VTerm/ResizeFn. Platform-specific resize watchers may report zero dimensions during rapid resizing. Test TestHandleResize_ClampZeroDimensions validates rows=0, cols=0, negative values all clamped to 1.",
-      "acceptance": "TestHandleResize_ClampZeroDimensions passes through 3 cases (0/0, -5/-3, 1/1). make test-termmux passes.",
-      "status": "Complete — Entry-point clamp added. TestHandleResize_ClampZeroDimensions passes 3 cases. Rule of Two PASS×2."
-    },
-    {
-      "task": "R43: Fix parseInt NaN vulnerability in TUI commands",
-      "description": "7 parseInt calls in pr_split_13_tui.js (move, rename, merge, reorder) lack isNaN guards. NaN < 0 evaluates false, bypassing bounds checks and causing undefined behavior downstream. Add isNaN() to each bounds check.",
-      "acceptance": "TestChunk13_ParseIntNaN passes 7 subtests (move×2, rename×1, merge×2, reorder×2). All chunk13 tests pass.",
-      "status": "Complete — 7 isNaN() guards added. TestChunk13_ParseIntNaN passes 7 subtests. Rule of Two PASS×2."
-    },
-    {
-      "task": "R44: Check branch restoration errors in executeSplit",
-      "description": "9 gitExec(['checkout', restoreBranch]) calls in pr_split_05_execution.js silently discard errors. Extract restoreSafely() helper that logs on failure. Also fix unchecked branch restore in pr_split_10_pipeline.js (1 site), unchecked git add in pr_split_00_core.js gitAddChangedFiles (1 site), and unchecked git add in pr_split_08_conflict.js fix functions (2 sites).",
-      "acceptance": "All 13 unchecked gitExec calls now check return codes. Existing chunk05/chunk13/narrow tests pass.",
-      "status": "Complete — restoreSafely() helper replaces 9 bare calls. Pipeline, core, and conflict fixers all check gitExec returns. Rule of Two PASS×2."
-    },
-    {
-      "task": "R45: Config path warning and validation test coverage",
-      "description": "main.go: Surface config.GetConfigPath() error as stderr warning instead of silently ignoring. Add TestChunk04_ValidatePlan_EmptyStringName and TestChunk04_ValidatePlan_EmptyFilesInSplit to cover validation edge cases. Add test-chunk04/test-chunk13 Make targets.",
-      "acceptance": "main.go warns on config path error. All 24 chunk04 tests pass. make lint passes.",
-      "status": "In Progress — Code applied. Tests pass. Awaiting Rule of Two."
-    },
-    {
-      "task": "R41: Write chunk architecture ADR",
-      "description": "Create docs/adr/001-pr-split-chunked-architecture.md with Context, Decision, Consequences, Alternatives.",
-      "acceptance": "ADR exists with all sections. Referenced from docs/architecture.md.",
-      "status": "Complete — ADR created with Context (monolith problems), Decision (14-chunk layout, embedding, dependency resolution, testing loaders), Consequences (positive: isolated testing, AI-friendly, explicit deps, test safety; negative: late-binding fragility, loading overhead), Alternatives (monolith, Go-only, ES modules, lazy getters). Referenced from docs/architecture.md and docs/README.md."
-    },
-    {
-      "task": "R42: Handle git-ignored files in PR-split plan execution",
-      "description": "In pr_split_05_execution.js: add git check-ignore pre-validation. Skip ignored files with warning. Integration test.",
-      "acceptance": "Pipeline handles ignored files without crash. Integration test verifies.",
-      "status": "Complete — git check-ignore --no-index pre-validation detects ignored files. Per-file skip with warning during execution. addFiles loop excludes ignored files. splitResult.skippedFiles tracks skipped entries. 2 tests: GitIgnoredFilesSkipped (force-added file skipped, absent from branch) and NoIgnoredFiles (empty skippedFiles for normal case)."
-    },
-    {
-      "task": "BP-01: Update blueprint.json meta after cleanup",
-      "description": "After R32: update mandatoryDirectives.sourceOfTruth and chunkArchitecture. Update statusSection.currentState.",
-      "acceptance": "Blueprint accurately describes current codebase.",
-      "status": "Complete — statusSection.currentState updated (reflects 3 bug fixes, 15 commands, clean wip branch at e2580ac). sourceOfTruth updated (46+ test files, ADR reference, auto-dir injection note)."
-    },
-    {
-      "task": "W00: Termmux JavaScript Facade (Builtin)",
-      "description": "Expose internal/termmux to JS via internal/builtin/termmux/ package. Pane management, visibility, resize. Core termmux MUST NOT contain goja bindings.",
-      "acceptance": "JS facade implemented. Bindings localized to internal/builtin/termmux. make all passes.",
-      "status": "Not Started"
-    },
-    {
-      "task": "W01: Wizard UI Phase 1 - State Machine Design",
-      "description": "Design state machine in pr_split_13_tui.js using osm:bt/bubbles/bubblezone. States: Config, Plan Gen, Plan Review, Branch Building, Error Resolution, Finalization.",
-      "acceptance": "JS state definitions implemented. Docs updated.",
-      "status": "Not Started"
-    },
-    {
-      "task": "W02: Wizard UI Phase 2 - Configuration & Baseline Validation",
-      "description": "Configuration stage. Run baseline verification interactively. On failure: pause with clear UI, allow override or abort.",
-      "acceptance": "Baseline failure shows clear JS menu. Re-evaluates on override.",
-      "status": "Not Started"
-    },
-    {
-      "task": "W03: Wizard UI Phase 3 - Interactive Plan Review Editor",
-      "description": "Port PlanEditor to JS. Wire plan generation. Detect schema invalidity. Allow retry with feedback or manual override.",
-      "acceptance": "User reviews plan in pure-JS TUI. Auto-Retry and manual overrides work.",
-      "status": "Not Started"
-    },
-    {
-      "task": "W04: Wizard UI Phase 4 - Granular Branch Check Pipeline",
-      "description": "Sequential/concurrent branch evaluation via JS. Create, apply, verify per branch. Report pass/fail to JS UI.",
-      "acceptance": "Individual branch evaluation. Clear pass/fail status.",
-      "status": "Not Started"
-    },
-    {
-      "task": "W05: Wizard UI Phase 5 - Interactive Error Resolution",
-      "description": "Error resolution for failed branches in JS TUI. Menu: Auto-Resolve, Manual Fix, Abort.",
-      "acceptance": "Failed branch shows resolution menu. Auto-Resolve applies patch and retries.",
-      "status": "Not Started"
-    },
-    {
-      "task": "W06: Wizard UI Phase 6 - End-to-End Orchestration",
-      "description": "Finalize JS orchestration. Clean termination. Delete old Go TUI code.",
-      "acceptance": "osm pr-split navigates full flow via JS. Old Go TUI removed.",
-      "status": "Not Started"
-    },
-    {
-      "task": "W07: Wizard E2E Integration Testing",
-      "description": "TestIntegration_WizardBaselineRetry, WizardPlanFeedback, WizardAutoResolve.",
-      "acceptance": "3+ simulation tests pass on make all.",
-      "status": "Not Started"
-    },
-    {
-      "task": "W08: Termmux Bell Interception & OS Notification",
-      "description": "Intercept ASCII BELL in termmux. OS notification + visual TUI indicator. Expose to JS Facade.",
-      "acceptance": "Bell intercepted. OS notification fires. Integration tests prove propagation.",
-      "status": "Not Started"
-    },
-    {
-      "task": "W09: Termmux Process State HUD",
-      "description": "Persistent overlay showing hidden Claude process state. Activity indicators from PTY writes.",
-      "acceptance": "HUD renders. State accurately reflected. Clean rendering.",
-      "status": "Not Started"
-    },
-    {
-      "task": "W10: Termmux Mouse Support",
-      "description": "BubbleTea mouse events in termmux. Click HUD to swap. Draggable overlay.",
-      "acceptance": "Mouse click toggles panes. Drag repositions.",
-      "status": "Not Started"
-    },
-    {
-      "task": "W10a: Remove Session ID from Auto-Split MCP",
-      "description": "Strip session metadata from MCP payloads. Process callbacks via socket identity only.",
-      "acceptance": "No session IDs in payloads. Integration tests prove functionality.",
-      "status": "Not Started"
-    },
-    {
-      "task": "W10b: Remove socat, Native Windows IPC",
-      "description": "Replace socat with native Go IPC. Named pipes or direct sockets. Must work on Windows.",
-      "acceptance": "osm pr-split works without socat. All platforms pass integration tests.",
-      "status": "Not Started"
-    },
-    {
-      "task": "W11: API Tidy & Breaking Changes Review",
-      "description": "Holistic review across all Wizard changes. Signal handling. Embrace breaking internal changes for quality.",
-      "acceptance": "All internal APIs clean. Integration tests stable.",
-      "status": "Not Started"
-    },
-    {
-      "task": "W12: Git Worktree Isolation",
-      "description": "Use temporary git worktree for split validations. User CWD never touched.",
-      "acceptance": "Separate worktree used. User CWD undisturbed. Integration test proves safety.",
-      "status": "Not Started"
-    },
-    {
-      "task": "W13: Wizard Error Handling Beyond Git Rebase",
-      "description": "Error handling as primary feature. Auto-retry with Claude, drop to subshell, skip branch.",
-      "acceptance": "Wizard pauses on failure with options. Subshell drop-in works. State machine uncorrupted.",
-      "status": "Not Started"
-    },
-    {
-      "task": "W14: Integration Tests for Error Recovery Paths",
-      "description": "Comprehensive tests for W13 error flows. Deterministic mocked failures. TUI inspection.",
-      "acceptance": "All error resolution paths tested. Near-maximum coverage.",
-      "status": "Not Started"
-    }
-  ],
-  "continuousVerification": {
-    "task": "CRITICAL: Run make pipeline AND ALL LOCAL INTEGRATION TESTS after EVERY significant change",
-    "description": "MANDATORY: Run make all AND make integration-test-prsplit-mcp AND make integration-test-vterm AND make integration-test-termmux after every change batch. For real-Claude tests: make integration-test-prsplit. For Linux: make make-all-in-container.",
-    "failPolicy": "If ANY check fails, STOP IMMEDIATELY and fix. Zero tolerance for flaky tests."
-  },
-  "finalEnforcementProtocol": [
-    {
-      "type": "POST_EXECUTION_WARNING",
-      "alert": "Do not claim a regression is fixed without test evidence."
-    },
-    {
-      "type": "POST_EXECUTION_WARNING_REPEATED",
-      "alert": "No commits until two contiguous, issue-free subagent reviews confirm correctness."
-    }
-  ]
+  }
 }

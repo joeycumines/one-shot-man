@@ -922,6 +922,66 @@ func TestHandleResize_StatusDisabled(t *testing.T) {
 	}
 }
 
+// TestHandleResize_ClampZeroDimensions verifies that handleResize clamps
+// zero/negative rows and cols to 1 at entry. This exercises the defensive
+// guard against platform-specific resize watchers that may report zero
+// dimensions during rapid resizing.
+func TestHandleResize_ClampZeroDimensions(t *testing.T) {
+	var stdout bytes.Buffer
+	m := New(bytes.NewReader(nil), &stdout, -1)
+	m.cfg.StatusEnabled = false
+
+	child := newMockChild()
+	if err := m.Attach(child); err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+
+	var resizedRows, resizedCols uint16
+	m.SetResizeFunc(func(rows, cols uint16) error {
+		resizedRows = rows
+		resizedCols = cols
+		return nil
+	})
+
+	// Case 1: rows=0, cols=0 → both clamped to 1.
+	m.handleResize(0, 0)
+	m.mu.Lock()
+	if m.termRows != 1 || m.termCols != 1 {
+		t.Errorf("case1: termDims = %dx%d; want 1x1", m.termRows, m.termCols)
+	}
+	m.mu.Unlock()
+	if resizedRows != 1 || resizedCols != 1 {
+		t.Errorf("case1: resize callback = %dx%d; want 1x1", resizedRows, resizedCols)
+	}
+
+	// Case 2: negative rows/cols → clamped to 1.
+	m.handleResize(-5, -3)
+	m.mu.Lock()
+	if m.termRows != 1 || m.termCols != 1 {
+		t.Errorf("case2: termDims = %dx%d; want 1x1", m.termRows, m.termCols)
+	}
+	m.mu.Unlock()
+	if resizedRows != 1 || resizedCols != 1 {
+		t.Errorf("case2: resize callback = %dx%d; want 1x1", resizedRows, resizedCols)
+	}
+
+	// Case 3: rows=1, cols=1 → unchanged (boundary).
+	m.handleResize(1, 1)
+	m.mu.Lock()
+	if m.termRows != 1 || m.termCols != 1 {
+		t.Errorf("case3: termDims = %dx%d; want 1x1", m.termRows, m.termCols)
+	}
+	m.mu.Unlock()
+	if resizedRows != 1 || resizedCols != 1 {
+		t.Errorf("case3: resize callback = %dx%d; want 1x1", resizedRows, resizedCols)
+	}
+
+	child.Close()
+	if !waitTimeout(m.teeDone, 5*time.Second) {
+		t.Fatal("teeLoop did not exit in time")
+	}
+}
+
 // ── T012 Tests: ChildExitOutput lifecycle ──────────────────────────
 
 func TestChildExitOutput_EmptyBeforeAttach(t *testing.T) {

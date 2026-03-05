@@ -261,6 +261,15 @@ func (m *Mux) ChildExitOutput() string {
 // the status bar), calls the resize callback to propagate to the child
 // PTY, and re-renders the status bar.
 func (m *Mux) handleResize(rows, cols int) {
+	// Defensive: clamp to valid range. Platform-specific resize
+	// watchers may report zero dimensions during rapid resizing.
+	if rows < 1 {
+		rows = 1
+	}
+	if cols < 1 {
+		cols = 1
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

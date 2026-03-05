@@ -208,7 +208,13 @@
       "task": "R28.5: Add defensive underflow guard to inline resize calls",
       "description": "Both first-swap and second-swap branches in RunPassthrough computed h-statusBarLines without clamping. If terminal shrinks while OSM TUI is active, statusBarLines (captured at setup) stays 1 but h could drop to 1, making childH = 0. Added if childH < 1 { childH = 1 } to both branches, matching handleResize pattern. Test TestMux_ResizeClampsTinyTerminal validates: start at 24 rows with status, shrink to 1 row mid-session, assert clamped to 1.",
       "acceptance": "TestMux_ResizeClampsTinyTerminal passes. Both swap branches have underflow guard. make test-termmux passes.",
-      "status": "In Progress — Code fix applied. Test written and passing. Awaiting Rule of Two."
+      "status": "Complete — Guard added to both swap branches. TestMux_ResizeClampsTinyTerminal passes. Rule of Two PASS×2. Committed as 0fe8cb3."
+    },
+    {
+      "task": "R28.6: Add entry-point dimension clamps to handleResize",
+      "description": "Add rows/cols clamp to 1 at the top of handleResize(), before storing dimensions or passing to VTerm/ResizeFn. Platform-specific resize watchers may report zero dimensions during rapid resizing. Test TestHandleResize_ClampZeroDimensions validates rows=0, cols=0, negative values all clamped to 1.",
+      "acceptance": "TestHandleResize_ClampZeroDimensions passes through 3 cases (0/0, -5/-3, 1/1). make test-termmux passes.",
+      "status": "Complete — Entry-point clamp added. TestHandleResize_ClampZeroDimensions passes 3 cases. Rule of Two PASS×2."
     },
     {
       "task": "R41: Write chunk architecture ADR",

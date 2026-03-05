@@ -395,8 +395,11 @@ func setupTestPipeline(t *testing.T, opts TestPipelineOpts) *TestPipeline {
 	}
 
 	// Set up engine with config overrides.
+	// Always include the absolute temp dir path to prevent git operations
+	// from targeting the Go test package directory (B00 fix).
 	overrides := map[string]interface{}{
 		"baseBranch": "main",
+		"dir":        dir,
 	}
 	for k, v := range opts.ConfigOverrides {
 		overrides[k] = v
@@ -890,17 +893,26 @@ var _ = (*scripting.Engine)(nil)
 
 // chdirTestPipeline is a helper that sets up a test pipeline, chdirs to
 // its repo, and returns the pipeline. The chdir is undone on test cleanup.
+//
+// CLEANUP ORDERING: The os.Chdir restoration cleanup is registered BEFORE
+// the engine cleanup (inside setupTestPipeline). Since Go's t.Cleanup is
+// LIFO, the engine cleanup runs FIRST (while CWD is still the temp dir),
+// then CWD restoration runs SECOND. This prevents the JS engine from
+// running git operations against the test binary's package directory.
 func chdirTestPipeline(t *testing.T, opts TestPipelineOpts) *TestPipeline {
 	t.Helper()
-	tp := setupTestPipeline(t, opts)
 	oldDir, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Register CWD restoration FIRST so it runs LAST in LIFO cleanup order.
+	// This ensures the JS engine cleanup (registered by setupTestPipeline)
+	// runs while CWD is still set to the temp repo directory.
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+	tp := setupTestPipeline(t, opts)
 	if err := os.Chdir(tp.Dir); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 	return tp
 }
 

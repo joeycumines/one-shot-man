@@ -176,9 +176,9 @@
     },
     {
       "task": "B00: Fix test git state mutation issue",
-      "description": "Investigate and fix a critical bug where running tests mutates the git state (detaching HEAD, modifying local worktree). The test cache likely hid this previously. Verify using the newly added `run-all-tests-no-cache` target in `config.mk` which runs tests with `-count=1` to defeat the test cache.",
+      "description": "Investigate and fix a critical bug where running tests mutates the git state (detaching HEAD). Root cause: tests with os.Chdir(tmpDir) + dir:'.' in JS caused gitExec('.') to run bare git in go test CWD. Fix (5 layers): (1) runtime.dir config field — tests inject absolute temp dir, (2) resolveDir() uses runtime.dir with no exec.execv fallback, (3) all gitExec callers go through resolveDir, (4) chdirTestPipeline LIFO ordering fix + 12 autosplit patterns converted, (5) loadChunkEngine injects t.TempDir() when no dir configured.",
       "acceptance": "Running `make run-all-tests-no-cache` completes successfully. Follow-up `git status` shows a clean tree with no detached HEAD. The fix must be verified rigorously under the Rule of Two.",
-      "status": "Not Started"
+      "status": "Complete — commit e655943. All 200+ pr-split tests pass. Branch=wip before and after. 15 files changed: pr_split_00_core.js (resolveDir + runtime.dir), 8 chunk JS files (resolveDir import+usage), pr_split_test.go (LIFO fix + setupTestPipeline auto-dir), pr_split_00_core_test.go (loadChunkEngine auto-dir), pr_split_autosplit_recovery_test.go (12 patterns converted)."
     },
     {
       "task": "R28.1: Audit termmux resize signal flow",

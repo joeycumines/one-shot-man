@@ -7,6 +7,7 @@
 
 (function(prSplit) {
     var gitExec = prSplit._gitExec;
+    var resolveDir = prSplit._resolveDir;
     var shellQuote = prSplit._shellQuote;
     var scopedVerifyCommand = prSplit.scopedVerifyCommand;
     var exec = prSplit._modules.exec;
@@ -16,7 +17,7 @@
     // -----------------------------------------------------------------------
     function verifySplit(branchName, config) {
         config = config || {};
-        var dir = config.dir || '.';
+        var dir = resolveDir(config.dir || '.');
         var command = config.verifyCommand || prSplit.runtime.verifyCommand;
         var timeoutMs = config.verifyTimeoutMs || 0;
         var outputFn = config.outputFn || null;
@@ -90,7 +91,7 @@
         if (!plan || !plan.splits) {
             return { allPassed: false, results: [], error: 'invalid plan: missing splits' };
         }
-        var dir = plan.dir || '.';
+        var dir = resolveDir(plan.dir || '.');
         var verifyTimeoutMs = options.verifyTimeoutMs || 0;
         var onBranchStart = typeof options.onBranchStart === 'function' ? options.onBranchStart : null;
         var onBranchDone = typeof options.onBranchDone === 'function' ? options.onBranchDone : null;
@@ -197,7 +198,7 @@
         if (!plan) {
             return { equivalent: false, splitTree: '', sourceTree: '', error: 'invalid plan' };
         }
-        var dir = plan.dir || '.';
+        var dir = resolveDir(plan.dir || '.');
 
         if (!plan.splits || plan.splits.length === 0) {
             return { equivalent: false, splitTree: '', sourceTree: '', error: 'no splits in plan' };
@@ -242,7 +243,7 @@
         if (!plan) {
             return { equivalent: false, splitTree: '', sourceTree: '', error: 'invalid plan', diffFiles: [], diffSummary: '' };
         }
-        var dir = plan.dir || '.';
+        var dir = resolveDir(plan.dir || '.');
         var base = verifyEquivalence(plan);
 
         if (base.error || base.equivalent) {
@@ -274,7 +275,7 @@
         if (!plan || !plan.splits) {
             return { deleted: [], errors: ['invalid plan: missing splits'] };
         }
-        var dir = plan.dir || '.';
+        var dir = resolveDir(plan.dir || '.');
         var deleted = [];
         var errors = [];
 

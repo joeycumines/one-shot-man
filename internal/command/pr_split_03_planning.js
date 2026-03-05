@@ -10,6 +10,7 @@
 (function(prSplit) {
     var runtime = prSplit.runtime;
     var gitExec = prSplit._gitExec;
+    var resolveDir = prSplit._resolveDir;
     var sanitizeBranchName = prSplit._sanitizeBranchName;
     var padIndex = prSplit._padIndex;
     var osmod = prSplit._modules.osmod;
@@ -23,7 +24,7 @@
     function createSplitPlan(groups, config) {
         if (!groups || typeof groups !== 'object') groups = {};
         config = config || {};
-        var dir = config.dir || '.';
+        var dir = resolveDir(config.dir || '.');
         var baseBranch = config.baseBranch || runtime.baseBranch;
         var branchPrefix = config.branchPrefix || runtime.branchPrefix;
         var commitPrefix = config.commitPrefix || '';

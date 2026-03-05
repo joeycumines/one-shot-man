@@ -12,6 +12,7 @@
 
 (function(prSplit) {
     var gitExec = prSplit._gitExec;
+    var resolveDir = prSplit._resolveDir;
     var runtime = prSplit.runtime;
 
     // analyzeDiff returns the list of changed files between the current
@@ -27,7 +28,7 @@
     function analyzeDiff(config) {
         config = config || {};
         var baseBranch = config.baseBranch || runtime.baseBranch;
-        var dir = config.dir || '.';
+        var dir = resolveDir(config.dir || '.');
 
         var emptyResult = function(error, currentBranch) {
             return {
@@ -127,7 +128,7 @@
     function analyzeDiffStats(config) {
         config = config || {};
         var baseBranch = config.baseBranch || runtime.baseBranch;
-        var dir = config.dir || '.';
+        var dir = resolveDir(config.dir || '.');
 
         var branchResult = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
         if (branchResult.code !== 0) {

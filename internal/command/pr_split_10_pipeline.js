@@ -781,6 +781,7 @@
     async function resolveConflictsWithClaude(failures, sessionId, timeouts, pollInterval, maxAttemptsPerBranch, report, aliveCheckFn) {
         // Late-bind cross-chunk dependencies.
         var isCancelled = prSplit.isCancelled;
+        var resolveDir = prSplit._resolveDir;
         var renderConflictPrompt = prSplit.renderConflictPrompt;
         var validateResolution = prSplit.validateResolution;
         var verifySplit = prSplit.verifySplit;
@@ -792,6 +793,7 @@
         var state = prSplit._state;
         var claudeExec = state.claudeExecutor;
         var recordConversation = prSplit.recordConversation || function() {};
+        var dir = resolveDir('.');
 
         var reSplitNeeded = false;
         var reSplitReason = '';
@@ -900,8 +902,8 @@
                             osmod.writeFile(patch.file, patch.content);
                         }
                     }
-                    gitAddChangedFiles('.');
-                    var patchCommit = gitExec('.', ['commit', '--amend', '--no-edit']);
+                    gitAddChangedFiles(dir);
+                    var patchCommit = gitExec(dir, ['commit', '--amend', '--no-edit']);
                     if (patchCommit.code !== 0) {
                         log.printf('auto-split: patch commit failed for %s: %s', fail.branch || fail.name, patchCommit.stderr.trim());
                     }
@@ -912,8 +914,8 @@
                     for (var c = 0; c < resolution.commands.length; c++) {
                         exec.execv(['sh', '-c', resolution.commands[c]]);
                     }
-                    gitAddChangedFiles('.');
-                    var cmdCommit = gitExec('.', ['commit', '--amend', '--no-edit']);
+                    gitAddChangedFiles(dir);
+                    var cmdCommit = gitExec(dir, ['commit', '--amend', '--no-edit']);
                     if (cmdCommit.code !== 0) {
                         log.printf('auto-split: command commit failed for %s: %s', fail.branch || fail.name, cmdCommit.stderr.trim());
                     }
@@ -967,13 +969,15 @@
         var renderClassificationPrompt = prSplit.renderClassificationPrompt;
         var padIndex = prSplit._padIndex;
         var osmod = prSplit._modules.osmod;
+        var resolveDir = prSplit._resolveDir;
         var recordConversation = prSplit.recordConversation || function() {};
         var recordTelemetry = prSplit.recordTelemetry || function() {};
         var assessIndependence = prSplit.assessIndependence || function() { return []; };
         var state = prSplit._state;
+        var dir = resolveDir(config.dir || '.');
 
         // Save the current branch so we can restore it on ALL exit paths.
-        var originalBranchResult = gitExec('.', ['rev-parse', '--abbrev-ref', 'HEAD']);
+        var originalBranchResult = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
         var originalBranch = originalBranchResult.code === 0 ? originalBranchResult.stdout.trim() : '';
 
         // Reset module-level state to prevent leakage across multiple runs
@@ -1773,7 +1777,7 @@
 
         // Restore the original branch.
         if (originalBranch) {
-            gitExec('.', ['checkout', originalBranch]);
+            gitExec(dir, ['checkout', originalBranch]);
         }
 
         return finishTUI({ error: report.error, report: report });

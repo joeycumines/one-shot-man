@@ -182,6 +182,7 @@
 
     var runtime = {
         baseBranch:    cfg.baseBranch    || 'main',
+        dir:           cfg.dir           || '.',
         strategy:      cfg.strategy      || 'directory',
         maxFiles:      cfg.maxFiles      || 10,
         branchPrefix:  cfg.branchPrefix  || 'split/',
@@ -211,6 +212,29 @@
             cmd.push(args[i]);
         }
         return exec.execv(cmd);
+    }
+
+    // resolveDir resolves a directory path to an absolute path. When dir is
+    // empty, falsy, or '.', it resolves to the current working directory.
+    // This prevents git operations from being affected by later CWD changes
+    // (e.g. during test cleanup ordering races).
+    //
+    // Resolution order:
+    //   1. If dir is already an absolute/non-default path, use it.
+    //   2. If runtime.dir is configured (set by tests or CLI), use it.
+    //   3. Fall back to '.' (uses process CWD — correct in production).
+    function resolveDir(dir) {
+        if (dir && dir !== '' && dir !== '.') {
+            return dir;
+        }
+        // Use the runtime-configured dir if set to a non-default value.
+        // This allows tests to pass an absolute path via config overrides,
+        // and avoids calling exec.execv(['pwd']) which would interfere with
+        // test mocks.
+        if (runtime.dir && runtime.dir !== '' && runtime.dir !== '.') {
+            return runtime.dir;
+        }
+        return dir || '.';
     }
 
     // shellQuote wraps a string in single quotes, escaping embedded quotes.
@@ -353,6 +377,7 @@
 
     // Internal helpers.
     prSplit._gitExec = gitExec;
+    prSplit._resolveDir = resolveDir;
     prSplit._shellQuote = shellQuote;
     prSplit._gitAddChangedFiles = gitAddChangedFiles;
     prSplit._dirname = dirname;

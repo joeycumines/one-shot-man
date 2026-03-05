@@ -281,11 +281,12 @@
     // getSplitDiff returns the git diff for a specific split.
     function getSplitDiff(plan, splitIndex) {
         var gitExec = prSplit._gitExec;
+        var resolveDir = prSplit._resolveDir;
         if (!plan || !plan.splits || splitIndex < 0 || splitIndex >= plan.splits.length) {
             return { error: 'invalid split index', diff: '' };
         }
         var split = plan.splits[splitIndex];
-        var dir = plan.dir || '.';
+        var dir = resolveDir(plan.dir || '.');
         var files = split.files || [];
         if (files.length === 0) {
             return { error: 'no files in split', diff: '' };

@@ -20,7 +20,8 @@
     //   mergeMethod: string - Merge method: squash, merge, rebase
     function createPRs(plan, options) {
         options = options || {};
-        var dir = plan.dir || '.';
+        var resolveDir = prSplit._resolveDir;
+        var dir = resolveDir(plan.dir || '.');
         var draft = options.draft !== false;
         var remote = options.remote || 'origin';
         var pushOnly = options.pushOnly || false;

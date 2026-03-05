@@ -61,6 +61,13 @@ func loadChunkEngine(t testing.TB, overrides map[string]interface{}, chunkNames 
 	for k, v := range overrides {
 		jsConfig[k] = v
 	}
+	// B00-safety: ensure a dir is always set so resolveDir never falls back
+	// to process CWD which would target the real repository.
+	// loadChunkEngine is used by chunk-level tests and loadTUIEngine — none of
+	// which os.Chdir to a test repo, so injecting t.TempDir() is safe.
+	if _, ok := jsConfig["dir"]; !ok {
+		jsConfig["dir"] = t.TempDir()
+	}
 
 	engine.SetGlobal("config", map[string]interface{}{"name": "pr-split"})
 	engine.SetGlobal("prSplitConfig", jsConfig)

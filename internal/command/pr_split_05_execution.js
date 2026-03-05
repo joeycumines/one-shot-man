@@ -5,6 +5,7 @@
 
 (function(prSplit) {
     var gitExec = prSplit._gitExec;
+    var resolveDir = prSplit._resolveDir;
     var validatePlan = prSplit.validatePlan;
 
     // -----------------------------------------------------------------------
@@ -12,7 +13,7 @@
     // -----------------------------------------------------------------------
     function executeSplit(plan, options) {
         options = options || {};
-        var dir = plan.dir || '.';
+        var dir = resolveDir(plan.dir || '.');
         var results = [];
         var progressFn = options.progressFn || null;
 

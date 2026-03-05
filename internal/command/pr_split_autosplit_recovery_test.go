@@ -101,7 +101,7 @@ func TestAutoSplit_PipelineTimeout(t *testing.T) {
 		{"b.go", "package b\n"},
 	}
 
-	tp := setupTestPipeline(t, TestPipelineOpts{
+	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
 		ConfigOverrides: map[string]interface{}{
@@ -109,15 +109,6 @@ func TestAutoSplit_PipelineTimeout(t *testing.T) {
 			"verifyCommand": "true",
 		},
 	})
-
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(tp.Dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Mock executor.
 	if _, err := tp.EvalJS(`
@@ -270,7 +261,7 @@ func TestAutoSplit_SaveAndResume(t *testing.T) {
 		{"cmd/run.go", "package main\n\nfunc run() {}\n"},
 	}
 
-	tp := setupTestPipeline(t, TestPipelineOpts{
+	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
 		ConfigOverrides: map[string]interface{}{
@@ -279,15 +270,6 @@ func TestAutoSplit_SaveAndResume(t *testing.T) {
 			"strategy":      "directory",
 		},
 	})
-
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(tp.Dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Classification data injected via mcpcallback channels.
 	classJSON, _ := json.Marshal(map[string]interface{}{"categories": []map[string]any{
@@ -478,7 +460,7 @@ func TestAutoSplit_CrashRecovery_AfterExecute(t *testing.T) {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
 
-	tp := setupTestPipeline(t, TestPipelineOpts{
+	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: []TestPipelineFile{
 			{"pkg/types.go", "package pkg\n\ntype Foo struct{}\n"},
 		},
@@ -492,15 +474,6 @@ func TestAutoSplit_CrashRecovery_AfterExecute(t *testing.T) {
 			"strategy":      "directory",
 		},
 	})
-
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(tp.Dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Classification data injected via mcpcallback channels.
 	classJSON, _ := json.Marshal(map[string]interface{}{"categories": []map[string]any{
@@ -707,7 +680,7 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 		{"docs/api.md", "# API Reference\n\nEndpoints here.\n"},
 	}
 
-	tp := setupTestPipeline(t, TestPipelineOpts{
+	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
 		ConfigOverrides: map[string]interface{}{
@@ -716,15 +689,6 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 			"strategy":      "directory",
 		},
 	})
-
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(tp.Dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Pre-write classification.json — Claude's classification of changed files.
 	type classCategory struct {
@@ -1107,7 +1071,7 @@ func TestAutoSplit_AllStepsReportTiming(t *testing.T) {
 		{"cmd/run.go", "package main\n\nfunc run() {}\n"},
 	}
 
-	tp := setupTestPipeline(t, TestPipelineOpts{
+	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
 		ConfigOverrides: map[string]interface{}{
@@ -1116,15 +1080,6 @@ func TestAutoSplit_AllStepsReportTiming(t *testing.T) {
 			"strategy":      "directory",
 		},
 	})
-
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(tp.Dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Classification data injected via mcpcallback channels.
 	classJSON, _ := json.Marshal(map[string]interface{}{"categories": []map[string]any{
@@ -1232,22 +1187,13 @@ func TestHeuristicFallback_Report(t *testing.T) {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
 
-	tp := setupTestPipeline(t, TestPipelineOpts{
+	tp := chdirTestPipeline(t, TestPipelineOpts{
 		ConfigOverrides: map[string]interface{}{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",
 		},
 	})
-
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(tp.Dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Mock ClaudeCodeExecutor to fail on resolve (Claude unavailable).
 	mockSetup := `
@@ -1619,7 +1565,7 @@ func TestAutoSplit_CleanupOnFailure(t *testing.T) {
 		{"docs/guide.md", "# Guide\n"},
 	}
 
-	tp := setupTestPipeline(t, TestPipelineOpts{
+	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
 		ConfigOverrides: map[string]interface{}{
@@ -1629,15 +1575,6 @@ func TestAutoSplit_CleanupOnFailure(t *testing.T) {
 			"cleanupOnFailure": true,
 		},
 	})
-
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(tp.Dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Classification and plan data injected via mcpcallback channels.
 	classification := []map[string]any{
@@ -1778,7 +1715,7 @@ func TestAutoSplit_CleanupOnFailure_Disabled(t *testing.T) {
 		{"docs/guide.md", "# Guide\n"},
 	}
 
-	tp := setupTestPipeline(t, TestPipelineOpts{
+	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
 		ConfigOverrides: map[string]interface{}{
@@ -1788,15 +1725,6 @@ func TestAutoSplit_CleanupOnFailure_Disabled(t *testing.T) {
 			// cleanupOnFailure NOT set — default is false.
 		},
 	})
-
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(tp.Dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Classification and plan data injected via mcpcallback channels.
 	classification := []map[string]any{
@@ -1976,22 +1904,13 @@ func TestAutoSplit_ErrorFeedback_ResumeInstructions(t *testing.T) {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
 
-	tp := setupTestPipeline(t, TestPipelineOpts{
+	tp := chdirTestPipeline(t, TestPipelineOpts{
 		ConfigOverrides: map[string]interface{}{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",
 		},
 	})
-
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(tp.Dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Mock ClaudeCodeExecutor to fail → forces heuristic fallback.
 	mockSetup := `
@@ -2114,7 +2033,7 @@ func TestAutoSplit_ResumeClaudeResolveFails(t *testing.T) {
 		{"cmd/run.go", "package main\n\nfunc run() {}\n"},
 	}
 
-	tp := setupTestPipeline(t, TestPipelineOpts{
+	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
 		ConfigOverrides: map[string]interface{}{
@@ -2123,15 +2042,6 @@ func TestAutoSplit_ResumeClaudeResolveFails(t *testing.T) {
 			"strategy":      "directory",
 		},
 	})
-
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(tp.Dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Classification data for Run 1.
 	classJSON, _ := json.Marshal(map[string]interface{}{"categories": []map[string]any{
@@ -2403,7 +2313,7 @@ func TestAutoSplit_StepTimeout(t *testing.T) {
 		{"b.go", "package b\n"},
 	}
 
-	tp := setupTestPipeline(t, TestPipelineOpts{
+	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
 		ConfigOverrides: map[string]interface{}{
@@ -2411,15 +2321,6 @@ func TestAutoSplit_StepTimeout(t *testing.T) {
 			"verifyCommand": "true",
 		},
 	})
-
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(tp.Dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Mock ClaudeCodeExecutor so no real Claude spawns.
 	if _, err := tp.EvalJS(`
@@ -2697,7 +2598,7 @@ func TestAutoSplit_WatchdogTimeout(t *testing.T) {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
 
-	tp := setupTestPipeline(t, TestPipelineOpts{
+	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: []TestPipelineFile{{"a.go", "package a\n"}},
 		FeatureFiles: []TestPipelineFile{{"b.go", "package b\n"}},
 		ConfigOverrides: map[string]interface{}{
@@ -2705,15 +2606,6 @@ func TestAutoSplit_WatchdogTimeout(t *testing.T) {
 			"verifyCommand": "true",
 		},
 	})
-
-	oldDir, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(tp.Dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Mock executor.
 	if _, err := tp.EvalJS(`

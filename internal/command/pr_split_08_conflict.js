@@ -309,6 +309,7 @@
     // Returns: {fixed: [], errors: [], totalRetries, branchRetries, reSplitNeeded, reSplitFiles, reSplitReason}
     prSplit.resolveConflicts = async function resolveConflicts(plan, options) {
         var gitExec = prSplit._gitExec;
+        var resolveDir = prSplit._resolveDir;
         var exec = prSplit._modules.exec;
         var shellQuote = prSplit._shellQuote;
         var isCancelled = prSplit.isCancelled;
@@ -319,7 +320,7 @@
             return { fixed: [], errors: [{ name: '(plan)', error: 'invalid plan: missing splits' }], reSplitNeeded: false, totalRetries: 0, reSplitFiles: [], reSplitReason: '' };
         }
         options = options || {};
-        var dir = plan.dir || '.';
+        var dir = resolveDir(plan.dir || '.');
         var verifyCommand = options.verifyCommand || plan.verifyCommand || runtime.verifyCommand;
         var retryBudget = typeof options.retryBudget === 'number' ? options.retryBudget : (typeof runtime.retryBudget === 'number' ? runtime.retryBudget : 3);
         var perBranchRetryBudget = typeof options.perBranchRetryBudget === 'number' ? options.perBranchRetryBudget : 2;

@@ -26,12 +26,12 @@
   ],
   "mandatoryDirectives": {
     "contextManagement": "Execute tasks strictly in sequence. Update blueprint.json incrementally after each task.",
-    "sourceOfTruth": "Live chunks: internal/command/pr_split_00_core.js through pr_split_13_tui.js. Go bridge: internal/command/pr_split.go. Tests: internal/command/pr_split_*_test.go. Chunk test helper: loadChunkEngine() in pr_split_00_core_test.go. Full engine helpers: loadPrSplitEngine()/loadPrSplitEngineWithEval() in pr_split_test.go. TUI: internal/command/prsplit_autosplit_model.go (AutoSplitModel), internal/command/prsplit_plan_editor.go (PlanEditor). Design doc: docs/architecture-pr-split-chunks.md.",
+    "sourceOfTruth": "Live chunks: internal/command/pr_split_00_core.js through pr_split_13_tui.js (14 IIFE-wrapped files). Go bridge: internal/command/pr_split.go (embeds + loads all chunks via loadChunkedScript). Tests: 46+ test files in internal/command/ matching pr_split_*_test.go and prsplit_*_test.go. Chunk test helper: loadChunkEngine() in pr_split_00_core_test.go (auto-injects t.TempDir runtime.dir). Full engine helpers: loadPrSplitEngine()/loadPrSplitEngineWithEval() in pr_split_test.go. TUI: prsplit_autosplit_model.go (AutoSplitModel), prsplit_plan_editor.go (PlanEditor). Design doc: docs/architecture-pr-split-chunks.md. ADR: docs/adr/001-pr-split-chunked-architecture.md (R41).",
     "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux, integration-test-vterm. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp.",
     "chunkArchitecture": "14 JS chunk files loaded in order by pr_split.go (loadChunkedScript). Each chunk is an IIFE that attaches exports to globalThis.prSplit (initialized by chunk 00). Chunks may reference symbols from earlier chunks via globalThis.prSplit. Go-injected globals (autoSplitTUI, tuiMux, splitView, planEditorFactory, prSplitConfig) are available to all chunks."
   },
   "statusSection": {
-    "currentState": "Build GREEN. All tests pass (make all, integration-test-prsplit-mcp, integration-test-vterm). Test fixes applied but UNCOMMITTED: (1) sendToHandle assertion \\r not \\n in pr_split_conflict_retry_test.go, (2) SEND_TEXT_CHUNK_BYTES override in 3 conflict retry tests + autosplit mock MCP test, (3) TUI harness close timeout non-fatal in tui_test.go, (4) completion test WaitExit to Close in tui_completion_integration_test.go. Blueprint refined via deep audit. 43 tasks identified.",
+    "currentState": "Build GREEN. All tests pass (make all). 15 commands registered. 14 JS chunk files loaded sequentially. 46+ pr-split test files providing extensive coverage. Three bugs fixed (B00: git state mutation, B01: ANSI→lipgloss, B02: PR creation guards). All orphaned claude-mux code deleted. TUI components relocated to internal/command. Documentation updated. Cross-platform validated (Linux container + Windows). wip branch at e2580ac.",
     "goalState": "14 independently-testable chunk files (all populated, no stubs). All orphaned claude-mux code deleted. TUI decoupled from termmux. All stale monolith references removed. Documentation current. Cross-platform validated. Wizard UI (W-series) implemented in JS. Every line has a reason to exist.",
     "replanLog": [
       {
@@ -208,19 +208,19 @@
       "task": "R41: Write chunk architecture ADR",
       "description": "Create docs/adr/001-pr-split-chunked-architecture.md with Context, Decision, Consequences, Alternatives.",
       "acceptance": "ADR exists with all sections. Referenced from docs/architecture.md.",
-      "status": "Not Started"
+      "status": "Complete — ADR created with Context (monolith problems), Decision (14-chunk layout, embedding, dependency resolution, testing loaders), Consequences (positive: isolated testing, AI-friendly, explicit deps, test safety; negative: late-binding fragility, loading overhead), Alternatives (monolith, Go-only, ES modules, lazy getters). Referenced from docs/architecture.md and docs/README.md."
     },
     {
       "task": "R42: Handle git-ignored files in PR-split plan execution",
       "description": "In pr_split_05_execution.js: add git check-ignore pre-validation. Skip ignored files with warning. Integration test.",
       "acceptance": "Pipeline handles ignored files without crash. Integration test verifies.",
-      "status": "Not Started"
+      "status": "Complete — git check-ignore --no-index pre-validation detects ignored files. Per-file skip with warning during execution. addFiles loop excludes ignored files. splitResult.skippedFiles tracks skipped entries. 2 tests: GitIgnoredFilesSkipped (force-added file skipped, absent from branch) and NoIgnoredFiles (empty skippedFiles for normal case)."
     },
     {
       "task": "BP-01: Update blueprint.json meta after cleanup",
       "description": "After R32: update mandatoryDirectives.sourceOfTruth and chunkArchitecture. Update statusSection.currentState.",
       "acceptance": "Blueprint accurately describes current codebase.",
-      "status": "Not Started"
+      "status": "Complete — statusSection.currentState updated (reflects 3 bug fixes, 15 commands, clean wip branch at e2580ac). sourceOfTruth updated (46+ test files, ADR reference, auto-dir injection note)."
     },
     {
       "task": "W00: Termmux JavaScript Facade (Builtin)",

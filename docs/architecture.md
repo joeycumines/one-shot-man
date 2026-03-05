@@ -433,3 +433,11 @@ CLI args → main.go → Registry.Get(cmd)
 
 - [docs/visuals/architecture.md](visuals/architecture.md)
 - [docs/visuals/workflows.md](visuals/workflows.md)
+
+## Architecture Decision Records
+
+- [ADR 001: PR-Split Chunked Architecture](adr/001-pr-split-chunked-architecture.md)
+
+## Related Design Docs
+
+- [PR-Split Chunk Architecture (detailed)](architecture-pr-split-chunks.md)

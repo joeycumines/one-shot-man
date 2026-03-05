@@ -287,3 +287,151 @@ func gitCmdAllowFail(t *testing.T, dir string, args ...string) cmdResult {
 	out, err := cmd.CombinedOutput()
 	return cmdResult{output: string(out), err: err}
 }
+
+func TestChunk05_ExecuteSplit_GitIgnoredFilesSkipped(t *testing.T) {
+	// Setup: create repo with .gitignore that ignores *.log files.
+	dir := initGitRepo(t)
+
+	writeFile(t, filepath.Join(dir, ".gitignore"), "*.log\n")
+	writeFile(t, filepath.Join(dir, "main.go"), "package main")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "base with gitignore")
+
+	// Feature branch: add a normal file + a force-added ignored file.
+	gitCmd(t, dir, "checkout", "-b", "feature")
+	writeFile(t, filepath.Join(dir, "feature.go"), "package feature")
+	writeFile(t, filepath.Join(dir, "debug.log"), "debug output")
+	gitCmd(t, dir, "add", "feature.go")
+	gitCmd(t, dir, "add", "-f", "debug.log") // force-add ignored file
+	gitCmd(t, dir, "commit", "-m", "feature with ignored file")
+
+	evalJS := loadChunkEngine(t, nil,
+		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
+
+	statuses := map[string]string{
+		"feature.go": "A",
+		"debug.log":  "A",
+	}
+	statusJSON, _ := json.Marshal(statuses)
+
+	result, err := evalJS(`
+		(function() {
+			var prSplit = globalThis.prSplit;
+			var plan = {
+				baseBranch: 'main',
+				sourceBranch: 'feature',
+				dir: '` + escapeJSPath(dir) + `',
+				fileStatuses: ` + string(statusJSON) + `,
+				splits: [
+					{ name: 'split/01-mixed', files: ['feature.go', 'debug.log'], message: 'mixed files' }
+				]
+			};
+			var r = prSplit.executeSplit(plan);
+			return JSON.stringify(r);
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var execResult struct {
+		Error   *string `json:"error"`
+		Results []struct {
+			Name         string   `json:"name"`
+			Files        []string `json:"files"`
+			SHA          string   `json:"sha"`
+			Error        *string  `json:"error"`
+			SkippedFiles []string `json:"skippedFiles"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &execResult); err != nil {
+		t.Fatal(err)
+	}
+
+	if execResult.Error != nil {
+		t.Fatalf("executeSplit error: %s", *execResult.Error)
+	}
+	if len(execResult.Results) != 1 {
+		t.Fatalf("got %d results, want 1", len(execResult.Results))
+	}
+
+	r := execResult.Results[0]
+	if r.SHA == "" {
+		t.Error("expected non-empty SHA")
+	}
+	if r.Error != nil {
+		t.Errorf("unexpected error: %s", *r.Error)
+	}
+
+	// debug.log should be in skippedFiles because it matches .gitignore.
+	if len(r.SkippedFiles) != 1 || r.SkippedFiles[0] != "debug.log" {
+		t.Errorf("skippedFiles = %v, want ['debug.log']", r.SkippedFiles)
+	}
+
+	// Verify the branch was created and feature.go is present.
+	gitCmd(t, dir, "checkout", "split/01-mixed")
+	content := gitCmd(t, dir, "show", "HEAD:feature.go")
+	if !strings.Contains(content, "feature") {
+		t.Error("feature.go should exist on split branch")
+	}
+
+	// debug.log should NOT be on the split branch (it was skipped).
+	showResult := gitCmdAllowFail(t, dir, "show", "HEAD:debug.log")
+	if showResult.err == nil {
+		t.Error("debug.log should not exist on split branch (it was git-ignored and skipped)")
+	}
+
+	gitCmd(t, dir, "checkout", "feature")
+}
+
+func TestChunk05_ExecuteSplit_NoIgnoredFiles(t *testing.T) {
+	// When no files are ignored, skippedFiles should be empty.
+	dir, statuses := setupExecRepo(t)
+
+	evalJS := loadChunkEngine(t, nil,
+		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
+
+	statusJSON, _ := json.Marshal(statuses)
+
+	result, err := evalJS(`
+		(function() {
+			var prSplit = globalThis.prSplit;
+			var plan = {
+				baseBranch: 'main',
+				sourceBranch: 'feature',
+				dir: '` + escapeJSPath(dir) + `',
+				fileStatuses: ` + string(statusJSON) + `,
+				splits: [
+					{ name: 'split/01-mods', files: ['modify.go', 'new-file.go'], message: 'modifications' }
+				]
+			};
+			var r = prSplit.executeSplit(plan);
+			return JSON.stringify(r);
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var execResult struct {
+		Error   *string `json:"error"`
+		Results []struct {
+			SkippedFiles []string `json:"skippedFiles"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &execResult); err != nil {
+		t.Fatal(err)
+	}
+
+	if execResult.Error != nil {
+		t.Fatalf("executeSplit error: %s", *execResult.Error)
+	}
+	if len(execResult.Results) != 1 {
+		t.Fatalf("got %d results, want 1", len(execResult.Results))
+	}
+	if len(execResult.Results[0].SkippedFiles) != 0 {
+		t.Errorf("skippedFiles = %v, want empty", execResult.Results[0].SkippedFiles)
+	}
+
+	gitCmd(t, dir, "checkout", "feature")
+}

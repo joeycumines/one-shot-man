@@ -16,6 +16,7 @@
         var dir = resolveDir(plan.dir || '.');
         var results = [];
         var progressFn = options.progressFn || null;
+        var ignoredFiles = {};
 
         var validation = validatePlan(plan);
         if (!validation.valid) {
@@ -31,6 +32,38 @@
             };
         }
         var fileStatuses = plan.fileStatuses;
+
+        // Pre-validate: detect git-ignored files in the plan.
+        // Files matching .gitignore rules won't be processable via git add
+        // on fresh branches. We collect all plan files and batch-check them.
+        var allPlanFiles = [];
+        for (var pi = 0; pi < plan.splits.length; pi++) {
+            for (var pf = 0; pf < plan.splits[pi].files.length; pf++) {
+                allPlanFiles.push(plan.splits[pi].files[pf]);
+            }
+        }
+        if (allPlanFiles.length > 0) {
+            // --no-index: check purely against .gitignore rules, even if the
+            // file is currently tracked (e.g., force-added). On a new branch
+            // created from base, these files won't be tracked, so git add
+            // would silently skip them.
+            var checkArgs = ['check-ignore', '--no-index'].concat(allPlanFiles);
+            var checkResult = gitExec(dir, checkArgs);
+            // exit 0 = at least one file is ignored; exit 1 = none ignored
+            if (checkResult.code === 0 && checkResult.stdout.trim()) {
+                var ignoreLines = checkResult.stdout.trim().split('\n');
+                for (var il = 0; il < ignoreLines.length; il++) {
+                    var ig = ignoreLines[il].trim();
+                    if (ig) {
+                        ignoredFiles[ig] = true;
+                    }
+                }
+                if (typeof log !== 'undefined' && log.warn) {
+                    var ignoredList = Object.keys(ignoredFiles);
+                    log.warn('pr-split: ' + ignoredList.length + ' file(s) in plan match .gitignore rules and will be skipped: ' + ignoredList.join(', '));
+                }
+            }
+        }
 
         var savedBranch = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
         if (savedBranch.code !== 0) {
@@ -55,7 +88,7 @@
             }
 
             var split = plan.splits[i];
-            var splitResult = { name: split.name, files: split.files, sha: '', error: null };
+            var splitResult = { name: split.name, files: split.files, sha: '', error: null, skippedFiles: [] };
 
             if (progressFn) {
                 progressFn('Creating branch ' + (i + 1) + '/' + plan.splits.length + ': ' + split.name);
@@ -78,6 +111,16 @@
                 }
 
                 var file = split.files[j];
+
+                // Skip git-ignored files detected during pre-validation.
+                if (ignoredFiles[file]) {
+                    splitResult.skippedFiles.push(file);
+                    if (typeof log !== 'undefined' && log.warn) {
+                        log.warn('pr-split: skipping git-ignored file in ' + split.name + ': ' + file);
+                    }
+                    continue;
+                }
+
                 var status = fileStatuses[file];
 
                 if (progressFn && split.files.length > 5) {
@@ -115,11 +158,12 @@
                 }
             }
 
-            // Stage only this split's files defensively.
+            // Stage only this split's files defensively (skip ignored + deleted).
             var addFiles = [];
             for (var af = 0; af < split.files.length; af++) {
-                if (fileStatuses[split.files[af]] !== 'D') {
-                    addFiles.push(split.files[af]);
+                var afFile = split.files[af];
+                if (fileStatuses[afFile] !== 'D' && !ignoredFiles[afFile]) {
+                    addFiles.push(afFile);
                 }
             }
             if (addFiles.length > 0) {

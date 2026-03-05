@@ -23,6 +23,7 @@ If you just want to try it, see the [root README](../README.md).
 ## Architecture & internals
 
 - [Architecture](architecture.md)
+- [PR-Split Chunk Architecture](architecture-pr-split-chunks.md)
 - [Terminal Multiplexer Architecture](reference/mux-architecture.md)
 - [PR Split Integration Testing](pr-split-testing.md)
 - [Security posture](security.md)
@@ -30,6 +31,10 @@ If you just want to try it, see the [root README](../README.md).
 - [Planning and acting using behavior trees](reference/planning-and-acting-using-behavior-trees.md)
 - [BT blackboard usage](reference/bt-blackboard-usage.md)
 - [Visuals](visuals/README.md)
+
+## Architecture Decision Records
+
+- [ADR 001: PR-Split Chunked Architecture](adr/001-pr-split-chunked-architecture.md)
 
 ## Archive
 

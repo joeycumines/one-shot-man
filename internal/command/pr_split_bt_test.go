@@ -55,7 +55,7 @@ func TestRenderColorizedDiff_ContentPreserved(t *testing.T) {
 		HasRemoveLine bool `json:"hasRemoveLine"`
 		HasHunkHeader bool `json:"hasHunkHeader"`
 		HasDiffHeader bool `json:"hasDiffHeader"`
-		HasContext     bool `json:"hasContext"`
+		HasContext    bool `json:"hasContext"`
 		LineCount     int  `json:"lineCount"`
 		NotEmpty      bool `json:"notEmpty"`
 	}

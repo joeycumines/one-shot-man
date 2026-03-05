@@ -5,10 +5,11 @@
 - **Mandate**: 9 hours of continuous improvement
 - **Elapsed**: ~22h (context window 13 of session)
 
-## Current Phase: R28.6 DONE → Committing, then R43
+## Current Phase: R43 DONE → Finding next improvement
 
 ### Commits on wip branch (most recent → oldest)
-- (pending) R28.6: Entry-point dimension clamp in handleResize
+- 2fd8381: R43 fix (parseInt NaN in TUI commands)
+- f99957b: R28.6 fix (handleResize entry-point dimension clamp)
 - 0fe8cb3: R28.5 fix (inline resize underflow guard)
 - 5b361eb: R28.1-R28.4 (resize-during-hidden-state fix, bell race fixes)
 - 592ea41: BP-01 + R41 + R42 (ADR, git-ignored files, blueprint meta)
@@ -21,13 +22,16 @@
 2. R32-01/02, R29/R30/R31-01/02/03, R00a, R39-01/02
 3. B00 (c9210c6), B01 (22703a0), B02 (e2580ac)
 4. BP-01+R41+R42 (592ea41), R28.1-R28.4 (5b361eb), R28.5 (0fe8cb3)
-5. R28.6: Entry-point dimension clamp — Rule of Two PASS×2
+5. R28.6 (f99957b): Entry-point dimension clamp
+6. R43 (2fd8381): parseInt NaN guard in TUI commands
+
+### Improvement areas from audit (status)
+- ✅ #1: cols guard in handleResize (R28.6)
+- ✅ #6: parseInt NaN in TUI (R43)
+- Remaining: #2 asymmetric edge cases, #3 platform resize divergence,
+  #4 inconsistent h>1 guard, #5 silent bell errors
 
 ### Next Steps
-- Commit R28.6
-- R43: Fix parseInt NaN vulnerability in pr_split_13_tui.js (9 occurrences)
-  - Lines: 246, 247, 283, 303, 304, 325, 326, 541, 551
-  - Pattern: parseInt(args[n], 10) without isNaN() check
-  - NaN < 0 evaluates false, bypasses bounds checks
-- Continue exploring improvements from audit
+- Explore remaining improvement areas (#2-#5) from termmux audit
+- Scan other packages for similar issues
 - W00-W14: Wizard UI improvements (17 tasks)

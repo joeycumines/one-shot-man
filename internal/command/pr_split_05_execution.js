@@ -71,6 +71,17 @@
         }
         var restoreBranch = savedBranch.stdout.trim();
 
+        // restoreSafely attempts to check out restoreBranch and warns on
+        // failure. Used in every error-recovery path. A failed restore is
+        // non-fatal (the primary error is already captured) but must be
+        // visible so the user knows they may be on an unexpected branch.
+        function restoreSafely() {
+            var r = gitExec(dir, ['checkout', restoreBranch]);
+            if (r.code !== 0 && typeof log !== 'undefined' && log.warn) {
+                log.warn('pr-split: failed to restore branch ' + restoreBranch + ': ' + r.stderr.trim());
+            }
+        }
+
         // Pre-flight: delete any pre-existing split branches to allow re-runs.
         for (var k = 0; k < plan.splits.length; k++) {
             var existCheck = gitExec(dir, ['rev-parse', '--verify', 'refs/heads/' + plan.splits[k].name]);
@@ -83,7 +94,7 @@
 
         for (var i = 0; i < plan.splits.length; i++) {
             if (prSplit.isCancelled()) {
-                gitExec(dir, ['checkout', restoreBranch]);
+                restoreSafely();
                 return { error: 'cancelled by user after ' + i + ' of ' + plan.splits.length + ' branches', results: results };
             }
 
@@ -98,7 +109,7 @@
             if (co.code !== 0) {
                 splitResult.error = 'create branch ' + split.name + ' from ' + currentBase + ' failed: ' + co.stderr.trim();
                 results.push(splitResult);
-                gitExec(dir, ['checkout', restoreBranch]);
+                restoreSafely();
                 return { error: splitResult.error, results: results };
             }
 
@@ -106,7 +117,7 @@
                 if (prSplit.isCancelled()) {
                     splitResult.error = 'cancelled by user after ' + j + ' of ' + split.files.length + ' files in ' + split.name;
                     results.push(splitResult);
-                    gitExec(dir, ['checkout', restoreBranch]);
+                    restoreSafely();
                     return { error: splitResult.error, results: results };
                 }
 
@@ -131,7 +142,7 @@
                     splitResult.error = 'file "' + file + '" has no entry in plan.fileStatuses — '
                         + 'ensure analyzeDiff() results are passed to createSplitPlan()';
                     results.push(splitResult);
-                    gitExec(dir, ['checkout', restoreBranch]);
+                    restoreSafely();
                     return { error: splitResult.error, results: results };
                 }
 
@@ -140,7 +151,7 @@
                     if (rm.code !== 0) {
                         splitResult.error = 'git rm ' + file + ': ' + rm.stderr.trim();
                         results.push(splitResult);
-                        gitExec(dir, ['checkout', restoreBranch]);
+                        restoreSafely();
                         return { error: splitResult.error, results: results };
                     }
                 } else {
@@ -152,7 +163,7 @@
                     if (checkout.code !== 0) {
                         splitResult.error = 'checkout file ' + file + ': ' + checkout.stderr.trim();
                         results.push(splitResult);
-                        gitExec(dir, ['checkout', restoreBranch]);
+                        restoreSafely();
                         return { error: splitResult.error, results: results };
                     }
                 }
@@ -172,7 +183,7 @@
                 if (add.code !== 0) {
                     splitResult.error = 'git add failed: ' + add.stderr.trim();
                     results.push(splitResult);
-                    gitExec(dir, ['checkout', restoreBranch]);
+                    restoreSafely();
                     return { error: splitResult.error, results: results };
                 }
             }
@@ -184,7 +195,7 @@
                 if (commitAllow.code !== 0) {
                     splitResult.error = 'git commit failed: ' + commitAllow.stderr.trim();
                     results.push(splitResult);
-                    gitExec(dir, ['checkout', restoreBranch]);
+                    restoreSafely();
                     return { error: splitResult.error, results: results };
                 }
             }
@@ -201,7 +212,7 @@
             currentBase = split.name;
         }
 
-        gitExec(dir, ['checkout', restoreBranch]);
+        restoreSafely();
         return { error: null, results: results };
     }
 

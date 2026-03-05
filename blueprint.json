@@ -223,6 +223,12 @@
       "status": "Complete — 7 isNaN() guards added. TestChunk13_ParseIntNaN passes 7 subtests. Rule of Two PASS×2."
     },
     {
+      "task": "R44: Check branch restoration errors in executeSplit",
+      "description": "9 gitExec(['checkout', restoreBranch]) calls in pr_split_05_execution.js silently discard errors. Extract restoreSafely() helper that logs on failure. Also fix unchecked branch restore in pr_split_10_pipeline.js (1 site), unchecked git add in pr_split_00_core.js gitAddChangedFiles (1 site), and unchecked git add in pr_split_08_conflict.js fix functions (2 sites).",
+      "acceptance": "All 13 unchecked gitExec calls now check return codes. Existing chunk05/chunk13/narrow tests pass.",
+      "status": "Complete — restoreSafely() helper replaces 9 bare calls. Pipeline, core, and conflict fixers all check gitExec returns. Rule of Two PASS×2."
+    },
+    {
       "task": "R41: Write chunk architecture ADR",
       "description": "Create docs/adr/001-pr-split-chunked-architecture.md with Context, Decision, Consequences, Alternatives.",
       "acceptance": "ADR exists with all sections. Referenced from docs/architecture.md.",

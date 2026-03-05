@@ -1777,7 +1777,10 @@
 
         // Restore the original branch.
         if (originalBranch) {
-            gitExec(dir, ['checkout', originalBranch]);
+            var restoreResult = gitExec(dir, ['checkout', originalBranch]);
+            if (restoreResult.code !== 0 && typeof log !== 'undefined' && log.warn) {
+                log.warn('pr-split: failed to restore branch ' + originalBranch + ': ' + restoreResult.stderr.trim());
+            }
         }
 
         return finishTUI({ error: report.error, report: report });

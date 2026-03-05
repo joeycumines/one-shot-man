@@ -296,7 +296,10 @@
             for (var f = 0; f < files.length; f++) {
                 addArgs.push(files[f]);
             }
-            gitExec(dir, addArgs);
+            var addResult = gitExec(dir, addArgs);
+            if (addResult.code !== 0 && typeof log !== 'undefined' && log.warn) {
+                log.warn('pr-split: git add failed in gitAddChangedFiles: ' + addResult.stderr.trim());
+            }
         }
     }
 

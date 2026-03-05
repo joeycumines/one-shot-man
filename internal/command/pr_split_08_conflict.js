@@ -35,7 +35,10 @@
                 if (status.stdout.trim() === '') {
                     return { fixed: false, error: 'go mod tidy made no changes' };
                 }
-                gitExec(dir, ['add', 'go.mod', 'go.sum']);
+                var addRes = gitExec(dir, ['add', 'go.mod', 'go.sum']);
+                if (addRes.code !== 0) {
+                    return { fixed: false, error: 'git add go.mod/go.sum failed: ' + addRes.stderr.trim() };
+                }
                 var commit = gitExec(dir, ['commit', '-m', 'fix: go mod tidy for split']);
                 if (commit.code !== 0) {
                     return { fixed: false, error: 'commit failed: ' + commit.stderr.trim() };
@@ -65,7 +68,10 @@
                 if (status.stdout.trim() === '') {
                     return { fixed: false, error: 'go mod download made no changes' };
                 }
-                gitExec(dir, ['add', 'go.sum']);
+                var addRes = gitExec(dir, ['add', 'go.sum']);
+                if (addRes.code !== 0) {
+                    return { fixed: false, error: 'git add go.sum failed: ' + addRes.stderr.trim() };
+                }
                 var commit = gitExec(dir, ['commit', '-m', 'fix: update go.sum for split']);
                 if (commit.code !== 0) {
                     return { fixed: false, error: 'commit failed: ' + commit.stderr.trim() };

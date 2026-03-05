@@ -867,6 +867,15 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]interface{} {
 		// The Update method handles this specially to force a render
 		return nil
 
+	case toggleReturnMsg:
+		m := map[string]interface{}{
+			"type": "ToggleReturn",
+		}
+		for k, v := range msg.Result {
+			m[k] = v
+		}
+		return m
+
 	default:
 		return nil
 	}
@@ -1074,6 +1083,119 @@ type stateRefreshMsg struct {
 // When a render is throttled, a delayed renderRefreshMsg is scheduled to
 // ensure the view is eventually re-rendered with the latest state.
 type renderRefreshMsg struct{}
+
+// toggleReturnMsg is sent to the model after a toggle key lifecycle completes
+// (terminal released → JS callback → terminal restored). JS receives this
+// as { type: "ToggleReturn", ... } with the onToggle callback's return value
+// merged into the message (e.g., reason, error from switchTo).
+type toggleReturnMsg struct {
+	// Result from the onToggle JS callback (nil if callback returned nothing).
+	Result map[string]interface{}
+}
+
+// toggleModel wraps a tea.Model to intercept a toggle key and execute
+// terminal lifecycle management around a JS callback. This enables BubbleTea
+// programs to integrate with termmux passthrough mode.
+//
+// When the toggle key is pressed:
+//  1. ReleaseTerminal — pauses BubbleTea renderer/input
+//  2. Sync write \x1b[?1049l — exit alt-screen (idempotent belt)
+//  3. Call JS onToggle via RunJSSync — typically mux.switchTo() which blocks
+//  4. Sync write \x1b[?1049h\x1b[2J\x1b[H — enter alt-screen (idempotent belt)
+//  5. RestoreTerminal — resume BubbleTea renderer/input
+//
+// All other keys/messages pass through to the inner model unchanged.
+type toggleModel struct {
+	inner     tea.Model
+	toggleKey byte          // Raw byte of the toggle key (e.g., 0x1D for Ctrl+])
+	onToggle  goja.Callable // JS callback executed between Release/Restore
+	jsRunner  JSRunner      // For thread-safe JS execution from BubbleTea goroutine
+	output    io.Writer     // Terminal output for sync escape sequences
+	mu        sync.Mutex    // Protects program
+	program   *tea.Program  // Set by runProgram after NewProgram, before Run
+}
+
+func (m *toggleModel) Init() tea.Cmd {
+	return m.inner.Init()
+}
+
+func (m *toggleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+		if m.isToggleKey(keyMsg) {
+			return m, m.toggleCmd()
+		}
+	}
+	innerModel, cmd := m.inner.Update(msg)
+	m.inner = innerModel
+	return m, cmd
+}
+
+func (m *toggleModel) View() string {
+	return m.inner.View()
+}
+
+// isToggleKey checks if a BubbleTea key message matches the configured toggle key.
+func (m *toggleModel) isToggleKey(msg tea.KeyMsg) bool {
+	k := tea.Key(msg)
+	// Match by rune (handles most key configurations)
+	if len(k.Runes) == 1 && byte(k.Runes[0]) == m.toggleKey {
+		return true
+	}
+	// Match Ctrl+] specifically (0x1D) — BubbleTea parses this as KeyCtrlCloseBracket
+	if k.Type == tea.KeyCtrlCloseBracket && m.toggleKey == 0x1D {
+		return true
+	}
+	return false
+}
+
+// toggleCmd returns a tea.Cmd that executes the full toggle lifecycle.
+// The command runs on BubbleTea's command goroutine and blocks during passthrough.
+func (m *toggleModel) toggleCmd() tea.Cmd {
+	return func() tea.Msg {
+		m.mu.Lock()
+		p := m.program
+		output := m.output
+		m.mu.Unlock()
+
+		// Release BubbleTea's terminal control (renderer, raw mode, input)
+		if p != nil {
+			p.ReleaseTerminal()
+		}
+		// Sync exit alt-screen — idempotent belt for async ReleaseTerminal
+		if output != nil {
+			_, _ = output.Write([]byte("\x1b[?1049l"))
+		}
+
+		// Call JS toggle handler (typically mux.switchTo() — blocks during passthrough).
+		// Capture the return value to forward to the model (e.g., exit reason).
+		var toggleResult map[string]interface{}
+		if m.jsRunner != nil && m.onToggle != nil {
+			_ = m.jsRunner.RunJSSync(func(vm *goja.Runtime) error {
+				val, err := m.onToggle(goja.Undefined())
+				if err != nil {
+					return err
+				}
+				if val != nil && !goja.IsUndefined(val) && !goja.IsNull(val) {
+					if exported, ok := val.Export().(map[string]interface{}); ok {
+						toggleResult = exported
+					}
+				}
+				return nil
+			})
+		}
+
+		// Sync enter alt-screen + clear — idempotent belt for async RestoreTerminal
+		if output != nil {
+			_, _ = output.Write([]byte("\x1b[?1049h\x1b[2J\x1b[H"))
+		}
+		// Restore BubbleTea's terminal control
+		if p != nil {
+			p.RestoreTerminal()
+		}
+
+		return toggleReturnMsg{Result: toggleResult}
+	}
+}
 
 // SendStateRefresh sends a state refresh message to the currently running program.
 // This is safe to call from any goroutine. If no program is running, it's a no-op.
@@ -1422,6 +1544,7 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 
 			// Parse options
 			var opts []tea.ProgramOption
+			var toggleWrapper *toggleModel
 			if len(call.Arguments) > 1 {
 				optObj := call.Argument(1).ToObject(runtime)
 				if optObj != nil {
@@ -1455,12 +1578,44 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 					if bracketedPaste != nil && !goja.IsUndefined(bracketedPaste) && !goja.IsNull(bracketedPaste) && !bracketedPaste.ToBoolean() {
 						opts = append(opts, tea.WithoutBracketedPaste())
 					}
+
+					// Toggle key support — integrates with termmux passthrough.
+					// When toggleKey and onToggle are both set, the model is wrapped
+					// in a toggleModel that intercepts the toggle key and executes
+					// the JS callback between ReleaseTerminal/RestoreTerminal calls.
+					toggleKeyVal := optObj.Get("toggleKey")
+					onToggleVal := optObj.Get("onToggle")
+					if toggleKeyVal != nil && !goja.IsUndefined(toggleKeyVal) && !goja.IsNull(toggleKeyVal) &&
+						onToggleVal != nil && !goja.IsUndefined(onToggleVal) && !goja.IsNull(onToggleVal) {
+						toggleKeyInt := toggleKeyVal.ToInteger()
+						if toggleKeyInt <= 0 || toggleKeyInt > 255 {
+							return createError(ErrCodeInvalidArgs, "toggleKey must be a byte in range 1-255")
+						}
+						toggleKey := byte(toggleKeyInt)
+						onToggleFn, ok := goja.AssertFunction(onToggleVal)
+						if !ok {
+							return createError(ErrCodeInvalidArgs, "onToggle must be a function")
+						}
+						toggleWrapper = &toggleModel{
+							inner:     model,
+							toggleKey: toggleKey,
+							onToggle:  onToggleFn,
+							jsRunner:  manager.GetJSRunner(),
+							output:    manager.output,
+						}
+					}
 				}
 			}
 
 			// Validate manager is not nil (model was validated above during registry lookup)
 			if manager == nil {
 				return createError(ErrCodeProgramFailed, "manager is nil")
+			}
+
+			// Determine the actual model to run: toggle-wrapped or plain
+			var programModel tea.Model = model
+			if toggleWrapper != nil {
+				programModel = toggleWrapper
 			}
 
 			// Run the program synchronously. This blocks until the BubbleTea
@@ -1477,7 +1632,7 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 			// 1. We're blocking the ExecuteScript goroutine, NOT the event loop
 			// 2. The event loop goroutine is free to process RunJSSync callbacks
 			// 3. BubbleTea's goroutine can call RunJSSync and get responses
-			if err := manager.runProgram(model, opts...); err != nil {
+			if err := manager.runProgram(programModel, opts...); err != nil {
 				return createError(ErrCodeProgramFailed, err.Error())
 			}
 
@@ -1704,7 +1859,21 @@ func (m *Manager) runProgram(model tea.Model, opts ...tea.ProgramOption) (err er
 	}()
 
 	// Also store program reference in jsModel for render throttling
-	if jm, ok := model.(*jsModel); ok {
+	// If the model is wrapped in a toggleModel, unwrap to reach the jsModel
+	// and set the program reference on the toggle wrapper too.
+	actualModel := model
+	if tm, ok := model.(*toggleModel); ok {
+		tm.mu.Lock()
+		tm.program = p
+		tm.mu.Unlock()
+		actualModel = tm.inner
+		defer func() {
+			tm.mu.Lock()
+			tm.program = nil
+			tm.mu.Unlock()
+		}()
+	}
+	if jm, ok := actualModel.(*jsModel); ok {
 		// Set up throttle cancellation context to prevent goroutine leak
 		// when program exits while a throttle timer is sleeping
 		throttleCtx, throttleCancel := context.WithCancel(ctx)

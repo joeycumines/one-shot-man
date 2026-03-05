@@ -352,6 +352,78 @@ func WrapMux(ctx context.Context, runtime *goja.Runtime, mux *parent.Mux) goja.V
 		return events.drain(runtime)
 	})
 
+	// fromModel wraps a BubbleTea model with termmux toggle key integration.
+	// Returns { model: <model>, options: { altScreen: true, toggleKey: <byte>, onToggle: <fn> } }
+	// where onToggle calls mux.switchTo(). Usage:
+	//
+	//   const tf = mux.fromModel(model);
+	//   tea.run(tf.model, tf.options);
+	//
+	// Or with custom options:
+	//
+	//   const tf = mux.fromModel(model, { altScreen: false, toggleKey: 0x1D });
+	//   tea.run(tf.model, Object.assign(tf.options, { reportFocus: true }));
+	_ = obj.Set("fromModel", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
+			panic(runtime.NewTypeError("fromModel requires a model argument"))
+		}
+		model := call.Argument(0)
+
+		// Parse optional config overrides
+		altScreen := true
+		toggleKeyByte := int(parent.DefaultToggleKey)
+		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
+			cfgObj := call.Argument(1).ToObject(runtime)
+			if cfgObj != nil {
+				if v := cfgObj.Get("altScreen"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+					altScreen = v.ToBoolean()
+				}
+				if v := cfgObj.Get("toggleKey"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+					toggleKeyByte = int(v.ToInteger())
+				}
+			}
+		}
+
+		result := runtime.NewObject()
+		_ = result.Set("model", model)
+
+		runOpts := runtime.NewObject()
+		_ = runOpts.Set("altScreen", altScreen)
+		_ = runOpts.Set("toggleKey", toggleKeyByte)
+
+		// onToggle calls mux.switchTo() — blocks during passthrough.
+		// This closure captures the mux and ctx from WrapMux's scope.
+		_ = runOpts.Set("onToggle", func(fc goja.FunctionCall) goja.Value {
+			if !mux.HasChild() {
+				return goja.Undefined()
+			}
+
+			// Emit focus event: entering Claude's terminal
+			events.emit(runtime, EventFocus, map[string]interface{}{
+				"side": "claude", "action": "enter",
+			})
+
+			reason, err := mux.RunPassthrough(ctx)
+
+			res := map[string]interface{}{
+				"reason": exitReasonString(reason),
+			}
+			if err != nil {
+				res["error"] = err.Error()
+			}
+
+			// Emit focus event: returning to osm's terminal
+			events.emit(runtime, EventFocus, map[string]interface{}{
+				"side": "osm", "action": "return",
+			})
+
+			return runtime.ToValue(res)
+		})
+
+		_ = result.Set("options", runOpts)
+		return result
+	})
+
 	return obj
 }
 

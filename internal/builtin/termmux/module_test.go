@@ -68,7 +68,7 @@ func TestModule_NewMux_ReturnsObject(t *testing.T) {
 		var m = require('osm:termmux').newMux();
 		var methods = ['attach', 'detach', 'hasChild', 'switchTo', 'activeSide',
 			'setStatus', 'setToggleKey', 'setStatusEnabled', 'setResizeFunc', 'screenshot',
-			'on', 'off', 'pollEvents'];
+			'on', 'off', 'pollEvents', 'fromModel'];
 		var missing = [];
 		for (var i = 0; i < methods.length; i++) {
 			if (typeof m[methods[i]] !== 'function') missing.push(methods[i]);
@@ -457,5 +457,113 @@ func TestModule_On_MissingArgs(t *testing.T) {
 	}
 	if v.String() == "no error" {
 		t.Error("expected TypeError for missing args")
+	}
+}
+
+// --- T09: fromModel tests ---
+
+func TestModule_FromModel_ReturnsStructure(t *testing.T) {
+	runtime, _ := testRequire(t)
+
+	v, err := runtime.RunString(`
+		var m = require('osm:termmux').newMux();
+		var fakeModel = { _type: 'bubbleteaModel', _modelID: 42 };
+		var result = m.fromModel(fakeModel);
+		JSON.stringify({
+			hasModel: result.model === fakeModel,
+			hasOptions: typeof result.options === 'object',
+			altScreen: result.options.altScreen,
+			toggleKey: result.options.toggleKey,
+			hasOnToggle: typeof result.options.onToggle === 'function',
+		});
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	got := v.String()
+	want := `{"hasModel":true,"hasOptions":true,"altScreen":true,"toggleKey":29,"hasOnToggle":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+func TestModule_FromModel_CustomConfig(t *testing.T) {
+	runtime, _ := testRequire(t)
+
+	v, err := runtime.RunString(`
+		var m = require('osm:termmux').newMux();
+		var fakeModel = { _type: 'bubbleteaModel', _modelID: 1 };
+		var result = m.fromModel(fakeModel, { altScreen: false, toggleKey: 0x01 });
+		JSON.stringify({
+			altScreen: result.options.altScreen,
+			toggleKey: result.options.toggleKey,
+		});
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	got := v.String()
+	want := `{"altScreen":false,"toggleKey":1}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+func TestModule_FromModel_MissingArg(t *testing.T) {
+	runtime, _ := testRequire(t)
+
+	v, err := runtime.RunString(`
+		var m = require('osm:termmux').newMux();
+		try {
+			m.fromModel();
+			'no error';
+		} catch(e) {
+			e.message || 'error';
+		}
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	if v.String() == "no error" {
+		t.Error("expected TypeError for missing model arg")
+	}
+}
+
+func TestModule_FromModel_NullArg(t *testing.T) {
+	runtime, _ := testRequire(t)
+
+	v, err := runtime.RunString(`
+		var m = require('osm:termmux').newMux();
+		try {
+			m.fromModel(null);
+			'no error';
+		} catch(e) {
+			e.message || 'error';
+		}
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	if v.String() == "no error" {
+		t.Error("expected TypeError for null model arg")
+	}
+}
+
+func TestModule_FromModel_OnToggle_NoChild(t *testing.T) {
+	runtime, _ := testRequire(t)
+
+	// onToggle should return undefined when no child is attached
+	v, err := runtime.RunString(`
+		var m = require('osm:termmux').newMux();
+		var fakeModel = { _type: 'bubbleteaModel', _modelID: 1 };
+		var result = m.fromModel(fakeModel);
+		var toggleResult = result.options.onToggle();
+		String(toggleResult);
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	if v.String() != "undefined" {
+		t.Errorf("expected 'undefined' when no child, got %q", v.String())
 	}
 }

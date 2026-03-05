@@ -512,3 +512,458 @@ func TestChunk13_ParseIntNaN(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+//  WizardState — state machine tests (T15)
+// ---------------------------------------------------------------------------
+
+// TestChunk13_WizardState_InitialState verifies a WizardState starts in IDLE.
+func TestChunk13_WizardState_InitialState(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var ws = new globalThis.prSplit.WizardState();
+		JSON.stringify({ current: ws.current, histLen: ws.history.length, terminal: ws.isTerminal() });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"current":"IDLE","histLen":0,"terminal":false}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_WizardState_HappyPath tests the full happy-path transition sequence.
+func TestChunk13_WizardState_HappyPath(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var ws = new globalThis.prSplit.WizardState();
+		ws.transition('CONFIG');
+		ws.transition('PLAN_GENERATION');
+		ws.transition('PLAN_REVIEW');
+		ws.transition('BRANCH_BUILDING');
+		ws.transition('EQUIV_CHECK');
+		ws.transition('FINALIZATION');
+		ws.transition('DONE');
+		JSON.stringify({ current: ws.current, histLen: ws.history.length, terminal: ws.isTerminal() });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"current":"DONE","histLen":7,"terminal":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_WizardState_InvalidTransition verifies that invalid transitions throw.
+func TestChunk13_WizardState_InvalidTransition(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	cases := []struct {
+		name, js string
+	}{
+		{"IDLE→DONE", `var ws = new globalThis.prSplit.WizardState(); ws.transition('DONE');`},
+		{"IDLE→BRANCH_BUILDING", `var ws = new globalThis.prSplit.WizardState(); ws.transition('BRANCH_BUILDING');`},
+		{"CONFIG→FINALIZATION", `var ws = new globalThis.prSplit.WizardState(); ws.transition('CONFIG'); ws.transition('FINALIZATION');`},
+		{"DONE→CONFIG", `var ws = new globalThis.prSplit.WizardState(); ws.transition('CONFIG'); ws.transition('PLAN_GENERATION'); ws.transition('PLAN_REVIEW'); ws.transition('BRANCH_BUILDING'); ws.transition('EQUIV_CHECK'); ws.transition('FINALIZATION'); ws.transition('DONE'); ws.transition('CONFIG');`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := evalJS(tc.js)
+			if err == nil {
+				t.Errorf("expected error for invalid transition %s", tc.name)
+			}
+		})
+	}
+}
+
+// TestChunk13_WizardState_Cancel verifies cancel from various states.
+func TestChunk13_WizardState_Cancel(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var results = [];
+
+		// Cancel from CONFIG
+		var ws1 = new globalThis.prSplit.WizardState();
+		ws1.transition('CONFIG');
+		ws1.cancel();
+		results.push(ws1.current);
+
+		// Cancel from BRANCH_BUILDING
+		var ws2 = new globalThis.prSplit.WizardState();
+		ws2.transition('CONFIG');
+		ws2.transition('PLAN_GENERATION');
+		ws2.transition('PLAN_REVIEW');
+		ws2.transition('BRANCH_BUILDING');
+		ws2.cancel();
+		results.push(ws2.current);
+
+		// Cancel on terminal state — no-op
+		var ws3 = new globalThis.prSplit.WizardState();
+		ws3.transition('CONFIG');
+		ws3.cancel();
+		ws3.cancel(); // Already CANCELLED, should stay
+		results.push(ws3.current);
+
+		JSON.stringify(results);
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `["CANCELLED","CANCELLED","CANCELLED"]`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_WizardState_ForceCancel tests double-cancel escalation.
+func TestChunk13_WizardState_ForceCancel(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var ws = new globalThis.prSplit.WizardState();
+		ws.transition('CONFIG');
+		ws.transition('PLAN_GENERATION');
+		ws.cancel();
+		ws.forceCancel();
+		var state = ws.current;
+		// Force cancel from DONE — no-op
+		ws.transition('DONE');
+		ws.forceCancel();
+		JSON.stringify({ afterForce: state, afterDone: ws.current });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"afterForce":"FORCE_CANCEL","afterDone":"DONE"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_WizardState_Pause tests pausing from allowed states.
+func TestChunk13_WizardState_Pause(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var results = [];
+
+		// Pause from PLAN_GENERATION — allowed
+		var ws1 = new globalThis.prSplit.WizardState();
+		ws1.transition('CONFIG');
+		ws1.transition('PLAN_GENERATION');
+		ws1.pause();
+		results.push(ws1.current);
+
+		// Pause from BRANCH_BUILDING — allowed
+		var ws2 = new globalThis.prSplit.WizardState();
+		ws2.transition('CONFIG');
+		ws2.transition('PLAN_GENERATION');
+		ws2.transition('PLAN_REVIEW');
+		ws2.transition('BRANCH_BUILDING');
+		ws2.pause();
+		results.push(ws2.current);
+
+		// Pause from CONFIG — not allowed, no-op
+		var ws3 = new globalThis.prSplit.WizardState();
+		ws3.transition('CONFIG');
+		ws3.pause();
+		results.push(ws3.current);
+
+		JSON.stringify(results);
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `["PAUSED","PAUSED","CONFIG"]`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_WizardState_ErrorFromAnyActive tests error transition.
+func TestChunk13_WizardState_ErrorFromAnyActive(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var results = [];
+
+		// Error from CONFIG
+		var ws1 = new globalThis.prSplit.WizardState();
+		ws1.transition('CONFIG');
+		ws1.error('bad config');
+		results.push({ state: ws1.current, msg: ws1.data.error });
+
+		// Error from terminal — no-op
+		var ws2 = new globalThis.prSplit.WizardState();
+		ws2.transition('CONFIG');
+		ws2.error('first');
+		ws2.error('second');
+		results.push({ state: ws2.current, msg: ws2.data.error });
+
+		JSON.stringify(results);
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `[{"state":"ERROR","msg":"bad config"},{"state":"ERROR","msg":"first"}]`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_WizardState_DataMerge tests that transition merges data correctly.
+func TestChunk13_WizardState_DataMerge(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var ws = new globalThis.prSplit.WizardState();
+		ws.transition('CONFIG', { baseBranch: 'main', dryRun: false });
+		ws.transition('PLAN_GENERATION', { analysisFiles: 42 });
+		JSON.stringify({ baseBranch: ws.data.baseBranch, dryRun: ws.data.dryRun, files: ws.data.analysisFiles });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"baseBranch":"main","dryRun":false,"files":42}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_WizardState_OnTransition tests the listener callback.
+func TestChunk13_WizardState_OnTransition(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var ws = new globalThis.prSplit.WizardState();
+		var transitions = [];
+		ws.onTransition(function(from, to) { transitions.push(from + '->' + to); });
+		ws.transition('CONFIG');
+		ws.transition('PLAN_GENERATION');
+		ws.cancel();
+		JSON.stringify(transitions);
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `["IDLE->CONFIG","CONFIG->PLAN_GENERATION","PLAN_GENERATION->CANCELLED"]`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_WizardState_History tests transition history tracking.
+func TestChunk13_WizardState_History(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var ws = new globalThis.prSplit.WizardState();
+		ws.transition('CONFIG');
+		ws.transition('PLAN_GENERATION');
+		var h = ws.history.map(function(e) { return e.from + '->' + e.to; });
+		JSON.stringify(h);
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `["IDLE->CONFIG","CONFIG->PLAN_GENERATION"]`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_WizardState_Reset tests that reset clears all state.
+func TestChunk13_WizardState_Reset(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var ws = new globalThis.prSplit.WizardState();
+		ws.transition('CONFIG', { x: 1 });
+		ws.reset();
+		JSON.stringify({ current: ws.current, dataKeys: Object.keys(ws.data).length, histLen: ws.history.length });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"current":"IDLE","dataKeys":0,"histLen":0}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_WizardState_Checkpoint tests saveCheckpoint.
+func TestChunk13_WizardState_Checkpoint(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var ws = new globalThis.prSplit.WizardState();
+		ws.transition('CONFIG', { plan: 'test' });
+		ws.transition('PLAN_GENERATION');
+		var cp = ws.saveCheckpoint();
+		JSON.stringify({ state: cp.state, plan: cp.data.plan, hasAt: typeof cp.at === 'number' });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"state":"PLAN_GENERATION","plan":"test","hasAt":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_WizardState_BaselineFailPath tests the baseline failure flow.
+func TestChunk13_WizardState_BaselineFailPath(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var ws = new globalThis.prSplit.WizardState();
+		ws.transition('CONFIG');
+		ws.transition('BASELINE_FAIL');
+		ws.transition('PLAN_GENERATION'); // override
+		JSON.stringify({ current: ws.current });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"current":"PLAN_GENERATION"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_WizardState_PlanEditorRoundtrip tests the PLAN_REVIEW ↔ PLAN_EDITOR cycle.
+func TestChunk13_WizardState_PlanEditorRoundtrip(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var ws = new globalThis.prSplit.WizardState();
+		ws.transition('CONFIG');
+		ws.transition('PLAN_GENERATION');
+		ws.transition('PLAN_REVIEW');
+		ws.transition('PLAN_EDITOR');
+		ws.transition('PLAN_REVIEW');
+		ws.transition('PLAN_EDITOR');
+		ws.transition('PLAN_REVIEW');
+		ws.transition('BRANCH_BUILDING');
+		JSON.stringify({ current: ws.current, histLen: ws.history.length });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"current":"BRANCH_BUILDING","histLen":8}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_WizardState_ErrorResolutionReSplit tests the re-split path.
+func TestChunk13_WizardState_ErrorResolutionReSplit(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var ws = new globalThis.prSplit.WizardState();
+		ws.transition('CONFIG');
+		ws.transition('PLAN_GENERATION');
+		ws.transition('PLAN_REVIEW');
+		ws.transition('BRANCH_BUILDING');
+		ws.transition('ERROR_RESOLUTION');
+		ws.transition('PLAN_GENERATION'); // re-split
+		ws.transition('PLAN_REVIEW');
+		ws.transition('BRANCH_BUILDING');
+		ws.transition('EQUIV_CHECK');
+		ws.transition('FINALIZATION');
+		ws.transition('DONE');
+		JSON.stringify({ current: ws.current, histLen: ws.history.length });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"current":"DONE","histLen":11}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_WizardState_ResumeFromBranchBuilding tests CONFIG→BRANCH_BUILDING.
+func TestChunk13_WizardState_ResumeFromBranchBuilding(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var ws = new globalThis.prSplit.WizardState();
+		ws.transition('CONFIG');
+		ws.transition('BRANCH_BUILDING'); // resume path
+		JSON.stringify({ current: ws.current });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"current":"BRANCH_BUILDING"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_WizardState_ExportsAvailable tests that WizardState and constants
+// are exported on prSplit for cross-chunk access.
+func TestChunk13_WizardState_ExportsAvailable(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		JSON.stringify({
+			hasWizardState: typeof globalThis.prSplit.WizardState === 'function',
+			hasTransitions: typeof globalThis.prSplit.WIZARD_VALID_TRANSITIONS === 'object',
+			hasTerminal: typeof globalThis.prSplit.WIZARD_TERMINAL_STATES === 'object',
+			idleValid: !!globalThis.prSplit.WIZARD_VALID_TRANSITIONS['IDLE']['CONFIG'],
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"hasWizardState":true,"hasTransitions":true,"hasTerminal":true,"idleValid":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_WizardState_ListenerErrorSwallowed tests that a throwing listener
+// doesn't break the state machine.
+func TestChunk13_WizardState_ListenerErrorSwallowed(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var ws = new globalThis.prSplit.WizardState();
+		ws.onTransition(function() { throw new Error('boom'); });
+		ws.transition('CONFIG'); // should not throw
+		JSON.stringify({ current: ws.current });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"current":"CONFIG"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}

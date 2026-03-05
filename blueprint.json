@@ -120,30 +120,30 @@
     },
     {
       "task": "T12: W00 verification gate",
-      "description": "Run make all + make integration-test-termmux + make integration-test-prsplit-mcp.",
+      "description": "Run make all + make integration-test-termmux + make integration-test-prsplit-mcp. All targets GREEN at commit 3f8747a.",
       "acceptance": "All targets GREEN. No regressions.",
-      "status": "Not Started",
+      "status": "Done",
       "contextPointers": ["Makefile", "project.mk"]
     },
     {
       "task": "T13: W01 - Design wizard state machine",
-      "description": "Design states: Config, PlanGeneration, PlanReview, BranchBuilding, ErrorResolution, Finalization. Document transitions, error paths, back-navigation in scratch/w01-state-machine.md.",
+      "description": "Designed 14-state wizard: IDLE→CONFIG→BASELINE_FAIL→PLAN_GENERATION→PLAN_REVIEW→PLAN_EDITOR→BRANCH_BUILDING→ERROR_RESOLUTION→EQUIV_CHECK→FINALIZATION→DONE + cross-cutting (CANCELLED/FORCE_CANCEL/PAUSED/ERROR). Full transition matrix, JS API sketch, integration points, error recovery architecture.",
       "acceptance": "State machine design document with all states, transitions, error paths, cancel semantics.",
-      "status": "Not Started",
-      "contextPointers": ["internal/command/pr_split_13_tui.js"]
+      "status": "Done",
+      "contextPointers": ["scratch/w01-state-machine.md"]
     },
     {
       "task": "T14: W01 - Implement state machine in JS",
-      "description": "Implement in pr_split_13_tui.js. WizardState object with currentState, transition() guarded by valid-transition matrix.",
+      "description": "Implemented WizardState in pr_split_13_tui.js: 15 states (IDLE, CONFIG, BASELINE_FAIL, PLAN_GENERATION, PLAN_REVIEW, PLAN_EDITOR, BRANCH_BUILDING, ERROR_RESOLUTION, EQUIV_CHECK, FINALIZATION, DONE, CANCELLED, FORCE_CANCEL, PAUSED, ERROR), guarded transition(), cancel/forceCancel/pause/error cross-cuts, history tracking, data merge, checkpoint, reset, listener registration. Exported as prSplit.WizardState + WIZARD_VALID_TRANSITIONS + WIZARD_TERMINAL_STATES.",
       "acceptance": "States transition correctly. Invalid transitions rejected. Tests verify all transitions.",
-      "status": "Not Started",
+      "status": "Done",
       "contextPointers": ["internal/command/pr_split_13_tui.js"]
     },
     {
       "task": "T15: W01 - State transition tests",
-      "description": "Tests: happy path, error entry, back navigation, invalid transitions rejected, cancel from any state.",
+      "description": "18 WizardState tests: InitialState, HappyPath (7-transition complete path), InvalidTransition (4 subcases), Cancel (3 scenarios), ForceCancel, Pause (3 scenarios), ErrorFromAnyActive, DataMerge, OnTransition, History, Reset, Checkpoint, BaselineFailPath, PlanEditorRoundtrip, ErrorResolutionReSplit, ResumeFromBranchBuilding, ExportsAvailable, ListenerErrorSwallowed. Total chunk 13 tests: 67.",
       "acceptance": "All transitions tested. Invalid transitions produce error. Tests pass.",
-      "status": "Not Started",
+      "status": "Done",
       "contextPointers": ["internal/command/pr_split_13_tui_test.go"]
     },
     {

@@ -39,6 +39,167 @@
     });
 
     // -----------------------------------------------------------------------
+    //  WizardState — Guarded state machine for the pr-split wizard.
+    //
+    //  States: IDLE, CONFIG, BASELINE_FAIL, PLAN_GENERATION, PLAN_REVIEW,
+    //          PLAN_EDITOR, BRANCH_BUILDING, ERROR_RESOLUTION, EQUIV_CHECK,
+    //          FINALIZATION, DONE, CANCELLED, FORCE_CANCEL, PAUSED, ERROR
+    //
+    //  See scratch/w01-state-machine.md for full design.
+    // -----------------------------------------------------------------------
+
+    // Valid transitions: { fromState: { toState: true, ... }, ... }
+    var VALID_TRANSITIONS = {
+        'IDLE':             { 'CONFIG': true },
+        'CONFIG':           { 'PLAN_GENERATION': true, 'BASELINE_FAIL': true, 'BRANCH_BUILDING': true, 'CANCELLED': true, 'ERROR': true },
+        'BASELINE_FAIL':    { 'PLAN_GENERATION': true, 'CANCELLED': true },
+        'PLAN_GENERATION':  { 'PLAN_REVIEW': true, 'CANCELLED': true, 'FORCE_CANCEL': true, 'PAUSED': true, 'ERROR': true },
+        'PLAN_REVIEW':      { 'PLAN_EDITOR': true, 'BRANCH_BUILDING': true, 'PLAN_GENERATION': true, 'CANCELLED': true },
+        'PLAN_EDITOR':      { 'PLAN_REVIEW': true },
+        'BRANCH_BUILDING':  { 'EQUIV_CHECK': true, 'ERROR_RESOLUTION': true, 'CANCELLED': true, 'FORCE_CANCEL': true, 'PAUSED': true, 'ERROR': true },
+        'ERROR_RESOLUTION': { 'EQUIV_CHECK': true, 'BRANCH_BUILDING': true, 'PLAN_GENERATION': true, 'CANCELLED': true, 'FORCE_CANCEL': true },
+        'EQUIV_CHECK':      { 'FINALIZATION': true, 'CANCELLED': true, 'ERROR': true },
+        'FINALIZATION':     { 'FINALIZATION': true, 'DONE': true },
+        'DONE':             { 'IDLE': true },
+        'CANCELLED':        { 'DONE': true },
+        'FORCE_CANCEL':     { 'DONE': true },
+        'PAUSED':           { 'DONE': true },
+        'ERROR':            { 'DONE': true }
+    };
+
+    // Terminal states — no pipeline activity, waiting for reset or dismiss.
+    var TERMINAL_STATES = { 'DONE': true, 'CANCELLED': true, 'FORCE_CANCEL': true, 'PAUSED': true, 'ERROR': true };
+
+    // States from which pause is allowed.
+    var PAUSABLE_STATES = { 'PLAN_GENERATION': true, 'BRANCH_BUILDING': true };
+
+    /**
+     * WizardState — pr-split wizard state machine.
+     *
+     * @constructor
+     */
+    function WizardState() {
+        this.current = 'IDLE';
+        this.data = {};
+        this.history = [];
+        this.checkpoint = null;
+        this.listeners = [];
+    }
+
+    /**
+     * transition — move to a new state with guard check.
+     *
+     * @param {string} to - Target state name.
+     * @param {Object} [mergeData] - Data to merge into this.data.
+     * @throws {Error} If the transition is not in VALID_TRANSITIONS.
+     */
+    WizardState.prototype.transition = function(to, mergeData) {
+        var from = this.current;
+        var allowed = VALID_TRANSITIONS[from];
+        if (!allowed || !allowed[to]) {
+            throw new Error('Invalid transition: ' + from + ' \u2192 ' + to);
+        }
+        this.history.push({ from: from, to: to, at: Date.now() });
+        this.current = to;
+        if (mergeData) {
+            var keys = Object.keys(mergeData);
+            for (var i = 0; i < keys.length; i++) {
+                this.data[keys[i]] = mergeData[keys[i]];
+            }
+        }
+        // Notify listeners
+        for (var j = 0; j < this.listeners.length; j++) {
+            try { this.listeners[j](from, to, this.data); } catch (e) { log.error('WizardState listener error: ' + e); }
+        }
+    };
+
+    /**
+     * cancel — transition to CANCELLED from any non-terminal active state.
+     * No-op if already terminal.
+     */
+    WizardState.prototype.cancel = function() {
+        if (TERMINAL_STATES[this.current]) return;
+        this.transition('CANCELLED');
+    };
+
+    /**
+     * forceCancel — transition to FORCE_CANCEL. Allowed from any state
+     * except DONE and FORCE_CANCEL.
+     */
+    WizardState.prototype.forceCancel = function() {
+        if (this.current === 'DONE' || this.current === 'FORCE_CANCEL') return;
+        // Force cancel bypasses normal transition matrix — always allowed
+        // from active states and even from CANCELLED.
+        this.history.push({ from: this.current, to: 'FORCE_CANCEL', at: Date.now() });
+        this.current = 'FORCE_CANCEL';
+        for (var j = 0; j < this.listeners.length; j++) {
+            try { this.listeners[j](this.current, 'FORCE_CANCEL', this.data); } catch (e) { /* swallow */ }
+        }
+    };
+
+    /**
+     * pause — transition to PAUSED if current state supports pausing.
+     */
+    WizardState.prototype.pause = function() {
+        if (!PAUSABLE_STATES[this.current]) return;
+        this.transition('PAUSED');
+    };
+
+    /**
+     * error — transition to ERROR from any non-terminal state.
+     * @param {string} [message] - Error description.
+     */
+    WizardState.prototype.error = function(message) {
+        if (TERMINAL_STATES[this.current]) return;
+        this.transition('ERROR', message ? { error: message } : undefined);
+    };
+
+    /**
+     * isTerminal — returns true if no further pipeline activity is expected.
+     * @returns {boolean}
+     */
+    WizardState.prototype.isTerminal = function() {
+        return !!TERMINAL_STATES[this.current];
+    };
+
+    /**
+     * onTransition — register a listener for state changes.
+     * @param {function(string,string,Object)} fn - Called with (from, to, data).
+     */
+    WizardState.prototype.onTransition = function(fn) {
+        if (typeof fn === 'function') this.listeners.push(fn);
+    };
+
+    /**
+     * reset — return to IDLE, clear data and history.
+     */
+    WizardState.prototype.reset = function() {
+        this.current = 'IDLE';
+        this.data = {};
+        this.history = [];
+        this.checkpoint = null;
+        this.listeners = [];
+    };
+
+    /**
+     * saveCheckpoint — capture current state for resume.
+     * @returns {Object} Checkpoint data.
+     */
+    WizardState.prototype.saveCheckpoint = function() {
+        this.checkpoint = {
+            state: this.current,
+            data: JSON.parse(JSON.stringify(this.data)),
+            at: Date.now()
+        };
+        return this.checkpoint;
+    };
+
+    // Export on prSplit for cross-chunk access.
+    prSplit.WizardState = WizardState;
+    prSplit.WIZARD_VALID_TRANSITIONS = VALID_TRANSITIONS;
+    prSplit.WIZARD_TERMINAL_STATES = TERMINAL_STATES;
+
+    // -----------------------------------------------------------------------
     //  buildReport — JSON-serializable status report
     // -----------------------------------------------------------------------
 

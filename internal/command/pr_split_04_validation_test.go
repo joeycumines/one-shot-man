@@ -433,3 +433,53 @@ func TestChunk04_ValidateResolution_BadCommand(t *testing.T) {
 		t.Error("expected invalid for empty command string")
 	}
 }
+
+// TestChunk04_ValidatePlan_EmptyStringName verifies that a split with
+// name="" is rejected (JavaScript's !” is true, so empty string is falsy).
+func TestChunk04_ValidatePlan_EmptyStringName(t *testing.T) {
+	evalJS := loadChunkEngine(t, nil,
+		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
+
+	vr := evalValidation(t, evalJS, `
+		JSON.stringify(globalThis.prSplit.validatePlan({
+			splits: [{ name: '', files: ['a.go'] }]
+		}))
+	`)
+	if vr.Valid {
+		t.Error("expected invalid for empty string split name")
+	}
+	found := false
+	for _, e := range vr.Errors {
+		if strings.Contains(e, "name") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error mentioning 'name', got: %v", vr.Errors)
+	}
+}
+
+// TestChunk04_ValidatePlan_EmptyFilesInSplit verifies that a split with
+// zero files is rejected.
+func TestChunk04_ValidatePlan_EmptyFilesInSplit(t *testing.T) {
+	evalJS := loadChunkEngine(t, nil,
+		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
+
+	vr := evalValidation(t, evalJS, `
+		JSON.stringify(globalThis.prSplit.validatePlan({
+			splits: [{ name: 'split/01-empty', files: [] }]
+		}))
+	`)
+	if vr.Valid {
+		t.Error("expected invalid for split with empty files array")
+	}
+	found := false
+	for _, e := range vr.Errors {
+		if strings.Contains(e, "no files") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error about 'no files', got: %v", vr.Errors)
+	}
+}

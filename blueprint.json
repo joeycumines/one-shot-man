@@ -229,6 +229,12 @@
       "status": "Complete — restoreSafely() helper replaces 9 bare calls. Pipeline, core, and conflict fixers all check gitExec returns. Rule of Two PASS×2."
     },
     {
+      "task": "R45: Config path warning and validation test coverage",
+      "description": "main.go: Surface config.GetConfigPath() error as stderr warning instead of silently ignoring. Add TestChunk04_ValidatePlan_EmptyStringName and TestChunk04_ValidatePlan_EmptyFilesInSplit to cover validation edge cases. Add test-chunk04/test-chunk13 Make targets.",
+      "acceptance": "main.go warns on config path error. All 24 chunk04 tests pass. make lint passes.",
+      "status": "In Progress — Code applied. Tests pass. Awaiting Rule of Two."
+    },
+    {
       "task": "R41: Write chunk architecture ADR",
       "description": "Create docs/adr/001-pr-split-chunked-architecture.md with Context, Decision, Consequences, Alternatives.",
       "acceptance": "ADR exists with all sections. Referenced from docs/architecture.md.",

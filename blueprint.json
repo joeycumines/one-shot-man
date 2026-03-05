@@ -26,131 +26,516 @@
   ],
   "mandatoryDirectives": {
     "contextManagement": "Execute tasks strictly in sequence. Update blueprint.json incrementally after each task.",
-    "sourceOfTruth": "Live chunks: internal/command/pr_split_00_core.js through pr_split_13_tui.js (14 IIFE-wrapped files). Go bridge: internal/command/pr_split.go (embeds + loads all chunks via loadChunkedScript). Tests: 46+ test files in internal/command/ matching pr_split_*_test.go and prsplit_*_test.go. Chunk test helper: loadChunkEngine() in pr_split_00_core_test.go (auto-injects t.TempDir runtime.dir). Full engine helpers: loadPrSplitEngine()/loadPrSplitEngineWithEval() in pr_split_test.go. TUI: prsplit_autosplit_model.go (AutoSplitModel), prsplit_plan_editor.go (PlanEditor). Design doc: docs/architecture-pr-split-chunks.md. ADR: docs/adr/001-pr-split-chunked-architecture.md (R41).",
-    "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux, integration-test-vterm. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp.",
+    "sourceOfTruth": "Live chunks: internal/command/pr_split_00_core.js through pr_split_13_tui.js (14 IIFE-wrapped files). Go bridge: internal/command/pr_split.go (embeds + loads all chunks via loadChunkedScript). Tests: 46+ test files in internal/command/ matching pr_split_*_test.go and prsplit_*_test.go. Chunk test helper: loadChunkEngine() in pr_split_00_core_test.go (auto-injects t.TempDir runtime.dir). Full engine helpers: loadPrSplitEngine()/loadPrSplitEngineWithEval() in pr_split_test.go. TUI: prsplit_autosplit_model.go (AutoSplitModel), prsplit_plan_editor.go (PlanEditor). Design doc: docs/architecture-pr-split-chunks.md. ADR: docs/adr/001-pr-split-chunked-architecture.md.",
+    "fullEndToEndIntegrationTesting": "The -integration flag, -claude-command, -claude-arg flags registered in internal/command/main_test.go TestMain. project.mk targets: integration-test-prsplit, integration-test-prsplit-mcp, integration-test-termmux. New test functions in internal/command/ matching TestIntegration_* are automatically picked up by make integration-test-prsplit-mcp.",
     "chunkArchitecture": "14 JS chunk files loaded in order by pr_split.go (loadChunkedScript). Each chunk is an IIFE that attaches exports to globalThis.prSplit (initialized by chunk 00). Chunks may reference symbols from earlier chunks via globalThis.prSplit. Go-injected globals (autoSplitTUI, tuiMux, splitView, planEditorFactory, prSplitConfig) are available to all chunks."
   },
   "statusSection": {
-    "currentState": "Build GREEN. All tests pass (make all). 15 commands registered. 14 JS chunk files loaded sequentially. 46+ pr-split test files providing extensive coverage. Three bugs fixed (B00: git state mutation, B01: ANSI→lipgloss, B02: PR creation guards). All orphaned claude-mux code deleted. TUI components relocated to internal/command. Documentation updated. Cross-platform validated (Linux container + Windows). wip branch at e2580ac.",
-    "goalState": "14 independently-testable chunk files (all populated, no stubs). All orphaned claude-mux code deleted. TUI decoupled from termmux. All stale monolith references removed. Documentation current. Cross-platform validated. Wizard UI (W-series) implemented in JS. Every line has a reason to exist.",
-    "replanLog": [
-      {
-        "task": "W00: Termmux JavaScript Facade (Builtin)",
-        "description": "Expose internal/termmux to JS via internal/builtin/termmux/ package. Pane management, visibility, resize. Core termmux MUST NOT contain goja bindings.",
-        "acceptance": "JS facade implemented. Bindings localized to internal/builtin/termmux. All code is covered via new automated tests / checks and all checks pass. Design the API surface carefully, taking note of the other implementations, e.g. for osm:bubbletea, osm:bt, osm:pabt, etc, as past examples of similarly complex, Go-heavy integrations. It must be possible to implement POWERFULL JAVASCRIPT-DEFINED BEHAVIOR that is **properly non-blocking in JavaScript** (i.e. does not rely on blocking calls to Go) using this API. This is critical for the success of the Wizard UI, which will run entirely in JS and must be able to orchestrate complex interactions with termmux without blocking the JS event loop. The API should be designed with an event-driven architecture in mind, allowing JS code to subscribe to termmux events and react accordingly, rather than relying on synchronous calls that could lead to a poor user experience. Additionally, ideally, bubbletea is able to integrate _directly_ with termmux panes via this facade, allowing for a more seamless UI experience. This may require some careful design to ensure that the event handling and state management between termmux and bubbletea are well-coordinated. Examples of challenging aspects include signal handling. It may be necessary to integrate with the event loop. N.B. Integrating with bubbletea is a critical part of realising the maximum potential of this implementation. Spare no expense.",
-        "status": "Not Started"
-      },
-      {
-        "task": "W01: Wizard UI Phase 1 - State Machine Design",
-        "description": "Design state machine in pr_split_13_tui.js using osm:bt/bubbles/bubblezone. States: Config, Plan Gen, Plan Review, Branch Building, Error Resolution, Finalization.",
-        "acceptance": "JS state definitions implemented. Docs updated. All code is covered via new automated tests / checks and all checks pass.",
-        "status": "Not Started"
-      },
-      {
-        "task": "W02: Wizard UI Phase 2 - Configuration & Baseline Validation",
-        "description": "Configuration stage. Run baseline verification interactively. On failure: pause with clear UI, allow override or abort.",
-        "acceptance": "Baseline failure shows clear JS menu. Re-evaluates on override. All code is covered via new automated tests / checks and all checks pass.",
-        "status": "Not Started"
-      },
-      {
-        "task": "W03: Wizard UI Phase 3 - Interactive Plan Review Editor",
-        "description": "Port PlanEditor to JS. Wire plan generation. Detect schema invalidity. Allow retry with feedback or manual override.",
-        "acceptance": "User reviews plan in pure-JS TUI. Auto-Retry and manual overrides work. All code is covered via new automated tests / checks and all checks pass.",
-        "status": "Not Started"
-      },
-      {
-        "task": "W04: Wizard UI Phase 4 - Granular Branch Check Pipeline",
-        "description": "Sequential/concurrent branch evaluation via JS. Create, apply, verify per branch. Report pass/fail to JS UI.",
-        "acceptance": "Individual branch evaluation. Clear pass/fail status. All code is covered via new automated tests / checks and all checks pass .",
-        "status": "Not Started"
-      },
-      {
-        "task": "W05: Wizard UI Phase 5 - Interactive Error Resolution",
-        "description": "Error resolution for failed branches in JS TUI. Menu: Auto-Resolve, Manual Fix, Abort.",
-        "acceptance": "Failed branch shows resolution menu. Auto-Resolve applies patch and retries. All code is covered via new automated tests / checks and all checks pass .",
-        "status": "Not Started"
-      },
-      {
-        "task": "W06: Wizard UI Phase 6 - End-to-End Orchestration",
-        "description": "Finalize JS orchestration. Clean termination. Delete old Go TUI code.",
-        "acceptance": "osm pr-split navigates full flow via JS. Old Go TUI removed. All code is covered via new automated tests / checks and all checks pass  .",
-        "status": "Not Started"
-      },
-      {
-        "task": "W07: Wizard E2E Integration Testing",
-        "description": "TestIntegration_WizardBaselineRetry, WizardPlanFeedback, WizardAutoResolve.",
-        "acceptance": "3+ simulation tests pass on make all. All code is covered via new automated tests / checks and all checks pass  .",
-        "status": "Not Started"
-      },
-      {
-        "task": "W08: Termmux Bell Interception & OS Notification",
-        "description": "Intercept ASCII BELL in termmux. OS notification + visual TUI indicator. Expose to JS Facade.",
-        "acceptance": "Bell intercepted. OS notification fires. Integration tests prove propagation. All code is covered via new automated tests / checks and all checks pass   .",
-        "status": "Not Started"
-      },
-      {
-        "task": "W09: Termmux Process State HUD",
-        "description": "Persistent overlay showing hidden Claude process state. Activity indicators from PTY writes.",
-        "acceptance": "HUD renders. State accurately reflected. Clean rendering. All code is covered via new automated tests / checks and all checks pass  .",
-        "status": "Not Started"
-      },
-      {
-        "task": "W10: Termmux Mouse Support",
-        "description": "BubbleTea mouse events in termmux. Click HUD to swap. Draggable overlay.",
-        "acceptance": "Mouse click toggles panes. Drag repositions. All code is covered via new automated tests / checks and all checks pass    .",
-        "status": "Not Started"
-      },
-      {
-        "task": "W10a: Remove Session ID from Auto-Split MCP",
-        "description": "Strip session metadata from MCP payloads. Process callbacks via socket identity only.",
-        "acceptance": "No session IDs in payloads. Integration tests prove functionality. All code is covered via new automated tests / checks and all checks pass  .",
-        "status": "Not Started"
-      },
-      {
-        "task": "W10b: Remove socat, Native Windows IPC",
-        "description": "Replace socat with native Go IPC. Named pipes or direct sockets. Must work on Windows.",
-        "acceptance": "osm pr-split works without socat. All platforms pass integration tests. All code is covered via new automated tests / checks and all checks pass   .",
-        "status": "Not Started"
-      },
-      {
-        "task": "W11: API Tidy & Breaking Changes Review",
-        "description": "Holistic review across all Wizard changes. Signal handling. Embrace breaking internal changes for quality.",
-        "acceptance": "All internal APIs clean. Integration tests stable. All code is covered via new automated tests / checks and all checks pass  .",
-        "status": "Not Started"
-      },
-      {
-        "task": "W12: Git Worktree Isolation",
-        "description": "Use temporary git worktree for split validations. User CWD never touched.",
-        "acceptance": "Separate worktree used. User CWD undisturbed. Integration test proves safety. All code is covered via new automated tests / checks and all checks pass  .",
-        "status": "Not Started"
-      },
-      {
-        "task": "W13: Wizard Error Handling Beyond Git Rebase",
-        "description": "Error handling as primary feature. Auto-retry with Claude, drop to subshell, skip branch.",
-        "acceptance": "Wizard pauses on failure with options. Subshell drop-in works. State machine uncorrupted. All code is covered via new automated tests / checks and all checks pass  .",
-        "status": "Not Started"
-      },
-      {
-        "task": "W14: Integration Tests for Error Recovery Paths",
-        "description": "Comprehensive tests for W13 error flows. Deterministic mocked failures. TUI inspection.",
-        "acceptance": "All error resolution paths tested. Near-maximum coverage. All code is covered via new automated tests / checks and all checks pass  .",
-        "status": "Not Started"
-      }
-    ],
-    "continuousVerification": {
-      "task": "CRITICAL: Run make pipeline AND ALL LOCAL INTEGRATION TESTS after EVERY significant change",
-      "description": "MANDATORY: Run make all AND make integration-test-prsplit-mcp AND make integration-test-vterm AND make integration-test-termmux after every change batch. For real-Claude tests: make integration-test-prsplit. For Linux: make make-all-in-container.",
-      "failPolicy": "If ANY check fails, STOP IMMEDIATELY and fix. Zero tolerance for flaky tests."
+    "currentState": "Build GREEN. All tests pass (make all). make integration-test-prsplit-mcp GREEN. 15 commands registered. 14 JS chunk files loaded sequentially. 46+ pr-split test files providing extensive coverage. Two bugs fixed (B00: git state mutation, B02: PR creation empty-diff guard). B01 (ANSI in commit messages) NOT FIXED. All orphaned claude-mux code deleted. TUI components relocated to internal/command. Documentation updated. Cross-platform validated (Linux container + Windows). wip branch at e2580ac. Session started 2026-03-05 22:03:19.",
+    "goalState": "14 independently-testable chunk files with zero bugs. B01 ANSI stripping fixed and tested. Exhaustive test coverage including error paths. Integration tests expanded (mock and real-Claude). Cross-platform validated. Wizard UI (W-series) implemented in JS via termmux facade. Every line has a reason to exist. Documentation current. No dead code. No AI slop."
+  },
+  "sequentialTasks": [
+    {
+      "task": "T01: Run integration-test-prsplit-mcp and establish baseline",
+      "description": "Execute make integration-test-prsplit-mcp. Verify TestIntegration_AutoSplitMockMCP and TestIntegration_AutoSplitMockMCP_TUIObservation both pass. Document current output as baseline.",
+      "acceptance": "Both mock MCP integration tests pass. Output captured in build.log. Baseline established for regression detection.",
+      "status": "Done",
+      "contextPointers": ["project.mk:34-37", "internal/command/pr_split_autosplit_recovery_test.go", "internal/command/pr_split_integration_test.go"]
     },
-    "finalEnforcementProtocol": [
-      {
-        "type": "POST_EXECUTION_WARNING",
-        "alert": "Do not claim a regression is fixed without test evidence."
-      },
-      {
-        "type": "POST_EXECUTION_WARNING_REPEATED",
-        "alert": "No commits until two contiguous, issue-free subagent reviews confirm correctness."
-      }
-    ]
-  }
+    {
+      "task": "T02: Run integration-test-termmux and verify",
+      "description": "Execute make integration-test-termmux. Verify all termmux integration tests pass with -tags=integration.",
+      "acceptance": "All termmux integration tests pass. No flaky failures.",
+      "status": "Not Started",
+      "contextPointers": ["project.mk:46-47", "internal/termmux/"]
+    },
+    {
+      "task": "T03: B01 - Add stripAnsi() utility to pr_split_00_core.js",
+      "description": "Implement a stripAnsi(str) function in pr_split_00_core.js that removes all ANSI escape sequences from a string. Use regex: /\\x1b\\[[0-9;]*[a-zA-Z]/g for CSI sequences, /\\x1b\\][^\\x07]*\\x07/g for OSC sequences, and /\\x1b[^\\[\\]][^a-zA-Z]*/g for other escapes. Export via globalThis.prSplit._stripAnsi. Place after the style section (~line 100).",
+      "acceptance": "stripAnsi('\\x1b[32mgreen\\x1b[0m') returns 'green'. stripAnsi('no ansi') returns 'no ansi'. stripAnsi('') returns ''. Function exported on globalThis.prSplit._stripAnsi.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_00_core.js:40-100"]
+    },
+    {
+      "task": "T04: B01 - Add unit tests for stripAnsi() in pr_split_00_core_test.go",
+      "description": "Add TestChunk00_StripAnsi test function. Test cases: plain text unchanged, single color code stripped, nested codes stripped, empty string, OSC sequences stripped, mixed styled+unstyled content. Use loadChunkEngine() helper.",
+      "acceptance": "6+ test cases covering all ANSI patterns. Tests pass via make all.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_00_core_test.go"]
+    },
+    {
+      "task": "T05: B01 - Apply stripAnsi() in pr_split_05_execution.js before git commit",
+      "description": "At pr_split_05_execution.js line 191, wrap: var msg = prSplit._stripAnsi(split.message || 'split: ' + split.name). Add comment: '// B01 fix: strip ANSI escape codes from commit messages'.",
+      "acceptance": "Commit messages guaranteed free of ANSI escape sequences. stripAnsi applied unconditionally.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_05_execution.js:191"]
+    },
+    {
+      "task": "T06: B01 - Add test proving ANSI codes stripped from commits",
+      "description": "In pr_split_05_execution_test.go, add TestChunk05_ExecuteSplit_ANSIInMessage. Set split.message to '\\x1b[32mAdd feature\\x1b[0m'. Execute split. Verify git log --format=%s shows 'Add feature' (no ANSI).",
+      "acceptance": "Test creates commit with ANSI-contaminated message, verifies git log message is clean.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_05_execution_test.go"]
+    },
+    {
+      "task": "T07: B01 - Audit all chunks for ANSI contamination paths",
+      "description": "Search all pr_split_*.js for paths where styled text could flow into git operations. Check: pr_split_03_planning.js:55 (message field), pr_split_10_pipeline.js:1495 (message), pr_split_13_tui.js:801 (message). Add stripAnsi() wherever contamination is possible.",
+      "acceptance": "All 14 chunks audited. Every path from styled text to git/file/external operations sanitized.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_03_planning.js:55", "internal/command/pr_split_10_pipeline.js:1495", "internal/command/pr_split_13_tui.js:801"]
+    },
+    {
+      "task": "T08: B01 verification gate - make all + integration tests",
+      "description": "Run make all and make integration-test-prsplit-mcp. All tests pass including new stripAnsi tests.",
+      "acceptance": "make all GREEN. make integration-test-prsplit-mcp GREEN. Zero regressions.",
+      "status": "Not Started",
+      "contextPointers": ["Makefile", "project.mk"]
+    },
+    {
+      "task": "T09: Test double-ANSI-styling in renderColorizedDiff",
+      "description": "In pr_split_11_utilities_test.go, add TestChunk11_RenderColorizedDiff_PreColoredInput. Pass pre-ANSI-colored diff through renderColorizedDiff(). Verify no double-styling.",
+      "acceptance": "Test proves renderColorizedDiff handles pre-colored input correctly.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_11_utilities.js:260-283", "internal/command/pr_split_11_utilities_test.go"]
+    },
+    {
+      "task": "T10: Test gh CLI not found error in chunk 07",
+      "description": "In pr_split_07_prcreation_test.go, add TestChunk07_CreatePRs_GhNotFound. Mock exec to fail for 'gh'. Verify clear error message.",
+      "acceptance": "gh-not-found produces clear, actionable error. Does not crash or return undefined.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_07_prcreation.js", "internal/command/pr_split_07_prcreation_test.go"]
+    },
+    {
+      "task": "T11: Test all AUTO_FIX_STRATEGIES in chunk 08",
+      "description": "In pr_split_08_conflict_test.go, add tests for each strategy: detection logic, fix application, strategy fallthrough on failure.",
+      "acceptance": "Every AUTO_FIX_STRATEGY has direct test coverage. Fallthrough path tested.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_08_conflict.js", "internal/command/pr_split_08_conflict_test.go"]
+    },
+    {
+      "task": "T12: Test model-not-available error in chunk 09",
+      "description": "In pr_split_09_claude_test.go, add TestChunk09_ClaudeExecutor_ModelNotAvailable. Test graceful handling when model is unavailable.",
+      "acceptance": "Model-unavailable error handled with clear message. No hang or undefined behavior.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_09_claude.js:70", "internal/command/pr_split_09_claude_test.go"]
+    },
+    {
+      "task": "T13: MockMCP test - classification with overlapping files",
+      "description": "Add TestIntegration_AutoSplitMockMCP_OverlappingFiles. Claude assigns same file to multiple groups. Verify pipeline handles gracefully.",
+      "acceptance": "Overlapping-files edge case exercised. Behavior well-defined.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_autosplit_recovery_test.go", "internal/command/pr_split_10_pipeline.js"]
+    },
+    {
+      "task": "T14: MockMCP test - verification failure and retry",
+      "description": "Add TestIntegration_AutoSplitMockMCP_VerifyFailure. verifySplit fails for one branch. Verify pipeline reports failure per-branch.",
+      "acceptance": "Verification failure path exercised. Per-branch error details in report.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_06_verification.js", "internal/command/pr_split_autosplit_recovery_test.go"]
+    },
+    {
+      "task": "T15: MockMCP test - cancellation during execution",
+      "description": "Add TestIntegration_AutoSplitMockMCP_CancelDuringExecution. Trigger cancellation during executeSplit. Verify clean stop and partial results.",
+      "acceptance": "Cancellation stops pipeline. Partial results reported. No hung goroutines.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_05_execution.js", "internal/command/pr_split_10_pipeline.js"]
+    },
+    {
+      "task": "T16: Verification gate - all tests after coverage expansion",
+      "description": "Run make all AND make integration-test-prsplit-mcp. All new tests T09-T15 pass alongside existing.",
+      "acceptance": "make all GREEN. make integration-test-prsplit-mcp GREEN.",
+      "status": "Not Started",
+      "contextPointers": ["Makefile", "project.mk"]
+    },
+    {
+      "task": "T17: Document TestIntegration_* coverage inventory",
+      "description": "Catalog all 23+ TestIntegration_* functions: name, file, line, what it tests, flag requirements. Write to scratch/integration-test-inventory.md.",
+      "acceptance": "All integration tests catalogued with flag requirements.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_integration_test.go", "internal/command/pr_split_autosplit_recovery_test.go"]
+    },
+    {
+      "task": "T18: MockMCP test - conflict resolution E2E",
+      "description": "Add TestIntegration_AutoSplitMockMCP_ConflictResolution. Split execution creates conflicting branch. Verify conflict resolution activates.",
+      "acceptance": "Conflict detected, resolution attempted, results reported.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_08_conflict.js", "internal/command/pr_split_autosplit_recovery_test.go"]
+    },
+    {
+      "task": "T19: Improve SendToHandle edge case tests",
+      "description": "Review 9 existing SendToHandle tests. Add: empty text send, very large payload, concurrent sends, send after detach.",
+      "acceptance": "Total SendToHandle tests >= 12. All edge cases covered.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_integration_test.go:470-957"]
+    },
+    {
+      "task": "T20: Run real-Claude integration tests",
+      "description": "Execute make integration-test-prsplit. Document results. Investigate any failures.",
+      "acceptance": "Real-Claude tests executed and documented.",
+      "status": "Not Started",
+      "contextPointers": ["project.mk:26-33"]
+    },
+    {
+      "task": "T21: Naming consistency audit across 14 chunks",
+      "description": "Audit function/variable naming in all pr_split_*.js. Fix inconsistencies in camelCase, prefix patterns, parameter naming.",
+      "acceptance": "All 14 chunks use consistent naming. Changes documented.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_00_core.js through pr_split_13_tui.js"]
+    },
+    {
+      "task": "T22: Error message clarity audit",
+      "description": "Audit error messages in all 14 chunks. Every error must identify what failed, include context, and suggest remediation.",
+      "acceptance": "All error messages clear and actionable.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_00_core.js through pr_split_13_tui.js"]
+    },
+    {
+      "task": "T23: Verify deadcode check passes",
+      "description": "Run make deadcode. Fix any findings by wiring up or deleting. Do NOT add .deadcodeignore entries.",
+      "acceptance": "make deadcode passes with zero findings.",
+      "status": "Not Started",
+      "contextPointers": ["Makefile", ".deadcodeignore"]
+    },
+    {
+      "task": "T24: Verify betteralign passes",
+      "description": "Run make betteralign. Fix struct alignment issues.",
+      "acceptance": "make betteralign passes.",
+      "status": "Not Started",
+      "contextPointers": ["Makefile"]
+    },
+    {
+      "task": "T25: Cross-platform: make-all-in-container",
+      "description": "Run make make-all-in-container for Linux validation.",
+      "acceptance": "Linux container build GREEN.",
+      "status": "Not Started",
+      "contextPointers": ["config.mk"]
+    },
+    {
+      "task": "T26: Update docs/architecture-pr-split-chunks.md",
+      "description": "Update with: current exports, B01/B02 fix notes, stripAnsi utility, test count, integration test info.",
+      "acceptance": "Architecture doc matches current codebase.",
+      "status": "Not Started",
+      "contextPointers": ["docs/architecture-pr-split-chunks.md"]
+    },
+    {
+      "task": "T27: Update ADR 001",
+      "description": "Ensure docs/adr/001-pr-split-chunked-architecture.md reflects current chunk count, rationale, and real-world consequences.",
+      "acceptance": "ADR 001 current and accurate.",
+      "status": "Not Started",
+      "contextPointers": ["docs/adr/001-pr-split-chunked-architecture.md"]
+    },
+    {
+      "task": "T28: Inline code comments for B01/B02 fixes",
+      "description": "Add comments at: stripAnsi function, stripAnsi call in chunk 05, diff guard in chunk 07.",
+      "acceptance": "All fix locations have explanatory comments.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_00_core.js", "internal/command/pr_split_05_execution.js", "internal/command/pr_split_07_prcreation.js"]
+    },
+    {
+      "task": "T29: W00 - Study osm:bubbletea builtin API patterns",
+      "description": "Read internal/builtin/bubbletea/. Document: Go-to-JS exposure, event handling, lifecycle, thread safety. Write to scratch/w00-api-study.md.",
+      "acceptance": "API study documented. Patterns inform termmux facade design.",
+      "status": "Not Started",
+      "contextPointers": ["internal/builtin/bubbletea/"]
+    },
+    {
+      "task": "T30: W00 - Study osm:bt builtin event patterns",
+      "description": "Read internal/builtin/bt/. Document event-driven patterns, behavior tree integration, non-blocking JS interaction.",
+      "acceptance": "Event-driven patterns documented.",
+      "status": "Not Started",
+      "contextPointers": ["internal/builtin/bt/"]
+    },
+    {
+      "task": "T31: W00 - Study internal/termmux for facade requirements",
+      "description": "Read internal/termmux/. Document: public API, pane management, PTY integration, render pipeline, what to expose to JS.",
+      "acceptance": "Termmux API fully documented. Public vs internal clearly distinguished.",
+      "status": "Not Started",
+      "contextPointers": ["internal/termmux/"]
+    },
+    {
+      "task": "T32: W00 - Design termmux JS facade API",
+      "description": "Design JS API in scratch/w00-termmux-facade-design.md. Include: pane CRUD, visibility, event subscription, bubbletea model integration, non-blocking patterns. Core termmux must NOT contain goja bindings.",
+      "acceptance": "API design document complete. All capabilities covered.",
+      "status": "Not Started",
+      "contextPointers": ["internal/builtin/termmux/", "internal/termmux/"]
+    },
+    {
+      "task": "T33: W00 - Create internal/builtin/termmux/ skeleton",
+      "description": "Create package: module.go, pane.go, events.go, integration.go. Wire in internal/builtin/register.go.",
+      "acceptance": "Package compiles. Module registered as 'osm:termmux'. make all passes.",
+      "status": "Not Started",
+      "contextPointers": ["internal/builtin/termmux/", "internal/builtin/register.go"]
+    },
+    {
+      "task": "T34: W00 - Implement pane management bindings",
+      "description": "JS bindings: create(opts), destroy(id), focus(id), resize(id, rows, cols), list().",
+      "acceptance": "JS can CRUD panes. Unit tests pass. make all passes.",
+      "status": "Not Started",
+      "contextPointers": ["internal/builtin/termmux/pane.go"]
+    },
+    {
+      "task": "T35: W00 - Implement visibility bindings",
+      "description": "JS bindings: show(id), hide(id), toggle(id), isVisible(id).",
+      "acceptance": "JS controls pane visibility. Tests pass.",
+      "status": "Not Started",
+      "contextPointers": ["internal/builtin/termmux/pane.go"]
+    },
+    {
+      "task": "T36: W00 - Implement event subscription",
+      "description": "JS bindings: on(event, callback), off(id). Events: output, resize, focus, bell, exit. Non-blocking via Go channels.",
+      "acceptance": "Events fire correctly in JS. Cleanup on unsubscribe. Tests pass.",
+      "status": "Not Started",
+      "contextPointers": ["internal/builtin/termmux/events.go"]
+    },
+    {
+      "task": "T37: W00 - Implement bubbletea integration",
+      "description": "fromModel(model) wraps BubbleTea model as termmux pane. Events forwarded bidirectionally.",
+      "acceptance": "BubbleTea model renders in termmux pane. Events forwarded. Integration test passes.",
+      "status": "Not Started",
+      "contextPointers": ["internal/builtin/termmux/integration.go"]
+    },
+    {
+      "task": "T38: W00 - Unit tests for termmux facade",
+      "description": "Tests in internal/builtin/termmux/*_test.go. Cover: pane CRUD, visibility, events, cleanup, errors.",
+      "acceptance": "All facade functions tested. Edge cases covered.",
+      "status": "Not Started",
+      "contextPointers": ["internal/builtin/termmux/"]
+    },
+    {
+      "task": "T39: W00 - Integration test with real PTY",
+      "description": "Termmux facade integration test: spawn real PTY, capture events, verify pane management E2E.",
+      "acceptance": "make integration-test-termmux passes with new test.",
+      "status": "Not Started",
+      "contextPointers": ["internal/builtin/termmux/", "project.mk:46"]
+    },
+    {
+      "task": "T40: W00 - Verification gate",
+      "description": "Run make all + make integration-test-termmux + make integration-test-prsplit-mcp.",
+      "acceptance": "All targets GREEN. No regressions.",
+      "status": "Not Started",
+      "contextPointers": ["Makefile", "project.mk"]
+    },
+    {
+      "task": "T41: W01 - Design wizard state machine",
+      "description": "Design states: Config, PlanGeneration, PlanReview, BranchBuilding, ErrorResolution, Finalization. Document in scratch/w01-state-machine.md.",
+      "acceptance": "State machine design document with all states, transitions, error paths.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_13_tui.js"]
+    },
+    {
+      "task": "T42: W01 - Implement state machine",
+      "description": "Implement in pr_split_13_tui.js. Wire transitions to TUI commands.",
+      "acceptance": "States transition correctly. TUI commands work per-state.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_13_tui.js"]
+    },
+    {
+      "task": "T43: W01 - State transition tests",
+      "description": "Test: happy path, error entry, back transitions, invalid transitions rejected.",
+      "acceptance": "All transitions tested. Tests pass.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_13_tui_test.go"]
+    },
+    {
+      "task": "T44: W02 - Config and baseline validation",
+      "description": "Implement Config state. Baseline verification. Failure menu (override/abort).",
+      "acceptance": "Baseline failure shows menu. Override resumes. Abort exits.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_13_tui.js"]
+    },
+    {
+      "task": "T45: W02 - Baseline failure tests",
+      "description": "Tests: baseline pass, baseline fail + menu, override, abort.",
+      "acceptance": "All paths tested.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_13_tui_test.go"]
+    },
+    {
+      "task": "T46: W03 - JS plan review editor",
+      "description": "Port PlanEditor to JS via osm:bubbletea. Wire validation. Retry and manual override.",
+      "acceptance": "Pure-JS editor works. Validates schema. Retry and override functional.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_13_tui.js", "internal/command/prsplit_plan_editor.go"]
+    },
+    {
+      "task": "T47: W03 - JS plan editor tests",
+      "description": "Tests matching Go PlanEditor coverage: display, navigation, edit, validation, retry.",
+      "acceptance": "Equivalent coverage to Go version.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_13_tui_test.go"]
+    },
+    {
+      "task": "T48: W04 - Branch check pipeline",
+      "description": "Sequential branch evaluation in JS. Per-branch pass/fail. Real-time UI updates.",
+      "acceptance": "Individual branch evaluation with status. Partial failure handling.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_13_tui.js"]
+    },
+    {
+      "task": "T49: W04 - Branch pipeline tests",
+      "description": "Tests: all pass, one fail, multiple fail, cancel.",
+      "acceptance": "All outcomes tested.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_13_tui_test.go"]
+    },
+    {
+      "task": "T50: W05 - Error resolution UI",
+      "description": "Menu: Auto-Resolve, Manual Fix, Skip, Abort. Wire to conflict resolution.",
+      "acceptance": "All menu options functional.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_13_tui.js"]
+    },
+    {
+      "task": "T51: W05 - Error resolution tests",
+      "description": "Test each option: auto-resolve success/fail, manual fix, skip, abort.",
+      "acceptance": "All paths tested. State machine intact.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_13_tui_test.go"]
+    },
+    {
+      "task": "T52: W06 - Full wizard orchestration",
+      "description": "Wire all stages end-to-end. Clean termination. Progress reporting.",
+      "acceptance": "Full flow works. Clean exit. No orphaned state.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_13_tui.js"]
+    },
+    {
+      "task": "T53: W06 - Remove old Go TUI code",
+      "description": "Delete prsplit_autosplit_model.go, prsplit_plan_editor.go, prsplit_ui_helpers.go and tests. Update pr_split.go.",
+      "acceptance": "Old Go TUI removed. make all passes. No dead code.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/prsplit_autosplit_model.go", "internal/command/prsplit_plan_editor.go"]
+    },
+    {
+      "task": "T54: W06 - Full orchestration tests",
+      "description": "Integration tests: happy path, plan rejection, baseline failure, branch failure recovery.",
+      "acceptance": "Full wizard tested E2E.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_13_tui_test.go"]
+    },
+    {
+      "task": "T55: W07 - Wizard E2E integration tests",
+      "description": "TestIntegration_WizardBaselineRetry, WizardPlanFeedback, WizardAutoResolve with mock MCP.",
+      "acceptance": "3+ integration tests pass on make all.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_integration_test.go"]
+    },
+    {
+      "task": "T56: W08 - Bell interception and notification",
+      "description": "Intercept ASCII BELL in termmux. OS notification. Visual indicator. Expose to JS.",
+      "acceptance": "Bell intercepted. Notification fires. Integration test proves propagation.",
+      "status": "Not Started",
+      "contextPointers": ["internal/termmux/", "internal/builtin/termmux/"]
+    },
+    {
+      "task": "T57: W09 - Process state HUD",
+      "description": "Overlay showing hidden process state. Activity indicators from PTY writes.",
+      "acceptance": "HUD renders accurately. Clean rendering.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_13_tui.js"]
+    },
+    {
+      "task": "T58: W10 - Mouse support",
+      "description": "BubbleTea mouse events in termmux. Click HUD to swap. Draggable overlay.",
+      "acceptance": "Mouse click toggles. Drag repositions.",
+      "status": "Not Started",
+      "contextPointers": ["internal/termmux/"]
+    },
+    {
+      "task": "T59: W10a - Remove session ID from MCP",
+      "description": "Strip session metadata from MCP payloads. Socket identity only.",
+      "acceptance": "No session IDs in payloads. Integration tests pass.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_09_claude.js"]
+    },
+    {
+      "task": "T60: W10b - Remove socat, native IPC",
+      "description": "Replace socat with native Go IPC. Named pipes on Windows, Unix sockets on Unix.",
+      "acceptance": "Works without socat on all platforms.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_10_pipeline.js"]
+    },
+    {
+      "task": "T61: W11 - API tidy",
+      "description": "Holistic API review. Signal handling. Breaking internal changes for quality.",
+      "acceptance": "All APIs clean. Integration tests stable.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split.go"]
+    },
+    {
+      "task": "T62: W12 - Git worktree isolation",
+      "description": "Temporary worktree for split validations. User CWD untouched.",
+      "acceptance": "Worktree used. CWD undisturbed. Integration test proves safety.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_05_execution.js"]
+    },
+    {
+      "task": "T63: W13 - Enhanced error handling",
+      "description": "Auto-retry with Claude, subshell drop-in, skip branch. State machine integrity preserved.",
+      "acceptance": "Wizard pauses on failure with options. State uncorrupted.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_13_tui.js"]
+    },
+    {
+      "task": "T64: W14 - Error recovery integration tests",
+      "description": "Deterministic mocked failures at each pipeline stage. TUI inspection.",
+      "acceptance": "All error recovery paths tested.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split_integration_test.go"]
+    },
+    {
+      "task": "T65: Final make all + integration targets",
+      "description": "Run: make all, integration-test-prsplit-mcp, integration-test-termmux, deadcode, betteralign.",
+      "acceptance": "All GREEN.",
+      "status": "Not Started",
+      "contextPointers": ["Makefile", "project.mk"]
+    },
+    {
+      "task": "T66: Final cross-platform validation",
+      "description": "make-all-in-container (Linux). make-all-run-windows if available.",
+      "acceptance": "All platforms GREEN.",
+      "status": "Not Started",
+      "contextPointers": ["config.mk"]
+    },
+    {
+      "task": "T67: Final documentation sweep",
+      "description": "Review all docs/ for accuracy. No stale references.",
+      "acceptance": "All docs current.",
+      "status": "Not Started",
+      "contextPointers": ["docs/"]
+    },
+    {
+      "task": "T68: Diff vs main review",
+      "description": "Review every change vs main. All intentional, tested, documented.",
+      "acceptance": "Complete audit trail of all changes.",
+      "status": "Not Started",
+      "contextPointers": ["git diff main...wip"]
+    },
+    {
+      "task": "T69: Scope expansion",
+      "description": "Identify next improvements. Add new tasks. Task list never empty.",
+      "acceptance": "New tasks added.",
+      "status": "Not Started",
+      "contextPointers": ["blueprint.json"]
+    }
+  ],
+  "continuousVerification": {
+    "task": "CRITICAL: Run make pipeline AND ALL LOCAL INTEGRATION TESTS after EVERY significant change",
+    "description": "MANDATORY: Run make all AND make integration-test-prsplit-mcp AND make integration-test-termmux after every change batch. For real-Claude tests: make integration-test-prsplit. For Linux: make make-all-in-container.",
+    "failPolicy": "If ANY check fails, STOP IMMEDIATELY and fix. Zero tolerance for flaky tests."
+  },
+  "finalEnforcementProtocol": [
+    {
+      "type": "POST_EXECUTION_WARNING",
+      "alert": "Do not claim a regression is fixed without test evidence."
+    },
+    {
+      "type": "POST_EXECUTION_WARNING_REPEATED",
+      "alert": "No commits until two contiguous, issue-free subagent reviews confirm correctness."
+    },
+    {
+      "type": "ANTI_AI_SLOP",
+      "alert": "Every line must have a reason to exist. No vestigial code, no contradictory logic, no untested paths."
+    }
+  ]
 }

@@ -39,7 +39,10 @@ func run() error {
 	goalRegistry := command.NewDynamicGoalRegistry(command.GetBuiltInGoals(), goalDiscovery)
 
 	// Resolve config path for commands that need it
-	configPath, _ := config.GetConfigPath()
+	configPath, configPathErr := config.GetConfigPath()
+	if configPathErr != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Warning: unable to resolve config path: %v\n", configPathErr)
+	}
 
 	// Register built-in commands
 	helpCmd := command.NewHelpCommand(registry)

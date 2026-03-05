@@ -69,8 +69,17 @@ func execMockSetupJS() string {
         if (cmd === 'git') {
             // Detect push subcommand anywhere in argv (may have -C dir prefix).
             var isPush = false;
+            var isLsRemote = false;
+            var isDiffQuiet = false;
             for (var i = 1; i < argv.length; i++) {
                 if (argv[i] === 'push') { isPush = true; break; }
+                if (argv[i] === 'ls-remote') { isLsRemote = true; break; }
+                if (argv[i] === 'diff') {
+                    for (var d = i + 1; d < argv.length; d++) {
+                        if (argv[d] === '--quiet') { isDiffQuiet = true; break; }
+                    }
+                    break;
+                }
             }
             if (isPush) {
                 globalThis._execPushCount++;
@@ -81,6 +90,16 @@ func execMockSetupJS() string {
                 }
                 var r = globalThis._execResponses['git:push'];
                 return r || ok('');
+            }
+            if (isLsRemote) {
+                var r = globalThis._execResponses['git:ls-remote'];
+                // Default: branch exists (return a fake SHA).
+                return r || ok('abc123def456\trefs/heads/main');
+            }
+            if (isDiffQuiet) {
+                var r = globalThis._execResponses['git:diff:quiet'];
+                // Default: branches DIFFER (exit code 1 = has diff).
+                return r || fail('');
             }
             // Default git success.
             return ok('');
@@ -155,6 +174,8 @@ type createPREntry struct {
 	Error      *string `json:"error"`
 	AutoMerge  bool    `json:"autoMerge"`
 	MergeError *string `json:"mergeError"`
+	Skipped    bool    `json:"skipped"`
+	SkipReason string  `json:"skipReason"`
 }
 
 // ---------------------------------------------------------------------------
@@ -976,4 +997,134 @@ func containsArg(argv []string, target string) bool {
 		}
 	}
 	return false
+}
+
+// ---------------------------------------------------------------------------
+// T-B02: Base branch validation and empty diff detection
+// ---------------------------------------------------------------------------
+
+func TestCreatePRs_BaseBranchNotOnRemote(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(execMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Make ls-remote return empty (branch not found).
+	if _, err := evalJS(`globalThis._execResponses['git:ls-remote'] = _execOk('')`); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := testPlanJS("nonexistent-branch", ".")
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := parseCreatePRsResult(t, val)
+	if r.Error == nil {
+		t.Fatal("expected error about base branch not found on remote")
+	}
+	if !strings.Contains(*r.Error, "not found on remote") {
+		t.Errorf("error should mention 'not found on remote', got: %s", *r.Error)
+	}
+	if !strings.Contains(*r.Error, "nonexistent-branch") {
+		t.Errorf("error should mention branch name, got: %s", *r.Error)
+	}
+	if len(r.Results) != 0 {
+		t.Errorf("expected 0 results when base branch missing, got %d", len(r.Results))
+	}
+}
+
+func TestCreatePRs_BaseBranchCheckSkippedForPushOnly(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(execMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Make ls-remote fail — push-only should not care.
+	if _, err := evalJS(`globalThis._execResponses['git:ls-remote'] = _execFail('network error')`); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := testPlanJS("main", ".")
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `, {pushOnly: true}))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := parseCreatePRsResult(t, val)
+	if r.Error != nil {
+		t.Fatalf("push-only should skip base branch check: %s", *r.Error)
+	}
+}
+
+func TestCreatePRs_EmptyDiffSkipsPR(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(execMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Make diff --quiet for the first split return 0 (no diff).
+	// The mock by default returns fail('') for diff --quiet (has diff),
+	// so we override with ok('') (no diff) to simulate empty commit.
+	if _, err := evalJS(`
+		var diffCallCount = 0;
+		globalThis._execResponses['git:diff:quiet'] = null; // clear default
+		// Override the git handler to count diff calls and make first return 0.
+		var origExecv = require('osm:exec').execv;
+		var realExecv = origExecv;
+		// We need to wrap the mock, not the original.
+		// Instead, just set the response to ok to make ALL diffs return "no diff".
+		globalThis._execResponses['git:diff:quiet'] = _execOk('');
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := testPlanJS("main", ".")
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := parseCreatePRsResult(t, val)
+	if r.Error != nil {
+		t.Fatalf("unexpected top-level error: %s", *r.Error)
+	}
+
+	// Both PRs should be skipped since both have no diff.
+	for i, entry := range r.Results {
+		if !entry.Skipped {
+			t.Errorf("result[%d] %s: expected skipped=true (empty diff)", i, entry.Name)
+		}
+		if entry.SkipReason == "" {
+			t.Errorf("result[%d] %s: expected skipReason", i, entry.Name)
+		}
+		if entry.PrURL != "" {
+			t.Errorf("result[%d] %s: expected no PR URL for skipped split", i, entry.Name)
+		}
+	}
+
+	// No gh pr create calls should have been made.
+	ghPrCalls, err := evalJS(`globalThis._execCalls.filter(function(c) {
+		return c.argv[0] === 'gh' && c.argv.length >= 3 && c.argv[1] === 'pr' && c.argv[2] === 'create';
+	}).length`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := int64(0)
+	switch v := ghPrCalls.(type) {
+	case int64:
+		count = v
+	case float64:
+		count = int64(v)
+	}
+	if count != 0 {
+		t.Errorf("expected 0 gh pr create calls for empty diffs, got %d", count)
+	}
 }

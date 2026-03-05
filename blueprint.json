@@ -160,7 +160,7 @@
       "task": "B02: Fix gh pr create GraphQL error (No commits between base and head)",
       "description": "Investigate and fix 'gh pr create failed: GraphQL: Head sha can't be blank, Base sha can't be blank, No commits between main and branch' error. This needs to be a separate task from B01.",
       "acceptance": "PR creation process either succeeds gracefully or provides a clear, actionable error/warning without crashing due to GraphQL validation errors.",
-      "status": "Not Started"
+      "status": "Complete — Added pre-flight base branch validation (git ls-remote), empty diff detection (git diff --quiet) to skip PRs with no changes, and mock updates for test coverage. 3 new tests: BaseBranchNotOnRemote, BaseBranchCheckSkippedForPushOnly, EmptyDiffSkipsPR."
     },
     {
       "task": "R39-01: Linux container validation",

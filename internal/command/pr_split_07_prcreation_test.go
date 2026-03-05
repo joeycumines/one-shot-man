@@ -153,6 +153,8 @@ func TestChunk07_CreatePRs_StackingOrder(t *testing.T) {
 
 			globalThis.prSplit._gitExec = function(dir, args) {
 				if (args[0] === 'push') return { code: 0, stdout: '', stderr: '' };
+				if (args[0] === 'ls-remote') return { code: 0, stdout: 'abc123\trefs/heads/main', stderr: '' };
+				if (args[0] === 'diff' && args.indexOf('--quiet') >= 0) return { code: 1, stdout: '', stderr: '' };
 				return origGitExec(dir, args);
 			};
 			globalThis.prSplit._modules.exec.execv = function(args) {

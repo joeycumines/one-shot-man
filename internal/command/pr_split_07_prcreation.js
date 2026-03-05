@@ -44,6 +44,18 @@
             }
         }
 
+        // Pre-flight: verify baseBranch exists on the remote so we don't
+        // hit "Base sha can't be blank" from the GitHub GraphQL API.
+        if (!pushOnly) {
+            var remoteCheck = gitExec(dir, ['ls-remote', '--heads', remote, plan.baseBranch]);
+            if (remoteCheck.code !== 0 || remoteCheck.stdout.trim() === '') {
+                return {
+                    error: 'base branch "' + plan.baseBranch + '" not found on remote "' + remote + '" — push it first or check the branch name',
+                    results: []
+                };
+            }
+        }
+
         var results = [];
 
         // Step 1: Push all split branches.
@@ -96,6 +108,19 @@
             ];
             if (draft) {
                 ghArgs.push('--draft');
+            }
+
+            // Pre-check: verify the head branch has actual changes from
+            // the base. This avoids the GraphQL error "No commits between
+            // base and head" / "Head sha can't be blank" which occurs when
+            // execute-split fell back to --allow-empty.
+            var diffCheck = gitExec(dir, ['diff', '--quiet', base, prSplit2.name]);
+            if (diffCheck.code === 0) {
+                // Exit code 0 means no diff — skip PR creation.
+                results[pi].error = null;
+                results[pi].skipped = true;
+                results[pi].skipReason = 'no changes between "' + base + '" and "' + prSplit2.name + '" — skipping PR creation';
+                continue;
             }
 
             var ghResult = exec.execv(ghArgs);

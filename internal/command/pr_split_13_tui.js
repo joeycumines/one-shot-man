@@ -245,10 +245,10 @@
                     var file = args[0];
                     var fromIdx = parseInt(args[1], 10) - 1;
                     var toIdx = parseInt(args[2], 10) - 1;
-                    if (fromIdx < 0 || fromIdx >= st.planCache.splits.length) {
+                    if (isNaN(fromIdx) || fromIdx < 0 || fromIdx >= st.planCache.splits.length) {
                         output.print('Invalid from-index: ' + args[1]); return;
                     }
-                    if (toIdx < 0 || toIdx >= st.planCache.splits.length) {
+                    if (isNaN(toIdx) || toIdx < 0 || toIdx >= st.planCache.splits.length) {
                         output.print('Invalid to-index: ' + args[2]); return;
                     }
                     if (fromIdx === toIdx) { output.print('From and to are the same split.'); return; }
@@ -281,7 +281,7 @@
                     if (!st.planCache) { output.print('No plan \u2014 run "plan" first.'); return; }
                     if (!args || args.length < 2) { output.print('Usage: rename <split-index> <new-name>'); return; }
                     var idx = parseInt(args[0], 10) - 1;
-                    if (idx < 0 || idx >= st.planCache.splits.length) {
+                    if (isNaN(idx) || idx < 0 || idx >= st.planCache.splits.length) {
                         output.print('Invalid index: ' + args[0]); return;
                     }
                     var newName = args.slice(1).join('-');
@@ -302,8 +302,8 @@
                     if (!args || args.length < 2) { output.print('Usage: merge <split-index-a> <split-index-b>'); return; }
                     var idxA = parseInt(args[0], 10) - 1;
                     var idxB = parseInt(args[1], 10) - 1;
-                    if (idxA < 0 || idxA >= st.planCache.splits.length) { output.print('Invalid index A'); return; }
-                    if (idxB < 0 || idxB >= st.planCache.splits.length) { output.print('Invalid index B'); return; }
+                    if (isNaN(idxA) || idxA < 0 || idxA >= st.planCache.splits.length) { output.print('Invalid index A'); return; }
+                    if (isNaN(idxB) || idxB < 0 || idxB >= st.planCache.splits.length) { output.print('Invalid index B'); return; }
                     if (idxA === idxB) { output.print('Cannot merge a split with itself.'); return; }
                     var splitA = st.planCache.splits[idxA];
                     var splitB = st.planCache.splits[idxB];
@@ -324,8 +324,8 @@
                     if (!args || args.length < 2) { output.print('Usage: reorder <split-index> <new-position>'); return; }
                     var fromIdx = parseInt(args[0], 10) - 1;
                     var toIdx = parseInt(args[1], 10) - 1;
-                    if (fromIdx < 0 || fromIdx >= st.planCache.splits.length) { output.print('Invalid index'); return; }
-                    if (toIdx < 0 || toIdx >= st.planCache.splits.length) { output.print('Invalid position'); return; }
+                    if (isNaN(fromIdx) || fromIdx < 0 || fromIdx >= st.planCache.splits.length) { output.print('Invalid index'); return; }
+                    if (isNaN(toIdx) || toIdx < 0 || toIdx >= st.planCache.splits.length) { output.print('Invalid position'); return; }
                     if (fromIdx === toIdx) { output.print('Already at that position.'); return; }
                     var split = st.planCache.splits.splice(fromIdx, 1)[0];
                     st.planCache.splits.splice(toIdx, 0, split);

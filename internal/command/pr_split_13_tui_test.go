@@ -445,3 +445,70 @@ func TestChunk13_OnEnterPrintsConfig(t *testing.T) {
 		t.Errorf("onEnter output missing help hint, got: %v", prints)
 	}
 }
+
+// TestChunk13_ParseIntNaN verifies that commands with index arguments
+// (move, rename, merge, reorder) reject non-numeric input instead of
+// silently bypassing bounds checks. parseInt("abc", 10) returns NaN,
+// and NaN < 0 is false, so without an explicit isNaN guard the value
+// would pass through and cause undefined behavior downstream.
+func TestChunk13_ParseIntNaN(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	// Inject a minimal planCache with 2 splits so we get past the
+	// "No plan" guard and actually reach the parseInt code path.
+	_, err := evalJS(`
+		globalThis.prSplit._state.planCache = {
+			splits: [
+				{ name: 'split/01-alpha', order: 0, files: ['a.go'], message: 'alpha' },
+				{ name: 'split/02-beta',  order: 1, files: ['b.go'], message: 'beta'  }
+			]
+		};
+	`)
+	if err != nil {
+		t.Fatalf("failed to set planCache: %v", err)
+	}
+
+	cases := []struct {
+		cmd  string
+		args string // JSON array
+		want string // substring expected in output
+	}{
+		// move: fromIdx = parseInt("abc") → NaN
+		{"move", `['a.go', 'abc', '2']`, "Invalid from-index"},
+		// move: toIdx = parseInt("xyz") → NaN
+		{"move", `['a.go', '1', 'xyz']`, "Invalid to-index"},
+		// rename: idx = parseInt("abc") → NaN
+		{"rename", `['abc', 'new-name']`, "Invalid index"},
+		// merge: idxA = parseInt("abc") → NaN
+		{"merge", `['abc', '2']`, "Invalid index A"},
+		// merge: idxB = parseInt("abc") → NaN
+		{"merge", `['1', 'abc']`, "Invalid index B"},
+		// reorder: fromIdx = parseInt("abc") → NaN
+		{"reorder", `['abc', '2']`, "Invalid index"},
+		// reorder: toIdx = parseInt("abc") → NaN
+		{"reorder", `['1', 'abc']`, "Invalid position"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.cmd+"_"+tc.want, func(t *testing.T) {
+			script := `
+				globalThis._prints = [];
+				var cmds = globalThis.prSplit._buildCommands({});
+				cmds['` + tc.cmd + `'].handler(` + tc.args + `);
+				JSON.stringify(globalThis._prints);
+			`
+			raw, err := evalJS(script)
+			if err != nil {
+				t.Fatalf("handler threw: %v", err)
+			}
+			var prints []string
+			if err := json.Unmarshal([]byte(raw.(string)), &prints); err != nil {
+				t.Fatalf("failed to unmarshal prints: %v", err)
+			}
+			joined := strings.Join(prints, "\n")
+			if !strings.Contains(joined, tc.want) {
+				t.Errorf("expected output to contain %q, got: %s", tc.want, joined)
+			}
+		})
+	}
+}

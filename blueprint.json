@@ -217,6 +217,12 @@
       "status": "Complete — Entry-point clamp added. TestHandleResize_ClampZeroDimensions passes 3 cases. Rule of Two PASS×2."
     },
     {
+      "task": "R43: Fix parseInt NaN vulnerability in TUI commands",
+      "description": "7 parseInt calls in pr_split_13_tui.js (move, rename, merge, reorder) lack isNaN guards. NaN < 0 evaluates false, bypassing bounds checks and causing undefined behavior downstream. Add isNaN() to each bounds check.",
+      "acceptance": "TestChunk13_ParseIntNaN passes 7 subtests (move×2, rename×1, merge×2, reorder×2). All chunk13 tests pass.",
+      "status": "Complete — 7 isNaN() guards added. TestChunk13_ParseIntNaN passes 7 subtests. Rule of Two PASS×2."
+    },
+    {
       "task": "R41: Write chunk architecture ADR",
       "description": "Create docs/adr/001-pr-split-chunked-architecture.md with Context, Decision, Consequences, Alternatives.",
       "acceptance": "ADR exists with all sections. Referenced from docs/architecture.md.",

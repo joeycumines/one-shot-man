@@ -16,6 +16,8 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 	"github.com/joeycumines/one-shot-man/internal/termmux"
+
+	termmuxmod "github.com/joeycumines/one-shot-man/internal/builtin/termmux"
 )
 
 //go:embed pr_split_template.md
@@ -311,103 +313,12 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	// stdout is injected for testability; in production it's os.Stdout.
 	termFd := int(os.Stdin.Fd())
 	tuiMux := termmux.New(os.Stdin, stdout, termFd)
-	// attachChild is a helper that handles ErrAlreadyAttached by
-	// detaching first, then retrying the attach. This prevents panics
-	// when the JS handler calls attach without a prior detach.
-	attachChild := func(child io.ReadWriteCloser) error {
-		err := tuiMux.Attach(child)
-		if err != nil && errors.Is(err, termmux.ErrAlreadyAttached) {
-			if detachErr := tuiMux.Detach(); detachErr != nil {
-				return fmt.Errorf("tuiMux.detach before reattach: %w", detachErr)
-			}
-			err = tuiMux.Attach(child)
-		}
-		return err
-	}
 
-	engine.SetGlobal("tuiMux", map[string]interface{}{
-		"attach": func(handle interface{}) {
-			// Case 1: Direct Go StringIO interface (non-Goja callers, tests).
-			if sio, ok := handle.(termmux.StringIO); ok {
-				if err := attachChild(termmux.WrapStringIO(sio)); err != nil {
-					panic(err.Error())
-				}
-				return
-			}
-			// Case 2: Goja-wrapped AgentHandle — exported as map[string]interface{}.
-			// wrapAgentHandle stores the original Go handle as _goHandle.
-			if m, ok := handle.(map[string]interface{}); ok {
-				if goHandle, exists := m["_goHandle"]; exists && goHandle != nil {
-					if sio, ok := goHandle.(termmux.StringIO); ok {
-						if err := attachChild(termmux.WrapStringIO(sio)); err != nil {
-							panic(err.Error())
-						}
-						return
-					}
-					// AgentHandle satisfies StringIO structurally — try io.ReadWriteCloser.
-					if rwc, ok := goHandle.(io.ReadWriteCloser); ok {
-						if err := attachChild(rwc); err != nil {
-							panic(err.Error())
-						}
-						return
-					}
-				}
-			}
-			panic("tuiMux.attach: argument must implement Send/Receive/Close (or be a wrapped AgentHandle with _goHandle)")
-		},
-		"detach": func() {
-			if err := tuiMux.Detach(); err != nil {
-				// Detach returns nil when no child is attached (idempotent).
-				// Only panic on real errors like ErrPassthroughActive.
-				panic(err.Error())
-			}
-		},
-		"switchToClaude": func() map[string]interface{} {
-			reason, err := tuiMux.RunPassthrough(ctx)
-			result := map[string]interface{}{
-				"reason": reason.String(),
-			}
-			if err != nil {
-				result["error"] = err.Error()
-			}
-			// When the child process exits, capture its last output for
-			// diagnostics. This surfaces error messages (e.g., "unknown flag",
-			// "API key not found") that would otherwise be lost.
-			if reason == termmux.ExitChildExit {
-				if output := tuiMux.ChildExitOutput(); output != "" {
-					result["childOutput"] = output
-				}
-			}
-			return result
-		},
-		"isClaudeActive": func() bool {
-			return tuiMux.ActiveSide() == termmux.SideClaude
-		},
-		"setStatus": func(status string) {
-			tuiMux.SetClaudeStatus(status)
-		},
-		"setToggleKey": func(key int) {
-			tuiMux.SetToggleKey(byte(key))
-		},
-		"setStatusEnabled": func(enabled bool) {
-			tuiMux.SetStatusEnabled(enabled)
-		},
-		"setResizeFunc": func(fn func(rows, cols int)) {
-			tuiMux.SetResizeFunc(func(rows, cols uint16) error {
-				fn(int(rows), int(cols))
-				return nil
-			})
-		},
-		// screenshot returns the current VTerm buffer content as plain
-		// text (ANSI-stripped). This provides a "terminal screenshot"
-		// for integration tests to verify output sanity — the returned
-		// text is suitable for string assertions and ANSI-garbage
-		// detection. Returns "" if no child is attached or no VTerm
-		// is allocated. Goroutine-safe (VTerm uses internal mutex).
-		"screenshot": func() string {
-			return tuiMux.ChildExitOutput()
-		},
-	})
+	// Expose the mux to JS through the standardized osm:termmux interface.
+	// This replaces the previous hand-crafted map[string]interface{} with
+	// the module's WrapMux, ensuring JS sees the same API as
+	// require('osm:termmux').newMux() would produce.
+	engine.SetGlobal("tuiMux", termmuxmod.WrapMux(ctx, engine.Runtime(), tuiMux))
 
 	// Auto-split progress TUI — pipeline visualisation for automated splits.
 	// The model is created here and exposed to JS; the JS automatedSplit()

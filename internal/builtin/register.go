@@ -34,6 +34,7 @@ import (
 	pathmod "github.com/joeycumines/one-shot-man/internal/builtin/path"
 	regexpmod "github.com/joeycumines/one-shot-man/internal/builtin/regexp"
 	templatemod "github.com/joeycumines/one-shot-man/internal/builtin/template"
+	termmuxmod "github.com/joeycumines/one-shot-man/internal/builtin/termmux"
 	scrollbarmod "github.com/joeycumines/one-shot-man/internal/builtin/termui/scrollbar"
 	timemod "github.com/joeycumines/one-shot-man/internal/builtin/time"
 	unicodetextmod "github.com/joeycumines/one-shot-man/internal/builtin/unicodetext"
@@ -170,6 +171,15 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 
 	// Register termui/scrollbar module for thin vertical scrollbars
 	registry.RegisterNativeModule(prefix+"termui/scrollbar", scrollbarmod.Require())
+
+	// Register termmux module for terminal multiplexer JS bindings
+	var muxInput io.Reader
+	var muxOutput io.Writer
+	if terminalProvider != nil {
+		muxInput = terminalProvider.GetTerminalReader()
+		muxOutput = terminalProvider.GetTerminalWriter()
+	}
+	registry.RegisterNativeModule(prefix+"termmux", termmuxmod.Require(ctx, muxInput, muxOutput))
 
 	return RegisterResult{
 		BubbleteaManager:  bubbleteaMgr,

@@ -567,3 +567,523 @@ func TestModule_FromModel_OnToggle_NoChild(t *testing.T) {
 		t.Errorf("expected 'undefined' when no child, got %q", v.String())
 	}
 }
+
+// --- T10: Expanded unit tests for termmux facade ---
+
+// resolveChild success paths
+
+func TestResolveChild_StringIO(t *testing.T) {
+	sio := &mockStringIO{}
+	rwc, err := resolveChild(sio)
+	if err != nil {
+		t.Fatalf("resolveChild(StringIO): %v", err)
+	}
+	if rwc == nil {
+		t.Fatal("expected non-nil ReadWriteCloser")
+	}
+	// Verify we can write through it (goes to StringIO.Send)
+	n, err := rwc.Write([]byte("hello"))
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if n != 5 {
+		t.Errorf("Write n=%d, want 5", n)
+	}
+	if sio.lastSent != "hello" {
+		t.Errorf("Send got %q, want %q", sio.lastSent, "hello")
+	}
+}
+
+func TestResolveChild_MapWithGoHandle_StringIO(t *testing.T) {
+	sio := &mockStringIO{}
+	m := map[string]interface{}{
+		"_goHandle": sio,
+	}
+	rwc, err := resolveChild(m)
+	if err != nil {
+		t.Fatalf("resolveChild(map+StringIO): %v", err)
+	}
+	if rwc == nil {
+		t.Fatal("expected non-nil ReadWriteCloser")
+	}
+}
+
+func TestResolveChild_MapWithGoHandle_RWC(t *testing.T) {
+	mrwc := &mockRWC{}
+	m := map[string]interface{}{
+		"_goHandle": mrwc,
+	}
+	rwc, err := resolveChild(m)
+	if err != nil {
+		t.Fatalf("resolveChild(map+RWC): %v", err)
+	}
+	if rwc != mrwc {
+		t.Error("expected resolveChild to return the RWC directly")
+	}
+}
+
+func TestResolveChild_DirectRWC(t *testing.T) {
+	mrwc := &mockRWC{}
+	rwc, err := resolveChild(mrwc)
+	if err != nil {
+		t.Fatalf("resolveChild(RWC): %v", err)
+	}
+	if rwc != mrwc {
+		t.Error("expected resolveChild to return the RWC directly")
+	}
+}
+
+func TestResolveChild_MapWithNilGoHandle(t *testing.T) {
+	m := map[string]interface{}{
+		"_goHandle": nil,
+	}
+	_, err := resolveChild(m)
+	if err == nil {
+		t.Fatal("expected error for nil _goHandle")
+	}
+}
+
+func TestResolveChild_MapWithInvalidGoHandle(t *testing.T) {
+	m := map[string]interface{}{
+		"_goHandle": "not a handle",
+	}
+	_, err := resolveChild(m)
+	if err == nil {
+		t.Fatal("expected error for invalid _goHandle type")
+	}
+}
+
+func TestResolveChild_MapWithoutGoHandle(t *testing.T) {
+	m := map[string]interface{}{
+		"other": "field",
+	}
+	_, err := resolveChild(m)
+	if err == nil {
+		t.Fatal("expected error for map without _goHandle")
+	}
+}
+
+// attachWithRetry tests
+
+func TestAttachWithRetry_SuccessFirstTry(t *testing.T) {
+	// Create a mux and a mock child, attach should succeed
+	mux := parent.New(nil, nil, -1)
+	mrwc := &mockRWC{}
+	err := attachWithRetry(mux, mrwc)
+	if err != nil {
+		t.Fatalf("attachWithRetry first try: %v", err)
+	}
+	if !mux.HasChild() {
+		t.Error("expected HasChild() == true after attach")
+	}
+}
+
+func TestAttachWithRetry_RetryOnAlreadyAttached(t *testing.T) {
+	// Attach a child, then try to attach another — should detach first child, attach second.
+	// Note: Detach() disconnects without calling Close(); the caller manages cleanup.
+	mux := parent.New(nil, nil, -1)
+	first := &mockRWC{}
+	if err := mux.Attach(first); err != nil {
+		t.Fatalf("initial attach: %v", err)
+	}
+	second := &mockRWC{}
+	err := attachWithRetry(mux, second)
+	if err != nil {
+		t.Fatalf("attachWithRetry retry: %v", err)
+	}
+	if !mux.HasChild() {
+		t.Error("expected HasChild() == true after retry-attach")
+	}
+}
+
+// setStatus, setToggleKey, setStatusEnabled smoke tests
+
+func TestModule_SetStatus(t *testing.T) {
+	runtime, _ := testRequire(t)
+
+	_, err := runtime.RunString(`
+		var m = require('osm:termmux').newMux();
+		m.setStatus('Building branch 3/5...');
+		m.setStatus('');
+		m.setStatus('Done ✓');
+	`)
+	if err != nil {
+		t.Fatalf("setStatus: %v", err)
+	}
+}
+
+func TestModule_SetToggleKey(t *testing.T) {
+	runtime, _ := testRequire(t)
+
+	_, err := runtime.RunString(`
+		var m = require('osm:termmux').newMux();
+		m.setToggleKey(0x1C);
+		m.setToggleKey(29);
+	`)
+	if err != nil {
+		t.Fatalf("setToggleKey: %v", err)
+	}
+}
+
+func TestModule_SetStatusEnabled(t *testing.T) {
+	runtime, _ := testRequire(t)
+
+	_, err := runtime.RunString(`
+		var m = require('osm:termmux').newMux();
+		m.setStatusEnabled(false);
+		m.setStatusEnabled(true);
+	`)
+	if err != nil {
+		t.Fatalf("setStatusEnabled: %v", err)
+	}
+}
+
+// setResizeFunc → event queue → pollEvents roundtrip
+
+func TestModule_SetResizeFunc_PollEvents(t *testing.T) {
+	runtime, _ := testRequire(t)
+
+	v, err := runtime.RunString(`
+		var m = require('osm:termmux').newMux();
+		var resizes = [];
+		m.setResizeFunc(function(rows, cols) {
+			resizes.push({rows: rows, cols: cols});
+		});
+		// Register listener for resize events
+		var resizeEvents = [];
+		m.on('resize', function(data) {
+			resizeEvents.push({rows: data.rows, cols: data.cols});
+		});
+		// pollEvents returns 0 with no pending events
+		var before = m.pollEvents();
+		JSON.stringify({before: before, resizes: resizes.length, events: resizeEvents.length});
+	`)
+	if err != nil {
+		t.Fatalf("setResizeFunc: %v", err)
+	}
+	got := v.String()
+	want := `{"before":0,"resizes":0,"events":0}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// on() with actual event emission (via internal emit)
+
+func TestMuxEvents_EmitToJSCallback(t *testing.T) {
+	runtime := goja.New()
+	events := newMuxEvents()
+
+	// Register a JS callback via on()
+	called := false
+	var receivedData map[string]interface{}
+	callback := func(fc goja.FunctionCall) goja.Value {
+		called = true
+		if len(fc.Arguments) > 0 {
+			receivedData, _ = fc.Arguments[0].Export().(map[string]interface{})
+		}
+		return goja.Undefined()
+	}
+	fn, ok := goja.AssertFunction(runtime.ToValue(callback))
+	if !ok {
+		t.Fatal("failed to create callable")
+	}
+
+	events.on("focus", fn)
+	events.emit(runtime, "focus", map[string]interface{}{"side": "claude"})
+
+	if !called {
+		t.Error("callback not called")
+	}
+	if receivedData["side"] != "claude" {
+		t.Errorf("side = %v, want claude", receivedData["side"])
+	}
+}
+
+func TestMuxEvents_QueueDrainToCallback(t *testing.T) {
+	runtime := goja.New()
+	events := newMuxEvents()
+
+	calls := 0
+	callback := func(fc goja.FunctionCall) goja.Value {
+		calls++
+		return goja.Undefined()
+	}
+	fn, _ := goja.AssertFunction(runtime.ToValue(callback))
+	events.on("resize", fn)
+
+	// Queue 3 resize events from a "non-JS goroutine"
+	events.queue("resize", map[string]interface{}{"rows": 24, "cols": 80})
+	events.queue("resize", map[string]interface{}{"rows": 25, "cols": 100})
+	events.queue("resize", map[string]interface{}{"rows": 30, "cols": 120})
+
+	// Drain — should deliver all 3
+	count := events.drain(runtime)
+	if count != 3 {
+		t.Errorf("drain count = %d, want 3", count)
+	}
+	if calls != 3 {
+		t.Errorf("callback called %d times, want 3", calls)
+	}
+}
+
+func TestMuxEvents_MultipleListenersSameEvent(t *testing.T) {
+	runtime := goja.New()
+	events := newMuxEvents()
+
+	calls1, calls2 := 0, 0
+	fn1, _ := goja.AssertFunction(runtime.ToValue(func(goja.FunctionCall) goja.Value {
+		calls1++
+		return goja.Undefined()
+	}))
+	fn2, _ := goja.AssertFunction(runtime.ToValue(func(goja.FunctionCall) goja.Value {
+		calls2++
+		return goja.Undefined()
+	}))
+
+	events.on("exit", fn1)
+	events.on("exit", fn2)
+
+	events.emit(runtime, "exit", map[string]interface{}{"reason": "toggle"})
+
+	if calls1 != 1 || calls2 != 1 {
+		t.Errorf("calls = (%d, %d), want (1, 1)", calls1, calls2)
+	}
+}
+
+func TestMuxEvents_OffRemovesOnlyTarget(t *testing.T) {
+	runtime := goja.New()
+	events := newMuxEvents()
+
+	calls1, calls2 := 0, 0
+	fn1, _ := goja.AssertFunction(runtime.ToValue(func(goja.FunctionCall) goja.Value {
+		calls1++
+		return goja.Undefined()
+	}))
+	fn2, _ := goja.AssertFunction(runtime.ToValue(func(goja.FunctionCall) goja.Value {
+		calls2++
+		return goja.Undefined()
+	}))
+
+	id1 := events.on("exit", fn1)
+	events.on("exit", fn2)
+
+	// Remove first, emit — only second should fire
+	events.off(id1)
+	events.emit(runtime, "exit", map[string]interface{}{"reason": "toggle"})
+
+	if calls1 != 0 {
+		t.Errorf("removed listener called %d times", calls1)
+	}
+	if calls2 != 1 {
+		t.Errorf("remaining listener called %d times, want 1", calls2)
+	}
+}
+
+// Concurrent event system tests
+
+func TestMuxEvents_ConcurrentOnOff(t *testing.T) {
+	runtime := goja.New()
+	events := newMuxEvents()
+
+	fn, _ := goja.AssertFunction(runtime.ToValue(func(goja.FunctionCall) goja.Value {
+		return goja.Undefined()
+	}))
+
+	// Register and remove many listeners concurrently
+	// Note: on() and off() use sync.Mutex — safe across goroutines.
+	// But emit/drain MUST only be called from the JS goroutine.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 100; i++ {
+			id := events.on("resize", fn)
+			events.off(id)
+		}
+	}()
+
+	// Concurrently add/remove from main goroutine
+	for i := 0; i < 100; i++ {
+		id := events.on("resize", fn)
+		events.off(id)
+	}
+	<-done
+}
+
+func TestMuxEvents_ConcurrentQueue(t *testing.T) {
+	events := newMuxEvents()
+
+	// Queue events from multiple goroutines (queue is thread-safe via channel)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 50; i++ {
+			events.queue("resize", map[string]interface{}{"rows": i})
+		}
+	}()
+	for i := 0; i < 50; i++ {
+		events.queue("focus", map[string]interface{}{"side": "osm"})
+	}
+	<-done
+
+	// Drain from JS goroutine
+	runtime := goja.New()
+	calls := 0
+	fn, _ := goja.AssertFunction(runtime.ToValue(func(goja.FunctionCall) goja.Value {
+		calls++
+		return goja.Undefined()
+	}))
+	events.on("resize", fn)
+	events.on("focus", fn)
+
+	count := events.drain(runtime)
+	// At least some events should be delivered (exact count depends on ordering)
+	if count == 0 {
+		t.Error("expected at least some events from concurrent queuing")
+	}
+	if count > 100 {
+		t.Errorf("count %d exceeds expected max 100", count)
+	}
+}
+
+// attach via JS (with exports from Go)
+
+func TestModule_Attach_Detach_HasChild(t *testing.T) {
+	// We need to inject a Go RWC into the JS runtime, then call attach()
+	runtime, _ := testRequire(t)
+	mrwc := &mockRWC{}
+
+	// Set the mock handle as a global so JS can use it
+	_ = runtime.Set("__testHandle", mrwc)
+
+	v, err := runtime.RunString(`
+		var m = require('osm:termmux').newMux();
+		var before = m.hasChild();
+		m.attach(__testHandle);
+		var after = m.hasChild();
+		m.detach();
+		var detached = m.hasChild();
+		JSON.stringify({before: before, after: after, detached: detached});
+	`)
+	if err != nil {
+		t.Fatalf("attach/detach: %v", err)
+	}
+	got := v.String()
+	want := `{"before":false,"after":true,"detached":false}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+	// Note: Detach() disconnects without calling Close(); caller manages cleanup.
+}
+
+func TestModule_Attach_MissingArg(t *testing.T) {
+	runtime, _ := testRequire(t)
+
+	v, err := runtime.RunString(`
+		var m = require('osm:termmux').newMux();
+		try { m.attach(); 'no error'; } catch(e) { e.message || 'error'; }
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	if v.String() == "no error" {
+		t.Error("expected error for missing argument")
+	}
+}
+
+func TestModule_Attach_InvalidType(t *testing.T) {
+	runtime, _ := testRequire(t)
+
+	v, err := runtime.RunString(`
+		var m = require('osm:termmux').newMux();
+		try { m.attach("not a handle"); 'no error'; } catch(e) { e.message || 'error'; }
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	if v.String() == "no error" {
+		t.Error("expected error for string argument")
+	}
+}
+
+func TestModule_Attach_RetryOnAlreadyAttached(t *testing.T) {
+	runtime, _ := testRequire(t)
+	first := &mockRWC{}
+	second := &mockRWC{}
+
+	_ = runtime.Set("__first", first)
+	_ = runtime.Set("__second", second)
+
+	v, err := runtime.RunString(`
+		var m = require('osm:termmux').newMux();
+		m.attach(__first);
+		var before = m.hasChild();
+		m.attach(__second);
+		var after = m.hasChild();
+		JSON.stringify({before: before, after: after});
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	got := v.String()
+	want := `{"before":true,"after":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+	// Note: Detach() disconnects without calling Close(); caller manages cleanup.
+}
+
+// ActiveSide changes after switchTo context
+
+func TestModule_ActiveSide_InitialState(t *testing.T) {
+	runtime, _ := testRequire(t)
+
+	v, err := runtime.RunString(`
+		var m = require('osm:termmux').newMux();
+		m.activeSide();
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	if v.String() != "osm" {
+		t.Errorf("activeSide = %q, want osm", v.String())
+	}
+}
+
+// Screenshot with no child content
+
+func TestModule_Screenshot_NoChild(t *testing.T) {
+	runtime, _ := testRequire(t)
+
+	v, err := runtime.RunString(`
+		var m = require('osm:termmux').newMux();
+		m.screenshot();
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	if v.String() != "" {
+		t.Errorf("screenshot = %q, want empty", v.String())
+	}
+}
+
+// --- T10: Mock types ---
+
+// mockStringIO satisfies parent.StringIO for resolveChild tests.
+type mockStringIO struct {
+	lastSent string
+	closed   bool
+}
+
+func (m *mockStringIO) Send(input string) error { m.lastSent = input; return nil }
+func (m *mockStringIO) Receive() (string, error) { return "", fmt.Errorf("eof") }
+func (m *mockStringIO) Close() error             { m.closed = true; return nil }
+
+// mockRWC satisfies io.ReadWriteCloser for resolveChild/attach tests.
+type mockRWC struct {
+	closed bool
+}
+
+func (m *mockRWC) Read(p []byte) (int, error)  { return 0, fmt.Errorf("eof") }
+func (m *mockRWC) Write(p []byte) (int, error) { return len(p), nil }
+func (m *mockRWC) Close() error                { m.closed = true; return nil }

@@ -3,17 +3,20 @@
 ## Session Start
 - **Timestamp**: 2026-03-05 03:16:49 (tracked in scratch/.session-start)
 - **Mandate**: 9 hours of continuous improvement
-- **Elapsed**: ~20h (context window 11 of session)
+- **Elapsed**: ~21h (context window 12 of session)
 
-## Current Phase: R28 COMPLETE — Rule of Two verification pending
+## Current Phase: R28.5 underflow guard — Rule of Two pending
 
-### What R28 Changed
-1. **termmux.go**: Added `resizeFn` call in second-swap `else` branch of `RunPassthrough()` (~line 449). When toggling back to child PTY, always nudge it with the current terminal dimensions.
-2. **termmux_test.go**: 
-   - Added `TestMux_ResizeDuringHiddenState` (new test proving the fix)
-   - Fixed pre-existing data races in `TestBellPropagation_BackgroundPane` and `TestBellPropagation_MultipleBells` (close childW before reading stdout)
-   - Updated `TestRunPassthrough_SecondSwapDoesNotClear` to assert resize DOES happen on second swap
-3. **config.mk**: Added `test-termmux` target
+### What R28.5 Changed
+1. **termmux.go**: Added `if childH < 1 { childH = 1 }` clamp to BOTH first-swap and second-swap inline resize calls in `RunPassthrough()`. Matches existing guard in `handleResize()`. Prevents underflow when terminal shrinks below statusBarLines after setup.
+2. **termmux_test.go**: Added `TestMux_ResizeClampsTinyTerminal` — starts at 80×24 with status bar, shrinks to height=1 mid-session, asserts second swap delivers clamped rows=1 instead of 0.
+
+### Commits on wip branch (most recent → oldest)
+- 5b361eb: R28.1-R28.4 (resize-during-hidden-state fix, bell race fixes)
+- 592ea41: BP-01 + R41 + R42 (ADR, git-ignored files, blueprint meta)
+- e2580ac: B02 fix (PR creation guards)
+- 22703a0: B01 fix (ANSI → lipgloss styles)
+- c9210c6: B00 fix (git state mutation, 5-layer dir fix)
 
 ### Completed This Session
 1. G01: Commit verified test fixes
@@ -28,9 +31,10 @@
 10. B01: Fix ANSI escape codes — commit 22703a0
 11. B02: Fix gh pr create GraphQL error — commit e2580ac
 12. BP-01+R41+R42: ADR, git-ignored files, blueprint meta — commit 592ea41
-13. R28.1-R28.4: Termmux resize-during-hidden-state fix — pending commit
+13. R28.1-R28.4: Termmux resize fix — commit 5b361eb
+14. R28.5: Inline resize underflow guard — code done, test passing, awaiting commit
 
-### Next Steps (after R28 commit)
-- Rule of Two: Lint + full test suite verification → commit
-- W00-W14: Wizard UI improvements
+### Next Steps
+- Rule of Two for R28.5 → commit
+- W00-W14: Wizard UI improvements (17 tasks)
 - Continue scanning for more refinements

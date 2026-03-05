@@ -423,7 +423,11 @@ func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 		// dimensions (accounting for status bar).
 		if resizeFn != nil && m.termFd >= 0 {
 			if w, h, err := m.termState.GetSize(m.termFd); err == nil {
-				_ = resizeFn(uint16(h-statusBarLines), uint16(w))
+				childH := h - statusBarLines
+				if childH < 1 {
+					childH = 1
+				}
+				_ = resizeFn(uint16(childH), uint16(w))
 			}
 		}
 	} else {
@@ -454,7 +458,11 @@ func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 		// the child PTY retains stale row/col values.
 		if resizeFn != nil && m.termFd >= 0 {
 			if w, h, err := m.termState.GetSize(m.termFd); err == nil {
-				_ = resizeFn(uint16(h-statusBarLines), uint16(w))
+				childH := h - statusBarLines
+				if childH < 1 {
+					childH = 1
+				}
+				_ = resizeFn(uint16(childH), uint16(w))
 			}
 		}
 	}

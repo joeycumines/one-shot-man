@@ -205,6 +205,12 @@
       "status": "Complete — make test-termmux: ALL 37 termmux tests pass, 0 data races, 0 failures. Subpackages (pty, ptyio, statusbar, vt) all green. Awaiting Rule of Two full-suite verification."
     },
     {
+      "task": "R28.5: Add defensive underflow guard to inline resize calls",
+      "description": "Both first-swap and second-swap branches in RunPassthrough computed h-statusBarLines without clamping. If terminal shrinks while OSM TUI is active, statusBarLines (captured at setup) stays 1 but h could drop to 1, making childH = 0. Added if childH < 1 { childH = 1 } to both branches, matching handleResize pattern. Test TestMux_ResizeClampsTinyTerminal validates: start at 24 rows with status, shrink to 1 row mid-session, assert clamped to 1.",
+      "acceptance": "TestMux_ResizeClampsTinyTerminal passes. Both swap branches have underflow guard. make test-termmux passes.",
+      "status": "In Progress — Code fix applied. Test written and passing. Awaiting Rule of Two."
+    },
+    {
       "task": "R41: Write chunk architecture ADR",
       "description": "Create docs/adr/001-pr-split-chunked-architecture.md with Context, Decision, Consequences, Alternatives.",
       "acceptance": "ADR exists with all sections. Referenced from docs/architecture.md.",

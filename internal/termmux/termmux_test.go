@@ -1286,3 +1286,73 @@ func TestMux_ResizeDuringHiddenState(t *testing.T) {
 		t.Fatal("teeLoop did not exit in time")
 	}
 }
+
+// TestMux_ResizeClampsTinyTerminal verifies that when the terminal shrinks so
+// small that h <= statusBarLines, the resize function receives childRows=1
+// (clamped) instead of a zero or wrapped-negative value. This can happen when
+// statusBarLines was captured as 1 during RunPassthrough setup, and then the
+// terminal height shrinks to 1 before a swap boundary.
+func TestMux_ResizeClampsTinyTerminal(t *testing.T) {
+	// Start at 80×24 so the status bar activates (needs h > 1).
+	ts := newMockTermState(80, 24)
+	bg := &mockBlockingGuard{}
+	m, _, stdinW, child := newTestMux(t, ts, bg)
+	m.cfg.StatusEnabled = true
+
+	var mu sync.Mutex
+	var lastRows uint16
+	var resizeCount int
+	m.SetResizeFunc(func(rows, cols uint16) error {
+		mu.Lock()
+		lastRows = rows
+		resizeCount++
+		mu.Unlock()
+		return nil
+	})
+
+	// ── First swap: assert normal 23 rows (24 - 1 status bar) ──────
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		stdinW.Write([]byte{DefaultToggleKey})
+	}()
+	reason, err := m.RunPassthrough(context.Background())
+	if reason != ExitToggle || err != nil {
+		t.Fatalf("first cycle: got (%v, %v); want (ExitToggle, nil)", reason, err)
+	}
+
+	mu.Lock()
+	firstRows := lastRows
+	mu.Unlock()
+	if firstRows != 23 {
+		t.Errorf("first swap: ResizeFn rows = %d; want 23", firstRows)
+	}
+
+	// ── Shrink terminal to 1 row while OSM TUI is active ───────────
+	// statusBarLines was captured as 1, so now h - statusBarLines = 0
+	// without the clamp guard.
+	ts.mu.Lock()
+	ts.height = 1
+	ts.mu.Unlock()
+
+	// ── Second swap: should clamp to 1 ─────────────────────────────
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		stdinW.Write([]byte{DefaultToggleKey})
+	}()
+	reason, err = m.RunPassthrough(context.Background())
+	if reason != ExitToggle || err != nil {
+		t.Fatalf("second cycle: got (%v, %v); want (ExitToggle, nil)", reason, err)
+	}
+
+	mu.Lock()
+	secondRows := lastRows
+	mu.Unlock()
+	if secondRows != 1 {
+		t.Errorf("second swap: ResizeFn rows = %d; want 1 (clamped)", secondRows)
+	}
+
+	child.Close()
+	if !waitTimeout(m.teeDone, 5*time.Second) {
+		t.Fatal("teeLoop did not exit in time")
+	}
+}

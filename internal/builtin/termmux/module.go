@@ -10,11 +10,126 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 
 	"github.com/dop251/goja"
 
 	parent "github.com/joeycumines/one-shot-man/internal/termmux"
 )
+
+// Event name constants exposed to JS.
+const (
+	EventExit   = "exit"
+	EventResize = "resize"
+	EventFocus  = "focus"
+	EventBell   = "bell"
+	EventOutput = "output"
+)
+
+// validEvents is the set of event names accepted by on().
+var validEvents = map[string]bool{
+	EventExit:   true,
+	EventResize: true,
+	EventFocus:  true,
+	EventBell:   true,
+	EventOutput: true,
+}
+
+// eventListener is a single registered JS callback for an event type.
+type eventListener struct {
+	event    string
+	callback goja.Callable
+}
+
+// pendingEvent is an event queued from a non-JS goroutine for later delivery.
+type pendingEvent struct {
+	event string
+	data  map[string]interface{}
+}
+
+// muxEvents manages per-mux event listeners and an async event queue.
+type muxEvents struct {
+	mu        sync.Mutex
+	listeners map[int]*eventListener
+	nextID    int
+
+	// pending buffers events from non-JS goroutines (e.g., resize via SIGWINCH).
+	// Drained by pollEvents() on the JS goroutine.
+	pending chan pendingEvent
+}
+
+// newMuxEvents creates the event system with a buffered pending channel.
+func newMuxEvents() *muxEvents {
+	return &muxEvents{
+		listeners: make(map[int]*eventListener),
+		pending:   make(chan pendingEvent, 64),
+	}
+}
+
+// on registers a listener for the given event. Returns a unique ID.
+func (e *muxEvents) on(event string, callback goja.Callable) int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.nextID++
+	id := e.nextID
+	e.listeners[id] = &eventListener{event: event, callback: callback}
+	return id
+}
+
+// off removes a listener by ID. Returns true if it existed.
+func (e *muxEvents) off(id int) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	_, ok := e.listeners[id]
+	delete(e.listeners, id)
+	return ok
+}
+
+// emit delivers an event synchronously to all matching listeners.
+// MUST be called on the JS goroutine (Goja runtime is not thread-safe).
+func (e *muxEvents) emit(runtime *goja.Runtime, event string, data map[string]interface{}) {
+	e.mu.Lock()
+	// Snapshot listeners under lock, then release before invoking.
+	type snap struct {
+		id int
+		cb goja.Callable
+	}
+	var targets []snap
+	for id, l := range e.listeners {
+		if l.event == event {
+			targets = append(targets, snap{id, l.callback})
+		}
+	}
+	e.mu.Unlock()
+
+	for _, t := range targets {
+		_, _ = t.cb(goja.Undefined(), runtime.ToValue(data))
+	}
+}
+
+// queue enqueues an event for later delivery via pollEvents(). Thread-safe.
+// If the channel is full, the event is dropped (non-blocking).
+func (e *muxEvents) queue(event string, data map[string]interface{}) {
+	select {
+	case e.pending <- pendingEvent{event: event, data: data}:
+	default:
+		// Drop event rather than block a non-JS goroutine.
+	}
+}
+
+// drain delivers all pending async events. MUST be called on the JS goroutine.
+func (e *muxEvents) drain(runtime *goja.Runtime) int {
+	count := 0
+	for {
+		select {
+		case ev := <-e.pending:
+			e.emit(runtime, ev.event, ev.data)
+			count++
+		default:
+			return count
+		}
+	}
+}
 
 // Require returns a module loader for "osm:termmux" that exposes the terminal
 // multiplexer to JavaScript. The input/output parameters are optional; when nil
@@ -31,6 +146,13 @@ func Require(ctx context.Context, input io.Reader, output io.Writer) func(*goja.
 		_ = exports.Set("SIDE_OSM", "osm")
 		_ = exports.Set("SIDE_CLAUDE", "claude")
 		_ = exports.Set("DEFAULT_TOGGLE_KEY", int(parent.DefaultToggleKey))
+
+		// ── Event name constants ─────────────────────────────
+		_ = exports.Set("EVENT_EXIT", EventExit)
+		_ = exports.Set("EVENT_RESIZE", EventResize)
+		_ = exports.Set("EVENT_FOCUS", EventFocus)
+		_ = exports.Set("EVENT_BELL", EventBell)
+		_ = exports.Set("EVENT_OUTPUT", EventOutput)
 
 		// ── Constructor ──────────────────────────────────────
 		_ = exports.Set("newMux", func(call goja.FunctionCall) goja.Value {
@@ -85,6 +207,7 @@ func newMux(ctx context.Context, runtime *goja.Runtime, input io.Reader, output 
 // expose it to JS through the same standardized interface that newMux() provides.
 func WrapMux(ctx context.Context, runtime *goja.Runtime, mux *parent.Mux) goja.Value {
 	obj := runtime.NewObject()
+	events := newMuxEvents()
 
 	// ── attach(handle) ───────────────────────────────────
 	// Accepts AgentHandle (map with _goHandle), StringIO, or io.ReadWriteCloser.
@@ -119,7 +242,13 @@ func WrapMux(ctx context.Context, runtime *goja.Runtime, mux *parent.Mux) goja.V
 
 	// ── switchTo() → { reason, error?, childOutput? } ────
 	// BLOCKING: enters raw passthrough mode, returns when user toggles or child exits.
+	// Emits "focus" event on entry (side: "claude") and exit (side: "osm").
+	// Emits "exit" event with the passthrough result.
+	// Drains pending async events before returning.
 	_ = obj.Set("switchTo", func() map[string]interface{} {
+		// Focus → claude before entering passthrough.
+		events.emit(runtime, EventFocus, map[string]interface{}{"side": "claude"})
+
 		reason, err := mux.RunPassthrough(ctx)
 		result := map[string]interface{}{
 			"reason": exitReasonString(reason),
@@ -132,6 +261,16 @@ func WrapMux(ctx context.Context, runtime *goja.Runtime, mux *parent.Mux) goja.V
 				result["childOutput"] = output
 			}
 		}
+
+		// Focus → osm after exiting passthrough.
+		events.emit(runtime, EventFocus, map[string]interface{}{"side": "osm"})
+
+		// Emit exit event with the passthrough result.
+		events.emit(runtime, EventExit, result)
+
+		// Drain any async events that accumulated during passthrough.
+		events.drain(runtime)
+
 		return result
 	})
 
@@ -159,9 +298,16 @@ func WrapMux(ctx context.Context, runtime *goja.Runtime, mux *parent.Mux) goja.V
 	})
 
 	// ── setResizeFunc(fn) ────────────────────────────────
+	// Installs user resize handler AND queues "resize" events for listeners.
+	// The underlying resize callback runs on the SIGWINCH goroutine, so we
+	// queue events rather than emitting synchronously.
 	_ = obj.Set("setResizeFunc", func(fn func(int, int)) {
 		mux.SetResizeFunc(func(rows, cols uint16) error {
 			fn(int(rows), int(cols))
+			events.queue(EventResize, map[string]interface{}{
+				"rows": int(rows),
+				"cols": int(cols),
+			})
 			return nil
 		})
 	})
@@ -170,6 +316,40 @@ func WrapMux(ctx context.Context, runtime *goja.Runtime, mux *parent.Mux) goja.V
 	// Returns plain-text VTerm buffer content for diagnostics/test assertions.
 	_ = obj.Set("screenshot", func() string {
 		return mux.ChildExitOutput()
+	})
+
+	// ── on(event, callback) → id ─────────────────────────
+	// Registers a listener for an event type. Returns a numeric ID for off().
+	// Supported events: exit, resize, focus, bell, output.
+	// Note: "bell" and "output" events require parent termmux changes to fire.
+	_ = obj.Set("on", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(runtime.NewTypeError("on: requires (event, callback)"))
+		}
+		event := call.Argument(0).String()
+		if !validEvents[event] {
+			panic(runtime.NewTypeError(fmt.Sprintf("on: unknown event %q", event)))
+		}
+		callback, ok := goja.AssertFunction(call.Argument(1))
+		if !ok {
+			panic(runtime.NewTypeError("on: callback must be a function"))
+		}
+		id := events.on(event, callback)
+		return runtime.ToValue(id)
+	})
+
+	// ── off(id) → boolean ────────────────────────────────
+	// Removes a previously registered listener. Returns true if it existed.
+	_ = obj.Set("off", func(id int) bool {
+		return events.off(id)
+	})
+
+	// ── pollEvents() → number ────────────────────────────
+	// Drains pending async events (resize, bell, output) and delivers them to
+	// registered listeners. Returns the count of events delivered. Call this
+	// periodically from JS to receive events from non-JS goroutines.
+	_ = obj.Set("pollEvents", func() int {
+		return events.drain(runtime)
 	})
 
 	return obj

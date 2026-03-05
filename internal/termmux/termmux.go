@@ -448,6 +448,15 @@ func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 			m.statusBar.Render()
 			m.mu.Unlock()
 		}
+		// Nudge the child with a resize so it redraws at the correct
+		// dimensions. The terminal may have been resized while the
+		// OSM TUI was active (passthrough hidden). Without this call
+		// the child PTY retains stale row/col values.
+		if resizeFn != nil && m.termFd >= 0 {
+			if w, h, err := m.termState.GetSize(m.termFd); err == nil {
+				_ = resizeFn(uint16(h-statusBarLines), uint16(w))
+			}
+		}
 	}
 
 	// ── T119: SIGWINCH resize watcher ──────────────────────────────

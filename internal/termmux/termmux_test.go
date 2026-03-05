@@ -586,19 +586,35 @@ func TestRunPassthrough_SecondSwapDoesNotClear(t *testing.T) {
 	m.RunPassthrough(context.Background())
 
 	stdout.Reset()
+
+	var mu sync.Mutex
+	var resizeRows, resizeCols uint16
 	m.SetResizeFunc(func(rows, cols uint16) error {
-		t.Error("resizeFn should NOT be called on second swap")
+		mu.Lock()
+		resizeRows = rows
+		resizeCols = cols
+		mu.Unlock()
 		return nil
 	})
 
-	// Second swap.
+	// Second swap — should NOT clear screen but SHOULD resize.
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		stdinW.Write([]byte{DefaultToggleKey})
 	}()
 	m.RunPassthrough(context.Background())
 
-	// ResizeFn was not called (verified by the t.Error above).
+	// Verify: no screen clear on second swap (flicker-free restore).
+	if strings.Contains(stdout.String(), "\x1b[2J") {
+		t.Error("second swap should not emit ESC[2J clear screen")
+	}
+	// Verify: resizeFn IS called on second swap to sync PTY dimensions.
+	mu.Lock()
+	if resizeRows != 24 || resizeCols != 80 {
+		t.Errorf("resizeFn on second swap: got %dx%d; want 24x80", resizeRows, resizeCols)
+	}
+	mu.Unlock()
+
 	child.Close()
 	<-m.teeDone
 }
@@ -1117,16 +1133,17 @@ func TestBellPropagation_BackgroundPane(t *testing.T) {
 
 	// Passthrough is NOT active by default. Child sends BEL.
 	childW.Write([]byte("Hello\x07World"))
-	time.Sleep(150 * time.Millisecond) // let teeLoop + VTerm process
+
+	// Close child and wait for teeLoop to finish to avoid data race
+	// on stdout.Bytes().
+	childW.Close()
+	<-m.teeDone
 
 	// BEL should have been propagated to stdout.
 	gotBytes := stdout.Bytes()
 	if !bytes.Contains(gotBytes, []byte{0x07}) {
 		t.Errorf("stdout should contain BEL; got %q", gotBytes)
 	}
-
-	childW.Close()
-	<-m.teeDone
 }
 
 func TestBellPropagation_PassthroughActive(t *testing.T) {
@@ -1179,16 +1196,93 @@ func TestBellPropagation_MultipleBells(t *testing.T) {
 		t.Fatalf("Attach error: %v", err)
 	}
 
-	// Send 3 BELs
+	// Send 3 BELs, then close child and wait for teeLoop to finish
+	// to avoid data race on stdout.Bytes().
 	childW.Write([]byte("\x07\x07\x07"))
-	time.Sleep(150 * time.Millisecond)
+	childW.Close()
+	<-m.teeDone
 
 	gotBytes := stdout.Bytes()
 	bellCount := bytes.Count(gotBytes, []byte{0x07})
 	if bellCount != 3 {
 		t.Errorf("expected 3 BELs; got %d", bellCount)
 	}
+}
 
-	childW.Close()
-	<-m.teeDone
+// ── R28.2: Replicate resize-during-hidden-state bug ────────────────
+// When the user toggles back to OSM TUI and resizes the terminal,
+// then toggles back to Claude, the child PTY should be resized to
+// the new dimensions. Before the fix, only the first swap called
+// ResizeFn; subsequent swaps restored VTerm but skipped the resize.
+
+func TestMux_ResizeDuringHiddenState(t *testing.T) {
+	ts := newMockTermState(80, 24)
+	bg := &mockBlockingGuard{}
+	m, _, stdinW, child := newTestMux(t, ts, bg)
+	m.cfg.StatusEnabled = false // simplify: no status bar
+
+	var mu sync.Mutex
+	var lastRows, lastCols uint16
+	var resizeCount int
+	m.SetResizeFunc(func(rows, cols uint16) error {
+		mu.Lock()
+		lastRows = rows
+		lastCols = cols
+		resizeCount++
+		mu.Unlock()
+		return nil
+	})
+
+	// ── First cycle: toggle ON → toggle OFF ────────────────────────
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		stdinW.Write([]byte{DefaultToggleKey})
+	}()
+	reason, err := m.RunPassthrough(context.Background())
+	if reason != ExitToggle || err != nil {
+		t.Fatalf("first cycle: got (%v, %v); want (ExitToggle, nil)", reason, err)
+	}
+
+	// First swap should have called ResizeFn with 80×24.
+	mu.Lock()
+	if lastRows != 24 || lastCols != 80 {
+		t.Errorf("first swap resize = %dx%d; want 24x80", lastRows, lastCols)
+	}
+	firstResizeCount := resizeCount
+	mu.Unlock()
+
+	// ── Simulate terminal resize while in OSM TUI (hidden state) ───
+	ts.mu.Lock()
+	ts.width = 120
+	ts.height = 40
+	ts.mu.Unlock()
+
+	// ── Second cycle: toggle ON → should resize PTY → toggle OFF ───
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		stdinW.Write([]byte{DefaultToggleKey})
+	}()
+	reason, err = m.RunPassthrough(context.Background())
+	if reason != ExitToggle || err != nil {
+		t.Fatalf("second cycle: got (%v, %v); want (ExitToggle, nil)", reason, err)
+	}
+
+	// The second swap should have called ResizeFn with new dimensions.
+	mu.Lock()
+	gotRows := lastRows
+	gotCols := lastCols
+	gotCount := resizeCount
+	mu.Unlock()
+
+	if gotRows != 40 || gotCols != 120 {
+		t.Errorf("second swap resize = %dx%d; want 40x120", gotRows, gotCols)
+	}
+	if gotCount <= firstResizeCount {
+		t.Errorf("ResizeFn call count = %d; want > %d (second swap should trigger resize)", gotCount, firstResizeCount)
+	}
+
+	child.Close()
+	if !waitTimeout(m.teeDone, 5*time.Second) {
+		t.Fatal("teeLoop did not exit in time")
+	}
 }

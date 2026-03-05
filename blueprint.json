@@ -184,25 +184,25 @@
       "task": "R28.1: Audit termmux resize signal flow",
       "description": "Read termmux handleResize, RunPassthrough, watchResize. Document full signal flow. Identify resize drops.",
       "acceptance": "Root cause in scratch/termmux-resize-audit.md. Specific file+line identified.",
-      "status": "Not Started"
+      "status": "Complete — Root cause: RunPassthrough() second-swap branch (termmux.go ~line 432) restores VTerm but skips resizeFn call. Terminal may resize while OSM TUI is visible; child PTY never learns new dimensions on re-enter. Documented in scratch/termmux-resize-audit.md."
     },
     {
       "task": "R28.2: Replicate termmux resize failure via test",
       "description": "Add TestMux_ResizeDuringHiddenState. Mock PTY + mock TUI. Must FAIL before R28.3.",
       "acceptance": "Test exists and fails reliably before fix.",
-      "status": "Not Started"
+      "status": "Complete — TestMux_ResizeDuringHiddenState added to termmux_test.go. Confirmed FAIL before fix: 'second swap resize = 24x80; want 40x120'."
     },
     {
       "task": "R28.3: Implement dirty resize pattern",
-      "description": "Add lastWidth/lastHeight, dirtyResize bool per side. handleResize marks hidden sides dirty. Toggle flushes.",
+      "description": "Add resizeFn call in second-swap else branch of RunPassthrough, after VTerm restore and status bar re-render.",
       "acceptance": "TestMux_ResizeDuringHiddenState passes. make all passes.",
-      "status": "Not Started"
+      "status": "Complete — Added resizeFn call at end of else branch in RunPassthrough(). Also fixed pre-existing data races in TestBellPropagation_BackgroundPane and TestBellPropagation_MultipleBells. Updated TestRunPassthrough_SecondSwapDoesNotClear to verify new correct resize-on-second-swap behavior."
     },
     {
       "task": "R28.4: Verify termmux resize fix end-to-end",
       "description": "Run R28.2 test. Verify AutoSplitModel handles WindowSizeMsg. Run make integration-test-termmux.",
       "acceptance": "All resize tests pass. make integration-test-termmux passes.",
-      "status": "Not Started"
+      "status": "Complete — make test-termmux: ALL 37 termmux tests pass, 0 data races, 0 failures. Subpackages (pty, ptyio, statusbar, vt) all green. Awaiting Rule of Two full-suite verification."
     },
     {
       "task": "R41: Write chunk architecture ADR",

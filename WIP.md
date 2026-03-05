@@ -3,9 +3,17 @@
 ## Session Start
 - **Timestamp**: 2026-03-05 03:16:49 (tracked in scratch/.session-start)
 - **Mandate**: 9 hours of continuous improvement
-- **Elapsed**: ~18h (context window 9 of session)
+- **Elapsed**: ~20h (context window 11 of session)
 
-## Current Phase: B02 COMPLETE — Committing, continuing to next tasks
+## Current Phase: R28 COMPLETE — Rule of Two verification pending
+
+### What R28 Changed
+1. **termmux.go**: Added `resizeFn` call in second-swap `else` branch of `RunPassthrough()` (~line 449). When toggling back to child PTY, always nudge it with the current terminal dimensions.
+2. **termmux_test.go**: 
+   - Added `TestMux_ResizeDuringHiddenState` (new test proving the fix)
+   - Fixed pre-existing data races in `TestBellPropagation_BackgroundPane` and `TestBellPropagation_MultipleBells` (close childW before reading stdout)
+   - Updated `TestRunPassthrough_SecondSwapDoesNotClear` to assert resize DOES happen on second swap
+3. **config.mk**: Added `test-termmux` target
 
 ### Completed This Session
 1. G01: Commit verified test fixes
@@ -16,29 +24,13 @@
 6. R29/R30/R31-01/02/03: Documentation updates
 7. R00a: Git state isolation verification
 8. R39-01/02: Cross-platform validation (Linux + Windows)
-9. B00: Fix test git state mutation — commit c9210c6 (Rule of Two PASSED)
-10. B01: Fix ANSI escape codes — commit 22703a0 (Rule of Two PASSED)
-11. B02: Fix gh pr create GraphQL error — pre-flight checks + empty diff skip
+9. B00: Fix test git state mutation — commit c9210c6
+10. B01: Fix ANSI escape codes — commit 22703a0
+11. B02: Fix gh pr create GraphQL error — commit e2580ac
+12. BP-01+R41+R42: ADR, git-ignored files, blueprint meta — commit 592ea41
+13. R28.1-R28.4: Termmux resize-during-hidden-state fix — pending commit
 
-### B01 Fix Summary
-**Root Cause:** `renderColorizedDiff()` in pr_split_11_utilities.js
-hardcoded raw ANSI escape codes (`\x1b[32m`, `\x1b[31m`, etc.) bypassing
-lipgloss entirely. This caused literal escape sequences when terminal mode
-wasn't what the codes expected.
-
-**Fix:**
-1. Added 5 diff styles to `prSplit._style` in pr_split_00_core.js:
-   diffAdd (#22c55e green), diffRemove (#ef4444 red), diffHunk (#06b6d4 cyan),
-   diffMeta (bold), diffContext (#6b7280 gray)
-2. Plain-text fallbacks return input unchanged (no-lip mode)
-3. Updated renderColorizedDiff() to use `style.*` instead of hardcoded ANSI
-4. Updated tests to check content preservation, not specific ANSI codes
-
-**Files changed:** pr_split_00_core.js, pr_split_11_utilities.js,
-pr_split_bt_test.go, pr_split_00_core_test.go, pr_split_11_utilities_test.go
-
-### Next Steps
-- Commit B01
-- B02: Fix gh pr create GraphQL error (No commits between base and head)
-- Continue with blueprint tasks
-- Continue blueprint tasks (R28.1-R28.4, R41, R42, BP-01, W00-W14)
+### Next Steps (after R28 commit)
+- Rule of Two: Lint + full test suite verification → commit
+- W00-W14: Wizard UI improvements
+- Continue scanning for more refinements

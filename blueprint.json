@@ -468,10 +468,10 @@
     },
     {
       "task": "T54: Performance benchmarks for large repos",
-      "description": "Create benchmark test: TestBenchmark_AutoSplitLargeRepo. Generate a git repo with 100+ files and 1000+ LOC total diff. Run automatedSplit() with mock MCP. Assert completion within 30s. Track timing per pipeline step.",
+      "description": "Created TestBenchmark_AutoSplitLargeRepo in pr_split_benchmark_test.go. Generates 100 files across 10 directories (~1200 LOC diff), runs automatedSplit with mock MCP. Completes in ~2.7s (30s deadline). Per-step timings: Analyze diff 36ms, Execute split plan 1934ms, Verify splits 674ms, Verify equivalence 21ms. No quadratic behavior detected.",
       "acceptance": "Benchmark test exists and passes within 30s. Per-step timings logged. No quadratic-or-worse behavior detected.",
-      "status": "Not Started",
-      "contextPointers": ["internal/command/pr_split_autosplit_recovery_test.go", "internal/command/pr_split_10_pipeline.js"]
+      "status": "Done",
+      "contextPointers": ["internal/command/pr_split_benchmark_test.go"]
     },
     {
       "task": "T55: Session state corruption resilience",

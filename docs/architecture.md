@@ -95,6 +95,16 @@ Creation sequence:
 
 Source: [internal/scripting/engine_core.go](../internal/scripting/engine_core.go)
 
+### Pipeline Cancellation
+
+Cooperative cancellation for long-running pipelines (e.g., `pr-split`) uses
+`prSplit._cancelSource` — a callback registered by TUI command handlers. Pipeline
+functions poll `prSplit.isCancelled()` / `isPaused()` / `isForceCancelled()` to
+detect user-requested abort. The wizard state machine transitions to `CANCELLED`
+or `FORCE_CANCEL`, which the callback reports back to the pipeline. See
+`pr_split_00_core.js` for the polling mechanism and `pr_split_13_tui.js` for how
+the cancel source is wired.
+
 ### EngineOption
 
 Currently one option: `WithModulePaths(paths...)` configures additional module search paths for bare `require('mylib')` resolution (similar to `NODE_PATH`). Configured via `script.module-paths` in the config file.

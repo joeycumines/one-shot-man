@@ -454,9 +454,9 @@
     },
     {
       "task": "T52: Final documentation sweep",
-      "description": "Review ALL docs/ files for accuracy: README.md, architecture.md, scripting.md, configuration.md, session.md, shell-completion.md, security.md, and all reference docs. Fix any stale references, broken links, outdated code examples.",
+      "description": "Audited all docs/ files. Found 7 issues (2 CRITICAL, 3 MEDIUM, 2 LOW). Fixed: (1) mux-architecture.md — updated SideOsm description from BubbleTea to JS wizard, removed deleted autosplit.go/planeditor.go from package structure, added NOTE about T27 removal. (2) todo.md — updated 3 stale gpt-oss:20b-cloud model references to minimax-m2.5:cloud. (3) architecture-pr-split-chunks.md — added cross-reference to ADR 001 addendum. (4) architecture.md — added Pipeline Cancellation section documenting _cancelSource mechanism. (5) Verified zero stale references to autoSplitTUI, planEditorFactory, socat, or deleted Go file names (except in historical 'was removed' context).",
       "acceptance": "All docs current and accurate. No stale references. All code examples work.",
-      "status": "Not Started",
+      "status": "Done",
       "contextPointers": ["docs/"]
     },
     {

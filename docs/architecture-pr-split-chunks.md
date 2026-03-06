@@ -79,6 +79,8 @@ The TUI is implemented entirely in JavaScript via `pr_split_13_tui.js`, which us
 the `osm:termmux` module for pane management, visibility, events, and BubbleTea
 integration. The Go BubbleTea TUI (`AutoSplitModel`, `PlanEditor`) was removed in
 T27 — all wizard state management now lives in the JS wizard state machine.
+See [ADR 001 Addendum](adr/001-pr-split-chunked-architecture.md) for the
+architectural decision details.
 
 ---
 

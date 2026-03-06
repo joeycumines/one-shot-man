@@ -6,7 +6,8 @@
 
 The terminal multiplexer (`Mux`) manages switching between two views of a terminal session:
 
-1. **SideOsm** — osm's BubbleTea TUI (auto-split planner, progress display)
+1. **SideOsm** — osm's interactive wizard UI (JavaScript-driven via `pr_split_13_tui.js`,
+   using `osm:termmux` module for pane management)
 2. **SideClaude** — direct passthrough to a child PTY (e.g., Claude Code)
 
 The user toggles between views with a configurable key (default: `Ctrl+]`). The multiplexer captures the child's terminal output in a virtual terminal buffer (VTerm) so the screen can be faithfully restored when toggling back.
@@ -29,10 +30,14 @@ internal/termmux/
 │   └── reader.go       # BufferedReader: async PTY read loop → channel
 ├── statusbar/          # Status bar rendering
 │   └── statusbar.go    # StatusBar: ANSI status line on bottom row
-└── ui/                 # BubbleTea UI models
-    ├── autosplit.go     # AutoSplitModel: orchestrates split workflow
-    ├── splitview.go     # SplitView: side-by-side terminal panes
-    └── planeditor.go    # PlanEditor: checkbox list editor
+├── sgrmouse.go         # SGR mouse protocol parser for status bar clicks
+├── pty/                # PTY integration tests
+│   └── pty_test.go     # RunPassthrough integration tests
+#
+# NOTE: Go BubbleTea TUI models (AutoSplitModel, PlanEditor) were removed in T27.
+# All wizard state management now lives in the JavaScript wizard state machine
+# (pr_split_13_tui.js), which uses the osm:termmux module for pane management.
+# See ADR 001 addendum for details.
 ```
 
 ## Component Diagram
@@ -50,8 +55,8 @@ internal/termmux/
 │           │           │           │              │
 │     ┌─────▼─────┐  ┌─▼───────┐   │              │
 │     │  SideOsm  │  │ Side    │   │              │
-│     │ (BubbleTea│  │ Claude  │   │              │
-│     │  UI: ui/) │  │ (Pass   │   │              │
+│     │ (JS Wizard│  │ Claude  │   │              │
+│     │  via TUI) │  │ (Pass   │   │              │
 │     └───────────┘  │ through)│   │              │
 │                     └───┬─────┘   │              │
 │                         │         │              │

@@ -273,7 +273,7 @@ Why splitting matters for LLMs:
 **Ollama Integration**:
 - Command: `ollama launch claude --config`
 - Must navigate through ollama's TUI menu
-- Select model (e.g., `gpt-oss:20b-cloud`)
+- Select model (e.g., `minimax-m2.5:cloud`)
 - Get to the common "entrypoint" (Claude Code TUI)
 - Model selection happens before Claude Code launches
 
@@ -323,12 +323,12 @@ This specific flow must be testable in isolation.
 - **Provider-specific configuration**: Each provider may have specific config requirements
 
 **User's Original Testing Requirements**:
-> "Write up a full on task like: For testing purposes of this ([specific mechanism to end up with a running claude command] -> Prompt that instructs on the task and response mechanism via MCP back to the wrapping osm process) it will be necessary to implement a special-case `TestMain` with CLI flags and environment variables (the latter for secrets, CLI flags to specify options) to configure provider(s) to test against (disabled by default). Individual providers may have specific configuration. For testing purposes, specify the requirement to use that `ollama launch claude --config` command, and to navigate through the menu to select `gpt-oss:20b-cloud`, and whatever else is necessary to get it to the common 'entrypoint'."
+> "Write up a full on task like: For testing purposes of this ([specific mechanism to end up with a running claude command] -> Prompt that instructs on the task and response mechanism via MCP back to the wrapping osm process) it will be necessary to implement a special-case `TestMain` with CLI flags and environment variables (the latter for secrets, CLI flags to specify options) to configure provider(s) to test against (disabled by default). Individual providers may have specific configuration. For testing purposes, specify the requirement to use that `ollama launch claude --config` command, and to navigate through the menu to select `minimax-m2.5:cloud`, and whatever else is necessary to get it to the common 'entrypoint'."
 
 **Example: Ollama Testing**
 ```bash
 # Test with ollama provider
-go test -v -run TestClaudeIntegration -provider=ollama -model=gpt-oss:20b-cloud
+go test -v -run TestClaudeIntegration -provider=ollama -model=minimax-m2.5:cloud
 
 # Special handling required:
 # - Navigate through ollama's TUI menu

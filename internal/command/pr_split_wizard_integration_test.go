@@ -24,7 +24,7 @@ import (
 //   - Full automatedSplit pipeline (chunks 01-10) with mock MCP injection
 //   - Wizard state transitions through to DONE
 func TestIntegration_WizardBaselineRetry(t *testing.T) {
-	t.Parallel()
+	// NOT parallel — uses chdirTestPipeline (os.Chdir is process-global).
 	if testing.Short() {
 		t.Skip("integration test")
 	}
@@ -171,7 +171,7 @@ func TestIntegration_WizardBaselineRetry(t *testing.T) {
 // This exercises the handler functions calling real chunk functions
 // (executeSplit from chunk 05, verifyEquivalence from chunk 06).
 func TestIntegration_WizardHandlerChain_PlanReject(t *testing.T) {
-	t.Parallel()
+	// NOT parallel — uses chdirTestPipeline (os.Chdir is process-global).
 	if testing.Short() {
 		t.Skip("integration test")
 	}
@@ -411,7 +411,7 @@ func TestIntegration_WizardHandlerChain_PlanReject(t *testing.T) {
 //
 // Uses a verifyCommand that fails for branches containing a specific file.
 func TestIntegration_WizardHandlerChain_BranchFailSkip(t *testing.T) {
-	t.Parallel()
+	// NOT parallel — uses chdirTestPipeline (os.Chdir is process-global).
 	if testing.Short() {
 		t.Skip("integration test")
 	}

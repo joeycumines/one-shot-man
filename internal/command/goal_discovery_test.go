@@ -16,7 +16,7 @@ import (
 )
 
 func TestGoalDiscovery_DiscoverGoalPaths(t *testing.T) {
-	t.Parallel()
+	// NOT parallel — subtests use os.Chdir (process-global).
 
 	t.Run("default configuration", func(t *testing.T) {
 		t.Parallel()

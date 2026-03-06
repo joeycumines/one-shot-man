@@ -512,7 +512,7 @@
       "task": "T60: Add direct symlink attack test for config loading",
       "description": "Config loading tests intermediate directory symlinks (config_test.go:505+) but not direct file symlinks. Create config path as direct symlink to /etc/passwd or temp file, verify LoadFromPath() rejects with error containing 'symlink'. Current code uses Lstat at config.go:145 — this test confirms end-to-end rejection.",
       "acceptance": "TestLoadFromPath_DirectSymlink_Rejected creates direct symlink, asserts rejection. TestLoadFromPath_DirectSymlink_ToSensitiveFile uses /etc/passwd target. Both PASS. make all GREEN.",
-      "status": "Not Started",
+      "status": "Done",
       "contextPointers": ["internal/config/config.go:130-159", "internal/config/config_test.go:505-535"]
     },
     {

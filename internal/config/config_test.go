@@ -534,6 +534,55 @@ func TestConfigFilePathResolutionEdgeCases(t *testing.T) {
 		}
 	})
 
+	// T60: Direct symlink attack tests — verify LoadFromPath() rejects
+	// config files that are themselves symlinks (not just intermediary dirs).
+	t.Run("DirectSymlink_Rejected", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+
+		// Create a real config file, then a symlink pointing to it.
+		realFile := filepath.Join(dir, "real-config")
+		if err := os.WriteFile(realFile, []byte("test secret"), 0600); err != nil {
+			t.Fatalf("write real config: %v", err)
+		}
+		symlinkPath := filepath.Join(dir, "symlinked-config")
+		if err := os.Symlink(realFile, symlinkPath); err != nil {
+			t.Skip("symlinks not supported on this platform")
+		}
+
+		_, err := LoadFromPath(symlinkPath)
+		if err == nil {
+			t.Fatal("expected error for direct symlink config, got nil")
+		}
+		if !strings.Contains(err.Error(), "symlink") {
+			t.Fatalf("expected error to mention 'symlink', got: %v", err)
+		}
+	})
+
+	t.Run("DirectSymlink_ToSensitiveFile", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+
+		// Symlink pointing to /etc/passwd (or any existing file).
+		// LoadFromPath must reject before opening.
+		target := "/etc/passwd"
+		if _, err := os.Stat(target); err != nil {
+			t.Skip("target file not available on this platform")
+		}
+		symlinkPath := filepath.Join(dir, "evil-config")
+		if err := os.Symlink(target, symlinkPath); err != nil {
+			t.Skip("symlinks not supported on this platform")
+		}
+
+		_, err := LoadFromPath(symlinkPath)
+		if err == nil {
+			t.Fatal("expected error for symlink to sensitive file, got nil")
+		}
+		if !strings.Contains(err.Error(), "symlink") {
+			t.Fatalf("expected error to mention 'symlink', got: %v", err)
+		}
+	})
+
 	t.Run("PathWithSpecialCharacters", func(t *testing.T) {
 		dir := t.TempDir()
 		// Note: Some characters may not be allowed in filenames on some platforms

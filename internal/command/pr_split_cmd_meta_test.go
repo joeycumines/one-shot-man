@@ -163,8 +163,8 @@ func TestPrSplitCommand_FlagDefaults(t *testing.T) {
 	if cmd.branchPrefix != "split/" {
 		t.Errorf("Expected default branchPrefix 'split/', got: %s", cmd.branchPrefix)
 	}
-	if cmd.verifyCommand != "make" {
-		t.Errorf("Expected default verifyCommand 'make', got: %s", cmd.verifyCommand)
+	if cmd.verifyCommand != "" {
+		t.Errorf("Expected default verifyCommand '' (empty=auto-detect), got: %s", cmd.verifyCommand)
 	}
 	if cmd.dryRun {
 		t.Error("Expected default dryRun to be false")

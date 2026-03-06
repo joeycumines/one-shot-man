@@ -135,7 +135,9 @@ func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID,
 	// Get current working directory for context manager
 	workingDir, err := os.Getwd()
 	if err != nil {
-		workingDir = "."
+		// Fallback to temp dir when CWD is unavailable (can happen in
+		// containers or when parallel tests delete their working directory).
+		workingDir = os.TempDir()
 	}
 
 	contextManager, err := NewContextManager(workingDir)

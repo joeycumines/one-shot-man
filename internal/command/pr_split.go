@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -348,7 +349,8 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 }
 
 // parseClaudeEnv parses a comma-separated KEY=VALUE string into a map.
-// Empty keys are silently dropped. Whitespace around pairs is trimmed.
+// Malformed entries (empty key, no '=') are logged as warnings and skipped.
+// Whitespace around pairs is trimmed.
 func parseClaudeEnv(raw string) map[string]string {
 	m := map[string]string{}
 	if raw == "" {
@@ -356,9 +358,19 @@ func parseClaudeEnv(raw string) map[string]string {
 	}
 	for _, pair := range strings.Split(raw, ",") {
 		pair = strings.TrimSpace(pair)
-		if k, v, ok := strings.Cut(pair, "="); ok && k != "" {
-			m[k] = v
+		if pair == "" {
+			continue
 		}
+		k, v, ok := strings.Cut(pair, "=")
+		if !ok {
+			slog.Warn("parseClaudeEnv: entry has no '=' delimiter, skipping", "entry", pair)
+			continue
+		}
+		if k == "" {
+			slog.Warn("parseClaudeEnv: entry has empty key, skipping", "entry", pair)
+			continue
+		}
+		m[k] = v
 	}
 	return m
 }

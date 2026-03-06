@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"flag"
+	"log/slog"
 	"strconv"
 	"strings"
 	"testing"
@@ -466,6 +467,49 @@ func TestParseClaudeEnv(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T59: parseClaudeEnv malformed-input warning logging
+// ---------------------------------------------------------------------------
+
+func TestParseClaudeEnv_MalformedInput(t *testing.T) {
+	// NOT parallel — mutates global slog default.
+	var buf strings.Builder
+	oldDefault := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(oldDefault) })
+
+	// Input contains all malformed variants the acceptance criteria require:
+	//   KEY=       → valid (empty value), no warning
+	//   =VALUE     → empty key → warn
+	//   ONLY_KEY   → no '=' sign → warn
+	//   ,,VALID=ok → empty pairs (skip silently) + valid pair
+	got := parseClaudeEnv("KEY=,=VALUE,ONLY_KEY,,VALID=ok")
+
+	// Valid entries must still parse.
+	if v, ok := got["KEY"]; !ok || v != "" {
+		t.Errorf("KEY: got %q (ok=%v), want \"\" (ok=true)", v, ok)
+	}
+	if v, ok := got["VALID"]; !ok || v != "ok" {
+		t.Errorf("VALID: got %q (ok=%v), want \"ok\" (ok=true)", v, ok)
+	}
+	if len(got) != 2 {
+		t.Errorf("expected 2 entries, got %d: %v", len(got), got)
+	}
+
+	// Assert warnings logged for malformed entries.
+	logged := buf.String()
+	if !strings.Contains(logged, "ONLY_KEY") {
+		t.Errorf("expected warning about ONLY_KEY, log:\n%s", logged)
+	}
+	if !strings.Contains(logged, "=VALUE") {
+		t.Errorf("expected warning about =VALUE, log:\n%s", logged)
+	}
+	// Verify warning-level messages were emitted (not info/debug).
+	if !strings.Contains(logged, "level=WARN") {
+		t.Errorf("expected WARN-level log entries, log:\n%s", logged)
 	}
 }
 

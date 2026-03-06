@@ -505,7 +505,7 @@
       "task": "T59: Add input validation to parseClaudeEnv",
       "description": "parseClaudeEnv() at pr_split.go:352-362 silently drops invalid KEY=VALUE pairs. If user provides 'API_KEY=,TIMEOUT=' (empty values/missing keys), invalid entries vanish without warning. Add warning logs for malformed entries.",
       "acceptance": "Entries with empty keys log warnings. TestParseClaudeEnv_MalformedInput covers: 'KEY=', '=VALUE', 'ONLY_KEY', ',,VALID=ok'. Malformed entries detected and reported; valid entries still parsed. make all GREEN.",
-      "status": "Not Started",
+      "status": "Done",
       "contextPointers": ["internal/command/pr_split.go:352-362", "internal/command/pr_split_cmd_meta_test.go:393"]
     },
     {

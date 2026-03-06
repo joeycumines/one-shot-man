@@ -33,7 +33,7 @@
                 }
                 var status = gitExec(dir, ['status', '--porcelain', 'go.mod', 'go.sum']);
                 if (status.stdout.trim() === '') {
-                    return { fixed: false, error: 'go mod tidy made no changes' };
+                    return { fixed: false, error: 'go mod tidy succeeded but made no changes to go.mod/go.sum — strategy not applicable for this failure' };
                 }
                 var addRes = gitExec(dir, ['add', 'go.mod', 'go.sum']);
                 if (addRes.code !== 0) {
@@ -66,7 +66,7 @@
                 }
                 var status = gitExec(dir, ['status', '--porcelain', 'go.sum']);
                 if (status.stdout.trim() === '') {
-                    return { fixed: false, error: 'go mod download made no changes' };
+                    return { fixed: false, error: 'go mod download succeeded but made no changes to go.sum — strategy not applicable for this failure' };
                 }
                 var addRes = gitExec(dir, ['add', 'go.sum']);
                 if (addRes.code !== 0) {
@@ -276,7 +276,7 @@
                     checkIntervalMs: pollIntervalMs
                 });
                 if (resolutionPoll.error) {
-                    return { fixed: false, error: 'Claude resolution timeout: ' + resolutionPoll.error };
+                    return { fixed: false, error: 'Claude resolution timed out waiting for reportResolution tool call: ' + resolutionPoll.error + ' — check Claude process logs for errors' };
                 }
                 var resolution = resolutionPoll.data;
                 var resVal = validateResolution(resolution);
@@ -288,13 +288,15 @@
                     for (var p = 0; p < resolution.patches.length; p++) {
                         var patch = resolution.patches[p];
                         if (osmod) {
-                            osmod.writeFile(patch.file, patch.content);
+                            // Write to the worktree directory (dir), not the CWD.
+                            osmod.writeFile(dir + '/' + patch.file, patch.content);
                         }
                     }
                 }
                 if (resolution.commands && resolution.commands.length > 0) {
                     for (var c = 0; c < resolution.commands.length; c++) {
-                        exec.execv(['sh', '-c', resolution.commands[c]]);
+                        // Run commands in the worktree directory.
+                        exec.execv(['sh', '-c', 'cd ' + shellQuote(dir) + ' && ' + resolution.commands[c]]);
                     }
                 }
                 var status = gitExec(dir, ['status', '--porcelain']);
@@ -349,12 +351,6 @@
             return { fixed: [], skipped: 'no verify command configured', errors: [], reSplitNeeded: false };
         }
 
-        var savedBranch = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
-        if (savedBranch.code !== 0) {
-            return { fixed: [], errors: [{ name: '(setup)', error: 'failed to get current branch' }], reSplitNeeded: false };
-        }
-        var restoreBranch = savedBranch.stdout.trim();
-
         var fixed = [];
         var errorsOut = [];
         var reSplitNeeded = false;
@@ -362,7 +358,6 @@
 
         for (var i = 0; i < plan.splits.length; i++) {
             if (isCancelled()) {
-                gitExec(dir, ['checkout', restoreBranch]);
                 return {
                     fixed: fixed, errors: errorsOut,
                     totalRetries: totalRetries, branchRetries: branchRetries,
@@ -392,14 +387,18 @@
                 continue;
             }
 
-            var co = gitExec(dir, ['checkout', split.name]);
-            if (co.code !== 0) {
-                errorsOut.push({ name: split.name, error: 'checkout failed: ' + co.stderr.trim() });
+            // Create a temporary worktree for this branch so the user's CWD
+            // remains untouched during fix attempts.
+            var worktreeDir = dir + '/../.osm-fix-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
+            var wtAdd = gitExec(dir, ['worktree', 'add', worktreeDir, split.name]);
+            if (wtAdd.code !== 0) {
+                errorsOut.push({ name: split.name, error: 'create worktree failed: ' + wtAdd.stderr.trim() });
                 continue;
             }
 
-            var verifyResult = exec.execv(['sh', '-c', 'cd ' + shellQuote(dir) + ' && ' + verifyCommand]);
+            var verifyResult = exec.execv(['sh', '-c', 'cd ' + shellQuote(worktreeDir) + ' && ' + verifyCommand]);
             if (verifyResult.code === 0) {
+                gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
                 continue;
             }
 
@@ -423,21 +422,21 @@
                         break;
                     }
                     var strategy = strategies[s];
-                    if (!strategy.detect(dir, verifyOutput)) {
+                    if (!strategy.detect(worktreeDir, verifyOutput)) {
                         continue;
                     }
 
                     totalRetries++;
                     branchRetries[split.name]++;
                     madeProgress = true;
-                    var fixResult = await strategy.fix(dir, split.name, plan, verifyOutput, strategyOptions);
+                    var fixResult = await strategy.fix(worktreeDir, split.name, plan, verifyOutput, strategyOptions);
                     if (!fixResult.fixed) {
                         log.warn('strategy ' + strategy.name + ' failed for ' + split.name +
                                  (fixResult.error ? ': ' + fixResult.error : ''));
                         continue;
                     }
 
-                    var reVerify = exec.execv(['sh', '-c', 'cd ' + shellQuote(dir) + ' && ' + verifyCommand]);
+                    var reVerify = exec.execv(['sh', '-c', 'cd ' + shellQuote(worktreeDir) + ' && ' + verifyCommand]);
                     if (reVerify.code === 0) {
                         fixed.push({ name: split.name, strategy: strategy.name });
                         resolved = true;
@@ -461,9 +460,10 @@
                 reSplitNeeded = true;
                 reSplitFiles = reSplitFiles.concat(split.files || []);
             }
-        }
 
-        gitExec(dir, ['checkout', restoreBranch]);
+            // Cleanup worktree for this branch.
+            gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
+        }
 
         return {
             fixed: fixed,

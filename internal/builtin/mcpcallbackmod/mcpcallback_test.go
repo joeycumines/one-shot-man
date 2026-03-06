@@ -1204,7 +1204,7 @@ func TestMCPCallback_ResetWaiter_NotRegistered_Panics(t *testing.T) {
 // external MCP client calls the tool → waitFor returns the data.
 func TestMCPCallback_WaitFor_EndToEnd(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("requires socat or Unix socket for MCP client bridge — skipped on Windows")
+		t.Skip("requires Unix domain socket — skipped on Windows")
 	}
 
 	p := testutil.NewTestEventLoopProvider()

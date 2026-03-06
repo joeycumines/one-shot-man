@@ -193,8 +193,8 @@ func TestCreatePRs_EmptySplits(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := parseCreatePRsResult(t, val)
-	if r.Error == nil || *r.Error != "no splits in plan" {
-		t.Errorf("expected 'no splits in plan' error, got: %v", r.Error)
+	if r.Error == nil || !strings.Contains(*r.Error, "no splits in plan") {
+		t.Errorf("expected error containing 'no splits in plan', got: %v", r.Error)
 	}
 	if len(r.Results) != 0 {
 		t.Errorf("expected 0 results, got %d", len(r.Results))
@@ -211,8 +211,8 @@ func TestCreatePRs_NilSplits(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := parseCreatePRsResult(t, val)
-	if r.Error == nil || *r.Error != "no splits in plan" {
-		t.Errorf("expected 'no splits in plan' error, got: %v", r.Error)
+	if r.Error == nil || !strings.Contains(*r.Error, "no splits in plan") {
+		t.Errorf("expected error containing 'no splits in plan', got: %v", r.Error)
 	}
 }
 

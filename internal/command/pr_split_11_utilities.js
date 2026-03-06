@@ -246,7 +246,7 @@
             osmod.writeFile(filename, data, { createDirs: true });
             return { error: null, path: filename };
         } catch (e) {
-            return { error: e.message };
+            return { error: 'failed to save telemetry to "' + filename + '": ' + (e.message || String(e)) };
         }
     }
 
@@ -285,13 +285,13 @@
         var gitExec = prSplit._gitExec;
         var resolveDir = prSplit._resolveDir;
         if (!plan || !plan.splits || splitIndex < 0 || splitIndex >= plan.splits.length) {
-            return { error: 'invalid split index', diff: '' };
+            return { error: 'invalid split index ' + splitIndex + ' (plan has ' + (plan && plan.splits ? plan.splits.length : 0) + ' splits)', diff: '' };
         }
         var split = plan.splits[splitIndex];
         var dir = resolveDir(plan.dir || '.');
         var files = split.files || [];
         if (files.length === 0) {
-            return { error: 'no files in split', diff: '' };
+            return { error: 'no files in split "' + (split.name || 'unnamed') + '" (index ' + splitIndex + ')', diff: '' };
         }
         // Try getting diff from the split branch.
         var diffArgs = ['diff', plan.baseBranch + '...' + split.name, '--'];

@@ -822,24 +822,16 @@ func TestAutoSplit_CancelDuringExecution_EmitsResumeAndCleansUp(t *testing.T) {
 		t.Fatalf("exec override: %v", err)
 	}
 
-	// Inject autoSplitTUI with cancellation wired to the trigger.
+	// Wire _cancelSource to the trigger flag for cooperative cancellation.
 	if _, err := tp.EvalJS(`
-		globalThis.autoSplitTUI = {
-			runAsync: function() {},
-			wait: function() { return null; },
-			stepStart: function() {},
-			stepDone: function() {},
-			appendOutput: function() {},
-			appendError: function() {},
-			done: function() {},
-			stepDetail: function() {},
-			cancelled: function() { return _cancelTriggered; },
-			forceCancelled: function() { return false; },
-			quit: function() {},
-			paused: function() { return false; }
+		globalThis.prSplit._cancelSource = function(q) {
+			if (q === 'cancelled') return _cancelTriggered;
+			if (q === 'forceCancelled') return false;
+			if (q === 'paused') return false;
+			return false;
 		};
 	`); err != nil {
-		t.Fatalf("TUI mock: %v", err)
+		t.Fatalf("cancel source mock: %v", err)
 	}
 
 	// Run the pipeline — heuristic fallback → plan → execute → cancel.

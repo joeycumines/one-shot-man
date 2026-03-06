@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/dop251/goja"
 
@@ -312,16 +313,39 @@ func WrapMux(ctx context.Context, runtime *goja.Runtime, mux *parent.Mux) goja.V
 		})
 	})
 
+	// ── bell event wiring ────────────────────────────────
+	// Install mux bell callback that queues "bell" events for JS listeners.
+	// The callback runs on the tee goroutine so we use queue() (thread-safe)
+	// rather than emit() (JS-goroutine only). JS receives bell events via
+	// pollEvents() or drain().
+	mux.SetBellFunc(func() {
+		events.queue(EventBell, map[string]interface{}{
+			"pane": "claude",
+		})
+	})
+
 	// ── screenshot() → string ────────────────────────────
 	// Returns plain-text VTerm buffer content for diagnostics/test assertions.
 	_ = obj.Set("screenshot", func() string {
 		return mux.ChildExitOutput()
 	})
 
+	// ── lastActivityMs() → int64 ─────────────────────────
+	// Returns milliseconds since the last child process output, or -1 if
+	// no output has been received yet. Used by the HUD overlay to show an
+	// activity indicator (live vs idle).
+	_ = obj.Set("lastActivityMs", func() int64 {
+		t := mux.LastWriteTime()
+		if t.IsZero() {
+			return -1
+		}
+		return time.Since(t).Milliseconds()
+	})
+
 	// ── on(event, callback) → id ─────────────────────────
 	// Registers a listener for an event type. Returns a numeric ID for off().
 	// Supported events: exit, resize, focus, bell, output.
-	// Note: "bell" and "output" events require parent termmux changes to fire.
+	// Note: "output" events require parent termmux changes to fire.
 	_ = obj.Set("on", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 2 {
 			panic(runtime.NewTypeError("on: requires (event, callback)"))
@@ -472,6 +496,8 @@ func attachWithRetry(mux *parent.Mux, child io.ReadWriteCloser) error {
 }
 
 // exitReasonString maps a [parent.ExitReason] to its JS string constant.
+// Known reasons use JS-style camelCase; unknown values fall back to the
+// type's own [parent.ExitReason.String] method.
 func exitReasonString(r parent.ExitReason) string {
 	switch r {
 	case parent.ExitToggle:
@@ -483,6 +509,6 @@ func exitReasonString(r parent.ExitReason) string {
 	case parent.ExitError:
 		return "error"
 	default:
-		return fmt.Sprintf("unknown(%d)", int(r))
+		return r.String()
 	}
 }

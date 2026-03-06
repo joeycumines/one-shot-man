@@ -29,7 +29,7 @@
         var mergeMethod = options.mergeMethod || 'squash';
 
         if (!plan.splits || plan.splits.length === 0) {
-            return { error: 'no splits in plan', results: [] };
+            return { error: 'no splits in plan — run "plan" or "run" to generate splits first', results: [] };
         }
 
         // Late-bound references for mockability.

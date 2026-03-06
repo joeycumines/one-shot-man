@@ -133,7 +133,7 @@ func TestChunk13_BuildCommandsRegistered(t *testing.T) {
 }
 
 // TestChunk13_AllCommandNames verifies that buildCommands returns an object
-// with all 25 expected command names.
+// with all expected command names (including abort and override).
 func TestChunk13_AllCommandNames(t *testing.T) {
 	evalJS := loadTUIEngine(t)
 
@@ -147,10 +147,10 @@ func TestChunk13_AllCommandNames(t *testing.T) {
 	}
 
 	expected := []string{
-		"analyze", "auto-split", "cleanup", "conversation", "copy",
+		"abort", "analyze", "auto-split", "cleanup", "conversation", "copy",
 		"create-prs", "diff", "edit-plan", "equivalence", "execute",
-		"fix", "graph", "group", "help", "load-plan", "merge", "move",
-		"plan", "preview", "rename", "reorder", "report", "retro",
+		"fix", "graph", "group", "help", "hud", "load-plan", "merge", "move",
+		"override", "plan", "preview", "rename", "reorder", "report", "retro",
 		"run", "save-plan", "set", "stats", "telemetry", "verify",
 	}
 
@@ -965,5 +965,1634 @@ func TestChunk13_WizardState_ListenerErrorSwallowed(t *testing.T) {
 	want := `{"current":"CONFIG"}`
 	if got != want {
 		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  T18: handleConfigState tests
+// ---------------------------------------------------------------------------
+
+// TestChunk13_HandleConfigState_MissingBaseBranch tests that CONFIG state
+// produces an error when baseBranch is empty.
+func TestChunk13_HandleConfigState_MissingBaseBranch(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		// Mock gitExec to return a valid feature branch.
+		prSplit._gitExec = function(dir, args) {
+			if (args[0] === 'rev-parse') return { code: 0, stdout: 'feature\n', stderr: '' };
+			return { code: 0, stdout: '', stderr: '' };
+		};
+		// Mock verifySplit to pass baseline.
+		prSplit.verifySplit = function() { return { passed: true, name: 'main', output: '' }; };
+
+		// Clear baseBranch.
+		prSplit.runtime.baseBranch = '';
+
+		var result = prSplit._handleConfigState({});
+		JSON.stringify({ hasError: !!result.error, errorContains: result.error ? result.error.indexOf('baseBranch') >= 0 : false });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"hasError":true,"errorContains":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleConfigState_OnBaseBranch tests that CONFIG state detects
+// when already on the base branch.
+func TestChunk13_HandleConfigState_OnBaseBranch(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		// Mock gitExec: current branch IS the base branch.
+		prSplit._gitExec = function(dir, args) {
+			if (args[0] === 'rev-parse') return { code: 0, stdout: 'main\n', stderr: '' };
+			return { code: 0, stdout: '', stderr: '' };
+		};
+		prSplit.verifySplit = function() { return { passed: true }; };
+		prSplit.runtime.baseBranch = 'main';
+
+		var result = prSplit._handleConfigState({});
+		JSON.stringify({ hasError: !!result.error, mentionsBase: result.error ? result.error.indexOf('base branch') >= 0 : false });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"hasError":true,"mentionsBase":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleConfigState_GitFails tests CONFIG when git rev-parse fails.
+func TestChunk13_HandleConfigState_GitFails(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		prSplit._gitExec = function(dir, args) {
+			if (args[0] === 'rev-parse') return { code: 128, stdout: '', stderr: 'not a git repo' };
+			return { code: 0, stdout: '', stderr: '' };
+		};
+		prSplit.runtime.baseBranch = 'main';
+
+		var result = prSplit._handleConfigState({});
+		JSON.stringify({ hasError: !!result.error, mentionsBranch: result.error ? result.error.indexOf('current branch') >= 0 : false });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"hasError":true,"mentionsBranch":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleConfigState_BaselinePass tests the happy path: valid config
+// and passing baseline verification → PLAN_GENERATION.
+func TestChunk13_HandleConfigState_BaselinePass(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		prSplit._gitExec = function(dir, args) {
+			if (args[0] === 'rev-parse') return { code: 0, stdout: 'feature\n', stderr: '' };
+			if (args[0] === 'checkout') return { code: 0, stdout: '', stderr: '' };
+			return { code: 0, stdout: '', stderr: '' };
+		};
+		prSplit.verifySplit = function(branch, opts) {
+			return { passed: true, name: branch, output: 'ok' };
+		};
+		prSplit.runtime.baseBranch = 'main';
+		prSplit.runtime.verifyCommand = 'make test';
+
+		var result = prSplit._handleConfigState({});
+		JSON.stringify({
+			error: result.error,
+			baselineFailed: !!result.baselineFailed,
+			resume: !!result.resume
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"error":null,"baselineFailed":false,"resume":false}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleConfigState_BaselineFail tests that failing baseline
+// verification returns baselineFailed=true.
+func TestChunk13_HandleConfigState_BaselineFail(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		prSplit._gitExec = function(dir, args) {
+			if (args[0] === 'rev-parse') return { code: 0, stdout: 'feature\n', stderr: '' };
+			if (args[0] === 'checkout') return { code: 0, stdout: '', stderr: '' };
+			return { code: 0, stdout: '', stderr: '' };
+		};
+		prSplit.verifySplit = function(branch, opts) {
+			return { passed: false, name: branch, error: 'make test: exit 2', output: 'FAIL' };
+		};
+		prSplit.runtime.baseBranch = 'main';
+		prSplit.runtime.verifyCommand = 'make test';
+
+		var result = prSplit._handleConfigState({});
+		JSON.stringify({
+			baselineFailed: !!result.baselineFailed,
+			hasBaselineError: !!result.baselineError
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"baselineFailed":true,"hasBaselineError":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleConfigState_ResumeWithCheckpoint tests that --resume with
+// a valid checkpoint returns resume=true.
+func TestChunk13_HandleConfigState_ResumeWithCheckpoint(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		prSplit._gitExec = function(dir, args) {
+			if (args[0] === 'rev-parse') return { code: 0, stdout: 'feature\n', stderr: '' };
+			return { code: 0, stdout: '', stderr: '' };
+		};
+		prSplit.loadPlan = function() {
+			return { plan: { splits: [{ name: 'split/01', files: ['a.go'] }] } };
+		};
+		prSplit.runtime.baseBranch = 'main';
+
+		var result = prSplit._handleConfigState({ resume: true });
+		JSON.stringify({ resume: !!result.resume, hasCheckpoint: !!result.checkpoint });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"resume":true,"hasCheckpoint":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleConfigState_ResumeNoCheckpoint tests that --resume without
+// a valid checkpoint falls through to normal config flow.
+func TestChunk13_HandleConfigState_ResumeNoCheckpoint(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		prSplit._gitExec = function(dir, args) {
+			if (args[0] === 'rev-parse') return { code: 0, stdout: 'feature\n', stderr: '' };
+			if (args[0] === 'checkout') return { code: 0, stdout: '', stderr: '' };
+			return { code: 0, stdout: '', stderr: '' };
+		};
+		prSplit.loadPlan = function() { return { error: 'no checkpoint' }; };
+		prSplit.verifySplit = function() { return { passed: true }; };
+		prSplit.runtime.baseBranch = 'main';
+		prSplit.runtime.verifyCommand = 'make test';
+
+		var result = prSplit._handleConfigState({ resume: true });
+		JSON.stringify({
+			error: result.error,
+			resume: !!result.resume,
+			baselineFailed: !!result.baselineFailed
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"error":null,"resume":false,"baselineFailed":false}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleConfigState_SkipsBaselineForTrue tests that baseline
+// verification is skipped when verifyCommand is 'true'.
+func TestChunk13_HandleConfigState_SkipsBaselineForTrue(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var verifyCalled = false;
+		prSplit._gitExec = function(dir, args) {
+			if (args[0] === 'rev-parse') return { code: 0, stdout: 'feature\n', stderr: '' };
+			return { code: 0, stdout: '', stderr: '' };
+		};
+		prSplit.verifySplit = function() { verifyCalled = true; return { passed: true }; };
+		prSplit.runtime.baseBranch = 'main';
+		prSplit.runtime.verifyCommand = 'true';
+
+		var result = prSplit._handleConfigState({});
+		JSON.stringify({ error: result.error, verifyCalled: verifyCalled });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"error":null,"verifyCalled":false}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleBaselineFailState tests (T17)
+// ---------------------------------------------------------------------------
+
+// TestChunk13_HandleBaselineFailState_Override tests that choosing 'override'
+// transitions from BASELINE_FAIL to PLAN_GENERATION.
+func TestChunk13_HandleBaselineFailState_Override(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('BASELINE_FAIL', { error: 'tests fail', output: 'FAIL main_test.go' });
+
+		var result = prSplit._handleBaselineFailState(wizard, 'override');
+		JSON.stringify({ action: result.action, state: result.state, current: wizard.current });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"override","state":"PLAN_GENERATION","current":"PLAN_GENERATION"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleBaselineFailState_Abort tests that choosing 'abort'
+// transitions from BASELINE_FAIL to CANCELLED.
+func TestChunk13_HandleBaselineFailState_Abort(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('BASELINE_FAIL', { error: 'tests fail', output: 'FAIL' });
+
+		var result = prSplit._handleBaselineFailState(wizard, 'abort');
+		JSON.stringify({ action: result.action, state: result.state, current: wizard.current });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"abort","state":"CANCELLED","current":"CANCELLED"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleBaselineFailState_DefaultAbort tests that no choice
+// (undefined or empty) defaults to abort.
+func TestChunk13_HandleBaselineFailState_DefaultAbort(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('BASELINE_FAIL', { error: 'tests fail', output: '' });
+
+		var result = prSplit._handleBaselineFailState(wizard);
+		JSON.stringify({ action: result.action, state: result.state, current: wizard.current });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"abort","state":"CANCELLED","current":"CANCELLED"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleBaselineFailState_WrongState tests that calling
+// handleBaselineFailState when wizard is NOT in BASELINE_FAIL returns error.
+func TestChunk13_HandleBaselineFailState_WrongState(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+
+		var result = prSplit._handleBaselineFailState(wizard, 'override');
+		JSON.stringify({ hasError: !!result.error, errorContains: result.error.indexOf('PLAN_GENERATION') >= 0 });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"hasError":true,"errorContains":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleBaselineFailState_OverridePreservesData tests that
+// wizard.data is preserved through override transition.
+func TestChunk13_HandleBaselineFailState_OverridePreservesData(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('BASELINE_FAIL', { error: 'make test fails', output: 'exit 1' });
+
+		prSplit._handleBaselineFailState(wizard, 'override');
+		JSON.stringify({
+			current: wizard.current,
+			errorData: wizard.data.error,
+			outputData: wizard.data.output
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"current":"PLAN_GENERATION","errorData":"make test fails","outputData":"exit 1"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handlePlanReviewState tests (T19/T21)
+// ---------------------------------------------------------------------------
+
+// TestChunk13_HandlePlanReviewState_Approve tests approve → BRANCH_BUILDING.
+func TestChunk13_HandlePlanReviewState_Approve(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+
+		var result = prSplit._handlePlanReviewState(wizard, 'approve');
+		JSON.stringify({ action: result.action, state: result.state, current: wizard.current });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"approve","state":"BRANCH_BUILDING","current":"BRANCH_BUILDING"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandlePlanReviewState_Edit tests edit → PLAN_EDITOR.
+func TestChunk13_HandlePlanReviewState_Edit(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+
+		var result = prSplit._handlePlanReviewState(wizard, 'edit');
+		JSON.stringify({ action: result.action, state: result.state, current: wizard.current });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"edit","state":"PLAN_EDITOR","current":"PLAN_EDITOR"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandlePlanReviewState_Regenerate tests regenerate → PLAN_GENERATION with feedback.
+func TestChunk13_HandlePlanReviewState_Regenerate(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+
+		var result = prSplit._handlePlanReviewState(wizard, 'regenerate', { feedback: 'too many splits' });
+		JSON.stringify({
+			action: result.action,
+			state: result.state,
+			current: wizard.current,
+			feedback: wizard.data.feedback
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"regenerate","state":"PLAN_GENERATION","current":"PLAN_GENERATION","feedback":"too many splits"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandlePlanReviewState_Cancel tests cancel → CANCELLED.
+func TestChunk13_HandlePlanReviewState_Cancel(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+
+		var result = prSplit._handlePlanReviewState(wizard, 'cancel');
+		JSON.stringify({ action: result.action, state: result.state, current: wizard.current });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"cancel","state":"CANCELLED","current":"CANCELLED"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandlePlanReviewState_DefaultCancel tests that no choice defaults to cancel.
+func TestChunk13_HandlePlanReviewState_DefaultCancel(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+
+		var result = prSplit._handlePlanReviewState(wizard);
+		JSON.stringify({ action: result.action, state: result.state, current: wizard.current });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"cancel","state":"CANCELLED","current":"CANCELLED"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandlePlanReviewState_WrongState tests calling from wrong state.
+func TestChunk13_HandlePlanReviewState_WrongState(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+
+		var result = prSplit._handlePlanReviewState(wizard, 'approve');
+		JSON.stringify({ hasError: !!result.error });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"hasError":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handlePlanEditorState tests (T20/T21)
+// ---------------------------------------------------------------------------
+
+// TestChunk13_HandlePlanEditorState_Done tests done → PLAN_REVIEW.
+func TestChunk13_HandlePlanEditorState_Done(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+		wizard.transition('PLAN_EDITOR');
+
+		var result = prSplit._handlePlanEditorState(wizard, 'done');
+		JSON.stringify({ action: result.action, state: result.state, current: wizard.current });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"done","state":"PLAN_REVIEW","current":"PLAN_REVIEW"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandlePlanEditorState_DoneWithPlan tests done with valid plan → PLAN_REVIEW.
+func TestChunk13_HandlePlanEditorState_DoneWithPlan(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+		wizard.transition('PLAN_EDITOR');
+
+		var plan = {
+			baseBranch: 'main',
+			sourceBranch: 'feature',
+			verifyCommand: 'true',
+			splits: [
+				{ name: 'split/01-a', files: ['a.go'], message: 'add a', order: 0 }
+			]
+		};
+
+		var result = prSplit._handlePlanEditorState(wizard, 'done', plan);
+		JSON.stringify({
+			action: result.action,
+			state: result.state,
+			current: wizard.current,
+			hasPlan: !!wizard.data.plan,
+			planSplitCount: wizard.data.plan ? wizard.data.plan.splits.length : 0
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"done","state":"PLAN_REVIEW","current":"PLAN_REVIEW","hasPlan":true,"planSplitCount":1}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandlePlanEditorState_ValidationFailure tests done with invalid plan.
+func TestChunk13_HandlePlanEditorState_ValidationFailure(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+		wizard.transition('PLAN_EDITOR');
+
+		// Plan with no splits — should fail validation.
+		var plan = {
+			baseBranch: 'main',
+			sourceBranch: 'feature',
+			verifyCommand: 'true',
+			splits: []
+		};
+
+		var result = prSplit._handlePlanEditorState(wizard, 'done', plan);
+		JSON.stringify({
+			action: result.action,
+			state: result.state,
+			current: wizard.current,
+			hasValidationErrors: !!(result.validationErrors && result.validationErrors.length > 0)
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"validation_failed","state":"PLAN_EDITOR","current":"PLAN_EDITOR","hasValidationErrors":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandlePlanEditorState_WrongState tests calling from wrong state.
+func TestChunk13_HandlePlanEditorState_WrongState(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+
+		var result = prSplit._handlePlanEditorState(wizard, 'done');
+		JSON.stringify({ hasError: !!result.error });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"hasError":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandlePlanEditorState_EditReviewRoundTrip tests edit→done→review cycle.
+func TestChunk13_HandlePlanEditorState_EditReviewRoundTrip(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+
+		// Enter editor.
+		var r1 = prSplit._handlePlanReviewState(wizard, 'edit');
+		// Finish editing.
+		var r2 = prSplit._handlePlanEditorState(wizard, 'done');
+		// Approve from review.
+		var r3 = prSplit._handlePlanReviewState(wizard, 'approve');
+
+		JSON.stringify({
+			editState: r1.state,
+			doneState: r2.state,
+			approveState: r3.state,
+			final: wizard.current
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"editState":"PLAN_EDITOR","doneState":"PLAN_REVIEW","approveState":"BRANCH_BUILDING","final":"BRANCH_BUILDING"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleBranchBuildingState tests (T22/T23)
+// ---------------------------------------------------------------------------
+
+// TestChunk13_HandleBranchBuildingState_AllPass tests all branches pass → EQUIV_CHECK.
+func TestChunk13_HandleBranchBuildingState_AllPass(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+		wizard.transition('BRANCH_BUILDING');
+
+		// Mock executeSplit to succeed.
+		prSplit.executeSplit = function(plan) {
+			return {
+				error: null,
+				results: [
+					{ name: 'split/01-a', files: ['a.go'], sha: 'abc1234', error: null },
+					{ name: 'split/02-b', files: ['b.go'], sha: 'def5678', error: null }
+				]
+			};
+		};
+		// Mock verifySplit to pass.
+		prSplit.verifySplit = function(branch, config) {
+			return { name: branch, passed: true, output: 'ok', error: null };
+		};
+
+		var plan = {
+			baseBranch: 'main', sourceBranch: 'feature', verifyCommand: 'make test',
+			splits: [
+				{ name: 'split/01-a', files: ['a.go'], message: 'add a', order: 0 },
+				{ name: 'split/02-b', files: ['b.go'], message: 'add b', order: 1 }
+			]
+		};
+
+		var result = prSplit._handleBranchBuildingState(wizard, plan);
+		JSON.stringify({
+			action: result.action,
+			state: result.state,
+			current: wizard.current,
+			resultCount: result.results.length,
+			failedCount: result.failedBranches.length
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"success","state":"EQUIV_CHECK","current":"EQUIV_CHECK","resultCount":2,"failedCount":0}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleBranchBuildingState_OneFail tests one branch fails → ERROR_RESOLUTION.
+func TestChunk13_HandleBranchBuildingState_OneFail(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+		wizard.transition('BRANCH_BUILDING');
+
+		prSplit.executeSplit = function(plan) {
+			return {
+				error: null,
+				results: [
+					{ name: 'split/01-a', files: ['a.go'], sha: 'abc', error: null },
+					{ name: 'split/02-b', files: ['b.go'], sha: 'def', error: null }
+				]
+			};
+		};
+		prSplit.verifySplit = function(branch) {
+			if (branch === 'split/02-b') return { name: branch, passed: false, output: 'FAIL', error: 'test failed' };
+			return { name: branch, passed: true, output: 'ok', error: null };
+		};
+
+		var plan = {
+			baseBranch: 'main', sourceBranch: 'feature', verifyCommand: 'make test',
+			splits: [
+				{ name: 'split/01-a', files: ['a.go'], message: 'add a', order: 0 },
+				{ name: 'split/02-b', files: ['b.go'], message: 'add b', order: 1 }
+			]
+		};
+
+		var result = prSplit._handleBranchBuildingState(wizard, plan);
+		JSON.stringify({
+			action: result.action,
+			state: result.state,
+			current: wizard.current,
+			failedCount: result.failedBranches.length,
+			failedName: result.failedBranches[0].name
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"failed","state":"ERROR_RESOLUTION","current":"ERROR_RESOLUTION","failedCount":1,"failedName":"split/02-b"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleBranchBuildingState_EmptyPlan tests empty plan → ERROR.
+func TestChunk13_HandleBranchBuildingState_EmptyPlan(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+		wizard.transition('BRANCH_BUILDING');
+
+		var result = prSplit._handleBranchBuildingState(wizard, { splits: [] });
+		JSON.stringify({ action: result.action, state: result.state, current: wizard.current, hasError: !!result.error });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"error","state":"ERROR","current":"ERROR","hasError":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleBranchBuildingState_Cancel tests cancellation mid-build.
+func TestChunk13_HandleBranchBuildingState_Cancel(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+		wizard.transition('BRANCH_BUILDING');
+
+		prSplit.executeSplit = function(plan) {
+			return {
+				error: null,
+				results: [
+					{ name: 'split/01-a', files: ['a.go'], sha: 'abc', error: null }
+				]
+			};
+		};
+
+		// Cancel immediately after execution.
+		var cancelCount = 0;
+		var result = prSplit._handleBranchBuildingState(wizard, {
+			baseBranch: 'main', sourceBranch: 'feature', verifyCommand: 'make test',
+			splits: [{ name: 'split/01-a', files: ['a.go'], message: 'add a', order: 0 }]
+		}, { isCancelled: function() { cancelCount++; return cancelCount > 1; } });
+
+		JSON.stringify({ action: result.action, state: result.state, current: wizard.current });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"cancelled","state":"CANCELLED","current":"CANCELLED"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleBranchBuildingState_WrongState tests wrong state guard.
+func TestChunk13_HandleBranchBuildingState_WrongState(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+
+		var result = prSplit._handleBranchBuildingState(wizard, {});
+		JSON.stringify({ hasError: !!result.error });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"hasError":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleErrorResolutionState tests (T24/T25)
+// ---------------------------------------------------------------------------
+
+// TestChunk13_HandleErrorResolutionState_AutoResolve tests auto-resolve → BRANCH_BUILDING.
+func TestChunk13_HandleErrorResolutionState_AutoResolve(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+		wizard.transition('BRANCH_BUILDING');
+		wizard.transition('ERROR_RESOLUTION');
+
+		var result = prSplit._handleErrorResolutionState(wizard, 'auto-resolve');
+		JSON.stringify({ action: result.action, state: result.state, current: wizard.current });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"auto-resolve","state":"BRANCH_BUILDING","current":"BRANCH_BUILDING"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleErrorResolutionState_Skip tests skip → EQUIV_CHECK.
+func TestChunk13_HandleErrorResolutionState_Skip(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+		wizard.transition('BRANCH_BUILDING');
+		wizard.transition('ERROR_RESOLUTION');
+
+		var result = prSplit._handleErrorResolutionState(wizard, 'skip');
+		JSON.stringify({ action: result.action, state: result.state, current: wizard.current });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"skip","state":"EQUIV_CHECK","current":"EQUIV_CHECK"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleErrorResolutionState_Retry tests retry → PLAN_GENERATION.
+func TestChunk13_HandleErrorResolutionState_Retry(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+		wizard.transition('BRANCH_BUILDING');
+		wizard.transition('ERROR_RESOLUTION');
+
+		var result = prSplit._handleErrorResolutionState(wizard, 'retry');
+		JSON.stringify({ action: result.action, state: result.state, current: wizard.current });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"retry","state":"PLAN_GENERATION","current":"PLAN_GENERATION"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleErrorResolutionState_Abort tests abort → CANCELLED.
+func TestChunk13_HandleErrorResolutionState_Abort(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+		wizard.transition('BRANCH_BUILDING');
+		wizard.transition('ERROR_RESOLUTION');
+
+		var result = prSplit._handleErrorResolutionState(wizard, 'abort');
+		JSON.stringify({ action: result.action, state: result.state, current: wizard.current });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"abort","state":"CANCELLED","current":"CANCELLED"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleErrorResolutionState_WrongState tests wrong state guard.
+func TestChunk13_HandleErrorResolutionState_WrongState(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+
+		var result = prSplit._handleErrorResolutionState(wizard, 'skip');
+		JSON.stringify({ hasError: !!result.error });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"hasError":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleEquivCheckState tests (T26)
+// ---------------------------------------------------------------------------
+
+// TestChunk13_HandleEquivCheckState_Pass tests equivalence pass → FINALIZATION.
+func TestChunk13_HandleEquivCheckState_Pass(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+		wizard.transition('BRANCH_BUILDING');
+		wizard.transition('EQUIV_CHECK');
+
+		prSplit.verifyEquivalence = function(plan) {
+			return { equivalent: true, splitTree: 'abc123', sourceTree: 'abc123', error: null };
+		};
+
+		var result = prSplit._handleEquivCheckState(wizard, { baseBranch: 'main', splits: [] });
+		JSON.stringify({
+			action: result.action,
+			state: result.state,
+			current: wizard.current,
+			equivalent: result.equivalence.equivalent
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"checked","state":"FINALIZATION","current":"FINALIZATION","equivalent":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleEquivCheckState_Mismatch tests tree mismatch still → FINALIZATION (warning).
+func TestChunk13_HandleEquivCheckState_Mismatch(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+		wizard.transition('BRANCH_BUILDING');
+		wizard.transition('EQUIV_CHECK');
+
+		prSplit.verifyEquivalence = function(plan) {
+			return { equivalent: false, splitTree: 'abc', sourceTree: 'def', error: null };
+		};
+
+		var result = prSplit._handleEquivCheckState(wizard, { baseBranch: 'main', splits: [] });
+		JSON.stringify({
+			action: result.action,
+			state: result.state,
+			equivalent: result.equivalence.equivalent,
+			storedInData: !!wizard.data.equivalence
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"checked","state":"FINALIZATION","equivalent":false,"storedInData":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleEquivCheckState_NoPlan tests no plan → ERROR.
+func TestChunk13_HandleEquivCheckState_NoPlan(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+		wizard.transition('BRANCH_BUILDING');
+		wizard.transition('EQUIV_CHECK');
+
+		var result = prSplit._handleEquivCheckState(wizard, null);
+		JSON.stringify({ action: result.action, state: result.state, hasError: !!result.error });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"error","state":"ERROR","hasError":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleFinalizationState tests (T26)
+// ---------------------------------------------------------------------------
+
+// TestChunk13_HandleFinalizationState_Done tests done → DONE.
+func TestChunk13_HandleFinalizationState_Done(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+		wizard.transition('BRANCH_BUILDING');
+		wizard.transition('EQUIV_CHECK');
+		wizard.transition('FINALIZATION');
+
+		var result = prSplit._handleFinalizationState(wizard, 'done');
+		JSON.stringify({ action: result.action, state: result.state, current: wizard.current });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"done","state":"DONE","current":"DONE"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleFinalizationState_CreatePRs tests create-prs → FINALIZATION (self).
+func TestChunk13_HandleFinalizationState_CreatePRs(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+		wizard.transition('BRANCH_BUILDING');
+		wizard.transition('EQUIV_CHECK');
+		wizard.transition('FINALIZATION');
+
+		var result = prSplit._handleFinalizationState(wizard, 'create-prs');
+		JSON.stringify({
+			action: result.action,
+			state: result.state,
+			current: wizard.current,
+			prsRequested: !!wizard.data.prsRequested
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"create-prs","state":"FINALIZATION","current":"FINALIZATION","prsRequested":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleFinalizationState_Report tests report stays in FINALIZATION.
+func TestChunk13_HandleFinalizationState_Report(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+		wizard.transition('BRANCH_BUILDING');
+		wizard.transition('EQUIV_CHECK');
+		wizard.transition('FINALIZATION');
+
+		var result = prSplit._handleFinalizationState(wizard, 'report');
+		JSON.stringify({ action: result.action, state: result.state, current: wizard.current });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"report","state":"FINALIZATION","current":"FINALIZATION"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleFinalizationState_DefaultDone tests default is done.
+func TestChunk13_HandleFinalizationState_DefaultDone(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+		wizard.transition('BRANCH_BUILDING');
+		wizard.transition('EQUIV_CHECK');
+		wizard.transition('FINALIZATION');
+
+		var result = prSplit._handleFinalizationState(wizard);
+		JSON.stringify({ action: result.action, state: result.state, current: wizard.current });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"action":"done","state":"DONE","current":"DONE"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// E2E wizard flow tests (T28)
+// ---------------------------------------------------------------------------
+
+// TestChunk13_Wizard_HappyPath_E2E tests full CONFIG→...→DONE flow.
+func TestChunk13_Wizard_HappyPath_E2E(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		// --- Setup mocks ---
+		prSplit._gitExec = function(dir, args) {
+			if (args[0] === 'rev-parse') return { code: 0, stdout: 'feature\n', stderr: '' };
+			return { code: 0, stdout: '', stderr: '' };
+		};
+		prSplit.verifySplit = function(branch, config) {
+			return { name: branch, passed: true, output: 'ok', error: null };
+		};
+		prSplit.executeSplit = function(plan) {
+			return {
+				error: null,
+				results: [
+					{ name: 'split/01-a', files: ['a.go'], sha: 'abc1234', error: null },
+					{ name: 'split/02-b', files: ['b.go'], sha: 'def5678', error: null }
+				]
+			};
+		};
+		prSplit.verifyEquivalence = function(plan) {
+			return { equivalent: true, splitTree: 'abc123', sourceTree: 'abc123', error: null };
+		};
+		prSplit.runtime.baseBranch = 'main';
+		prSplit.runtime.verifyCommand = 'make test';
+
+		// --- Execute wizard ---
+		var wizard = new prSplit.WizardState();
+		var history = [];
+		wizard.onTransition(function(from, to) { history.push(from + '→' + to); });
+
+		// CONFIG
+		wizard.transition('CONFIG');
+		var configResult = prSplit._handleConfigState({});
+		if (configResult.error) throw 'config error: ' + configResult.error;
+		wizard.transition('PLAN_GENERATION');
+
+		// PLAN_REVIEW (skip PLAN_GENERATION — that's the pipeline's job)
+		wizard.transition('PLAN_REVIEW');
+		var reviewResult = prSplit._handlePlanReviewState(wizard, 'approve');
+
+		// BRANCH_BUILDING
+		var plan = {
+			baseBranch: 'main', sourceBranch: 'feature', verifyCommand: 'make test',
+			splits: [
+				{ name: 'split/01-a', files: ['a.go'], message: 'add a', order: 0 },
+				{ name: 'split/02-b', files: ['b.go'], message: 'add b', order: 1 }
+			]
+		};
+		var buildResult = prSplit._handleBranchBuildingState(wizard, plan);
+
+		// EQUIV_CHECK
+		var equivResult = prSplit._handleEquivCheckState(wizard, plan);
+
+		// FINALIZATION → DONE
+		var finalResult = prSplit._handleFinalizationState(wizard, 'done');
+
+		JSON.stringify({
+			final: wizard.current,
+			isTerminal: wizard.isTerminal(),
+			historyLength: wizard.history.length,
+			transitions: history.join(', '),
+			buildSuccess: buildResult.action === 'success',
+			equivPass: equivResult.equivalence.equivalent
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"final":"DONE","isTerminal":true,"historyLength":7,"transitions":"IDLE→CONFIG, CONFIG→PLAN_GENERATION, PLAN_GENERATION→PLAN_REVIEW, PLAN_REVIEW→BRANCH_BUILDING, BRANCH_BUILDING→EQUIV_CHECK, EQUIV_CHECK→FINALIZATION, FINALIZATION→DONE","buildSuccess":true,"equivPass":true}`
+	if got != want {
+		t.Errorf("got:\n  %s\nwant:\n  %s", got, want)
+	}
+}
+
+// TestChunk13_Wizard_PlanRejection_E2E tests reject plan → regenerate → approve flow.
+func TestChunk13_Wizard_PlanRejection_E2E(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+
+		// Reject: regenerate with feedback.
+		var r1 = prSplit._handlePlanReviewState(wizard, 'regenerate', { feedback: 'fewer splits' });
+
+		// Back to PLAN_REVIEW after regeneration.
+		wizard.transition('PLAN_REVIEW');
+
+		// Approve this time.
+		var r2 = prSplit._handlePlanReviewState(wizard, 'approve');
+
+		JSON.stringify({
+			afterReject: r1.state,
+			feedbackStored: wizard.data.feedback,
+			afterApprove: r2.state,
+			final: wizard.current
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"afterReject":"PLAN_GENERATION","feedbackStored":"fewer splits","afterApprove":"BRANCH_BUILDING","final":"BRANCH_BUILDING"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_Wizard_BaselineFailRecovery_E2E tests baseline fail → override → complete.
+func TestChunk13_Wizard_BaselineFailRecovery_E2E(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		prSplit._gitExec = function(dir, args) {
+			if (args[0] === 'rev-parse') return { code: 0, stdout: 'feature\n', stderr: '' };
+			return { code: 0, stdout: '', stderr: '' };
+		};
+		prSplit.verifySplit = function(branch, config) {
+			return { name: branch, passed: false, output: 'FAIL', error: 'test failed' };
+		};
+		prSplit.runtime.baseBranch = 'main';
+		prSplit.runtime.verifyCommand = 'make test';
+
+		var wizard = new prSplit.WizardState();
+
+		// CONFIG
+		wizard.transition('CONFIG');
+		var configResult = prSplit._handleConfigState({});
+
+		// Baseline fails.
+		wizard.transition('BASELINE_FAIL', {
+			error: configResult.baselineError,
+			output: configResult.baselineOutput
+		});
+
+		// Override.
+		var overrideResult = prSplit._handleBaselineFailState(wizard, 'override');
+
+		// Now in PLAN_GENERATION.
+		JSON.stringify({
+			baselineFailed: !!configResult.baselineFailed,
+			overrideAction: overrideResult.action,
+			final: wizard.current,
+			historyLength: wizard.history.length
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"baselineFailed":true,"overrideAction":"override","final":"PLAN_GENERATION","historyLength":3}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_Wizard_BranchFailRecovery_E2E tests branch fail → auto-resolve → complete.
+func TestChunk13_Wizard_BranchFailRecovery_E2E(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var callCount = 0;
+		prSplit.executeSplit = function(plan) {
+			callCount++;
+			return {
+				error: null,
+				results: [
+					{ name: 'split/01-a', files: ['a.go'], sha: 'abc', error: null }
+				]
+			};
+		};
+		prSplit.verifySplit = function(branch, config) {
+			if (callCount <= 1) return { name: branch, passed: false, output: 'FAIL', error: 'test error' };
+			return { name: branch, passed: true, output: 'ok', error: null };
+		};
+		prSplit.verifyEquivalence = function() {
+			return { equivalent: true, splitTree: 'aaa', sourceTree: 'aaa', error: null };
+		};
+
+		var wizard = new prSplit.WizardState();
+		wizard.transition('CONFIG');
+		wizard.transition('PLAN_GENERATION');
+		wizard.transition('PLAN_REVIEW');
+		wizard.transition('BRANCH_BUILDING');
+
+		var plan = {
+			baseBranch: 'main', sourceBranch: 'feature', verifyCommand: 'make test',
+			splits: [{ name: 'split/01-a', files: ['a.go'], message: 'add a', order: 0 }]
+		};
+
+		// First build — fails.
+		var r1 = prSplit._handleBranchBuildingState(wizard, plan);
+
+		// Auto-resolve → re-enter BRANCH_BUILDING.
+		var r2 = prSplit._handleErrorResolutionState(wizard, 'auto-resolve');
+
+		// Second build — succeeds.
+		var r3 = prSplit._handleBranchBuildingState(wizard, plan);
+
+		// Equiv check.
+		var r4 = prSplit._handleEquivCheckState(wizard, plan);
+
+		// Done.
+		var r5 = prSplit._handleFinalizationState(wizard, 'done');
+
+		JSON.stringify({
+			firstBuild: r1.action,
+			resolution: r2.action,
+			secondBuild: r3.action,
+			equiv: r4.action,
+			final: r5.action,
+			current: wizard.current,
+			calls: callCount
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"firstBuild":"failed","resolution":"auto-resolve","secondBuild":"success","equiv":"checked","final":"done","current":"DONE","calls":2}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  HUD Overlay Tests (T32)
+// ═══════════════════════════════════════════════════════════════════════
+
+// TestChunk13_HUD_ExportedFunctions verifies that HUD functions are
+// exported on prSplit after chunk 13 loads.
+func TestChunk13_HUD_ExportedFunctions(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`JSON.stringify({
+		hudEnabled: typeof globalThis.prSplit._hudEnabled,
+		renderHudPanel: typeof globalThis.prSplit._renderHudPanel,
+		renderHudStatusLine: typeof globalThis.prSplit._renderHudStatusLine,
+		getActivityInfo: typeof globalThis.prSplit._getActivityInfo,
+		getLastOutputLines: typeof globalThis.prSplit._getLastOutputLines
+	})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := raw.(string)
+	wantExports := `{"hudEnabled":"function","renderHudPanel":"function","renderHudStatusLine":"function","getActivityInfo":"function","getLastOutputLines":"function"}`
+	if got != wantExports {
+		t.Errorf("HUD exports:\n  got:  %s\n  want: %s", got, wantExports)
+	}
+}
+
+// TestChunk13_HUD_ActivityInfoWithoutMux verifies that _getActivityInfo
+// returns 'unknown' when tuiMux is not available.
+func TestChunk13_HUD_ActivityInfoWithoutMux(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`JSON.stringify(globalThis.prSplit._getActivityInfo())`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var info struct {
+		Label string `json:"label"`
+		Ms    int    `json:"ms"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &info); err != nil {
+		t.Fatal(err)
+	}
+	if info.Label != "unknown" {
+		t.Errorf("activity label = %q, want 'unknown'", info.Label)
+	}
+	if info.Ms != -1 {
+		t.Errorf("activity ms = %d, want -1", info.Ms)
+	}
+}
+
+// TestChunk13_HUD_LastOutputLinesWithoutMux verifies that _getLastOutputLines
+// returns an empty array when tuiMux is not available.
+func TestChunk13_HUD_LastOutputLinesWithoutMux(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`JSON.stringify(globalThis.prSplit._getLastOutputLines(5))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw.(string) != "[]" {
+		t.Errorf("got %s, want []", raw.(string))
+	}
+}
+
+// TestChunk13_HUD_ToggleState verifies that _hudEnabled toggles correctly.
+func TestChunk13_HUD_ToggleState(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	// Initially disabled.
+	raw, err := evalJS(`globalThis.prSplit._hudEnabled()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != false {
+		t.Errorf("initial _hudEnabled() = %v, want false", raw)
+	}
+}
+
+// TestChunk13_HUD_RenderPanel verifies that _renderHudPanel returns a
+// non-empty string containing expected markers.
+func TestChunk13_HUD_RenderPanel(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`globalThis.prSplit._renderHudPanel()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	panel := raw.(string)
+	if len(panel) < 20 {
+		t.Errorf("panel too short: %q", panel)
+	}
+	// Should contain key elements.
+	for _, needle := range []string{"Claude Process HUD", "Status:", "Wizard:"} {
+		if !strings.Contains(panel, needle) {
+			t.Errorf("panel missing %q:\n%s", needle, panel)
+		}
+	}
+}
+
+// TestChunk13_HUD_StatusLineFormat verifies the compact status line format.
+func TestChunk13_HUD_StatusLineFormat(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`globalThis.prSplit._renderHudStatusLine()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := raw.(string)
+	// Should contain activity icon in brackets and wizard state.
+	if !strings.Contains(line, "[") || !strings.Contains(line, "]") {
+		t.Errorf("status line missing brackets: %q", line)
+	}
+}
+
+// TestChunk13_HUD_CommandRegistered verifies that 'hud' command exists
+// in buildCommands output.
+func TestChunk13_HUD_CommandRegistered(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var cmds = globalThis.prSplit._buildCommands({});
+		JSON.stringify({
+			hasHud: typeof cmds.hud === 'object',
+			description: cmds.hud && cmds.hud.description || '',
+			usage: cmds.hud && cmds.hud.usage || '',
+			hasHandler: typeof (cmds.hud && cmds.hud.handler) === 'function'
+		})
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var info struct {
+		HasHud      bool   `json:"hasHud"`
+		Description string `json:"description"`
+		Usage       string `json:"usage"`
+		HasHandler  bool   `json:"hasHandler"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &info); err != nil {
+		t.Fatal(err)
+	}
+	if !info.HasHud {
+		t.Error("hud command not found in buildCommands")
+	}
+	if !info.HasHandler {
+		t.Error("hud command has no handler")
+	}
+	if info.Description == "" {
+		t.Error("hud command has empty description")
 	}
 }

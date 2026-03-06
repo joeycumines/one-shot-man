@@ -3,7 +3,10 @@ package termmux
 import (
 	"context"
 	"fmt"
+	"io"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/dop251/goja"
 	"github.com/dop251/goja_nodejs/require"
@@ -1278,4 +1281,176 @@ func TestModule_AttachMapWithGoHandle_ViaJS(t *testing.T) {
 	if got != want {
 		t.Errorf("got %s, want %s", got, want)
 	}
+}
+
+// --- T31: Bell event propagation to JS ---
+
+// pipeMockChild implements io.ReadWriteCloser using pipes (similar to termmux_test.go).
+type pipeMockChild struct {
+	r io.ReadCloser
+	w io.Writer
+}
+
+func (p *pipeMockChild) Read(b []byte) (int, error)  { return p.r.Read(b) }
+func (p *pipeMockChild) Write(b []byte) (int, error) { return p.w.Write(b) }
+func (p *pipeMockChild) Close() error                { return p.r.Close() }
+
+func TestModule_BellEvent_QueuedThroughMux(t *testing.T) {
+	// Full chain: child writes BEL → VTerm → Mux.BellFn → SetBellFunc → events.queue → pollEvents → JS callback
+	runtime, _ := testRequire(t)
+
+	childR, childW := io.Pipe()
+	mc := &pipeMockChild{r: childR, w: io.Discard}
+
+	mux := parent.New(nil, io.Discard, -1)
+	muxObj := WrapMux(context.Background(), runtime, mux)
+	_ = runtime.Set("__mux", muxObj)
+
+	// Register bell listener.
+	_, err := runtime.RunString(`
+		var m = __mux;
+		var bellEvents = [];
+		m.on('bell', function(data) {
+			bellEvents.push(data.pane || 'unknown');
+		});
+	`)
+	if err != nil {
+		t.Fatalf("RunString setup: %v", err)
+	}
+
+	// Attach the mock child (this wires BellFn + SetBellFunc).
+	if err := mux.Attach(mc); err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+
+	// Child sends text with BEL.
+	childW.Write([]byte("Hello\x07World\x07"))
+	childW.Close()
+
+	// Wait for teeLoop to finish processing all output.
+	// Poll until we've received the expected bell events.
+	deadline := time.After(5 * time.Second)
+	for {
+		// Poll for events.
+		_, err := runtime.RunString(`m.pollEvents()`)
+		if err != nil {
+			t.Fatalf("pollEvents: %v", err)
+		}
+		v, err := runtime.RunString(`bellEvents.length`)
+		if err != nil {
+			t.Fatalf("bellEvents.length: %v", err)
+		}
+		if v.ToInteger() >= 2 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timeout waiting for 2 bell events; got %d", v.ToInteger())
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	// Verify bell event data.
+	v, err := runtime.RunString(`JSON.stringify(bellEvents)`)
+	if err != nil {
+		t.Fatalf("RunString verify: %v", err)
+	}
+	got2 := v.String()
+	want2 := `["claude","claude"]`
+	if got2 != want2 {
+		t.Errorf("bellEvents = %s, want %s", got2, want2)
+	}
+}
+
+func TestMuxEvents_BellQueueDrain(t *testing.T) {
+	// Unit test: bell events can be queued and drained through the event system.
+	e := newMuxEvents()
+	runtime := goja.New()
+
+	var received []map[string]interface{}
+	cb, _ := goja.AssertFunction(runtime.ToValue(func(call goja.FunctionCall) goja.Value {
+		data := call.Argument(0).Export()
+		if m, ok := data.(map[string]interface{}); ok {
+			received = append(received, m)
+		}
+		return goja.Undefined()
+	}))
+
+	e.on("bell", cb)
+
+	// Queue 3 bell events.
+	e.queue("bell", map[string]interface{}{"pane": "claude"})
+	e.queue("bell", map[string]interface{}{"pane": "claude"})
+	e.queue("bell", map[string]interface{}{"pane": "claude"})
+
+	count := e.drain(runtime)
+	if count != 3 {
+		t.Errorf("drain returned %d, want 3", count)
+	}
+	if len(received) != 3 {
+		t.Fatalf("received %d bell events, want 3", len(received))
+	}
+	if got := received[0]["pane"]; got != "claude" {
+		t.Errorf("bell event pane = %v, want claude", got)
+	}
+}
+
+// TestModule_LastActivityMs_MinusOneBeforeOutput verifies that lastActivityMs()
+// returns -1 when no child output has been received yet.
+func TestModule_LastActivityMs_MinusOneBeforeOutput(t *testing.T) {
+	vm := goja.New()
+	mux := parent.New(strings.NewReader(""), io.Discard, -1)
+	obj := WrapMux(context.Background(), vm, mux)
+
+	fn, ok := goja.AssertFunction(obj.ToObject(vm).Get("lastActivityMs"))
+	if !ok {
+		t.Fatal("lastActivityMs is not a function")
+	}
+	val, err := fn(goja.Undefined())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms := val.ToInteger()
+	if ms != -1 {
+		t.Errorf("lastActivityMs() = %d before output; want -1", ms)
+	}
+}
+
+// TestModule_LastActivityMs_PositiveAfterOutput verifies that lastActivityMs()
+// returns a positive value after child output flows through teeLoop.
+func TestModule_LastActivityMs_PositiveAfterOutput(t *testing.T) {
+	vm := goja.New()
+	mux := parent.New(strings.NewReader(""), io.Discard, -1)
+
+	childR, childW := io.Pipe()
+	mc := &pipeMockChild{r: childR, w: io.Discard}
+
+	if err := mux.Attach(mc); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write some output through the child.
+	childW.Write([]byte("output data\n"))
+	time.Sleep(150 * time.Millisecond)
+
+	obj := WrapMux(context.Background(), vm, mux)
+	fn, ok := goja.AssertFunction(obj.ToObject(vm).Get("lastActivityMs"))
+	if !ok {
+		t.Fatal("lastActivityMs is not a function")
+	}
+	val, err := fn(goja.Undefined())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ms := val.ToInteger()
+	if ms < 0 {
+		t.Errorf("lastActivityMs() = %d after output; want >= 0", ms)
+	}
+	if ms > 5000 {
+		t.Errorf("lastActivityMs() = %d after output; suspiciously large (want < 5000)", ms)
+	}
+
+	childW.Close()
+	childR.Close()
 }

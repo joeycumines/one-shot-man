@@ -3,7 +3,6 @@ package command
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -11,12 +10,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/builtin/mcpcallbackmod"
-	"github.com/joeycumines/one-shot-man/internal/termmux/pty"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -386,9 +383,9 @@ func TestIntegration_ExecuteSplit_WorktreeConflict(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestIntegration_AutoSplitCancel verifies that the auto-split pipeline
-// responds to cooperative cancellation within a reasonable time. It mocks
-// the autoSplitTUI.cancelled() function to return true during the pipeline
-// and verifies the pipeline exits with a cancellation error.
+// responds to cooperative cancellation within a reasonable time. It sets
+// prSplit._cancelSource to return true for 'cancelled' queries and verifies
+// the pipeline exits with a cancellation error.
 func TestIntegration_AutoSplitCancel(t *testing.T) {
 	t.Parallel()
 
@@ -402,26 +399,16 @@ func TestIntegration_AutoSplitCancel(t *testing.T) {
 		"verifyCommand": "true",
 	})
 
-	// Inject a mock autoSplitTUI that returns cancelled immediately.
-	// This simulates the user pressing q before the pipeline starts any
-	// blocking operation.
+	// Inject a _cancelSource that returns true for 'cancelled' immediately.
+	// This simulates the user requesting cancellation before the pipeline
+	// starts any blocking operation.
 	_, err := evalJS(`
-		globalThis.autoSplitTUI = {
-			runAsync: function() {},
-			wait: function() { return null; },
-			stepStart: function() {},
-			stepDone: function() {},
-			appendOutput: function() {},
-			appendError: function() {},
-			done: function() {},
-			stepDetail: function() {},
-			cancelled: function() { return true; },
-			forceCancelled: function() { return false; },
-			quit: function() {}
+		globalThis.prSplit._cancelSource = function(query) {
+			return query === 'cancelled' || query === 'forceCancelled';
 		};
 	`)
 	if err != nil {
-		t.Fatalf("failed to inject mock autoSplitTUI: %v", err)
+		t.Fatalf("failed to inject _cancelSource: %v", err)
 	}
 
 	// Run auto-split — it should detect cancellation at the first step
@@ -460,11 +447,11 @@ func TestIntegration_AutoSplitCancel(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Integration Test: sendToHandle fallback (no autoSplitTUI)
+// Integration Test: sendToHandle direct send path
 // ---------------------------------------------------------------------------
 
 // TestIntegration_SendToHandle_FallbackDirect verifies that sendToHandle
-// falls back to direct handle.send() when no autoSplitTUI is present.
+// uses direct handle.send() for writing data to the child process.
 // Two-write: text first, then Enter (\r) as a separate write so that
 // non-blocking TUI readers interpret it as submission.
 func TestIntegration_SendToHandle_FallbackDirect(t *testing.T) {
@@ -472,7 +459,7 @@ func TestIntegration_SendToHandle_FallbackDirect(t *testing.T) {
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	// Ensure autoSplitTUI is not defined (default engine state).
+	// sendToHandle uses the direct handle.send() path.
 	raw, err := evalJS(`
 		(async function() {
 			// sendToHandle uses two-write: text, then \r separately.
@@ -554,48 +541,33 @@ func TestIntegration_SendToHandle_FallbackError(t *testing.T) {
 	}
 }
 
-// TestIntegration_SendToHandle_TUIPath verifies the sendToHandle code path
-// that uses autoSplitTUI.sendWithCancel (when autoSplitTUI is defined with
-// that method). Two-write: sends text via sendWithCancel, then \r separately.
-func TestIntegration_SendToHandle_TUIPath(t *testing.T) {
+// TestIntegration_SendToHandle_DirectPath verifies the sendToHandle code path
+// using direct handle.send(). Two-write: sends text first, then \r separately.
+func TestIntegration_SendToHandle_DirectPath(t *testing.T) {
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	raw, err := evalJS(`
 		(async function() {
-			// Define autoSplitTUI with sendWithCancel to trigger the TUI path.
 			var calls = [];
-			globalThis.autoSplitTUI = {
-				sendWithCancel: function(handle, text) {
-					calls.push({ handle: 'mock', text: text });
-					return { error: null };
-				}
-			};
 
 			var mockHandle = {
-				send: function(text) { calls.push({ directSend: text }); }
+				send: function(text) { calls.push(text); }
 			};
 
 			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
-
-			// Tear down to avoid leaking into other tests.
-			delete globalThis.autoSplitTUI;
 
 			return JSON.stringify({ error: result.error, calls: calls });
 		})()
 	`)
 	if err != nil {
-		t.Fatalf("sendToHandle TUI path test failed: %v", err)
+		t.Fatalf("sendToHandle direct path test failed: %v", err)
 	}
 
 	var result struct {
-		Error *string `json:"error"`
-		Calls []struct {
-			Handle     string `json:"handle"`
-			Text       string `json:"text"`
-			DirectSend string `json:"directSend"`
-		} `json:"calls"`
+		Error *string  `json:"error"`
+		Calls []string `json:"calls"`
 	}
 	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
 		t.Fatalf("parse error: %v", err)
@@ -603,28 +575,22 @@ func TestIntegration_SendToHandle_TUIPath(t *testing.T) {
 	if result.Error != nil {
 		t.Errorf("expected no error, got: %s", *result.Error)
 	}
-	// Two-write: text first, then \r in separate sendWithCancel calls.
+	// Two-write: text first, then \r separately.
 	if len(result.Calls) != 2 {
-		t.Fatalf("expected 2 sendWithCancel calls (two-write), got %d: %+v", len(result.Calls), result.Calls)
+		t.Fatalf("expected 2 send calls (two-write), got %d: %+v", len(result.Calls), result.Calls)
 	}
-	if result.Calls[0].Text != "classify these files" {
-		t.Errorf("call[0] text = %q, want %q", result.Calls[0].Text, "classify these files")
+	if result.Calls[0] != "classify these files" {
+		t.Errorf("call[0] = %q, want %q", result.Calls[0], "classify these files")
 	}
-	if result.Calls[1].Text != "\r" {
-		t.Errorf("call[1] text = %q, want %q", result.Calls[1].Text, "\r")
-	}
-	// Should NOT have used direct send.
-	for _, c := range result.Calls {
-		if c.DirectSend != "" {
-			t.Errorf("should not have used direct send, but got: %q", c.DirectSend)
-		}
+	if result.Calls[1] != "\r" {
+		t.Errorf("call[1] = %q, want %q", result.Calls[1], "\r")
 	}
 }
 
-// TestIntegration_SendToHandle_TUIPath_FirstSendError verifies that when
-// autoSplitTUI.sendWithCancel returns an error on the first write (text),
-// the function returns that error without attempting the second write.
-func TestIntegration_SendToHandle_TUIPath_FirstSendError(t *testing.T) {
+// TestIntegration_SendToHandle_FirstSendError verifies that when
+// handle.send() throws on the first write (text), the function returns
+// that error without attempting the Enter write.
+func TestIntegration_SendToHandle_FirstSendError(t *testing.T) {
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -632,26 +598,23 @@ func TestIntegration_SendToHandle_TUIPath_FirstSendError(t *testing.T) {
 	raw, err := evalJS(`
 		(async function() {
 			var callCount = 0;
-			globalThis.autoSplitTUI = {
-				sendWithCancel: function(handle, text) {
+
+			var mockHandle = {
+				send: function(text) {
 					callCount++;
 					if (callCount === 1) {
-						return { error: 'cancelled by user' };
+						throw new Error('cancelled by user');
 					}
-					return { error: null };
 				}
 			};
 
-			var mockHandle = { send: function() {} };
 			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'will cancel');
-
-			delete globalThis.autoSplitTUI;
 
 			return JSON.stringify({ error: result.error, callCount: callCount });
 		})()
 	`)
 	if err != nil {
-		t.Fatalf("sendToHandle TUI error test failed: %v", err)
+		t.Fatalf("sendToHandle error test failed: %v", err)
 	}
 
 	var result struct {
@@ -662,7 +625,7 @@ func TestIntegration_SendToHandle_TUIPath_FirstSendError(t *testing.T) {
 		t.Fatalf("parse error: %v", err)
 	}
 	if result.Error == nil {
-		t.Fatal("expected error from sendToHandle when first sendWithCancel fails")
+		t.Fatal("expected error from sendToHandle when first handle.send() throws")
 	}
 	if !strings.Contains(*result.Error, "cancelled") {
 		t.Errorf("error = %q, want to contain 'cancelled'", *result.Error)
@@ -672,10 +635,10 @@ func TestIntegration_SendToHandle_TUIPath_FirstSendError(t *testing.T) {
 	}
 }
 
-// TestIntegration_SendToHandle_TUIPath_ObservedSubmissionRetry verifies
+// TestIntegration_SendToHandle_ObservedSubmissionRetry verifies
 // sendToHandle retries Enter submission when terminal output does not change
 // after the first Enter, and succeeds once output change is observed.
-func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionRetry(t *testing.T) {
+func TestIntegration_SendToHandle_ObservedSubmissionRetry(t *testing.T) {
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -686,8 +649,8 @@ func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionRetry(t *testing.T) 
 			var screen = 'Claude shell\n❯ classify these files';
 			var enterCount = 0;
 
-			globalThis.autoSplitTUI = {
-				sendWithCancel: function(handle, text) {
+			var mockHandle = {
+				send: function(text) {
 					calls.push(text);
 					if (text === '\r') {
 						enterCount++;
@@ -697,7 +660,6 @@ func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionRetry(t *testing.T) 
 							screen = 'Claude processing request...\n❯ ';
 						}
 					}
-					return { error: null };
 				}
 			};
 			globalThis.tuiMux = {
@@ -713,9 +675,8 @@ func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionRetry(t *testing.T) 
 			prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES = 1;
 			prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS = 3;
 
-			var result = await globalThis.prSplit.sendToHandle({}, 'classify these files');
+			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
 
-			delete globalThis.autoSplitTUI;
 			delete globalThis.tuiMux;
 
 			return JSON.stringify({
@@ -759,10 +720,10 @@ func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionRetry(t *testing.T) 
 	}
 }
 
-// TestIntegration_SendToHandle_TUIPath_ObservedSubmissionFailure verifies
+// TestIntegration_SendToHandle_ObservedSubmissionFailure verifies
 // sendToHandle fails when Enter retries never produce an observable
 // terminal output change.
-func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionFailure(t *testing.T) {
+func TestIntegration_SendToHandle_ObservedSubmissionFailure(t *testing.T) {
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -772,10 +733,9 @@ func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionFailure(t *testing.T
 			var calls = [];
 			var screen = 'Claude shell\n❯ classify these files';
 
-			globalThis.autoSplitTUI = {
-				sendWithCancel: function(handle, text) {
+			var mockHandle = {
+				send: function(text) {
 					calls.push(text);
-					return { error: null };
 				}
 			};
 			globalThis.tuiMux = {
@@ -791,9 +751,8 @@ func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionFailure(t *testing.T
 			prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES = 1;
 			prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS = 2;
 
-			var result = await globalThis.prSplit.sendToHandle({}, 'classify these files');
+			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
 
-			delete globalThis.autoSplitTUI;
 			delete globalThis.tuiMux;
 
 			return JSON.stringify({
@@ -830,9 +789,9 @@ func TestIntegration_SendToHandle_TUIPath_ObservedSubmissionFailure(t *testing.T
 	}
 }
 
-// TestIntegration_SendToHandle_TUIPath_PromptReadyTimeout verifies that
+// TestIntegration_SendToHandle_PromptReadyTimeout verifies that
 // sendToHandle fails before any write when no Claude prompt marker appears.
-func TestIntegration_SendToHandle_TUIPath_PromptReadyTimeout(t *testing.T) {
+func TestIntegration_SendToHandle_PromptReadyTimeout(t *testing.T) {
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -842,10 +801,9 @@ func TestIntegration_SendToHandle_TUIPath_PromptReadyTimeout(t *testing.T) {
 			var calls = [];
 			var screen = 'Claude booting...';
 
-			globalThis.autoSplitTUI = {
-				sendWithCancel: function(handle, text) {
+			var mockHandle = {
+				send: function(text) {
 					calls.push(text);
-					return { error: null };
 				}
 			};
 			globalThis.tuiMux = {
@@ -856,9 +814,8 @@ func TestIntegration_SendToHandle_TUIPath_PromptReadyTimeout(t *testing.T) {
 			prSplit.SEND_PROMPT_READY_POLL_MS = 1;
 			prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 1;
 
-			var result = await globalThis.prSplit.sendToHandle({}, 'classify these files');
+			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
 
-			delete globalThis.autoSplitTUI;
 			delete globalThis.tuiMux;
 
 			return JSON.stringify({
@@ -889,9 +846,9 @@ func TestIntegration_SendToHandle_TUIPath_PromptReadyTimeout(t *testing.T) {
 	}
 }
 
-// TestIntegration_SendToHandle_TUIPath_PromptSetupBlocker verifies that
+// TestIntegration_SendToHandle_PromptSetupBlocker verifies that
 // first-run setup screens are detected and reported as actionable errors.
-func TestIntegration_SendToHandle_TUIPath_PromptSetupBlocker(t *testing.T) {
+func TestIntegration_SendToHandle_PromptSetupBlocker(t *testing.T) {
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -905,10 +862,9 @@ func TestIntegration_SendToHandle_TUIPath_PromptSetupBlocker(t *testing.T) {
 				"❯ 1. Dark mode"
 			].join('\n');
 
-			globalThis.autoSplitTUI = {
-				sendWithCancel: function(handle, text) {
+			var mockHandle = {
+				send: function(text) {
 					calls.push(text);
-					return { error: null };
 				}
 			};
 			globalThis.tuiMux = {
@@ -919,9 +875,8 @@ func TestIntegration_SendToHandle_TUIPath_PromptSetupBlocker(t *testing.T) {
 			prSplit.SEND_PROMPT_READY_POLL_MS = 1;
 			prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 1;
 
-			var result = await globalThis.prSplit.sendToHandle({}, 'classify these files');
+			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
 
-			delete globalThis.autoSplitTUI;
 			delete globalThis.tuiMux;
 
 			return JSON.stringify({
@@ -952,9 +907,9 @@ func TestIntegration_SendToHandle_TUIPath_PromptSetupBlocker(t *testing.T) {
 	}
 }
 
-// TestIntegration_SendToHandle_TUIPath_PromptReadyDelayed verifies that
+// TestIntegration_SendToHandle_PromptReadyDelayed verifies that
 // sendToHandle waits for prompt readiness before writing.
-func TestIntegration_SendToHandle_TUIPath_PromptReadyDelayed(t *testing.T) {
+func TestIntegration_SendToHandle_PromptReadyDelayed(t *testing.T) {
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -965,15 +920,14 @@ func TestIntegration_SendToHandle_TUIPath_PromptReadyDelayed(t *testing.T) {
 			var screenshotCalls = 0;
 			var screen = 'Claude booting...';
 
-			globalThis.autoSplitTUI = {
-				sendWithCancel: function(handle, text) {
+			var mockHandle = {
+				send: function(text) {
 					calls.push(text);
 					if (text === 'classify these files') {
 						screen = 'Claude shell\n❯ classify these files';
 					} else if (text === '\r') {
 						screen = 'Claude processing request...\n❯ ';
 					}
-					return { error: null };
 				}
 			};
 			globalThis.tuiMux = {
@@ -997,9 +951,8 @@ func TestIntegration_SendToHandle_TUIPath_PromptReadyDelayed(t *testing.T) {
 			prSplit.SEND_SUBMIT_ACK_POLL_MS = 1;
 			prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES = 1;
 
-			var result = await globalThis.prSplit.sendToHandle({}, 'classify these files');
+			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
 
-			delete globalThis.autoSplitTUI;
 			delete globalThis.tuiMux;
 
 			return JSON.stringify({
@@ -1704,307 +1657,18 @@ func TestIntegration_IsAliveGuard_MissingIsAlive(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Integration Test: prSplitSendWithCancel with real PTY child
+// Integration Test: Pipeline Output Observation — verify stdout step progress
 // ---------------------------------------------------------------------------
 
-// TestPrSplitSendWithCancel_NormalWrite spawns a real `cat` process in a
-// PTY and sends a small amount of data through prSplitSendWithCancel.
-// This verifies the happy path with a real child process.
-func TestPrSplitSendWithCancel_NormalWrite(t *testing.T) {
-	t.Parallel()
-	if _, err := exec.LookPath("cat"); err != nil {
-		t.Skip("cat not available")
-	}
-
-	ctx := context.Background()
-	proc, err := ptySpawnCat(ctx)
-	if err != nil {
-		t.Fatalf("failed to spawn cat: %v", err)
-	}
-	defer proc.Close()
-
-	// Send a small amount of data — cat will echo it back, keeping the
-	// write buffer from filling up. No cancellation.
-	sendErr := prSplitSendWithCancel(
-		func() error { return proc.Write("hello world\n") },
-		func() { _ = proc.Signal("SIGKILL") },
-		func() bool { return false },
-		func() bool { return false },
-	)
-	if sendErr != nil {
-		t.Fatalf("prSplitSendWithCancel returned error on normal write: %v", sendErr)
-	}
-
-	// Read back the data to verify it went through.
-	out, readErr := proc.Read()
-	if readErr != nil && out == "" {
-		t.Fatalf("failed to read from cat: %v", readErr)
-	}
-	if !strings.Contains(out, "hello world") {
-		t.Errorf("expected cat to echo 'hello world', got: %q", out)
-	}
-}
-
-// TestPrSplitSendWithCancel_Cancel spawns a real `sleep` process (which
-// never reads stdin), starts a large write (that will block the PTY buffer),
-// and then signals cancel. Verifies that prSplitSendWithCancel kills the
-// process and returns within a reasonable time.
-//
-// Uses a synthetic blocking send (not a real PTY write) to avoid
-// platform-specific PTY buffer size differences. A separate test
-// (TestPrSplitSendWithCancel_RealPTYKill) validates that SIGKILL
-// actually unblocks a real PTY write.
-func TestPrSplitSendWithCancel_Cancel(t *testing.T) {
-	t.Parallel()
-
-	var cancelledFlag int32
-	go func() {
-		time.Sleep(300 * time.Millisecond)
-		atomic.StoreInt32(&cancelledFlag, 1)
-	}()
-
-	// The "send" blocks on a channel until kill() closes it —
-	// simulating a PTY write that would block indefinitely.
-	killed := make(chan struct{})
-
-	start := time.Now()
-	sendErr := prSplitSendWithCancel(
-		func() error {
-			<-killed
-			return errors.New("write aborted: process killed")
-		},
-		func() { close(killed) },
-		func() bool { return atomic.LoadInt32(&cancelledFlag) == 1 },
-		func() bool { return false },
-	)
-	elapsed := time.Since(start)
-
-	if sendErr == nil {
-		t.Fatal("expected cancel error, got nil")
-	}
-	if !strings.Contains(sendErr.Error(), "cancelled by user") {
-		t.Errorf("expected 'cancelled by user' error, got: %v", sendErr)
-	}
-	// Should complete within 2 seconds (300ms cancel delay + ≤200ms poll).
-	if elapsed > 2*time.Second {
-		t.Errorf("cancel took too long: %v (expected < 2s)", elapsed)
-	}
-	t.Logf("cancel completed in %v", elapsed)
-}
-
-// TestPrSplitSendWithCancel_ForceCancel is similar to Cancel but sets
-// the forceCancel flag instead. Verifies the "force cancelled" error path.
-func TestPrSplitSendWithCancel_ForceCancel(t *testing.T) {
-	t.Parallel()
-
-	var forceCancelFlag int32
-	go func() {
-		time.Sleep(300 * time.Millisecond)
-		atomic.StoreInt32(&forceCancelFlag, 1)
-	}()
-
-	killed := make(chan struct{})
-
-	start := time.Now()
-	sendErr := prSplitSendWithCancel(
-		func() error {
-			<-killed
-			return errors.New("write aborted: process killed")
-		},
-		func() { close(killed) },
-		func() bool { return false },
-		func() bool { return atomic.LoadInt32(&forceCancelFlag) == 1 },
-	)
-	elapsed := time.Since(start)
-
-	if sendErr == nil {
-		t.Fatal("expected force cancel error, got nil")
-	}
-	if !strings.Contains(sendErr.Error(), "force cancelled") {
-		t.Errorf("expected 'force cancelled' error, got: %v", sendErr)
-	}
-	if elapsed > 2*time.Second {
-		t.Errorf("force cancel took too long: %v (expected < 2s)", elapsed)
-	}
-	t.Logf("force cancel completed in %v", elapsed)
-}
-
-// ---------------------------------------------------------------------------
-// T97: prSplitSendWithCancel — kill does NOT unblock send (2s fallback)
-// ---------------------------------------------------------------------------
-
-// TestPrSplitSendWithCancel_KillTimeoutFallback verifies the 2s fallback
-// after kill(). If kill() does not unblock the send goroutine (e.g., orphaned
-// PTY fd in a blocked kernel state), the function must still return within
-// ~2.5s via the time.After(2 * time.Second) branch.
-func TestPrSplitSendWithCancel_KillTimeoutFallback(t *testing.T) {
-	t.Parallel()
-
-	var cancelFlag int32
-	go func() {
-		time.Sleep(300 * time.Millisecond)
-		atomic.StoreInt32(&cancelFlag, 1)
-	}()
-
-	// send() blocks forever — kill() is a no-op that does NOT unblock it.
-	// This simulates the pathological case where SIGKILL fails to unblock
-	// the PTY write.
-	blockForever := make(chan struct{})
-	t.Cleanup(func() { close(blockForever) }) // prevent goroutine leak after test
-
-	start := time.Now()
-	sendErr := prSplitSendWithCancel(
-		func() error {
-			<-blockForever // blocks until test cleanup
-			return errors.New("should not reach here during test")
-		},
-		func() { /* no-op kill — does not unblock send */ },
-		func() bool { return atomic.LoadInt32(&cancelFlag) == 1 },
-		func() bool { return false },
-	)
-	elapsed := time.Since(start)
-
-	if sendErr == nil {
-		t.Fatal("expected cancel error, got nil")
-	}
-	if !strings.Contains(sendErr.Error(), "cancelled by user") {
-		t.Errorf("expected 'cancelled by user' error, got: %v", sendErr)
-	}
-	// Should take ~2.3-2.5s: 300ms cancel delay + 200ms poll + 2s timeout.
-	if elapsed < 2*time.Second {
-		t.Errorf("expected at least 2s (kill timeout), got: %v", elapsed)
-	}
-	if elapsed > 5*time.Second {
-		t.Errorf("took too long: %v (expected < 5s)", elapsed)
-	}
-	t.Logf("kill-timeout fallback completed in %v", elapsed)
-}
-
-// TestPrSplitSendWithCancel_ForceKillTimeoutFallback is the same as above
-// but for the force-cancel path.
-func TestPrSplitSendWithCancel_ForceKillTimeoutFallback(t *testing.T) {
-	t.Parallel()
-
-	var forceFlag int32
-	go func() {
-		time.Sleep(300 * time.Millisecond)
-		atomic.StoreInt32(&forceFlag, 1)
-	}()
-
-	blockForever := make(chan struct{})
-	t.Cleanup(func() { close(blockForever) })
-
-	start := time.Now()
-	sendErr := prSplitSendWithCancel(
-		func() error {
-			<-blockForever
-			return errors.New("should not reach here during test")
-		},
-		func() { /* no-op kill */ },
-		func() bool { return false },
-		func() bool { return atomic.LoadInt32(&forceFlag) == 1 },
-	)
-	elapsed := time.Since(start)
-
-	if sendErr == nil {
-		t.Fatal("expected force cancel error, got nil")
-	}
-	if !strings.Contains(sendErr.Error(), "force cancelled") {
-		t.Errorf("expected 'force cancelled' error, got: %v", sendErr)
-	}
-	if elapsed < 2*time.Second {
-		t.Errorf("expected at least 2s (kill timeout), got: %v", elapsed)
-	}
-	if elapsed > 5*time.Second {
-		t.Errorf("took too long: %v (expected < 5s)", elapsed)
-	}
-	t.Logf("force-kill-timeout fallback completed in %v", elapsed)
-}
-
-// TestPrSplitSendWithCancel_RealPTYKill spawns a real child process (sleep)
-// in a PTY and verifies that the SIGKILL path works correctly. On macOS the
-// PTY buffer is large enough to absorb 1MB without blocking, so the cancel
-// check may never fire. This test verifies that either:
-//   - The write completes and the function returns nil (large buffer), OR
-//   - The cancel fires, kills the process, and returns "cancelled" (small buffer).
-//
-// In both cases the function must return promptly (no hang).
-func TestPrSplitSendWithCancel_RealPTYKill(t *testing.T) {
-	t.Parallel()
-	if _, err := exec.LookPath("sleep"); err != nil {
-		t.Skip("sleep not available")
-	}
-
-	ctx := context.Background()
-	proc, err := pty.Spawn(ctx, pty.SpawnConfig{
-		Command: "sleep",
-		Args:    []string{"3600"},
-		Rows:    24,
-		Cols:    80,
-	})
-	if err != nil {
-		t.Fatalf("failed to spawn sleep: %v", err)
-	}
-	defer proc.Close()
-
-	// Set cancel flag immediately — we just want to verify the function
-	// completes promptly without hanging.
-	start := time.Now()
-	sendErr := prSplitSendWithCancel(
-		func() error {
-			return proc.Write(strings.Repeat("x", 1<<20))
-		},
-		func() { _ = proc.Signal("SIGKILL") },
-		func() bool { return true }, // cancelled from the start
-		func() bool { return false },
-	)
-	elapsed := time.Since(start)
-
-	// The function must return within a few seconds regardless of buffer.
-	if elapsed > 5*time.Second {
-		t.Errorf("real PTY send+cancel took too long: %v (hang detected)", elapsed)
-	}
-	t.Logf("real PTY send+cancel completed in %v, err=%v", elapsed, sendErr)
-
-	// Now separately verify SIGKILL actually works on a real process.
-	proc2, err := pty.Spawn(ctx, pty.SpawnConfig{
-		Command: "sleep", Args: []string{"3600"},
-	})
-	if err != nil {
-		t.Fatalf("failed to spawn second sleep: %v", err)
-	}
-	defer proc2.Close()
-
-	if !proc2.IsAlive() {
-		t.Fatal("process should be alive before kill")
-	}
-	if err := proc2.Signal("SIGKILL"); err != nil {
-		t.Fatalf("Signal(SIGKILL) failed: %v", err)
-	}
-	// Wait for the process to die (should be near-instant after SIGKILL).
-	code, _ := proc2.Wait()
-	if proc2.IsAlive() {
-		t.Error("process should be dead after SIGKILL + Wait")
-	}
-	t.Logf("SIGKILL exit code: %d", code)
-}
-
-// ---------------------------------------------------------------------------
-// Integration Test: TUI Observation APIs — verify getSteps/getOutputLines/getView
-// ---------------------------------------------------------------------------
-
-// TestIntegration_AutoSplitMockMCP_TUIObservation exercises the TUI
-// observation APIs (autoSplitTUI.getView, getSteps, getOutputLines)
-// to verify that the pipeline progress is observable for downstream
-// validation. This test ENABLES the TUI (unlike the base MockMCP test
-// which uses disableTUI:true) to validate that BubbleTea rendering
-// produces the expected step icons and output pane content.
+// TestIntegration_AutoSplitMockMCP_OutputObservation exercises the pipeline's
+// step progress output to verify that pipeline progress is observable via
+// stdout. The pipeline emits "[auto-split] {step}..." and "[auto-split] {step} OK"
+// messages through output.print(), which are captured in the test's stdout buffer.
 //
 // This test addresses the "PTY screenshot mechanism" requirement:
-// after the pipeline completes (and TUI exits), we capture the final
-// rendered state and assert on it — proving that the TUI would have
-// shown correct information to a real user.
-func TestIntegration_AutoSplitMockMCP_TUIObservation(t *testing.T) {
+// after the pipeline completes, we capture stdout and assert on it — proving
+// that a real user would see correct progress information.
+func TestIntegration_AutoSplitMockMCP_OutputObservation(t *testing.T) {
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -2038,55 +1702,6 @@ func TestIntegration_AutoSplitMockMCP_TUIObservation(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
-
-	// Inject a mock autoSplitTUI that tracks step calls via getSteps/getOutputLines.
-	// Rather than using a pure JS mock (which wouldn't exercise the Go observation
-	// APIs), we inject a mock that records state in JS arrays and then validate
-	// using the captured stepStart/stepDone calls.
-	_, err = tp.EvalJS(`
-		var _tuiStepStarts = [];
-		var _tuiStepDones = [];
-		var _tuiOutputs = [];
-		var _tuiErrors = [];
-		var _tuiDoneSummary = null;
-		globalThis.autoSplitTUI = {
-			runAsync: function() {},
-			wait: function() { return null; },
-			stepStart: function(name) {
-				_tuiStepStarts.push(name);
-				log.printf('TUI_STEP_START: %s', name);
-			},
-			stepDone: function(name, err, elapsed) {
-				_tuiStepDones.push({ name: name, error: err || '', elapsedMs: elapsed });
-				log.printf('TUI_STEP_DONE: %s err=%s elapsed=%dms', name, err || 'ok', elapsed);
-			},
-			appendOutput: function(text) { _tuiOutputs.push(text); },
-			appendError: function(text) { _tuiErrors.push(text); },
-			done: function(summary) { _tuiDoneSummary = summary; },
-			stepDetail: function() {},
-			branchStart: function() {},
-			branchDone: function() {},
-			branchOutput: function() {},
-			cancelled: function() { return false; },
-			forceCancelled: function() { return false; },
-			paused: function() { return false; },
-			quit: function() {},
-			getSteps: function() { return _tuiStepDones; },
-			getOutputLines: function() { return _tuiOutputs; },
-			getView: function() {
-				var lines = [];
-				for (var i = 0; i < _tuiStepDones.length; i++) {
-					var s = _tuiStepDones[i];
-					var icon = s.error ? '✗' : '✓';
-					lines.push(icon + ' ' + s.name + ' (' + s.elapsedMs + 'ms)');
-				}
-				return lines.join('\n');
-			}
-		};
-	`)
-	if err != nil {
-		t.Fatalf("Failed to inject TUI observation mock: %v", err)
-	}
 
 	// Classification data.
 	classJSON, _ := json.Marshal(map[string]interface{}{"categories": []map[string]any{
@@ -2153,114 +1768,37 @@ func TestIntegration_AutoSplitMockMCP_TUIObservation(t *testing.T) {
 	}
 
 	// -----------------------------------------------------------------------
-	// Validate TUI observation APIs captured the correct state.
+	// Validate stdout captured pipeline step progress.
+	// The pipeline emits "[auto-split] {step}..." and "[auto-split] {step} OK"
+	// messages via output.print().
 	// -----------------------------------------------------------------------
 
-	// 1. Step starts were recorded.
-	stepsRaw, err := tp.EvalJS(`JSON.stringify(_tuiStepStarts)`)
-	if err != nil {
-		t.Fatalf("get step starts: %v", err)
-	}
-	var stepStarts []string
-	if err := json.Unmarshal([]byte(stepsRaw.(string)), &stepStarts); err != nil {
-		t.Fatalf("parse step starts: %v", err)
-	}
-	t.Logf("TUI step starts: %v", stepStarts)
-	if len(stepStarts) < 4 {
-		t.Errorf("expected at least 4 step starts, got %d: %v", len(stepStarts), stepStarts)
-	}
-	// Deep validation: verify expected pipeline step names appear.
+	outStr := tp.Stdout.String()
+	t.Logf("Pipeline stdout (%d bytes):\n%s", len(outStr), outStr)
+
+	// 1. Verify step progress messages appear in stdout.
+	// Pipeline steps emit "[auto-split] Analyze diff...", "[auto-split] Classify files...", etc.
 	expectedStepKeywords := []string{"nalyze", "lassif", "lan", "xecut"}
 	for _, keyword := range expectedStepKeywords {
-		found := false
-		for _, step := range stepStarts {
-			if strings.Contains(strings.ToLower(step), strings.ToLower(keyword)) {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("expected step matching %q in step starts: %v", keyword, stepStarts)
+		if !strings.Contains(strings.ToLower(outStr), strings.ToLower(keyword)) {
+			t.Errorf("expected step keyword %q in stdout, not found", keyword)
 		}
 	}
 
-	// 2. Step dones were recorded with correct names and no errors.
-	donesRaw, err := tp.EvalJS(`JSON.stringify(_tuiStepDones)`)
-	if err != nil {
-		t.Fatalf("get step dones: %v", err)
-	}
-	var stepDones []struct {
-		Name      string `json:"name"`
-		Error     string `json:"error"`
-		ElapsedMs int64  `json:"elapsedMs"`
-	}
-	if err := json.Unmarshal([]byte(donesRaw.(string)), &stepDones); err != nil {
-		t.Fatalf("parse step dones: %v", err)
-	}
-	for _, s := range stepDones {
-		if s.Error != "" {
-			t.Errorf("step %q had error: %s", s.Name, s.Error)
-		}
-		if s.ElapsedMs < 0 {
-			t.Errorf("step %q had negative elapsed time: %dms", s.Name, s.ElapsedMs)
-		}
-		t.Logf("  step %q: OK (%dms)", s.Name, s.ElapsedMs)
-	}
-
-	// 3. Output lines were captured (pipeline emits progress messages).
-	outputsRaw, err := tp.EvalJS(`JSON.stringify(_tuiOutputs)`)
-	if err != nil {
-		t.Fatalf("get outputs: %v", err)
-	}
-	var outputs []string
-	if err := json.Unmarshal([]byte(outputsRaw.(string)), &outputs); err != nil {
-		t.Fatalf("parse outputs: %v", err)
-	}
-	t.Logf("TUI output lines: %d", len(outputs))
-	for i, line := range outputs {
-		if i < 20 { // log first 20 lines
-			t.Logf("  [%d] %s", i, line)
-		}
-	}
-	if len(outputs) == 0 {
-		t.Error("expected at least one output line from the pipeline")
-	}
-	// Deep validation: verify output contains success indicators.
-	// Output lines use "[auto-split] Analyze diff..." format.
-	joinedOutput := strings.Join(outputs, "\n")
-	successIndicators := []string{"Analyze diff", "split", "OK"}
+	// 2. Verify success indicators appear (step completion messages).
+	successIndicators := []string{"[auto-split]", "OK"}
 	for _, indicator := range successIndicators {
-		if !strings.Contains(joinedOutput, indicator) {
-			t.Errorf("expected %q in TUI output lines, not found. First 5 lines: %v",
-				indicator, outputs[:min(5, len(outputs))])
+		if !strings.Contains(outStr, indicator) {
+			t.Errorf("expected %q in stdout, not found", indicator)
 		}
 	}
 
-	// 4. No errors were recorded.
-	errorsRaw, err := tp.EvalJS(`JSON.stringify(_tuiErrors)`)
-	if err != nil {
-		t.Fatalf("get errors: %v", err)
-	}
-	var tuiErrors []string
-	if err := json.Unmarshal([]byte(errorsRaw.(string)), &tuiErrors); err != nil {
-		t.Fatalf("parse errors: %v", err)
-	}
-	if len(tuiErrors) > 0 {
-		t.Errorf("TUI received %d error(s): %v", len(tuiErrors), tuiErrors)
+	// 3. Verify no error messages were emitted.
+	if strings.Contains(outStr, "FAILED") {
+		t.Errorf("stdout contains FAILED — unexpected step failure")
 	}
 
-	// 5. Done summary was provided.
-	summaryRaw, err := tp.EvalJS(`_tuiDoneSummary`)
-	if err != nil {
-		t.Fatalf("get done summary: %v", err)
-	}
-	t.Logf("TUI done summary: %v", summaryRaw)
-	if summaryRaw == nil || summaryRaw == "" {
-		t.Error("expected non-empty done summary")
-	}
-
-	// 6. Verify stdout has no ANSI escape sequences (broken.md issue #2).
-	outStr := tp.Stdout.String()
+	// 4. Verify stdout has no ANSI escape sequences (broken.md issue #2).
 	for _, seq := range []string{"\x1b[?1049h", "\x1b[?1049l", "\x1b[2J"} {
 		if strings.Contains(outStr, seq) {
 			t.Errorf("stdout contains raw ANSI sequence %q — terminal mangling", seq)
@@ -2320,41 +1858,6 @@ func TestIntegration_AutoSplitWithClaude_Pipeline(t *testing.T) {
 			t.Logf("Engine stdout:\n%s", out)
 		}
 	})
-
-	// Inject autoSplitTUI mock — no real BubbleTea (no terminal in CI),
-	// but provides the interface the pipeline expects. sendWithCancel is
-	// deliberately NOT included so the pipeline uses the direct fallback;
-	// the sendWithCancel mechanics are tested by the PTY tests above.
-	// T37: The mock now logs step events to Go's testing.T for real-time
-	// visibility even when the test times out.
-	_, err := evalJS(`
-		globalThis.autoSplitTUI = {
-			runAsync: function() {},
-			wait: function() { return null; },
-			stepStart: function(name) {
-				log.printf('TUI STEP START: %s', name);
-				output.print('[test-tui] STEP START: ' + name);
-			},
-			stepDone: function(name, err, elapsed) {
-				log.printf('TUI STEP DONE: %s err=%s elapsed=%dms', name, err || 'ok', elapsed);
-				output.print('[test-tui] STEP DONE: ' + name + ' err=' + (err || 'ok') + ' ' + elapsed + 'ms');
-			},
-			appendOutput: function(text) {
-				log.printf('TUI OUTPUT: %s', text);
-			},
-			appendError: function(text) { log.printf('TUI ERROR: %s', text); },
-			done: function(summary) { log.printf('TUI DONE: %s', summary); },
-			stepDetail: function(name, detail) {
-				log.printf('TUI DETAIL: %s — %s', name, detail);
-			},
-			cancelled: function() { return false; },
-			forceCancelled: function() { return false; },
-			quit: function() {}
-		};
-	`)
-	if err != nil {
-		t.Fatalf("failed to inject autoSplitTUI mock: %v", err)
-	}
 
 	// Run the full auto-split pipeline.
 	t.Log("Starting auto-split pipeline with real Claude agent...")
@@ -2429,9 +1932,10 @@ func TestIntegration_AutoSplitWithClaude_Pipeline(t *testing.T) {
 func TestIntegration_ClaudeMCP_Headless(t *testing.T) {
 	skipIfNoClaude(t)
 
-	// Pre-flight: socat is required for the stdio-to-unix-socket bridge.
-	if _, err := exec.LookPath("socat"); err != nil {
-		t.Skip("socat not found on PATH (required for MCP callback unix socket bridge)")
+	// Pre-flight: osm binary is required for the stdio-to-socket bridge (mcp-bridge subcommand).
+	osmExe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("resolve osm executable: %v", err)
 	}
 
 	// Pre-flight: verify Claude can respond in -p mode.
@@ -2530,12 +2034,12 @@ func TestIntegration_ClaudeMCP_Headless(t *testing.T) {
 		}
 	}()
 
-	// 3. Generate MCP config JSON.
+	// 3. Generate MCP config JSON using osm mcp-bridge as the stdio-to-socket bridge.
 	mcpConfig := map[string]any{
 		"mcpServers": map[string]any{
 			"osm-callback": map[string]any{
-				"command": "socat",
-				"args":    []string{"STDIO", "UNIX-CONNECT:" + sockPath},
+				"command": osmExe,
+				"args":    []string{"mcp-bridge", "unix", sockPath},
 			},
 		},
 	}
@@ -2623,19 +2127,6 @@ Do NOT just describe the classification in text — use the tool.`
 		// Claude should have already finished by now (cmd.CombinedOutput completed).
 		t.Fatal("reportClassification tool was never called — Claude did not invoke the MCP tool")
 	}
-}
-
-// ---------------------------------------------------------------------------
-// Integration Test Helpers (PTY)
-// ---------------------------------------------------------------------------
-
-// ptySpawnCat spawns a `cat` process in a PTY for testing.
-func ptySpawnCat(ctx context.Context) (*pty.Process, error) {
-	return pty.Spawn(ctx, pty.SpawnConfig{
-		Command: "cat",
-		Rows:    24,
-		Cols:    80,
-	})
 }
 
 // ---------------------------------------------------------------------------
@@ -2963,7 +2454,7 @@ func TestIntegration_CleanupExecutor_CloseBeforeDetach(t *testing.T) {
 				tuiMux = {
 					detach: function() { callOrder.push('detach'); }
 				};
-				prSplit._isForceCancelled = function() { return false; };
+				prSplit.isForceCancelled = function() { return false; };
 
 				cleanupExecutor();
 
@@ -3018,7 +2509,7 @@ func TestIntegration_CleanupExecutor_ForceCancel(t *testing.T) {
 					detach: function() { callOrder.push('detach'); }
 				};
 
-				prSplit._isForceCancelled = function() { return true; };
+				prSplit.isForceCancelled = function() { return true; };
 				cleanupExecutor();
 
 				return JSON.stringify({
@@ -3062,7 +2553,7 @@ func TestIntegration_CleanupExecutor_NilExecutor(t *testing.T) {
 				tuiMux = {
 					detach: function() { callOrder.push('detach'); }
 				};
-				prSplit._isForceCancelled = function() { return false; };
+				prSplit.isForceCancelled = function() { return false; };
 				cleanupExecutor();
 
 				return JSON.stringify({ callOrder: callOrder });

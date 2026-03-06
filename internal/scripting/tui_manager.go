@@ -764,10 +764,27 @@ func (tm *TUIManager) buildGoPrompt(cfg promptBuildConfig) *prompt.Prompt {
 		if cfg.flushOutput {
 			tm.flushQueuedOutput()
 		}
+
+		// During command execution, bypass the output queue and write
+		// directly to the terminal. go-prompt is not rendering while the
+		// executor is running, so direct writes are safe and ensure the
+		// user sees output immediately (critical for long-running async
+		// pipeline commands like auto-split). This also ensures ANSI
+		// escape codes reach the terminal unmangled.
+		tm.engine.logger.SetTUISink(nil)
+
 		if !tm.executor(line) {
 			// Signal the prompt to exit via ExitChecker mechanism
 			tm.RequestExit()
 		}
+
+		// Restore output queuing for the prompt rendering cycle.
+		tm.engine.logger.SetTUISink(func(msg string) {
+			tm.outputMu.Lock()
+			tm.outputQueue = append(tm.outputQueue, msg)
+			tm.outputMu.Unlock()
+		})
+
 		if cfg.flushOutput {
 			tm.flushQueuedOutput()
 		}

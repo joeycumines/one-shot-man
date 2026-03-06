@@ -519,14 +519,14 @@ func TestChunk00_RuntimeConfig(t *testing.T) {
 func TestChunk00_IsCancelled(t *testing.T) {
 	evalJS := loadChunkEngine(t, nil, "00_core")
 
-	// Without autoSplitTUI, all should return false.
-	for _, fn := range []string{"isCancelled", "_isPaused", "_isForceCancelled"} {
+	// Without _cancelSource, all should return false.
+	for _, fn := range []string{"isCancelled", "isPaused", "isForceCancelled"} {
 		val, err := evalJS(fmt.Sprintf(`globalThis.prSplit.%s()`, fn))
 		if err != nil {
 			t.Fatalf("%s: unexpected error: %v", fn, err)
 		}
 		if val != false {
-			t.Errorf("%s() = %v, want false (no autoSplitTUI)", fn, val)
+			t.Errorf("%s() = %v, want false (no _cancelSource)", fn, val)
 		}
 	}
 }

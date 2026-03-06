@@ -20,7 +20,7 @@
         'runtime', '_gitExec', '_resolveDir', '_shellQuote', '_gitAddChangedFiles',
         '_dirname', '_fileExtension', '_sanitizeBranchName', '_padIndex',
         'discoverVerifyCommand', 'scopedVerifyCommand',
-        'isCancelled', '_isPaused', '_isForceCancelled',
+        'isCancelled', 'isPaused', 'isForceCancelled',
 
         // Chunk 01: Analysis
         'analyzeDiff', 'analyzeDiffStats',

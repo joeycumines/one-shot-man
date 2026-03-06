@@ -14,6 +14,11 @@
 
     // -----------------------------------------------------------------------
     //  verifySplit — runs verify command on a single branch
+    //
+    //  Uses a temporary git worktree so the user's CWD is never modified.
+    //  Tries proper branch checkout first (preserves branch name for verify
+    //  commands that inspect HEAD), falls back to detached HEAD if the
+    //  branch is already checked out elsewhere.
     // -----------------------------------------------------------------------
     function verifySplit(branchName, config) {
         config = config || {};
@@ -22,18 +27,31 @@
         var timeoutMs = config.verifyTimeoutMs || 0;
         var outputFn = config.outputFn || null;
 
-        var co = gitExec(dir, ['checkout', branchName]);
-        if (co.code !== 0) {
-            return {
-                name: branchName,
-                passed: false,
-                output: '',
-                error: 'checkout failed: ' + co.stderr.trim()
-            };
+        // Create a temporary worktree for this branch.
+        var worktreeDir = dir + '/../.osm-verify-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
+
+        // Try proper branch checkout first (preserves branch name in HEAD).
+        var wtAdd = gitExec(dir, ['worktree', 'add', worktreeDir, branchName]);
+        if (wtAdd.code !== 0) {
+            // Branch might be checked out elsewhere (user's CWD); fallback to detached HEAD.
+            gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
+            wtAdd = gitExec(dir, ['worktree', 'add', '--detach', worktreeDir, branchName]);
+            if (wtAdd.code !== 0) {
+                return {
+                    name: branchName,
+                    passed: false,
+                    output: '',
+                    error: 'create worktree failed: ' + wtAdd.stderr.trim()
+                };
+            }
+        }
+
+        function cleanupWorktree() {
+            gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
         }
 
         var startMs = Date.now();
-        var shellCmd = 'cd ' + shellQuote(dir) + ' && ' + command;
+        var shellCmd = 'cd ' + shellQuote(worktreeDir) + ' && ' + command;
 
         if (timeoutMs > 0) {
             var timeoutSec = Math.ceil(timeoutMs / 1000);
@@ -66,6 +84,8 @@
         });
         var elapsedMs = Date.now() - startMs;
 
+        cleanupWorktree();
+
         if (timeoutMs > 0 && (result.code === 124 || elapsedMs >= timeoutMs)) {
             return {
                 name: branchName,
@@ -85,11 +105,14 @@
 
     // -----------------------------------------------------------------------
     //  verifySplits — runs verification for all splits, respects cancellation
+    //
+    //  Each branch is verified in its own temporary worktree (via verifySplit),
+    //  so the user's CWD is never modified.
     // -----------------------------------------------------------------------
     function verifySplits(plan, options) {
         options = options || {};
         if (!plan || !plan.splits) {
-            return { allPassed: false, results: [], error: 'invalid plan: missing splits' };
+            return { allPassed: false, results: [], error: 'verifySplits: plan is missing splits array — run "plan" first' };
         }
         var dir = resolveDir(plan.dir || '.');
         var verifyTimeoutMs = options.verifyTimeoutMs || 0;
@@ -99,9 +122,6 @@
         var results = [];
         var allPassed = true;
         var failedBranches = {};
-
-        var saved = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
-        var restoreBranch = saved.code === 0 ? saved.stdout.trim() : plan.sourceBranch;
 
         // Pre-existing failure detection: run verification on the source
         // branch first. If it fails, split branch failures are flagged as
@@ -121,7 +141,6 @@
 
         for (var i = 0; i < plan.splits.length; i++) {
             if (prSplit.isCancelled()) {
-                gitExec(dir, ['checkout', restoreBranch]);
                 return { allPassed: false, results: results, error: 'verification cancelled by user' };
             }
 
@@ -187,7 +206,6 @@
             }
         }
 
-        gitExec(dir, ['checkout', restoreBranch]);
         return { allPassed: allPassed, results: results, error: null };
     }
 
@@ -273,7 +291,7 @@
     // -----------------------------------------------------------------------
     function cleanupBranches(plan) {
         if (!plan || !plan.splits) {
-            return { deleted: [], errors: ['invalid plan: missing splits'] };
+            return { deleted: [], errors: ['cleanupBranches: plan is missing splits array — nothing to clean up'] };
         }
         var dir = resolveDir(plan.dir || '.');
         var deleted = [];

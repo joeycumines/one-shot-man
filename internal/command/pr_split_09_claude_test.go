@@ -205,8 +205,7 @@ func TestChunk09_RenderConflictPrompt(t *testing.T) {
 				branchName: 'split/01-types',
 				files: ['types.go', 'types_test.go'],
 				exitCode: 2,
-				errorOutput: 'undefined: Foo',
-				sessionId: 'test-session-123'
+				errorOutput: 'undefined: Foo'
 			});
 			return JSON.stringify({
 				hasText: r.text.length > 0,
@@ -243,8 +242,9 @@ func TestChunk09_RenderConflictPrompt(t *testing.T) {
 	if !data.ContainsError {
 		t.Error("prompt should contain error output")
 	}
-	if !data.ContainsSession {
-		t.Error("prompt should contain session ID")
+	// T34: session IDs removed from prompts.
+	if data.ContainsSession {
+		t.Error("prompt must NOT contain session ID (removed per T34)")
 	}
 }
 

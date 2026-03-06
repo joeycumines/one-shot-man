@@ -15,31 +15,31 @@ import (
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// isCancelled — returns true when autoSplitTUI.cancelled() is truthy
+// isCancelled — returns true when prSplit._cancelSource() reports cancelled
 // ---------------------------------------------------------------------------
 
-func TestIsCancelled_NoTUI(t *testing.T) {
+func TestIsCancelled_NoCancelSource(t *testing.T) {
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	// Without autoSplitTUI defined, isCancelled should return false.
+	// Without _cancelSource defined, isCancelled should return false.
 	val, err := evalJS(`globalThis.prSplit.isCancelled()`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if val != false {
-		t.Errorf("expected false when autoSplitTUI is not defined, got %v", val)
+		t.Errorf("expected false when _cancelSource is not defined, got %v", val)
 	}
 }
 
-func TestIsCancelled_TUINotCancelled(t *testing.T) {
+func TestIsCancelled_NotCancelled(t *testing.T) {
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	// Define autoSplitTUI with cancelled returning false.
-	_, err := evalJS(`globalThis.autoSplitTUI = { cancelled: function() { return false; } }`)
+	// Set _cancelSource returning false for all queries.
+	_, err := evalJS(`globalThis.prSplit._cancelSource = function(q) { return false; }`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,17 +49,17 @@ func TestIsCancelled_TUINotCancelled(t *testing.T) {
 		t.Fatal(err)
 	}
 	if val != false {
-		t.Errorf("expected false when TUI is not cancelled, got %v", val)
+		t.Errorf("expected false when _cancelSource reports not cancelled, got %v", val)
 	}
 }
 
-func TestIsCancelled_TUICancelled(t *testing.T) {
+func TestIsCancelled_Cancelled(t *testing.T) {
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	// Define autoSplitTUI with cancelled returning true.
-	_, err := evalJS(`globalThis.autoSplitTUI = { cancelled: function() { return true; } }`)
+	// Set _cancelSource returning true for 'cancelled' query.
+	_, err := evalJS(`globalThis.prSplit._cancelSource = function(q) { return q === 'cancelled'; }`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,17 +69,17 @@ func TestIsCancelled_TUICancelled(t *testing.T) {
 		t.Fatal(err)
 	}
 	if val != true {
-		t.Errorf("expected true when TUI is cancelled, got %v", val)
+		t.Errorf("expected true when _cancelSource reports cancelled, got %v", val)
 	}
 }
 
-func TestIsCancelled_TUIWithoutCancelledMethod(t *testing.T) {
+func TestIsCancelled_CancelSourceNotFunction(t *testing.T) {
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	// Define autoSplitTUI without cancelled function.
-	_, err := evalJS(`globalThis.autoSplitTUI = { someOtherMethod: function() {} }`)
+	// Set _cancelSource to a non-function value.
+	_, err := evalJS(`globalThis.prSplit._cancelSource = 'not-a-function'`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestIsCancelled_TUIWithoutCancelledMethod(t *testing.T) {
 		t.Fatal(err)
 	}
 	if val != false {
-		t.Errorf("expected false when cancelled method is missing, got %v", val)
+		t.Errorf("expected false when _cancelSource is not a function, got %v", val)
 	}
 }
 
@@ -109,7 +109,7 @@ func TestRenderClassificationPrompt_BasicGo(t *testing.T) {
 			files: ['internal/foo/foo.go', 'internal/bar/bar.go'],
 			fileStatuses: { 'internal/foo/foo.go': 'M', 'internal/bar/bar.go': 'A' }
 		},
-		{ sessionId: 'test-session', maxGroups: 5 }
+		{ maxGroups: 5 }
 	))`)
 	if err != nil {
 		t.Fatal(err)
@@ -131,8 +131,9 @@ func TestRenderClassificationPrompt_BasicGo(t *testing.T) {
 	if !strings.Contains(result.Text, "reportClassification") {
 		t.Error("prompt should mention reportClassification MCP tool")
 	}
-	if !strings.Contains(result.Text, "test-session") {
-		t.Error("prompt should include session ID")
+	// T34: Session IDs removed from MCP payloads — routing by socket identity.
+	if strings.Contains(result.Text, "session") {
+		t.Error("prompt must NOT contain session ID references (routing is by socket)")
 	}
 	if !strings.Contains(result.Text, "internal/foo/foo.go") {
 		t.Error("prompt should list the files")
@@ -166,7 +167,7 @@ func TestRenderClassificationPrompt_EmptyFiles(t *testing.T) {
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.renderClassificationPrompt(
 		{ baseBranch: 'main', files: [], fileStatuses: {} },
-		{ sessionId: 'empty-test' }
+		{}
 	))`)
 	if err != nil {
 		t.Fatal(err)
@@ -200,7 +201,7 @@ func TestRenderSplitPlanPrompt_Basic(t *testing.T) {
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.renderSplitPlanPrompt(
 		{ 'internal/foo/foo.go': 'infrastructure', 'internal/bar/bar.go': 'feature' },
-		{ branchPrefix: 'split/', maxFilesPerSplit: 10, sessionId: 'plan-test' }
+		{ branchPrefix: 'split/', maxFilesPerSplit: 10 }
 	))`)
 	if err != nil {
 		t.Fatal(err)
@@ -220,8 +221,9 @@ func TestRenderSplitPlanPrompt_Basic(t *testing.T) {
 	if !strings.Contains(result.Text, "reportSplitPlan") {
 		t.Error("prompt should mention reportSplitPlan MCP tool")
 	}
-	if !strings.Contains(result.Text, "plan-test") {
-		t.Error("prompt should include session ID")
+	// T34: Session IDs removed from MCP payloads.
+	if strings.Contains(result.Text, "session") {
+		t.Error("prompt must NOT contain session ID references")
 	}
 }
 
@@ -268,8 +270,7 @@ func TestRenderConflictPrompt_Basic(t *testing.T) {
 		files: ['go.mod', 'go.sum'],
 		exitCode: 2,
 		errorOutput: 'missing module: github.com/example/lib',
-		goModContent: 'module github.com/foo\n\ngo 1.21',
-		sessionId: 'conflict-test'
+		goModContent: 'module github.com/foo\n\ngo 1.21'
 	}))`)
 	if err != nil {
 		t.Fatal(err)

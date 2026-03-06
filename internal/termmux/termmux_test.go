@@ -681,6 +681,92 @@ func TestRunPassthrough_ToggleKeyMidStream(t *testing.T) {
 	<-m.teeDone
 }
 
+// ── T33: Mouse click on status bar triggers toggle ─────────────────
+
+func TestRunPassthrough_MouseClickStatusBarToggle(t *testing.T) {
+	ts := newMockTermState(80, 24)
+	bg := &mockBlockingGuard{}
+	m, _, stdinW, child := newTestMux(t, ts, bg)
+	m.cfg.StatusEnabled = true
+
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		// SGR mouse: left click at row 24 (status bar row), col 5.
+		// Format: CSI < 0 ; 5 ; 24 M  (press, button 0 = left)
+		// With 24 rows and 1 status bar line, statusBarTop = 24.
+		stdinW.Write([]byte("\x1b[<0;5;24M"))
+	}()
+
+	reason, err := m.RunPassthrough(context.Background())
+	if reason != ExitToggle || err != nil {
+		t.Fatalf("got (%v, %v); want (ExitToggle, nil)", reason, err)
+	}
+
+	child.Close()
+	<-m.teeDone
+}
+
+func TestRunPassthrough_MouseClickAboveStatusBar(t *testing.T) {
+	ts := newMockTermState(80, 24)
+	bg := &mockBlockingGuard{}
+	m, _, stdinW, child := newTestMux(t, ts, bg)
+	m.cfg.StatusEnabled = true
+
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		// Left click at row 23 (above status bar) — should pass through.
+		stdinW.Write([]byte("\x1b[<0;5;23M"))
+		// Then toggle key to exit.
+		time.Sleep(20 * time.Millisecond)
+		stdinW.Write([]byte{DefaultToggleKey})
+	}()
+
+	reason, err := m.RunPassthrough(context.Background())
+	if reason != ExitToggle || err != nil {
+		t.Fatalf("got (%v, %v); want (ExitToggle, nil)", reason, err)
+	}
+
+	// The mouse click above the status bar should have been forwarded to child.
+	time.Sleep(50 * time.Millisecond)
+	got := child.Written()
+	if !strings.Contains(got, "\x1b[<0;5;23M") {
+		t.Errorf("expected mouse click to be forwarded to child; got %q", got)
+	}
+
+	child.Close()
+	<-m.teeDone
+}
+
+func TestRunPassthrough_MouseClickStatusBarDisabled(t *testing.T) {
+	ts := newMockTermState(80, 24)
+	bg := &mockBlockingGuard{}
+	m, _, stdinW, child := newTestMux(t, ts, bg)
+	m.cfg.StatusEnabled = false // Explicitly disable status bar.
+
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		// Left click at row 24 — should pass through when status bar disabled.
+		stdinW.Write([]byte("\x1b[<0;5;24M"))
+		time.Sleep(20 * time.Millisecond)
+		stdinW.Write([]byte{DefaultToggleKey})
+	}()
+
+	reason, err := m.RunPassthrough(context.Background())
+	if reason != ExitToggle || err != nil {
+		t.Fatalf("got (%v, %v); want (ExitToggle, nil)", reason, err)
+	}
+
+	// Mouse click should be forwarded since status bar is disabled.
+	time.Sleep(50 * time.Millisecond)
+	got := child.Written()
+	if !strings.Contains(got, "\x1b[<0;5;24M") {
+		t.Errorf("expected mouse click forwarded when status disabled; got %q", got)
+	}
+
+	child.Close()
+	<-m.teeDone
+}
+
 // ── T055 Tests: child exit and context cancellation ────────────────
 
 func TestRunPassthrough_ChildExit(t *testing.T) {
@@ -1266,6 +1352,143 @@ func TestBellPropagation_MultipleBells(t *testing.T) {
 	bellCount := bytes.Count(gotBytes, []byte{0x07})
 	if bellCount != 3 {
 		t.Errorf("expected 3 BELs; got %d", bellCount)
+	}
+}
+
+// ── T31: SetBellFunc callback fires on BEL ─────────────────────────
+
+func TestSetBellFunc_CalledOnBEL(t *testing.T) {
+	// Verify that SetBellFunc callback is invoked when the child emits BEL.
+	childR, childW := io.Pipe()
+	mc := &pipeMockChild{r: childR, w: io.Discard}
+
+	var stdout bytes.Buffer
+	m := New(bytes.NewReader(nil), &stdout, -1)
+
+	var bellCount int32
+	m.SetBellFunc(func() {
+		atomic.AddInt32(&bellCount, 1)
+	})
+
+	if err := m.Attach(mc); err != nil {
+		t.Fatalf("Attach error: %v", err)
+	}
+
+	// Send 2 BELs from child, then close.
+	childW.Write([]byte("A\x07B\x07C"))
+	childW.Close()
+	<-m.teeDone
+
+	got := atomic.LoadInt32(&bellCount)
+	if got != 2 {
+		t.Errorf("SetBellFunc called %d times; want 2", got)
+	}
+}
+
+func TestSetBellFunc_NilSafe(t *testing.T) {
+	// SetBellFunc(nil) should not panic even if BEL fires.
+	childR, childW := io.Pipe()
+	mc := &pipeMockChild{r: childR, w: io.Discard}
+
+	var stdout bytes.Buffer
+	m := New(bytes.NewReader(nil), &stdout, -1)
+	m.SetBellFunc(nil) // explicitly nil
+
+	if err := m.Attach(mc); err != nil {
+		t.Fatalf("Attach error: %v", err)
+	}
+
+	// Send BEL — should not panic.
+	childW.Write([]byte("\x07"))
+	childW.Close()
+	<-m.teeDone
+}
+
+func TestSetBellFunc_FiresDuringPassthrough(t *testing.T) {
+	// SetBellFunc should fire even when passthrough is active
+	// (bell callback is unconditional, stdout propagation is conditional).
+	ts := newMockTermState(80, 24)
+	bg := &mockBlockingGuard{}
+	m, _, stdinW, child := newTestMux(t, ts, bg)
+
+	var bellCount int32
+	m.SetBellFunc(func() {
+		atomic.AddInt32(&bellCount, 1)
+	})
+
+	// Start passthrough.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		m.RunPassthrough(context.Background())
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	// Child sends BEL in passthrough.
+	child.readPW.Write([]byte("X\x07Y"))
+	time.Sleep(100 * time.Millisecond)
+
+	// Exit passthrough.
+	stdinW.Write([]byte{DefaultToggleKey})
+	<-done
+
+	got := atomic.LoadInt32(&bellCount)
+	if got != 1 {
+		t.Errorf("SetBellFunc called %d times during passthrough; want 1", got)
+	}
+
+	child.Close()
+	<-m.teeDone
+}
+
+// TestLastWriteTime_TracksTeeLoopOutput verifies that LastWriteTime is
+// updated each time teeLoop processes child output.
+func TestLastWriteTime_TracksTeeLoopOutput(t *testing.T) {
+	childR, childW := io.Pipe()
+	mc := &pipeMockChild{r: childR, w: io.Discard}
+
+	m := New(strings.NewReader(""), io.Discard, -1)
+	if err := m.Attach(mc); err != nil {
+		t.Fatal(err)
+	}
+
+	// Before any output, LastWriteTime should be zero.
+	if !m.LastWriteTime().IsZero() {
+		t.Fatal("LastWriteTime should be zero before any output")
+	}
+
+	// Child writes output.
+	childW.Write([]byte("Hello\n"))
+	time.Sleep(100 * time.Millisecond)
+
+	t1 := m.LastWriteTime()
+	if t1.IsZero() {
+		t.Fatal("LastWriteTime should be non-zero after output")
+	}
+	if time.Since(t1) > 2*time.Second {
+		t.Errorf("LastWriteTime too old: %v ago", time.Since(t1))
+	}
+
+	// Write more output; timestamp should advance.
+	time.Sleep(10 * time.Millisecond)
+	childW.Write([]byte("World\n"))
+	time.Sleep(100 * time.Millisecond)
+
+	t2 := m.LastWriteTime()
+	if !t2.After(t1) {
+		t.Errorf("LastWriteTime did not advance: t1=%v t2=%v", t1, t2)
+	}
+
+	childW.Close()
+	<-m.teeDone
+}
+
+// TestLastWriteTime_ZeroWithoutChild verifies that a freshly created Mux
+// (no child attached) returns the zero time.
+func TestLastWriteTime_ZeroWithoutChild(t *testing.T) {
+	m := New(strings.NewReader(""), io.Discard, -1)
+	if !m.LastWriteTime().IsZero() {
+		t.Errorf("LastWriteTime should be zero without child; got %v", m.LastWriteTime())
 	}
 }
 

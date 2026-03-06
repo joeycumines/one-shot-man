@@ -287,6 +287,7 @@ func TestIntegration_ComplexGoProject_HeuristicSplit(t *testing.T) {
 //	make integration-test-prsplit
 func TestIntegration_AutoSplitComplexGoProject(t *testing.T) {
 	skipIfNoClaude(t)
+	verifyClaudeAuth(t)
 
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go not available")
@@ -315,35 +316,19 @@ func TestIntegration_AutoSplitComplexGoProject(t *testing.T) {
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, configOverrides)
 
-	// Inject autoSplitTUI mock for headless CI/terminal execution.
-	_, err := evalJS(`
-		globalThis.autoSplitTUI = {
-			runAsync: function() {},
-			wait: function() { return null; },
-			stepStart: function(name) { log.printf('STEP START: %s', name); },
-			stepDone: function(name, err, elapsed) {
-				log.printf('STEP DONE: %s err=%s elapsed=%dms', name, err || 'ok', elapsed);
-			},
-			appendOutput: function(text) { log.printf('OUTPUT: %s', text); },
-			appendError: function(text) { log.printf('ERROR: %s', text); },
-			done: function(summary) { log.printf('DONE: %s', summary); },
-			stepDetail: function(name, detail) { log.printf('DETAIL: %s — %s', name, detail); },
-			cancelled: function() { return false; },
-			forceCancelled: function() { return false; },
-			quit: function() {}
-		};
-	`)
-	if err != nil {
-		t.Fatalf("inject autoSplitTUI mock: %v", err)
-	}
-
 	// Run the full auto-split pipeline with AI classification.
 	t.Log("Starting auto-split pipeline with real AI agent...")
 	t.Logf("Claude command: %s %v", claudeTestCommand, claudeArgsList)
 	raw, err := evalJS(`JSON.stringify(await globalThis.prSplit.automatedSplit({
 		baseBranch: 'main',
 		dir: ` + jsString(repoDir) + `,
-		strategy: 'directory'
+		strategy: 'directory',
+		classifyTimeoutMs: 300000,
+		planTimeoutMs: 300000,
+		resolveTimeoutMs: 300000,
+		pipelineTimeoutMs: 600000,
+		stepTimeoutMs: 300000,
+		watchdogIdleMs: 180000
 	}))`)
 	if err != nil {
 		t.Fatalf("automatedSplit failed: %v", err)

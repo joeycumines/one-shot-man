@@ -236,8 +236,8 @@ const chunkCompatShim = `
         'sanitizeBranchName':'_sanitizeBranchName',
         'padIndex':          '_padIndex',
         'isCancelled':       'isCancelled',
-        'isPaused':          '_isPaused',
-        'isForceCancelled':  '_isForceCancelled'
+        'isPaused':          'isPaused',
+        'isForceCancelled':  'isForceCancelled'
     };
     Object.keys(internalNames).forEach(function(bare) {
         var real = internalNames[bare];

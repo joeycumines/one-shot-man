@@ -558,7 +558,7 @@ func TestResolveConflicts(t *testing.T) {
 					fix: function() {
 						_strategyAttempts.push('strategy-1');
 						// After this fix, set cancellation flag before next strategy.
-						globalThis.autoSplitTUI = { cancelled: function() { return true; } };
+						globalThis.prSplit._cancelSource = function(q) { return q === 'cancelled'; };
 						return { fixed: true };
 					}
 				};

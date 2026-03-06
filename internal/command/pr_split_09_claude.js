@@ -242,7 +242,6 @@
         '- No placeholder messages like "various updates", "cleanup", or "other changes"\n' +
         '- No catch-all categories unless absolutely necessary (prefer specific groupings)\n' +
         '- If the project uses conventional commits, follow that style\n\n' +
-        'Use the session ID: `{{.SessionID}}`\n\n' +
         'Also assess which groups are independent (can be merged in any order). ' +
         'If any groups can merge independently, mention this in your response.\n';
 
@@ -262,7 +261,7 @@
         '2. Earlier stages should be foundations that later stages build on\n' +
         '3. Minimize cross-stage dependencies to reduce merge conflicts\n' +
         '4. Each stage should build and pass tests independently (when stacked)\n\n' +
-        'Use the `reportSplitPlan` MCP tool with session ID `{{.SessionID}}`. ' +
+        'Use the `reportSplitPlan` MCP tool. ' +
         'Each stage needs: name, files array, commit message, and order (0-based).\n';
 
     var CONFLICT_RESOLUTION_PROMPT_TEMPLATE =
@@ -275,7 +274,7 @@
         '{{if .GoModContent}}### go.mod content\n\n```\n{{.GoModContent}}\n```\n\n{{end}}' +
         '## Task\n\n' +
         'Analyze the error and propose a fix using the `reportResolution` MCP tool ' +
-        'with session ID `{{.SessionID}}` and branch `{{.BranchName}}`.\n\n' +
+        'for branch `{{.BranchName}}`.\n\n' +
         'You can suggest:\n' +
         '- File patches (full file content replacements)\n' +
         '- Commands to run (e.g., `go mod tidy`)\n' +
@@ -312,8 +311,7 @@
             ModulePath: modulePath,
             BaseBranch: analysis.baseBranch || runtime.baseBranch,
             FileStatuses: analysis.fileStatuses || {},
-            MaxGroups: config.maxGroups || 0,
-            SessionID: config.sessionId || ''
+            MaxGroups: config.maxGroups || 0
         });
     }
 
@@ -324,8 +322,7 @@
             Classification: classification,
             BranchPrefix: config.branchPrefix || runtime.branchPrefix || 'split/',
             MaxFilesPerSplit: config.maxFilesPerSplit || runtime.maxFiles || 0,
-            PreferIndependent: config.preferIndependent || false,
-            SessionID: config.sessionId || ''
+            PreferIndependent: config.preferIndependent || false
         });
     }
 
@@ -335,8 +332,7 @@
             Files: conflict.files || [],
             ExitCode: conflict.exitCode || 1,
             ErrorOutput: conflict.errorOutput || '',
-            GoModContent: conflict.goModContent || '',
-            SessionID: conflict.sessionId || ''
+            GoModContent: conflict.goModContent || ''
         });
     }
 

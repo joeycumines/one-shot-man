@@ -6,6 +6,7 @@ import (
 	"io"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -50,6 +51,16 @@ type Mux struct {
 
 	// Detach timeout.
 	detachTimeout time.Duration
+
+	// bellFn is called (from the tee goroutine) whenever the child process
+	// emits a BEL character. It runs AFTER stdout propagation for background
+	// bells and is safe for non-blocking work such as event queue insertion.
+	bellFn func()
+
+	// lastWriteAt stores the Unix millisecond timestamp of the most recent
+	// teeLoop write (child process output). Updated atomically — safe to
+	// read from any goroutine without holding mu.
+	lastWriteAt atomic.Int64
 }
 
 // New creates a new Mux with the given I/O and terminal fd.
@@ -93,15 +104,22 @@ func (m *Mux) Attach(child io.ReadWriteCloser) error {
 	// and the mux is NOT in passthrough mode (background pane), propagate
 	// BEL to the user's terminal. If passthrough IS active the bell
 	// naturally reaches the terminal via stdout passthrough in teeLoop.
+	// After stdout propagation, invoke the user-installed bellFn (if any)
+	// so the JS event system can be notified.
 	m.vterm.BellFn = func() {
 		m.mu.Lock()
 		passthrough := m.passthroughActive
 		stdout := m.stdout
+		fn := m.bellFn
 		m.mu.Unlock()
 
 		if !passthrough && stdout != nil {
 			// Background pane bell — propagate to outer terminal.
 			_, _ = stdout.Write([]byte{0x07})
+		}
+
+		if fn != nil {
+			fn()
 		}
 	}
 
@@ -146,6 +164,9 @@ func (m *Mux) teeLoop(reader *ptyio.BufferedReader, teeDone, childEOF chan struc
 
 		// Always tee to VTerm for screen capture.
 		_, _ = vtm.Write(chunk)
+
+		// Record activity timestamp for HUD polling.
+		m.lastWriteAt.Store(time.Now().UnixMilli())
 
 		// Forward to stdout only during passthrough.
 		if passthrough {
@@ -239,6 +260,27 @@ func (m *Mux) SetClaudeStatus(status string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.statusBar.SetStatus(status)
+}
+
+// SetBellFunc installs a callback invoked whenever the child PTY emits
+// a BEL character (0x07). The callback runs on the tee goroutine —
+// it MUST NOT block or perform JS-unsafe operations. Use the event
+// queue (thread-safe channel send) for JS notification.
+func (m *Mux) SetBellFunc(fn func()) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.bellFn = fn
+}
+
+// LastWriteTime returns the time of the most recent child process
+// output (teeLoop write). Returns the zero Time if no output has
+// been received yet. Safe to call from any goroutine.
+func (m *Mux) LastWriteTime() time.Time {
+	ms := m.lastWriteAt.Load()
+	if ms == 0 {
+		return time.Time{}
+	}
+	return time.UnixMilli(ms)
 }
 
 // ChildExitOutput returns the content captured in the VTerm buffer as
@@ -526,19 +568,46 @@ func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 				resultCh <- fwdResult{ExitError, err}
 				return
 			}
+
+			data := buf[:n]
+
+			// ── T33: SGR mouse filtering ───────────────────────────
+			// When the status bar is visible, intercept left clicks on
+			// the status bar row. The filtered output has the click
+			// sequence removed; remaining bytes (other mouse events,
+			// keystrokes) pass through to the child. We read termRows
+			// under lock because handleResize updates it concurrently.
+			if statusBarLines > 0 {
+				m.mu.Lock()
+				rows := m.termRows
+				m.mu.Unlock()
+
+				filtered, clicked := filterMouseForStatusBar(data, rows, statusBarLines)
+				if clicked {
+					// Forward any remaining bytes that preceded or
+					// followed the click, then toggle back to OSM.
+					if len(filtered) > 0 {
+						_, _ = child.Write(filtered)
+					}
+					resultCh <- fwdResult{ExitToggle, nil}
+					return
+				}
+				data = filtered
+			}
+
 			// Scan for toggle key in the received bytes.
-			for i := 0; i < n; i++ {
-				if buf[i] == toggleKey {
+			for i := 0; i < len(data); i++ {
+				if data[i] == toggleKey {
 					// Forward bytes before the toggle key, then exit.
 					if i > 0 {
-						_, _ = child.Write(buf[:i])
+						_, _ = child.Write(data[:i])
 					}
 					resultCh <- fwdResult{ExitToggle, nil}
 					return
 				}
 			}
 			// Forward all bytes to child.
-			if _, err := child.Write(buf[:n]); err != nil {
+			if _, err := child.Write(data); err != nil {
 				if fwdCtx.Err() != nil {
 					return
 				}

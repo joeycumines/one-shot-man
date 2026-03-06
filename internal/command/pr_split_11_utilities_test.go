@@ -461,8 +461,9 @@ func TestChunk11_GetSplitDiff_InvalidIndex(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
 		t.Fatal(err)
 	}
-	if result["error"] != "invalid split index" {
-		t.Errorf("expected 'invalid split index', got %v", result["error"])
+	errStr, _ := result["error"].(string)
+	if !strings.Contains(errStr, "invalid split index") {
+		t.Errorf("expected error containing 'invalid split index', got %v", result["error"])
 	}
 }
 
@@ -482,8 +483,9 @@ func TestChunk11_GetSplitDiff_NoFiles(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
 		t.Fatal(err)
 	}
-	if result["error"] != "no files in split" {
-		t.Errorf("expected 'no files in split', got %v", result["error"])
+	errStr, _ := result["error"].(string)
+	if !strings.Contains(errStr, "no files in split") {
+		t.Errorf("expected error containing 'no files in split', got %v", result["error"])
 	}
 }
 
@@ -498,8 +500,9 @@ func TestChunk11_GetSplitDiff_NullPlan(t *testing.T) {
 	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
 		t.Fatal(err)
 	}
-	if result["error"] != "invalid split index" {
-		t.Errorf("expected error for null plan, got %v", result["error"])
+	errStr, _ := result["error"].(string)
+	if !strings.Contains(errStr, "invalid split index") {
+		t.Errorf("expected error containing 'invalid split index' for null plan, got %v", result["error"])
 	}
 }
 

@@ -7,7 +7,7 @@
 // Go-injected globals expected:
 //   prSplitConfig  — {baseBranch, strategy, maxFiles, branchPrefix, verifyCommand, ...}
 //   config.name    — "pr-split"
-//   autoSplitTUI   — TUI bridge (optional; used by isCancelled/isPaused/isForceCancelled)
+//   prSplit._cancelSource — cancellation callback (optional; used by isCancelled/isPaused/isForceCancelled)
 //
 // See docs/architecture-pr-split-chunks.md for the full chunk loading contract.
 
@@ -140,19 +140,29 @@
 
     // discoverVerifyCommand auto-detects the verification command for the
     // working directory. Checks for Makefile, makefile, and GNUmakefile.
-    // Returns 'make' if any exist, '' if none found.
+    // Prefers 'gmake' (GNU Make on macOS) over 'make' if available.
+    // Returns the best make command, or '' if no Makefile found.
     function discoverVerifyCommand(dir) {
         var names = ['Makefile', 'makefile', 'GNUmakefile'];
+        var hasMakefile = false;
         for (var i = 0; i < names.length; i++) {
             var path = dir ? (dir + '/' + names[i]) : names[i];
             if (osmod && osmod.fileExists(path)) {
-                return 'make';
+                hasMakefile = true;
+                break;
             } else if (!osmod) {
                 var result = exec.execv(['test', '-f', path]);
-                if (result.code === 0) return 'make';
+                if (result.code === 0) { hasMakefile = true; break; }
             }
         }
-        return '';
+        if (!hasMakefile) return '';
+
+        // Prefer gmake (GNU Make) if available — required on macOS where
+        // the system 'make' is BSD Make 3.81 which cannot run GNU Makefiles.
+        var gmakeCheck = exec.execv(['gmake', '--version']);
+        if (gmakeCheck.code === 0) return 'gmake';
+
+        return 'make';
     }
 
     // scopedVerifyCommand returns a verification command scoped to the Go
@@ -339,29 +349,35 @@
     }
 
     // -----------------------------------------------------------------------
-    //  Cooperative Cancellation (from Go-injected autoSplitTUI)
+    //  Cooperative Cancellation (via injectable callback)
     // -----------------------------------------------------------------------
+    //
+    // The auto-split TUI was removed in T27. Cancellation is
+    // now driven by a _cancelSource callback injected before pipeline runs.
+    // Callers set prSplit._cancelSource = function(query) { ... } before
+    // calling automatedSplit(). query is 'cancelled', 'paused', or 'forceCancelled'.
+    // The callback returns true/false. When no callback is set, returns false.
 
-    // isCancelled checks cooperative cancellation from the auto-split TUI.
-    // Returns true when the user has pressed q/Ctrl+C.
+    // isCancelled checks cooperative cancellation.
+    // Returns true when the user has requested cancellation.
     function isCancelled() {
-        return typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
-               typeof autoSplitTUI.cancelled === 'function' && autoSplitTUI.cancelled();
+        var src = (typeof prSplit !== 'undefined' && prSplit && prSplit._cancelSource);
+        return typeof src === 'function' && src('cancelled');
     }
 
-    // isPaused checks whether the user pressed Ctrl-P to request a pause.
+    // isPaused checks whether the user requested a pause.
     // The pipeline should save a checkpoint and exit cleanly when this
     // returns true.
     function isPaused() {
-        return typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
-               typeof autoSplitTUI.paused === 'function' && autoSplitTUI.paused();
+        var src = (typeof prSplit !== 'undefined' && prSplit && prSplit._cancelSource);
+        return typeof src === 'function' && src('paused');
     }
 
-    // isForceCancelled checks whether the user has pressed q/Ctrl+C twice,
+    // isForceCancelled checks whether the user has double-cancelled,
     // signalling that child processes should be killed immediately.
     function isForceCancelled() {
-        return typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
-               typeof autoSplitTUI.forceCancelled === 'function' && autoSplitTUI.forceCancelled();
+        var src = (typeof prSplit !== 'undefined' && prSplit && prSplit._cancelSource);
+        return typeof src === 'function' && src('forceCancelled');
     }
 
     // -----------------------------------------------------------------------
@@ -411,6 +427,6 @@
 
     // Cooperative cancellation.
     prSplit.isCancelled = isCancelled;
-    prSplit._isPaused = isPaused;
-    prSplit._isForceCancelled = isForceCancelled;
+    prSplit.isPaused = isPaused;
+    prSplit.isForceCancelled = isForceCancelled;
 })();

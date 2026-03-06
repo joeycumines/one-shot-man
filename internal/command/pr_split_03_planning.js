@@ -146,7 +146,7 @@
             return { error: 'unsupported plan version: ' + String(snapshot.version) };
         }
         if (!snapshot.plan || !snapshot.plan.splits) {
-            return { error: 'plan file missing splits' };
+            return { error: 'plan file "' + path + '" missing splits — file may be corrupt or from an incompatible version' };
         }
 
         // Restore runtime config.

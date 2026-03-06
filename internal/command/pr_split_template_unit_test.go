@@ -489,7 +489,7 @@ func TestPrSplitCommand_RenderClassificationPrompt(t *testing.T) {
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.renderClassificationPrompt(
 		{ files: ["main.go", "util.go"], fileStatuses: {"main.go": "M", "util.go": "A"}, baseBranch: "main" },
-		{ sessionId: "test-session-123", maxGroups: 5 }
+		{ maxGroups: 5 }
 	))`)
 	if err != nil {
 		t.Fatal(err)
@@ -510,8 +510,9 @@ func TestPrSplitCommand_RenderClassificationPrompt(t *testing.T) {
 	if !strings.Contains(result.Text, "reportClassification") {
 		t.Error("Rendered prompt should mention reportClassification")
 	}
-	if !strings.Contains(result.Text, "test-session-123") {
-		t.Error("Rendered prompt should contain session ID")
+	// T34: session IDs removed from prompts.
+	if strings.Contains(result.Text, "session ID") {
+		t.Error("Rendered prompt must NOT contain session ID (removed per T34)")
 	}
 	if !strings.Contains(result.Text, "main.go") {
 		t.Error("Rendered prompt should contain file names")
@@ -528,7 +529,7 @@ func TestPrSplitCommand_RenderSplitPlanPrompt(t *testing.T) {
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.renderSplitPlanPrompt(
 		{ "main.go": "core", "docs/readme.md": "docs" },
-		{ sessionId: "plan-session", branchPrefix: "pr/", maxFilesPerSplit: 8 }
+		{ branchPrefix: "pr/", maxFilesPerSplit: 8 }
 	))`)
 	if err != nil {
 		t.Fatal(err)
@@ -547,8 +548,9 @@ func TestPrSplitCommand_RenderSplitPlanPrompt(t *testing.T) {
 	if !strings.Contains(result.Text, "reportSplitPlan") {
 		t.Error("Rendered prompt should mention reportSplitPlan")
 	}
-	if !strings.Contains(result.Text, "plan-session") {
-		t.Error("Rendered prompt should contain session ID")
+	// T34: session IDs removed from prompts.
+	if strings.Contains(result.Text, "session ID") {
+		t.Error("Rendered prompt must NOT contain session ID (removed per T34)")
 	}
 	if !strings.Contains(result.Text, "main.go") {
 		t.Error("Rendered prompt should contain file names from classification")
@@ -565,8 +567,7 @@ func TestPrSplitCommand_RenderConflictPrompt(t *testing.T) {
 		files: ["pkg/types.go", "pkg/impl.go"],
 		exitCode: 2,
 		errorOutput: "cannot find module: pkg/missing",
-		goModContent: "module example.com/test\n\ngo 1.21",
-		sessionId: "fix-session"
+		goModContent: "module example.com/test\n\ngo 1.21"
 	}))`)
 	if err != nil {
 		t.Fatal(err)

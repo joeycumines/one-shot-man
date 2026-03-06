@@ -948,6 +948,7 @@ func TestIntegration_TUICommandSequence(t *testing.T) {
 
 func TestIntegration_RealClaudeCode(t *testing.T) {
 	skipIfNoClaude(t)
+	verifyClaudeAuth(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -1006,6 +1007,7 @@ func TestIntegration_RealClaudeCode(t *testing.T) {
 
 func TestIntegration_AutoSplitWithClaude(t *testing.T) {
 	skipIfNoClaude(t)
+	verifyClaudeAuth(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -1126,6 +1128,7 @@ func TestIntegration_AutoSplitWithClaude(t *testing.T) {
 
 func TestIntegration_AutoSplitComplexEdits(t *testing.T) {
 	skipIfNoClaude(t)
+	verifyClaudeAuth(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}

@@ -69,10 +69,7 @@ These globals are set by `pr_split.go` Execute() before any JS chunk loads:
 | Global | Type | Set By | Used In Chunks |
 |--------|------|--------|----------------|
 | `prSplitConfig` | Object | Go flag parsing | 00 (→ `cfg`) |
-| `autoSplitTUI` | Object | Go TUI bridge | 10, 13 |
 | `tuiMux` | Object | Go termmux bridge | 10, 13 |
-| `splitView` | Function | Go TUI bridge | 13 |
-| `planEditorFactory` | Function | Go TUI bridge | 13 |
 | `tui` | Object | Scripting runtime | 13 (guard check) |
 | `ctx` | Object | Scripting runtime | 13 (guard check) |
 | `output` | Object | Scripting runtime | 10, 13 |
@@ -232,7 +229,7 @@ for internal use) plus `discoverVerifyCommand`, `scopedVerifyCommand`, `runtime`
 **Cross-chunk dependency issue:** executeSplit calls `isCancelled()` which is
 defined in chunk 10. **Resolution:** Move `isCancelled`, `isPaused`,
 `isForceCancelled` to chunk 00 as foundational pipeline helpers. They only
-reference `autoSplitTUI` (Go-injected global), not any JS-defined symbols.
+reference `prSplit._cancelSource` (callback set by TUI command handlers).
 
 **Attaches to prSplit:** `executeSplit`
 
@@ -364,14 +361,14 @@ are only invoked at runtime when all chunks are loaded.
   planning (03), validation (04), execution (05), verification (06),
   conflict (08), claude (09), utilities (11).
 **External modules used:** `require('osm:mcp')`, `require('osm:mcpcallback')`,
-  `osmod.readFile`, `exec.execv`, `autoSplitTUI.*`, `tuiMux.attach/detach`,
+  `osmod.readFile`, `exec.execv`, `tuiMux.attach/detach`,
   `output.print`
 **Attaches to prSplit:** `AUTOMATED_DEFAULTS`, `sendToHandle`, `waitForLogged`,
   `automatedSplit`, `heuristicFallback`, `classificationToGroups`,
   `resolveConflictsWithClaude`, `cleanupExecutor`, `isCancelled`
 
 **Note:** `isCancelled`, `isPaused`, `isForceCancelled` MOVED to chunk 00 in
-the chunked architecture (they reference only Go-injected `autoSplitTUI`).
+the chunked architecture (they use `prSplit._cancelSource` callback).
 The pipeline chunk still defines `sendToHandle` and `waitForLogged`.
 
 ---
@@ -476,8 +473,8 @@ conversation, graph, telemetry, retro, help.
 
 **Reads from prSplit:** Nearly everything — all analysis, grouping, planning,
 execution, verification, conflict, pipeline, utility functions.
-**Go-injected globals used:** `tui`, `ctx`, `output`, `shared`, `splitView`,
-`planEditorFactory`, `autoSplitTUI`, `tuiMux`
+**Go-injected globals used:** `tui`, `ctx`, `output`, `shared`,
+`tuiMux`
 **Attaches to prSplit:** `_buildReport` (late-bind for testing)
 
 **CommonJS exports (line 6221–6223):**

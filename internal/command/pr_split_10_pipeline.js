@@ -3,14 +3,13 @@
 // Dependencies: chunks 00-09 must be loaded first.
 //
 // Go-injected globals used directly (available in global scope):
-//   autoSplitTUI   — TUI bridge (optional; for progress display)
 //   tuiMux         — TUI multiplexer for ctrl+] toggle (optional)
 //   output         — output.print for user-facing messages
 //   log            — log.printf for debug/diagnostic logging
 //   prSplitConfig  — resolved config from Go bridge
 //
 // Cross-chunk references (late-bound via prSplit.* at call time):
-//   Chunk 00: isCancelled, _isPaused, _isForceCancelled, _gitExec,
+//   Chunk 00: isCancelled, isPaused, isForceCancelled, _gitExec,
 //             _gitAddChangedFiles, _padIndex, detectGoModulePath, runtime
 //   Chunk 01: analyzeDiff
 //   Chunk 02: applyStrategy
@@ -102,7 +101,7 @@
     //  sendToHandle — PTY double-write with async delay
     // -----------------------------------------------------------------------
 
-    function numberOrDefault(value, fallback, minValue) {
+    function resolveNumber(value, fallback, minValue) {
         var n = Number(value);
         if (!isFinite(n)) return fallback;
         n = Math.floor(n);
@@ -112,25 +111,25 @@
 
     function resolveSendConfig() {
         return {
-            textNewlineDelayMs: numberOrDefault(prSplit.SEND_TEXT_NEWLINE_DELAY_MS, SEND_TEXT_NEWLINE_DELAY_MS, 0),
-            textChunkBytes: numberOrDefault(prSplit.SEND_TEXT_CHUNK_BYTES, SEND_TEXT_CHUNK_BYTES, 1),
-            textChunkDelayMs: numberOrDefault(prSplit.SEND_TEXT_CHUNK_DELAY_MS, SEND_TEXT_CHUNK_DELAY_MS, 0),
-            preSubmitStableTimeoutMs: numberOrDefault(prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS, SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS, 1),
-            preSubmitStablePollMs: numberOrDefault(prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS, SEND_PRE_SUBMIT_STABLE_POLL_MS, 1),
-            preSubmitStableSamples: numberOrDefault(prSplit.SEND_PRE_SUBMIT_STABLE_SAMPLES, SEND_PRE_SUBMIT_STABLE_SAMPLES, 1),
-            inputAnchorTailChars: numberOrDefault(prSplit.SEND_INPUT_ANCHOR_TAIL_CHARS, SEND_INPUT_ANCHOR_TAIL_CHARS, 4),
-            submitAckTimeoutMs: numberOrDefault(prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS, SEND_SUBMIT_ACK_TIMEOUT_MS, 1),
-            submitAckPollMs: numberOrDefault(prSplit.SEND_SUBMIT_ACK_POLL_MS, SEND_SUBMIT_ACK_POLL_MS, 1),
-            submitAckStableSamples: numberOrDefault(prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES, SEND_SUBMIT_ACK_STABLE_SAMPLES, 1),
-            submitMaxNewlineAttempts: numberOrDefault(prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS, SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS, 1),
-            promptReadyTimeoutMs: numberOrDefault(prSplit.SEND_PROMPT_READY_TIMEOUT_MS, SEND_PROMPT_READY_TIMEOUT_MS, 1),
-            promptReadyPollMs: numberOrDefault(prSplit.SEND_PROMPT_READY_POLL_MS, SEND_PROMPT_READY_POLL_MS, 1),
-            promptReadyStableSamples: numberOrDefault(prSplit.SEND_PROMPT_READY_STABLE_SAMPLES, SEND_PROMPT_READY_STABLE_SAMPLES, 1)
+            textNewlineDelayMs: resolveNumber(prSplit.SEND_TEXT_NEWLINE_DELAY_MS, SEND_TEXT_NEWLINE_DELAY_MS, 0),
+            textChunkBytes: resolveNumber(prSplit.SEND_TEXT_CHUNK_BYTES, SEND_TEXT_CHUNK_BYTES, 1),
+            textChunkDelayMs: resolveNumber(prSplit.SEND_TEXT_CHUNK_DELAY_MS, SEND_TEXT_CHUNK_DELAY_MS, 0),
+            preSubmitStableTimeoutMs: resolveNumber(prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS, SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS, 1),
+            preSubmitStablePollMs: resolveNumber(prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS, SEND_PRE_SUBMIT_STABLE_POLL_MS, 1),
+            preSubmitStableSamples: resolveNumber(prSplit.SEND_PRE_SUBMIT_STABLE_SAMPLES, SEND_PRE_SUBMIT_STABLE_SAMPLES, 1),
+            inputAnchorTailChars: resolveNumber(prSplit.SEND_INPUT_ANCHOR_TAIL_CHARS, SEND_INPUT_ANCHOR_TAIL_CHARS, 4),
+            submitAckTimeoutMs: resolveNumber(prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS, SEND_SUBMIT_ACK_TIMEOUT_MS, 1),
+            submitAckPollMs: resolveNumber(prSplit.SEND_SUBMIT_ACK_POLL_MS, SEND_SUBMIT_ACK_POLL_MS, 1),
+            submitAckStableSamples: resolveNumber(prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES, SEND_SUBMIT_ACK_STABLE_SAMPLES, 1),
+            submitMaxNewlineAttempts: resolveNumber(prSplit.SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS, SEND_SUBMIT_MAX_NEWLINE_ATTEMPTS, 1),
+            promptReadyTimeoutMs: resolveNumber(prSplit.SEND_PROMPT_READY_TIMEOUT_MS, SEND_PROMPT_READY_TIMEOUT_MS, 1),
+            promptReadyPollMs: resolveNumber(prSplit.SEND_PROMPT_READY_POLL_MS, SEND_PROMPT_READY_POLL_MS, 1),
+            promptReadyStableSamples: resolveNumber(prSplit.SEND_PROMPT_READY_STABLE_SAMPLES, SEND_PROMPT_READY_STABLE_SAMPLES, 1)
         };
     }
 
     function getCancellationError() {
-        if (typeof prSplit._isForceCancelled === 'function' && prSplit._isForceCancelled()) {
+        if (typeof prSplit.isForceCancelled === 'function' && prSplit.isForceCancelled()) {
             return 'force cancelled by user';
         }
         if (typeof prSplit.isCancelled === 'function' && prSplit.isCancelled()) {
@@ -139,7 +138,7 @@
         return null;
     }
 
-    function safeScreenshot() {
+    function captureScreenshot() {
         if (typeof tuiMux === 'undefined' || !tuiMux || typeof tuiMux.screenshot !== 'function') {
             return null;
         }
@@ -153,7 +152,7 @@
         }
     }
 
-    function textTailAnchor(text, maxChars) {
+    function getTextTailAnchor(text, maxChars) {
         var s = String(text || '');
         var lines = s.split('\n');
         for (var i = lines.length - 1; i >= 0; i--) {
@@ -215,11 +214,11 @@
     }
 
     function captureInputAnchors(text, cfg) {
-        var screen = safeScreenshot();
+        var screen = captureScreenshot();
         if (screen === null) {
             return { observed: false };
         }
-        var tail = textTailAnchor(text, cfg.inputAnchorTailChars);
+        var tail = getTextTailAnchor(text, cfg.inputAnchorTailChars);
         var prompt = findPromptMarker(screen);
         var blocker = detectPromptBlocker(screen);
 
@@ -449,7 +448,7 @@
     async function sendToHandle(handle, text) {
         if (!handle) {
             log.printf('auto-split sendToHandle: handle is null — process may have exited');
-            return { error: 'Claude process handle is null — process may have exited' };
+            return { error: 'Claude process handle is null — process may have exited or failed to spawn. Check Claude CLI availability and MCP configuration.' };
         }
         var config = resolveSendConfig();
         var truncated = text.length > 120 ? text.substring(0, 120) + '...' : text;
@@ -468,17 +467,8 @@
             var lastErr;
             for (var attempt = 0; attempt <= EAGAIN_MAX_RETRIES; attempt++) {
                 try {
-                    // TUI path with cancellation support
-                    if (typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
-                        typeof autoSplitTUI.sendWithCancel === 'function') {
-                        var res = autoSplitTUI.sendWithCancel(handle, data);
-                        if (!res.error) return { error: null };
-                        lastErr = res.error;
-                    } else {
-                        // Direct send fallback
-                        handle.send(data);
-                        return { error: null };
-                    }
+                    handle.send(data);
+                    return { error: null };
                 } catch (e) {
                     lastErr = e.message || String(e);
                 }
@@ -597,7 +587,7 @@
     function waitForLogged(toolName, timeoutMs, opts) {
         var mcpCb = prSplit._mcpCallbackObj;
         if (!mcpCb || typeof mcpCb.waitFor !== 'function') {
-            return { data: null, error: 'MCP callback not initialized' };
+            return { data: null, error: 'MCP callback not initialized — ensure mcpConfigPath is provided via osm:mcpcallback module' };
         }
 
         opts = opts || {};
@@ -611,7 +601,7 @@
             }
         }
         wrappedOpts.aliveCheck = function() {
-            if (typeof prSplit._isForceCancelled === 'function' && prSplit._isForceCancelled()) {
+            if (typeof prSplit.isForceCancelled === 'function' && prSplit.isForceCancelled()) {
                 forceCancelledByUser = true;
                 return false;
             }
@@ -680,7 +670,7 @@
     // tuiMux so ctrl+] stops trying to forward to a dead child process.
     // When force-cancelled, sends SIGKILL to skip graceful shutdown.
     function cleanupExecutor() {
-        var isForceCancelled = prSplit._isForceCancelled;
+        var isForceCancelled = prSplit.isForceCancelled;
         var claudeExec = prSplit._state.claudeExecutor;
         var forceNow = false;
         try { forceNow = !!isForceCancelled(); } catch (e) { forceNow = false; }
@@ -774,6 +764,33 @@
     }
 
     // -----------------------------------------------------------------------
+    //  isTransientError — classify error messages for retry decisions
+    // -----------------------------------------------------------------------
+
+    /**
+     * Returns true if the error message looks like a transient failure that
+     * is worth retrying (rate limits, timeouts, temporary unavailability).
+     * Returns false for permanent errors (invalid tool call, malformed data).
+     */
+    function isTransientError(msg) {
+        if (!msg || typeof msg !== 'string') return true; // unknown → assume transient
+        var lc = msg.toLowerCase();
+        // Rate-limit / quota patterns.
+        if (/rate.?limit|429|too many requests|quota|throttl/i.test(lc)) return true;
+        // Timeout / connectivity.
+        if (/timeout|timed?.?out|econnreset|econnrefused|epipe|socket hang up|enetunreach/i.test(lc)) return true;
+        // Service unavailable.
+        if (/503|502|500|service unavailable|internal server error|bad gateway/i.test(lc)) return true;
+        // Temporary Claude issues.
+        if (/overloaded|capacity|try again/i.test(lc)) return true;
+        // Likely permanent: validation, schema, argument errors.
+        if (/invalid tool|malformed|schema|unknown tool|argument/i.test(lc)) return false;
+        // Default: assume transient (safe to retry).
+        return true;
+    }
+    prSplit._isTransientError = isTransientError;
+
+    // -----------------------------------------------------------------------
     //  resolveConflictsWithClaude — Claude-based conflict resolution
     // -----------------------------------------------------------------------
 
@@ -787,6 +804,7 @@
         var verifySplit = prSplit.verifySplit;
         var gitExec = prSplit._gitExec;
         var gitAddChangedFiles = prSplit._gitAddChangedFiles;
+        var shellQuote = prSplit._shellQuote;
         var osmod = prSplit._modules.osmod;
         var exec = prSplit._modules.exec;
         var runtime = prSplit.runtime;
@@ -824,6 +842,21 @@
                 if (isCancelled()) {
                     return { reSplitNeeded: false, reSplitReason: 'cancelled by user' };
                 }
+
+                // Exponential backoff between retry attempts (skip delay on first attempt).
+                if (attempt > 0) {
+                    var backoffMs = Math.min(2000 * Math.pow(2, attempt - 1), 30000);
+                    log.printf('auto-split: retrying %s after %dms backoff (attempt %d/%d)',
+                        fail.branch || fail.name, backoffMs, attempt + 1, maxAttemptsPerBranch);
+                    await new Promise(function(resolve) { setTimeout(resolve, backoffMs); });
+                    if (Date.now() >= deadline) {
+                        return { reSplitNeeded: false, reSplitReason: 'wall-clock timeout during backoff' };
+                    }
+                    if (isCancelled()) {
+                        return { reSplitNeeded: false, reSplitReason: 'cancelled during backoff' };
+                    }
+                }
+
                 report.conflicts.push({
                     branch: fail.branch || fail.name,
                     attempt: attempt + 1,
@@ -836,8 +869,7 @@
                     files: fail.files || [],
                     exitCode: fail.exitCode || 1,
                     errorOutput: fail.error || fail.output || '',
-                    goModContent: '',
-                    sessionId: sessionId
+                    goModContent: ''
                 });
                 if (promptResult.error) {
                     log.printf('auto-split: conflict prompt render failed: %s', promptResult.error);
@@ -847,7 +879,11 @@
                 var sendResult = await sendToHandle(claudeExec.handle, promptResult.text);
                 if (sendResult.error) {
                     log.printf('auto-split: failed to send conflict prompt: %s', sendResult.error);
-                    break;
+                    if (!isTransientError(sendResult.error)) {
+                        log.printf('auto-split: permanent send error for %s — skipping retries', fail.branch || fail.name);
+                        break;
+                    }
+                    continue; // transient — allow backoff + retry
                 }
                 report.claudeInteractions++;
                 recordConversation('conflict-resolution', promptResult.text, '');
@@ -861,7 +897,12 @@
                     checkIntervalMs: pollInterval
                 });
                 if (resolutionPoll.error) {
-                    log.printf('auto-split: resolution timeout for %s (attempt %d)', fail.branch || fail.name, attempt + 1);
+                    log.printf('auto-split: resolution timeout for %s (attempt %d): %s',
+                        fail.branch || fail.name, attempt + 1, resolutionPoll.error);
+                    if (!isTransientError(resolutionPoll.error)) {
+                        log.printf('auto-split: permanent resolution error for %s — skipping retries', fail.branch || fail.name);
+                        break;
+                    }
                     continue;
                 }
 
@@ -894,34 +935,48 @@
                     break;
                 }
 
-                // Apply patches.
+                // Apply patches and commands in a temporary worktree on the
+                // failing branch. This ensures we modify the correct branch
+                // without touching the user's CWD.
+                var patchBranch = fail.branch || fail.name;
+                var patchWorktreeDir = dir + '/../.osm-resolve-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
+                var patchWtAdd = gitExec(dir, ['worktree', 'add', patchWorktreeDir, patchBranch]);
+                if (patchWtAdd.code !== 0) {
+                    log.printf('auto-split: failed to create worktree for %s: %s', patchBranch, patchWtAdd.stderr.trim());
+                    continue;
+                }
+
+                // Apply patches in worktree.
                 if (resolution.patches && resolution.patches.length > 0) {
                     for (var p = 0; p < resolution.patches.length; p++) {
                         var patch = resolution.patches[p];
                         if (osmod) {
-                            osmod.writeFile(patch.file, patch.content);
+                            osmod.writeFile(patchWorktreeDir + '/' + patch.file, patch.content);
                         }
                     }
-                    gitAddChangedFiles(dir);
-                    var patchCommit = gitExec(dir, ['commit', '--amend', '--no-edit']);
+                    gitAddChangedFiles(patchWorktreeDir);
+                    var patchCommit = gitExec(patchWorktreeDir, ['commit', '--amend', '--no-edit']);
                     if (patchCommit.code !== 0) {
-                        log.printf('auto-split: patch commit failed for %s: %s', fail.branch || fail.name, patchCommit.stderr.trim());
+                        log.printf('auto-split: patch commit failed for %s: %s', patchBranch, patchCommit.stderr.trim());
                     }
                 }
 
-                // Run suggested commands.
+                // Run suggested commands in worktree.
                 if (resolution.commands && resolution.commands.length > 0) {
                     for (var c = 0; c < resolution.commands.length; c++) {
-                        exec.execv(['sh', '-c', resolution.commands[c]]);
+                        exec.execv(['sh', '-c', 'cd ' + shellQuote(patchWorktreeDir) + ' && ' + resolution.commands[c]]);
                     }
-                    gitAddChangedFiles(dir);
-                    var cmdCommit = gitExec(dir, ['commit', '--amend', '--no-edit']);
+                    gitAddChangedFiles(patchWorktreeDir);
+                    var cmdCommit = gitExec(patchWorktreeDir, ['commit', '--amend', '--no-edit']);
                     if (cmdCommit.code !== 0) {
-                        log.printf('auto-split: command commit failed for %s: %s', fail.branch || fail.name, cmdCommit.stderr.trim());
+                        log.printf('auto-split: command commit failed for %s: %s', patchBranch, cmdCommit.stderr.trim());
                     }
                 }
 
-                // Re-verify this branch.
+                // Cleanup resolution worktree before re-verify.
+                gitExec(dir, ['worktree', 'remove', '--force', patchWorktreeDir]);
+
+                // Re-verify this branch (verifySplit creates its own worktree).
                 var reVerify = verifySplit(fail.branch || fail.name, { verifyCommand: runtime.verifyCommand });
                 if (reVerify.passed) {
                     fixed = true;
@@ -952,7 +1007,7 @@
         var runtime = prSplit.runtime;
         var gitExec = prSplit._gitExec;
         var isCancelled = prSplit.isCancelled;
-        var isPaused = prSplit._isPaused;
+        var isPaused = prSplit.isPaused;
         var analyzeDiff = prSplit.analyzeDiff;
         var createSplitPlan = prSplit.createSplitPlan;
         var savePlan = prSplit.savePlan;
@@ -975,10 +1030,6 @@
         var assessIndependence = prSplit.assessIndependence || function() { return []; };
         var state = prSplit._state;
         var dir = resolveDir(config.dir || '.');
-
-        // Save the current branch so we can restore it on ALL exit paths.
-        var originalBranchResult = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
-        var originalBranch = originalBranchResult.code === 0 ? originalBranchResult.stdout.trim() : '';
 
         // Reset module-level state to prevent leakage across multiple runs
         // within the same JS VM.
@@ -1009,10 +1060,11 @@
             resolve: config.resolveTimeoutMs || AUTOMATED_DEFAULTS.resolveTimeoutMs
         };
         var pollInterval = config.pollIntervalMs || AUTOMATED_DEFAULTS.pollIntervalMs;
-        var maxAttemptsPerBranch = config.maxResolveRetries || AUTOMATED_DEFAULTS.maxResolveRetries;
-        var maxReSplits = config.maxReSplits || AUTOMATED_DEFAULTS.maxReSplits;
+        // Use typeof check: 0 is a valid value for retry/re-split counts (meaning "none").
+        var maxAttemptsPerBranch = typeof config.maxResolveRetries === 'number' ? config.maxResolveRetries : AUTOMATED_DEFAULTS.maxResolveRetries;
+        var maxReSplits = typeof config.maxReSplits === 'number' ? config.maxReSplits : AUTOMATED_DEFAULTS.maxReSplits;
 
-        // Clamp: negative/zero values must not cause spin-loops or nonsensical retries.
+        // Clamp: negative values must not cause spin-loops or nonsensical retries.
         if (pollInterval < 50) { pollInterval = 50; }
         if (maxReSplits < 0) { maxReSplits = 0; }
         if (maxAttemptsPerBranch < 0) { maxAttemptsPerBranch = 0; }
@@ -1025,11 +1077,9 @@
         var lastProgressTime = Date.now();
 
         // Detect the auto-split BubbleTea TUI (injected from Go).
-        var hasTUI = typeof autoSplitTUI !== 'undefined' && autoSplitTUI &&
-                     typeof autoSplitTUI.runAsync === 'function';
-        if (hasTUI && !config.disableTUI) {
-            autoSplitTUI.runAsync();
-        }
+        // NOTE: The Go BubbleTea TUI was removed in the Go→JS TUI migration (T27).
+        // Progress is now reported via output.print() directly.
+        var hasTUI = false;
 
         var report = {
             mode: 'automated',
@@ -1046,23 +1096,20 @@
         };
 
         function emitOutput(text) {
-            if (hasTUI && !config.disableTUI) {
-                autoSplitTUI.appendOutput(text);
-            }
             output.print(text);
             lastProgressTime = Date.now();
         }
 
         function updateDetail(stepName, detail) {
-            if (hasTUI && !config.disableTUI && typeof autoSplitTUI.stepDetail === 'function') {
-                autoSplitTUI.stepDetail(stepName, detail);
-            }
+            // Placeholder: TUI detail display removed in T27 migration.
+            // detail is logged for diagnostics.
+            log.printf('auto-split detail [%s]: %s', stepName, detail);
         }
 
         // step() wrapper for pipeline steps. Supports both sync and async callbacks.
         async function step(name, fn) {
             // Check cancellation before each step.
-            if (hasTUI && !config.disableTUI && typeof autoSplitTUI.cancelled === 'function' && autoSplitTUI.cancelled()) {
+            if (isCancelled()) {
                 return { error: 'cancelled by user' };
             }
             // Check pause — save checkpoint and exit cleanly.
@@ -1096,9 +1143,6 @@
 
             var t0 = Date.now();
             lastProgressTime = Date.now();
-            if (hasTUI && !config.disableTUI) {
-                autoSplitTUI.stepStart(name);
-            }
             emitOutput('[auto-split] ' + name + '...');
             log.printf('auto-split step: %s', name);
             var result;
@@ -1123,14 +1167,8 @@
             report.steps.push({ name: name, elapsedMs: elapsed, error: result.error || null });
             if (result.error) {
                 emitOutput('[auto-split] ' + name + ' FAILED (' + elapsed + 'ms): ' + result.error);
-                if (hasTUI && !config.disableTUI) {
-                    autoSplitTUI.stepDone(name, result.error, elapsed);
-                }
             } else {
                 emitOutput('[auto-split] ' + name + ' OK (' + elapsed + 'ms)');
-                if (hasTUI && !config.disableTUI) {
-                    autoSplitTUI.stepDone(name, '', elapsed);
-                }
             }
             return result;
         }
@@ -1157,9 +1195,7 @@
             }
 
             if (hasTUI && !config.disableTUI) {
-                var summary = result.error ? ('Error: ' + result.error) : 'Complete';
-                autoSplitTUI.done(summary);
-                autoSplitTUI.wait();
+                emitOutput('\n[auto-split] ' + (result.error ? ('Error: ' + result.error) : 'Complete'));
             }
             return result;
         }
@@ -1216,7 +1252,6 @@
                 {
                     type: 'object',
                     properties: {
-                        sessionId: { type: 'string', description: 'Session identifier' },
                         categories: {
                             type: 'array',
                             items: {
@@ -1239,7 +1274,6 @@
                 {
                     type: 'object',
                     properties: {
-                        sessionId: { type: 'string' },
                         stages: {
                             type: 'array',
                             items: {
@@ -1262,7 +1296,6 @@
                 {
                     type: 'object',
                     properties: {
-                        sessionId: { type: 'string' },
                         patches: { type: 'array', items: { type: 'object', properties: { file: { type: 'string' }, content: { type: 'string' } } } },
                         commands: { type: 'array', items: { type: 'string' } },
                         preExistingFailure: { type: 'boolean' },
@@ -1372,7 +1405,7 @@
         var classifyResult = await step('Send classification request', async function() {
             updateDetail('Send classification request', 'Rendering prompt (' + analysis.files.length + ' files)...');
             var renderResult = renderClassificationPrompt(analysis, {
-                sessionId: sessionId, maxGroups: config.maxGroups || 0
+                maxGroups: config.maxGroups || 0
             });
             if (renderResult.error) {
                 return { error: renderResult.error };
@@ -1610,17 +1643,9 @@
             var verifyObj = verifySplits(plan, {
                 verifyTimeoutMs: config.verifyTimeoutMs || AUTOMATED_DEFAULTS.verifyTimeoutMs,
                 outputFn: emitOutput,
-                onBranchStart: (hasTUI && !config.disableTUI && typeof autoSplitTUI.branchStart === 'function')
-                    ? function(name) { autoSplitTUI.branchStart(name); }
-                    : null,
-                onBranchDone: (hasTUI && !config.disableTUI && typeof autoSplitTUI.branchDone === 'function')
-                    ? function(name, passed, exitCode, elapsedMs, skipped, preExisting) {
-                        autoSplitTUI.branchDone(name, passed, exitCode, elapsedMs, skipped, preExisting);
-                    }
-                    : null,
-                onBranchOutput: (hasTUI && !config.disableTUI && typeof autoSplitTUI.branchOutput === 'function')
-                    ? function(name, line) { autoSplitTUI.branchOutput(name, line); }
-                    : null
+                onBranchStart: null,
+                onBranchDone: null,
+                onBranchOutput: null
             });
             var realFailures = [];
             var skippedResults = [];
@@ -1687,8 +1712,7 @@
                 cleanupBranches(plan);
                 var reClassifyResult = await step('Re-classify (retry ' + reSplitCount + ')', async function() {
                     var constraintPrompt = 'Re-classify these files with the constraint: ' +
-                        resolved.reSplitReason + '\n\nUse reportClassification MCP tool ' +
-                        'with session ID ' + sessionId + '.\n';
+                        resolved.reSplitReason + '\n\nUse the reportClassification MCP tool.\n';
                     var sendResult = await sendToHandle(claudeExecutor.handle, constraintPrompt);
                     if (sendResult.error) {
                         return { error: 'failed to send re-classify prompt: ' + sendResult.error };
@@ -1775,13 +1799,7 @@
             }
         }
 
-        // Restore the original branch.
-        if (originalBranch) {
-            var restoreResult = gitExec(dir, ['checkout', originalBranch]);
-            if (restoreResult.code !== 0 && typeof log !== 'undefined' && log.warn) {
-                log.warn('pr-split: failed to restore branch ' + originalBranch + ': ' + restoreResult.stderr.trim());
-            }
-        }
+        // Worktree isolation: user's branch is never modified, no restore needed.
 
         return finishTUI({ error: report.error, report: report });
     }

@@ -1397,7 +1397,7 @@ func TestVerifySplits_PerBranchTimeout(t *testing.T) {
 // Root cause: step('Verify splits', fn) at line 2920 returns
 //   { error: null, failures: realFailures, allPassed: false }
 // The step() wrapper at line 2600 checks result.error, sees null, and calls
-//   autoSplitTUI.stepDone(name, '', elapsed)  — empty error string = success
+//   step() emits '[auto-split] {name} OK ({elapsed}ms)' via output.print()
 // Failures are handled separately at line 2951 (if verifyResult.failures.length > 0).
 //
 // Fix target: T48 — modify step wrapper return or step() error checking.

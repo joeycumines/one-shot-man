@@ -30,7 +30,7 @@
         var baseBranch = config.baseBranch || runtime.baseBranch;
         var dir = resolveDir(config.dir || '.');
 
-        var emptyResult = function(error, currentBranch) {
+        var createEmptyResult = function(error, currentBranch) {
             return {
                 files: [],
                 fileStatuses: {},
@@ -42,19 +42,19 @@
 
         var branchResult = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
         if (branchResult.code !== 0) {
-            return emptyResult('failed to get current branch: ' + branchResult.stderr.trim(), '');
+            return createEmptyResult('failed to get current branch: ' + branchResult.stderr.trim(), '');
         }
         var currentBranch = branchResult.stdout.trim();
 
         var mergeBase = gitExec(dir, ['merge-base', baseBranch, currentBranch]);
         if (mergeBase.code !== 0) {
-            return emptyResult('merge-base failed: ' + mergeBase.stderr.trim(), currentBranch);
+            return createEmptyResult('merge-base failed: ' + mergeBase.stderr.trim(), currentBranch);
         }
 
         // Use --name-status to capture diff status (A/M/D/R/C) per file.
         var diffResult = gitExec(dir, ['diff', '--name-status', mergeBase.stdout.trim(), currentBranch]);
         if (diffResult.code !== 0) {
-            return emptyResult('git diff failed: ' + diffResult.stderr.trim(), currentBranch);
+            return createEmptyResult('git diff failed: ' + diffResult.stderr.trim(), currentBranch);
         }
 
         var raw = diffResult.stdout.trim();
@@ -76,7 +76,7 @@
 
                 // Unmerged paths (U) mean unresolved conflicts — fail early.
                 if (status === 'U') {
-                    return emptyResult(
+                    return createEmptyResult(
                         'unmerged path detected: ' + parts[1] +
                         ' — resolve all merge conflicts before splitting',
                         currentBranch

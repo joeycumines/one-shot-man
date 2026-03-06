@@ -456,19 +456,20 @@ module.exports = {
 		return fmt.Errorf("write bootstrap script: %w", err)
 	}
 
-	// Generate MCP config JSON for Claude Code integration
-	var connectArg string
-	if transport == "unix" {
-		connectArg = "UNIX-CONNECT:" + address
-	} else {
-		connectArg = "TCP:" + address
+	// Generate MCP config JSON for Claude Code integration.
+	// Use the osm binary itself as the stdio-to-socket bridge, replacing
+	// the external socat dependency. The mcp-bridge subcommand is a
+	// simple bidirectional stdio↔socket proxy.
+	osmExe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("resolve osm executable path: %w", err)
 	}
 
 	mcpConfig := map[string]any{
 		"mcpServers": map[string]any{
 			"osm-callback": map[string]any{
-				"command": "socat",
-				"args":    []string{"STDIO", connectArg},
+				"command": osmExe,
+				"args":    []string{"mcp-bridge", transport, address},
 			},
 		},
 	}

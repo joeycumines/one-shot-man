@@ -1822,11 +1822,10 @@ func TestPrSplitCommand_SendToHandle_CancellationBeforeChunk(t *testing.T) {
 
 	// Set cancellation flag before calling sendToHandle.
 	// getCancellationError() checks prSplit.isCancelled() which delegates to
-	// autoSplitTUI.cancelled().
+	// prSplit._cancelSource().
 	val, err := evalJS(`(async function() {
-		globalThis.autoSplitTUI = {
-			cancelled: function() { return true; },
-			forceCancelled: function() { return false; }
+		globalThis.prSplit._cancelSource = function(q) {
+			return q === 'cancelled';
 		};
 		var sends = [];
 		var mockHandle = {

@@ -519,7 +519,7 @@
       "task": "T61: Validate session ID path safety against traversal",
       "description": "Session file paths constructed from user-supplied or auto-detected session IDs. While sanitization exists, no explicit traversal test verifies SessionFilePath() cannot escape the session directory. Test with IDs: '../../../etc/passwd', '..\\\\..\\\\windows', './;../../etc'. Verify all paths resolve under session root.",
       "acceptance": "TestSessionFilePath_TraversalAttempt_Rejected tests 3+ malicious IDs. All returned paths are under session storage root. Cross-platform. make all GREEN.",
-      "status": "Not Started",
+      "status": "Done",
       "contextPointers": ["internal/storage/paths.go", "internal/session/session.go:20-40"]
     },
     {

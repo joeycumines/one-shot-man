@@ -20,13 +20,13 @@
 - **d28ae45**: T58 MCP callback cleanup logging (3 slog.Warn + 2 new tests)
 - T59: parseClaudeEnv input validation (2 slog.Warn + TestParseClaudeEnv_MalformedInput)
 - T60: Config direct symlink attack tests (DirectSymlink_Rejected + DirectSymlink_ToSensitiveFile)
+- T61: Session path traversal tests + sanitizeFilename fix (SessionFilePath, SessionLockFilePath, SetTestPaths)
 
 ### Tasks Done This Session
-- T40-T60 all done (see above)
+- T40-T61 all done (see above)
 
 ### Next Steps
-1. T61: Session path traversal test
-2. T62: Atomic write error audit
+1. T62: Atomic write error audit
 
 ### Blocked
 - T41: Claude CLI not logged in

@@ -63,10 +63,10 @@ func SetTestPaths(dir string) {
 	defer pathsMu.Unlock()
 	sessionDirectory = func() (string, error) { return dir, nil }
 	sessionFilePath = func(id string) (string, error) {
-		return filepath.Join(dir, id+".session.json"), nil
+		return filepath.Join(dir, sanitizeFilename(id)+".session.json"), nil
 	}
 	sessionLockFilePath = func(id string) (string, error) {
-		return filepath.Join(dir, id+".session.lock"), nil
+		return filepath.Join(dir, sanitizeFilename(id)+".session.lock"), nil
 	}
 }
 
@@ -109,22 +109,28 @@ func SessionDirectory() (string, error) {
 
 // SessionFilePath returns the absolute path to a session file.
 // File naming: {session_id}.session.json
+//
+// SECURITY: The session ID is sanitized via sanitizeFilename() to prevent
+// path traversal attacks (e.g., "../../../etc/passwd" as a session ID).
 func SessionFilePath(sessionID string) (string, error) {
 	dir, err := getSessionDirectory()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, sessionID+".session.json"), nil
+	return filepath.Join(dir, sanitizeFilename(sessionID)+".session.json"), nil
 }
 
 // SessionLockFilePath returns the absolute path to a session lock file.
 // File naming: {session_id}.session.lock
+//
+// SECURITY: The session ID is sanitized via sanitizeFilename() to prevent
+// path traversal attacks.
 func SessionLockFilePath(sessionID string) (string, error) {
 	dir, err := getSessionDirectory()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, sessionID+".session.lock"), nil
+	return filepath.Join(dir, sanitizeFilename(sessionID)+".session.lock"), nil
 }
 
 // sessionArchiveDir returns the directory where archived session files are stored.

@@ -361,3 +361,99 @@ func TestSessionArchiveDir_MkdirAllError(t *testing.T) {
 		t.Fatal("expected error when MkdirAll fails for archive directory")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T61: Session path traversal attack tests
+// ---------------------------------------------------------------------------
+
+func TestSessionFilePath_TraversalAttempt_Rejected(t *testing.T) {
+	// NOT parallel — mutates global path functions via SetTestPaths.
+	sessionDir := t.TempDir()
+	SetTestPaths(sessionDir)
+	defer ResetPaths()
+
+	maliciousIDs := []struct {
+		name string
+		id   string
+	}{
+		{"unix traversal", "../../../etc/passwd"},
+		{"windows traversal", "..\\..\\windows\\system32"},
+		{"semicolon injection", "./;../../etc"},
+		{"double-dot chain", ".../.../../root/.ssh"},
+		{"relative current dir", "./current"},
+		{"null byte", "session\x00evil"},
+	}
+
+	for _, tc := range maliciousIDs {
+		t.Run(tc.name, func(t *testing.T) {
+			path, err := SessionFilePath(tc.id)
+			if err != nil {
+				t.Fatalf("SessionFilePath(%q) unexpected error: %v", tc.id, err)
+			}
+
+			// The resolved path MUST be under the session directory.
+			cleaned := filepath.Clean(path)
+			if !strings.HasPrefix(cleaned, sessionDir) {
+				t.Errorf("SessionFilePath(%q) escaped session dir:\n  got:  %s\n  want prefix: %s", tc.id, cleaned, sessionDir)
+			}
+
+			// The path must not contain raw path separator sequences.
+			base := filepath.Base(path)
+			if strings.ContainsAny(base, "/\\") {
+				t.Errorf("SessionFilePath(%q) base contains path separators: %s", tc.id, base)
+			}
+		})
+	}
+}
+
+func TestSessionLockFilePath_TraversalAttempt_Rejected(t *testing.T) {
+	// NOT parallel — mutates global path functions via SetTestPaths.
+	sessionDir := t.TempDir()
+	SetTestPaths(sessionDir)
+	defer ResetPaths()
+
+	maliciousIDs := []string{
+		"../../../etc/passwd",
+		"..\\..\\AppData\\Roaming",
+		"./;../../etc",
+	}
+
+	for _, id := range maliciousIDs {
+		t.Run(id, func(t *testing.T) {
+			path, err := SessionLockFilePath(id)
+			if err != nil {
+				t.Fatalf("SessionLockFilePath(%q) unexpected error: %v", id, err)
+			}
+			cleaned := filepath.Clean(path)
+			if !strings.HasPrefix(cleaned, sessionDir) {
+				t.Errorf("SessionLockFilePath(%q) escaped session dir:\n  got:  %s\n  want prefix: %s", id, cleaned, sessionDir)
+			}
+		})
+	}
+}
+
+func TestArchiveSessionFilePath_TraversalAttempt_Rejected(t *testing.T) {
+	// NOT parallel — mutates global path functions via SetTestPaths.
+	sessionDir := t.TempDir()
+	SetTestPaths(sessionDir)
+	defer ResetPaths()
+
+	ts := time.Date(2025, 11, 26, 14, 3, 0, 0, time.UTC)
+	maliciousIDs := []string{
+		"../../../etc/passwd",
+		"..\\..\\windows",
+	}
+
+	for _, id := range maliciousIDs {
+		t.Run(id, func(t *testing.T) {
+			path, err := ArchiveSessionFilePath(id, ts, 0)
+			if err != nil {
+				t.Fatalf("ArchiveSessionFilePath(%q) unexpected error: %v", id, err)
+			}
+			cleaned := filepath.Clean(path)
+			if !strings.HasPrefix(cleaned, sessionDir) {
+				t.Errorf("ArchiveSessionFilePath(%q) escaped session dir:\n  got:  %s\n  want prefix: %s", id, cleaned, sessionDir)
+			}
+		})
+	}
+}

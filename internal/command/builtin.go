@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"text/tabwriter"
@@ -288,8 +289,11 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		// Persist to disk if a config path is available
 		configPath := c.configPath
 		if configPath == "" {
-			// Best-effort resolve; if it fails, skip disk write
-			configPath, _ = config.GetConfigPath()
+			var err error
+			configPath, err = config.GetConfigPath()
+			if err != nil {
+				slog.Warn("config path resolution failed, skipping disk write", "error", err)
+			}
 		}
 		if configPath != "" {
 			if err := config.SetKeyInFile(configPath, key, value); err != nil {
@@ -419,7 +423,11 @@ func (c *ConfigCommand) executeResetKey(key string, stdout, stderr io.Writer) er
 	// Remove from disk.
 	configPath := c.configPath
 	if configPath == "" {
-		configPath, _ = config.GetConfigPath()
+		var err error
+		configPath, err = config.GetConfigPath()
+		if err != nil {
+			slog.Warn("config path resolution failed, skipping disk write", "error", err)
+		}
 	}
 	if configPath != "" {
 		if err := config.DeleteKeyInFile(configPath, key); err != nil {
@@ -440,7 +448,11 @@ func (c *ConfigCommand) executeResetAll(stdout, stderr io.Writer) error {
 	// Remove all global keys from disk.
 	configPath := c.configPath
 	if configPath == "" {
-		configPath, _ = config.GetConfigPath()
+		var err error
+		configPath, err = config.GetConfigPath()
+		if err != nil {
+			slog.Warn("config path resolution failed, skipping disk write", "error", err)
+		}
 	}
 	if configPath != "" {
 		diskCount, err := config.DeleteAllGlobalKeysInFile(configPath)

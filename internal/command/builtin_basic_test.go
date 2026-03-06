@@ -3,8 +3,10 @@ package command
 import (
 	"bytes"
 	"flag"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -513,5 +515,54 @@ func TestInitCommandForceCreatesConfig(t *testing.T) {
 	}
 	if len(data) == 0 {
 		t.Fatalf("expected generated config to be non-empty")
+	}
+}
+
+// TestConfigCommand_SetWithConfigPathResolutionFailure verifies that executeSet
+// logs a warning when config.GetConfigPath() fails, while still applying the
+// in-memory config change.
+// NOT parallel — mutates global slog default and HOME env var.
+func TestConfigCommand_SetWithConfigPathResolutionFailure(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("HOME-based path resolution not applicable on Windows")
+	}
+
+	// Ensure OSM_CONFIG is not set, so GetConfigPath falls through to UserHomeDir.
+	t.Setenv("OSM_CONFIG", "")
+	// Unset HOME to make os.UserHomeDir() fail.
+	t.Setenv("HOME", "")
+
+	// Pre-check: verify that GetConfigPath actually fails in this environment.
+	// On some platforms (macOS with cgo), UserHomeDir falls back to getpwuid_r
+	// even with HOME="", which succeeds. Skip if we can't induce the failure.
+	if _, err := config.GetConfigPath(); err == nil {
+		t.Skip("GetConfigPath did not fail with HOME=\"\" on this platform (likely cgo fallback)")
+	}
+
+	// Capture slog output.
+	var buf bytes.Buffer
+	oldDefault := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(oldDefault) })
+
+	cfg := config.NewConfig()
+	cmd := NewConfigCommand(cfg) // no configPath — triggers GetConfigPath
+
+	var stdout, stderr bytes.Buffer
+	// Set a known config key to avoid schema warning noise.
+	err := cmd.Execute([]string{"verbose", "true"}, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// In-memory config should still be updated.
+	if v, ok := cfg.GetGlobalOption("verbose"); !ok || v != "true" {
+		t.Fatalf("expected verbose=true in memory, got %q exists=%v", v, ok)
+	}
+
+	// slog.Warn should have been emitted.
+	logOutput := buf.String()
+	if !strings.Contains(logOutput, "config path resolution failed") {
+		t.Fatalf("expected slog.Warn 'config path resolution failed', got: %s", logOutput)
 	}
 }

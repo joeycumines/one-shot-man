@@ -533,7 +533,7 @@
       "task": "T63: Log cleanup scheduler errors instead of silencing them",
       "description": "CleanupScheduler.runOnce() at cleanup_scheduler.go:61 silently discards ExecuteCleanup() errors with `_, _ = s.Cleaner.ExecuteCleanup(s.ExcludeID)`. While cleanup is best-effort, permission errors or backend failures that indicate misconfiguration vanish without trace. Add slog.Debug for non-nil errors (debug level because cleanup is background/expected-failure). Add TestCleanupScheduler_LogsCleanupErrors using a mock Cleaner that returns an error, verify slog.Debug output captured.",
       "acceptance": "runOnce() logs non-nil errors via slog.Debug with error and ExcludeID context. TestCleanupScheduler_LogsCleanupErrors creates a mock Cleaner returning a known error, runs scheduler once, captures slog output, asserts debug message contains the error string. make all GREEN.",
-      "status": "Not Started",
+      "status": "Done",
       "contextPointers": ["internal/storage/cleanup_scheduler.go:57-62", "internal/storage/cleanup_scheduler_test.go (9 existing tests, mockCleaner pattern)"]
     },
     {

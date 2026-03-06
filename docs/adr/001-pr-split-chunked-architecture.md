@@ -136,3 +136,45 @@ the Goja-idiomatic approach.
 Considered. Would provide explicit dependency declarations via getter functions.
 Rejected as overengineering — the 14-file sequential loading is simpler and
 the late-binding pattern adequately handles cross-chunk references.
+
+---
+
+## Addendum: JS Wizard TUI (T27)
+
+**Date:** 2026-03-06  
+**Status:** Accepted
+
+### Context
+
+The original TUI was implemented in Go using BubbleTea (`AutoSplitModel`,
+`PlanEditor`). This created a split-brain problem: pipeline state lived in JS,
+UI state lived in Go, and synchronization between them required complex
+bridging (SetGlobal callbacks, event channels, update cycles).
+
+### Decision
+
+Replace the Go BubbleTea TUI with a JS-driven wizard state machine
+(`pr_split_13_tui.js`), using the `osm:termmux` module as the display facade.
+
+- **Wizard state machine:** 15 states — entry (IDLE), config (CONFIG,
+  BASELINE_FAIL), main flow (PLAN_GENERATION → PLAN_REVIEW → PLAN_EDITOR →
+  BRANCH_BUILDING → ERROR_RESOLUTION → EQUIV_CHECK → FINALIZATION → DONE),
+  cross-cutting (CANCELLED, FORCE_CANCEL, PAUSED, ERROR) — with guarded
+  transitions and cooperative cancellation.
+- **termmux facade:** `osm:termmux` module exposes pane management
+  (visibility, resize, split), event subscription (bell, activity), and
+  BubbleTea integration (`toggleModel`/`fromModel`) from Go to JS.
+- **REPL commands:** 32 interactive commands built via `buildCommands()` in
+  chunk 13, registered as an `osm` mode via the scripting engine.
+
+### Consequences
+
+**Positive:**
+- Single source of truth for state (JS wizard owns all state).
+- Hot-reloadable during development (no recompile for UI changes).
+- Pipeline and UI share the same module system, reducing bridging overhead.
+
+**Negative:**
+- JS debugging is harder than Go (no step debugger in Goja).
+- Dynamic typing in JS means UI state errors surface at runtime.
+- termmux module bindings must be maintained in Go alongside JS consumers.

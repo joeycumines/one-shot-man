@@ -1549,13 +1549,7 @@
                             description: s.message || ''
                         });
                     }
-                    if (typeof planEditorFactory !== 'undefined' && planEditorFactory && planEditorFactory.create) {
-                        // NOTE: planEditorFactory (Go BubbleTea PlanEditor) was removed in T27.
-                        // This branch is unreachable but kept for future re-integration.
-                        output.print('[edit-plan] BubbleTea plan editor unavailable. Use text commands: move, rename, merge.');
-                    } else {
-                        output.print('[edit-plan] Plan editor not available. Use text commands: move, rename, merge.');
-                    }
+                    output.print('[edit-plan] Plan editor not available. Use text commands: move, rename, merge.');
                 }
             },
 

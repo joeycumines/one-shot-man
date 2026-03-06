@@ -75,8 +75,10 @@ These globals are set by `pr_split.go` Execute() before any JS chunk loads:
 | `output` | Object | Scripting runtime | 10, 13 |
 | `log` | Function | Scripting runtime | 08, 09, 10 |
 
-The TUI models (`AutoSplitModel`, `PlanEditor`) live in `internal/command/`
-alongside `pr_split.go` (`prsplit_autosplit_model.go`, `prsplit_plan_editor.go`).
+The TUI is implemented entirely in JavaScript via `pr_split_13_tui.js`, which uses
+the `osm:termmux` module for pane management, visibility, events, and BubbleTea
+integration. The Go BubbleTea TUI (`AutoSplitModel`, `PlanEditor`) was removed in
+T27 — all wizard state management now lives in the JS wizard state machine.
 
 ---
 

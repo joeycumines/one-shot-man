@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"log/slog"
 	"time"
 )
 
@@ -25,7 +26,7 @@ type CleanupScheduler struct {
 }
 
 // Run executes cleanup immediately, then at intervals until ctx is cancelled.
-// It blocks until ctx.Done() fires. Cleanup errors are silently ignored
+// It blocks until ctx.Done() fires. Cleanup errors are logged at debug level
 // because cleanup is best-effort — the cleaner already handles lock contention
 // and concurrent access safely via the global cleanup lock.
 func (s *CleanupScheduler) Run(ctx context.Context) {
@@ -56,9 +57,14 @@ func (s *CleanupScheduler) Run(ctx context.Context) {
 	}
 }
 
-// runOnce executes a single cleanup cycle, ignoring errors.
+// runOnce executes a single cleanup cycle. Errors are logged at debug level
+// because cleanup is best-effort, but logging them aids in diagnosing
+// misconfiguration (permission errors, backend failures).
 func (s *CleanupScheduler) runOnce() {
-	_, _ = s.Cleaner.ExecuteCleanup(s.ExcludeID)
+	_, err := s.Cleaner.ExecuteCleanup(s.ExcludeID)
+	if err != nil {
+		slog.Debug("cleanup cycle failed", "error", err, "excludeID", s.ExcludeID)
+	}
 }
 
 // defaultNewTicker wraps time.NewTicker to match the NewTicker signature.

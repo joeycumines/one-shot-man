@@ -44,7 +44,7 @@
     "tasksCompleted": ["T01-T15 from prior blueprint (one-off setup steps, pruned)"]
   },
   "statusSection": {
-    "currentState": "SESSION 2. Commits: cd6cb0a (verify+model+test fixes), 8efe737 (container fixes). T40/T47/T48/T49/T53 Done. Dead code removed (planEditorFactory). Blueprint refs cleaned. Docs updated (architecture + ADR). Pending commit: T48/T49/T53 cleanup.",
+    "currentState": "SESSION 2. T01-T62 ALL DONE. 13 commits: cd6cb0a→0922854. Scope expansion: T63-T68 added (cleanup logging, config path warnings, termmux write logging, listener integration test, concurrent cleanup test). Executing T63+.",
     "goalState": "Wizard UI fully implemented in JS via termmux facade. osm:termmux module exposes pane management, visibility, events, BubbleTea integration to JS. State machine drives Config→PlanGeneration→PlanReview→BranchBuilding→ErrorResolution→Finalization. Old Go TUI replaced. Integration tests massively expanded (mock MCP + real Claude). Cross-platform validated. Every line has a reason to exist. No dead code. No AI slop."
   },
   "sequentialTasks": [
@@ -528,6 +528,48 @@
       "acceptance": "TestAtomicWriteFile_AllErrorPaths covers 5 error cases. TestFileSystemBackend_SaveSession_AtomicWriteFailure verifies error bubbles up. Verify cleanup warnings logged. make all GREEN.",
       "status": "Done",
       "contextPointers": ["internal/storage/atomic_write.go:28-100", "internal/storage/fs_backend.go:87-110"]
+    },
+    {
+      "task": "T63: Log cleanup scheduler errors instead of silencing them",
+      "description": "CleanupScheduler.runOnce() at cleanup_scheduler.go:61 silently discards ExecuteCleanup() errors with `_, _ = s.Cleaner.ExecuteCleanup(s.ExcludeID)`. While cleanup is best-effort, permission errors or backend failures that indicate misconfiguration vanish without trace. Add slog.Debug for non-nil errors (debug level because cleanup is background/expected-failure). Add TestCleanupScheduler_LogsCleanupErrors using a mock Cleaner that returns an error, verify slog.Debug output captured.",
+      "acceptance": "runOnce() logs non-nil errors via slog.Debug with error and ExcludeID context. TestCleanupScheduler_LogsCleanupErrors creates a mock Cleaner returning a known error, runs scheduler once, captures slog output, asserts debug message contains the error string. make all GREEN.",
+      "status": "Not Started",
+      "contextPointers": ["internal/storage/cleanup_scheduler.go:57-62", "internal/storage/cleanup_scheduler_test.go (9 existing tests, mockCleaner pattern)"]
+    },
+    {
+      "task": "T64: Warn when config path resolution fails in builtin set/reset commands",
+      "description": "builtin.go has 3 instances of `configPath, _ = config.GetConfigPath()` (lines 292, 422, 443) in executeSet, executeResetKey, and executeResetAll. If GetConfigPath fails (e.g., HOME unset, XDG_CONFIG_HOME unreadable), the in-memory write succeeds but the disk write silently doesn't happen — the user thinks their config is saved but it's lost on restart. Add slog.Warn with the error when GetConfigPath fails AND configPath is still empty. Add test: mock HOME to empty/invalid, call executeSet, verify warning logged and in-memory state still applied.",
+      "acceptance": "All 3 GetConfigPath call sites log slog.Warn when error is non-nil. TestExecuteSet_ConfigPathResolutionFailure_WarnsUser verifies: (1) slog.Warn captured with error string, (2) in-memory config still updated, (3) no crash. make all GREEN.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/builtin.go:288-296 (executeSet)", "internal/command/builtin.go:419-425 (executeResetKey)", "internal/command/builtin.go:440-446 (executeResetAll)", "internal/config/config.go (GetConfigPath)"]
+    },
+    {
+      "task": "T65: Add termmux stdout write error logging",
+      "description": "termmux.go has 7 instances of `_, _ = m.stdout.Write(...)` or `_, _ = stdout.Write(...)` (lines 118, 166, 175, 471, 496, 590, 603) that silently discard write errors. Terminal writes failing mid-session (broken pipe, closed fd) cause silent data loss. Add a writeWithLog helper that logs write errors at debug level with byte count context. Replace all 7 bare writes. Add TestMux_StdoutWriteError using a mockWriter that returns errors after N bytes, verify debug logs captured.",
+      "acceptance": "All 7 stdout/child Write calls use writeWithLog helper. TestMux_StdoutWriteError verifies errors logged at debug level with byte count. No behavior change (still best-effort writes). make all GREEN.",
+      "status": "Not Started",
+      "contextPointers": ["internal/termmux/termmux.go:118,166,175,471,496,590,603"]
+    },
+    {
+      "task": "T66: StateManager listener integration test — full notification lifecycle",
+      "description": "AddListener/RemoveListener have edge case tests (nil map, invalid ID) but no integration test verifying the notification actually fires when SetState is called. state_listener_test.go tests notifyListeners() directly but not through the public SetState→notifyListeners chain. Add TestStateManager_ListenerNotifiedOnSetState: register listener via AddListener, call SetState('shared', 'key', 'val'), assert listener callback received 'key'. Then RemoveListener, call SetState again, assert listener NOT called. This exercises the full public API chain.",
+      "acceptance": "TestStateManager_ListenerNotifiedOnSetState verifies: (1) AddListener registers callback, (2) SetState triggers callback with correct key, (3) RemoveListener stops notifications, (4) second SetState does NOT trigger callback. make all GREEN.",
+      "status": "Not Started",
+      "contextPointers": ["internal/scripting/state_manager.go:530-562 (AddListener, RemoveListener, notifyListeners)", "internal/scripting/state_manager.go:SetState (calls notifyListeners)", "internal/scripting/state_listener_test.go (existing direct tests)", "internal/scripting/state_manager_test.go (18 existing tests)"]
+    },
+    {
+      "task": "T67: Cleanup scheduler + active session concurrency test",
+      "description": "No test verifies that cleanup scheduler correctly SKIPS locked (active) sessions. The cleaner uses file locking but the interaction between active writes and concurrent cleanup is untested. Add TestCleanupScheduler_SkipsLockedSession: (1) create a session via FileSystemBackend, (2) hold its lock via AcquireLockHandle, (3) start CleanupScheduler with 0-second retention, (4) verify session file survives cleanup, (5) release lock, (6) re-run cleanup, (7) verify session is now cleaned. Uses real FileSystemBackend (not mock).",
+      "acceptance": "TestCleanupScheduler_SkipsLockedSession verifies: (1) locked session survived cleanup, (2) after unlock, cleanup removes it. No race detector warnings across 10 runs. make all GREEN.",
+      "status": "Not Started",
+      "contextPointers": ["internal/storage/cleanup_scheduler.go", "internal/storage/cleaner.go (ExecuteCleanup, lock checking)", "internal/storage/fs_backend.go (SaveSession, Close)", "internal/storage/lock.go (AcquireLockHandle, ReleaseLockHandle)"]
+    },
+    {
+      "task": "T68: Scope expansion — identify T69+ improvement opportunities",
+      "description": "Codebase audit for further improvements. Areas to investigate: (1) readFile() path validation in engine_core.go:743 (raw os.ReadFile with no symlink/traversal check), (2) cross-platform testing gaps (Windows via run-on-windows.sh), (3) benchmark regression tracking, (4) documentation for new T57-T67 security hardening work, (5) test coverage quantification via make cover. Generate 5+ new tasks with verified context pointers.",
+      "acceptance": "5+ new tasks added to blueprint, each passing anti-vaporware test. All context pointers verified against actual code.",
+      "status": "Not Started",
+      "contextPointers": ["blueprint.json"]
     }
   ],
   "continuousVerification": {

@@ -3,31 +3,22 @@
 ## Session Start
 - **Timestamp**: 2026-03-06 22:06:43
 - **Mandate**: 9 hours of continuous improvement (until ~07:06:43 2026-03-07)
-- **Commits this session**: cd6cb0a, 8efe737, a8e56ed, 82b46f4, a4707c5, c80f020
+- **Commits this session**: cd6cb0a, 8efe737, a8e56ed, 82b46f4, a4707c5, c80f020, 97945bc, e6b392d, d28ae45, ad26795, 724ec78, cc58ea0, 0922854
 
-## Current Phase: T59+ — Error Handling Hardening
+## Current Phase: T63+ — Scope Expansion Batch 2
 
 ### Completed This Session
-- **cd6cb0a**: Fix verifyCommand default, model, test reliability (5 bug fixes + new test)
-- **8efe737**: Fix flag defaults test + getwd container resilience
-- **a8e56ed**: Remove dead planEditorFactory, fix stale blueprint/doc refs, ADR addendum
-- **82b46f4**: Fix CapturesStderr test flake from parallel CWD deletion
-- **a4707c5**: Fix os.Chdir + t.Parallel() race — container GREEN
-- **c80f020**: Performance benchmark (100 files, 10 splits, 2.71s)
-- **97945bc**: Corruption resilience tests (NoVersionField + ResumeCorruptCheckpoint)
-- **e6b392d**: Fix stale doc references (mux-arch, todo model, architecture cancellation)
-- T57: Already committed (a0e5b15), marked Done
-- **d28ae45**: T58 MCP callback cleanup logging (3 slog.Warn + 2 new tests)
-- T59: parseClaudeEnv input validation (2 slog.Warn + TestParseClaudeEnv_MalformedInput)
-- T60: Config direct symlink attack tests (DirectSymlink_Rejected + DirectSymlink_ToSensitiveFile)
-- T61: Session path traversal tests + sanitizeFilename fix (SessionFilePath, SessionLockFilePath, SetTestPaths)
-- T62: Atomic write error path exhaustive tests (write/sync/close/chmod + SaveSession integration)
-
-### Tasks Done This Session
-- T40-T62 all done (see above)
+- T01-T62 all done (see blueprint.json for details)
+- T57-T62: Error handling hardening (MCP bridge, callback cleanup, parseClaudeEnv, config symlink, path traversal, atomic write)
+- T63: Cleanup scheduler error logging (IN PROGRESS — code done, pending review gate)
 
 ### Next Steps
-1. Expand scope — add T63+ tasks for further hardening/improvement
+1. Commit T63 after Rule of Two
+2. T64: builtin.go config path resolution warnings
+3. T65: termmux stdout write error logging
+4. T66: StateManager listener integration test
+5. T67: Cleanup scheduler + active session concurrency test
+6. T68: Next scope expansion
 
 ### Blocked
 - T41: Claude CLI not logged in

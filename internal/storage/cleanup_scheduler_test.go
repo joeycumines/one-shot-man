@@ -1,8 +1,11 @@
 package storage
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -392,5 +395,54 @@ func TestCleanupScheduler_NilNewTicker(t *testing.T) {
 		// Good.
 	case <-time.After(2 * time.Second):
 		t.Fatal("Run did not return after cancellation")
+	}
+}
+
+// TestCleanupScheduler_LogsCleanupErrors verifies that runOnce() logs
+// ExecuteCleanup errors at slog.Debug level instead of silencing them.
+// NOT parallel — mutates global slog default and test paths.
+func TestCleanupScheduler_LogsCleanupErrors(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create a file where the session directory should be —
+	// this makes ScanSessions return "sessions path is not a directory".
+	fakePath := dir + "/sessions"
+	if err := os.WriteFile(fakePath, []byte("not-a-dir"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	SetTestPaths(fakePath)
+	defer ResetPaths()
+
+	// Capture slog output at debug level.
+	var buf bytes.Buffer
+	oldDefault := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(oldDefault) })
+
+	cleaner := &Cleaner{MaxAgeDays: 1}
+	scheduler := &CleanupScheduler{
+		Cleaner:   cleaner,
+		ExcludeID: "test-session",
+		Interval:  0,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		scheduler.Run(ctx)
+		close(done)
+	}()
+
+	// Let the startup cleanup run, then cancel.
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	<-done
+
+	logOutput := buf.String()
+	if !strings.Contains(logOutput, "cleanup cycle failed") {
+		t.Fatalf("expected slog.Debug 'cleanup cycle failed' in log output, got: %s", logOutput)
+	}
+	if !strings.Contains(logOutput, "test-session") {
+		t.Fatalf("expected excludeID 'test-session' in log output, got: %s", logOutput)
 	}
 }

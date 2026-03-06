@@ -513,19 +513,23 @@ func TestVerifySplit(t *testing.T) {
 			},
 		},
 		{
-			name: "checkout failure",
+			name: "worktree creation failure",
 			setup: `
-				globalThis._gitResponses['checkout missing-branch'] = _gitFail('branch not found');
+				globalThis._gitResponses['worktree'] = function(args) {
+					if (args && args.indexOf('add') >= 0) return _gitFail('branch not found');
+					if (args && args.indexOf('remove') >= 0) return _gitOk('');
+					return _gitOk('');
+				};
 			`,
 			invoke: `JSON.stringify(globalThis.prSplit.verifySplit('missing-branch', {}))`,
 			check: func(t *testing.T, r verifySplitResult) {
 				if r.Passed {
-					t.Error("expected passed=false on checkout failure")
+					t.Error("expected passed=false on worktree creation failure")
 				}
 				if r.Error == nil {
 					t.Fatal("expected error")
 				}
-				if !strings.Contains(*r.Error, "checkout failed") {
+				if !strings.Contains(*r.Error, "create worktree failed") {
 					t.Errorf("error = %q", *r.Error)
 				}
 			},

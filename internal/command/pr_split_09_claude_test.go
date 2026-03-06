@@ -2,6 +2,7 @@ package command
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -246,6 +247,205 @@ func TestChunk09_RenderConflictPrompt(t *testing.T) {
 	if data.ContainsSession {
 		t.Error("prompt must NOT contain session ID (removed per T34)")
 	}
+}
+
+// ---- T13: ClaudeCodeExecutor model-not-available scenarios ----------------
+
+func TestChunk09_ClaudeCodeExecutor_ModelNotAvailable(t *testing.T) {
+	evalJS := loadChunkEngine(t, nil, claudeChunks...)
+
+	t.Run("CommandNotFound", func(t *testing.T) {
+		result, err := evalJS(`
+			(function() {
+				var origExecv = globalThis.prSplit._modules.exec.execv;
+				globalThis.prSplit._modules.exec.execv = function(args) {
+					if (args[0] === 'which') return { code: 1, stdout: '', stderr: 'not found' };
+					return origExecv(args);
+				};
+				var ex = new globalThis.prSplit.ClaudeCodeExecutor({ claudeCommand: '/opt/nonexistent-claude' });
+				var r = ex.resolve();
+				globalThis.prSplit._modules.exec.execv = origExecv;
+				return JSON.stringify({ error: r.error || '', resolved: !!ex.resolved });
+			})()
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var data struct {
+			Error    string `json:"error"`
+			Resolved bool   `json:"resolved"`
+		}
+		if err := json.Unmarshal([]byte(result.(string)), &data); err != nil {
+			t.Fatal(err)
+		}
+		if data.Error == "" {
+			t.Fatal("expected error for command not found")
+		}
+		if !strings.Contains(data.Error, "/opt/nonexistent-claude") {
+			t.Errorf("error should mention the command, got %q", data.Error)
+		}
+		if data.Resolved {
+			t.Error("resolved should be null/false")
+		}
+	})
+
+	t.Run("ClaudeVersionCheckFails", func(t *testing.T) {
+		result, err := evalJS(`
+			(function() {
+				var origExecv = globalThis.prSplit._modules.exec.execv;
+				globalThis.prSplit._modules.exec.execv = function(args) {
+					if (args[0] === 'which' && args[1] === 'claude') {
+						return { code: 0, stdout: '/usr/bin/claude\n', stderr: '' };
+					}
+					if (args[0] === 'claude' && args[1] === '--version') {
+						return { code: 1, stdout: '', stderr: 'segfault' };
+					}
+					// No ollama.
+					if (args[0] === 'which') return { code: 1, stdout: '', stderr: '' };
+					return origExecv(args);
+				};
+				var ex = new globalThis.prSplit.ClaudeCodeExecutor({});
+				var r = ex.resolve();
+				globalThis.prSplit._modules.exec.execv = origExecv;
+				return JSON.stringify({ error: r.error || '' });
+			})()
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var data struct {
+			Error string `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(result.(string)), &data); err != nil {
+			t.Fatal(err)
+		}
+		if data.Error == "" {
+			t.Fatal("expected error for version check failure")
+		}
+		if !strings.Contains(data.Error, "version check failed") {
+			t.Errorf("error should mention version check, got %q", data.Error)
+		}
+	})
+
+	t.Run("OllamaModelNotListed", func(t *testing.T) {
+		result, err := evalJS(`
+			(function() {
+				var origExecv = globalThis.prSplit._modules.exec.execv;
+				globalThis.prSplit._modules.exec.execv = function(args) {
+					// No claude on PATH.
+					if (args[0] === 'which' && args[1] === 'claude') {
+						return { code: 1, stdout: '', stderr: '' };
+					}
+					// Ollama found.
+					if (args[0] === 'which' && args[1] === 'ollama') {
+						return { code: 0, stdout: '/usr/bin/ollama\n', stderr: '' };
+					}
+					// ollama list succeeds but model not in output.
+					if (args[0] === 'ollama' && args[1] === 'list') {
+						return { code: 0, stdout: 'NAME    SIZE    MODIFIED\nllama3  4.7G    2 weeks ago\n', stderr: '' };
+					}
+					return origExecv(args);
+				};
+				var ex = new globalThis.prSplit.ClaudeCodeExecutor({ claudeModel: 'nonexistent-model-42' });
+				var r = ex.resolve();
+				globalThis.prSplit._modules.exec.execv = origExecv;
+				return JSON.stringify({ error: r.error || '' });
+			})()
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var data struct {
+			Error string `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(result.(string)), &data); err != nil {
+			t.Fatal(err)
+		}
+		if data.Error == "" {
+			t.Fatal("expected error for model not listed")
+		}
+		if !strings.Contains(data.Error, "nonexistent-model-42") {
+			t.Errorf("error should mention the model name, got %q", data.Error)
+		}
+		if !strings.Contains(data.Error, "not available") {
+			t.Errorf("error should say model not available, got %q", data.Error)
+		}
+	})
+
+	t.Run("NoBinaryFound", func(t *testing.T) {
+		result, err := evalJS(`
+			(function() {
+				var origExecv = globalThis.prSplit._modules.exec.execv;
+				globalThis.prSplit._modules.exec.execv = function(args) {
+					if (args[0] === 'which') return { code: 1, stdout: '', stderr: '' };
+					return origExecv(args);
+				};
+				var ex = new globalThis.prSplit.ClaudeCodeExecutor({});
+				var r = ex.resolve();
+				globalThis.prSplit._modules.exec.execv = origExecv;
+				return JSON.stringify({ error: r.error || '' });
+			})()
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var data struct {
+			Error string `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(result.(string)), &data); err != nil {
+			t.Fatal(err)
+		}
+		if data.Error == "" {
+			t.Fatal("expected error for no binary found")
+		}
+		if !strings.Contains(data.Error, "Claude") || !strings.Contains(data.Error, "Ollama") {
+			t.Errorf("error should suggest both Claude and Ollama, got %q", data.Error)
+		}
+	})
+
+	t.Run("OllamaResolveSuccess", func(t *testing.T) {
+		result, err := evalJS(`
+			(function() {
+				var origExecv = globalThis.prSplit._modules.exec.execv;
+				globalThis.prSplit._modules.exec.execv = function(args) {
+					if (args[0] === 'which' && args[1] === 'claude') return { code: 1, stdout: '', stderr: '' };
+					if (args[0] === 'which' && args[1] === 'ollama') return { code: 0, stdout: '/usr/bin/ollama\n', stderr: '' };
+					if (args[0] === 'ollama' && args[1] === 'list') {
+						return { code: 0, stdout: 'NAME     SIZE    MODIFIED\nllama3   4.7G    2w ago\n', stderr: '' };
+					}
+					return origExecv(args);
+				};
+				var ex = new globalThis.prSplit.ClaudeCodeExecutor({ claudeModel: 'llama3' });
+				var r = ex.resolve();
+				globalThis.prSplit._modules.exec.execv = origExecv;
+				return JSON.stringify({
+					error: r.error,
+					type: ex.resolved ? ex.resolved.type : '',
+					command: ex.resolved ? ex.resolved.command : ''
+				});
+			})()
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var data struct {
+			Error   *string `json:"error"`
+			Type    string  `json:"type"`
+			Command string  `json:"command"`
+		}
+		if err := json.Unmarshal([]byte(result.(string)), &data); err != nil {
+			t.Fatal(err)
+		}
+		if data.Error != nil {
+			t.Fatalf("unexpected error: %v", *data.Error)
+		}
+		if data.Type != "ollama" {
+			t.Errorf("expected type 'ollama', got %q", data.Type)
+		}
+		if data.Command != "ollama" {
+			t.Errorf("expected command 'ollama', got %q", data.Command)
+		}
+	})
 }
 
 func TestChunk09_RenderPrompt_NoTemplate(t *testing.T) {

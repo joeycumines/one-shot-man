@@ -416,7 +416,7 @@ func TestPrSplitCommand_ResolveConflictsWallClockTimeout(t *testing.T) {
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	// wallClockTimeoutMs=1 guarantees the deadline will be exceeded immediately.
+	// wallClockTimeoutMs=0 guarantees the deadline will be exceeded immediately.
 	val, err := evalJS(`(async function() {
 		var result = await globalThis.prSplit.resolveConflicts({
 			dir: '` + strings.ReplaceAll(dir, `\`, `\\`) + `',
@@ -425,7 +425,7 @@ func TestPrSplitCommand_ResolveConflictsWallClockTimeout(t *testing.T) {
 				{ name: 'split/wc-b', files: ['b.go'] }
 			],
 			verifyCommand: 'exit 1'
-		}, { retryBudget: 10, wallClockTimeoutMs: 1 });
+		}, { retryBudget: 10, wallClockTimeoutMs: 0 });
 		return JSON.stringify(result);
 	})()`)
 	if err != nil {
@@ -2071,8 +2071,8 @@ func TestPrSplitCommand_ResolveConflictsWithClaude_SuccessfulFix(t *testing.T) {
 	if len(output.WriteFileCalls) != 1 {
 		t.Fatalf("Expected 1 writeFile call (1 patch), got %d", len(output.WriteFileCalls))
 	}
-	if output.WriteFileCalls[0].File != "pkg/handler.go" {
-		t.Errorf("writeFile file = %q, want %q", output.WriteFileCalls[0].File, "pkg/handler.go")
+	if !strings.HasSuffix(output.WriteFileCalls[0].File, "pkg/handler.go") {
+		t.Errorf("writeFile file = %q, want suffix %q", output.WriteFileCalls[0].File, "pkg/handler.go")
 	}
 	if !strings.Contains(output.WriteFileCalls[0].Content, "func Handle()") {
 		t.Errorf("writeFile content should contain patched function, got %q", output.WriteFileCalls[0].Content)
@@ -2093,7 +2093,7 @@ func TestPrSplitCommand_ResolveConflictsWithClaude_SuccessfulFix(t *testing.T) {
 			hasAdd = true
 		case strings.Contains(call, "commit --amend --no-edit"):
 			hasCommitAmend = true
-		case strings.Contains(call, "checkout split/fix-me"):
+		case strings.Contains(call, "worktree add") && strings.Contains(call, "split/fix-me"):
 			hasCheckout = true
 		case strings.HasPrefix(call, "sh -c"):
 			hasShVerify = true
@@ -2109,7 +2109,7 @@ func TestPrSplitCommand_ResolveConflictsWithClaude_SuccessfulFix(t *testing.T) {
 		t.Error("Expected git commit --amend --no-edit call")
 	}
 	if !hasCheckout {
-		t.Error("Expected git checkout split/fix-me call (from verifySplit)")
+		t.Error("Expected git worktree add ... split/fix-me call")
 	}
 	if !hasShVerify {
 		t.Error("Expected sh -c verify command call (from verifySplit)")

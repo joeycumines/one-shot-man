@@ -112,7 +112,7 @@
     function verifySplits(plan, options) {
         options = options || {};
         if (!plan || !plan.splits) {
-            return { allPassed: false, results: [], error: 'verifySplits: plan is missing splits array — run "plan" first' };
+            return { allPassed: false, results: [], error: 'verifySplits: invalid plan — missing splits array' };
         }
         var dir = resolveDir(plan.dir || '.');
         var verifyTimeoutMs = options.verifyTimeoutMs || 0;
@@ -291,7 +291,7 @@
     // -----------------------------------------------------------------------
     function cleanupBranches(plan) {
         if (!plan || !plan.splits) {
-            return { deleted: [], errors: ['cleanupBranches: plan is missing splits array — nothing to clean up'] };
+            return { deleted: [], errors: ['cleanupBranches: invalid plan — missing splits array'] };
         }
         var dir = resolveDir(plan.dir || '.');
         var deleted = [];

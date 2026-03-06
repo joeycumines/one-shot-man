@@ -855,3 +855,75 @@ func TestChunk11_ExtractGoPkgs_WithModulePath(t *testing.T) {
 		t.Error("README.md dir should not be in pkgs (not a .go file)")
 	}
 }
+
+// ---- renderColorizedDiff: ANSI pre-colored input (T10) --------------------
+
+func TestChunk11_RenderColorizedDiff_PreColoredInput(t *testing.T) {
+	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+
+	// Input diff that already contains ANSI escape sequences (e.g. from
+	// `git diff --color`). renderColorizedDiff must not crash, must not
+	// double-escape, and must preserve content.
+	raw, err := evalJS(`
+		var ansi = '\x1b[32m';
+		var reset = '\x1b[0m';
+		var input = 'diff --git a/f.go b/f.go\n' +
+			'index abc..def 100644\n' +
+			'--- a/f.go\n' +
+			'+++ b/f.go\n' +
+			'@@ -1,3 +1,4 @@\n' +
+			' context\n' +
+			'-' + ansi + 'old colored' + reset + '\n' +
+			'+' + ansi + 'new colored' + reset + '\n';
+		globalThis.prSplit.renderColorizedDiff(input);
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := raw.(string)
+	// Content must be preserved (ANSI codes may wrap the line).
+	if !strings.Contains(out, "old colored") {
+		t.Error("expected removal line content preserved")
+	}
+	if !strings.Contains(out, "new colored") {
+		t.Error("expected addition line content preserved")
+	}
+	if !strings.Contains(out, "context") {
+		t.Error("expected context line content preserved")
+	}
+	// Must not double-escape: \x1b[32m should not become \\x1b[32m
+	// (the JS engine preserves raw bytes; double-escape would add backslash).
+	if strings.Contains(out, `\\x1b`) {
+		t.Error("ANSI escape codes were double-escaped")
+	}
+	// Line count preserved (input has 8 non-empty content lines; trailing \n
+	// produces an extra empty element from split → 9 total).
+	lines := strings.Split(out, "\n")
+	if len(lines) != 9 {
+		t.Errorf("expected 9 lines (8 content + trailing empty), got %d", len(lines))
+	}
+}
+
+func TestChunk11_RenderColorizedDiff_NullInput(t *testing.T) {
+	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+
+	raw, err := evalJS(`globalThis.prSplit.renderColorizedDiff(null)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "" {
+		t.Errorf("expected empty string for null input, got %q", raw)
+	}
+}
+
+func TestChunk11_RenderColorizedDiff_UndefinedInput(t *testing.T) {
+	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+
+	raw, err := evalJS(`globalThis.prSplit.renderColorizedDiff(undefined)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "" {
+		t.Errorf("expected empty string for undefined input, got %q", raw)
+	}
+}

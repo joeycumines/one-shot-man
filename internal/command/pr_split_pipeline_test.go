@@ -245,30 +245,37 @@ func TestResolveConflicts(t *testing.T) {
 		{
 			name: "branch detection fails",
 			setup: `
-				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitFail('not a repo');
+				globalThis._gitResponses['worktree'] = function(args) {
+					if (args && args.indexOf('add') >= 0) return _gitFail('not a repo');
+					if (args && args.indexOf('remove') >= 0) return _gitOk('');
+					return _gitOk('');
+				};
 				var plan = {splits: [{name: "s1", files: ["a.go"]}]};
 			`,
 			invoke: `JSON.stringify(await globalThis.prSplit.resolveConflicts(plan, {verifyCommand: 'make test'}))`,
 			check: func(t *testing.T, r resolveConflictsResult) {
 				if len(r.Errors) == 0 {
-					t.Error("expected error when branch detection fails")
+					t.Error("expected error when worktree creation fails")
 				}
 				found := false
 				for _, e := range r.Errors {
-					if strings.Contains(e.Error, "current branch") {
+					if strings.Contains(e.Error, "create worktree failed") {
 						found = true
 					}
 				}
 				if !found {
-					t.Errorf("expected 'current branch' error, got: %+v", r.Errors)
+					t.Errorf("expected 'create worktree failed' error, got: %+v", r.Errors)
 				}
 			},
 		},
 		{
 			name: "all splits pass verification — no fixes needed",
 			setup: `
-				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('main');
-				globalThis._gitResponses['checkout'] = _gitOk('');
+				globalThis._gitResponses['worktree'] = function(args) {
+					if (args && args.indexOf('add') >= 0) return _gitOk('');
+					if (args && args.indexOf('remove') >= 0) return _gitOk('');
+					return _gitOk('');
+				};
 				// verify command succeeds
 				globalThis._gitResponses['!sh'] = _gitOk('all tests pass');
 				var plan = {splits: [{name: "s1", files: ["a.go"]}, {name: "s2", files: ["b.go"]}]};
@@ -287,13 +294,16 @@ func TestResolveConflicts(t *testing.T) {
 			},
 		},
 		{
-			name: "checkout fails for a split",
+			name: "worktree creation fails for a split",
 			setup: `
-				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('main');
-				var checkoutCount = 0;
-				globalThis._gitResponses['checkout'] = function(argv) {
-					checkoutCount++;
-					if (checkoutCount === 1) return _gitFail('branch not found');
+				var worktreeAddCount = 0;
+				globalThis._gitResponses['worktree'] = function(args) {
+					if (args && args.indexOf('add') >= 0) {
+						worktreeAddCount++;
+						if (worktreeAddCount === 1) return _gitFail('branch not found');
+						return _gitOk('');
+					}
+					if (args && args.indexOf('remove') >= 0) return _gitOk('');
 					return _gitOk('');
 				};
 				globalThis._gitResponses['!sh'] = _gitOk('ok');
@@ -302,24 +312,27 @@ func TestResolveConflicts(t *testing.T) {
 			invoke: `JSON.stringify(await globalThis.prSplit.resolveConflicts(plan, {verifyCommand: 'make test'}))`,
 			check: func(t *testing.T, r resolveConflictsResult) {
 				if len(r.Errors) == 0 {
-					t.Error("expected error for checkout failure")
+					t.Error("expected error for worktree creation failure")
 				}
 				found := false
 				for _, e := range r.Errors {
-					if strings.Contains(e.Error, "checkout failed") {
+					if strings.Contains(e.Error, "create worktree failed") {
 						found = true
 					}
 				}
 				if !found {
-					t.Errorf("expected 'checkout failed' error, got: %+v", r.Errors)
+					t.Errorf("expected 'create worktree failed' error, got: %+v", r.Errors)
 				}
 			},
 		},
 		{
 			name: "verification fails — all strategies exhaust — re-split needed",
 			setup: `
-				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('main');
-				globalThis._gitResponses['checkout'] = _gitOk('');
+				globalThis._gitResponses['worktree'] = function(args) {
+					if (args && args.indexOf('add') >= 0) return _gitOk('');
+					if (args && args.indexOf('remove') >= 0) return _gitOk('');
+					return _gitOk('');
+				};
 
 				// verify always fails
 				globalThis._gitResponses['!sh'] = _gitFail('tests failed');
@@ -343,8 +356,11 @@ func TestResolveConflicts(t *testing.T) {
 		{
 			name: "strategy fixes a split successfully",
 			setup: `
-				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('main');
-				globalThis._gitResponses['checkout'] = _gitOk('');
+				globalThis._gitResponses['worktree'] = function(args) {
+					if (args && args.indexOf('add') >= 0) return _gitOk('');
+					if (args && args.indexOf('remove') >= 0) return _gitOk('');
+					return _gitOk('');
+				};
 
 				var verifyCallCount = 0;
 				globalThis._gitResponses['!sh'] = function(argv) {
@@ -384,8 +400,11 @@ func TestResolveConflicts(t *testing.T) {
 		{
 			name: "retry budget exhausted across splits",
 			setup: `
-				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('main');
-				globalThis._gitResponses['checkout'] = _gitOk('');
+				globalThis._gitResponses['worktree'] = function(args) {
+					if (args && args.indexOf('add') >= 0) return _gitOk('');
+					if (args && args.indexOf('remove') >= 0) return _gitOk('');
+					return _gitOk('');
+				};
 
 				// Verify always fails.
 				globalThis._gitResponses['!sh'] = _gitFail('error');
@@ -424,8 +443,11 @@ func TestResolveConflicts(t *testing.T) {
 		{
 			name: "chained strategy restart sees updated verifyOutput",
 			setup: `
-				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('main');
-				globalThis._gitResponses['checkout'] = _gitOk('');
+				globalThis._gitResponses['worktree'] = function(args) {
+					if (args && args.indexOf('add') >= 0) return _gitOk('');
+					if (args && args.indexOf('remove') >= 0) return _gitOk('');
+					return _gitOk('');
+				};
 
 				var verifyCalls = 0;
 				globalThis._gitResponses['!sh'] = function(argv) {
@@ -477,8 +499,11 @@ func TestResolveConflicts(t *testing.T) {
 		{
 			name: "per-branch retry budget limits retries",
 			setup: `
-				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('main');
-				globalThis._gitResponses['checkout'] = _gitOk('');
+				globalThis._gitResponses['worktree'] = function(args) {
+					if (args && args.indexOf('add') >= 0) return _gitOk('');
+					if (args && args.indexOf('remove') >= 0) return _gitOk('');
+					return _gitOk('');
+				};
 				// Verify always fails.
 				globalThis._gitResponses['!sh'] = _gitFail('compile error');
 
@@ -513,8 +538,11 @@ func TestResolveConflicts(t *testing.T) {
 		{
 			name: "wall-clock timeout reports remaining splits",
 			setup: `
-				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('main');
-				globalThis._gitResponses['checkout'] = _gitOk('');
+				globalThis._gitResponses['worktree'] = function(args) {
+					if (args && args.indexOf('add') >= 0) return _gitOk('');
+					if (args && args.indexOf('remove') >= 0) return _gitOk('');
+					return _gitOk('');
+				};
 				globalThis._gitResponses['!sh'] = _gitFail('takes too long');
 
 				var plan = {splits: [
@@ -544,8 +572,11 @@ func TestResolveConflicts(t *testing.T) {
 		{
 			name: "intra-strategy cancellation stops before second strategy",
 			setup: `
-				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('main');
-				globalThis._gitResponses['checkout'] = _gitOk('');
+				globalThis._gitResponses['worktree'] = function(args) {
+					if (args && args.indexOf('add') >= 0) return _gitOk('');
+					if (args && args.indexOf('remove') >= 0) return _gitOk('');
+					return _gitOk('');
+				};
 				globalThis._gitResponses['!sh'] = _gitFail('build error');
 
 				// Two strategies: first always detects and "fixes" (but verify

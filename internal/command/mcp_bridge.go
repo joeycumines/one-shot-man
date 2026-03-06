@@ -14,6 +14,8 @@ import (
 // external socat dependency for MCP callback channel setup.
 type McpBridgeCommand struct {
 	*BaseCommand
+	// Stdin is the reader to use for input. If nil, defaults to os.Stdin.
+	Stdin io.Reader
 }
 
 // NewMcpBridgeCommand creates a new McpBridgeCommand.
@@ -59,10 +61,15 @@ func (c *McpBridgeCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	var wg sync.WaitGroup
 	wg.Add(2)
 
+	stdin := c.Stdin
+	if stdin == nil {
+		stdin = os.Stdin
+	}
+
 	// stdin → socket
 	go func() {
 		defer wg.Done()
-		_, _ = io.Copy(conn, os.Stdin)
+		_, _ = io.Copy(conn, stdin)
 		// Half-close the write side so the remote end sees EOF.
 		closeWrite(conn)
 	}()

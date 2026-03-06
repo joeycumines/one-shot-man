@@ -415,3 +415,313 @@ func TestChunk08_ClaudeFixDetect_NoExecutor(t *testing.T) {
 		t.Error("expected claude-fix detect=false when no executor set")
 	}
 }
+
+// ---- T12: Individual strategy detect tests --------------------------------
+
+func TestChunk08_Strategy_GoModTidy_Detect(t *testing.T) {
+	evalJS := loadChunkEngine(t, nil, conflictChunks...)
+
+	result, err := evalJS(`
+		(function() {
+			var strats = globalThis.prSplit.AUTO_FIX_STRATEGIES;
+			var s = null;
+			for (var i = 0; i < strats.length; i++) { if (strats[i].name === 'go-mod-tidy') { s = strats[i]; break; } }
+			if (!s) return JSON.stringify({error: 'not found'});
+			// Mock: file exists check via exec (fallback path when osmod is null).
+			var origExecv = globalThis.prSplit._modules.exec.execv;
+			var origOsmod = globalThis.prSplit._modules.osmod;
+			globalThis.prSplit._modules.osmod = null; // force exec fallback
+
+			// go.mod exists.
+			globalThis.prSplit._modules.exec.execv = function(args) {
+				if (args[0] === 'test' && args[1] === '-f') return { code: 0 };
+				return origExecv(args);
+			};
+			var existsResult = s.detect('/fake/dir');
+			// go.mod does NOT exist.
+			globalThis.prSplit._modules.exec.execv = function(args) {
+				if (args[0] === 'test' && args[1] === '-f') return { code: 1 };
+				return origExecv(args);
+			};
+			var notExistsResult = s.detect('/fake/dir');
+
+			globalThis.prSplit._modules.exec.execv = origExecv;
+			globalThis.prSplit._modules.osmod = origOsmod;
+			return JSON.stringify({exists: !!existsResult, notExists: !!notExistsResult});
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var data struct {
+		Exists    bool `json:"exists"`
+		NotExists bool `json:"notExists"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &data); err != nil {
+		t.Fatal(err)
+	}
+	if !data.Exists {
+		t.Error("go-mod-tidy detect should be true when go.mod exists")
+	}
+	if data.NotExists {
+		t.Error("go-mod-tidy detect should be false when go.mod missing")
+	}
+}
+
+func TestChunk08_Strategy_GoGenerateSum_Detect(t *testing.T) {
+	evalJS := loadChunkEngine(t, nil, conflictChunks...)
+
+	result, err := evalJS(`
+		(function() {
+			var strats = globalThis.prSplit.AUTO_FIX_STRATEGIES;
+			var s = null;
+			for (var i = 0; i < strats.length; i++) { if (strats[i].name === 'go-generate-sum') { s = strats[i]; break; } }
+			if (!s) return JSON.stringify({error: 'not found'});
+			var origExecv = globalThis.prSplit._modules.exec.execv;
+			var origOsmod = globalThis.prSplit._modules.osmod;
+			globalThis.prSplit._modules.osmod = null;
+
+			globalThis.prSplit._modules.exec.execv = function(args) {
+				if (args[0] === 'test' && args[1] === '-f' && args[2].indexOf('go.sum') >= 0) return { code: 0 };
+				if (args[0] === 'test') return { code: 1 };
+				return origExecv(args);
+			};
+			var yes = s.detect('/fake/dir');
+			globalThis.prSplit._modules.exec.execv = function(args) {
+				if (args[0] === 'test') return { code: 1 };
+				return origExecv(args);
+			};
+			var no = s.detect('/fake/dir');
+
+			globalThis.prSplit._modules.exec.execv = origExecv;
+			globalThis.prSplit._modules.osmod = origOsmod;
+			return JSON.stringify({yes: !!yes, no: !!no});
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data struct {
+		Yes bool `json:"yes"`
+		No  bool `json:"no"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &data); err != nil {
+		t.Fatal(err)
+	}
+	if !data.Yes {
+		t.Error("go-generate-sum detect should be true when go.sum exists")
+	}
+	if data.No {
+		t.Error("go-generate-sum detect should be false when go.sum missing")
+	}
+}
+
+func TestChunk08_Strategy_GoBuildMissingImports_Detect(t *testing.T) {
+	evalJS := loadChunkEngine(t, nil, conflictChunks...)
+
+	result, err := evalJS(`
+		(function() {
+			var strats = globalThis.prSplit.AUTO_FIX_STRATEGIES;
+			var s = null;
+			for (var i = 0; i < strats.length; i++) { if (strats[i].name === 'go-build-missing-imports') { s = strats[i]; break; } }
+			if (!s) return JSON.stringify({error: 'not found'});
+			return JSON.stringify({
+				undefined: s.detect('.', 'build error: undefined: SomeFunc'),
+				importedNotUsed: s.detect('.', 'imported and not used: "fmt"'),
+				couldNotImport: s.detect('.', 'could not import foo/bar'),
+				noMatch: s.detect('.', 'test passed ok'),
+				empty: s.detect('.', ''),
+				nil: s.detect('.', null)
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data map[string]bool
+	if err := json.Unmarshal([]byte(result.(string)), &data); err != nil {
+		t.Fatal(err)
+	}
+	if !data["undefined"] {
+		t.Error("should detect 'undefined:'")
+	}
+	if !data["importedNotUsed"] {
+		t.Error("should detect 'imported and not used'")
+	}
+	if !data["couldNotImport"] {
+		t.Error("should detect 'could not import'")
+	}
+	if data["noMatch"] {
+		t.Error("should not detect normal output")
+	}
+	if data["empty"] {
+		t.Error("should not detect empty string")
+	}
+	if data["nil"] {
+		t.Error("should not detect null")
+	}
+}
+
+func TestChunk08_Strategy_NpmInstall_Detect(t *testing.T) {
+	evalJS := loadChunkEngine(t, nil, conflictChunks...)
+
+	result, err := evalJS(`
+		(function() {
+			var strats = globalThis.prSplit.AUTO_FIX_STRATEGIES;
+			var s = null;
+			for (var i = 0; i < strats.length; i++) { if (strats[i].name === 'npm-install') { s = strats[i]; break; } }
+			if (!s) return JSON.stringify({error: 'not found'});
+			var origExecv = globalThis.prSplit._modules.exec.execv;
+			var origOsmod = globalThis.prSplit._modules.osmod;
+			globalThis.prSplit._modules.osmod = null;
+
+			globalThis.prSplit._modules.exec.execv = function(args) {
+				if (args[0] === 'test' && args[1] === '-f' && args[2].indexOf('package.json') >= 0) return { code: 0 };
+				if (args[0] === 'test') return { code: 1 };
+				return origExecv(args);
+			};
+			var yes = s.detect('/work');
+			globalThis.prSplit._modules.exec.execv = function(args) {
+				if (args[0] === 'test') return { code: 1 };
+				return origExecv(args);
+			};
+			var no = s.detect('/work');
+
+			globalThis.prSplit._modules.exec.execv = origExecv;
+			globalThis.prSplit._modules.osmod = origOsmod;
+			return JSON.stringify({yes: !!yes, no: !!no});
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data struct {
+		Yes bool `json:"yes"`
+		No  bool `json:"no"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &data); err != nil {
+		t.Fatal(err)
+	}
+	if !data.Yes {
+		t.Error("npm-install detect should be true when package.json exists")
+	}
+	if data.No {
+		t.Error("npm-install detect should be false when package.json missing")
+	}
+}
+
+func TestChunk08_Strategy_MakeGenerate_Detect(t *testing.T) {
+	evalJS := loadChunkEngine(t, nil, conflictChunks...)
+
+	result, err := evalJS(`
+		(function() {
+			var strats = globalThis.prSplit.AUTO_FIX_STRATEGIES;
+			var s = null;
+			for (var i = 0; i < strats.length; i++) { if (strats[i].name === 'make-generate') { s = strats[i]; break; } }
+			if (!s) return JSON.stringify({error: 'not found'});
+			var origExecv = globalThis.prSplit._modules.exec.execv;
+			var origOsmod = globalThis.prSplit._modules.osmod;
+			globalThis.prSplit._modules.osmod = null;
+
+			// Scenario 1: Makefile with generate target.
+			globalThis.prSplit._modules.exec.execv = function(args) {
+				var cmd = args.join(' ');
+				if (args[0] === 'test' && args[1] === '-f' && args[2].indexOf('Makefile') >= 0) return { code: 0 };
+				if (cmd.indexOf('grep -q "^generate:" Makefile') >= 0) return { code: 0 };
+				return origExecv(args);
+			};
+			var withMakeGenerate = s.detect('.');
+
+			// Scenario 2: No Makefile but has //go:generate.
+			globalThis.prSplit._modules.exec.execv = function(args) {
+				var cmd = args.join(' ');
+				if (args[0] === 'test') return { code: 1 }; // no Makefile
+				if (cmd.indexOf('go:generate') >= 0) return { code: 0, stdout: './gen.go\n' };
+				return origExecv(args);
+			};
+			var withGoGenerate = s.detect('.');
+
+			// Scenario 3: No Makefile, no go:generate.
+			globalThis.prSplit._modules.exec.execv = function(args) {
+				if (args[0] === 'test') return { code: 1 };
+				return { code: 1, stdout: '' };
+			};
+			var noGenerate = s.detect('.');
+
+			globalThis.prSplit._modules.exec.execv = origExecv;
+			globalThis.prSplit._modules.osmod = origOsmod;
+			return JSON.stringify({
+				withMakeGenerate: !!withMakeGenerate,
+				withGoGenerate: !!withGoGenerate,
+				noGenerate: !!noGenerate
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data struct {
+		WithMakeGenerate bool `json:"withMakeGenerate"`
+		WithGoGenerate   bool `json:"withGoGenerate"`
+		NoGenerate       bool `json:"noGenerate"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &data); err != nil {
+		t.Fatal(err)
+	}
+	if !data.WithMakeGenerate {
+		t.Error("should detect Makefile with generate: target")
+	}
+	if !data.WithGoGenerate {
+		t.Error("should detect //go:generate annotations")
+	}
+	if data.NoGenerate {
+		t.Error("should not detect when no generation sources exist")
+	}
+}
+
+func TestChunk08_Strategy_AddMissingFiles_Detect(t *testing.T) {
+	evalJS := loadChunkEngine(t, nil, conflictChunks...)
+
+	result, err := evalJS(`
+		(function() {
+			var strats = globalThis.prSplit.AUTO_FIX_STRATEGIES;
+			var s = null;
+			for (var i = 0; i < strats.length; i++) { if (strats[i].name === 'add-missing-files') { s = strats[i]; break; } }
+			if (!s) return JSON.stringify({error: 'not found'});
+			return JSON.stringify({
+				noSuchFile: s.detect('.', 'open foo.go: no such file or directory'),
+				cannotFind: s.detect('.', 'error: cannot find module'),
+				fileNotFound: s.detect('.', 'FATAL: file not found: bar.txt'),
+				noMatch: s.detect('.', 'all tests passed'),
+				empty: s.detect('.', ''),
+				nil: s.detect('.', null)
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data map[string]bool
+	if err := json.Unmarshal([]byte(result.(string)), &data); err != nil {
+		t.Fatal(err)
+	}
+	if !data["noSuchFile"] {
+		t.Error("should detect 'no such file or directory'")
+	}
+	if !data["cannotFind"] {
+		t.Error("should detect 'cannot find'")
+	}
+	if !data["fileNotFound"] {
+		t.Error("should detect 'file not found'")
+	}
+	if data["noMatch"] {
+		t.Error("should not detect normal output")
+	}
+	if data["empty"] {
+		t.Error("should not detect empty string")
+	}
+	if data["nil"] {
+		t.Error("should not detect null")
+	}
+}

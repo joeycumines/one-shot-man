@@ -243,3 +243,127 @@ func TestChunk07_CreatePRs_StackingOrder(t *testing.T) {
 		t.Error("expected --draft flag")
 	}
 }
+
+// ---- T11: gh CLI not found ------------------------------------------------
+
+func TestChunk07_CreatePRs_GhNotFound(t *testing.T) {
+	// Mock exec to make 'gh' command unavailable.
+	evalJS := loadChunkEngine(t, nil, prCreationChunks...)
+
+	result, err := evalJS(`
+		(function() {
+			var origExecv = globalThis.prSplit._modules.exec.execv;
+			var origGitExec = globalThis.prSplit._gitExec;
+
+			// gh --version fails (not on PATH).
+			globalThis.prSplit._modules.exec.execv = function(args) {
+				if (args[0] === 'gh') {
+					return { code: 127, stdout: '', stderr: 'gh: command not found' };
+				}
+				return origExecv(args);
+			};
+			// Ensure remote check doesn't block us.
+			globalThis.prSplit._gitExec = function(dir, args) {
+				if (args[0] === 'push') return { code: 0, stdout: '', stderr: '' };
+				return origGitExec(dir, args);
+			};
+
+			var plan = {
+				baseBranch: 'main',
+				splits: [{ name: 'split/01-a', files: ['a.go'], message: 'part 1' }]
+			};
+			// NOT pushOnly → should check for gh CLI.
+			var r = globalThis.prSplit.createPRs(plan, { pushOnly: false });
+
+			globalThis.prSplit._modules.exec.execv = origExecv;
+			globalThis.prSplit._gitExec = origGitExec;
+
+			return JSON.stringify({
+				error: r.error || '',
+				resultCount: r.results.length
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var data struct {
+		Error       string `json:"error"`
+		ResultCount int    `json:"resultCount"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &data); err != nil {
+		t.Fatal(err)
+	}
+	if data.Error == "" {
+		t.Fatal("expected error when gh not found")
+	}
+	if !strings.Contains(data.Error, "gh") {
+		t.Errorf("error should mention 'gh', got %q", data.Error)
+	}
+	if !strings.Contains(data.Error, "cli.github.com") {
+		t.Errorf("error should suggest installation URL, got %q", data.Error)
+	}
+	if data.ResultCount != 0 {
+		t.Errorf("expected 0 results when gh not found, got %d", data.ResultCount)
+	}
+}
+
+func TestChunk07_CreatePRs_RemoteBranchNotFound(t *testing.T) {
+	// gh CLI available but base branch missing from remote.
+	evalJS := loadChunkEngine(t, nil, prCreationChunks...)
+
+	result, err := evalJS(`
+		(function() {
+			var origExecv = globalThis.prSplit._modules.exec.execv;
+			var origGitExec = globalThis.prSplit._gitExec;
+
+			globalThis.prSplit._modules.exec.execv = function(args) {
+				if (args[0] === 'gh' && args[1] === '--version') {
+					return { code: 0, stdout: 'gh version 2.0.0', stderr: '' };
+				}
+				return origExecv(args);
+			};
+			globalThis.prSplit._gitExec = function(dir, args) {
+				if (args[0] === 'ls-remote') {
+					return { code: 0, stdout: '', stderr: '' }; // empty = not found
+				}
+				return origGitExec(dir, args);
+			};
+
+			var plan = {
+				baseBranch: 'nonexistent-branch',
+				splits: [{ name: 'split/01-a', files: ['a.go'], message: 'part 1' }]
+			};
+			var r = globalThis.prSplit.createPRs(plan, {});
+
+			globalThis.prSplit._modules.exec.execv = origExecv;
+			globalThis.prSplit._gitExec = origGitExec;
+
+			return JSON.stringify({
+				error: r.error || '',
+				resultCount: r.results.length
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var data struct {
+		Error       string `json:"error"`
+		ResultCount int    `json:"resultCount"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &data); err != nil {
+		t.Fatal(err)
+	}
+	if data.Error == "" {
+		t.Fatal("expected error when remote branch not found")
+	}
+	if !strings.Contains(data.Error, "nonexistent-branch") {
+		t.Errorf("error should mention branch name, got %q", data.Error)
+	}
+	if data.ResultCount != 0 {
+		t.Errorf("expected 0 results, got %d", data.ResultCount)
+	}
+}

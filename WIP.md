@@ -4,26 +4,32 @@
 - **Timestamp**: 2026-03-06 08:35:45 (tracked in scratch/.session-start)
 - **Mandate**: 9 hours of continuous improvement (until 17:35:45 2026-03-06)
 
-## Current Phase: HANA INTERVENTION COMPLETE — Committing H-series + T27-T46
+## Current Phase: POST-COMMIT — T10-T14 + worktree/bridge fixes DONE
 
-### H-Series Fixes — ALL COMPLETE, RULE OF TWO PASSED
-- **H1**: Removed ALL autoSplitTUI dead code from pipeline.js (hasTUI, emitOutput, updateDetail, step, finishTUI, sendWithRetry, verify callbacks)
-- **H2**: Rewired cooperative cancellation to prSplit._cancelSource query-based callback
-- **H3**: Fixed discoverVerifyCommand to prefer gmake over make on macOS
-- **H4**: Updated all sendToHandle tests (direct handle.send() path)
-- **Output fix**: tui_manager.go SetTUISink(nil) during executor for direct stdout
-- **6 test files updated**: integration, recovery, prompt, pipeline, conflict_retry, session_cancel, complex_project, core
-- **Rule of Two**: 2 contiguous PASS reviews + fitness review PASSED
-- **Build**: GREEN (5,961+ tests, build, lint all pass)
+### Last Commit
+- **537cb06**: "Remove Go BubbleTea TUI, add termmux features, fix pipeline bugs"
+- 56 files changed, 6820 insertions, 6900 deletions
+- H-series fixes + T27-T46 all committed
+- Rule of Two PASSED before commit
 
-### Commit Scope
-- Staged: Deleted Go TUI (AutoSplitModel 2246 lines, PlanEditor 378 lines, UI helpers, state machine doc), new SGR mouse (sgrmouse.go 189 lines + tests 269 lines), termmux enhancements (bell, activity, mouse)
-- Unstaged: H-series JS/Go/test fixes, docs, blueprint
+### Pending Commit (T10-T14 + cascading fixes)
+- **T10-T14 tests written**: 15 new test cases across 5 files
+- **Worktree mock fixes**: 10+ test cases migrated from checkout→worktree pattern
+- **MCP bridge refactor**: Injectable Stdin field, eliminates os.Stdin data race
+- **All 5,962 tests PASS**, build GREEN, lint GREEN
 
-### Next After Commit
-- T47: Cross-platform validation (make-all-in-container)
-- T48+: Remaining blueprint tasks
-- BLOCKED: T40-T41 (model doesn't support MCP)
+### Remaining Tasks
+- **T47**: Cross-platform validation (make-all-in-container) — BLOCKED (Docker not available)
+- **T48**: Update architecture documentation — Not Started
+- **T49**: Update ADR 001 — Not Started
+- **T50**: Final make all + all integration targets — Not Started
+- **T51**: Final cross-platform validation — BLOCKED (Docker)
+- **T52**: Final documentation sweep — Not Started
+- **T53**: Diff vs main comprehensive review — Not Started
+- **T54**: Performance benchmarks for large repos — Not Started
+- **T55**: Session state corruption resilience — Not Started
+- **T56**: Scope expansion — Not Started
+- **BLOCKED**: T40-T41 (model doesn't support MCP)
 
 ### Phase 1 Summary (T01-T15) — COMPLETE
 - 7 mock MCP integration tests: All GREEN (14.2s total)

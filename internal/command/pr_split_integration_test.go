@@ -988,6 +988,201 @@ func TestIntegration_SendToHandle_PromptReadyDelayed(t *testing.T) {
 	}
 }
 
+// ---- T14: SendToHandle edge cases ----------------------------------------
+
+// TestIntegration_SendToHandle_EmptyText verifies that sending an empty
+// string does not crash and still sends the Enter (\r) separately.
+func TestIntegration_SendToHandle_EmptyText(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	raw, err := evalJS(`
+		(async function() {
+			var sends = [];
+			var mockHandle = {
+				send: function(text) { sends.push(text); }
+			};
+			var result = await globalThis.prSplit.sendToHandle(mockHandle, '');
+			return JSON.stringify({ error: result.error, sends: sends });
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("sendToHandle empty text test failed: %v", err)
+	}
+
+	var result struct {
+		Error *string  `json:"error"`
+		Sends []string `json:"sends"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if result.Error != nil {
+		t.Errorf("expected no error for empty text, got: %s", *result.Error)
+	}
+	// Even empty text should produce a two-write (empty string + \r) or
+	// at least not crash. Check that sends were attempted.
+	if len(result.Sends) < 1 {
+		t.Error("expected at least 1 send call for empty text")
+	}
+}
+
+// TestIntegration_SendToHandle_LargePayload verifies that sendToHandle
+// handles a large text payload (100KB) gracefully. The chunking logic should
+// split large writes into 4KB chunks.
+func TestIntegration_SendToHandle_LargePayload(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	raw, err := evalJS(`
+		(async function() {
+			var sends = [];
+			var totalBytes = 0;
+			var mockHandle = {
+				send: function(text) {
+					sends.push(text.length);
+					totalBytes += text.length;
+				}
+			};
+			// Generate 100KB of text (25K repetitions of "abcd").
+			var largeText = '';
+			for (var i = 0; i < 25000; i++) largeText += 'abcd';
+			var result = await globalThis.prSplit.sendToHandle(mockHandle, largeText);
+			return JSON.stringify({
+				error: result.error,
+				sendCount: sends.length,
+				totalBytes: totalBytes,
+				inputLength: largeText.length
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("sendToHandle large payload test failed: %v", err)
+	}
+
+	var result struct {
+		Error       *string `json:"error"`
+		SendCount   int     `json:"sendCount"`
+		TotalBytes  int     `json:"totalBytes"`
+		InputLength int     `json:"inputLength"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if result.Error != nil {
+		t.Fatalf("expected no error for large payload, got: %s", *result.Error)
+	}
+	if result.InputLength != 100000 {
+		t.Fatalf("input length = %d, want 100000", result.InputLength)
+	}
+	// Multiple chunks + Enter → should be more than 2 sends.
+	if result.SendCount < 3 {
+		t.Errorf("expected multiple sends for 100KB payload (chunked), got %d", result.SendCount)
+	}
+	// Total bytes sent should be at least the input length (plus \r).
+	if result.TotalBytes < result.InputLength {
+		t.Errorf("total bytes sent = %d, less than input length %d", result.TotalBytes, result.InputLength)
+	}
+}
+
+// TestIntegration_SendToHandle_ConcurrentSends verifies that two concurrent
+// sendToHandle calls do not cause a data race. This exercises the race
+// detector when run with -race.
+func TestIntegration_SendToHandle_ConcurrentSends(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	raw, err := evalJS(`
+		(async function() {
+			var sends = [];
+			var mockHandle = {
+				send: function(text) { sends.push(text); }
+			};
+			// Launch two sendToHandle calls concurrently via Promise.all.
+			var results = await Promise.all([
+				globalThis.prSplit.sendToHandle(mockHandle, 'message-A'),
+				globalThis.prSplit.sendToHandle(mockHandle, 'message-B')
+			]);
+			return JSON.stringify({
+				error0: results[0].error,
+				error1: results[1].error,
+				sendCount: sends.length,
+				hasA: sends.some(function(s) { return s === 'message-A'; }),
+				hasB: sends.some(function(s) { return s === 'message-B'; })
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("sendToHandle concurrent test failed: %v", err)
+	}
+
+	var result struct {
+		Error0    *string `json:"error0"`
+		Error1    *string `json:"error1"`
+		SendCount int     `json:"sendCount"`
+		HasA      bool    `json:"hasA"`
+		HasB      bool    `json:"hasB"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if result.Error0 != nil {
+		t.Errorf("first concurrent send errored: %s", *result.Error0)
+	}
+	if result.Error1 != nil {
+		t.Errorf("second concurrent send errored: %s", *result.Error1)
+	}
+	// Both messages should have been sent.
+	if !result.HasA {
+		t.Error("message-A not found in sends")
+	}
+	if !result.HasB {
+		t.Error("message-B not found in sends")
+	}
+	// 2 messages × 2 writes each (text + \r) = at least 4 sends.
+	if result.SendCount < 4 {
+		t.Errorf("expected at least 4 sends for 2 concurrent messages, got %d", result.SendCount)
+	}
+}
+
+// TestIntegration_SendToHandle_AfterDetach verifies that sendToHandle returns
+// a clear error when the handle's send function throws (simulating a detached
+// or closed handle).
+func TestIntegration_SendToHandle_AfterDetach(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	raw, err := evalJS(`
+		(async function() {
+			var mockHandle = {
+				send: function() { throw new Error('handle already detached'); }
+			};
+			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'should fail');
+			return JSON.stringify({ error: result.error || '' });
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("sendToHandle after-detach test failed: %v", err)
+	}
+
+	var result struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if result.Error == "" {
+		t.Fatal("expected error when send throws after detach")
+	}
+	if !strings.Contains(result.Error, "detach") {
+		t.Errorf("error should mention detach, got %q", result.Error)
+	}
+}
+
 // TestIntegration_SpawnArgs_DangerouslySkipPermissions verifies that
 // ClaudeCodeExecutor.spawn prepends --dangerously-skip-permissions for
 // claude-code type providers but NOT for ollama type providers.

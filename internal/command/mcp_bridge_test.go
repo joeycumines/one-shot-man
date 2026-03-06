@@ -81,13 +81,10 @@ func TestMcpBridgeCommand_BidirectionalCopy_TCP(t *testing.T) {
 	}()
 
 	// Pipe stdin data into the bridge.
-	origStdin := os.Stdin
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("pipe: %v", err)
 	}
-	os.Stdin = r
-	defer func() { os.Stdin = origStdin }()
 
 	// Write test data, then close write end to signal EOF.
 	testData := "hello mcp bridge\n"
@@ -98,6 +95,7 @@ func TestMcpBridgeCommand_BidirectionalCopy_TCP(t *testing.T) {
 
 	var stdout bytes.Buffer
 	cmd := NewMcpBridgeCommand()
+	cmd.Stdin = r
 	err = cmd.Execute([]string{"tcp", ln.Addr().String()}, &stdout, io.Discard)
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -115,8 +113,13 @@ func TestMcpBridgeCommand_BidirectionalCopy_Unix(t *testing.T) {
 	}
 	t.Parallel()
 
-	tmpDir := t.TempDir()
-	sockPath := filepath.Join(tmpDir, "test.sock")
+	// Use a short socket path to stay within macOS 104-byte UDS limit.
+	sockPath := filepath.Join("/tmp", "osm-bridge-test-"+t.Name()+".sock")
+	// Sanitise: test names may contain '/' from subtests.
+	sockPath = strings.ReplaceAll(sockPath, "/", "-")
+	sockPath = "/tmp/" + filepath.Base(sockPath)
+	os.Remove(sockPath) // remove stale socket from previous runs
+	t.Cleanup(func() { os.Remove(sockPath) })
 
 	ln, err := net.Listen("unix", sockPath)
 	if err != nil {
@@ -134,13 +137,10 @@ func TestMcpBridgeCommand_BidirectionalCopy_Unix(t *testing.T) {
 		_, _ = io.Copy(conn, conn)
 	}()
 
-	origStdin := os.Stdin
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("pipe: %v", err)
 	}
-	os.Stdin = r
-	defer func() { os.Stdin = origStdin }()
 
 	testData := "unix bridge test data\n"
 	go func() {
@@ -150,6 +150,7 @@ func TestMcpBridgeCommand_BidirectionalCopy_Unix(t *testing.T) {
 
 	var stdout bytes.Buffer
 	cmd := NewMcpBridgeCommand()
+	cmd.Stdin = r
 	err = cmd.Execute([]string{"unix", sockPath}, &stdout, io.Discard)
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -181,13 +182,10 @@ func TestMcpBridgeCommand_LargePayload(t *testing.T) {
 		_, _ = io.Copy(conn, conn)
 	}()
 
-	origStdin := os.Stdin
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("pipe: %v", err)
 	}
-	os.Stdin = r
-	defer func() { os.Stdin = origStdin }()
 
 	// 256 KB payload
 	payload := strings.Repeat("A", 256*1024) + "\n"
@@ -198,6 +196,7 @@ func TestMcpBridgeCommand_LargePayload(t *testing.T) {
 
 	var stdout bytes.Buffer
 	cmd := NewMcpBridgeCommand()
+	cmd.Stdin = r
 	err = cmd.Execute([]string{"tcp", ln.Addr().String()}, &stdout, io.Discard)
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -228,13 +227,10 @@ func TestMcpBridgeCommand_ServerClosesFirst(t *testing.T) {
 		_ = conn.Close()
 	}()
 
-	origStdin := os.Stdin
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("pipe: %v", err)
 	}
-	os.Stdin = r
-	defer func() { os.Stdin = origStdin }()
 
 	// Don't write anything, just close stdin after a short delay.
 	go func() {
@@ -244,6 +240,7 @@ func TestMcpBridgeCommand_ServerClosesFirst(t *testing.T) {
 
 	var stdout bytes.Buffer
 	cmd := NewMcpBridgeCommand()
+	cmd.Stdin = r
 
 	// Run with timeout to prevent hangs.
 	done := make(chan error, 1)

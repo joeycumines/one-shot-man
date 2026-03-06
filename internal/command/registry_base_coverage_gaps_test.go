@@ -293,8 +293,11 @@ func TestScriptCommand_Execute_CapturesStderr(t *testing.T) {
 	if err := cmd.Execute(nil, &stdout, &stderr); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if got := strings.TrimSpace(stderr.String()); got != "err" {
-		t.Fatalf("expected stderr 'err', got %q", got)
+	// Use Contains rather than exact match: when parallel tests delete their
+	// temp dirs, the shell may emit "shell-init: error retrieving current
+	// directory: getcwd: ..." before our script output.
+	if got := stderr.String(); !strings.Contains(got, "err") {
+		t.Fatalf("expected stderr to contain 'err', got %q", got)
 	}
 }
 

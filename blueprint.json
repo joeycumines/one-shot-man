@@ -44,7 +44,7 @@
     "tasksCompleted": ["T01-T15 from prior blueprint (one-off setup steps, pruned)"]
   },
   "statusSection": {
-    "currentState": "SESSION 2. T01-T62 ALL DONE. 13 commits: cd6cb0a→0922854. Scope expansion: T63-T68 added (cleanup logging, config path warnings, termmux write logging, listener integration test, concurrent cleanup test). Executing T63+.",
+    "currentState": "SESSION 2. T01-T65 ALL DONE. 16 commits: cd6cb0a→(pending T65 commit). Scope expansion: T66-T68 remaining (listener integration test, concurrent cleanup test, next expansion). Executing T66.",
     "goalState": "Wizard UI fully implemented in JS via termmux facade. osm:termmux module exposes pane management, visibility, events, BubbleTea integration to JS. State machine drives Config→PlanGeneration→PlanReview→BranchBuilding→ErrorResolution→Finalization. Old Go TUI replaced. Integration tests massively expanded (mock MCP + real Claude). Cross-platform validated. Every line has a reason to exist. No dead code. No AI slop."
   },
   "sequentialTasks": [
@@ -540,15 +540,15 @@
       "task": "T64: Warn when config path resolution fails in builtin set/reset commands",
       "description": "builtin.go has 3 instances of `configPath, _ = config.GetConfigPath()` (lines 292, 422, 443) in executeSet, executeResetKey, and executeResetAll. If GetConfigPath fails (e.g., HOME unset, XDG_CONFIG_HOME unreadable), the in-memory write succeeds but the disk write silently doesn't happen — the user thinks their config is saved but it's lost on restart. Add slog.Warn with the error when GetConfigPath fails AND configPath is still empty. Add test: mock HOME to empty/invalid, call executeSet, verify warning logged and in-memory state still applied.",
       "acceptance": "All 3 GetConfigPath call sites log slog.Warn when error is non-nil. TestExecuteSet_ConfigPathResolutionFailure_WarnsUser verifies: (1) slog.Warn captured with error string, (2) in-memory config still updated, (3) no crash. make all GREEN.",
-      "status": "Not Started",
+      "status": "Done",
       "contextPointers": ["internal/command/builtin.go:288-296 (executeSet)", "internal/command/builtin.go:419-425 (executeResetKey)", "internal/command/builtin.go:440-446 (executeResetAll)", "internal/config/config.go (GetConfigPath)"]
     },
     {
       "task": "T65: Add termmux stdout write error logging",
-      "description": "termmux.go has 7 instances of `_, _ = m.stdout.Write(...)` or `_, _ = stdout.Write(...)` (lines 118, 166, 175, 471, 496, 590, 603) that silently discard write errors. Terminal writes failing mid-session (broken pipe, closed fd) cause silent data loss. Add a writeWithLog helper that logs write errors at debug level with byte count context. Replace all 7 bare writes. Add TestMux_StdoutWriteError using a mockWriter that returns errors after N bytes, verify debug logs captured.",
-      "acceptance": "All 7 stdout/child Write calls use writeWithLog helper. TestMux_StdoutWriteError verifies errors logged at debug level with byte count. No behavior change (still best-effort writes). make all GREEN.",
-      "status": "Not Started",
-      "contextPointers": ["internal/termmux/termmux.go:118,166,175,471,496,590,603"]
+      "description": "termmux.go had 4 `_, _ = stdout.Write(...)` calls (lines 118, 175, 471, 496) that silently discarded write errors. Added writeOrLog(w, data, context) helper that logs at slog.Debug on failure with structured error+context. Converted all 4 stdout write sites: bell (BellFn closure), tee-passthrough (teeLoop), first-swap-clear, vterm-restore. Left vtm.Write (in-memory VTerm buffer) and child.Write (PTY stdin, not stdout) unchanged. Added TestWriteOrLog_Success and TestWriteOrLog_Error_Logged.",
+      "acceptance": "All 4 stdout Write calls use writeOrLog helper. TestWriteOrLog_Error_Logged verifies errors logged at debug level with context string. No behavior change (still best-effort writes). make all GREEN.",
+      "status": "Done",
+      "contextPointers": ["internal/termmux/termmux.go:119,176,472,497,638 (writeOrLog helper + 4 call sites)", "internal/termmux/termmux_test.go (TestWriteOrLog_Success, TestWriteOrLog_Error_Logged)"]
     },
     {
       "task": "T66: StateManager listener integration test — full notification lifecycle",

@@ -3,7 +3,9 @@ package termmux
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
+	"log/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1637,5 +1639,39 @@ func TestMux_ResizeClampsTinyTerminal(t *testing.T) {
 	child.Close()
 	if !waitTimeout(m.teeDone, 5*time.Second) {
 		t.Fatal("teeLoop did not exit in time")
+	}
+}
+
+// ── writeOrLog tests ───────────────────────────────────────────────
+
+// failWriter is an io.Writer that always returns an error.
+type failWriter struct{ err error }
+
+func (fw failWriter) Write([]byte) (int, error) { return 0, fw.err }
+
+func TestWriteOrLog_Success(t *testing.T) {
+	t.Parallel()
+	var buf bytes.Buffer
+	writeOrLog(&buf, []byte("hello"), "test-ctx")
+	if buf.String() != "hello" {
+		t.Fatalf("buf = %q; want %q", buf.String(), "hello")
+	}
+}
+
+func TestWriteOrLog_Error_Logged(t *testing.T) {
+	// NOT parallel — mutates global slog default.
+	var logBuf bytes.Buffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	t.Cleanup(func() { slog.SetDefault(old) })
+
+	fw := failWriter{err: errors.New("pipe broken")}
+	writeOrLog(fw, []byte("data"), "bell")
+
+	got := logBuf.String()
+	for _, want := range []string{"terminal write failed", "pipe broken", "bell"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("log output missing %q; got:\n%s", want, got)
+		}
 	}
 }

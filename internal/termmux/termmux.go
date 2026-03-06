@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -115,7 +116,7 @@ func (m *Mux) Attach(child io.ReadWriteCloser) error {
 
 		if !passthrough && stdout != nil {
 			// Background pane bell — propagate to outer terminal.
-			_, _ = stdout.Write([]byte{0x07})
+			writeOrLog(stdout, []byte{0x07}, "bell")
 		}
 
 		if fn != nil {
@@ -172,7 +173,7 @@ func (m *Mux) teeLoop(reader *ptyio.BufferedReader, teeDone, childEOF chan struc
 		if passthrough {
 			m.mu.Lock()
 			if m.passthroughActive {
-				_, _ = m.stdout.Write(chunk)
+				writeOrLog(m.stdout, chunk, "tee-passthrough")
 			}
 			m.mu.Unlock()
 		}
@@ -468,7 +469,7 @@ func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 	if firstSwap {
 		// ESC[2J = erase entire display, ESC[H = cursor to 1,1.
 		m.mu.Lock()
-		_, _ = m.stdout.Write([]byte("\x1b[2J\x1b[H"))
+		writeOrLog(m.stdout, []byte("\x1b[2J\x1b[H"), "first-swap-clear")
 		m.mu.Unlock()
 		// Nudge the child with a resize so it redraws at the correct
 		// dimensions (accounting for status bar).
@@ -493,7 +494,7 @@ func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 			// to stdout under m.mu to avoid racing with tee goroutine.
 			rendered := vtm.RenderFullScreen()
 			m.mu.Lock()
-			_, _ = m.stdout.Write([]byte(rendered))
+			writeOrLog(m.stdout, []byte(rendered), "vterm-restore")
 			m.mu.Unlock()
 		}
 		// Re-render status bar after VTerm restore. VTerm content
@@ -628,5 +629,14 @@ func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 	case <-ctx.Done():
 		cancel()
 		return ExitContext, ctx.Err()
+	}
+}
+
+// writeOrLog writes data to w, logging at Debug level on failure.
+// Terminal output failures typically mean the controlling terminal has
+// been closed or disconnected — best-effort logging is appropriate.
+func writeOrLog(w io.Writer, data []byte, context string) {
+	if _, err := w.Write(data); err != nil {
+		slog.Debug("terminal write failed", "error", err, "context", context)
 	}
 }

@@ -482,10 +482,52 @@
     },
     {
       "task": "T56: Scope expansion — identify and add new improvement tasks",
-      "description": "After all above tasks complete: audit the codebase for the next frontier of improvements. Candidates must be concrete and project-specific: (1) telemetry dashboard (render pipeline step timings as TUI chart), (2) PR template customization (user-defined template in goal JSON), (3) parallel branch verification (concurrent verifySplit calls with goroutine pool), (4) Claude conversation logging (persist to .pr-split-history/), (5) git hook integration (post-split hook for CI trigger), (6) VS Code extension integration (expose pr-split as VS Code command). For each candidate: assess feasibility (read relevant code), write task description meeting Planning Depth Standard, add to blueprint.",
+      "description": "Codebase audit identified 6 concrete improvement tasks: silent io.Copy errors in MCP bridge, temp file cleanup in mcpcallback, parseClaudeEnv input validation, config symlink attack test, session ID path traversal test, atomic write error propagation audit. All tasks are project-specific with file:line references.",
       "acceptance": "5+ new tasks added to blueprint, each with: concrete description referencing specific files/functions, testable acceptance criteria describing delivered value, context pointers. Task list never empty. Each new task passes anti-vaporware test (could not appear verbatim in a different project).",
-      "status": "Not Started",
+      "status": "Done",
       "contextPointers": ["blueprint.json"]
+    },
+    {
+      "task": "T57: Handle io.Copy failures in MCP bridge bidirectional relay",
+      "description": "McpBridgeCommand.Execute() at mcp_bridge.go:72,80 discards io.Copy errors with _, _. If data transfer fails (connection reset, broken pipe), the function returns nil (success). Both goroutines should capture errors and report them via an error channel. Clean EOF should not produce spurious errors.",
+      "acceptance": "Both io.Copy calls capture and log errors via slog. New test TestMcpBridgeCommand_CopyErrorHandling verifies connection failures are reported. Normal EOF case produces no error. make all GREEN.",
+      "status": "Done",
+      "contextPointers": ["internal/command/mcp_bridge.go:65-85", "internal/command/mcp_bridge_test.go"]
+    },
+    {
+      "task": "T58: Log MCP callback cleanup failures to prevent temp file accumulation",
+      "description": "mcpcallback.go has 3 bare os.Remove*/os.RemoveAll calls (lines 373, 397, 595) that discard errors. In high-volume CI, this causes /tmp to accumulate stale socket files. Add slog.Warn with path and error for each. Add test for rapid init/close cycles.",
+      "acceptance": "All 3 os.Remove* calls log warnings on failure. TestMCPCallback_CleanupErrorLogging verifies warnings logged. TestMCPCallback_LeakedTempDirs_UnderLoad runs 50 rapid cycles, no orphaned temps. make all GREEN.",
+      "status": "Done",
+      "contextPointers": ["internal/builtin/mcpcallbackmod/mcpcallback.go:373,397,595"]
+    },
+    {
+      "task": "T59: Add input validation to parseClaudeEnv",
+      "description": "parseClaudeEnv() at pr_split.go:352-362 silently drops invalid KEY=VALUE pairs. If user provides 'API_KEY=,TIMEOUT=' (empty values/missing keys), invalid entries vanish without warning. Add warning logs for malformed entries.",
+      "acceptance": "Entries with empty keys log warnings. TestParseClaudeEnv_MalformedInput covers: 'KEY=', '=VALUE', 'ONLY_KEY', ',,VALID=ok'. Malformed entries detected and reported; valid entries still parsed. make all GREEN.",
+      "status": "Not Started",
+      "contextPointers": ["internal/command/pr_split.go:352-362", "internal/command/pr_split_cmd_meta_test.go:393"]
+    },
+    {
+      "task": "T60: Add direct symlink attack test for config loading",
+      "description": "Config loading tests intermediate directory symlinks (config_test.go:505+) but not direct file symlinks. Create config path as direct symlink to /etc/passwd or temp file, verify LoadFromPath() rejects with error containing 'symlink'. Current code uses Lstat at config.go:145 — this test confirms end-to-end rejection.",
+      "acceptance": "TestLoadFromPath_DirectSymlink_Rejected creates direct symlink, asserts rejection. TestLoadFromPath_DirectSymlink_ToSensitiveFile uses /etc/passwd target. Both PASS. make all GREEN.",
+      "status": "Not Started",
+      "contextPointers": ["internal/config/config.go:130-159", "internal/config/config_test.go:505-535"]
+    },
+    {
+      "task": "T61: Validate session ID path safety against traversal",
+      "description": "Session file paths constructed from user-supplied or auto-detected session IDs. While sanitization exists, no explicit traversal test verifies SessionFilePath() cannot escape the session directory. Test with IDs: '../../../etc/passwd', '..\\\\..\\\\windows', './;../../etc'. Verify all paths resolve under session root.",
+      "acceptance": "TestSessionFilePath_TraversalAttempt_Rejected tests 3+ malicious IDs. All returned paths are under session storage root. Cross-platform. make all GREEN.",
+      "status": "Not Started",
+      "contextPointers": ["internal/storage/paths.go", "internal/session/session.go:20-40"]
+    },
+    {
+      "task": "T62: Audit atomic write error propagation paths",
+      "description": "AtomicWriteFile() at atomic_write.go:28-100 uses careful error handling with success flag and deferred cleanup. Verify all error cases (temp creation, write, fsync, chmod, rename) return non-nil errors with proper %w wrapping. Verify FileSystemBackend.SaveSession() at fs_backend.go:87 propagates errors correctly.",
+      "acceptance": "TestAtomicWriteFile_AllErrorPaths covers 5 error cases. TestFileSystemBackend_SaveSession_AtomicWriteFailure verifies error bubbles up. Verify cleanup warnings logged. make all GREEN.",
+      "status": "Not Started",
+      "contextPointers": ["internal/storage/atomic_write.go:28-100", "internal/storage/fs_backend.go:87-110"]
     }
   ],
   "continuousVerification": {

@@ -57,9 +57,23 @@ func (c *McpBridgeCommand) Execute(args []string, stdout, stderr io.Writer) erro
 
 	// Bidirectional copy: stdin→socket, socket→stdout.
 	// When either direction finishes (EOF or error), we shut down the
-	// other direction to avoid hanging.
-	var wg sync.WaitGroup
+	// other direction to avoid hanging. The first non-EOF error from
+	// either goroutine is captured and returned.
+	var (
+		wg      sync.WaitGroup
+		copyErr error
+		errOnce sync.Once
+	)
 	wg.Add(2)
+
+	// recordError captures the first non-EOF copy error.
+	recordError := func(direction string, err error) {
+		if err != nil && err != io.EOF {
+			errOnce.Do(func() {
+				copyErr = fmt.Errorf("bridge %s: %w", direction, err)
+			})
+		}
+	}
 
 	stdin := c.Stdin
 	if stdin == nil {
@@ -69,7 +83,8 @@ func (c *McpBridgeCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	// stdin → socket
 	go func() {
 		defer wg.Done()
-		_, _ = io.Copy(conn, stdin)
+		_, err := io.Copy(conn, stdin)
+		recordError("stdin→socket", err)
 		// Half-close the write side so the remote end sees EOF.
 		closeWrite(conn)
 	}()
@@ -77,11 +92,12 @@ func (c *McpBridgeCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	// socket → stdout
 	go func() {
 		defer wg.Done()
-		_, _ = io.Copy(stdout, conn)
+		_, err := io.Copy(stdout, conn)
+		recordError("socket→stdout", err)
 	}()
 
 	wg.Wait()
-	return nil
+	return copyErr
 }
 
 // closeWrite performs a half-close (shutdown write) on the connection,

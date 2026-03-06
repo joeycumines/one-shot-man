@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"os/signal"
@@ -370,7 +371,9 @@ func (cb *mcpCallback) startListener() error {
 
 	// Set directory permissions to 0700 (owner-only access)
 	if err := os.Chmod(tempDir, 0700); err != nil {
-		_ = os.RemoveAll(tempDir)
+		if rmErr := os.RemoveAll(tempDir); rmErr != nil {
+			slog.Warn("failed to remove temp dir after chmod failure", "path", tempDir, "error", rmErr)
+		}
 		return fmt.Errorf("chmod temp dir: %w", err)
 	}
 
@@ -394,7 +397,9 @@ func (cb *mcpCallback) startUDSListener() error {
 	sockPath := filepath.Join(tempDir, "osm.sock")
 
 	// Remove stale socket file if present (defensive)
-	_ = os.Remove(sockPath)
+	if err := os.Remove(sockPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		slog.Warn("failed to remove stale socket", "path", sockPath, "error", err)
+	}
 
 	ln, err := net.Listen("unix", sockPath)
 	if err != nil {
@@ -592,7 +597,9 @@ func (cb *mcpCallback) cleanup() {
 
 	// Remove temp directory and all contents (socket, scripts, config)
 	if tempDir != "" {
-		_ = os.RemoveAll(tempDir)
+		if err := os.RemoveAll(tempDir); err != nil {
+			slog.Warn("failed to remove MCP callback temp dir", "path", tempDir, "error", err)
+		}
 	}
 }
 

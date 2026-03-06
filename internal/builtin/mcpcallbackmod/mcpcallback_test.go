@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -1368,4 +1370,82 @@ func TestMCPCallback_WaitFor_ProgressCallback(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+}
+
+func TestMCPCallback_CleanupErrorLogging(t *testing.T) {
+	// Verify that cleanup() logs a slog.Warn when os.RemoveAll fails.
+	// We create a temp dir, add a file, then remove write permission
+	// so RemoveAll fails (cannot delete children in a 0555 directory).
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission semantics required")
+	}
+
+	// Capture slog output.
+	var logBuf strings.Builder
+	handler := slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn})
+	oldDefault := slog.Default()
+	slog.SetDefault(slog.New(handler))
+	t.Cleanup(func() { slog.SetDefault(oldDefault) })
+
+	// Create temp dir with a blocker file, then make it unremovable.
+	tempDir := t.TempDir() // t.TempDir will force-clean at end of test
+	blocker := filepath.Join(tempDir, "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(tempDir, 0555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(tempDir, 0755) // restore for t.TempDir cleanup
+	})
+
+	// Construct a minimal mcpCallback pointing at this tempDir.
+	cb := &mcpCallback{tempDir: tempDir}
+	cb.cleanup()
+
+	logs := logBuf.String()
+	if !strings.Contains(logs, "failed to remove MCP callback temp dir") {
+		t.Errorf("expected slog warning about failed removal, got: %q", logs)
+	}
+	if !strings.Contains(logs, tempDir) {
+		t.Errorf("expected slog warning to contain tempDir path %q, got: %q", tempDir, logs)
+	}
+}
+
+func TestMCPCallback_RapidInitClose_NoLeakedDirs(t *testing.T) {
+	// Run 10 rapid init/close cycles to verify no temp directory leaks.
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	const cycles = 10
+	for i := range cycles {
+		var scriptPath string
+		runOnLoop(t, p, func() {
+			vm := p.Runtime()
+			_, err := vm.RunString(`
+				var __cycleSrv = mcpMod.createServer('test', '1.0.0');
+				var __cycleCb = mcpCbMod.MCPCallback({ server: __cycleSrv });
+				__cycleCb.initSync();
+				var __cycleScriptPath = __cycleCb.scriptPath;
+				__cycleCb.closeSync();
+			`)
+			if err != nil {
+				t.Fatalf("cycle %d: JS error: %v", i, err)
+			}
+			v := vm.Get("__cycleScriptPath")
+			if v != nil && !goja.IsUndefined(v) {
+				scriptPath = v.String()
+			}
+		})
+
+		if scriptPath == "" {
+			t.Fatalf("cycle %d: no scriptPath", i)
+		}
+		tempDir := scriptPath[:strings.LastIndex(scriptPath, string(os.PathSeparator))]
+		if _, err := os.Stat(tempDir); !os.IsNotExist(err) {
+			t.Errorf("cycle %d: temp dir %q not cleaned up (err=%v)", i, tempDir, err)
+		}
+	}
 }

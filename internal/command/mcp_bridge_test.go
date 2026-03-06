@@ -2,6 +2,7 @@ package command
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -303,4 +304,117 @@ func TestCloseWrite(t *testing.T) {
 	// Should not panic.
 	closeWrite(conn)
 	wg.Wait()
+}
+
+// errorReader returns an error after reading n bytes.
+type errorReader struct {
+	data []byte
+	pos  int
+	err  error
+}
+
+func (r *errorReader) Read(p []byte) (int, error) {
+	if r.pos >= len(r.data) {
+		return 0, r.err
+	}
+	n := copy(p, r.data[r.pos:])
+	r.pos += n
+	if r.pos >= len(r.data) {
+		return n, r.err
+	}
+	return n, nil
+}
+
+func TestMcpBridgeCommand_CopyErrorReported(t *testing.T) {
+	t.Parallel()
+
+	// Create a TCP echo server.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+
+	go func() {
+		conn, aErr := ln.Accept()
+		if aErr != nil {
+			return
+		}
+		defer conn.Close()
+		_, _ = io.Copy(conn, conn)
+	}()
+
+	// Use an errorReader that returns some data then a non-EOF error.
+	injectedErr := fmt.Errorf("injected read failure")
+	stdin := &errorReader{
+		data: []byte("partial data"),
+		err:  injectedErr,
+	}
+
+	var stdout bytes.Buffer
+	cmd := NewMcpBridgeCommand()
+	cmd.Stdin = stdin
+
+	// Run with timeout.
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Execute([]string{"tcp", ln.Addr().String()}, &stdout, io.Discard)
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected error from bridge, got nil")
+		}
+		if !strings.Contains(err.Error(), "bridge stdin→socket") {
+			t.Errorf("error %q should contain direction info", err.Error())
+		}
+		if !strings.Contains(err.Error(), "injected read failure") {
+			t.Errorf("error %q should contain original error", err.Error())
+		}
+		t.Logf("Bridge error correctly reported: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("bridge did not exit within 5s")
+	}
+}
+
+func TestMcpBridgeCommand_NormalEOF_NoError(t *testing.T) {
+	t.Parallel()
+
+	// Verify that normal operation (clean EOF) does NOT produce an error.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+
+	go func() {
+		conn, aErr := ln.Accept()
+		if aErr != nil {
+			return
+		}
+		defer conn.Close()
+		_, _ = io.Copy(conn, conn)
+	}()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+
+	go func() {
+		_, _ = w.WriteString("clean data\n")
+		_ = w.Close() // clean EOF
+	}()
+
+	var stdout bytes.Buffer
+	cmd := NewMcpBridgeCommand()
+	cmd.Stdin = r
+	err = cmd.Execute([]string{"tcp", ln.Addr().String()}, &stdout, io.Discard)
+	if err != nil {
+		t.Fatalf("expected no error for clean EOF, got: %v", err)
+	}
+	if stdout.String() != "clean data\n" {
+		t.Errorf("got %q, want %q", stdout.String(), "clean data\n")
+	}
 }

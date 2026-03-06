@@ -818,6 +818,11 @@ func TestPrSplitCommand_ResolveConflictsWithClaude_MaxAttemptsPerBranch(t *testi
 	val, err := evalJS(`(async function() {
 		// Prevent text chunking — tests count raw send() calls.
 		prSplit.SEND_TEXT_CHUNK_BYTES = 1000000;
+		// Zero out all send delays to prevent event-loop-mediated timeouts.
+		prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 0;
+		prSplit.SEND_TEXT_CHUNK_DELAY_MS = 0;
+		// Override backoff constant to prevent 2s+ real-time waits.
+		prSplit._RESOLVE_BACKOFF_BASE_MS = 0;
 
 		var sendCount = 0;
 		claudeExecutor = {

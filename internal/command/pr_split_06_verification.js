@@ -27,6 +27,11 @@
         var timeoutMs = config.verifyTimeoutMs || 0;
         var outputFn = config.outputFn || null;
 
+        // No verify command configured — treat as pass (verification skipped).
+        if (!command) {
+            return { name: branchName, passed: true, output: '', error: null, skipped: true, duration: 0 };
+        }
+
         // Create a temporary worktree for this branch.
         var worktreeDir = dir + '/../.osm-verify-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
 

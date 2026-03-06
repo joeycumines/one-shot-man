@@ -845,7 +845,8 @@
 
                 // Exponential backoff between retry attempts (skip delay on first attempt).
                 if (attempt > 0) {
-                    var backoffMs = Math.min(2000 * Math.pow(2, attempt - 1), 30000);
+                    var backoffBaseMs = resolveNumber(prSplit._RESOLVE_BACKOFF_BASE_MS, 2000, 0);
+                    var backoffMs = Math.min(backoffBaseMs * Math.pow(2, attempt - 1), 30000);
                     log.printf('auto-split: retrying %s after %dms backoff (attempt %d/%d)',
                         fail.branch || fail.name, backoffMs, attempt + 1, maxAttemptsPerBranch);
                     await new Promise(function(resolve) { setTimeout(resolve, backoffMs); });

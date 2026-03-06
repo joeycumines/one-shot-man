@@ -1019,14 +1019,27 @@ func TestVerifySplits_MockExec(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		// verifySplit now uses worktree — mock worktree add to fail.
+		// verifySplit now uses worktree — mock worktree add to fail for
+		// split branches only. The baseline (source branch) verification
+		// must succeed so that split failures are NOT masked as pre-existing.
 		if _, err := evalJS(`
 			_gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature\n');
 			_gitResponses['worktree'] = function(args) {
-				if (args && args.indexOf('add') >= 0) return _gitFail('branch not found');
+				if (args && args.indexOf('add') >= 0) {
+					// Allow worktree add for the source branch (baseline check).
+					// Use exact match on last arg (branch name) to avoid false
+					// positives when a split name contains 'feature' as substring.
+					var branch = args.length > 0 ? args[args.length - 1] : '';
+					if (branch === 'feature') {
+						return _gitOk('');
+					}
+					return _gitFail('branch not found');
+				}
 				if (args && args.indexOf('remove') >= 0) return _gitOk('');
 				return _gitOk('');
 			};
+			// Mock the verify command (sh -c ...) to pass for baseline.
+			_gitResponses['!sh'] = _gitOk('');
 		`); err != nil {
 			t.Fatal(err)
 		}

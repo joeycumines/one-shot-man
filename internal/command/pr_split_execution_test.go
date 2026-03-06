@@ -555,6 +555,24 @@ func TestVerifySplit(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "empty verifyCommand skips verification",
+			setup: `
+				runtime.verifyCommand = '';
+			`,
+			invoke: `JSON.stringify(globalThis.prSplit.verifySplit('split/01-noverify', {verifyCommand: ''}))`,
+			check: func(t *testing.T, r verifySplitResult) {
+				if !r.Passed {
+					t.Error("expected passed=true when verifyCommand is empty")
+				}
+				if r.Name != "split/01-noverify" {
+					t.Errorf("name = %q, want split/01-noverify", r.Name)
+				}
+				if r.Error != nil {
+					t.Errorf("unexpected error: %s", *r.Error)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

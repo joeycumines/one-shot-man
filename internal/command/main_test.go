@@ -39,7 +39,7 @@ func TestMain(m *testing.M) {
 		"enable integration tests that require real agent infrastructure")
 	flag.StringVar(&ollamaCommand, "ollama-command", "",
 		"path to ollama binary for integration tests (empty = skip ollama tests)")
-	flag.StringVar(&integrationModel, "integration-model", "gpt-oss:20b-cloud",
+	flag.StringVar(&integrationModel, "integration-model", "minimax-m2.5:cloud",
 		"model to use for integration tests")
 	flag.StringVar(&claudeTestCommand, "claude-command", "",
 		"path to Claude binary for pr-split integration tests (empty = skip Claude tests)")

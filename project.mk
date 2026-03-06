@@ -17,7 +17,7 @@ generate-tapes-and-gifs: ## Generate all recording tapes and GIFs
 .PHONY: integration-test-claudemux
 integration-test-claudemux: ## Run claudemux integration tests (requires real agent infrastructure)
 integration-test-claudemux: PROVIDER ?= ollama
-integration-test-claudemux: MODEL ?= gpt-oss:20b-cloud
+integration-test-claudemux: MODEL ?= minimax-m2.5:cloud
 integration-test-claudemux:
 	$(GO) test -race -v -count=1 -timeout=10m \
 		-integration -provider=$(PROVIDER) -model=$(MODEL) \
@@ -27,7 +27,7 @@ integration-test-claudemux:
 integration-test-prsplit: ## Run pr-split integration tests with real Claude/AI (requires agent infrastructure)
 integration-test-prsplit: CLAUDE_COMMAND ?= claude
 integration-test-prsplit: CLAUDE_ARGS ?=
-integration-test-prsplit: INTEGRATION_MODEL ?= gpt-oss:20b-cloud
+integration-test-prsplit: INTEGRATION_MODEL ?= minimax-m2.5:cloud
 integration-test-prsplit: PRSPLIT_TEST_RUN ?= TestIntegration_(.*Claude|AutoSplitComplex|PrSplit_VTerm)
 integration-test-prsplit:
 	$(GO) test -race -count=1 -timeout=15m \

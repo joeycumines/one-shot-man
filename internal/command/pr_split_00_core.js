@@ -213,7 +213,7 @@
         strategy:      cfg.strategy      || 'directory',
         maxFiles:      cfg.maxFiles      || 10,
         branchPrefix:  cfg.branchPrefix  || 'split/',
-        verifyCommand: cfg.verifyCommand || discoverVerifyCommand('.') || 'make',
+        verifyCommand: cfg.verifyCommand || discoverVerifyCommand('.') || '',
         dryRun:        cfg.dryRun        || false,
         jsonOutput:    cfg.jsonOutput    || false,
         mode:          cfg.mode          || 'heuristic',

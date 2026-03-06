@@ -526,7 +526,7 @@
       "task": "T62: Audit atomic write error propagation paths",
       "description": "AtomicWriteFile() at atomic_write.go:28-100 uses careful error handling with success flag and deferred cleanup. Verify all error cases (temp creation, write, fsync, chmod, rename) return non-nil errors with proper %w wrapping. Verify FileSystemBackend.SaveSession() at fs_backend.go:87 propagates errors correctly.",
       "acceptance": "TestAtomicWriteFile_AllErrorPaths covers 5 error cases. TestFileSystemBackend_SaveSession_AtomicWriteFailure verifies error bubbles up. Verify cleanup warnings logged. make all GREEN.",
-      "status": "Not Started",
+      "status": "Done",
       "contextPointers": ["internal/storage/atomic_write.go:28-100", "internal/storage/fs_backend.go:87-110"]
     }
   ],

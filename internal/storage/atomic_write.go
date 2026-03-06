@@ -18,6 +18,17 @@ func SetTestHookCrashBeforeRename(hook func()) {
 	testHookCrashBeforeRename = hook
 }
 
+// atomicFileWriter abstracts *os.File for test error injection.
+type atomicFileWriter interface {
+	Write([]byte) (int, error)
+	Sync() error
+	Close() error
+}
+
+// testHookAtomicFileWrapper, if non-nil, wraps the *os.File from CreateTemp
+// so tests can inject errors for write/sync/close paths.
+var testHookAtomicFileWrapper func(*os.File) atomicFileWriter
+
 // renameError wraps a rename error with the temporary file path for testing purposes.
 type renameError struct {
 	Err      error
@@ -42,6 +53,12 @@ func AtomicWriteFile(filename string, data []byte, perm os.FileMode) error {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 
+	// Optionally wrap the file for test error injection.
+	var writer atomicFileWriter = tempFile
+	if testHookAtomicFileWrapper != nil {
+		writer = testHookAtomicFileWrapper(tempFile)
+	}
+
 	// Capture the temp path immediately and ensure the temp file is removed
 	// on any error path. Capturing the path prevents races if the underlying
 	// *os.File object is changed or renamed later.
@@ -57,15 +74,15 @@ func AtomicWriteFile(filename string, data []byte, perm os.FileMode) error {
 		}
 	}()
 
-	if _, err := tempFile.Write(data); err != nil {
-		tempFile.Close()
+	if _, err := writer.Write(data); err != nil {
+		writer.Close()
 		return fmt.Errorf("failed to write to temp file: %w", err)
 	}
-	if err := tempFile.Sync(); err != nil { // Ensure data is on disk.
-		tempFile.Close()
+	if err := writer.Sync(); err != nil { // Ensure data is on disk.
+		writer.Close()
 		return fmt.Errorf("failed to sync temp file: %w", err)
 	}
-	if err := tempFile.Close(); err != nil {
+	if err := writer.Close(); err != nil {
 		return fmt.Errorf("failed to close temporary file %q: %w", tempFile.Name(), err)
 	}
 	if err := os.Chmod(tempFile.Name(), perm); err != nil {

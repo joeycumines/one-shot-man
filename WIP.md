@@ -21,12 +21,13 @@
 - T59: parseClaudeEnv input validation (2 slog.Warn + TestParseClaudeEnv_MalformedInput)
 - T60: Config direct symlink attack tests (DirectSymlink_Rejected + DirectSymlink_ToSensitiveFile)
 - T61: Session path traversal tests + sanitizeFilename fix (SessionFilePath, SessionLockFilePath, SetTestPaths)
+- T62: Atomic write error path exhaustive tests (write/sync/close/chmod + SaveSession integration)
 
 ### Tasks Done This Session
-- T40-T61 all done (see above)
+- T40-T62 all done (see above)
 
 ### Next Steps
-1. T62: Atomic write error audit
+1. Expand scope — add T63+ tasks for further hardening/improvement
 
 ### Blocked
 - T41: Claude CLI not logged in

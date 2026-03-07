@@ -389,7 +389,7 @@ func (gd *GoalDiscovery) traverseForGoalDirs(startDir string) []string {
 		realDir, err := filepath.EvalSymlinks(dir)
 		if err != nil {
 			// If we can't resolve symlinks (e.g., permission denied), log and stop traversal
-			if os.IsPermission(err) {
+			if errors.Is(err, os.ErrPermission) {
 				log.Printf("warning: permission denied resolving symlinks for %q, stopping upward traversal", dir)
 				gd.debugf("traversal: permission denied at %s: %v", dir, err)
 			} else {
@@ -409,7 +409,7 @@ func (gd *GoalDiscovery) traverseForGoalDirs(startDir string) []string {
 			goalPath := filepath.Join(dir, pattern)
 			exists, checkErr := gd.checkDirectory(goalPath)
 			if checkErr != nil {
-				if os.IsPermission(checkErr) {
+				if errors.Is(checkErr, os.ErrPermission) {
 					log.Printf("warning: permission denied checking goal directory %q", goalPath)
 					gd.debugf("traversal: permission denied for %s", goalPath)
 				} else {
@@ -667,7 +667,7 @@ func (gd *GoalDiscovery) DiscoverPromptFilePaths() []string {
 			if errors.Is(err, os.ErrNotExist) {
 				log.Printf("warning: configured prompt path does not exist: %s", expanded)
 				gd.debugf("prompt paths: configured path %q does not exist", expanded)
-			} else if os.IsPermission(err) {
+			} else if errors.Is(err, os.ErrPermission) {
 				log.Printf("warning: configured prompt path is not readable: %s", expanded)
 				gd.debugf("prompt paths: configured path %q permission denied", expanded)
 			} else {

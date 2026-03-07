@@ -497,7 +497,7 @@ func findPromptFilesWalk(dir string, recursive bool, depth int, visitedDirs map[
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
 		}
-		if os.IsPermission(err) {
+		if errors.Is(err, os.ErrPermission) {
 			return nil
 		}
 		return fmt.Errorf("failed to read prompt directory %q: %w", dir, err)

@@ -210,7 +210,7 @@ func TestEnsureConfigDirFailsWhenParentIsFile(t *testing.T) {
 		t.Fatalf("expected error path %q, got %q", parent, pathErr.Path)
 	}
 
-	if !errors.Is(pathErr.Err, fs.ErrExist) && !errors.Is(pathErr.Err, syscall.ENOTDIR) && !os.IsPermission(pathErr.Err) {
+	if !errors.Is(pathErr.Err, fs.ErrExist) && !errors.Is(pathErr.Err, syscall.ENOTDIR) && !errors.Is(pathErr.Err, os.ErrPermission) {
 		t.Fatalf("unexpected underlying error: %v", pathErr.Err)
 	}
 }

@@ -378,7 +378,7 @@ func (sd *ScriptDiscovery) traverseForGitRepos(startDir string) []string {
 		// Resolve the real path for cycle detection
 		realDir, err := filepath.EvalSymlinks(dir)
 		if err != nil {
-			if os.IsPermission(err) {
+			if errors.Is(err, os.ErrPermission) {
 				log.Printf("warning: permission denied resolving symlinks for %q, stopping git traversal", dir)
 				sd.debugf("git-traversal: permission denied at %s: %v", dir, err)
 			} else {
@@ -416,7 +416,7 @@ func (sd *ScriptDiscovery) traverseForGitRepos(startDir string) []string {
 			scriptPath := filepath.Join(repo, pattern)
 			exists, checkErr := sd.checkDirectory(scriptPath)
 			if checkErr != nil {
-				if os.IsPermission(checkErr) {
+				if errors.Is(checkErr, os.ErrPermission) {
 					log.Printf("warning: permission denied checking script directory %q", scriptPath)
 					sd.debugf("git-traversal: permission denied for %s", scriptPath)
 				} else {
@@ -451,7 +451,7 @@ func (sd *ScriptDiscovery) traverseForScriptDirs(startDir string) []string {
 		// Resolve the real path for cycle detection
 		realDir, err := filepath.EvalSymlinks(dir)
 		if err != nil {
-			if os.IsPermission(err) {
+			if errors.Is(err, os.ErrPermission) {
 				log.Printf("warning: permission denied resolving symlinks for %q, stopping upward traversal", dir)
 				sd.debugf("traversal: permission denied at %s: %v", dir, err)
 			} else {
@@ -471,7 +471,7 @@ func (sd *ScriptDiscovery) traverseForScriptDirs(startDir string) []string {
 			scriptPath := filepath.Join(dir, pattern)
 			exists, checkErr := sd.checkDirectory(scriptPath)
 			if checkErr != nil {
-				if os.IsPermission(checkErr) {
+				if errors.Is(checkErr, os.ErrPermission) {
 					log.Printf("warning: permission denied checking script directory %q", scriptPath)
 					sd.debugf("traversal: permission denied for %s", scriptPath)
 				} else {

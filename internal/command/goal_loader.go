@@ -121,7 +121,7 @@ func FindGoalFiles(dir string) ([]GoalFileCandidate, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil // Directory doesn't exist, return empty list
 		}
-		if os.IsPermission(err) {
+		if errors.Is(err, os.ErrPermission) {
 			// Permission denied reading the directory — skip with nil error
 			// since this is expected for some system directories
 			return nil, nil

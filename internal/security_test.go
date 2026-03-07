@@ -462,7 +462,7 @@ func TestFilePermissionHandling_ReadPermissions(t *testing.T) {
 		if len(cfg.Global) > 0 {
 			t.Error("Successfully read file with no read permissions")
 		}
-	} else if os.IsPermission(err) {
+	} else if errors.Is(err, os.ErrPermission) {
 		t.Log("Permission error as expected")
 	} else {
 		t.Logf("Other error: %v", err)

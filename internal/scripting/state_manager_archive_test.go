@@ -28,7 +28,7 @@ type flakyBackend struct {
 func (f *flakyBackend) LoadSession(sessionID string) (*storage.Session, error) {
 	if f.saved == nil {
 		// return a simple session so StateManager initializes properly
-		f.saved = &storage.Session{Version: storage.CurrentSchemaVersion, ID: sessionID, CreateTime: time.Now(), UpdateTime: time.Now(), ScriptState: map[string]map[string]interface{}{}, SharedState: map[string]interface{}{}, History: []storage.HistoryEntry{}}
+		f.saved = &storage.Session{Version: storage.CurrentSchemaVersion, ID: sessionID, CreateTime: time.Now(), UpdateTime: time.Now(), ScriptState: map[string]map[string]any{}, SharedState: map[string]any{}, History: []storage.HistoryEntry{}}
 	}
 	return f.saved, nil
 }
@@ -70,7 +70,7 @@ func TestArchiveAndReset_RetriesOnCollision(t *testing.T) {
 	fb := &flakyBackend{sessionID: "sid"}
 
 	// Create a state manager that uses our flaky backend
-	sm := &StateManager{backend: fb, sessionID: "sid", session: &storage.Session{Version: storage.CurrentSchemaVersion, ID: "sid", CreateTime: time.Now(), UpdateTime: time.Now(), ScriptState: map[string]map[string]interface{}{}, SharedState: map[string]interface{}{}, History: []storage.HistoryEntry{}}}
+	sm := &StateManager{backend: fb, sessionID: "sid", session: &storage.Session{Version: storage.CurrentSchemaVersion, ID: "sid", CreateTime: time.Now(), UpdateTime: time.Now(), ScriptState: map[string]map[string]any{}, SharedState: map[string]any{}, History: []storage.HistoryEntry{}}}
 
 	archivePath, err := sm.ArchiveAndReset()
 	if err != nil {
@@ -110,7 +110,7 @@ type backendAlwaysExists struct {
 
 func (b *backendAlwaysExists) LoadSession(sessionID string) (*storage.Session, error) {
 	if b.saved == nil {
-		b.saved = &storage.Session{Version: storage.CurrentSchemaVersion, ID: sessionID, CreateTime: time.Now(), UpdateTime: time.Now(), ScriptState: map[string]map[string]interface{}{"x": {}}, SharedState: map[string]interface{}{"k": "v"}, History: []storage.HistoryEntry{{EntryID: "1"}}}
+		b.saved = &storage.Session{Version: storage.CurrentSchemaVersion, ID: sessionID, CreateTime: time.Now(), UpdateTime: time.Now(), ScriptState: map[string]map[string]any{"x": {}}, SharedState: map[string]any{"k": "v"}, History: []storage.HistoryEntry{{EntryID: "1"}}}
 	}
 	return b.saved, nil
 }

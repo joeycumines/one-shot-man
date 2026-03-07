@@ -277,7 +277,7 @@ func TestAutoMergeOptions(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestGoHandleExtractionRoundtrip verifies that a Goja-wrapped AgentHandle
-// stored via _goHandle can be extracted via map[string]interface{} and cast
+// stored via _goHandle can be extracted via map[string]any and cast
 // to mux.StringIO. This is the bridge between the JS claudeExecutor.handle
 // and the Go tuiMux.attach closure.
 func TestGoHandleExtractionRoundtrip(t *testing.T) {
@@ -310,7 +310,7 @@ func TestGoHandleExtractionRoundtrip(t *testing.T) {
 		t.Fatalf("Failed to eval: %v", err)
 	}
 
-	m, ok := result.(map[string]interface{})
+	m, ok := result.(map[string]any)
 	if !ok {
 		t.Fatalf("Expected map, got %T", result)
 	}

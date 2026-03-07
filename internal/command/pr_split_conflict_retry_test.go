@@ -23,12 +23,12 @@ func TestPrSplitCommand_ResolveConflictsNoVerifyCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
 		t.Fatalf("Failed to parse result: %v", err)
 	}
 	// fixed should be empty array.
-	fixed, ok := result["fixed"].([]interface{})
+	fixed, ok := result["fixed"].([]any)
 	if !ok {
 		t.Fatalf("Expected fixed to be array, got %T: %v", result["fixed"], result["fixed"])
 	}
@@ -68,7 +68,7 @@ func TestPrSplitCommand_ResolveConflictsReturnShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var shape map[string]interface{}
+	var shape map[string]any
 	if err := json.Unmarshal([]byte(val.(string)), &shape); err != nil {
 		t.Fatalf("Failed to parse shape: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestPrSplitCommand_ResolveConflictsZeroBudget(t *testing.T) {
 		t.Fatalf("Failed to checkout main: %s (%v)", out, err)
 	}
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]interface{}{
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]any{
 		"retryBudget": 0,
 	})
 
@@ -171,12 +171,12 @@ func TestPrSplitCommand_ResolveConflictsZeroBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
 		t.Fatalf("Failed to parse result: %v", err)
 	}
 	// With budget 0, the first branch should immediately get budget exhausted.
-	errs, _ := result["errors"].([]interface{})
+	errs, _ := result["errors"].([]any)
 	if len(errs) == 0 {
 		t.Error("Expected errors for zero-budget branch")
 	}
@@ -278,12 +278,12 @@ func TestPrSplitCommand_ResolveConflictsWithGitRepo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
 		t.Fatalf("Failed to parse result: %v", err)
 	}
 	// No splits means no errors.
-	errs, _ := result["errors"].([]interface{})
+	errs, _ := result["errors"].([]any)
 	if len(errs) != 0 {
 		t.Errorf("Expected no errors, got %d: %v", len(errs), errs)
 	}
@@ -326,12 +326,12 @@ func TestPrSplitCommand_ResolveConflictsRetryBudgetExhaustion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
 		t.Fatalf("Failed to parse result: %v", err)
 	}
 	// Should have errors for the failed branch.
-	errs, _ := result["errors"].([]interface{})
+	errs, _ := result["errors"].([]any)
 	if len(errs) == 0 {
 		t.Error("Expected errors for failed branch")
 	}
@@ -340,7 +340,7 @@ func TestPrSplitCommand_ResolveConflictsRetryBudgetExhaustion(t *testing.T) {
 		t.Errorf("Expected reSplitNeeded=true, got %v", result["reSplitNeeded"])
 	}
 	// reSplitFiles should contain the files from the failed split.
-	reSplitFiles, _ := result["reSplitFiles"].([]interface{})
+	reSplitFiles, _ := result["reSplitFiles"].([]any)
 	if len(reSplitFiles) == 0 {
 		t.Error("Expected reSplitFiles to contain files from failed split")
 	}
@@ -379,12 +379,12 @@ func TestPrSplitCommand_ResolveConflictsPassingBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
 		t.Fatalf("Failed to parse result: %v", err)
 	}
 	// No errors when branches pass.
-	errs, _ := result["errors"].([]interface{})
+	errs, _ := result["errors"].([]any)
 	if len(errs) != 0 {
 		t.Errorf("Expected no errors, got %d", len(errs))
 	}
@@ -431,17 +431,17 @@ func TestPrSplitCommand_ResolveConflictsWallClockTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
 		t.Fatalf("Failed to parse result: %v", err)
 	}
 	// Both branches should have wall-clock timeout errors.
-	errs, _ := result["errors"].([]interface{})
+	errs, _ := result["errors"].([]any)
 	if len(errs) < 2 {
 		t.Fatalf("Expected at least 2 errors (one per branch), got %d: %v", len(errs), errs)
 	}
 	for _, e := range errs {
-		em, _ := e.(map[string]interface{})
+		em, _ := e.(map[string]any)
 		errMsg, _ := em["error"].(string)
 		if !strings.Contains(errMsg, "wall-clock timeout") {
 			t.Errorf("Expected 'wall-clock timeout' in error, got: %s", errMsg)
@@ -522,7 +522,7 @@ func TestPrSplitCommand_ResolveConflictsWithClaudeWallClockTimeout(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
 		t.Fatalf("Failed to parse result: %v", err)
 	}
@@ -761,8 +761,8 @@ func TestPrSplitCommand_ResolveConflictsWithClaudePreExistingFailure(t *testing.
 			ReSplitReason string `json:"reSplitReason"`
 		} `json:"result"`
 		Report struct {
-			Conflicts           []interface{} `json:"conflicts"`
-			Resolutions         []interface{} `json:"resolutions"`
+			Conflicts           []any `json:"conflicts"`
+			Resolutions         []any `json:"resolutions"`
 			ClaudeInteractions  int           `json:"claudeInteractions"`
 			PreExistingFailures []struct {
 				Branch  string `json:"branch"`
@@ -1593,7 +1593,7 @@ func TestPrSplitCommand_AddMissingFilesFixNoSourceBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
 		t.Fatalf("Failed to parse: %v", err)
 	}
@@ -1622,7 +1622,7 @@ func TestPrSplitCommand_GoMissingImportsFixNoGoimports(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
 		t.Fatalf("Failed to parse: %v", err)
 	}

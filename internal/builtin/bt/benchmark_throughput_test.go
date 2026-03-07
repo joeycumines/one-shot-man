@@ -205,7 +205,7 @@ func BenchmarkRunJSSync_RealisticUpdate(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		err := bridge.RunJSSync(func(vm *goja.Runtime) error {
 			// Create the message (simulating msgToJS)
-			msg := map[string]interface{}{
+			msg := map[string]any{
 				"type": "Key",
 				"key":  "w",
 			}

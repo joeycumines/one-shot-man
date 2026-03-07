@@ -20,7 +20,7 @@ func TestSuperDocument_FormMode_TextareaCommandPropagation(t *testing.T) {
 	engine.SetTestMode(true)
 
 	// Provide minimal globals the script expects
-	engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{
 		"textPrimary":    "#7f5fcf",
 		"textSecondary":  "#efefef",
 		"textTertiary":   "#888888",
@@ -71,8 +71,8 @@ __result = res;
 		t.Fatalf("expected __result to be set by test script")
 	}
 
-	// The result is a JS array -> []interface{}
-	arr, ok := val.([]interface{})
+	// The result is a JS array -> []any
+	arr, ok := val.([]any)
 	if !ok {
 		t.Fatalf("unexpected __result type: %T", val)
 	}
@@ -80,7 +80,7 @@ __result = res;
 		t.Fatalf("expected returned array to have at least 2 elements, got %d", len(arr))
 	}
 	cmdVal := arr[1]
-	cmdObj, ok := cmdVal.(map[string]interface{})
+	cmdObj, ok := cmdVal.(map[string]any)
 	if !ok {
 		t.Fatalf("expected cmd object to be a map, got %T", cmdVal)
 	}
@@ -99,7 +99,7 @@ func TestSuperDocument_ListMode_NoCommandOnKeyNav(t *testing.T) {
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{
 		"textPrimary":    "#7f5fcf",
 		"textSecondary":  "#efefef",
 		"textTertiary":   "#888888",
@@ -139,7 +139,7 @@ __s = s;
 		t.Fatalf("test script execution failed: %v", err)
 	}
 	val := engine.GetGlobal("__resArr")
-	arr, ok := val.([]interface{})
+	arr, ok := val.([]any)
 	if !ok {
 		t.Fatalf("unexpected result type: %T", val)
 	}
@@ -151,7 +151,7 @@ __s = s;
 	}
 	// Verify selection moved down
 	sval := engine.GetGlobal("__s")
-	sm, ok := sval.(map[string]interface{})
+	sm, ok := sval.(map[string]any)
 	if !ok {
 		t.Fatalf("unexpected s type: %T", sval)
 	}
@@ -170,7 +170,7 @@ func TestSuperDocument_ListMode_ViewportCommandPropagation(t *testing.T) {
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{
 		"textPrimary":    "#7f5fcf",
 		"textSecondary":  "#efefef",
 		"textTertiary":   "#888888",
@@ -207,7 +207,7 @@ __result = res;
 		t.Fatalf("test script execution failed: %v", err)
 	}
 	val := engine.GetGlobal("__result")
-	m, ok := val.(map[string]interface{})
+	m, ok := val.(map[string]any)
 	if !ok {
 		t.Fatalf("expected result to be object, got %T", val)
 	}
@@ -226,7 +226,7 @@ func TestSuperDocument_ModeTransition_TextareaToList(t *testing.T) {
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{
 		"textPrimary":    "#7f5fcf",
 		"textSecondary":  "#efefef",
 		"textTertiary":   "#888888",
@@ -261,14 +261,14 @@ __res = res;
 		t.Fatalf("test script execution failed: %v", err)
 	}
 	val := engine.GetGlobal("__res")
-	arr, ok := val.([]interface{})
+	arr, ok := val.([]any)
 	if !ok || len(arr) < 2 {
 		t.Fatalf("unexpected submit result: %T %#v", val, val)
 	}
 	if arr[1] == nil {
 		t.Fatalf("expected a command (clearScreen) on submit, got nil")
 	}
-	cmdObj, ok := arr[1].(map[string]interface{})
+	cmdObj, ok := arr[1].(map[string]any)
 	if !ok {
 		t.Fatalf("expected cmd to be object, got %T", arr[1])
 	}
@@ -287,7 +287,7 @@ func TestSuperDocument_ModeTransition_ListToForm(t *testing.T) {
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{
 		"textPrimary":    "#7f5fcf",
 		"textSecondary":  "#efefef",
 		"textTertiary":   "#888888",
@@ -322,7 +322,7 @@ __res = res;
 		t.Fatalf("test script execution failed: %v", err)
 	}
 	val := engine.GetGlobal("__s")
-	sm, ok := val.(map[string]interface{})
+	sm, ok := val.(map[string]any)
 	if !ok {
 		t.Fatalf("unexpected s type: %T", val)
 	}
@@ -344,7 +344,7 @@ func TestSuperDocument_ModeTransition_PreservesState(t *testing.T) {
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{
 		"textPrimary":    "#7f5fcf",
 		"textSecondary":  "#efefef",
 		"textTertiary":   "#888888",
@@ -391,7 +391,7 @@ __s = s;
 		t.Fatalf("test script execution failed: %v", err)
 	}
 	docVal := engine.GetGlobal("__doc")
-	m, ok := docVal.(map[string]interface{})
+	m, ok := docVal.(map[string]any)
 	if !ok {
 		t.Fatalf("unexpected doc type: %T", docVal)
 	}
@@ -400,7 +400,7 @@ __s = s;
 	}
 	// Verify selection preserved
 	sVal := engine.GetGlobal("__s")
-	sm, ok := sVal.(map[string]interface{})
+	sm, ok := sVal.(map[string]any)
 	if !ok {
 		t.Fatalf("unexpected s type: %T", sVal)
 	}

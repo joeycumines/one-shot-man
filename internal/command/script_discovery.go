@@ -40,7 +40,7 @@ type ScriptDiscoveryConfig struct {
 	// DebugLogFunc is called with debug messages during discovery.
 	// If nil, debug logging is suppressed. Useful for troubleshooting
 	// why specific script directories are or aren't discovered.
-	DebugLogFunc func(format string, args ...interface{})
+	DebugLogFunc func(format string, args ...any)
 }
 
 // ScriptDiscovery manages script path discovery with configurable rules
@@ -49,7 +49,7 @@ type ScriptDiscovery struct {
 }
 
 // debugf logs a debug message if DebugLogFunc is configured.
-func (sd *ScriptDiscovery) debugf(format string, args ...interface{}) {
+func (sd *ScriptDiscovery) debugf(format string, args ...any) {
 	if sd.config.DebugLogFunc != nil {
 		sd.config.DebugLogFunc(format, args...)
 	}
@@ -101,7 +101,7 @@ func NewScriptDiscovery(cfg *config.Config) *ScriptDiscovery {
 	// Enable debug logging via config option
 	if val, exists := cfg.GetGlobalOption("script.debug-discovery"); exists {
 		if parsed, _ := strconv.ParseBool(val); parsed {
-			discoveryConfig.DebugLogFunc = func(format string, args ...interface{}) {
+			discoveryConfig.DebugLogFunc = func(format string, args ...any) {
 				log.Printf("[script-discovery] "+format, args...)
 			}
 		}

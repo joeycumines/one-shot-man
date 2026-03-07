@@ -56,7 +56,7 @@ func (c *CodeReviewCommand) Execute(args []string, stdout, stderr io.Writer) err
 
 	// Inject command name for state namespacing
 	const commandName = "code-review"
-	engine.SetGlobal("config", map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{
 		"name": commandName,
 	})
 
@@ -66,11 +66,11 @@ func (c *CodeReviewCommand) Execute(args []string, stdout, stderr io.Writer) err
 
 	// Expose diff splitter to JS for chunked code reviews.
 	engine.SetGlobal("defaultMaxDiffLines", DefaultMaxDiffLines)
-	engine.SetGlobal("splitDiff", func(diff string, maxLines int) []map[string]interface{} {
+	engine.SetGlobal("splitDiff", func(diff string, maxLines int) []map[string]any {
 		chunks := SplitDiff(diff, maxLines)
-		result := make([]map[string]interface{}, len(chunks))
+		result := make([]map[string]any, len(chunks))
 		for i, c := range chunks {
-			result[i] = map[string]interface{}{
+			result[i] = map[string]any{
 				"index":   c.Index,
 				"total":   c.Total,
 				"files":   c.Files,

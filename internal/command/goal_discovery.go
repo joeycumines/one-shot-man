@@ -52,7 +52,7 @@ type GoalDiscoveryConfig struct {
 	// DebugLogFunc is called with debug messages during discovery.
 	// If nil, debug logging is suppressed. Useful for troubleshooting
 	// why specific goal directories are or aren't discovered.
-	DebugLogFunc func(format string, args ...interface{})
+	DebugLogFunc func(format string, args ...any)
 }
 
 // GoalDiscovery manages goal path discovery with configurable rules
@@ -61,7 +61,7 @@ type GoalDiscovery struct {
 }
 
 // debugf logs a debug message if DebugLogFunc is configured.
-func (gd *GoalDiscovery) debugf(format string, args ...interface{}) {
+func (gd *GoalDiscovery) debugf(format string, args ...any) {
 	if gd.config.DebugLogFunc != nil {
 		gd.config.DebugLogFunc(format, args...)
 	}
@@ -124,7 +124,7 @@ func NewGoalDiscovery(cfg *config.Config) *GoalDiscovery {
 	// Enable debug logging via config option
 	if val, exists := cfg.GetGlobalOption("goal.debug-discovery"); exists {
 		if parsed, _ := strconv.ParseBool(val); parsed {
-			discoveryConfig.DebugLogFunc = func(format string, args ...interface{}) {
+			discoveryConfig.DebugLogFunc = func(format string, args ...any) {
 				log.Printf("[goal-discovery] "+format, args...)
 			}
 		}

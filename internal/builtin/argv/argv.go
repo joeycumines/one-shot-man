@@ -40,7 +40,7 @@ func Require(runtime *goja.Runtime, module *goja.Object) {
 		}
 
 		// Fallback path, mimicking JS's loose typing and `catch` block, which just joins without quoting.
-		var argvAny []interface{}
+		var argvAny []any
 		err = runtime.ExportTo(arg, &argvAny)
 		if err != nil {
 			// Ultimate fallback if it's not array-like at all.

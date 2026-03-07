@@ -123,7 +123,7 @@ func TestParseGoImports(t *testing.T) {
 
 type groupResult map[string][]string
 
-func parseGroupResult(t *testing.T, raw interface{}) groupResult {
+func parseGroupResult(t *testing.T, raw any) groupResult {
 	t.Helper()
 	s, ok := raw.(string)
 	if !ok {
@@ -446,7 +446,7 @@ type selectStrategyResult struct {
 	} `json:"scored"`
 }
 
-func parseSelectStrategyResult(t *testing.T, raw interface{}) selectStrategyResult {
+func parseSelectStrategyResult(t *testing.T, raw any) selectStrategyResult {
 	t.Helper()
 	s, ok := raw.(string)
 	if !ok {
@@ -719,7 +719,7 @@ type createSplitPlanResult struct {
 	} `json:"splits"`
 }
 
-func parseCreateSplitPlanResult(t *testing.T, raw interface{}) createSplitPlanResult {
+func parseCreateSplitPlanResult(t *testing.T, raw any) createSplitPlanResult {
 	t.Helper()
 	s, ok := raw.(string)
 	if !ok {
@@ -1038,7 +1038,7 @@ type savePlanResult struct {
 	Error *string `json:"error"`
 }
 
-func parseSavePlanResult(t *testing.T, raw interface{}) savePlanResult {
+func parseSavePlanResult(t *testing.T, raw any) savePlanResult {
 	t.Helper()
 	s, ok := raw.(string)
 	if !ok {
@@ -1189,7 +1189,7 @@ type loadPlanResult struct {
 	LastCompletedStep *string `json:"lastCompletedStep"`
 }
 
-func parseLoadPlanResult(t *testing.T, raw interface{}) loadPlanResult {
+func parseLoadPlanResult(t *testing.T, raw any) loadPlanResult {
 	t.Helper()
 	s, ok := raw.(string)
 	if !ok {

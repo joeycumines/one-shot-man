@@ -155,12 +155,12 @@ func TestJsonResponse(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]any{
 			"name":    "test",
 			"count":   42.0,
 			"active":  true,
 			"tags":    []string{"a", "b"},
-			"nested":  map[string]interface{}{"key": "val"},
+			"nested":  map[string]any{"key": "val"},
 			"nothing": nil,
 		})
 	}))

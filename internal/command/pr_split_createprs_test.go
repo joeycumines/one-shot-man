@@ -149,7 +149,7 @@ func testPlanJS(baseBranch, dir string) string {
 }
 
 // helper: parse JSON result from evalJS.
-func parseCreatePRsResult(t *testing.T, raw interface{}) createPRsResult {
+func parseCreatePRsResult(t *testing.T, raw any) createPRsResult {
 	t.Helper()
 	s, ok := raw.(string)
 	if !ok {

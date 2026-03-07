@@ -258,7 +258,7 @@ func TestJsLogWarn(t *testing.T) {
 	var buf bytes.Buffer
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 
-	eng.jsLogWarn("warning message", map[string]interface{}{
+	eng.jsLogWarn("warning message", map[string]any{
 		"severity": "high",
 	})
 
@@ -274,7 +274,7 @@ func TestJsLogError(t *testing.T) {
 	var buf bytes.Buffer
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 
-	eng.jsLogError("error message", map[string]interface{}{
+	eng.jsLogError("error message", map[string]any{
 		"code": "E001",
 	})
 

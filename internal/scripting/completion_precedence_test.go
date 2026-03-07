@@ -99,7 +99,7 @@ func TestCompletionPrecedence(t *testing.T) {
 		}
 
 		// Create a custom prompt and test its completion behavior
-		promptConfig := map[string]interface{}{
+		promptConfig := map[string]any{
 			"name":   "testPrompt",
 			"title":  "Test Prompt",
 			"prefix": "test> ",

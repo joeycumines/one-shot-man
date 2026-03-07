@@ -224,7 +224,7 @@ func (l *TUILogger) Error(msg string, attrs ...slog.Attr) {
 }
 
 // Printf logs a formatted message at info level.
-func (l *TUILogger) Printf(format string, args ...interface{}) {
+func (l *TUILogger) Printf(format string, args ...any) {
 	l.logger.Info(fmt.Sprintf(format, args...))
 }
 
@@ -262,7 +262,7 @@ func (l *TUILogger) PrintToTUI(msg string) {
 }
 
 // PrintfToTUI prints a formatted message directly to the terminal interface.
-func (l *TUILogger) PrintfToTUI(format string, args ...interface{}) {
+func (l *TUILogger) PrintfToTUI(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	l.PrintToTUI(msg)
 }

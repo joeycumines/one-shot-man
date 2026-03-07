@@ -49,10 +49,10 @@ func requireCallable(t *testing.T, exports *goja.Object, name string) goja.Calla
 	return callable
 }
 
-func exportMap(t *testing.T, runtime *goja.Runtime, value goja.Value) map[string]interface{} {
+func exportMap(t *testing.T, runtime *goja.Runtime, value goja.Value) map[string]any {
 	t.Helper()
 
-	var out map[string]interface{}
+	var out map[string]any
 	if err := runtime.ExportTo(value, &out); err != nil {
 		t.Fatalf("failed to export map: %v", err)
 	}

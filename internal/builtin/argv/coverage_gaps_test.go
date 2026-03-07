@@ -282,7 +282,7 @@ func TestFormatArgv_ObjectArg(t *testing.T) {
 	if err != nil {
 		t.Fatalf("formatArgv returned error: %v", err)
 	}
-	// Object falls through both ExportTo calls (not []string, not []interface{})
+	// Object falls through both ExportTo calls (not []string, not []any)
 	// Ultimate fallback: arg.String()
 	if result.String() == "" {
 		t.Error("expected non-empty string representation of object")
@@ -348,9 +348,9 @@ func TestFormatArgv_NoArgs(t *testing.T) {
 	}
 }
 
-// TestFormatArgv_GoIntSlice hits the []interface{} fallback path.
+// TestFormatArgv_GoIntSlice hits the []any fallback path.
 // A Go []int passed to goja cannot be exported to []string, so ExportTo([]string)
-// fails, but ExportTo([]interface{}) succeeds → iterates and joins with fmt.Sprint.
+// fails, but ExportTo([]any) succeeds → iterates and joins with fmt.Sprint.
 func TestFormatArgv_GoIntSlice(t *testing.T) {
 	runtime, module := setupModule(t)
 	Require(runtime, module)

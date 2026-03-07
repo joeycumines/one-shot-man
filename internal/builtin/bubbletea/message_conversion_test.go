@@ -211,12 +211,12 @@ func TestMsgToJS_KeyMsg(t *testing.T) {
 	tests := []struct {
 		name  string
 		msg   tea.KeyMsg
-		check func(*testing.T, map[string]interface{})
+		check func(*testing.T, map[string]any)
 	}{
 		{
 			name: "Simple 'a'",
 			msg:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}},
-			check: func(t *testing.T, res map[string]interface{}) {
+			check: func(t *testing.T, res map[string]any) {
 				assert.Equal(t, "Key", res["type"])
 				assert.Equal(t, "a", res["key"])
 				assert.Equal(t, []string{"a"}, res["runes"])
@@ -227,7 +227,7 @@ func TestMsgToJS_KeyMsg(t *testing.T) {
 		{
 			name: "Ctrl+C",
 			msg:  tea.KeyMsg{Type: tea.KeyCtrlC},
-			check: func(t *testing.T, res map[string]interface{}) {
+			check: func(t *testing.T, res map[string]any) {
 				assert.Equal(t, "Key", res["type"])
 				assert.Equal(t, "ctrl+c", res["key"])
 				assert.True(t, res["ctrl"].(bool))
@@ -236,7 +236,7 @@ func TestMsgToJS_KeyMsg(t *testing.T) {
 		{
 			name: "Alt+Runes",
 			msg:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}, Alt: true},
-			check: func(t *testing.T, res map[string]interface{}) {
+			check: func(t *testing.T, res map[string]any) {
 				assert.Equal(t, "Key", res["type"])
 				assert.Equal(t, "alt+b", res["key"])
 				assert.True(t, res["alt"].(bool))
@@ -245,7 +245,7 @@ func TestMsgToJS_KeyMsg(t *testing.T) {
 		{
 			name: "Bracketed Paste",
 			msg:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("paste"), Paste: true},
-			check: func(t *testing.T, res map[string]interface{}) {
+			check: func(t *testing.T, res map[string]any) {
 				assert.Equal(t, "Key", res["type"])
 				assert.True(t, res["paste"].(bool))
 			},
@@ -318,32 +318,32 @@ func TestMsgToJS_OtherMsgs(t *testing.T) {
 	tests := []struct {
 		name  string
 		msg   tea.Msg
-		check func(map[string]interface{})
+		check func(map[string]any)
 	}{
 		{
 			"Focus",
 			tea.FocusMsg{},
-			func(m map[string]interface{}) { assert.Equal(t, "Focus", m["type"]) },
+			func(m map[string]any) { assert.Equal(t, "Focus", m["type"]) },
 		},
 		{
 			"Blur",
 			tea.BlurMsg{},
-			func(m map[string]interface{}) { assert.Equal(t, "Blur", m["type"]) },
+			func(m map[string]any) { assert.Equal(t, "Blur", m["type"]) },
 		},
 		{
 			"Quit",
 			quitMsg{},
-			func(m map[string]interface{}) { assert.Equal(t, "Quit", m["type"]); assert.True(t, model.quitCalled) },
+			func(m map[string]any) { assert.Equal(t, "Quit", m["type"]); assert.True(t, model.quitCalled) },
 		},
 		{
 			"ClearScreen",
 			clearScreenMsg{},
-			func(m map[string]interface{}) { assert.Equal(t, "ClearScreen", m["type"]) },
+			func(m map[string]any) { assert.Equal(t, "ClearScreen", m["type"]) },
 		},
 		{
 			"StateRefresh",
 			stateRefreshMsg{key: "foo"},
-			func(m map[string]interface{}) {
+			func(m map[string]any) {
 				assert.Equal(t, "StateRefresh", m["type"])
 				assert.Equal(t, "foo", m["key"])
 			},
@@ -351,7 +351,7 @@ func TestMsgToJS_OtherMsgs(t *testing.T) {
 		{
 			"RenderRefresh",
 			renderRefreshMsg{},
-			func(m map[string]interface{}) { assert.Nil(t, m) }, // Should return nil
+			func(m map[string]any) { assert.Nil(t, m) }, // Should return nil
 		},
 	}
 

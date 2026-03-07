@@ -293,7 +293,7 @@ func PromptFileToGoal(pf *PromptFile) *Goal {
 
 	// Carry over prompt options.
 	if pf.Model != "" || pf.Mode != "" || len(pf.Tools) > 0 {
-		opts := make(map[string]interface{})
+		opts := make(map[string]any)
 		if pf.Model != "" {
 			opts["model"] = pf.Model
 		}

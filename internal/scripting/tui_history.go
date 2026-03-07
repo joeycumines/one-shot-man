@@ -7,7 +7,7 @@ import (
 )
 
 // parseHistoryConfig parses history configuration from JavaScript config.
-func parseHistoryConfig(configMap map[string]interface{}) (historyConfig, error) {
+func parseHistoryConfig(configMap map[string]any) (historyConfig, error) {
 	config := historyConfig{
 		Enabled: false,
 		File:    "",
@@ -15,7 +15,7 @@ func parseHistoryConfig(configMap map[string]interface{}) (historyConfig, error)
 	}
 
 	if historyRaw, exists := configMap["history"]; exists {
-		if historyMap, ok := historyRaw.(map[string]interface{}); ok {
+		if historyMap, ok := historyRaw.(map[string]any); ok {
 			if v, err := getBool(historyMap, "enabled", false); err != nil {
 				return historyConfig{}, err
 			} else {

@@ -157,7 +157,7 @@ func jsSSEReader(runtime *goja.Runtime, adapter *gojaeventloop.Adapter) func(cal
 }
 
 // parseOptions extracts HTTP request parameters from the optional second argument.
-func parseOptions(call goja.FunctionCall) (method string, timeout time.Duration, bodyReader io.Reader, reqHeaders map[string]interface{}, signal *goeventloop.AbortSignal, maxResponseSize int64) {
+func parseOptions(call goja.FunctionCall) (method string, timeout time.Duration, bodyReader io.Reader, reqHeaders map[string]any, signal *goeventloop.AbortSignal, maxResponseSize int64) {
 	method = "GET"
 	timeout = 30 * time.Second
 	maxResponseSize = defaultMaxResponseSize
@@ -169,7 +169,7 @@ func parseOptions(call goja.FunctionCall) (method string, timeout time.Duration,
 	if goja.IsUndefined(arg) || goja.IsNull(arg) {
 		return
 	}
-	opts, ok := arg.Export().(map[string]interface{})
+	opts, ok := arg.Export().(map[string]any)
 	if !ok {
 		return
 	}
@@ -201,7 +201,7 @@ func parseOptions(call goja.FunctionCall) (method string, timeout time.Duration,
 		}
 	}
 	if h, ok := opts["headers"]; ok {
-		if m, ok := h.(map[string]interface{}); ok {
+		if m, ok := h.(map[string]any); ok {
 			reqHeaders = m
 		}
 	}
@@ -253,7 +253,7 @@ func buildResponse(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, resp *
 	// Since the body is fully buffered, the Promise resolves immediately.
 	// Rejects if the body is not valid JSON.
 	_ = result.Set("json", func(goja.FunctionCall) goja.Value {
-		var parsed interface{}
+		var parsed any
 		if err := json.Unmarshal(body, &parsed); err != nil {
 			p, _, reject := runtime.NewPromise()
 			reject(runtime.NewGoError(err))
@@ -290,9 +290,9 @@ func buildHeaders(runtime *goja.Runtime, h http.Header) *goja.Object {
 
 	// entries() returns an array of [name, value] pairs (lowercased keys).
 	_ = obj.Set("entries", func() goja.Value {
-		var entries []interface{}
+		var entries []any
 		for k, v := range h {
-			entries = append(entries, []interface{}{strings.ToLower(k), strings.Join(v, ", ")})
+			entries = append(entries, []any{strings.ToLower(k), strings.Join(v, ", ")})
 		}
 		return runtime.ToValue(entries)
 	})

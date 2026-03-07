@@ -16,7 +16,7 @@ type validationResult struct {
 	Errors []string `json:"errors"`
 }
 
-func evalValidation(t *testing.T, evalJS func(string) (interface{}, error), code string) validationResult {
+func evalValidation(t *testing.T, evalJS func(string) (any, error), code string) validationResult {
 	t.Helper()
 	raw, err := evalJS(code)
 	if err != nil {

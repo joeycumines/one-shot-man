@@ -267,7 +267,7 @@ func TestToggleModel_ToggleCmd_ReturnValue(t *testing.T) {
 
 	// onToggle returns a map with reason and error (like switchTo does)
 	onToggle := func(goja.FunctionCall) goja.Value {
-		return runtime.ToValue(map[string]interface{}{
+		return runtime.ToValue(map[string]any{
 			"reason": "toggle",
 			"extra":  42,
 		})
@@ -303,7 +303,7 @@ func TestToggleModel_ToggleCmd_ReturnValue(t *testing.T) {
 func TestToggleReturnMsg_MsgToJS_WithResult(t *testing.T) {
 	runtime := goja.New()
 	m := &jsModel{runtime: runtime}
-	msg := toggleReturnMsg{Result: map[string]interface{}{
+	msg := toggleReturnMsg{Result: map[string]any{
 		"reason": "childExit",
 		"error":  "something failed",
 	}}

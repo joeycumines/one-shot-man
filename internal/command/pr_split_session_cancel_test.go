@@ -766,7 +766,7 @@ func TestAutoSplit_CancelDuringExecution_EmitsResumeAndCleansUp(t *testing.T) {
 	}
 
 	tp := setupTestPipeline(t, TestPipelineOpts{
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",

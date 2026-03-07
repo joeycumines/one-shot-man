@@ -47,7 +47,7 @@ func TestRunProgram_Lifecycle(t *testing.T) {
 			}
 			// Return an initial command to ensure Update runs and the program exits deterministically.
 			newState := vm.NewObject()
-			quit := map[string]interface{}{"_cmdType": "quit"}
+			quit := map[string]any{"_cmdType": "quit"}
 			return vm.NewArray(newState, vm.ToValue(quit)), nil
 		},
 
@@ -59,7 +59,7 @@ func TestRunProgram_Lifecycle(t *testing.T) {
 			}
 
 			// Always return Quit to ensure termination
-			quit := map[string]interface{}{"_cmdType": "quit"}
+			quit := map[string]any{"_cmdType": "quit"}
 			return vm.NewArray(args[1], vm.ToValue(quit)), nil
 		},
 		viewFn: createViewFn(vm, func(state goja.Value) string {
@@ -155,7 +155,7 @@ func TestRunProgram_Options(t *testing.T) {
 	// Define raw init function that returns a Tick command
 	initFnRaw := func(this goja.Value, args ...goja.Value) (goja.Value, error) {
 		newState := vm.NewObject()
-		tick := map[string]interface{}{
+		tick := map[string]any{
 			"_cmdType": "tick",
 			"duration": 50, // 50ms
 		}
@@ -169,7 +169,7 @@ func TestRunProgram_Options(t *testing.T) {
 		initFn: createViewFn(vm, func(state goja.Value) string { return "" }),
 		updateFn: func(this goja.Value, args ...goja.Value) (goja.Value, error) {
 			// When we receive the tick (or any message), quit
-			quit := map[string]interface{}{"_cmdType": "quit"}
+			quit := map[string]any{"_cmdType": "quit"}
 			return vm.NewArray(args[1], vm.ToValue(quit)), nil
 		},
 		viewFn: createViewFn(vm, func(state goja.Value) string { return "" }),
@@ -227,7 +227,7 @@ func TestRunProgram_AlreadyRunning(t *testing.T) {
 		updateFn: func(this goja.Value, args ...goja.Value) (goja.Value, error) {
 			select {
 			case <-stopFirstProgram:
-				quit := map[string]interface{}{"_cmdType": "quit"}
+				quit := map[string]any{"_cmdType": "quit"}
 				return vm.NewArray(args[1], vm.ToValue(quit)), nil
 			default:
 				return vm.NewArray(args[1], goja.Null()), nil
@@ -299,7 +299,7 @@ func TestSendStateRefresh_Integration(t *testing.T) {
 			if jsMsg.Get("type").String() == "StateRefresh" {
 				key := jsMsg.Get("key").String()
 				go func() { refreshReceived <- key }()
-				quit := map[string]interface{}{"_cmdType": "quit"}
+				quit := map[string]any{"_cmdType": "quit"}
 				return vm.NewArray(args[1], vm.ToValue(quit)), nil
 			}
 			return vm.NewArray(args[1], goja.Null()), nil

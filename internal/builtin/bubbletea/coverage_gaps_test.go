@@ -312,7 +312,7 @@ func TestUpdateDirect_ErrorPath(t *testing.T) {
 		state: vm.NewObject(),
 	}
 
-	cmd := model.updateDirect(map[string]interface{}{"type": "Key", "key": "q"})
+	cmd := model.updateDirect(map[string]any{"type": "Key", "key": "q"})
 	assert.Nil(t, cmd)
 }
 
@@ -329,7 +329,7 @@ func TestUpdateDirect_NonArrayReturn(t *testing.T) {
 		state: vm.NewObject(),
 	}
 
-	cmd := model.updateDirect(map[string]interface{}{"type": "Key", "key": "q"})
+	cmd := model.updateDirect(map[string]any{"type": "Key", "key": "q"})
 	assert.Nil(t, cmd, "should return nil for non-array update result")
 }
 
@@ -346,7 +346,7 @@ func TestUpdateDirect_NilState(t *testing.T) {
 		state: nil, // state is nil
 	}
 
-	cmd := model.updateDirect(map[string]interface{}{"type": "Key"})
+	cmd := model.updateDirect(map[string]any{"type": "Key"})
 	assert.Nil(t, cmd)
 }
 

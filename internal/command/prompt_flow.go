@@ -56,7 +56,7 @@ func (c *PromptFlowCommand) Execute(args []string, stdout, stderr io.Writer) err
 
 	// Inject command name for state namespacing
 	const commandName = "prompt-flow"
-	engine.SetGlobal("config", map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{
 		"name": commandName,
 	})
 

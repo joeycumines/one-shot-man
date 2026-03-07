@@ -216,7 +216,7 @@ func TestFormatGoalLine(t *testing.T) {
 		goal := Goal{
 			Name:        "test",
 			Description: "Test goal",
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"mode":  "fast",
 				"level": 3,
 			},
@@ -231,7 +231,7 @@ func TestFormatGoalLine(t *testing.T) {
 		goal := Goal{
 			Name:        "test",
 			Description: "Test goal",
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"a": nil,
 				"b": "value",
 				"c": nil,
@@ -250,7 +250,7 @@ func TestFormatGoalLine(t *testing.T) {
 		goal := Goal{
 			Name:        "test",
 			Description: "Test goal",
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"blank": "",
 				"valid": "ok",
 			},
@@ -268,7 +268,7 @@ func TestFormatGoalLine(t *testing.T) {
 		goal := Goal{
 			Name:        "test",
 			Description: "Test goal",
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"text": "This is a very long default value that should be truncated for display",
 			},
 		}
@@ -297,7 +297,7 @@ func TestFormatGoalLine(t *testing.T) {
 		goal := Goal{
 			Name:        "full",
 			Description: "Full goal",
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"mode": "default",
 			},
 			Commands: []CommandConfig{
@@ -324,7 +324,7 @@ func TestFormatGoalLine(t *testing.T) {
 		goal := Goal{
 			Name:        "test",
 			Description: "Test goal",
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"a": nil,
 				"b": nil,
 			},
@@ -339,7 +339,7 @@ func TestFormatGoalLine(t *testing.T) {
 		goal := Goal{
 			Name:        "test",
 			Description: "Test goal",
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"count":   42,
 				"enabled": true,
 			},
@@ -840,7 +840,7 @@ func TestGoal_PromptFooterInBuildPrompt(t *testing.T) {
 		Script:       goalScript,
 		FileName:     "footer-test.js",
 		PromptFooter: "Format: {{index .stateKeys \"outputFormat\"}}",
-		StateVars: map[string]interface{}{
+		StateVars: map[string]any{
 			"outputFormat": "markdown",
 		},
 		PromptTemplate:     "Instructions\n{{.contextHeader}}\n{{.contextTxtar}}\n{{.promptInstructions}}\n---\n{{.promptFooter}}",

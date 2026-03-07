@@ -82,7 +82,7 @@ func TestBenchmark_AutoSplitLargeRepo(t *testing.T) {
 			Files:       files,
 		}
 	}
-	classJSON, err := json.Marshal(map[string]interface{}{"categories": classification})
+	classJSON, err := json.Marshal(map[string]any{"categories": classification})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestBenchmark_AutoSplitLargeRepo(t *testing.T) {
 			Message: fmt.Sprintf("Add module %d feature files", d),
 		}
 	}
-	planJSON, err := json.Marshal(map[string]interface{}{"stages": splitPlan})
+	planJSON, err := json.Marshal(map[string]any{"stages": splitPlan})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestBenchmark_AutoSplitLargeRepo(t *testing.T) {
 	tp := setupTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",

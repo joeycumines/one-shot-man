@@ -645,7 +645,7 @@ func (m *jsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // updateDirect performs the actual update call. MUST be called from event loop goroutine.
-func (m *jsModel) updateDirect(jsMsg map[string]interface{}) tea.Cmd {
+func (m *jsModel) updateDirect(jsMsg map[string]any) tea.Cmd {
 	// Ensure state is not nil before passing to JS
 	state := m.state
 	if state == nil || goja.IsUndefined(state) || goja.IsNull(state) {
@@ -792,7 +792,7 @@ func (m *jsModel) viewDirect() string {
 
 // msgToJS converts a tea.Msg to a JavaScript-compatible object.
 // Handles all bubbletea message types comprehensively.
-func (m *jsModel) msgToJS(msg tea.Msg) map[string]interface{} {
+func (m *jsModel) msgToJS(msg tea.Msg) map[string]any {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		// Extract runes as an array for unicode/IME support
@@ -808,7 +808,7 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]interface{} {
 		// KeyMsg embeds Key which has Type, Runes, Alt, Paste
 		key := tea.Key(msg)
 
-		return map[string]interface{}{
+		return map[string]any{
 			"type":  "Key",
 			"key":   keyStr,
 			"runes": runes,
@@ -822,24 +822,24 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]interface{} {
 		return MouseEventToJS(msg)
 
 	case tea.WindowSizeMsg:
-		return map[string]interface{}{
+		return map[string]any{
 			"type":   "WindowSize",
 			"width":  msg.Width,
 			"height": msg.Height,
 		}
 
 	case tea.FocusMsg:
-		return map[string]interface{}{
+		return map[string]any{
 			"type": "Focus",
 		}
 
 	case tea.BlurMsg:
-		return map[string]interface{}{
+		return map[string]any{
 			"type": "Blur",
 		}
 
 	case tickMsg:
-		return map[string]interface{}{
+		return map[string]any{
 			"type": "Tick",
 			"id":   msg.id,
 			"time": msg.time.UnixMilli(),
@@ -847,17 +847,17 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]interface{} {
 
 	case quitMsg:
 		m.quitCalled = true
-		return map[string]interface{}{
+		return map[string]any{
 			"type": "Quit",
 		}
 
 	case clearScreenMsg:
-		return map[string]interface{}{
+		return map[string]any{
 			"type": "ClearScreen",
 		}
 
 	case stateRefreshMsg:
-		return map[string]interface{}{
+		return map[string]any{
 			"type": "StateRefresh",
 			"key":  msg.key,
 		}
@@ -868,7 +868,7 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]interface{} {
 		return nil
 
 	case toggleReturnMsg:
-		m := map[string]interface{}{
+		m := map[string]any{
 			"type": "ToggleReturn",
 		}
 		for k, v := range msg.Result {
@@ -1090,7 +1090,7 @@ type renderRefreshMsg struct{}
 // merged into the message (e.g., reason, error from switchTo).
 type toggleReturnMsg struct {
 	// Result from the onToggle JS callback (nil if callback returned nothing).
-	Result map[string]interface{}
+	Result map[string]any
 }
 
 // toggleModel wraps a tea.Model to intercept a toggle key and execute
@@ -1168,7 +1168,7 @@ func (m *toggleModel) toggleCmd() tea.Cmd {
 
 		// Call JS toggle handler (typically mux.switchTo() — blocks during passthrough).
 		// Capture the return value to forward to the model (e.g., exit reason).
-		var toggleResult map[string]interface{}
+		var toggleResult map[string]any
 		if m.jsRunner != nil && m.onToggle != nil {
 			_ = m.jsRunner.RunJSSync(func(vm *goja.Runtime) error {
 				val, err := m.onToggle(goja.Undefined())
@@ -1176,7 +1176,7 @@ func (m *toggleModel) toggleCmd() tea.Cmd {
 					return err
 				}
 				if val != nil && !goja.IsUndefined(val) && !goja.IsNull(val) {
-					if exported, ok := val.Export().(map[string]interface{}); ok {
+					if exported, ok := val.Export().(map[string]any); ok {
 						toggleResult = exported
 					}
 				}
@@ -1240,12 +1240,12 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 		}
 
 		// Helper to create command with validated ID
-		createCommand := func(cmdType string, props map[string]interface{}) goja.Value {
+		createCommand := func(cmdType string, props map[string]any) goja.Value {
 			cmdID := generateCommandID()
 			if currentModel != nil {
 				currentModel.registerCommand(cmdID)
 			}
-			result := map[string]interface{}{
+			result := map[string]any{
 				"_cmdType": cmdType,
 				"_cmdID":   cmdID,
 			}
@@ -1257,7 +1257,7 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 
 		// Helper to create error response
 		createError := func(code, message string) goja.Value {
-			return runtime.ToValue(map[string]interface{}{
+			return runtime.ToValue(map[string]any{
 				"error":     fmt.Sprintf("%s: %s", code, message),
 				"errorCode": code,
 			})
@@ -1351,7 +1351,7 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 		// Returns: { valid: boolean, reason: string }
 		_ = exports.Set("isValidTextareaInput", func(call goja.FunctionCall) goja.Value {
 			if len(call.Arguments) < 1 {
-				return runtime.ToValue(map[string]interface{}{
+				return runtime.ToValue(map[string]any{
 					"valid":  false,
 					"reason": "missing keyStr argument",
 				})
@@ -1362,7 +1362,7 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 				isPaste = call.Argument(1).ToBoolean()
 			}
 			result := ValidateTextareaInput(keyStr, isPaste)
-			return runtime.ToValue(map[string]interface{}{
+			return runtime.ToValue(map[string]any{
 				"valid":  result.Valid,
 				"reason": result.Reason,
 			})
@@ -1374,7 +1374,7 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 		// Returns: { valid: boolean, reason: string }
 		_ = exports.Set("isValidLabelInput", func(call goja.FunctionCall) goja.Value {
 			if len(call.Arguments) < 1 {
-				return runtime.ToValue(map[string]interface{}{
+				return runtime.ToValue(map[string]any{
 					"valid":  false,
 					"reason": "missing keyStr argument",
 				})
@@ -1385,7 +1385,7 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 				isPaste = call.Argument(1).ToBoolean()
 			}
 			result := ValidateLabelInput(keyStr, isPaste)
-			return runtime.ToValue(map[string]interface{}{
+			return runtime.ToValue(map[string]any{
 				"valid":  result.Valid,
 				"reason": result.Reason,
 			})
@@ -1651,24 +1651,24 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 
 		// batch combines multiple commands
 		_ = exports.Set("batch", func(call goja.FunctionCall) goja.Value {
-			cmds := make([]interface{}, 0, len(call.Arguments))
+			cmds := make([]any, 0, len(call.Arguments))
 			for _, arg := range call.Arguments {
 				if !goja.IsUndefined(arg) && !goja.IsNull(arg) {
 					cmds = append(cmds, arg.Export())
 				}
 			}
-			return createCommand("batch", map[string]interface{}{"cmds": cmds})
+			return createCommand("batch", map[string]any{"cmds": cmds})
 		})
 
 		// sequence executes commands in sequence
 		_ = exports.Set("sequence", func(call goja.FunctionCall) goja.Value {
-			cmds := make([]interface{}, 0, len(call.Arguments))
+			cmds := make([]any, 0, len(call.Arguments))
 			for _, arg := range call.Arguments {
 				if !goja.IsUndefined(arg) && !goja.IsNull(arg) {
 					cmds = append(cmds, arg.Export())
 				}
 			}
-			return createCommand("sequence", map[string]interface{}{"cmds": cmds})
+			return createCommand("sequence", map[string]any{"cmds": cmds})
 		})
 
 		// tick returns a timer command
@@ -1687,7 +1687,7 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 				id = call.Argument(1).String()
 			}
 
-			return createCommand("tick", map[string]interface{}{
+			return createCommand("tick", map[string]any{
 				"duration": durationMs,
 				"id":       id,
 			})
@@ -1698,7 +1698,7 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 			if len(call.Arguments) < 1 {
 				return createError(ErrCodeInvalidArgs, "setWindowTitle requires a title string")
 			}
-			return createCommand("setWindowTitle", map[string]interface{}{
+			return createCommand("setWindowTitle", map[string]any{
 				"title": call.Argument(0).String(),
 			})
 		})

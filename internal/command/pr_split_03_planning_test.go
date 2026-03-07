@@ -18,7 +18,7 @@ import (
 // indices.
 func TestChunk03_CreateSplitPlan_BasicGroups(t *testing.T) {
 	dir := initGitRepo(t)
-	evalJS := loadChunkEngine(t, map[string]interface{}{
+	evalJS := loadChunkEngine(t, map[string]any{
 		"baseBranch":   "main",
 		"branchPrefix": "split/",
 	}, "00_core", "01_analysis", "02_grouping", "03_planning")
@@ -140,7 +140,7 @@ func TestChunk03_CreateSplitPlan_NilGroups(t *testing.T) {
 // TestChunk03_CreateSplitPlan_BranchNames verifies sanitized branch names
 // with padded indices.
 func TestChunk03_CreateSplitPlan_BranchNames(t *testing.T) {
-	evalJS := loadChunkEngine(t, map[string]interface{}{
+	evalJS := loadChunkEngine(t, map[string]any{
 		"branchPrefix": "pr/",
 	}, "00_core", "01_analysis", "02_grouping", "03_planning")
 
@@ -527,7 +527,7 @@ func escapeJSPath(p string) string {
 }
 
 // toInt converts a goja result to int for comparison.
-func toInt(v interface{}) int {
+func toInt(v any) int {
 	switch n := v.(type) {
 	case int64:
 		return int(n)

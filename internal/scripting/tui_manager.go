@@ -973,7 +973,7 @@ func (tm *TUIManager) flushQueuedOutput() {
 // They bridge the gap between Go tests and the Symbol-based state system.
 
 // SetStateForTest sets a state value using a persistent string key (for testing only).
-func (tm *TUIManager) SetStateForTest(persistentKey string, value interface{}) error {
+func (tm *TUIManager) SetStateForTest(persistentKey string, value any) error {
 	if tm.stateManager == nil {
 		return fmt.Errorf("state manager not initialized")
 	}
@@ -982,7 +982,7 @@ func (tm *TUIManager) SetStateForTest(persistentKey string, value interface{}) e
 }
 
 // GetStateForTest retrieves a state value using a persistent string key (for testing only).
-func (tm *TUIManager) GetStateForTest(persistentKey string) (interface{}, error) {
+func (tm *TUIManager) GetStateForTest(persistentKey string) (any, error) {
 	if tm.stateManager == nil {
 		return nil, fmt.Errorf("state manager not initialized")
 	}
@@ -1144,16 +1144,16 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 	}
 
 	// Convert to the expected format
-	var items []map[string]interface{}
+	var items []map[string]any
 
 	// Handle different possible types
 	switch v := contextItemsRaw.(type) {
-	case []map[string]interface{}:
+	case []map[string]any:
 		items = v
-	case []interface{}:
+	case []any:
 		// Convert each element
 		for _, item := range v {
-			if itemMap, ok := item.(map[string]interface{}); ok {
+			if itemMap, ok := item.(map[string]any); ok {
 				items = append(items, itemMap)
 			}
 		}
@@ -1163,7 +1163,7 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 	}
 
 	// Iterate through items and re-populate ContextManager with file-type entries
-	var validItems []interface{}
+	var validItems []any
 	stateChanged := false
 	var restoredFiles int
 
@@ -1172,7 +1172,7 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 		// structure returned from the StateManager. Modifying the original
 		// can leave the in-memory store in a partially-modified state when
 		// early returns or errors occur.
-		item := make(map[string]interface{}, len(srcItem))
+		item := make(map[string]any, len(srcItem))
 		for k, v := range srcItem {
 			item[k] = v
 		}

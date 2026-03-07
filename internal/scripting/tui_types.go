@@ -153,7 +153,7 @@ type Command struct {
 	Name          string
 	Description   string
 	Usage         string
-	Handler       interface{} // Can be goja.Callable or Go function
+	Handler       any // Can be goja.Callable or Go function
 	IsGoCommand   bool
 	ArgCompleters []string
 	FlagDefs      []FlagDef

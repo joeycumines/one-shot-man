@@ -92,7 +92,7 @@ func TestPrSplitCommand_DependencyStrategy(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
+	stdout, dispatch := loadPrSplitEngine(t, map[string]any{
 		"strategy": "dependency",
 	})
 
@@ -182,7 +182,7 @@ func TestPrSplitCommand_DependencyStrategyNonGo(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
+	stdout, dispatch := loadPrSplitEngine(t, map[string]any{
 		"strategy": "dependency",
 	})
 
@@ -343,7 +343,7 @@ func TestPrSplitCommand_FlagOverridesConfig(t *testing.T) {
 
 func TestPrSplitCommand_ClaudeConfigJSExposure(t *testing.T) {
 	// Verify prSplitConfig in JS contains the correct claude values.
-	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
+	stdout, dispatch := loadPrSplitEngine(t, map[string]any{
 		"claudeCommand":   "test-claude",
 		"claudeArgs":      []string{"--fast", "--quiet"},
 		"claudeModel":     "sonnet-4",
@@ -366,7 +366,7 @@ func TestPrSplitCommand_ClaudeConfigJSExposure(t *testing.T) {
 
 func TestPrSplitCommand_ClaudeArgsEmptySplit(t *testing.T) {
 	// When claudeArgs is empty, the resulting list should be empty.
-	stdout, _ := loadPrSplitEngine(t, map[string]interface{}{
+	stdout, _ := loadPrSplitEngine(t, map[string]any{
 		"claudeArgs": []string{},
 	})
 	_ = stdout

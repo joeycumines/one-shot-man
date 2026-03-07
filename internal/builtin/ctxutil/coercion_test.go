@@ -104,27 +104,27 @@ func TestGojaCoercion(t *testing.T) {
 		t.Parallel()
 		runtime := goja.New()
 
-		// null -> nil interface{}
+		// null -> nil any
 		v, err := runtime.RunString("null")
 		require.NoError(t, err)
-		var i interface{}
+		var i any
 		err = runtime.ExportTo(v, &i)
 		require.NoError(t, err)
 		require.Nil(t, i)
 
-		// undefined -> nil interface{}
+		// undefined -> nil any
 		v, err = runtime.RunString("undefined")
 		require.NoError(t, err)
 		err = runtime.ExportTo(v, &i)
 		require.NoError(t, err)
 		require.Nil(t, i)
 
-		// array -> []interface{}
+		// array -> []any
 		v, err = runtime.RunString("[1, 'a', true]")
 		require.NoError(t, err)
 		err = runtime.ExportTo(v, &i)
 		require.NoError(t, err)
-		s, ok := i.([]interface{})
+		s, ok := i.([]any)
 		require.True(t, ok)
 		require.Len(t, s, 3)
 		require.Equal(t, int64(1), s[0])

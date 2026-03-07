@@ -805,7 +805,7 @@ func TestGoalDiscovery_DebugLogging(t *testing.T) {
 	cfg.SetGlobalOption("goal.paths", goalDir)
 
 	discovery := NewGoalDiscovery(cfg)
-	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
 		mu.Lock()
 		defer mu.Unlock()
 		messages = append(messages, fmt.Sprintf(format, args...))
@@ -866,7 +866,7 @@ func TestGoalDiscovery_DebugLogging_Dedup(t *testing.T) {
 	cfg.SetGlobalOption("goal.paths", goalDir+string(filepath.ListSeparator)+goalDir)
 
 	discovery := NewGoalDiscovery(cfg)
-	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
 		mu.Lock()
 		defer mu.Unlock()
 		messages = append(messages, fmt.Sprintf(format, args...))
@@ -945,7 +945,7 @@ func TestGoalDiscovery_PermissionDenied(t *testing.T) {
 	cfg.SetGlobalOption("goal.path-patterns", "osm-goals")
 
 	discovery := NewGoalDiscovery(cfg)
-	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
 		mu.Lock()
 		defer mu.Unlock()
 		messages = append(messages, fmt.Sprintf(format, args...))
@@ -1055,7 +1055,7 @@ func TestGoalDiscovery_SymlinkCycleDetection(t *testing.T) {
 	cfg.SetGlobalOption("goal.path-patterns", "osm-goals")
 
 	discovery := NewGoalDiscovery(cfg)
-	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
 		mu.Lock()
 		defer mu.Unlock()
 		messages = append(messages, fmt.Sprintf(format, args...))
@@ -1157,7 +1157,7 @@ func TestGoalDiscovery_TraversalReachesRoot(t *testing.T) {
 	cfg.SetGlobalOption("goal.path-patterns", "nonexistent-pattern-xyzzy")
 
 	discovery := NewGoalDiscovery(cfg)
-	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
 		mu.Lock()
 		defer mu.Unlock()
 		messages = append(messages, fmt.Sprintf(format, args...))

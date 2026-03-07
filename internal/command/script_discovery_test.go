@@ -518,7 +518,7 @@ func TestScriptDiscovery_DebugLogging(t *testing.T) {
 	cfg.SetGlobalOption("script.paths", scriptsDir)
 
 	discovery := NewScriptDiscovery(cfg)
-	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
 		mu.Lock()
 		defer mu.Unlock()
 		messages = append(messages, fmt.Sprintf(format, args...))
@@ -579,7 +579,7 @@ func TestScriptDiscovery_DebugLogging_Dedup(t *testing.T) {
 	cfg.SetGlobalOption("script.paths", scriptsDir+string(filepath.ListSeparator)+scriptsDir)
 
 	discovery := NewScriptDiscovery(cfg)
-	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
 		mu.Lock()
 		defer mu.Unlock()
 		messages = append(messages, fmt.Sprintf(format, args...))
@@ -698,7 +698,7 @@ func TestScriptDiscovery_PermissionDenied(t *testing.T) {
 	cfg.SetGlobalOption("script.path-patterns", "scripts")
 
 	discovery := NewScriptDiscovery(cfg)
-	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
 		mu.Lock()
 		defer mu.Unlock()
 		messages = append(messages, fmt.Sprintf(format, args...))
@@ -756,7 +756,7 @@ func TestScriptDiscovery_SymlinkCycleDetection(t *testing.T) {
 	cfg.SetGlobalOption("script.path-patterns", "scripts")
 
 	discovery := NewScriptDiscovery(cfg)
-	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
 		mu.Lock()
 		defer mu.Unlock()
 		messages = append(messages, fmt.Sprintf(format, args...))
@@ -818,7 +818,7 @@ func TestScriptDiscovery_TraversalReachesRoot(t *testing.T) {
 	cfg.SetGlobalOption("script.path-patterns", "nonexistent-pattern-xyzzy")
 
 	discovery := NewScriptDiscovery(cfg)
-	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
 		mu.Lock()
 		defer mu.Unlock()
 		messages = append(messages, fmt.Sprintf(format, args...))

@@ -1117,7 +1117,7 @@ func TestEscapeJSONPointer(t *testing.T) {
 func TestValuesEqual(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		a, b     interface{}
+		a, b     any
 		expected bool
 	}{
 		{nil, nil, true},
@@ -1141,34 +1141,34 @@ func TestValuesEqual(t *testing.T) {
 
 func TestDeepCopy(t *testing.T) {
 	t.Parallel()
-	original := map[string]interface{}{
-		"a": map[string]interface{}{"b": float64(1)},
-		"c": []interface{}{float64(2), float64(3)},
+	original := map[string]any{
+		"a": map[string]any{"b": float64(1)},
+		"c": []any{float64(2), float64(3)},
 	}
 	copied := deepCopy(original)
-	original["a"].(map[string]interface{})["b"] = float64(99)
-	original["c"].([]interface{})[0] = float64(99)
+	original["a"].(map[string]any)["b"] = float64(99)
+	original["c"].([]any)[0] = float64(99)
 
-	copiedMap := copied.(map[string]interface{})
-	if copiedMap["a"].(map[string]interface{})["b"] != float64(1) {
+	copiedMap := copied.(map[string]any)
+	if copiedMap["a"].(map[string]any)["b"] != float64(1) {
 		t.Error("deep copy modified")
 	}
-	if copiedMap["c"].([]interface{})[0] != float64(2) {
+	if copiedMap["c"].([]any)[0] != float64(2) {
 		t.Error("deep copy array modified")
 	}
 }
 
 func TestMergePatchAlgorithm(t *testing.T) {
 	t.Parallel()
-	target := map[string]interface{}{"a": "b", "c": map[string]interface{}{"d": "e", "f": "g"}}
-	patch := map[string]interface{}{"a": "z", "c": map[string]interface{}{"f": nil}}
+	target := map[string]any{"a": "b", "c": map[string]any{"d": "e", "f": "g"}}
+	patch := map[string]any{"a": "z", "c": map[string]any{"f": nil}}
 
 	result := mergePatch(target, patch)
-	m := result.(map[string]interface{})
+	m := result.(map[string]any)
 	if m["a"] != "z" {
 		t.Errorf("a: %v", m["a"])
 	}
-	cm := m["c"].(map[string]interface{})
+	cm := m["c"].(map[string]any)
 	if cm["d"] != "e" {
 		t.Errorf("c.d: %v", cm["d"])
 	}
@@ -1352,7 +1352,7 @@ func TestUnflattenEmptySeparator(t *testing.T) {
 func TestNormalizeNumericAllTypes(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		input interface{}
+		input any
 		want  float64
 	}{
 		{int(5), 5},

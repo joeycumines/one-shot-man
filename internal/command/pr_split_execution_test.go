@@ -441,7 +441,7 @@ type verifySplitResult struct {
 	Error  *string `json:"error"`
 }
 
-func parseVerifySplitResult(t *testing.T, raw interface{}) verifySplitResult {
+func parseVerifySplitResult(t *testing.T, raw any) verifySplitResult {
 	t.Helper()
 	s, ok := raw.(string)
 	if !ok {
@@ -853,7 +853,7 @@ type cleanupResult struct {
 	Errors  []string `json:"errors"`
 }
 
-func parseCleanupResult(t *testing.T, raw interface{}) cleanupResult {
+func parseCleanupResult(t *testing.T, raw any) cleanupResult {
 	t.Helper()
 	s, ok := raw.(string)
 	if !ok {

@@ -1155,7 +1155,7 @@ func wrapAgentHandle(runtime *goja.Runtime, h AgentHandle) goja.Value {
 
 	_ = obj.Set("wait", func(call goja.FunctionCall) goja.Value {
 		code, err := h.Wait()
-		result := map[string]interface{}{"code": code, "error": nil}
+		result := map[string]any{"code": code, "error": nil}
 		if err != nil {
 			result["error"] = err.Error()
 		}
@@ -1247,7 +1247,7 @@ func parseSpawnOpts(runtime *goja.Runtime, obj *goja.Object, opts *SpawnOpts) {
 // modelMenuToJS converts a *ModelMenu to a JS object.
 func modelMenuToJS(runtime *goja.Runtime, menu *ModelMenu) goja.Value {
 	obj := runtime.NewObject()
-	models := make([]interface{}, len(menu.Models))
+	models := make([]any, len(menu.Models))
 	for i, m := range menu.Models {
 		models[i] = m
 	}
@@ -1597,7 +1597,7 @@ func mcpGuardConfigToJS(runtime *goja.Runtime, cfg MCPGuardConfig) goja.Value {
 	al := runtime.NewObject()
 	_ = al.Set("enabled", cfg.ToolAllowlist.Enabled)
 	if cfg.ToolAllowlist.AllowedTools != nil {
-		tools := make([]interface{}, len(cfg.ToolAllowlist.AllowedTools))
+		tools := make([]any, len(cfg.ToolAllowlist.AllowedTools))
 		for i, t := range cfg.ToolAllowlist.AllowedTools {
 			tools[i] = t
 		}

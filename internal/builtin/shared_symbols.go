@@ -22,8 +22,8 @@ type StateManagerProvider interface {
 type StateManager interface {
 	SetSharedSymbols(symbolToString map[goja.Value]string, stringToSymbol map[string]goja.Value)
 	IsSharedSymbol(symbol goja.Value) (string, bool)
-	GetState(persistentKey string) (interface{}, bool)
-	SetState(persistentKey string, value interface{})
+	GetState(persistentKey string) (any, bool)
+	SetState(persistentKey string, value any)
 	CaptureSnapshot(modeID, command string, stateJSON json.RawMessage) error
 	PersistSession() error
 	GetSessionHistory() []storage.HistoryEntry

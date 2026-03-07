@@ -244,7 +244,7 @@ func TestChunk11_ConversationHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var history []map[string]interface{}
+	var history []map[string]any
 	if err := json.Unmarshal([]byte(raw.(string)), &history); err != nil {
 		t.Fatal(err)
 	}
@@ -324,7 +324,7 @@ func TestChunk11_Telemetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var summary map[string]interface{}
+	var summary map[string]any
 	if err := json.Unmarshal([]byte(raw.(string)), &summary); err != nil {
 		t.Fatal(err)
 	}
@@ -358,7 +358,7 @@ func TestChunk11_Telemetry_IncrementDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var summary map[string]interface{}
+	var summary map[string]any
 	if err := json.Unmarshal([]byte(raw.(string)), &summary); err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +375,7 @@ func TestChunk11_GetTelemetrySummary_Empty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var summary map[string]interface{}
+	var summary map[string]any
 	if err := json.Unmarshal([]byte(raw.(string)), &summary); err != nil {
 		t.Fatal(err)
 	}
@@ -457,7 +457,7 @@ func TestChunk11_GetSplitDiff_InvalidIndex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
 		t.Fatal(err)
 	}
@@ -479,7 +479,7 @@ func TestChunk11_GetSplitDiff_NoFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
 		t.Fatal(err)
 	}
@@ -496,7 +496,7 @@ func TestChunk11_GetSplitDiff_NullPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
 		t.Fatal(err)
 	}
@@ -588,8 +588,8 @@ func TestChunk11_BuildDependencyGraph_Null(t *testing.T) {
 		t.Fatal(err)
 	}
 	var graph struct {
-		Nodes []interface{} `json:"nodes"`
-		Edges []interface{} `json:"edges"`
+		Nodes []any `json:"nodes"`
+		Edges []any `json:"edges"`
 	}
 	if err := json.Unmarshal([]byte(raw.(string)), &graph); err != nil {
 		t.Fatal(err)

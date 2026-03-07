@@ -177,16 +177,16 @@ func setupTestState(t *testing.T, vm *goja.Runtime, state *goja.Object) {
 }
 
 // createKeyMsg creates a Key message
-func createKeyMsg(key string) map[string]interface{} {
-	return map[string]interface{}{
+func createKeyMsg(key string) map[string]any {
+	return map[string]any{
 		"type": "Key",
 		"key":  key,
 	}
 }
 
 // createTickMsg creates a Tick message
-func createTickMsg() map[string]interface{} {
-	return map[string]interface{}{
+func createTickMsg() map[string]any {
+	return map[string]any{
 		"type": "Tick",
 		"id":   "tick",
 	}

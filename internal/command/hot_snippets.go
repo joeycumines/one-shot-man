@@ -8,13 +8,13 @@ import (
 // configHotSnippetsForJS converts config.HotSnippets to a JS-compatible
 // slice of maps. Returns nil when cfg is nil or contains no snippets,
 // which Goja will expose as JavaScript undefined.
-func configHotSnippetsForJS(cfg *config.Config) []map[string]interface{} {
+func configHotSnippetsForJS(cfg *config.Config) []map[string]any {
 	if cfg == nil || len(cfg.HotSnippets) == 0 {
 		return nil
 	}
-	result := make([]map[string]interface{}, len(cfg.HotSnippets))
+	result := make([]map[string]any, len(cfg.HotSnippets))
 	for i, s := range cfg.HotSnippets {
-		m := map[string]interface{}{
+		m := map[string]any{
 			"name": s.Name,
 			"text": s.Text,
 		}

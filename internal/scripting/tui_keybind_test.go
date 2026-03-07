@@ -355,7 +355,7 @@ func TestDocumentAPI_EnrichedMethods(t *testing.T) {
 	}
 
 	// Verify the JSON is valid and contains expected fields.
-	var result map[string]interface{}
+	var result map[string]any
 	if err := vm.ExportTo(vm.ToValue(resultJSON), &result); err != nil {
 		// Use Go standard library instead
 		t.Logf("Result JSON: %s", resultJSON)

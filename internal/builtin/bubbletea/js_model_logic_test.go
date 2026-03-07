@@ -33,7 +33,7 @@ func TestJSModelLogic_Init(t *testing.T) {
 			initFn: func(this goja.Value, args ...goja.Value) (goja.Value, error) {
 				// return [state, quit]
 				newState := vm.NewObject()
-				quit := map[string]interface{}{"_cmdType": "quit"}
+				quit := map[string]any{"_cmdType": "quit"}
 				return vm.NewArray(newState, vm.ToValue(quit)), nil
 			},
 			state: vm.NewObject(),
@@ -82,7 +82,7 @@ func TestJSModelLogic_Update(t *testing.T) {
 			runtime: vm,
 			updateFn: func(this goja.Value, args ...goja.Value) (goja.Value, error) {
 				// args[0]=msg, args[1]=state
-				cmd := map[string]interface{}{"_cmdType": "quit"}
+				cmd := map[string]any{"_cmdType": "quit"}
 				return vm.NewArray(args[1], vm.ToValue(cmd)), nil
 			},
 			state: vm.NewObject(),

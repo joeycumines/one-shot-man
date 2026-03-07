@@ -181,7 +181,7 @@ func TestBuildContextWithGoSlice(t *testing.T) {
 	t.Parallel()
 	runtime := setupBuildContext(t)
 
-	goItems := []map[string]interface{}{
+	goItems := []map[string]any{
 		{
 			"type":    "note",
 			"label":   "from Go slice",
@@ -252,10 +252,10 @@ func TestBuildContextLazyDiffExportedSlice(t *testing.T) {
 		return []string{"DEFAULT"}
 	}
 
-	if err := runtime.Set("__payload", []interface{}{"--stat", "--cached"}); err != nil {
+	if err := runtime.Set("__payload", []any{"--stat", "--cached"}); err != nil {
 		t.Fatalf("failed to set payload: %v", err)
 	}
-	if err := runtime.Set("__invalidPayload", []interface{}{"--stat", 42}); err != nil {
+	if err := runtime.Set("__invalidPayload", []any{"--stat", 42}); err != nil {
 		t.Fatalf("failed to set invalid payload: %v", err)
 	}
 
@@ -323,7 +323,7 @@ func TestBuildContext_NonArrayObject(t *testing.T) {
 	t.Parallel()
 	runtime := setupBuildContext(t)
 
-	// A plain object {} is not an Array — ExportTo to []interface{} should fail.
+	// A plain object {} is not an Array — ExportTo to []any should fail.
 	script := `globalThis.__result = exports.buildContext({});`
 	if _, err := runtime.RunString(script); err != nil {
 		t.Fatalf("failed: %v", err)
@@ -422,7 +422,7 @@ func TestBuildContext_LazyDiffGoStringSlice(t *testing.T) {
 		return []string{"DEFAULT"}
 	}
 
-	// Set a Go []string (not []interface{}) as payload to hit the `case []string:` path.
+	// Set a Go []string (not []any) as payload to hit the `case []string:` path.
 	if err := runtime.Set("__goStringPayload", []string{"--stat", "HEAD"}); err != nil {
 		t.Fatalf("failed to set payload: %v", err)
 	}

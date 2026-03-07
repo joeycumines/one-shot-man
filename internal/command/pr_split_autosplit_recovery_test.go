@@ -106,7 +106,7 @@ func TestAutoSplit_PipelineTimeout(t *testing.T) {
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 		},
@@ -132,7 +132,7 @@ func TestAutoSplit_PipelineTimeout(t *testing.T) {
 	// Inject classification via mcpcallback BUT with -1 pipeline timeout.
 	// The negative timeout guarantees that any step() call will detect
 	// elapsed >= pipelineTimeoutMs since elapsed (>= 0) is always >= -1.
-	classJSON, _ := json.Marshal(map[string]interface{}{"categories": []map[string]any{
+	classJSON, _ := json.Marshal(map[string]any{"categories": []map[string]any{
 		{"name": "core", "description": "Core changes", "files": []string{"b.go"}},
 	}})
 
@@ -266,7 +266,7 @@ func TestAutoSplit_SaveAndResume(t *testing.T) {
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",
@@ -274,7 +274,7 @@ func TestAutoSplit_SaveAndResume(t *testing.T) {
 	})
 
 	// Classification data injected via mcpcallback channels.
-	classJSON, _ := json.Marshal(map[string]interface{}{"categories": []map[string]any{
+	classJSON, _ := json.Marshal(map[string]any{"categories": []map[string]any{
 		{"name": "api", "description": "Add API implementation", "files": []string{"pkg/impl.go"}},
 		{"name": "cli", "description": "Add CLI runner", "files": []string{"cmd/run.go"}},
 	}})
@@ -470,7 +470,7 @@ func TestAutoSplit_CrashRecovery_AfterExecute(t *testing.T) {
 			{"pkg/impl.go", "package pkg\n\nfunc Bar() string { return \"bar\" }\n"},
 			{"cmd/run.go", "package main\n\nfunc run() {}\n"},
 		},
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",
@@ -478,7 +478,7 @@ func TestAutoSplit_CrashRecovery_AfterExecute(t *testing.T) {
 	})
 
 	// Classification data injected via mcpcallback channels.
-	classJSON, _ := json.Marshal(map[string]interface{}{"categories": []map[string]any{
+	classJSON, _ := json.Marshal(map[string]any{"categories": []map[string]any{
 		{"name": "api", "description": "Add API implementation", "files": []string{"pkg/impl.go"}},
 		{"name": "cli", "description": "Add CLI runner", "files": []string{"cmd/run.go"}},
 	}})
@@ -685,7 +685,7 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",
@@ -704,7 +704,7 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 		{Name: "database", Description: "Add database migration and connection", Files: []string{"internal/db/migrate.go", "internal/db/conn.go"}},
 		{Name: "documentation", Description: "Update project documentation", Files: []string{"docs/README.md", "docs/api.md"}},
 	}
-	classJSON, err := json.Marshal(map[string]interface{}{"categories": classification})
+	classJSON, err := json.Marshal(map[string]any{"categories": classification})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -737,7 +737,7 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 			Message: "Update documentation with API reference",
 		},
 	}
-	planJSON, err := json.Marshal(map[string]interface{}{"stages": splitPlan})
+	planJSON, err := json.Marshal(map[string]any{"stages": splitPlan})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1076,7 +1076,7 @@ func TestAutoSplit_AllStepsReportTiming(t *testing.T) {
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",
@@ -1084,7 +1084,7 @@ func TestAutoSplit_AllStepsReportTiming(t *testing.T) {
 	})
 
 	// Classification data injected via mcpcallback channels.
-	classJSON, _ := json.Marshal(map[string]interface{}{"categories": []map[string]any{
+	classJSON, _ := json.Marshal(map[string]any{"categories": []map[string]any{
 		{"name": "api", "description": "Add API implementation", "files": []string{"pkg/impl.go"}},
 		{"name": "cli", "description": "Add CLI runner", "files": []string{"cmd/run.go"}},
 	}})
@@ -1190,7 +1190,7 @@ func TestHeuristicFallback_Report(t *testing.T) {
 	}
 
 	tp := chdirTestPipeline(t, TestPipelineOpts{
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",
@@ -1338,7 +1338,7 @@ func TestIntegration_PlanPersistence_RoundTrip(t *testing.T) {
 
 	// Phase 1: Run full heuristic pipeline (non-dry-run) to generate a plan
 	// with analysis, groups, plan, and execution results.
-	stdout1, dispatch1 := loadPrSplitEngine(t, map[string]interface{}{
+	stdout1, dispatch1 := loadPrSplitEngine(t, map[string]any{
 		"baseBranch":    "main",
 		"strategy":      "directory",
 		"maxFiles":      10,
@@ -1570,7 +1570,7 @@ func TestAutoSplit_CleanupOnFailure(t *testing.T) {
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":     "split/",
 			"verifyCommand":    "true",
 			"strategy":         "directory",
@@ -1584,7 +1584,7 @@ func TestAutoSplit_CleanupOnFailure(t *testing.T) {
 		{"name": "cli", "description": "Add CLI runner", "files": []string{"cmd/run.go"}},
 		{"name": "docs", "description": "Update documentation", "files": []string{"docs/guide.md"}},
 	}
-	classJSON, _ := json.Marshal(map[string]interface{}{"categories": classification})
+	classJSON, _ := json.Marshal(map[string]any{"categories": classification})
 
 	type splitEntry struct {
 		Name    string   `json:"name"`
@@ -1596,7 +1596,7 @@ func TestAutoSplit_CleanupOnFailure(t *testing.T) {
 		{Name: "split/cli", Files: []string{"cmd/run.go"}, Message: "Add CLI run"},
 		{Name: "split/docs", Files: []string{"docs/guide.md"}, Message: "Add docs"},
 	}
-	planJSON, _ := json.Marshal(map[string]interface{}{"stages": splitPlan})
+	planJSON, _ := json.Marshal(map[string]any{"stages": splitPlan})
 
 	// Mock ClaudeCodeExecutor — no resultDir, mcpcallback is sole IPC.
 	mockSetup := `
@@ -1720,7 +1720,7 @@ func TestAutoSplit_CleanupOnFailure_Disabled(t *testing.T) {
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",
@@ -1734,7 +1734,7 @@ func TestAutoSplit_CleanupOnFailure_Disabled(t *testing.T) {
 		{"name": "cli", "description": "Add CLI runner", "files": []string{"cmd/run.go"}},
 		{"name": "docs", "description": "Update documentation", "files": []string{"docs/guide.md"}},
 	}
-	classJSON, _ := json.Marshal(map[string]interface{}{"categories": classification})
+	classJSON, _ := json.Marshal(map[string]any{"categories": classification})
 	type splitEntry struct {
 		Name    string   `json:"name"`
 		Files   []string `json:"files"`
@@ -1745,7 +1745,7 @@ func TestAutoSplit_CleanupOnFailure_Disabled(t *testing.T) {
 		{Name: "split/cli", Files: []string{"cmd/run.go"}, Message: "Add CLI run"},
 		{Name: "split/docs", Files: []string{"docs/guide.md"}, Message: "Add docs"},
 	}
-	planJSON, _ := json.Marshal(map[string]interface{}{"stages": splitPlan})
+	planJSON, _ := json.Marshal(map[string]any{"stages": splitPlan})
 
 	// Mock ClaudeCodeExecutor — no resultDir, mcpcallback is sole IPC.
 	mockSetup := `
@@ -1843,7 +1843,7 @@ func TestPrSplitConfig_CleanupOnFailure(t *testing.T) {
 	t.Parallel()
 
 	// Verify the cleanup-on-failure flag is accessible in JS config.
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]interface{}{
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]any{
 		"cleanupOnFailure": true,
 	})
 
@@ -1869,7 +1869,7 @@ func TestPrSplitConfig_CleanupOnFailure(t *testing.T) {
 	// The source code builds autoConfig objects that include
 	// cleanupOnFailure: prSplitConfig.cleanupOnFailure.
 	// Grep the script source to confirm the propagation is wired up.
-	_, _, evalJS3, _ := loadPrSplitEngineWithEval(t, map[string]interface{}{
+	_, _, evalJS3, _ := loadPrSplitEngineWithEval(t, map[string]any{
 		"cleanupOnFailure": true,
 	})
 	// Count occurrences of cleanupOnFailure in autoConfig construction.
@@ -1907,7 +1907,7 @@ func TestAutoSplit_ErrorFeedback_ResumeInstructions(t *testing.T) {
 	}
 
 	tp := chdirTestPipeline(t, TestPipelineOpts{
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",
@@ -2038,7 +2038,7 @@ func TestAutoSplit_ResumeClaudeResolveFails(t *testing.T) {
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",
@@ -2046,7 +2046,7 @@ func TestAutoSplit_ResumeClaudeResolveFails(t *testing.T) {
 	})
 
 	// Classification data for Run 1.
-	classJSON, _ := json.Marshal(map[string]interface{}{"categories": []map[string]any{
+	classJSON, _ := json.Marshal(map[string]any{"categories": []map[string]any{
 		{"name": "api", "description": "Add API implementation", "files": []string{"pkg/impl.go"}},
 		{"name": "cli", "description": "Add CLI runner", "files": []string{"cmd/run.go"}},
 	}})
@@ -2231,7 +2231,7 @@ func TestAutoSplit_PauseDuringStep(t *testing.T) {
 	repoDir := initIntegrationRepo(t)
 	addIntegrationFeatureFiles(t, repoDir)
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]interface{}{
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]any{
 		"baseBranch":    "main",
 		"strategy":      "directory",
 		"branchPrefix":  "split/",
@@ -2307,7 +2307,7 @@ func TestAutoSplit_StepTimeout(t *testing.T) {
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 		},
@@ -2331,7 +2331,7 @@ func TestAutoSplit_StepTimeout(t *testing.T) {
 	}
 
 	// Inject classification via mcpcallback. The Classify step needs MCP.
-	classJSON, _ := json.Marshal(map[string]interface{}{"categories": []map[string]any{
+	classJSON, _ := json.Marshal(map[string]any{"categories": []map[string]any{
 		{"name": "core", "description": "Core changes", "files": []string{"b.go"}},
 	}})
 
@@ -2414,14 +2414,14 @@ func TestWaitForLogged_Success(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
 		t.Fatal(err)
 	}
 	if result["error"] != nil {
 		t.Errorf("expected nil error, got %v", result["error"])
 	}
-	data, ok := result["data"].(map[string]interface{})
+	data, ok := result["data"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected data map, got %T", result["data"])
 	}
@@ -2448,7 +2448,7 @@ func TestWaitForLogged_Timeout(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
 		t.Fatal(err)
 	}
@@ -2607,21 +2607,21 @@ func TestIntegration_AutoSplitMockMCP_DoubleInvocation(t *testing.T) {
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",
 		},
 	})
 
-	classJSON, err := json.Marshal(map[string]interface{}{"categories": []map[string]interface{}{
+	classJSON, err := json.Marshal(map[string]any{"categories": []map[string]any{
 		{"name": "api", "description": "API handler and types", "files": []string{"pkg/handler.go", "pkg/types.go"}},
 		{"name": "cli", "description": "CLI serve command", "files": []string{"cmd/serve.go", "cmd/main.go"}},
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	planJSON, err := json.Marshal(map[string]interface{}{"stages": []map[string]interface{}{
+	planJSON, err := json.Marshal(map[string]any{"stages": []map[string]any{
 		{"name": "split/api-types", "files": []string{"pkg/handler.go", "pkg/types.go"}, "message": "Add API handler"},
 		{"name": "split/cli-serve", "files": []string{"cmd/serve.go", "cmd/main.go"}, "message": "Add serve command"},
 	}})
@@ -2767,7 +2767,7 @@ func TestIntegration_AutoSplitMockMCP_OverlappingFiles(t *testing.T) {
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",
@@ -2775,7 +2775,7 @@ func TestIntegration_AutoSplitMockMCP_OverlappingFiles(t *testing.T) {
 	})
 
 	// Classification intentionally puts cmd/main.go in BOTH groups.
-	classJSON, err := json.Marshal(map[string]interface{}{"categories": []map[string]interface{}{
+	classJSON, err := json.Marshal(map[string]any{"categories": []map[string]any{
 		{"name": "api", "description": "API types and handler", "files": []string{"pkg/types.go", "pkg/handler.go", "cmd/main.go"}},
 		{"name": "cli", "description": "CLI changes", "files": []string{"cmd/main.go"}},
 	}})
@@ -2783,7 +2783,7 @@ func TestIntegration_AutoSplitMockMCP_OverlappingFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Plan also has cmd/main.go in both splits.
-	planJSON, err := json.Marshal(map[string]interface{}{"stages": []map[string]interface{}{
+	planJSON, err := json.Marshal(map[string]any{"stages": []map[string]any{
 		{"name": "split/api", "files": []string{"pkg/types.go", "pkg/handler.go", "cmd/main.go"}, "message": "API types and handler"},
 		{"name": "split/cli", "files": []string{"cmd/main.go"}, "message": "CLI changes"},
 	}})
@@ -2921,7 +2921,7 @@ func TestIntegration_AutoSplitMockMCP_VerifyFailure(t *testing.T) {
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix": "split/",
 			// Verify command fails for "split/02-b" by checking branch name.
 			"verifyCommand": `sh -c 'branch=$(git rev-parse --abbrev-ref HEAD); case "$branch" in *02-b*) exit 1;; *) exit 0;; esac'`,
@@ -2929,14 +2929,14 @@ func TestIntegration_AutoSplitMockMCP_VerifyFailure(t *testing.T) {
 		},
 	})
 
-	classJSON, err := json.Marshal(map[string]interface{}{"categories": []map[string]interface{}{
+	classJSON, err := json.Marshal(map[string]any{"categories": []map[string]any{
 		{"name": "a", "description": "Module A changes", "files": []string{"pkg/a.go"}},
 		{"name": "b", "description": "Module B changes", "files": []string{"pkg/b.go"}},
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	planJSON, err := json.Marshal(map[string]interface{}{"stages": []map[string]interface{}{
+	planJSON, err := json.Marshal(map[string]any{"stages": []map[string]any{
 		{"name": "split/01-a", "files": []string{"pkg/a.go"}, "message": "Module A"},
 		{"name": "split/02-b", "files": []string{"pkg/b.go"}, "message": "Module B"},
 	}})
@@ -3054,14 +3054,14 @@ func TestIntegration_AutoSplitMockMCP_CancelDuringExecution(t *testing.T) {
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",
 		},
 	})
 
-	classJSON, err := json.Marshal(map[string]interface{}{"categories": []map[string]interface{}{
+	classJSON, err := json.Marshal(map[string]any{"categories": []map[string]any{
 		{"name": "a", "description": "A changes", "files": []string{"pkg/a.go"}},
 		{"name": "b", "description": "B changes", "files": []string{"pkg/b.go"}},
 	}})
@@ -3175,13 +3175,13 @@ func TestIntegration_AutoSplitMockMCP_ConflictResolution(t *testing.T) {
 			{"pkg/a.go", "package a\nvar A = 2\n"},
 			{"pkg/b.go", "package b\nvar B = 2\n"},
 		},
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": verifyCmd,
 		},
 	})
 
-	classJSON, err := json.Marshal(map[string]interface{}{"categories": []map[string]interface{}{
+	classJSON, err := json.Marshal(map[string]any{"categories": []map[string]any{
 		{"name": "a", "description": "A changes", "files": []string{"pkg/a.go"}},
 		{"name": "b", "description": "B changes", "files": []string{"pkg/b.go"}},
 	}})
@@ -3190,7 +3190,7 @@ func TestIntegration_AutoSplitMockMCP_ConflictResolution(t *testing.T) {
 	}
 
 	// Also inject a plan to skip the 5-second hardcoded plan poll timeout.
-	planJSON, err := json.Marshal(map[string]interface{}{"stages": []map[string]interface{}{
+	planJSON, err := json.Marshal(map[string]any{"stages": []map[string]any{
 		{"name": "split/01-a", "files": []string{"pkg/a.go"}, "message": "A changes", "order": 0},
 		{"name": "split/02-b", "files": []string{"pkg/b.go"}, "message": "B changes", "order": 1},
 	}})
@@ -3198,8 +3198,8 @@ func TestIntegration_AutoSplitMockMCP_ConflictResolution(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resolutionJSON, err := json.Marshal(map[string]interface{}{
-		"patches": []map[string]interface{}{
+	resolutionJSON, err := json.Marshal(map[string]any{
+		"patches": []map[string]any{
 			{"file": ".fix-applied", "content": "fixed\n"},
 		},
 	})
@@ -3343,7 +3343,7 @@ func TestAutoSplit_WatchdogTimeout(t *testing.T) {
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: []TestPipelineFile{{"a.go", "package a\n"}},
 		FeatureFiles: []TestPipelineFile{{"b.go", "package b\n"}},
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 		},
@@ -3412,7 +3412,7 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_ClassificationTimeout(t *tes
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: []TestPipelineFile{{"a.go", "package a\n\nfunc A() {}\n"}},
 		FeatureFiles: []TestPipelineFile{{"a.go", "package a\n\nfunc A() { /* new */ }\n"}},
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 		},
@@ -3514,7 +3514,7 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_PlanFallbackToLocal(t *testi
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",
@@ -3523,7 +3523,7 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_PlanFallbackToLocal(t *testi
 
 	// Inject classification but NOT the plan. Pipeline should fall back
 	// to local plan generation via classificationToGroups → createSplitPlan.
-	classJSON, err := json.Marshal(map[string]interface{}{"categories": []map[string]interface{}{
+	classJSON, err := json.Marshal(map[string]any{"categories": []map[string]any{
 		{"name": "a", "description": "A changes", "files": []string{"pkg/a.go"}},
 		{"name": "b", "description": "B changes", "files": []string{"pkg/b.go"}},
 	}})
@@ -3643,7 +3643,7 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_ExecutionFailure(t *testing.
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 		},
@@ -3651,13 +3651,13 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_ExecutionFailure(t *testing.
 
 	// Classification and plan reference a file that doesn't exist in the diff.
 	// This causes executeSplit to fail because "nonexistent.go" has no diff status.
-	classJSON, err := json.Marshal(map[string]interface{}{"categories": []map[string]interface{}{
+	classJSON, err := json.Marshal(map[string]any{"categories": []map[string]any{
 		{"name": "ghost", "description": "Phantom files", "files": []string{"nonexistent.go"}},
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	planJSON, err := json.Marshal(map[string]interface{}{"stages": []map[string]interface{}{
+	planJSON, err := json.Marshal(map[string]any{"stages": []map[string]any{
 		{"name": "split/01-ghost", "files": []string{"nonexistent.go"}, "message": "Ghost split"},
 	}})
 	if err != nil {
@@ -3766,7 +3766,7 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_AllBranchesFailVerify(t *tes
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix": "split/",
 			// ALL branches fail verify — 'exit 1' always.
 			"verifyCommand": "sh -c 'exit 1'",
@@ -3774,14 +3774,14 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_AllBranchesFailVerify(t *tes
 		},
 	})
 
-	classJSON, err := json.Marshal(map[string]interface{}{"categories": []map[string]interface{}{
+	classJSON, err := json.Marshal(map[string]any{"categories": []map[string]any{
 		{"name": "a", "description": "A", "files": []string{"pkg/a.go"}},
 		{"name": "b", "description": "B", "files": []string{"pkg/b.go"}},
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	planJSON, err := json.Marshal(map[string]interface{}{"stages": []map[string]interface{}{
+	planJSON, err := json.Marshal(map[string]any{"stages": []map[string]any{
 		{"name": "split/01-a", "files": []string{"pkg/a.go"}, "message": "A"},
 		{"name": "split/02-b", "files": []string{"pkg/b.go"}, "message": "B"},
 	}})

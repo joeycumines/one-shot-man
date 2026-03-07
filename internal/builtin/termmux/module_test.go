@@ -37,7 +37,7 @@ func TestModule_Constants(t *testing.T) {
 
 	tests := []struct {
 		name string
-		want interface{}
+		want any
 	}{
 		{"EXIT_TOGGLE", "toggle"},
 		{"EXIT_CHILD_EXIT", "childExit"},
@@ -83,7 +83,7 @@ func TestModule_NewMux_ReturnsObject(t *testing.T) {
 	}
 
 	missing := v.Export()
-	if arr, ok := missing.([]interface{}); ok && len(arr) > 0 {
+	if arr, ok := missing.([]any); ok && len(arr) > 0 {
 		t.Errorf("missing methods on mux: %v", arr)
 	}
 }
@@ -237,7 +237,7 @@ func TestMuxEvents_Emit(t *testing.T) {
 	var received []string
 	cb, _ := goja.AssertFunction(runtime.ToValue(func(call goja.FunctionCall) goja.Value {
 		data := call.Argument(0).Export()
-		if m, ok := data.(map[string]interface{}); ok {
+		if m, ok := data.(map[string]any); ok {
 			if side, ok := m["side"].(string); ok {
 				received = append(received, side)
 			}
@@ -248,7 +248,7 @@ func TestMuxEvents_Emit(t *testing.T) {
 	e.on("focus", cb)
 	e.on("focus", cb) // Two listeners for same event.
 
-	e.emit(runtime, "focus", map[string]interface{}{"side": "claude"})
+	e.emit(runtime, "focus", map[string]any{"side": "claude"})
 
 	if len(received) != 2 {
 		t.Fatalf("expected 2 callbacks, got %d", len(received))
@@ -265,7 +265,7 @@ func TestMuxEvents_EmitNoListeners(t *testing.T) {
 	runtime := goja.New()
 
 	// Should not panic with no listeners.
-	e.emit(runtime, "exit", map[string]interface{}{"reason": "toggle"})
+	e.emit(runtime, "exit", map[string]any{"reason": "toggle"})
 }
 
 func TestMuxEvents_EmitWrongEvent(t *testing.T) {
@@ -279,7 +279,7 @@ func TestMuxEvents_EmitWrongEvent(t *testing.T) {
 	}))
 
 	e.on("exit", cb)
-	e.emit(runtime, "resize", map[string]interface{}{"rows": 24, "cols": 80})
+	e.emit(runtime, "resize", map[string]any{"rows": 24, "cols": 80})
 
 	if called {
 		t.Error("exit listener should not fire for resize event")
@@ -290,10 +290,10 @@ func TestMuxEvents_Queue_Drain(t *testing.T) {
 	e := newMuxEvents()
 	runtime := goja.New()
 
-	var received []map[string]interface{}
+	var received []map[string]any
 	cb, _ := goja.AssertFunction(runtime.ToValue(func(call goja.FunctionCall) goja.Value {
 		data := call.Argument(0).Export()
-		if m, ok := data.(map[string]interface{}); ok {
+		if m, ok := data.(map[string]any); ok {
 			received = append(received, m)
 		}
 		return goja.Undefined()
@@ -302,9 +302,9 @@ func TestMuxEvents_Queue_Drain(t *testing.T) {
 	e.on("resize", cb)
 
 	// Queue 3 events.
-	e.queue("resize", map[string]interface{}{"rows": 24, "cols": 80})
-	e.queue("resize", map[string]interface{}{"rows": 50, "cols": 120})
-	e.queue("resize", map[string]interface{}{"rows": 30, "cols": 100})
+	e.queue("resize", map[string]any{"rows": 24, "cols": 80})
+	e.queue("resize", map[string]any{"rows": 50, "cols": 120})
+	e.queue("resize", map[string]any{"rows": 30, "cols": 100})
 
 	count := e.drain(runtime)
 	if count != 3 {
@@ -337,11 +337,11 @@ func TestMuxEvents_QueueFull_Drops(t *testing.T) {
 
 	// Fill the channel (capacity 64).
 	for i := 0; i < 64; i++ {
-		e.queue("resize", map[string]interface{}{"i": i})
+		e.queue("resize", map[string]any{"i": i})
 	}
 
 	// 65th should not block (dropped).
-	e.queue("resize", map[string]interface{}{"i": 64})
+	e.queue("resize", map[string]any{"i": 64})
 
 	// Drain should get exactly 64.
 	runtime := goja.New()
@@ -364,7 +364,7 @@ func TestMuxEvents_OffDuringEmit(t *testing.T) {
 	selfID = e.on("exit", cb)
 
 	// Should not deadlock or panic.
-	e.emit(runtime, "exit", map[string]interface{}{"reason": "toggle"})
+	e.emit(runtime, "exit", map[string]any{"reason": "toggle"})
 }
 
 func TestModule_On_InvalidEvent(t *testing.T) {
@@ -599,7 +599,7 @@ func TestResolveChild_StringIO(t *testing.T) {
 
 func TestResolveChild_MapWithGoHandle_StringIO(t *testing.T) {
 	sio := &mockStringIO{}
-	m := map[string]interface{}{
+	m := map[string]any{
 		"_goHandle": sio,
 	}
 	rwc, err := resolveChild(m)
@@ -613,7 +613,7 @@ func TestResolveChild_MapWithGoHandle_StringIO(t *testing.T) {
 
 func TestResolveChild_MapWithGoHandle_RWC(t *testing.T) {
 	mrwc := &mockRWC{}
-	m := map[string]interface{}{
+	m := map[string]any{
 		"_goHandle": mrwc,
 	}
 	rwc, err := resolveChild(m)
@@ -637,7 +637,7 @@ func TestResolveChild_DirectRWC(t *testing.T) {
 }
 
 func TestResolveChild_MapWithNilGoHandle(t *testing.T) {
-	m := map[string]interface{}{
+	m := map[string]any{
 		"_goHandle": nil,
 	}
 	_, err := resolveChild(m)
@@ -647,7 +647,7 @@ func TestResolveChild_MapWithNilGoHandle(t *testing.T) {
 }
 
 func TestResolveChild_MapWithInvalidGoHandle(t *testing.T) {
-	m := map[string]interface{}{
+	m := map[string]any{
 		"_goHandle": "not a handle",
 	}
 	_, err := resolveChild(m)
@@ -657,7 +657,7 @@ func TestResolveChild_MapWithInvalidGoHandle(t *testing.T) {
 }
 
 func TestResolveChild_MapWithoutGoHandle(t *testing.T) {
-	m := map[string]interface{}{
+	m := map[string]any{
 		"other": "field",
 	}
 	_, err := resolveChild(m)
@@ -779,11 +779,11 @@ func TestMuxEvents_EmitToJSCallback(t *testing.T) {
 
 	// Register a JS callback via on()
 	called := false
-	var receivedData map[string]interface{}
+	var receivedData map[string]any
 	callback := func(fc goja.FunctionCall) goja.Value {
 		called = true
 		if len(fc.Arguments) > 0 {
-			receivedData, _ = fc.Arguments[0].Export().(map[string]interface{})
+			receivedData, _ = fc.Arguments[0].Export().(map[string]any)
 		}
 		return goja.Undefined()
 	}
@@ -793,7 +793,7 @@ func TestMuxEvents_EmitToJSCallback(t *testing.T) {
 	}
 
 	events.on("focus", fn)
-	events.emit(runtime, "focus", map[string]interface{}{"side": "claude"})
+	events.emit(runtime, "focus", map[string]any{"side": "claude"})
 
 	if !called {
 		t.Error("callback not called")
@@ -816,9 +816,9 @@ func TestMuxEvents_QueueDrainToCallback(t *testing.T) {
 	events.on("resize", fn)
 
 	// Queue 3 resize events from a "non-JS goroutine"
-	events.queue("resize", map[string]interface{}{"rows": 24, "cols": 80})
-	events.queue("resize", map[string]interface{}{"rows": 25, "cols": 100})
-	events.queue("resize", map[string]interface{}{"rows": 30, "cols": 120})
+	events.queue("resize", map[string]any{"rows": 24, "cols": 80})
+	events.queue("resize", map[string]any{"rows": 25, "cols": 100})
+	events.queue("resize", map[string]any{"rows": 30, "cols": 120})
 
 	// Drain — should deliver all 3
 	count := events.drain(runtime)
@@ -847,7 +847,7 @@ func TestMuxEvents_MultipleListenersSameEvent(t *testing.T) {
 	events.on("exit", fn1)
 	events.on("exit", fn2)
 
-	events.emit(runtime, "exit", map[string]interface{}{"reason": "toggle"})
+	events.emit(runtime, "exit", map[string]any{"reason": "toggle"})
 
 	if calls1 != 1 || calls2 != 1 {
 		t.Errorf("calls = (%d, %d), want (1, 1)", calls1, calls2)
@@ -873,7 +873,7 @@ func TestMuxEvents_OffRemovesOnlyTarget(t *testing.T) {
 
 	// Remove first, emit — only second should fire
 	events.off(id1)
-	events.emit(runtime, "exit", map[string]interface{}{"reason": "toggle"})
+	events.emit(runtime, "exit", map[string]any{"reason": "toggle"})
 
 	if calls1 != 0 {
 		t.Errorf("removed listener called %d times", calls1)
@@ -921,11 +921,11 @@ func TestMuxEvents_ConcurrentQueue(t *testing.T) {
 	go func() {
 		defer close(done)
 		for i := 0; i < 50; i++ {
-			events.queue("resize", map[string]interface{}{"rows": i})
+			events.queue("resize", map[string]any{"rows": i})
 		}
 	}()
 	for i := 0; i < 50; i++ {
-		events.queue("focus", map[string]interface{}{"side": "osm"})
+		events.queue("focus", map[string]any{"side": "osm"})
 	}
 	<-done
 
@@ -1258,7 +1258,7 @@ func TestModule_AttachMapWithGoHandle_ViaJS(t *testing.T) {
 
 	// Create a Go map that mimics what Goja exports for an AgentHandle
 	sio := &mockStringIO{}
-	handle := map[string]interface{}{
+	handle := map[string]any{
 		"_goHandle": sio,
 		"send":      func(s string) {},
 		"receive":   func() string { return "" },
@@ -1368,10 +1368,10 @@ func TestMuxEvents_BellQueueDrain(t *testing.T) {
 	e := newMuxEvents()
 	runtime := goja.New()
 
-	var received []map[string]interface{}
+	var received []map[string]any
 	cb, _ := goja.AssertFunction(runtime.ToValue(func(call goja.FunctionCall) goja.Value {
 		data := call.Argument(0).Export()
-		if m, ok := data.(map[string]interface{}); ok {
+		if m, ok := data.(map[string]any); ok {
 			received = append(received, m)
 		}
 		return goja.Undefined()
@@ -1380,9 +1380,9 @@ func TestMuxEvents_BellQueueDrain(t *testing.T) {
 	e.on("bell", cb)
 
 	// Queue 3 bell events.
-	e.queue("bell", map[string]interface{}{"pane": "claude"})
-	e.queue("bell", map[string]interface{}{"pane": "claude"})
-	e.queue("bell", map[string]interface{}{"pane": "claude"})
+	e.queue("bell", map[string]any{"pane": "claude"})
+	e.queue("bell", map[string]any{"pane": "claude"})
+	e.queue("bell", map[string]any{"pane": "claude"})
 
 	count := e.drain(runtime)
 	if count != 3 {

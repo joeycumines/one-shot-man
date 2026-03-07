@@ -61,7 +61,7 @@ func TestIntegration_ComplexGoProject_HeuristicSplit(t *testing.T) {
 		t.Fatalf("expected feature branch, got %q", branch)
 	}
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]interface{}{
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]any{
 		"baseBranch":    "main",
 		"strategy":      "directory-deep",
 		"maxFiles":      20,
@@ -299,7 +299,7 @@ func TestIntegration_AutoSplitComplexGoProject(t *testing.T) {
 	claudeArgsList := make([]string, len(claudeTestArgs))
 	copy(claudeArgsList, claudeTestArgs)
 
-	configOverrides := map[string]interface{}{
+	configOverrides := map[string]any{
 		"baseBranch":    "main",
 		"strategy":      "directory",
 		"maxFiles":      20,

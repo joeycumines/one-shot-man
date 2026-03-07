@@ -53,8 +53,8 @@ func (pc *PromptColors) applyFromGetter(get func(string) (string, bool)) {
 	}
 }
 
-// ApplyFromInterfaceMap applies overrides where values come from a JS map (map[string]interface{}).
-func (pc *PromptColors) ApplyFromInterfaceMap(m map[string]interface{}) {
+// ApplyFromInterfaceMap applies overrides where values come from a JS map (map[string]any).
+func (pc *PromptColors) ApplyFromInterfaceMap(m map[string]any) {
 	if m == nil {
 		return
 	}

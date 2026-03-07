@@ -26,7 +26,7 @@ import (
 // Returns an evalJS function that evaluates JS expressions/statements on
 // the engine's event loop, properly handling Promises and async/await.
 // ---------------------------------------------------------------------------
-func loadChunkEngine(t testing.TB, overrides map[string]interface{}, chunkNames ...string) func(string) (interface{}, error) {
+func loadChunkEngine(t testing.TB, overrides map[string]any, chunkNames ...string) func(string) (any, error) {
 	t.Helper()
 
 	var stdout safeBuffer
@@ -49,7 +49,7 @@ func loadChunkEngine(t testing.TB, overrides map[string]interface{}, chunkNames 
 	t.Cleanup(cleanup)
 
 	// Set up globals matching PrSplitCommand.Execute.
-	jsConfig := map[string]interface{}{
+	jsConfig := map[string]any{
 		"baseBranch":    "main",
 		"strategy":      "directory",
 		"maxFiles":      10,
@@ -69,7 +69,7 @@ func loadChunkEngine(t testing.TB, overrides map[string]interface{}, chunkNames 
 		jsConfig["dir"] = t.TempDir()
 	}
 
-	engine.SetGlobal("config", map[string]interface{}{"name": "pr-split"})
+	engine.SetGlobal("config", map[string]any{"name": "pr-split"})
 	engine.SetGlobal("prSplitConfig", jsConfig)
 
 	// Build chunk name→source lookup.
@@ -96,12 +96,12 @@ func loadChunkEngine(t testing.TB, overrides map[string]interface{}, chunkNames 
 
 // makeEvalJS creates an evalJS function from a scripting.Engine.
 // This is a standalone helper reusable by any chunk test.
-func makeEvalJS(t testing.TB, engine *scripting.Engine, timeout time.Duration) func(string) (interface{}, error) {
+func makeEvalJS(t testing.TB, engine *scripting.Engine, timeout time.Duration) func(string) (any, error) {
 	t.Helper()
 
-	return func(js string) (interface{}, error) {
+	return func(js string) (any, error) {
 		done := make(chan struct{})
-		var result interface{}
+		var result any
 		var resultErr error
 
 		submitErr := engine.Loop().Submit(func() {
@@ -109,7 +109,7 @@ func makeEvalJS(t testing.TB, engine *scripting.Engine, timeout time.Duration) f
 
 			// Async path: if JS contains 'await', wrap in async IIFE.
 			if strings.Contains(js, "await ") {
-				_ = vm.Set("__evalResult", func(val interface{}) {
+				_ = vm.Set("__evalResult", func(val any) {
 					result = val
 					close(done)
 				})
@@ -474,7 +474,7 @@ func TestChunk00_GitAddChangedFiles(t *testing.T) {
 // TestChunk00_RuntimeConfig verifies the runtime config object picks up
 // injected prSplitConfig values and applies defaults.
 func TestChunk00_RuntimeConfig(t *testing.T) {
-	overrides := map[string]interface{}{
+	overrides := map[string]any{
 		"baseBranch":   "develop",
 		"strategy":     "extension",
 		"maxFiles":     20,
@@ -486,7 +486,7 @@ func TestChunk00_RuntimeConfig(t *testing.T) {
 
 	tests := []struct {
 		field    string
-		expected interface{}
+		expected any
 	}{
 		{"runtime.baseBranch", "develop"},
 		{"runtime.strategy", "extension"},

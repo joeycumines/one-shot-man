@@ -786,11 +786,11 @@ func (cm *ContextManager) RefreshPath(path string) error {
 }
 
 // GetStats returns statistics about the context.
-func (cm *ContextManager) GetStats() map[string]interface{} {
+func (cm *ContextManager) GetStats() map[string]any {
 	cm.mutex.RLock()
 	defer cm.mutex.RUnlock()
 
-	stats := map[string]interface{}{
+	stats := map[string]any{
 		"totalPaths":  len(cm.paths),
 		"files":       0,
 		"directories": 0,

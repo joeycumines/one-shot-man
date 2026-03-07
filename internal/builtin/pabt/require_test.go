@@ -141,7 +141,7 @@ func TestNewState_Creation(t *testing.T) {
 				};
 			})()
 		`)
-		obj := res.Export().(map[string]interface{})
+		obj := res.Export().(map[string]any)
 		assert.True(t, obj["hasVariable"].(bool))
 		assert.True(t, obj["hasGet"].(bool))
 		assert.True(t, obj["hasSet"].(bool))
@@ -315,7 +315,7 @@ func TestRequire_NewExprCondition(t *testing.T) {
 				};
 			})()
 		`)
-		obj := res.Export().(map[string]interface{})
+		obj := res.Export().(map[string]any)
 		assert.True(t, obj["hasKey"].(bool))
 		assert.True(t, obj["match5"].(bool))
 		assert.False(t, obj["match10"].(bool))
@@ -343,7 +343,7 @@ func TestRequire_NewExprCondition(t *testing.T) {
 				};
 			})()
 		`)
-		obj := res.Export().(map[string]interface{})
+		obj := res.Export().(map[string]any)
 		assert.True(t, obj["inRange"].(bool))
 		assert.False(t, obj["outOfRange"].(bool))
 	})
@@ -545,7 +545,7 @@ func TestJSCondition_ThreadSafety(t *testing.T) {
 				return { matchCalled, matchResult };
 			})()
 		`)
-		obj := res.Export().(map[string]interface{})
+		obj := res.Export().(map[string]any)
 		assert.True(t, obj["matchCalled"].(bool))
 		assert.True(t, obj["matchResult"].(bool))
 	})

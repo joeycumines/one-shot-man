@@ -324,7 +324,7 @@ func TestPromptFlowCommand_UseFromInitialPhase(t *testing.T) {
 	engine.SetTestMode(true)
 
 	// Inject the same globals that PromptFlowCommand.Execute sets
-	engine.SetGlobal("config", map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{
 		"name": "prompt-flow",
 	})
 	engine.SetGlobal("args", []string{})
@@ -403,7 +403,7 @@ func TestPromptFlowCommand_Footer(t *testing.T) {
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	engine.SetGlobal("config", map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{
 		"name": "prompt-flow",
 	})
 	engine.SetGlobal("args", []string{})
@@ -481,7 +481,7 @@ func TestPromptFlowCommand_FooterClear(t *testing.T) {
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	engine.SetGlobal("config", map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{
 		"name": "prompt-flow",
 	})
 	engine.SetGlobal("args", []string{})
@@ -552,7 +552,7 @@ func TestPromptFlowCommand_NoFooter(t *testing.T) {
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	engine.SetGlobal("config", map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{
 		"name": "prompt-flow",
 	})
 	engine.SetGlobal("args", []string{})
@@ -620,7 +620,7 @@ func newPromptFlowTestEngine(t *testing.T) (*scripting.Engine, *bytes.Buffer, *b
 		t.Fatalf("NewEngine failed: %v", err)
 	}
 	engine.SetTestMode(true)
-	engine.SetGlobal("config", map[string]interface{}{"name": "prompt-flow"})
+	engine.SetGlobal("config", map[string]any{"name": "prompt-flow"})
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("promptFlowTemplate", promptFlowTemplate)
 

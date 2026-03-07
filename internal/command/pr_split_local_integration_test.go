@@ -385,8 +385,8 @@ func TestIntegration_BrokenSplitsResolution(t *testing.T) {
 		Error      *string `json:"error"`
 		SplitCount int     `json:"splitCount"`
 		Resolved   struct {
-			Fixed         []interface{} `json:"fixed"`
-			Errors        []interface{} `json:"errors"`
+			Fixed         []any `json:"fixed"`
+			Errors        []any `json:"errors"`
 			TotalRetries  int           `json:"totalRetries"`
 			ReSplitNeeded bool          `json:"reSplitNeeded"`
 		} `json:"resolved"`
@@ -529,7 +529,7 @@ func TestIntegration_HeuristicFallback(t *testing.T) {
 	}
 
 	tp := setupTestPipeline(t, TestPipelineOpts{
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			// Point at a nonexistent binary to ensure Claude fails to resolve.
 			"claudeCommand": "/nonexistent/claude-for-test-" + t.Name(),
 		},
@@ -593,7 +593,7 @@ func TestIntegration_PollFileTimeout(t *testing.T) {
 		t.Fatal(err)
 	}
 	var result struct {
-		Errors       []interface{} `json:"errors"`
+		Errors       []any `json:"errors"`
 		TotalRetries int           `json:"totalRetries"`
 	}
 	if err := json.Unmarshal([]byte(val2.(string)), &result); err != nil {
@@ -973,7 +973,7 @@ func TestIntegration_RealClaudeCode(t *testing.T) {
 			{"docs/api.md", "# API\n\nReference.\n"},
 			{"config/default.yaml", "key: value\n"},
 		},
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"claudeCommand": claudeTestCommand,
 			"claudeArgs":    []string(claudeTestArgs),
 		},
@@ -1052,7 +1052,7 @@ func TestIntegration_AutoSplitWithClaude(t *testing.T) {
 			{"configs/default.yaml", "port: 8080\ndb_dsn: postgres://localhost/app\n"},
 			{"configs/test.yaml", "port: 0\ndb_dsn: sqlite://test.db\n"},
 		},
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"claudeCommand": claudeTestCommand,
 			"claudeArgs":    []string(claudeTestArgs),
 		},
@@ -1169,7 +1169,7 @@ func TestIntegration_AutoSplitComplexEdits(t *testing.T) {
 			{"pkg/util/utils.go", "package util\n\nfunc Help() string { return \"help v2\" }\n"},
 			{"pkg/util/format.go", "package util\n\nfunc Format(s string) string { return \"[\" + s + \"]\" }\n"},
 		},
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"claudeCommand": claudeTestCommand,
 			"claudeArgs":    []string(claudeTestArgs),
 		},
@@ -1260,7 +1260,7 @@ func TestIntegration_RealOllama(t *testing.T) {
 			{"pkg/helper.go", "package pkg\n\nfunc Helper() {}\n"},
 			{"docs/guide.md", "# Guide\n"},
 		},
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"claudeCommand": ollamaCommand,
 			"claudeModel":   integrationModel,
 		},

@@ -509,7 +509,7 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 		defer engine.Close()
 		engine.SetTestMode(true)
 
-		engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{}})
+		engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{}})
 		engine.SetGlobal("args", []string{})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 
@@ -529,7 +529,7 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 		defer engine.Close()
 		engine.SetTestMode(true)
 
-		engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{}})
+		engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{}})
 		engine.SetGlobal("args", []string{"   \t\n  "})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 
@@ -549,7 +549,7 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 		defer engine.Close()
 		engine.SetTestMode(true)
 
-		engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{}})
+		engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{}})
 		engine.SetGlobal("args", []string{"/nonexistent/path/to/file.txt"})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 
@@ -572,7 +572,7 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 		// Use temp directory as input
 		tmpDir := t.TempDir()
 
-		engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{}})
+		engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{}})
 		engine.SetGlobal("args", []string{tmpDir})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 
@@ -595,7 +595,7 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 		// Create extremely long input
 		longInput := strings.Repeat("x", 100000)
 
-		engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{}})
+		engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{}})
 		engine.SetGlobal("args", []string{longInput})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 
@@ -618,7 +618,7 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 		defer engine.Close()
 		engine.SetTestMode(true)
 
-		engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{}})
+		engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{}})
 		engine.SetGlobal("args", []string{})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 
@@ -781,7 +781,7 @@ func TestGoalCommandGoalLoadingEdgeCases(t *testing.T) {
 			Description: "A test goal",
 			Category:    "testing",
 			Usage:       "Test usage",
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"key1": "value1",
 				"key2": float64(42),
 			},
@@ -913,7 +913,7 @@ func TestSuperDocumentCommandWithVariousFlags(t *testing.T) {
 		defer engine.Close()
 		engine.SetTestMode(true)
 
-		engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "shellMode": true, "theme": map[string]interface{}{}})
+		engine.SetGlobal("config", map[string]any{"name": "super-document", "shellMode": true, "theme": map[string]any{}})
 		engine.SetGlobal("args", []string{"--shell"})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 
@@ -933,7 +933,7 @@ func TestSuperDocumentCommandWithVariousFlags(t *testing.T) {
 		defer engine.Close()
 		engine.SetTestMode(true)
 
-		engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "interactive": false, "theme": map[string]interface{}{}})
+		engine.SetGlobal("config", map[string]any{"name": "super-document", "interactive": false, "theme": map[string]any{}})
 		engine.SetGlobal("args", []string{"--test"})
 		engine.SetGlobal("superDocumentTemplate", "dummy template")
 

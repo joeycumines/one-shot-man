@@ -135,7 +135,7 @@ func TestMultilineJsCreatePrompt(t *testing.T) {
 	tm := eng.GetTUIManager()
 
 	// Test with multiline=true
-	name, err := tm.jsCreatePrompt(map[string]interface{}{
+	name, err := tm.jsCreatePrompt(map[string]any{
 		"name":      "ml-test",
 		"prefix":    ">>> ",
 		"multiline": true,
@@ -159,7 +159,7 @@ func TestMultilineJsCreatePrompt(t *testing.T) {
 	}
 
 	// Test with multiline=false (default)
-	name2, err := tm.jsCreatePrompt(map[string]interface{}{
+	name2, err := tm.jsCreatePrompt(map[string]any{
 		"name":      "ml-test-false",
 		"prefix":    ">>> ",
 		"multiline": false,
@@ -172,7 +172,7 @@ func TestMultilineJsCreatePrompt(t *testing.T) {
 	}
 
 	// Test default (not specified)
-	name3, err := tm.jsCreatePrompt(map[string]interface{}{
+	name3, err := tm.jsCreatePrompt(map[string]any{
 		"name":   "ml-test-default",
 		"prefix": ">>> ",
 	})
@@ -184,7 +184,7 @@ func TestMultilineJsCreatePrompt(t *testing.T) {
 	}
 
 	// Test with invalid multiline type
-	_, err = tm.jsCreatePrompt(map[string]interface{}{
+	_, err = tm.jsCreatePrompt(map[string]any{
 		"name":      "ml-test-invalid",
 		"prefix":    ">>> ",
 		"multiline": "notbool",

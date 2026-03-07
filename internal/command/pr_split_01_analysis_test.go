@@ -105,7 +105,7 @@ func TestChunk01_AnalyzeDiff_MultiFileChanges(t *testing.T) {
 	gitRun(t, dir, "add", ".")
 	gitRun(t, dir, "commit", "-m", "feature changes")
 
-	evalJS := loadChunkEngine(t, map[string]interface{}{
+	evalJS := loadChunkEngine(t, map[string]any{
 		"baseBranch": "main",
 	}, "00_core", "01_analysis")
 
@@ -174,7 +174,7 @@ func TestChunk01_AnalyzeDiff_EmptyDiff(t *testing.T) {
 	// Feature branch with NO changes.
 	gitRun(t, dir, "checkout", "-b", "feature")
 
-	evalJS := loadChunkEngine(t, map[string]interface{}{
+	evalJS := loadChunkEngine(t, map[string]any{
 		"baseBranch": "main",
 	}, "00_core", "01_analysis")
 
@@ -213,7 +213,7 @@ func TestChunk01_AnalyzeDiff_BadBaseBranch(t *testing.T) {
 	gitRun(t, dir, "add", ".")
 	gitRun(t, dir, "commit", "-m", "x")
 
-	evalJS := loadChunkEngine(t, map[string]interface{}{
+	evalJS := loadChunkEngine(t, map[string]any{
 		"baseBranch": "nonexistent-branch",
 	}, "00_core", "01_analysis")
 
@@ -258,7 +258,7 @@ func TestChunk01_AnalyzeDiff_Rename(t *testing.T) {
 	gitRun(t, dir, "mv", "old.txt", "new.txt")
 	gitRun(t, dir, "commit", "-m", "rename")
 
-	evalJS := loadChunkEngine(t, map[string]interface{}{
+	evalJS := loadChunkEngine(t, map[string]any{
 		"baseBranch": "main",
 	}, "00_core", "01_analysis")
 
@@ -313,7 +313,7 @@ func TestChunk01_AnalyzeDiffStats_BasicCounts(t *testing.T) {
 	gitRun(t, dir, "add", ".")
 	gitRun(t, dir, "commit", "-m", "modify file")
 
-	evalJS := loadChunkEngine(t, map[string]interface{}{
+	evalJS := loadChunkEngine(t, map[string]any{
 		"baseBranch": "main",
 	}, "00_core", "01_analysis")
 
@@ -362,7 +362,7 @@ func TestChunk01_AnalyzeDiffStats_EmptyDiff(t *testing.T) {
 
 	gitRun(t, dir, "checkout", "-b", "feature")
 
-	evalJS := loadChunkEngine(t, map[string]interface{}{
+	evalJS := loadChunkEngine(t, map[string]any{
 		"baseBranch": "main",
 	}, "00_core", "01_analysis")
 
@@ -373,7 +373,7 @@ func TestChunk01_AnalyzeDiffStats_EmptyDiff(t *testing.T) {
 	}
 
 	var result struct {
-		Files []interface{} `json:"files"`
+		Files []any `json:"files"`
 		Error *string       `json:"error"`
 	}
 	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {

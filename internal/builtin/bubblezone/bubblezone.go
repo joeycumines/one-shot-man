@@ -183,7 +183,7 @@ func Require(manager *Manager) func(runtime *goja.Runtime, module *goja.Object) 
 			}
 
 			// ZoneInfo has StartX, StartY, EndX, EndY as direct fields
-			return runtime.ToValue(map[string]interface{}{
+			return runtime.ToValue(map[string]any{
 				"startX": zoneInfo.StartX,
 				"startY": zoneInfo.StartY,
 				"endX":   zoneInfo.EndX,

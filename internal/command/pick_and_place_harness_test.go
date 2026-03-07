@@ -1277,7 +1277,7 @@ type LogEvent struct {
 	Timestamp string                 `json:"timestamp"`
 	Level     string                 `json:"level"`
 	Message   string                 `json:"message"`
-	Fields    map[string]interface{} `json:"fields"`
+	Fields    map[string]any `json:"fields"`
 }
 
 // MirroredState represents the Go-side state built from log events
@@ -1326,7 +1326,7 @@ func parseLogEvents(content string) []LogEvent {
 				Timestamp: matches[1],
 				Level:     matches[2],
 				Message:   matches[3],
-				Fields:    make(map[string]interface{}),
+				Fields:    make(map[string]any),
 			}
 
 			// Parse JSON fields if present
@@ -1337,9 +1337,9 @@ func parseLogEvents(content string) []LogEvent {
 			events = append(events, event)
 		} else {
 			// Try parsing as pure JSON log line (structured logging)
-			var jsonEvent map[string]interface{}
+			var jsonEvent map[string]any
 			if err := json.Unmarshal([]byte(line), &jsonEvent); err == nil {
-				event := LogEvent{Fields: make(map[string]interface{})}
+				event := LogEvent{Fields: make(map[string]any)}
 				if ts, ok := jsonEvent["time"].(string); ok {
 					event.Timestamp = ts
 				}

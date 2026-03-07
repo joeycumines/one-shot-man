@@ -56,7 +56,7 @@ func TestPromptColors_BackgroundFields(t *testing.T) {
 
 	t.Run("ApplyFromInterfaceMap_sets_background_colors", func(t *testing.T) {
 		pc := PromptColors{}
-		pc.ApplyFromInterfaceMap(map[string]interface{}{
+		pc.ApplyFromInterfaceMap(map[string]any{
 			"inputBackground":  "red",
 			"prefixBackground": "blue",
 		})

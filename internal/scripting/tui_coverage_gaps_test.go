@@ -25,7 +25,7 @@ import (
 func TestApplyFromGetter_AllColorKeys(t *testing.T) {
 	t.Parallel()
 	pc := PromptColors{}
-	pc.ApplyFromInterfaceMap(map[string]interface{}{
+	pc.ApplyFromInterfaceMap(map[string]any{
 		"input":                         "red",
 		"inputBackground":               "blue",
 		"prefix":                        "green",
@@ -146,7 +146,7 @@ func TestSetDefaultColorsFromStrings(t *testing.T) {
 func TestApplyFromInterfaceMap_NonStringValue(t *testing.T) {
 	t.Parallel()
 	pc := PromptColors{}
-	pc.ApplyFromInterfaceMap(map[string]interface{}{
+	pc.ApplyFromInterfaceMap(map[string]any{
 		"input": 42, // not a string
 	})
 	// Should remain at default (0 = DefaultColor)
@@ -772,8 +772,8 @@ func TestParseHistoryConfig(t *testing.T) {
 	t.Parallel()
 
 	t.Run("full_config", func(t *testing.T) {
-		cfg, err := parseHistoryConfig(map[string]interface{}{
-			"history": map[string]interface{}{
+		cfg, err := parseHistoryConfig(map[string]any{
+			"history": map[string]any{
 				"enabled": true,
 				"file":    "/tmp/test-history",
 				"size":    500,
@@ -794,7 +794,7 @@ func TestParseHistoryConfig(t *testing.T) {
 	})
 
 	t.Run("no_history_key", func(t *testing.T) {
-		cfg, err := parseHistoryConfig(map[string]interface{}{})
+		cfg, err := parseHistoryConfig(map[string]any{})
 		if err != nil {
 			t.Fatalf("parseHistoryConfig: %v", err)
 		}
@@ -804,8 +804,8 @@ func TestParseHistoryConfig(t *testing.T) {
 	})
 
 	t.Run("invalid_enabled_type", func(t *testing.T) {
-		_, err := parseHistoryConfig(map[string]interface{}{
-			"history": map[string]interface{}{
+		_, err := parseHistoryConfig(map[string]any{
+			"history": map[string]any{
 				"enabled": "notbool",
 			},
 		})
@@ -815,8 +815,8 @@ func TestParseHistoryConfig(t *testing.T) {
 	})
 
 	t.Run("invalid_file_type", func(t *testing.T) {
-		_, err := parseHistoryConfig(map[string]interface{}{
-			"history": map[string]interface{}{
+		_, err := parseHistoryConfig(map[string]any{
+			"history": map[string]any{
 				"file": 123,
 			},
 		})
@@ -826,8 +826,8 @@ func TestParseHistoryConfig(t *testing.T) {
 	})
 
 	t.Run("invalid_size_type", func(t *testing.T) {
-		_, err := parseHistoryConfig(map[string]interface{}{
-			"history": map[string]interface{}{
+		_, err := parseHistoryConfig(map[string]any{
+			"history": map[string]any{
 				"size": "notint",
 			},
 		})
@@ -1038,7 +1038,7 @@ func TestJsRegisterCommand_MissingHandler(t *testing.T) {
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 	tm := eng.GetTUIManager()
 
-	err := tm.jsRegisterCommand(map[string]interface{}{
+	err := tm.jsRegisterCommand(map[string]any{
 		"name":        "no-handler",
 		"description": "A command without a handler",
 	})
@@ -1165,7 +1165,7 @@ func TestJsSetCompleter_CompleterNotFound(t *testing.T) {
 	tm := eng.GetTUIManager()
 
 	// First create a valid prompt
-	_, err := tm.jsCreatePrompt(map[string]interface{}{
+	_, err := tm.jsCreatePrompt(map[string]any{
 		"name":   "set-comp-test",
 		"prefix": ">>> ",
 	})
@@ -1389,7 +1389,7 @@ func TestBuildPromptJSObject(t *testing.T) {
 	tm := eng.GetTUIManager()
 
 	// Create a prompt to get a *prompt.Prompt
-	_, err := tm.jsCreatePrompt(map[string]interface{}{
+	_, err := tm.jsCreatePrompt(map[string]any{
 		"name":   "obj-test",
 		"prefix": ">>> ",
 	})
@@ -1430,7 +1430,7 @@ func TestJsCreatePrompt_WithOptions(t *testing.T) {
 	tm := eng.GetTUIManager()
 
 	// Test with various options
-	name, err := tm.jsCreatePrompt(map[string]interface{}{
+	name, err := tm.jsCreatePrompt(map[string]any{
 		"name":                    "full-opts",
 		"title":                   "Test Title",
 		"prefix":                  "$ ",
@@ -1442,11 +1442,11 @@ func TestJsCreatePrompt_WithOptions(t *testing.T) {
 		"showCompletionAtStart":   true,
 		"completionOnDown":        true,
 		"keyBindMode":             "emacs",
-		"colors": map[string]interface{}{
+		"colors": map[string]any{
 			"input":  "red",
 			"prefix": "blue",
 		},
-		"history": map[string]interface{}{
+		"history": map[string]any{
 			"enabled": false,
 		},
 	})
@@ -1458,7 +1458,7 @@ func TestJsCreatePrompt_WithOptions(t *testing.T) {
 	}
 
 	// Test with common key bind mode
-	_, err = tm.jsCreatePrompt(map[string]interface{}{
+	_, err = tm.jsCreatePrompt(map[string]any{
 		"name":        "common-mode",
 		"prefix":      "$ ",
 		"keyBindMode": "common",
@@ -1494,10 +1494,10 @@ func TestJsCreatePrompt_WithHistoryFile(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	_, err := tm.jsCreatePrompt(map[string]interface{}{
+	_, err := tm.jsCreatePrompt(map[string]any{
 		"name":   "hist-test",
 		"prefix": ">>> ",
-		"history": map[string]interface{}{
+		"history": map[string]any{
 			"enabled": true,
 			"file":    histFile,
 			"size":    100,
@@ -2405,7 +2405,7 @@ func TestJsSetCompleter_Success(t *testing.T) {
 	}
 
 	// Create a prompt
-	_, err := tm.jsCreatePrompt(map[string]interface{}{
+	_, err := tm.jsCreatePrompt(map[string]any{
 		"name":   "setcomp-prompt",
 		"prefix": ">>> ",
 	})
@@ -2528,19 +2528,19 @@ func TestJsCreatePrompt_InvalidOptionTypes(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		config map[string]interface{}
+		config map[string]any
 	}{
-		{"bad_name", map[string]interface{}{"name": 123}},
-		{"bad_title", map[string]interface{}{"title": 123}},
-		{"bad_prefix", map[string]interface{}{"prefix": 123}},
-		{"bad_maxSuggestion", map[string]interface{}{"maxSuggestion": "notint"}},
-		{"bad_dynamicCompletion", map[string]interface{}{"dynamicCompletion": "notbool"}},
-		{"bad_executeHidesCompletions", map[string]interface{}{"executeHidesCompletions": "notbool"}},
-		{"bad_escapeToggle", map[string]interface{}{"escapeToggle": "notbool"}},
-		{"bad_initialText", map[string]interface{}{"initialText": 123}},
-		{"bad_showCompletionAtStart", map[string]interface{}{"showCompletionAtStart": "notbool"}},
-		{"bad_completionOnDown", map[string]interface{}{"completionOnDown": "notbool"}},
-		{"bad_keyBindMode", map[string]interface{}{"keyBindMode": 123}},
+		{"bad_name", map[string]any{"name": 123}},
+		{"bad_title", map[string]any{"title": 123}},
+		{"bad_prefix", map[string]any{"prefix": 123}},
+		{"bad_maxSuggestion", map[string]any{"maxSuggestion": "notint"}},
+		{"bad_dynamicCompletion", map[string]any{"dynamicCompletion": "notbool"}},
+		{"bad_executeHidesCompletions", map[string]any{"executeHidesCompletions": "notbool"}},
+		{"bad_escapeToggle", map[string]any{"escapeToggle": "notbool"}},
+		{"bad_initialText", map[string]any{"initialText": 123}},
+		{"bad_showCompletionAtStart", map[string]any{"showCompletionAtStart": "notbool"}},
+		{"bad_completionOnDown", map[string]any{"completionOnDown": "notbool"}},
+		{"bad_keyBindMode", map[string]any{"keyBindMode": 123}},
 	}
 
 	for _, tt := range tests {
@@ -2561,7 +2561,7 @@ func TestBuildGoPrompt_KeyBindModes(t *testing.T) {
 	tm := eng.GetTUIManager()
 
 	// Test with static prefix (no callback)
-	_, err := tm.jsCreatePrompt(map[string]interface{}{
+	_, err := tm.jsCreatePrompt(map[string]any{
 		"name":   "static-prefix",
 		"prefix": "$ ",
 	})
@@ -2570,7 +2570,7 @@ func TestBuildGoPrompt_KeyBindModes(t *testing.T) {
 	}
 
 	// Test with title
-	_, err = tm.jsCreatePrompt(map[string]interface{}{
+	_, err = tm.jsCreatePrompt(map[string]any{
 		"name":  "with-title",
 		"title": "My Terminal",
 	})
@@ -2614,7 +2614,7 @@ func TestJsRegisterMode_InvalidInitialCommandType(t *testing.T) {
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 	tm := eng.GetTUIManager()
 
-	err := tm.jsRegisterMode(map[string]interface{}{
+	err := tm.jsRegisterMode(map[string]any{
 		"name":           "bad-init",
 		"initialCommand": 42, // wrong type — expects string
 	})
@@ -2634,7 +2634,7 @@ func TestJsRegisterMode_InvalidMultilineType(t *testing.T) {
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 	tm := eng.GetTUIManager()
 
-	err := tm.jsRegisterMode(map[string]interface{}{
+	err := tm.jsRegisterMode(map[string]any{
 		"name":      "bad-multiline",
 		"multiline": "not-a-bool", // wrong type — expects bool
 	})
@@ -2657,10 +2657,10 @@ func TestJsRegisterCommand_InvalidArgCompleters(t *testing.T) {
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 	tm := eng.GetTUIManager()
 
-	err := tm.jsRegisterCommand(map[string]interface{}{
+	err := tm.jsRegisterCommand(map[string]any{
 		"name":          "bad-completers",
 		"description":   "test",
-		"argCompleters": "not-an-array", // wrong type — expects []interface{}
+		"argCompleters": "not-an-array", // wrong type — expects []any
 		"handler":       func() {},
 	})
 	if err == nil {
@@ -2678,10 +2678,10 @@ func TestJsRegisterCommand_InvalidFlagDefs(t *testing.T) {
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 	tm := eng.GetTUIManager()
 
-	err := tm.jsRegisterCommand(map[string]interface{}{
+	err := tm.jsRegisterCommand(map[string]any{
 		"name":        "bad-flags",
 		"description": "test",
-		"flagDefs":    "not-an-array", // wrong type — expects []interface{}
+		"flagDefs":    "not-an-array", // wrong type — expects []any
 		"handler":     func() {},
 	})
 	if err == nil {
@@ -2706,12 +2706,12 @@ func TestJsCreatePrompt_MoreInvalidTypes(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		config map[string]interface{}
+		config map[string]any
 		errKey string
 	}{
-		{"bad_multiline", map[string]interface{}{"multiline": "notbool"}, "multiline"},
-		{"bad_completionWordSeparator", map[string]interface{}{"completionWordSeparator": 123}, "completionWordSeparator"},
-		{"bad_indentSize", map[string]interface{}{"indentSize": "notint"}, "indentSize"},
+		{"bad_multiline", map[string]any{"multiline": "notbool"}, "multiline"},
+		{"bad_completionWordSeparator", map[string]any{"completionWordSeparator": 123}, "completionWordSeparator"},
+		{"bad_indentSize", map[string]any{"indentSize": "notint"}, "indentSize"},
 	}
 
 	for _, tt := range tests {
@@ -2742,7 +2742,7 @@ func TestBuildGoPrompt_AllOptionBranches(t *testing.T) {
 
 	// Create a prompt with ALL optional features enabled.
 	// jsCreatePrompt delegates to buildGoPrompt, so this exercises the code.
-	_, err := tm.jsCreatePrompt(map[string]interface{}{
+	_, err := tm.jsCreatePrompt(map[string]any{
 		"name":                    "all-opts-completionWordSep",
 		"prefix":                  "$ ",
 		"title":                   "All Options Test",
@@ -2759,7 +2759,7 @@ func TestBuildGoPrompt_AllOptionBranches(t *testing.T) {
 	}
 
 	// Also test "emacs" key bind mode
-	_, err = tm.jsCreatePrompt(map[string]interface{}{
+	_, err = tm.jsCreatePrompt(map[string]any{
 		"name":        "emacs-mode",
 		"prefix":      "$ ",
 		"keyBindMode": "emacs",
@@ -2842,12 +2842,12 @@ func TestRehydrateContextManager_ValidData(t *testing.T) {
 	}
 
 	// Set valid contextItems data in the format rehydrateContextManager expects
-	tm.stateManager.SetState("contextItems", []interface{}{
-		map[string]interface{}{
+	tm.stateManager.SetState("contextItems", []any{
+		map[string]any{
 			"type":  "file",
 			"label": f1,
 		},
-		map[string]interface{}{
+		map[string]any{
 			"type":  "file",
 			"label": f2,
 		},
@@ -2870,8 +2870,8 @@ func TestRehydrateContextManager_MissingFile(t *testing.T) {
 	tm := eng.GetTUIManager()
 
 	// Set contextItems with a nonexistent file
-	tm.stateManager.SetState("contextItems", []interface{}{
-		map[string]interface{}{
+	tm.stateManager.SetState("contextItems", []any{
+		map[string]any{
 			"type":  "file",
 			"label": "/tmp/nonexistent-file-12345.txt",
 		},

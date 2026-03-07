@@ -374,7 +374,7 @@ func BenchmarkNewGojaObject(b *testing.B) {
 func BenchmarkGojaToValue_Map(b *testing.B) {
 	runtime := goja.New()
 
-	m := map[string]interface{}{
+	m := map[string]any{
 		"type":  "Key",
 		"key":   "w",
 		"runes": []string{"w"},

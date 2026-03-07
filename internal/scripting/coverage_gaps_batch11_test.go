@@ -216,13 +216,13 @@ func TestNewTUILogger_FileLogging_WithGroupAndAttrs(t *testing.T) {
 	output := logBuf.String()
 	assert.NotEmpty(t, output, "JSON log should be written")
 
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	err := json.Unmarshal([]byte(output), &parsed)
 	require.NoError(t, err)
 	assert.Equal(t, "hello", parsed["msg"])
 
 	// slog.JSONHandler nests groups as JSON objects.
-	svcMap, ok := parsed["svc"].(map[string]interface{})
+	svcMap, ok := parsed["svc"].(map[string]any)
 	require.True(t, ok, "svc group should be a JSON object, got: %v", parsed)
 	assert.Equal(t, "1.0", svcMap["version"])
 	assert.Equal(t, "test123", svcMap["detail"])

@@ -131,7 +131,7 @@ func TestPipelineChunk_SendToHandle_NullHandle(t *testing.T) {
 	}
 
 	// Result should be a map with error key.
-	m, ok := val.(map[string]interface{})
+	m, ok := val.(map[string]any)
 	if !ok {
 		t.Fatalf("expected map, got %T: %v", val, val)
 	}
@@ -170,7 +170,7 @@ func TestPipelineChunk_SendToHandle_MockHandle(t *testing.T) {
 	}
 
 	// Should succeed.
-	m, ok := val.(map[string]interface{})
+	m, ok := val.(map[string]any)
 	if !ok {
 		t.Fatalf("expected map, got %T: %v", val, val)
 	}
@@ -219,7 +219,7 @@ func TestPipelineChunk_SEND_TEXT_NEWLINE_DELAY_MS(t *testing.T) {
 }
 
 // toInt64 converts an interface value to int64.
-func toInt64(v interface{}) int64 {
+func toInt64(v any) int64 {
 	switch n := v.(type) {
 	case int64:
 		return n

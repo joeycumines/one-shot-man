@@ -19,7 +19,7 @@ var verifyChunks = []string{
 
 // setupExecRepoAndExecute creates a repo, makes changes, runs executeSplit,
 // then returns the dir and plan JSON for verification tests.
-func setupExecRepoAndExecute(t *testing.T, evalJS func(string) (interface{}, error)) string {
+func setupExecRepoAndExecute(t *testing.T, evalJS func(string) (any, error)) string {
 	t.Helper()
 	dir := initGitRepo(t)
 

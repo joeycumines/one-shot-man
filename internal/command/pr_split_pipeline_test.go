@@ -24,7 +24,7 @@ type validatePlanResult struct {
 	Errors []string `json:"errors"`
 }
 
-func parseValidatePlanResult(t *testing.T, raw interface{}) validatePlanResult {
+func parseValidatePlanResult(t *testing.T, raw any) validatePlanResult {
 	t.Helper()
 	s, ok := raw.(string)
 	if !ok {
@@ -55,7 +55,7 @@ type resolveConflictsResult struct {
 	CancelledByUser bool           `json:"cancelledByUser"`
 }
 
-func parseResolveConflictsResult(t *testing.T, raw interface{}) resolveConflictsResult {
+func parseResolveConflictsResult(t *testing.T, raw any) resolveConflictsResult {
 	t.Helper()
 	s, ok := raw.(string)
 	if !ok {
@@ -72,7 +72,7 @@ type claudeResolveResult struct {
 	Error *string `json:"error"`
 }
 
-func parseClaudeResolveResult(t *testing.T, raw interface{}) claudeResolveResult {
+func parseClaudeResolveResult(t *testing.T, raw any) claudeResolveResult {
 	t.Helper()
 	s, ok := raw.(string)
 	if !ok {

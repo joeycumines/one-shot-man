@@ -181,7 +181,7 @@ func Require(manager *Manager) func(runtime *goja.Runtime, module *goja.Object) 
 			panic("defineProperty is not a function")
 		}
 
-		_, err := defPropCallable(goja.Undefined(), proto, runtime.ToValue("hasError"), runtime.ToValue(map[string]interface{}{
+		_, err := defPropCallable(goja.Undefined(), proto, runtime.ToValue("hasError"), runtime.ToValue(map[string]any{
 			"get": func(call goja.FunctionCall) goja.Value {
 				state := getState(call)
 				if state == nil {
@@ -195,7 +195,7 @@ func Require(manager *Manager) func(runtime *goja.Runtime, module *goja.Object) 
 			panic(err)
 		}
 
-		_, err = defPropCallable(goja.Undefined(), proto, runtime.ToValue("error"), runtime.ToValue(map[string]interface{}{
+		_, err = defPropCallable(goja.Undefined(), proto, runtime.ToValue("error"), runtime.ToValue(map[string]any{
 			"get": func(call goja.FunctionCall) goja.Value {
 				state := getState(call)
 				if state == nil || !state.hasError {
@@ -209,7 +209,7 @@ func Require(manager *Manager) func(runtime *goja.Runtime, module *goja.Object) 
 			panic(err)
 		}
 
-		_, err = defPropCallable(goja.Undefined(), proto, runtime.ToValue("errorCode"), runtime.ToValue(map[string]interface{}{
+		_, err = defPropCallable(goja.Undefined(), proto, runtime.ToValue("errorCode"), runtime.ToValue(map[string]any{
 			"get": func(call goja.FunctionCall) goja.Value {
 				state := getState(call)
 				if state == nil || !state.hasError {
@@ -614,15 +614,15 @@ func Require(manager *Manager) func(runtime *goja.Runtime, module *goja.Object) 
 		_ = exports.Set("NoTabConversion", lipgloss.NoTabConversion)
 
 		// Border Factories
-		_ = exports.Set("normalBorder", func() map[string]interface{} { return borderToJS(lipgloss.NormalBorder()) })
-		_ = exports.Set("roundedBorder", func() map[string]interface{} { return borderToJS(lipgloss.RoundedBorder()) })
-		_ = exports.Set("blockBorder", func() map[string]interface{} { return borderToJS(lipgloss.BlockBorder()) })
-		_ = exports.Set("outerHalfBlockBorder", func() map[string]interface{} { return borderToJS(lipgloss.OuterHalfBlockBorder()) })
-		_ = exports.Set("innerHalfBlockBorder", func() map[string]interface{} { return borderToJS(lipgloss.InnerHalfBlockBorder()) })
-		_ = exports.Set("thickBorder", func() map[string]interface{} { return borderToJS(lipgloss.ThickBorder()) })
-		_ = exports.Set("doubleBorder", func() map[string]interface{} { return borderToJS(lipgloss.DoubleBorder()) })
-		_ = exports.Set("hiddenBorder", func() map[string]interface{} { return borderToJS(lipgloss.HiddenBorder()) })
-		_ = exports.Set("noBorder", func() map[string]interface{} { return nil })
+		_ = exports.Set("normalBorder", func() map[string]any { return borderToJS(lipgloss.NormalBorder()) })
+		_ = exports.Set("roundedBorder", func() map[string]any { return borderToJS(lipgloss.RoundedBorder()) })
+		_ = exports.Set("blockBorder", func() map[string]any { return borderToJS(lipgloss.BlockBorder()) })
+		_ = exports.Set("outerHalfBlockBorder", func() map[string]any { return borderToJS(lipgloss.OuterHalfBlockBorder()) })
+		_ = exports.Set("innerHalfBlockBorder", func() map[string]any { return borderToJS(lipgloss.InnerHalfBlockBorder()) })
+		_ = exports.Set("thickBorder", func() map[string]any { return borderToJS(lipgloss.ThickBorder()) })
+		_ = exports.Set("doubleBorder", func() map[string]any { return borderToJS(lipgloss.DoubleBorder()) })
+		_ = exports.Set("hiddenBorder", func() map[string]any { return borderToJS(lipgloss.HiddenBorder()) })
+		_ = exports.Set("noBorder", func() map[string]any { return nil })
 
 		// Utilities
 		_ = exports.Set("joinHorizontal", func(call goja.FunctionCall) goja.Value {
@@ -722,10 +722,10 @@ func Require(manager *Manager) func(runtime *goja.Runtime, module *goja.Object) 
 
 		_ = exports.Set("size", func(call goja.FunctionCall) goja.Value {
 			if len(call.Arguments) < 1 {
-				return runtime.ToValue(map[string]interface{}{"width": 0, "height": 0})
+				return runtime.ToValue(map[string]any{"width": 0, "height": 0})
 			}
 			str := call.Argument(0).String()
-			return runtime.ToValue(map[string]interface{}{
+			return runtime.ToValue(map[string]any{
 				"width":  lipgloss.Width(str),
 				"height": lipgloss.Height(str),
 			})
@@ -856,8 +856,8 @@ func extractInts(args []goja.Value) []int {
 	return result
 }
 
-func borderToJS(b lipgloss.Border) map[string]interface{} {
-	return map[string]interface{}{
+func borderToJS(b lipgloss.Border) map[string]any {
+	return map[string]any{
 		"top":          b.Top,
 		"bottom":       b.Bottom,
 		"left":         b.Left,

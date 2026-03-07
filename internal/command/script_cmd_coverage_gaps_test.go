@@ -706,9 +706,9 @@ func TestInjectConfigHotSnippets_WithSnippets(t *testing.T) {
 	if val == nil {
 		t.Fatal("expected CONFIG_HOT_SNIPPETS to be set")
 	}
-	arr, ok := val.([]map[string]interface{})
+	arr, ok := val.([]map[string]any)
 	if !ok {
-		t.Fatalf("expected []map[string]interface{}, got %T", val)
+		t.Fatalf("expected []map[string]any, got %T", val)
 	}
 	if len(arr) != 1 {
 		t.Fatalf("expected 1 snippet, got %d", len(arr))

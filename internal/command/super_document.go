@@ -64,7 +64,7 @@ func (c *SuperDocumentCommand) Execute(args []string, stdout, stderr io.Writer) 
 	// - "Off-Black" and "Off-White" to reduce eye strain
 	// - Primary accent (Indigo/Blue) looks good on both backgrounds
 	// - Semantic colors for success, error, warning states
-	themeColors := map[string]interface{}{
+	themeColors := map[string]any{
 		// Text colors - primary content, secondary labels, tertiary/muted hints
 		"textPrimary":   map[string]string{"light": "#24292f", "dark": "#e6edf3"},
 		"textSecondary": map[string]string{"light": "#57606a", "dark": "#8b949e"},
@@ -109,7 +109,7 @@ func (c *SuperDocumentCommand) Execute(args []string, stdout, stderr io.Writer) 
 	// Inject command name and configuration for state namespacing
 	// The shellMode flag controls whether to start in shell or TUI mode
 	const commandName = "super-document"
-	engine.SetGlobal("config", map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{
 		"name":      commandName,
 		"shellMode": c.shellMode, // Wire --shell flag to JS state
 		"theme":     themeColors, // Wire theme colors to JS

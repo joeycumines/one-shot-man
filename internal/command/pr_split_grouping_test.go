@@ -17,7 +17,7 @@ import (
 
 // parseGroups is a convenience helper that JSON-parses a grouping result
 // from evalJS into a map[string][]string.
-func parseGroups(t *testing.T, raw interface{}) map[string][]string {
+func parseGroups(t *testing.T, raw any) map[string][]string {
 	t.Helper()
 	s, ok := raw.(string)
 	if !ok {

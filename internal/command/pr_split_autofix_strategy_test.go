@@ -580,7 +580,7 @@ type autoFixResult struct {
 	Error string `json:"error"`
 }
 
-func parseAutoFixResult(t *testing.T, raw interface{}) autoFixResult {
+func parseAutoFixResult(t *testing.T, raw any) autoFixResult {
 	t.Helper()
 	var r autoFixResult
 	if err := json.Unmarshal([]byte(raw.(string)), &r); err != nil {

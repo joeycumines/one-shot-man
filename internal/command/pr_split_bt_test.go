@@ -359,7 +359,7 @@ func TestBuildReport_WithNullCaches(t *testing.T) {
 	}
 	jsonStr = jsonStr[:end]
 
-	var report map[string]interface{}
+	var report map[string]any
 	if err := json.Unmarshal([]byte(jsonStr), &report); err != nil {
 		t.Fatalf("failed to parse report JSON: %v\nraw: %s", err, jsonStr)
 	}
@@ -424,7 +424,7 @@ func TestBuildReport_WithPopulatedCaches(t *testing.T) {
 	}
 	jsonStr = jsonStr[:end]
 
-	var report map[string]interface{}
+	var report map[string]any
 	if err := json.Unmarshal([]byte(jsonStr), &report); err != nil {
 		t.Fatalf("failed to parse report JSON: %v\nraw: %s", err, jsonStr)
 	}
@@ -436,7 +436,7 @@ func TestBuildReport_WithPopulatedCaches(t *testing.T) {
 	}
 
 	// Analysis
-	analysis, _ := report["analysis"].(map[string]interface{})
+	analysis, _ := report["analysis"].(map[string]any)
 	if analysis == nil {
 		t.Fatal("expected report.analysis to be populated after analyze")
 	}
@@ -446,13 +446,13 @@ func TestBuildReport_WithPopulatedCaches(t *testing.T) {
 	}
 
 	// Groups
-	groups, _ := report["groups"].([]interface{})
+	groups, _ := report["groups"].([]any)
 	if len(groups) == 0 {
 		t.Error("expected report.groups to be populated after group")
 	}
 
 	// Plan
-	plan, _ := report["plan"].(map[string]interface{})
+	plan, _ := report["plan"].(map[string]any)
 	if plan == nil {
 		t.Fatal("expected report.plan to be populated after plan")
 	}

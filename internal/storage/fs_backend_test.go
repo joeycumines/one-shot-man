@@ -490,7 +490,7 @@ func TestFileSystemBackend_ArchiveSession_ExclusiveCreate(t *testing.T) {
 	defer backend.Close()
 
 	// Save an initial session so session file exists
-	s := &Session{ID: sessionID, CreateTime: time.Now(), UpdateTime: time.Now(), ScriptState: map[string]map[string]interface{}{}, SharedState: map[string]interface{}{}, History: []HistoryEntry{}}
+	s := &Session{ID: sessionID, CreateTime: time.Now(), UpdateTime: time.Now(), ScriptState: map[string]map[string]any{}, SharedState: map[string]any{}, History: []HistoryEntry{}}
 	if err := backend.SaveSession(s); err != nil {
 		t.Fatalf("SaveSession failed: %v", err)
 	}
@@ -558,7 +558,7 @@ func TestFileSystemBackend_ArchiveSession_ConcurrentExclusive(t *testing.T) {
 	defer backend.Close()
 
 	// Save an initial session so session file exists
-	s := &Session{ID: sessionID, CreateTime: time.Now(), UpdateTime: time.Now(), ScriptState: map[string]map[string]interface{}{}, SharedState: map[string]interface{}{}, History: []HistoryEntry{}}
+	s := &Session{ID: sessionID, CreateTime: time.Now(), UpdateTime: time.Now(), ScriptState: map[string]map[string]any{}, SharedState: map[string]any{}, History: []HistoryEntry{}}
 	if err := backend.SaveSession(s); err != nil {
 		t.Fatalf("SaveSession failed: %v", err)
 	}
@@ -632,7 +632,7 @@ func TestFileSystemBackend_ArchiveSession_PreserveArchiveOnSourceRemoveFailure(t
 	defer backend.Close()
 
 	// Save an initial session so session file exists
-	s := &Session{ID: sessionID, CreateTime: time.Now(), UpdateTime: time.Now(), ScriptState: map[string]map[string]interface{}{}, SharedState: map[string]interface{}{}, History: []HistoryEntry{}}
+	s := &Session{ID: sessionID, CreateTime: time.Now(), UpdateTime: time.Now(), ScriptState: map[string]map[string]any{}, SharedState: map[string]any{}, History: []HistoryEntry{}}
 	if err := backend.SaveSession(s); err != nil {
 		t.Fatalf("SaveSession failed: %v", err)
 	}

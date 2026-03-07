@@ -79,7 +79,7 @@ func TestGraphJS_PlanCreation(t *testing.T) {
 		})()
 	`)
 
-	obj := res.Export().(map[string]interface{})
+	obj := res.Export().(map[string]any)
 	assert.True(t, obj["planCreated"].(bool), "Plan should be created")
 	assert.True(t, obj["hasNode"].(bool), "Plan should have Node() method")
 	assert.Equal(t, "s0", obj["initialActor"], "Actor should start at s0")
@@ -257,10 +257,10 @@ func TestGraphJS_PathValidation(t *testing.T) {
 	require.NoError(t, err, "Timed out waiting for actor to reach goal sg")
 
 	// Get the path
-	var path []interface{}
+	var path []any
 	err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
 		pathVal := vm.Get("pathTaken")
-		path = pathVal.Export().([]interface{})
+		path = pathVal.Export().([]any)
 		return nil
 	})
 	require.NoError(t, err)
@@ -280,7 +280,7 @@ func TestGraphJS_PathValidation(t *testing.T) {
 	// Build path string for verification
 	pathNodes := []string{"s0"}
 	for _, move := range path {
-		moveMap := move.(map[string]interface{})
+		moveMap := move.(map[string]any)
 		pathNodes = append(pathNodes, moveMap["to"].(string))
 	}
 

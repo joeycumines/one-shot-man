@@ -42,7 +42,7 @@ func TestIntegration_WizardBaselineRetry(t *testing.T) {
 			{"cmd/run.go", "package main\n\nfunc run() {}\n"},
 			{".verify-ok", "marker"},
 		},
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "test -f .verify-ok",
 			"strategy":      "directory",
@@ -87,8 +87,8 @@ func TestIntegration_WizardBaselineRetry(t *testing.T) {
 	}
 
 	// --- Step 2: Set up MCP injection for the pipeline after override ---
-	classJSON, _ := json.Marshal(map[string]interface{}{
-		"categories": []map[string]interface{}{
+	classJSON, _ := json.Marshal(map[string]any{
+		"categories": []map[string]any{
 			{
 				"name":        "pkg",
 				"description": "Package additions",
@@ -101,8 +101,8 @@ func TestIntegration_WizardBaselineRetry(t *testing.T) {
 			},
 		},
 	})
-	planJSON, _ := json.Marshal(map[string]interface{}{
-		"stages": []map[string]interface{}{
+	planJSON, _ := json.Marshal(map[string]any{
+		"stages": []map[string]any{
 			{
 				"name":    "split/01-pkg",
 				"files":   []string{"pkg/handler.go", ".verify-ok"},
@@ -185,7 +185,7 @@ func TestIntegration_WizardHandlerChain_PlanReject(t *testing.T) {
 			{"pkg/handler.go", "package pkg\n\nfunc Handle() string { return \"ok\" }\n"},
 			{"cmd/run.go", "package main\n\nfunc run() {}\n"},
 		},
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",
@@ -315,7 +315,7 @@ func TestIntegration_WizardHandlerChain_PlanReject(t *testing.T) {
 			Name         string `json:"name"`
 			VerifyPassed bool   `json:"verifyPassed"`
 		} `json:"results"`
-		FailedBranches []interface{} `json:"failedBranches"`
+		FailedBranches []any `json:"failedBranches"`
 	}
 	if err := json.Unmarshal([]byte(buildResult.(string)), &br); err != nil {
 		t.Fatalf("parse build result: %v", err)
@@ -430,7 +430,7 @@ func TestIntegration_WizardHandlerChain_BranchFailSkip(t *testing.T) {
 			{"cmd/run.go", "package main\n\nfunc run() {}\n"},
 			{"FAIL_MARKER", "this file triggers verify failure"},
 		},
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true", // baseline uses 'true'
 			"strategy":      "directory",

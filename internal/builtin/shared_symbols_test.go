@@ -21,8 +21,8 @@ func (m *mockStateManager) SetSharedSymbols(symbolToString map[goja.Value]string
 	m.stringToSymbolLen = len(stringToSymbol)
 }
 func (m *mockStateManager) IsSharedSymbol(goja.Value) (string, bool) { return "", false }
-func (m *mockStateManager) GetState(string) (interface{}, bool)      { return nil, false }
-func (m *mockStateManager) SetState(string, interface{})             {}
+func (m *mockStateManager) GetState(string) (any, bool)      { return nil, false }
+func (m *mockStateManager) SetState(string, any)             {}
 func (m *mockStateManager) CaptureSnapshot(string, string, json.RawMessage) error {
 	return nil
 }

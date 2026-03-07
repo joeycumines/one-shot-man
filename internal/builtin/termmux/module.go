@@ -45,7 +45,7 @@ type eventListener struct {
 // pendingEvent is an event queued from a non-JS goroutine for later delivery.
 type pendingEvent struct {
 	event string
-	data  map[string]interface{}
+	data  map[string]any
 }
 
 // muxEvents manages per-mux event listeners and an async event queue.
@@ -88,7 +88,7 @@ func (e *muxEvents) off(id int) bool {
 
 // emit delivers an event synchronously to all matching listeners.
 // MUST be called on the JS goroutine (Goja runtime is not thread-safe).
-func (e *muxEvents) emit(runtime *goja.Runtime, event string, data map[string]interface{}) {
+func (e *muxEvents) emit(runtime *goja.Runtime, event string, data map[string]any) {
 	e.mu.Lock()
 	// Snapshot listeners under lock, then release before invoking.
 	type snap struct {
@@ -110,7 +110,7 @@ func (e *muxEvents) emit(runtime *goja.Runtime, event string, data map[string]in
 
 // queue enqueues an event for later delivery via pollEvents(). Thread-safe.
 // If the channel is full, the event is dropped (non-blocking).
-func (e *muxEvents) queue(event string, data map[string]interface{}) {
+func (e *muxEvents) queue(event string, data map[string]any) {
 	select {
 	case e.pending <- pendingEvent{event: event, data: data}:
 	default:
@@ -246,12 +246,12 @@ func WrapMux(ctx context.Context, runtime *goja.Runtime, mux *parent.Mux) goja.V
 	// Emits "focus" event on entry (side: "claude") and exit (side: "osm").
 	// Emits "exit" event with the passthrough result.
 	// Drains pending async events before returning.
-	_ = obj.Set("switchTo", func() map[string]interface{} {
+	_ = obj.Set("switchTo", func() map[string]any {
 		// Focus → claude before entering passthrough.
-		events.emit(runtime, EventFocus, map[string]interface{}{"side": "claude"})
+		events.emit(runtime, EventFocus, map[string]any{"side": "claude"})
 
 		reason, err := mux.RunPassthrough(ctx)
-		result := map[string]interface{}{
+		result := map[string]any{
 			"reason": exitReasonString(reason),
 		}
 		if err != nil {
@@ -264,7 +264,7 @@ func WrapMux(ctx context.Context, runtime *goja.Runtime, mux *parent.Mux) goja.V
 		}
 
 		// Focus → osm after exiting passthrough.
-		events.emit(runtime, EventFocus, map[string]interface{}{"side": "osm"})
+		events.emit(runtime, EventFocus, map[string]any{"side": "osm"})
 
 		// Emit exit event with the passthrough result.
 		events.emit(runtime, EventExit, result)
@@ -305,7 +305,7 @@ func WrapMux(ctx context.Context, runtime *goja.Runtime, mux *parent.Mux) goja.V
 	_ = obj.Set("setResizeFunc", func(fn func(int, int)) {
 		mux.SetResizeFunc(func(rows, cols uint16) error {
 			fn(int(rows), int(cols))
-			events.queue(EventResize, map[string]interface{}{
+			events.queue(EventResize, map[string]any{
 				"rows": int(rows),
 				"cols": int(cols),
 			})
@@ -319,7 +319,7 @@ func WrapMux(ctx context.Context, runtime *goja.Runtime, mux *parent.Mux) goja.V
 	// rather than emit() (JS-goroutine only). JS receives bell events via
 	// pollEvents() or drain().
 	mux.SetBellFunc(func() {
-		events.queue(EventBell, map[string]interface{}{
+		events.queue(EventBell, map[string]any{
 			"pane": "claude",
 		})
 	})
@@ -423,13 +423,13 @@ func WrapMux(ctx context.Context, runtime *goja.Runtime, mux *parent.Mux) goja.V
 			}
 
 			// Emit focus event: entering Claude's terminal
-			events.emit(runtime, EventFocus, map[string]interface{}{
+			events.emit(runtime, EventFocus, map[string]any{
 				"side": "claude", "action": "enter",
 			})
 
 			reason, err := mux.RunPassthrough(ctx)
 
-			res := map[string]interface{}{
+			res := map[string]any{
 				"reason": exitReasonString(reason),
 			}
 			if err != nil {
@@ -437,7 +437,7 @@ func WrapMux(ctx context.Context, runtime *goja.Runtime, mux *parent.Mux) goja.V
 			}
 
 			// Emit focus event: returning to osm's terminal
-			events.emit(runtime, EventFocus, map[string]interface{}{
+			events.emit(runtime, EventFocus, map[string]any{
 				"side": "osm", "action": "return",
 			})
 
@@ -456,14 +456,14 @@ func WrapMux(ctx context.Context, runtime *goja.Runtime, mux *parent.Mux) goja.V
 //   - [parent.StringIO] (Send/Receive/Close)
 //   - map with "_goHandle" key containing StringIO or io.ReadWriteCloser
 //   - [io.ReadWriteCloser] directly
-func resolveChild(raw interface{}) (io.ReadWriteCloser, error) {
+func resolveChild(raw any) (io.ReadWriteCloser, error) {
 	// Case 1: Direct StringIO (Go test callers).
 	if sio, ok := raw.(parent.StringIO); ok {
 		return parent.WrapStringIO(sio), nil
 	}
 
 	// Case 2: Goja-wrapped AgentHandle — map with _goHandle.
-	if m, ok := raw.(map[string]interface{}); ok {
+	if m, ok := raw.(map[string]any); ok {
 		if goHandle, exists := m["_goHandle"]; exists && goHandle != nil {
 			if sio, ok := goHandle.(parent.StringIO); ok {
 				return parent.WrapStringIO(sio), nil

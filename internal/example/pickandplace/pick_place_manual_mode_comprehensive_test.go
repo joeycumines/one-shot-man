@@ -86,13 +86,13 @@ func setupPickAndPlaceTest(t *testing.T) (*context.Context, *goja.Runtime, *goja
 				if goja.IsUndefined(childrenVal) || goja.IsNull(childrenVal) {
 					return goja.Undefined()
 				}
-				// Handle the children array - it could be []goja.Value or []interface{}
+				// Handle the children array - it could be []goja.Value or []any
 				exported := childrenVal.Export()
 				var children []goja.Value
 				switch v := exported.(type) {
 				case []goja.Value:
 					children = v
-				case []interface{}:
+				case []any:
 					for _, item := range v {
 						if gojaVal, ok := item.(goja.Value); ok {
 							children = append(children, gojaVal)
@@ -235,14 +235,14 @@ func getUpdateFn(t *testing.T, exports *goja.Object) goja.Callable {
 
 // Helper to send input and then tick to process it
 // The script queues Mouse/Key inputs and processes them on Tick
-func sendInputAndTick(t *testing.T, vm *goja.Runtime, state *goja.Object, updateFn goja.Callable, msg map[string]interface{}) error {
+func sendInputAndTick(t *testing.T, vm *goja.Runtime, state *goja.Object, updateFn goja.Callable, msg map[string]any) error {
 	// Send the input message (gets queued)
 	_, err := updateFn(goja.Undefined(), state, vm.ToValue(msg))
 	if err != nil {
 		return err
 	}
 	// Send a Tick to process the queued input
-	tickMsg := map[string]interface{}{"type": "Tick", "id": "tick"}
+	tickMsg := map[string]any{"type": "Tick", "id": "tick"}
 	_, err = updateFn(goja.Undefined(), state, vm.ToValue(tickMsg))
 	return err
 }
@@ -343,7 +343,7 @@ func TestManualMode_MouseInteraction_T9(t *testing.T) {
 	_ = actor.Set("heldItem", goja.Null())
 
 	// Switch to manual mode FIRST (game starts in automatic mode)
-	modeSwitchMsg := map[string]interface{}{"type": "Key", "key": "m"}
+	modeSwitchMsg := map[string]any{"type": "Key", "key": "m"}
 	err := sendInputAndTick(t, vm, state, updateFn, modeSwitchMsg)
 	require.NoError(t, err, "Mode switch should succeed")
 	require.Equal(t, "manual", state.Get("gameMode").String(), "Should be in manual mode")
@@ -354,7 +354,7 @@ func TestManualMode_MouseInteraction_T9(t *testing.T) {
 
 		// Click on the cube position: SimX=11, SimY=10
 		// Screen coords: spaceX=(80-60)/2 = 10. ClickX = 11 + 10 + 1 = 22, ClickY=10
-		msg := map[string]interface{}{
+		msg := map[string]any{
 			"type":   "Mouse",
 			"action": "press",
 			"x":      22,
@@ -389,7 +389,7 @@ func TestManualMode_MouseInteraction_T9(t *testing.T) {
 
 		// Click on the far cube: SimX=50, SimY=10
 		// Screen coords: ClickX = 50 + 10 + 1 = 61, ClickY=10
-		msg := map[string]interface{}{
+		msg := map[string]any{
 			"type":   "Mouse",
 			"action": "press",
 			"x":      61,
@@ -423,7 +423,7 @@ func TestManualMode_MouseInteraction_T9(t *testing.T) {
 
 		// Click on empty adjacent cell: SimX=11, SimY=10 (distance 1.0, within 1.5)
 		// Screen coords: ClickX = 11 + 10 + 1 = 22, ClickY=10
-		msg := map[string]interface{}{
+		msg := map[string]any{
 			"type":   "Mouse",
 			"action": "press",
 			"x":      22,
@@ -469,7 +469,7 @@ func TestManualMode_MouseInteraction_T9(t *testing.T) {
 
 		// Try to place on occupied cell: SimX=11, SimY=10
 		// Screen coords: ClickX = 11 + 10 + 1 = 22, ClickY=10
-		msg := map[string]interface{}{
+		msg := map[string]any{
 			"type":   "Mouse",
 			"action": "press",
 			"x":      22,
@@ -516,7 +516,7 @@ func TestManualMode_MouseInteraction_T9(t *testing.T) {
 		// Goal area is centered at (8, 18) with radius 1
 		// Click on (8, 18) which is within goal area
 		// Screen coords: ClickX = 8 + 10 + 1 = 19, ClickY=18
-		msg := map[string]interface{}{
+		msg := map[string]any{
 			"type":   "Mouse",
 			"action": "press",
 			"x":      19,
@@ -558,7 +558,7 @@ func TestManualMode_MouseInteraction_T9(t *testing.T) {
 		addCube(t, vm, state, 1000, 11, 10, true, "wall")
 
 		// Try to pick the wall: SimX=11, SimY=10
-		msg := map[string]interface{}{
+		msg := map[string]any{
 			"type":   "Mouse",
 			"action": "press",
 			"x":      22,
@@ -596,7 +596,7 @@ func TestManualMode_MouseInteraction_T9(t *testing.T) {
 		addCube(t, vm, state, 506, 11, 10, false, "obstacle")
 
 		// Try to pick another cube while holding one
-		msg := map[string]interface{}{
+		msg := map[string]any{
 			"type":   "Mouse",
 			"action": "press",
 			"x":      22,
@@ -635,7 +635,7 @@ func TestManualMode_MouseInteraction_T9(t *testing.T) {
 		heldItemBefore := actor.Get("heldItem")
 
 		// Send mouse RELEASE event (not press)
-		msg := map[string]interface{}{
+		msg := map[string]any{
 			"type":   "Mouse",
 			"action": "release",
 			"x":      22,
@@ -686,7 +686,7 @@ func TestManualMode_ModeSwitching_T10_T12(t *testing.T) {
 		_ = state.Set("manualMoveTarget", manualMoveTarget)
 
 		// Switch to manual mode
-		msg := map[string]interface{}{"type": "Key", "key": "m"}
+		msg := map[string]any{"type": "Key", "key": "m"}
 		done := make(chan bool, 1)
 
 		go func() {
@@ -727,7 +727,7 @@ func TestManualMode_ModeSwitching_T10_T12(t *testing.T) {
 		_ = actor2.Set("heldItem", heldItem)
 
 		// Switch to manual mode
-		msg := map[string]interface{}{"type": "Key", "key": "m"}
+		msg := map[string]any{"type": "Key", "key": "m"}
 		_ = msg // Suppress unused warning
 		done := make(chan bool, 1)
 
@@ -763,7 +763,7 @@ func TestManualMode_ModeSwitching_T10_T12(t *testing.T) {
 		_ = actor.Set("heldItem", goja.Null())
 
 		// Switch to manual
-		msg := map[string]interface{}{"type": "Key", "key": "m"}
+		msg := map[string]any{"type": "Key", "key": "m"}
 		done := make(chan bool, 1)
 
 		go func() {
@@ -797,7 +797,7 @@ func TestManualMode_ModeSwitching_T10_T12(t *testing.T) {
 		_ = state.Set("manualMoveTarget", manualMoveTarget)
 
 		// Switch to automatic mode
-		msg := map[string]interface{}{"type": "Key", "key": "m"}
+		msg := map[string]any{"type": "Key", "key": "m"}
 		_ = msg // Suppress unused variable warning (used below via ToValue())
 		done := make(chan bool, 1)
 
@@ -847,7 +847,7 @@ func TestManualMode_ModeSwitching_T10_T12(t *testing.T) {
 		_ = actor.Set("heldItem", goja.Null())
 
 		// Switch to manual mode properly (creates manualBT)
-		switchMsg := map[string]interface{}{"type": "Key", "key": "m"}
+		switchMsg := map[string]any{"type": "Key", "key": "m"}
 		err := sendInputAndTick(t, vm, state, updateFn, switchMsg)
 		require.NoError(t, err)
 		require.Equal(t, "manual", state.Get("gameMode").String())
@@ -856,7 +856,7 @@ func TestManualMode_ModeSwitching_T10_T12(t *testing.T) {
 		addCube(t, vm, state, 601, 11, 10, false, "obstacle")
 
 		// Click to pick (this should initiate pick)
-		msgPick := map[string]interface{}{
+		msgPick := map[string]any{
 			"type":   "Mouse",
 			"action": "press",
 			"x":      22,
@@ -873,7 +873,7 @@ func TestManualMode_ModeSwitching_T10_T12(t *testing.T) {
 		assert.False(t, goja.IsNull(heldItem), "Item should be picked")
 
 		// Now switch to auto mode
-		msgSwitch := map[string]interface{}{"type": "Key", "key": "m"}
+		msgSwitch := map[string]any{"type": "Key", "key": "m"}
 		_ = msgSwitch // Suppress unused warning
 		done := make(chan bool, 1)
 
@@ -908,7 +908,7 @@ func TestManualMode_ModeSwitching_T10_T12(t *testing.T) {
 		_ = actor.Set("heldItem", goja.Null())
 
 		// Switch to manual mode properly (creates manualBT)
-		switchMsg := map[string]interface{}{"type": "Key", "key": "m"}
+		switchMsg := map[string]any{"type": "Key", "key": "m"}
 		err := sendInputAndTick(t, vm, state, updateFn, switchMsg)
 		require.NoError(t, err)
 		require.Equal(t, "manual", state.Get("gameMode").String())
@@ -922,7 +922,7 @@ func TestManualMode_ModeSwitching_T10_T12(t *testing.T) {
 		addCube(t, vm, state, 602, -1, -1, false, "obstacle")
 
 		// Click to place
-		msgPlace := map[string]interface{}{
+		msgPlace := map[string]any{
 			"type":   "Mouse",
 			"action": "press",
 			"x":      22,
@@ -938,7 +938,7 @@ func TestManualMode_ModeSwitching_T10_T12(t *testing.T) {
 		assert.True(t, goja.IsNull(actor.Get("heldItem")), "Item should be placed")
 
 		// Switch to auto mode
-		msgSwitch := map[string]interface{}{"type": "Key", "key": "m"}
+		msgSwitch := map[string]any{"type": "Key", "key": "m"}
 		_ = msgSwitch // Suppress unused warning
 		done := make(chan bool, 1)
 
@@ -978,7 +978,7 @@ func TestManualMode_ModeSwitching_T10_T12(t *testing.T) {
 		_ = state.Set("manualMoveTarget", moveTarget)
 
 		// Switch to auto while "moving"
-		msgSwitch := map[string]interface{}{"type": "Key", "key": "m"}
+		msgSwitch := map[string]any{"type": "Key", "key": "m"}
 		_ = msgSwitch // Suppress unused warning
 		done := make(chan bool, 1)
 
@@ -1032,7 +1032,7 @@ func TestManualMode_WASD_Movement_T13(t *testing.T) {
 		_ = actor.Set("y", 12)
 
 		// Press 'W' key and tick to process it
-		msg := map[string]interface{}{"type": "Key", "key": "w"}
+		msg := map[string]any{"type": "Key", "key": "w"}
 		err := sendInputAndTick(t, vm, state, updateFn, msg)
 		assert.NoError(t, err)
 
@@ -1051,7 +1051,7 @@ func TestManualMode_WASD_Movement_T13(t *testing.T) {
 
 		// Press 'D' key 5 times (discrete movement) with tick after each
 		for i := 0; i < 5; i++ {
-			msgKey := map[string]interface{}{"type": "Key", "key": "d"}
+			msgKey := map[string]any{"type": "Key", "key": "d"}
 			err := sendInputAndTick(t, vm, state, updateFn, msgKey)
 			assert.NoError(t, err, "Key press %d should succeed", i)
 		}
@@ -1069,12 +1069,12 @@ func TestManualMode_WASD_Movement_T13(t *testing.T) {
 		_ = actor.Set("y", 12)
 
 		// Press 'W' key (move up) and tick
-		msgW := map[string]interface{}{"type": "Key", "key": "w"}
+		msgW := map[string]any{"type": "Key", "key": "w"}
 		err1 := sendInputAndTick(t, vm, state, updateFn, msgW)
 		assert.NoError(t, err1)
 
 		// Press 'D' key (move right) and tick
-		msgD := map[string]interface{}{"type": "Key", "key": "d"}
+		msgD := map[string]any{"type": "Key", "key": "d"}
 		err2 := sendInputAndTick(t, vm, state, updateFn, msgD)
 		assert.NoError(t, err2)
 
@@ -1096,7 +1096,7 @@ func TestManualMode_WASD_Movement_T13(t *testing.T) {
 		addCube(t, vm, state, 701, 31, 12, false, "obstacle")
 
 		// Press 'D' to move right and tick
-		msg := map[string]interface{}{"type": "Key", "key": "d"}
+		msg := map[string]any{"type": "Key", "key": "d"}
 		err := sendInputAndTick(t, vm, state, updateFn, msg)
 		assert.NoError(t, err)
 
@@ -1113,7 +1113,7 @@ func TestManualMode_WASD_Movement_T13(t *testing.T) {
 		_ = actor.Set("y", 12)
 
 		// Press 'D' to move right (would go to 60, out of bounds) and tick
-		msg := map[string]interface{}{"type": "Key", "key": "d"}
+		msg := map[string]any{"type": "Key", "key": "d"}
 		err := sendInputAndTick(t, vm, state, updateFn, msg)
 		assert.NoError(t, err)
 
@@ -1126,7 +1126,7 @@ func TestManualMode_WASD_Movement_T13(t *testing.T) {
 		_ = actor.Set("y", 12)
 
 		// Press 'A' to move left and tick
-		msgA := map[string]interface{}{"type": "Key", "key": "a"}
+		msgA := map[string]any{"type": "Key", "key": "a"}
 		err = sendInputAndTick(t, vm, state, updateFn, msgA)
 		assert.NoError(t, err)
 

@@ -92,7 +92,7 @@ func Test_ChunkedPipeline_HeuristicRun(t *testing.T) {
 	dir := setupSmokeTestRepo(t)
 	escaped := escapeJSPath(dir)
 
-	evalJS := loadChunkEngine(t, map[string]interface{}{
+	evalJS := loadChunkEngine(t, map[string]any{
 		"baseBranch":    "main",
 		"strategy":      "directory",
 		"branchPrefix":  "smoke/",
@@ -108,7 +108,7 @@ func Test_ChunkedPipeline_HeuristicRun(t *testing.T) {
 		t.Fatalf("analyzeDiff: %v", err)
 	}
 	var analysis struct {
-		Files        []interface{}     `json:"files"`
+		Files        []any     `json:"files"`
 		FileStatuses map[string]string `json:"fileStatuses"`
 		Error        *string           `json:"error"`
 	}
@@ -276,7 +276,7 @@ func Test_ChunkedPipeline_CommandSequence(t *testing.T) {
 	dir := setupSmokeTestRepo(t)
 	escaped := escapeJSPath(dir)
 
-	evalJS := loadChunkEngine(t, map[string]interface{}{
+	evalJS := loadChunkEngine(t, map[string]any{
 		"baseBranch":    "main",
 		"strategy":      "directory",
 		"branchPrefix":  "seq/",
@@ -438,7 +438,7 @@ func Test_ChunkedPipeline_CommandSequence(t *testing.T) {
 }
 
 // mustMarshalJSON marshals v to JSON, failing the test on error.
-func mustMarshalJSON(t *testing.T, v interface{}) string {
+func mustMarshalJSON(t *testing.T, v any) string {
 	t.Helper()
 	b, err := json.Marshal(v)
 	if err != nil {

@@ -469,8 +469,8 @@ func TestParseSpawnOpts_AllFields(t *testing.T) {
 	_ = obj.Set("dir", "/tmp/workdir")
 	_ = obj.Set("rows", 40)
 	_ = obj.Set("cols", 120)
-	_ = obj.Set("env", map[string]interface{}{"FOO": "bar", "BAZ": "qux"})
-	_ = obj.Set("args", []interface{}{"--verbose", "--debug"})
+	_ = obj.Set("env", map[string]any{"FOO": "bar", "BAZ": "qux"})
+	_ = obj.Set("args", []any{"--verbose", "--debug"})
 
 	opts := &SpawnOpts{}
 	parseSpawnOpts(rt, obj, opts)
@@ -859,7 +859,7 @@ func TestJsToModelMenu_ValidObject(t *testing.T) {
 	t.Parallel()
 	rt := goja.New()
 	obj := rt.NewObject()
-	_ = obj.Set("models", []interface{}{"a", "b", "c"})
+	_ = obj.Set("models", []any{"a", "b", "c"})
 	_ = obj.Set("selectedIndex", 1)
 
 	menu := jsToModelMenu(rt, rt.ToValue(obj))
@@ -1543,7 +1543,7 @@ func TestWrapRegistry_RegisterAndList(t *testing.T) {
 	listVal, _ := listFn(goja.Undefined())
 	arr := listVal.Export()
 	if arr != nil {
-		if items, ok := arr.([]interface{}); ok && len(items) != 0 {
+		if items, ok := arr.([]any); ok && len(items) != 0 {
 			t.Errorf("list() should be empty, got %d items", len(items))
 		}
 	}
@@ -1560,7 +1560,7 @@ func TestWrapRegistry_RegisterAndList(t *testing.T) {
 	listVal2, _ := listFn(goja.Undefined())
 	exported := listVal2.Export()
 	switch items := exported.(type) {
-	case []interface{}:
+	case []any:
 		if len(items) != 1 {
 			t.Errorf("list() after register: got %d items, want 1", len(items))
 		}

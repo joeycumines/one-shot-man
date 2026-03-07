@@ -145,7 +145,7 @@ func TestContextManagerAddItem(t *testing.T) {
 
 	itemsVal := runtime.Get("__items")
 	items := itemsVal.Export()
-	itemsSlice, ok := items.([]interface{})
+	itemsSlice, ok := items.([]any)
 	if !ok {
 		t.Fatalf("expected items to be a slice, got %T", items)
 	}
@@ -376,7 +376,7 @@ func TestContextManagerCommandDescriptions(t *testing.T) {
 
 	descriptionsVal := runtime.Get("__descriptions")
 	descriptions := descriptionsVal.Export()
-	descriptionsMap, ok := descriptions.(map[string]interface{})
+	descriptionsMap, ok := descriptions.(map[string]any)
 	if !ok {
 		t.Fatalf("expected descriptions to be a map, got %T", descriptions)
 	}
@@ -560,7 +560,7 @@ func TestContextManagerDiffHandlerPayload(t *testing.T) {
 	}
 
 	defaultPayload := runtime.Get("__defaultPayload").Export()
-	defaultSlice, ok := defaultPayload.([]interface{})
+	defaultSlice, ok := defaultPayload.([]any)
 	if !ok {
 		t.Fatalf("expected default payload to be a slice, got %T", defaultPayload)
 	}
@@ -573,7 +573,7 @@ func TestContextManagerDiffHandlerPayload(t *testing.T) {
 	}
 
 	customPayload := runtime.Get("__customPayload").Export()
-	customSlice, ok := customPayload.([]interface{})
+	customSlice, ok := customPayload.([]any)
 	if !ok {
 		t.Fatalf("expected custom payload to be a slice, got %T", customPayload)
 	}
@@ -673,7 +673,7 @@ func TestContextManagerCopyRefreshesFileItems(t *testing.T) {
 
 	// Verify refreshPath was called for each file-type item (but NOT notes)
 	refreshedPaths := runtime.Get("__refreshedPaths").Export()
-	paths, ok := refreshedPaths.([]interface{})
+	paths, ok := refreshedPaths.([]any)
 	if !ok {
 		t.Fatalf("expected refreshedPaths to be a slice, got %T", refreshedPaths)
 	}
@@ -732,7 +732,7 @@ func TestContextManagerShowRefreshesFileItems(t *testing.T) {
 	}
 
 	refreshedPaths := runtime.Get("__refreshedPaths").Export()
-	paths, ok := refreshedPaths.([]interface{})
+	paths, ok := refreshedPaths.([]any)
 	if !ok {
 		t.Fatalf("expected refreshedPaths to be a slice, got %T", refreshedPaths)
 	}
@@ -744,7 +744,7 @@ func TestContextManagerShowRefreshesFileItems(t *testing.T) {
 	}
 
 	outputCalls := runtime.Get("__outputCalls").Export()
-	outputs, ok := outputCalls.([]interface{})
+	outputs, ok := outputCalls.([]any)
 	if !ok {
 		t.Fatalf("expected outputCalls to be a slice, got %T", outputCalls)
 	}
@@ -883,7 +883,7 @@ func TestContextManagerAddFromDiffBasic(t *testing.T) {
 	}
 
 	addPathCalls := runtime.Get("__addPathCalls").Export()
-	paths, ok := addPathCalls.([]interface{})
+	paths, ok := addPathCalls.([]any)
 	if !ok {
 		t.Fatalf("expected addPathCalls to be a slice, got %T", addPathCalls)
 	}
@@ -898,7 +898,7 @@ func TestContextManagerAddFromDiffBasic(t *testing.T) {
 	}
 
 	items := runtime.Get("__items").Export()
-	itemsSlice, ok := items.([]interface{})
+	itemsSlice, ok := items.([]any)
 	if !ok {
 		t.Fatalf("expected items to be a slice, got %T", items)
 	}
@@ -948,7 +948,7 @@ func TestContextManagerAddFromDiffWithSpec(t *testing.T) {
 	}
 
 	receivedArgv := runtime.Get("__receivedArgv").Export()
-	argv, ok := receivedArgv.([]interface{})
+	argv, ok := receivedArgv.([]any)
 	if !ok {
 		t.Fatalf("expected receivedArgv to be a slice, got %T", receivedArgv)
 	}
@@ -1004,7 +1004,7 @@ func TestContextManagerAddFromDiffNoChanges(t *testing.T) {
 	}
 
 	outputCalls := runtime.Get("__outputCalls").Export()
-	outputs, ok := outputCalls.([]interface{})
+	outputs, ok := outputCalls.([]any)
 	if !ok {
 		t.Fatalf("expected outputCalls to be a slice, got %T", outputCalls)
 	}
@@ -1055,7 +1055,7 @@ func TestContextManagerAddFromDiffError(t *testing.T) {
 	}
 
 	outputCalls := runtime.Get("__outputCalls").Export()
-	outputs, ok := outputCalls.([]interface{})
+	outputs, ok := outputCalls.([]any)
 	if !ok {
 		t.Fatalf("expected outputCalls to be a slice, got %T", outputCalls)
 	}
@@ -1094,18 +1094,18 @@ func TestContextManagerExecBasic(t *testing.T) {
 	}
 
 	items := runtime.Get("__items").Export()
-	itemsSlice, ok := items.([]interface{})
+	itemsSlice, ok := items.([]any)
 	if !ok {
 		t.Fatalf("expected items to be a slice, got %T", items)
 	}
 	if len(itemsSlice) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(itemsSlice))
 	}
-	item := itemsSlice[0].(map[string]interface{})
+	item := itemsSlice[0].(map[string]any)
 	if item["type"].(string) != "lazy-exec" {
 		t.Errorf("expected type 'lazy-exec', got %q", item["type"])
 	}
-	payload := item["payload"].([]interface{})
+	payload := item["payload"].([]any)
 	if len(payload) != 2 || payload[0].(string) != "ls" || payload[1].(string) != "-la" {
 		t.Errorf("expected payload [\"ls\", \"-la\"], got %v", payload)
 	}
@@ -1114,7 +1114,7 @@ func TestContextManagerExecBasic(t *testing.T) {
 	}
 
 	outputCalls := runtime.Get("__outputCalls").Export()
-	outputs, ok := outputCalls.([]interface{})
+	outputs, ok := outputCalls.([]any)
 	if !ok {
 		t.Fatalf("expected outputCalls to be a slice, got %T", outputCalls)
 	}
@@ -1155,7 +1155,7 @@ func TestContextManagerExecNoArgs(t *testing.T) {
 	}
 
 	items := runtime.Get("__items").Export()
-	itemsSlice, ok := items.([]interface{})
+	itemsSlice, ok := items.([]any)
 	if !ok {
 		t.Fatalf("expected items to be a slice, got %T", items)
 	}
@@ -1164,7 +1164,7 @@ func TestContextManagerExecNoArgs(t *testing.T) {
 	}
 
 	outputCalls := runtime.Get("__outputCalls").Export()
-	outputs, ok := outputCalls.([]interface{})
+	outputs, ok := outputCalls.([]any)
 	if !ok {
 		t.Fatalf("expected outputCalls to be a slice, got %T", outputCalls)
 	}
@@ -1227,15 +1227,15 @@ func TestContextManagerExecEditLazyExec(t *testing.T) {
 
 	// Verify item was updated
 	items := runtime.Get("__items").Export()
-	itemsSlice, ok := items.([]interface{})
+	itemsSlice, ok := items.([]any)
 	if !ok {
 		t.Fatalf("expected items to be a slice, got %T", items)
 	}
 	if len(itemsSlice) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(itemsSlice))
 	}
-	item := itemsSlice[0].(map[string]interface{})
-	payload := item["payload"].([]interface{})
+	item := itemsSlice[0].(map[string]any)
+	payload := item["payload"].([]any)
 	if len(payload) != 2 || payload[0].(string) != "cat" || payload[1].(string) != "/etc/hosts" {
 		t.Errorf("expected updated payload [\"cat\", \"/etc/hosts\"], got %v", payload)
 	}
@@ -1245,7 +1245,7 @@ func TestContextManagerExecEditLazyExec(t *testing.T) {
 
 	// Verify output
 	outputCalls := runtime.Get("__outputCalls").Export()
-	outputs, ok := outputCalls.([]interface{})
+	outputs, ok := outputCalls.([]any)
 	if !ok {
 		t.Fatalf("expected outputCalls to be a slice, got %T", outputCalls)
 	}
@@ -1300,7 +1300,7 @@ func TestContextManagerAddFromDiffPartialFailure(t *testing.T) {
 
 	// 2 successful adds (good.txt and also-good.txt), 1 failed (deleted.txt)
 	items := runtime.Get("__items").Export()
-	itemsSlice, ok := items.([]interface{})
+	itemsSlice, ok := items.([]any)
 	if !ok {
 		t.Fatalf("expected items to be a slice, got %T", items)
 	}
@@ -1309,7 +1309,7 @@ func TestContextManagerAddFromDiffPartialFailure(t *testing.T) {
 	}
 
 	outputCalls := runtime.Get("__outputCalls").Export()
-	outputs, ok := outputCalls.([]interface{})
+	outputs, ok := outputCalls.([]any)
 	if !ok {
 		t.Fatalf("expected outputCalls to be a slice, got %T", outputCalls)
 	}
@@ -1356,7 +1356,7 @@ func TestContextManagerAddArgCompletersIncludeGitref(t *testing.T) {
 	}
 
 	completers := runtime.Get("__addCompleters").Export()
-	cslice, ok := completers.([]interface{})
+	cslice, ok := completers.([]any)
 	if !ok {
 		t.Fatalf("expected argCompleters to be a slice, got %T", completers)
 	}
@@ -1418,7 +1418,7 @@ func TestContextManagerPostCopyHint(t *testing.T) {
 	}
 
 	outputCalls := runtime.Get("__outputCalls").Export()
-	outputs, ok := outputCalls.([]interface{})
+	outputs, ok := outputCalls.([]any)
 	if !ok {
 		t.Fatalf("expected outputCalls to be a slice, got %T", outputCalls)
 	}
@@ -1464,7 +1464,7 @@ func TestContextManagerPostCopyHintNotShownWhenEmpty(t *testing.T) {
 	}
 
 	outputCalls := runtime.Get("__outputCalls").Export()
-	outputs, ok := outputCalls.([]interface{})
+	outputs, ok := outputCalls.([]any)
 	if !ok {
 		t.Fatalf("expected outputCalls to be a slice, got %T", outputCalls)
 	}
@@ -1534,7 +1534,7 @@ func TestContextManagerHotSnippetBasic(t *testing.T) {
 	}
 
 	outputCalls := runtime.Get("__outputCalls").Export()
-	outputs, ok := outputCalls.([]interface{})
+	outputs, ok := outputCalls.([]any)
 	if !ok {
 		t.Fatalf("expected outputCalls to be a slice, got %T", outputCalls)
 	}
@@ -1577,7 +1577,7 @@ func TestContextManagerHotSnippetWarning(t *testing.T) {
 	}
 
 	outputCalls := runtime.Get("__outputCalls").Export()
-	outputs, ok := outputCalls.([]interface{})
+	outputs, ok := outputCalls.([]any)
 	if !ok {
 		t.Fatalf("expected outputCalls to be a slice, got %T", outputCalls)
 	}
@@ -1633,7 +1633,7 @@ func TestContextManagerHotSnippetWarningDisabled(t *testing.T) {
 	}
 
 	outputCalls := runtime.Get("__outputCalls").Export()
-	outputs, ok := outputCalls.([]interface{})
+	outputs, ok := outputCalls.([]any)
 	if !ok {
 		t.Fatalf("expected outputCalls to be a slice, got %T", outputCalls)
 	}
@@ -1692,7 +1692,7 @@ func TestContextManagerHotSnippetsList(t *testing.T) {
 	}
 
 	outputCalls := runtime.Get("__outputCalls").Export()
-	outputs, ok := outputCalls.([]interface{})
+	outputs, ok := outputCalls.([]any)
 	if !ok {
 		t.Fatalf("expected outputCalls to be a slice, got %T", outputCalls)
 	}
@@ -1758,7 +1758,7 @@ func TestContextManagerHotSnippetsEmpty(t *testing.T) {
 	}
 
 	outputCalls := runtime.Get("__outputCalls").Export()
-	outputs, ok := outputCalls.([]interface{})
+	outputs, ok := outputCalls.([]any)
 	if !ok {
 		t.Fatalf("expected outputCalls to be a slice, got %T", outputCalls)
 	}
@@ -1801,7 +1801,7 @@ func TestContextManagerListCommand(t *testing.T) {
 	}
 
 	outputCalls := runtime.Get("__outputCalls").Export()
-	outputs, ok := outputCalls.([]interface{})
+	outputs, ok := outputCalls.([]any)
 	if !ok {
 		t.Fatalf("expected outputCalls to be a slice, got %T", outputCalls)
 	}
@@ -1841,7 +1841,7 @@ func TestContextManagerListEmpty(t *testing.T) {
 	}
 
 	outputs := runtime.Get("__outputCalls").Export()
-	outputsSlice, ok := outputs.([]interface{})
+	outputsSlice, ok := outputs.([]any)
 	if !ok {
 		t.Fatalf("expected slice, got %T", outputs)
 	}
@@ -1910,30 +1910,30 @@ func TestContextManagerEditEdgeCases(t *testing.T) {
 		t.Fatalf("failed to execute script: %v", err)
 	}
 
-	noArgs := runtime.Get("__noArgsOutput").Export().([]interface{})
+	noArgs := runtime.Get("__noArgsOutput").Export().([]any)
 	if len(noArgs) != 1 || !strings.Contains(noArgs[0].(string), "Usage: edit") {
 		t.Errorf("expected usage message for no args, got %v", noArgs)
 	}
-	invalidId := runtime.Get("__invalidIdOutput").Export().([]interface{})
+	invalidId := runtime.Get("__invalidIdOutput").Export().([]any)
 	if len(invalidId) != 1 || !strings.Contains(invalidId[0].(string), "Invalid id") {
 		t.Errorf("expected invalid id message, got %v", invalidId)
 	}
-	notFound := runtime.Get("__notFoundOutput").Export().([]interface{})
+	notFound := runtime.Get("__notFoundOutput").Export().([]any)
 	if len(notFound) != 1 || !strings.Contains(notFound[0].(string), "Not found") {
 		t.Errorf("expected not found message, got %v", notFound)
 	}
-	fileEdit := runtime.Get("__fileEditOutput").Export().([]interface{})
+	fileEdit := runtime.Get("__fileEditOutput").Export().([]any)
 	if len(fileEdit) != 1 || !strings.Contains(fileEdit[0].(string), "not supported") {
 		t.Errorf("expected 'not supported' message for file edit, got %v", fileEdit)
 	}
-	noteEdit := runtime.Get("__noteEditOutput").Export().([]interface{})
+	noteEdit := runtime.Get("__noteEditOutput").Export().([]any)
 	if len(noteEdit) != 1 || !strings.Contains(noteEdit[0].(string), "Edited [2]") {
 		t.Errorf("expected 'Edited [2]' message, got %v", noteEdit)
 	}
 	if got := runtime.Get("__notePayloadAfter").String(); got != "edited: original text" {
 		t.Errorf("expected edited payload, got %q", got)
 	}
-	diffEdit := runtime.Get("__diffEditOutput").Export().([]interface{})
+	diffEdit := runtime.Get("__diffEditOutput").Export().([]any)
 	if len(diffEdit) != 1 || !strings.Contains(diffEdit[0].(string), "Updated diff specification") {
 		t.Errorf("expected 'Updated diff specification' message, got %v", diffEdit)
 	}
@@ -1941,7 +1941,7 @@ func TestContextManagerEditEdgeCases(t *testing.T) {
 		t.Errorf("expected updated label to contain 'git diff', got %q", got)
 	}
 	diffPayload := runtime.Get("__diffPayloadAfter").Export()
-	if diffSlice, ok := diffPayload.([]interface{}); !ok || len(diffSlice) == 0 {
+	if diffSlice, ok := diffPayload.([]any); !ok || len(diffSlice) == 0 {
 		t.Errorf("expected non-empty diff payload after edit, got %v (%T)", diffPayload, diffPayload)
 	}
 }
@@ -1975,11 +1975,11 @@ func TestContextManagerEditExecEmptyCommand(t *testing.T) {
 		t.Fatalf("failed to execute script: %v", err)
 	}
 
-	outputs := runtime.Get("__outputCalls").Export().([]interface{})
+	outputs := runtime.Get("__outputCalls").Export().([]any)
 	if len(outputs) != 1 || !strings.Contains(outputs[0].(string), "Command cannot be empty") {
 		t.Errorf("expected 'Command cannot be empty' message, got %v", outputs)
 	}
-	payload := runtime.Get("__payloadAfter").Export().([]interface{})
+	payload := runtime.Get("__payloadAfter").Export().([]any)
 	if len(payload) != 1 || payload[0].(string) != "ls" {
 		t.Errorf("expected payload unchanged ['ls'], got %v", payload)
 	}
@@ -2028,15 +2028,15 @@ func TestContextManagerRemoveEdgeCases(t *testing.T) {
 		t.Fatalf("failed to execute script: %v", err)
 	}
 
-	noArgs := runtime.Get("__noArgsOutput").Export().([]interface{})
+	noArgs := runtime.Get("__noArgsOutput").Export().([]any)
 	if len(noArgs) != 1 || !strings.Contains(noArgs[0].(string), "Usage: remove") {
 		t.Errorf("expected usage message, got %v", noArgs)
 	}
-	notFound := runtime.Get("__notFoundOutput").Export().([]interface{})
+	notFound := runtime.Get("__notFoundOutput").Export().([]any)
 	if len(notFound) != 1 || !strings.Contains(notFound[0].(string), "Not found") {
 		t.Errorf("expected not found message, got %v", notFound)
 	}
-	errOutput := runtime.Get("__errorOutput").Export().([]interface{})
+	errOutput := runtime.Get("__errorOutput").Export().([]any)
 	if len(errOutput) != 1 || !strings.Contains(errOutput[0].(string), "Error:") {
 		t.Errorf("expected error message, got %v", errOutput)
 	}
@@ -2076,7 +2076,7 @@ func TestContextManagerRemoveThrowPath(t *testing.T) {
 		t.Fatalf("failed to execute script: %v", err)
 	}
 
-	outputs := runtime.Get("__outputCalls").Export().([]interface{})
+	outputs := runtime.Get("__outputCalls").Export().([]any)
 	hasInfo := false
 	hasRemoved := false
 	for _, o := range outputs {
@@ -2130,7 +2130,7 @@ func TestContextManagerRemoveThrowGenericError(t *testing.T) {
 		t.Fatalf("failed to execute script: %v", err)
 	}
 
-	outputs := runtime.Get("__outputCalls").Export().([]interface{})
+	outputs := runtime.Get("__outputCalls").Export().([]any)
 	if len(outputs) != 1 || !strings.Contains(outputs[0].(string), "Error:") {
 		t.Errorf("expected error message for generic throw, got %v", outputs)
 	}
@@ -2163,7 +2163,7 @@ func TestContextManagerCopyClipboardError(t *testing.T) {
 		t.Fatalf("failed to execute script: %v", err)
 	}
 
-	outputs := runtime.Get("__outputCalls").Export().([]interface{})
+	outputs := runtime.Get("__outputCalls").Export().([]any)
 	if len(outputs) != 1 || !strings.Contains(outputs[0].(string), "Clipboard error") {
 		t.Errorf("expected clipboard error message, got %v", outputs)
 	}
@@ -2195,7 +2195,7 @@ func TestContextManagerHotSnippetClipboardError(t *testing.T) {
 		t.Fatalf("failed to execute script: %v", err)
 	}
 
-	outputs := runtime.Get("__outputCalls").Export().([]interface{})
+	outputs := runtime.Get("__outputCalls").Export().([]any)
 	if len(outputs) != 1 || !strings.Contains(outputs[0].(string), "Clipboard error") {
 		t.Errorf("expected clipboard error message, got %v", outputs)
 	}
@@ -2233,7 +2233,7 @@ func TestContextManagerAddNoArgsEditor(t *testing.T) {
 		t.Fatalf("failed to execute script: %v", err)
 	}
 
-	addPathCalls := runtime.Get("__addPathCalls").Export().([]interface{})
+	addPathCalls := runtime.Get("__addPathCalls").Export().([]any)
 	if len(addPathCalls) != 2 {
 		t.Fatalf("expected 2 addPath calls (comments and blanks filtered), got %d: %v", len(addPathCalls), addPathCalls)
 	}
@@ -2274,7 +2274,7 @@ func TestContextManagerAddErrorInRegularPath(t *testing.T) {
 		t.Fatalf("failed to execute script: %v", err)
 	}
 
-	outputs := runtime.Get("__outputCalls").Export().([]interface{})
+	outputs := runtime.Get("__outputCalls").Export().([]any)
 	if len(outputs) != 1 || !strings.Contains(outputs[0].(string), "add error") {
 		t.Errorf("expected add error message, got %v", outputs)
 	}
@@ -2317,7 +2317,7 @@ func TestContextManagerRefreshWithoutContextGlobal(t *testing.T) {
 	if got := runtime.Get("__clipboardContent").String(); got != "prompt without context" {
 		t.Errorf("expected clipboard content, got %q", got)
 	}
-	outputs := runtime.Get("__outputCalls").Export().([]interface{})
+	outputs := runtime.Get("__outputCalls").Export().([]any)
 	if len(outputs) != 1 || !strings.Contains(outputs[0].(string), "Prompt copied to clipboard") {
 		t.Errorf("expected copy success message, got %v", outputs)
 	}
@@ -2348,11 +2348,11 @@ func TestContextManagerNoteViaEditor(t *testing.T) {
 		t.Fatalf("failed to execute script: %v", err)
 	}
 
-	items := runtime.Get("__items").Export().([]interface{})
+	items := runtime.Get("__items").Export().([]any)
 	if len(items) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(items))
 	}
-	item := items[0].(map[string]interface{})
+	item := items[0].(map[string]any)
 	if item["payload"].(string) != "editor note content" {
 		t.Errorf("expected 'editor note content', got %q", item["payload"])
 	}
@@ -2494,7 +2494,7 @@ func TestContextManagerHotSnippetNoGlobalNoOptions(t *testing.T) {
 	}
 
 	outputCalls := runtime.Get("__outputCalls").Export()
-	outputs, ok := outputCalls.([]interface{})
+	outputs, ok := outputCalls.([]any)
 	if !ok {
 		t.Fatalf("expected outputCalls to be a slice, got %T", outputCalls)
 	}
@@ -2503,7 +2503,7 @@ func TestContextManagerHotSnippetNoGlobalNoOptions(t *testing.T) {
 	}
 
 	extraCmds := runtime.Get("__extraCommands").Export()
-	extras, ok := extraCmds.([]interface{})
+	extras, ok := extraCmds.([]any)
 	if !ok {
 		t.Fatalf("expected extraCommands to be a slice, got %T", extraCmds)
 	}

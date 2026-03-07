@@ -149,7 +149,7 @@ func TestPrSplitCommand_RunDryRun(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
+	stdout, dispatch := loadPrSplitEngine(t, map[string]any{
 		"dryRun": true,
 	})
 
@@ -500,7 +500,7 @@ func TestPrSplitCommand_RunExtensionStrategy(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
+	stdout, dispatch := loadPrSplitEngine(t, map[string]any{
 		"strategy": "extension",
 	})
 
@@ -743,7 +743,7 @@ func TestPrSplitCommand_RunCompilableGoRepo(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
+	stdout, dispatch := loadPrSplitEngine(t, map[string]any{
 		"verifyCommand": "go build ./...",
 	})
 
@@ -860,7 +860,7 @@ func TestPrSplitCommand_VerifyCommand(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
+	stdout, dispatch := loadPrSplitEngine(t, map[string]any{
 		"verifyCommand": "true", // Always succeed.
 	})
 
@@ -982,7 +982,7 @@ func TestPrSplitCommand_StepByStep(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
+	stdout, dispatch := loadPrSplitEngine(t, map[string]any{
 		"verifyCommand": "true",
 	})
 
@@ -1194,7 +1194,7 @@ func TestPrSplitCommand_SaveLoadPlan(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Phase 1: Create plan in dry-run mode and save it.
-	stdout1, dispatch1 := loadPrSplitEngine(t, map[string]interface{}{
+	stdout1, dispatch1 := loadPrSplitEngine(t, map[string]any{
 		"dryRun": true,
 	})
 
@@ -1317,7 +1317,7 @@ func TestPrSplitCommand_PlanEditing(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
+	stdout, dispatch := loadPrSplitEngine(t, map[string]any{
 		"dryRun": true,
 	})
 

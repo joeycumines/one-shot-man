@@ -21,7 +21,7 @@ func TestSuperDocumentE2E_FullWorkflow(t *testing.T) {
 	defer engine.Close()
 	engine.SetTestMode(true)
 
-	engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{
 		"textPrimary":    "#7f5fcf",
 		"textSecondary":  "#efefef",
 		"textTertiary":   "#888888",
@@ -85,7 +85,7 @@ __res = (function(){
 	if res == nil {
 		t.Fatalf("E2E returned nil")
 	}
-	m, ok := res.(map[string]interface{})
+	m, ok := res.(map[string]any)
 	if !ok {
 		t.Fatalf("unexpected E2E return type: %T", res)
 	}

@@ -7,7 +7,7 @@ import (
 // MouseEventToJS converts a tea.MouseEvent to a JavaScript-compatible map.
 // This uses the generated MouseButtonDefs and MouseActionDefs for consistency
 // with tea.MouseEvent.String().
-func MouseEventToJS(msg tea.MouseMsg) map[string]interface{} {
+func MouseEventToJS(msg tea.MouseMsg) map[string]any {
 	m := tea.MouseEvent(msg)
 
 	// Get button string from generated defs
@@ -28,7 +28,7 @@ func MouseEventToJS(msg tea.MouseMsg) map[string]interface{} {
 		}
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"type":    "Mouse",
 		"x":       m.X,
 		"y":       m.Y,

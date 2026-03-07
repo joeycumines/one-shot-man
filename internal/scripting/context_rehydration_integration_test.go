@@ -106,7 +106,7 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 			t.Fatalf("Failed to get items: %v", err)
 		}
 
-		itemsList, ok := items.([]interface{})
+		itemsList, ok := items.([]any)
 		if !ok {
 			t.Fatalf("Expected items to be array, got %T", items)
 		}
@@ -198,7 +198,7 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 			t.Fatalf("Failed to get items: %v", err)
 		}
 
-		itemsList, ok := items.([]interface{})
+		itemsList, ok := items.([]any)
 		if !ok {
 			t.Fatalf("Expected items to be array, got %T", items)
 		}
@@ -232,7 +232,7 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 			t.Fatalf("Failed to get items after remove: %v", err)
 		}
 
-		itemsList, ok = items.([]interface{})
+		itemsList, ok = items.([]any)
 		if !ok {
 			t.Fatalf("Expected items to be array, got %T", items)
 		}

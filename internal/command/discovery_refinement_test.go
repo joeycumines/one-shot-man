@@ -292,7 +292,7 @@ func TestGoalDiscovery_SymlinkToParentCreatesUpwardCycle(t *testing.T) {
 	cfg.SetGlobalOption("goal.max-traversal-depth", "20")
 
 	discovery := NewGoalDiscovery(cfg)
-	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
 		mu.Lock()
 		defer mu.Unlock()
 		messages = append(messages, fmt.Sprintf(format, args...))
@@ -354,7 +354,7 @@ func TestScriptDiscovery_SymlinkCycleInTraversal(t *testing.T) {
 	cfg.SetGlobalOption("script.max-traversal-depth", "20")
 
 	discovery := NewScriptDiscovery(cfg)
-	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
 		mu.Lock()
 		defer mu.Unlock()
 		messages = append(messages, fmt.Sprintf(format, args...))
@@ -468,7 +468,7 @@ func TestGoalDiscovery_UnreadableDirectoryInTraversal(t *testing.T) {
 	cfg.SetGlobalOption("goal.max-traversal-depth", "10")
 
 	discovery := NewGoalDiscovery(cfg)
-	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
 		mu.Lock()
 		defer mu.Unlock()
 		messages = append(messages, fmt.Sprintf(format, args...))
@@ -757,7 +757,7 @@ func TestGoalDiscovery_DebugLogCoverage(t *testing.T) {
 	// Keep standard paths enabled to exercise that code path.
 
 	discovery := NewGoalDiscovery(cfg)
-	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
 		mu.Lock()
 		defer mu.Unlock()
 		messages = append(messages, fmt.Sprintf(format, args...))
@@ -831,7 +831,7 @@ func TestScriptDiscovery_DebugLogCoverage(t *testing.T) {
 	cfg.SetGlobalOption("script.path-patterns", "scripts")
 
 	discovery := NewScriptDiscovery(cfg)
-	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
 		mu.Lock()
 		defer mu.Unlock()
 		messages = append(messages, fmt.Sprintf(format, args...))

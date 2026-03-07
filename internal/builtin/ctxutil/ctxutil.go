@@ -127,7 +127,7 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 				}
 			} else {
 				// Fall back to exporting into generic slice (e.g., Go slices exposed to JS)
-				var itemsGo []interface{}
+				var itemsGo []any
 				if err := runtime.ExportTo(itemsArg, &itemsGo); err != nil {
 					return runtime.ToValue("")
 				}
@@ -262,7 +262,7 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 						errMsg = fmt.Sprintf("Invalid payload: %v", err)
 					} else {
 						switch exported := exported.(type) {
-						case []interface{}:
+						case []any:
 							tmp := make([]string, 0, len(exported))
 							for i, item := range exported {
 								str, ok := item.(string)
@@ -487,9 +487,9 @@ func valueOrUndefined(val goja.Value) goja.Value {
 	return val
 }
 
-func exportGojaValue(runtime *goja.Runtime, value goja.Value) (interface{}, error) {
+func exportGojaValue(runtime *goja.Runtime, value goja.Value) (any, error) {
 	var (
-		result    interface{}
+		result    any
 		exportErr error
 	)
 

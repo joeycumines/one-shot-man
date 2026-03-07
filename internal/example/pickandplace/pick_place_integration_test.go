@@ -85,13 +85,13 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 				if goja.IsUndefined(childrenVal) || goja.IsNull(childrenVal) {
 					return goja.Undefined()
 				}
-				// Handle the children array - it could be []goja.Value or []interface{}
+				// Handle the children array - it could be []goja.Value or []any
 				exported := childrenVal.Export()
 				var children []goja.Value
 				switch v := exported.(type) {
 				case []goja.Value:
 					children = v
-				case []interface{}:
+				case []any:
 					for _, item := range v {
 						if gojaVal, ok := item.(goja.Value); ok {
 							children = append(children, gojaVal)
@@ -250,7 +250,7 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 
 	// Helper: Send Tick to process queued inputs
 	sendTick := func() {
-		tickMsg := map[string]interface{}{
+		tickMsg := map[string]any{
 			"type": "Tick",
 			"id":   "tick",
 		}
@@ -258,7 +258,7 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 	}
 
 	// Switch to manual mode FIRST (game starts in automatic mode)
-	modeSwitchMsg := map[string]interface{}{"type": "Key", "key": "m"}
+	modeSwitchMsg := map[string]any{"type": "Key", "key": "m"}
 	_, err = updateFn(goja.Undefined(), stateVal, vm.ToValue(modeSwitchMsg))
 	require.NoError(t, err, "Mode switch event should work")
 	sendTick()
@@ -275,7 +275,7 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 
 		// Click coords: SimX=11, SimY=10
 		// Screen coords: spaceX=(80-60)/2 = 10. ClickX = 11 + 10 + 1 = 22, ClickY=10
-		msg := map[string]interface{}{
+		msg := map[string]any{
 			"type":   "Mouse",
 			"action": "press",
 			"x":      22,
@@ -313,7 +313,7 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 		// Let's ensure the cube object exists in the map.
 
 		// Click coords: SimX=11, SimY=10. ScreenX = 11+10+1 = 22, ScreenY=10
-		msg := map[string]interface{}{
+		msg := map[string]any{
 			"type":   "Mouse",
 			"action": "press",
 			"x":      22,
@@ -353,7 +353,7 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 		_, _ = addSpatialFn(spatialGrid, vm.ToValue(401), vm.ToValue(11), vm.ToValue(10))
 
 		// Click Far Away: SimX=50, SimY=10. ScreenX = 50+10+1 = 61, SimY=10
-		msg := map[string]interface{}{
+		msg := map[string]any{
 			"type":   "Mouse",
 			"action": "press",
 			"x":      61,

@@ -673,7 +673,7 @@ func TestMapToAttrs_WithData(t *testing.T) {
 
 	t.Run("with_maps", func(t *testing.T) {
 		t.Parallel()
-		maps := []map[string]interface{}{
+		maps := []map[string]any{
 			{"key1": "value1", "key2": 42},
 			{"key3": true},
 		}
@@ -693,7 +693,7 @@ func TestMapToAttrs_WithData(t *testing.T) {
 
 	t.Run("empty_inner_map", func(t *testing.T) {
 		t.Parallel()
-		maps := []map[string]interface{}{
+		maps := []map[string]any{
 			{},
 		}
 		attrs := mapToAttrs(maps)
@@ -724,7 +724,7 @@ func TestJsLogClear(t *testing.T) {
 	// Verify logs are cleared
 	logsAfter := eng.jsGetLogs()
 	switch v := logsAfter.(type) {
-	case []interface{}:
+	case []any:
 		if len(v) != 0 {
 			t.Errorf("expected 0 logs after clear, got %d", len(v))
 		}
@@ -741,7 +741,7 @@ func TestJsLogDebug_WithAttrs(t *testing.T) {
 	var buf bytes.Buffer
 	eng := mustNewEngine(t, ctx, &buf, &buf)
 
-	eng.jsLogDebug("debug msg", map[string]interface{}{
+	eng.jsLogDebug("debug msg", map[string]any{
 		"component": "test",
 		"count":     42,
 	})
@@ -1035,8 +1035,8 @@ func TestNewStateManager_VersionMismatch(t *testing.T) {
 		CreateTime:  time.Now(),
 		UpdateTime:  time.Now(),
 		History:     []storage.HistoryEntry{},
-		ScriptState: map[string]map[string]interface{}{"cmd": {"k": "v"}},
-		SharedState: map[string]interface{}{"shared": "data"},
+		ScriptState: map[string]map[string]any{"cmd": {"k": "v"}},
+		SharedState: map[string]any{"shared": "data"},
 	}
 	if err := backend.SaveSession(oldSession); err != nil {
 		t.Fatal(err)
@@ -1205,7 +1205,7 @@ func TestSerializeCompleteState_NilMaps(t *testing.T) {
 		t.Fatalf("SerializeCompleteState: %v", err)
 	}
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(raw, &result); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
@@ -1298,8 +1298,8 @@ func TestArchiveAndReset_MaxAttemptsExhausted(t *testing.T) {
 		CreateTime:  time.Now(),
 		UpdateTime:  time.Now(),
 		History:     []storage.HistoryEntry{},
-		ScriptState: make(map[string]map[string]interface{}),
-		SharedState: make(map[string]interface{}),
+		ScriptState: make(map[string]map[string]any),
+		SharedState: make(map[string]any),
 	}
 	_ = realBackend.SaveSession(seed)
 

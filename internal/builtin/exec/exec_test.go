@@ -79,17 +79,17 @@ func writeScript(t *testing.T, contents string) string {
 	return path
 }
 
-func exportResult(t *testing.T, runtime *goja.Runtime, value goja.Value) map[string]interface{} {
+func exportResult(t *testing.T, runtime *goja.Runtime, value goja.Value) map[string]any {
 	t.Helper()
 
-	var out map[string]interface{}
+	var out map[string]any
 	if err := runtime.ExportTo(value, &out); err != nil {
 		t.Fatalf("failed to export result: %v", err)
 	}
 	return out
 }
 
-func toInt64(v interface{}) int64 {
+func toInt64(v any) int64 {
 	switch n := v.(type) {
 	case int64:
 		return n

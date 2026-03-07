@@ -17,7 +17,7 @@ func newProvider(t *testing.T) *testutil.TestEventLoopProvider {
 }
 
 // setVar sets a JS variable on the event loop.
-func setVar(t *testing.T, provider *testutil.TestEventLoopProvider, name string, value interface{}) {
+func setVar(t *testing.T, provider *testutil.TestEventLoopProvider, name string, value any) {
 	t.Helper()
 	runOnLoop(t, provider, func() {
 		_ = provider.Runtime().Set(name, value)

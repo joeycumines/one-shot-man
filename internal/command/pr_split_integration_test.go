@@ -43,7 +43,7 @@ func TestIntegration_HeuristicSplitEndToEnd(t *testing.T) {
 	}
 
 	// Set up the pr-split JS engine pointing at our temp repo.
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]interface{}{
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]any{
 		"baseBranch":    "main",
 		"strategy":      "directory",
 		"maxFiles":      10,
@@ -392,7 +392,7 @@ func TestIntegration_AutoSplitCancel(t *testing.T) {
 	repoDir := initIntegrationRepo(t)
 	addIntegrationFeatureFiles(t, repoDir)
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]interface{}{
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]any{
 		"baseBranch":    "main",
 		"strategy":      "directory",
 		"branchPrefix":  "split/",
@@ -1882,7 +1882,7 @@ func TestIntegration_AutoSplitMockMCP_OutputObservation(t *testing.T) {
 	tp := setupTestPipeline(t, TestPipelineOpts{
 		InitialFiles: initialFiles,
 		FeatureFiles: featureFiles,
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",
@@ -1899,7 +1899,7 @@ func TestIntegration_AutoSplitMockMCP_OutputObservation(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Classification data.
-	classJSON, _ := json.Marshal(map[string]interface{}{"categories": []map[string]any{
+	classJSON, _ := json.Marshal(map[string]any{"categories": []map[string]any{
 		{"name": "api", "description": "Add API", "files": []string{"pkg/handler.go"}},
 		{"name": "cli", "description": "CLI runner", "files": []string{"cmd/run.go"}},
 		{"name": "docs", "description": "Documentation", "files": []string{"docs/README.md"}},
@@ -2030,7 +2030,7 @@ func TestIntegration_AutoSplitWithClaude_Pipeline(t *testing.T) {
 	claudeArgsList := make([]string, len(claudeTestArgs))
 	copy(claudeArgsList, claudeTestArgs)
 
-	configOverrides := map[string]interface{}{
+	configOverrides := map[string]any{
 		"baseBranch":    "main",
 		"strategy":      "directory",
 		"maxFiles":      10,
@@ -2602,7 +2602,7 @@ func jsString(s string) string {
 }
 
 // mustJSON marshals v to a JSON string, failing the test on error.
-func mustJSON(t *testing.T, v interface{}) string {
+func mustJSON(t *testing.T, v any) string {
 	t.Helper()
 	b, err := json.Marshal(v)
 	if err != nil {

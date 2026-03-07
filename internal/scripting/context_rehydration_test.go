@@ -55,7 +55,7 @@ func TestContextManagerRehydration(t *testing.T) {
 	}
 
 	// Build the items array in the format expected by ctxutil
-	items := []map[string]interface{}{
+	items := []map[string]any{
 		{
 			"id":      float64(1),
 			"type":    "file",
@@ -173,7 +173,7 @@ func TestContextManagerRehydrationWithMissingFiles(t *testing.T) {
 		stateManager: stateManager,
 	}
 
-	items := []map[string]interface{}{
+	items := []map[string]any{
 		{
 			"id":      float64(1),
 			"type":    "file",
@@ -272,7 +272,7 @@ func (o *testOutput) String() string {
 	return string(o.data)
 }
 
-func (o *testOutput) Printf(format string, args ...interface{}) {
+func (o *testOutput) Printf(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	o.Write([]byte(msg))
 }

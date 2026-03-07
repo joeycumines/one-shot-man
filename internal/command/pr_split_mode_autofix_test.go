@@ -90,7 +90,7 @@ func TestPrSplitCommand_AutoSplitFallsBackToHeuristic(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Force Claude to be "not found" so auto-split falls back to heuristic.
-	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
+	stdout, dispatch := loadPrSplitEngine(t, map[string]any{
 		"claudeCommand": "/nonexistent/claude-for-test",
 	})
 
@@ -125,7 +125,7 @@ func TestPrSplitCommand_RunModeAutoFallback(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
 	// Force Claude to be "not found" so run --mode auto falls back to heuristic.
-	stdout, dispatch := loadPrSplitEngine(t, map[string]interface{}{
+	stdout, dispatch := loadPrSplitEngine(t, map[string]any{
 		"claudeCommand": "/nonexistent/claude-for-test",
 	})
 
@@ -560,7 +560,7 @@ func TestPrSplitCommand_ClaudeFixFixWithoutExecutor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
 		t.Fatalf("Failed to parse result: %v", err)
 	}

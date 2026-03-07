@@ -120,7 +120,7 @@ type analyzeDiffResult struct {
 	CurrentBranch string            `json:"currentBranch"`
 }
 
-func parseAnalyzeDiffResult(t *testing.T, raw interface{}) analyzeDiffResult {
+func parseAnalyzeDiffResult(t *testing.T, raw any) analyzeDiffResult {
 	t.Helper()
 	s, ok := raw.(string)
 	if !ok {
@@ -142,7 +142,7 @@ type verifyEquivResult struct {
 	DiffSummary string   `json:"diffSummary"`
 }
 
-func parseVerifyEquivResult(t *testing.T, raw interface{}) verifyEquivResult {
+func parseVerifyEquivResult(t *testing.T, raw any) verifyEquivResult {
 	t.Helper()
 	s, ok := raw.(string)
 	if !ok {
@@ -165,7 +165,7 @@ type executeSplitResult struct {
 	} `json:"results"`
 }
 
-func parseExecuteSplitResult(t *testing.T, raw interface{}) executeSplitResult {
+func parseExecuteSplitResult(t *testing.T, raw any) executeSplitResult {
 	t.Helper()
 	s, ok := raw.(string)
 	if !ok {
@@ -191,7 +191,7 @@ type verifySplitsResult struct {
 	Error *string `json:"error"`
 }
 
-func parseVerifySplitsResult(t *testing.T, raw interface{}) verifySplitsResult {
+func parseVerifySplitsResult(t *testing.T, raw any) verifySplitsResult {
 	t.Helper()
 	s, ok := raw.(string)
 	if !ok {
@@ -2769,12 +2769,12 @@ type buildReportResult struct {
 	BaseBranch string      `json:"baseBranch"`
 	Strategy   string      `json:"strategy"`
 	DryRun     bool        `json:"dryRun"`
-	Analysis   interface{} `json:"analysis"`
-	Groups     interface{} `json:"groups"`
-	Plan       interface{} `json:"plan"`
+	Analysis   any `json:"analysis"`
+	Groups     any `json:"groups"`
+	Plan       any `json:"plan"`
 }
 
-func parseBuildReportResult(t *testing.T, raw interface{}) buildReportResult {
+func parseBuildReportResult(t *testing.T, raw any) buildReportResult {
 	t.Helper()
 	s, ok := raw.(string)
 	if !ok {

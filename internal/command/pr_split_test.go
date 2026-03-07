@@ -322,8 +322,8 @@ type TestPipeline struct {
 	ResultDir   string                            // MCP result directory
 	Stdout      *safeBuffer                       // captured stdout (thread-safe)
 	Dispatch    func(string, []string) error      // TUI command dispatch
-	EvalJS      func(string) (interface{}, error) // evaluate JS in engine
-	EvalJSAsync func(string) (interface{}, error) // evaluate async JS (await)
+	EvalJS      func(string) (any, error) // evaluate JS in engine
+	EvalJSAsync func(string) (any, error) // evaluate async JS (await)
 }
 
 // setupTestPipeline creates a test pipeline with configurable initial files,
@@ -397,7 +397,7 @@ func setupTestPipeline(t *testing.T, opts TestPipelineOpts) *TestPipeline {
 	// Set up engine with config overrides.
 	// Always include the absolute temp dir path to prevent git operations
 	// from targeting the Go test package directory (B00 fix).
-	overrides := map[string]interface{}{
+	overrides := map[string]any{
 		"baseBranch": "main",
 		"dir":        dir,
 	}
@@ -422,7 +422,7 @@ type TestPipelineOpts struct {
 	InitialFiles    []TestPipelineFile     // files on main (nil = default set)
 	FeatureFiles    []TestPipelineFile     // files on feature branch (nil = default set)
 	NoFeatureFiles  bool                   // if true, feature branch has no file changes (empty commit)
-	ConfigOverrides map[string]interface{} // pr-split config overrides
+	ConfigOverrides map[string]any // pr-split config overrides
 }
 
 // dispatchAwaitPromise dispatches a TUI command by name, calling the handler
@@ -555,7 +555,7 @@ func allChunkSources() string {
 // globalThis with Object.defineProperty get/set proxies so that satellite
 // tests that assign to bare names (e.g. executeSplit = function(){})
 // transparently update the prSplit.* namespace used by chunk code.
-func loadPrSplitEngine(t testing.TB, overrides map[string]interface{}) (*bytes.Buffer, func(name string, args []string) error) {
+func loadPrSplitEngine(t testing.TB, overrides map[string]any) (*bytes.Buffer, func(name string, args []string) error) {
 	t.Helper()
 
 	var stdout, stderr bytes.Buffer
@@ -577,7 +577,7 @@ func loadPrSplitEngine(t testing.TB, overrides map[string]interface{}) (*bytes.B
 	t.Cleanup(cleanup)
 
 	// Set defaults — same as PrSplitCommand.Execute.
-	jsConfig := map[string]interface{}{
+	jsConfig := map[string]any{
 		"baseBranch":    "main",
 		"strategy":      "directory",
 		"maxFiles":      10,
@@ -590,7 +590,7 @@ func loadPrSplitEngine(t testing.TB, overrides map[string]interface{}) (*bytes.B
 		jsConfig[k] = v
 	}
 
-	engine.SetGlobal("config", map[string]interface{}{"name": "pr-split"})
+	engine.SetGlobal("config", map[string]any{"name": "pr-split"})
 	engine.SetGlobal("prSplitConfig", jsConfig)
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("prSplitTemplate", prSplitTemplate)
@@ -618,7 +618,7 @@ func loadPrSplitEngine(t testing.TB, overrides map[string]interface{}) (*bytes.B
 	return &stdout, dispatch
 }
 
-func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]interface{}) (*safeBuffer, func(string, []string) error, func(string) (interface{}, error), func(string) (interface{}, error)) {
+func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]any) (*safeBuffer, func(string, []string) error, func(string) (any, error), func(string) (any, error)) {
 	t.Helper()
 
 	// T32: Extract optional eval timeout from overrides.
@@ -651,7 +651,7 @@ func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]interface{}) (
 	}
 	t.Cleanup(cleanup)
 
-	jsConfig := map[string]interface{}{
+	jsConfig := map[string]any{
 		"baseBranch":    "main",
 		"strategy":      "directory",
 		"maxFiles":      10,
@@ -664,7 +664,7 @@ func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]interface{}) (
 		jsConfig[k] = v
 	}
 
-	engine.SetGlobal("config", map[string]interface{}{"name": "pr-split"})
+	engine.SetGlobal("config", map[string]any{"name": "pr-split"})
 	engine.SetGlobal("prSplitConfig", jsConfig)
 	engine.SetGlobal("args", []string{})
 	engine.SetGlobal("prSplitTemplate", prSplitTemplate)
@@ -684,9 +684,9 @@ func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]interface{}) (
 		return dispatchAwaitPromise(engine, tm, name, args)
 	}
 
-	evalJS := func(js string) (interface{}, error) {
+	evalJS := func(js string) (any, error) {
 		done := make(chan struct{})
-		var result interface{}
+		var result any
 		var resultErr error
 
 		submitErr := engine.Loop().Submit(func() {
@@ -696,7 +696,7 @@ func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]interface{}) (
 			// All await-containing calls are expressions (not statements),
 			// so the `var __res = <js>` wrapping is safe for these.
 			if strings.Contains(js, "await ") {
-				_ = vm.Set("__evalResult", func(val interface{}) {
+				_ = vm.Set("__evalResult", func(val any) {
 					result = val
 					close(done)
 				})
@@ -786,9 +786,9 @@ func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]interface{}) (
 	// The JS expression should be like: "await prSplit.automatedSplit({...})"
 	// or "JSON.stringify(await prSplit.automatedSplit({...}))"
 	// Also handles statement-level JS (var decls, assignments) via direct execution.
-	evalJSAsync := func(js string) (interface{}, error) {
+	evalJSAsync := func(js string) (any, error) {
 		done := make(chan struct{})
-		var result interface{}
+		var result any
 		var resultErr error
 
 		submitErr := engine.Loop().Submit(func() {
@@ -796,7 +796,7 @@ func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]interface{}) (
 
 			// If the JS contains 'await', wrap in async IIFE.
 			if strings.Contains(js, "await ") {
-				_ = vm.Set("__asyncResult", func(val interface{}) {
+				_ = vm.Set("__asyncResult", func(val any) {
 					result = val
 					close(done)
 				})

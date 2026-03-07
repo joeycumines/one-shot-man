@@ -75,7 +75,7 @@ type Engine struct {
 	ctx                  context.Context
 	stdout               io.Writer
 	stderr               io.Writer
-	globals              map[string]interface{}
+	globals              map[string]any
 	globalsMu            sync.RWMutex // Protects globals map access (C5 fix)
 	testMode             bool
 	threadCheckMode      bool  // If true, SetGlobal/GetGlobal panic on wrong goroutine
@@ -208,7 +208,7 @@ func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID,
 		ctx:            ctx,
 		stdout:         stdout,
 		stderr:         stderr,
-		globals:        make(map[string]interface{}),
+		globals:        make(map[string]any),
 		contextManager: contextManager,
 		logger:         NewTUILogger(stdout, logFile, logBufferSize, logLevel),
 		terminalIO:     terminalIO,
@@ -307,7 +307,7 @@ func (e *Engine) SetTestMode(enabled bool) {
 // For testing/debugging, you can enable strict thread-checking mode which
 // will cause SetGlobal/GetGlobal to panic if called from the wrong goroutine.
 // See SetThreadCheckMode.
-func (e *Engine) QueueSetGlobal(name string, value interface{}) {
+func (e *Engine) QueueSetGlobal(name string, value any) {
 	// Queue the VM and local cache update to the event loop for thread safety
 	// Also acquire lock to synchronize with GetGlobal's Lock()
 	vm := e.vm
@@ -325,7 +325,7 @@ func (e *Engine) QueueSetGlobal(name string, value interface{}) {
 // The operation is asynchronous - the callback is invoked with the result
 // once the operation completes on the event loop.
 // If you need synchronous access, use Runtime.GetGlobal instead.
-func (e *Engine) QueueGetGlobal(name string, callback func(value interface{})) {
+func (e *Engine) QueueGetGlobal(name string, callback func(value any)) {
 	// Queue the VM read to the event loop for thread safety
 	// Also acquire lock to synchronize with QueueSetGlobal's vm.Set() calls
 	vm := e.vm
@@ -333,7 +333,7 @@ func (e *Engine) QueueGetGlobal(name string, callback func(value interface{})) {
 		e.globalsMu.Lock()
 		val := vm.Get(name)
 		e.globalsMu.Unlock()
-		var result interface{}
+		var result any
 		if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
 			result = nil
 		} else {
@@ -380,7 +380,7 @@ func (e *Engine) checkEventLoopGoroutine(methodName string) {
 //
 // PANIC: In debug mode (when ThreadCheckMode is enabled), this will panic
 // if called from a goroutine other than the event loop goroutine.
-func (e *Engine) SetGlobal(name string, value interface{}) {
+func (e *Engine) SetGlobal(name string, value any) {
 	if e.threadCheckMode {
 		e.checkEventLoopGoroutine("SetGlobal")
 	}
@@ -404,7 +404,7 @@ func (e *Engine) SetGlobal(name string, value interface{}) {
 //
 // PANIC: In debug mode (when ThreadCheckMode is enabled), this will panic
 // if called from a goroutine other than the event loop goroutine.
-func (e *Engine) GetGlobal(name string) interface{} {
+func (e *Engine) GetGlobal(name string) any {
 	if e.threadCheckMode {
 		e.checkEventLoopGoroutine("GetGlobal")
 	}
@@ -659,7 +659,7 @@ func (e *Engine) setExecutionContext(ctx *ExecutionContext) error {
 	if ctx == nil {
 		panic("execution context cannot be nil")
 	}
-	return e.vm.Set(jsGlobalContextName, map[string]interface{}{
+	return e.vm.Set(jsGlobalContextName, map[string]any{
 		"run":    ctx.Run,
 		"defer":  ctx.Defer,
 		"log":    ctx.Log,
@@ -676,7 +676,7 @@ func (e *Engine) setExecutionContext(ctx *ExecutionContext) error {
 // setupGlobals sets up the global JavaScript environment.
 func (e *Engine) setupGlobals() {
 	// Context management functions
-	_ = e.vm.Set("context", map[string]interface{}{
+	_ = e.vm.Set("context", map[string]any{
 		"addPath":       e.jsContextAddPath,
 		"removePath":    e.jsContextRemovePath,
 		"listPaths":     e.jsContextListPaths,
@@ -690,7 +690,7 @@ func (e *Engine) setupGlobals() {
 	})
 
 	// Logging functions (application logs)
-	_ = e.vm.Set("log", map[string]interface{}{
+	_ = e.vm.Set("log", map[string]any{
 		"debug":      e.jsLogDebug,
 		"info":       e.jsLogInfo,
 		"warn":       e.jsLogWarn,
@@ -702,13 +702,13 @@ func (e *Engine) setupGlobals() {
 	})
 
 	// Terminal output functions (separate from logs)
-	_ = e.vm.Set("output", map[string]interface{}{
+	_ = e.vm.Set("output", map[string]any{
 		"print":  e.jsOutputPrint,
 		"printf": e.jsOutputPrintf,
 	})
 
 	// TUI and Mode management functions
-	_ = e.vm.Set("tui", map[string]interface{}{
+	_ = e.vm.Set("tui", map[string]any{
 		"registerMode":       e.tuiManager.jsRegisterMode,
 		"switchMode":         e.tuiManager.jsSwitchMode,
 		"getCurrentMode":     e.tuiManager.jsGetCurrentMode,

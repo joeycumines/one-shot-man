@@ -337,7 +337,7 @@ func TestHeuristicFallback_DirectoryStrategy(t *testing.T) {
 
 	// dryRun: true avoids any git operations — heuristicFallback only
 	// builds groups+plan and returns immediately.
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]interface{}{
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]any{
 		"dryRun": true,
 	})
 
@@ -407,7 +407,7 @@ func TestHeuristicFallback_TreeHashMismatch(t *testing.T) {
 	}
 
 	tp := setupTestPipeline(t, TestPipelineOpts{
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",

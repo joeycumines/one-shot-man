@@ -15,9 +15,9 @@ import (
 // jsRegisterMode allows JavaScript to register a new mode.
 // IMPORTANT: This is a JS mutator - it uses scheduleWriteAndWait to avoid deadlocks.
 // See TUIManager documentation for the locking strategy.
-func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
+func (tm *TUIManager) jsRegisterMode(modeConfig any) error {
 	// Convert the config object to a Go struct
-	if configMap, ok := modeConfig.(map[string]interface{}); ok {
+	if configMap, ok := modeConfig.(map[string]any); ok {
 		name, err := getString(configMap, "name", "")
 		if err != nil {
 			return err
@@ -32,7 +32,7 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 
 		// Process TUI configuration
 		if tuiConfig, exists := configMap["tui"]; exists {
-			if tuiMap, ok := tuiConfig.(map[string]interface{}); ok {
+			if tuiMap, ok := tuiConfig.(map[string]any); ok {
 				mode.TUIConfig = &TUIConfig{}
 				var err error
 				mode.TUIConfig.Title, err = getString(tuiMap, "title", "")
@@ -87,12 +87,12 @@ func (tm *TUIManager) jsRegisterMode(modeConfig interface{}) error {
 			}
 
 			// If it's a plain object (map) provided inline, convert it into mode.Commands
-			if objMap, ok := commandsBuilder.(map[string]interface{}); ok {
+			if objMap, ok := commandsBuilder.(map[string]any); ok {
 				for key, raw := range objMap {
 					if raw == nil {
 						continue
 					}
-					if cmdObj, ok := raw.(map[string]interface{}); ok {
+					if cmdObj, ok := raw.(map[string]any); ok {
 						desc, _ := getString(cmdObj, "description", "")
 						usage, _ := getString(cmdObj, "usage", "")
 						argCompleters, _ := getStringSlice(cmdObj, "argCompleters")
@@ -149,8 +149,8 @@ func (tm *TUIManager) jsGetCurrentMode() string {
 // jsRegisterCommand allows JavaScript to register global commands.
 // IMPORTANT: This is a JS mutator - it uses scheduleWriteAndWait to avoid deadlocks.
 // See TUIManager documentation for the locking strategy.
-func (tm *TUIManager) jsRegisterCommand(cmdConfig interface{}) error {
-	if configMap, ok := cmdConfig.(map[string]interface{}); ok {
+func (tm *TUIManager) jsRegisterCommand(cmdConfig any) error {
+	if configMap, ok := cmdConfig.(map[string]any); ok {
 		name, err := getString(configMap, "name", "")
 		if err != nil {
 			return err
@@ -213,8 +213,8 @@ func (tm *TUIManager) jsListModes() []string {
 //
 // IMPORTANT: This is a JS mutator - it uses scheduleWriteAndWait to avoid deadlocks.
 // See TUIManager documentation for the locking strategy.
-func (tm *TUIManager) jsCreatePrompt(config interface{}) (string, error) {
-	configMap, ok := config.(map[string]interface{})
+func (tm *TUIManager) jsCreatePrompt(config any) (string, error) {
+	configMap, ok := config.(map[string]any)
 	if !ok {
 		return "", fmt.Errorf("invalid prompt configuration")
 	}
@@ -236,7 +236,7 @@ func (tm *TUIManager) jsCreatePrompt(config interface{}) (string, error) {
 	// Parse colors configuration, starting from manager defaults, then applying overrides
 	colors := tm.defaultColors
 	if colorsRaw, exists := configMap["colors"]; exists {
-		if colorMap, ok := colorsRaw.(map[string]interface{}); ok {
+		if colorMap, ok := colorsRaw.(map[string]any); ok {
 			colors.ApplyFromInterfaceMap(colorMap)
 		}
 	}

@@ -735,10 +735,10 @@ func TestConcurrentScriptExecution(t *testing.T) {
 			go func(idx int) {
 				defer verifyWG.Done()
 				key := fmt.Sprintf("goroutine_%d_iter_%d", idx, idx)
-				var result interface{}
+				var result any
 				var readWG sync.WaitGroup
 				readWG.Add(1)
-				engine.QueueGetGlobal(key, func(value interface{}) {
+				engine.QueueGetGlobal(key, func(value any) {
 					result = value
 					readWG.Done()
 				})
@@ -786,7 +786,7 @@ func TestConcurrentScriptExecution(t *testing.T) {
 
 		var wg sync.WaitGroup
 		const numOps = 20
-		results := make([]interface{}, numOps)
+		results := make([]any, numOps)
 
 		for i := 0; i < numOps; i++ {
 			wg.Add(1)
@@ -799,7 +799,7 @@ func TestConcurrentScriptExecution(t *testing.T) {
 					// Use QueueGetGlobal for thread-safe async read
 					var readWg sync.WaitGroup
 					readWg.Add(1)
-					engine.QueueGetGlobal("syncKey", func(value interface{}) {
+					engine.QueueGetGlobal("syncKey", func(value any) {
 						results[idx] = value
 						readWg.Done()
 					})
@@ -830,7 +830,7 @@ func TestScriptPanicRecovery(t *testing.T) {
 
 		panicTypes := []struct {
 			name  string
-			panic interface{}
+			panic any
 		}{
 			{"string", "panic string"},
 			{"number", 42},

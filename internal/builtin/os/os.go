@@ -32,13 +32,13 @@ func Require(ctx context.Context, tuiSink func(string)) func(runtime *goja.Runti
 				path = call.Argument(0).String()
 			}
 			if path == "" {
-				return runtime.ToValue(map[string]interface{}{"error": true, "message": "empty path", "content": ""})
+				return runtime.ToValue(map[string]any{"error": true, "message": "empty path", "content": ""})
 			}
 			data, err := os.ReadFile(path)
 			if err != nil {
-				return runtime.ToValue(map[string]interface{}{"error": true, "message": err.Error(), "content": ""})
+				return runtime.ToValue(map[string]any{"error": true, "message": err.Error(), "content": ""})
 			}
-			return runtime.ToValue(map[string]interface{}{"error": false, "message": "", "content": string(data)})
+			return runtime.ToValue(map[string]any{"error": false, "message": "", "content": string(data)})
 		})
 
 		// fileExists(path: string): boolean

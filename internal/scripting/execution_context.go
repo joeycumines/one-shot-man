@@ -78,7 +78,7 @@ func (ctx *ExecutionContext) Defer(fn goja.Callable) {
 }
 
 // Log logs a message to the test output (Go-style method for internal use).
-func (ctx *ExecutionContext) Log(args ...interface{}) {
+func (ctx *ExecutionContext) Log(args ...any) {
 	_, _ = fmt.Fprintf(&ctx.output, "[%s] %s\n", ctx.name, fmt.Sprint(args...))
 	if ctx.engine.testMode {
 		_, _ = fmt.Fprintf(ctx.engine.stdout, "[%s] %s\n", ctx.name, fmt.Sprint(args...))
@@ -86,7 +86,7 @@ func (ctx *ExecutionContext) Log(args ...interface{}) {
 }
 
 // Logf logs a formatted message to the test output (Go-style method for internal use).
-func (ctx *ExecutionContext) Logf(format string, args ...interface{}) {
+func (ctx *ExecutionContext) Logf(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	_, _ = fmt.Fprintf(&ctx.output, "[%s] %s\n", ctx.name, msg)
 	if ctx.engine.testMode {
@@ -95,7 +95,7 @@ func (ctx *ExecutionContext) Logf(format string, args ...interface{}) {
 }
 
 // Error marks the current test as failed and logs an error message.
-func (ctx *ExecutionContext) Error(args ...interface{}) {
+func (ctx *ExecutionContext) Error(args ...any) {
 	ctx.failed = true
 	msg := fmt.Sprint(args...)
 	_, _ = fmt.Fprintf(&ctx.output, "[%s] ERROR: %s\n", ctx.name, msg)
@@ -103,7 +103,7 @@ func (ctx *ExecutionContext) Error(args ...interface{}) {
 }
 
 // Errorf marks the current test as failed and logs a formatted error message.
-func (ctx *ExecutionContext) Errorf(format string, args ...interface{}) {
+func (ctx *ExecutionContext) Errorf(format string, args ...any) {
 	ctx.failed = true
 	msg := fmt.Sprintf(format, args...)
 	_, _ = fmt.Fprintf(&ctx.output, "[%s] ERROR: %s\n", ctx.name, msg)
@@ -111,13 +111,13 @@ func (ctx *ExecutionContext) Errorf(format string, args ...interface{}) {
 }
 
 // Fatal marks the current test as failed and stops execution.
-func (ctx *ExecutionContext) Fatal(args ...interface{}) {
+func (ctx *ExecutionContext) Fatal(args ...any) {
 	ctx.Error(args...)
 	panic("test failed")
 }
 
 // Fatalf marks the current test as failed and stops execution with a formatted message.
-func (ctx *ExecutionContext) Fatalf(format string, args ...interface{}) {
+func (ctx *ExecutionContext) Fatalf(format string, args ...any) {
 	ctx.Errorf(format, args...)
 	panic("test failed")
 }

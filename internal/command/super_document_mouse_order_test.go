@@ -26,7 +26,7 @@ func TestHandleMouse_CallsSetViewportContextBeforeHandleClickAtScreenCoords(t *t
 	engine.SetTestMode(true)
 
 	// Provide minimal globals the script expects
-	engine.SetGlobal("config", map[string]interface{}{"name": "super-document", "theme": map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{"name": "super-document", "theme": map[string]any{
 		"textPrimary":    "#7f5fcf",
 		"textSecondary":  "#efefef",
 		"textTertiary":   "#888888",

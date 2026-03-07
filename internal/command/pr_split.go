@@ -277,7 +277,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 
 	// Inject command name for state namespacing
 	const commandName = "pr-split"
-	engine.SetGlobal("config", map[string]interface{}{
+	engine.SetGlobal("config", map[string]any{
 		"name": commandName,
 	})
 
@@ -288,7 +288,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	claudeArgsList := make([]string, len(c.claudeArgs))
 	copy(claudeArgsList, c.claudeArgs)
 	claudeEnvMap := parseClaudeEnv(c.claudeEnv)
-	engine.SetGlobal("prSplitConfig", map[string]interface{}{
+	engine.SetGlobal("prSplitConfig", map[string]any{
 		"baseBranch":       c.baseBranch,
 		"strategy":         c.strategy,
 		"maxFiles":         c.maxFiles,
@@ -314,7 +314,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	tuiMux := termmux.New(os.Stdin, stdout, termFd)
 
 	// Expose the mux to JS through the standardized osm:termmux interface.
-	// This replaces the previous hand-crafted map[string]interface{} with
+	// This replaces the previous hand-crafted map[string]any with
 	// the module's WrapMux, ensuring JS sees the same API as
 	// require('osm:termmux').newMux() would produce.
 	engine.SetGlobal("tuiMux", termmuxmod.WrapMux(ctx, engine.Runtime(), tuiMux))

@@ -400,7 +400,7 @@ type diffAnalysisResult struct {
 	CurrentBranch string            `json:"currentBranch"`
 }
 
-func parseDiffAnalysisResult(t *testing.T, raw interface{}) diffAnalysisResult {
+func parseDiffAnalysisResult(t *testing.T, raw any) diffAnalysisResult {
 	t.Helper()
 	s, ok := raw.(string)
 	if !ok {
@@ -918,8 +918,8 @@ func TestBuildDependencyGraph_NilPlan(t *testing.T) {
 	}
 	s := val.(string)
 	var graph struct {
-		Nodes []interface{} `json:"nodes"`
-		Edges []interface{} `json:"edges"`
+		Nodes []any `json:"nodes"`
+		Edges []any `json:"edges"`
 	}
 	if err := json.Unmarshal([]byte(s), &graph); err != nil {
 		t.Fatalf("parse error: %v", err)
@@ -1028,7 +1028,7 @@ func TestAnalyzeRetrospective_BalancedPlan(t *testing.T) {
 	}
 	s := val.(string)
 	var result struct {
-		Insights []interface{} `json:"insights"`
+		Insights []any `json:"insights"`
 		Score    float64       `json:"score"`
 	}
 	if err := json.Unmarshal([]byte(s), &result); err != nil {
@@ -1124,7 +1124,7 @@ func TestAnalyzeRetrospective_NilPlan(t *testing.T) {
 	}
 	s := val.(string)
 	var result struct {
-		Insights []interface{} `json:"insights"`
+		Insights []any `json:"insights"`
 		Score    float64       `json:"score"`
 	}
 	if err := json.Unmarshal([]byte(s), &result); err != nil {
@@ -1199,7 +1199,7 @@ func TestRecordTelemetry_Increment(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := val.(string)
-	var summary map[string]interface{}
+	var summary map[string]any
 	if err := json.Unmarshal([]byte(s), &summary); err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -1227,7 +1227,7 @@ func TestRecordTelemetry_SetString(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := val.(string)
-	var summary map[string]interface{}
+	var summary map[string]any
 	if err := json.Unmarshal([]byte(s), &summary); err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -1245,7 +1245,7 @@ func TestGetTelemetrySummary_HasEndTime(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := val.(string)
-	var summary map[string]interface{}
+	var summary map[string]any
 	if err := json.Unmarshal([]byte(s), &summary); err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
@@ -1668,7 +1668,7 @@ func TestSaveTelemetry_Success(t *testing.T) {
 	if !ok || ws == "" {
 		t.Fatalf("expected written file content, got %T: %v", written, written)
 	}
-	var telemetry map[string]interface{}
+	var telemetry map[string]any
 	if err := json.Unmarshal([]byte(ws), &telemetry); err != nil {
 		t.Fatalf("written content is not valid JSON: %v\ncontent: %s", err, ws)
 	}

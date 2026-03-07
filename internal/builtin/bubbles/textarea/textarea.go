@@ -151,7 +151,7 @@ type textareaModelMirror struct {
 	row                  int
 	lastCharOffset       int
 	viewport             *viewport.Model
-	rsan                 interface{} // runeutil.Sanitizer
+	rsan                 any // runeutil.Sanitizer
 }
 
 // Static assertion: verify textareaModelMirror has the same size as textarea.Model.

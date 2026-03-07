@@ -26,11 +26,11 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(runtime *
 		// exec(command: string, ...args: string[]): { stdout, stderr, code, error, message }
 		_ = exports.Set("exec", func(call goja.FunctionCall) goja.Value {
 			if len(call.Arguments) == 0 {
-				return runtime.ToValue(map[string]interface{}{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "exec: missing command"})
+				return runtime.ToValue(map[string]any{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "exec: missing command"})
 			}
 			cmdStr, ok := call.Argument(0).Export().(string)
 			if !ok || cmdStr == "" {
-				return runtime.ToValue(map[string]interface{}{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "exec: command must be a non-empty string"})
+				return runtime.ToValue(map[string]any{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "exec: command must be a non-empty string"})
 			}
 			var args []string
 			for i := 1; i < len(call.Arguments); i++ {
@@ -49,11 +49,11 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(runtime *
 		// execv(argv: string[]): { stdout, stderr, code, error, message }
 		_ = exports.Set("execv", func(call goja.FunctionCall) goja.Value {
 			if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
-				return runtime.ToValue(map[string]interface{}{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "execv: no argv"})
+				return runtime.ToValue(map[string]any{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "execv: no argv"})
 			}
 			var parts []string
 			if err := runtime.ExportTo(call.Argument(0), &parts); err != nil || len(parts) == 0 {
-				return runtime.ToValue(map[string]interface{}{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "execv: expects array of strings"})
+				return runtime.ToValue(map[string]any{"stdout": "", "stderr": "", "code": -1, "error": true, "message": "execv: expects array of strings"})
 			}
 			cmd := parts[0]
 			var args []string
@@ -244,12 +244,12 @@ func wrapReadableStream(rt *goja.Runtime, adapter *gojaeventloop.Adapter, readFn
 func jsExecStream(baseCtx context.Context, rt *goja.Runtime) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
-			return rt.ToValue(map[string]interface{}{"code": -1, "error": true, "message": "execStream: no argv"})
+			return rt.ToValue(map[string]any{"code": -1, "error": true, "message": "execStream: no argv"})
 		}
 
 		var parts []string
 		if err := rt.ExportTo(call.Argument(0), &parts); err != nil || len(parts) == 0 {
-			return rt.ToValue(map[string]interface{}{"code": -1, "error": true, "message": "execStream: expects array of strings"})
+			return rt.ToValue(map[string]any{"code": -1, "error": true, "message": "execStream: expects array of strings"})
 		}
 
 		// Parse options.
@@ -289,7 +289,7 @@ func jsExecStream(baseCtx context.Context, rt *goja.Runtime) func(call goja.Func
 
 		child, err := SpawnChild(ctx, cfg)
 		if err != nil {
-			return rt.ToValue(map[string]interface{}{"code": -1, "error": true, "message": fmt.Sprintf("execStream: spawn failed: %v", err)})
+			return rt.ToValue(map[string]any{"code": -1, "error": true, "message": fmt.Sprintf("execStream: spawn failed: %v", err)})
 		}
 
 		// Drain stdout/stderr channels, firing JS callbacks synchronously.
@@ -346,7 +346,7 @@ func jsExecStream(baseCtx context.Context, rt *goja.Runtime) func(call goja.Func
 		if waitErr != nil {
 			errStr = waitErr.Error()
 		}
-		return rt.ToValue(map[string]interface{}{
+		return rt.ToValue(map[string]any{
 			"code":    code,
 			"error":   waitErr != nil,
 			"message": errStr,
@@ -354,7 +354,7 @@ func jsExecStream(baseCtx context.Context, rt *goja.Runtime) func(call goja.Func
 	}
 }
 
-func runExec(ctx context.Context, cmd string, args ...string) map[string]interface{} {
+func runExec(ctx context.Context, cmd string, args ...string) map[string]any {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -374,7 +374,7 @@ func runExec(ctx context.Context, cmd string, args ...string) map[string]interfa
 		}
 		errStr = err.Error()
 	}
-	return map[string]interface{}{
+	return map[string]any{
 		"stdout":  stdout.String(),
 		"stderr":  stderr.String(),
 		"code":    code,

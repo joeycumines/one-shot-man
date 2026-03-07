@@ -410,7 +410,7 @@ func TestBlackboard(t *testing.T) {
 		({hasFoo, val, hasFooAfter})
 	`
 	res := executeJS(t, bridge, script)
-	obj := res.Export().(map[string]interface{})
+	obj := res.Export().(map[string]any)
 
 	assert.Equal(t, true, obj["hasFoo"])
 	assert.Equal(t, "bar", obj["val"])

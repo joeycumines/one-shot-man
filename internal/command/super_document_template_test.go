@@ -15,7 +15,7 @@ func TestSuperDocumentTemplate_ConditionalDocuments(t *testing.T) {
 
 	t.Run("no documents", func(t *testing.T) {
 		var buf bytes.Buffer
-		data := map[string]interface{}{"contextTxtar": ""}
+		data := map[string]any{"contextTxtar": ""}
 		if err := tmpl.Execute(&buf, data); err != nil {
 			t.Fatalf("execute template: %v", err)
 		}
@@ -32,7 +32,7 @@ func TestSuperDocumentTemplate_ConditionalDocuments(t *testing.T) {
 
 	t.Run("with documents", func(t *testing.T) {
 		var buf bytes.Buffer
-		data := map[string]interface{}{"documents": []map[string]string{{"id": "doc1", "content": "content1"}}}
+		data := map[string]any{"documents": []map[string]string{{"id": "doc1", "content": "content1"}}}
 		if err := tmpl.Execute(&buf, data); err != nil {
 			t.Fatalf("execute template: %v", err)
 		}

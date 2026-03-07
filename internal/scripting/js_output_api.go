@@ -8,6 +8,6 @@ func (e *Engine) jsOutputPrint(msg string) {
 }
 
 // jsOutputPrintf prints formatted text to terminal output.
-func (e *Engine) jsOutputPrintf(format string, args ...interface{}) {
+func (e *Engine) jsOutputPrintf(format string, args ...any) {
 	e.logger.PrintfToTUI(format, args...)
 }

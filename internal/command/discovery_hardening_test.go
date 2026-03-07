@@ -34,7 +34,7 @@ func TestGoalDiscovery_TimingInDebugLogs(t *testing.T) {
 	cfg.SetGlobalOption("goal.paths", goalDir)
 
 	discovery := NewGoalDiscovery(cfg)
-	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
 		mu.Lock()
 		defer mu.Unlock()
 		messages = append(messages, fmt.Sprintf(format, args...))
@@ -76,7 +76,7 @@ func TestScriptDiscovery_TimingInDebugLogs(t *testing.T) {
 	cfg.SetGlobalOption("script.paths", scriptDir)
 
 	discovery := NewScriptDiscovery(cfg)
-	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
 		mu.Lock()
 		defer mu.Unlock()
 		messages = append(messages, fmt.Sprintf(format, args...))
@@ -135,7 +135,7 @@ func TestGoalDiscovery_TraversalTimingAndDirCount(t *testing.T) {
 	cfg.SetGlobalOption("goal.path-patterns", "osm-goals")
 
 	discovery := NewGoalDiscovery(cfg)
-	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
 		mu.Lock()
 		defer mu.Unlock()
 		messages = append(messages, fmt.Sprintf(format, args...))
@@ -348,7 +348,7 @@ func TestGoalDiscovery_AnnotatedPathsTiming(t *testing.T) {
 	cfg.SetGlobalOption("goal.paths", goalDir)
 
 	discovery := NewGoalDiscovery(cfg)
-	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
 		mu.Lock()
 		defer mu.Unlock()
 		messages = append(messages, fmt.Sprintf(format, args...))
@@ -389,7 +389,7 @@ func TestScriptDiscovery_AnnotatedPathsTiming(t *testing.T) {
 	cfg.SetGlobalOption("script.paths", scriptDir)
 
 	discovery := NewScriptDiscovery(cfg)
-	discovery.config.DebugLogFunc = func(format string, args ...interface{}) {
+	discovery.config.DebugLogFunc = func(format string, args ...any) {
 		mu.Lock()
 		defer mu.Unlock()
 		messages = append(messages, fmt.Sprintf(format, args...))

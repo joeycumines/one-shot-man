@@ -64,7 +64,7 @@ const setupTUIMocks = `
 
 // loadTUIEngine loads chunks 00-12, injects TUI mocks, then loads chunk 13.
 // Returns evalJS function.
-func loadTUIEngine(t testing.TB) func(string) (interface{}, error) {
+func loadTUIEngine(t testing.TB) func(string) (any, error) {
 	t.Helper()
 
 	evalJS := loadChunkEngine(t, nil, allChunksThrough12...)
@@ -209,7 +209,7 @@ func TestChunk13_BuildReportStructure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var report map[string]interface{}
+	var report map[string]any
 	if err := json.Unmarshal([]byte(raw.(string)), &report); err != nil {
 		t.Fatal(err)
 	}
@@ -371,7 +371,7 @@ func TestChunk13_ReportCommandOutputsJSON(t *testing.T) {
 	}
 
 	// The output should be valid JSON.
-	var parsed map[string]interface{}
+	var parsed map[string]any
 	str, ok := raw.(string)
 	if !ok || str == "" {
 		t.Fatal("report output is empty")

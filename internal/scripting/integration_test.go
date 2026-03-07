@@ -1023,8 +1023,8 @@ func TestJavaScriptInteroperability(t *testing.T) {
 		t.Error("Expected config to be set, but got nil")
 	}
 	// Verify it's an object with nested.value = 42
-	if configMap, ok := configValue.(map[string]interface{}); ok {
-		if nested, ok := configMap["nested"].(map[string]interface{}); ok {
+	if configMap, ok := configValue.(map[string]any); ok {
+		if nested, ok := configMap["nested"].(map[string]any); ok {
 			if value, ok := nested["value"].(int64); !ok || value != 42 {
 				t.Errorf("Expected nested.value to be 42, got %v", nested["value"])
 			}
@@ -1819,7 +1819,7 @@ func TestScriptStateVerification(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get messages state: %v", err)
 	}
-	if messages, ok := messagesValue.([]interface{}); !ok || len(messages) != 3 {
+	if messages, ok := messagesValue.([]any); !ok || len(messages) != 3 {
 		t.Errorf("Expected 3 messages, got %v (type %T)", messagesValue, messagesValue)
 	}
 
@@ -1827,11 +1827,11 @@ func TestScriptStateVerification(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get config state: %v", err)
 	}
-	if configMap, ok := configValue.(map[string]interface{}); ok {
+	if configMap, ok := configValue.(map[string]any); ok {
 		if version, exists := configMap["version"]; !exists || version != "1.0" {
 			t.Errorf("Expected config.version to be '1.0', got %v", configMap["version"])
 		}
-		if settings, ok := configMap["settings"].(map[string]interface{}); ok {
+		if settings, ok := configMap["settings"].(map[string]any); ok {
 			if debug, ok := settings["debug"].(string); !ok || debug != "false" {
 				t.Errorf("Expected config.settings.debug to be 'false', got %v", settings["debug"])
 			}

@@ -351,9 +351,9 @@ type pipelineResult struct {
 
 // parsePipelineResult extracts key metrics from the automatedSplit() return
 // value, which has the structure: { error, report: { plan: { splits: [...] } } }.
-func parsePipelineResult(t *testing.T, raw interface{}) pipelineResult {
+func parsePipelineResult(t *testing.T, raw any) pipelineResult {
 	t.Helper()
-	var m map[string]interface{}
+	var m map[string]any
 	if err := json.Unmarshal([]byte(raw.(string)), &m); err != nil {
 		t.Fatalf("parse: %v\nraw: %s", err, raw)
 	}
@@ -361,16 +361,16 @@ func parsePipelineResult(t *testing.T, raw interface{}) pipelineResult {
 	if e, ok := m["error"].(string); ok {
 		r.Error = e
 	}
-	report, _ := m["report"].(map[string]interface{})
+	report, _ := m["report"].(map[string]any)
 	if report != nil {
-		plan, _ := report["plan"].(map[string]interface{})
+		plan, _ := report["plan"].(map[string]any)
 		if plan != nil {
-			splits, _ := plan["splits"].([]interface{})
+			splits, _ := plan["splits"].([]any)
 			r.PlanSplits = len(splits)
 			for _, s := range splits {
-				sm, _ := s.(map[string]interface{})
+				sm, _ := s.(map[string]any)
 				if sm != nil {
-					files, _ := sm["files"].([]interface{})
+					files, _ := sm["files"].([]any)
 					r.PlanFiles += len(files)
 				}
 			}
@@ -392,7 +392,7 @@ func TestAutoSplit_EmptyDiff(t *testing.T) {
 			{"a.go", "package a\n"},
 		},
 		NoFeatureFiles: true, // feature branch has no file changes
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",
@@ -452,7 +452,7 @@ func TestAutoSplit_SingleFile(t *testing.T) {
 		FeatureFiles: []TestPipelineFile{
 			{"single.go", "package single\n\nfunc Alone() {}\n"},
 		},
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",
@@ -523,7 +523,7 @@ func TestAutoSplit_LargeDiff(t *testing.T) {
 
 	tp := setupTestPipeline(t, TestPipelineOpts{
 		FeatureFiles: featureFiles,
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",
@@ -593,7 +593,7 @@ func TestAutoSplit_BinaryFiles(t *testing.T) {
 			{"data/config.bin", string([]byte{0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE, 0xFD})},
 			{"src/app.go", "package src\n\nfunc App() {}\n"}, // normal file alongside binary
 		},
-		ConfigOverrides: map[string]interface{}{
+		ConfigOverrides: map[string]any{
 			"branchPrefix":  "split/",
 			"verifyCommand": "true",
 			"strategy":      "directory",

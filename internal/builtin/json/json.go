@@ -54,9 +54,9 @@ func Require(runtime *goja.Runtime, module *goja.Object) {
 	})
 }
 
-// exportValue safely exports a goja.Value to a Go interface{}.
+// exportValue safely exports a goja.Value to a Go any.
 // Returns nil for nil, undefined, and null.
-func exportValue(v goja.Value) interface{} {
+func exportValue(v goja.Value) any {
 	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
 		return nil
 	}
@@ -73,7 +73,7 @@ func jsParse(runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
 		panic(runtime.NewTypeError("parse requires a string argument"))
 	}
 	str := arg.String()
-	var result interface{}
+	var result any
 	if err := json.Unmarshal([]byte(str), &result); err != nil {
 		panic(runtime.NewTypeError(fmt.Sprintf("invalid JSON: %s", err.Error())))
 	}
@@ -225,7 +225,7 @@ func parsePath(path string) []pathSegment {
 }
 
 // queryValue navigates val according to the remaining path segments.
-func queryValue(val interface{}, segments []pathSegment) (interface{}, bool) {
+func queryValue(val any, segments []pathSegment) (any, bool) {
 	if len(segments) == 0 {
 		return val, true
 	}
@@ -235,7 +235,7 @@ func queryValue(val interface{}, segments []pathSegment) (interface{}, bool) {
 
 	switch seg.typ {
 	case segKey:
-		m, ok := val.(map[string]interface{})
+		m, ok := val.(map[string]any)
 		if !ok {
 			return nil, false
 		}
@@ -246,7 +246,7 @@ func queryValue(val interface{}, segments []pathSegment) (interface{}, bool) {
 		return queryValue(v, rest)
 
 	case segIndex:
-		arr, ok := val.([]interface{})
+		arr, ok := val.([]any)
 		if !ok {
 			return nil, false
 		}
@@ -256,11 +256,11 @@ func queryValue(val interface{}, segments []pathSegment) (interface{}, bool) {
 		return queryValue(arr[seg.index], rest)
 
 	case segWildcard:
-		arr, ok := val.([]interface{})
+		arr, ok := val.([]any)
 		if !ok {
 			return nil, false
 		}
-		results := make([]interface{}, 0, len(arr))
+		results := make([]any, 0, len(arr))
 		for _, item := range arr {
 			if r, ok := queryValue(item, rest); ok {
 				results = append(results, r)
@@ -291,19 +291,19 @@ func jsMergePatch(runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
 // If patch is not an object (map), the patch replaces the target entirely.
 // Within objects: null values delete keys; non-null values recurse.
 // Arrays are replaced, not merged. The input is not mutated.
-func mergePatch(target, patch interface{}) interface{} {
-	patchMap, patchIsMap := patch.(map[string]interface{})
+func mergePatch(target, patch any) any {
+	patchMap, patchIsMap := patch.(map[string]any)
 	if !patchIsMap {
 		return patch
 	}
 
-	targetMap, targetIsMap := target.(map[string]interface{})
+	targetMap, targetIsMap := target.(map[string]any)
 	if !targetIsMap {
-		targetMap = make(map[string]interface{})
+		targetMap = make(map[string]any)
 	}
 
 	// Deep copy target to avoid mutation.
-	result := make(map[string]interface{}, len(targetMap))
+	result := make(map[string]any, len(targetMap))
 	for k, v := range targetMap {
 		result[k] = deepCopy(v)
 	}
@@ -320,16 +320,16 @@ func mergePatch(target, patch interface{}) interface{} {
 }
 
 // deepCopy returns a deep clone of maps and slices; primitives are returned as-is.
-func deepCopy(v interface{}) interface{} {
+func deepCopy(v any) any {
 	switch val := v.(type) {
-	case map[string]interface{}:
-		result := make(map[string]interface{}, len(val))
+	case map[string]any:
+		result := make(map[string]any, len(val))
 		for k, child := range val {
 			result[k] = deepCopy(child)
 		}
 		return result
-	case []interface{}:
-		result := make([]interface{}, len(val))
+	case []any:
+		result := make([]any, len(val))
 		for i, child := range val {
 			result[i] = deepCopy(child)
 		}
@@ -349,39 +349,39 @@ func jsDiff(runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
 
 	ops := computeDiff(a, b, "")
 	if ops == nil {
-		ops = []interface{}{}
+		ops = []any{}
 	}
 	return runtime.ToValue(ops)
 }
 
 // computeDiff recursively computes the differences between a and b.
 // path is the JSON Pointer prefix for child operations.
-func computeDiff(a, b interface{}, path string) []interface{} {
-	aMap, aIsMap := a.(map[string]interface{})
-	bMap, bIsMap := b.(map[string]interface{})
+func computeDiff(a, b any, path string) []any {
+	aMap, aIsMap := a.(map[string]any)
+	bMap, bIsMap := b.(map[string]any)
 	if aIsMap && bIsMap {
 		return diffMaps(aMap, bMap, path)
 	}
 
-	aArr, aIsArr := a.([]interface{})
-	bArr, bIsArr := b.([]interface{})
+	aArr, aIsArr := a.([]any)
+	bArr, bIsArr := b.([]any)
 	if aIsArr && bIsArr {
 		return diffArrays(aArr, bArr, path)
 	}
 
 	if !valuesEqual(a, b) {
-		op := map[string]interface{}{
+		op := map[string]any{
 			"op":       "replace",
 			"path":     path,
 			"value":    b,
 			"oldValue": a,
 		}
-		return []interface{}{op}
+		return []any{op}
 	}
 	return nil
 }
 
-func diffMaps(a, b map[string]interface{}, path string) []interface{} {
+func diffMaps(a, b map[string]any, path string) []any {
 	// Collect and sort keys for deterministic output.
 	keySet := make(map[string]struct{}, len(a)+len(b))
 	for k := range a {
@@ -396,7 +396,7 @@ func diffMaps(a, b map[string]interface{}, path string) []interface{} {
 	}
 	sort.Strings(keys)
 
-	var ops []interface{}
+	var ops []any
 	for _, k := range keys {
 		childPath := path + "/" + escapeJSONPointer(k)
 		av, inA := a[k]
@@ -406,13 +406,13 @@ func diffMaps(a, b map[string]interface{}, path string) []interface{} {
 		case inA && inB:
 			ops = append(ops, computeDiff(av, bv, childPath)...)
 		case inA:
-			ops = append(ops, map[string]interface{}{
+			ops = append(ops, map[string]any{
 				"op":       "remove",
 				"path":     childPath,
 				"oldValue": av,
 			})
 		default:
-			ops = append(ops, map[string]interface{}{
+			ops = append(ops, map[string]any{
 				"op":    "add",
 				"path":  childPath,
 				"value": bv,
@@ -422,24 +422,24 @@ func diffMaps(a, b map[string]interface{}, path string) []interface{} {
 	return ops
 }
 
-func diffArrays(a, b []interface{}, path string) []interface{} {
+func diffArrays(a, b []any, path string) []any {
 	maxLen := len(a)
 	if len(b) > maxLen {
 		maxLen = len(b)
 	}
 
-	var ops []interface{}
+	var ops []any
 	for i := 0; i < maxLen; i++ {
 		childPath := path + "/" + strconv.Itoa(i)
 		switch {
 		case i >= len(a):
-			ops = append(ops, map[string]interface{}{
+			ops = append(ops, map[string]any{
 				"op":    "add",
 				"path":  childPath,
 				"value": b[i],
 			})
 		case i >= len(b):
-			ops = append(ops, map[string]interface{}{
+			ops = append(ops, map[string]any{
 				"op":       "remove",
 				"path":     childPath,
 				"oldValue": a[i],
@@ -461,7 +461,7 @@ func escapeJSONPointer(s string) string {
 
 // valuesEqual compares two primitive (non-map, non-slice) values for equality,
 // normalizing numeric types so int64(1) == float64(1).
-func valuesEqual(a, b interface{}) bool {
+func valuesEqual(a, b any) bool {
 	if a == nil && b == nil {
 		return true
 	}
@@ -472,7 +472,7 @@ func valuesEqual(a, b interface{}) bool {
 }
 
 // normalizeNumeric converts integer types to float64 for consistent comparison.
-func normalizeNumeric(v interface{}) interface{} {
+func normalizeNumeric(v any) any {
 	switch n := v.(type) {
 	case int:
 		return float64(n)
@@ -502,7 +502,7 @@ func jsFlatten(runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
 	}
 
 	obj := objArg.Export()
-	m, ok := obj.(map[string]interface{})
+	m, ok := obj.(map[string]any)
 	if !ok {
 		panic(runtime.NewTypeError("flatten requires an object argument"))
 	}
@@ -513,16 +513,16 @@ func jsFlatten(runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
 		sep = sepArg.String()
 	}
 
-	result := make(map[string]interface{})
+	result := make(map[string]any)
 	flattenValue(m, "", sep, result)
 	return runtime.ToValue(result)
 }
 
 // flattenValue recursively flattens val into result using the given prefix and separator.
 // Object keys are joined with sep; array indices use [n] notation.
-func flattenValue(val interface{}, prefix, sep string, result map[string]interface{}) {
+func flattenValue(val any, prefix, sep string, result map[string]any) {
 	switch v := val.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		if len(v) == 0 && prefix != "" {
 			result[prefix] = v
 			return
@@ -534,7 +534,7 @@ func flattenValue(val interface{}, prefix, sep string, result map[string]interfa
 			}
 			flattenValue(child, key, sep, result)
 		}
-	case []interface{}:
+	case []any:
 		if len(v) == 0 && prefix != "" {
 			result[prefix] = v
 			return
@@ -559,7 +559,7 @@ func jsUnflatten(runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
 	}
 
 	obj := objArg.Export()
-	m, ok := obj.(map[string]interface{})
+	m, ok := obj.(map[string]any)
 	if !ok {
 		panic(runtime.NewTypeError("unflatten requires an object argument"))
 	}
@@ -582,7 +582,7 @@ type unflattenSeg struct {
 }
 
 // unflattenMap rebuilds a nested structure from a flat map.
-func unflattenMap(flat map[string]interface{}, sep string) interface{} {
+func unflattenMap(flat map[string]any, sep string) any {
 	// Sort keys for deterministic processing (important for array indices).
 	keys := make([]string, 0, len(flat))
 	for k := range flat {
@@ -590,7 +590,7 @@ func unflattenMap(flat map[string]interface{}, sep string) interface{} {
 	}
 	sort.Strings(keys)
 
-	var root interface{} = make(map[string]interface{})
+	var root any = make(map[string]any)
 	for _, key := range keys {
 		segments := parseUnflattenKey(key, sep)
 		root = setNestedValue(root, segments, flat[key])
@@ -644,7 +644,7 @@ func parseUnflattenKey(key, sep string) []unflattenSeg {
 
 // setNestedValue recursively builds the nested structure, returning the
 // updated container. Each call handles one segment and recurses for the rest.
-func setNestedValue(container interface{}, segments []unflattenSeg, value interface{}) interface{} {
+func setNestedValue(container any, segments []unflattenSeg, value any) any {
 	if len(segments) == 0 {
 		return value
 	}
@@ -653,8 +653,8 @@ func setNestedValue(container interface{}, segments []unflattenSeg, value interf
 	rest := segments[1:]
 
 	if seg.isArr {
-		var arr []interface{}
-		if existing, ok := container.([]interface{}); ok {
+		var arr []any
+		if existing, ok := container.([]any); ok {
 			arr = existing
 		}
 		for len(arr) <= seg.index {
@@ -664,11 +664,11 @@ func setNestedValue(container interface{}, segments []unflattenSeg, value interf
 		return arr
 	}
 
-	var m map[string]interface{}
-	if existing, ok := container.(map[string]interface{}); ok {
+	var m map[string]any
+	if existing, ok := container.(map[string]any); ok {
 		m = existing
 	} else {
-		m = make(map[string]interface{})
+		m = make(map[string]any)
 	}
 	m[seg.key] = setNestedValue(m[seg.key], rest, value)
 	return m

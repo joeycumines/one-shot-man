@@ -17,7 +17,7 @@ func GetBuiltInGoals() []Goal {
 			TUIPrompt: "(comment-stripper) > ",
 
 			// WARNING: Including contextItems may break the prompt.
-			StateVars: map[string]interface{}{},
+			StateVars: map[string]any{},
 
 			PromptInstructions: `Analyze the provided code and remove useless comments while refactoring useful ones according to these rules:
 
@@ -86,7 +86,7 @@ Maintain all functionality and behavior of the original code while improving its
 			TUITitle:  "Code Documentation Generator",
 			TUIPrompt: "(doc-gen) > ",
 
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"type": "comprehensive",
 			},
 
@@ -118,7 +118,7 @@ Maintain all functionality and behavior of the original code while improving its
 
 			ContextHeader: "CODE TO DOCUMENT",
 
-			PromptOptions: map[string]interface{}{
+			PromptOptions: map[string]any{
 				"typeInstructions": map[string]string{
 					"comprehensive": `Generate comprehensive documentation including:
 - Overview and purpose
@@ -205,7 +205,7 @@ Maintain all functionality and behavior of the original code while improving its
 			// printed on entry in the banner
 			NotableVariables: []string{`type`, `framework`},
 
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"type":      "unit",
 				"framework": "auto",
 			},
@@ -251,7 +251,7 @@ Use the {{.stateKeys.framework}} testing framework.
 
 			ContextHeader: "CODE TO TEST",
 
-			PromptOptions: map[string]interface{}{
+			PromptOptions: map[string]any{
 				"typeInstructions": map[string]string{
 					"unit": `Generate comprehensive unit tests including:
 - Test all public methods and functions
@@ -358,7 +358,7 @@ Use the {{.stateKeys.framework}} testing framework.
 			TUITitle:  "Commit Message",
 			TUIPrompt: "(commit-message) > ",
 
-			StateVars: map[string]interface{}{},
+			StateVars: map[string]any{},
 
 			PromptInstructions: `You MUST produce a commit message strictly utilizing the following syntax / style / semantics.
 
@@ -445,7 +445,7 @@ Generate a commit message that follows these guidelines based on the provided di
 
 			NotableVariables: []string{"originalInstructions", "failedPlan", "specificFailures"},
 
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"originalInstructions": nil,
 				"failedPlan":           nil,
 				"specificFailures":     nil,
@@ -620,7 +620,7 @@ There is no "I'll do it later." There is no "that's good enough." There is no "c
 			TUITitle:  "Implementation Plan",
 			TUIPrompt: "(plan) > ",
 
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"goalText": "Prepare a detailed, _explicit_ implementation plan, .",
 			},
 
@@ -772,7 +772,7 @@ Type 'help' for commands.`,
 			TUITitle:  "Bug Buster",
 			TUIPrompt: "(bug-buster) > ",
 
-			StateVars: map[string]interface{}{},
+			StateVars: map[string]any{},
 
 			PromptInstructions: `Analyze the provided code and identify any bugs, errors, or anti-patterns present. For each issue found:
 
@@ -826,7 +826,7 @@ The corrected code should be functional, efficient, and adhere to best practices
 			TUITitle:  "Code Optimizer",
 			TUIPrompt: "(code-optimizer) > ",
 
-			StateVars: map[string]interface{}{},
+			StateVars: map[string]any{},
 
 			PromptInstructions: `Analyze the provided code and suggest improvements to optimize its performance. For each optimization:
 
@@ -884,7 +884,7 @@ The optimized code must maintain identical functionality and correctness. Do not
 
 			NotableVariables: []string{"depth"},
 
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"depth": "detailed",
 			},
 
@@ -912,7 +912,7 @@ The goal is to help a reader understand both what the code does and how it works
 
 			ContextHeader: "CODE TO EXPLAIN",
 
-			PromptOptions: map[string]interface{}{
+			PromptOptions: map[string]any{
 				"depthInstructions": map[string]string{
 					"brief": `Provide a brief, high-level overview:
 - One-paragraph summary of the code's purpose
@@ -982,7 +982,7 @@ The goal is to help a reader understand both what the code does and how it works
 			TUITitle:  "Meeting Notes",
 			TUIPrompt: "(meeting-notes) > ",
 
-			StateVars: map[string]interface{}{},
+			StateVars: map[string]any{},
 
 			PromptInstructions: `Review the provided meeting notes or transcript and create a concise, well-organized summary following this structure:
 
@@ -1057,7 +1057,7 @@ Note any follow-up meetings, check-ins, or milestones mentioned.
 
 			NotableVariables: []string{"level"},
 
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"level": "strict",
 			},
 
@@ -1116,7 +1116,7 @@ Note any follow-up meetings, check-ins, or milestones mentioned.
 
 			ContextHeader: "CONTENT TO SCRUB",
 
-			PromptOptions: map[string]interface{}{
+			PromptOptions: map[string]any{
 				"levelInstructions": map[string]string{
 					"strict": `**Strict Mode:** Redact ALL potential PII aggressively. When in doubt, redact.
 - Include quasi-identifiers that could be combined to re-identify individuals
@@ -1184,7 +1184,7 @@ Note any follow-up meetings, check-ins, or milestones mentioned.
 
 			NotableVariables: []string{"style"},
 
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"style": "technical",
 			},
 
@@ -1261,7 +1261,7 @@ Note any follow-up meetings, check-ins, or milestones mentioned.
 
 			ContextHeader: "PROSE TO POLISH",
 
-			PromptOptions: map[string]interface{}{
+			PromptOptions: map[string]any{
 				"styleInstructions": map[string]string{
 					"technical": `**Target Style: Technical**
 - Favor precision over elegance — every term should have a specific, unambiguous meaning
@@ -1350,7 +1350,7 @@ Note any follow-up meetings, check-ins, or milestones mentioned.
 
 			NotableVariables: []string{"mode"},
 
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"mode": "auto",
 			},
 
@@ -1400,7 +1400,7 @@ Note any follow-up meetings, check-ins, or milestones mentioned.
 
 			ContextHeader: "RAW DATA / UNSTRUCTURED INPUT",
 
-			PromptOptions: map[string]interface{}{
+			PromptOptions: map[string]any{
 				"modeInstructions": map[string]string{
 					"auto": `**Auto Mode:** Analyze the input and automatically determine the best JSON structure.
 - Detect patterns, repeating structures, and implicit schemas
@@ -1472,7 +1472,7 @@ Note any follow-up meetings, check-ins, or milestones mentioned.
 
 			NotableVariables: []string{"format"},
 
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"format": "numbered",
 			},
 
@@ -1525,7 +1525,7 @@ Note any follow-up meetings, check-ins, or milestones mentioned.
 
 			ContextHeader: "SOURCE MATERIAL",
 
-			PromptOptions: map[string]interface{}{
+			PromptOptions: map[string]any{
 				"formatInstructions": map[string]string{
 					"numbered": `**Numbered Citation Format:**
 - Use bracketed numbers inline: [1], [2], [3]
@@ -1619,7 +1619,7 @@ Note any follow-up meetings, check-ins, or milestones mentioned.
 				},
 			},
 
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"comparisonType": "general",
 			},
 
@@ -1683,7 +1683,7 @@ Produce a **comparison matrix** (table format) with:
 
 			ContextHeader: "OPTIONS & CONTEXT",
 
-			PromptOptions: map[string]interface{}{
+			PromptOptions: map[string]any{
 				"comparisonTypeInstructions": map[string]string{
 					"general": `**General Comparison Mode**
 
@@ -1801,7 +1801,7 @@ In addition to the general methodology, specifically evaluate:
 
 			NotableVariables: []string{"dialect"},
 
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"dialect": "auto",
 			},
 
@@ -1862,7 +1862,7 @@ In addition to the general methodology, specifically evaluate:
 
 			ContextHeader: "SCHEMA & QUERY REQUEST",
 
-			PromptOptions: map[string]interface{}{
+			PromptOptions: map[string]any{
 				"dialectInstructions": map[string]string{
 					"auto": `**Dialect: Auto-Detect**
 Detect the SQL dialect from the provided schema, DDL syntax, or context clues (e.g., backtick quoting suggests MySQL, double-colon casting suggests PostgreSQL). If no dialect can be inferred, default to standard ANSI SQL and note the assumption.`,
@@ -1973,7 +1973,7 @@ Use SQL Server-specific syntax and features where appropriate:
 
 			NotableVariables: []string{"focus"},
 
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"focus": "general",
 			},
 
@@ -2046,7 +2046,7 @@ Questions raised by the document that are not answered within it. Flag informati
 
 			ContextHeader: "REPORT / DOCUMENT",
 
-			PromptOptions: map[string]interface{}{
+			PromptOptions: map[string]any{
 				"focusInstructions": map[string]string{
 					"general": `**Focus: General Analysis**
 Perform a balanced analysis covering all aspects of the document. Weight all sections of the memo equally and surface whatever is most significant regardless of category.`,
@@ -2136,7 +2136,7 @@ Prioritize technical architecture, capabilities, limitations, and scalability. E
 
 			NotableVariables: []string{"outputFormat"},
 
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"outputFormat": "detailed",
 			},
 
@@ -2233,7 +2233,7 @@ For each categorization, identify the specific verbatim quote or paraphrase that
 
 			ContextHeader: "FEEDBACK / REVIEWS",
 
-			PromptOptions: map[string]interface{}{
+			PromptOptions: map[string]any{
 				"outputFormatInstructions": map[string]string{
 					"detailed": `**Output Format: Detailed**
 Provide full analysis with:
@@ -2326,7 +2326,7 @@ Output as a valid JSON object with this structure:
 
 			NotableVariables: []string{"instruction"},
 
-			StateVars: map[string]interface{}{
+			StateVars: map[string]any{
 				"instruction": "",
 			},
 

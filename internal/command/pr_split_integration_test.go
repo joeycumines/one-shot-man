@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -2027,8 +2028,7 @@ func TestIntegration_AutoSplitWithClaude_Pipeline(t *testing.T) {
 	addIntegrationFeatureFiles(t, repoDir)
 
 	// Build config from TestMain flags.
-	claudeArgsList := make([]string, len(claudeTestArgs))
-	copy(claudeArgsList, claudeTestArgs)
+	claudeArgsList := slices.Clone(claudeTestArgs)
 
 	configOverrides := map[string]any{
 		"baseBranch":    "main",

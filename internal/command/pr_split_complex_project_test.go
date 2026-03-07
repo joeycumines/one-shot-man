@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -296,8 +297,7 @@ func TestIntegration_AutoSplitComplexGoProject(t *testing.T) {
 	repoDir := initComplexGoRepo(t)
 	addComplexGoFeatureChanges(t, repoDir)
 
-	claudeArgsList := make([]string, len(claudeTestArgs))
-	copy(claudeArgsList, claudeTestArgs)
+	claudeArgsList := slices.Clone(claudeTestArgs)
 
 	configOverrides := map[string]any{
 		"baseBranch":    "main",

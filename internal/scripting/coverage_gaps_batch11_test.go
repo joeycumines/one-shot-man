@@ -29,7 +29,6 @@ func TestTUILogHandler_WithAttrs_ForwardsToFileHandler(t *testing.T) {
 
 	handler := &tuiLogHandler{
 		shared: &tuiLogHandlerShared{
-			entries: make([]logEntry, 0),
 			maxSize: 100,
 			level:   slog.LevelDebug,
 		},
@@ -60,7 +59,6 @@ func TestTUILogHandler_WithGroup_ForwardsToFileHandler(t *testing.T) {
 
 	handler := &tuiLogHandler{
 		shared: &tuiLogHandlerShared{
-			entries: make([]logEntry, 0),
 			maxSize: 100,
 			level:   slog.LevelDebug,
 		},

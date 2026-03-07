@@ -501,8 +501,7 @@ func matchEntry(entries []notebookEntry, query string) *notebookEntry {
 
 	// Slug-only match (e.g., "my-review"). Returns most recent if ambiguous.
 	// Sort reverse chronological first. Copy to avoid mutating caller's slice.
-	sorted := make([]notebookEntry, len(entries))
-	copy(sorted, entries)
+	sorted := slices.Clone(entries)
 	slices.SortFunc(sorted, func(a, b notebookEntry) int {
 		return cmp.Compare(b.path, a.path)
 	})

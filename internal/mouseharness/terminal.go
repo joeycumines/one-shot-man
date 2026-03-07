@@ -49,7 +49,7 @@ func parseTerminalBuffer(buffer string) []string {
 					case 'H', 'f': // Cursor position
 						row, col := 1, 1
 						if params != "" {
-							parts := strings.Split(params, ";")
+							parts := strings.SplitN(params, ";", 3)
 							if len(parts) >= 1 && parts[0] != "" {
 								if n, err := strconv.Atoi(parts[0]); err == nil {
 									row = n

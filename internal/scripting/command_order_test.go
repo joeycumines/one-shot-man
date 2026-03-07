@@ -79,7 +79,6 @@ func TestCommandCompletionSuggestionOrder(t *testing.T) {
 	tm := &TUIManager{
 		writer:       NewTUIWriterFromIO(io.Discard),
 		commands:     make(map[string]Command),
-		commandOrder: make([]string, 0),
 		modes:        make(map[string]*ScriptMode),
 	}
 
@@ -146,7 +145,6 @@ func TestModeCommandOrder(t *testing.T) {
 	mode := &ScriptMode{
 		Name:         "test-mode",
 		Commands:     make(map[string]Command),
-		CommandOrder: make([]string, 0),
 	}
 
 	// Add commands to mode in specific order

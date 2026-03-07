@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1242,7 +1243,7 @@ func runCommand(t *testing.T, dir string, name string, args ...string) {
 
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
-	cmd.Env = append(append([]string(nil), os.Environ()...), "OSM_SESSION="+testutil.NewTestSessionID("test", t.Name()), "OSM_STORE=memory")
+	cmd.Env = append(slices.Clone(os.Environ()), "OSM_SESSION="+testutil.NewTestSessionID("test", t.Name()), "OSM_STORE=memory")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

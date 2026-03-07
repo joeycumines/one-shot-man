@@ -64,7 +64,7 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 				// Mock bt.node - just return a sequence-like node
 				node := vm.NewObject()
 				_ = node.Set("_type", "sequence")
-				children := make([]goja.Value, 0)
+				var children []goja.Value
 				for i := 1; i < len(call.Arguments); i++ {
 					children = append(children, call.Arguments[i])
 				}

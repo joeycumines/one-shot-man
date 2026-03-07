@@ -23,9 +23,8 @@ func (tm *TUIManager) jsRegisterMode(modeConfig any) error {
 			return err
 		}
 		mode := &ScriptMode{
-			Name:         name,
-			Commands:     make(map[string]Command),
-			CommandOrder: make([]string, 0),
+			Name:     name,
+			Commands: make(map[string]Command),
 		}
 
 		// N.B. JavaScript manages its own state via tui.createState() which talks directly to StateManager.

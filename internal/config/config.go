@@ -52,7 +52,6 @@ func NewConfig() *Config {
 			EnvVars:             make(map[string]string),
 		},
 		HotSnippets: make([]HotSnippet, 0),
-		Warnings:    make([]string, 0),
 	}
 }
 

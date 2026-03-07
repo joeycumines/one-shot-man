@@ -25,6 +25,7 @@ import (
 	"context"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -161,15 +162,13 @@ func TestExecutorTokenization_QuotedArgs(t *testing.T) {
 	engine := mustNewEngine(t, ctx, &out, &out)
 
 	tm := engine.GetTUIManager()
-	received := make([][]string, 0)
+	var received [][]string
 	tm.RegisterCommand(Command{
 		Name:        "add",
 		Description: "Add files",
 		IsGoCommand: true,
 		Handler: func(args []string) error {
-			cp := make([]string, len(args))
-			copy(cp, args)
-			received = append(received, cp)
+			received = append(received, slices.Clone(args))
 			return nil
 		},
 	})

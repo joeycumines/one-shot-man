@@ -978,7 +978,7 @@ func TestValueToCmd_DescriptorBatch(t *testing.T) {
 	require.True(t, ok)
 
 	// Descriptor batch containing wrapped Go commands - verify both are executed
-	calls := make([]int, 0)
+	var calls []int
 	var callsMu sync.Mutex
 	c1 := func() tea.Msg { callsMu.Lock(); defer callsMu.Unlock(); calls = append(calls, 1); return nil }
 	c2 := func() tea.Msg { callsMu.Lock(); defer callsMu.Unlock(); calls = append(calls, 2); return nil }
@@ -1039,7 +1039,7 @@ func TestValueToCmd_DescriptorSequence(t *testing.T) {
 	m, ok := modelVal.Export().(*jsModel)
 	require.True(t, ok)
 
-	calls := make([]int, 0)
+	var calls []int
 	var callsMu sync.Mutex
 	c1 := func() tea.Msg { callsMu.Lock(); calls = append(calls, 1); callsMu.Unlock(); return nil }
 	c2 := func() tea.Msg { callsMu.Lock(); calls = append(calls, 2); callsMu.Unlock(); return nil }

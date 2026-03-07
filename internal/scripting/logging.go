@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -281,9 +282,7 @@ func (l *TUILogger) GetLogs() []logEntry {
 	defer l.handler.shared.mutex.RUnlock()
 
 	// Return a copy to prevent race conditions
-	logs := make([]logEntry, len(l.handler.shared.entries))
-	copy(logs, l.handler.shared.entries)
-	return logs
+	return slices.Clone(l.handler.shared.entries)
 }
 
 // GetRecentLogs returns the most recent N log entries.
@@ -296,9 +295,7 @@ func (l *TUILogger) GetRecentLogs(count int) []logEntry {
 	}
 
 	start := len(l.handler.shared.entries) - count
-	logs := make([]logEntry, count)
-	copy(logs, l.handler.shared.entries[start:])
-	return logs
+	return slices.Clone(l.handler.shared.entries[start:])
 }
 
 // SearchLogs searches for log entries containing the given text.

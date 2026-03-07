@@ -1315,7 +1315,35 @@
     },
     {
       "task": "T175: Scope expansion — identify T176+ improvement opportunities",
-      "description": "Continue indefinite improvement cycle after T172-T174.",
+      "description": "Audit found: (1) 20+ make([]T,0)→var s []T, (2) 8 copy/append cloning→slices.Clone, (3) 1 unbounded strings.Split in mouseharness. Deferred: fmt.Errorf without %w (mostly validation errors, intentionally not wrapped).",
+      "acceptance": "T176-T178 created and executed.",
+      "status": "Done",
+      "contextPointers": ["blueprint.json"]
+    },
+    {
+      "task": "T176: Replace make([]T, 0) with var declarations",
+      "description": "~33 sites converted. Kept config.go HotSnippets (test requires non-nil) and benchmark_test.go HistoryEntry (JSON marshaling requires []).",
+      "acceptance": "Zero unnecessary make([]T, 0) in production code. Build passes.",
+      "status": "Done",
+      "contextPointers": ["internal/command/registry.go", "internal/config/config.go"]
+    },
+    {
+      "task": "T177: Replace copy/append cloning with slices.Clone",
+      "description": "10 sites converted from append([]T(nil), s...) or make+copy to slices.Clone across 7 files.",
+      "acceptance": "All manual slice clone patterns use slices.Clone. Build passes.",
+      "status": "Done",
+      "contextPointers": ["internal/command/sync.go", "internal/builtin/ctxutil/ctxutil_test.go"]
+    },
+    {
+      "task": "T178: Bound strings.Split in mouseharness terminal parsing",
+      "description": "strings.Split→strings.SplitN(params, \";\", 3) for bounded ANSI SGR parameter parsing.",
+      "acceptance": "SplitN used with bound. Build passes.",
+      "status": "Done",
+      "contextPointers": ["internal/mouseharness/terminal.go"]
+    },
+    {
+      "task": "T179: Scope expansion — identify T180+ improvement opportunities",
+      "description": "Continue indefinite improvement cycle after T176-T178.",
       "acceptance": "5+ new tasks added.",
       "status": "Not Started",
       "contextPointers": ["blueprint.json"]

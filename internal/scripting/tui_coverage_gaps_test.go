@@ -346,7 +346,6 @@ func TestExecutor_UnknownCommand_NoMode(t *testing.T) {
 	tm := &TUIManager{
 		writer:       NewTUIWriterFromIO(&buf),
 		commands:     make(map[string]Command),
-		commandOrder: make([]string, 0),
 		modes:        make(map[string]*ScriptMode),
 	}
 
@@ -369,7 +368,6 @@ func TestExecutor_HandlerError_DisplaysError(t *testing.T) {
 	tm := &TUIManager{
 		writer:       NewTUIWriterFromIO(&buf),
 		commands:     make(map[string]Command),
-		commandOrder: make([]string, 0),
 		modes:        make(map[string]*ScriptMode),
 	}
 
@@ -403,7 +401,6 @@ func TestExecutor_HandlerPanic_DisplaysError(t *testing.T) {
 	tm := &TUIManager{
 		writer:       NewTUIWriterFromIO(&buf),
 		commands:     make(map[string]Command),
-		commandOrder: make([]string, 0),
 		modes:        make(map[string]*ScriptMode),
 	}
 
@@ -635,7 +632,6 @@ func TestBuiltinCommand_Modes(t *testing.T) {
 		tm := &TUIManager{
 			writer:       NewTUIWriterFromIO(&buf),
 			commands:     make(map[string]Command),
-			commandOrder: make([]string, 0),
 			modes:        make(map[string]*ScriptMode),
 		}
 		tm.registerBuiltinCommands()
@@ -651,7 +647,6 @@ func TestBuiltinCommand_Modes(t *testing.T) {
 		tm := &TUIManager{
 			writer:       NewTUIWriterFromIO(&buf),
 			commands:     make(map[string]Command),
-			commandOrder: make([]string, 0),
 			modes:        map[string]*ScriptMode{"alpha": mode},
 			currentMode:  mode,
 		}
@@ -676,7 +671,6 @@ func TestBuiltinCommand_State(t *testing.T) {
 		tm := &TUIManager{
 			writer:       NewTUIWriterFromIO(&buf),
 			commands:     make(map[string]Command),
-			commandOrder: make([]string, 0),
 			modes:        make(map[string]*ScriptMode),
 		}
 		tm.registerBuiltinCommands()
@@ -692,7 +686,6 @@ func TestBuiltinCommand_State(t *testing.T) {
 		tm := &TUIManager{
 			writer:       NewTUIWriterFromIO(&buf),
 			commands:     make(map[string]Command),
-			commandOrder: make([]string, 0),
 			modes:        map[string]*ScriptMode{"stateful": mode},
 			currentMode:  mode,
 		}
@@ -717,7 +710,6 @@ func TestBuiltinCommand_Mode(t *testing.T) {
 		tm := &TUIManager{
 			writer:       NewTUIWriterFromIO(&buf),
 			commands:     make(map[string]Command),
-			commandOrder: make([]string, 0),
 			modes:        make(map[string]*ScriptMode),
 		}
 		tm.registerBuiltinCommands()
@@ -732,7 +724,6 @@ func TestBuiltinCommand_Mode(t *testing.T) {
 		tm := &TUIManager{
 			writer:       NewTUIWriterFromIO(&buf),
 			commands:     make(map[string]Command),
-			commandOrder: make([]string, 0),
 			modes:        make(map[string]*ScriptMode),
 		}
 		tm.registerBuiltinCommands()
@@ -749,7 +740,6 @@ func TestBuiltinCommand_Mode(t *testing.T) {
 		tm := &TUIManager{
 			writer:       NewTUIWriterFromIO(&buf),
 			commands:     make(map[string]Command),
-			commandOrder: make([]string, 0),
 			modes:        map[string]*ScriptMode{"target": mode},
 		}
 		tm.registerBuiltinCommands()
@@ -1620,7 +1610,6 @@ func TestExecuteCommand_GoHandlerWithTUIManager(t *testing.T) {
 	tm := &TUIManager{
 		writer:       NewTUIWriterFromIO(io.Discard),
 		commands:     make(map[string]Command),
-		commandOrder: make([]string, 0),
 		modes:        make(map[string]*ScriptMode),
 	}
 	tm.RegisterCommand(Command{
@@ -1642,7 +1631,6 @@ func TestExecuteCommand_InvalidGoHandler(t *testing.T) {
 	tm := &TUIManager{
 		writer:       NewTUIWriterFromIO(io.Discard),
 		commands:     make(map[string]Command),
-		commandOrder: make([]string, 0),
 		modes:        make(map[string]*ScriptMode),
 	}
 	tm.RegisterCommand(Command{
@@ -2223,7 +2211,6 @@ func TestCompletion_ModeCompletion(t *testing.T) {
 	tm := &TUIManager{
 		writer:       NewTUIWriterFromIO(io.Discard),
 		commands:     make(map[string]Command),
-		commandOrder: make([]string, 0),
 		modes: map[string]*ScriptMode{
 			"alpha":   {Name: "alpha"},
 			"beta":    {Name: "beta"},
@@ -2266,7 +2253,6 @@ func TestCompletion_CommandNotFound(t *testing.T) {
 	tm := &TUIManager{
 		writer:       NewTUIWriterFromIO(io.Discard),
 		commands:     make(map[string]Command),
-		commandOrder: make([]string, 0),
 		modes:        make(map[string]*ScriptMode),
 	}
 
@@ -2286,7 +2272,6 @@ func TestExecuteCommand_CommandNotFound(t *testing.T) {
 	tm := &TUIManager{
 		writer:       NewTUIWriterFromIO(io.Discard),
 		commands:     make(map[string]Command),
-		commandOrder: make([]string, 0),
 		modes:        make(map[string]*ScriptMode),
 	}
 
@@ -2352,7 +2337,6 @@ func TestBuiltinCommand_Reset_StateManagerNil(t *testing.T) {
 	tm := &TUIManager{
 		writer:       NewTUIWriterFromIO(&buf),
 		commands:     make(map[string]Command),
-		commandOrder: make([]string, 0),
 		modes:        make(map[string]*ScriptMode),
 		stateManager: nil, // triggers "no state manager" error from resetAllState
 	}

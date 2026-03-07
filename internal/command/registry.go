@@ -26,7 +26,6 @@ type Registry struct {
 func NewRegistryWithConfig(cfg *config.Config) *Registry {
 	registry := &Registry{
 		commands:        make(map[string]Command),
-		scriptPaths:     make([]string, 0),
 		scriptDiscovery: NewScriptDiscovery(cfg),
 	}
 

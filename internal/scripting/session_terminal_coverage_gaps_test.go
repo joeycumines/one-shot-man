@@ -25,7 +25,6 @@ import (
 func TestTUILogHandler_WithAttrs_ReturnsNewHandler(t *testing.T) {
 	t.Parallel()
 	handler := &tuiLogHandler{shared: &tuiLogHandlerShared{
-		entries: make([]logEntry, 0),
 		maxSize: 100,
 		level:   slog.LevelDebug,
 	}}
@@ -45,7 +44,6 @@ func TestTUILogHandler_WithAttrs_ReturnsNewHandler(t *testing.T) {
 func TestTUILogHandler_WithGroup_ReturnsNewHandler(t *testing.T) {
 	t.Parallel()
 	handler := &tuiLogHandler{shared: &tuiLogHandlerShared{
-		entries: make([]logEntry, 0),
 		maxSize: 100,
 		level:   slog.LevelDebug,
 	}}
@@ -62,7 +60,6 @@ func TestTUILogHandler_WithGroup_ReturnsNewHandler(t *testing.T) {
 func TestTUILogHandler_Handle_WithPC(t *testing.T) {
 	t.Parallel()
 	handler := &tuiLogHandler{shared: &tuiLogHandlerShared{
-		entries: make([]logEntry, 0),
 		maxSize: 100,
 		level:   slog.LevelDebug,
 	}}
@@ -84,7 +81,6 @@ func TestTUILogHandler_Handle_WithPC(t *testing.T) {
 func TestTUILogHandler_Handle_WithZeroPC(t *testing.T) {
 	t.Parallel()
 	handler := &tuiLogHandler{shared: &tuiLogHandlerShared{
-		entries: make([]logEntry, 0),
 		maxSize: 100,
 		level:   slog.LevelDebug,
 	}}
@@ -106,7 +102,6 @@ func TestTUILogHandler_Handle_ForwardsToFileHandler(t *testing.T) {
 
 	handler := &tuiLogHandler{
 		shared: &tuiLogHandlerShared{
-			entries: make([]logEntry, 0),
 			maxSize: 100,
 			level:   slog.LevelDebug,
 		},
@@ -150,7 +145,6 @@ func TestTUILogHandler_Handle_EvictsOldest(t *testing.T) {
 func TestTUILogHandler_Handle_CapturesAttrs(t *testing.T) {
 	t.Parallel()
 	handler := &tuiLogHandler{shared: &tuiLogHandlerShared{
-		entries: make([]logEntry, 0),
 		maxSize: 100,
 		level:   slog.LevelDebug,
 	}}

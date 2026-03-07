@@ -83,7 +83,6 @@ func NewTUIManagerWithConfig(ctx context.Context, engine *Engine, input io.Reade
 		ctx:                  ctx,
 		modes:                make(map[string]*ScriptMode),
 		commands:             make(map[string]Command),
-		commandOrder:         make([]string, 0),
 		reader:               reader,
 		writer:               writer,
 		prompts:              make(map[string]*prompt.Prompt),

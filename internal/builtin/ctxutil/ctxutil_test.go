@@ -2,6 +2,7 @@ package ctxutil
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -38,7 +39,7 @@ func TestBuildContextFormatting(t *testing.T) {
 
 	var diffCalls [][]string
 	runGitDiffFn = func(ctx context.Context, args []string) (string, string, bool) {
-		copyArgs := append([]string(nil), args...)
+		copyArgs := slices.Clone(args)
 		diffCalls = append(diffCalls, copyArgs)
 		switch strings.Join(args, " ") {
 		case "--stat":
@@ -244,7 +245,7 @@ func TestBuildContextLazyDiffExportedSlice(t *testing.T) {
 
 	var diffCalls [][]string
 	runGitDiffFn = func(ctx context.Context, args []string) (string, string, bool) {
-		copyArgs := append([]string(nil), args...)
+		copyArgs := slices.Clone(args)
 		diffCalls = append(diffCalls, copyArgs)
 		return "custom diff", "", false
 	}
@@ -415,7 +416,7 @@ func TestBuildContext_LazyDiffGoStringSlice(t *testing.T) {
 
 	var capturedArgs []string
 	runGitDiffFn = func(ctx context.Context, args []string) (string, string, bool) {
-		capturedArgs = append([]string(nil), args...)
+		capturedArgs = slices.Clone(args)
 		return "go-string-slice diff", "", false
 	}
 	getDefaultGitDiffArgsFn = func(ctx context.Context) []string {

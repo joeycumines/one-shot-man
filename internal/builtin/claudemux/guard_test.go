@@ -777,7 +777,7 @@ func TestGuard_Integration_FullScenario(t *testing.T) {
 		{"task completed", 6 * time.Second},
 	}
 
-	actions := make([]GuardAction, 0)
+	var actions []GuardAction
 	for _, l := range lines {
 		ev := parser.Parse(l.line)
 		ge := g.ProcessEvent(ev, now.Add(l.dt))

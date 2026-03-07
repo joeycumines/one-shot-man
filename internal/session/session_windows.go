@@ -95,7 +95,7 @@ func isShell(name string) bool {
 	}
 	if extra := os.Getenv("OSM_EXTRA_SHELLS"); extra != "" {
 		for _, sh := range strings.Split(extra, ";") {
-			if strings.ToLower(strings.TrimSpace(sh)) == lower {
+			if strings.EqualFold(strings.TrimSpace(sh), name) {
 				return true
 			}
 		}

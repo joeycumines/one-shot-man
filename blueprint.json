@@ -1377,8 +1377,22 @@
       "contextPointers": ["internal/scripting/context.go", "internal/builtin/claudemux/instance.go"]
     },
     {
-      "task": "T184: Scope expansion — identify T185+ improvement opportunities", 
-      "description": "Continue indefinite improvement cycle after T183.",
+      "task": "T184: Scope expansion — identify T185+ improvement opportunities",
+      "description": "Audit found 3 below-threshold quick wins: 2x EqualFold, 1x time.After timer leak. Executed as micro-batch. Codebase is fundamentally clean — no 3+ instance patterns remain.",
+      "acceptance": "T185 created, all quick wins fixed.",
+      "status": "Done",
+      "contextPointers": ["blueprint.json"]
+    },
+    {
+      "task": "T185: EqualFold and timer leak micro-fixes",
+      "description": "session_windows.go: ToLower comparison→EqualFold. model_nav.go: ToLower comparison→EqualFold. tui_manager.go: time.After→time.NewTimer+defer Stop().",
+      "acceptance": "No ToLower==string patterns. No time.After in select. Build passes.",
+      "status": "Done",
+      "contextPointers": ["internal/session/session_windows.go", "internal/builtin/claudemux/model_nav.go", "internal/scripting/tui_manager.go"]
+    },
+    {
+      "task": "T186: Scope expansion — identify T187+ improvement opportunities",
+      "description": "Continue indefinite improvement cycle. Previous idiom audits exhausted — shift to structural/architectural improvements.",
       "acceptance": "5+ new tasks added.",
       "status": "Not Started",
       "contextPointers": ["blueprint.json"]

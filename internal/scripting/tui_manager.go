@@ -249,10 +249,12 @@ func (tm *TUIManager) stopWriter() {
 	// indefinitely would hang the entire process on exit. A 5-second timeout
 	// ensures the process always terminates, logging a diagnostic stack trace
 	// so the root cause can be investigated.
+	timer := time.NewTimer(writerShutdownTimeout)
+	defer timer.Stop()
 	select {
 	case <-tm.writerDone:
 		// Writer exited cleanly.
-	case <-time.After(writerShutdownTimeout):
+	case <-timer.C:
 		// Writer goroutine is stuck. Dump all goroutine stacks for diagnosis.
 		buf := make([]byte, goroutineStackBufSize)
 		n := runtime.Stack(buf, true)

@@ -254,14 +254,14 @@ func findModelIndex(models []string, target string) int {
 	}
 
 	// Case-insensitive match.
-	targetLower := strings.ToLower(target)
 	for i, m := range models {
-		if strings.ToLower(m) == targetLower {
+		if strings.EqualFold(m, target) {
 			return i
 		}
 	}
 
 	// Substring match (case-insensitive).
+	targetLower := strings.ToLower(target)
 	for i, m := range models {
 		if strings.Contains(strings.ToLower(m), targetLower) {
 			return i

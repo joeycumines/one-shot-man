@@ -45,11 +45,11 @@ type Goal struct {
 	StateVars map[string]any `json:"stateVars"` // Initial state values
 
 	// Prompt building
-	PromptInstructions string                 `json:"promptInstructions"` // Main goal instructions
-	PromptTemplate     string                 `json:"promptTemplate"`     // Template for final prompt
-	PromptFooter       string                 `json:"promptFooter"`       // Footer text appended after context (template-interpolated)
+	PromptInstructions string         `json:"promptInstructions"` // Main goal instructions
+	PromptTemplate     string         `json:"promptTemplate"`     // Template for final prompt
+	PromptFooter       string         `json:"promptFooter"`       // Footer text appended after context (template-interpolated)
 	PromptOptions      map[string]any `json:"promptOptions"`      // Additional options for prompt building
-	ContextHeader      string                 `json:"contextHeader"`      // Header for context section
+	ContextHeader      string         `json:"contextHeader"`      // Header for context section
 
 	// UI text
 	BannerTemplate string `json:"bannerTemplate"` // printed on entry to goal, overrides default

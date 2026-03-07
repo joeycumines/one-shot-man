@@ -1343,7 +1343,42 @@
     },
     {
       "task": "T179: Scope expansion — identify T180+ improvement opportunities",
-      "description": "Continue indefinite improvement cycle after T176-T178.",
+      "description": "Audit found: (1) 13 map[string]bool→map[string]struct{} set patterns, (2) 20+ raw error string comparisons in tests. Deferred: reflect.DeepEqual (6 sites, no go-cmp dep), bytes.Buffer/sync.Mutex (0 candidates).",
+      "acceptance": "T180-T181 created and executed.",
+      "status": "Done",
+      "contextPointers": ["blueprint.json"]
+    },
+    {
+      "task": "T180: Evaluate map[string]bool→struct{} for sets",
+      "description": "13 sites in session files. SKIPPED — map[string]bool is idiomatic for set lookups (simple syntax). struct{} adds verbosity without meaningful benefit.",
+      "acceptance": "Evaluated and decided against.",
+      "status": "Skipped",
+      "contextPointers": ["internal/session/session_linux.go"]
+    },
+    {
+      "task": "T181: Fix sentinel error consistency in completion_command.go",
+      "description": "completion_command.go:37 returned fmt.Errorf('too many arguments') instead of ErrUnexpectedArguments sentinel. Fixed to wrap with %w.",
+      "acceptance": "All unexpected-arguments returns use ErrUnexpectedArguments sentinel. Build passes.",
+      "status": "Done",
+      "contextPointers": ["internal/command/completion_command.go", "internal/command/errors.go"]
+    },
+    {
+      "task": "T182: Scope expansion — identify T183+ improvement opportunities",
+      "description": "Audit found: (1) 4 unchecked type assertions in production code (context.go, claudemux/instance.go), (2) context.Background() in sync.go (deferred — design change), (3) all panic() calls appropriate. Everything else clean.",
+      "acceptance": "T183 created and executed.",
+      "status": "Done",
+      "contextPointers": ["blueprint.json"]
+    },
+    {
+      "task": "T183: Fix unchecked type assertions in production code",
+      "description": "context.go:802,806,809 — unsafe map value assertions. claudemux/instance.go:213 — unsafe sync.Map key assertion. Add ok-variant checks.",
+      "acceptance": "All production type assertions use ok variant. Build passes.",
+      "status": "Not Started",
+      "contextPointers": ["internal/scripting/context.go", "internal/builtin/claudemux/instance.go"]
+    },
+    {
+      "task": "T184: Scope expansion — identify T185+ improvement opportunities", 
+      "description": "Continue indefinite improvement cycle after T183.",
       "acceptance": "5+ new tasks added.",
       "status": "Not Started",
       "contextPointers": ["blueprint.json"]

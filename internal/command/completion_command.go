@@ -34,7 +34,7 @@ func (c *CompletionCommand) Execute(args []string, stdout, stderr io.Writer) err
 	if len(args) > 1 {
 		_, _ = fmt.Fprintf(stderr, "Too many arguments: %v\n", args[1:])
 		_, _ = fmt.Fprintln(stderr, "Usage: osm completion [shell]")
-		return &SilentError{Err: fmt.Errorf("too many arguments")}
+		return &SilentError{Err: fmt.Errorf("too many arguments: %w", ErrUnexpectedArguments)}
 	}
 
 	shell := "bash"

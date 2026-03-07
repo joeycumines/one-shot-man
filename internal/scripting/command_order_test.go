@@ -77,9 +77,9 @@ func TestCommandCompletionOrder(t *testing.T) {
 func TestCommandCompletionSuggestionOrder(t *testing.T) {
 	// Create a minimal TUIManager for testing completion
 	tm := &TUIManager{
-		writer:       NewTUIWriterFromIO(io.Discard),
-		commands:     make(map[string]Command),
-		modes:        make(map[string]*ScriptMode),
+		writer:   NewTUIWriterFromIO(io.Discard),
+		commands: make(map[string]Command),
+		modes:    make(map[string]*ScriptMode),
 	}
 
 	// Register commands that all start with the same prefix in specific order
@@ -143,8 +143,8 @@ func TestModeCommandOrder(t *testing.T) {
 
 	// Create a test mode with commands in specific order
 	mode := &ScriptMode{
-		Name:         "test-mode",
-		Commands:     make(map[string]Command),
+		Name:     "test-mode",
+		Commands: make(map[string]Command),
 	}
 
 	// Add commands to mode in specific order

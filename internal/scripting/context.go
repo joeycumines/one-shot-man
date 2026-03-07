@@ -790,27 +790,27 @@ func (cm *ContextManager) GetStats() map[string]any {
 	cm.mutex.RLock()
 	defer cm.mutex.RUnlock()
 
-	stats := map[string]any{
-		"totalPaths":  len(cm.paths),
-		"files":       0,
-		"directories": 0,
-		"totalSize":   0,
-	}
+	var files, directories, totalSize int
 
 	for _, contextPath := range cm.paths {
 		if contextPath.Type == "file" {
-			stats["files"] = stats["files"].(int) + 1
+			files++
 			if sizeStr, ok := contextPath.Metadata["size"]; ok {
 				var size int
 				fmt.Sscanf(sizeStr, "%d", &size)
-				stats["totalSize"] = stats["totalSize"].(int) + size
+				totalSize += size
 			}
 		} else {
-			stats["directories"] = stats["directories"].(int) + 1
+			directories++
 		}
 	}
 
-	return stats
+	return map[string]any{
+		"totalPaths":  len(cm.paths),
+		"files":       files,
+		"directories": directories,
+		"totalSize":   totalSize,
+	}
 }
 
 // FilterPaths returns paths matching the given pattern.

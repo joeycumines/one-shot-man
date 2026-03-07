@@ -387,8 +387,8 @@ func TestIntegration_BrokenSplitsResolution(t *testing.T) {
 		Resolved   struct {
 			Fixed         []any `json:"fixed"`
 			Errors        []any `json:"errors"`
-			TotalRetries  int           `json:"totalRetries"`
-			ReSplitNeeded bool          `json:"reSplitNeeded"`
+			TotalRetries  int   `json:"totalRetries"`
+			ReSplitNeeded bool  `json:"reSplitNeeded"`
 		} `json:"resolved"`
 	}
 	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
@@ -594,7 +594,7 @@ func TestIntegration_PollFileTimeout(t *testing.T) {
 	}
 	var result struct {
 		Errors       []any `json:"errors"`
-		TotalRetries int           `json:"totalRetries"`
+		TotalRetries int   `json:"totalRetries"`
 	}
 	if err := json.Unmarshal([]byte(val2.(string)), &result); err != nil {
 		t.Fatal(err)

@@ -210,7 +210,9 @@ func (r *InstanceRegistry) CloseAll() error {
 func (r *InstanceRegistry) List() []string {
 	var ids []string
 	r.instances.Range(func(key, _ any) bool {
-		ids = append(ids, key.(string))
+		if k, ok := key.(string); ok {
+			ids = append(ids, k)
+		}
 		return true
 	})
 	slices.Sort(ids)

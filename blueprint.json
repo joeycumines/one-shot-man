@@ -713,6 +713,27 @@
     },
     {
       "task": "T89: Scope expansion — identify T90+ improvement opportunities",
+      "description": "COMPLETED. Audit of README.md and docs/scripting.md. README accurate. scripting.md missing osm:mcp and osm:termmux from module reference table (same pattern as architecture.md inaccuracies fixed in T87). Generated T90.",
+      "acceptance": "5+ new tasks added.",
+      "status": "Done",
+      "contextPointers": ["docs/scripting.md:230-234"]
+    },
+    {
+      "task": "T90: Add osm:mcp and osm:termmux to scripting.md module table",
+      "description": "COMPLETED. Added osm:mcp (MCP server with createServer/addTool/run/close) and osm:termmux (terminal multiplexer with newMux, 12 constants, 14 methods) to the Claude Code orchestration section of the module reference table in docs/scripting.md.",
+      "acceptance": "Both modules documented with accurate Key exports. Table formatting matches existing entries.",
+      "status": "Done",
+      "contextPointers": ["docs/scripting.md:234-236", "internal/builtin/mcpmod/", "internal/builtin/termmux/"]
+    },
+    {
+      "task": "T91: Linux container re-validation after T90",
+      "description": "COMPLETED. Both make make-all-with-log and make make-all-in-container passed. Rule of Two achieved (3 iterations due to reviewer-found issues: addTool sig, attach sig, switchTo sig, run optionality, off param, fromModel sig). All fixed and verified.",
+      "acceptance": "Both make targets exit 0.",
+      "status": "Done",
+      "contextPointers": ["config.mk"]
+    },
+    {
+      "task": "T92: Scope expansion — identify T93+ improvement opportunities",
       "description": "Continue indefinite improvement cycle.",
       "acceptance": "5+ new tasks added.",
       "status": "Not Started",

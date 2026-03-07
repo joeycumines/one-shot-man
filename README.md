@@ -182,6 +182,28 @@ Command `osm` is a scripting engine.
 
 **Philosophy:** Go code exposes reusable primitives (accessible via `osm script`), while all application-specific logic lives in JavaScript. Exposing the building blocks to build your own, custom implementations.
 
+### Commands
+
+| Command | Description |
+|---|---|
+| `help` | List available commands and usage |
+| `version` | Print the osm version |
+| `config` | Show or edit configuration |
+| `init` | Initialize a new osm project |
+| `script` | Run a JavaScript file or expression |
+| `session` | Manage sessions (list, clean, purge, delete, info, path, id) |
+| `prompt-flow` | Two-step prompt builder (meta-prompt → final prompt) |
+| `code-review` | Interactive code review prompt builder |
+| `super-document` | Assemble a single document from multiple sources (TUI + shell) |
+| `completion` | Generate shell completions (bash, zsh, fish, powershell) |
+| `goal` | Run curated prompt templates and workflows |
+| `sync` | Notebook save/list and git-backed sync |
+| `log` | View and manage session logs |
+| `pr-split` | Split large PRs into reviewable chunks |
+| `mcp-bridge` | Internal MCP bridge for agent-tool communication |
+
+See [docs/reference/command.md](docs/reference/command.md) for full details.
+
 Future functionality based on merits.
 Fair warning: This may include features* which expand the scope of functionality.
 See also [docs/todo.md](docs/todo.md).

@@ -112,7 +112,7 @@ func (c *SyncCommand) executeSave(args []string, stdout, stderr io.Writer) error
 	fs.StringVar(&body, "body", "", "Prompt body text")
 
 	if err := fs.Parse(args); err != nil {
-		if err == flag.ErrHelp {
+		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
 		return err
@@ -186,7 +186,7 @@ func (c *SyncCommand) executeList(args []string, stdout, stderr io.Writer) error
 	fs.IntVar(&limit, "limit", 0, "Maximum number of entries to show (0 = all)")
 
 	if err := fs.Parse(args); err != nil {
-		if err == flag.ErrHelp {
+		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
 		return err
@@ -243,7 +243,7 @@ func (c *SyncCommand) executeInit(args []string, stdout, stderr io.Writer) error
 	fs := flag.NewFlagSet("sync-init", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	if err := fs.Parse(args); err != nil {
-		if err == flag.ErrHelp {
+		if errors.Is(err, flag.ErrHelp) {
 			return nil
 		}
 		return err

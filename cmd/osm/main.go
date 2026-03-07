@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -79,7 +80,7 @@ func run() error {
 	// we can safely parse top-level help flags without consuming subcommand
 	// args.
 	if err := globalFS.Parse(os.Args[1:]); err != nil {
-		if err == flag.ErrHelp {
+		if errors.Is(err, flag.ErrHelp) {
 			return helpCmd.Execute([]string{}, os.Stdout, os.Stderr)
 		}
 		return err
@@ -133,7 +134,7 @@ func run() error {
 	// the command name in the global flagset's remaining args).
 	cmdArgs := gargs[1:]
 	if err := fs.Parse(cmdArgs); err != nil {
-		if err == flag.ErrHelp {
+		if errors.Is(err, flag.ErrHelp) {
 			// flag.ErrHelp indicates usage/help was requested; treat as
 			// non-error so the program can exit successfully and uniformly.
 			return nil

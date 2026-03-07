@@ -77,7 +77,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			}
 		}
 		if err := fs.Parse(args[1:]); err != nil {
-			if err == flag.ErrHelp {
+			if errors.Is(err, flag.ErrHelp) {
 				return nil
 			}
 			return err
@@ -107,7 +107,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			fs.SetOutput(io.Discard)
 		}
 		if err := fs.Parse(args[1:]); err != nil {
-			if err == flag.ErrHelp {
+			if errors.Is(err, flag.ErrHelp) {
 				return nil
 			}
 			return err
@@ -138,7 +138,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			}
 		}
 		if err := fs.Parse(args[1:]); err != nil {
-			if err == flag.ErrHelp {
+			if errors.Is(err, flag.ErrHelp) {
 				return nil
 			}
 			return err
@@ -182,7 +182,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			}
 		}
 		if err := fs.Parse(args[1:]); err != nil {
-			if err == flag.ErrHelp {
+			if errors.Is(err, flag.ErrHelp) {
 				return nil
 			}
 			return err
@@ -282,7 +282,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		// Parse the args that were before '--' and weren't stripped.
 		// This handles help (-h) and any other flags.
 		if err := fs.Parse(flagParsableArgs); err != nil {
-			if err == flag.ErrHelp {
+			if errors.Is(err, flag.ErrHelp) {
 				return nil
 			}
 			return err
@@ -344,7 +344,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			}
 		}
 		if err := fs.Parse(args[1:]); err != nil {
-			if err == flag.ErrHelp {
+			if errors.Is(err, flag.ErrHelp) {
 				return nil
 			}
 			return err
@@ -373,7 +373,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			}
 		}
 		if err := fs.Parse(args[1:]); err != nil {
-			if err == flag.ErrHelp {
+			if errors.Is(err, flag.ErrHelp) {
 				return nil
 			}
 			return err

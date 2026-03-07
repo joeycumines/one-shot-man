@@ -357,7 +357,6 @@ func TestStaleLockRecovery(t *testing.T) {
 
 		// Exit without calling backend.Close() to simulate crash
 		os.Exit(1)
-		return
 	}
 
 	// Parent test process

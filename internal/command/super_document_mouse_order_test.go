@@ -15,6 +15,7 @@ import (
 // deterministic, single-threaded unit test implemented by injecting spy
 // functions into a synthetic `s` object and invoking the real `handleMouse`.
 func TestHandleMouse_CallsSetViewportContextBeforeHandleClickAtScreenCoords(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")

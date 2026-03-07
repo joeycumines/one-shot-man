@@ -12,7 +12,9 @@ import (
 
 func TestWriteResolvedTable_Empty(t *testing.T) {
 	var buf bytes.Buffer
-	writeResolvedTable(&buf, nil)
+	if err := writeResolvedTable(&buf, nil); err != nil {
+		t.Fatal(err)
+	}
 	// Should still have the header line.
 	out := buf.String()
 	if !strings.Contains(out, "KEY") || !strings.Contains(out, "VALUE") || !strings.Contains(out, "SOURCE") {
@@ -26,9 +28,11 @@ func TestWriteResolvedTable_Empty(t *testing.T) {
 
 func TestWriteResolvedTable_SingleRow(t *testing.T) {
 	var buf bytes.Buffer
-	writeResolvedTable(&buf, []config.ResolvedOption{
+	if err := writeResolvedTable(&buf, []config.ResolvedOption{
 		{Key: "editor", Value: "vim", Source: "config-file"},
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	if !strings.Contains(out, "editor") {
 		t.Errorf("missing key: %q", out)
@@ -47,11 +51,13 @@ func TestWriteResolvedTable_SingleRow(t *testing.T) {
 
 func TestWriteResolvedTable_MultipleRows(t *testing.T) {
 	var buf bytes.Buffer
-	writeResolvedTable(&buf, []config.ResolvedOption{
+	if err := writeResolvedTable(&buf, []config.ResolvedOption{
 		{Key: "editor", Value: "vim", Source: "config-file"},
 		{Key: "log-level", Value: "debug", Source: "env"},
 		{Key: "session-store", Value: "fs", Source: "default"},
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	if len(lines) != 4 {
@@ -67,10 +73,12 @@ func TestWriteResolvedTable_MultipleRows(t *testing.T) {
 
 func TestWriteResolvedTable_TabAlignment(t *testing.T) {
 	var buf bytes.Buffer
-	writeResolvedTable(&buf, []config.ResolvedOption{
+	if err := writeResolvedTable(&buf, []config.ResolvedOption{
 		{Key: "a", Value: "short", Source: "s1"},
 		{Key: "long-key-name", Value: "also-a-long-value", Source: "source-name"},
-	})
+	}); err != nil {
+		t.Fatal(err)
+	}
 	out := buf.String()
 	// tabwriter should produce aligned columns — verify that the header
 	// and each row contain multiple spaces (tabwriter padding).

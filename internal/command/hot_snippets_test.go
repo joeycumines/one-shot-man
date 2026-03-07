@@ -7,6 +7,7 @@ import (
 )
 
 func TestConfigHotSnippetsForJS(t *testing.T) {
+	t.Parallel()
 	t.Run("NilConfig", func(t *testing.T) {
 		result := configHotSnippetsForJS(nil)
 		if result != nil {

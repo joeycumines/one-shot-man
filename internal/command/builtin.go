@@ -333,8 +333,7 @@ func (c *ConfigCommand) executeValidate(stdout io.Writer) error {
 func (c *ConfigCommand) executeList(stdout io.Writer) error {
 	schema := config.DefaultSchema()
 	resolved := schema.ResolveAll(c.config)
-	writeResolvedTable(stdout, resolved)
-	return nil
+	return writeResolvedTable(stdout, resolved)
 }
 
 // executeDiff shows only non-default configuration values.
@@ -345,18 +344,20 @@ func (c *ConfigCommand) executeDiff(stdout io.Writer) error {
 		_, _ = fmt.Fprintln(stdout, "All values are at their defaults.")
 		return nil
 	}
-	writeResolvedTable(stdout, diff)
-	return nil
+	return writeResolvedTable(stdout, diff)
 }
 
 // writeResolvedTable writes a formatted table of ResolvedOptions.
-func writeResolvedTable(w io.Writer, resolved []config.ResolvedOption) {
+func writeResolvedTable(w io.Writer, resolved []config.ResolvedOption) error {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "KEY\tVALUE\tSOURCE")
 	for _, ro := range resolved {
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\n", ro.Key, ro.Value, ro.Source)
 	}
-	_ = tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return fmt.Errorf("failed to flush config table: %w", err)
+	}
+	return nil
 }
 
 // executeReset handles the "config reset" subcommand.

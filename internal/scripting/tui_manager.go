@@ -1230,7 +1230,7 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 			// Only attempt normalization if the original error indicates the
 			// file truly does not exist. Do not mask permission/IO errors.
 			// Note: err is guaranteed non-nil here since we returned early above on success.
-			if (os.IsNotExist(err) || errors.Is(err, os.ErrNotExist)) && runtime.GOOS != "windows" && strings.Contains(label, "\\") {
+			if errors.Is(err, os.ErrNotExist) && runtime.GOOS != "windows" && strings.Contains(label, "\\") {
 				normalizedLabel := strings.ReplaceAll(label, "\\", "/")
 				normalized := filepath.Clean(filepath.FromSlash(normalizedLabel))
 				owner2, err2 := tm.engine.contextManager.AddRelativePath(normalized)

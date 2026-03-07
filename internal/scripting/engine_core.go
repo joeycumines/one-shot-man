@@ -197,7 +197,7 @@ func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID,
 		return nil
 	})
 	if err != nil {
-		runtime.Close()
+		_ = runtime.Close()
 		return nil, fmt.Errorf("failed to get VM reference: %w", err)
 	}
 
@@ -253,7 +253,7 @@ func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID,
 		return nil
 	})
 	if err != nil {
-		runtime.Close()
+		_ = runtime.Close()
 		return nil, fmt.Errorf("failed to enable require: %w", err)
 	}
 
@@ -635,7 +635,11 @@ func (e *Engine) Close() error {
 	// Close the runtime (this stops the event loop).
 	// We do this after stopping btBridge so any pending JS operations complete.
 	if e.runtime != nil {
-		e.runtime.Close()
+		if err := e.runtime.Close(); err != nil {
+			if e.stderr != nil {
+				_, _ = fmt.Fprintf(e.stderr, "Warning: failed to close runtime: %v\n", err)
+			}
+		}
 	}
 
 	// Clean up any resources

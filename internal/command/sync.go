@@ -203,7 +203,7 @@ func (c *SyncCommand) executeList(args []string, stdout, stderr io.Writer) error
 	entries, err := discoverEntries(dir)
 	if err != nil {
 		// If the directory doesn't exist yet, that's fine — no entries.
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			_, _ = fmt.Fprintln(stdout, "No notebook entries found.")
 			return nil
 		}
@@ -455,7 +455,7 @@ func (c *SyncCommand) executeLoad(args []string, stdout, stderr io.Writer) error
 
 	entries, err := discoverEntries(dir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("no notebook entries found")
 		}
 		return fmt.Errorf("listing notebook entries: %w", err)
@@ -608,14 +608,14 @@ func parseTags(tags string) []string {
 
 // deduplicatePath appends a numeric suffix if the path already exists.
 func deduplicatePath(path string) (string, error) {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		return path, nil
 	}
 	ext := filepath.Ext(path)
 	base := strings.TrimSuffix(path, ext)
 	for i := 2; i < 1000; i++ {
 		candidate := fmt.Sprintf("%s-%d%s", base, i, ext)
-		if _, err := os.Stat(candidate); os.IsNotExist(err) {
+		if _, err := os.Stat(candidate); errors.Is(err, os.ErrNotExist) {
 			return candidate, nil
 		}
 	}

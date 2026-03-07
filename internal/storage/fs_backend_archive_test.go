@@ -131,7 +131,7 @@ func TestArchiveSession_SourceDoesNotExist(t *testing.T) {
 	}
 
 	// dest should NOT exist.
-	if _, err := os.Stat(dest); !os.IsNotExist(err) {
+	if _, err := os.Stat(dest); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected dest to not exist, stat err: %v", err)
 	}
 }

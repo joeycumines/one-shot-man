@@ -2,6 +2,7 @@ package command
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -117,7 +118,7 @@ func FindGoalFiles(dir string) ([]GoalFileCandidate, error) {
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil // Directory doesn't exist, return empty list
 		}
 		if os.IsPermission(err) {

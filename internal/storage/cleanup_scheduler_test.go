@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"strings"
@@ -55,7 +56,7 @@ func TestCleanupScheduler_RunsOnStartup(t *testing.T) {
 	<-done
 
 	// Session should have been removed by the startup cleanup.
-	if _, err := os.Stat(p); !os.IsNotExist(err) {
+	if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected session to be removed by startup cleanup, stat err: %v", err)
 	}
 }
@@ -112,7 +113,7 @@ func TestCleanupScheduler_RunsOnTick(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Session should now be removed.
-	if _, err := os.Stat(p); !os.IsNotExist(err) {
+	if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected session to be removed after tick, stat err: %v", err)
 	}
 
@@ -192,7 +193,7 @@ func TestCleanupScheduler_ZeroInterval(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Old session should be removed by startup cleanup.
-	if _, err := os.Stat(p); !os.IsNotExist(err) {
+	if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected session removed by startup cleanup with 0 interval, stat err: %v", err)
 	}
 
@@ -244,7 +245,7 @@ func TestCleanupScheduler_ExcludeID(t *testing.T) {
 		t.Fatalf("expected excluded session to remain, stat err: %v", err)
 	}
 	// exclude-remove should be deleted.
-	if _, err := os.Stat(p2); !os.IsNotExist(err) {
+	if _, err := os.Stat(p2); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected non-excluded session to be removed, stat err: %v", err)
 	}
 }
@@ -296,7 +297,7 @@ func TestCleanupScheduler_MultipleTicksRunMultipleCleanups(t *testing.T) {
 	tick <- time.Now()
 	time.Sleep(50 * time.Millisecond)
 
-	if _, err := os.Stat(p1); !os.IsNotExist(err) {
+	if _, err := os.Stat(p1); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("tick 1: expected session removed, stat err: %v", err)
 	}
 
@@ -312,7 +313,7 @@ func TestCleanupScheduler_MultipleTicksRunMultipleCleanups(t *testing.T) {
 	tick <- time.Now()
 	time.Sleep(50 * time.Millisecond)
 
-	if _, err := os.Stat(p2); !os.IsNotExist(err) {
+	if _, err := os.Stat(p2); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("tick 2: expected session removed, stat err: %v", err)
 	}
 

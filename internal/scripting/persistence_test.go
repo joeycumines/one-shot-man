@@ -2,6 +2,7 @@ package scripting
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -64,7 +65,7 @@ func TestEngine_PersistenceOnClose(t *testing.T) {
 	// Note: session ID is namespaced according to the session package
 	expectedPath := filepath.Join(tmpDir, expectedSessionID+".session.json")
 
-	if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
+	if _, err := os.Stat(expectedPath); errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("Session file was not created at %s", expectedPath)
 	}
 

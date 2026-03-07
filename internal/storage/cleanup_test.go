@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -57,7 +58,7 @@ func TestCleaner_DoesNotRemoveLockForActiveSession(t *testing.T) {
 	}
 
 	// The lockfile should still exist and the session should be skipped.
-	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected lock file to still exist for active session")
 	}
 	for _, id := range report.Removed {
@@ -114,7 +115,7 @@ func TestCleaner_RemovesOrphanLock(t *testing.T) {
 	}
 
 	// The lockfile should no longer exist and the id should be in Removed.
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected lock file to be removed for orphan session")
 	}
 
@@ -157,7 +158,7 @@ func TestCleaner_SkipsYoungOrphanLock(t *testing.T) {
 	}
 
 	// Lock should still exist
-	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected young orphan lock file to remain")
 	}
 
@@ -201,7 +202,7 @@ func TestCleaner_CustomMinOrphanAge_RemovesWhenSmaller(t *testing.T) {
 		t.Fatalf("cleanup failed: %v", err)
 	}
 
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected lock file to be removed for custom-age-remove")
 	}
 	found := false
@@ -244,7 +245,7 @@ func TestCleaner_CustomMinOrphanAge_SkipsWhenLarger(t *testing.T) {
 	}
 
 	// Lock should still exist
-	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected lock file to remain for custom-age-skip")
 	}
 
@@ -296,7 +297,7 @@ func TestCleaner_DoesNotRemoveLockWhenAcquirableAndSessionExists(t *testing.T) {
 		t.Fatalf("cleanup failed: %v", err)
 	}
 
-	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected lock file to still exist for session even if acquirable")
 	}
 
@@ -427,7 +428,7 @@ func TestAcquireLockHandle_CloseLeavesFile(t *testing.T) {
 	}
 
 	// File should still exist on disk
-	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected lock artifact to remain after Close, but it was removed")
 	}
 }
@@ -506,7 +507,7 @@ func TestCleanup_IgnoresNonSessionLockFilesAndRemovesOrphans(t *testing.T) {
 	}
 
 	// orphan.session.lock should have been removed
-	if _, err := os.Stat(orphanLock); !os.IsNotExist(err) {
+	if _, err := os.Stat(orphanLock); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected orphan.session.lock to be removed, stat error: %v", err)
 	}
 }
@@ -603,12 +604,12 @@ func TestCleaner_PreservesLockWhenRemoveFails(t *testing.T) {
 	}
 
 	// The session file removal should have failed, so session directory (now replacing file) should still exist
-	if _, err := os.Stat(sessionPath); os.IsNotExist(err) {
+	if _, err := os.Stat(sessionPath); errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected session directory (simulating file removal failure) to exist after a failed remove")
 	}
 
 	// The lock file should still exist (we should NOT have unlinked it on failure)
-	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected lock file to remain after failed session removal")
 	}
 
@@ -738,7 +739,7 @@ func TestCleaner_DryRunOrphanLock(t *testing.T) {
 	}
 
 	// Lock file should still exist (dry-run: no mutations).
-	if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); errors.Is(err, os.ErrNotExist) {
 		t.Fatal("expected lock file to remain in dry-run mode")
 	}
 

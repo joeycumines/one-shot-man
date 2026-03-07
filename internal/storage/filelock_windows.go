@@ -51,7 +51,7 @@ func releaseFileLock(lockFile *os.File) error {
 	// acquirer has the file open; the lock was already released above, so the
 	// caller's session is correctly unlocked.
 	if err3 != nil {
-		if os.IsNotExist(err3) {
+		if errors.Is(err3, os.ErrNotExist) {
 			err3 = nil
 		} else if isWindowsFileBusy(err3) {
 			err3 = nil

@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -223,7 +224,7 @@ func TestPickAndPlaceError_ER003_NormalExecution(t *testing.T) {
 
 	// Read the actual pick-and-place script (if available)
 	pickPlacePath := filepath.Join("..", "..", "scripts", "example-05-pick-and-place.js")
-	if _, err := os.Stat(pickPlacePath); os.IsNotExist(err) {
+	if _, err := os.Stat(pickPlacePath); errors.Is(err, os.ErrNotExist) {
 		t.Log("Pick-and-place script not found, skipping file-based tests")
 	} else {
 		// The pick-and-place script requires bubbletea TUI, so we can't fully ExecuteScript it

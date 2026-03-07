@@ -584,21 +584,21 @@ func TestMCPCallback_CloseRemovesTempDir(t *testing.T) {
 	// Close and verify cleanup
 	runAsync(t, p, `await cb.close();`)
 
-	if _, err := os.Stat(scriptPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(scriptPath); !errors.Is(err, os.ErrNotExist) {
 		t.Error("bootstrap script should be removed after close")
 	}
-	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(configPath); !errors.Is(err, os.ErrNotExist) {
 		t.Error("MCP config should be removed after close")
 	}
 	// Check that the temp directory is gone (parent of script)
 	tempDir := scriptPath[:strings.LastIndex(scriptPath, string(os.PathSeparator))]
-	if _, err := os.Stat(tempDir); !os.IsNotExist(err) {
+	if _, err := os.Stat(tempDir); !errors.Is(err, os.ErrNotExist) {
 		t.Error("temp directory should be removed after close")
 	}
 
 	// On Unix, verify socket is gone
 	if runtime.GOOS != "windows" && address != "" {
-		if _, err := os.Stat(address); !os.IsNotExist(err) {
+		if _, err := os.Stat(address); !errors.Is(err, os.ErrNotExist) {
 			t.Error("socket file should be removed after close")
 		}
 	}
@@ -826,7 +826,7 @@ func TestMCPCallback_ContextCancellation_TriggersCleanup(t *testing.T) {
 	// Wait for cleanup goroutine to fire (with timeout)
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if _, err := os.Stat(tempDir); os.IsNotExist(err) {
+		if _, err := os.Stat(tempDir); errors.Is(err, os.ErrNotExist) {
 			// Temp dir removed — cleanup worked
 			return
 		}
@@ -897,7 +897,7 @@ func TestMCPCallback_SignalCleanup_CloseIsIdempotent(t *testing.T) {
 	// Wait for cleanup
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if _, err := os.Stat(tempDir); os.IsNotExist(err) {
+		if _, err := os.Stat(tempDir); errors.Is(err, os.ErrNotExist) {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -1445,7 +1445,7 @@ func TestMCPCallback_RapidInitClose_NoLeakedDirs(t *testing.T) {
 			t.Fatalf("cycle %d: no scriptPath", i)
 		}
 		tempDir := scriptPath[:strings.LastIndex(scriptPath, string(os.PathSeparator))]
-		if _, err := os.Stat(tempDir); !os.IsNotExist(err) {
+		if _, err := os.Stat(tempDir); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("cycle %d: temp dir %q not cleaned up (err=%v)", i, tempDir, err)
 		}
 	}

@@ -1249,7 +1249,7 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 
 			// Handle error (err is guaranteed non-nil here since we returned early on success)
 			// If the file no longer exists, log it and remove from state
-			if os.IsNotExist(err) {
+			if errors.Is(err, os.ErrNotExist) {
 				_, _ = fmt.Fprintf(tm.writer, "Info: file from previous session not found, removing: %s\n", label)
 				stateChanged = true
 				continue

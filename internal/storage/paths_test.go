@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -124,7 +125,7 @@ func TestPaths(t *testing.T) {
 		}
 
 		// Verify the directory actually exists
-		if _, err := os.Stat(dir1); os.IsNotExist(err) {
+		if _, err := os.Stat(dir1); errors.Is(err, os.ErrNotExist) {
 			t.Errorf("SessionDirectory returned path that doesn't exist: %q", dir1)
 		}
 

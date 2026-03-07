@@ -62,7 +62,7 @@ func TestNewFileSystemBackend(t *testing.T) {
 		defer backend.Close()
 
 		lockPath, _ := SessionLockFilePath(sessionID)
-		if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+		if _, err := os.Stat(lockPath); errors.Is(err, os.ErrNotExist) {
 			t.Error("lock file was not created")
 		}
 	})
@@ -110,7 +110,7 @@ func TestFileSystemBackend_Close(t *testing.T) {
 		}
 
 		lockPath, _ := SessionLockFilePath(sessionID)
-		if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
 			t.Error("lock file was not removed after Close()")
 		}
 	})
@@ -533,7 +533,7 @@ func TestFileSystemBackend_ArchiveSession_ExclusiveCreate(t *testing.T) {
 	}
 
 	// Original session should be removed after successful archive
-	if _, err := os.Stat(sessionPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(sessionPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected original session removed after archive success, got: %v", err)
 	}
 

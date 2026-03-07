@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -80,10 +81,10 @@ func TestSessionsListAndClean(t *testing.T) {
 		t.Fatalf("clean failed: %v", err)
 	}
 
-	if _, err := os.Stat(s1); !os.IsNotExist(err) {
+	if _, err := os.Stat(s1); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("expected old_session to be removed")
 	}
-	if _, err := os.Stat(s2); os.IsNotExist(err) {
+	if _, err := os.Stat(s2); errors.Is(err, os.ErrNotExist) {
 		t.Errorf("expected new_session to persist")
 	}
 }
@@ -214,12 +215,12 @@ func TestSessionsDeleteRemovesLockAndFile(t *testing.T) {
 	}
 
 	// session file removed
-	if _, err := os.Stat(p); !os.IsNotExist(err) {
+	if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected session file removed, stat error: %v", err)
 	}
 
 	// lock file should not remain
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected lock file removed, stat error: %v", err)
 	}
 }
@@ -245,13 +246,13 @@ func TestSessionsDeleteAcceptsFlagBeforeID(t *testing.T) {
 	}
 
 	// session file removed
-	if _, err := os.Stat(p); !os.IsNotExist(err) {
+	if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected session file removed, stat error: %v", err)
 	}
 
 	// lock file should not remain
 	lockPath, _ := storage.SessionLockFilePath(id)
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected lock file removed, stat error: %v", err)
 	}
 }
@@ -278,7 +279,7 @@ func TestSessionsDeleteAcceptsFlagAfterID(t *testing.T) {
 	}
 
 	// session file removed
-	if _, err := os.Stat(p); !os.IsNotExist(err) {
+	if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected session file removed, stat error: %v", err)
 	}
 }
@@ -308,10 +309,10 @@ func TestSessionsDeleteMultipleIDsDeletesAll(t *testing.T) {
 		t.Fatalf("delete failed: %v", err)
 	}
 
-	if _, err := os.Stat(p1); !os.IsNotExist(err) {
+	if _, err := os.Stat(p1); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected session file 1 removed, stat error: %v", err)
 	}
-	if _, err := os.Stat(p2); !os.IsNotExist(err) {
+	if _, err := os.Stat(p2); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected session file 2 removed, stat error: %v", err)
 	}
 }
@@ -363,10 +364,10 @@ func TestSessionsPurge_RemovesAllNonActive(t *testing.T) {
 		t.Fatalf("purge failed: %v", err)
 	}
 
-	if _, err := os.Stat(p1); !os.IsNotExist(err) {
+	if _, err := os.Stat(p1); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected session p1 to be removed by purge")
 	}
-	if _, err := os.Stat(p2); !os.IsNotExist(err) {
+	if _, err := os.Stat(p2); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected session p2 to be removed by purge")
 	}
 }
@@ -491,13 +492,13 @@ func TestSessionsDeleteAcceptsIDThatLooksLikeFlagWithTerminator(t *testing.T) {
 	}
 
 	// session file removed
-	if _, err := os.Stat(p); !os.IsNotExist(err) {
+	if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected session file removed, stat error: %v", err)
 	}
 
 	// lock file should not remain
 	lockPath, _ := storage.SessionLockFilePath(id)
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected lock file removed, stat error: %v", err)
 	}
 }
@@ -783,7 +784,7 @@ func TestSessionsDeletePreservesLockOnRemoveFailure(t *testing.T) {
 	// Either way, the lock file behavior should be consistent
 	if err != nil {
 		// Delete failed as expected - lock file should still exist
-		if _, err := os.Stat(lockPath); os.IsNotExist(err) {
+		if _, err := os.Stat(lockPath); errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("expected lock file to remain after failed deletion")
 		}
 	} else {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -315,7 +316,7 @@ func TestRotatingFileWriter_Rotate_RemoveBeyondRetention(t *testing.T) {
 
 	// .2 should be deleted (beyond maxFiles=1).
 	_, err = os.Stat(path + ".2")
-	assert.True(t, os.IsNotExist(err), "backup .2 should be deleted")
+	assert.True(t, errors.Is(err, os.ErrNotExist), "backup .2 should be deleted")
 
 	// .1 should exist (was the old main file).
 	_, err = os.Stat(path + ".1")
@@ -346,7 +347,7 @@ func TestRotatingFileWriter_Rotate_MaxFilesZero(t *testing.T) {
 
 	// No .1 backup should exist.
 	_, err = os.Stat(path + ".1")
-	assert.True(t, os.IsNotExist(err), "no backup should exist with maxFiles=0")
+	assert.True(t, errors.Is(err, os.ErrNotExist), "no backup should exist with maxFiles=0")
 
 	// The main file should be fresh (empty or newly created).
 	info, err := os.Stat(path)

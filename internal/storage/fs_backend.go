@@ -2,6 +2,7 @@ package storage
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -66,7 +67,7 @@ func (b *FileSystemBackend) LoadSession(sessionID string) (*Session, error) {
 	// Check if the session file exists
 	data, err := os.ReadFile(sessionPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to read session file: %w", err)
@@ -134,7 +135,7 @@ func (b *FileSystemBackend) ArchiveSession(sessionID string, destPath string) er
 
 	// Check if source session file exists
 	if _, err := os.Stat(sessionPath); err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			// Source is gone. If another caller already archived to destPath,
 			// report the conflict so the caller can retry with a different counter.
 			if _, dstErr := os.Stat(destPath); dstErr == nil {
@@ -158,7 +159,7 @@ func (b *FileSystemBackend) ArchiveSession(sessionID string, destPath string) er
 	// the kernel enforces atomically.
 	if _, err := os.Stat(destPath); err == nil {
 		return os.ErrExist
-	} else if !os.IsNotExist(err) {
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("failed to stat destination: %w", err)
 	}
 

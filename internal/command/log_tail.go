@@ -3,6 +3,7 @@ package command
 import (
 	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -85,7 +86,7 @@ func resolveLogPath(cfg *config.Config) string {
 func (c *LogCommand) tailLines(logPath string, stdout, stderr io.Writer) error {
 	f, err := os.Open(logPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			_, _ = fmt.Fprintf(stderr, "Log file does not exist: %s\n", logPath)
 			return &SilentError{Err: fmt.Errorf("log file not found: %s", logPath)}
 		}
@@ -142,7 +143,7 @@ func (c *LogCommand) tailFollow(logPath string, stdout, stderr io.Writer) error 
 	// Print last N lines first, then follow.
 	f, err := os.Open(logPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			// File doesn't exist yet — wait for it.
 			_, _ = fmt.Fprintf(stderr, "Waiting for log file: %s\n", logPath)
 			f, err = waitForFile(logPath)
@@ -270,7 +271,7 @@ func waitForFile(path string) (*os.File, error) {
 		if err == nil {
 			return f, nil
 		}
-		if !os.IsNotExist(err) {
+		if !errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("failed to open log file: %w", err)
 		}
 		time.Sleep(pollInterval)

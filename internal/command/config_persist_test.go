@@ -72,7 +72,7 @@ func TestConfigSet_SchemaValidation_KnownBoolKey_InvalidValue(t *testing.T) {
 	}
 
 	// Verify file was NOT created
-	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(configPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected config file to not exist, got stat err: %v", err)
 	}
 }

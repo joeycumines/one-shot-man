@@ -3,6 +3,7 @@ package command
 import (
 	"bufio"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -160,7 +161,7 @@ func (c *SyncCommand) executeConfigPull(args []string, stdout, stderr io.Writer)
 	}
 
 	// Check that the sync root directory exists (pull requires it).
-	if _, statErr := os.Stat(root); os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(root); errors.Is(statErr, os.ErrNotExist) {
 		return fmt.Errorf("sync directory does not exist: %s", root)
 	}
 
@@ -176,7 +177,7 @@ func (c *SyncCommand) executeConfigPull(args []string, stdout, stderr io.Writer)
 	sharedPath := filepath.Join(root, sharedConfigRelPath)
 	data, err := os.ReadFile(sharedPath)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			_, _ = fmt.Fprintln(stderr, "No shared config found in sync repository.")
 			_, _ = fmt.Fprintln(stderr, "Use 'osm sync config-push' to publish your config first.")
 			return &SilentError{Err: fmt.Errorf("shared config not found: %s", sharedConfigRelPath)}

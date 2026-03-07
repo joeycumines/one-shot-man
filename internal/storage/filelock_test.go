@@ -34,7 +34,7 @@ func TestFileLock_AcquireAndRelease(t *testing.T) {
 	if err != nil {
 		t.Fatalf("releaseFileLock failed: %v", err)
 	}
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
 		t.Error("Lock file was not removed after release")
 	}
 }

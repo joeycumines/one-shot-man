@@ -1,6 +1,7 @@
 package command
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -510,7 +511,7 @@ func TestScriptDiscovery_UnreadableDirInCheckDirectory(t *testing.T) {
 	if exists {
 		t.Error("Expected exists=false for child of unreadable directory")
 	}
-	if err != nil && !os.IsPermission(err) && !os.IsNotExist(err) {
+	if err != nil && !os.IsPermission(err) && !errors.Is(err, os.ErrNotExist) {
 		// It's acceptable to get either a permission error or a not-exist
 		// error, depending on OS behavior.
 		t.Errorf("Expected permission or not-exist error, got: %v", err)

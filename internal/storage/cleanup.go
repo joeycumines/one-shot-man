@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -165,7 +166,7 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 		}
 
 		// We hold the lock. Attempt to remove the session file.
-		if err := os.Remove(s.Path); err != nil && !os.IsNotExist(err) {
+		if err := os.Remove(s.Path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			// Failed to remove session file; Close handle to release lock
 			// but DO NOT remove the lock file.
 			_ = f.Close()
@@ -190,7 +191,7 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		// If the sessions directory doesn't exist, there is nothing to clean.
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return &report, nil
 		}
 		return nil, fmt.Errorf("failed to read sessions directory %q: %w", dir, err)
@@ -228,7 +229,7 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 			// Session file exists — do not remove the lock artifact.
 			report.Skipped = append(report.Skipped, base)
 			continue
-		} else if !os.IsNotExist(err) {
+		} else if !errors.Is(err, os.ErrNotExist) {
 			// Unexpected stat error - skip conservative.
 			report.Skipped = append(report.Skipped, base)
 			continue

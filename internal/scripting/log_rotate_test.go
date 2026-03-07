@@ -1,6 +1,7 @@
 package scripting
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -131,7 +132,7 @@ func TestRotatingFileWriter_MaxFilesEnforced(t *testing.T) {
 	if _, err := os.Stat(path + ".2"); err != nil {
 		t.Errorf("expected backup .2 to exist: %v", err)
 	}
-	if _, err := os.Stat(path + ".3"); !os.IsNotExist(err) {
+	if _, err := os.Stat(path + ".3"); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("expected backup .3 to NOT exist, but stat returned: %v", err)
 	}
 }

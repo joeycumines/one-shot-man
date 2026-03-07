@@ -1,6 +1,7 @@
 package command
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -446,7 +447,7 @@ func (gd *GoalDiscovery) traverseForGoalDirs(startDir string) []string {
 func (gd *GoalDiscovery) checkDirectory(path string) (bool, error) {
 	info, err := os.Stat(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return false, nil
 		}
 		// Return the error (permission denied, I/O error, etc.) for the caller to handle
@@ -663,7 +664,7 @@ func (gd *GoalDiscovery) DiscoverPromptFilePaths() []string {
 		// Non-glob path: validate and report missing/unreadable.
 		info, err := os.Stat(expanded)
 		if err != nil {
-			if os.IsNotExist(err) {
+			if errors.Is(err, os.ErrNotExist) {
 				log.Printf("warning: configured prompt path does not exist: %s", expanded)
 				gd.debugf("prompt paths: configured path %q does not exist", expanded)
 			} else if os.IsPermission(err) {

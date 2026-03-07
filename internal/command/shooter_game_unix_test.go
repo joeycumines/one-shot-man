@@ -5,6 +5,7 @@ package command
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -64,7 +65,7 @@ func getScriptPath(t *testing.T) string {
 // script via the osm CLI and verifies it can be started and quit gracefully.
 func TestShooterGame_E2E(t *testing.T) {
 	scriptPath := getScriptPath(t)
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+	if _, err := os.Stat(scriptPath); errors.Is(err, os.ErrNotExist) {
 		t.Skip("Shooter game script not found at scripts/example-04-bt-shooter.js")
 		return
 	}
@@ -143,7 +144,7 @@ func TestShooterGame_E2E(t *testing.T) {
 // TestShooterE2E_StartAndQuit verifies the basic game lifecycle
 func TestShooterE2E_StartAndQuit(t *testing.T) {
 	scriptPath := getScriptPath(t)
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+	if _, err := os.Stat(scriptPath); errors.Is(err, os.ErrNotExist) {
 		t.Skip("Shooter game script not found")
 		return
 	}
@@ -169,7 +170,7 @@ func TestShooterE2E_StartAndQuit(t *testing.T) {
 // This is a simpler test that doesn't require gameplay
 func TestShooterE2E_DebugOverlay(t *testing.T) {
 	scriptPath := getScriptPath(t)
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+	if _, err := os.Stat(scriptPath); errors.Is(err, os.ErrNotExist) {
 		t.Skip("Shooter game script not found")
 		return
 	}
@@ -251,7 +252,7 @@ func TestShooterE2E_DebugOverlay(t *testing.T) {
 // This test checks both state AND visual output.
 func TestShooterE2E_PlayerShoots(t *testing.T) {
 	scriptPath := getScriptPath(t)
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+	if _, err := os.Stat(scriptPath); errors.Is(err, os.ErrNotExist) {
 		t.Skip("Shooter game script not found")
 		return
 	}
@@ -399,7 +400,7 @@ func TestShooterE2E_PlayerShoots(t *testing.T) {
 // This is the CRITICAL test that was missing - enemies must not stand still!
 func TestShooterE2E_EnemyMovement(t *testing.T) {
 	scriptPath := getScriptPath(t)
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+	if _, err := os.Stat(scriptPath); errors.Is(err, os.ErrNotExist) {
 		t.Skip("Shooter game script not found")
 		return
 	}
@@ -539,7 +540,7 @@ func TestShooterE2E_EnemyMovement(t *testing.T) {
 // Requirement: Player must move within 2-3 frames of key press (< 50ms).
 func TestShooterE2E_PlayerMovesImmediately(t *testing.T) {
 	scriptPath := getScriptPath(t)
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+	if _, err := os.Stat(scriptPath); errors.Is(err, os.ErrNotExist) {
 		t.Skip("Shooter game script not found")
 		return
 	}
@@ -640,7 +641,7 @@ func TestShooterE2E_PlayerMovesImmediately(t *testing.T) {
 // This test validates the speed fix from sluggish to responsive movement.
 func TestShooterE2E_PlayerVelocityMatchesExpected(t *testing.T) {
 	scriptPath := getScriptPath(t)
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
+	if _, err := os.Stat(scriptPath); errors.Is(err, os.ErrNotExist) {
 		t.Skip("Shooter game script not found")
 		return
 	}

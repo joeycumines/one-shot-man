@@ -47,7 +47,7 @@ func releaseFileLock(lockFile *os.File) error {
 	err2 := os.Remove(path)
 
 	// Ignore "file does not exist" for the final removal
-	if err2 != nil && !os.IsNotExist(err2) {
+	if err2 != nil && !errors.Is(err2, os.ErrNotExist) {
 		// keep the error
 	} else {
 		err2 = nil

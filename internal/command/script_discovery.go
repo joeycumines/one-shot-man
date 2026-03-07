@@ -1,6 +1,7 @@
 package command
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -515,7 +516,7 @@ func (sd *ScriptDiscovery) isGitRepository(dir string) bool {
 func (sd *ScriptDiscovery) checkDirectory(path string) (bool, error) {
 	info, err := os.Stat(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return false, nil
 		}
 		// Return the error (permission denied, I/O error, etc.) for the caller to handle

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,7 +19,7 @@ import (
 // ignored, ensuring command-specific options are never accidentally overwritten.
 func SetKeyInFile(path, key, value string) error {
 	data, err := os.ReadFile(path)
-	if err != nil && !os.IsNotExist(err) {
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("reading config file: %w", err)
 	}
 
@@ -105,7 +106,7 @@ func SetKeyInFile(path, key, value string) error {
 func DeleteKeyInFile(path, key string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil // nothing to delete
 		}
 		return fmt.Errorf("reading config file: %w", err)
@@ -164,7 +165,7 @@ func DeleteKeyInFile(path, key string) error {
 func DeleteAllGlobalKeysInFile(path string) (int, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return 0, nil
 		}
 		return 0, fmt.Errorf("reading config file: %w", err)

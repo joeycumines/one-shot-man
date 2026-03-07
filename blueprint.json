@@ -1196,7 +1196,21 @@
     },
     {
       "task": "T158: Scope expansion — identify T159+ improvement opportunities",
-      "description": "Continue indefinite improvement cycle.",
+      "description": "Audit batch 21 identified: (1) duplicate 'unexpected arguments' dynamic-arg sites needing %w wrapping, (2) missing %w context in session_{darwin,linux,windows}.go, (3) log.Printf for warnings, (4) stale comment in goal_builtin.go, (5) incomplete RegisterBackend API.",
+      "acceptance": "T159 created and executed.",
+      "status": "Done",
+      "contextPointers": ["scratch/rule-of-two-t159-pass1.md"]
+    },
+    {
+      "task": "T159: Wrap all dynamic 'unexpected arguments' errors with sentinel",
+      "description": "Convert every remaining fmt.Errorf('unexpected arguments: ...') in the command package to use %w wrapping with ErrUnexpectedArguments. 16 source sites across 4 files (builtin.go:3, session.go:6, sync.go:5, sync_config.go:2). 24 test assertions upgraded from strings.Contains to errors.Is across 4 test files. Committed as a593de7.",
+      "acceptance": "Zero fmt.Errorf('unexpected arg...') or strings.Contains assertions for unexpected arguments remain. All tests pass. Rule of Two 2/2 PASS.",
+      "status": "Done",
+      "contextPointers": ["internal/command/builtin.go", "internal/command/session.go", "internal/command/sync.go", "internal/command/sync_config.go", "internal/command/arg_validation_test.go", "internal/command/builtin_basic_test.go", "internal/command/config_persist_test.go", "internal/command/sync_config_test.go"]
+    },
+    {
+      "task": "T160: Scope expansion — identify T161+ improvement opportunities",
+      "description": "Continue indefinite improvement cycle. Known deferred items: (1) missing %w context wrapping in session_{darwin,linux,windows}.go, (2) log.Printf for warnings instead of structured logging, (3) stale comment in goal_builtin.go, (4) incomplete RegisterBackend API, (5) os.IsNotExist→errors.Is migration (~50 sites), (6) spinlock busy-wait in termmux.go, (7) time.Sleep in tests, (8) TestConfigCommandGetAndSet missing errors.Is check for unexpected args stderr path.",
       "acceptance": "5+ new tasks added.",
       "status": "Not Started",
       "contextPointers": ["blueprint.json"]

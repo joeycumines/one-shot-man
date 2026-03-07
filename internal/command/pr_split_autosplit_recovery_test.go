@@ -2,6 +2,7 @@ package command
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -2005,7 +2006,7 @@ func TestAutoSplit_ErrorFeedback_ResumeInstructions(t *testing.T) {
 
 	// Also verify the plan file was actually written (savePlan from finishTUI).
 	planPath := filepath.Join(tp.Dir, ".pr-split-plan.json")
-	if _, err := os.Stat(planPath); os.IsNotExist(err) {
+	if _, err := os.Stat(planPath); errors.Is(err, os.ErrNotExist) {
 		t.Errorf("expected plan file to be written at %s", planPath)
 	}
 }
@@ -2100,7 +2101,7 @@ func TestAutoSplit_ResumeClaudeResolveFails(t *testing.T) {
 
 	// Verify plan file was written.
 	planPath := filepath.Join(tp.Dir, ".pr-split-plan.json")
-	if _, statErr := os.Stat(planPath); os.IsNotExist(statErr) {
+	if _, statErr := os.Stat(planPath); errors.Is(statErr, os.ErrNotExist) {
 		t.Fatal("plan file not written by Run 1")
 	}
 

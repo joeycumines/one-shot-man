@@ -4,6 +4,7 @@ package internal_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -48,7 +49,7 @@ func TestPathTraversalPrevention_ConfigLoading(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.valid {
 				cfg, err := config.LoadFromPath(tc.path)
-				if err != nil && !os.IsNotExist(err) {
+				if err != nil && !errors.Is(err, os.ErrNotExist) {
 					t.Errorf("Unexpected error for valid path %s: %v", tc.path, err)
 				}
 				_ = cfg

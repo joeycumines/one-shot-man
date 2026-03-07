@@ -131,7 +131,7 @@ func newHardenedSourceLoader(
 		data, err := shebangStrippingLoader(filename)
 		if err != nil {
 			// Enhance "not found" errors with search path context.
-			if errors.Is(err, require.ModuleFileDoesNotExistError) || os.IsNotExist(err) {
+			if errors.Is(err, require.ModuleFileDoesNotExistError) || errors.Is(err, os.ErrNotExist) {
 				if len(searchPathsDisplay) > 0 {
 					return nil, fmt.Errorf("module %q not found (searched: %s): %w",
 						filename, strings.Join(searchPathsDisplay, ", "), require.ModuleFileDoesNotExistError)

@@ -2,6 +2,7 @@ package claudemux
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -1033,7 +1034,7 @@ func TestPRSplit_ExecuteSplit_WithDeletedFiles(t *testing.T) {
 	lastSplit := runJS(`plan.splits[plan.splits.length-1].name`).String()
 	runGit(t, dir, "checkout", lastSplit)
 	_, err := os.Stat(filepath.Join(dir, "README.md"))
-	assert.True(t, os.IsNotExist(err), "README.md should not exist on the last split branch")
+	assert.True(t, errors.Is(err, os.ErrNotExist), "README.md should not exist on the last split branch")
 
 	// Restore to feature.
 	runGit(t, dir, "checkout", "feature")

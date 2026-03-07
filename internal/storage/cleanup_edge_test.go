@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -439,7 +440,7 @@ func TestCleaner_ManyOrphanLocks(t *testing.T) {
 	// Verify all lock files are gone.
 	for _, id := range expectedIDs {
 		lockPath, _ := sessionLockFilePath(id)
-		if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("expected lock file for %s to be removed", id)
 		}
 	}

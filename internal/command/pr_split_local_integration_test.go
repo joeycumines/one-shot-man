@@ -2,6 +2,7 @@ package command
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -659,7 +660,7 @@ func TestIntegration_PlanPersistence(t *testing.T) {
 	}
 
 	// Verify file was written.
-	if _, err := os.Stat(planPath); os.IsNotExist(err) {
+	if _, err := os.Stat(planPath); errors.Is(err, os.ErrNotExist) {
 		t.Fatal("plan file was not created")
 	}
 
@@ -1233,7 +1234,7 @@ func TestIntegration_AutoSplitComplexEdits(t *testing.T) {
 		"docs/migration.md",
 	} {
 		path := filepath.Join(tp.Dir, newFile)
-		if _, err := os.Stat(path); os.IsNotExist(err) {
+		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 			t.Errorf("new file %q should exist on feature branch", newFile)
 		}
 	}

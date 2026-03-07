@@ -2,6 +2,7 @@ package command
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1218,7 +1219,7 @@ func TestPrSplitCommand_SaveLoadPlan(t *testing.T) {
 	}
 
 	// Verify file exists.
-	if _, err := os.Stat(planFile); os.IsNotExist(err) {
+	if _, err := os.Stat(planFile); errors.Is(err, os.ErrNotExist) {
 		t.Fatal("plan file does not exist after save-plan")
 	}
 

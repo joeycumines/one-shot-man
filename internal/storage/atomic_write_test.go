@@ -142,7 +142,7 @@ func TestAtomicWriteFile(t *testing.T) {
 
 		// Now that we have the specific error type, check for cleanup.
 		tempPath := renameErr.TempPath()
-		if _, statErr := os.Stat(tempPath); !os.IsNotExist(statErr) {
+		if _, statErr := os.Stat(tempPath); !errors.Is(statErr, os.ErrNotExist) {
 			t.Errorf("Temporary file %q was not cleaned up after rename failure", tempPath)
 		}
 	})
@@ -336,7 +336,7 @@ func TestAtomicWriteFile_AllErrorPaths(t *testing.T) {
 			}
 
 			// The target file must NOT have been created.
-			if _, statErr := os.Stat(target); !os.IsNotExist(statErr) {
+			if _, statErr := os.Stat(target); !errors.Is(statErr, os.ErrNotExist) {
 				t.Error("target file exists after failed write — should not")
 			}
 
@@ -377,7 +377,7 @@ func TestAtomicWriteFile_AllErrorPaths(t *testing.T) {
 		}
 
 		// The target file must NOT have been created.
-		if _, statErr := os.Stat(target); !os.IsNotExist(statErr) {
+		if _, statErr := os.Stat(target); !errors.Is(statErr, os.ErrNotExist) {
 			t.Error("target file exists after chmod failure — should not")
 		}
 

@@ -982,7 +982,7 @@ func TestSyncCommand_ConfigPushAtomicWrite(t *testing.T) {
 
 	// Verify no .tmp file remains.
 	tmpPath := sharedPath + ".tmp"
-	if _, err := os.Stat(tmpPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(tmpPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected .tmp file to be cleaned up, but it exists")
 	}
 }
@@ -1047,7 +1047,7 @@ func TestSyncCommand_ConfigLockCleanup(t *testing.T) {
 	unlock()
 
 	// Lock file should be gone.
-	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("lock file should be removed after unlock, stat returned: %v", err)
 	}
 

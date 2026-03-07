@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"sync"
@@ -91,7 +92,7 @@ func TestFileLock_RapidCycling(t *testing.T) {
 		}
 
 		// Lock file should be removed after release.
-		if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("iteration %d: lock file still exists after release", i)
 		}
 	}

@@ -2,6 +2,7 @@ package config
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -134,7 +135,7 @@ func LoadFromPath(path string) (*Config, error) {
 	// the threat model targets direct file symlink substitution.
 	fi, err := os.Lstat(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			// Return empty config if file doesn't exist
 			return NewConfig(), nil
 		}

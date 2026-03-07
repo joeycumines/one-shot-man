@@ -2,6 +2,7 @@ package command
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"os"
 	"os/exec"
@@ -64,7 +65,7 @@ func TestSessionDelete_HappyPath(t *testing.T) {
 
 	// Verify session file was removed.
 	_, statErr := os.Stat(sessionFile)
-	assert.True(t, os.IsNotExist(statErr), "session file should be removed")
+	assert.True(t, errors.Is(statErr, os.ErrNotExist), "session file should be removed")
 }
 
 // TestSessionDelete_NonexistentSession tries to delete a session whose file
@@ -93,7 +94,7 @@ func TestSessionDelete_NonexistentSession(t *testing.T) {
 	var buf bytes.Buffer
 	err := cmd.delete(&buf, "nonexistent")
 	require.Error(t, err)
-	assert.True(t, os.IsNotExist(err), "expected file-not-found error, got: %v", err)
+	assert.True(t, errors.Is(err, os.ErrNotExist), "expected file-not-found error, got: %v", err)
 }
 
 // TestSessionDelete_LockedSession creates a session, acquires its lock

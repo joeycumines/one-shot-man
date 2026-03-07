@@ -1,6 +1,7 @@
 package scripting
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -84,7 +85,7 @@ func TestRotatingFileWriter_MultipleRotations_BackupChain(t *testing.T) {
 	}
 	for _, n := range []int{4, 5} {
 		bp := path + "." + strconv.Itoa(n)
-		if _, err := os.Stat(bp); !os.IsNotExist(err) {
+		if _, err := os.Stat(bp); !errors.Is(err, os.ErrNotExist) {
 			t.Errorf("backup .%d should NOT exist, stat returned: %v", n, err)
 		}
 	}

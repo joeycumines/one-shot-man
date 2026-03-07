@@ -132,8 +132,8 @@ func TestVersionCommandRejectsUnexpectedArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unexpected arguments")
 	}
-	if !strings.Contains(err.Error(), "unexpected arguments") {
-		t.Fatalf("expected 'unexpected arguments' error, got %q", err.Error())
+	if !errors.Is(err, ErrUnexpectedArguments) {
+		t.Fatalf("expected ErrUnexpectedArguments, got %q", err.Error())
 	}
 	if !strings.Contains(stderr.String(), "unexpected arguments") {
 		t.Fatalf("expected stderr to mention unexpected arguments, got %q", stderr.String())
@@ -471,8 +471,8 @@ func TestInitCommandRejectsUnexpectedArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unexpected arguments")
 	}
-	if !strings.Contains(err.Error(), "unexpected arguments") {
-		t.Fatalf("expected 'unexpected arguments' error, got %q", err.Error())
+	if !errors.Is(err, ErrUnexpectedArguments) {
+		t.Fatalf("expected ErrUnexpectedArguments, got %q", err.Error())
 	}
 	if !strings.Contains(stderr.String(), "unexpected arguments") {
 		t.Fatalf("expected stderr to mention unexpected arguments, got %q", stderr.String())

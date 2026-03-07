@@ -2,6 +2,7 @@ package command
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"io"
 	"strings"
@@ -48,7 +49,7 @@ func TestGoalCommand_ListRejectsExtraArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for extra args with -l")
 	}
-	if !strings.Contains(err.Error(), "unexpected arguments") {
+	if !errors.Is(err, ErrUnexpectedArguments) {
 		t.Fatalf("wrong error: %v", err)
 	}
 }
@@ -59,7 +60,7 @@ func TestGoalCommand_RunRejectsExtraArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for extra args with -r")
 	}
-	if !strings.Contains(err.Error(), "unexpected arguments") {
+	if !errors.Is(err, ErrUnexpectedArguments) {
 		t.Fatalf("wrong error: %v", err)
 	}
 }
@@ -70,7 +71,7 @@ func TestGoalCommand_PositionalRejectsExtraArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for extra positional args")
 	}
-	if !strings.Contains(err.Error(), "unexpected arguments") {
+	if !errors.Is(err, ErrUnexpectedArguments) {
 		t.Fatalf("wrong error: %v", err)
 	}
 }
@@ -86,7 +87,7 @@ func TestHelpCommand_RejectsExtraArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for extra args")
 	}
-	if !strings.Contains(err.Error(), "unexpected arguments") {
+	if !errors.Is(err, ErrUnexpectedArguments) {
 		t.Fatalf("wrong error: %v", err)
 	}
 }
@@ -102,7 +103,7 @@ func TestConfigCommand_ValidateRejectsExtraArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for extra args")
 	}
-	if !strings.Contains(err.Error(), "unexpected arguments") {
+	if !errors.Is(err, ErrUnexpectedArguments) {
 		t.Fatalf("wrong error: %v", err)
 	}
 }
@@ -115,7 +116,7 @@ func TestConfigCommand_SchemaRejectsExtraArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for extra args")
 	}
-	if !strings.Contains(err.Error(), "unexpected arguments") {
+	if !errors.Is(err, ErrUnexpectedArguments) {
 		t.Fatalf("wrong error: %v", err)
 	}
 }
@@ -138,7 +139,7 @@ func TestSessionCommand_IdRejectsExtraArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for extra args")
 	}
-	if !strings.Contains(err.Error(), "session id: unexpected arguments") {
+	if !errors.Is(err, ErrUnexpectedArguments) {
 		t.Fatalf("wrong error: %v", err)
 	}
 }
@@ -149,7 +150,7 @@ func TestSessionCommand_ListRejectsExtraArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for extra args")
 	}
-	if !strings.Contains(err.Error(), "session list: unexpected arguments") {
+	if !errors.Is(err, ErrUnexpectedArguments) {
 		t.Fatalf("wrong error: %v", err)
 	}
 }
@@ -160,7 +161,7 @@ func TestSessionCommand_CleanRejectsExtraArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for extra args")
 	}
-	if !strings.Contains(err.Error(), "session clean: unexpected arguments") {
+	if !errors.Is(err, ErrUnexpectedArguments) {
 		t.Fatalf("wrong error: %v", err)
 	}
 }
@@ -171,7 +172,7 @@ func TestSessionCommand_PurgeRejectsExtraArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for extra args")
 	}
-	if !strings.Contains(err.Error(), "session purge: unexpected arguments") {
+	if !errors.Is(err, ErrUnexpectedArguments) {
 		t.Fatalf("wrong error: %v", err)
 	}
 }
@@ -182,7 +183,7 @@ func TestSessionCommand_InfoRejectsExtraArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for extra args after session id")
 	}
-	if !strings.Contains(err.Error(), "unexpected arguments after session id") {
+	if !errors.Is(err, ErrUnexpectedArguments) {
 		t.Fatalf("wrong error: %v", err)
 	}
 }
@@ -193,7 +194,7 @@ func TestSessionCommand_PathRejectsExtraArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for extra args")
 	}
-	if !strings.Contains(err.Error(), "unexpected arguments for path") {
+	if !errors.Is(err, ErrUnexpectedArguments) {
 		t.Fatalf("wrong error: %v", err)
 	}
 }
@@ -211,7 +212,7 @@ func TestSyncCommand_SaveRejectsExtraArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for extra args")
 	}
-	if !strings.Contains(err.Error(), "unexpected arguments for save") {
+	if !errors.Is(err, ErrUnexpectedArguments) {
 		t.Fatalf("wrong error: %v", err)
 	}
 }
@@ -222,7 +223,7 @@ func TestSyncCommand_ListRejectsExtraArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for extra args")
 	}
-	if !strings.Contains(err.Error(), "unexpected arguments for list") {
+	if !errors.Is(err, ErrUnexpectedArguments) {
 		t.Fatalf("wrong error: %v", err)
 	}
 }
@@ -233,7 +234,7 @@ func TestSyncCommand_InitRejectsExtraArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for extra args")
 	}
-	if !strings.Contains(err.Error(), "unexpected arguments for init") {
+	if !errors.Is(err, ErrUnexpectedArguments) {
 		t.Fatalf("wrong error: %v", err)
 	}
 }
@@ -244,7 +245,7 @@ func TestSyncCommand_PushRejectsExtraArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for extra args")
 	}
-	if !strings.Contains(err.Error(), "unexpected arguments for push") {
+	if !errors.Is(err, ErrUnexpectedArguments) {
 		t.Fatalf("wrong error: %v", err)
 	}
 }
@@ -255,7 +256,7 @@ func TestSyncCommand_PullRejectsExtraArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for extra args")
 	}
-	if !strings.Contains(err.Error(), "unexpected arguments for pull") {
+	if !errors.Is(err, ErrUnexpectedArguments) {
 		t.Fatalf("wrong error: %v", err)
 	}
 }
@@ -268,7 +269,7 @@ func TestVersionCommand_RejectsArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for extra args")
 	}
-	if !strings.Contains(err.Error(), "unexpected arguments") {
+	if !errors.Is(err, ErrUnexpectedArguments) {
 		t.Fatalf("wrong error: %v", err)
 	}
 }

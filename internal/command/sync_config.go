@@ -47,7 +47,7 @@ func isSensitiveKey(key string) bool {
 // content is stored in sync.config-sha for conflict detection on pull.
 func (c *SyncCommand) executeConfigPush(args []string, stdout, stderr io.Writer) error {
 	if len(args) > 0 {
-		return fmt.Errorf("unexpected arguments for config-push: %v", args)
+		return fmt.Errorf("%w for config-push: %v", ErrUnexpectedArguments, args)
 	}
 
 	if c.config == nil {
@@ -141,7 +141,7 @@ func (c *SyncCommand) executeConfigPull(args []string, stdout, stderr io.Writer)
 		case "--dry-run":
 			dryRun = true
 		default:
-			return fmt.Errorf("unexpected argument for config-pull: %s", a)
+			return fmt.Errorf("%w for config-pull: %s", ErrUnexpectedArguments, a)
 		}
 	}
 

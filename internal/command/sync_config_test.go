@@ -2,6 +2,7 @@ package command
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -59,8 +60,8 @@ func TestSyncCommand_ConfigPushUnexpectedArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for extra args")
 	}
-	if !strings.Contains(err.Error(), "unexpected arguments") {
-		t.Fatalf("expected 'unexpected arguments', got %q", err.Error())
+	if !errors.Is(err, ErrUnexpectedArguments) {
+		t.Fatalf("expected ErrUnexpectedArguments, got %q", err.Error())
 	}
 }
 
@@ -599,8 +600,8 @@ func TestSyncCommand_ConfigPullUnexpectedArg(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for bad arg")
 	}
-	if !strings.Contains(err.Error(), "unexpected argument") {
-		t.Fatalf("expected 'unexpected argument', got %q", err.Error())
+	if !errors.Is(err, ErrUnexpectedArguments) {
+		t.Fatalf("expected ErrUnexpectedArguments, got %q", err.Error())
 	}
 }
 

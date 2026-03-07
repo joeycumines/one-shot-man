@@ -83,7 +83,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			return err
 		}
 		if rem := fs.Args(); len(rem) > 0 {
-			return fmt.Errorf("session id: unexpected arguments: %v", rem)
+			return fmt.Errorf("session id: %w: %v", ErrUnexpectedArguments, rem)
 		}
 		// Resolve session id using scripting package
 		id := scripting.GetSessionID(localSession)
@@ -113,7 +113,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			return err
 		}
 		if rem := fs.Args(); len(rem) > 0 {
-			return fmt.Errorf("session list: unexpected arguments: %v", rem)
+			return fmt.Errorf("session list: %w: %v", ErrUnexpectedArguments, rem)
 		}
 		return c.list(stdout, formatLocal, sortLocal)
 	case "clean":
@@ -144,7 +144,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			return err
 		}
 		if rem := fs.Args(); len(rem) > 0 {
-			return fmt.Errorf("session clean: unexpected arguments: %v", rem)
+			return fmt.Errorf("session clean: %w: %v", ErrUnexpectedArguments, rem)
 		}
 		// confirmation
 		if !c.dry && !c.yes && !yesLocal {
@@ -188,7 +188,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			return err
 		}
 		if rem := fs.Args(); len(rem) > 0 {
-			return fmt.Errorf("session purge: unexpected arguments: %v", rem)
+			return fmt.Errorf("session purge: %w: %v", ErrUnexpectedArguments, rem)
 		}
 		// confirmation
 		if !c.dry && !c.yes && !yesLocal {
@@ -354,7 +354,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			return fmt.Errorf("info requires a session id")
 		}
 		if len(rem) > 1 {
-			return fmt.Errorf("unexpected arguments after session id: %v", rem[1:])
+			return fmt.Errorf("%w after session id: %v", ErrUnexpectedArguments, rem[1:])
 		}
 		return c.info(stdout, rem[0])
 	case "path":
@@ -380,7 +380,7 @@ func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		}
 		rem := fs.Args()
 		if len(rem) > 1 {
-			return fmt.Errorf("unexpected arguments for path: %v", rem[1:])
+			return fmt.Errorf("%w for path: %v", ErrUnexpectedArguments, rem[1:])
 		}
 		if len(rem) == 0 {
 			// Use SessionFilePath to derive a directory using the package-local

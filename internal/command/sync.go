@@ -118,7 +118,7 @@ func (c *SyncCommand) executeSave(args []string, stdout, stderr io.Writer) error
 		return err
 	}
 	if fs.NArg() > 0 {
-		return fmt.Errorf("unexpected arguments for save: %v", fs.Args())
+		return fmt.Errorf("%w for save: %v", ErrUnexpectedArguments, fs.Args())
 	}
 
 	if title == "" {
@@ -192,7 +192,7 @@ func (c *SyncCommand) executeList(args []string, stdout, stderr io.Writer) error
 		return err
 	}
 	if fs.NArg() > 0 {
-		return fmt.Errorf("unexpected arguments for list: %v", fs.Args())
+		return fmt.Errorf("%w for list: %v", ErrUnexpectedArguments, fs.Args())
 	}
 
 	dir, err := c.notebooksDir()
@@ -250,7 +250,7 @@ func (c *SyncCommand) executeInit(args []string, stdout, stderr io.Writer) error
 	}
 
 	if fs.NArg() > 1 {
-		return fmt.Errorf("unexpected arguments for init: %v", fs.Args()[1:])
+		return fmt.Errorf("%w for init: %v", ErrUnexpectedArguments, fs.Args()[1:])
 	}
 	repoURL := ""
 	if fs.NArg() > 0 {
@@ -286,7 +286,7 @@ func (c *SyncCommand) executeInit(args []string, stdout, stderr io.Writer) error
 // executePush stages all changes, commits, and pushes to the remote.
 func (c *SyncCommand) executePush(args []string, stdout, stderr io.Writer) error {
 	if len(args) > 0 {
-		return fmt.Errorf("unexpected arguments for push: %v", args)
+		return fmt.Errorf("%w for push: %v", ErrUnexpectedArguments, args)
 	}
 	root, err := c.syncRoot()
 	if err != nil {
@@ -335,7 +335,7 @@ func (c *SyncCommand) executePush(args []string, stdout, stderr io.Writer) error
 // executePull fetches and merges remote changes, or clones if not initialized.
 func (c *SyncCommand) executePull(args []string, stdout, stderr io.Writer) error {
 	if len(args) > 0 {
-		return fmt.Errorf("unexpected arguments for pull: %v", args)
+		return fmt.Errorf("%w for pull: %v", ErrUnexpectedArguments, args)
 	}
 	root, err := c.syncRoot()
 	if err != nil {

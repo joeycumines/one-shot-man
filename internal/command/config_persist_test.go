@@ -1013,8 +1013,8 @@ func TestConfigReset_DuplicateKeyArg(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for multiple keys")
 	}
-	if !strings.Contains(err.Error(), "unexpected argument") {
-		t.Fatalf("expected 'unexpected argument' in error, got: %v", err)
+	if !errors.Is(err, ErrUnexpectedArguments) {
+		t.Fatalf("expected ErrUnexpectedArguments, got: %v", err)
 	}
 }
 
@@ -1120,8 +1120,8 @@ func TestConfigSchema_JSON_ExtraArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for extra args after --json")
 	}
-	if !strings.Contains(err.Error(), "unexpected arguments") {
-		t.Fatalf("expected 'unexpected arguments' error, got: %v", err)
+	if !errors.Is(err, ErrUnexpectedArguments) {
+		t.Fatalf("expected ErrUnexpectedArguments, got: %v", err)
 	}
 }
 

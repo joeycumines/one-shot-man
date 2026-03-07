@@ -76,7 +76,7 @@ func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 
 	// Show help for a specific command
 	if len(args) > 1 {
-		return fmt.Errorf("unexpected arguments: %v", args[1:])
+		return fmt.Errorf("%w: %v", ErrUnexpectedArguments, args[1:])
 	}
 	cmdName := args[0]
 	cmd, err := c.registry.Get(cmdName)
@@ -133,7 +133,7 @@ func NewVersionCommand(version string) *VersionCommand {
 func (c *VersionCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if len(args) > 0 {
 		_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args)
-		return &SilentError{Err: fmt.Errorf("unexpected arguments: %v", args)}
+		return &SilentError{Err: fmt.Errorf("%w: %v", ErrUnexpectedArguments, args)}
 	}
 	_, _ = fmt.Fprintf(stdout, "osm version %s\n", c.version)
 	return nil
@@ -381,8 +381,8 @@ func (c *ConfigCommand) executeReset(args []string, stdout, stderr io.Writer) er
 				return &SilentError{Err: fmt.Errorf("unknown flag: %s", a)}
 			}
 			if key != "" {
-				_, _ = fmt.Fprintf(stderr, "unexpected argument: %s\n", a)
-				return &SilentError{Err: fmt.Errorf("unexpected argument: %s", a)}
+				_, _ = fmt.Fprintf(stderr, "unexpected arguments: %s\n", a)
+				return &SilentError{Err: fmt.Errorf("%w: %s", ErrUnexpectedArguments, a)}
 			}
 			key = a
 		}

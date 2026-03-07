@@ -776,6 +776,41 @@
     },
     {
       "task": "T98: Scope expansion — identify T99+ improvement opportunities",
+      "description": "COMPLETED. Audit found: mcp-bridge missing from command.md, 6 unlinked reference pages in docs/README.md, 2 JS TODOs (super_document viewport, pr-split BRANCH_BUILDING checkpoint), README command list incomplete. Generated T99-T103.",
+      "acceptance": "5+ new tasks added.",
+      "status": "Done",
+      "contextPointers": ["blueprint.json"]
+    },
+    {
+      "task": "T99: Document mcp-bridge command in docs/reference/command.md",
+      "description": "COMPLETED. Added mcp-bridge section with usage, required args (network, address), purpose, and integration context. All 15 commands now documented.",
+      "acceptance": "mcp-bridge documented. All 15 commands now in command.md.",
+      "status": "Done",
+      "contextPointers": ["docs/reference/command.md", "internal/command/mcp_bridge.go"]
+    },
+    {
+      "task": "T100: Add missing reference page links to docs/README.md",
+      "description": "COMPLETED. Added 'Scripting module reference' subsection with 6 links: encoding, nextintegerid, regexp, scrollbar, time, unicodetext.",
+      "acceptance": "All reference docs linked from docs/README.md index.",
+      "status": "Done",
+      "contextPointers": ["docs/README.md:15-21"]
+    },
+    {
+      "task": "T101: Verify docs/README.md link accuracy",
+      "description": "COMPLETED. All 29 links verified — zero dead links.",
+      "acceptance": "No dead links in docs/README.md.",
+      "status": "Done",
+      "contextPointers": ["docs/README.md"]
+    },
+    {
+      "task": "T102: Validate and commit T99-T101 (docs batch)",
+      "description": "COMPLETED. Lint clean. Rule of Two passed (2 contiguous PASS). Committed.",
+      "acceptance": "Rule of Two achieved. Committed.",
+      "status": "Done",
+      "contextPointers": ["config.mk"]
+    },
+    {
+      "task": "T103: Scope expansion — identify T104+ improvement opportunities",
       "description": "Continue indefinite improvement cycle.",
       "acceptance": "5+ new tasks added.",
       "status": "Not Started",

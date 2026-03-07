@@ -322,6 +322,17 @@ Subcommands:
 - `osm session path [session-id]`
   - prints sessions directory, or a specific session file path
 
+### `osm mcp-bridge`
+
+stdio-to-socket bridge for MCP IPC (internal use).
+
+Bidirectionally copies data between stdin/stdout and a remote socket, enabling MCP (Model Context Protocol) communication between processes. Primarily used internally by the `osm:mcpcallback` scripting module during `pr-split` integration.
+
+- Usage: `osm mcp-bridge <network> <address>`
+- Required arguments:
+  - `network`: connection type — `unix` or `tcp`
+  - `address`: socket path (for `unix`) or `host:port` (for `tcp`)
+
 ## Script commands (discovered)
 
 Any executable file discovered in the configured script paths can appear as `osm <name>`.

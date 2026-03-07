@@ -23,6 +23,17 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/storage"
 )
 
+const (
+	// writerShutdownTimeout is the maximum time to wait for the writer
+	// goroutine to drain and exit cleanly during TUIManager shutdown.
+	// If exceeded, a goroutine stack trace is dumped to stderr.
+	writerShutdownTimeout = 5 * time.Second
+
+	// goroutineStackBufSize is the buffer size for capturing all goroutine
+	// stacks when diagnosing a stuck writer goroutine.
+	goroutineStackBufSize = 256 * 1024
+)
+
 // extractCommandHistory converts storage.HistoryEntry slice into []string for go-prompt.
 // The go-prompt history manager handles de-duplication and ordering.
 // We provide the complete, chronological list of commands.
@@ -242,11 +253,11 @@ func (tm *TUIManager) stopWriter() {
 	select {
 	case <-tm.writerDone:
 		// Writer exited cleanly.
-	case <-time.After(5 * time.Second):
+	case <-time.After(writerShutdownTimeout):
 		// Writer goroutine is stuck. Dump all goroutine stacks for diagnosis.
-		buf := make([]byte, 256*1024)
+		buf := make([]byte, goroutineStackBufSize)
 		n := runtime.Stack(buf, true)
-		_, _ = fmt.Fprintf(os.Stderr, "WARNING: stopWriter timed out after 5s waiting for writer goroutine.\nGoroutine dump:\n%s\n", buf[:n])
+		_, _ = fmt.Fprintf(os.Stderr, "WARNING: stopWriter timed out after %s waiting for writer goroutine.\nGoroutine dump:\n%s\n", writerShutdownTimeout, buf[:n])
 	}
 }
 

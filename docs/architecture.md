@@ -14,8 +14,8 @@ This document describes the internal architecture of `osm` — how the major sub
 
 3. **Goal subsystem.** `command.NewGoalDiscovery(cfg)` builds the discovery engine, then `command.NewDynamicGoalRegistry(builtIns, discovery)` merges built-in goals with user-discovered goals.
 
-4. **Command registration.** All 14 built-in commands are registered:
-   `help`, `version`, `config`, `init`, `script`, `session`, `prompt-flow`, `code-review`, `super-document`, `completion`, `goal`, `sync`, `log`, `pr-split`. The completion command receives both the registry and goal registry for tab-completion data.
+4. **Command registration.** All 15 built-in commands are registered:
+   `help`, `version`, `config`, `init`, `script`, `session`, `prompt-flow`, `code-review`, `super-document`, `completion`, `goal`, `sync`, `log`, `pr-split`, `mcp-bridge`. The completion command receives both the registry and goal registry for tab-completion data.
 
 5. **Flag parsing.** A global `FlagSet` parses top-level `-h`/`-help`; remaining args identify the command name and its arguments. Each command gets its own `FlagSet` (with `ContinueOnError`) so `SetupFlags` can register command-specific flags before `fs.Parse(cmdArgs)`.
 
@@ -202,6 +202,14 @@ Native modules are registered via `builtin.Register()` in [internal/builtin/regi
 | `osm:nextIntegerID` | Thread-safe monotonic integer ID generator |
 | `osm:sharedStateSymbols` | Shared state symbol constants for cross-module state |
 
+### MCP and process management
+
+| Module | Description |
+|--------|-------------|
+| `osm:mcp` | Promise-based MCP (Model Context Protocol) client |
+| `osm:mcpcallback` | MCP callback handler for tool invocation responses |
+| `osm:termmux` | Terminal multiplexer — pane management, visibility, events, BubbleTea integration |
+
 ### Agent orchestration
 
 | Module | Description |
@@ -222,7 +230,8 @@ Source: [internal/builtin/ctxutil/contextManager.js](../internal/builtin/ctxutil
 
 Sessions are JSON files stored in a platform-specific directory:
 
-- **Linux/macOS:** `~/.local/share/osm/sessions/` (or `$XDG_DATA_HOME/osm/sessions/`)
+- **Linux:** `~/.config/osm/sessions/` (or `$XDG_CONFIG_HOME/osm/sessions/`)
+- **macOS:** `~/Library/Application Support/osm/sessions/`
 - **Windows:** `%LOCALAPPDATA%\osm\sessions\`
 
 Each session consists of:
@@ -418,7 +427,7 @@ CLI args → main.go → Registry.Get(cmd)
                                   ↓
                           Engine created with:
                           - Goja VM + event loop
-                          - 28 native modules
+                          - 30 native modules
                           - TUI manager + state
                           - Session persistence
                           - Context manager

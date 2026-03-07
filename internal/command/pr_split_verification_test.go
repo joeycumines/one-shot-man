@@ -1479,8 +1479,8 @@ func TestVerifySplits_FailedBranch_AllPassedFalse(t *testing.T) {
 		}
 	}
 
-	// T15 FIXED: In automatedSplit(), the "Verify splits" step callback
-	// now sets result.error when realFailures.length > 0. See
+	// In automatedSplit(), the "Verify splits" step callback sets
+	// result.error when realFailures.length > 0. See
 	// TestVerifyStepReportsErrorOnFailure for the integration-level test.
 }
 

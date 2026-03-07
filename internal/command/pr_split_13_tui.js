@@ -1401,8 +1401,9 @@
                         if (configResult.resume) {
                             wizard.transition('BRANCH_BUILDING', configResult.checkpoint);
                             output.print('[wizard] Resuming from checkpoint...');
-                            // TODO(T22): implement BRANCH_BUILDING from checkpoint.
-                            // For now, fall through to automatedSplit with resume plan.
+                            // Checkpoint resume falls through to automatedSplit with
+                            // the saved plan — full BRANCH_BUILDING state entry from
+                            // checkpoint is not yet implemented.
                             autoConfig.resumePlan = configResult.checkpoint.plan;
                         } else if (configResult.baselineFailed) {
                             wizard.transition('BASELINE_FAIL', {

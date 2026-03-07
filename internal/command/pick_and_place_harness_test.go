@@ -1508,8 +1508,8 @@ func parseInt(s string) (int, error) {
 // 2. Restructuring scenario to use multiple sequential PA-BT plans
 // 3. Using a different planning approach
 //
-// FIXED: Dynamic obstacle detection now implemented per blueprint.json Groups A-D.
-// Path blockers computed every tick for both goal and target destinations.
+// Dynamic obstacle detection is implemented per blueprint.json Groups A-D.
+// Path blockers are computed every tick for both goal and target destinations.
 func TestPickAndPlaceConflictResolution(t *testing.T) {
 	// NOTE: Test enabled after implementing dynamic obstacle detection.
 	// The simulation now properly handles conflict resolution by:

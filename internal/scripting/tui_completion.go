@@ -59,8 +59,9 @@ func getFilepathSuggestions(path string) []prompt.Suggest {
 		dirToScan = "/"
 		prefix = ""
 	} else if fi, err := os.Stat(expandedPath); err == nil && fi.IsDir() && strings.HasSuffix(path, "/") {
-		// FIXED: Only scan directory contents if the user explicitly typed a trailing slash.
-		// Otherwise, we want to scan the parent to suggest the directory name itself (e.g. "bin/").
+		// Only scan directory contents when the user typed a trailing slash.
+		// Without the slash, scan the parent to suggest the directory name
+		// itself (e.g. "bin/") so the user can tab-complete into it.
 		dirToScan = expandedPath
 		prefix = ""
 	}

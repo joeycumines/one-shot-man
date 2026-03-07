@@ -70,7 +70,7 @@ type JSLeafAdapter struct {
 	lastError  error
 
 	// Cancellation support
-	// FIXED: Use parent context directly to prevent memory leak (CRITICAL #2)
+	// Uses parent context directly (no child derivation) to prevent memory leak.
 	ctx context.Context
 }
 

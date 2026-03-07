@@ -62,7 +62,7 @@ const program = tea.newModel({
         // Initialize Textarea
         const ta = textareaLib.new();
         ta.setPlaceholder("What needs to be done?");
-        ta.focus(); // FIXED: Used focus() instead of setFocus(true)
+        ta.focus();
         ta.setHeight(1);
         ta.setShowLineNumbers(false);
 
@@ -106,7 +106,7 @@ const program = tea.newModel({
             if (msg.type === 'Key') {
                 if (msg.key === 'esc') {
                     model.mode = 'list';
-                    model.textarea.setValue(""); // FIXED: Used setValue("") for safe reset
+                    model.textarea.setValue("");
                     return [model, null];
                 }
                 if (msg.key === 'enter') {
@@ -117,7 +117,7 @@ const program = tea.newModel({
                         ensureSelectionVisible(model);
                     }
                     model.mode = 'list';
-                    model.textarea.setValue(""); // FIXED: Used setValue("") for safe reset
+                    model.textarea.setValue("");
                     return [model, null];
                 }
 

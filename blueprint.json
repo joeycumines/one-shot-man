@@ -944,6 +944,41 @@
     },
     {
       "task": "T122: Scope expansion — identify T123+ improvement opportunities",
+      "description": "COMPLETED. Deep audit round 2 found: stale FIXED comment, untested config validation paths, inconsistent error formatting. Generated T123-T127.",
+      "acceptance": "5+ new tasks added.",
+      "status": "Done",
+      "contextPointers": ["blueprint.json"]
+    },
+    {
+      "task": "T123: Remove stale FIXED comment marker in tui_completion.go",
+      "description": "COMPLETED. Removed FIXED: prefix, kept technical explanation as permanent documentation.",
+      "acceptance": "No stale FIXED markers in production code.",
+      "status": "Done",
+      "contextPointers": ["internal/scripting/tui_completion.go:62-64"]
+    },
+    {
+      "task": "T124: Add config validation error path tests",
+      "description": "SKIPPED — tests already exist. NegativeIntegerValues sub-test in config_test.go:780 covers maxAgeDays, maxCount, maxSizeMB. ZeroCleanupInterval at line 798 covers cleanupIntervalHours. InvalidBooleanValues at line 773 covers autoCleanupEnabled. All validation error paths are already tested.",
+      "acceptance": "All negative-value validation paths tested. Tests pass on both platforms.",
+      "status": "Done",
+      "contextPointers": ["internal/config/config.go:271-342", "internal/config/config_test.go"]
+    },
+    {
+      "task": "T125: Audit and fix all stale TODO/FIXME/HACK/XXX comments",
+      "description": "COMPLETED. Found 3 real FIXED: markers across Go and JS files. Cleaned all: tui_completion.go (already done in T123), pick_and_place_harness_test.go, bt/adapter.go. Updated stale TODO(T22) in pr_split_13_tui.js to neutral wording. No remaining stale markers.",
+      "acceptance": "No stale markers remain.",
+      "status": "Done",
+      "contextPointers": ["grep -rn 'TODO\\|FIXME\\|HACK\\|XXX\\|FIXED' internal/ cmd/"]
+    },
+    {
+      "task": "T126: Validate and commit T123-T125",
+      "description": "COMPLETED. Both platforms pass. Rule of Two achieved (reset once when reviewer found 4 additional markers). Committed.",
+      "acceptance": "Both platforms pass. Rule of Two. Committed.",
+      "status": "Done",
+      "contextPointers": ["config.mk"]
+    },
+    {
+      "task": "T127: Scope expansion — identify T128+ improvement opportunities",
       "description": "Continue indefinite improvement cycle.",
       "acceptance": "5+ new tasks added.",
       "status": "Not Started",

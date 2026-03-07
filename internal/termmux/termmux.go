@@ -588,7 +588,7 @@ func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 					// Forward any remaining bytes that preceded or
 					// followed the click, then toggle back to OSM.
 					if len(filtered) > 0 {
-						_, _ = child.Write(filtered)
+						writeOrLog(child, filtered, "child-pre-toggle-click")
 					}
 					resultCh <- fwdResult{ExitToggle, nil}
 					return
@@ -601,7 +601,7 @@ func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 				if data[i] == toggleKey {
 					// Forward bytes before the toggle key, then exit.
 					if i > 0 {
-						_, _ = child.Write(data[:i])
+						writeOrLog(child, data[:i], "child-pre-toggle-key")
 					}
 					resultCh <- fwdResult{ExitToggle, nil}
 					return

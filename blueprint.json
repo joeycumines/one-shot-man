@@ -580,9 +580,9 @@
     },
     {
       "task": "T70: Add writeOrLog to child.Write fire-and-forget sites in termmux",
-      "description": "termmux.go lines 591 and 604 have _, _ = child.Write(filtered/data[:i]) for fire-and-forget writes before toggle exit. The writeOrLog helper already exists at line 638. Convert these 2 sites for consistency. Context strings: 'child-pre-toggle-click' and 'child-pre-toggle-key'. No behavioral change — just adds debug logging for completeness.",
-      "acceptance": "Both child.Write sites use writeOrLog. No new tests needed (existing toggle tests still pass). make all GREEN.",
-      "status": "Not Started",
+      "description": "Converted 2 remaining _, _ = child.Write(...) fire-and-forget sites (lines 591, 604) to use writeOrLog helper for consistency with the 4 stdout sites converted in T65. Context strings: 'child-pre-toggle-click' and 'child-pre-toggle-key'. No behavioral change.",
+      "acceptance": "Both child.Write sites use writeOrLog. No new tests needed. make all GREEN.",
+      "status": "Done",
       "contextPointers": ["internal/termmux/termmux.go:591,604 (child.Write discards)", "internal/termmux/termmux.go:638 (writeOrLog helper)"]
     },
     {

@@ -512,7 +512,7 @@ func TestFileSystemBackend_ArchiveSession_ExclusiveCreate(t *testing.T) {
 		t.Fatalf("failed to create pre-existing dest: %v", err)
 	}
 
-	if err := backend.ArchiveSession(sessionID, destPath); !os.IsExist(err) {
+	if err := backend.ArchiveSession(sessionID, destPath); !errors.Is(err, os.ErrExist) {
 		t.Fatalf("expected ErrExist when dest exists, got: %v", err)
 	}
 
@@ -600,12 +600,12 @@ func TestFileSystemBackend_ArchiveSession_ConcurrentExclusive(t *testing.T) {
 	success := 0
 	if err1 == nil {
 		success++
-	} else if !os.IsExist(err1) {
+	} else if !errors.Is(err1, os.ErrExist) {
 		t.Fatalf("unexpected error for archive attempt 1: %v", err1)
 	}
 	if err2 == nil {
 		success++
-	} else if !os.IsExist(err2) {
+	} else if !errors.Is(err2, os.ErrExist) {
 		t.Fatalf("unexpected error for archive attempt 2: %v", err2)
 	}
 	if success != 1 {

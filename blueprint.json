@@ -1231,7 +1231,28 @@
     },
     {
       "task": "T163: Scope expansion — identify T164+ improvement opportunities",
-      "description": "Continue indefinite improvement cycle. Known deferred items: (1) os.IsPermission→errors.Is migration (~13 sites), (2) missing %w context wrapping in session_{darwin,linux,windows}.go, (3) log.Printf for warnings, (4) spinlock busy-wait in termmux.go, (5) time.Sleep in tests.",
+      "description": "Identified os.IsPermission→errors.Is and os.IsExist→errors.Is as next systematic migrations.",
+      "acceptance": "T164-T165 created and executed.",
+      "status": "Done",
+      "contextPointers": ["blueprint.json"]
+    },
+    {
+      "task": "T164: Replace os.IsPermission with errors.Is",
+      "description": "Migrated all 13 os.IsPermission(err) to errors.Is(err, os.ErrPermission) across 8 files. Committed as cca7b0d8. Rule of Two 2/2 PASS.",
+      "acceptance": "Zero os.IsPermission in internal/**/*.go. All tests pass.",
+      "status": "Done",
+      "contextPointers": ["internal/storage/fs_backend.go", "internal/session/session_darwin.go"]
+    },
+    {
+      "task": "T165: Replace os.IsExist with errors.Is",
+      "description": "Migrated all 5 os.IsExist(err) to errors.Is(err, os.ErrExist) across 3 files (sync_config.go, fs_backend.go, fs_backend_test.go). Rule of Two 2/2 PASS.",
+      "acceptance": "Zero os.IsExist in internal/**/*.go. All tests pass.",
+      "status": "Done",
+      "contextPointers": ["internal/command/sync_config.go", "internal/storage/fs_backend.go"]
+    },
+    {
+      "task": "T166: Scope expansion — identify T167+ improvement opportunities",
+      "description": "Continue indefinite improvement cycle. Known deferred items: (1) missing %w context wrapping in session_{darwin,linux,windows}.go, (2) log.Printf for warnings instead of structured logging, (3) incomplete RegisterBackend API, (4) spinlock busy-wait in termmux.go, (5) time.Sleep in tests, (6) TestConfigCommandGetAndSet missing errors.Is check. All deprecated os.Is* patterns now eliminated (IsNotExist, IsPermission, IsExist, IsTimeout=0).",
       "acceptance": "5+ new tasks added.",
       "status": "Not Started",
       "contextPointers": ["blueprint.json"]

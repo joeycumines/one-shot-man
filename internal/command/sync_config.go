@@ -390,7 +390,7 @@ func syncConfigLock(root string) (func(), error) {
 
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 	if err != nil {
-		if os.IsExist(err) {
+		if errors.Is(err, os.ErrExist) {
 			if removeStaleLock(lockPath) {
 				// Stale lock removed — retry once.
 				f, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)

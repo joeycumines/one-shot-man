@@ -175,7 +175,7 @@ func (b *FileSystemBackend) ArchiveSession(sessionID string, destPath string) er
 	// can retry with a different counter.
 	dstFile, err := os.OpenFile(destPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 	if err != nil {
-		if os.IsExist(err) {
+		if errors.Is(err, os.ErrExist) {
 			return os.ErrExist
 		}
 		return fmt.Errorf("failed to create archive destination: %w", err)

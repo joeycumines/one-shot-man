@@ -49,7 +49,7 @@ func (c *LogCommand) Execute(args []string, stdout, stderr io.Writer) error {
 
 	if len(args) > 0 {
 		_, _ = fmt.Fprintf(stderr, "unknown subcommand: %s\n", args[0])
-		return fmt.Errorf("unknown subcommand: %s", args[0])
+		return &SilentError{Err: fmt.Errorf("unknown subcommand: %s", args[0])}
 	}
 
 	// Resolve log file path: flag → config → error.
@@ -59,7 +59,7 @@ func (c *LogCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	}
 	if logPath == "" {
 		_, _ = fmt.Fprintln(stderr, "No log file configured. Use --file or set log.file in config.")
-		return fmt.Errorf("no log file configured")
+		return &SilentError{Err: fmt.Errorf("no log file configured")}
 	}
 
 	if c.follow {
@@ -87,7 +87,7 @@ func (c *LogCommand) tailLines(logPath string, stdout, stderr io.Writer) error {
 	if err != nil {
 		if os.IsNotExist(err) {
 			_, _ = fmt.Fprintf(stderr, "Log file does not exist: %s\n", logPath)
-			return fmt.Errorf("log file not found: %s", logPath)
+			return &SilentError{Err: fmt.Errorf("log file not found: %s", logPath)}
 		}
 		return fmt.Errorf("failed to open log file: %w", err)
 	}

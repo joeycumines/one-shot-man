@@ -811,6 +811,62 @@
     },
     {
       "task": "T103: Scope expansion — identify T104+ improvement opportunities",
+      "description": "COMPLETED. Code quality audit found: duplicate error output pattern (stderr + main() print), undocumented Registry API, CHANGELOG organization. Generated T104-T108.",
+      "acceptance": "5+ new tasks added.",
+      "status": "Done",
+      "contextPointers": ["blueprint.json"]
+    },
+    {
+      "task": "T104: Add godoc comments to Registry exports",
+      "description": "SKIPPED. Subagent claim was wrong — all exported types and methods in registry.go ALREADY have godoc comments. Verified by reading the file directly.",
+      "acceptance": "All exported types and methods in registry.go have godoc comments.",
+      "status": "Done",
+      "contextPointers": ["internal/command/registry.go:19-74"]
+    },
+    {
+      "task": "T105: Introduce SilentError for command duplicate-output fix",
+      "description": "COMPLETED. Created SilentError type in internal/command/silent_error.go. Updated main() to check IsSilent(err) before printing. Converted 32 error sites across 5 command files (builtin.go 15, goal.go 5, sync.go 7, scripting_command.go 2, log_tail.go 3). Tests in silent_error_test.go cover Error, Unwrap, IsSilent, errors.As.",
+      "acceptance": "No duplicate error output. SilentError used where commands handle their own stderr. Tests pass.",
+      "status": "Done",
+      "contextPointers": ["internal/command/silent_error.go", "internal/command/silent_error_test.go", "cmd/osm/main.go:16-20"]
+    },
+    {
+      "task": "T106: Validate and commit T104-T105",
+      "description": "COMPLETED. Lint clean, macOS tests pass, Linux container (golang:1.26.0) tests pass. SilentError committed in prior batch.",
+      "acceptance": "Both platforms pass. Rule of Two achieved. Committed.",
+      "status": "Done",
+      "contextPointers": ["config.mk"]
+    },
+    {
+      "task": "T107: Scope expansion — identify T108+ improvement opportunities",
+      "description": "COMPLETED. Deep audit found: 8 missed SilentError wrappings across 4 files (main.go, mcp_bridge.go, completion_command.go, sync_config.go), SilentError pattern undocumented in architecture.md, BT bridge nolint suppression. Generated T108-T112.",
+      "acceptance": "5+ new tasks added.",
+      "status": "Done",
+      "contextPointers": ["blueprint.json"]
+    },
+    {
+      "task": "T108: Complete SilentError adoption — 8 remaining sites",
+      "description": "COMPLETED. Wrapped 9 remaining sites: main.go unknown command, mcp_bridge.go args, completion_command.go 2 paths, sync_config.go 5 paths.",
+      "acceptance": "All fprintf-to-stderr + return-error paths use SilentError. No duplicate output.",
+      "status": "Done",
+      "contextPointers": ["cmd/osm/main.go:100-102", "internal/command/mcp_bridge.go:36-39", "internal/command/completion_command.go:35-58", "internal/command/sync_config.go:57-207"]
+    },
+    {
+      "task": "T109: Document SilentError pattern in architecture.md",
+      "description": "COMPLETED. Added Error handling section with SilentError convention: code examples, when-to-use guidance, link to source.",
+      "acceptance": "docs/architecture.md has Error Handling section with SilentError pattern.",
+      "status": "Done",
+      "contextPointers": ["docs/architecture.md", "internal/command/silent_error.go"]
+    },
+    {
+      "task": "T110: Validate and commit T108-T109",
+      "description": "COMPLETED. Lint clean, macOS tests pass, Linux container tests pass. Rule of Two achieved (2 contiguous PASS). Committed.",
+      "acceptance": "Both platforms pass. Rule of Two achieved. Committed.",
+      "status": "Done",
+      "contextPointers": ["config.mk"]
+    },
+    {
+      "task": "T111: Scope expansion — identify T112+ improvement opportunities",
       "description": "Continue indefinite improvement cycle.",
       "acceptance": "5+ new tasks added.",
       "status": "Not Started",

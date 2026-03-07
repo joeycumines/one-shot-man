@@ -113,6 +113,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Deprecated `ScrollWheel` and `ScrollWheelOnElement` string-based methods from mouseharness; use type-safe `ScrollWheelWithDirection` and `ScrollWheelOnElementWithDirection` instead
 
 ### Fixed
+- Duplicate error output: commands that printed to stderr AND returned an error caused `main()` to print the error again — introduced `SilentError` type in `internal/command/` so commands can signal "already reported" to the top-level handler; 41 error sites converted across 9 command files (builtin, goal, sync, scripting_command, log_tail, mcp_bridge, completion_command, sync_config, main.go)
 - `TestExecAndExecv` ETXTBSY on Docker overlayfs: added directory `fsync` after write-then-rename to flush metadata before `exec` — the canonical POSIX pattern for ensuring rename durability
 - TUI model selection regex (`reSelectedArrow`) only matched `>` (ASCII) and `❯` (U+276F) — added `▸` (U+25B8 Ollama), `►` (U+25BA), `→` (U+2192) for cross-provider compatibility; 4 new test cases
 - Bash completion formatting: `;;` case terminators for `schema)` and `log)` were concatenated on the same line as the next case pattern — split to separate lines

@@ -133,7 +133,7 @@ func (c *GoalCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if len(args) > 0 && args[0] == "paths" {
 		if len(args) > 1 {
 			_, _ = fmt.Fprintf(stderr, "unexpected arguments with paths: %v\n", args[1:])
-			return fmt.Errorf("unexpected arguments")
+			return &SilentError{Err: fmt.Errorf("unexpected arguments")}
 		}
 		return c.showGoalPaths(stdout, stderr)
 	}
@@ -143,7 +143,7 @@ func (c *GoalCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if c.list {
 		if len(args) > 0 {
 			_, _ = fmt.Fprintf(stderr, "unexpected arguments with -l: %v\n", args)
-			return fmt.Errorf("unexpected arguments")
+			return &SilentError{Err: fmt.Errorf("unexpected arguments")}
 		}
 		return c.listGoals(goals, stdout)
 	}
@@ -155,7 +155,7 @@ func (c *GoalCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	case c.run != "":
 		if len(args) > 0 {
 			_, _ = fmt.Fprintf(stderr, "unexpected arguments with -r: %v\n", args)
-			return fmt.Errorf("unexpected arguments")
+			return &SilentError{Err: fmt.Errorf("unexpected arguments")}
 		}
 		goalName = c.run
 		// -r implies non-interactive by default, unless -i explicitly set
@@ -163,7 +163,7 @@ func (c *GoalCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	case len(args) > 0:
 		if len(args) > 1 {
 			_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[1:])
-			return fmt.Errorf("unexpected arguments")
+			return &SilentError{Err: fmt.Errorf("unexpected arguments")}
 		}
 		goalName = args[0]
 		// Positional goal defaults to interactive, per README
@@ -176,7 +176,7 @@ func (c *GoalCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	selectedGoal, err := c.registry.Get(goalName)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "Goal '%s' not found. Use 'osm goal -l' to list available goals.\n", goalName)
-		return fmt.Errorf("goal not found: %s", goalName)
+		return &SilentError{Err: fmt.Errorf("goal not found: %s", goalName)}
 	}
 
 	// Create a scripting engine to run the goal (allow explicit session/backend)

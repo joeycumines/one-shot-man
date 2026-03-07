@@ -82,7 +82,7 @@ func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	cmd, err := c.registry.Get(cmdName)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "Unknown command: %s\n", cmdName)
-		return err
+		return &SilentError{Err: err}
 	}
 
 	_, _ = fmt.Fprintf(stdout, "Command: %s\n", cmd.Name())
@@ -133,7 +133,7 @@ func NewVersionCommand(version string) *VersionCommand {
 func (c *VersionCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if len(args) > 0 {
 		_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args)
-		return fmt.Errorf("unexpected arguments")
+		return &SilentError{Err: fmt.Errorf("unexpected arguments: %v", args)}
 	}
 	_, _ = fmt.Fprintf(stdout, "osm version %s\n", c.version)
 	return nil
@@ -219,14 +219,14 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	case "validate":
 		if len(args) > 1 {
 			_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[1:])
-			return fmt.Errorf("unexpected arguments")
+			return &SilentError{Err: fmt.Errorf("unexpected arguments")}
 		}
 		return c.executeValidate(stdout)
 	case "schema":
 		if len(args) > 1 && args[1] == "--json" {
 			if len(args) > 2 {
 				_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[2:])
-				return fmt.Errorf("unexpected arguments")
+				return &SilentError{Err: fmt.Errorf("unexpected arguments")}
 			}
 			data, err := config.DefaultSchema().FormatSchemaJSON()
 			if err != nil {
@@ -237,20 +237,20 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		}
 		if len(args) > 1 {
 			_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[1:])
-			return fmt.Errorf("unexpected arguments")
+			return &SilentError{Err: fmt.Errorf("unexpected arguments")}
 		}
 		_, _ = fmt.Fprint(stdout, config.DefaultSchema().FormatHelp())
 		return nil
 	case "list":
 		if len(args) > 1 {
 			_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[1:])
-			return fmt.Errorf("unexpected arguments")
+			return &SilentError{Err: fmt.Errorf("unexpected arguments")}
 		}
 		return c.executeList(stdout)
 	case "diff":
 		if len(args) > 1 {
 			_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[1:])
-			return fmt.Errorf("unexpected arguments")
+			return &SilentError{Err: fmt.Errorf("unexpected arguments")}
 		}
 		return c.executeDiff(stdout)
 	case "reset":
@@ -283,7 +283,7 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 			_, _ = fmt.Fprintf(stderr, "Warning: %q is not a known configuration key (use 'config schema' to list known keys)\n", key)
 		} else if err := config.ValidateOptionValue(opt.Type, value); err != nil {
 			_, _ = fmt.Fprintf(stderr, "Error: invalid value for %q: %v\n", key, err)
-			return fmt.Errorf("invalid value for %q: %w", key, err)
+			return &SilentError{Err: fmt.Errorf("invalid value for %q: %w", key, err)}
 		}
 
 		c.config.SetGlobalOption(key, value)
@@ -308,7 +308,7 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	}
 
 	_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args)
-	return fmt.Errorf("unexpected arguments")
+	return &SilentError{Err: fmt.Errorf("unexpected arguments")}
 }
 
 // executeValidate validates the current config against the schema.
@@ -378,11 +378,11 @@ func (c *ConfigCommand) executeReset(args []string, stdout, stderr io.Writer) er
 		default:
 			if strings.HasPrefix(a, "-") {
 				_, _ = fmt.Fprintf(stderr, "unknown flag: %s\n", a)
-				return fmt.Errorf("unknown flag: %s", a)
+				return &SilentError{Err: fmt.Errorf("unknown flag: %s", a)}
 			}
 			if key != "" {
 				_, _ = fmt.Fprintf(stderr, "unexpected argument: %s\n", a)
-				return fmt.Errorf("unexpected argument: %s", a)
+				return &SilentError{Err: fmt.Errorf("unexpected argument: %s", a)}
 			}
 			key = a
 		}
@@ -390,7 +390,7 @@ func (c *ConfigCommand) executeReset(args []string, stdout, stderr io.Writer) er
 
 	if resetAll && key != "" {
 		_, _ = fmt.Fprintln(stderr, "Error: cannot specify both --all and a key name")
-		return fmt.Errorf("cannot specify both --all and a key name")
+		return &SilentError{Err: fmt.Errorf("cannot specify both --all and a key name")}
 	}
 
 	if !resetAll && key == "" {
@@ -403,7 +403,7 @@ func (c *ConfigCommand) executeReset(args []string, stdout, stderr io.Writer) er
 	if resetAll {
 		if !force {
 			_, _ = fmt.Fprintln(stderr, "Error: reset --all requires --force to confirm")
-			return fmt.Errorf("reset --all requires --force")
+			return &SilentError{Err: fmt.Errorf("reset --all requires --force")}
 		}
 		return c.executeResetAll(stdout, stderr)
 	}
@@ -417,7 +417,7 @@ func (c *ConfigCommand) executeResetKey(key string, stdout, stderr io.Writer) er
 	opt := schema.Lookup("", key)
 	if opt == nil {
 		_, _ = fmt.Fprintf(stderr, "Error: %q is not a known configuration key (use 'config schema' to list known keys)\n", key)
-		return fmt.Errorf("unknown configuration key: %q", key)
+		return &SilentError{Err: fmt.Errorf("unknown configuration key: %q", key)}
 	}
 
 	// Remove from in-memory config.
@@ -498,7 +498,7 @@ func (c *InitCommand) SetupFlags(fs *flag.FlagSet) {
 func (c *InitCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if len(args) > 0 {
 		_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args)
-		return fmt.Errorf("unexpected arguments")
+		return &SilentError{Err: fmt.Errorf("unexpected arguments")}
 	}
 	// Get config path and ensure directory exists
 	configPath, err := config.GetConfigPath()

@@ -67,7 +67,7 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	if len(args) > 0 && args[0] == "paths" {
 		if len(args) > 1 {
 			_, _ = fmt.Fprintf(stderr, "unexpected arguments with paths: %v\n", args[1:])
-			return fmt.Errorf("unexpected arguments")
+			return &SilentError{Err: fmt.Errorf("unexpected arguments")}
 		}
 		return c.showScriptPaths(stdout, stderr)
 	}
@@ -198,7 +198,7 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	// If not interactive and no scripts were provided, it's an error.
 	if scriptFile == "" && c.script == "" {
 		_, _ = fmt.Fprintln(stderr, "No script file specified. Use -i for interactive mode, -e for direct execution, or provide a script file.")
-		return fmt.Errorf("no script specified")
+		return &SilentError{Err: fmt.Errorf("no script specified")}
 	}
 
 	return nil

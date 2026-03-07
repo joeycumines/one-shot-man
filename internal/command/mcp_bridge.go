@@ -36,7 +36,7 @@ func (c *McpBridgeCommand) Execute(args []string, stdout, stderr io.Writer) erro
 		_, _ = fmt.Fprintf(stderr, "Usage: osm mcp-bridge <network> <address>\n")
 		_, _ = fmt.Fprintf(stderr, "  network: \"unix\" or \"tcp\"\n")
 		_, _ = fmt.Fprintf(stderr, "  address: socket path (unix) or host:port (tcp)\n")
-		return fmt.Errorf("expected 2 arguments, got %d", len(args))
+		return &SilentError{Err: fmt.Errorf("expected 2 arguments, got %d", len(args))}
 	}
 
 	network := args[0]

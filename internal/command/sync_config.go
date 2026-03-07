@@ -55,7 +55,7 @@ func (c *SyncCommand) executeConfigPush(args []string, stdout, stderr io.Writer)
 
 	if !c.config.GetBool("sync.config-sync") {
 		_, _ = fmt.Fprintln(stderr, "Config sync is disabled. Set sync.config-sync=true to enable.")
-		return fmt.Errorf("config sync disabled: set sync.config-sync=true")
+		return &SilentError{Err: fmt.Errorf("config sync disabled: set sync.config-sync=true")}
 	}
 
 	root, err := c.syncRoot()
@@ -150,7 +150,7 @@ func (c *SyncCommand) executeConfigPull(args []string, stdout, stderr io.Writer)
 
 	if !c.config.GetBool("sync.config-sync") {
 		_, _ = fmt.Fprintln(stderr, "Config sync is disabled. Set sync.config-sync=true to enable.")
-		return fmt.Errorf("config sync disabled: set sync.config-sync=true")
+		return &SilentError{Err: fmt.Errorf("config sync disabled: set sync.config-sync=true")}
 	}
 
 	root, err := c.syncRoot()
@@ -178,7 +178,7 @@ func (c *SyncCommand) executeConfigPull(args []string, stdout, stderr io.Writer)
 		if os.IsNotExist(err) {
 			_, _ = fmt.Fprintln(stderr, "No shared config found in sync repository.")
 			_, _ = fmt.Fprintln(stderr, "Use 'osm sync config-push' to publish your config first.")
-			return fmt.Errorf("shared config not found: %s", sharedConfigRelPath)
+			return &SilentError{Err: fmt.Errorf("shared config not found: %s", sharedConfigRelPath)}
 		}
 		return fmt.Errorf("reading shared config: %w", err)
 	}
@@ -193,7 +193,7 @@ func (c *SyncCommand) executeConfigPull(args []string, stdout, stderr io.Writer)
 		_, _ = fmt.Fprintf(stderr, "Shared config schema version %d is newer than supported (%d).\n",
 			version, sharedConfigVersion)
 		_, _ = fmt.Fprintln(stderr, "Upgrade osm to apply this configuration.")
-		return fmt.Errorf("unsupported shared config version %d (max %d)", version, sharedConfigVersion)
+		return &SilentError{Err: fmt.Errorf("unsupported shared config version %d (max %d)", version, sharedConfigVersion)}
 	}
 
 	// Compute remote SHA.
@@ -205,7 +205,7 @@ func (c *SyncCommand) executeConfigPull(args []string, stdout, stderr io.Writer)
 		_, _ = fmt.Fprintln(stderr, "No previous sync state found (first pull).")
 		_, _ = fmt.Fprintln(stderr, "Local config may have been manually configured.")
 		_, _ = fmt.Fprintln(stderr, "Use --force to apply shared config anyway.")
-		return fmt.Errorf("unknown sync state: use --force for first pull")
+		return &SilentError{Err: fmt.Errorf("unknown sync state: use --force for first pull")}
 	}
 
 	if storedSHA == remoteSHA && !dryRun {

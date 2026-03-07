@@ -72,7 +72,7 @@ func (c *SyncCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		_, _ = fmt.Fprintln(stderr, "  pull          Fetch and merge remote changes")
 		_, _ = fmt.Fprintln(stderr, "  config-push   Push local config to sync repository")
 		_, _ = fmt.Fprintln(stderr, "  config-pull   Pull shared config from sync repository")
-		return fmt.Errorf("no subcommand specified")
+		return &SilentError{Err: fmt.Errorf("no subcommand specified")}
 	}
 
 	sub := strings.ToLower(args[0])
@@ -95,7 +95,7 @@ func (c *SyncCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		return c.executeConfigPull(args[1:], stdout, stderr)
 	default:
 		_, _ = fmt.Fprintf(stderr, "unknown sync subcommand: %s\n", sub)
-		return fmt.Errorf("unknown sync subcommand: %s", sub)
+		return &SilentError{Err: fmt.Errorf("unknown sync subcommand: %s", sub)}
 	}
 }
 
@@ -123,12 +123,12 @@ func (c *SyncCommand) executeSave(args []string, stdout, stderr io.Writer) error
 
 	if title == "" {
 		_, _ = fmt.Fprintln(stderr, "Error: --title is required")
-		return fmt.Errorf("--title is required")
+		return &SilentError{Err: fmt.Errorf("--title is required")}
 	}
 
 	if body == "" {
 		_, _ = fmt.Fprintln(stderr, "Error: --body is required")
-		return fmt.Errorf("--body is required")
+		return &SilentError{Err: fmt.Errorf("--body is required")}
 	}
 
 	dir, err := c.notebooksDir()
@@ -263,7 +263,7 @@ func (c *SyncCommand) executeInit(args []string, stdout, stderr io.Writer) error
 		_, _ = fmt.Fprintln(stderr, "Error: repository URL required")
 		_, _ = fmt.Fprintln(stderr, "  Pass as argument: osm sync init <repo-url>")
 		_, _ = fmt.Fprintln(stderr, "  Or set sync.repository in config")
-		return fmt.Errorf("repository URL required: pass as argument or set sync.repository in config")
+		return &SilentError{Err: fmt.Errorf("repository URL required: pass as argument or set sync.repository in config")}
 	}
 
 	root, err := c.syncRoot()
@@ -370,7 +370,7 @@ func (c *SyncCommand) executePull(args []string, stdout, stderr io.Writer) error
 			_, _ = fmt.Fprintln(stderr, "")
 			_, _ = fmt.Fprintf(stderr, "Resolve conflicts manually in: %s\n", root)
 			_, _ = fmt.Fprintln(stderr, "Then run: osm sync push")
-			return fmt.Errorf("sync pull encountered merge conflicts: %w", err)
+			return &SilentError{Err: fmt.Errorf("sync pull encountered merge conflicts: %w", err)}
 		}
 		return fmt.Errorf("git pull failed: %w", err)
 	}
@@ -444,7 +444,7 @@ func discoverEntries(dir string) ([]notebookEntry, error) {
 func (c *SyncCommand) executeLoad(args []string, stdout, stderr io.Writer) error {
 	if len(args) != 1 {
 		_, _ = fmt.Fprintln(stderr, "Usage: osm sync load <slug-or-date>")
-		return fmt.Errorf("load requires exactly one argument")
+		return &SilentError{Err: fmt.Errorf("load requires exactly one argument")}
 	}
 	query := args[0]
 

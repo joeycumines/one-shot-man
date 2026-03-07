@@ -14,7 +14,9 @@ const version = "0.1.0"
 
 func main() {
 	if err := run(); err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		if !command.IsSilent(err) {
+			_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		}
 		os.Exit(1)
 	}
 }
@@ -97,7 +99,7 @@ func run() error {
 	if err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmdName)
 		_, _ = fmt.Fprintln(os.Stderr, "Use 'osm help' to see available commands; use 'osm help <command>' for details (includes flags).")
-		return err
+		return &command.SilentError{Err: err}
 	}
 
 	// Create flag set for this command

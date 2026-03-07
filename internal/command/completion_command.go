@@ -34,7 +34,7 @@ func (c *CompletionCommand) Execute(args []string, stdout, stderr io.Writer) err
 	if len(args) > 1 {
 		_, _ = fmt.Fprintf(stderr, "Too many arguments: %v\n", args[1:])
 		_, _ = fmt.Fprintln(stderr, "Usage: osm completion [shell]")
-		return fmt.Errorf("too many arguments")
+		return &SilentError{Err: fmt.Errorf("too many arguments")}
 	}
 
 	shell := "bash"
@@ -56,7 +56,7 @@ func (c *CompletionCommand) Execute(args []string, stdout, stderr io.Writer) err
 	default:
 		_, _ = fmt.Fprintf(stderr, "Unsupported shell: %s\n", shell)
 		_, _ = fmt.Fprintln(stderr, "Supported shells: bash, zsh, fish, powershell")
-		return fmt.Errorf("unsupported shell: %s", shell)
+		return &SilentError{Err: fmt.Errorf("unsupported shell: %s", shell)}
 	}
 }
 

@@ -25,6 +25,43 @@ Source: [cmd/osm/main.go](../cmd/osm/main.go)
 
 ---
 
+## Error handling
+
+### SilentError convention
+
+Many commands print user-facing error details to stderr (usage hints, validation messages, contextual guidance) and then return an error for exit-code propagation. Without coordination, `main()` would also print the returned error, producing duplicate output:
+
+```
+Too many arguments: [extra]         ← command printed to stderr
+Usage: osm completion [shell]       ← command printed to stderr
+Error: too many arguments           ← main() printed the returned error
+```
+
+The `SilentError` type in `internal/command/silent_error.go` solves this. When a command has already printed meaningful output to stderr, it wraps the returned error:
+
+```go
+_, _ = fmt.Fprintf(stderr, "Too many arguments: %v\n", args[1:])
+_, _ = fmt.Fprintln(stderr, "Usage: osm completion [shell]")
+return &SilentError{Err: fmt.Errorf("too many arguments")}
+```
+
+In `main()`, the top-level error handler checks `command.IsSilent(err)` (which uses `errors.As` to unwrap the chain) and skips the redundant print:
+
+```go
+if err := run(); err != nil {
+    if !command.IsSilent(err) {
+        _, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+    }
+    os.Exit(1)
+}
+```
+
+**When to use SilentError:** Any `Execute()` method that prints to its `stderr` writer before returning an error should wrap the return in `&SilentError{Err: ...}`. Errors that propagate without prior stderr output (e.g. from library calls) should remain unwrapped so `main()` reports them.
+
+Source: [internal/command/silent_error.go](../internal/command/silent_error.go)
+
+---
+
 ## Command system
 
 ### Command interface

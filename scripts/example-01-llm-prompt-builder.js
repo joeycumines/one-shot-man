@@ -22,8 +22,8 @@ const state = tui.createState(MODE_NAME, {
     }
 });
 
-// N.B. This was implemented in Go, but was removed due to its general lack of utility.
-// It was ported to JS largely to support existing integration tests.
+// PromptBuilder demonstrates mode state management with versioning.
+// Used in integration tests to validate state persistence across mode lifecycle.
 class PromptBuilder {
     constructor(title, description) {
         this.title = title;

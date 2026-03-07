@@ -660,9 +660,6 @@ func (tm *TUIManager) executeCommand(cmd Command, args []string) (execErr error)
 	}
 }
 
-// OLD API - REMOVED: GetState and SetState are replaced by StateAccessor
-// Use the { state } injection pattern in command handlers instead
-
 // ListModes returns a list of all registered modes.
 func (tm *TUIManager) ListModes() []string {
 	tm.mu.RLock()

@@ -1126,6 +1126,27 @@
     },
     {
       "task": "T148: Scope expansion — identify T149+ improvement opportunities",
+      "description": "Audit found: stale 'OLD API - REMOVED' comment in tui_manager.go, confusing PromptBuilder comment in example JS. Lower-quality findings discarded (capitalized test messages not a Go convention violation, %w in t.Fatalf invalid).",
+      "acceptance": "T149 task created with concrete fixes.",
+      "status": "Done",
+      "contextPointers": ["internal/scripting/tui_manager.go", "scripts/example-01-llm-prompt-builder.js"]
+    },
+    {
+      "task": "T149: Remove stale comments (tui_manager.go + example JS)",
+      "description": "Removed 2-line 'OLD API - REMOVED' comment from tui_manager.go (~line 663-664). Improved PromptBuilder doc comment in example-01-llm-prompt-builder.js to accurately describe its purpose (mode state management with versioning, used in integration tests). Build passed. Rule of Two 2/2 PASS.",
+      "acceptance": "Stale comment removed. Replacement comment accurate. Build green.",
+      "status": "Done",
+      "contextPointers": ["internal/scripting/tui_manager.go:663", "scripts/example-01-llm-prompt-builder.js:24-25"]
+    },
+    {
+      "task": "T150: Validate and commit T148-T149",
+      "description": "macOS make pass. Rule of Two 2/2 PASS. Committed.",
+      "acceptance": "Committed.",
+      "status": "Done",
+      "contextPointers": ["scratch/commit-msg.txt"]
+    },
+    {
+      "task": "T151: Scope expansion — identify T152+ improvement opportunities",
       "description": "Continue indefinite improvement cycle.",
       "acceptance": "5+ new tasks added.",
       "status": "Not Started",

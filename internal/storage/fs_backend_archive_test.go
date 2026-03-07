@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -84,7 +85,7 @@ func TestArchiveSession_SessionIDMismatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for session ID mismatch")
 	}
-	if got := err.Error(); !contains(got, "session ID mismatch") {
+	if got := err.Error(); !strings.Contains(got, "session ID mismatch") {
 		t.Fatalf("expected session ID mismatch error, got: %v", err)
 	}
 }
@@ -105,7 +106,7 @@ func TestArchiveSession_EmptyDestPath(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for empty destPath")
 	}
-	if got := err.Error(); !contains(got, "destPath cannot be empty") {
+	if got := err.Error(); !strings.Contains(got, "destPath cannot be empty") {
 		t.Fatalf("expected 'destPath cannot be empty' error, got: %v", err)
 	}
 }
@@ -162,19 +163,6 @@ func TestArchiveSession_SourceGoneButDestExists(t *testing.T) {
 	}
 }
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstring(s, substr))
-}
-
-func containsSubstring(s, substr string) bool {
-	for i := 0; i+len(substr) <= len(s); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}
-
 // TestArchiveSession_StatSourceNonENOENT exercises the "failed to stat session file"
 // error path. This happens when os.Stat returns an error that is NOT os.ErrNotExist
 // (e.g., ENOTDIR when an intermediate path component is a regular file).
@@ -218,7 +206,7 @@ func TestArchiveSession_StatSourceNonENOENT(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for stat source non-ENOENT")
 	}
-	if !contains(err.Error(), "failed to stat session file") {
+	if !strings.Contains(err.Error(), "failed to stat session file") {
 		t.Fatalf("expected 'failed to stat session file' error, got: %v", err)
 	}
 }
@@ -262,7 +250,7 @@ func TestArchiveSession_ReadFileError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when session path is a directory")
 	}
-	if !contains(err.Error(), "failed to read session for archive") {
+	if !strings.Contains(err.Error(), "failed to read session for archive") {
 		t.Fatalf("expected 'failed to read session for archive' error, got: %v", err)
 	}
 }
@@ -304,7 +292,7 @@ func TestArchiveSession_StatDestNonENOENT(t *testing.T) {
 	// MkdirAll fails first because it tries to create the directory path
 	// containing the blocker file.
 	errStr := err.Error()
-	if !contains(errStr, "failed to stat destination") && !contains(errStr, "failed to create archive directory") {
+	if !strings.Contains(errStr, "failed to stat destination") && !strings.Contains(errStr, "failed to create archive directory") {
 		t.Fatalf("expected stat/mkdir error, got: %v", err)
 	}
 }

@@ -1056,6 +1056,34 @@
     },
     {
       "task": "T138: Scope expansion — identify T139+ improvement opportunities",
+      "description": "COMPLETED. Audit found: 5 packages missing doc comments, redundant test helper in storage. Generated T139-T141.",
+      "acceptance": "5+ new tasks added.",
+      "status": "Done",
+      "contextPointers": ["blueprint.json"]
+    },
+    {
+      "task": "T139: Add package documentation (doc.go) for 5 packages",
+      "description": "Created doc.go for internal/command, internal/config, internal/session, internal/storage, internal/argv.",
+      "acceptance": "All 5 packages have package-level doc comments.",
+      "status": "Done",
+      "contextPointers": ["internal/command/doc.go", "internal/config/doc.go", "internal/session/doc.go", "internal/storage/doc.go", "internal/argv/doc.go"]
+    },
+    {
+      "task": "T140: Remove redundant contains() helper in storage test",
+      "description": "Replaced custom contains()/containsSubstring() (14 lines) with strings.Contains() across 5 call sites in fs_backend_archive_test.go.",
+      "acceptance": "No custom contains helper. Tests pass.",
+      "status": "Done",
+      "contextPointers": ["internal/storage/fs_backend_archive_test.go"]
+    },
+    {
+      "task": "T141: Validate and commit T138-T140",
+      "description": "macOS make pass. Rule of Two: 2/2 PASS.",
+      "acceptance": "Make pass. Rule of Two. Committed.",
+      "status": "Done",
+      "contextPointers": ["config.mk"]
+    },
+    {
+      "task": "T142: Scope expansion — identify T143+ improvement opportunities",
       "description": "Continue indefinite improvement cycle.",
       "acceptance": "5+ new tasks added.",
       "status": "Not Started",

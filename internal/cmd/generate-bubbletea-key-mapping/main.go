@@ -22,7 +22,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
-	"sort"
 	"strconv"
 
 	"golang.org/x/tools/go/packages"
@@ -256,7 +255,7 @@ func generateKeysOutput(keyNames map[string]string, aliases map[string]string) (
 	}
 	// Sort each slice for determinism
 	for k := range unexportedToAllExported {
-		sort.Strings(unexportedToAllExported[k])
+		slices.Sort(unexportedToAllExported[k])
 	}
 
 	// Build final mapping: string value -> all exported constant names
@@ -292,7 +291,7 @@ func generateKeysOutput(keyNames map[string]string, aliases map[string]string) (
 
 	// Sort allNames for each entry and pick canonical name
 	for stringVal, entry := range entriesByString {
-		sort.Strings(entry.allNames)
+		slices.Sort(entry.allNames)
 
 		// Pick canonical name: use preferredNames if available, otherwise first alphabetically
 		if prefs, ok := preferredNames[stringVal]; ok {

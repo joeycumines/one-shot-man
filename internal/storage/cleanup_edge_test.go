@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -430,7 +430,7 @@ func TestCleaner_ManyOrphanLocks(t *testing.T) {
 	for _, id := range report.Removed {
 		removedSet[id] = true
 	}
-	sort.Strings(expectedIDs)
+	slices.Sort(expectedIDs)
 	for _, id := range expectedIDs {
 		if !removedSet[id] {
 			t.Errorf("expected orphan %s in Removed", id)

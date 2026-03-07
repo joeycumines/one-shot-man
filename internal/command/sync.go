@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -399,20 +400,20 @@ func (c *SyncCommand) syncRoot() (string, error) {
 func discoverEntries(dir string) ([]notebookEntry, error) {
 	var entries []notebookEntry
 
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		// Only look at .md files.
-		if info.IsDir() {
+		if d.IsDir() {
 			return nil
 		}
-		if !strings.HasSuffix(info.Name(), ".md") {
+		name, ok := strings.CutSuffix(d.Name(), ".md")
+		if !ok {
 			return nil
 		}
 
 		relPath, _ := filepath.Rel(dir, path)
-		name := strings.TrimSuffix(info.Name(), ".md")
 
 		// Parse date prefix: YYYY-MM-DD-<slug>
 		if len(name) < 11 {

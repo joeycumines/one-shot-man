@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"sync"
 	"time"
 )
@@ -213,7 +213,7 @@ func (r *InstanceRegistry) List() []string {
 		ids = append(ids, key.(string))
 		return true
 	})
-	sort.Strings(ids)
+	slices.Sort(ids)
 	return ids
 }
 

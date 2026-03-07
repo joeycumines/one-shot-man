@@ -123,8 +123,8 @@ func parseSimpleYAML(raw string, pf *PromptFile) error {
 		}
 
 		// Multi-line list item: "  - value"
-		if strings.HasPrefix(trimmed, "- ") && currentListKey != "" {
-			item := strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
+		if rest, ok := strings.CutPrefix(trimmed, "- "); ok && currentListKey != "" {
+			item := strings.TrimSpace(rest)
 			item = unquoteYAMLString(item)
 			if currentListKey == "tools" {
 				pf.Tools = append(pf.Tools, item)

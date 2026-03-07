@@ -515,18 +515,15 @@ func (r *InputCaptureRecorder) inputToTape(input string) string {
 	// Process markers (sleep, comment, wait) and regular input
 	parts := strings.Split(input, "\x00")
 	for _, part := range parts {
-		if strings.HasPrefix(part, "SLEEP:") {
-			duration := strings.TrimPrefix(part, "SLEEP:")
+		if duration, ok := strings.CutPrefix(part, "SLEEP:"); ok {
 			result.WriteString(fmt.Sprintf("Sleep %s\n", duration))
 			continue
 		}
-		if strings.HasPrefix(part, "COMMENT:") {
-			text := strings.TrimPrefix(part, "COMMENT:")
+		if text, ok := strings.CutPrefix(part, "COMMENT:"); ok {
 			result.WriteString(fmt.Sprintf("# %s\n", text))
 			continue
 		}
-		if strings.HasPrefix(part, "WAIT:") {
-			rest := strings.TrimPrefix(part, "WAIT:")
+		if rest, ok := strings.CutPrefix(part, "WAIT:"); ok {
 			idx := strings.Index(rest, ":")
 			if idx > 0 {
 				timeout := rest[:idx]

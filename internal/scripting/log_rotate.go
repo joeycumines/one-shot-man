@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -183,7 +184,7 @@ func (w *RotatingFileWriter) listBackups() []int {
 		nums = append(nums, n)
 	}
 
-	sort.Ints(nums)
+	slices.Sort(nums)
 	return nums
 }
 

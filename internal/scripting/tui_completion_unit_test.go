@@ -7,6 +7,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -2305,7 +2306,7 @@ func TestDiffFlagCompletion_PrefixFilter(t *testing.T) {
 		}
 	}
 
-	sort.Strings(flagTexts)
+	slices.Sort(flagTexts)
 	if len(flagTexts) != 2 {
 		t.Fatalf("expected 2 flags matching '--sta', got %d: %v", len(flagTexts), flagTexts)
 	}

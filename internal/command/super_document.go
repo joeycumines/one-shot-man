@@ -86,21 +86,15 @@ func (c *SuperDocumentCommand) Execute(args []string, stdout, stderr io.Writer) 
 	}
 	if c.config != nil {
 		for k, v := range c.config.Global {
-			if strings.HasPrefix(k, "theme.") {
-				key := strings.TrimPrefix(k, "theme.")
-				if key != "" {
-					themeColors[key] = v
-				}
+			if key, ok := strings.CutPrefix(k, "theme."); ok && key != "" {
+				themeColors[key] = v
 			}
 		}
 		// Also check command-specific theme overrides
 		if cmdOpts, ok := c.config.Commands["super-document"]; ok {
 			for k, v := range cmdOpts {
-				if strings.HasPrefix(k, "theme.") {
-					key := strings.TrimPrefix(k, "theme.")
-					if key != "" {
-						themeColors[key] = v
-					}
+				if key, ok := strings.CutPrefix(k, "theme."); ok && key != "" {
+					themeColors[key] = v
 				}
 			}
 		}
@@ -131,11 +125,8 @@ func (c *SuperDocumentCommand) Execute(args []string, stdout, stderr io.Writer) 
 		if c.config != nil {
 			colorMap := make(map[string]string)
 			for k, v := range c.config.Global {
-				if strings.HasPrefix(k, "prompt.color.") {
-					key := strings.TrimPrefix(k, "prompt.color.")
-					if key != "" {
-						colorMap[key] = v
-					}
+				if key, ok := strings.CutPrefix(k, "prompt.color."); ok && key != "" {
+					colorMap[key] = v
 				}
 			}
 			if len(colorMap) > 0 {

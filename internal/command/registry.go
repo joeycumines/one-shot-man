@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -84,7 +84,7 @@ func (r *Registry) List() []string {
 	names = append(names, scriptNames...)
 
 	// Sort and deduplicate
-	sort.Strings(names)
+	slices.Sort(names)
 	return removeDuplicates(names)
 }
 
@@ -94,14 +94,14 @@ func (r *Registry) listBuiltin() []string {
 	for name := range r.commands {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	return names
 }
 
 // listScript returns only script commands.
 func (r *Registry) listScript() []string {
 	names := r.findScriptCommands()
-	sort.Strings(names)
+	slices.Sort(names)
 	return names
 }
 

@@ -9,7 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -79,7 +79,7 @@ func (c *SyncCommand) executeConfigPush(args []string, stdout, stderr io.Writer)
 			keys = append(keys, k)
 		}
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	if len(keys) == 0 {
 		_, _ = fmt.Fprintln(stdout, "No shareable config keys to push.")
@@ -302,10 +302,11 @@ func parseSharedConfig(content string) (int, []configKeyValue, error) {
 
 // parseVersionHeader parses the "# osm-shared-config-version N" header line.
 func parseVersionHeader(line string) (int, error) {
-	if !strings.HasPrefix(line, sharedConfigHeader) {
+	rest, ok := strings.CutPrefix(line, sharedConfigHeader)
+	if !ok {
 		return 0, fmt.Errorf("missing version header (expected %q prefix)", sharedConfigHeader)
 	}
-	versionStr := strings.TrimSpace(strings.TrimPrefix(line, sharedConfigHeader))
+	versionStr := strings.TrimSpace(rest)
 	if versionStr == "" {
 		return 0, fmt.Errorf("version header missing version number")
 	}
@@ -428,11 +429,11 @@ func removeStaleLock(lockPath string) bool {
 	var pid int
 	var lockTime time.Time
 	for _, line := range lines {
-		if strings.HasPrefix(line, "pid=") {
-			pid, _ = strconv.Atoi(strings.TrimPrefix(line, "pid="))
+		if after, ok := strings.CutPrefix(line, "pid="); ok {
+			pid, _ = strconv.Atoi(after)
 		}
-		if strings.HasPrefix(line, "time=") {
-			lockTime, _ = time.Parse(time.RFC3339, strings.TrimPrefix(line, "time="))
+		if after, ok := strings.CutPrefix(line, "time="); ok {
+			lockTime, _ = time.Parse(time.RFC3339, after)
 		}
 	}
 

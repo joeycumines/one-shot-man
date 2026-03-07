@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"golang.org/x/text/cases"
@@ -226,11 +226,8 @@ var GOAL_CONFIG = %s;
 			if c.config != nil {
 				colorMap := make(map[string]string)
 				for k, v := range c.config.Global {
-					if strings.HasPrefix(k, "prompt.color.") {
-						key := strings.TrimPrefix(k, "prompt.color.")
-						if key != "" {
-							colorMap[key] = v
-						}
+					if key, ok := strings.CutPrefix(k, "prompt.color."); ok && key != "" {
+						colorMap[key] = v
 					}
 				}
 				if len(colorMap) > 0 {
@@ -279,7 +276,7 @@ func (c *GoalCommand) listGoals(goals []Goal, stdout io.Writer) error {
 	for category := range categories {
 		sortedCategories = append(sortedCategories, category)
 	}
-	sort.Strings(sortedCategories)
+	slices.Sort(sortedCategories)
 
 	for _, category := range sortedCategories {
 		_, _ = fmt.Fprintf(stdout, "%s:\n", cases.Title(language.Und).String(strings.ToLower(strings.ReplaceAll(category, "-", " "))))
@@ -357,7 +354,7 @@ func formatGoalLine(goal Goal) string {
 		varParts = append(varParts, key+"="+s)
 	}
 	if len(varParts) > 0 {
-		sort.Strings(varParts) // deterministic order
+		slices.Sort(varParts) // deterministic order
 		line += "  [vars: " + strings.Join(varParts, ", ") + "]"
 	}
 

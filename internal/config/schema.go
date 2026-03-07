@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -144,7 +144,7 @@ func (s *ConfigSchema) Sections() []string {
 	for sec := range seen {
 		out = append(out, sec)
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 
@@ -212,7 +212,7 @@ func ValidateConfig(c *Config, s *ConfigSchema) []string {
 		}
 	}
 
-	sort.Strings(issues)
+	slices.Sort(issues)
 	return issues
 }
 

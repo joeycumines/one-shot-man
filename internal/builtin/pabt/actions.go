@@ -2,7 +2,7 @@ package pabt
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"sync"
 
 	bt "github.com/joeycumines/go-behaviortree"
@@ -50,7 +50,7 @@ func (r *ActionRegistry) All() []pabtpkg.IAction {
 	for name := range r.actions {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 
 	// Build result in sorted order
 	result := make([]pabtpkg.IAction, 0, len(r.actions))

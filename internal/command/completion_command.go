@@ -3,7 +3,7 @@ package command
 import (
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
@@ -69,7 +69,7 @@ func configKeys() []string {
 	for i, o := range opts {
 		keys[i] = o.Key
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	return keys
 }
 

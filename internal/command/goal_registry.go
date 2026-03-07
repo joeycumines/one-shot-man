@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"slices"
-	"sort"
 )
 
 // GoalRegistry manages available goals (built-in and discovered)
@@ -159,7 +158,7 @@ func (r *DynamicGoalRegistry) Reload() error {
 	for name := range r.mergedGoals {
 		r.orderedGoalNames = append(r.orderedGoalNames, name)
 	}
-	sort.Strings(r.orderedGoalNames)
+	slices.Sort(r.orderedGoalNames)
 
 	return nil
 }

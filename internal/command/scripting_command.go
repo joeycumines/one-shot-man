@@ -173,11 +173,8 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 		if c.config != nil {
 			colorMap := make(map[string]string)
 			for k, v := range c.config.Global {
-				if strings.HasPrefix(k, "prompt.color.") {
-					key := strings.TrimPrefix(k, "prompt.color.")
-					if key != "" {
-						colorMap[key] = v
-					}
+				if key, ok := strings.CutPrefix(k, "prompt.color."); ok && key != "" {
+					colorMap[key] = v
 				}
 			}
 			if len(colorMap) > 0 {

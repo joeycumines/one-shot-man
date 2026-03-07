@@ -7,7 +7,7 @@ package jsonmod
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -394,7 +394,7 @@ func diffMaps(a, b map[string]any, path string) []any {
 	for k := range keySet {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	var ops []any
 	for _, k := range keys {
@@ -588,7 +588,7 @@ func unflattenMap(flat map[string]any, sep string) any {
 	for k := range flat {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 
 	var root any = make(map[string]any)
 	for _, key := range keys {

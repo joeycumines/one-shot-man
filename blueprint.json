@@ -1392,7 +1392,14 @@
     },
     {
       "task": "T186: Scope expansion — identify T187+ improvement opportunities",
-      "description": "Continue indefinite improvement cycle. Previous idiom audits exhausted — shift to structural/architectural improvements.",
+      "description": "Audit found 8 packages missing doc.go + 1 package (scripting) missing doc.go. All 9 created. Structural audit shows codebase is clean.",
+      "acceptance": "All packages have package-level doc comments. Build passes.",
+      "status": "Done",
+      "contextPointers": ["internal/scripting/doc.go", "internal/goroutineid/doc.go"]
+    },
+    {
+      "task": "T187: Scope expansion — identify T188+ improvement opportunities",
+      "description": "Continue indefinite improvement cycle. Go idioms exhausted. Structural audit exhausted. Consider: test coverage, documentation, CHANGELOG.",
       "acceptance": "5+ new tasks added.",
       "status": "Not Started",
       "contextPointers": ["blueprint.json"]

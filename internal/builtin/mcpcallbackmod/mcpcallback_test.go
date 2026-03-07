@@ -1379,6 +1379,7 @@ func TestMCPCallback_CleanupErrorLogging(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX permission semantics required")
 	}
+	testutil.SkipIfRoot(t, testutil.DetectPlatform(t), "chmod restrictions bypassed by root")
 
 	// Capture slog output.
 	var logBuf strings.Builder

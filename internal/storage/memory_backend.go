@@ -23,7 +23,7 @@ var globalInMemoryStore = struct {
 // NewInMemoryBackend creates a new in-memory storage backend (for testing).
 func NewInMemoryBackend(sessionID string) (*InMemoryBackend, error) {
 	if sessionID == "" {
-		return nil, fmt.Errorf("sessionID cannot be empty")
+		return nil, ErrEmptySessionID
 	}
 
 	return &InMemoryBackend{

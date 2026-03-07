@@ -2,6 +2,7 @@ package scripting
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -314,8 +315,8 @@ func TestNewStateManager_ErrorCases(t *testing.T) {
 		if err == nil {
 			t.Error("expected error for empty sessionID, got nil")
 		}
-		if !strings.Contains(err.Error(), "sessionID cannot be empty") {
-			t.Errorf("unexpected error message: %v", err)
+		if !errors.Is(err, storage.ErrEmptySessionID) {
+			t.Errorf("unexpected error: got %v, want %v", err, storage.ErrEmptySessionID)
 		}
 	})
 

@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -8,8 +9,8 @@ import (
 func TestNewInMemoryBackend(t *testing.T) {
 	t.Run("empty session ID returns error", func(t *testing.T) {
 		_, err := NewInMemoryBackend("")
-		if err == nil {
-			t.Fatal("expected error for empty sessionID")
+		if !errors.Is(err, ErrEmptySessionID) {
+			t.Fatalf("expected ErrEmptySessionID, got %v", err)
 		}
 	})
 

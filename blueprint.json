@@ -1147,6 +1147,34 @@
     },
     {
       "task": "T151: Scope expansion — identify T152+ improvement opportunities",
+      "description": "Audit found: (1) 16 bare backend.Close() in benchmark_test.go discarding errors, (2) duplicate 'sessionID cannot be empty' string in 3 files across 2 packages, (3) loop.Shutdown(context.Background()) without timeout — deferred as architectural. Shutdown uses loopCancel() first which should unblock tasks.",
+      "acceptance": "T152-T153 tasks created. Shutdown timeout deferred.",
+      "status": "Done",
+      "contextPointers": ["internal/benchmark_test.go", "internal/storage/fs_backend.go", "internal/storage/memory_backend.go", "internal/scripting/state_manager.go"]
+    },
+    {
+      "task": "T152: Fix bare Close()/SaveSession() in benchmark_test.go",
+      "description": "Changed all 25 bare Close()/SaveSession()/engine.Close() calls to use `_ =` prefix for explicit error discard. Includes 16 backend.Close(), 3 rt.Close(), 5 backend.SaveSession(), 1 engine.Close(). Defer patterns left as-is (idiomatic Go).",
+      "acceptance": "All non-defer Close/SaveSession use _ =. Build passes.",
+      "status": "Done",
+      "contextPointers": ["internal/benchmark_test.go"]
+    },
+    {
+      "task": "T153: Extract ErrEmptySessionID sentinel to storage package",
+      "description": "Defined `var ErrEmptySessionID = errors.New(\"sessionID cannot be empty\")` in storage/backend.go. Updated fs_backend.go, memory_backend.go, scripting/state_manager.go to use it. Updated 3 test files (fs_backend_test.go, memory_backend_test.go, state_manager_test.go) to assert with errors.Is().",
+      "acceptance": "Single source of truth. All sites use sentinel. Tests use errors.Is(). Build passes.",
+      "status": "Done",
+      "contextPointers": ["internal/storage/fs_backend.go:23", "internal/storage/memory_backend.go:26", "internal/scripting/state_manager.go:55"]
+    },
+    {
+      "task": "T154: Validate and commit T151-T153",
+      "description": "macOS make pass. Rule of Two 2/2 PASS. Committed.",
+      "acceptance": "Committed.",
+      "status": "Done",
+      "contextPointers": ["scratch/commit-msg.txt"]
+    },
+    {
+      "task": "T155: Scope expansion — identify T156+ improvement opportunities",
       "description": "Continue indefinite improvement cycle.",
       "acceptance": "5+ new tasks added.",
       "status": "Not Started",

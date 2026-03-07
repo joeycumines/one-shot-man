@@ -52,7 +52,7 @@ func NewStateManager(backend storage.StorageBackend, sessionID string) (*StateMa
 		return nil, fmt.Errorf("backend cannot be nil")
 	}
 	if sessionID == "" {
-		return nil, fmt.Errorf("sessionID cannot be empty")
+		return nil, storage.ErrEmptySessionID
 	}
 
 	// Try to load existing session

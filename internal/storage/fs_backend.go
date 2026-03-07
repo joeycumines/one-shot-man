@@ -20,7 +20,7 @@ type FileSystemBackend struct {
 // It acquires an exclusive lock on the session to prevent concurrent access.
 func NewFileSystemBackend(sessionID string) (*FileSystemBackend, error) {
 	if sessionID == "" {
-		return nil, fmt.Errorf("sessionID cannot be empty")
+		return nil, ErrEmptySessionID
 	}
 
 	// Ensure the session directory exists

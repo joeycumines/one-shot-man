@@ -2,6 +2,7 @@ package storage
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -68,8 +69,8 @@ func TestNewFileSystemBackend(t *testing.T) {
 
 	t.Run("empty session id", func(t *testing.T) {
 		_, err := NewFileSystemBackend("")
-		if err == nil {
-			t.Error("expected error for empty sessionID, got nil")
+		if !errors.Is(err, ErrEmptySessionID) {
+			t.Errorf("expected ErrEmptySessionID, got %v", err)
 		}
 	})
 

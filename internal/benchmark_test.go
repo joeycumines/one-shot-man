@@ -105,7 +105,7 @@ func BenchmarkSessionOperations(b *testing.B) {
 			if err := backend.SaveSession(sess); err != nil {
 				b.Fatalf("failed to save session: %v", err)
 			}
-			backend.Close()
+			_ = backend.Close()
 		}
 	})
 
@@ -119,8 +119,8 @@ func BenchmarkSessionOperations(b *testing.B) {
 			SharedState: make(map[string]any),
 		}
 		backend, _ := storage.NewInMemoryBackend(sess.ID)
-		backend.SaveSession(sess)
-		backend.Close()
+		_ = backend.SaveSession(sess)
+		_ = backend.Close()
 
 		b.ReportAllocs()
 		b.ResetTimer()
@@ -136,7 +136,7 @@ func BenchmarkSessionOperations(b *testing.B) {
 			if loaded == nil {
 				b.Fatal("session not found")
 			}
-			backend.Close()
+			_ = backend.Close()
 		}
 	})
 
@@ -150,8 +150,8 @@ func BenchmarkSessionOperations(b *testing.B) {
 			SharedState: make(map[string]any),
 		}
 		backend, _ := storage.NewInMemoryBackend(sess.ID)
-		backend.SaveSession(sess)
-		backend.Close()
+		_ = backend.SaveSession(sess)
+		_ = backend.Close()
 
 		b.ResetTimer()
 		b.RunParallel(func(pb *testing.PB) {
@@ -167,7 +167,7 @@ func BenchmarkSessionOperations(b *testing.B) {
 				if loaded == nil {
 					b.Fatal("session not found")
 				}
-				backend.Close()
+				_ = backend.Close()
 			}
 		})
 	})
@@ -302,7 +302,7 @@ func BenchmarkFileSystemIO(b *testing.B) {
 			if loaded == nil {
 				b.Fatal("session not found")
 			}
-			backend.Close()
+			_ = backend.Close()
 		}
 	})
 
@@ -324,7 +324,7 @@ func BenchmarkFileSystemIO(b *testing.B) {
 			if err := backend.SaveSession(sess); err != nil {
 				b.Fatalf("failed to save: %v", err)
 			}
-			backend.Close()
+			_ = backend.Close()
 		}
 	})
 
@@ -343,7 +343,7 @@ func BenchmarkFileSystemIO(b *testing.B) {
 		if err := backend.SaveSession(sess); err != nil {
 			b.Fatalf("setup: %v", err)
 		}
-		backend.Close()
+		_ = backend.Close()
 
 		b.ReportAllocs()
 		b.ResetTimer()
@@ -359,7 +359,7 @@ func BenchmarkFileSystemIO(b *testing.B) {
 			if loaded == nil {
 				b.Fatal("session not found")
 			}
-			backend.Close()
+			_ = backend.Close()
 		}
 	})
 
@@ -498,7 +498,7 @@ func BenchmarkScriptingEngine(b *testing.B) {
 			if err != nil {
 				b.Fatalf("failed to create runtime: %v", err)
 			}
-			rt.Close()
+			_ = rt.Close()
 		}
 	})
 
@@ -586,7 +586,7 @@ func BenchmarkScriptingEngine(b *testing.B) {
 			if err != nil {
 				b.Fatalf("failed to create engine: %v", err)
 			}
-			engine.Close()
+			_ = engine.Close()
 		}
 	})
 }
@@ -654,8 +654,8 @@ func TestPerformanceRegression(t *testing.T) {
 		}
 		for i := 0; i < writeIter; i++ {
 			backend, _ := storage.NewInMemoryBackend(sess.ID)
-			backend.SaveSession(sess)
-			backend.Close()
+			_ = backend.SaveSession(sess)
+			_ = backend.Close()
 		}
 		writeElapsed := time.Since(writeStart)
 		avgWriteUs := writeElapsed.Microseconds() / writeIter
@@ -673,7 +673,7 @@ func TestPerformanceRegression(t *testing.T) {
 			if loaded == nil {
 				t.Fatal("session not found")
 			}
-			backend.Close()
+			_ = backend.Close()
 		}
 		readElapsed := time.Since(readStart)
 		avgReadUs := readElapsed.Microseconds() / readIter
@@ -698,7 +698,7 @@ func TestPerformanceRegression(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create runtime: %v", err)
 			}
-			rt.Close()
+			_ = rt.Close()
 		}
 
 		elapsed := time.Since(start)
@@ -754,8 +754,8 @@ func TestPerformanceRegression(t *testing.T) {
 			SharedState: make(map[string]any),
 		}
 		backend, _ := storage.NewInMemoryBackend(sess.ID)
-		backend.SaveSession(sess)
-		backend.Close()
+		_ = backend.SaveSession(sess)
+		_ = backend.Close()
 
 		const numGoroutines = 10
 		const iterPerGoroutine = 20
@@ -776,15 +776,15 @@ func TestPerformanceRegression(t *testing.T) {
 					loaded, err := backend.LoadSession(sess.ID)
 					if err != nil {
 						t.Errorf("failed to load session: %v", err)
-						backend.Close()
+						_ = backend.Close()
 						return
 					}
 					if loaded == nil {
 						t.Error("session not found")
-						backend.Close()
+						_ = backend.Close()
 						return
 					}
-					backend.Close()
+					_ = backend.Close()
 				}
 			}()
 		}
@@ -819,7 +819,7 @@ func TestMemoryUsageRegression(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create runtime: %v", err)
 			}
-			rt.Close()
+			_ = rt.Close()
 		}
 
 		runtime.GC()
@@ -857,8 +857,8 @@ func TestMemoryUsageRegression(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to create backend: %v", err)
 			}
-			backend.SaveSession(sess)
-			backend.Close()
+			_ = backend.SaveSession(sess)
+			_ = backend.Close()
 		}
 
 		runtime.GC()

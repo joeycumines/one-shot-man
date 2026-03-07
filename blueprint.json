@@ -1035,6 +1035,27 @@
     },
     {
       "task": "T135: Scope expansion — identify T136+ improvement opportunities",
+      "description": "COMPLETED. Audit found syscall.EPERM sentinel comparison. Generated T136-T137.",
+      "acceptance": "5+ new tasks added.",
+      "status": "Done",
+      "contextPointers": ["blueprint.json"]
+    },
+    {
+      "task": "T136: Replace syscall.EPERM == with errors.Is()",
+      "description": "Fixed 1 site in process_alive_unix.go: `err == syscall.EPERM` → `errors.Is(err, syscall.EPERM)`. Added errors import.",
+      "acceptance": "No sentinel comparisons remain. Tests pass.",
+      "status": "Done",
+      "contextPointers": ["internal/command/process_alive_unix.go:12"]
+    },
+    {
+      "task": "T137: Validate and commit T135-T136",
+      "description": "macOS make pass. Rule of Two: 2/2 PASS.",
+      "acceptance": "Make pass. Rule of Two. Committed.",
+      "status": "Done",
+      "contextPointers": ["config.mk"]
+    },
+    {
+      "task": "T138: Scope expansion — identify T139+ improvement opportunities",
       "description": "Continue indefinite improvement cycle.",
       "acceptance": "5+ new tasks added.",
       "status": "Not Started",

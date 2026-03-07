@@ -45,6 +45,8 @@ func (c *SessionCommand) SetupFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.yes, "y", false, "Assume yes to confirmation prompts")
 }
 
+// Execute runs the session subcommand specified by args (list, clean, purge,
+// delete, info, path, id). Defaults to list when no subcommand is given.
 func (c *SessionCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return c.list(stdout, "text", "default")

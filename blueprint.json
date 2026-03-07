@@ -909,6 +909,41 @@
     },
     {
       "task": "T117: Scope expansion — identify T118+ improvement opportunities",
+      "description": "COMPLETED. Deep audit found: unchecked test setup errors (3 os.MkdirAll), 2s sleep in autosplit recovery test, missing doc comments on Command types, termmux platform build tags already paired. Generated T118-T123.",
+      "acceptance": "5+ new tasks added.",
+      "status": "Done",
+      "contextPointers": ["blueprint.json"]
+    },
+    {
+      "task": "T118: Fix unchecked os.MkdirAll in tui_completion_unit_test.go",
+      "description": "COMPLETED. Fixed 12 unchecked os.MkdirAll/os.WriteFile calls in tui_completion_unit_test.go. All now use t.Fatalf on error.",
+      "acceptance": "All os.MkdirAll/WriteFile calls check errors. Tests pass.",
+      "status": "Done",
+      "contextPointers": ["internal/scripting/tui_completion_unit_test.go:433", "internal/scripting/tui_completion_unit_test.go:648", "internal/scripting/tui_completion_unit_test.go:712"]
+    },
+    {
+      "task": "T119: Replace 2s time.Sleep in autosplit conflict resolution test",
+      "description": "COMPLETED. Replaced time.Sleep(2*time.Second) with poll-retry loop that calls InjectToolResult every 50ms until waiter exists (10s timeout). Eliminates fixed sleep while maintaining correctness.",
+      "acceptance": "No time.Sleep in autosplit recovery test. Test still passes on both platforms. Test completes faster.",
+      "status": "Done",
+      "contextPointers": ["internal/command/pr_split_autosplit_recovery_test.go:3230-3260"]
+    },
+    {
+      "task": "T120: Add doc comments to all Command struct types",
+      "description": "COMPLETED. Audit found only 1 missing: SessionCommand.Execute in session.go. Added doc comment. All 15 types and 15 Execute methods now have doc comments.",
+      "acceptance": "All exported Command types and Execute methods have doc comments. go vet passes.",
+      "status": "Done",
+      "contextPointers": ["internal/command/goal.go:98", "internal/command/session.go:38", "internal/command/builtin.go:35,133,177,498", "internal/command/sync.go:62", "internal/command/log_tail.go:43", "internal/command/prompt_flow.go:48", "internal/command/code_review.go:48", "internal/command/mcp_bridge.go:34", "internal/command/scripting_command.go:65", "internal/command/super_document.go:50", "internal/command/completion_command.go"]
+    },
+    {
+      "task": "T121: Validate and commit T118-T120",
+      "description": "COMPLETED. Both platforms pass. Rule of Two achieved (2 contiguous PASS). Committed.",
+      "acceptance": "Both platforms pass. Rule of Two. Committed.",
+      "status": "Done",
+      "contextPointers": ["config.mk"]
+    },
+    {
+      "task": "T122: Scope expansion — identify T123+ improvement opportunities",
       "description": "Continue indefinite improvement cycle.",
       "acceptance": "5+ new tasks added.",
       "status": "Not Started",

@@ -3238,13 +3238,16 @@ func TestIntegration_AutoSplitMockMCP_ConflictResolution(t *testing.T) {
 		if err := h.InjectToolResult("reportSplitPlan", planJSON); err != nil {
 			t.Logf("inject plan: %v", err)
 		}
-		// With plan injected instantly: execute (~200ms) + verify (~200ms) +
-		// send conflict prompt + resetWaiter (~10ms). Total ≈ 500ms.
-		// Sleep 2s for safe margin, then inject resolution.
-		time.Sleep(2 * time.Second)
-		// Inject resolution: patches that create .fix-applied file.
-		if err := h.InjectToolResult("reportResolution", resolutionJSON); err != nil {
-			t.Logf("inject resolution: %v", err)
+		// Poll-inject resolution: the pipeline needs time to execute branches,
+		// run verification, detect conflicts, and register the reportResolution
+		// waiter. Instead of a fixed sleep, retry InjectToolResult until the
+		// waiter exists (typically ~500ms, timeout after 10s).
+		deadline := time.Now().Add(10 * time.Second)
+		for time.Now().Before(deadline) {
+			if err := h.InjectToolResult("reportResolution", resolutionJSON); err == nil {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
 		}
 	}()
 

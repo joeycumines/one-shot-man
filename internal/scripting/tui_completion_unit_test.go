@@ -430,9 +430,15 @@ func TestCursorAwareCompletion(t *testing.T) {
 	// Arrange a temporary workspace
 	tmpDir := t.TempDir()
 	// Files and dirs
-	_ = os.MkdirAll(filepath.Join(tmpDir, "scripts"), 0o755)
-	_ = os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte(""), 0o644)
-	_ = os.WriteFile(filepath.Join(tmpDir, "config.mk"), []byte(""), 0o644)
+	if err := os.MkdirAll(filepath.Join(tmpDir, "scripts"), 0o755); err != nil {
+		t.Fatalf("setup: MkdirAll scripts: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "README.md"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: WriteFile README.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "config.mk"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: WriteFile config.mk: %v", err)
+	}
 
 	// Change CWD
 	origDir, _ := os.Getwd()
@@ -644,8 +650,12 @@ func TestCompletion_EscapedQuoteInToken(t *testing.T) {
 // until they press a space after it.
 func TestFallbackGuard_FirstSimpleArg_NoSpace_NoFallback(t *testing.T) {
 	tmp := t.TempDir()
-	_ = os.WriteFile(filepath.Join(tmp, "README.md"), []byte(""), 0o644)
-	_ = os.MkdirAll(filepath.Join(tmp, "scripts"), 0o755)
+	if err := os.WriteFile(filepath.Join(tmp, "README.md"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: WriteFile README.md: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmp, "scripts"), 0o755); err != nil {
+		t.Fatalf("setup: MkdirAll scripts: %v", err)
+	}
 
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
@@ -682,7 +692,9 @@ func TestFallbackGuard_FirstSimpleArg_NoSpace_NoFallback(t *testing.T) {
 
 func TestFallbackGuard_FirstSimpleArg_WithSpace_AllowsFallback(t *testing.T) {
 	tmp := t.TempDir()
-	_ = os.WriteFile(filepath.Join(tmp, "config.mk"), []byte(""), 0o644)
+	if err := os.WriteFile(filepath.Join(tmp, "config.mk"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
 
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
@@ -709,7 +721,9 @@ func TestFallbackGuard_FirstSimpleArg_WithSpace_AllowsFallback(t *testing.T) {
 
 func TestFallbackGuard_PathArg_WithoutSpace_AllowsFallback(t *testing.T) {
 	tmp := t.TempDir()
-	_ = os.MkdirAll(filepath.Join(tmp, "dir"), 0o755)
+	if err := os.MkdirAll(filepath.Join(tmp, "dir"), 0o755); err != nil {
+		t.Fatalf("setup: MkdirAll dir: %v", err)
+	}
 
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
@@ -739,7 +753,9 @@ func TestFallbackGuard_PathArg_WithoutSpace_AllowsFallback(t *testing.T) {
 
 func TestFallbackGuard_QuotedFirstArg_NoSpace_NoFallback(t *testing.T) {
 	tmp := t.TempDir()
-	_ = os.WriteFile(filepath.Join(tmp, "notes.txt"), []byte(""), 0o644)
+	if err := os.WriteFile(filepath.Join(tmp, "notes.txt"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
 
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
@@ -768,7 +784,9 @@ func TestFallbackGuard_QuotedFirstArg_NoSpace_NoFallback(t *testing.T) {
 
 func TestFallbackGuard_SecondArg_NoSpace_AllowsFallback(t *testing.T) {
 	tmp := t.TempDir()
-	_ = os.WriteFile(filepath.Join(tmp, "a.txt"), []byte(""), 0o644)
+	if err := os.WriteFile(filepath.Join(tmp, "a.txt"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
 
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
@@ -797,7 +815,9 @@ func TestFallbackGuard_SecondArg_NoSpace_AllowsFallback(t *testing.T) {
 // appear; this must not happen until a space is typed.
 func TestNoFileSuggestions_WhileTypingCommand_NoSpace(t *testing.T) {
 	tmp := t.TempDir()
-	_ = os.WriteFile(filepath.Join(tmp, "hello.txt"), []byte(""), 0o644)
+	if err := os.WriteFile(filepath.Join(tmp, "hello.txt"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
 
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
@@ -832,7 +852,9 @@ func TestNoFileSuggestions_WhileTypingCommand_NoSpace(t *testing.T) {
 // preemptively add file suggestions combined with the predicted command.
 func TestNoFileSuggestions_WhileTypingCommandPrefix_NoSpace(t *testing.T) {
 	tmp := t.TempDir()
-	_ = os.WriteFile(filepath.Join(tmp, "world.md"), []byte(""), 0o644)
+	if err := os.WriteFile(filepath.Join(tmp, "world.md"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
 
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
@@ -867,7 +889,9 @@ func TestNoFileSuggestions_WhileTypingCommandPrefix_NoSpace(t *testing.T) {
 // even if the first argument is currently empty.
 func TestCommand_TrailingSpace_ShowsFileSuggestions_FirstArg(t *testing.T) {
 	tmp := t.TempDir()
-	_ = os.WriteFile(filepath.Join(tmp, "file1.txt"), []byte(""), 0o644)
+	if err := os.WriteFile(filepath.Join(tmp, "file1.txt"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
 
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
@@ -896,7 +920,9 @@ func TestCommand_TrailingSpace_ShowsFileSuggestions_FirstArg(t *testing.T) {
 // we should not suggest files for the first argument automatically.
 func TestNonFileCommand_TrailingSpace_NoFileSuggestions(t *testing.T) {
 	tmp := t.TempDir()
-	_ = os.WriteFile(filepath.Join(tmp, "x.txt"), []byte(""), 0o644)
+	if err := os.WriteFile(filepath.Join(tmp, "x.txt"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
 
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
@@ -1116,7 +1142,9 @@ func TestFlagCompletion_NoFlagDefs(t *testing.T) {
 // completers work together on the same command.
 func TestFlagCompletion_MixedWithFile(t *testing.T) {
 	tmp := t.TempDir()
-	_ = os.WriteFile(filepath.Join(tmp, "data.csv"), []byte(""), 0o644)
+	if err := os.WriteFile(filepath.Join(tmp, "data.csv"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
 
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)
@@ -2446,7 +2474,9 @@ func TestUnknownCompleter_DoesNotPanic(t *testing.T) {
 // are silently skipped while known types still produce suggestions.
 func TestUnknownCompleter_MixedWithKnown(t *testing.T) {
 	tmp := t.TempDir()
-	_ = os.WriteFile(filepath.Join(tmp, "test.txt"), []byte(""), 0o644)
+	if err := os.WriteFile(filepath.Join(tmp, "test.txt"), []byte(""), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
 
 	orig, _ := os.Getwd()
 	defer os.Chdir(orig)

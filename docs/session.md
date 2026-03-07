@@ -15,6 +15,14 @@ Get your sessions directory:
 osm session path
 ```
 
+Default locations (via `os.UserConfigDir()`):
+
+| Platform | Path |
+|----------|------|
+| Linux | `~/.config/osm/sessions/` (or `$XDG_CONFIG_HOME/osm/sessions/`) |
+| macOS | `~/Library/Application Support/osm/sessions/` |
+| Windows | `%AppData%\osm\sessions\` |
+
 List sessions:
 
 ```sh

@@ -192,7 +192,7 @@ When autodiscovery is enabled, it also traverses upward looking for directories 
 
 The `[sessions]` section controls session retention and cleanup thresholds.
 
-These settings drive the `osm session cleanup` workflow, which removes sessions that exceed the configured limits.
+These settings drive automatic session cleanup and the `osm session clean` command. When `autoCleanupEnabled` is true, cleanup runs automatically on startup of session-creating commands (`script`, `prompt-flow`, `code-review`, `goal`) at the configured interval. See [Session: Automatic cleanup](../session.md#automatic-cleanup) for operational details.
 
 ### Keys
 
@@ -266,6 +266,54 @@ claude-command claude
 claude-model sonnet
 ```
 
+## Claude Code multiplexer (`[claude-mux]`)
+
+The `[claude-mux]` section configures the Claude Code agent orchestration system used by the `mcp-bridge` command and `osm:claudemux` scripting module.
+
+### Keys
+
+- `provider` (string, default `claude-code`)
+  - AI provider name. Determines how agents are spawned.
+- `model` (string, default _(empty)_)
+  - Model identifier passed to the provider. When empty, uses the provider's default.
+- `work-dir` (string, default _(empty)_)
+  - Working directory for spawned agents. When empty, uses the current working directory.
+- `env-inherit` (bool, default `true`)
+  - Whether agents inherit the parent process's environment variables.
+  - Accepts: `true`, `false`, `1`, `0`, `yes`, `no`, `on`, `off` (case-insensitive).
+- `env` (string, default _(empty)_)
+  - Additional environment variable in `KEY=VALUE` format to set for agent processes.
+- `env-profile` (string, default _(empty)_)
+  - Active environment variable profile name. Profiles are defined as `[claude-mux.env.<profile>]` sections.
+- `pre-spawn-hook` (string, default _(empty)_)
+  - Path to a JavaScript file executed before each agent spawn. Useful for credential injection or dynamic environment setup.
+- `permission-policy` (string, default `reject`)
+  - How permission prompts from agents are handled. `reject` automatically denies permission requests; `ask` surfaces them to the user.
+- `rate-limit-backoff-sec` (int, default `30`)
+  - Initial backoff duration in seconds when an agent encounters API rate limits.
+- `max-agents` (int, default `4`)
+  - Maximum number of concurrent agents in the pool.
+- `pty-rows` (int, default `24`)
+  - Row count for agent PTY allocation.
+- `pty-cols` (int, default `80`)
+  - Column count for agent PTY allocation.
+- `provider-command` (string, default _(empty)_)
+  - Override the provider executable path. When empty, the provider is resolved via `$PATH`.
+- `mcp-servers` (string, default _(empty)_)
+  - Comma-separated MCP server commands to configure for agents.
+
+Example:
+
+```text
+[claude-mux]
+provider claude-code
+model sonnet
+max-agents 2
+permission-policy ask
+pty-rows 40
+pty-cols 120
+```
+
 ## Global options
 
 These keys can appear at the top level of the config file (outside any `[section]`).
@@ -276,6 +324,7 @@ All keys, types, defaults, and environment variable overrides are defined in the
 
 | Key | Type | Default | Env var | Description |
 |-----|------|---------|---------|-------------|
+| `config.schema-version` | int | `1` | — | Configuration schema version (do not edit manually) |
 | `verbose` | bool | `false` | — | Enable verbose output |
 | `color` | string | `auto` | — | Color mode: `auto`, `always`, `never` |
 | `pager` | string | _(empty)_ | — | Pager program for long output |

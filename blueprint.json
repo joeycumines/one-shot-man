@@ -734,6 +734,48 @@
     },
     {
       "task": "T92: Scope expansion — identify T93+ improvement opportunities",
+      "description": "COMPLETED. Audit found 5 actionable items: error msg inconsistency, undocumented config options, missing session paths in docs, confirmation read error handling, session cleanup docs. Generated T93-T97.",
+      "acceptance": "5+ new tasks added.",
+      "status": "Done",
+      "contextPointers": ["blueprint.json"]
+    },
+    {
+      "task": "T93: Add platform-specific session paths to docs/session.md",
+      "description": "COMPLETED. Added Linux/macOS/Windows path table after 'Get your sessions directory' section.",
+      "acceptance": "All 3 platform paths documented. Matches internal/storage/paths.go.",
+      "status": "Done",
+      "contextPointers": ["docs/session.md:12", "internal/storage/paths.go:92-108"]
+    },
+    {
+      "task": "T94: Expand session cleanup behavior docs in config.md",
+      "description": "COMPLETED. Replaced vague 'osm session cleanup workflow' reference with clear description: cleanup runs on startup of session-creating commands. Added cross-reference to docs/session.md#automatic-cleanup.",
+      "acceptance": "Cleanup trigger and policy documented. config.md sessions section complete.",
+      "status": "Done",
+      "contextPointers": ["docs/reference/config.md:202-225"]
+    },
+    {
+      "task": "T95: Document missing [claude-mux] config options in config.md",
+      "description": "COMPLETED. Added full [claude-mux] section with 15 options (14 + env key found during completeness check) including types, defaults, descriptions, and example.",
+      "acceptance": "All 15 claude-mux options documented with types, defaults, and descriptions.",
+      "status": "Done",
+      "contextPointers": ["docs/reference/config.md", "internal/config/schema.go:485-547"]
+    },
+    {
+      "task": "T96: Document missing global config options in config.md",
+      "description": "COMPLETED. Most global options were already documented. Added 2 missing: config.schema-version (Core options table) and env (claude-mux section). Comprehensive cross-check confirmed 100% coverage.",
+      "acceptance": "All global config options documented accurately.",
+      "status": "Done",
+      "contextPointers": ["docs/reference/config.md", "internal/config/schema.go"]
+    },
+    {
+      "task": "T97: Validate and commit T93-T96 (docs batch)",
+      "description": "COMPLETED. Lint clean. Rule of Two passed (2 contiguous PASS). All doc changes verified against source: session paths, claude-mux 14 keys, config.schema-version, sessions cross-reference.",
+      "acceptance": "Both platforms pass. Rule of Two achieved. Committed.",
+      "status": "Done",
+      "contextPointers": ["config.mk"]
+    },
+    {
+      "task": "T98: Scope expansion — identify T99+ improvement opportunities",
       "description": "Continue indefinite improvement cycle.",
       "acceptance": "5+ new tasks added.",
       "status": "Not Started",

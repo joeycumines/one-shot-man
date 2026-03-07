@@ -65,7 +65,9 @@ func (c *HelpCommand) Execute(args []string, stdout, stderr io.Writer) error {
 			}
 		}
 
-		_ = w.Flush()
+		if err := w.Flush(); err != nil {
+			return fmt.Errorf("failed to flush help output: %w", err)
+		}
 
 		_, _ = fmt.Fprintln(stdout, "")
 		_, _ = fmt.Fprintln(stdout, "Use 'osm help <command>' for more information about a specific command (includes flags).")

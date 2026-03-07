@@ -2,6 +2,7 @@ package command
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"log/slog"
 	"os"
@@ -564,5 +565,45 @@ func TestConfigCommand_SetWithConfigPathResolutionFailure(t *testing.T) {
 	logOutput := buf.String()
 	if !strings.Contains(logOutput, "config path resolution failed") {
 		t.Fatalf("expected slog.Warn 'config path resolution failed', got: %s", logOutput)
+	}
+}
+
+// limitedWriter accepts exactly N bytes then returns an error.
+type limitedWriter struct {
+	remaining int
+}
+
+func (w *limitedWriter) Write(p []byte) (int, error) {
+	if w.remaining <= 0 {
+		return 0, errors.New("write limit exceeded")
+	}
+	n := len(p)
+	if n > w.remaining {
+		n = w.remaining
+	}
+	w.remaining -= n
+	return n, nil
+}
+
+func TestHelpCommand_FlushError(t *testing.T) {
+	t.Parallel()
+	registry := &Registry{commands: make(map[string]Command)}
+	helper := NewHelpCommand(registry)
+	version := NewVersionCommand("1.0.0")
+	registry.Register(helper)
+	registry.Register(version)
+
+	// limitedWriter allows the first few writes (header lines that go
+	// directly to stdout) but errors when the tabwriter flushes its
+	// buffered content, triggering the Flush error path.
+	stdout := &limitedWriter{remaining: 50}
+	var stderr bytes.Buffer
+
+	err := helper.Execute(nil, stdout, &stderr)
+	if err == nil {
+		t.Fatal("expected error from help command when stdout writer fails")
+	}
+	if !strings.Contains(err.Error(), "failed to flush help output") {
+		t.Fatalf("expected 'failed to flush help output' error, got: %v", err)
 	}
 }

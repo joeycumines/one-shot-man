@@ -601,8 +601,50 @@
     },
     {
       "task": "T73: Scope expansion — identify T74+ improvement opportunities",
-      "description": "Deep codebase audit for further improvements after T69-T72 complete. Areas: (1) JavaScript test coverage for pr_split chunks, (2) error message consistency across commands, (3) documentation for T57-T72 hardening work, (4) integration test expansion, (5) benchmark tracking. Must generate 5+ new verified tasks.",
+      "description": "COMPLETED. Two parallel audit subagents ran: (1) Error handling/robustness audit found 5 issues — TabWriter.Flush error discard, test Accept error discard, test body read error, Flock unlock error, BT bridge nolint. (2) Test coverage audit found 6 gaps — ConfigCommand disk error paths, wrapReadableStream untested, SplitDiff empty inputs, GoalCommand.Execute 26.8%. Generated T74-T79.",
       "acceptance": "5+ new tasks added to blueprint, each passing anti-vaporware test. All context pointers verified against actual code.",
+      "status": "Done",
+      "contextPointers": ["blueprint.json"]
+    },
+    {
+      "task": "T74: Help TabWriter.Flush error propagation",
+      "description": "COMPLETED. Changed `_ = w.Flush()` to `if err := w.Flush(); err != nil { return ... }` in HelpCommand.Execute. Added TestHelpCommand_FlushError using a limitedWriter that triggers flush failure.",
+      "acceptance": "w.Flush() error is propagated. Test verifies error returned when stdout writer fails.",
+      "status": "Done",
+      "contextPointers": ["internal/command/builtin.go:68 (_ = w.Flush())"]
+    },
+    {
+      "task": "T75: SplitDiff edge case tests",
+      "description": "ALREADY COVERED. Investigation found diff_splitter_test.go already has 12+ test functions covering: empty input, whitespace-only, no diff markers, single small file, multiple files, large file hunk splitting, default/negative maxLines, single huge hunk, file name extraction, reassembly, exact fit. Plus FuzzSplitDiff fuzz test. The T71 0% coverage claim was inaccurate — SplitDiff is comprehensively tested.",
+      "acceptance": "No changes needed. Existing tests verified as comprehensive.",
+      "status": "Done",
+      "contextPointers": ["internal/command/diff_splitter.go:31 (SplitDiff)", "internal/command/diff_splitter_test.go"]
+    },
+    {
+      "task": "T76: ConfigCommand disk error path tests",
+      "description": "COMPLETED. Added TestConfigReset_SingleKey_DiskWriteError and TestConfigReset_AllKeys_DiskWriteError. Tests use file-as-directory trick to trigger ENOTDIR in DeleteKeyInFile/DeleteAllGlobalKeysInFile. Verified warning printed to stderr, nil returned, in-memory config cleared.",
+      "acceptance": "2 new test cases pass. Disk error warnings verified.",
+      "status": "Done",
+      "contextPointers": ["internal/command/builtin.go:412 (executeResetKey)", "internal/command/builtin.go:443 (executeResetAll)", "internal/command/config_persist_test.go"]
+    },
+    {
+      "task": "T77: Flock unlock error logging",
+      "description": "SKIPPED (Low Value). Investigation found the comment is correct: Flock(fd, LOCK_UN) only fails with EBADF for invalid fd, which is impossible here since we just obtained the fd from lockFile.Fd(). The subsequent lockFile.Close() catches fd invalidity. Adding slog.Warn for an impossible condition is AI slop — defensive logging that adds noise without signal.",
+      "acceptance": "N/A — determined to be low-value change.",
+      "status": "Done",
+      "contextPointers": ["internal/storage/filelock_unix.go:44 (unix.Flock LOCK_UN)"]
+    },
+    {
+      "task": "T78: Linux container re-validation after T74-T77",
+      "description": "Run make make-all-in-container to validate all T74-T77 changes pass in Linux Docker. Run make make-all-with-log for macOS. Record results.",
+      "acceptance": "Both make targets exit 0. Results recorded.",
+      "status": "Not Started",
+      "contextPointers": ["config.mk (make-all-in-container target)"]
+    },
+    {
+      "task": "T79: Scope expansion — identify T80+ improvement opportunities",
+      "description": "Next scope expansion after T74-T78. Must generate 5+ new verified tasks from areas: GoalCommand coverage, completion generators, exec module, documentation updates.",
+      "acceptance": "5+ new tasks added, each with verified context pointers.",
       "status": "Not Started",
       "contextPointers": ["blueprint.json"]
     }

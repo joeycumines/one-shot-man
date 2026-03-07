@@ -1123,3 +1123,81 @@ func TestConfigSchema_JSON_ExtraArgs(t *testing.T) {
 		t.Fatalf("expected 'unexpected arguments' error, got: %v", err)
 	}
 }
+
+// --- T76: config reset disk error path tests ---
+
+func TestConfigReset_SingleKey_DiskWriteError(t *testing.T) {
+	t.Parallel()
+
+	// Create a config path that triggers a non-IsNotExist error in
+	// DeleteKeyInFile. Using a regular file as a directory component
+	// causes ENOTDIR on all platforms.
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	badPath := filepath.Join(blocker, "config") // blocker is a file, not a dir
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("color", "always")
+	cmd := NewConfigCommand(cfg, badPath)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"reset", "color"}, &stdout, &stderr)
+
+	// Should succeed (returns nil) despite disk error.
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+
+	// Warning should be on stderr.
+	if !strings.Contains(stderr.String(), "Warning: failed to persist reset to disk") {
+		t.Fatalf("expected disk write warning in stderr, got: %q", stderr.String())
+	}
+
+	// Stdout should still have the reset confirmation.
+	if !strings.Contains(stdout.String(), "Reset color to default:") {
+		t.Fatalf("expected reset confirmation in stdout, got: %q", stdout.String())
+	}
+}
+
+func TestConfigReset_AllKeys_DiskWriteError(t *testing.T) {
+	t.Parallel()
+
+	// Same strategy: use a file as a directory component.
+	dir := t.TempDir()
+	blocker := filepath.Join(dir, "blocker")
+	if err := os.WriteFile(blocker, []byte("x"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	badPath := filepath.Join(blocker, "config")
+
+	cfg := config.NewConfig()
+	cfg.SetGlobalOption("verbose", "true")
+	cfg.SetGlobalOption("color", "always")
+	cmd := NewConfigCommand(cfg, badPath)
+
+	var stdout, stderr bytes.Buffer
+	err := cmd.Execute([]string{"reset", "--all", "--force"}, &stdout, &stderr)
+
+	// Should succeed despite disk error.
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+
+	// Warning should be on stderr.
+	if !strings.Contains(stderr.String(), "Warning: failed to persist reset to disk") {
+		t.Fatalf("expected disk write warning in stderr, got: %q", stderr.String())
+	}
+
+	// Stdout should have reset count.
+	if !strings.Contains(stdout.String(), "Reset") {
+		t.Fatalf("expected reset confirmation in stdout, got: %q", stdout.String())
+	}
+
+	// In-memory config should be cleared.
+	if len(cfg.Global) != 0 {
+		t.Fatalf("expected empty global config after reset --all, got: %v", cfg.Global)
+	}
+}

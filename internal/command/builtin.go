@@ -219,14 +219,14 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	case "validate":
 		if len(args) > 1 {
 			_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[1:])
-			return &SilentError{Err: fmt.Errorf("unexpected arguments")}
+			return &SilentError{Err: ErrUnexpectedArguments}
 		}
 		return c.executeValidate(stdout)
 	case "schema":
 		if len(args) > 1 && args[1] == "--json" {
 			if len(args) > 2 {
 				_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[2:])
-				return &SilentError{Err: fmt.Errorf("unexpected arguments")}
+				return &SilentError{Err: ErrUnexpectedArguments}
 			}
 			data, err := config.DefaultSchema().FormatSchemaJSON()
 			if err != nil {
@@ -237,20 +237,20 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 		}
 		if len(args) > 1 {
 			_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[1:])
-			return &SilentError{Err: fmt.Errorf("unexpected arguments")}
+			return &SilentError{Err: ErrUnexpectedArguments}
 		}
 		_, _ = fmt.Fprint(stdout, config.DefaultSchema().FormatHelp())
 		return nil
 	case "list":
 		if len(args) > 1 {
 			_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[1:])
-			return &SilentError{Err: fmt.Errorf("unexpected arguments")}
+			return &SilentError{Err: ErrUnexpectedArguments}
 		}
 		return c.executeList(stdout)
 	case "diff":
 		if len(args) > 1 {
 			_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args[1:])
-			return &SilentError{Err: fmt.Errorf("unexpected arguments")}
+			return &SilentError{Err: ErrUnexpectedArguments}
 		}
 		return c.executeDiff(stdout)
 	case "reset":
@@ -308,7 +308,7 @@ func (c *ConfigCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	}
 
 	_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args)
-	return &SilentError{Err: fmt.Errorf("unexpected arguments")}
+	return &SilentError{Err: ErrUnexpectedArguments}
 }
 
 // executeValidate validates the current config against the schema.
@@ -498,7 +498,7 @@ func (c *InitCommand) SetupFlags(fs *flag.FlagSet) {
 func (c *InitCommand) Execute(args []string, stdout, stderr io.Writer) error {
 	if len(args) > 0 {
 		_, _ = fmt.Fprintf(stderr, "unexpected arguments: %v\n", args)
-		return &SilentError{Err: fmt.Errorf("unexpected arguments")}
+		return &SilentError{Err: ErrUnexpectedArguments}
 	}
 	// Get config path and ensure directory exists
 	configPath, err := config.GetConfigPath()

@@ -67,7 +67,7 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 	if len(args) > 0 && args[0] == "paths" {
 		if len(args) > 1 {
 			_, _ = fmt.Fprintf(stderr, "unexpected arguments with paths: %v\n", args[1:])
-			return &SilentError{Err: fmt.Errorf("unexpected arguments")}
+			return &SilentError{Err: ErrUnexpectedArguments}
 		}
 		return c.showScriptPaths(stdout, stderr)
 	}

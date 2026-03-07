@@ -1175,6 +1175,27 @@
     },
     {
       "task": "T155: Scope expansion — identify T156+ improvement opportunities",
+      "description": "Audit found: (1) 13 duplicate 'unexpected arguments' fmt.Errorf in command package — extracted to ErrUnexpectedArguments sentinel, (2) missing %w in session errors — leaf errors with no inner error to wrap, deferred, (3) log.Printf warnings — architectural, too large for scope expansion, (4) stale comment in goal_builtin.go — actually intentional LLM prompt content, (5) registry API — feature request, not quality issue. Only finding #1 actionable.",
+      "acceptance": "T156-T157 tasks created.",
+      "status": "Done",
+      "contextPointers": ["internal/command/builtin.go", "internal/command/goal.go", "internal/command/scripting_command.go"]
+    },
+    {
+      "task": "T156: Extract ErrUnexpectedArguments sentinel to command package",
+      "description": "Created internal/command/errors.go with `var ErrUnexpectedArguments = errors.New(\"unexpected arguments\")`. Updated 13 bare `fmt.Errorf(\"unexpected arguments\")` sites in builtin.go (7), goal.go (4), scripting_command.go (1) to use sentinel. Updated 2 test assertions in config_persist_test.go to use errors.Is(). SilentError.Unwrap() enables errors.Is chain-through. Build green.",
+      "acceptance": "Single source of truth. All bare sites use sentinel. Tests use errors.Is(). Build passes.",
+      "status": "Done",
+      "contextPointers": ["internal/command/errors.go", "internal/command/builtin.go", "internal/command/goal.go", "internal/command/scripting_command.go", "internal/command/config_persist_test.go"]
+    },
+    {
+      "task": "T157: Validate and commit T155-T156",
+      "description": "macOS make pass. Rule of Two 2/2 PASS. Committed.",
+      "acceptance": "Committed.",
+      "status": "Done",
+      "contextPointers": ["scratch/commit-msg.txt"]
+    },
+    {
+      "task": "T158: Scope expansion — identify T159+ improvement opportunities",
       "description": "Continue indefinite improvement cycle.",
       "acceptance": "5+ new tasks added.",
       "status": "Not Started",

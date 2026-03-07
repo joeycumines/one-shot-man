@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -656,8 +657,8 @@ func TestConfigList_RejectsExtraArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for extra args")
 	}
-	if !strings.Contains(err.Error(), "unexpected arguments") {
-		t.Fatalf("expected 'unexpected arguments' error, got: %v", err)
+	if !errors.Is(err, ErrUnexpectedArguments) {
+		t.Fatalf("expected ErrUnexpectedArguments, got: %v", err)
 	}
 }
 
@@ -758,8 +759,8 @@ func TestConfigDiff_RejectsExtraArgs(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for extra args")
 	}
-	if !strings.Contains(err.Error(), "unexpected arguments") {
-		t.Fatalf("expected 'unexpected arguments' error, got: %v", err)
+	if !errors.Is(err, ErrUnexpectedArguments) {
+		t.Fatalf("expected ErrUnexpectedArguments, got: %v", err)
 	}
 }
 

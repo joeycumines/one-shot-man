@@ -20,10 +20,12 @@
 - T149: Stale comments removed (tui_manager.go + example JS)
 - T152: 25 bare Close()/SaveSession() → _ = prefix in benchmark_test.go
 - T153: ErrEmptySessionID sentinel extracted to storage package
+- T156: ErrUnexpectedArguments sentinel extracted to command package (13 sites, 2 test assertions)
 
 ### Next Steps
-1. T155: Scope expansion — identify T156+ tasks
-2. Continue indefinite improvement cycle
+1. T158: Scope expansion — identify T159+ tasks
+2. Upgrade remaining "unexpected arguments" string assertions in arg_validation_test.go and sync_config_test.go to errors.Is()
+3. Continue indefinite improvement cycle
 
 ### Blocked
 - T41: Claude CLI not logged in

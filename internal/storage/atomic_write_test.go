@@ -283,7 +283,7 @@ type chmodSabotageFile struct {
 }
 
 func (f *chmodSabotageFile) Write(p []byte) (int, error) { return f.real.Write(p) }
-func (f *chmodSabotageFile) Sync() error                  { return f.real.Sync() }
+func (f *chmodSabotageFile) Sync() error                 { return f.real.Sync() }
 
 func (f *chmodSabotageFile) Close() error {
 	name := f.real.Name()

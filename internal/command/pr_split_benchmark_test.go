@@ -25,11 +25,11 @@ func TestBenchmark_AutoSplitLargeRepo(t *testing.T) {
 	}
 
 	const (
-		numDirs        = 10       // number of package directories
-		filesPerDir    = 10       // files per directory → 100 files total
-		linesPerFile   = 12       // lines per feature file → ~1200 LOC total diff
-		timeoutSeconds = 30       // hard deadline
-		numSplits      = numDirs  // one split per directory (directory strategy)
+		numDirs        = 10      // number of package directories
+		filesPerDir    = 10      // files per directory → 100 files total
+		linesPerFile   = 12      // lines per feature file → ~1200 LOC total diff
+		timeoutSeconds = 30      // hard deadline
+		numSplits      = numDirs // one split per directory (directory strategy)
 	)
 
 	// Build InitialFiles: one base file per directory.

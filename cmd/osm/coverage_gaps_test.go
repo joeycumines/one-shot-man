@@ -74,6 +74,13 @@ func TestRun_ConfigLoadError(t *testing.T) {
 	if !strings.Contains(stdout, "Available commands") {
 		t.Fatalf("expected help output, got stdout=%q stderr=%q", stdout, stderr)
 	}
+	// Config load error should produce a warning on stderr (symlink rejection).
+	if !strings.Contains(stderr, "Warning: failed to load config:") {
+		t.Errorf("expected config load warning on stderr, got %q", stderr)
+	}
+	if !strings.Contains(stderr, "symlink") {
+		t.Errorf("expected symlink mention in warning, got %q", stderr)
+	}
 }
 
 // TestRun_CommandFlagParseNonErrHelp covers the non-ErrHelp error path

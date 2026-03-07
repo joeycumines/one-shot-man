@@ -2,6 +2,7 @@ package command
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -167,7 +168,7 @@ func TestInit_ExtraArgs(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := cmd.Execute([]string{"extra", "args"}, &stdout, &stderr)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unexpected arguments")
+	assert.True(t, errors.Is(err, ErrUnexpectedArguments), "expected ErrUnexpectedArguments, got %v", err)
 }
 
 // TestConfig_Schema_ExtraArgs verifies that 'config schema' with extra
@@ -180,7 +181,7 @@ func TestConfig_Schema_ExtraArgs(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	err := cmd.Execute([]string{"schema", "extra"}, &stdout, &stderr)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unexpected arguments")
+	assert.True(t, errors.Is(err, ErrUnexpectedArguments), "expected ErrUnexpectedArguments, got %v", err)
 }
 
 // TestConfig_ResetKey_UnknownKey verifies that resetting an unrecognized

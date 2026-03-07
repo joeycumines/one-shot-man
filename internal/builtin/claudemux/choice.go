@@ -1,9 +1,10 @@
 package claudemux
 
 import (
+	"cmp"
 	"fmt"
 	"math"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -145,8 +146,8 @@ func (cr *ChoiceResolver) Analyze(candidates []Candidate, criteria []Criterion, 
 	}
 
 	// Sort by total score descending.
-	sort.Slice(rankings, func(i, j int) bool {
-		return rankings[i].TotalScore > rankings[j].TotalScore
+	slices.SortFunc(rankings, func(a, b CandidateScore) int {
+		return cmp.Compare(b.TotalScore, a.TotalScore)
 	})
 
 	// Assign ranks (1-based).

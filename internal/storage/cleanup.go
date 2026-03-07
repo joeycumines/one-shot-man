@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -104,8 +104,8 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 	// Count-based pruning: keep newest MaxCount
 	if c.MaxCount > 0 {
 		// Sort candidates by UpdateTime descending (newest first)
-		sort.SliceStable(candidates, func(i, j int) bool {
-			return candidates[i].UpdateTime.After(candidates[j].UpdateTime)
+		slices.SortStableFunc(candidates, func(a, b SessionInfo) int {
+			return b.UpdateTime.Compare(a.UpdateTime)
 		})
 		if len(candidates) > c.MaxCount {
 			for _, s := range candidates[c.MaxCount:] {
@@ -124,8 +124,8 @@ func (c *Cleaner) ExecuteCleanup(excludeID string) (*CleanupReport, error) {
 		if total > maxBytes {
 			// Remove oldest until under limit
 			// Sort ascending (oldest first)
-			sort.SliceStable(candidates, func(i, j int) bool {
-				return candidates[i].UpdateTime.Before(candidates[j].UpdateTime)
+			slices.SortStableFunc(candidates, func(a, b SessionInfo) int {
+				return a.UpdateTime.Compare(b.UpdateTime)
 			})
 			for _, s := range candidates {
 				if total <= maxBytes {

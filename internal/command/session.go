@@ -2,6 +2,7 @@ package command
 
 import (
 	"bufio"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -9,7 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -422,19 +423,20 @@ func (c *SessionCommand) list(w io.Writer, format, sortMode string) error {
 
 	// Apply 'active' sorting: active sessions first, then idle; within groups sort by UpdateTime (desc), then ID asc
 	if sortMode == "active" {
-		sort.SliceStable(infos, func(i, j int) bool {
-			a := infos[i]
-			b := infos[j]
+		slices.SortStableFunc(infos, func(a, b storage.SessionInfo) int {
 			// Active sessions first
 			if a.Active != b.Active {
-				return a.Active && !b.Active
+				if a.Active {
+					return -1
+				}
+				return 1
 			}
 			// Most recently updated first
-			if !a.UpdateTime.Equal(b.UpdateTime) {
-				return a.UpdateTime.After(b.UpdateTime)
+			if c := b.UpdateTime.Compare(a.UpdateTime); c != 0 {
+				return c
 			}
 			// Tiebreaker: ID ascending
-			return a.ID < b.ID
+			return cmp.Compare(a.ID, b.ID)
 		})
 	}
 

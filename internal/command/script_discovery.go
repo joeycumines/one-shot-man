@@ -1,6 +1,7 @@
 package command
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"log"
@@ -8,7 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -171,23 +172,20 @@ func (sd *ScriptDiscovery) DiscoverScriptPaths() []string {
 	}
 
 	// Sort using pre-computed scores
-	sort.Slice(scoredPaths, func(i, j int) bool {
-		pi := scoredPaths[i].score
-		pj := scoredPaths[j].score
-
-		if pi.class != pj.class {
-			return pi.class < pj.class
+	slices.SortFunc(scoredPaths, func(a, b scoredPath) int {
+		if c := cmp.Compare(a.score.class, b.score.class); c != 0 {
+			return c
 		}
 
-		if pi.distance != pj.distance {
-			return pi.distance < pj.distance
+		if c := cmp.Compare(a.score.distance, b.score.distance); c != 0 {
+			return c
 		}
 
-		if pi.depth != pj.depth {
-			return pi.depth < pj.depth
+		if c := cmp.Compare(a.score.depth, b.score.depth); c != 0 {
+			return c
 		}
 
-		return scoredPaths[i].path < scoredPaths[j].path
+		return cmp.Compare(a.path, b.path)
 	})
 
 	// Extract sorted paths
@@ -266,20 +264,20 @@ func (sd *ScriptDiscovery) DiscoverAnnotatedScriptPaths() []AnnotatedPath {
 		execDir = filepath.Dir(execPath)
 	}
 
-	sort.Slice(candidates, func(i, j int) bool {
-		pi := sd.computePathScore(candidates[i].path, cwd, configDir, execDir)
-		pj := sd.computePathScore(candidates[j].path, cwd, configDir, execDir)
+	slices.SortFunc(candidates, func(a, b candidate) int {
+		pa := sd.computePathScore(a.path, cwd, configDir, execDir)
+		pb := sd.computePathScore(b.path, cwd, configDir, execDir)
 
-		if pi.class != pj.class {
-			return pi.class < pj.class
+		if c := cmp.Compare(pa.class, pb.class); c != 0 {
+			return c
 		}
-		if pi.distance != pj.distance {
-			return pi.distance < pj.distance
+		if c := cmp.Compare(pa.distance, pb.distance); c != 0 {
+			return c
 		}
-		if pi.depth != pj.depth {
-			return pi.depth < pj.depth
+		if c := cmp.Compare(pa.depth, pb.depth); c != 0 {
+			return c
 		}
-		return candidates[i].path < candidates[j].path
+		return cmp.Compare(a.path, b.path)
 	})
 
 	// Build result with existence check

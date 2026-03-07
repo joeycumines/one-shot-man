@@ -4,6 +4,7 @@ package scripting
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"os"
@@ -11,7 +12,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -543,7 +543,7 @@ func (r *InputCaptureRecorder) inputToTape(input string) string {
 		for seq := range EscapeSequences {
 			seqs = append(seqs, seq)
 		}
-		sort.Slice(seqs, func(i, j int) bool { return len(seqs[i]) > len(seqs[j]) })
+		slices.SortFunc(seqs, func(a, b string) int { return cmp.Compare(len(b), len(a)) })
 		for _, seq := range seqs {
 			cmd := EscapeSequences[seq]
 			s = strings.ReplaceAll(s, seq, "\n"+cmd+"\n")

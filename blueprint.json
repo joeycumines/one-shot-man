@@ -1273,16 +1273,16 @@
     },
     {
       "task": "T169: Audit string-based error testing for sentinel usage",
-      "description": "3-5 test sites use strings.Contains(err.Error(),...) or err.Error() != ... instead of errors.Is with sentinels where applicable.",
+      "description": "Upgraded 2 remaining assert.Contains(err.Error(),...) to errors.Is(err, ErrUnexpectedArguments) in coverage_gaps_batch12_test.go. All other string-based error checks verified to have no corresponding sentinels.",
       "acceptance": "All error checks that have corresponding sentinels use errors.Is. Build passes.",
-      "status": "Not Started",
-      "contextPointers": ["internal/config/schema_test.go", "internal/command/scripting_command_test.go"]
+      "status": "Done",
+      "contextPointers": ["internal/command/coverage_gaps_batch12_test.go"]
     },
     {
       "task": "T170: Replace sort.Slice with slices.SortFunc",
-      "description": "17 sites use sort.Slice with index-based less function. Go 1.21+ provides slices.SortFunc which is more type-safe and idiomatic.",
+      "description": "Migrated all 20 sort.Slice/sort.SliceStable to slices.SortFunc/slices.SortStableFunc across 9 files. Uses cmp.Compare for ordered types, time.Time.Compare for time, chained returns for multi-field sorts. Rule of Two 2/2 PASS.",
       "acceptance": "All sort.Slice replaced with slices.SortFunc. Build passes.",
-      "status": "Not Started",
+      "status": "Done",
       "contextPointers": ["internal/command/sync.go", "internal/command/script_discovery.go"]
     },
     {

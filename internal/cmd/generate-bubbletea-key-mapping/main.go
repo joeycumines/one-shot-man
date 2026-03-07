@@ -13,6 +13,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -20,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 
@@ -316,8 +318,8 @@ func generateKeysOutput(keyNames map[string]string, aliases map[string]string) (
 	for _, e := range entriesByString {
 		entries = append(entries, e)
 	}
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].stringVal < entries[j].stringVal
+	slices.SortFunc(entries, func(a, b *keyEntry) int {
+		return cmp.Compare(a.stringVal, b.stringVal)
 	})
 
 	var buf bytes.Buffer
@@ -371,8 +373,8 @@ var KeyDefsByName = map[string]KeyDef{
 		}
 	}
 	// Sort by name for stable output
-	sort.Slice(allNameEntries, func(i, j int) bool {
-		return allNameEntries[i].name < allNameEntries[j].name
+	slices.SortFunc(allNameEntries, func(a, b nameEntry) int {
+		return cmp.Compare(a.name, b.name)
 	})
 	// Dedupe by name (in case of duplicates)
 	seenNames := make(map[string]bool)
@@ -532,8 +534,8 @@ var MouseButtonDefs = map[string]MouseButtonDef{
 	for name, strVal := range mouseButtons {
 		buttons = append(buttons, buttonEntry{name: name, strVal: strVal})
 	}
-	sort.Slice(buttons, func(i, j int) bool {
-		return buttons[i].strVal < buttons[j].strVal
+	slices.SortFunc(buttons, func(a, b buttonEntry) int {
+		return cmp.Compare(a.strVal, b.strVal)
 	})
 
 	for _, b := range buttons {
@@ -548,8 +550,8 @@ var MouseButtonDefsByName = map[string]MouseButtonDef{
 `)
 
 	// Sort by name for deterministic output
-	sort.Slice(buttons, func(i, j int) bool {
-		return buttons[i].name < buttons[j].name
+	slices.SortFunc(buttons, func(a, b buttonEntry) int {
+		return cmp.Compare(a.name, b.name)
 	})
 	for _, b := range buttons {
 		buf.WriteString(fmt.Sprintf("\t%q: MouseButtonDefs[%q],\n", b.name, b.strVal))
@@ -571,8 +573,8 @@ var MouseActionDefs = map[string]MouseActionDef{
 	for name, strVal := range mouseActions {
 		actions = append(actions, actionEntry{name: name, strVal: strVal})
 	}
-	sort.Slice(actions, func(i, j int) bool {
-		return actions[i].strVal < actions[j].strVal
+	slices.SortFunc(actions, func(a, b actionEntry) int {
+		return cmp.Compare(a.strVal, b.strVal)
 	})
 
 	for _, a := range actions {
@@ -587,8 +589,8 @@ var MouseActionDefsByName = map[string]MouseActionDef{
 `)
 
 	// Sort by name for deterministic output
-	sort.Slice(actions, func(i, j int) bool {
-		return actions[i].name < actions[j].name
+	slices.SortFunc(actions, func(a, b actionEntry) int {
+		return cmp.Compare(a.name, b.name)
 	})
 	for _, a := range actions {
 		buf.WriteString(fmt.Sprintf("\t%q: MouseActionDefs[%q],\n", a.name, a.strVal))
@@ -601,8 +603,8 @@ var AllMouseButtons = []tea.MouseButton{
 `)
 
 	// Use the original sorted-by-strVal order
-	sort.Slice(buttons, func(i, j int) bool {
-		return buttons[i].strVal < buttons[j].strVal
+	slices.SortFunc(buttons, func(a, b buttonEntry) int {
+		return cmp.Compare(a.strVal, b.strVal)
 	})
 	for _, b := range buttons {
 		buf.WriteString(fmt.Sprintf("\ttea.%s,\n", b.name))
@@ -615,8 +617,8 @@ var AllMouseActions = []tea.MouseAction{
 `)
 
 	// Use the original sorted-by-strVal order
-	sort.Slice(actions, func(i, j int) bool {
-		return actions[i].strVal < actions[j].strVal
+	slices.SortFunc(actions, func(a, b actionEntry) int {
+		return cmp.Compare(a.strVal, b.strVal)
 	})
 	for _, a := range actions {
 		buf.WriteString(fmt.Sprintf("\ttea.%s,\n", a.name))

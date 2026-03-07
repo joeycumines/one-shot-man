@@ -1,13 +1,14 @@
 package command
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"log"
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -185,23 +186,23 @@ func (gd *GoalDiscovery) DiscoverGoalPaths() []string {
 		execDir = filepath.Dir(execPath)
 	}
 
-	sort.Slice(paths, func(i, j int) bool {
-		pi := gd.computePathScore(paths[i], cwd, configDir, execDir)
-		pj := gd.computePathScore(paths[j], cwd, configDir, execDir)
+	slices.SortFunc(paths, func(a, b string) int {
+		pa := gd.computePathScore(a, cwd, configDir, execDir)
+		pb := gd.computePathScore(b, cwd, configDir, execDir)
 
-		if pi.class != pj.class {
-			return pi.class < pj.class
+		if c := cmp.Compare(pa.class, pb.class); c != 0 {
+			return c
 		}
 
-		if pi.distance != pj.distance {
-			return pi.distance < pj.distance
+		if c := cmp.Compare(pa.distance, pb.distance); c != 0 {
+			return c
 		}
 
-		if pi.depth != pj.depth {
-			return pi.depth < pj.depth
+		if c := cmp.Compare(pa.depth, pb.depth); c != 0 {
+			return c
 		}
 
-		return paths[i] < paths[j]
+		return cmp.Compare(a, b)
 	})
 
 	gd.debugf("discovery complete: %d paths found in %s", len(paths), time.Since(discoveryStart))
@@ -275,20 +276,20 @@ func (gd *GoalDiscovery) DiscoverAnnotatedGoalPaths() []AnnotatedPath {
 		execDir = filepath.Dir(execPath)
 	}
 
-	sort.Slice(candidates, func(i, j int) bool {
-		pi := gd.computePathScore(candidates[i].path, cwd, configDir, execDir)
-		pj := gd.computePathScore(candidates[j].path, cwd, configDir, execDir)
+	slices.SortFunc(candidates, func(a, b candidate) int {
+		pa := gd.computePathScore(a.path, cwd, configDir, execDir)
+		pb := gd.computePathScore(b.path, cwd, configDir, execDir)
 
-		if pi.class != pj.class {
-			return pi.class < pj.class
+		if c := cmp.Compare(pa.class, pb.class); c != 0 {
+			return c
 		}
-		if pi.distance != pj.distance {
-			return pi.distance < pj.distance
+		if c := cmp.Compare(pa.distance, pb.distance); c != 0 {
+			return c
 		}
-		if pi.depth != pj.depth {
-			return pi.depth < pj.depth
+		if c := cmp.Compare(pa.depth, pb.depth); c != 0 {
+			return c
 		}
-		return candidates[i].path < candidates[j].path
+		return cmp.Compare(a.path, b.path)
 	})
 
 	// Build result with existence check

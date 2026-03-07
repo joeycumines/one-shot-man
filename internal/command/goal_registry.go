@@ -1,8 +1,10 @@
 package command
 
 import (
+	"cmp"
 	"fmt"
 	"log"
+	"slices"
 	"sort"
 )
 
@@ -170,8 +172,8 @@ func (r *DynamicGoalRegistry) GetAllGoals() []Goal {
 	}
 
 	// Sort by name for consistent ordering
-	sort.Slice(goals, func(i, j int) bool {
-		return goals[i].Name < goals[j].Name
+	slices.SortFunc(goals, func(a, b Goal) int {
+		return cmp.Compare(a.Name, b.Name)
 	})
 
 	return goals

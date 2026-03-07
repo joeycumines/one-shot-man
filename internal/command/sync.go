@@ -1,6 +1,7 @@
 package command
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"flag"
@@ -8,7 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -216,8 +217,8 @@ func (c *SyncCommand) executeList(args []string, stdout, stderr io.Writer) error
 	}
 
 	// Reverse chronological order (newest first).
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].path > entries[j].path
+	slices.SortFunc(entries, func(a, b notebookEntry) int {
+		return cmp.Compare(b.path, a.path)
 	})
 
 	if limit > 0 && limit < len(entries) {
@@ -501,8 +502,8 @@ func matchEntry(entries []notebookEntry, query string) *notebookEntry {
 	// Sort reverse chronological first. Copy to avoid mutating caller's slice.
 	sorted := make([]notebookEntry, len(entries))
 	copy(sorted, entries)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].path > sorted[j].path
+	slices.SortFunc(sorted, func(a, b notebookEntry) int {
+		return cmp.Compare(b.path, a.path)
 	})
 	for i := range sorted {
 		if sorted[i].slug == query {

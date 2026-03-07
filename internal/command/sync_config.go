@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -370,8 +371,14 @@ func syncConfigLockPath(root string) string {
 	return filepath.Join(root, "config", ".sync-config.lock")
 }
 
+// syncConfigLockMaxAge is the maximum age of a lock file before it is
+// considered stale and automatically removed.
+const syncConfigLockMaxAge = 10 * time.Minute
+
 // syncConfigLock acquires an advisory lock file in the sync config directory.
-// Returns a cleanup function that releases the lock.
+// Returns a cleanup function that releases the lock. If a stale lock is
+// detected (the owning PID is no longer running, or the lock is older than
+// syncConfigLockMaxAge), it is automatically removed and re-acquired.
 func syncConfigLock(root string) (func(), error) {
 	lockPath := syncConfigLockPath(root)
 
@@ -383,9 +390,18 @@ func syncConfigLock(root string) (func(), error) {
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 	if err != nil {
 		if os.IsExist(err) {
-			return nil, fmt.Errorf("another sync operation is in progress (lock: %s)", lockPath)
+			if removeStaleLock(lockPath) {
+				// Stale lock removed — retry once.
+				f, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+				if err != nil {
+					return nil, fmt.Errorf("acquiring sync lock after stale removal: %w", err)
+				}
+			} else {
+				return nil, fmt.Errorf("another sync operation is in progress (lock: %s)", lockPath)
+			}
+		} else {
+			return nil, fmt.Errorf("acquiring sync lock: %w", err)
 		}
-		return nil, fmt.Errorf("acquiring sync lock: %w", err)
 	}
 
 	// Write debugging info.
@@ -396,6 +412,40 @@ func syncConfigLock(root string) (func(), error) {
 		_ = os.Remove(lockPath)
 	}
 	return cleanup, nil
+}
+
+// removeStaleLock checks whether the lock file at lockPath is stale (owner
+// process is dead or the lock is older than syncConfigLockMaxAge). If stale,
+// it removes the lock file and returns true. Otherwise returns false.
+func removeStaleLock(lockPath string) bool {
+	data, err := os.ReadFile(lockPath)
+	if err != nil {
+		return false
+	}
+
+	lines := strings.Split(string(data), "\n")
+	var pid int
+	var lockTime time.Time
+	for _, line := range lines {
+		if strings.HasPrefix(line, "pid=") {
+			pid, _ = strconv.Atoi(strings.TrimPrefix(line, "pid="))
+		}
+		if strings.HasPrefix(line, "time=") {
+			lockTime, _ = time.Parse(time.RFC3339, strings.TrimPrefix(line, "time="))
+		}
+	}
+
+	// Check if lock is older than max age.
+	if !lockTime.IsZero() && time.Since(lockTime) > syncConfigLockMaxAge {
+		return os.Remove(lockPath) == nil
+	}
+
+	// Check if the owning process is still alive.
+	if pid > 0 && !processAlive(pid) {
+		return os.Remove(lockPath) == nil
+	}
+
+	return false
 }
 
 // checkGitignored returns true if the given path is ignored by git in the

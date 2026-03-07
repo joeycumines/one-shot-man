@@ -53,13 +53,17 @@ func TestPathTraversalPrevention_ConfigLoading(t *testing.T) {
 				}
 				_ = cfg
 			} else {
+				// For traversal paths, verify that loading does not
+				// produce the specific test config content we created.
+				// The loader does not block traversal (it reads any
+				// valid path), but it should not accidentally resolve
+				// to a different config in the test directory.
 				cfg, err := config.LoadFromPath(tc.path)
 				if err == nil && len(cfg.Global) > 0 {
 					if _, hasTest := cfg.Global["test"]; hasTest {
-						t.Error("Config loading with parent directory traversal may have escaped the intended directory")
+						t.Errorf("Traversal path %q loaded config containing test key — may have escaped the intended directory", tc.path)
 					}
 				}
-				_ = cfg
 			}
 		})
 	}

@@ -2,11 +2,13 @@ package command
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
 )
@@ -1054,6 +1056,77 @@ func TestSyncCommand_ConfigLockCleanup(t *testing.T) {
 		t.Fatalf("re-acquisition after cleanup failed: %v", err)
 	}
 	unlock2()
+}
+
+func TestSyncCommand_StaleLockRecovery_DeadPID(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+
+	// Create a lock file with a PID that is almost certainly not alive
+	// (999999999 exceeds typical PID ranges). On Unix, signal-0 detects
+	// this; on Windows processAlive is conservative (returns true), so we
+	// also set an old timestamp to ensure the age check triggers.
+	lockPath := syncConfigLockPath(root)
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0755); err != nil {
+		t.Fatalf("creating lock dir: %v", err)
+	}
+	oldTime := time.Now().Add(-11 * time.Minute).UTC().Format(time.RFC3339)
+	if err := os.WriteFile(lockPath, []byte(fmt.Sprintf("pid=999999999\ntime=%s\n", oldTime)), 0644); err != nil {
+		t.Fatalf("writing stale lock: %v", err)
+	}
+
+	// syncConfigLock should detect the stale lock and recover.
+	unlock, err := syncConfigLock(root)
+	if err != nil {
+		t.Fatalf("expected stale lock recovery, got error: %v", err)
+	}
+	unlock()
+}
+
+func TestSyncCommand_StaleLockRecovery_AgedOut(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+
+	// Create a lock file with the current PID (alive) but an old timestamp.
+	lockPath := syncConfigLockPath(root)
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0755); err != nil {
+		t.Fatalf("creating lock dir: %v", err)
+	}
+	oldTime := time.Now().Add(-11 * time.Minute).UTC().Format(time.RFC3339)
+	if err := os.WriteFile(lockPath, []byte(fmt.Sprintf("pid=%d\ntime=%s\n", os.Getpid(), oldTime)), 0644); err != nil {
+		t.Fatalf("writing aged lock: %v", err)
+	}
+
+	// syncConfigLock should detect the aged lock and recover.
+	unlock, err := syncConfigLock(root)
+	if err != nil {
+		t.Fatalf("expected aged lock recovery, got error: %v", err)
+	}
+	unlock()
+}
+
+func TestSyncCommand_ActiveLockNotStale(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+
+	// Create a lock file with the current (alive) PID and fresh timestamp.
+	lockPath := syncConfigLockPath(root)
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0755); err != nil {
+		t.Fatalf("creating lock dir: %v", err)
+	}
+	freshTime := time.Now().UTC().Format(time.RFC3339)
+	if err := os.WriteFile(lockPath, []byte(fmt.Sprintf("pid=%d\ntime=%s\n", os.Getpid(), freshTime)), 0644); err != nil {
+		t.Fatalf("writing active lock: %v", err)
+	}
+
+	// syncConfigLock should NOT remove an active lock.
+	_, err := syncConfigLock(root)
+	if err == nil {
+		t.Fatal("expected error for active lock, got nil")
+	}
+	if !strings.Contains(err.Error(), "another sync operation is in progress") {
+		t.Fatalf("expected 'another sync operation' error, got %q", err.Error())
+	}
 }
 
 func TestSyncCommand_ConfigPushGitignoreWarning(t *testing.T) {

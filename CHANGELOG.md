@@ -114,6 +114,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Duplicate error output: commands that printed to stderr AND returned an error caused `main()` to print the error again — introduced `SilentError` type in `internal/command/` so commands can signal "already reported" to the top-level handler; 41 error sites converted across 9 command files (builtin, goal, sync, scripting_command, log_tail, mcp_bridge, completion_command, sync_config, main.go)
+- Stale sync config lock after crash: `syncConfigLock` now detects stale locks via PID liveness check (Unix signal-0) and 10-minute age timeout; platform-specific `processAlive()` via build tags; Windows falls back to age-based detection only
 - `TestExecAndExecv` ETXTBSY on Docker overlayfs: added directory `fsync` after write-then-rename to flush metadata before `exec` — the canonical POSIX pattern for ensuring rename durability
 - TUI model selection regex (`reSelectedArrow`) only matched `>` (ASCII) and `❯` (U+276F) — added `▸` (U+25B8 Ollama), `►` (U+25BA), `→` (U+2192) for cross-provider compatibility; 4 new test cases
 - Bash completion formatting: `;;` case terminators for `schema)` and `log)` were concatenated on the same line as the next case pattern — split to separate lines

@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command"
 )
 
 func TestRunNoArgsShowsHelp(t *testing.T) {
@@ -58,6 +60,10 @@ func TestRunUnknownCommand(t *testing.T) {
 	stdout, stderr, err := runWithCapturedIO(t, []string{"osm", "unknown"})
 	if err == nil {
 		t.Fatalf("expected error for unknown command")
+	}
+
+	if !command.IsSilent(err) {
+		t.Fatalf("expected SilentError, got %T: %v", err, err)
 	}
 
 	if stdout != "" {
@@ -312,6 +318,12 @@ func TestVersionCommandVariations(t *testing.T) {
 	}
 }
 
+// runWithCapturedIO invokes run() with the given os.Args, capturing stdout
+// and stderr to temporary files. It returns the captured output and the error.
+//
+// WARNING: This function mutates process-global state (os.Args, os.Stdout,
+// os.Stderr). Tests that call this function MUST NOT use t.Parallel().
+// Adding t.Parallel() to any caller will cause data races under -race.
 func runWithCapturedIO(t *testing.T, args []string) (string, string, error) {
 	t.Helper()
 

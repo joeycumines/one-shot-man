@@ -373,8 +373,8 @@ func TestChunk01_AnalyzeDiffStats_EmptyDiff(t *testing.T) {
 	}
 
 	var result struct {
-		Files []any `json:"files"`
-		Error *string       `json:"error"`
+		Files []any   `json:"files"`
+		Error *string `json:"error"`
 	}
 	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
 		t.Fatal(err)

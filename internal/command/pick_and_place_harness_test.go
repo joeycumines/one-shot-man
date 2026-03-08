@@ -1274,9 +1274,9 @@ func truncateFromEnd(s string, n int) string {
 
 // LogEvent represents a parsed log event from the simulation
 type LogEvent struct {
-	Timestamp string                 `json:"timestamp"`
-	Level     string                 `json:"level"`
-	Message   string                 `json:"message"`
+	Timestamp string         `json:"timestamp"`
+	Level     string         `json:"level"`
+	Message   string         `json:"message"`
 	Fields    map[string]any `json:"fields"`
 }
 

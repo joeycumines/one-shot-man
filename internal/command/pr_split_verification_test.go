@@ -2765,13 +2765,13 @@ func TestScopedVerifyCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 type buildReportResult struct {
-	Version    string      `json:"version"`
-	BaseBranch string      `json:"baseBranch"`
-	Strategy   string      `json:"strategy"`
-	DryRun     bool        `json:"dryRun"`
-	Analysis   any `json:"analysis"`
-	Groups     any `json:"groups"`
-	Plan       any `json:"plan"`
+	Version    string `json:"version"`
+	BaseBranch string `json:"baseBranch"`
+	Strategy   string `json:"strategy"`
+	DryRun     bool   `json:"dryRun"`
+	Analysis   any    `json:"analysis"`
+	Groups     any    `json:"groups"`
+	Plan       any    `json:"plan"`
 }
 
 func parseBuildReportResult(t *testing.T, raw any) buildReportResult {

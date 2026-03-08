@@ -1028,8 +1028,8 @@ func TestAnalyzeRetrospective_BalancedPlan(t *testing.T) {
 	}
 	s := val.(string)
 	var result struct {
-		Insights []any `json:"insights"`
-		Score    float64       `json:"score"`
+		Insights []any   `json:"insights"`
+		Score    float64 `json:"score"`
 	}
 	if err := json.Unmarshal([]byte(s), &result); err != nil {
 		t.Fatalf("parse error: %v\nraw: %s", err, s)
@@ -1124,8 +1124,8 @@ func TestAnalyzeRetrospective_NilPlan(t *testing.T) {
 	}
 	s := val.(string)
 	var result struct {
-		Insights []any `json:"insights"`
-		Score    float64       `json:"score"`
+		Insights []any   `json:"insights"`
+		Score    float64 `json:"score"`
 	}
 	if err := json.Unmarshal([]byte(s), &result); err != nil {
 		t.Fatalf("parse error: %v", err)

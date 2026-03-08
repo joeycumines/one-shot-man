@@ -108,7 +108,7 @@ func Test_ChunkedPipeline_HeuristicRun(t *testing.T) {
 		t.Fatalf("analyzeDiff: %v", err)
 	}
 	var analysis struct {
-		Files        []any     `json:"files"`
+		Files        []any             `json:"files"`
 		FileStatuses map[string]string `json:"fileStatuses"`
 		Error        *string           `json:"error"`
 	}

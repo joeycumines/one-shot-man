@@ -763,7 +763,7 @@ func TestPrSplitCommand_ResolveConflictsWithClaudePreExistingFailure(t *testing.
 		Report struct {
 			Conflicts           []any `json:"conflicts"`
 			Resolutions         []any `json:"resolutions"`
-			ClaudeInteractions  int           `json:"claudeInteractions"`
+			ClaudeInteractions  int   `json:"claudeInteractions"`
 			PreExistingFailures []struct {
 				Branch  string `json:"branch"`
 				Details string `json:"details"`

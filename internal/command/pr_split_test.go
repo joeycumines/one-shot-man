@@ -318,12 +318,12 @@ type TestPipelineFile struct {
 // temp git repo with configurable files, the Goja engine loaded with
 // pr-split chunk files (00-13), and a result directory for mock MCP responses.
 type TestPipeline struct {
-	Dir         string                            // git repo directory
-	ResultDir   string                            // MCP result directory
-	Stdout      *safeBuffer                       // captured stdout (thread-safe)
-	Dispatch    func(string, []string) error      // TUI command dispatch
-	EvalJS      func(string) (any, error) // evaluate JS in engine
-	EvalJSAsync func(string) (any, error) // evaluate async JS (await)
+	Dir         string                       // git repo directory
+	ResultDir   string                       // MCP result directory
+	Stdout      *safeBuffer                  // captured stdout (thread-safe)
+	Dispatch    func(string, []string) error // TUI command dispatch
+	EvalJS      func(string) (any, error)    // evaluate JS in engine
+	EvalJSAsync func(string) (any, error)    // evaluate async JS (await)
 }
 
 // setupTestPipeline creates a test pipeline with configurable initial files,
@@ -419,10 +419,10 @@ func setupTestPipeline(t *testing.T, opts TestPipelineOpts) *TestPipeline {
 
 // TestPipelineOpts configures setupTestPipeline.
 type TestPipelineOpts struct {
-	InitialFiles    []TestPipelineFile     // files on main (nil = default set)
-	FeatureFiles    []TestPipelineFile     // files on feature branch (nil = default set)
-	NoFeatureFiles  bool                   // if true, feature branch has no file changes (empty commit)
-	ConfigOverrides map[string]any // pr-split config overrides
+	InitialFiles    []TestPipelineFile // files on main (nil = default set)
+	FeatureFiles    []TestPipelineFile // files on feature branch (nil = default set)
+	NoFeatureFiles  bool               // if true, feature branch has no file changes (empty commit)
+	ConfigOverrides map[string]any     // pr-split config overrides
 }
 
 // dispatchAwaitPromise dispatches a TUI command by name, calling the handler

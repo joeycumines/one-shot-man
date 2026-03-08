@@ -1091,6 +1091,77 @@ func TestChunk13_HandleConfigState_BaselinePass(t *testing.T) {
 	}
 }
 
+func TestChunk13_HandleConfigState_BaselineTimeoutDefaultAndProgress(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var seenTimeout = -1;
+		prSplit._gitExec = function(dir, args) {
+			if (args[0] === 'rev-parse') return { code: 0, stdout: 'feature\n', stderr: '' };
+			return { code: 0, stdout: '', stderr: '' };
+		};
+		prSplit.verifySplit = function(branch, opts) {
+			seenTimeout = opts.verifyTimeoutMs;
+			return { passed: true, name: branch, output: '' };
+		};
+		prSplit.runtime.baseBranch = 'main';
+		prSplit.runtime.verifyCommand = 'make test';
+
+		var result = prSplit._handleConfigState({});
+		var hasStart = false;
+		var hasOk = false;
+		for (var i = 0; i < globalThis._prints.length; i++) {
+			if (globalThis._prints[i].indexOf('[auto-split] Verify baseline') >= 0) hasStart = true;
+			if (globalThis._prints[i].indexOf('[auto-split] Verify baseline OK') >= 0) hasOk = true;
+		}
+		JSON.stringify({
+			error: result.error,
+			seenTimeout: seenTimeout,
+			hasStart: hasStart,
+			hasOk: hasOk
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"error":null,"seenTimeout":600000,"hasStart":true,"hasOk":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+func TestChunk13_HandleConfigState_BaselineTimeoutOverride(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var seenTimeout = -1;
+		prSplit._gitExec = function(dir, args) {
+			if (args[0] === 'rev-parse') return { code: 0, stdout: 'feature\n', stderr: '' };
+			return { code: 0, stdout: '', stderr: '' };
+		};
+		prSplit.verifySplit = function(branch, opts) {
+			seenTimeout = opts.verifyTimeoutMs;
+			return { passed: true, name: branch, output: '' };
+		};
+		prSplit.runtime.baseBranch = 'main';
+		prSplit.runtime.verifyCommand = 'make test';
+
+		var result = prSplit._handleConfigState({ verifyTimeoutMs: 12345 });
+		JSON.stringify({ error: result.error, seenTimeout: seenTimeout });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"error":null,"seenTimeout":12345}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
 // TestChunk13_HandleConfigState_BaselineFail tests that failing baseline
 // verification returns baselineFailed=true.
 func TestChunk13_HandleConfigState_BaselineFail(t *testing.T) {

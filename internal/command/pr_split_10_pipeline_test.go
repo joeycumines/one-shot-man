@@ -30,7 +30,8 @@ func TestPipelineChunk_AUTOMATED_DEFAULTS(t *testing.T) {
 	}
 	// Check a few key values.
 	for _, sub := range []string{
-		`"classifyTimeoutMs":1200000`,
+		`"classifyTimeoutMs":300000`,
+		`"planTimeoutMs":300000`,
 		`"resolveTimeoutMs":1800000`,
 		`"pollIntervalMs":500`,
 		`"maxResolveRetries":3`,

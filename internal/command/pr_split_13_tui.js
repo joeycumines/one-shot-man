@@ -270,6 +270,7 @@
         var gitExec = prSplit._gitExec;
         var resolveDir = prSplit._resolveDir;
         var verifySplit = prSplit.verifySplit;
+        var automatedDefaults = prSplit.AUTOMATED_DEFAULTS || {};
         var loadPlan = prSplit.loadPlan;
         var dir = resolveDir(config.dir || '.');
 
@@ -309,20 +310,38 @@
         // Verify the base branch passes the verifyCommand before we start splitting.
         // Skip if verifyCommand is trivial ('true') or absent.
         var verifyCommand = runtime.verifyCommand;
+        var verifyTimeoutMs = 0;
+        if (typeof config.verifyTimeoutMs === 'number' && config.verifyTimeoutMs > 0) {
+            verifyTimeoutMs = config.verifyTimeoutMs;
+        } else if (typeof automatedDefaults.verifyTimeoutMs === 'number' &&
+                   automatedDefaults.verifyTimeoutMs > 0) {
+            verifyTimeoutMs = automatedDefaults.verifyTimeoutMs;
+        }
         if (verifyCommand && verifyCommand !== 'true') {
+            if (verifyTimeoutMs > 0) {
+                output.print('[auto-split] Verify baseline (timeout ' + Math.ceil(verifyTimeoutMs / 1000) + 's)...');
+            } else {
+                output.print('[auto-split] Verify baseline...');
+            }
+            var baselineStart = Date.now();
             var baselineResult = verifySplit(runtime.baseBranch, {
                 verifyCommand: verifyCommand,
-                dir: dir
+                dir: dir,
+                verifyTimeoutMs: verifyTimeoutMs,
+                outputFn: function(line) { output.print(line); }
             });
+            var baselineElapsedMs = Date.now() - baselineStart;
             // Worktree isolation: user's branch is never modified, no restore needed.
 
             if (!baselineResult.passed) {
                 return {
                     baselineFailed: true,
                     baselineError: baselineResult.error || 'baseline verification failed (exit code non-zero)',
-                    baselineOutput: baselineResult.output || ''
+                    baselineOutput: baselineResult.output || '',
+                    baselineDurationMs: baselineElapsedMs
                 };
             }
+            output.print('[auto-split] Verify baseline OK (' + baselineElapsedMs + 'ms)');
         }
 
         return { error: null };

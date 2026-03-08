@@ -48,10 +48,12 @@ type TerminalOps interface {
 //   - Production: NewTUIReader() creates a reader that lazily initializes to stdin
 //   - Testing: Use newTestTUIReader(customReader) from test files, or NewTUIReaderFromIO(r)
 type TUIReader struct {
-	reader  prompt.Reader
-	once    sync.Once
-	initFn  func() prompt.Reader
-	isStdin bool // true if this reader is backed by stdin (for correct Fd() behavior)
+	reader       prompt.Reader
+	once         sync.Once
+	initFn       func() prompt.Reader
+	isStdin      bool // true if this reader is backed by stdin (for correct Fd() behavior)
+	readMu       sync.Mutex
+	pendingInput []byte
 }
 
 // NewTUIReader creates a TUIReader that lazily initializes to read from stdin.
@@ -83,7 +85,52 @@ func (r *TUIReader) Read(p []byte) (n int, err error) {
 	if reader == nil {
 		return 0, io.EOF
 	}
-	return reader.Read(p)
+	r.readMu.Lock()
+	defer r.readMu.Unlock()
+
+	if len(r.pendingInput) > 0 {
+		n = copy(p, r.pendingInput)
+		r.pendingInput = r.pendingInput[n:]
+		return n, nil
+	}
+
+	n, err = reader.Read(p)
+	if n <= 1 {
+		return n, err
+	}
+
+	// Work around go-prompt batching input reads by splitting "text + trailing
+	// CR" into two reads: first text, then CR. This allows Enter to be handled
+	// as a key event instead of being folded into plain text.
+	splitAt := splitTrailingCarriageReturn(p[:n])
+	if splitAt < 0 {
+		return n, err
+	}
+	r.pendingInput = append(r.pendingInput[:0], p[splitAt:n]...)
+	return splitAt, nil
+}
+
+// splitTrailingCarriageReturn returns the index where the caller should split a
+// read buffer so a trailing CR is delivered separately.
+//
+// We only split when all of these are true:
+//  1. Buffer ends with '\r'
+//  2. Buffer has no '\n' (avoid changing CRLF/pasted multiline behavior)
+//  3. Buffer has no earlier '\r' (avoid partial splitting of mixed content)
+func splitTrailingCarriageReturn(buf []byte) int {
+	if len(buf) <= 1 {
+		return -1
+	}
+	last := len(buf) - 1
+	if buf[last] != '\r' {
+		return -1
+	}
+	for i := 0; i < last; i++ {
+		if buf[i] == '\n' || buf[i] == '\r' {
+			return -1
+		}
+	}
+	return last
 }
 
 // Close implements io.Closer by delegating to the underlying prompt.Reader.

@@ -308,7 +308,7 @@ func TestIntegration_AutoSplitComplexGoProject(t *testing.T) {
 		"claudeCommand": claudeTestCommand,
 		"claudeArgs":    claudeArgsList,
 		"timeoutMs":     int64(5 * 60 * 1000), // 5 minutes per step (JS layer)
-		"_evalTimeout":  25 * time.Minute,     // T32: Go-layer evalJS timeout (must exceed JS classifyTimeoutMs=20min)
+		"_evalTimeout":  25 * time.Minute,     // T32: Go-layer evalJS timeout (must exceed JS classifyTimeoutMs=5min + pipeline overhead)
 	}
 	if integrationModel != "" {
 		configOverrides["claudeModel"] = integrationModel

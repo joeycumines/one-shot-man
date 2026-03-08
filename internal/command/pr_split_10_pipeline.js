@@ -59,8 +59,8 @@
     //      → resolveConflictsWithClaude(..., { resolveWallClockTimeoutMs })
     //      → verifySplit(..., { verifyTimeoutMs })
     var AUTOMATED_DEFAULTS = {
-        classifyTimeoutMs: 1200000, // 20 minutes for classification
-        planTimeoutMs: 1200000,     // 20 minutes for plan generation
+        classifyTimeoutMs: 300000,  // 5 minutes for classification (generous for LLM analysis)
+        planTimeoutMs: 300000,      // 5 minutes for plan generation
         resolveTimeoutMs: 1800000,  // 30 minutes for conflict resolution
         pollIntervalMs: 500,        // Poll every 500ms for fast cancellation
         maxResolveRetries: 3,       // Retries per branch
@@ -75,7 +75,10 @@
     // Delay between text and newline writes to defeat PTY coalescing.
     var SEND_TEXT_NEWLINE_DELAY_MS = 10;
     // Chunk large prompts into smaller writes so PTY consumers read them
-    // incrementally instead of one giant burst.
+    // incrementally instead of one giant burst. Despite the name, this is
+    // a CHARACTER limit (JavaScript substring operates on code units). For
+    // ASCII prompts the distinction is irrelevant; multi-byte text may
+    // produce larger wire payloads per chunk.
     var SEND_TEXT_CHUNK_BYTES = 512;
     // Delay between chunk writes to reduce PTY coalescing into a single
     // read burst on the Claude side.
@@ -594,6 +597,14 @@
         var userAliveCheck = (typeof opts.aliveCheck === 'function') ? opts.aliveCheck : null;
         var cancelledByUser = false;
         var forceCancelledByUser = false;
+
+        // Heartbeat monitoring: if opts.heartbeatTool is set, check that the
+        // named MCP tool was called within opts.heartbeatTimeoutMs. This
+        // detects when Claude is alive but not making progress.
+        var heartbeatTool = opts.heartbeatTool || '';
+        var heartbeatTimeoutMs = opts.heartbeatTimeoutMs || 0;
+        var heartbeatStale = false;
+
         var wrappedOpts = {};
         for (var k in opts) {
             if (Object.prototype.hasOwnProperty.call(opts, k)) {
@@ -608,6 +619,24 @@
             if (typeof prSplit.isCancelled === 'function' && prSplit.isCancelled()) {
                 cancelledByUser = true;
                 return false;
+            }
+            // Heartbeat freshness check. lastCallTime returns the unix ms of
+            // the most recent heartbeat call, or 0 if never called.
+            if (heartbeatTool && heartbeatTimeoutMs > 0 &&
+                typeof mcpCb.lastCallTime === 'function') {
+                var hbTime = mcpCb.lastCallTime(heartbeatTool);
+                if (hbTime > 0) {
+                    // At least one heartbeat received — check staleness.
+                    var age = Date.now() - hbTime;
+                    if (age > heartbeatTimeoutMs) {
+                        log.printf('auto-split: heartbeat stale (%dms since last call to %s), aborting wait for %s',
+                            age, heartbeatTool, toolName);
+                        heartbeatStale = true;
+                        return false;
+                    }
+                }
+                // hbTime === 0 means no heartbeat received yet — skip check
+                // (grace period until first heartbeat arrives).
             }
             if (userAliveCheck) {
                 return !!userAliveCheck();
@@ -624,6 +653,9 @@
         }
         if (cancelledByUser) {
             return { data: null, error: 'cancelled by user' };
+        }
+        if (heartbeatStale) {
+            return { data: null, error: 'Claude process unresponsive (heartbeat timeout for ' + toolName + ')' };
         }
         if (result.error) {
             log.printf('auto-split waitFor: tool=%s FAILED after %dms — %s', toolName, elapsedMs, result.error);
@@ -795,7 +827,7 @@
     // -----------------------------------------------------------------------
 
     // Attempts to fix failing splits using Claude.
-    async function resolveConflictsWithClaude(failures, sessionId, timeouts, pollInterval, maxAttemptsPerBranch, report, aliveCheckFn) {
+    async function resolveConflictsWithClaude(failures, sessionId, timeouts, pollInterval, maxAttemptsPerBranch, report, aliveCheckFn, heartbeatTimeoutMs) {
         // Late-bind cross-chunk dependencies.
         var isCancelled = prSplit.isCancelled;
         var resolveDir = prSplit._resolveDir;
@@ -894,6 +926,8 @@
                 mcpCb.resetWaiter('reportResolution');
                 var resolutionPoll = waitForLogged('reportResolution', timeouts.resolve, {
                     aliveCheck: aliveCheckFn,
+                    heartbeatTool: 'heartbeat',
+                    heartbeatTimeoutMs: heartbeatTimeoutMs,
                     onProgress: function(elapsed) {},
                     checkIntervalMs: pollInterval
                 });
@@ -1307,7 +1341,9 @@
                 });
 
             // Heartbeat tool — Claude calls periodically to signal liveness.
-            var lastHeartbeatTime = Date.now();
+            // Heartbeat timeout: if Claude has sent at least one heartbeat but
+            // then goes silent for longer than this, waitForLogged aborts.
+            // Default: 2× the watchdog idle time.
             var heartbeatTimeoutMs = config.heartbeatTimeoutMs || (watchdogIdleMs * 2);
             mcpCallbackObj.addTool('heartbeat',
                 'Send a heartbeat to indicate Claude is still actively working. Call this periodically during long-running analysis.',
@@ -1402,6 +1438,108 @@
             log.printf('auto-split: no tuiMux — started PTY output drain to prevent deadlock');
         }
 
+        // Step 2b: Dismiss Ollama launcher menu if present.
+        // Ollama shows a "Run a model" launcher screen before the model
+        // selection menu.  We detect it via tuiMux.screenshot() and send
+        // the appropriate dismissal keystrokes.  For non-Ollama providers
+        // this block is a no-op.
+        if (claudeExecutor && claudeExecutor.resolved &&
+            claudeExecutor.resolved.type === 'ollama' &&
+            claudeExecutor.handle && claudeExecutor.cm) {
+            var launcherResult = await step('Dismiss launcher', async function() {
+                var LAUNCHER_POLL_MS     = 200;
+                var LAUNCHER_TIMEOUT_MS  = 10000;
+                var LAUNCHER_STABLE_NEED = 3;
+                var cm = claudeExecutor.cm;
+                var handle = claudeExecutor.handle;
+                var startMs = Date.now();
+                var stableCount = 0;
+                var dismissed = false;
+
+                while (Date.now() - startMs < LAUNCHER_TIMEOUT_MS) {
+                    var cancelErr = getCancellationError();
+                    if (cancelErr) { return { error: cancelErr }; }
+
+                    var shot = captureScreenshot();
+                    if (!shot) {
+                        // tuiMux not available — nothing to dismiss.
+                        log.printf('auto-split launcher: no screenshot available, skipping');
+                        return { error: null, dismissed: false };
+                    }
+
+                    var lines = shot.split('\n');
+                    var menu;
+                    try { menu = cm.parseModelMenu(lines); }
+                    catch (e) {
+                        log.printf('auto-split launcher: parseModelMenu error: %s', e.message || String(e));
+                        await new Promise(function(r) { setTimeout(r, LAUNCHER_POLL_MS); });
+                        continue;
+                    }
+
+                    if (!menu || !menu.models || menu.models.length === 0) {
+                        // No menu detected yet — screen might still be loading.
+                        stableCount++;
+                        if (stableCount >= LAUNCHER_STABLE_NEED) {
+                            // No menu after stable polls — not a menu-based provider.
+                            log.printf('auto-split launcher: no menu detected after %d stable polls, proceeding', stableCount);
+                            return { error: null, dismissed: false };
+                        }
+                        await new Promise(function(r) { setTimeout(r, LAUNCHER_POLL_MS); });
+                        continue;
+                    }
+
+                    // Reset stable counter — we have menu content.
+                    stableCount = 0;
+
+                    if (cm.isLauncherMenu(menu)) {
+                        var keys = cm.dismissLauncherKeys(menu);
+                        if (keys) {
+                            log.printf('auto-split launcher: detected launcher menu (%d items), dismissing',
+                                menu.models.length);
+                            try { handle.send(keys); }
+                            catch (e) {
+                                return { error: 'failed to dismiss launcher: ' + (e.message || String(e)) };
+                            }
+                            // Wait briefly for screen to update after dismissal.
+                            await new Promise(function(r) { setTimeout(r, 500); });
+                            dismissed = true;
+                            continue;  // Re-poll to check for model selection menu.
+                        }
+                    }
+
+                    // Not a launcher menu — might be model selection.
+                    // If we have a target model, navigate to it.
+                    if (claudeExecutor.model && !dismissed) {
+                        try {
+                            var navKeys = cm.navigateToModel(menu, claudeExecutor.model);
+                            if (navKeys) {
+                                log.printf('auto-split launcher: navigating to model %s', claudeExecutor.model);
+                                handle.send(navKeys);
+                                await new Promise(function(r) { setTimeout(r, 500); });
+                            }
+                        } catch (e) {
+                            log.printf('auto-split launcher: model navigation error: %s — proceeding with selected model',
+                                e.message || String(e));
+                        }
+                    }
+
+                    // Menu is present but not a launcher — we're past the
+                    // launcher stage (or it was never shown).  Done.
+                    log.printf('auto-split launcher: menu resolved (dismissed=%s)', String(dismissed));
+                    return { error: null, dismissed: dismissed };
+                }
+
+                // Timeout — proceed anyway (best effort).
+                log.printf('auto-split launcher: timeout after %dms — proceeding', LAUNCHER_TIMEOUT_MS);
+                return { error: null, dismissed: false };
+            });
+            if (launcherResult.error) {
+                report.error = launcherResult.error;
+                cleanupExecutor();
+                return finishTUI({ error: launcherResult.error, report: report });
+            }
+        }
+
         // Step 3: Send classification request.
         var classifyResult = await step('Send classification request', async function() {
             updateDetail('Send classification request', 'Rendering prompt (' + analysis.files.length + ' files)...');
@@ -1432,6 +1570,8 @@
             updateDetail('Receive classification', 'Waiting for classification...');
             var pollResult = waitForLogged('reportClassification', timeouts.classify, {
                 aliveCheck: aliveCheckFn,
+                heartbeatTool: 'heartbeat',
+                heartbeatTimeoutMs: heartbeatTimeoutMs,
                 onProgress: function(elapsed) {
                     var sec = Math.round(elapsed / 1000);
                     updateDetail('Receive classification', 'Waiting... ' + sec + 's');
@@ -1502,6 +1642,8 @@
             updateDetail('Generate split plan', 'Checking for Claude-generated plan...');
             var planPoll = waitForLogged('reportSplitPlan', 5000, {
                 aliveCheck: aliveCheckFn,
+                heartbeatTool: 'heartbeat',
+                heartbeatTimeoutMs: heartbeatTimeoutMs,
                 checkIntervalMs: 1000
             });
             // Extract stages from full tool arguments.
@@ -1702,7 +1844,8 @@
             var resolved = await step('Resolve conflicts via Claude', async function() {
                 return await resolveConflictsWithClaude(
                     verifyResult.failures, sessionId,
-                    timeouts, pollInterval, maxAttemptsPerBranch, report, aliveCheckFn
+                    timeouts, pollInterval, maxAttemptsPerBranch, report, aliveCheckFn,
+                    heartbeatTimeoutMs
                 );
             });
 
@@ -1723,6 +1866,8 @@
                     mcpCallbackObj.resetWaiter('reportClassification');
                     var rePoll = waitForLogged('reportClassification', timeouts.classify, {
                         aliveCheck: aliveCheckFn,
+                        heartbeatTool: 'heartbeat',
+                        heartbeatTimeoutMs: heartbeatTimeoutMs,
                         onProgress: function(elapsed) {
                             updateDetail('Re-classify (retry ' + reSplitCount + ')', 'Waiting... ' + Math.round(elapsed / 1000) + 's');
                         },

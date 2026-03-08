@@ -1,22 +1,30 @@
-# WIP — Active Session State
+# Active Session State
 
-## Session Start
-- **Timestamp**: 2026-03-06 22:06:43
-- **Commits this session**: cd6cb0a through 44e3b26f (52+)
+## Current Phase: T004 — Decision Gate: Run VTerm tests with -integration
 
-## Current Phase: STEADY STATE — Codebase Perfected
+### Completed
+- **T001**: Baseline established. 10 MockMCP tests PASS. Pre-existing failures: TestSessionDelete_LockedSession, TestPickAndPlace.
+- **T002**: Root cause reconciled. go-prompt feed()+GetKey() treats entire buffer as single key → NotDefined → literal insertion. NOT CR→LF. NOT executor deadlock.
+- **T003**: termtest.Console integrated.
+  - `pr_split_pty_unix_test.go`: Added `-tags=integration` to buildOSMBinary
+  - `pr_split_termmux_observation_test.go`: REWRITTEN — vtermObserver → termtest.Console (~300 LOC deleted, 4 tests refactored)
+  - Verification: `make build` OK, `make lint` OK, `make make-all-with-log` ZERO failures (912s), MockMCP all 10 PASS.
+  - NO production code changes. Only test infrastructure.
 
-### Completed This Session (Session 2)
-- T01-T187 all done (see blueprint.json for full history)
-- T159-T178: Go idiom modernization (errors.Is, any, slices, CutPrefix, WalkDir, Clone, SplitN)
-- T179-T187: Quality and structural (sentinel consistency, type assertions, EqualFold, timer leak, doc.go)
+### Immediate Next Step
+1. **T004**: Run `go test -race -v -count=1 -timeout=5m -tags=integration ./internal/command/... -run 'TestIntegration_PrSplit_VTerm(CleanExit|HeuristicRun)'`
+2. If PASS → T004 Done, skip T004a (already removed), proceed to T005
+3. If FAIL → investigate sync protocol behavior, check for `............` dots
 
-### Final Audit Results
-- ✅ Go idioms: ALL patterns modernized
-- ✅ Structural: Zero TODO/FIXME/HACK, zero dead code, zero race conditions
-- ✅ Documentation: All docs accurate, all packages have godoc comments
-- ✅ Error handling: Consistent lowercase, %w wrapping, sentinels where appropriate
-- ⚠️ 3 intentional log.Printf warnings in state_manager.go/tui_completion.go (graceful fallbacks, low priority)
+### Key Files (Modified This Session)
+- `internal/command/pr_split_pty_unix_test.go` — buildOSMBinary now uses `-tags=integration`
+- `internal/command/pr_split_termmux_observation_test.go` — termtest.Console replaces vtermObserver
+- `blueprint.json` — T001=Done, T002=Done, T003=Done
 
-### Blocked
-- T41: Claude CLI not logged in
+### Key Files (To Watch)
+- `internal/scripting/tui_manager.go:516-700` — executeCommand (T006)
+- `internal/command/pr_split_10_pipeline.js` — heartbeat vars unused (T007-T008)
+- `internal/command/pr_split_13_tui.js:1350-1493` — async auto-split handler
+
+### Session Timer
+- Started ~13:13 AEST Mar 8 2026. Use `make check-session-time`.

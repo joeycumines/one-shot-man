@@ -17,6 +17,7 @@ import (
 	goruntime "runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -206,6 +207,7 @@ func jsCallbackFactory(rt *goja.Runtime, adapter *gojaeventloop.Adapter, loop *g
 		_ = obj.Set("waitFor", cb.jsWaitFor())
 		_ = obj.Set("closeSync", cb.jsCloseSync())
 		_ = obj.Set("resetWaiter", cb.jsResetWaiter())
+		_ = obj.Set("lastCallTime", cb.jsLastCallTime())
 
 		_ = obj.DefineAccessorProperty("scriptPath",
 			rt.ToValue(func(call goja.FunctionCall) goja.Value {
@@ -243,7 +245,8 @@ func jsCallbackFactory(rt *goja.Runtime, adapter *gojaeventloop.Adapter, loop *g
 // toolWaiter holds a channel for receiving Go-native tool call data.
 // Used by addTool/waitFor for synchronous IPC that bypasses the JS event loop.
 type toolWaiter struct {
-	ch chan json.RawMessage // buffered(1): holds latest tool call arguments
+	ch           chan json.RawMessage // buffered(1): holds latest tool call arguments
+	lastCallTime atomic.Int64         // unix ms of last tool call — thread-safe for cross-goroutine reads
 }
 
 // mcpCallback holds the state for a disposable MCP IPC channel.
@@ -671,6 +674,9 @@ func (cb *mcpCallback) jsAddTool() func(call goja.FunctionCall) goja.Value {
 			Description: desc,
 			InputSchema: inputSchema,
 		}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			// Record the call time (thread-safe) so JS can check liveness.
+			waiter.lastCallTime.Store(time.Now().UnixMilli())
+
 			// Non-blocking send: drain old data if channel is full (last-write-wins).
 			select {
 			case waiter.ch <- req.Params.Arguments:
@@ -871,6 +877,28 @@ func (cb *mcpCallback) jsWaitFor() func(call goja.FunctionCall) goja.Value {
 				return cb.waitResult(nil, "MCPCallback closed during wait for "+name)
 			}
 		}
+	}
+}
+
+// jsLastCallTime returns the JS method: lastCallTime(toolName) → number
+//
+// Returns the Unix millisecond timestamp of the last time the named tool was
+// called via MCP. Returns 0 if the tool has never been called or is not
+// registered. Thread-safe: reads an atomic counter set by the MCP transport
+// goroutine.
+func (cb *mcpCallback) jsLastCallTime() func(call goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		name := call.Argument(0).String()
+		if name == "" {
+			return cb.runtime.ToValue(int64(0))
+		}
+		cb.toolMu.RLock()
+		waiter, ok := cb.toolWaiters[name]
+		cb.toolMu.RUnlock()
+		if !ok {
+			return cb.runtime.ToValue(int64(0))
+		}
+		return cb.runtime.ToValue(waiter.lastCallTime.Load())
 	}
 }
 

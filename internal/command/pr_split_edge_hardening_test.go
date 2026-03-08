@@ -33,11 +33,11 @@ func TestAutomatedDefaults_OverrideChain(t *testing.T) {
 		if err := json.Unmarshal([]byte(val.(string)), &defaults); err != nil {
 			t.Fatalf("parse: %v", err)
 		}
-		if defaults.ClassifyTimeoutMs != 1200000 {
-			t.Errorf("classifyTimeoutMs: got %d, want 1200000", defaults.ClassifyTimeoutMs)
+		if defaults.ClassifyTimeoutMs != 300000 {
+			t.Errorf("classifyTimeoutMs: got %d, want 300000", defaults.ClassifyTimeoutMs)
 		}
-		if defaults.PlanTimeoutMs != 1200000 {
-			t.Errorf("planTimeoutMs: got %d, want 1200000", defaults.PlanTimeoutMs)
+		if defaults.PlanTimeoutMs != 300000 {
+			t.Errorf("planTimeoutMs: got %d, want 300000", defaults.PlanTimeoutMs)
 		}
 		if defaults.ResolveTimeoutMs != 1800000 {
 			t.Errorf("resolveTimeoutMs: got %d, want 1800000", defaults.ResolveTimeoutMs)
@@ -81,8 +81,8 @@ func TestAutomatedDefaults_OverrideChain(t *testing.T) {
 		if timeouts.Classify != 5000 {
 			t.Errorf("classify: got %d, want 5000", timeouts.Classify)
 		}
-		if timeouts.Plan != 1200000 {
-			t.Errorf("plan: got %d, want 1200000 (default)", timeouts.Plan)
+		if timeouts.Plan != 300000 {
+			t.Errorf("plan: got %d, want 300000 (default)", timeouts.Plan)
 		}
 		if timeouts.Resolve != 1800000 {
 			t.Errorf("resolve: got %d, want 1800000 (default)", timeouts.Resolve)

@@ -2462,6 +2462,148 @@ func TestWaitForLogged_Timeout(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// T013: waitForLogged — heartbeat timeout scenario
+// ---------------------------------------------------------------------------
+
+func TestWaitForLogged_HeartbeatTimeout(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Mock mcpCallbackObj with:
+	// - waitFor that calls aliveCheck repeatedly before "timing out"
+	// - lastCallTime that returns a STALE timestamp (heartbeat long ago)
+	val, err := evalJS(`(function() {
+		var aliveCheckCallCount = 0;
+		mcpCallbackObj = {
+			waitFor: function(name, timeout, opts) {
+				// Simulate polling: call aliveCheck multiple times.
+				for (var i = 0; i < 10; i++) {
+					if (opts && typeof opts.aliveCheck === 'function') {
+						var alive = opts.aliveCheck();
+						// If heartbeat check killed us, aliveCheck returns false.
+						if (!alive) {
+							return { data: null, error: 'died via aliveCheck' };
+						}
+					}
+				}
+				return { data: null, error: 'timeout waiting for ' + name };
+			},
+			lastCallTime: function(toolName) {
+				if (toolName === 'heartbeat') {
+					// Return a timestamp 60 seconds ago — stale.
+					return Date.now() - 60000;
+				}
+				return 0;
+			}
+		};
+		var result = waitForLogged('reportClassification', 5000, {
+			heartbeatTool: 'heartbeat',
+			heartbeatTimeoutMs: 5000  // 5 second timeout, but heartbeat is 60s old
+		});
+		return JSON.stringify(result);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatal(err)
+	}
+	errStr, _ := result["error"].(string)
+	if !strings.Contains(errStr, "heartbeat timeout") {
+		t.Errorf("expected heartbeat timeout error, got %q", errStr)
+	}
+}
+
+func TestWaitForLogged_HeartbeatFresh_NoAbort(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Mock where heartbeat is fresh (just received) — should NOT abort.
+	val, err := evalJS(`(function() {
+		mcpCallbackObj = {
+			waitFor: function(name, timeout, opts) {
+				// Call aliveCheck — should return true (heartbeat is fresh).
+				if (opts && typeof opts.aliveCheck === 'function') {
+					var alive = opts.aliveCheck();
+					if (!alive) {
+						return { data: null, error: 'unexpected: aliveCheck returned false' };
+					}
+				}
+				return { data: { ok: true }, error: null };
+			},
+			lastCallTime: function(toolName) {
+				if (toolName === 'heartbeat') {
+					// Return a timestamp 1 second ago — fresh.
+					return Date.now() - 1000;
+				}
+				return 0;
+			}
+		};
+		var result = waitForLogged('reportClassification', 5000, {
+			heartbeatTool: 'heartbeat',
+			heartbeatTimeoutMs: 30000  // 30 second timeout, heartbeat is 1s old
+		});
+		return JSON.stringify(result);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["error"] != nil {
+		t.Errorf("expected nil error (heartbeat is fresh), got %v", result["error"])
+	}
+}
+
+func TestWaitForLogged_HeartbeatNeverReceived_GracePeriod(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Mock where heartbeat was NEVER called (lastCallTime returns 0).
+	// Should NOT abort — grace period until first heartbeat arrives.
+	val, err := evalJS(`(function() {
+		mcpCallbackObj = {
+			waitFor: function(name, timeout, opts) {
+				if (opts && typeof opts.aliveCheck === 'function') {
+					var alive = opts.aliveCheck();
+					if (!alive) {
+						return { data: null, error: 'unexpected: aliveCheck returned false' };
+					}
+				}
+				return { data: { ok: true }, error: null };
+			},
+			lastCallTime: function(toolName) {
+				return 0;  // Never called.
+			}
+		};
+		var result = waitForLogged('reportClassification', 5000, {
+			heartbeatTool: 'heartbeat',
+			heartbeatTimeoutMs: 1  // Even with 1ms timeout, grace period applies.
+		});
+		return JSON.stringify(result);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["error"] != nil {
+		t.Errorf("expected nil error (grace period for zero heartbeat), got %v", result["error"])
+	}
+}
+
+// ---------------------------------------------------------------------------
 // T88: cleanupExecutor — resource cleanup sequence
 // ---------------------------------------------------------------------------
 

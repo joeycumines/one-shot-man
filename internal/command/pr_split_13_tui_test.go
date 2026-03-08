@@ -2707,14 +2707,23 @@ func TestChunk13_WizardColors_ValidHexStrings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var colors map[string]string
+	// Colors are adaptive: {light: "#...", dark: "#..."}.
+	var colors map[string]map[string]string
 	if err := json.Unmarshal([]byte(raw.(string)), &colors); err != nil {
 		t.Fatal(err)
 	}
 
-	for key, val := range colors {
-		if len(val) != 7 || val[0] != '#' {
-			t.Errorf("COLORS.%s = %q — not a 7-char hex string", key, val)
+	for key, adaptive := range colors {
+		for variant, val := range adaptive {
+			if len(val) != 7 || val[0] != '#' {
+				t.Errorf("COLORS.%s.%s = %q — not a 7-char hex string", key, variant, val)
+			}
+		}
+		if _, ok := adaptive["light"]; !ok {
+			t.Errorf("COLORS.%s missing 'light' variant", key)
+		}
+		if _, ok := adaptive["dark"]; !ok {
+			t.Errorf("COLORS.%s missing 'dark' variant", key)
 		}
 	}
 }
@@ -3336,5 +3345,733 @@ func TestChunk13_WizardModel_HelpOverlayComposition(t *testing.T) {
 	}
 	if !strings.Contains(s, "Esc") {
 		t.Errorf("help overlay should contain 'Esc', got:\n%s", s)
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  T003 Regression: msg.key handling in BubbleTea update()
+//
+//  The root cause of all keyboard non-responsiveness was the use of
+//  msg.string (undefined on key events) instead of msg.key. These tests
+//  exercise the raw _wizardUpdate function with key messages to prove
+//  the fix works.
+// ---------------------------------------------------------------------------
+
+// TestChunk13_WizardUpdate_ExportsExist verifies the lifecycle function
+// exports that T003+ tests depend on are present.
+func TestChunk13_WizardUpdate_ExportsExist(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	for _, name := range []string{"_wizardInit", "_wizardUpdate", "_wizardView"} {
+		raw, err := evalJS(`typeof globalThis.prSplit.` + name)
+		if err != nil {
+			t.Fatalf("typeof prSplit.%s: %v", name, err)
+		}
+		if raw != "function" {
+			t.Errorf("prSplit.%s should be function, got %v", name, raw)
+		}
+	}
+}
+
+// TestChunk13_WizardUpdate_HelpToggle verifies '?' and 'f1' toggle showHelp.
+func TestChunk13_WizardUpdate_HelpToggle(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	// Initialize state, set to CONFIG (simulating post-WindowSize).
+	raw, err := evalJS(`(function() {
+		var s = globalThis.prSplit._wizardInit();
+		s.needsInitClear = false;
+		s.wizard.transition('CONFIG');
+		s.wizardState = 'CONFIG';
+
+		// Press '?' — should set showHelp = true.
+		var result = globalThis.prSplit._wizardUpdate({type: 'Key', key: '?'}, s);
+		if (!result[0].showHelp) return 'FAIL: ? did not set showHelp';
+
+		// Any key while help is open — should close help.
+		result = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'a'}, result[0]);
+		if (result[0].showHelp) return 'FAIL: any-key did not close help';
+
+		// Press 'f1' — should also set showHelp = true.
+		result = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'f1'}, result[0]);
+		if (!result[0].showHelp) return 'FAIL: f1 did not set showHelp';
+
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("help toggle test: %v", raw)
+	}
+}
+
+// TestChunk13_WizardUpdate_CtrlC verifies Ctrl+C shows confirm cancel dialog.
+func TestChunk13_WizardUpdate_CtrlC(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = globalThis.prSplit._wizardInit();
+		s.needsInitClear = false;
+		s.wizard.transition('CONFIG');
+		s.wizardState = 'CONFIG';
+
+		var result = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'ctrl+c'}, s);
+		if (!result[0].showConfirmCancel) return 'FAIL: ctrl+c did not set showConfirmCancel';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("ctrl+c test: %v", raw)
+	}
+}
+
+// TestChunk13_WizardUpdate_ConfirmCancel_Yes verifies 'y' in confirm dialog
+// sets state to CANCELLED.
+func TestChunk13_WizardUpdate_ConfirmCancel_Yes(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = globalThis.prSplit._wizardInit();
+		s.needsInitClear = false;
+		// Properly transition wizard to CONFIG.
+		s.wizard.transition('CONFIG');
+		s.wizardState = 'CONFIG';
+		s.showConfirmCancel = true;
+
+		var result = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'y'}, s);
+		if (result[0].showConfirmCancel) return 'FAIL: y did not dismiss confirm overlay';
+		if (result[0].wizardState !== 'CANCELLED') return 'FAIL: wizardState=' + result[0].wizardState + ', want CANCELLED';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("confirm-cancel-yes test: %v", raw)
+	}
+}
+
+// TestChunk13_WizardUpdate_ConfirmCancel_No verifies 'n' dismisses the dialog
+// without changing state.
+func TestChunk13_WizardUpdate_ConfirmCancel_No(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = globalThis.prSplit._wizardInit();
+		s.needsInitClear = false;
+		s.wizard.transition('CONFIG');
+		s.wizardState = 'CONFIG';
+		s.showConfirmCancel = true;
+
+		var result = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'n'}, s);
+		if (result[0].showConfirmCancel) return 'FAIL: n did not dismiss confirm overlay';
+		if (result[0].wizardState !== 'CONFIG') return 'FAIL: wizardState=' + result[0].wizardState + ', want CONFIG';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("confirm-cancel-no test: %v", raw)
+	}
+}
+
+// TestChunk13_WizardUpdate_ConfirmCancel_Esc verifies 'esc' dismisses
+// the confirm dialog (same as 'n').
+func TestChunk13_WizardUpdate_ConfirmCancel_Esc(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = globalThis.prSplit._wizardInit();
+		s.needsInitClear = false;
+		s.wizard.transition('CONFIG');
+		s.wizardState = 'CONFIG';
+		s.showConfirmCancel = true;
+
+		var result = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'esc'}, s);
+		if (result[0].showConfirmCancel) return 'FAIL: esc did not dismiss confirm overlay';
+		if (result[0].wizardState !== 'CONFIG') return 'FAIL: wizardState=' + result[0].wizardState + ', want CONFIG';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("confirm-cancel-esc test: %v", raw)
+	}
+}
+
+// TestChunk13_WizardUpdate_ConfirmCancel_Enter verifies 'enter' in confirm
+// dialog confirms the cancel (same as 'y').
+func TestChunk13_WizardUpdate_ConfirmCancel_Enter(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = globalThis.prSplit._wizardInit();
+		s.needsInitClear = false;
+		s.wizard.transition('CONFIG');
+		s.wizardState = 'CONFIG';
+		s.showConfirmCancel = true;
+
+		var result = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'enter'}, s);
+		if (result[0].showConfirmCancel) return 'FAIL: enter did not dismiss confirm overlay';
+		if (result[0].wizardState !== 'CANCELLED') return 'FAIL: wizardState=' + result[0].wizardState + ', want CANCELLED';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("confirm-cancel-enter test: %v", raw)
+	}
+}
+
+// TestChunk13_WizardUpdate_WindowSize verifies WindowSize msg sets dimensions
+// and transitions to CONFIG on first render.
+func TestChunk13_WizardUpdate_WindowSize(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = globalThis.prSplit._wizardInit();
+		// needsInitClear should be true initially.
+		if (!s.needsInitClear) return 'FAIL: needsInitClear should be true initially';
+
+		var result = globalThis.prSplit._wizardUpdate(
+			{type: 'WindowSize', width: 120, height: 40}, s);
+		if (result[0].width !== 120) return 'FAIL: width=' + result[0].width + ', want 120';
+		if (result[0].height !== 40) return 'FAIL: height=' + result[0].height + ', want 40';
+		if (result[0].wizardState !== 'CONFIG') return 'FAIL: wizardState=' + result[0].wizardState + ', want CONFIG';
+		if (result[0].needsInitClear) return 'FAIL: needsInitClear should be false after first WindowSize';
+
+		// Second WindowSize: should NOT re-trigger CONFIG transition.
+		result = globalThis.prSplit._wizardUpdate(
+			{type: 'WindowSize', width: 80, height: 24}, result[0]);
+		if (result[0].width !== 80) return 'FAIL: second width=' + result[0].width + ', want 80';
+		// Should still be CONFIG (not re-init).
+		if (result[0].wizardState !== 'CONFIG') return 'FAIL: second wizardState=' + result[0].wizardState;
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("window-size test: %v", raw)
+	}
+}
+
+// TestChunk13_WizardUpdate_NavigationKeys verifies j/k/up/down/tab/shift+tab
+// in PLAN_REVIEW with splits properly modify selectedSplitIdx.
+func TestChunk13_WizardUpdate_NavigationKeys(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = globalThis.prSplit._wizardInit();
+		s.needsInitClear = false;
+		s.selectedSplitIdx = 0;
+		// Properly transition wizard through valid path to PLAN_REVIEW.
+		s.wizard.transition('CONFIG');
+		s.wizard.transition('PLAN_GENERATION');
+		s.wizard.transition('PLAN_REVIEW');
+		s.wizardState = 'PLAN_REVIEW';
+
+		// Set up plan cache with 3 splits so navigation has room.
+		globalThis.prSplit._state.planCache = {
+			splits: [{name:'a',files:[]},{name:'b',files:[]},{name:'c',files:[]}]
+		};
+
+		// j -> move down.
+		var result = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'j'}, s);
+		if (result[0].selectedSplitIdx !== 1) return 'FAIL: j: idx=' + result[0].selectedSplitIdx + ', want 1';
+
+		// down -> move down again.
+		result = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'down'}, result[0]);
+		if (result[0].selectedSplitIdx !== 2) return 'FAIL: down: idx=' + result[0].selectedSplitIdx + ', want 2';
+
+		// down at max -> stays at max.
+		result = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'down'}, result[0]);
+		if (result[0].selectedSplitIdx !== 2) return 'FAIL: down-at-max: idx=' + result[0].selectedSplitIdx + ', want 2';
+
+		// k -> move up.
+		result = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'k'}, result[0]);
+		if (result[0].selectedSplitIdx !== 1) return 'FAIL: k: idx=' + result[0].selectedSplitIdx + ', want 1';
+
+		// up -> move up.
+		result = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'up'}, result[0]);
+		if (result[0].selectedSplitIdx !== 0) return 'FAIL: up: idx=' + result[0].selectedSplitIdx + ', want 0';
+
+		// up at min -> stays at 0.
+		result = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'up'}, result[0]);
+		if (result[0].selectedSplitIdx !== 0) return 'FAIL: up-at-min: idx=' + result[0].selectedSplitIdx + ', want 0';
+
+		// tab -> same as down.
+		result = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'tab'}, result[0]);
+		if (result[0].selectedSplitIdx !== 1) return 'FAIL: tab: idx=' + result[0].selectedSplitIdx + ', want 1';
+
+		// shift+tab -> same as up.
+		result = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'shift+tab'}, result[0]);
+		if (result[0].selectedSplitIdx !== 0) return 'FAIL: shift+tab: idx=' + result[0].selectedSplitIdx + ', want 0';
+
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("navigation-keys test: %v", raw)
+	}
+}
+
+// TestChunk13_WizardUpdate_EscGoesBack verifies Esc in PLAN_REVIEW goes
+// back to CONFIG.
+func TestChunk13_WizardUpdate_EscGoesBack(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = globalThis.prSplit._wizardInit();
+		s.needsInitClear = false;
+		// Properly transition through valid path to PLAN_REVIEW.
+		s.wizard.transition('CONFIG');
+		s.wizard.transition('PLAN_GENERATION');
+		s.wizard.transition('PLAN_REVIEW');
+		s.wizardState = 'PLAN_REVIEW';
+
+		var result = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'esc'}, s);
+		if (result[0].wizardState !== 'CONFIG') return 'FAIL: esc-back: wizardState=' + result[0].wizardState + ', want CONFIG';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("esc-goes-back test: %v", raw)
+	}
+}
+
+// TestChunk13_WizardUpdate_PlanEditorShortcut verifies 'e' in PLAN_REVIEW
+// enters the plan editor.
+func TestChunk13_WizardUpdate_PlanEditorShortcut(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = globalThis.prSplit._wizardInit();
+		s.needsInitClear = false;
+		s.isProcessing = false;
+		s.wizard.transition('CONFIG');
+		s.wizard.transition('PLAN_GENERATION');
+		s.wizard.transition('PLAN_REVIEW');
+		s.wizardState = 'PLAN_REVIEW';
+
+		var result = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'e'}, s);
+		if (result[0].wizardState !== 'PLAN_EDITOR') return 'FAIL: e: wizardState=' + result[0].wizardState + ', want PLAN_EDITOR';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("plan-editor-shortcut test: %v", raw)
+	}
+}
+
+// TestChunk13_WizardUpdate_MsgStringUndefined is the explicit regression
+// test for the msg.string bug. It verifies that using msg.string (old broken
+// property) does NOT trigger any handler, while msg.key (correct property) does.
+func TestChunk13_WizardUpdate_MsgStringUndefined(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = globalThis.prSplit._wizardInit();
+		s.needsInitClear = false;
+		s.wizard.transition('CONFIG');
+		s.wizardState = 'CONFIG';
+
+		// A message with type:'Key' but using the WRONG property 'string'
+		// instead of 'key'. This should NOT trigger any handler.
+		var badMsg = {type: 'Key', string: '?'};
+		var result = globalThis.prSplit._wizardUpdate(badMsg, s);
+		if (result[0].showHelp) return 'FAIL: msg.string=? incorrectly triggered showHelp';
+
+		// The correct property 'key' SHOULD work.
+		var goodMsg = {type: 'Key', key: '?'};
+		result = globalThis.prSplit._wizardUpdate(goodMsg, result[0]);
+		if (!result[0].showHelp) return 'FAIL: msg.key=? did not trigger showHelp';
+
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("msg-string-regression test: %v", raw)
+	}
+}
+
+// TestChunk13_WizardUpdate_AllKeyBindingsRespond is a comprehensive check
+// that every documented key binding produces a state change or returns a
+// non-nil command (i.e., is not a no-op).
+func TestChunk13_WizardUpdate_AllKeyBindingsRespond(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+
+		function testKey(key, state, checkFn, label) {
+			var s = globalThis.prSplit._wizardInit();
+			s.needsInitClear = false;
+			s.selectedSplitIdx = 1;
+			s.isProcessing = false;
+			// Reset shared wizard before each test case.
+			s.wizard.reset();
+			// Properly transition through valid state paths.
+			s.wizard.transition('CONFIG');
+			if (state === 'PLAN_REVIEW' || state === 'PLAN_EDITOR') {
+				s.wizard.transition('PLAN_GENERATION');
+				s.wizard.transition('PLAN_REVIEW');
+				if (state === 'PLAN_EDITOR') {
+					s.wizard.transition('PLAN_EDITOR');
+				}
+				globalThis.prSplit._state.planCache = {
+					splits: [{name:'a',files:[]},{name:'b',files:[]},{name:'c',files:[]}]
+				};
+			}
+			s.wizardState = state;
+			var result = globalThis.prSplit._wizardUpdate({type: 'Key', key: key}, s);
+			if (!checkFn(result[0], result[1])) {
+				errors.push(label + ' (key=' + key + ', state=' + state + ')');
+			}
+		}
+
+		// Help keys.
+		testKey('?', 'CONFIG', function(s) { return s.showHelp === true; }, 'help-?');
+		testKey('f1', 'CONFIG', function(s) { return s.showHelp === true; }, 'help-f1');
+
+		// Cancel.
+		testKey('ctrl+c', 'CONFIG', function(s) { return s.showConfirmCancel === true; }, 'cancel');
+
+		// Navigation.
+		testKey('j', 'PLAN_REVIEW', function(s) { return s.selectedSplitIdx === 2; }, 'nav-j');
+		testKey('down', 'PLAN_REVIEW', function(s) { return s.selectedSplitIdx === 2; }, 'nav-down');
+		testKey('k', 'PLAN_REVIEW', function(s) { return s.selectedSplitIdx === 0; }, 'nav-k');
+		testKey('up', 'PLAN_REVIEW', function(s) { return s.selectedSplitIdx === 0; }, 'nav-up');
+		testKey('tab', 'PLAN_REVIEW', function(s) { return s.selectedSplitIdx === 2; }, 'nav-tab');
+		testKey('shift+tab', 'PLAN_REVIEW', function(s) { return s.selectedSplitIdx === 0; }, 'nav-shift+tab');
+
+		// Plan editor shortcut.
+		testKey('e', 'PLAN_REVIEW', function(s) { return s.wizardState === 'PLAN_EDITOR'; }, 'editor-e');
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join(', ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("all-key-bindings test: %v", raw)
+	}
+}
+
+// TestChunk13_WizardUpdate_MouseWheelScroll verifies mouse wheel events
+// work through the update function.
+func TestChunk13_WizardUpdate_MouseWheelScroll(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = globalThis.prSplit._wizardInit();
+		s.needsInitClear = false;
+		s.wizard.transition('CONFIG');
+		s.wizardState = 'CONFIG';
+
+		// Mouse wheel down should not crash (viewport exists on state).
+		var result = globalThis.prSplit._wizardUpdate(
+			{type: 'Mouse', action: 'wheelDown', x: 10, y: 10}, s);
+		if (!result || !result[0]) return 'FAIL: wheelDown returned invalid result';
+
+		result = globalThis.prSplit._wizardUpdate(
+			{type: 'Mouse', action: 'wheelUp', x: 10, y: 10}, result[0]);
+		if (!result || !result[0]) return 'FAIL: wheelUp returned invalid result';
+
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("mouse-wheel test: %v", raw)
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  T005: State → Screen mapping via _wizardView
+//
+//  Verify that _wizardView renders the correct screen content for each
+//  wizard state. This proves the view dispatching logic in viewForState
+//  connects every state to its renderer.
+// ---------------------------------------------------------------------------
+
+// TestChunk13_WizardView_StateScreenMapping verifies each wizard state
+// produces screen-specific content markers in the raw screen output.
+// Uses _viewForState (unclipped) to avoid viewport cropping at small heights.
+func TestChunk13_WizardView_StateScreenMapping(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	// Helper: initialise state, transition wizard, render via _viewForState (no viewport).
+	setupJS := `
+	function renderForState(targetState, extras) {
+		var s = globalThis.prSplit._wizardInit();
+		s.needsInitClear = false;
+		s.width = 80;
+		s.height = 24;
+		s.showHelp = false;
+		s.showConfirmCancel = false;
+		s.isProcessing = false;
+		s.selectedSplitIdx = 0;
+		s.analysisSteps = [];
+		s.analysisProgress = 0;
+		s.executionResults = [];
+		s.executingIdx = 0;
+		s.errorDetails = '';
+		s.equivalenceResult = null;
+
+		// Transition wizard through valid paths.
+		s.wizard.reset();
+		switch (targetState) {
+			case 'CONFIG':
+				s.wizard.transition('CONFIG');
+				break;
+			case 'PLAN_GENERATION':
+				s.wizard.transition('CONFIG');
+				s.wizard.transition('PLAN_GENERATION');
+				break;
+			case 'PLAN_REVIEW':
+				s.wizard.transition('CONFIG');
+				s.wizard.transition('PLAN_GENERATION');
+				s.wizard.transition('PLAN_REVIEW');
+				break;
+			case 'PLAN_EDITOR':
+				s.wizard.transition('CONFIG');
+				s.wizard.transition('PLAN_GENERATION');
+				s.wizard.transition('PLAN_REVIEW');
+				s.wizard.transition('PLAN_EDITOR');
+				break;
+			case 'BRANCH_BUILDING':
+				s.wizard.transition('CONFIG');
+				s.wizard.transition('PLAN_GENERATION');
+				s.wizard.transition('PLAN_REVIEW');
+				s.wizard.transition('BRANCH_BUILDING');
+				break;
+			case 'EQUIV_CHECK':
+				s.wizard.transition('CONFIG');
+				s.wizard.transition('PLAN_GENERATION');
+				s.wizard.transition('PLAN_REVIEW');
+				s.wizard.transition('BRANCH_BUILDING');
+				s.wizard.transition('EQUIV_CHECK');
+				break;
+			case 'FINALIZATION':
+				s.wizard.transition('CONFIG');
+				s.wizard.transition('PLAN_GENERATION');
+				s.wizard.transition('PLAN_REVIEW');
+				s.wizard.transition('BRANCH_BUILDING');
+				s.wizard.transition('EQUIV_CHECK');
+				s.wizard.transition('FINALIZATION');
+				break;
+			case 'ERROR_RESOLUTION':
+				s.wizard.transition('CONFIG');
+				s.wizard.transition('PLAN_GENERATION');
+				s.wizard.transition('PLAN_REVIEW');
+				s.wizard.transition('BRANCH_BUILDING');
+				s.wizard.transition('ERROR_RESOLUTION');
+				break;
+			case 'CANCELLED':
+				s.wizard.transition('CONFIG');
+				s.wizard.cancel();
+				break;
+			case 'ERROR':
+				s.wizard.transition('CONFIG');
+				s.wizard.transition('PLAN_GENERATION');
+				s.wizard.transition('ERROR');
+				break;
+		}
+		s.wizardState = targetState;
+
+		// Apply any extra state overrides.
+		if (extras) {
+			for (var k in extras) {
+				if (extras.hasOwnProperty(k)) s[k] = extras[k];
+			}
+		}
+
+		return globalThis.prSplit._viewForState(s);
+	}
+	`
+	if _, err := evalJS(setupJS); err != nil {
+		t.Fatalf("setup renderForState: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		state    string
+		extras   string // JS object literal for extra state
+		contains []string
+	}{
+		{
+			name:     "CONFIG",
+			state:    "CONFIG",
+			contains: []string{"Repository", "Source Branch", "Strategy"},
+		},
+		{
+			name:     "PLAN_GENERATION",
+			state:    "PLAN_GENERATION",
+			extras:   `{analysisSteps: [{label:'Analyze',active:true,done:false}], analysisProgress: 0.25}`,
+			contains: []string{"Analyzing"},
+		},
+		{
+			name:     "PLAN_REVIEW",
+			state:    "PLAN_REVIEW",
+			contains: []string{"Plan"},
+		},
+		{
+			name:     "BRANCH_BUILDING",
+			state:    "BRANCH_BUILDING",
+			extras:   `{executionResults: [{name:'split-1',status:'pending'}]}`,
+			contains: []string{"Execut"},
+		},
+		{
+			name:     "EQUIV_CHECK",
+			state:    "EQUIV_CHECK",
+			contains: []string{"Verif"},
+		},
+		{
+			name:     "FINALIZATION",
+			state:    "FINALIZATION",
+			extras:   `{executionResults: [{name:'split-1',status:'done'}]}`,
+			contains: []string{"Complete", "Done"},
+		},
+		{
+			name:     "ERROR_RESOLUTION",
+			state:    "ERROR_RESOLUTION",
+			extras:   `{errorDetails: 'cherry-pick conflict'}`,
+			contains: []string{"Error Resolution"},
+		},
+		{
+			name:     "CANCELLED",
+			state:    "CANCELLED",
+			contains: []string{"Cancelled"},
+		},
+		{
+			name:     "ERROR",
+			state:    "ERROR",
+			extras:   `{errorDetails: 'unexpected failure'}`,
+			contains: []string{"Error"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			extrasArg := "null"
+			if tt.extras != "" {
+				extrasArg = tt.extras
+			}
+			raw, err := evalJS(`renderForState('` + tt.state + `', ` + extrasArg + `)`)
+			if err != nil {
+				t.Fatalf("renderForState(%s): %v", tt.state, err)
+			}
+			s, ok := raw.(string)
+			if !ok {
+				t.Fatalf("renderForState(%s) returned non-string: %T", tt.state, raw)
+			}
+			if s == "" {
+				t.Errorf("renderForState(%s) returned empty string", tt.state)
+			}
+			for _, want := range tt.contains {
+				if !strings.Contains(s, want) {
+					t.Errorf("renderForState(%s) should contain %q, got:\n%s", tt.state, want, s)
+				}
+			}
+		})
+	}
+}
+
+// TestChunk13_WizardView_HelpOverlayInView verifies that when showHelp=true,
+// the view output contains help overlay content.
+func TestChunk13_WizardView_HelpOverlayInView(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = globalThis.prSplit._wizardInit();
+		s.needsInitClear = false;
+		s.wizard.reset();
+		s.wizard.transition('CONFIG');
+		s.wizardState = 'CONFIG';
+		s.width = 80;
+		s.height = 24;
+		s.showHelp = true;
+		return globalThis.prSplit._wizardView(s);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := raw.(string)
+	// Help overlay should contain keyboard shortcuts.
+	for _, kw := range []string{"Tab", "Esc", "Enter"} {
+		if !strings.Contains(s, kw) {
+			t.Errorf("help overlay view should contain %q when showHelp=true", kw)
+		}
+	}
+}
+
+// TestChunk13_WizardView_ConfirmCancelOverlayInView verifies that when
+// showConfirmCancel=true, the view output contains the cancel prompt.
+func TestChunk13_WizardView_ConfirmCancelOverlayInView(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = globalThis.prSplit._wizardInit();
+		s.needsInitClear = false;
+		s.wizard.reset();
+		s.wizard.transition('CONFIG');
+		s.wizardState = 'CONFIG';
+		s.width = 80;
+		s.height = 24;
+		s.showConfirmCancel = true;
+		return globalThis.prSplit._wizardView(s);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := raw.(string)
+	if !strings.Contains(s, "cancel") && !strings.Contains(s, "Cancel") {
+		t.Errorf("confirm cancel overlay should contain 'cancel' text, got:\n%s", s)
+	}
+}
+
+// TestChunk13_WizardView_ContainsChromeElements verifies that a full view
+// includes title bar, navigation bar, and status bar.
+func TestChunk13_WizardView_ContainsChromeElements(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = globalThis.prSplit._wizardInit();
+		s.needsInitClear = false;
+		s.wizard.reset();
+		s.wizard.transition('CONFIG');
+		s.wizardState = 'CONFIG';
+		s.width = 80;
+		s.height = 24;
+		return globalThis.prSplit._wizardView(s);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := raw.(string)
+	// Title bar should contain wizard name.
+	if !strings.Contains(s, "PR Split") {
+		t.Errorf("view should contain 'PR Split' in title bar")
+	}
+	// Status bar should mention Help or shortcuts.
+	if !strings.Contains(s, "Help") {
+		t.Errorf("view should contain 'Help' in status bar")
 	}
 }

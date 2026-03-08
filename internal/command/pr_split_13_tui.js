@@ -1987,18 +1987,30 @@
     //  Design spec: docs/pr-split-tui-design.md §2
     // -----------------------------------------------------------------------
 
+    // Adaptive color palette: auto-detects light/dark terminal background.
+    // Uses {light, dark} objects resolved by lipgloss.AdaptiveColor.
+    // Palette: high-contrast, distinct hues, WCAG AA compliant.
     var COLORS = {
-        primary:   '#7C3AED',
-        secondary: '#6366F1',
-        success:   '#10B981',
-        warning:   '#F59E0B',
-        error:     '#EF4444',
-        muted:     '#6B7280',
-        surface:   '#1F2937',
-        border:    '#374151',
-        text:      '#F9FAFB',
-        textDim:   '#9CA3AF'
+        primary:   {light: '#6D28D9', dark: '#A78BFA'},  // Purple accent
+        secondary: {light: '#4338CA', dark: '#818CF8'},  // Indigo
+        success:   {light: '#15803D', dark: '#4ADE80'},  // Green
+        warning:   {light: '#A16207', dark: '#FACC15'},  // Amber
+        error:     {light: '#DC2626', dark: '#F87171'},  // Red
+        muted:     {light: '#6B7280', dark: '#9CA3AF'},  // Gray
+        surface:   {light: '#F3F4F6', dark: '#1F2937'},  // Card bg
+        border:    {light: '#D1D5DB', dark: '#4B5563'},  // Borders
+        text:      {light: '#111827', dark: '#F9FAFB'},  // Primary text
+        textDim:   {light: '#6B7280', dark: '#9CA3AF'}   // Secondary text
     };
+
+    // Resolve adaptive color to a plain string (for APIs that don't support objects).
+    function resolveColor(c) {
+        if (typeof c === 'string') return c;
+        if (c && typeof c === 'object' && c.light && c.dark) {
+            return lipgloss.hasDarkBackground() ? c.dark : c.light;
+        }
+        return '';
+    }
 
     var styles = {
         titleBar: function() {
@@ -2194,17 +2206,20 @@
     function renderNavBar(s) {
         var stepIdx = STATE_TO_STEP[s.wizardState] || 0;
         var w = s.width || 80;
+        var narrow = w < 50;
 
         // Back button (not on first screen).
         var backBtn = '';
         if (stepIdx > 0 && !s.isProcessing) {
+            var backLabel = narrow ? '\u2190' : '\u2190 Back';
             backBtn = zone.mark('nav-back',
-                styles.secondaryButton().render('\u2190 Back'));
+                styles.secondaryButton().render(backLabel));
         }
 
         // Cancel button.
+        var cancelLabel = narrow ? '\u00d7' : 'Cancel';
         var cancelBtn = zone.mark('nav-cancel',
-            styles.secondaryButton().render('Cancel'));
+            styles.secondaryButton().render(cancelLabel));
 
         // Dots.
         var dots = renderStepDots(s);
@@ -2212,31 +2227,40 @@
         // Next/action button.
         var nextBtn = '';
         if (s.isProcessing) {
-            nextBtn = styles.disabledButton().render('Processing...');
+            nextBtn = styles.disabledButton().render(narrow ? '...' : 'Processing...');
         } else {
             var nextLabel = getNextButtonLabel(s);
             if (nextLabel) {
+                if (narrow && nextLabel.length > 8) {
+                    nextLabel = nextLabel.split(' ')[0];
+                }
                 nextBtn = zone.mark('nav-next',
                     styles.primaryButton().render(nextLabel + ' \u2192'));
             }
         }
 
-        // Layout: | back | cancel  dots  next |
-        var leftPart = backBtn ? backBtn + '  ' : '';
-        var centerPart = cancelBtn + '  ' + dots;
-        var rightPart = nextBtn ? '  ' + nextBtn : '';
+        // Build left section (back + cancel).
+        var leftParts = [];
+        if (backBtn) leftParts.push(backBtn);
+        leftParts.push(cancelBtn);
+        var leftSection = leftParts.length > 1
+            ? lipgloss.joinHorizontal(lipgloss.Center, leftParts[0], '  ', leftParts[1])
+            : leftParts[0];
 
-        var contentW = lipgloss.width(leftPart) + lipgloss.width(centerPart) + lipgloss.width(rightPart);
-        var navGap = Math.max(1, w - contentW);
-        var leftGap = Math.floor(navGap / 2);
-        var rightGap = navGap - leftGap;
+        // Build right section (dots + next).
+        var rightParts = [dots];
+        if (nextBtn) rightParts.push(nextBtn);
+        var rightSection = rightParts.length > 1
+            ? lipgloss.joinHorizontal(lipgloss.Center, rightParts[0], '  ', rightParts[1])
+            : rightParts[0];
 
-        var gapL = '';
-        for (var gl = 0; gl < leftGap; gl++) gapL += ' ';
-        var gapR = '';
-        for (var gr = 0; gr < rightGap; gr++) gapR += ' ';
+        // Compose full nav bar: left ... right, spread across width.
+        var leftW = lipgloss.width(leftSection);
+        var rightW = lipgloss.width(rightSection);
+        var gap = Math.max(2, w - leftW - rightW);
+        var spacer = lipgloss.newStyle().width(gap).render('');
 
-        return leftPart + gapL + centerPart + gapR + rightPart;
+        return lipgloss.joinHorizontal(lipgloss.Center, leftSection, spacer, rightSection);
     }
 
     function getNextButtonLabel(s) {
@@ -2258,33 +2282,49 @@
 
     function renderStatusBar(s) {
         var w = s.width || 80;
+        var narrow = w < 60;
+        var veryNarrow = w < 40;
 
         // Left: termmux toggle hint.
-        var left = styles.dim().render('Ctrl+] Claude');
+        var left = styles.dim().render(veryNarrow ? 'C-]' : 'Ctrl+] Claude');
 
         // Center: help.
-        var center = styles.dim().render('? Help');
+        var center = veryNarrow ? '' : styles.dim().render('? Help');
 
         // Right: Claude process status.
         var claudeStatus = getClaudeStatusText(s);
-        var right = zone.mark('claude-status', claudeStatus);
+        var right = narrow ? '' : zone.mark('claude-status', claudeStatus);
 
-        var leftW = lipgloss.width(left);
-        var centerW = lipgloss.width(center);
-        var rightW = lipgloss.width(right);
-        var totalW = leftW + centerW + rightW;
-        var remaining = Math.max(0, w - totalW);
-        var g1 = Math.floor(remaining / 2);
-        var g2 = remaining - g1;
+        // Build status line with guaranteed minimum spacing.
+        var items = [left];
+        if (center) items.push(center);
+        if (right) items.push(right);
 
-        var gap1 = '';
-        for (var i = 0; i < g1; i++) gap1 += ' ';
-        var gap2 = '';
-        for (var j = 0; j < g2; j++) gap2 += ' ';
+        var totalItemW = 0;
+        for (var ii = 0; ii < items.length; ii++) {
+            totalItemW += lipgloss.width(items[ii]);
+        }
+
+        var statusLine;
+        if (items.length === 1) {
+            statusLine = items[0];
+        } else {
+            // Distribute remaining space evenly between items.
+            var gapCount = items.length - 1;
+            var remaining = Math.max(gapCount * 2, w - totalItemW);
+            var perGap = Math.floor(remaining / gapCount);
+            var parts = items[0];
+            for (var ix = 1; ix < items.length; ix++) {
+                var g = '';
+                for (var gi = 0; gi < perGap; gi++) g += ' ';
+                parts += g + items[ix];
+            }
+            statusLine = parts;
+        }
 
         return styles.dim().render(
-            styles.divider().render('\u2500'.repeat(w))
-        ) + '\n' + left + gap1 + center + gap2 + right;
+            styles.divider().render(repeatStr('\u2500', w))
+        ) + '\n' + statusLine;
     }
 
     function getClaudeStatusText(s) {
@@ -2315,8 +2355,8 @@
         var barW = Math.max(10, (width || 40) - 10);
         var filled = Math.round(barW * Math.min(1, Math.max(0, percent)));
         var empty = barW - filled;
-        var bar = styles.progressFull().render('\u2588'.repeat(filled)) +
-                  styles.progressEmpty().render('\u2591'.repeat(empty));
+        var bar = styles.progressFull().render(repeatStr('\u2588', filled)) +
+                  styles.progressEmpty().render(repeatStr('\u2591', empty));
         var pctStr = Math.round(percent * 100) + '%';
         return bar + '  ' + pctStr;
     }
@@ -2873,6 +2913,7 @@
     prSplit._viewErrorResolutionScreen = viewErrorResolutionScreen;
     prSplit._viewHelpOverlay = viewHelpOverlay;
     prSplit._viewConfirmCancelOverlay = viewConfirmCancelOverlay;
+    prSplit._viewForState = viewForState;
 
     // -----------------------------------------------------------------------
     //  BubbleTea Model — init / update / view (T020-T025)
@@ -2891,240 +2932,253 @@
         vp.setMouseWheelEnabled(true);
         var sb = scrollbarLib.new();
 
-        var model = tea.newModel({
-            init: function() {
-                return {
-                    // Wizard state.
-                    wizard: wizard,
-                    wizardState: 'IDLE',
+        // Named lifecycle functions — exported for unit testing.
+        var _initFn = function() {
+            return {
+                // Wizard state.
+                wizard: wizard,
+                wizardState: 'IDLE',
 
-                    // Dimensions.
-                    width: 80,
-                    height: 24,
+                // Dimensions.
+                width: 80,
+                height: 24,
 
-                    // Viewport.
-                    vp: vp,
-                    scrollbar: sb,
+                // Viewport.
+                vp: vp,
+                scrollbar: sb,
 
-                    // Time.
-                    startTime: Date.now(),
+                // Time.
+                startTime: Date.now(),
 
-                    // UI state.
-                    showHelp: false,
-                    showConfirmCancel: false,
-                    showAdvanced: false,
-                    selectedSplitIdx: 0,
-                    isProcessing: false,
+                // UI state.
+                showHelp: false,
+                showConfirmCancel: false,
+                showAdvanced: false,
+                selectedSplitIdx: 0,
+                isProcessing: false,
 
-                    // Analysis progress.
-                    analysisSteps: [],
-                    analysisProgress: -1,
+                // Analysis progress.
+                analysisSteps: [],
+                analysisProgress: -1,
 
-                    // Execution state.
-                    executionResults: [],
-                    executingIdx: 0,
+                // Execution state.
+                executionResults: [],
+                executingIdx: 0,
 
-                    // Results.
-                    equivalenceResult: null,
-                    errorDetails: null,
+                // Results.
+                equivalenceResult: null,
+                errorDetails: null,
 
-                    // First render flag.
-                    needsInitClear: true
-                };
-            },
+                // First render flag.
+                needsInitClear: true
+            };
+        };
 
-            update: function(msg, s) {
-                // WindowSize — always handle.
-                if (msg.type === 'WindowSize') {
-                    s.width = msg.width;
-                    s.height = msg.height;
+        var _updateFn = function(msg, s) {
+            // WindowSize — always handle.
+            if (msg.type === 'WindowSize') {
+                s.width = msg.width;
+                s.height = msg.height;
 
-                    if (s.needsInitClear) {
-                        s.needsInitClear = false;
-                        // Start the wizard on first render.
-                        s.wizardState = 'CONFIG';
-                        wizard.transition('CONFIG');
-                        return [s, tea.clearScreen()];
-                    }
-                    return [s, null];
+                if (s.needsInitClear) {
+                    s.needsInitClear = false;
+                    // Start the wizard on first render.
+                    s.wizardState = 'CONFIG';
+                    wizard.transition('CONFIG');
+                    return [s, tea.clearScreen()];
                 }
-
-                // Overlays intercept all input when active.
-                if (s.showHelp) {
-                    if (msg.type === 'Key') {
-                        // Any key closes help.
-                        s.showHelp = false;
-                        return [s, null];
-                    }
-                    return [s, null];
-                }
-
-                if (s.showConfirmCancel) {
-                    return updateConfirmCancel(msg, s);
-                }
-
-                // Global key bindings.
-                if (msg.type === 'Key') {
-                    // Help toggle.
-                    if (msg.string === '?' || msg.string === 'f1') {
-                        s.showHelp = true;
-                        return [s, null];
-                    }
-                    // Cancel.
-                    if (msg.string === 'ctrl+c') {
-                        s.showConfirmCancel = true;
-                        return [s, null];
-                    }
-                    // Escape — back or close.
-                    if (msg.string === 'esc') {
-                        return handleBack(s);
-                    }
-                    // Enter — forward action.
-                    if (msg.string === 'enter') {
-                        return handleNext(s);
-                    }
-                    // Navigation: j/k, up/down, tab/shift+tab.
-                    if (msg.string === 'j' || msg.string === 'down') {
-                        return handleNavDown(s);
-                    }
-                    if (msg.string === 'k' || msg.string === 'up') {
-                        return handleNavUp(s);
-                    }
-                    if (msg.string === 'tab') {
-                        return handleNavDown(s);
-                    }
-                    if (msg.string === 'shift+tab') {
-                        return handleNavUp(s);
-                    }
-                    // Viewport scroll.
-                    if (msg.string === 'pgdown') {
-                        if (s.vp) s.vp.halfViewDown();
-                        return [s, null];
-                    }
-                    if (msg.string === 'pgup') {
-                        if (s.vp) s.vp.halfViewUp();
-                        return [s, null];
-                    }
-                    if (msg.string === 'home') {
-                        if (s.vp) s.vp.gotoTop();
-                        return [s, null];
-                    }
-                    if (msg.string === 'end') {
-                        if (s.vp) s.vp.gotoBottom();
-                        return [s, null];
-                    }
-                    // Screen-specific key shortcuts.
-                    if (msg.string === 'e' && s.wizardState === 'PLAN_REVIEW' && !s.isProcessing) {
-                        // Enter plan editor.
-                        s.wizard.transition('PLAN_EDITOR');
-                        s.wizardState = 'PLAN_EDITOR';
-                        return [s, null];
-                    }
-                    // termmux toggle.
-                    if (msg.string === 'ctrl+]') {
-                        if (typeof tuiMux !== 'undefined' && tuiMux &&
-                            typeof tuiMux.switchTo === 'function') {
-                            tuiMux.switchTo('claude');
-                        }
-                        return [s, null];
-                    }
-                }
-
-                // Mouse handling.
-                if (msg.type === 'Mouse' && msg.action === 'press') {
-                    return handleMouseClick(msg, s);
-                }
-
-                // Mouse wheel for viewport.
-                if (msg.type === 'Mouse') {
-                    if (msg.action === 'wheelUp' && s.vp) {
-                        s.vp.lineUp(3);
-                        return [s, null];
-                    }
-                    if (msg.action === 'wheelDown' && s.vp) {
-                        s.vp.lineDown(3);
-                        return [s, null];
-                    }
-                }
-
                 return [s, null];
-            },
-
-            view: function(s) {
-                var w = s.width || 80;
-                var h = s.height || 24;
-
-                // Title bar.
-                var titleBar = renderTitleBar(s);
-
-                // Divider.
-                var divider = styles.divider().render(repeatStr('\u2500', w));
-
-                // Screen content.
-                var screenContent = viewForState(s);
-
-                // Wrap in viewport.
-                if (s.vp) {
-                    s.vp.setWidth(w);
-                    // Reserve: title(1) + divider(1) + navDivider(1) + nav(1) + status(2) = 6 lines
-                    var vpHeight = Math.max(3, h - 6);
-                    s.vp.setHeight(vpHeight);
-                    s.vp.setContent(screenContent);
-
-                    // Scrollbar.
-                    if (s.scrollbar) {
-                        s.scrollbar.setViewportHeight(vpHeight);
-                        s.scrollbar.setContentHeight(s.vp.totalLineCount());
-                        s.scrollbar.setYOffset(s.vp.yOffset());
-                        s.scrollbar.setChars('\u2588', '\u2591');
-                        s.scrollbar.setThumbForeground(COLORS.primary);
-                        s.scrollbar.setTrackForeground(COLORS.border);
-                    }
-
-                    var vpView = s.vp.view();
-                    var sbView = s.scrollbar ? s.scrollbar.view() : '';
-                    screenContent = lipgloss.joinHorizontal(lipgloss.Top, vpView, sbView);
-                }
-
-                // Navigation bar.
-                var navBar = renderNavBar(s);
-
-                // Status bar.
-                var statusBar = renderStatusBar(s);
-
-                // Compose.
-                var fullView = lipgloss.joinVertical(lipgloss.Left,
-                    titleBar,
-                    divider,
-                    screenContent,
-                    divider,
-                    navBar,
-                    statusBar
-                );
-
-                // Overlay: Help.
-                if (s.showHelp) {
-                    var helpPanel = viewHelpOverlay(s);
-                    fullView = lipgloss.place(w, h,
-                        lipgloss.Center, lipgloss.Center,
-                        helpPanel,
-                        lipgloss.withWhitespaceChars('\u2591'),
-                        lipgloss.withWhitespaceForeground(COLORS.border));
-                }
-
-                // Overlay: Confirm Cancel.
-                if (s.showConfirmCancel) {
-                    var confirmPanel = viewConfirmCancelOverlay(s);
-                    fullView = lipgloss.place(w, h,
-                        lipgloss.Center, lipgloss.Center,
-                        confirmPanel,
-                        lipgloss.withWhitespaceChars('\u2591'),
-                        lipgloss.withWhitespaceForeground(COLORS.border));
-                }
-
-                return zone.scan(fullView);
             }
+
+            // Overlays intercept all input when active.
+            if (s.showHelp) {
+                if (msg.type === 'Key') {
+                    // Any key closes help.
+                    s.showHelp = false;
+                    return [s, null];
+                }
+                return [s, null];
+            }
+
+            if (s.showConfirmCancel) {
+                return updateConfirmCancel(msg, s);
+            }
+
+            // Global key bindings.
+            if (msg.type === 'Key') {
+                var k = msg.key;
+                // Help toggle.
+                if (k === '?' || k === 'f1') {
+                    s.showHelp = true;
+                    return [s, null];
+                }
+                // Cancel.
+                if (k === 'ctrl+c') {
+                    s.showConfirmCancel = true;
+                    return [s, null];
+                }
+                // Escape — back or close.
+                if (k === 'esc') {
+                    return handleBack(s);
+                }
+                // Enter — forward action.
+                if (k === 'enter') {
+                    return handleNext(s);
+                }
+                // Navigation: j/k, up/down, tab/shift+tab.
+                if (k === 'j' || k === 'down') {
+                    return handleNavDown(s);
+                }
+                if (k === 'k' || k === 'up') {
+                    return handleNavUp(s);
+                }
+                if (k === 'tab') {
+                    return handleNavDown(s);
+                }
+                if (k === 'shift+tab') {
+                    return handleNavUp(s);
+                }
+                // Viewport scroll.
+                if (k === 'pgdown') {
+                    if (s.vp) s.vp.halfPageDown();
+                    return [s, null];
+                }
+                if (k === 'pgup') {
+                    if (s.vp) s.vp.halfPageUp();
+                    return [s, null];
+                }
+                if (k === 'home') {
+                    if (s.vp) s.vp.gotoTop();
+                    return [s, null];
+                }
+                if (k === 'end') {
+                    if (s.vp) s.vp.gotoBottom();
+                    return [s, null];
+                }
+                // Screen-specific key shortcuts.
+                if (k === 'e' && s.wizardState === 'PLAN_REVIEW' && !s.isProcessing) {
+                    // Enter plan editor.
+                    s.wizard.transition('PLAN_EDITOR');
+                    s.wizardState = 'PLAN_EDITOR';
+                    return [s, null];
+                }
+                // termmux toggle.
+                if (k === 'ctrl+]') {
+                    if (typeof tuiMux !== 'undefined' && tuiMux &&
+                        typeof tuiMux.switchTo === 'function') {
+                        tuiMux.switchTo('claude');
+                    }
+                    return [s, null];
+                }
+            }
+
+            // Mouse handling.
+            if (msg.type === 'Mouse' && msg.action === 'press') {
+                return handleMouseClick(msg, s);
+            }
+
+            // Mouse wheel for viewport.
+            if (msg.type === 'Mouse') {
+                if (msg.action === 'wheelUp' && s.vp) {
+                    s.vp.scrollUp(3);
+                    return [s, null];
+                }
+                if (msg.action === 'wheelDown' && s.vp) {
+                    s.vp.scrollDown(3);
+                    return [s, null];
+                }
+            }
+
+            return [s, null];
+        };
+
+        var _viewFn = function(s) {
+            var w = s.width || 80;
+            var h = s.height || 24;
+
+            // Title bar.
+            var titleBar = renderTitleBar(s);
+
+            // Divider.
+            var divider = styles.divider().render(repeatStr('\u2500', w));
+
+            // Navigation bar.
+            var navBar = renderNavBar(s);
+
+            // Status bar.
+            var statusBar = renderStatusBar(s);
+
+            // Screen content.
+            var screenContent = viewForState(s);
+
+            // Wrap in viewport.
+            if (s.vp) {
+                s.vp.setWidth(w);
+                // Reserve chrome lines dynamically from actual rendered heights.
+                // +2 for the two dividers (each 1 line).
+                var chromeH = lipgloss.height(titleBar) + 2 + lipgloss.height(navBar) + lipgloss.height(statusBar);
+                var vpHeight = Math.max(3, h - chromeH);
+                s.vp.setHeight(vpHeight);
+                s.vp.setContent(screenContent);
+
+                // Scrollbar.
+                if (s.scrollbar) {
+                    s.scrollbar.setViewportHeight(vpHeight);
+                    s.scrollbar.setContentHeight(s.vp.totalLineCount());
+                    s.scrollbar.setYOffset(s.vp.yOffset());
+                    s.scrollbar.setChars('\u2588', '\u2591');
+                    s.scrollbar.setThumbForeground(resolveColor(COLORS.primary));
+                    s.scrollbar.setTrackForeground(resolveColor(COLORS.border));
+                }
+
+                var vpView = s.vp.view();
+                var sbView = s.scrollbar ? s.scrollbar.view() : '';
+                screenContent = lipgloss.joinHorizontal(lipgloss.Top, vpView, sbView);
+            }
+
+            // Compose.
+            var fullView = lipgloss.joinVertical(lipgloss.Left,
+                titleBar,
+                divider,
+                screenContent,
+                divider,
+                navBar,
+                statusBar
+            );
+
+            // Overlay: Help.
+            if (s.showHelp) {
+                var helpPanel = viewHelpOverlay(s);
+                fullView = lipgloss.place(w, h,
+                    lipgloss.Center, lipgloss.Center,
+                    helpPanel,
+                    {whitespaceChars: '\u2591', whitespaceForeground: COLORS.border});
+            }
+
+            // Overlay: Confirm Cancel.
+            if (s.showConfirmCancel) {
+                var confirmPanel = viewConfirmCancelOverlay(s);
+                fullView = lipgloss.place(w, h,
+                    lipgloss.Center, lipgloss.Center,
+                    confirmPanel,
+                    {whitespaceChars: '\u2591', whitespaceForeground: COLORS.border});
+            }
+
+            return zone.scan(fullView);
+        };
+
+        var model = tea.newModel({
+            init: _initFn,
+
+            update: _updateFn,
+
+            view: _viewFn
         });
+
+        // Export lifecycle functions for unit testing.
+        prSplit._wizardInit = _initFn;
+        prSplit._wizardUpdate = _updateFn;
+        prSplit._wizardView = _viewFn;
 
         return model;
     }
@@ -3135,14 +3189,14 @@
 
     function updateConfirmCancel(msg, s) {
         if (msg.type === 'Key') {
-            if (msg.string === 'y' || msg.string === 'enter') {
-                // Check for zone click on confirm-yes.
+            var k = msg.key;
+            if (k === 'y' || k === 'enter') {
                 s.showConfirmCancel = false;
                 s.wizard.cancel();
                 s.wizardState = 'CANCELLED';
                 return [s, tea.quit()];
             }
-            if (msg.string === 'n' || msg.string === 'esc') {
+            if (k === 'n' || k === 'esc') {
                 s.showConfirmCancel = false;
                 return [s, null];
             }

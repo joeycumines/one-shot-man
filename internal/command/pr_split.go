@@ -324,22 +324,16 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		return err
 	}
 
-	// Only run interactive mode if requested and not in test mode
+	// Only run interactive mode if requested and not in test mode.
+	// Launches the BubbleTea wizard (full-screen TUI) instead of go-prompt.
+	// tea.run() blocks until the user exits the wizard.
 	if c.interactive && !c.testMode {
-		// Apply prompt color overrides from config if present
-		if c.config != nil {
-			colorMap := make(map[string]string)
-			for k, v := range c.config.Global {
-				if key, ok := strings.CutPrefix(k, "prompt.color."); ok && key != "" {
-					colorMap[key] = v
-				}
-			}
-			if len(colorMap) > 0 {
-				engine.GetTUIManager().SetDefaultColorsFromStrings(colorMap)
-			}
+		wizardScript := engine.LoadScriptFromString(
+			"pr-split/wizard-launch",
+			`globalThis.prSplit.startWizard();`)
+		if err := engine.ExecuteScript(wizardScript); err != nil {
+			return fmt.Errorf("pr-split wizard: %w", err)
 		}
-		terminal := scripting.NewTerminal(ctx, engine)
-		terminal.Run()
 	}
 
 	return nil

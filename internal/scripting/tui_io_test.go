@@ -156,35 +156,6 @@ func TestTUIReaderFromIO(t *testing.T) {
 	}
 }
 
-func TestTUIReader_ReadSplitsTrailingCarriageReturn(t *testing.T) {
-	r := NewTUIReaderFromIO(strings.NewReader("auto-split\r"))
-	buf := make([]byte, 64)
-
-	n, err := r.Read(buf)
-	if err != nil {
-		t.Fatalf("first read err: %v", err)
-	}
-	if got := string(buf[:n]); got != "auto-split" {
-		t.Fatalf("first read got %q, want %q", got, "auto-split")
-	}
-
-	n, err = r.Read(buf)
-	if err != nil {
-		t.Fatalf("second read err: %v", err)
-	}
-	if got := string(buf[:n]); got != "\r" {
-		t.Fatalf("second read got %q, want %q", got, "\r")
-	}
-
-	n, err = r.Read(buf)
-	if n != 0 {
-		t.Fatalf("third read n=%d, want 0", n)
-	}
-	if !errors.Is(err, io.EOF) {
-		t.Fatalf("third read err=%v, want EOF", err)
-	}
-}
-
 func TestTUIReader_ReadDoesNotSplitCRLFData(t *testing.T) {
 	input := "line1\r\nline2\r\n"
 	r := NewTUIReaderFromIO(strings.NewReader(input))

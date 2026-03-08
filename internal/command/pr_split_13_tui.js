@@ -702,10 +702,7 @@
 
     prSplit._handleFinalizationState = handleFinalizationState;
 
-    // -----------------------------------------------------------------------
-    //  buildCommands — all TUI REPL commands
-    // -----------------------------------------------------------------------
-
+    // ═══════════════════════════════════════════════════════════════════════
     function buildCommands(tuiStateArg) {
         var style = prSplit._style;
         var padIndex = prSplit._padIndex;
@@ -1859,16 +1856,23 @@
     // _renderHudPanel builds the full HUD panel using lipgloss.
     function _renderHudPanel() {
         var style = prSplit._style;
+        if (!style || typeof style.header !== 'function') {
+            return '(HUD unavailable — styles not loaded)';
+        }
         var activity = _getActivityInfo();
-        var wizState = (typeof prSplit._wizardState !== 'undefined' && prSplit._wizardState)
-            ? prSplit._wizardState.current()
-            : 'N/A';
+        var _ws = prSplit._wizardState;
+        var wizState;
+        if (typeof _ws !== 'undefined' && _ws && typeof _ws.current === 'function') {
+            wizState = _ws.current();
+        } else {
+            wizState = 'N/A';
+        }
         var lastLines = _getLastOutputLines(_hudMaxLines);
 
         var lines = [];
         lines.push(style.header('\u250c\u2500 Claude Process HUD \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500'));
         lines.push('\u2502 Status: ' + activity.icon + ' ' + style.bold(activity.label));
-        lines.push('\u2502 Wizard: ' + style.info(wizState));
+        lines.push('\u2502 Wizard: ' + style.info(String(wizState)));
         lines.push('\u2502');
 
         if (lastLines.length > 0) {
@@ -1892,9 +1896,13 @@
     // _renderHudStatusLine builds a compact one-line status for the status bar.
     function _renderHudStatusLine() {
         var activity = _getActivityInfo();
-        var wizState = (typeof prSplit._wizardState !== 'undefined' && prSplit._wizardState)
-            ? prSplit._wizardState.current()
-            : '?';
+        var _ws = prSplit._wizardState;
+        var wizState;
+        if (typeof _ws !== 'undefined' && _ws && typeof _ws.current === 'function') {
+            wizState = _ws.current();
+        } else {
+            wizState = '?';
+        }
         var lastLines = _getLastOutputLines(1);
         var lastSnippet = '';
         if (lastLines.length > 0) {
@@ -1963,7 +1971,1614 @@
     }
 
     // -----------------------------------------------------------------------
-    //  Mode Registration
+
+    //  BubbleTea Wizard — Full-screen TUI replacing the go-prompt REPL
+    // ═══════════════════════════════════════════════════════════════════════
+
+    var tea = require('osm:bubbletea');
+    var lipgloss = require('osm:lipgloss');
+    var zone = require('osm:bubblezone');
+    var viewportLib = require('osm:bubbles/viewport');
+    var scrollbarLib = require('osm:termui/scrollbar');
+
+    // -----------------------------------------------------------------------
+    //  COLORS & Styles (T006)
+    //
+    //  Design spec: docs/pr-split-tui-design.md §2
+    // -----------------------------------------------------------------------
+
+    var COLORS = {
+        primary:   '#7C3AED',
+        secondary: '#6366F1',
+        success:   '#10B981',
+        warning:   '#F59E0B',
+        error:     '#EF4444',
+        muted:     '#6B7280',
+        surface:   '#1F2937',
+        border:    '#374151',
+        text:      '#F9FAFB',
+        textDim:   '#9CA3AF'
+    };
+
+    var styles = {
+        titleBar: function() {
+            return lipgloss.newStyle()
+                .bold(true)
+                .foreground(COLORS.text)
+                .background(COLORS.primary)
+                .padding(0, 1);
+        },
+        stepIndicator: function() {
+            return lipgloss.newStyle()
+                .foreground(COLORS.textDim);
+        },
+        activeCard: function() {
+            return lipgloss.newStyle()
+                .border(lipgloss.roundedBorder())
+                .borderForeground(COLORS.primary)
+                .padding(1, 2);
+        },
+        inactiveCard: function() {
+            return lipgloss.newStyle()
+                .border(lipgloss.roundedBorder())
+                .borderForeground(COLORS.border)
+                .padding(1, 2);
+        },
+        errorCard: function() {
+            return lipgloss.newStyle()
+                .border(lipgloss.normalBorder())
+                .borderForeground(COLORS.error)
+                .padding(1, 2);
+        },
+        successBadge: function() {
+            return lipgloss.newStyle()
+                .bold(true)
+                .foreground('#000000')
+                .background(COLORS.success)
+                .padding(0, 1);
+        },
+        warningBadge: function() {
+            return lipgloss.newStyle()
+                .bold(true)
+                .foreground('#000000')
+                .background(COLORS.warning)
+                .padding(0, 1);
+        },
+        errorBadge: function() {
+            return lipgloss.newStyle()
+                .bold(true)
+                .foreground('#000000')
+                .background(COLORS.error)
+                .padding(0, 1);
+        },
+        primaryButton: function() {
+            return lipgloss.newStyle()
+                .bold(true)
+                .foreground(COLORS.text)
+                .background(COLORS.primary)
+                .padding(0, 2);
+        },
+        secondaryButton: function() {
+            return lipgloss.newStyle()
+                .foreground(COLORS.text)
+                .background(COLORS.surface)
+                .padding(0, 2)
+                .border(lipgloss.roundedBorder())
+                .borderForeground(COLORS.border);
+        },
+        disabledButton: function() {
+            return lipgloss.newStyle()
+                .foreground(COLORS.muted)
+                .background(COLORS.surface)
+                .padding(0, 2);
+        },
+        progressFull: function() {
+            return lipgloss.newStyle()
+                .foreground(COLORS.success);
+        },
+        progressEmpty: function() {
+            return lipgloss.newStyle()
+                .foreground(COLORS.border);
+        },
+        divider: function() {
+            return lipgloss.newStyle()
+                .foreground(COLORS.border);
+        },
+        dim: function() {
+            return lipgloss.newStyle()
+                .foreground(COLORS.textDim);
+        },
+        bold: function() {
+            return lipgloss.newStyle()
+                .bold(true)
+                .foreground(COLORS.text);
+        },
+        label: function() {
+            return lipgloss.newStyle()
+                .foreground(COLORS.text);
+        },
+        fieldValue: function() {
+            return lipgloss.newStyle()
+                .foreground(COLORS.secondary);
+        },
+        statusIdle: function() {
+            return lipgloss.newStyle()
+                .foreground(COLORS.muted);
+        },
+        statusActive: function() {
+            return lipgloss.newStyle()
+                .bold(true)
+                .foreground(COLORS.warning);
+        }
+    };
+
+    // Export styles for test access.
+    prSplit._wizardStyles = styles;
+    prSplit._wizardColors = COLORS;
+
+    // -----------------------------------------------------------------------
+    //  Chrome Renderers (T007)
+    //
+    //  Title bar, navigation bar, status bar, step dots
+    // -----------------------------------------------------------------------
+
+    var STEP_LABELS = [
+        'Configure',
+        'Analysis',
+        'Review Plan',
+        'Edit Plan',
+        'Execution',
+        'Verification',
+        'Finalization'
+    ];
+
+    // Map wizard states to step indices (0-based).
+    var STATE_TO_STEP = {
+        'IDLE':             0,
+        'CONFIG':           0,
+        'BASELINE_FAIL':    0,
+        'PLAN_GENERATION':  1,
+        'PLAN_REVIEW':      2,
+        'PLAN_EDITOR':      3,
+        'BRANCH_BUILDING':  4,
+        'ERROR_RESOLUTION': 4,
+        'EQUIV_CHECK':      5,
+        'FINALIZATION':     6,
+        'DONE':             6,
+        'CANCELLED':        6,
+        'FORCE_CANCEL':     6,
+        'PAUSED':           6,
+        'ERROR':            6
+    };
+
+    function renderTitleBar(s) {
+        var stepIdx = STATE_TO_STEP[s.wizardState] || 0;
+        var stepLabel = STEP_LABELS[stepIdx] || 'Unknown';
+        var stepNum = stepIdx + 1;
+        var totalSteps = 7;
+
+        // Elapsed time.
+        var elapsed = s.startTime ? Math.floor((Date.now() - s.startTime) / 1000) : 0;
+        var mins = Math.floor(elapsed / 60);
+        var secs = elapsed % 60;
+        var timeStr = mins + ':' + (secs < 10 ? '0' : '') + secs;
+
+        var left = styles.titleBar().render('\ud83d\udd00 PR Split Wizard');
+        var right = styles.stepIndicator().render(
+            'Step ' + stepNum + '/' + totalSteps + ': ' + stepLabel + '  \u23f1 ' + timeStr
+        );
+
+        var w = s.width || 80;
+        var leftW = lipgloss.width(left);
+        var rightW = lipgloss.width(right);
+        var gap = Math.max(1, w - leftW - rightW);
+        var gapStr = '';
+        for (var i = 0; i < gap; i++) gapStr += ' ';
+
+        return left + gapStr + right;
+    }
+
+    function renderStepDots(s) {
+        var stepIdx = STATE_TO_STEP[s.wizardState] || 0;
+        var dots = '';
+        for (var i = 0; i < 7; i++) {
+            if (i <= stepIdx) {
+                dots += styles.progressFull().render('\u25cf');
+            } else {
+                dots += styles.progressEmpty().render('\u25cb');
+            }
+        }
+        return dots;
+    }
+
+    function renderNavBar(s) {
+        var stepIdx = STATE_TO_STEP[s.wizardState] || 0;
+        var w = s.width || 80;
+
+        // Back button (not on first screen).
+        var backBtn = '';
+        if (stepIdx > 0 && !s.isProcessing) {
+            backBtn = zone.mark('nav-back',
+                styles.secondaryButton().render('\u2190 Back'));
+        }
+
+        // Cancel button.
+        var cancelBtn = zone.mark('nav-cancel',
+            styles.secondaryButton().render('Cancel'));
+
+        // Dots.
+        var dots = renderStepDots(s);
+
+        // Next/action button.
+        var nextBtn = '';
+        if (s.isProcessing) {
+            nextBtn = styles.disabledButton().render('Processing...');
+        } else {
+            var nextLabel = getNextButtonLabel(s);
+            if (nextLabel) {
+                nextBtn = zone.mark('nav-next',
+                    styles.primaryButton().render(nextLabel + ' \u2192'));
+            }
+        }
+
+        // Layout: | back | cancel  dots  next |
+        var leftPart = backBtn ? backBtn + '  ' : '';
+        var centerPart = cancelBtn + '  ' + dots;
+        var rightPart = nextBtn ? '  ' + nextBtn : '';
+
+        var contentW = lipgloss.width(leftPart) + lipgloss.width(centerPart) + lipgloss.width(rightPart);
+        var navGap = Math.max(1, w - contentW);
+        var leftGap = Math.floor(navGap / 2);
+        var rightGap = navGap - leftGap;
+
+        var gapL = '';
+        for (var gl = 0; gl < leftGap; gl++) gapL += ' ';
+        var gapR = '';
+        for (var gr = 0; gr < rightGap; gr++) gapR += ' ';
+
+        return leftPart + gapL + centerPart + gapR + rightPart;
+    }
+
+    function getNextButtonLabel(s) {
+        switch (s.wizardState) {
+            case 'IDLE': case 'CONFIG':
+                return 'Start Analysis';
+            case 'PLAN_REVIEW':
+                return 'Execute Plan';
+            case 'PLAN_EDITOR':
+                return 'Save & Review';
+            case 'ERROR_RESOLUTION':
+                return 'Retry';
+            case 'FINALIZATION':
+                return 'Finish';
+            default:
+                return '';
+        }
+    }
+
+    function renderStatusBar(s) {
+        var w = s.width || 80;
+
+        // Left: termmux toggle hint.
+        var left = styles.dim().render('Ctrl+] Claude');
+
+        // Center: help.
+        var center = styles.dim().render('? Help');
+
+        // Right: Claude process status.
+        var claudeStatus = getClaudeStatusText(s);
+        var right = zone.mark('claude-status', claudeStatus);
+
+        var leftW = lipgloss.width(left);
+        var centerW = lipgloss.width(center);
+        var rightW = lipgloss.width(right);
+        var totalW = leftW + centerW + rightW;
+        var remaining = Math.max(0, w - totalW);
+        var g1 = Math.floor(remaining / 2);
+        var g2 = remaining - g1;
+
+        var gap1 = '';
+        for (var i = 0; i < g1; i++) gap1 += ' ';
+        var gap2 = '';
+        for (var j = 0; j < g2; j++) gap2 += ' ';
+
+        return styles.dim().render(
+            styles.divider().render('\u2500'.repeat(w))
+        ) + '\n' + left + gap1 + center + gap2 + right;
+    }
+
+    function getClaudeStatusText(s) {
+        if (typeof tuiMux === 'undefined' || !tuiMux ||
+            typeof tuiMux.lastActivityMs !== 'function') {
+            return styles.statusIdle().render('\ud83d\udca4 Claude: N/A');
+        }
+        var ms = tuiMux.lastActivityMs();
+        if (ms < 0) return styles.statusIdle().render('\u23f8\ufe0f Claude: no output');
+        if (ms < 2000) return styles.statusActive().render('\ud83d\udd04 Claude: LIVE');
+        if (ms < 10000) return styles.statusIdle().render('\u23f3 Claude: idle (' + Math.round(ms / 1000) + 's)');
+        return styles.statusIdle().render('\ud83d\udca4 Claude: quiet');
+    }
+
+    // Export chrome for testing.
+    prSplit._renderTitleBar = renderTitleBar;
+    prSplit._renderNavBar = renderNavBar;
+    prSplit._renderStatusBar = renderStatusBar;
+    prSplit._renderStepDots = renderStepDots;
+
+    // -----------------------------------------------------------------------
+    //  Helpers (T008)
+    //
+    //  Progress bar, truncation, padding
+    // -----------------------------------------------------------------------
+
+    function renderProgressBar(percent, width) {
+        var barW = Math.max(10, (width || 40) - 10);
+        var filled = Math.round(barW * Math.min(1, Math.max(0, percent)));
+        var empty = barW - filled;
+        var bar = styles.progressFull().render('\u2588'.repeat(filled)) +
+                  styles.progressEmpty().render('\u2591'.repeat(empty));
+        var pctStr = Math.round(percent * 100) + '%';
+        return bar + '  ' + pctStr;
+    }
+
+    function truncate(str, maxLen) {
+        if (!str) return '';
+        if (str.length <= maxLen) return str;
+        return str.substring(0, maxLen - 3) + '...';
+    }
+
+    function padRight(str, width) {
+        str = str || '';
+        while (str.length < width) str += ' ';
+        return str;
+    }
+
+    function repeatStr(ch, n) {
+        var s = '';
+        for (var i = 0; i < n; i++) s += ch;
+        return s;
+    }
+
+    prSplit._renderProgressBar = renderProgressBar;
+
+    // -----------------------------------------------------------------------
+    //  Screen Renderers (T009-T017)
+    //
+    //  Each screen returns a string for the content area.
+    //  The update function sets model state; view calls the appropriate
+    //  screen renderer based on wizardState.
+    // -----------------------------------------------------------------------
+
+    // ----- Screen 1: Configuration (IDLE / CONFIG) -----
+
+    function viewConfigScreen(s) {
+        var runtime = prSplit.runtime;
+        var lines = [];
+
+        // Repository info.
+        lines.push(styles.bold().render('Repository'));
+        lines.push('  ' + styles.fieldValue().render(runtime.dir || '.'));
+        lines.push('');
+
+        // Config form (non-editable display for now, wizard sets these).
+        lines.push(styles.bold().render('Source Branch'));
+        var srcBranch = (st.analysisCache && st.analysisCache.currentBranch) || '(auto-detect)';
+        lines.push('  ' + styles.activeCard().width(Math.max(20, (s.width || 80) - 12)).render(
+            styles.fieldValue().render(srcBranch)
+        ));
+        lines.push('');
+
+        lines.push(styles.bold().render('Target Branch'));
+        lines.push('  ' + styles.activeCard().width(Math.max(20, (s.width || 80) - 12)).render(
+            styles.fieldValue().render(runtime.baseBranch || 'main')
+        ));
+        lines.push('');
+
+        // Strategy selection.
+        lines.push(styles.bold().render('Strategy'));
+        var strategies = ['auto', 'heuristic', 'directory'];
+        var currentMode = runtime.mode || 'heuristic';
+        for (var si = 0; si < strategies.length; si++) {
+            var strat = strategies[si];
+            var selected = (strat === currentMode);
+            var bullet = selected ? styles.primaryButton().render(' \u25cf ') : '  \u25cb ';
+            var label = styles.label().render(strat.charAt(0).toUpperCase() + strat.slice(1));
+            var stratId = 'strategy-' + strat;
+            lines.push('  ' + zone.mark(stratId, bullet + ' ' + label));
+        }
+        lines.push('');
+
+        // Advanced options toggle.
+        if (s.showAdvanced) {
+            lines.push(styles.dim().render('\u25be Advanced Options'));
+            lines.push('  Max files per chunk: ' +
+                styles.fieldValue().render(String(runtime.maxFiles || 10)));
+            lines.push('  Branch prefix:       ' +
+                styles.fieldValue().render(runtime.branchPrefix || 'split/'));
+            lines.push('  Verify command:      ' +
+                styles.fieldValue().render(runtime.verifyCommand || 'true'));
+            lines.push('  ' + (runtime.dryRun ? '\u2611' : '\u2610') + ' Dry run');
+        } else {
+            lines.push(zone.mark('toggle-advanced',
+                styles.dim().render('\u25b8 Advanced Options')));
+        }
+
+        return lines.join('\n');
+    }
+
+    // ----- Screen 2: Analysis (PLAN_GENERATION) -----
+
+    function viewAnalysisScreen(s) {
+        var lines = [];
+        var runtime = prSplit.runtime;
+
+        lines.push(styles.bold().render('Analyzing Changes'));
+        lines.push('  ' + styles.fieldValue().render(
+            (st.analysisCache && st.analysisCache.currentBranch || '?') +
+            ' \u2192 ' + (runtime.baseBranch || 'main')
+        ));
+        lines.push('');
+
+        // Progress steps.
+        var steps = s.analysisSteps || [];
+        for (var i = 0; i < steps.length; i++) {
+            var step = steps[i];
+            var icon = step.done ? styles.successBadge().render(' \u2713 ') :
+                       step.active ? styles.warningBadge().render(' \u25b6 ') :
+                       styles.dim().render(' \u25cb ');
+            var stepLabel = styles.label().render(step.label);
+            var stepTime = step.elapsed ? styles.dim().render(' (' + step.elapsed + 'ms)') : '';
+            lines.push('  ' + icon + ' ' + stepLabel + stepTime);
+        }
+
+        if (s.analysisProgress >= 0) {
+            lines.push('');
+            lines.push('  ' + renderProgressBar(s.analysisProgress, (s.width || 80) - 8));
+        }
+
+        // Show analysis results if available.
+        if (st.analysisCache && st.analysisCache.files && !st.analysisCache.error) {
+            lines.push('');
+            lines.push(styles.successBadge().render(' Analysis Complete '));
+            lines.push('  Changed files: ' +
+                styles.fieldValue().render(String(st.analysisCache.files.length)));
+
+            // File list (abbreviated).
+            var maxShow = Math.min(10, st.analysisCache.files.length);
+            for (var f = 0; f < maxShow; f++) {
+                var file = st.analysisCache.files[f];
+                var status = (st.analysisCache.fileStatuses && st.analysisCache.fileStatuses[file]) || '?';
+                lines.push('    [' + status + '] ' + truncate(file, (s.width || 80) - 16));
+            }
+            if (st.analysisCache.files.length > maxShow) {
+                lines.push(styles.dim().render(
+                    '    ... and ' + (st.analysisCache.files.length - maxShow) + ' more'));
+            }
+        }
+
+        if (st.analysisCache && st.analysisCache.error) {
+            lines.push('');
+            lines.push(styles.errorBadge().render(' Error ') + ' ' +
+                styles.errorCard().render(st.analysisCache.error));
+        }
+
+        return lines.join('\n');
+    }
+
+    // ----- Screen 3: Plan Review (PLAN_REVIEW) -----
+
+    function viewPlanReviewScreen(s) {
+        var lines = [];
+
+        if (!st.planCache) {
+            lines.push(styles.warningBadge().render(' No Plan ') +
+                ' Run analysis first.');
+            return lines.join('\n');
+        }
+
+        var plan = st.planCache;
+        lines.push(styles.bold().render('Split Plan Overview'));
+        lines.push('  Splits: ' + styles.fieldValue().render(String(plan.splits.length)));
+        lines.push('  Base: ' + styles.fieldValue().render(plan.baseBranch || 'main'));
+        lines.push('');
+
+        // Split cards.
+        var w = (s.width || 80) - 8;
+        var selectedIdx = s.selectedSplitIdx || 0;
+
+        for (var i = 0; i < plan.splits.length; i++) {
+            var split = plan.splits[i];
+            var isSelected = (i === selectedIdx);
+            var cardStyle = isSelected ? styles.activeCard() : styles.inactiveCard();
+            var cardId = 'split-card-' + i;
+
+            var cardContent = '';
+            cardContent += styles.bold().render(
+                (i + 1) + '. ' + (split.name || 'split-' + i)) + '\n';
+            cardContent += styles.dim().render(split.message || '') + '\n';
+            cardContent += styles.fieldValue().render(
+                split.files.length + ' file' + (split.files.length !== 1 ? 's' : ''));
+
+            // Show files for selected split.
+            if (isSelected && split.files) {
+                cardContent += '\n';
+                for (var fi = 0; fi < split.files.length; fi++) {
+                    var fStatus = (plan.fileStatuses && plan.fileStatuses[split.files[fi]]) || '?';
+                    cardContent += '\n  [' + fStatus + '] ' + truncate(split.files[fi], w - 10);
+                }
+            }
+
+            lines.push(zone.mark(cardId, cardStyle.width(w).render(cardContent)));
+        }
+
+        // Action buttons.
+        lines.push('');
+        lines.push(
+            zone.mark('plan-edit', styles.secondaryButton().render('Edit Plan \u270f')) +
+            '  ' +
+            zone.mark('plan-regenerate', styles.secondaryButton().render('Regenerate \ud83d\udd04'))
+        );
+
+        return lines.join('\n');
+    }
+
+    // ----- Screen 4: Plan Editor (PLAN_EDITOR) -----
+
+    function viewPlanEditorScreen(s) {
+        var lines = [];
+
+        if (!st.planCache) {
+            lines.push('No plan to edit.');
+            return lines.join('\n');
+        }
+
+        lines.push(styles.bold().render('Edit Split Plan'));
+        lines.push(styles.dim().render(
+            'Click a split to select. Use Move/Rename buttons to modify.'));
+        lines.push('');
+
+        var plan = st.planCache;
+        var selectedIdx = s.selectedSplitIdx || 0;
+        var w = (s.width || 80) - 8;
+
+        for (var i = 0; i < plan.splits.length; i++) {
+            var split = plan.splits[i];
+            var isSelected = (i === selectedIdx);
+            var badge = isSelected ? styles.primaryButton().render(' \u25b6 ') : '  ' + (i + 1) + '. ';
+            var name = styles.bold().render(split.name || 'split-' + i);
+            var files = styles.dim().render(split.files.length + ' files');
+            var cardId = 'edit-split-' + i;
+
+            lines.push(zone.mark(cardId, badge + ' ' + name + '  ' + files));
+
+            if (isSelected && split.files) {
+                for (var fi = 0; fi < split.files.length; fi++) {
+                    var fileId = 'edit-file-' + i + '-' + fi;
+                    lines.push('    ' + zone.mark(fileId,
+                        styles.dim().render(split.files[fi])));
+                }
+            }
+        }
+
+        if (isSelected) {
+            lines.push('');
+            lines.push(
+                zone.mark('editor-move', styles.secondaryButton().render('Move File')) +
+                '  ' +
+                zone.mark('editor-rename', styles.secondaryButton().render('Rename Split')) +
+                '  ' +
+                zone.mark('editor-merge', styles.secondaryButton().render('Merge Splits'))
+            );
+        }
+
+        return lines.join('\n');
+    }
+
+    // ----- Screen 5: Execution (BRANCH_BUILDING) -----
+
+    function viewExecutionScreen(s) {
+        var lines = [];
+
+        lines.push(styles.bold().render('Executing Split Plan'));
+        lines.push('');
+
+        if (!st.planCache || !st.planCache.splits) {
+            lines.push('No plan to execute.');
+            return lines.join('\n');
+        }
+
+        var splits = st.planCache.splits;
+        var results = s.executionResults || [];
+        var currentIdx = s.executingIdx || 0;
+
+        for (var i = 0; i < splits.length; i++) {
+            var split = splits[i];
+            var result = results[i];
+            var icon, statusText;
+
+            if (result && result.error) {
+                icon = styles.errorBadge().render(' \u2718 ');
+                statusText = styles.errorCard().width((s.width || 80) - 16).render(
+                    split.name + '\n' + result.error);
+            } else if (result) {
+                icon = styles.successBadge().render(' \u2713 ');
+                statusText = styles.label().render(split.name) +
+                    styles.dim().render(' \u2192 ' + (result.sha ? result.sha.substring(0, 8) : ''));
+            } else if (i === currentIdx && s.isProcessing) {
+                icon = styles.warningBadge().render(' \u25b6 ');
+                statusText = styles.statusActive().render(split.name + '...');
+            } else {
+                icon = styles.dim().render(' \u25cb ');
+                statusText = styles.dim().render(split.name);
+            }
+
+            lines.push('  ' + icon + ' ' + statusText);
+        }
+
+        // Overall progress.
+        if (splits.length > 0) {
+            lines.push('');
+            var progress = results.length / splits.length;
+            lines.push('  ' + renderProgressBar(progress, (s.width || 80) - 8));
+        }
+
+        return lines.join('\n');
+    }
+
+    // ----- Screen 6: Verification (EQUIV_CHECK) -----
+
+    function viewVerificationScreen(s) {
+        var lines = [];
+
+        lines.push(styles.bold().render('Verifying Equivalence'));
+        lines.push('');
+
+        if (s.isProcessing) {
+            lines.push('  ' + styles.warningBadge().render(' \u25b6 ') +
+                ' Checking tree hash equivalence...');
+            lines.push('');
+            lines.push('  ' + renderProgressBar(0.5, (s.width || 80) - 8));
+        } else if (s.equivalenceResult) {
+            var equiv = s.equivalenceResult;
+            if (equiv.equivalent) {
+                lines.push('  ' + styles.successBadge().render(' PASS ') +
+                    ' Tree hashes match!');
+                lines.push('');
+                lines.push(styles.dim().render(
+                    '  All splits merge to produce identical content as the source branch.'));
+            } else if (equiv.error) {
+                lines.push('  ' + styles.errorBadge().render(' ERROR ') + ' ' + equiv.error);
+            } else {
+                lines.push('  ' + styles.errorBadge().render(' FAIL ') +
+                    ' Tree hash mismatch');
+                if (equiv.expected) {
+                    lines.push('    Expected: ' + styles.fieldValue().render(equiv.expected));
+                }
+                if (equiv.actual) {
+                    lines.push('    Actual:   ' + styles.fieldValue().render(equiv.actual));
+                }
+            }
+
+            // Skipped branches note.
+            if (equiv.skippedBranches && equiv.skippedBranches.length > 0) {
+                lines.push('');
+                lines.push(styles.warningBadge().render(' Note ') +
+                    ' Skipped ' + equiv.skippedBranches.length + ' branch(es)');
+            }
+        }
+
+        return lines.join('\n');
+    }
+
+    // ----- Screen 7: Finalization (FINALIZATION / DONE) -----
+
+    function viewFinalizationScreen(s) {
+        var lines = [];
+
+        lines.push(styles.bold().render('PR Split Complete'));
+        lines.push('');
+
+        // Summary stats.
+        var plan = st.planCache;
+        if (plan && plan.splits) {
+            lines.push('  Splits created: ' +
+                styles.successBadge().render(' ' + plan.splits.length + ' '));
+            lines.push('');
+
+            for (var i = 0; i < plan.splits.length; i++) {
+                var split = plan.splits[i];
+                lines.push('    ' + (i + 1) + '. ' +
+                    styles.fieldValue().render(split.name) +
+                    styles.dim().render(' (' + split.files.length + ' files)'));
+            }
+        }
+
+        // Equivalence result.
+        if (s.equivalenceResult) {
+            lines.push('');
+            if (s.equivalenceResult.equivalent) {
+                lines.push('  ' + styles.successBadge().render(' \u2705 Equivalence Verified '));
+            } else {
+                lines.push('  ' + styles.warningBadge().render(' \u26a0 Equivalence Not Verified '));
+            }
+        }
+
+        // Elapsed time.
+        if (s.startTime) {
+            var totalSec = Math.floor((Date.now() - s.startTime) / 1000);
+            lines.push('');
+            lines.push(styles.dim().render(
+                '  Total time: ' + Math.floor(totalSec / 60) + 'm ' + (totalSec % 60) + 's'));
+        }
+
+        // Actions.
+        lines.push('');
+        lines.push(
+            zone.mark('final-report',
+                styles.secondaryButton().render('View Report')) +
+            '  ' +
+            zone.mark('final-create-prs',
+                styles.primaryButton().render('Create PRs')) +
+            '  ' +
+            zone.mark('final-done',
+                styles.primaryButton().render('Done'))
+        );
+
+        return lines.join('\n');
+    }
+
+    // ----- Error Resolution Overlay (T018) -----
+
+    function viewErrorResolutionScreen(s) {
+        var lines = [];
+
+        lines.push(styles.errorBadge().render(' Error Resolution '));
+        lines.push('');
+
+        if (s.errorDetails) {
+            lines.push(styles.errorCard().width((s.width || 80) - 8).render(
+                s.errorDetails));
+            lines.push('');
+        }
+
+        var failedBranches = (s.wizard && s.wizard.data && s.wizard.data.failedBranches) || [];
+        if (failedBranches.length > 0) {
+            lines.push(styles.bold().render('Failed Branches:'));
+            for (var i = 0; i < failedBranches.length; i++) {
+                var fb = failedBranches[i];
+                var name = fb.name || fb;
+                var err = fb.verifyError || fb.error || '';
+                lines.push('  ' + styles.errorBadge().render(' \u2718 ') + ' ' +
+                    styles.fieldValue().render(name) +
+                    (err ? '\n    ' + styles.dim().render(err) : ''));
+            }
+            lines.push('');
+        }
+
+        // Resolution options.
+        lines.push(styles.bold().render('Choose Resolution:'));
+        lines.push('');
+        lines.push('  ' + zone.mark('resolve-auto',
+            styles.primaryButton().render('Auto-Resolve')) +
+            styles.dim().render('  Let Claude fix the issues'));
+        lines.push('');
+        lines.push('  ' + zone.mark('resolve-manual',
+            styles.secondaryButton().render('Manual Fix')) +
+            styles.dim().render('  Switch to Claude pane to fix manually'));
+        lines.push('');
+        lines.push('  ' + zone.mark('resolve-skip',
+            styles.secondaryButton().render('Skip')) +
+            styles.dim().render('  Skip failed branches'));
+        lines.push('');
+        lines.push('  ' + zone.mark('resolve-retry',
+            styles.secondaryButton().render('Retry')) +
+            styles.dim().render('  Regenerate plan from scratch'));
+        lines.push('');
+        lines.push('  ' + zone.mark('resolve-abort',
+            styles.secondaryButton().render('Abort')) +
+            styles.dim().render('  Cancel the split'));
+
+        return lines.join('\n');
+    }
+
+    // ----- Help Overlay (T019) -----
+
+    function viewHelpOverlay(s) {
+        var w = Math.min(60, (s.width || 80) - 4);
+        var lines = [];
+
+        lines.push(styles.bold().render('Keyboard Shortcuts'));
+        lines.push('');
+        lines.push(padRight('  ? / F1', 20) + 'Toggle this help');
+        lines.push(padRight('  Tab', 20) + 'Next field / option');
+        lines.push(padRight('  Shift+Tab', 20) + 'Previous field / option');
+        lines.push(padRight('  Enter', 20) + 'Confirm / select');
+        lines.push(padRight('  Esc', 20) + 'Back / close overlay');
+        lines.push(padRight('  Ctrl+C', 20) + 'Cancel wizard');
+        lines.push(padRight('  Ctrl+]', 20) + 'Toggle Claude pane');
+        lines.push(padRight('  j / \u2193', 20) + 'Move down');
+        lines.push(padRight('  k / \u2191', 20) + 'Move up');
+        lines.push(padRight('  PgUp / PgDn', 20) + 'Scroll page');
+        lines.push(padRight('  Home / End', 20) + 'Jump to top / bottom');
+
+        var content = lines.join('\n');
+        return styles.activeCard().width(w).render(content);
+    }
+
+    // ----- Confirm Cancel Overlay -----
+
+    function viewConfirmCancelOverlay(s) {
+        var w = Math.min(50, (s.width || 80) - 4);
+        var lines = [];
+
+        lines.push(styles.warningBadge().render(' Cancel Wizard? '));
+        lines.push('');
+        lines.push('Are you sure you want to cancel the PR split?');
+        lines.push('All progress will be lost.');
+        lines.push('');
+        lines.push(
+            zone.mark('confirm-yes',
+                styles.errorBadge().render(' Yes, Cancel ')) +
+            '    ' +
+            zone.mark('confirm-no',
+                styles.primaryButton().render(' No, Continue '))
+        );
+
+        var content = lines.join('\n');
+        return styles.activeCard().width(w).render(content);
+    }
+
+    // Map wizard state to the correct screen renderer.
+    function viewForState(s) {
+        switch (s.wizardState) {
+            case 'IDLE':
+            case 'CONFIG':
+            case 'BASELINE_FAIL':
+                return viewConfigScreen(s);
+            case 'PLAN_GENERATION':
+                return viewAnalysisScreen(s);
+            case 'PLAN_REVIEW':
+                return viewPlanReviewScreen(s);
+            case 'PLAN_EDITOR':
+                return viewPlanEditorScreen(s);
+            case 'BRANCH_BUILDING':
+                return viewExecutionScreen(s);
+            case 'ERROR_RESOLUTION':
+                return viewErrorResolutionScreen(s);
+            case 'EQUIV_CHECK':
+                return viewVerificationScreen(s);
+            case 'FINALIZATION':
+            case 'DONE':
+                return viewFinalizationScreen(s);
+            case 'CANCELLED':
+            case 'FORCE_CANCEL':
+                return styles.warningBadge().render(' Cancelled ') +
+                    '\n\nThe PR split was cancelled.';
+            case 'ERROR':
+                return styles.errorBadge().render(' Error ') +
+                    '\n\n' + (s.errorDetails || 'An unexpected error occurred.');
+            default:
+                return 'Unknown state: ' + s.wizardState;
+        }
+    }
+
+    // Export screen renderers for testing.
+    prSplit._viewConfigScreen = viewConfigScreen;
+    prSplit._viewAnalysisScreen = viewAnalysisScreen;
+    prSplit._viewPlanReviewScreen = viewPlanReviewScreen;
+    prSplit._viewPlanEditorScreen = viewPlanEditorScreen;
+    prSplit._viewExecutionScreen = viewExecutionScreen;
+    prSplit._viewVerificationScreen = viewVerificationScreen;
+    prSplit._viewFinalizationScreen = viewFinalizationScreen;
+    prSplit._viewErrorResolutionScreen = viewErrorResolutionScreen;
+    prSplit._viewHelpOverlay = viewHelpOverlay;
+    prSplit._viewConfirmCancelOverlay = viewConfirmCancelOverlay;
+
+    // -----------------------------------------------------------------------
+    //  BubbleTea Model — init / update / view (T020-T025)
+    // -----------------------------------------------------------------------
+
+    function createWizardModel() {
+        var wizard = new WizardState();
+        prSplit._wizardState = wizard;
+
+        // Track transitions to update the TUI model state.
+        wizard.onTransition(function(from, to, data) {
+            log.printf('wizard: %s \u2192 %s', from, to);
+        });
+
+        var vp = viewportLib.new(80, 24);
+        vp.setMouseWheelEnabled(true);
+        var sb = scrollbarLib.new();
+
+        var model = tea.newModel({
+            init: function() {
+                return {
+                    // Wizard state.
+                    wizard: wizard,
+                    wizardState: 'IDLE',
+
+                    // Dimensions.
+                    width: 80,
+                    height: 24,
+
+                    // Viewport.
+                    vp: vp,
+                    scrollbar: sb,
+
+                    // Time.
+                    startTime: Date.now(),
+
+                    // UI state.
+                    showHelp: false,
+                    showConfirmCancel: false,
+                    showAdvanced: false,
+                    selectedSplitIdx: 0,
+                    isProcessing: false,
+
+                    // Analysis progress.
+                    analysisSteps: [],
+                    analysisProgress: -1,
+
+                    // Execution state.
+                    executionResults: [],
+                    executingIdx: 0,
+
+                    // Results.
+                    equivalenceResult: null,
+                    errorDetails: null,
+
+                    // First render flag.
+                    needsInitClear: true
+                };
+            },
+
+            update: function(msg, s) {
+                // WindowSize — always handle.
+                if (msg.type === 'WindowSize') {
+                    s.width = msg.width;
+                    s.height = msg.height;
+
+                    if (s.needsInitClear) {
+                        s.needsInitClear = false;
+                        // Start the wizard on first render.
+                        s.wizardState = 'CONFIG';
+                        wizard.transition('CONFIG');
+                        return [s, tea.clearScreen()];
+                    }
+                    return [s, null];
+                }
+
+                // Overlays intercept all input when active.
+                if (s.showHelp) {
+                    if (msg.type === 'Key') {
+                        // Any key closes help.
+                        s.showHelp = false;
+                        return [s, null];
+                    }
+                    return [s, null];
+                }
+
+                if (s.showConfirmCancel) {
+                    return updateConfirmCancel(msg, s);
+                }
+
+                // Global key bindings.
+                if (msg.type === 'Key') {
+                    // Help toggle.
+                    if (msg.string === '?' || msg.string === 'f1') {
+                        s.showHelp = true;
+                        return [s, null];
+                    }
+                    // Cancel.
+                    if (msg.string === 'ctrl+c') {
+                        s.showConfirmCancel = true;
+                        return [s, null];
+                    }
+                    // Escape — back or close.
+                    if (msg.string === 'esc') {
+                        return handleBack(s);
+                    }
+                    // Enter — forward action.
+                    if (msg.string === 'enter') {
+                        return handleNext(s);
+                    }
+                    // Navigation: j/k, up/down, tab/shift+tab.
+                    if (msg.string === 'j' || msg.string === 'down') {
+                        return handleNavDown(s);
+                    }
+                    if (msg.string === 'k' || msg.string === 'up') {
+                        return handleNavUp(s);
+                    }
+                    if (msg.string === 'tab') {
+                        return handleNavDown(s);
+                    }
+                    if (msg.string === 'shift+tab') {
+                        return handleNavUp(s);
+                    }
+                    // Viewport scroll.
+                    if (msg.string === 'pgdown') {
+                        if (s.vp) s.vp.halfViewDown();
+                        return [s, null];
+                    }
+                    if (msg.string === 'pgup') {
+                        if (s.vp) s.vp.halfViewUp();
+                        return [s, null];
+                    }
+                    if (msg.string === 'home') {
+                        if (s.vp) s.vp.gotoTop();
+                        return [s, null];
+                    }
+                    if (msg.string === 'end') {
+                        if (s.vp) s.vp.gotoBottom();
+                        return [s, null];
+                    }
+                    // Screen-specific key shortcuts.
+                    if (msg.string === 'e' && s.wizardState === 'PLAN_REVIEW' && !s.isProcessing) {
+                        // Enter plan editor.
+                        s.wizard.transition('PLAN_EDITOR');
+                        s.wizardState = 'PLAN_EDITOR';
+                        return [s, null];
+                    }
+                    // termmux toggle.
+                    if (msg.string === 'ctrl+]') {
+                        if (typeof tuiMux !== 'undefined' && tuiMux &&
+                            typeof tuiMux.switchTo === 'function') {
+                            tuiMux.switchTo('claude');
+                        }
+                        return [s, null];
+                    }
+                }
+
+                // Mouse handling.
+                if (msg.type === 'Mouse' && msg.action === 'press') {
+                    return handleMouseClick(msg, s);
+                }
+
+                // Mouse wheel for viewport.
+                if (msg.type === 'Mouse') {
+                    if (msg.action === 'wheelUp' && s.vp) {
+                        s.vp.lineUp(3);
+                        return [s, null];
+                    }
+                    if (msg.action === 'wheelDown' && s.vp) {
+                        s.vp.lineDown(3);
+                        return [s, null];
+                    }
+                }
+
+                return [s, null];
+            },
+
+            view: function(s) {
+                var w = s.width || 80;
+                var h = s.height || 24;
+
+                // Title bar.
+                var titleBar = renderTitleBar(s);
+
+                // Divider.
+                var divider = styles.divider().render(repeatStr('\u2500', w));
+
+                // Screen content.
+                var screenContent = viewForState(s);
+
+                // Wrap in viewport.
+                if (s.vp) {
+                    s.vp.setWidth(w);
+                    // Reserve: title(1) + divider(1) + navDivider(1) + nav(1) + status(2) = 6 lines
+                    var vpHeight = Math.max(3, h - 6);
+                    s.vp.setHeight(vpHeight);
+                    s.vp.setContent(screenContent);
+
+                    // Scrollbar.
+                    if (s.scrollbar) {
+                        s.scrollbar.setViewportHeight(vpHeight);
+                        s.scrollbar.setContentHeight(s.vp.totalLineCount());
+                        s.scrollbar.setYOffset(s.vp.yOffset());
+                        s.scrollbar.setChars('\u2588', '\u2591');
+                        s.scrollbar.setThumbForeground(COLORS.primary);
+                        s.scrollbar.setTrackForeground(COLORS.border);
+                    }
+
+                    var vpView = s.vp.view();
+                    var sbView = s.scrollbar ? s.scrollbar.view() : '';
+                    screenContent = lipgloss.joinHorizontal(lipgloss.Top, vpView, sbView);
+                }
+
+                // Navigation bar.
+                var navBar = renderNavBar(s);
+
+                // Status bar.
+                var statusBar = renderStatusBar(s);
+
+                // Compose.
+                var fullView = lipgloss.joinVertical(lipgloss.Left,
+                    titleBar,
+                    divider,
+                    screenContent,
+                    divider,
+                    navBar,
+                    statusBar
+                );
+
+                // Overlay: Help.
+                if (s.showHelp) {
+                    var helpPanel = viewHelpOverlay(s);
+                    fullView = lipgloss.place(w, h,
+                        lipgloss.Center, lipgloss.Center,
+                        helpPanel,
+                        lipgloss.withWhitespaceChars('\u2591'),
+                        lipgloss.withWhitespaceForeground(COLORS.border));
+                }
+
+                // Overlay: Confirm Cancel.
+                if (s.showConfirmCancel) {
+                    var confirmPanel = viewConfirmCancelOverlay(s);
+                    fullView = lipgloss.place(w, h,
+                        lipgloss.Center, lipgloss.Center,
+                        confirmPanel,
+                        lipgloss.withWhitespaceChars('\u2591'),
+                        lipgloss.withWhitespaceForeground(COLORS.border));
+                }
+
+                return zone.scan(fullView);
+            }
+        });
+
+        return model;
+    }
+
+    // -----------------------------------------------------------------------
+    //  Update Handlers — screen-specific input handling
+    // -----------------------------------------------------------------------
+
+    function updateConfirmCancel(msg, s) {
+        if (msg.type === 'Key') {
+            if (msg.string === 'y' || msg.string === 'enter') {
+                // Check for zone click on confirm-yes.
+                s.showConfirmCancel = false;
+                s.wizard.cancel();
+                s.wizardState = 'CANCELLED';
+                return [s, tea.quit()];
+            }
+            if (msg.string === 'n' || msg.string === 'esc') {
+                s.showConfirmCancel = false;
+                return [s, null];
+            }
+        }
+        if (msg.type === 'Mouse' && msg.action === 'press') {
+            if (zone.inBounds('confirm-yes', msg)) {
+                s.showConfirmCancel = false;
+                s.wizard.cancel();
+                s.wizardState = 'CANCELLED';
+                return [s, tea.quit()];
+            }
+            if (zone.inBounds('confirm-no', msg)) {
+                s.showConfirmCancel = false;
+                return [s, null];
+            }
+        }
+        return [s, null];
+    }
+
+    function handleMouseClick(msg, s) {
+        // Navigation bar clicks.
+        if (zone.inBounds('nav-back', msg)) {
+            return handleBack(s);
+        }
+        if (zone.inBounds('nav-cancel', msg)) {
+            s.showConfirmCancel = true;
+            return [s, null];
+        }
+        if (zone.inBounds('nav-next', msg)) {
+            return handleNext(s);
+        }
+        // Claude status badge.
+        if (zone.inBounds('claude-status', msg)) {
+            if (typeof tuiMux !== 'undefined' && tuiMux &&
+                typeof tuiMux.switchTo === 'function') {
+                tuiMux.switchTo('claude');
+            }
+            return [s, null];
+        }
+        // Screen-specific zone clicks.
+        return handleScreenMouseClick(msg, s);
+    }
+
+    function handleScreenMouseClick(msg, s) {
+        // Config screen: strategy selection, advanced toggle.
+        if (s.wizardState === 'CONFIG' || s.wizardState === 'IDLE') {
+            var strategies = ['auto', 'heuristic', 'directory'];
+            for (var si = 0; si < strategies.length; si++) {
+                if (zone.inBounds('strategy-' + strategies[si], msg)) {
+                    prSplit.runtime.mode = strategies[si];
+                    return [s, null];
+                }
+            }
+            if (zone.inBounds('toggle-advanced', msg)) {
+                s.showAdvanced = !s.showAdvanced;
+                return [s, null];
+            }
+        }
+
+        // Plan review: split card selection + edit button.
+        if (s.wizardState === 'PLAN_REVIEW') {
+            if (st.planCache && st.planCache.splits) {
+                for (var i = 0; i < st.planCache.splits.length; i++) {
+                    if (zone.inBounds('split-card-' + i, msg)) {
+                        s.selectedSplitIdx = i;
+                        return [s, null];
+                    }
+                }
+            }
+            if (zone.inBounds('plan-edit', msg) && !s.isProcessing) {
+                s.wizard.transition('PLAN_EDITOR');
+                s.wizardState = 'PLAN_EDITOR';
+                return [s, null];
+            }
+            if (zone.inBounds('plan-regenerate', msg) && !s.isProcessing) {
+                handlePlanReviewState(s.wizard, 'regenerate');
+                s.wizardState = 'CONFIG';
+                s.wizard.reset();
+                s.wizard.transition('CONFIG');
+                return [s, null];
+            }
+        }
+
+        // Plan editor: split selection, file selection, action buttons.
+        if (s.wizardState === 'PLAN_EDITOR') {
+            if (st.planCache && st.planCache.splits) {
+                for (var i = 0; i < st.planCache.splits.length; i++) {
+                    if (zone.inBounds('edit-split-' + i, msg)) {
+                        s.selectedSplitIdx = i;
+                        return [s, null];
+                    }
+                    // File selection within currently selected split.
+                    if (i === (s.selectedSplitIdx || 0) && st.planCache.splits[i].files) {
+                        for (var fi = 0; fi < st.planCache.splits[i].files.length; fi++) {
+                            if (zone.inBounds('edit-file-' + i + '-' + fi, msg)) {
+                                s.selectedFileIdx = fi;
+                                return [s, null];
+                            }
+                        }
+                    }
+                }
+            }
+            // Editor action buttons.
+            if (zone.inBounds('editor-move', msg)) {
+                // TODO: Implement move-file dialog (future enhancement).
+                log.printf('editor-move: not yet implemented');
+                return [s, null];
+            }
+            if (zone.inBounds('editor-rename', msg)) {
+                // TODO: Implement rename-split dialog (future enhancement).
+                log.printf('editor-rename: not yet implemented');
+                return [s, null];
+            }
+            if (zone.inBounds('editor-merge', msg)) {
+                // TODO: Implement merge-splits dialog (future enhancement).
+                log.printf('editor-merge: not yet implemented');
+                return [s, null];
+            }
+        }
+
+        // Error resolution: resolution choice buttons.
+        if (s.wizardState === 'ERROR_RESOLUTION') {
+            var resolveChoices = ['auto', 'manual', 'skip', 'retry', 'abort'];
+            for (var ri = 0; ri < resolveChoices.length; ri++) {
+                if (zone.inBounds('resolve-' + resolveChoices[ri], msg)) {
+                    return handleErrorResolutionChoice(s, resolveChoices[ri] === 'auto' ? 'auto-resolve' : resolveChoices[ri]);
+                }
+            }
+        }
+
+        // Finalization: action buttons.
+        if (s.wizardState === 'FINALIZATION') {
+            if (zone.inBounds('final-report', msg)) {
+                output.print(JSON.stringify(buildReport(), null, 2));
+                return [s, null];
+            }
+            if (zone.inBounds('final-create-prs', msg)) {
+                handleFinalizationState(s.wizard, 'create-prs');
+                return [s, null];
+            }
+            if (zone.inBounds('final-done', msg)) {
+                handleFinalizationState(s.wizard, 'done');
+                s.wizardState = 'DONE';
+                return [s, tea.quit()];
+            }
+        }
+
+        return [s, null];
+    }
+
+    // -----------------------------------------------------------------------
+    //  Navigation Handlers — Back / Next / Up / Down
+    // -----------------------------------------------------------------------
+
+    function handleBack(s) {
+        switch (s.wizardState) {
+            case 'PLAN_REVIEW':
+                s.wizardState = 'CONFIG';
+                s.wizard.reset();
+                s.wizard.transition('CONFIG');
+                return [s, null];
+            case 'PLAN_EDITOR':
+                s.wizardState = 'PLAN_REVIEW';
+                handlePlanEditorState(s.wizard, 'back', st.planCache);
+                return [s, null];
+            default:
+                return [s, null];
+        }
+    }
+
+    function handleNext(s) {
+        if (s.isProcessing) return [s, null];
+
+        switch (s.wizardState) {
+            case 'IDLE':
+            case 'CONFIG':
+                return startAnalysis(s);
+            case 'PLAN_REVIEW':
+                return startExecution(s);
+            case 'PLAN_EDITOR':
+                // Save edits and return to review.
+                handlePlanEditorState(s.wizard, 'save', st.planCache);
+                s.wizardState = 'PLAN_REVIEW';
+                return [s, null];
+            case 'ERROR_RESOLUTION':
+                return handleErrorResolutionChoice(s, 'auto-resolve');
+            case 'FINALIZATION':
+                handleFinalizationState(s.wizard, 'done');
+                s.wizardState = 'DONE';
+                return [s, tea.quit()];
+            default:
+                return [s, null];
+        }
+    }
+
+    function handleNavDown(s) {
+        if (s.wizardState === 'PLAN_REVIEW' || s.wizardState === 'PLAN_EDITOR') {
+            if (st.planCache && st.planCache.splits) {
+                s.selectedSplitIdx = Math.min(
+                    (s.selectedSplitIdx || 0) + 1,
+                    st.planCache.splits.length - 1
+                );
+            }
+        }
+        return [s, null];
+    }
+
+    function handleNavUp(s) {
+        if (s.wizardState === 'PLAN_REVIEW' || s.wizardState === 'PLAN_EDITOR') {
+            s.selectedSplitIdx = Math.max((s.selectedSplitIdx || 0) - 1, 0);
+        }
+        return [s, null];
+    }
+
+    // -----------------------------------------------------------------------
+    //  Async Pipeline Handlers — drive wizard state machine
+    // -----------------------------------------------------------------------
+
+    function startAnalysis(s) {
+        s.isProcessing = true;
+        s.analysisProgress = 0;
+        s.analysisSteps = [
+            { label: 'Analyze diff', active: true, done: false },
+            { label: 'Group files', active: false, done: false },
+            { label: 'Generate plan', active: false, done: false },
+            { label: 'Validate plan', active: false, done: false }
+        ];
+
+        // Run config state handler.
+        var configResult = handleConfigState({
+            baseBranch: prSplit.runtime.baseBranch,
+            dir: prSplit.runtime.dir,
+            strategy: prSplit.runtime.strategy,
+            verifyCommand: prSplit.runtime.verifyCommand
+        });
+
+        if (configResult.error) {
+            s.isProcessing = false;
+            s.errorDetails = configResult.error;
+            s.wizardState = 'ERROR';
+            return [s, null];
+        }
+
+        // Transition to CONFIG if needed.
+        if (s.wizard.current === 'IDLE') {
+            s.wizard.transition('CONFIG');
+        }
+
+        // Step 1: Analyze diff.
+        s.analysisSteps[0].active = true;
+        var analysisStart = Date.now();
+        try {
+            st.analysisCache = prSplit.analyzeDiff({ baseBranch: prSplit.runtime.baseBranch });
+        } catch (e) {
+            s.isProcessing = false;
+            s.errorDetails = 'Analysis failed: ' + (e.message || String(e));
+            s.wizardState = 'ERROR';
+            return [s, null];
+        }
+        s.analysisSteps[0].done = true;
+        s.analysisSteps[0].active = false;
+        s.analysisSteps[0].elapsed = Date.now() - analysisStart;
+        s.analysisProgress = 0.25;
+
+        if (st.analysisCache.error) {
+            s.isProcessing = false;
+            s.errorDetails = st.analysisCache.error;
+            s.wizardState = 'ERROR';
+            return [s, null];
+        }
+        if (!st.analysisCache.files || st.analysisCache.files.length === 0) {
+            s.isProcessing = false;
+            s.errorDetails = 'No changes found between branches.';
+            s.wizardState = 'CONFIG';
+            return [s, null];
+        }
+
+        // Step 2: Group files.
+        s.analysisSteps[1].active = true;
+        var groupStart = Date.now();
+        st.groupsCache = prSplit.applyStrategy(
+            st.analysisCache.files, prSplit.runtime.strategy);
+        s.analysisSteps[1].done = true;
+        s.analysisSteps[1].active = false;
+        s.analysisSteps[1].elapsed = Date.now() - groupStart;
+        s.analysisProgress = 0.5;
+
+        // Step 3: Create plan.
+        s.analysisSteps[2].active = true;
+        var planStart = Date.now();
+        st.planCache = prSplit.createSplitPlan(st.groupsCache, {
+            baseBranch: prSplit.runtime.baseBranch,
+            sourceBranch: st.analysisCache.currentBranch,
+            branchPrefix: prSplit.runtime.branchPrefix,
+            verifyCommand: prSplit.runtime.verifyCommand,
+            fileStatuses: st.analysisCache.fileStatuses
+        });
+        s.analysisSteps[2].done = true;
+        s.analysisSteps[2].active = false;
+        s.analysisSteps[2].elapsed = Date.now() - planStart;
+        s.analysisProgress = 0.75;
+
+        // Step 4: Validate.
+        s.analysisSteps[3].active = true;
+        var validation = prSplit.validatePlan(st.planCache);
+        s.analysisSteps[3].done = true;
+        s.analysisSteps[3].active = false;
+        s.analysisProgress = 1.0;
+
+        if (!validation.valid) {
+            s.isProcessing = false;
+            s.errorDetails = 'Plan validation failed: ' + validation.errors.join('; ');
+            s.wizardState = 'ERROR';
+            return [s, null];
+        }
+
+        s.isProcessing = false;
+
+        // Transition wizard to PLAN_GENERATION then PLAN_REVIEW.
+        if (s.wizard.current === 'CONFIG') {
+            s.wizard.transition('PLAN_GENERATION');
+        }
+        s.wizard.transition('PLAN_REVIEW');
+        s.wizardState = 'PLAN_REVIEW';
+        return [s, null];
+    }
+
+    function startExecution(s) {
+        if (!st.planCache || !st.planCache.splits || st.planCache.splits.length === 0) {
+            s.errorDetails = 'No plan to execute.';
+            return [s, null];
+        }
+
+        s.isProcessing = true;
+        s.executionResults = [];
+        s.executingIdx = 0;
+
+        // Transition: PLAN_REVIEW → BRANCH_BUILDING.
+        if (s.wizard.current === 'PLAN_REVIEW') {
+            handlePlanReviewState(s.wizard, 'approve');
+        }
+        s.wizardState = 'BRANCH_BUILDING';
+
+        // Dry run check.
+        if (prSplit.runtime.dryRun) {
+            s.isProcessing = false;
+            s.wizardState = 'FINALIZATION';
+            s.wizard.transition('FINALIZATION');
+            return [s, null];
+        }
+
+        // Execute.
+        try {
+            var result = prSplit.executeSplit(st.planCache);
+            if (result.error) {
+                s.isProcessing = false;
+                s.errorDetails = result.error;
+                s.wizard.data.failedBranches = result.results ?
+                    result.results.filter(function(r) { return r.error; }) : [];
+                s.wizard.transition('ERROR_RESOLUTION');
+                s.wizardState = 'ERROR_RESOLUTION';
+                return [s, null];
+            }
+            st.executionResultCache = result.results;
+            s.executionResults = result.results || [];
+        } catch (e) {
+            s.isProcessing = false;
+            s.errorDetails = 'Execution error: ' + (e.message || String(e));
+            s.wizard.transition('ERROR_RESOLUTION');
+            s.wizardState = 'ERROR_RESOLUTION';
+            return [s, null];
+        }
+
+        s.isProcessing = false;
+
+        // Move to equivalence check.
+        s.wizard.transition('EQUIV_CHECK');
+        s.wizardState = 'EQUIV_CHECK';
+
+        // Run equivalence check.
+        s.isProcessing = true;
+        var equivResult = handleEquivCheckState(s.wizard, st.planCache);
+        s.isProcessing = false;
+        s.equivalenceResult = equivResult.equivalence || {};
+        s.wizardState = s.wizard.current;
+
+        return [s, null];
+    }
+
+    function handleErrorResolutionChoice(s, choice) {
+        var result = handleErrorResolutionState(s.wizard, choice);
+        s.wizardState = s.wizard.current;
+
+        if (choice === 'manual' && typeof tuiMux !== 'undefined' && tuiMux &&
+            typeof tuiMux.switchTo === 'function') {
+            tuiMux.switchTo('claude');
+        }
+
+        return [s, null];
+    }
+
+    // -----------------------------------------------------------------------
+    //  Program Launch (T025 + T027)
+    // -----------------------------------------------------------------------
+
+    var _wizardModel = createWizardModel();
+
+    // Export for Go-side launching and test access.
+    prSplit._wizardModel = _wizardModel;
+    prSplit._createWizardModel = createWizardModel;
+    prSplit._buildReport = buildReport;
+
+    // startWizard — called by pr_split.go to launch the BubbleTea wizard.
+    // Blocks the calling goroutine until the user exits the wizard.
+    prSplit.startWizard = function() {
+        return tea.run(_wizardModel, {altScreen: true, mouse: true});
+    };
+
+    // -----------------------------------------------------------------------
+    //  Bell Event Handling
+    // -----------------------------------------------------------------------
+
+    if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.on === 'function') {
+        var _bellCount = 0;
+        tuiMux.on('bell', function(data) {
+            _bellCount++;
+            log.printf('bell: received bell #%d from pane=%s', _bellCount, data && data.pane || 'unknown');
+        });
+        prSplit._bellCount = function() { return _bellCount; };
+    }
+
+    // -----------------------------------------------------------------------
+    //  Mode Registration — commands remain for programmatic/test dispatch.
+    //  The BubbleTea wizard above is launched by pr_split.go for interactive
+    //  use. This registration exposes all commands so existing tests and
+    //  the scripting API continue to work.
     // -----------------------------------------------------------------------
 
     ctx.run('register-mode', function() {
@@ -1975,8 +3590,7 @@
                 prompt: '(pr-split) > '
             },
             onEnter: function() {
-                output.print('PR Split \u2014 split large PRs into reviewable stacked branches.');
-                output.print('Type "help" for commands. Quick start: "run"');
+                output.print('PR Split Wizard active. Type "help" for commands.');
                 output.print('');
                 output.print('Config: base=' + runtime.baseBranch + ' strategy=' + runtime.strategy +
                     ' max=' + runtime.maxFiles + (runtime.dryRun ? ' [DRY RUN]' : ''));

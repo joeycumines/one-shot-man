@@ -2667,3 +2667,674 @@ func TestChunk13_HUD_CommandRegistered(t *testing.T) {
 		t.Error("hud command has empty description")
 	}
 }
+
+// ===========================================================================
+//  BubbleTea Wizard TUI Tests (T030-T036)
+// ===========================================================================
+
+// T030: COLORS and styles constants
+func TestChunk13_WizardColors_AllKeysPresent(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`JSON.stringify(Object.keys(globalThis.prSplit._wizardColors).sort())`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var keys []string
+	if err := json.Unmarshal([]byte(raw.(string)), &keys); err != nil {
+		t.Fatal(err)
+	}
+
+	expected := []string{
+		"border", "error", "muted", "primary", "secondary",
+		"success", "surface", "text", "textDim", "warning",
+	}
+	if len(keys) != len(expected) {
+		t.Fatalf("COLORS has %d keys, want %d\n  got:  %v\n  want: %v",
+			len(keys), len(expected), keys, expected)
+	}
+	for i, k := range expected {
+		if i >= len(keys) || keys[i] != k {
+			t.Errorf("COLORS key[%d] = %q, want %q", i, keys[i], k)
+		}
+	}
+}
+
+func TestChunk13_WizardColors_ValidHexStrings(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`JSON.stringify(globalThis.prSplit._wizardColors)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var colors map[string]string
+	if err := json.Unmarshal([]byte(raw.(string)), &colors); err != nil {
+		t.Fatal(err)
+	}
+
+	for key, val := range colors {
+		if len(val) != 7 || val[0] != '#' {
+			t.Errorf("COLORS.%s = %q — not a 7-char hex string", key, val)
+		}
+	}
+}
+
+func TestChunk13_WizardStyles_AllStylesCallable(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	styleNames := []string{
+		"titleBar", "stepIndicator", "activeCard", "inactiveCard",
+		"errorCard", "successBadge", "warningBadge", "errorBadge",
+		"primaryButton", "secondaryButton", "disabledButton",
+		"progressFull", "progressEmpty", "divider",
+		"dim", "bold", "label", "fieldValue",
+		"statusIdle", "statusActive",
+	}
+
+	for _, name := range styleNames {
+		raw, err := evalJS(`typeof globalThis.prSplit._wizardStyles.` + name)
+		if err != nil {
+			t.Fatalf("typeof styles.%s: %v", name, err)
+		}
+		if raw != "function" {
+			t.Errorf("styles.%s should be function (style factory), got %v", name, raw)
+			continue
+		}
+		// Call the factory and verify the render method exists.
+		raw, err = evalJS(`typeof globalThis.prSplit._wizardStyles.` + name + `().render`)
+		if err != nil {
+			t.Fatalf("styles.%s().render: %v", name, err)
+		}
+		if raw != "function" {
+			t.Errorf("styles.%s().render should be function, got %v", name, raw)
+		}
+	}
+}
+
+func TestChunk13_WizardStyles_RenderProducesOutput(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`globalThis.prSplit._wizardStyles.primaryButton().render('Test')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, ok := raw.(string)
+	if !ok || s == "" {
+		t.Errorf("primaryButton().render('Test') should produce non-empty string, got %v", raw)
+	}
+	if !strings.Contains(s, "Test") {
+		t.Errorf("rendered output should contain 'Test', got %q", s)
+	}
+}
+
+// T031: Global chrome renderers
+func TestChunk13_RenderTitleBar_ContainsWizardName(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	// Test at different wizard states.
+	states := map[string]string{
+		"CONFIG":          "Step 1/7: Configure",
+		"PLAN_GENERATION": "Step 2/7: Analysis",
+		"PLAN_REVIEW":     "Step 3/7: Review Plan",
+		"FINALIZATION":    "Step 7/7: Finalization",
+	}
+
+	for state, expectedStep := range states {
+		raw, err := evalJS(`globalThis.prSplit._renderTitleBar({
+			wizardState: '` + state + `',
+			startTime: Date.now() - 5000,
+			width: 80
+		})`)
+		if err != nil {
+			t.Fatalf("renderTitleBar(%s): %v", state, err)
+		}
+		s := raw.(string)
+		if !strings.Contains(s, "PR Split Wizard") {
+			t.Errorf("titleBar(%s) missing 'PR Split Wizard': %q", state, s)
+		}
+		if !strings.Contains(s, expectedStep) {
+			t.Errorf("titleBar(%s) missing %q: %q", state, expectedStep, s)
+		}
+	}
+}
+
+func TestChunk13_RenderNavBar_BackButtonPresence(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	// CONFIG should NOT have Back.
+	raw, err := evalJS(`globalThis.prSplit._renderNavBar({
+		wizardState: 'CONFIG', width: 80, isProcessing: false
+	})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(raw.(string), "Back") {
+		t.Error("navBar at CONFIG should not show Back button")
+	}
+
+	// PLAN_REVIEW should have Back.
+	raw, err = evalJS(`globalThis.prSplit._renderNavBar({
+		wizardState: 'PLAN_REVIEW', width: 80, isProcessing: false
+	})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(raw.(string), "Back") {
+		t.Error("navBar at PLAN_REVIEW should show Back button")
+	}
+}
+
+func TestChunk13_RenderNavBar_NextButtonLabels(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	cases := map[string]string{
+		"CONFIG":       "Start Analysis",
+		"PLAN_REVIEW":  "Execute Plan",
+		"FINALIZATION": "Finish",
+	}
+
+	for state, label := range cases {
+		raw, err := evalJS(`globalThis.prSplit._renderNavBar({
+			wizardState: '` + state + `', width: 80, isProcessing: false
+		})`)
+		if err != nil {
+			t.Fatalf("navBar(%s): %v", state, err)
+		}
+		if !strings.Contains(raw.(string), label) {
+			t.Errorf("navBar(%s) should contain '%s': %q", state, label, raw.(string))
+		}
+	}
+}
+
+func TestChunk13_RenderStatusBar_ContainsHints(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`globalThis.prSplit._renderStatusBar({width: 80})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := raw.(string)
+	if !strings.Contains(s, "Claude") {
+		t.Errorf("statusBar should contain 'Claude', got %q", s)
+	}
+	if !strings.Contains(s, "Help") {
+		t.Errorf("statusBar should contain 'Help', got %q", s)
+	}
+}
+
+func TestChunk13_RenderStepDots(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`globalThis.prSplit._renderStepDots({wizardState: 'PLAN_REVIEW'})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := raw.(string)
+	// Should contain some filled and some empty dots.
+	if s == "" {
+		t.Error("stepDots should produce non-empty output")
+	}
+}
+
+// T032: Screen view functions
+func TestChunk13_ViewConfigScreen_RendersFields(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`globalThis.prSplit._viewConfigScreen({
+		wizardState: 'CONFIG', width: 80, showAdvanced: false
+	})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := raw.(string)
+	for _, expected := range []string{"Repository", "Source Branch", "Target Branch", "Strategy", "Advanced"} {
+		if !strings.Contains(s, expected) {
+			t.Errorf("viewConfig should contain %q, output:\n%s", expected, s)
+		}
+	}
+}
+
+func TestChunk13_ViewConfigScreen_AdvancedToggle(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	// Collapsed: no "Max files".
+	raw, err := evalJS(`globalThis.prSplit._viewConfigScreen({
+		wizardState: 'CONFIG', width: 80, showAdvanced: false
+	})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(raw.(string), "Max files") {
+		t.Error("viewConfig with showAdvanced=false should not show 'Max files'")
+	}
+
+	// Expanded: has "Max files".
+	raw, err = evalJS(`globalThis.prSplit._viewConfigScreen({
+		wizardState: 'CONFIG', width: 80, showAdvanced: true
+	})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(raw.(string), "Max files") {
+		t.Error("viewConfig with showAdvanced=true should show 'Max files'")
+	}
+}
+
+func TestChunk13_ViewAnalysisScreen_ShowsProgress(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`globalThis.prSplit._viewAnalysisScreen({
+		wizardState: 'PLAN_GENERATION', width: 80,
+		analysisSteps: [
+			{label: 'Parse diff', done: true, elapsed: 100},
+			{label: 'Group files', active: true, done: false}
+		],
+		analysisProgress: 0.5
+	})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := raw.(string)
+	if !strings.Contains(s, "Analyzing") {
+		t.Errorf("viewAnalysis should contain 'Analyzing', got:\n%s", s)
+	}
+	if !strings.Contains(s, "50%") {
+		t.Errorf("viewAnalysis should contain '50%%', got:\n%s", s)
+	}
+}
+
+func TestChunk13_ViewPlanReviewScreen_NoPlan(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	// Clear plan cache.
+	if _, err := evalJS(`globalThis.prSplit._state.planCache = null`); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := evalJS(`globalThis.prSplit._viewPlanReviewScreen({
+		wizardState: 'PLAN_REVIEW', width: 80, selectedSplitIdx: 0
+	})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(raw.(string), "No Plan") {
+		t.Error("viewPlanReview with no plan should show 'No Plan'")
+	}
+}
+
+func TestChunk13_ViewExecutionScreen_ShowsProgress(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	// Set up a mock plan.
+	if _, err := evalJS(`
+		globalThis.prSplit._state.planCache = {
+			baseBranch: 'main',
+			splits: [
+				{name: 'split-1', files: ['a.go'], message: 'fix A'},
+				{name: 'split-2', files: ['b.go'], message: 'fix B'}
+			]
+		};
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := evalJS(`globalThis.prSplit._viewExecutionScreen({
+		wizardState: 'BRANCH_BUILDING', width: 80,
+		executionResults: [{sha: 'abc123'}],
+		executingIdx: 1,
+		isProcessing: true
+	})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := raw.(string)
+	if !strings.Contains(s, "Executing") {
+		t.Errorf("viewExecution should contain 'Executing', got:\n%s", s)
+	}
+	if !strings.Contains(s, "split-1") || !strings.Contains(s, "split-2") {
+		t.Errorf("viewExecution should list both splits, got:\n%s", s)
+	}
+}
+
+func TestChunk13_ViewVerificationScreen_Pass(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`globalThis.prSplit._viewVerificationScreen({
+		wizardState: 'EQUIV_CHECK', width: 80,
+		isProcessing: false,
+		equivalenceResult: {equivalent: true}
+	})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(raw.(string), "PASS") {
+		t.Error("viewVerification with equiv pass should contain 'PASS'")
+	}
+}
+
+func TestChunk13_ViewVerificationScreen_Fail(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`globalThis.prSplit._viewVerificationScreen({
+		wizardState: 'EQUIV_CHECK', width: 80,
+		isProcessing: false,
+		equivalenceResult: {equivalent: false, expected: 'abc', actual: 'def'}
+	})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := raw.(string)
+	if !strings.Contains(s, "FAIL") {
+		t.Errorf("viewVerification with equiv fail should contain 'FAIL', got:\n%s", s)
+	}
+}
+
+func TestChunk13_ViewFinalizationScreen_ShowsSummary(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	if _, err := evalJS(`
+		globalThis.prSplit._state.planCache = {
+			baseBranch: 'main',
+			splits: [
+				{name: 'split/api', files: ['a.go', 'b.go']},
+				{name: 'split/cli', files: ['c.go']}
+			]
+		};
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := evalJS(`globalThis.prSplit._viewFinalizationScreen({
+		wizardState: 'FINALIZATION', width: 80, startTime: Date.now() - 60000,
+		equivalenceResult: {equivalent: true}
+	})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := raw.(string)
+	if !strings.Contains(s, "Complete") {
+		t.Errorf("viewFinalization should contain 'Complete', got:\n%s", s)
+	}
+	if !strings.Contains(s, "split/api") || !strings.Contains(s, "split/cli") {
+		t.Errorf("viewFinalization should list splits, got:\n%s", s)
+	}
+}
+
+// T033: Overlay renderers
+func TestChunk13_ViewHelpOverlay_ContainsShortcuts(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`globalThis.prSplit._viewHelpOverlay({width: 80})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := raw.(string)
+	for _, kw := range []string{"Tab", "Enter", "Esc", "Ctrl+C", "Ctrl+]"} {
+		if !strings.Contains(s, kw) {
+			t.Errorf("help overlay should contain %q, got:\n%s", kw, s)
+		}
+	}
+}
+
+func TestChunk13_ViewConfirmCancelOverlay_ContainsPrompt(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`globalThis.prSplit._viewConfirmCancelOverlay({width: 80})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := raw.(string)
+	if !strings.Contains(s, "Cancel") {
+		t.Errorf("confirm cancel should contain 'Cancel', got:\n%s", s)
+	}
+}
+
+func TestChunk13_ViewErrorResolutionScreen_ShowsOptions(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`globalThis.prSplit._viewErrorResolutionScreen({
+		wizardState: 'ERROR_RESOLUTION', width: 80,
+		errorDetails: 'cherry-pick conflict at line 45'
+	})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := raw.(string)
+	for _, kw := range []string{"Error Resolution", "Auto-Resolve", "Manual Fix", "Skip", "Retry", "Abort"} {
+		if !strings.Contains(s, kw) {
+			t.Errorf("error resolution should contain %q, got:\n%s", kw, s)
+		}
+	}
+}
+
+// T034-T035: State machine → screen mapping & exports
+func TestChunk13_WizardExports_StartWizard(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`typeof globalThis.prSplit.startWizard`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "function" {
+		t.Errorf("prSplit.startWizard should be function, got %v", raw)
+	}
+}
+
+func TestChunk13_WizardExports_WizardModel(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`typeof globalThis.prSplit._wizardModel`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "object" {
+		t.Errorf("prSplit._wizardModel should be object, got %v", raw)
+	}
+}
+
+func TestChunk13_WizardExports_CreateWizardModel(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`typeof globalThis.prSplit._createWizardModel`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "function" {
+		t.Errorf("prSplit._createWizardModel should be function, got %v", raw)
+	}
+}
+
+func TestChunk13_WizardExports_ScreenRenderers(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	renderers := []string{
+		"_viewConfigScreen", "_viewAnalysisScreen", "_viewPlanReviewScreen",
+		"_viewPlanEditorScreen", "_viewExecutionScreen", "_viewVerificationScreen",
+		"_viewFinalizationScreen", "_viewErrorResolutionScreen",
+		"_viewHelpOverlay", "_viewConfirmCancelOverlay",
+	}
+
+	for _, name := range renderers {
+		raw, err := evalJS(`typeof globalThis.prSplit.` + name)
+		if err != nil {
+			t.Fatalf("typeof prSplit.%s: %v", name, err)
+		}
+		if raw != "function" {
+			t.Errorf("prSplit.%s should be function, got %v", name, raw)
+		}
+	}
+}
+
+func TestChunk13_WizardExports_ChromeRenderers(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	renderers := []string{
+		"_renderTitleBar", "_renderNavBar", "_renderStatusBar",
+		"_renderStepDots", "_renderProgressBar",
+	}
+
+	for _, name := range renderers {
+		raw, err := evalJS(`typeof globalThis.prSplit.` + name)
+		if err != nil {
+			t.Fatalf("typeof prSplit.%s: %v", name, err)
+		}
+		if raw != "function" {
+			t.Errorf("prSplit.%s should be function, got %v", name, raw)
+		}
+	}
+}
+
+func TestChunk13_ProgressBar_Rendering(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	// 0% progress
+	raw, err := evalJS(`globalThis.prSplit._renderProgressBar(0, 40)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(raw.(string), "0%") {
+		t.Errorf("progressBar at 0 should contain '0%%', got %q", raw.(string))
+	}
+
+	// 100% progress
+	raw, err = evalJS(`globalThis.prSplit._renderProgressBar(1, 40)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(raw.(string), "100%") {
+		t.Errorf("progressBar at 1 should contain '100%%', got %q", raw.(string))
+	}
+}
+
+// T036: Responsive layout test (compact behavior)
+func TestChunk13_RenderTitleBar_NarrowWidth(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`globalThis.prSplit._renderTitleBar({
+		wizardState: 'CONFIG', startTime: Date.now(), width: 40
+	})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := raw.(string)
+	// Should still render without panic at narrow width.
+	if s == "" {
+		t.Error("titleBar should produce non-empty output at narrow width")
+	}
+}
+
+func TestChunk13_RenderNavBar_NarrowWidth(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`globalThis.prSplit._renderNavBar({
+		wizardState: 'CONFIG', width: 40, isProcessing: false
+	})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw.(string) == "" {
+		t.Error("navBar should produce non-empty output at narrow width")
+	}
+}
+
+// T037: Integration test — model lifecycle verification
+func TestChunk13_WizardModel_InitialState_IsIDLE(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	// The model's init function should set wizardState to IDLE.
+	// After creating the model, the wizard should be in IDLE with needsInitClear=true.
+	// On first WindowSize msg, it transitions to CONFIG.
+	raw, err := evalJS(`'' + globalThis.prSplit._wizardState.current`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// After chunk load, wizard is in IDLE (before the model receives WindowSize).
+	if raw != "IDLE" {
+		t.Errorf("wizard initial state should be IDLE, got %v", raw)
+	}
+}
+
+func TestChunk13_WizardModel_ConfigViewComposition(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	// Test the full view composition: titleBar + screenContent + navBar + statusBar.
+	// This simulates what the BubbleTea view() does for the CONFIG state.
+	raw, err := evalJS(`(function() {
+		var s = {
+			wizardState: 'CONFIG',
+			startTime: Date.now(),
+			width: 80,
+			height: 24,
+			showAdvanced: false,
+			isProcessing: false,
+			showHelp: false,
+			showConfirmCancel: false,
+			selectedSplitIdx: 0,
+			configFocusIdx: 0,
+			analysisSteps: [],
+			analysisProgress: 0,
+			executionResults: [],
+			executingIdx: 0,
+			errorDetails: '',
+			equivalenceResult: null
+		};
+		var title = globalThis.prSplit._renderTitleBar(s);
+		var screen = globalThis.prSplit._viewConfigScreen(s);
+		var nav = globalThis.prSplit._renderNavBar(s);
+		var status = globalThis.prSplit._renderStatusBar(s);
+		return title + '\n' + screen + '\n' + nav + '\n' + status;
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := raw.(string)
+	if !strings.Contains(s, "PR Split Wizard") {
+		t.Errorf("composed view should contain 'PR Split Wizard', got:\n%s", s)
+	}
+	if !strings.Contains(s, "Configure") {
+		t.Errorf("composed view should contain 'Configure', got:\n%s", s)
+	}
+	if !strings.Contains(s, "Repository") {
+		t.Errorf("composed view should contain 'Repository', got:\n%s", s)
+	}
+	if !strings.Contains(s, "Start Analysis") {
+		t.Errorf("composed view should contain 'Start Analysis' button, got:\n%s", s)
+	}
+}
+
+func TestChunk13_WizardModel_HelpOverlayComposition(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = {
+			wizardState: 'CONFIG',
+			startTime: Date.now(),
+			width: 80,
+			height: 24,
+			showAdvanced: false,
+			isProcessing: false,
+			showHelp: true,
+			showConfirmCancel: false,
+			selectedSplitIdx: 0,
+			configFocusIdx: 0,
+			analysisSteps: [],
+			analysisProgress: 0,
+			executionResults: [],
+			executingIdx: 0,
+			errorDetails: '',
+			equivalenceResult: null
+		};
+		var overlay = globalThis.prSplit._viewHelpOverlay(s);
+		return overlay;
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := raw.(string)
+	if !strings.Contains(s, "Tab") {
+		t.Errorf("help overlay should contain 'Tab', got:\n%s", s)
+	}
+	if !strings.Contains(s, "Esc") {
+		t.Errorf("help overlay should contain 'Esc', got:\n%s", s)
+	}
+}

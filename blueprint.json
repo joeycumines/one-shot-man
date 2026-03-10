@@ -28,7 +28,6 @@
     "contextManagement": "Tasks are sequential. Complete one fully (including Rule of Two + commit) before starting the next. Each task is self-contained. Break work into manageable units."
   },
   "statusSection": {
-    "currentState": "T01 DONE (0f2bfb1d), T02 DONE (39405a10), TSplit DONE (52e29a1c), T03 DONE (with TSplit), T04 DONE (d38db8ca), T05 DONE (pending commit). Next: T06.",
     "goalState": "A fully functional, production-quality pr-split TUI wizard with: (1) non-blocking async operations, (2) proper viewport/scrollbar on all screens, (3) working keyboard+mouse navigation matching super-document patterns, (4) real Claude integration with back-and-forth interaction, (5) embedded terminal output as BubbleTea component via termmux, (6) proper signal handling, (7) working error resolution flow, (8) post-split verification, (9) correct colors/layout, (10) comprehensive test coverage.",
     "replanLog": [
       {
@@ -50,8 +49,12 @@
       "acceptance": "Running 'Start Analysis' in the TUI wizard does NOT freeze the UI. Progress bar animates smoothly through 0→25→50→75→100%. User can press Ctrl+C or Esc during analysis. Each analysis step completes independently with proper error messages on failure. Verified by running osm pr-split in a test repo with significant diff.",
       "status": "Done",
       "context": {
-        "files": ["internal/command/pr_split_13_tui.js (function startAnalysis, function runAnalysisStep)"],
-        "references": ["internal/command/super_document_script.js"],
+        "files": [
+          "internal/command/pr_split_13_tui.js (function startAnalysis, function runAnalysisStep)"
+        ],
+        "references": [
+          "internal/command/super_document_script.js"
+        ],
         "dependencies": []
       }
     },
@@ -61,9 +64,15 @@
       "acceptance": "Execution screen shows real-time per-chunk progress bars. UI remains responsive during execution — user can pause (Ctrl+P), cancel (Ctrl+C), or toggle to Claude (Ctrl+]). Each chunk's build status updates live. Equivalence check runs as a separate async step after all chunks complete.",
       "status": "Done",
       "context": {
-        "files": ["internal/command/pr_split_13_tui.js (function startExecution, function runExecutionStep)"],
-        "references": ["internal/command/pr_split_05_execution.js (executeSplit)"],
-        "dependencies": ["T01"]
+        "files": [
+          "internal/command/pr_split_13_tui.js (function startExecution, function runExecutionStep)"
+        ],
+        "references": [
+          "internal/command/pr_split_05_execution.js (executeSplit)"
+        ],
+        "dependencies": [
+          "T01"
+        ]
       }
     },
     {
@@ -72,9 +81,16 @@
       "acceptance": "The 4 chunk files exist and are loaded in order by pr_split.go. The original pr_split_13_tui.js is trimmed to 708 lines (state only). `make make-all-with-log` passes (build, lint, all tests). No functionality changes — the split is purely structural. All tests pass. The test file loads all 4 TUI chunks correctly.",
       "status": "Done",
       "context": {
-        "files": ["internal/command/pr_split_13_tui.js (to be split)", "internal/command/pr_split.go (embed directives, prSplitChunks array)"],
-        "references": ["internal/command/pr_split_00_core.js (IIFE pattern example)"],
-        "dependencies": ["T02"]
+        "files": [
+          "internal/command/pr_split_13_tui.js (to be split)",
+          "internal/command/pr_split.go (embed directives, prSplitChunks array)"
+        ],
+        "references": [
+          "internal/command/pr_split_00_core.js (IIFE pattern example)"
+        ],
+        "dependencies": [
+          "T02"
+        ]
       }
     },
     {
@@ -83,9 +99,18 @@
       "acceptance": "When user selects 'Auto (AI)' strategy and clicks 'Start Analysis', Claude is spawned via ClaudeCodeExecutor, classification prompt is sent, and the pipeline runs end-to-end with live progress in the wizard. The wizard state transitions match the design doc flow. Claude's MCP callbacks (reportClassification, reportSplitPlan) update the wizard UI in real-time.",
       "status": "Done",
       "context": {
-        "files": ["internal/command/pr_split_16_tui_core.js (startAutoAnalysis, handleAutoSplitPoll, handleNext auto-mode check)", "internal/command/pr_split_10_pipeline.js (automatedSplit, sendToHandle)", "internal/command/pr_split_09_claude.js (ClaudeCodeExecutor)"],
-        "references": ["docs/pr-split-tui-design.md (Section 2: Analysis screen)"],
-        "dependencies": ["T01", "T02"]
+        "files": [
+          "internal/command/pr_split_16_tui_core.js (startAutoAnalysis, handleAutoSplitPoll, handleNext auto-mode check)",
+          "internal/command/pr_split_10_pipeline.js (automatedSplit, sendToHandle)",
+          "internal/command/pr_split_09_claude.js (ClaudeCodeExecutor)"
+        ],
+        "references": [
+          "docs/pr-split-tui-design.md (Section 2: Analysis screen)"
+        ],
+        "dependencies": [
+          "T01",
+          "T02"
+        ]
       },
       "completionNote": "Code shipped with TSplit commit 52e29a1c. startAutoAnalysis dispatches prSplit.automatedSplit() as Promise, handleAutoSplitPoll polls every 500ms, handleNext routes mode=auto to auto path. Claude fallback to heuristic implemented. E2E testing deferred to T22."
     },
@@ -95,9 +120,18 @@
       "acceptance": "When a branch build fails, the ERROR_RESOLUTION screen appears with actionable buttons. Clicking 'Auto-Resolve' triggers conflict resolution asynchronously with progress feedback. 'Skip' advances past the failed branch. 'Retry' re-runs the failed branch. 'Abort' cancels the wizard cleanly. 'Manual Fix' opens Claude terminal with the conflict context. The wizard never gets 'stuck' — every error state has a forward path.",
       "status": "Done",
       "context": {
-        "files": ["internal/command/pr_split_13_tui.js (handleErrorResolutionState — manual branch output.print removed)", "internal/command/pr_split_16_tui_core.js (handleErrorResolutionChoice rewritten, handleResolvePoll added)", "internal/command/pr_split_08_conflict.js (resolveConflicts)"],
-        "references": ["docs/pr-split-tui-design.md (Error Resolution Overlay)"],
-        "dependencies": ["T02", "T03"]
+        "files": [
+          "internal/command/pr_split_13_tui.js (handleErrorResolutionState — manual branch output.print removed)",
+          "internal/command/pr_split_16_tui_core.js (handleErrorResolutionChoice rewritten, handleResolvePoll added)",
+          "internal/command/pr_split_08_conflict.js (resolveConflicts)"
+        ],
+        "references": [
+          "docs/pr-split-tui-design.md (Error Resolution Overlay)"
+        ],
+        "dependencies": [
+          "T02",
+          "T03"
+        ]
       },
       "completionNote": "handleErrorResolutionChoice now properly dispatches: auto-resolve → async resolveConflicts with tick polling, manual → switch to Claude pane with stored context, skip → dispatch equiv check, retry → re-run startAnalysis, abort → tea.quit(). Removed output.print() hazard from manual branch. Added handleResolvePoll function and resolve-poll tick handler. Guarded exec-step-1 transition to prevent double EQUIV_CHECK transition."
     },
@@ -107,8 +141,12 @@
       "acceptance": "Every screen that can overflow vertically has a working scrollbar track+thumb on the right edge. Mouse wheel up/down scrolls the viewport. PgUp/PgDn/Home/End work. Verify existing Math.max(3, h-chromeH) guard is sufficient and add unit test for edge case (h=5, chromeH=10). Screen 3 specifically shows scrollbar when chunk list exceeds viewport height. Verified by running with small terminal size (80x24) and large plan. No output.print() calls reachable from BubbleTea update/view context (audit all output.print calls in TUI file).",
       "status": "Done",
       "context": {
-        "files": ["internal/command/pr_split_13_tui.js (all viewXxxScreen functions, _viewFn viewport wiring — search for 'viewConfigScreen', 'viewAnalysisScreen', etc.)"],
-        "references": ["internal/command/super_document_script.js (viewport+scrollbar pattern)"],
+        "files": [
+          "internal/command/pr_split_13_tui.js (all viewXxxScreen functions, _viewFn viewport wiring — search for 'viewConfigScreen', 'viewAnalysisScreen', etc.)"
+        ],
+        "references": [
+          "internal/command/super_document_script.js (viewport+scrollbar pattern)"
+        ],
         "dependencies": []
       }
     },
@@ -118,9 +156,15 @@
       "acceptance": "Tab cycles through all interactive elements on every screen. Selected element has visible focus indicator. Arrow keys navigate lists (chunks, files, options). Enter activates buttons and options. Esc closes help/cancel overlays and navigates back. Focus wraps around at list boundaries (last→first for Tab). Screen 1: Tab cycles source branch, target branch, strategy options, advanced toggle, Start button. Screen 3: Arrow keys select chunks, Tab moves to action buttons.",
       "status": "Not Started",
       "context": {
-        "files": ["internal/command/pr_split_13_tui.js (_updateFn keyboard section — search for 'key.' handlers; handleNavDown/handleNavUp functions)"],
-        "references": ["internal/command/super_document_script.js (handleKeys, ensureSelectionVisible)"],
-        "dependencies": ["T05"]
+        "files": [
+          "internal/command/pr_split_13_tui.js (_updateFn keyboard section — search for 'key.' handlers; handleNavDown/handleNavUp functions)"
+        ],
+        "references": [
+          "internal/command/super_document_script.js (handleKeys, ensureSelectionVisible)"
+        ],
+        "dependencies": [
+          "T05"
+        ]
       }
     },
     {
@@ -129,9 +173,16 @@
       "acceptance": "Every button, radio option, chunk card, and interactive element responds to mouse click. Clicking strategy options on Screen 1 selects them. Clicking chunk cards on Screen 3 selects them. Clicking 'Start Analysis' begins analysis. Clicking 'Cancel' shows cancel confirmation. Mouse clicks work correctly even when viewport is scrolled (Y offset adjusted). Claude status badge in footer is clickable and toggles to Claude pane.",
       "status": "Not Started",
       "context": {
-        "files": ["internal/command/pr_split_13_tui.js (handleMouseClick function, handleScreenMouseClick, all zone.mark() calls)"],
-        "references": ["internal/command/super_document_script.js (handleMouse, zone.mark, zone.inBounds, findClickedDocument)"],
-        "dependencies": ["T05", "T06"]
+        "files": [
+          "internal/command/pr_split_13_tui.js (handleMouseClick function, handleScreenMouseClick, all zone.mark() calls)"
+        ],
+        "references": [
+          "internal/command/super_document_script.js (handleMouse, zone.mark, zone.inBounds, findClickedDocument)"
+        ],
+        "dependencies": [
+          "T05",
+          "T06"
+        ]
       }
     },
     {
@@ -140,9 +191,16 @@
       "acceptance": "Colors are high-contrast and readable in both iTerm2 dark mode and light mode terminals. Box-drawing borders align correctly at all terminal widths. Nav bar gracefully truncates at narrow widths without content overlap. Status bar items are properly spaced. Wide layout (>100 cols) shows side-by-side panels on plan review screen. Verified at 60x24, 80x24, 120x40, and 200x60 terminal sizes.",
       "status": "Not Started",
       "context": {
-        "files": ["internal/command/pr_split_13_tui.js (COLORS object with {light,dark} — search for 'var COLORS'; resolveColor function; styles object; renderTitleBar, renderNavBar, renderStatusBar)"],
-        "references": ["internal/command/super_document_script.js (DESIGN constants, theme, adaptive colors)", "docs/pr-split-tui-design.md (Section 2: Colors)"],
-        "dependencies": ["T05"]
+        "files": [
+          "internal/command/pr_split_13_tui.js (COLORS object with {light,dark} — search for 'var COLORS'; resolveColor function; styles object; renderTitleBar, renderNavBar, renderStatusBar)"
+        ],
+        "references": [
+          "internal/command/super_document_script.js (DESIGN constants, theme, adaptive colors)",
+          "docs/pr-split-tui-design.md (Section 2: Colors)"
+        ],
+        "dependencies": [
+          "T05"
+        ]
       }
     },
     {
@@ -151,9 +209,16 @@
       "acceptance": "Ctrl+C once shows cancel confirmation overlay. Ctrl+C twice force-quits immediately with clean terminal restore. SIGTERM triggers graceful shutdown with checkpoint save. Terminal is NEVER left in a broken state (raw mode, alt screen, hidden cursor). Verified by sending SIGINT and SIGTERM during both the wizard and during Claude passthrough mode.",
       "status": "Not Started",
       "context": {
-        "files": ["internal/command/pr_split_13_tui.js (Ctrl+C in _updateFn — search for 'ctrl+c')", "internal/command/pr_split.go (command execution, cleanup)"],
-        "references": ["internal/termmux/termmux.go (RunPassthrough terminal restore)"],
-        "dependencies": ["T01"]
+        "files": [
+          "internal/command/pr_split_13_tui.js (Ctrl+C in _updateFn — search for 'ctrl+c')",
+          "internal/command/pr_split.go (command execution, cleanup)"
+        ],
+        "references": [
+          "internal/termmux/termmux.go (RunPassthrough terminal restore)"
+        ],
+        "dependencies": [
+          "T01"
+        ]
       }
     },
     {
@@ -162,9 +227,15 @@
       "acceptance": "Clicking 'View Report' on the finalization screen opens a full-screen report view WITHIN the wizard. Report is formatted readably (sections, colors, aligned columns). Report viewport has scrollbar. User can scroll with mouse wheel, PgUp/PgDn. Esc or Enter closes the report view and returns to finalization screen. 'Copy to Clipboard' copies the formatted report.",
       "status": "Not Started",
       "context": {
-        "files": ["internal/command/pr_split_13_tui.js (finalization screen 'final-report' zone handler — search for 'final-report'; buildReport function — search for 'function buildReport')"],
-        "references": ["internal/command/pr_split_template.md"],
-        "dependencies": ["T05"]
+        "files": [
+          "internal/command/pr_split_13_tui.js (finalization screen 'final-report' zone handler — search for 'final-report'; buildReport function — search for 'function buildReport')"
+        ],
+        "references": [
+          "internal/command/pr_split_template.md"
+        ],
+        "dependencies": [
+          "T05"
+        ]
       }
     },
     {
@@ -173,8 +244,14 @@
       "acceptance": "internal/termmux exports a CaptureSession type with Start, IsRunning, Output, Interrupt, Kill, Resize methods. Unit tests verify: command starts, output accumulates, Output() returns current screen content, Interrupt sends SIGINT, Kill terminates. Tests use a simple echo/sleep command. No pr-split-specific code in termmux package.",
       "status": "Not Started",
       "context": {
-        "files": ["internal/termmux/termmux.go", "internal/termmux/vt/ (VTerm)"],
-        "references": ["internal/termmux/ptyio/ (buffered PTY reader)", "internal/termmux/pty/ (process spawning)"],
+        "files": [
+          "internal/termmux/termmux.go",
+          "internal/termmux/vt/ (VTerm)"
+        ],
+        "references": [
+          "internal/termmux/ptyio/ (buffered PTY reader)",
+          "internal/termmux/pty/ (process spawning)"
+        ],
         "dependencies": []
       }
     },
@@ -184,9 +261,15 @@
       "acceptance": "JS code `const sess = termmux.newCaptureSession(); sess.start('echo', ['hello']); setTimeout(() => { console.log(sess.output()); }, 100);` works correctly. Events fire on output and exit. Unit tests in internal/builtin/termmux/module_test.go verify all methods. No pr-split-specific code in the bindings.",
       "status": "Not Started",
       "context": {
-        "files": ["internal/builtin/termmux/module.go"],
-        "references": ["internal/termmux/ (CaptureSession from T11)"],
-        "dependencies": ["T11"]
+        "files": [
+          "internal/builtin/termmux/module.go"
+        ],
+        "references": [
+          "internal/termmux/ (CaptureSession from T11)"
+        ],
+        "dependencies": [
+          "T11"
+        ]
       }
     },
     {
@@ -195,9 +278,17 @@
       "acceptance": "During branch verification, the execution screen shows a live-updating terminal-style viewport with the test command output. Output scrolls automatically to follow new content. User can scroll back to review earlier output. User can interrupt via button or shortcut. The viewport has a styled border with the command name as title. Output is properly rendered with ANSI colors stripped or preserved as appropriate.",
       "status": "Not Started",
       "context": {
-        "files": ["internal/command/pr_split_13_tui.js (execution screen)", "internal/command/pr_split_06_verification.js"],
-        "references": ["internal/builtin/termmux/module.go (CaptureSession bindings from T12)"],
-        "dependencies": ["T02", "T12"]
+        "files": [
+          "internal/command/pr_split_13_tui.js (execution screen)",
+          "internal/command/pr_split_06_verification.js"
+        ],
+        "references": [
+          "internal/builtin/termmux/module.go (CaptureSession bindings from T12)"
+        ],
+        "dependencies": [
+          "T02",
+          "T12"
+        ]
       }
     },
     {
@@ -206,9 +297,17 @@
       "acceptance": "User can toggle a split-view mode (e.g., Ctrl+L or a UI button) that shows Claude's terminal output in the bottom half of the wizard. The Claude output updates periodically (every 500ms poll). User can scroll the Claude output viewport. Returning to full wizard view hides the Claude output pane. The split-view correctly adjusts layout heights for both the wizard content and Claude output areas.",
       "status": "Not Started",
       "context": {
-        "files": ["internal/command/pr_split_13_tui.js", "internal/builtin/termmux/module.go (screenshot method)"],
-        "references": ["docs/pr-split-tui-design.md (Section 5: termmux Integration)"],
-        "dependencies": ["T03", "T12"]
+        "files": [
+          "internal/command/pr_split_13_tui.js",
+          "internal/builtin/termmux/module.go (screenshot method)"
+        ],
+        "references": [
+          "docs/pr-split-tui-design.md (Section 5: termmux Integration)"
+        ],
+        "dependencies": [
+          "T03",
+          "T12"
+        ]
       }
     },
     {
@@ -217,9 +316,18 @@
       "acceptance": "User can interact with Claude during plan generation — if Claude asks for clarification, a prompt appears in the wizard. From Plan Review, user can click 'Talk to Claude' to send feedback and get a regenerated plan. During error resolution, 'Ask Claude' sends conflict context and puts user in interactive mode. All interactions are non-blocking — wizard UI remains responsive throughout. Conversation history is maintained across interactions. If Claude process crashes or times out, detect within 5s, show error with retry/fallback option.",
       "status": "Not Started",
       "context": {
-        "files": ["internal/command/pr_split_09_claude.js (ClaudeCodeExecutor, renderPrompt)", "internal/command/pr_split_10_pipeline.js (sendToHandle, waitForLogged)"],
-        "references": ["docs/pr-split-tui-design.md (Sections 2, 3, 5)"],
-        "dependencies": ["T03", "T04", "T14"]
+        "files": [
+          "internal/command/pr_split_09_claude.js (ClaudeCodeExecutor, renderPrompt)",
+          "internal/command/pr_split_10_pipeline.js (sendToHandle, waitForLogged)"
+        ],
+        "references": [
+          "docs/pr-split-tui-design.md (Sections 2, 3, 5)"
+        ],
+        "dependencies": [
+          "T03",
+          "T04",
+          "T14"
+        ]
       }
     },
     {
@@ -228,9 +336,18 @@
       "acceptance": "Config screen clearly shows which strategy is selected. 'Auto (AI)' selection triggers an immediate check of Claude availability, showing ✓/✗. The resolved Claude command is displayed. 'Test Connection' button verifies Claude responds. If Claude is unavailable, a warning is shown and heuristic fallback is offered. User always knows whether Claude will be used for the split.",
       "status": "Not Started",
       "context": {
-        "files": ["internal/command/pr_split_13_tui.js (viewConfigScreen function)", "internal/command/pr_split_09_claude.js (ClaudeCodeExecutor.resolve)"],
-        "references": ["docs/pr-split-tui-design.md (Screen 1: Configuration)"],
-        "dependencies": ["T06", "T07", "T08"]
+        "files": [
+          "internal/command/pr_split_13_tui.js (viewConfigScreen function)",
+          "internal/command/pr_split_09_claude.js (ClaudeCodeExecutor.resolve)"
+        ],
+        "references": [
+          "docs/pr-split-tui-design.md (Screen 1: Configuration)"
+        ],
+        "dependencies": [
+          "T06",
+          "T07",
+          "T08"
+        ]
       }
     },
     {
@@ -239,9 +356,16 @@
       "acceptance": "After branches are built, the wizard automatically runs verification (test suite) on each branch. Verification progress is shown per-branch with live test output. Failed branches transition to ERROR_RESOLUTION with failure details. Equivalence check runs AFTER all branches pass verification (or are skipped). User can see test output in an embedded terminal viewport.",
       "status": "Not Started",
       "context": {
-        "files": ["internal/command/pr_split_13_tui.js (function startExecution)", "internal/command/pr_split_06_verification.js (verifySplit, verifySplits)"],
+        "files": [
+          "internal/command/pr_split_13_tui.js (function startExecution)",
+          "internal/command/pr_split_06_verification.js (verifySplit, verifySplits)"
+        ],
         "references": [],
-        "dependencies": ["T02", "T04", "T13"]
+        "dependencies": [
+          "T02",
+          "T04",
+          "T13"
+        ]
       }
     },
     {
@@ -250,9 +374,18 @@
       "acceptance": "Plan Editor screen has functional inline editing of chunk titles. File list shows checkboxes, Space toggles inclusion. Arrow keys navigate files. 'Move File' opens an overlay with chunk selection. Prev/Next buttons navigate between chunks. Save validates the edited plan and returns to Plan Review. All interactions work via both keyboard and mouse.",
       "status": "Not Started",
       "context": {
-        "files": ["internal/command/pr_split_13_tui.js (viewPlanEditorScreen function)"],
-        "references": ["internal/command/super_document_script.js (textarea pattern, configureTextarea)", "docs/pr-split-tui-design.md (Screen 4: Plan Editor)"],
-        "dependencies": ["T05", "T06", "T07"]
+        "files": [
+          "internal/command/pr_split_13_tui.js (viewPlanEditorScreen function)"
+        ],
+        "references": [
+          "internal/command/super_document_script.js (textarea pattern, configureTextarea)",
+          "docs/pr-split-tui-design.md (Screen 4: Plan Editor)"
+        ],
+        "dependencies": [
+          "T05",
+          "T06",
+          "T07"
+        ]
       }
     },
     {
@@ -261,9 +394,18 @@
       "acceptance": "Unit tests exist for ALL 7 screen renderers + overlays. Tests verify: content at expected positions, zone marks present, scrollbar presence, responsive layout, error states. Tests pass on all platforms. Coverage for view functions is ≥90%.",
       "status": "Not Started",
       "context": {
-        "files": ["internal/command/pr_split_13_tui.js (all viewXxx functions)"],
-        "references": ["internal/command/super_document_template_test.go (test patterns)"],
-        "dependencies": ["T05", "T06", "T07", "T08"]
+        "files": [
+          "internal/command/pr_split_13_tui.js (all viewXxx functions)"
+        ],
+        "references": [
+          "internal/command/super_document_template_test.go (test patterns)"
+        ],
+        "dependencies": [
+          "T05",
+          "T06",
+          "T07",
+          "T08"
+        ]
       }
     },
     {
@@ -272,9 +414,17 @@
       "acceptance": "Unit tests verify: Tab focus cycling on each screen, arrow navigation in lists, Enter activation, Esc back behavior, mouse click dispatch for every zone, mouse wheel scroll. Tests cover all 7 screens. Tests pass on all platforms.",
       "status": "Not Started",
       "context": {
-        "files": ["internal/command/pr_split_13_tui.js (update function, handleMouseClick, handleNavUp/Down)"],
-        "references": ["internal/command/super_document_mouse_order_test.go"],
-        "dependencies": ["T06", "T07", "T19"]
+        "files": [
+          "internal/command/pr_split_13_tui.js (update function, handleMouseClick, handleNavUp/Down)"
+        ],
+        "references": [
+          "internal/command/super_document_mouse_order_test.go"
+        ],
+        "dependencies": [
+          "T06",
+          "T07",
+          "T19"
+        ]
       }
     },
     {
@@ -283,9 +433,18 @@
       "acceptance": "Integration tests cover: happy path flow through all 7 states, error path to ERROR_RESOLUTION with recovery, cancellation from every non-terminal state, Claude unavailable fallback to heuristic. Tests run without external dependencies (git, Claude). Tests pass on all platforms.",
       "status": "Not Started",
       "context": {
-        "files": ["internal/command/pr_split_wizard_integration_test.go"],
-        "references": ["internal/command/pr_split_integration_test.go (existing patterns)"],
-        "dependencies": ["T01", "T02", "T03", "T04"]
+        "files": [
+          "internal/command/pr_split_wizard_integration_test.go"
+        ],
+        "references": [
+          "internal/command/pr_split_integration_test.go (existing patterns)"
+        ],
+        "dependencies": [
+          "T01",
+          "T02",
+          "T03",
+          "T04"
+        ]
       }
     },
     {
@@ -294,9 +453,18 @@
       "acceptance": "Integration test target exists in project.mk. Tests run real Claude binary, send classification prompt, receive MCP callback, validate classification output. Tests skip gracefully when Claude is unavailable. Tests pass when Claude IS available. Tests are not flaky — proper timeouts and retry logic.",
       "status": "Not Started",
       "context": {
-        "files": ["internal/command/pr_split_integration_test.go", "project.mk"],
-        "references": ["internal/command/pr_split_09_claude.js", "internal/command/pr_split_10_pipeline.js"],
-        "dependencies": ["T03", "T15"]
+        "files": [
+          "internal/command/pr_split_integration_test.go",
+          "project.mk"
+        ],
+        "references": [
+          "internal/command/pr_split_09_claude.js",
+          "internal/command/pr_split_10_pipeline.js"
+        ],
+        "dependencies": [
+          "T03",
+          "T15"
+        ]
       }
     },
     {
@@ -305,9 +473,30 @@
       "acceptance": "Design document accurately reflects the implemented TUI. All screen designs match the actual implementation. New features (CaptureSession, Claude back-and-forth, split-view) are documented. Keyboard shortcut table is accurate. File structure section matches actual code organization.",
       "status": "Not Started",
       "context": {
-        "files": ["docs/pr-split-tui-design.md"],
+        "files": [
+          "docs/pr-split-tui-design.md"
+        ],
         "references": [],
-        "dependencies": ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18"]
+        "dependencies": [
+          "T01",
+          "T02",
+          "T03",
+          "T04",
+          "T05",
+          "T06",
+          "T07",
+          "T08",
+          "T09",
+          "T10",
+          "T11",
+          "T12",
+          "T13",
+          "T14",
+          "T15",
+          "T16",
+          "T17",
+          "T18"
+        ]
       }
     },
     {
@@ -316,9 +505,16 @@
       "acceptance": "Terminal is NEVER left in broken state for any exit path. git worktrees created during execution are cleaned up on cancellation. Claude process is terminated on exit. State checkpoint is saved on graceful cancellation (resume supported). All 6 exit paths tested with assertions on terminal state.",
       "status": "Not Started",
       "context": {
-        "files": ["internal/command/pr_split_13_tui.js", "internal/command/pr_split.go"],
-        "references": ["internal/termmux/termmux.go (RunPassthrough cleanup)"],
-        "dependencies": ["T09"]
+        "files": [
+          "internal/command/pr_split_13_tui.js",
+          "internal/command/pr_split.go"
+        ],
+        "references": [
+          "internal/termmux/termmux.go (RunPassthrough cleanup)"
+        ],
+        "dependencies": [
+          "T09"
+        ]
       }
     },
     {
@@ -327,9 +523,33 @@
       "acceptance": "If chunking: the TUI is split into manageable chunks (each <800 lines) with clear boundaries. The chunking follows the same IIFE+prSplit.* pattern as other chunks. If not chunking: a clear documented justification exists for why the TUI is better as a single file, and the file is well-organized with clear sections.",
       "status": "Not Started",
       "context": {
-        "files": ["internal/command/pr_split_13_tui.js", "internal/command/pr_split.go (chunk loading)"],
-        "references": ["docs/architecture-pr-split-chunks.md"],
-        "dependencies": ["T01", "T02", "T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18"]
+        "files": [
+          "internal/command/pr_split_13_tui.js",
+          "internal/command/pr_split.go (chunk loading)"
+        ],
+        "references": [
+          "docs/architecture-pr-split-chunks.md"
+        ],
+        "dependencies": [
+          "T01",
+          "T02",
+          "T03",
+          "T04",
+          "T05",
+          "T06",
+          "T07",
+          "T08",
+          "T09",
+          "T10",
+          "T11",
+          "T12",
+          "T13",
+          "T14",
+          "T15",
+          "T16",
+          "T17",
+          "T18"
+        ]
       }
     }
   ],

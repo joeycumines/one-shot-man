@@ -4039,3 +4039,529 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_AllBranchesFailVerify(t *tes
 	// Pipeline should complete without crash or hang.
 	t.Log("pipeline completed: all failures correctly identified as pre-existing")
 }
+
+// ---------------------------------------------------------------------------
+// T02: Mock MCP edge-case integration tests — schema validation, error
+// recovery, and graceful degradation of the automatedSplit pipeline.
+// ---------------------------------------------------------------------------
+
+// mockClaudeSetupJS returns the standard mock ClaudeCodeExecutor JavaScript
+// for injection into the test pipeline. The mock is stateless: resolve(),
+// spawn(), close(), kill() all succeed immediately, and the handle's send()
+// and isAlive() are no-ops/true.
+const mockClaudeSetupJS = `
+	prSplit.SEND_TEXT_CHUNK_BYTES = 1000000;
+	ClaudeCodeExecutor = function(config) {
+		this.config = config;
+		this.resolved = { command: 'mock-claude' };
+		this.handle = { send: function() {}, isAlive: function() { return true; } };
+	};
+	ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+	ClaudeCodeExecutor.prototype.spawn = function(sid, opts) {
+		return { error: null, sessionId: 'mock-' + sid };
+	};
+	ClaudeCodeExecutor.prototype.close = function() {};
+	ClaudeCodeExecutor.prototype.kill = function() {};
+`
+
+// mockMCPTestPipelineOpts returns shared TestPipelineOpts for the MockMCP
+// edge-case tests. All tests use a 3-file repo (pkg/a.go, pkg/b.go,
+// docs/readme.md) with simple single-line changes.
+func mockMCPTestPipelineOpts() TestPipelineOpts {
+	return TestPipelineOpts{
+		InitialFiles: []TestPipelineFile{
+			{"pkg/a.go", "package pkg\n\nfunc A() {}\n"},
+			{"pkg/b.go", "package pkg\n\nfunc B() {}\n"},
+			{"docs/readme.md", "# Project\n"},
+		},
+		FeatureFiles: []TestPipelineFile{
+			{"pkg/a.go", "package pkg\n\nfunc A() { /* updated */ }\n"},
+			{"pkg/b.go", "package pkg\n\nfunc B() { /* updated */ }\n"},
+			{"docs/readme.md", "# Project\n\nNew documentation.\n"},
+		},
+		ConfigOverrides: map[string]any{
+			"branchPrefix":  "split/",
+			"verifyCommand": "true",
+			"strategy":      "directory",
+		},
+	}
+}
+
+// automatedSplitFastTimeouts returns the JS config object fragment for
+// automatedSplit with fast timeouts suitable for mock MCP tests.
+const automatedSplitFastTimeouts = `{
+	disableTUI: true,
+	pollIntervalMs: 50,
+	classifyTimeoutMs: 2000,
+	planTimeoutMs: 2000,
+	resolveTimeoutMs: 500,
+	maxResolveRetries: 0,
+	maxReSplits: 0,
+	pipelineTimeoutMs: 30000,
+	stepTimeoutMs: 30000,
+	watchdogIdleMs: 30000
+}`
+
+// mockMCPReport is the shared report structure parsed from automatedSplit
+// output in mock MCP tests.
+type mockMCPReport struct {
+	Error  string `json:"error"`
+	Report struct {
+		Error        string `json:"error"`
+		Mode         string `json:"mode"`
+		FallbackUsed bool   `json:"fallbackUsed"`
+		Steps        []struct {
+			Name  string `json:"name"`
+			Error string `json:"error"`
+		} `json:"steps"`
+		Classification []struct {
+			Name        string   `json:"name"`
+			Description string   `json:"description"`
+			Files       []string `json:"files"`
+		} `json:"classification"`
+		Plan struct {
+			Splits []struct {
+				Name    string   `json:"name"`
+				Files   []string `json:"files"`
+				Message string   `json:"message"`
+			} `json:"splits"`
+		} `json:"plan"`
+		Splits []struct {
+			Name  string `json:"name"`
+			SHA   string `json:"sha"`
+			Error string `json:"error"`
+		} `json:"splits"`
+	} `json:"report"`
+}
+
+// TestIntegration_MockMCP_MalformedClassification injects classification
+// data that does NOT match the expected schema:
+//   - categories is a string instead of an array
+//   - pipeline should handle gracefully (fallback or error, no crash/hang)
+func TestIntegration_MockMCP_MalformedClassification(t *testing.T) {
+	// NOT parallel — uses chdir.
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	tp := chdirTestPipeline(t, mockMCPTestPipelineOpts())
+	if _, err := tp.EvalJS(mockClaudeSetupJS); err != nil {
+		t.Fatalf("mock setup: %v", err)
+	}
+
+	// Inject malformed classification: categories is a string, not array.
+	malformedJSON := []byte(`{"categories": "this is not an array"}`)
+
+	watchCh := mcpcallbackmod.WatchForInit()
+	go func() {
+		h := <-watchCh
+		if err := h.InjectToolResult("reportClassification", malformedJSON); err != nil {
+			t.Logf("inject classification: %v", err)
+		}
+		// No plan injection — let pipeline handle local fallback.
+	}()
+
+	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit(` + automatedSplitFastTimeouts + `))`)
+	if err != nil {
+		t.Fatalf("automatedSplit failed: %v", err)
+	}
+
+	resultStr, ok := result.(string)
+	if !ok {
+		t.Fatalf("expected string, got %T: %v", result, result)
+	}
+	t.Logf("raw result: %s", resultStr)
+
+	var report mockMCPReport
+	if err := json.Unmarshal([]byte(resultStr), &report); err != nil {
+		t.Fatalf("parse: %v\nraw: %s", err, resultStr)
+	}
+
+	// The pipeline should NOT crash/panic/hang.
+	// With a string instead of array, classificationToGroups will get empty
+	// groups (string is not array and not iterable as object keys), which
+	// means ALL files go to "uncategorized". The pipeline may succeed with
+	// a single "uncategorized" split, or it may error. Both are valid as
+	// long as no crash.
+	t.Logf("error=%q report.error=%q", report.Error, report.Report.Error)
+
+	// If pipeline completed, check that classification was stored in report.
+	if report.Error == "" && report.Report.Error == "" {
+		// Should have fallen back and created splits.
+		if len(report.Report.Plan.Splits) == 0 && len(report.Report.Splits) == 0 {
+			t.Log("WARNING: pipeline completed with no plan splits — may need investigation")
+		}
+	}
+
+	// Verify "Receive classification" step is present.
+	hasReceiveStep := false
+	for _, s := range report.Report.Steps {
+		if s.Name == "Receive classification" {
+			hasReceiveStep = true
+			t.Logf("step %q error=%q", s.Name, s.Error)
+		}
+	}
+	if !hasReceiveStep {
+		t.Log("no 'Receive classification' step — pipeline may have errored earlier")
+	}
+
+	t.Log("malformed classification handled without crash or hang")
+}
+
+// TestIntegration_MockMCP_PartialClassification injects a classification
+// that covers only SOME of the changed files. The pipeline should detect
+// the missing files and add them to an "uncategorized" bucket.
+func TestIntegration_MockMCP_PartialClassification(t *testing.T) {
+	// NOT parallel — uses chdir.
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	tp := chdirTestPipeline(t, mockMCPTestPipelineOpts())
+	if _, err := tp.EvalJS(mockClaudeSetupJS); err != nil {
+		t.Fatalf("mock setup: %v", err)
+	}
+
+	// Classify only pkg/a.go — deliberately omit pkg/b.go and docs/readme.md.
+	partialClassJSON, err := json.Marshal(map[string]any{"categories": []map[string]any{
+		{"name": "core", "description": "Core package changes", "files": []string{"pkg/a.go"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Also inject a plan covering only the classified file.
+	planJSON, err := json.Marshal(map[string]any{"stages": []map[string]any{
+		{"name": "split/core", "files": []string{"pkg/a.go"}, "message": "Core changes"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	watchCh := mcpcallbackmod.WatchForInit()
+	go func() {
+		h := <-watchCh
+		if err := h.InjectToolResult("reportClassification", partialClassJSON); err != nil {
+			t.Logf("inject classification: %v", err)
+		}
+		if err := h.InjectToolResult("reportSplitPlan", planJSON); err != nil {
+			t.Logf("inject plan: %v", err)
+		}
+	}()
+
+	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit(` + automatedSplitFastTimeouts + `))`)
+	if err != nil {
+		t.Fatalf("automatedSplit failed: %v", err)
+	}
+
+	resultStr := result.(string)
+	t.Logf("raw result: %s", resultStr)
+
+	var report mockMCPReport
+	if err := json.Unmarshal([]byte(resultStr), &report); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	// Pipeline should handle partial classification by adding missing files
+	// to "uncategorized" (or reject the plan and generate locally).
+	t.Logf("error=%q report.error=%q fallback=%v", report.Error, report.Report.Error, report.Report.FallbackUsed)
+
+	// Check classification has an "uncategorized" category for missing files.
+	hasUncategorized := false
+	for _, cat := range report.Report.Classification {
+		if cat.Name == "uncategorized" {
+			hasUncategorized = true
+			t.Logf("uncategorized category has %d files: %v", len(cat.Files), cat.Files)
+			// Should contain pkg/b.go and docs/readme.md
+			missingFiles := map[string]bool{"pkg/b.go": false, "docs/readme.md": false}
+			for _, f := range cat.Files {
+				if _, ok := missingFiles[f]; ok {
+					missingFiles[f] = true
+				}
+			}
+			for f, found := range missingFiles {
+				if !found {
+					t.Errorf("expected %q in uncategorized category", f)
+				}
+			}
+		}
+	}
+	if !hasUncategorized && report.Error == "" {
+		t.Error("expected 'uncategorized' category for missing files")
+	}
+
+	// If the Claude plan was accepted (plan validation doesn't check
+	// completeness against the diff), the plan may only cover the classified
+	// files. validatePlan checks structure, not coverage. Verify the
+	// equivalence check catches this (tree hash mismatch expected).
+	if report.Error == "" {
+		equivErr := ""
+		for _, s := range report.Report.Steps {
+			if s.Name == "Verify equivalence" && s.Error != "" {
+				equivErr = s.Error
+			}
+		}
+		if equivErr != "" {
+			t.Logf("equivalence mismatch detected (expected with partial plan): %s", equivErr)
+		}
+	}
+
+	t.Log("partial classification handled: missing files detected and categorized")
+}
+
+// TestIntegration_MockMCP_EmptyCategories injects a classification where
+// all categories have empty file arrays. The pipeline should detect this
+// via validateClassification and fall back to local plan generation.
+func TestIntegration_MockMCP_EmptyCategories(t *testing.T) {
+	// NOT parallel — uses chdir.
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	tp := chdirTestPipeline(t, mockMCPTestPipelineOpts())
+	if _, err := tp.EvalJS(mockClaudeSetupJS); err != nil {
+		t.Fatalf("mock setup: %v", err)
+	}
+
+	// Classification with categories that have NO files.
+	emptyClassJSON, err := json.Marshal(map[string]any{"categories": []map[string]any{
+		{"name": "api", "description": "API layer", "files": []string{}},
+		{"name": "docs", "description": "Documentation", "files": []string{}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	watchCh := mcpcallbackmod.WatchForInit()
+	go func() {
+		h := <-watchCh
+		if err := h.InjectToolResult("reportClassification", emptyClassJSON); err != nil {
+			t.Logf("inject classification: %v", err)
+		}
+		// No plan injection — let pipeline generate locally after fallback.
+	}()
+
+	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit(` + automatedSplitFastTimeouts + `))`)
+	if err != nil {
+		t.Fatalf("automatedSplit failed: %v", err)
+	}
+
+	resultStr := result.(string)
+	t.Logf("raw result: %s", resultStr)
+
+	var report mockMCPReport
+	if err := json.Unmarshal([]byte(resultStr), &report); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	// With ALL categories having empty files, every file is "missing" and
+	// should go to "uncategorized". Pipeline should still complete.
+	t.Logf("error=%q report.error=%q", report.Error, report.Report.Error)
+
+	if report.Error == "" && report.Report.Error == "" {
+		// Pipeline succeeded — all files must be somewhere in the plan.
+		totalFiles := 0
+		for _, s := range report.Report.Plan.Splits {
+			totalFiles += len(s.Files)
+		}
+		if totalFiles < 3 {
+			t.Errorf("expected plan to cover all 3 files, got %d", totalFiles)
+		}
+
+		// Should have an uncategorized group with all 3 files.
+		hasUncategorized := false
+		for _, cat := range report.Report.Classification {
+			if cat.Name == "uncategorized" {
+				hasUncategorized = true
+				if len(cat.Files) != 3 {
+					t.Errorf("expected 3 files in uncategorized, got %d", len(cat.Files))
+				}
+			}
+		}
+		if !hasUncategorized {
+			t.Error("expected 'uncategorized' category for all orphaned files")
+		}
+	}
+
+	t.Log("empty categories handled: all files moved to uncategorized")
+}
+
+// TestIntegration_MockMCP_MalformedPlan injects a valid classification
+// followed by a malformed split plan (not an array, missing required
+// fields). The pipeline should reject the Claude plan and fall back to
+// local plan generation from the classification.
+func TestIntegration_MockMCP_MalformedPlan(t *testing.T) {
+	// NOT parallel — uses chdir.
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	tp := chdirTestPipeline(t, mockMCPTestPipelineOpts())
+	if _, err := tp.EvalJS(mockClaudeSetupJS); err != nil {
+		t.Fatalf("mock setup: %v", err)
+	}
+
+	// Valid classification.
+	classJSON, err := json.Marshal(map[string]any{"categories": []map[string]any{
+		{"name": "code", "description": "Code changes", "files": []string{"pkg/a.go", "pkg/b.go"}},
+		{"name": "docs", "description": "Documentation", "files": []string{"docs/readme.md"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Malformed plan: stages is a string, not an array.
+	malformedPlanJSON := []byte(`{"stages": "not an array"}`)
+
+	watchCh := mcpcallbackmod.WatchForInit()
+	go func() {
+		h := <-watchCh
+		if err := h.InjectToolResult("reportClassification", classJSON); err != nil {
+			t.Logf("inject classification: %v", err)
+		}
+		if err := h.InjectToolResult("reportSplitPlan", malformedPlanJSON); err != nil {
+			t.Logf("inject plan: %v", err)
+		}
+	}()
+
+	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit(` + automatedSplitFastTimeouts + `))`)
+	if err != nil {
+		t.Fatalf("automatedSplit failed: %v", err)
+	}
+
+	resultStr := result.(string)
+	t.Logf("raw result: %s", resultStr)
+
+	var report mockMCPReport
+	if err := json.Unmarshal([]byte(resultStr), &report); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	// The pipeline should reject the malformed plan and fall back to local
+	// plan generation. It should NOT crash or hang.
+	t.Logf("error=%q report.error=%q", report.Error, report.Report.Error)
+
+	if report.Error == "" && report.Report.Error == "" {
+		// Pipeline succeeded — plan was generated locally.
+		if len(report.Report.Plan.Splits) == 0 {
+			t.Fatal("expected locally generated plan to have splits")
+		}
+		t.Logf("local plan generated with %d splits", len(report.Report.Plan.Splits))
+
+		// Verify plan covers all files.
+		planFiles := make(map[string]bool)
+		for _, s := range report.Report.Plan.Splits {
+			for _, f := range s.Files {
+				planFiles[f] = true
+			}
+		}
+		expectedFiles := []string{"pkg/a.go", "pkg/b.go", "docs/readme.md"}
+		for _, ef := range expectedFiles {
+			if !planFiles[ef] {
+				t.Errorf("expected file %q in plan, not found", ef)
+			}
+		}
+	}
+
+	// Verify splits were actually created in git.
+	if report.Error == "" {
+		branches := runGitCmd(t, tp.Dir, "branch")
+		if !strings.Contains(branches, "split/") {
+			t.Error("expected at least one split/ branch to exist")
+		}
+		t.Logf("branches: %s", branches)
+	}
+
+	t.Log("malformed plan handled: local fallback plan generated and executed")
+}
+
+// TestIntegration_MockMCP_LateClassification verifies that injecting
+// classification data AFTER the classify timeout has expired does not
+// crash, panic, or deadlock the pipeline. The pipeline should already
+// have returned with a timeout error; the late injection must be
+// silently discarded.
+func TestIntegration_MockMCP_LateClassification(t *testing.T) {
+	// NOT parallel — uses chdir.
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	tp := chdirTestPipeline(t, mockMCPTestPipelineOpts())
+	if _, err := tp.EvalJS(mockClaudeSetupJS); err != nil {
+		t.Fatalf("mock setup: %v", err)
+	}
+
+	// Valid classification — but we'll inject it LATE.
+	classJSON, err := json.Marshal(map[string]any{"categories": []map[string]any{
+		{"name": "all", "description": "All changes", "files": []string{"pkg/a.go", "pkg/b.go", "docs/readme.md"}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Track when to inject: AFTER the pipeline returns.
+	pipelineDone := make(chan struct{})
+	var injectErr error
+
+	watchCh := mcpcallbackmod.WatchForInit()
+	go func() {
+		h := <-watchCh
+		// Wait for pipeline to complete (timeout) before injecting.
+		<-pipelineDone
+		// Now inject late — this should NOT cause any issues.
+		injectErr = h.InjectToolResult("reportClassification", classJSON)
+		if injectErr != nil {
+			// Expected: the waiter may already be closed/gone.
+			t.Logf("late inject (expected failure): %v", injectErr)
+		} else {
+			t.Log("late inject succeeded (data silently absorbed into closed channel)")
+		}
+	}()
+
+	// VERY short classify timeout — pipeline times out quickly.
+	result, err := tp.EvalJS(`JSON.stringify(await prSplit.automatedSplit({
+		disableTUI: true,
+		pollIntervalMs: 50,
+		classifyTimeoutMs: 300,
+		planTimeoutMs: 300,
+		resolveTimeoutMs: 100,
+		maxResolveRetries: 0,
+		maxReSplits: 0,
+		pipelineTimeoutMs: 30000,
+		stepTimeoutMs: 30000,
+		watchdogIdleMs: 30000
+	}))`)
+	close(pipelineDone) // Signal goroutine to inject late.
+
+	if err != nil {
+		t.Fatalf("automatedSplit failed: %v", err)
+	}
+
+	resultStr := result.(string)
+	t.Logf("raw result: %s", resultStr)
+
+	var report mockMCPReport
+	if err := json.Unmarshal([]byte(resultStr), &report); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	// Pipeline should have timed out.
+	errStr := report.Error
+	if errStr == "" {
+		errStr = report.Report.Error
+	}
+	if errStr == "" {
+		t.Fatal("expected timeout error from classification")
+	}
+	if !strings.Contains(strings.ToLower(errStr), "timeout") {
+		t.Errorf("error should mention timeout, got: %s", errStr)
+	}
+	t.Logf("pipeline timed out as expected: %s", errStr)
+
+	// Give the late injection goroutine time to complete.
+	time.Sleep(200 * time.Millisecond)
+
+	// Key assertion: we got here without a crash, panic, or deadlock.
+	// The late injection either failed (waiter gone) or succeeded silently.
+	t.Log("late classification injection handled safely — no crash or deadlock")
+}

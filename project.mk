@@ -41,7 +41,7 @@ integration-test-prsplit:
 .PHONY: integration-test-prsplit-mcp
 integration-test-prsplit-mcp: ## Run pr-split MCP mock integration tests (no real AI required)
 	$(GO) test -race -v -count=1 -timeout=10m \
-		./internal/command/... -run 'TestIntegration_AutoSplitMockMCP'
+		./internal/command/... -run 'TestIntegration_(AutoSplitMockMCP|MockMCP_)'
 
 # ---
 

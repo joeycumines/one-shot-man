@@ -241,6 +241,10 @@
                 if (msg.id === 'auto-poll') {
                     return handleAutoSplitPoll(s);
                 }
+                // Resolve-conflicts polling.
+                if (msg.id === 'resolve-poll') {
+                    return handleResolvePoll(s);
+                }
                 return [s, null];
             }
 
@@ -895,6 +899,49 @@
         return [s, null];
     }
 
+    // handleResolvePoll: Called every 500ms to check if the async
+    // resolveConflicts operation has completed. Processes the result
+    // and transitions to the appropriate state.
+    function handleResolvePoll(s) {
+        if (!s.isProcessing) {
+            return [s, null];
+        }
+
+        if (s.resolveRunning) {
+            return [s, tea.tick(500, 'resolve-poll')];
+        }
+
+        // Resolve completed — process result.
+        var result = s.resolveResult;
+        s.isProcessing = false;
+
+        if (result && result.error) {
+            s.errorDetails = result.error;
+            s.wizard.transition('ERROR_RESOLUTION');
+            s.wizardState = 'ERROR_RESOLUTION';
+            return [s, null];
+        }
+
+        // Check if any branches still have errors after auto-resolve.
+        var errors = (result && result.errors) || [];
+        if (errors.length > 0) {
+            // Some branches still failing — re-enter error resolution.
+            s.wizard.data.failedBranches = errors;
+            s.errorDetails = 'Auto-resolve fixed ' +
+                ((result && result.fixed) ? result.fixed.length : 0) +
+                ' branch(es), but ' + errors.length + ' still failing.';
+            s.wizard.transition('ERROR_RESOLUTION');
+            s.wizardState = 'ERROR_RESOLUTION';
+            return [s, null];
+        }
+
+        // All resolved — continue to equivalence check.
+        s.wizard.transition('EQUIV_CHECK');
+        s.wizardState = 'EQUIV_CHECK';
+        s.isProcessing = true;
+        return [s, tea.tick(1, 'exec-step-1')];
+    }
+
     function startExecution(s) {
         if (!st.planCache || !st.planCache.splits || st.planCache.splits.length === 0) {
             s.errorDetails = 'No plan to execute.';
@@ -961,7 +1008,11 @@
         }
         case 1: {
             // Step 2: Equivalence check.
-            s.wizard.transition('EQUIV_CHECK');
+            // Guard: only transition if not already in EQUIV_CHECK
+            // (handleResolvePoll pre-transitions for the skip/resolve paths).
+            if (s.wizard.current !== 'EQUIV_CHECK') {
+                s.wizard.transition('EQUIV_CHECK');
+            }
             s.wizardState = 'EQUIV_CHECK';
 
             var equivResult = handleEquivCheckState(s.wizard, st.planCache);
@@ -980,12 +1031,66 @@
         var result = handleErrorResolutionState(s.wizard, choice);
         s.wizardState = s.wizard.current;
 
-        if (choice === 'manual' && typeof tuiMux !== 'undefined' && tuiMux &&
-            typeof tuiMux.switchTo === 'function') {
-            tuiMux.switchTo('claude');
+        if (result && result.error) {
+            s.errorDetails = result.error;
+            return [s, null];
         }
 
-        return [s, null];
+        switch (choice) {
+        case 'auto-resolve':
+            // Dispatch resolveConflicts as async Promise with tick polling
+            // (same pattern as startAutoAnalysis).
+            s.isProcessing = true;
+            s.resolveRunning = true;
+            s.resolveResult = null;
+
+            var resolveOpts = {
+                verifyCommand: prSplit.runtime.verifyCommand,
+                retryBudget: prSplit.runtime.retryBudget
+            };
+            prSplit.resolveConflicts(st.planCache, resolveOpts).then(
+                function(res) {
+                    s.resolveResult = res;
+                    s.resolveRunning = false;
+                },
+                function(err) {
+                    s.resolveResult = { error: (err && err.message) ? err.message : String(err) };
+                    s.resolveRunning = false;
+                }
+            );
+            return [s, tea.tick(500, 'resolve-poll')];
+
+        case 'manual':
+            // Switch to Claude pane — user fixes manually. Store context
+            // so the execution screen can show instructions when user
+            // returns from Claude.
+            s.manualFixContext = {
+                failedBranches: (result && result.failedBranches) ||
+                    (s.wizard.data && s.wizard.data.failedBranches) || []
+            };
+            if (typeof tuiMux !== 'undefined' && tuiMux &&
+                typeof tuiMux.switchTo === 'function') {
+                tuiMux.switchTo('claude');
+            }
+            return [s, null];
+
+        case 'skip':
+            // Transition to EQUIV_CHECK happened in handleErrorResolutionState.
+            // Dispatch equivalence check via the existing exec-step-1 handler.
+            s.isProcessing = true;
+            return [s, tea.tick(1, 'exec-step-1')];
+
+        case 'retry':
+            // Transition to PLAN_GENERATION happened. Re-run analysis.
+            return startAnalysis(s);
+
+        case 'abort':
+            // Transition to CANCELLED happened. Quit the wizard.
+            return [s, tea.quit()];
+
+        default:
+            return [s, null];
+        }
     }
 
     // -----------------------------------------------------------------------

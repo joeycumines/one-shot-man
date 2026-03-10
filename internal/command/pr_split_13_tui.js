@@ -609,18 +609,13 @@
         if (choice === 'manual') {
             // Manual fix: user interacts with Claude pane to fix branches,
             // then re-enters BRANCH_BUILDING for re-verification.
+            // NOTE: Do NOT call output.print() here — this runs inside
+            // BubbleTea context and would corrupt the terminal. The caller
+            // (handleErrorResolutionChoice in chunk 16) handles switching
+            // to the Claude pane and storing context for the view.
             var failedBranches = (wizard.data && wizard.data.failedBranches) || [];
-            if (typeof output !== 'undefined') {
-                output.print('[pr-split] Manual fix mode — use the Claude pane (toggle key) to fix these branches:');
-                for (var fb = 0; fb < failedBranches.length; fb++) {
-                    var fb_name = failedBranches[fb].name || failedBranches[fb];
-                    var fb_error = failedBranches[fb].verifyError || failedBranches[fb].error || '';
-                    output.print('  • ' + fb_name + (fb_error ? ': ' + fb_error : ''));
-                }
-                output.print('[pr-split] When done, run "fix" or "verify" to re-check branches.');
-            }
             wizard.transition('BRANCH_BUILDING');
-            return { action: 'manual', state: 'BRANCH_BUILDING' };
+            return { action: 'manual', state: 'BRANCH_BUILDING', failedBranches: failedBranches };
         }
 
         // Default: abort.

@@ -939,6 +939,150 @@
         return styles.activeCard().width(overlayW).render(inner);
     }
 
+    // ----- Move File Dialog Overlay -----
+
+    function viewMoveFileDialog(s) {
+        var overlayW = Math.min(55, (s.width || 80) - 6);
+        var lines = [];
+
+        var splitIdx = s.selectedSplitIdx || 0;
+        var fileIdx = s.selectedFileIdx || 0;
+        var splits = (st.planCache && st.planCache.splits) ? st.planCache.splits : [];
+        var srcSplit = splits[splitIdx];
+        var fileName = (srcSplit && srcSplit.files && srcSplit.files[fileIdx])
+            ? srcSplit.files[fileIdx] : '(no file selected)';
+
+        lines.push(styles.bold().render('Move File'));
+        lines.push('');
+        lines.push(styles.dim().render('File: ') + styles.fieldValue().render(fileName));
+        lines.push(styles.dim().render('From: ') + styles.label().render(
+            srcSplit ? srcSplit.name : '?'));
+        lines.push('');
+        lines.push(styles.dim().render('Select target split:'));
+        lines.push('');
+
+        var ds = s.editorDialogState || {};
+        var targetCursor = ds.targetIdx || 0;
+        var ti = 0;
+
+        for (var i = 0; i < splits.length; i++) {
+            if (i === splitIdx) continue;
+            var isActive = (ti === targetCursor);
+            var bullet = isActive
+                ? styles.primaryButton().render(' \u25b6 ')
+                : '   ';
+            var splitName = styles.label().render(splits[i].name || 'split-' + i);
+            var fileCount = styles.dim().render(
+                (splits[i].files ? splits[i].files.length : 0) + ' files');
+            lines.push(zone.mark('move-target-' + ti,
+                bullet + ' ' + splitName + '  ' + fileCount));
+            ti++;
+        }
+
+        lines.push('');
+        lines.push(styles.dim().render('j/k navigate \u2022 Enter confirm \u2022 Esc cancel'));
+        lines.push('');
+        lines.push(
+            zone.mark('move-confirm', styles.primaryButton().render(' Move ')) +
+            '  ' +
+            zone.mark('move-cancel', styles.secondaryButton().render(' Cancel '))
+        );
+
+        var content = lines.join('\n');
+        return styles.activeCard().width(overlayW).render(content);
+    }
+
+    // ----- Rename Split Dialog Overlay -----
+
+    function viewRenameSplitDialog(s) {
+        var overlayW = Math.min(50, (s.width || 80) - 6);
+        var lines = [];
+
+        var splitIdx = s.selectedSplitIdx || 0;
+        var splits = (st.planCache && st.planCache.splits) ? st.planCache.splits : [];
+        var currentName = (splits[splitIdx] && splits[splitIdx].name) || '';
+
+        var ds = s.editorDialogState || {};
+        var inputText = ds.inputText !== undefined ? ds.inputText : currentName;
+
+        lines.push(styles.bold().render('Rename Split'));
+        lines.push('');
+        lines.push(styles.dim().render('Current: ') +
+            styles.fieldValue().render(currentName));
+        lines.push('');
+        lines.push(styles.dim().render('New name:'));
+
+        // Render a text input field with a cursor indicator.
+        var inputDisplay = inputText + '\u2588'; // Block cursor at end.
+        var inputField = styles.activeCard().width(Math.max(20, overlayW - 8)).render(
+            styles.label().render(inputDisplay));
+        lines.push(inputField);
+
+        lines.push('');
+        lines.push(styles.dim().render('Type to edit \u2022 Enter confirm \u2022 Esc cancel'));
+        lines.push('');
+        lines.push(
+            zone.mark('rename-confirm', styles.primaryButton().render(' Rename ')) +
+            '  ' +
+            zone.mark('rename-cancel', styles.secondaryButton().render(' Cancel '))
+        );
+
+        var content = lines.join('\n');
+        return styles.activeCard().width(overlayW).render(content);
+    }
+
+    // ----- Merge Splits Dialog Overlay -----
+
+    function viewMergeSplitsDialog(s) {
+        var overlayW = Math.min(55, (s.width || 80) - 6);
+        var lines = [];
+
+        var splitIdx = s.selectedSplitIdx || 0;
+        var splits = (st.planCache && st.planCache.splits) ? st.planCache.splits : [];
+        var dstSplit = splits[splitIdx];
+        var dstName = dstSplit ? dstSplit.name : '?';
+
+        lines.push(styles.bold().render('Merge Splits'));
+        lines.push('');
+        lines.push(styles.dim().render('Merge selected splits into: ') +
+            styles.fieldValue().render(dstName));
+        lines.push('');
+
+        var ds = s.editorDialogState || {};
+        var selected = ds.selected || {};
+        var cursorIdx = ds.cursorIdx || 0;
+        var ci = 0;
+
+        for (var i = 0; i < splits.length; i++) {
+            if (i === splitIdx) continue;
+            var isChecked = !!selected[i];
+            var isCursor = (ci === cursorIdx);
+            var checkbox = isChecked ? '\u2611' : '\u2610';
+            var pointer = isCursor ? '\u25b6 ' : '  ';
+            var nameStyle = isCursor
+                ? styles.bold().render(splits[i].name || 'split-' + i)
+                : styles.label().render(splits[i].name || 'split-' + i);
+            var fileCount = styles.dim().render(
+                ' (' + (splits[i].files ? splits[i].files.length : 0) + ' files)');
+            lines.push(zone.mark('merge-item-' + ci,
+                pointer + checkbox + ' ' + nameStyle + fileCount));
+            ci++;
+        }
+
+        lines.push('');
+        lines.push(styles.dim().render(
+            'j/k navigate \u2022 Space toggle \u2022 Enter merge \u2022 Esc cancel'));
+        lines.push('');
+        lines.push(
+            zone.mark('merge-confirm', styles.primaryButton().render(' Merge ')) +
+            '  ' +
+            zone.mark('merge-cancel', styles.secondaryButton().render(' Cancel '))
+        );
+
+        var content = lines.join('\n');
+        return styles.activeCard().width(overlayW).render(content);
+    }
+
     // Map wizard state to the correct screen renderer.
     function viewForState(s) {
         switch (s.wizardState) {
@@ -985,6 +1129,9 @@
     prSplit._viewHelpOverlay = viewHelpOverlay;
     prSplit._viewConfirmCancelOverlay = viewConfirmCancelOverlay;
     prSplit._viewReportOverlay = viewReportOverlay;
+    prSplit._viewMoveFileDialog = viewMoveFileDialog;
+    prSplit._viewRenameSplitDialog = viewRenameSplitDialog;
+    prSplit._viewMergeSplitsDialog = viewMergeSplitsDialog;
     prSplit._viewForState = viewForState;
 
     // Cross-chunk exports — libraries and utilities for subsequent chunks.

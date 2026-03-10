@@ -112,7 +112,8 @@
       "task": "T04: Implement plan editor modal dialogs — move-file, rename-split, merge-splits",
       "description": "Three TODO stubs in pr_split_16_tui_core.js (search: 'editor-move', 'editor-rename', 'editor-merge' in handleScreenMouseClick): buttons log TODO and return. Implement: (a) Move-file dialog: overlay with target chunks list, arrows to select, Enter confirms, moves file and updates wizard.data.plan.splits. (b) Rename-split: text input pre-filled with current name, Enter confirms, Esc cancels. (c) Merge-splits: chunk list with checkboxes, Space toggles, Enter merges into current. (d) All use lipgloss, zone marks, keyboard nav. (e) Add s.activeDialog field to model state.",
       "acceptance": "'Move File' opens chunk-selection overlay. 'Rename' opens text input. 'Merge' opens multi-select. All dismissible with Esc. Plan state updated after operations.",
-      "status": "Not Started",
+      "status": "Done",
+      "completionNotes": "Implemented 3 modal dialogs: Move-file (target split selection, j/k nav, file splice), Rename-split (text input with block cursor, char accumulation), Merge-splits (checkbox multi-select, descending-order splice). All dismiss with Esc, plan mutations on st.planCache.splits, zone marks for mouse, keyboard nav. State: activeEditorDialog + editorDialogState + selectedFileIdx in model init.",
       "context": {
         "files": [
           "internal/command/pr_split_16_tui_core.js (handleScreenMouseClick editor section)",

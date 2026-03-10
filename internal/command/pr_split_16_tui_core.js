@@ -28,6 +28,9 @@
     var viewHelpOverlay = prSplit._viewHelpOverlay;
     var viewConfirmCancelOverlay = prSplit._viewConfirmCancelOverlay;
     var viewReportOverlay = prSplit._viewReportOverlay;
+    var viewMoveFileDialog = prSplit._viewMoveFileDialog;
+    var viewRenameSplitDialog = prSplit._viewRenameSplitDialog;
+    var viewMergeSplitsDialog = prSplit._viewMergeSplitsDialog;
 
     // Cross-chunk imports — state and handlers from chunks 13-14.
     var st = prSplit._state;
@@ -91,7 +94,12 @@
                 reportVp: reportVp,
                 reportSb: reportSb,
                 selectedSplitIdx: 0,
+                selectedFileIdx: 0,
                 isProcessing: false,
+
+                // Editor dialog state.
+                activeEditorDialog: null,  // 'move' | 'rename' | 'merge' | null
+                editorDialogState: {},
 
                 // Analysis progress.
                 analysisSteps: [],
@@ -198,6 +206,11 @@
                     return [s, null];
                 }
                 return [s, null];
+            }
+
+            // Editor dialog intercepts all input when active.
+            if (s.activeEditorDialog) {
+                return updateEditorDialog(msg, s);
             }
 
             // Global key bindings.
@@ -404,6 +417,17 @@
                     {whitespaceChars: '\u2591', whitespaceForeground: COLORS.border});
             }
 
+            // Overlay: Editor Dialog (move/rename/merge).
+            if (s.activeEditorDialog) {
+                var dialogPanel = viewEditorDialog(s);
+                if (dialogPanel) {
+                    fullView = lipgloss.place(w, h,
+                        lipgloss.Center, lipgloss.Center,
+                        dialogPanel,
+                        {whitespaceChars: '\u2591', whitespaceForeground: COLORS.border});
+                }
+            }
+
             return zone.scan(fullView);
         };
 
@@ -454,6 +478,290 @@
             }
         }
         return [s, null];
+    }
+
+    // -----------------------------------------------------------------------
+    //  Editor Dialog Handler — move-file, rename-split, merge-splits
+    // -----------------------------------------------------------------------
+
+    function updateEditorDialog(msg, s) {
+        var dialog = s.activeEditorDialog;
+        var ds = s.editorDialogState || {};
+
+        // Close any dialog on Esc.
+        if (msg.type === 'Key' && msg.key === 'esc') {
+            s.activeEditorDialog = null;
+            s.editorDialogState = {};
+            return [s, null];
+        }
+
+        // --- Move File Dialog ---
+        if (dialog === 'move') {
+            return updateMoveDialog(msg, s, ds);
+        }
+
+        // --- Rename Split Dialog ---
+        if (dialog === 'rename') {
+            return updateRenameDialog(msg, s, ds);
+        }
+
+        // --- Merge Splits Dialog ---
+        if (dialog === 'merge') {
+            return updateMergeDialog(msg, s, ds);
+        }
+
+        return [s, null];
+    }
+
+    function updateMoveDialog(msg, s, ds) {
+        if (!st.planCache || !st.planCache.splits) {
+            s.activeEditorDialog = null;
+            return [s, null];
+        }
+        var splits = st.planCache.splits;
+        var currentIdx = s.selectedSplitIdx || 0;
+
+        // Build list of valid target indices (all except current).
+        var targets = [];
+        for (var i = 0; i < splits.length; i++) {
+            if (i !== currentIdx) targets.push(i);
+        }
+        if (targets.length === 0) {
+            s.activeEditorDialog = null;
+            return [s, null];
+        }
+
+        if (msg.type === 'Key') {
+            var k = msg.key;
+            // Navigate targets.
+            if (k === 'j' || k === 'down') {
+                ds.targetIdx = Math.min((ds.targetIdx || 0) + 1, targets.length - 1);
+                s.editorDialogState = ds;
+                return [s, null];
+            }
+            if (k === 'k' || k === 'up') {
+                ds.targetIdx = Math.max((ds.targetIdx || 0) - 1, 0);
+                s.editorDialogState = ds;
+                return [s, null];
+            }
+            // Confirm move.
+            if (k === 'enter') {
+                var targetSplitIdx = targets[ds.targetIdx || 0];
+                var fileIdx = s.selectedFileIdx || 0;
+                var srcSplit = splits[currentIdx];
+                var dstSplit = splits[targetSplitIdx];
+                if (srcSplit && srcSplit.files && srcSplit.files[fileIdx] && dstSplit) {
+                    var file = srcSplit.files[fileIdx];
+                    // Remove from source.
+                    srcSplit.files.splice(fileIdx, 1);
+                    // Add to destination.
+                    if (!dstSplit.files) dstSplit.files = [];
+                    dstSplit.files.push(file);
+                    // Adjust selectedFileIdx if it's now out of range.
+                    if (s.selectedFileIdx >= srcSplit.files.length) {
+                        s.selectedFileIdx = Math.max(0, srcSplit.files.length - 1);
+                    }
+                    log.printf('Moved %s from %s to %s', file, srcSplit.name, dstSplit.name);
+                }
+                s.activeEditorDialog = null;
+                s.editorDialogState = {};
+                return [s, null];
+            }
+        }
+
+        // Mouse: click on target zone marks.
+        if (msg.type === 'Mouse' && msg.action === 'press' && !msg.isWheel) {
+            for (var ti = 0; ti < targets.length; ti++) {
+                if (zone.inBounds('move-target-' + ti, msg)) {
+                    ds.targetIdx = ti;
+                    s.editorDialogState = ds;
+                    // Double-click or explicit confirm — for now just select.
+                    return [s, null];
+                }
+            }
+            if (zone.inBounds('move-confirm', msg)) {
+                // Reuse enter logic by synthesizing a key.
+                return updateMoveDialog({type: 'Key', key: 'enter'}, s, ds);
+            }
+            if (zone.inBounds('move-cancel', msg)) {
+                s.activeEditorDialog = null;
+                s.editorDialogState = {};
+                return [s, null];
+            }
+        }
+
+        return [s, null];
+    }
+
+    function updateRenameDialog(msg, s, ds) {
+        if (msg.type === 'Key') {
+            var k = msg.key;
+            // Confirm rename.
+            if (k === 'enter') {
+                var text = (ds.inputText || '').trim();
+                if (text.length > 0 && st.planCache && st.planCache.splits) {
+                    var splitIdx = s.selectedSplitIdx || 0;
+                    if (st.planCache.splits[splitIdx]) {
+                        var oldName = st.planCache.splits[splitIdx].name;
+                        st.planCache.splits[splitIdx].name = text;
+                        log.printf('Renamed split %s to %s', oldName, text);
+                    }
+                }
+                s.activeEditorDialog = null;
+                s.editorDialogState = {};
+                return [s, null];
+            }
+            // Backspace — delete last char.
+            if (k === 'backspace') {
+                var t = ds.inputText || '';
+                if (t.length > 0) {
+                    ds.inputText = t.substring(0, t.length - 1);
+                    s.editorDialogState = ds;
+                }
+                return [s, null];
+            }
+            // Typed character — single printable char (length 1).
+            if (k.length === 1) {
+                ds.inputText = (ds.inputText || '') + k;
+                s.editorDialogState = ds;
+                return [s, null];
+            }
+        }
+
+        // Mouse zone clicks.
+        if (msg.type === 'Mouse' && msg.action === 'press' && !msg.isWheel) {
+            if (zone.inBounds('rename-confirm', msg)) {
+                return updateRenameDialog({type: 'Key', key: 'enter'}, s, ds);
+            }
+            if (zone.inBounds('rename-cancel', msg)) {
+                s.activeEditorDialog = null;
+                s.editorDialogState = {};
+                return [s, null];
+            }
+        }
+
+        return [s, null];
+    }
+
+    function updateMergeDialog(msg, s, ds) {
+        if (!st.planCache || !st.planCache.splits) {
+            s.activeEditorDialog = null;
+            return [s, null];
+        }
+        var splits = st.planCache.splits;
+        var currentIdx = s.selectedSplitIdx || 0;
+
+        // Build list of mergeable indices (all except current).
+        var mergeables = [];
+        for (var i = 0; i < splits.length; i++) {
+            if (i !== currentIdx) mergeables.push(i);
+        }
+        if (mergeables.length === 0) {
+            s.activeEditorDialog = null;
+            return [s, null];
+        }
+
+        if (msg.type === 'Key') {
+            var k = msg.key;
+            // Navigate.
+            if (k === 'j' || k === 'down') {
+                ds.cursorIdx = Math.min((ds.cursorIdx || 0) + 1, mergeables.length - 1);
+                s.editorDialogState = ds;
+                return [s, null];
+            }
+            if (k === 'k' || k === 'up') {
+                ds.cursorIdx = Math.max((ds.cursorIdx || 0) - 1, 0);
+                s.editorDialogState = ds;
+                return [s, null];
+            }
+            // Toggle selection.
+            if (k === ' ') {
+                var idx = mergeables[ds.cursorIdx || 0];
+                if (!ds.selected) ds.selected = {};
+                ds.selected[idx] = !ds.selected[idx];
+                s.editorDialogState = ds;
+                return [s, null];
+            }
+            // Confirm merge.
+            if (k === 'enter') {
+                var selected = ds.selected || {};
+                var dstSplit = splits[currentIdx];
+                if (!dstSplit) {
+                    s.activeEditorDialog = null;
+                    s.editorDialogState = {};
+                    return [s, null];
+                }
+                // Collect indices to merge, sorted in descending order
+                // so splicing doesn't shift indices of later items.
+                var toMerge = [];
+                for (var si = 0; si < splits.length; si++) {
+                    if (selected[si]) toMerge.push(si);
+                }
+                toMerge.sort(function(a, b) { return b - a; });
+
+                // Move files from each selected split into destination.
+                for (var mi = 0; mi < toMerge.length; mi++) {
+                    var srcIdx = toMerge[mi];
+                    var srcSplit = splits[srcIdx];
+                    if (srcSplit && srcSplit.files) {
+                        if (!dstSplit.files) dstSplit.files = [];
+                        for (var fi = 0; fi < srcSplit.files.length; fi++) {
+                            dstSplit.files.push(srcSplit.files[fi]);
+                        }
+                    }
+                    // Remove the merged split.
+                    splits.splice(srcIdx, 1);
+                    log.printf('Merged split %s into %s',
+                        srcSplit ? srcSplit.name : srcIdx, dstSplit.name);
+                }
+
+                // Adjust selectedSplitIdx if it shifted.
+                // Recalculate: find the current split by reference.
+                for (var ni = 0; ni < splits.length; ni++) {
+                    if (splits[ni] === dstSplit) {
+                        s.selectedSplitIdx = ni;
+                        break;
+                    }
+                }
+
+                s.activeEditorDialog = null;
+                s.editorDialogState = {};
+                return [s, null];
+            }
+        }
+
+        // Mouse: toggle checkboxes, confirm/cancel.
+        if (msg.type === 'Mouse' && msg.action === 'press' && !msg.isWheel) {
+            for (var ci = 0; ci < mergeables.length; ci++) {
+                if (zone.inBounds('merge-item-' + ci, msg)) {
+                    var idx = mergeables[ci];
+                    if (!ds.selected) ds.selected = {};
+                    ds.selected[idx] = !ds.selected[idx];
+                    s.editorDialogState = ds;
+                    return [s, null];
+                }
+            }
+            if (zone.inBounds('merge-confirm', msg)) {
+                return updateMergeDialog({type: 'Key', key: 'enter'}, s, ds);
+            }
+            if (zone.inBounds('merge-cancel', msg)) {
+                s.activeEditorDialog = null;
+                s.editorDialogState = {};
+                return [s, null];
+            }
+        }
+
+        return [s, null];
+    }
+
+    // Dispatch to the correct dialog view function.
+    function viewEditorDialog(s) {
+        switch (s.activeEditorDialog) {
+            case 'move':   return viewMoveFileDialog(s);
+            case 'rename': return viewRenameSplitDialog(s);
+            case 'merge':  return viewMergeSplitsDialog(s);
+            default:       return null;
+        }
     }
 
     function handleMouseClick(msg, s) {
@@ -541,18 +849,35 @@
             }
             // Editor action buttons.
             if (zone.inBounds('editor-move', msg)) {
-                // TODO: Implement move-file dialog (future enhancement).
-                log.printf('editor-move: not yet implemented');
+                var splitIdx = s.selectedSplitIdx || 0;
+                var fileIdx = s.selectedFileIdx || 0;
+                if (st.planCache && st.planCache.splits &&
+                    st.planCache.splits[splitIdx] &&
+                    st.planCache.splits[splitIdx].files &&
+                    st.planCache.splits[splitIdx].files[fileIdx] &&
+                    st.planCache.splits.length > 1) {
+                    s.activeEditorDialog = 'move';
+                    s.editorDialogState = { targetIdx: 0 };
+                }
                 return [s, null];
             }
             if (zone.inBounds('editor-rename', msg)) {
-                // TODO: Implement rename-split dialog (future enhancement).
-                log.printf('editor-rename: not yet implemented');
+                var splitIdx = s.selectedSplitIdx || 0;
+                if (st.planCache && st.planCache.splits &&
+                    st.planCache.splits[splitIdx]) {
+                    s.activeEditorDialog = 'rename';
+                    s.editorDialogState = {
+                        inputText: st.planCache.splits[splitIdx].name || ''
+                    };
+                }
                 return [s, null];
             }
             if (zone.inBounds('editor-merge', msg)) {
-                // TODO: Implement merge-splits dialog (future enhancement).
-                log.printf('editor-merge: not yet implemented');
+                if (st.planCache && st.planCache.splits &&
+                    st.planCache.splits.length > 1) {
+                    s.activeEditorDialog = 'merge';
+                    s.editorDialogState = { selected: {}, cursorIdx: 0 };
+                }
                 return [s, null];
             }
         }

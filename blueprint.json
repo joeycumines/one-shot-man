@@ -323,7 +323,7 @@
       "task": "T16: Implement interactive Claude back-and-forth during wizard flow",
       "description": "User-Claude conversation: (a) PLAN_GENERATION: detect clarification, inline text input, send via sendToHandle. (b) Plan Review: 'Ask Claude' button sends feedback, waits for MCP callback. (c) ERROR_RESOLUTION: sends context + instructions. (d) s.claudeHistory[]. (e) Non-blocking via tick.",
       "acceptance": "User can interact during plan gen. Ask Claude on review works. Error resolution sends context. History persists. Non-blocking.",
-      "status": "Not Started",
+      "status": "Done",
       "context": {
         "files": [
           "internal/command/pr_split_16_tui_core.js",

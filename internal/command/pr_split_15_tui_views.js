@@ -517,12 +517,116 @@
         return paneStyle.render(contentLines.join('\n'));
     }
 
+    // -----------------------------------------------------------------------
+    //  Claude Conversation Overlay (T16)
+    // -----------------------------------------------------------------------
+    function viewClaudeConvoOverlay(s) {
+        var convo = s.claudeConvo;
+        var w = Math.min((s.width || 80) - 4, 76);
+        var h = Math.min((s.height || 24) - 4, 22);
+
+        var lines = [];
+
+        // Title.
+        var contextLabel = convo.context === 'plan-review' ? 'Plan Review'
+            : convo.context === 'error-resolution' ? 'Error Resolution'
+            : 'Claude';
+        lines.push(styles.bold().render('\ud83e\udd16 Ask Claude \u2014 ' + contextLabel));
+        lines.push(styles.dim().render('Type your message. Enter to send. Esc to close.'));
+        lines.push('');
+
+        // Error banner.
+        if (convo.lastError) {
+            lines.push(styles.errorBadge().render(' Error ') + ' ' +
+                styles.dim().render(truncate(convo.lastError, w - 12)));
+            lines.push('');
+        }
+
+        // Conversation history.
+        var historyHeight = h - 7; // title(2) + blank(1) + input(2) + status(1) + padding(1)
+        if (convo.lastError) historyHeight -= 2;
+        historyHeight = Math.max(3, historyHeight);
+
+        var historyLines = [];
+        for (var hi = 0; hi < convo.history.length; hi++) {
+            var entry = convo.history[hi];
+            if (entry.role === 'user') {
+                historyLines.push(styles.primaryButton().render(' You ') + ' ' + entry.text);
+            } else {
+                var cLines = entry.text.split('\n');
+                historyLines.push(styles.successBadge().render(' Claude '));
+                for (var cl = 0; cl < cLines.length; cl++) {
+                    historyLines.push('  ' + truncate(cLines[cl], w - 6));
+                }
+            }
+            historyLines.push('');
+        }
+
+        // Apply scroll offset.
+        var visibleHistory;
+        var totalHistLines = historyLines.length;
+        if (totalHistLines <= historyHeight) {
+            visibleHistory = historyLines.slice();
+        } else {
+            var scrollOff = convo.scrollOffset || 0;
+            var start = Math.max(0, totalHistLines - historyHeight - scrollOff);
+            var end = Math.min(totalHistLines, start + historyHeight);
+            visibleHistory = historyLines.slice(start, end);
+        }
+
+        // Pad to fill history area.
+        while (visibleHistory.length < historyHeight) {
+            visibleHistory.push('');
+        }
+
+        for (var vhi = 0; vhi < visibleHistory.length; vhi++) {
+            lines.push(visibleHistory[vhi]);
+        }
+
+        // Separator.
+        lines.push(styles.dim().render(repeatStr('\u2500', w - 4)));
+
+        // Input field.
+        var inputPrefix = convo.sending
+            ? styles.dim().render('\u23f3 Sending...')
+            : styles.bold().render('\u276f ');
+        var inputText = convo.sending
+            ? styles.dim().render('Waiting for Claude to respond...')
+            : (convo.inputText || '') + styles.dim().render('\u2588');
+        lines.push(inputPrefix + truncate(inputText, w - 8));
+
+        // Status bar.
+        var statusParts = [];
+        if (convo.sending && convo.waitingForTool) {
+            statusParts.push(styles.dim().render('Waiting for: ' + convo.waitingForTool));
+        }
+        if (convo.history.length > 0) {
+            statusParts.push(styles.dim().render(convo.history.length + ' message' +
+                (convo.history.length !== 1 ? 's' : '')));
+        }
+        if (statusParts.length > 0) {
+            lines.push(statusParts.join(' \u00b7 '));
+        }
+
+        // Wrap in bordered box.
+        var contentH = Math.max(1, lines.length);
+        var overlayStyle = lipgloss.newStyle()
+            .border(lipgloss.roundedBorder())
+            .borderForeground(COLORS.primary)
+            .width(w - 2)
+            .height(contentH)
+            .padding(0, 1);
+
+        return overlayStyle.render(lines.join('\n'));
+    }
+
     // Export chrome for testing.
     prSplit._renderTitleBar = renderTitleBar;
     prSplit._renderNavBar = renderNavBar;
     prSplit._renderStatusBar = renderStatusBar;
     prSplit._renderClaudePane = renderClaudePane;
     prSplit._renderStepDots = renderStepDots;
+    prSplit._viewClaudeConvoOverlay = viewClaudeConvoOverlay;
 
     // -----------------------------------------------------------------------
     //  Helpers (T008)
@@ -824,15 +928,20 @@
         var regenFocused = (focusIdx === splitCount + 1);
         var editBtnStyle = editFocused ? styles.focusedButton() : styles.secondaryButton();
         var regenBtnStyle = regenFocused ? styles.focusedButton() : styles.secondaryButton();
+        var askClaudeFocused = (focusIdx === splitCount + 2);
+        var askClaudeStyle = askClaudeFocused ? styles.focusedButton() : styles.primaryButton();
         lines.push('');
         if (layoutMode(s) === 'compact') {
             lines.push(zone.mark('plan-edit', editBtnStyle.render('Edit \u270f')));
             lines.push(zone.mark('plan-regenerate', regenBtnStyle.render('Regen \ud83d\udd04')));
+            lines.push(zone.mark('ask-claude', askClaudeStyle.render('Ask Claude \ud83e\udd16')));
         } else {
             lines.push(
                 zone.mark('plan-edit', editBtnStyle.render('Edit Plan \u270f')) +
                 '  ' +
-                zone.mark('plan-regenerate', regenBtnStyle.render('Regenerate \ud83d\udd04'))
+                zone.mark('plan-regenerate', regenBtnStyle.render('Regenerate \ud83d\udd04')) +
+                '  ' +
+                zone.mark('ask-claude', askClaudeStyle.render('Ask Claude \ud83e\udd16'))
             );
         }
 
@@ -1290,6 +1399,20 @@
             }
             lines.push(line);
             if (ri < resolveButtons.length - 1) lines.push('');
+        }
+
+        // "Ask Claude" interactive conversation button (T16).
+        if (st.claudeExecutor) {
+            lines.push('');
+            lines.push(styles.dim().render(repeatStr('\u2500', Math.min(40, (s.width || 80) - 12))));
+            lines.push('');
+            var askClaudeFocused = (focusIdx === resolveButtons.length);
+            var askClaudeStyle = askClaudeFocused
+                ? styles.focusedButton()
+                : styles.secondaryButton();
+            lines.push('  ' + zone.mark('error-ask-claude',
+                askClaudeStyle.render('\ud83e\udd16 Ask Claude')) +
+                styles.dim().render('  Chat with Claude about this error'));
         }
 
         return lines.join('\n');

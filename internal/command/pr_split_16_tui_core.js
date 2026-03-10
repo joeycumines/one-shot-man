@@ -32,6 +32,7 @@
     var viewMoveFileDialog = prSplit._viewMoveFileDialog;
     var viewRenameSplitDialog = prSplit._viewRenameSplitDialog;
     var viewMergeSplitsDialog = prSplit._viewMergeSplitsDialog;
+    var viewClaudeConvoOverlay = prSplit._viewClaudeConvoOverlay;
 
     // Cross-chunk imports — state and handlers from chunks 13-14.
     var st = prSplit._state;
@@ -141,6 +142,18 @@
                 splitViewFocus: 'wizard',      // 'wizard' or 'claude' — which pane is focused
                 claudeScreenshot: '',          // cached plain-text screenshot from tuiMux
                 claudeViewOffset: 0,           // scroll offset in Claude pane (lines from bottom)
+
+                // Claude conversation (T16).
+                claudeConvo: {
+                    active: false,             // conversation overlay is visible
+                    context: null,             // 'plan-review' | 'error-resolution' | null
+                    history: [],               // [{ role: 'user'|'claude', text: string, ts: number }]
+                    inputText: '',             // current text buffer
+                    sending: false,            // async send in flight
+                    waitingForTool: null,       // MCP tool being waited on (or null)
+                    lastError: null,           // last error string
+                    scrollOffset: 0            // scroll offset in history view
+                },
 
                 // Results.
                 equivalenceResult: null,
@@ -254,6 +267,11 @@
             // Editor dialog intercepts all input when active.
             if (s.activeEditorDialog) {
                 return updateEditorDialog(msg, s);
+            }
+
+            // Claude conversation overlay intercepts all input when active.
+            if (s.claudeConvo.active) {
+                return updateClaudeConvo(msg, s);
             }
 
             } // end: if (msg.type !== 'Tick') — overlay guard
@@ -521,6 +539,10 @@
                 if (msg.id === 'claude-screenshot') {
                     return pollClaudeScreenshot(s);
                 }
+                // Claude conversation: poll for async send/wait completion.
+                if (msg.id === 'claude-convo-poll') {
+                    return pollClaudeConvo(s);
+                }
                 return [s, null];
             }
 
@@ -680,6 +702,15 @@
                         dialogPanel,
                         {whitespaceChars: '\u2591', whitespaceForeground: COLORS.border});
                 }
+            }
+
+            // Overlay: Claude Conversation (T16).
+            if (s.claudeConvo.active) {
+                var convoPanel = viewClaudeConvoOverlay(s);
+                fullView = lipgloss.place(w, h,
+                    lipgloss.Center, lipgloss.Center,
+                    convoPanel,
+                    {whitespaceChars: '\u2591', whitespaceForeground: COLORS.border});
             }
 
             return zone.scan(fullView);
@@ -1158,6 +1189,10 @@
                 s.wizard.transition('CONFIG');
                 return [s, null];
             }
+            // Ask Claude: open conversation overlay for plan review feedback.
+            if (zone.inBounds('ask-claude', msg) && !s.isProcessing) {
+                return openClaudeConvo(s, 'plan-review');
+            }
         }
 
         // Plan editor: split selection, file selection, action buttons.
@@ -1221,6 +1256,10 @@
                 if (zone.inBounds('resolve-' + resolveChoices[ri], msg)) {
                     return handleErrorResolutionChoice(s, resolveChoices[ri] === 'auto' ? 'auto-resolve' : resolveChoices[ri]);
                 }
+            }
+            // Ask Claude about error resolution.
+            if (zone.inBounds('error-ask-claude', msg)) {
+                return openClaudeConvo(s, 'error-resolution');
             }
         }
 
@@ -1438,6 +1477,7 @@
                 }
                 elems.push({id: 'plan-edit',       type: 'button'});
                 elems.push({id: 'plan-regenerate',  type: 'button'});
+                elems.push({id: 'ask-claude',       type: 'button'});
                 elems.push({id: 'nav-next',         type: 'nav'});
                 return elems;
             }
@@ -1454,13 +1494,17 @@
                 return elems;
             }
             case 'ERROR_RESOLUTION': {
-                return [
+                var elems = [
                     {id: 'resolve-auto',   type: 'button'},
                     {id: 'resolve-manual', type: 'button'},
                     {id: 'resolve-skip',   type: 'button'},
                     {id: 'resolve-retry',  type: 'button'},
                     {id: 'resolve-abort',  type: 'button'}
                 ];
+                if (st.claudeExecutor) {
+                    elems.push({id: 'error-ask-claude', type: 'button'});
+                }
+                return elems;
             }
             default:
                 return [];
@@ -1579,6 +1623,9 @@
                 s.wizard.transition('CONFIG');
                 return [s, null];
             }
+            if (focused.id === 'ask-claude' && !s.isProcessing) {
+                return openClaudeConvo(s, 'plan-review');
+            }
             // Plan editor buttons — open dialogs.
             if (focused.id === 'editor-move') {
                 var splitIdx = s.selectedSplitIdx || 0;
@@ -1617,6 +1664,10 @@
                 var choice = focused.id.replace('resolve-', '');
                 return handleErrorResolutionChoice(s,
                     choice === 'auto' ? 'auto-resolve' : choice);
+            }
+            // Ask Claude about error.
+            if (focused.id === 'error-ask-claude') {
+                return openClaudeConvo(s, 'error-resolution');
             }
         }
 
@@ -2356,6 +2407,318 @@
 
         // Schedule next poll at 500ms.
         return [s, tea.tick(500, 'claude-screenshot')];
+    }
+
+    // -----------------------------------------------------------------------
+    //  Claude Conversation (T16): interactive back-and-forth
+    // -----------------------------------------------------------------------
+
+    /**
+     * openClaudeConvo — opens the conversation overlay.
+     * @param {string} context - 'plan-review' or 'error-resolution'
+     */
+    function openClaudeConvo(s, context) {
+        // Check Claude availability.
+        var executor = st.claudeExecutor;
+        if (!executor || !executor.handle) {
+            s.claudeConvo.lastError = 'Claude is not running. Select "auto" strategy and run analysis first.';
+            s.claudeConvo.active = true;
+            s.claudeConvo.context = context;
+            return [s, null];
+        }
+        if (typeof executor.handle.isAlive === 'function' && !executor.handle.isAlive()) {
+            s.claudeConvo.lastError = 'Claude process has exited. Restart analysis to reconnect.';
+            s.claudeConvo.active = true;
+            s.claudeConvo.context = context;
+            return [s, null];
+        }
+
+        s.claudeConvo.active = true;
+        s.claudeConvo.context = context;
+        s.claudeConvo.inputText = '';
+        s.claudeConvo.lastError = null;
+        s.claudeConvo.scrollOffset = 0;
+        return [s, null];
+    }
+
+    /**
+     * closeClaudeConvo — dismisses the conversation overlay.
+     */
+    function closeClaudeConvo(s) {
+        s.claudeConvo.active = false;
+        s.claudeConvo.inputText = '';
+        s.claudeConvo.scrollOffset = 0;
+        // Keep history and context for re-opening.
+        return [s, null];
+    }
+
+    /**
+     * updateClaudeConvo — handles input while conversation overlay is active.
+     */
+    function updateClaudeConvo(msg, s) {
+        var convo = s.claudeConvo;
+
+        if (msg.type === 'Key') {
+            var k = msg.key;
+
+            // Escape closes the overlay.
+            if (k === 'esc') {
+                return closeClaudeConvo(s);
+            }
+
+            // Enter submits the current input (if not already sending).
+            if (k === 'enter' && !convo.sending) {
+                var text = (convo.inputText || '').trim();
+                if (text.length > 0) {
+                    return submitClaudeMessage(s, text);
+                }
+                return [s, null];
+            }
+
+            // Backspace.
+            if (k === 'backspace' && !convo.sending) {
+                var t = convo.inputText || '';
+                if (t.length > 0) {
+                    convo.inputText = t.substring(0, t.length - 1);
+                }
+                return [s, null];
+            }
+
+            // Ctrl+U: clear input line.
+            if (k === 'ctrl+u' && !convo.sending) {
+                convo.inputText = '';
+                return [s, null];
+            }
+
+            // Scroll history: up/pgup to scroll back.
+            if (k === 'up' || k === 'pgup') {
+                convo.scrollOffset = (convo.scrollOffset || 0) + 3;
+                return [s, null];
+            }
+            if (k === 'down' || k === 'pgdown') {
+                convo.scrollOffset = Math.max(0, (convo.scrollOffset || 0) - 3);
+                return [s, null];
+            }
+
+            // Single printable char — accumulate (when not sending).
+            if (k.length === 1 && !convo.sending) {
+                convo.inputText = (convo.inputText || '') + k;
+                return [s, null];
+            }
+
+            return [s, null];
+        }
+
+        // Mouse wheel scrolls history.
+        if (msg.type === 'Mouse' && msg.isWheel) {
+            if (msg.button === 'wheel up') {
+                convo.scrollOffset = (convo.scrollOffset || 0) + 3;
+                return [s, null];
+            }
+            if (msg.button === 'wheel down') {
+                convo.scrollOffset = Math.max(0, (convo.scrollOffset || 0) - 3);
+                return [s, null];
+            }
+        }
+
+        // Clicking outside the overlay area could close it (but since this is
+        // a full overlay interceptor, just consume to prevent leakage).
+        return [s, null];
+    }
+
+    /**
+     * buildClaudePrompt — constructs the prompt based on conversation context.
+     */
+    function buildClaudePrompt(context, userMessage, s) {
+        var parts = [];
+
+        if (context === 'plan-review') {
+            parts.push('The user is reviewing the current PR split plan and has feedback.');
+            if (st.planCache) {
+                parts.push('Current plan has ' + st.planCache.splits.length + ' splits:');
+                for (var i = 0; i < st.planCache.splits.length; i++) {
+                    var sp = st.planCache.splits[i];
+                    parts.push('  ' + (i + 1) + '. ' + (sp.name || 'split-' + i) +
+                        ' (' + sp.files.length + ' files)');
+                }
+            }
+            parts.push('');
+            parts.push('User feedback: ' + userMessage);
+            parts.push('');
+            parts.push('Please call the reportSplitPlan tool with your revised split plan based on this feedback.');
+        } else if (context === 'error-resolution') {
+            parts.push('An error occurred during PR split execution. The user needs help resolving it.');
+            if (s.errorDetails) {
+                parts.push('Error: ' + s.errorDetails);
+            }
+            // Include failed branch context if available.
+            if (s.manualFixContext && s.manualFixContext.failedBranches) {
+                parts.push('Failed branches: ' + s.manualFixContext.failedBranches.join(', '));
+            }
+            parts.push('');
+            parts.push('User message: ' + userMessage);
+            parts.push('');
+            parts.push('Please call the reportResolution tool with your suggested fix.');
+        } else {
+            // Generic conversation.
+            parts.push(userMessage);
+        }
+
+        return parts.join('\n');
+    }
+
+    /**
+     * submitClaudeMessage — launches the async send + wait operation.
+     */
+    function submitClaudeMessage(s, text) {
+        var convo = s.claudeConvo;
+        var executor = st.claudeExecutor;
+
+        if (!executor || !executor.handle) {
+            convo.lastError = 'Claude is not running.';
+            return [s, null];
+        }
+
+        // Add user message to history.
+        convo.history.push({ role: 'user', text: text, ts: Date.now() });
+        convo.inputText = '';
+        convo.sending = true;
+        convo.lastError = null;
+        convo.scrollOffset = 0; // scroll to bottom
+
+        // Determine MCP tool to wait for based on context.
+        var toolToWait = null;
+        var timeoutMs = 120000; // 2 minutes default
+        if (convo.context === 'plan-review') {
+            toolToWait = 'reportSplitPlan';
+            timeoutMs = 180000; // 3 minutes for plan revision
+        } else if (convo.context === 'error-resolution') {
+            toolToWait = 'reportResolution';
+            timeoutMs = 120000;
+        }
+        convo.waitingForTool = toolToWait;
+
+        // Build the prompt.
+        var prompt = buildClaudePrompt(convo.context, text, s);
+
+        // Launch async operation: sendToHandle → waitForLogged.
+        // Use same pattern as automatedSplit: Promise + tick polling.
+        var convoState = convo; // capture reference for closure
+        prSplit.sendToHandle(executor.handle, prompt).then(
+            function(sendResult) {
+                if (sendResult && sendResult.error) {
+                    convoState.lastError = 'Send failed: ' + sendResult.error;
+                    convoState.sending = false;
+                    convoState.waitingForTool = null;
+                    return;
+                }
+
+                if (toolToWait) {
+                    // Wait for Claude to call the expected MCP tool.
+                    var waitResult = prSplit.waitForLogged(toolToWait, timeoutMs, {
+                        aliveCheck: function() {
+                            return (executor.handle &&
+                                typeof executor.handle.isAlive === 'function' &&
+                                executor.handle.isAlive());
+                        }
+                    });
+                    if (waitResult && waitResult.data) {
+                        convoState.history.push({
+                            role: 'claude',
+                            text: formatClaudeResponse(toolToWait, waitResult.data),
+                            ts: Date.now()
+                        });
+                        // Process structured response.
+                        processClaudeConvoResult(convoState, toolToWait, waitResult.data);
+                    } else if (waitResult && waitResult.error) {
+                        convoState.lastError = 'Claude: ' + waitResult.error;
+                    } else {
+                        // No tool call received — Claude may have responded in free text.
+                        // Capture the latest screenshot as response.
+                        var shot = '';
+                        if (typeof tuiMux !== 'undefined' && tuiMux &&
+                            typeof tuiMux.screenshot === 'function') {
+                            try { shot = String(tuiMux.screenshot() || ''); } catch (e) { /* ignore */ }
+                        }
+                        if (shot) {
+                            convoState.history.push({
+                                role: 'claude',
+                                text: '[screenshot]\n' + shot.substring(shot.length - 500),
+                                ts: Date.now()
+                            });
+                        }
+                    }
+                } else {
+                    // No specific tool to wait for — just note the send succeeded.
+                    convoState.history.push({
+                        role: 'claude',
+                        text: '(message sent — check Claude pane for response)',
+                        ts: Date.now()
+                    });
+                }
+                convoState.sending = false;
+                convoState.waitingForTool = null;
+            },
+            function(err) {
+                convoState.lastError = (err && err.message) ? err.message : String(err);
+                convoState.sending = false;
+                convoState.waitingForTool = null;
+            }
+        );
+
+        // Start tick polling for completion.
+        return [s, tea.tick(200, 'claude-convo-poll')];
+    }
+
+    /**
+     * formatClaudeResponse — formats structured MCP tool response for display.
+     */
+    function formatClaudeResponse(toolName, data) {
+        if (toolName === 'reportSplitPlan' && data && data.splits) {
+            var parts = ['Revised plan (' + data.splits.length + ' splits):'];
+            for (var i = 0; i < data.splits.length; i++) {
+                var sp = data.splits[i];
+                parts.push('  ' + (i + 1) + '. ' + (sp.name || 'split-' + i) +
+                    ' (' + (sp.files ? sp.files.length : 0) + ' files)');
+            }
+            return parts.join('\n');
+        }
+        if (toolName === 'reportResolution' && data) {
+            return 'Resolution: ' + (data.description || data.action || JSON.stringify(data));
+        }
+        return JSON.stringify(data, null, 2);
+    }
+
+    /**
+     * processClaudeConvoResult — applies structured result to wizard state.
+     */
+    function processClaudeConvoResult(convo, toolName, data) {
+        if (toolName === 'reportSplitPlan' && data && data.splits) {
+            // Update the plan cache with the revised plan from Claude.
+            if (st.planCache) {
+                st.planCache.splits = data.splits;
+                if (data.baseBranch) {
+                    st.planCache.baseBranch = data.baseBranch;
+                }
+            }
+        }
+        // reportResolution results are handled by the existing error resolution flow.
+        // The user can manually apply the suggestion or use auto-resolve.
+    }
+
+    /**
+     * pollClaudeConvo — tick handler to check async send/wait progress.
+     */
+    function pollClaudeConvo(s) {
+        var convo = s.claudeConvo;
+
+        // If still sending, keep polling.
+        if (convo.sending) {
+            return [s, tea.tick(200, 'claude-convo-poll')];
+        }
+
+        // Async operation completed. UI will update on next render.
+        return [s, null];
     }
 
     function handleErrorResolutionChoice(s, choice) {

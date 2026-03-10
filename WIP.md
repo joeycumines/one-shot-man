@@ -18,16 +18,19 @@
 - **T11**: DONE. Committed `4cb8793b`. Per-branch verification display in execution screen with 3-step pipeline.
 - **T12+T13**: DONE. Committed `e73b2ae8`. CaptureSession + JS bindings. R2 3rd attempt (2/2 PASS).
 - **T14**: DONE. Committed `ab15b3e5`. CaptureSession integration into verification TUI. R2 (2/2 PASS).
-- **T15**: DONE. Pending commit. Claude window-in-window split-view. R2 (2/2 PASS).
-- **Blueprint**: 33 tasks. T01-T15=Done, T16-T33=Not Started.
+- **T15**: DONE. Committed `5cd75ac7`. Claude window-in-window split-view. R2 (2/2 PASS).
+- **T16**: IN PROGRESS. Interactive Claude conversation overlay. Build passes. R2 2/2 PASS.
+- **Blueprint**: 33 tasks. T01-T15=Done, T16=In Progress, T17-T33=Not Started.
 
 ### Next Step
 
-**T16: Implement interactive Claude back-and-forth during wizard flow.**
+**T16: R2 review gate, then commit.**
 
-### T15 Implementation Details (for Next Takumi)
+### T16 Implementation Details
 
-- Files changed: pr_split_15_tui_views.js (renderClaudePane + status bar hint), pr_split_16_tui_core.js (5 model fields, Ctrl+L/Tab/Ctrl+=/- handlers, claude-screenshot tick, pollClaudeScreenshot, split-view viewFn logic)
+- Files changed: pr_split_15_tui_views.js (viewClaudeConvoOverlay renderer, "Ask Claude" buttons in plan review + error resolution views), pr_split_16_tui_core.js (claudeConvo nested state object, overlay interceptor, tick handler, click handlers, focus elements, Enter key handlers, openClaudeConvo, closeClaudeConvo, updateClaudeConvo, submitClaudeMessage, buildClaudePrompt, formatClaudeResponse, processClaudeConvoResult, pollClaudeConvo, viewClaudeConvoOverlay import + overlay rendering in _viewFn)
+- Pattern: Same as automatedSplit — sendToHandle + waitForLogged via Promise, tick-based polling
+- MCP tools waited on: reportSplitPlan (plan-review context), reportResolution (error-resolution context)
 - Split-view: wizard top, Claude bottom, adjustable ratio 0.2-0.8
 - Height guard: vpHeight < 7 → auto-disable split view (no overflow)
 - Pane divider: labelW = focusLabel.length + splitHint.length + 7

@@ -351,15 +351,42 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 
 	// Interactive mode: launch BubbleTea wizard with signal handling.
 	if c.interactive && !c.testMode {
+		// Save terminal state before BubbleTea enters alt screen / raw mode.
+		// Used by the double-SIGINT handler AND the deferred finalizer below.
+		var savedTermState *term.State
+		if term.IsTerminal(termFd) {
+			savedTermState, _ = term.GetState(termFd)
+		}
+
+		// Deferred terminal finalizer — defense-in-depth safety net.
+		//
+		// BubbleTea and termmux.RunPassthrough each manage their own
+		// terminal restoration (alt screen, raw mode, cursor). This
+		// defer catches any edge case where their cleanup does not
+		// run — e.g., an engine error, unexpected panic path, or a
+		// goja runtime interrupt that bypasses normal shutdown.
+		//
+		// The operations are idempotent: term.Restore to a previously
+		// saved state is harmless if already restored, and the ANSI
+		// escape sequences are no-ops when already in normal mode.
+		//
+		// Note on double-SIGINT (os.Exit): this defer does NOT run
+		// on os.Exit; that path has its own explicit restore above.
+		// Note on Claude process: os.Exit closes all FDs including
+		// the PTY master, which sends SIGHUP to Claude — no orphan.
+		defer func() {
+			if savedTermState != nil {
+				_ = term.Restore(termFd, savedTermState)
+			}
+			// Belt-and-suspenders: exit alt screen + show cursor.
+			fmt.Fprint(os.Stderr, "\x1b[?1049l\x1b[?25h")
+		}()
+
 		// Double-SIGINT force-exit handler. After the first signal cancels
 		// ctx (triggering BubbleTea's graceful quit via context propagation),
 		// a second SIGINT force-exits with best-effort terminal restoration.
 		// This prevents the user from being stuck if graceful shutdown hangs
 		// (e.g., Claude subprocess won't terminate).
-		var savedTermState *term.State
-		if term.IsTerminal(termFd) {
-			savedTermState, _ = term.GetState(termFd)
-		}
 		done := make(chan struct{})
 		defer close(done)
 		go func() {

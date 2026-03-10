@@ -199,7 +199,8 @@
       "task": "T09: Clean exit audit — guarantee terminal restore on all 8 exit paths",
       "description": "Audit: (a) Normal DONE, (b) Cancel confirmed, (c) Force-cancel, (d) SIGINT, (e) SIGTERM, (f) JS exception, (g) BubbleTea panic, (h) termmux exit. Verify alt screen/cursor/raw mode restored. Add deferred finalizer.",
       "acceptance": "Terminal NEVER broken for any path. Claude terminated. Worktrees cleaned on cancel. Checkpoint saved on graceful exit.",
-      "status": "Not Started",
+      "status": "Done",
+      "completionNotes": "Audited all 8 exit paths. Paths 1/2/4/5: SAFE via BubbleTea cleanup. Path 3: SAFE via T08 double-SIGINT handler + OS PTY SIGHUP. Paths 6/7: SAFE via BubbleTea panic recovery. Path 8: SAFE via RunPassthrough deferred restore. Added deferred terminal finalizer as defense-in-depth: term.Restore(savedState) + alt-screen-exit + cursor-show. Comments document Claude orphan non-issue (PTY master close → SIGHUP) and os.Exit path. All tests pass.",
       "context": {
         "files": [
           "internal/command/pr_split.go",

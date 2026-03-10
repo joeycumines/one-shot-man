@@ -509,6 +509,35 @@
             var stratId = 'strategy-' + strat;
             lines.push(focusPointer + zone.mark(stratId, bullet + ' ' + label));
         }
+
+        // Claude availability status (shown after strategy buttons).
+        if (s.claudeCheckStatus === 'checking') {
+            lines.push('');
+            lines.push('  ' + styles.statusActive().render('\u23f3 Checking Claude availability\u2026'));
+        }
+        if (s.claudeCheckStatus === 'available' && s.claudeResolvedInfo) {
+            lines.push('');
+            lines.push('  ' + styles.successBadge().render(' \u2713 Claude available '));
+            lines.push('    Command:  ' + styles.fieldValue().render(s.claudeResolvedInfo.command || '?'));
+            lines.push('    Provider: ' + styles.fieldValue().render(s.claudeResolvedInfo.type || '?'));
+        }
+        if (s.claudeCheckStatus === 'unavailable') {
+            lines.push('');
+            lines.push('  ' + styles.errorBadge().render(' \u2717 Claude unavailable '));
+            if (s.claudeCheckError) {
+                lines.push('    ' + styles.dim().render(s.claudeCheckError));
+            }
+            lines.push('    ' + styles.dim().render('\u2192 Fell back to Heuristic strategy'));
+        }
+
+        // Test Connection button.
+        if (currentMode === 'auto' || s.claudeCheckStatus) {
+            // Focus index 3 = test-claude button (after 3 strategy items).
+            var testFocused = (focusIdx === 3);
+            var testBtnStyle = testFocused ? styles.focusedButton() : styles.secondaryButton();
+            lines.push('  ' + zone.mark('test-claude',
+                testBtnStyle.render(' Test Connection ')));
+        }
         lines.push('');
 
         // Advanced options toggle.

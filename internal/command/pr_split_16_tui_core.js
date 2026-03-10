@@ -105,6 +105,11 @@
                 focusIndex: 0,
                 _prevWizardState: null,
 
+                // Claude availability (CONFIG screen).
+                claudeCheckStatus: null,   // null | 'checking' | 'available' | 'unavailable'
+                claudeResolvedInfo: null,  // null | { command, type }
+                claudeCheckError: null,    // null | error string
+
                 // Analysis progress.
                 analysisSteps: [],
                 analysisProgress: -1,
@@ -342,6 +347,10 @@
                 // Resolve-conflicts polling.
                 if (msg.id === 'resolve-poll') {
                     return handleResolvePoll(s);
+                }
+                // Claude availability check (CONFIG screen).
+                if (msg.id === 'check-claude') {
+                    return handleClaudeCheck(s);
                 }
                 return [s, null];
             }
@@ -812,14 +821,30 @@
     }
 
     function handleScreenMouseClick(msg, s) {
-        // Config screen: strategy selection, advanced toggle.
+        // Config screen: strategy selection, advanced toggle, Test Connection.
         if (s.wizardState === 'CONFIG' || s.wizardState === 'IDLE') {
             var strategies = ['auto', 'heuristic', 'directory'];
             for (var si = 0; si < strategies.length; si++) {
                 if (zone.inBounds('strategy-' + strategies[si], msg)) {
                     prSplit.runtime.mode = strategies[si];
+                    // Trigger Claude check for 'auto'.
+                    if (strategies[si] === 'auto') {
+                        s.claudeCheckStatus = 'checking';
+                        return [s, tea.tick(1, 'check-claude')];
+                    }
+                    // Clear check status when switching away.
+                    s.claudeCheckStatus = null;
+                    s.claudeResolvedInfo = null;
+                    s.claudeCheckError = null;
                     return [s, null];
                 }
+            }
+            // Test Connection button.
+            if (zone.inBounds('test-claude', msg)) {
+                if (s.claudeCheckStatus === 'checking') return [s, null];
+                s.claudeCheckStatus = 'checking';
+                prSplit.runtime.mode = 'auto';
+                return [s, tea.tick(1, 'check-claude')];
             }
             if (zone.inBounds('toggle-advanced', msg)) {
                 s.showAdvanced = !s.showAdvanced;
@@ -1107,12 +1132,19 @@
             case 'IDLE':
             case 'CONFIG':
             case 'BASELINE_FAIL': {
-                return [
+                var elems = [
                     {id: 'strategy-auto',      type: 'strategy'},
                     {id: 'strategy-heuristic',  type: 'strategy'},
-                    {id: 'strategy-directory',  type: 'strategy'},
-                    {id: 'nav-next',            type: 'nav'}
+                    {id: 'strategy-directory',  type: 'strategy'}
                 ];
+                // Show Test Connection button when auto is selected or
+                // a previous check result is visible.
+                if ((prSplit.runtime.mode || 'heuristic') === 'auto' ||
+                    s.claudeCheckStatus) {
+                    elems.push({id: 'test-claude', type: 'button'});
+                }
+                elems.push({id: 'nav-next', type: 'nav'});
+                return elems;
             }
             case 'PLAN_REVIEW': {
                 var elems = [];
@@ -1222,7 +1254,24 @@
         if (focused.type === 'strategy') {
             var stratName = focused.id.replace('strategy-', '');
             prSplit.runtime.mode = stratName;
+            // Trigger Claude availability check for 'auto' strategy.
+            if (stratName === 'auto') {
+                s.claudeCheckStatus = 'checking';
+                return [s, tea.tick(1, 'check-claude')];
+            }
+            // Clear check status when switching away from 'auto'.
+            s.claudeCheckStatus = null;
+            s.claudeResolvedInfo = null;
+            s.claudeCheckError = null;
             return [s, null];
+        }
+
+        // Test Connection button re-triggers Claude check.
+        if (focused.id === 'test-claude') {
+            if (s.claudeCheckStatus === 'checking') return [s, null];
+            s.claudeCheckStatus = 'checking';
+            prSplit.runtime.mode = 'auto';
+            return [s, tea.tick(1, 'check-claude')];
         }
 
         // Split card selection.
@@ -1443,10 +1492,50 @@
 
     // startAutoAnalysis: Dispatches the full automated pipeline (Claude
     // classification → plan → execute → verify) as an async Promise.
+    // ── Claude availability check (CONFIG screen) ────────────────────
+    // Called via tea.tick('check-claude') when user selects 'auto'.
+    // Creates a temporary executor, calls resolve(), and caches the
+    // result for the view layer. On failure, auto-falls back to
+    // heuristic mode so the user isn't stuck.
+    function handleClaudeCheck(s) {
+        // Guard: prSplitConfig is injected from Go and may be absent in tests.
+        if (typeof prSplitConfig === 'undefined') {
+            s.claudeCheckStatus = 'unavailable';
+            s.claudeCheckError = 'Configuration not available (test mode)';
+            s.claudeResolvedInfo = null;
+            return [s, null];
+        }
+        var executor = new (prSplit.ClaudeCodeExecutor)(prSplitConfig);
+        var result = executor.resolve();
+
+        if (result.error) {
+            s.claudeCheckStatus = 'unavailable';
+            s.claudeCheckError = result.error;
+            s.claudeResolvedInfo = null;
+            // Auto-fallback: switch to heuristic so user can proceed.
+            prSplit.runtime.mode = 'heuristic';
+        } else {
+            s.claudeCheckStatus = 'available';
+            s.claudeResolvedInfo = executor.resolved; // { command, type }
+            s.claudeCheckError = null;
+            // Cache the resolved executor for startAutoAnalysis().
+            st.claudeExecutor = executor;
+        }
+        return [s, null];
+    }
+
+    // ── Automated pipeline (Claude) ────────────────────────────────
     // The pipeline runs on the JS event loop independently. We poll for
     // completion via ticks so BubbleTea can render progress and the user
     // can cancel.
     function startAutoAnalysis(s) {
+        // Defense-in-depth: if prSplitConfig is absent (test/offline),
+        // fall back immediately rather than crashing on property access.
+        if (typeof prSplitConfig === 'undefined') {
+            log.printf('auto-analysis: prSplitConfig unavailable — falling back to heuristic');
+            return startAnalysis(s);
+        }
+
         s.isProcessing = true;
         s.analysisProgress = 0;
         s.analysisSteps = [

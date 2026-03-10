@@ -218,7 +218,8 @@
       "task": "T10: Add strategy validation UI — Claude availability check and connection test",
       "description": "Config screen shows strategy buttons but no Claude validation. Fix: (a) On auto strategy select, call ClaudeCodeExecutor.resolve() async. (b) Show checkmark/cross indicator with resolved path. (c) Show provider type. (d) 'Test Connection' button. (e) Auto-fallback to heuristic if unavailable.",
       "acceptance": "Auto strategy triggers availability check. Resolved command displayed. Test button verifies. Unavailable shows warning + fallback.",
-      "status": "Not Started",
+      "status": "Done",
+      "completionNotes": "Added claudeCheckStatus/claudeResolvedInfo/claudeCheckError to model state. Selecting 'auto' triggers tea.tick('check-claude') → handleClaudeCheck() creates temporary ClaudeCodeExecutor, calls resolve(). Available: green badge + command/provider. Unavailable: error badge + message + auto-fallback to heuristic. Test Connection button re-triggers check. Focus system updated: test-claude button at index 3 (conditional). Both keyboard (handleFocusActivate) and mouse (handleScreenMouseClick) paths trigger check. Guard for undefined prSplitConfig in tests. All tests pass.",
       "context": {
         "files": [
           "internal/command/pr_split_15_tui_views.js (viewConfigScreen)",

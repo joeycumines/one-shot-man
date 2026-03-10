@@ -341,7 +341,7 @@
       "task": "T17: Make plan editor screen fully functional with inline editing",
       "description": "Interactive editing: (a) Inline title edit (text input). (b) File checkboxes (Space). (c) File reordering (Shift+arrows). (d) Chunk nav with [/]. (e) File detail panel. (f) Save validates and returns to review.",
       "acceptance": "Title edit, file toggle, reorder, chunk nav, file detail, save. Keyboard and mouse.",
-      "status": "Not Started",
+      "status": "Done",
       "context": {
         "files": [
           "internal/command/pr_split_15_tui_views.js (viewPlanEditorScreen)",

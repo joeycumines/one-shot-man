@@ -959,35 +959,105 @@
         }
 
         lines.push(styles.bold().render('Edit Split Plan'));
-        lines.push(styles.dim().render(
-            'Click a split to select. Use Move/Rename buttons to modify.'));
+        var compact = layoutMode(s) === 'compact';
+        if (compact) {
+            lines.push(styles.dim().render('Tab: splits  j/k: files  Space: check  e: rename  Shift+\u2191\u2193: move'));
+        } else {
+            lines.push(styles.dim().render(
+                'Tab: cycle splits  j/k: select file  Space: check  ' +
+                'e: rename split  Shift+\u2191/\u2193: reorder'));
+        }
         lines.push('');
+
+        // Validation error banner (T17).
+        var valErrors = s.editorValidationErrors || [];
+        if (valErrors.length > 0) {
+            lines.push(styles.errorBadge().render(' Validation Errors '));
+            for (var ve = 0; ve < valErrors.length; ve++) {
+                lines.push('  ' + styles.dim().render('\u2022 ' + valErrors[ve]));
+            }
+            lines.push('');
+        }
 
         var plan = st.planCache;
         var selectedIdx = s.selectedSplitIdx || 0;
+        var selectedFileIdx = s.selectedFileIdx || 0;
         var w = (s.width || 80) - 8;
+        var checkedFiles = s.editorCheckedFiles || {};
 
         for (var i = 0; i < plan.splits.length; i++) {
             var split = plan.splits[i];
             var isSelected = (i === selectedIdx);
-            var badge = isSelected ? styles.primaryButton().render(' \u25b6 ') : '  ' + (i + 1) + '. ';
-            var name = styles.bold().render(split.name || 'split-' + i);
-            var files = styles.dim().render(split.files.length + ' files');
+
+            // Split header: badge + name (or inline edit) + file count.
+            var badge = isSelected
+                ? styles.primaryButton().render(' \u25b6 ')
+                : '  ' + (i + 1) + '. ';
+
+            var nameDisplay;
+            if (s.editorTitleEditing && s.editorTitleEditingIdx === i) {
+                // Inline title edit mode.
+                var editText = s.editorTitleText || '';
+                nameDisplay = styles.bold().render(editText) +
+                    styles.dim().render('\u2588') +
+                    styles.dim().render('  (Enter to save, Esc to cancel)');
+            } else {
+                nameDisplay = styles.bold().render(split.name || 'split-' + i);
+            }
+            var filesLabel = styles.dim().render(split.files.length + ' file' +
+                (split.files.length !== 1 ? 's' : ''));
             var cardId = 'edit-split-' + i;
 
-            lines.push(zone.mark(cardId, badge + ' ' + name + '  ' + files));
+            lines.push(zone.mark(cardId, badge + ' ' + nameDisplay + '  ' + filesLabel));
 
+            // File list with checkboxes (T17).
             if (isSelected && split.files) {
                 for (var fi = 0; fi < split.files.length; fi++) {
                     var fileId = 'edit-file-' + i + '-' + fi;
+                    var fileKey = i + '-' + fi;
+                    var isChecked = !!checkedFiles[fileKey];
+                    var isFileFocused = (fi === selectedFileIdx);
+
+                    var checkbox = isChecked
+                        ? styles.successBadge().render('\u2713')
+                        : styles.dim().render('\u2610');
+                    var filePath = split.files[fi];
+                    var fileStyle = isFileFocused
+                        ? styles.bold()
+                        : styles.dim();
+
                     lines.push('    ' + zone.mark(fileId,
-                        styles.dim().render(split.files[fi])));
+                        checkbox + ' ' + fileStyle.render(truncate(filePath, w - 10))));
+                }
+
+                // File detail panel (T17).
+                if (split.files[selectedFileIdx]) {
+                    var detailFile = split.files[selectedFileIdx];
+                    lines.push('');
+                    lines.push('    ' + styles.dim().render('\u2500\u2500\u2500 File Detail \u2500\u2500\u2500'));
+                    lines.push('    ' + styles.bold().render('Path: ') +
+                        styles.dim().render(detailFile));
+                    lines.push('    ' + styles.bold().render('Split: ') +
+                        styles.dim().render(split.name || 'split-' + i));
+                    lines.push('    ' + styles.bold().render('Position: ') +
+                        styles.dim().render((selectedFileIdx + 1) + ' of ' + split.files.length));
+
+                    // Checked file count for this split.
+                    var checkedCount = 0;
+                    for (var ck = 0; ck < split.files.length; ck++) {
+                        if (checkedFiles[i + '-' + ck]) checkedCount++;
+                    }
+                    if (checkedCount > 0) {
+                        lines.push('    ' + styles.bold().render('Checked: ') +
+                            styles.dim().render(checkedCount + ' file' +
+                                (checkedCount !== 1 ? 's' : '') + ' selected'));
+                    }
                 }
             }
 
+            // Editor action buttons.
             if (isSelected) {
-                // Focus: split cards occupy indices 0..N-1;
-                // editor buttons are N, N+1, N+2.
+                // Focus: split cards = 0..N-1; buttons = N, N+1, N+2.
                 var focusIdx = s.focusIndex || 0;
                 var splitCount = plan.splits.length;
                 var moveFocused = (focusIdx === splitCount);
@@ -997,7 +1067,7 @@
                 var renameBtnStyle = renameFocused ? styles.focusedButton() : styles.secondaryButton();
                 var mergeBtnStyle = mergeFocused ? styles.focusedButton() : styles.secondaryButton();
                 lines.push('');
-                if (layoutMode(s) === 'compact') {
+                if (compact) {
                     lines.push(zone.mark('editor-move', moveBtnStyle.render('Move')));
                     lines.push(zone.mark('editor-rename', renameBtnStyle.render('Rename')));
                     lines.push(zone.mark('editor-merge', mergeBtnStyle.render('Merge')));

@@ -19,25 +19,25 @@
 - **T12+T13**: DONE. Committed `e73b2ae8`. CaptureSession + JS bindings. R2 3rd attempt (2/2 PASS).
 - **T14**: DONE. Committed `ab15b3e5`. CaptureSession integration into verification TUI. R2 (2/2 PASS).
 - **T15**: DONE. Committed `5cd75ac7`. Claude window-in-window split-view. R2 (2/2 PASS).
-- **T16**: IN PROGRESS. Interactive Claude conversation overlay. Build passes. R2 2/2 PASS.
-- **Blueprint**: 33 tasks. T01-T15=Done, T16=In Progress, T17-T33=Not Started.
+- **T16**: DONE. Committed `629c9f44`. Interactive Claude conversation overlay. R2 (2/2 PASS).
+- **T17**: IN PROGRESS. Plan editor inline editing, file checkboxes, reorder, validation. Build passes. R2 attempt 4, 2/2 PASS.
+- **Blueprint**: 33 tasks. T01-T17=Done, T18-T33=Not Started.
 
 ### Next Step
 
-**T16: R2 review gate, then commit.**
+**T17: Commit, then start T18.**
 
-### T16 Implementation Details
+### T17 Implementation Details
 
-- Files changed: pr_split_15_tui_views.js (viewClaudeConvoOverlay renderer, "Ask Claude" buttons in plan review + error resolution views), pr_split_16_tui_core.js (claudeConvo nested state object, overlay interceptor, tick handler, click handlers, focus elements, Enter key handlers, openClaudeConvo, closeClaudeConvo, updateClaudeConvo, submitClaudeMessage, buildClaudePrompt, formatClaudeResponse, processClaudeConvoResult, pollClaudeConvo, viewClaudeConvoOverlay import + overlay rendering in _viewFn)
-- Pattern: Same as automatedSplit — sendToHandle + waitForLogged via Promise, tick-based polling
-- MCP tools waited on: reportSplitPlan (plan-review context), reportResolution (error-resolution context)
-- Split-view: wizard top, Claude bottom, adjustable ratio 0.2-0.8
-- Height guard: vpHeight < 7 → auto-disable split view (no overflow)
-- Pane divider: labelW = focusLabel.length + splitHint.length + 7
-- renderClaudePane: contentH = height - 2 (border overhead), title inside content area
-- Polling: 500ms tick via 'claude-screenshot' tick ID, self-terminates when disabled
-- cleanupVerifyWorktree(): removes temp worktree via gitExec.
-- pollVerifySession(): 100ms tick poll — null guard, timeout→kill, isDone→cleanup+advance, running→reschedule.
+- Files changed: pr_split_15_tui_views.js (viewPlanEditorScreen rewrite), pr_split_16_tui_core.js (keyboard handlers, enterPlanEditor helper, handleListNav split, handleNext validation)
+- New model state: editorTitleEditing, editorTitleText, editorCheckedFiles, editorValidationErrors, editorFileDetailExpanded
+- Inline title edit: 'e' key enters edit mode, copies split name to text buffer, Enter saves, Esc cancels, interceptor swallows all keys during edit
+- File checkboxes: Space toggles checked state on highlighted file, checkbox state tracked in editorCheckedFiles map
+- File reordering: Shift+up/down swaps files within split, also swaps their checked state
+- File navigation: j/k now navigates files (not splits) in PLAN_EDITOR, Tab cycles splits+buttons
+- Validation errors: handleNext uses 'done' (was 'save'), captures validation_failed result, displays errors in banner
+- enterPlanEditor(): centralizes all PLAN_EDITOR transition sites, resets inline state on entry
+- View: help text, validation banner, inline edit input, checkboxes, file detail panel, checked count
 - runVerifyBranch(): async CaptureSession approach; falls back to blocking verifySplit() on Windows.
 - 8 model state fields: activeVerifySession, activeVerifyWorktree, activeVerifyBranch, activeVerifyDir, activeVerifyStartTime, verifyViewportOffset, verifyAutoScroll, lastVerifyInterruptTime.
 - Tick passthrough: overlays guarded by `if (msg.type !== 'Tick')` to prevent killing async poll chains.

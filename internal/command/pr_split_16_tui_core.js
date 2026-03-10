@@ -103,6 +103,14 @@
                 activeEditorDialog: null,  // 'move' | 'rename' | 'merge' | null
                 editorDialogState: {},
 
+                // Editor inline state (T17).
+                editorTitleEditing: false,      // true when inline title edit is active
+                editorTitleEditingIdx: -1,      // split index being edited (-1 = none)
+                editorTitleText: '',            // current title text buffer
+                editorCheckedFiles: {},         // { 'splitIdx-fileIdx': true } for checked files
+                editorValidationErrors: [],     // validation errors from save attempt
+                editorFileDetailExpanded: false, // show enhanced file detail panel
+
                 // Focus system.
                 focusIndex: 0,
                 _prevWizardState: null,
@@ -274,6 +282,48 @@
                 return updateClaudeConvo(msg, s);
             }
 
+            // Inline title editing intercepts all key input when active (T17).
+            if (s.editorTitleEditing && msg.type === 'Key') {
+                var ek = msg.key;
+                if (ek === 'enter') {
+                    // Save title to the split that was being edited (not current selection).
+                    var eidx = s.editorTitleEditingIdx >= 0 ? s.editorTitleEditingIdx : (s.selectedSplitIdx || 0);
+                    if (st.planCache && st.planCache.splits && st.planCache.splits[eidx]) {
+                        var newName = (s.editorTitleText || '').trim();
+                        if (newName) {
+                            st.planCache.splits[eidx].name = newName;
+                        }
+                    }
+                    s.editorTitleEditing = false;
+                    s.editorTitleEditingIdx = -1;
+                    s.editorTitleText = '';
+                    return [s, null];
+                }
+                if (ek === 'esc') {
+                    // Cancel editing without saving.
+                    s.editorTitleEditing = false;
+                    s.editorTitleEditingIdx = -1;
+                    s.editorTitleText = '';
+                    return [s, null];
+                }
+                if (ek === 'backspace') {
+                    var etxt = s.editorTitleText || '';
+                    s.editorTitleText = etxt.slice(0, -1);
+                    return [s, null];
+                }
+                if (ek === 'ctrl+u') {
+                    s.editorTitleText = '';
+                    return [s, null];
+                }
+                // Single character input.
+                if (ek.length === 1) {
+                    s.editorTitleText = (s.editorTitleText || '') + ek;
+                    return [s, null];
+                }
+                // Swallow all other keys during edit.
+                return [s, null];
+            }
+
             } // end: if (msg.type !== 'Tick') — overlay guard
 
             // Global key bindings.
@@ -429,8 +479,69 @@
                 // Screen-specific key shortcuts.
                 if (k === 'e' && s.wizardState === 'PLAN_REVIEW' && !s.isProcessing) {
                     // Enter plan editor.
-                    s.wizard.transition('PLAN_EDITOR');
-                    s.wizardState = 'PLAN_EDITOR';
+                    return enterPlanEditor(s);
+                }
+                // PLAN_EDITOR: inline title rename (T17).
+                if (k === 'e' && s.wizardState === 'PLAN_EDITOR') {
+                    var eidx = s.selectedSplitIdx || 0;
+                    if (st.planCache && st.planCache.splits && st.planCache.splits[eidx]) {
+                        s.editorTitleEditing = true;
+                        s.editorTitleEditingIdx = eidx;
+                        s.editorTitleText = st.planCache.splits[eidx].name || '';
+                    }
+                    return [s, null];
+                }
+                // PLAN_EDITOR: Space toggles checked state on highlighted file (T17).
+                if (k === ' ' && s.wizardState === 'PLAN_EDITOR') {
+                    var sidx = s.selectedSplitIdx || 0;
+                    var fidx = s.selectedFileIdx || 0;
+                    if (st.planCache && st.planCache.splits && st.planCache.splits[sidx] &&
+                        st.planCache.splits[sidx].files && st.planCache.splits[sidx].files[fidx]) {
+                        if (!s.editorCheckedFiles) s.editorCheckedFiles = {};
+                        var fkey = sidx + '-' + fidx;
+                        s.editorCheckedFiles[fkey] = !s.editorCheckedFiles[fkey];
+                    }
+                    return [s, null];
+                }
+                // PLAN_EDITOR: Shift+up/down reorder files within split (T17).
+                if (k === 'shift+up' && s.wizardState === 'PLAN_EDITOR') {
+                    var sidx = s.selectedSplitIdx || 0;
+                    var fidx = s.selectedFileIdx || 0;
+                    if (st.planCache && st.planCache.splits && st.planCache.splits[sidx] &&
+                        st.planCache.splits[sidx].files && fidx > 0) {
+                        var reFiles = st.planCache.splits[sidx].files;
+                        var tmp = reFiles[fidx - 1];
+                        reFiles[fidx - 1] = reFiles[fidx];
+                        reFiles[fidx] = tmp;
+                        // Also swap checked state to follow the file.
+                        if (!s.editorCheckedFiles) s.editorCheckedFiles = {};
+                        var ckFrom = sidx + '-' + fidx;
+                        var ckTo = sidx + '-' + (fidx - 1);
+                        var tmpCk = s.editorCheckedFiles[ckFrom];
+                        s.editorCheckedFiles[ckFrom] = s.editorCheckedFiles[ckTo];
+                        s.editorCheckedFiles[ckTo] = tmpCk;
+                        s.selectedFileIdx = fidx - 1;
+                    }
+                    return [s, null];
+                }
+                if (k === 'shift+down' && s.wizardState === 'PLAN_EDITOR') {
+                    var sidx = s.selectedSplitIdx || 0;
+                    var fidx = s.selectedFileIdx || 0;
+                    if (st.planCache && st.planCache.splits && st.planCache.splits[sidx] &&
+                        st.planCache.splits[sidx].files && fidx < st.planCache.splits[sidx].files.length - 1) {
+                        var reFiles = st.planCache.splits[sidx].files;
+                        var tmp = reFiles[fidx + 1];
+                        reFiles[fidx + 1] = reFiles[fidx];
+                        reFiles[fidx] = tmp;
+                        // Also swap checked state to follow the file.
+                        if (!s.editorCheckedFiles) s.editorCheckedFiles = {};
+                        var ckFrom = sidx + '-' + fidx;
+                        var ckTo = sidx + '-' + (fidx + 1);
+                        var tmpCk = s.editorCheckedFiles[ckFrom];
+                        s.editorCheckedFiles[ckFrom] = s.editorCheckedFiles[ckTo];
+                        s.editorCheckedFiles[ckTo] = tmpCk;
+                        s.selectedFileIdx = fidx + 1;
+                    }
                     return [s, null];
                 }
                 // termmux toggle.
@@ -1178,9 +1289,7 @@
                 }
             }
             if (zone.inBounds('plan-edit', msg) && !s.isProcessing) {
-                s.wizard.transition('PLAN_EDITOR');
-                s.wizardState = 'PLAN_EDITOR';
-                return [s, null];
+                return enterPlanEditor(s);
             }
             if (zone.inBounds('plan-regenerate', msg) && !s.isProcessing) {
                 handlePlanReviewState(s.wizard, 'regenerate');
@@ -1200,7 +1309,14 @@
             if (st.planCache && st.planCache.splits) {
                 for (var i = 0; i < st.planCache.splits.length; i++) {
                     if (zone.inBounds('edit-split-' + i, msg)) {
+                        // Cancel inline title edit if changing to a different split.
+                        if (s.editorTitleEditing && i !== s.editorTitleEditingIdx) {
+                            s.editorTitleEditing = false;
+                            s.editorTitleEditingIdx = -1;
+                            s.editorTitleText = '';
+                        }
                         s.selectedSplitIdx = i;
+                        s.selectedFileIdx = 0;
                         return [s, null];
                     }
                     // File selection within currently selected split.
@@ -1397,6 +1513,19 @@
     //  Navigation Handlers — Back / Next / Up / Down
     // -----------------------------------------------------------------------
 
+    // Transition into the plan editor, resetting all inline editing state.
+    function enterPlanEditor(s) {
+        s.wizard.transition('PLAN_EDITOR');
+        s.wizardState = 'PLAN_EDITOR';
+        s.editorTitleEditing = false;
+        s.editorTitleEditingIdx = -1;
+        s.editorTitleText = '';
+        s.editorCheckedFiles = {};
+        s.editorValidationErrors = [];
+        s.selectedFileIdx = 0;
+        return [s, null];
+    }
+
     function handleBack(s) {
         switch (s.wizardState) {
             case 'PLAN_REVIEW':
@@ -1405,6 +1534,12 @@
                 s.wizard.transition('CONFIG');
                 return [s, null];
             case 'PLAN_EDITOR':
+                // Reset all inline editing state before leaving (T17).
+                s.editorTitleEditing = false;
+                s.editorTitleEditingIdx = -1;
+                s.editorTitleText = '';
+                s.editorCheckedFiles = {};
+                s.editorValidationErrors = [];
                 s.wizardState = 'PLAN_REVIEW';
                 handlePlanEditorState(s.wizard, 'back', st.planCache);
                 return [s, null];
@@ -1427,11 +1562,21 @@
                 return startAnalysis(s);
             case 'PLAN_REVIEW':
                 return startExecution(s);
-            case 'PLAN_EDITOR':
-                // Save edits and return to review.
-                handlePlanEditorState(s.wizard, 'save', st.planCache);
+            case 'PLAN_EDITOR': {
+                // Validate and save edits, return to review (T17).
+                var editorResult = handlePlanEditorState(s.wizard, 'done', st.planCache);
+                if (editorResult && editorResult.action === 'validation_failed') {
+                    s.editorValidationErrors = editorResult.validationErrors || [];
+                    return [s, null];
+                }
+                s.editorValidationErrors = [];
+                s.editorTitleEditing = false;
+                s.editorTitleEditingIdx = -1;
+                s.editorTitleText = '';
+                s.editorCheckedFiles = {};
                 s.wizardState = 'PLAN_REVIEW';
                 return [s, null];
+            }
             case 'ERROR_RESOLUTION':
                 return handleErrorResolutionChoice(s, 'auto-resolve');
             case 'FINALIZATION':
@@ -1511,10 +1656,11 @@
         }
     }
 
-    // List navigation (j/k/up/down): navigates splits only, clamped.
-    // Also syncs focusIndex to the selected split card.
+    // List navigation (j/k/up/down):
+    //   PLAN_REVIEW → navigates splits, clamped, syncs focusIndex.
+    //   PLAN_EDITOR → navigates files within the selected split (T17).
     function handleListNav(s, delta) {
-        if (s.wizardState === 'PLAN_REVIEW' || s.wizardState === 'PLAN_EDITOR') {
+        if (s.wizardState === 'PLAN_REVIEW') {
             var splitCount = (st.planCache && st.planCache.splits)
                 ? st.planCache.splits.length : 0;
             if (splitCount > 0) {
@@ -1523,6 +1669,16 @@
                 s.selectedSplitIdx = newIdx;
                 // Keep focusIndex in sync with the split card.
                 s.focusIndex = newIdx;
+            }
+        } else if (s.wizardState === 'PLAN_EDITOR') {
+            // File-level navigation within the selected split.
+            var sidx = s.selectedSplitIdx || 0;
+            var files = (st.planCache && st.planCache.splits && st.planCache.splits[sidx])
+                ? st.planCache.splits[sidx].files : [];
+            if (files && files.length > 0) {
+                var newFileIdx = (s.selectedFileIdx || 0) + delta;
+                newFileIdx = Math.max(0, Math.min(newFileIdx, files.length - 1));
+                s.selectedFileIdx = newFileIdx;
             }
         }
         return [s, null];
@@ -1612,9 +1768,7 @@
         if (focused.type === 'button') {
             // Plan review buttons.
             if (focused.id === 'plan-edit' && !s.isProcessing) {
-                s.wizard.transition('PLAN_EDITOR');
-                s.wizardState = 'PLAN_EDITOR';
-                return [s, null];
+                return enterPlanEditor(s);
             }
             if (focused.id === 'plan-regenerate' && !s.isProcessing) {
                 handlePlanReviewState(s.wizard, 'regenerate');

@@ -176,6 +176,22 @@
     prSplit._wizardColors = COLORS;
 
     // -----------------------------------------------------------------------
+    //  Layout Mode Helper (T07)
+    //
+    //  Returns 'compact' (<60), 'standard' (60-100), or 'wide' (>100).
+    // -----------------------------------------------------------------------
+
+    function layoutMode(s) {
+        var w = s.width || 80;
+        if (w < 60) return 'compact';
+        if (w > 100) return 'wide';
+        return 'standard';
+    }
+
+    // Export for testing.
+    prSplit._layoutMode = layoutMode;
+
+    // -----------------------------------------------------------------------
     //  Chrome Renderers (T007)
     //
     //  Title bar, navigation bar, status bar, step dots
@@ -215,6 +231,7 @@
         var stepLabel = STEP_LABELS[stepIdx] || 'Unknown';
         var stepNum = stepIdx + 1;
         var totalSteps = 7;
+        var mode = layoutMode(s);
 
         // Elapsed time.
         var elapsed = s.startTime ? Math.floor((Date.now() - s.startTime) / 1000) : 0;
@@ -222,12 +239,25 @@
         var secs = elapsed % 60;
         var timeStr = mins + ':' + (secs < 10 ? '0' : '') + secs;
 
+        var w = s.width || 80;
+
+        if (mode === 'compact') {
+            // Compact: dots + timer only, no title or step label.
+            var dots = renderStepDots(s);
+            var right = styles.dim().render('\u23f1 ' + timeStr);
+            var leftW = lipgloss.width(dots);
+            var rightW = lipgloss.width(right);
+            var gap = Math.max(1, w - leftW - rightW);
+            var gapStr = '';
+            for (var i = 0; i < gap; i++) gapStr += ' ';
+            return dots + gapStr + right;
+        }
+
         var left = styles.titleBar().render('\ud83d\udd00 PR Split Wizard');
         var right = styles.stepIndicator().render(
             'Step ' + stepNum + '/' + totalSteps + ': ' + stepLabel + '  \u23f1 ' + timeStr
         );
 
-        var w = s.width || 80;
         var leftW = lipgloss.width(left);
         var rightW = lipgloss.width(right);
         var gap = Math.max(1, w - leftW - rightW);
@@ -570,43 +600,94 @@
         }
 
         var plan = st.planCache;
+        var mode = layoutMode(s);
         lines.push(styles.bold().render('Split Plan Overview'));
         lines.push('  Splits: ' + styles.fieldValue().render(String(plan.splits.length)));
         lines.push('  Base: ' + styles.fieldValue().render(plan.baseBranch || 'main'));
         lines.push('');
 
-        // Split cards.
         var w = (s.width || 80) - 8;
         var selectedIdx = s.selectedSplitIdx || 0;
-        // Focus: indices 0..N-1 = split cards, N = plan-edit, N+1 = plan-regenerate.
         var focusIdx = s.focusIndex || 0;
         var splitCount = plan.splits.length;
 
-        for (var i = 0; i < plan.splits.length; i++) {
-            var split = plan.splits[i];
-            var isSelected = (i === selectedIdx);
-            var isFocused = (focusIdx === i);
-            var cardStyle = isFocused ? styles.focusedCard() :
-                            isSelected ? styles.activeCard() : styles.inactiveCard();
-            var cardId = 'split-card-' + i;
+        if (mode === 'wide' && splitCount > 0) {
+            // Wide: side-by-side — compact card list (left) + detail (right).
+            var leftW = Math.min(Math.floor(w * 0.35), 40);
+            var rightW = w - leftW - 3; // 3 for separator column.
+            var leftLines = [];
+            var rightLines = [];
 
-            var cardContent = '';
-            cardContent += styles.bold().render(
-                (i + 1) + '. ' + (split.name || 'split-' + i)) + '\n';
-            cardContent += styles.dim().render(split.message || '') + '\n';
-            cardContent += styles.fieldValue().render(
-                split.files.length + ' file' + (split.files.length !== 1 ? 's' : ''));
+            // Left: compact card summary list.
+            for (var i = 0; i < plan.splits.length; i++) {
+                var split = plan.splits[i];
+                var isSelected = (i === selectedIdx);
+                var isFocused = (focusIdx === i);
+                var bullet = isSelected ? styles.primaryButton().render(' \u25b6 ')
+                    : '  ' + (i + 1) + '.';
+                var nameStr = truncate(split.name || 'split-' + i, leftW - 8);
+                var label = isFocused
+                    ? styles.statusActive().render(nameStr)
+                    : (isSelected ? styles.bold().render(nameStr) : styles.label().render(nameStr));
+                var filesStr = styles.dim().render(' (' + split.files.length + ')');
+                var cardId = 'split-card-' + i;
+                leftLines.push(zone.mark(cardId, bullet + ' ' + label + filesStr));
+            }
 
-            // Show files for selected split.
-            if (isSelected && split.files) {
-                cardContent += '\n';
-                for (var fi = 0; fi < split.files.length; fi++) {
-                    var fStatus = (plan.fileStatuses && plan.fileStatuses[split.files[fi]]) || '?';
-                    cardContent += '\n  [' + fStatus + '] ' + truncate(split.files[fi], w - 10);
+            // Right: detail for selected split.
+            var sel = plan.splits[selectedIdx];
+            if (sel) {
+                rightLines.push(styles.bold().render(sel.name || 'split-' + selectedIdx));
+                if (sel.message) {
+                    rightLines.push(styles.dim().render(sel.message));
+                }
+                rightLines.push(styles.fieldValue().render(
+                    sel.files.length + ' file' + (sel.files.length !== 1 ? 's' : '')));
+                rightLines.push('');
+                if (sel.files) {
+                    for (var fi = 0; fi < sel.files.length; fi++) {
+                        var fStatus = (plan.fileStatuses && plan.fileStatuses[sel.files[fi]]) || '?';
+                        rightLines.push('[' + fStatus + '] ' + truncate(sel.files[fi], rightW - 6));
+                    }
                 }
             }
 
-            lines.push(zone.mark(cardId, cardStyle.width(w).render(cardContent)));
+            // Join columns with a vertical separator.
+            var separator = styles.divider().render('\u2502');
+            var leftBlock = leftLines.join('\n');
+            var rightBlock = rightLines.join('\n');
+            var leftStyled = lipgloss.newStyle().width(leftW).render(leftBlock);
+            var rightStyled = lipgloss.newStyle().width(rightW).render(rightBlock);
+            lines.push(lipgloss.joinHorizontal(lipgloss.Top,
+                leftStyled, ' ' + separator + ' ', rightStyled));
+        } else {
+            // Standard / Compact: single-column card layout.
+            for (var i = 0; i < plan.splits.length; i++) {
+                var split = plan.splits[i];
+                var isSelected = (i === selectedIdx);
+                var isFocused = (focusIdx === i);
+                var cardStyle = isFocused ? styles.focusedCard() :
+                                isSelected ? styles.activeCard() : styles.inactiveCard();
+                var cardId = 'split-card-' + i;
+
+                var cardContent = '';
+                cardContent += styles.bold().render(
+                    (i + 1) + '. ' + (split.name || 'split-' + i)) + '\n';
+                cardContent += styles.dim().render(split.message || '') + '\n';
+                cardContent += styles.fieldValue().render(
+                    split.files.length + ' file' + (split.files.length !== 1 ? 's' : ''));
+
+                // Show files for selected split.
+                if (isSelected && split.files) {
+                    cardContent += '\n';
+                    for (var fi = 0; fi < split.files.length; fi++) {
+                        var fStatus = (plan.fileStatuses && plan.fileStatuses[split.files[fi]]) || '?';
+                        cardContent += '\n  [' + fStatus + '] ' + truncate(split.files[fi], w - 10);
+                    }
+                }
+
+                lines.push(zone.mark(cardId, cardStyle.width(w).render(cardContent)));
+            }
         }
 
         // Action buttons.
@@ -615,11 +696,16 @@
         var editBtnStyle = editFocused ? styles.focusedButton() : styles.secondaryButton();
         var regenBtnStyle = regenFocused ? styles.focusedButton() : styles.secondaryButton();
         lines.push('');
-        lines.push(
-            zone.mark('plan-edit', editBtnStyle.render('Edit Plan \u270f')) +
-            '  ' +
-            zone.mark('plan-regenerate', regenBtnStyle.render('Regenerate \ud83d\udd04'))
-        );
+        if (layoutMode(s) === 'compact') {
+            lines.push(zone.mark('plan-edit', editBtnStyle.render('Edit \u270f')));
+            lines.push(zone.mark('plan-regenerate', regenBtnStyle.render('Regen \ud83d\udd04')));
+        } else {
+            lines.push(
+                zone.mark('plan-edit', editBtnStyle.render('Edit Plan \u270f')) +
+                '  ' +
+                zone.mark('plan-regenerate', regenBtnStyle.render('Regenerate \ud83d\udd04'))
+            );
+        }
 
         return lines.join('\n');
     }
@@ -673,13 +759,19 @@
                 var renameBtnStyle = renameFocused ? styles.focusedButton() : styles.secondaryButton();
                 var mergeBtnStyle = mergeFocused ? styles.focusedButton() : styles.secondaryButton();
                 lines.push('');
-                lines.push(
-                    zone.mark('editor-move', moveBtnStyle.render('Move File')) +
-                    '  ' +
-                    zone.mark('editor-rename', renameBtnStyle.render('Rename Split')) +
-                    '  ' +
-                    zone.mark('editor-merge', mergeBtnStyle.render('Merge Splits'))
-                );
+                if (layoutMode(s) === 'compact') {
+                    lines.push(zone.mark('editor-move', moveBtnStyle.render('Move')));
+                    lines.push(zone.mark('editor-rename', renameBtnStyle.render('Rename')));
+                    lines.push(zone.mark('editor-merge', mergeBtnStyle.render('Merge')));
+                } else {
+                    lines.push(
+                        zone.mark('editor-move', moveBtnStyle.render('Move File')) +
+                        '  ' +
+                        zone.mark('editor-rename', renameBtnStyle.render('Rename Split')) +
+                        '  ' +
+                        zone.mark('editor-merge', mergeBtnStyle.render('Merge Splits'))
+                    );
+                }
             }
         }
 
@@ -824,17 +916,27 @@
         }
 
         // Actions.
+        var compact = layoutMode(s) === 'compact';
         lines.push('');
-        lines.push(
-            zone.mark('final-report',
-                styles.secondaryButton().render('View Report')) +
-            '  ' +
-            zone.mark('final-create-prs',
-                styles.primaryButton().render('Create PRs')) +
-            '  ' +
-            zone.mark('final-done',
-                styles.primaryButton().render('Done'))
-        );
+        if (compact) {
+            lines.push(zone.mark('final-report',
+                styles.secondaryButton().render('View Report')));
+            lines.push(zone.mark('final-create-prs',
+                styles.primaryButton().render('Create PRs')));
+            lines.push(zone.mark('final-done',
+                styles.primaryButton().render('Done')));
+        } else {
+            lines.push(
+                zone.mark('final-report',
+                    styles.secondaryButton().render('View Report')) +
+                '  ' +
+                zone.mark('final-create-prs',
+                    styles.primaryButton().render('Create PRs')) +
+                '  ' +
+                zone.mark('final-done',
+                    styles.primaryButton().render('Done'))
+            );
+        }
 
         return lines.join('\n');
     }
@@ -878,6 +980,7 @@
         ];
         lines.push(styles.bold().render('Choose Resolution:'));
         lines.push('');
+        var compact = layoutMode(s) === 'compact';
         for (var ri = 0; ri < resolveButtons.length; ri++) {
             var rb = resolveButtons[ri];
             var isFocused = (focusIdx === ri);
@@ -889,8 +992,11 @@
             } else {
                 btnStyle = styles.secondaryButton();
             }
-            lines.push('  ' + zone.mark(rb.id, btnStyle.render(rb.label)) +
-                styles.dim().render('  ' + rb.desc));
+            var line = '  ' + zone.mark(rb.id, btnStyle.render(rb.label));
+            if (!compact) {
+                line += styles.dim().render('  ' + rb.desc);
+            }
+            lines.push(line);
             if (ri < resolveButtons.length - 1) lines.push('');
         }
 

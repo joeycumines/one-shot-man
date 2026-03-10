@@ -165,7 +165,8 @@
       "task": "T07: Implement responsive layout breakpoints — compact/standard/wide",
       "description": "Fixed width with no adaptation. Implement: (a) layoutMode() helper: compact (<60), standard (60-100), wide (>100). (b) Compact: dots only, truncated status, single-column. (c) Standard: current. (d) Wide: side-by-side plan review. (e) Audit chrome for graceful truncation.",
       "acceptance": "50x24: dots only. 80x24: full chrome. 130x40: side-by-side. No content overlap.",
-      "status": "Not Started",
+      "status": "Done",
+      "completionNotes": "layoutMode(s) returns compact/standard/wide. Compact (<60): title bar shows dots+timer only, plan buttons stacked vertically, editor buttons stacked, error resolution descriptions hidden, finalization buttons stacked. Standard (60-100): unchanged. Wide (>100): viewPlanReviewScreen renders side-by-side — compact card list left (35%, max 40), detail panel right with full file list and separator column. All existing narrow checks preserved. Exported _layoutMode for testing.",
       "context": {
         "files": [
           "internal/command/pr_split_15_tui_views.js (renderTitleBar, renderNavBar, renderStatusBar, viewPlanReviewScreen)",

@@ -159,6 +159,11 @@ func Require(ctx context.Context, input io.Reader, output io.Writer) func(*goja.
 		_ = exports.Set("newMux", func(call goja.FunctionCall) goja.Value {
 			return newMux(ctx, runtime, input, output, call)
 		})
+
+		// ── CaptureSession factory ───────────────────────────
+		_ = exports.Set("newCaptureSession", func(call goja.FunctionCall) goja.Value {
+			return newCaptureSession(ctx, runtime, call)
+		})
 	}
 }
 
@@ -511,4 +516,173 @@ func exitReasonString(r parent.ExitReason) string {
 	default:
 		return r.String()
 	}
+}
+
+// newCaptureSession creates a [parent.CaptureSession] from JS arguments and
+// returns a wrapped JS object.
+//
+// JS signature:
+//
+//	termmux.newCaptureSession(command, args?, { dir?, rows?, cols?, env? }?)
+func newCaptureSession(ctx context.Context, runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
+	if len(call.Arguments) == 0 {
+		panic(runtime.NewTypeError("newCaptureSession: command argument is required"))
+	}
+
+	cmd := call.Argument(0).String()
+	if cmd == "" {
+		panic(runtime.NewTypeError("newCaptureSession: command must be a non-empty string"))
+	}
+
+	cfg := parent.CaptureConfig{
+		Command: cmd,
+	}
+
+	// Parse optional args array (second argument).
+	if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
+		argsObj := call.Argument(1).ToObject(runtime)
+		if lenVal := argsObj.Get("length"); lenVal != nil && !goja.IsUndefined(lenVal) {
+			arrLen := lenVal.ToInteger()
+			for i := int64(0); i < arrLen; i++ {
+				v := argsObj.Get(fmt.Sprintf("%d", i))
+				if v != nil && !goja.IsUndefined(v) {
+					cfg.Args = append(cfg.Args, v.String())
+				}
+			}
+		}
+	}
+
+	// Parse optional options object (third argument).
+	if len(call.Arguments) > 2 && !goja.IsUndefined(call.Argument(2)) && !goja.IsNull(call.Argument(2)) {
+		optObj := call.Argument(2).ToObject(runtime)
+		if v := optObj.Get("dir"); v != nil && !goja.IsUndefined(v) {
+			cfg.Dir = v.String()
+		}
+		if v := optObj.Get("rows"); v != nil && !goja.IsUndefined(v) {
+			cfg.Rows = int(v.ToInteger())
+		}
+		if v := optObj.Get("cols"); v != nil && !goja.IsUndefined(v) {
+			cfg.Cols = int(v.ToInteger())
+		}
+		if v := optObj.Get("env"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+			envObj := v.ToObject(runtime)
+			cfg.Env = make(map[string]string)
+			for _, key := range envObj.Keys() {
+				val := envObj.Get(key)
+				if val != nil && !goja.IsUndefined(val) && !goja.IsNull(val) {
+					cfg.Env[key] = val.String()
+				}
+			}
+		}
+	}
+
+	cs := parent.NewCaptureSession(cfg)
+	return WrapCaptureSession(ctx, runtime, cs)
+}
+
+// WrapCaptureSession wraps a [parent.CaptureSession] into a Goja object with
+// JavaScript-callable methods. Exported so callers (e.g., pr_split.go) can
+// create a Go-side CaptureSession and expose it through the same interface.
+func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.CaptureSession) goja.Value {
+	obj := runtime.NewObject()
+
+	// ── start() ──────────────────────────────────────────
+	_ = obj.Set("start", func() {
+		if err := cs.Start(ctx); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+	})
+
+	// ── isRunning() → boolean ────────────────────────────
+	_ = obj.Set("isRunning", func() bool {
+		return cs.IsRunning()
+	})
+
+	// ── output() → string ────────────────────────────────
+	// Returns plain text snapshot of the virtual terminal screen.
+	_ = obj.Set("output", func() string {
+		return cs.Output()
+	})
+
+	// ── screen() → string ────────────────────────────────
+	// Returns ANSI-escaped screen content for terminal rendering.
+	_ = obj.Set("screen", func() string {
+		return cs.Screen()
+	})
+
+	// ── interrupt() ──────────────────────────────────────
+	_ = obj.Set("interrupt", func() {
+		if err := cs.Interrupt(); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+	})
+
+	// ── kill() ───────────────────────────────────────────
+	_ = obj.Set("kill", func() {
+		if err := cs.Kill(); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+	})
+
+	// ── resize(rows, cols) ───────────────────────────────
+	_ = obj.Set("resize", func(rows, cols int) {
+		if err := cs.Resize(rows, cols); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+	})
+
+	// ── wait() → { code, error? } ───────────────────────
+	// BLOCKING: waits until child process exits and output is drained.
+	_ = obj.Set("wait", func() map[string]any {
+		code, err := cs.Wait()
+		result := map[string]any{"code": code}
+		if err != nil {
+			result["error"] = err.Error()
+		}
+		return result
+	})
+
+	// ── write(data) ──────────────────────────────────────
+	_ = obj.Set("write", func(data string) {
+		if err := cs.Write(data); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+	})
+
+	// ── sendEOF() ────────────────────────────────────────
+	_ = obj.Set("sendEOF", func() {
+		if err := cs.SendEOF(); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+	})
+
+	// ── close() ──────────────────────────────────────────
+	_ = obj.Set("close", func() {
+		if err := cs.Close(); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+	})
+
+	// ── pid() → number ──────────────────────────────────
+	_ = obj.Set("pid", func() int {
+		return cs.Pid()
+	})
+
+	// ── exitCode() → number ──────────────────────────────
+	_ = obj.Set("exitCode", func() int {
+		return cs.ExitCode()
+	})
+
+	// ── isDone() → boolean ───────────────────────────────
+	// Non-blocking check: true if the child has exited and output is drained.
+	_ = obj.Set("isDone", func() bool {
+		select {
+		case <-cs.Done():
+			return true
+		default:
+			return false
+		}
+	})
+
+	return obj
 }

@@ -252,7 +252,8 @@
       "task": "T12: Build CaptureSession in termmux — embedded command output capture",
       "description": "General-purpose CaptureSession: (a) Struct with cmd, pty, vterm, mutex. (b) Start/IsRunning/Output/Interrupt/Kill/Resize/Wait methods. (c) Output returns vterm Screenshot. (d) No pr-split code.",
       "acceptance": "CaptureSession exported. echo test works. IsRunning correct. Interrupt/Kill work. All platforms. No pr-split code in termmux.",
-      "status": "Not Started",
+      "status": "Done",
+      "completionNotes": "CaptureSession struct in capture.go with Start/IsRunning/Output/Screen/Interrupt/Kill/Resize/Wait/Close/Write/SendEOF/ExitCode/Pid/Done. Background readerLoop feeds PTY→VTerm. JS bindings in module.go: newCaptureSession factory + WrapCaptureSession. 25 tests covering echo, IsRunning lifecycle, Interrupt, Kill, context cancel, Resize, double-Start, Close idempotent, PID, exit code, Write/SendEOF, Screen, multiline output, Done channel, concurrent output, env vars, working dir, default/custom dimensions, invalid command, not-started guards, start-after-close.",
       "context": {
         "files": [
           "internal/termmux/termmux.go",
@@ -267,7 +268,8 @@
       "task": "T13: Build osm:termmux JS bindings for CaptureSession",
       "description": "Expose CaptureSession to JS: (a) newCaptureSession factory. (b) JS methods: start/isRunning/output/interrupt/kill/resize/wait. (c) Event queuing. (d) Context cleanup. (e) Thread-safe.",
       "acceptance": "JS usage works. Events fire. Unit tests pass. No pr-split code.",
-      "status": "Not Started",
+      "status": "Done",
+      "completionNotes": "JS bindings implemented in T12 (combined delivery — deadcode checker requires wiring). newCaptureSession(cmd, args?, opts?) factory and WrapCaptureSession both in module.go. Full API: start/isRunning/output/screen/interrupt/kill/resize/wait/write/sendEOF/close/pid/exitCode/isDone.",
       "context": {
         "files": [
           "internal/builtin/termmux/module.go"

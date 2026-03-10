@@ -15,13 +15,42 @@
 - **T08**: DONE. Committed `bb9b10c5`. Signal handling: SIGINT/SIGTERM context, double-SIGINT force-exit.
 - **T09**: DONE. Committed `d3c640b5`. Deferred terminal finalizer, all 8 exit paths audited safe.
 - **T10**: DONE. Committed `b50859e5`. Claude availability check + Test Connection button on CONFIG screen.
-- **Blueprint**: 33 tasks. T01-T10=Done, T11-T33=Not Started.
+- **T11**: DONE. Committed `4cb8793b`. Per-branch verification display in execution screen with 3-step pipeline.
+- **T12+T13**: DONE. CaptureSession + JS bindings. R2 3rd attempt (2/2 PASS). Pending commit.
+- **Blueprint**: 33 tasks. T01-T13=Done, T14-T33=Not Started.
 
 ### Next Step
 
-**T11: Wire post-split verification display into TUI execution screen.**
+**T14: Integrate CaptureSession into pr-split TUI for live command output.**
 
-### T10 Implementation Details (for Next Takumi)
+### T12+T13 Implementation Details (for Next Takumi)
+
+- Files added: internal/termmux/capture.go, internal/termmux/capture_test.go
+- Files modified: internal/builtin/termmux/module.go (JS bindings)
+- CaptureSession struct: PTY-attached command execution with VTerm screen capture
+- CaptureConfig: Command, Args, Dir, Env, Rows, Cols
+- Methods: Start, IsRunning, Output, Screen, Resize, Interrupt, Kill, Wait, Done, Close, ExitCode, Pid, Write, SendEOF
+- Single goroutine (readerLoop): reads PTY → feeds VTerm → proc.Wait() → records exit state → closes done
+- Close is idempotent, cancel context + proc.Close + 5s timeout for drain
+- Wait before Start returns (-1, error) instead of deadlocking
+- Resize validates positive + overflow (> 65535) before PTY then VTerm
+- 25 tests: echo, IsRunning lifecycle, Interrupt/Kill/ContextCancel, Resize, DoubleStart, CloseIdempotent, Pid, ExitCode, Write, SendEOF, Screen, Multiline, ConcurrentOutput, Done, Env, WorkingDir, DefaultDimensions, CustomDimensions, InvalidCommand, NotStarted, StartAfterClose, Resize overflow
+- JS bindings in module.go: newCaptureSession(cmd, args?, opts?) factory, WrapCaptureSession with 14 JS methods
+- WrapCaptureSession exported for pr_split.go to use directly
+- Null guard on env values in JS factory (goja.IsNull check)
+- Empty command validation in JS factory
+
+### T11 Implementation Details (for Next Takumi)
+
+- Files changed: pr_split_16_tui_core.js, pr_split_15_tui_views.js
+- Model state: verificationResults[], verifyingIdx (-1=not started), verifyOutput{}, expandedVerifyBranch
+- runExecutionStep: 3 steps — 0=branches, 1=init verify (or skip to 2 if no verifyCommand), 2=equiv check
+- runVerifyBranch(s): tick-based one-branch-per-tick, dependency chain checking, prSplit.verifySplit() call, output capture via outputFn, scoped verify command support, result storage + self-dispatch
+- startExecution: resets all 4 verification state fields
+- Tick routing: exec-step-2 → runExecutionStep(s,2), verify-branch → runVerifyBranch(s)
+- viewExecutionScreen: "Verifying Branches" section with 5 icon states (✓✗—▶○), duration, expandable output (zone-based Show/Hide), summary badges
+- Mouse: BRANCH_BUILDING handler for verify-expand-{branch} and verify-collapse-{branch} zones
+- All exec-step-1 refs that skip to equiv updated to exec-step-2
 
 - Files changed: pr_split_16_tui_core.js, pr_split_15_tui_views.js
 - State: claudeCheckStatus (null/checking/available/unavailable), claudeResolvedInfo, claudeCheckError

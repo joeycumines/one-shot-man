@@ -17,17 +17,22 @@
 - **T10**: DONE. Committed `b50859e5`. Claude availability check + Test Connection button on CONFIG screen.
 - **T11**: DONE. Committed `4cb8793b`. Per-branch verification display in execution screen with 3-step pipeline.
 - **T12+T13**: DONE. Committed `e73b2ae8`. CaptureSession + JS bindings. R2 3rd attempt (2/2 PASS).
-- **T14**: DONE. Pending commit. CaptureSession integration into verification TUI. R2 (2/2 PASS).
-- **Blueprint**: 33 tasks. T01-T14=Done, T15-T33=Not Started.
+- **T14**: DONE. Committed `ab15b3e5`. CaptureSession integration into verification TUI. R2 (2/2 PASS).
+- **T15**: DONE. Pending commit. Claude window-in-window split-view. R2 (2/2 PASS).
+- **Blueprint**: 33 tasks. T01-T15=Done, T16-T33=Not Started.
 
 ### Next Step
 
-**T15: Build Claude window-in-window split-view via termmux screenshot.**
+**T16: Implement interactive Claude back-and-forth during wizard flow.**
 
-### T14 Implementation Details (for Next Takumi)
+### T15 Implementation Details (for Next Takumi)
 
-- Files changed: pr_split_06_verification.js, pr_split_12_exports.js, pr_split_15_tui_views.js, pr_split_16_tui_core.js
-- startVerifySession(): creates temp worktree + CaptureSession (PTY+VTerm). Fail-fast: require('osm:termmux') before worktree creation. try-catch wraps newCaptureSession+start.
+- Files changed: pr_split_15_tui_views.js (renderClaudePane + status bar hint), pr_split_16_tui_core.js (5 model fields, Ctrl+L/Tab/Ctrl+=/- handlers, claude-screenshot tick, pollClaudeScreenshot, split-view viewFn logic)
+- Split-view: wizard top, Claude bottom, adjustable ratio 0.2-0.8
+- Height guard: vpHeight < 7 → auto-disable split view (no overflow)
+- Pane divider: labelW = focusLabel.length + splitHint.length + 7
+- renderClaudePane: contentH = height - 2 (border overhead), title inside content area
+- Polling: 500ms tick via 'claude-screenshot' tick ID, self-terminates when disabled
 - cleanupVerifyWorktree(): removes temp worktree via gitExec.
 - pollVerifySession(): 100ms tick poll — null guard, timeout→kill, isDone→cleanup+advance, running→reschedule.
 - runVerifyBranch(): async CaptureSession approach; falls back to blocking verifySplit() on Windows.

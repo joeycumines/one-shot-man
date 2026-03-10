@@ -364,8 +364,12 @@
         var narrow = w < 60;
         var veryNarrow = w < 40;
 
-        // Left: termmux toggle hint.
-        var left = styles.dim().render(veryNarrow ? 'C-]' : 'Ctrl+] Claude');
+        // Left: termmux toggle hint + split-view hint.
+        var leftParts = veryNarrow ? 'C-]' : 'Ctrl+] Claude';
+        if (!veryNarrow) {
+            leftParts += '  Ctrl+L Split';
+        }
+        var left = styles.dim().render(leftParts);
 
         // Center: help.
         var center = veryNarrow ? '' : styles.dim().render('? Help');
@@ -418,10 +422,106 @@
         return styles.statusIdle().render('\ud83d\udca4 Claude: quiet');
     }
 
+    // -----------------------------------------------------------------------
+    //  Split-View: Claude Pane Renderer (T15)
+    // -----------------------------------------------------------------------
+    function renderClaudePane(s, width, height) {
+        var screenshot = s.claudeScreenshot || '';
+        var hasMux = (typeof tuiMux !== 'undefined' && tuiMux &&
+            typeof tuiMux.screenshot === 'function');
+
+        // Height budget: border adds 2 lines (top + bottom).
+        // Content height = height - 2. First content line is the title.
+        var contentH = Math.max(1, height - 2);
+        var viewH = Math.max(1, contentH - 1); // lines for screenshot text
+        var viewW = Math.max(10, width - 6);    // border(2) + padding(2) + safety(2)
+
+        // Focus indicator.
+        var isFocused = (s.splitViewFocus === 'claude');
+        var borderColor = isFocused ? COLORS.primary : COLORS.border;
+
+        // Placeholder when no Claude session is available.
+        if (!hasMux || !screenshot) {
+            var placeholder = styles.dim().render(
+                hasMux ? 'Waiting for Claude output...'
+                       : 'No Claude session attached');
+            var hint = styles.dim().render('Ctrl+] to toggle Claude \u00b7 Ctrl+L to close split');
+
+            var phLines = [];
+            var phPadTop = Math.max(0, Math.floor((contentH - 2) / 2));
+            for (var pi = 0; pi < phPadTop; pi++) phLines.push('');
+            phLines.push(placeholder);
+            phLines.push(hint);
+            while (phLines.length < contentH) phLines.push('');
+
+            var phStyle = lipgloss.newStyle()
+                .border(lipgloss.roundedBorder())
+                .borderForeground(borderColor)
+                .width(width - 2)
+                .height(contentH);
+            return phStyle.render(phLines.join('\n'));
+        }
+
+        // Parse screenshot into lines.
+        var lines = screenshot.split('\n');
+        while (lines.length > 0 && lines[lines.length - 1] === '') {
+            lines.pop();
+        }
+
+        var totalLines = lines.length;
+
+        // Scroll indicator.
+        var scrollInfo = '';
+        if (totalLines > viewH) {
+            if (s.claudeViewOffset <= 0) {
+                scrollInfo = ' [live]';
+            } else {
+                var startForPct = Math.max(0, totalLines - viewH - s.claudeViewOffset);
+                var pct = Math.round((startForPct / Math.max(1, totalLines - viewH)) * 100);
+                scrollInfo = ' [' + pct + '%]';
+            }
+        }
+
+        // Title line (rendered inside the border as first content line).
+        var titleText = styles.bold().render(' Claude' + scrollInfo + ' ');
+
+        // Determine visible window based on scroll offset.
+        var startLine;
+        if (s.claudeViewOffset <= 0) {
+            startLine = Math.max(0, totalLines - viewH);
+        } else {
+            startLine = Math.max(0, totalLines - viewH - s.claudeViewOffset);
+        }
+        var endLine = Math.min(totalLines, startLine + viewH);
+
+        // Build viewport content.
+        var contentLines = [titleText];
+        for (var ci = startLine; ci < endLine; ci++) {
+            var ln = lines[ci] || '';
+            if (ln.length > viewW) {
+                ln = ln.substring(0, viewW - 3) + '...';
+            }
+            contentLines.push(ln);
+        }
+        // Pad to fill contentH.
+        while (contentLines.length < contentH) {
+            contentLines.push('');
+        }
+
+        var paneStyle = lipgloss.newStyle()
+            .border(lipgloss.roundedBorder())
+            .borderForeground(borderColor)
+            .width(width - 2)
+            .height(contentH);
+
+        return paneStyle.render(contentLines.join('\n'));
+    }
+
     // Export chrome for testing.
     prSplit._renderTitleBar = renderTitleBar;
     prSplit._renderNavBar = renderNavBar;
     prSplit._renderStatusBar = renderStatusBar;
+    prSplit._renderClaudePane = renderClaudePane;
     prSplit._renderStepDots = renderStepDots;
 
     // -----------------------------------------------------------------------

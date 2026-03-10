@@ -304,7 +304,8 @@
       "task": "T15: Build Claude window-in-window split-view via termmux screenshot",
       "description": "Read-only split-view: (a) s.splitView toggle. (b) Ctrl+L or button. (c) Wizard top, Claude bottom. (d) Poll screenshot 500ms. (e) Independent scroll. (f) Adjustable ratio. (g) Placeholder when no Claude.",
       "acceptance": "Ctrl+L toggles. Live Claude output. Both scrollable. Ratio adjustable. Placeholder when detached.",
-      "status": "Not Started",
+      "status": "Done",
+      "completionNotes": "Split-view toggle via Ctrl+L. Claude screenshot polled at 500ms via tick. Wizard top + Claude bottom with adjustable ratio (Ctrl+=/Ctrl+-). Focus switch via Tab. Independent scroll (↑↓/Home/End/wheel). Bordered Claude pane with placeholder when no session. 5 new model state fields. Pane divider with focus indicator.",
       "context": {
         "files": [
           "internal/command/pr_split_16_tui_core.js",

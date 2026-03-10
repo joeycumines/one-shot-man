@@ -24,6 +24,7 @@
     var renderNavBar = prSplit._renderNavBar;
     var renderStatusBar = prSplit._renderStatusBar;
     var renderProgressBar = prSplit._renderProgressBar;
+    var renderClaudePane = prSplit._renderClaudePane;
     var viewForState = prSplit._viewForState;
     var viewHelpOverlay = prSplit._viewHelpOverlay;
     var viewConfirmCancelOverlay = prSplit._viewConfirmCancelOverlay;
@@ -133,6 +134,13 @@
                 verifyViewportOffset: 0,       // scroll offset (lines from bottom)
                 verifyAutoScroll: true,        // auto-scroll to bottom
                 lastVerifyInterruptTime: 0,    // timestamp of last Ctrl+C interrupt
+
+                // Split-view (Claude window-in-window).
+                splitViewEnabled: false,       // true when split-view is active
+                splitViewRatio: 0.6,           // wizard gets this fraction of content height
+                splitViewFocus: 'wizard',      // 'wizard' or 'claude' — which pane is focused
+                claudeScreenshot: '',          // cached plain-text screenshot from tuiMux
+                claudeViewOffset: 0,           // scroll offset in Claude pane (lines from bottom)
 
                 // Results.
                 equivalenceResult: null,
@@ -297,6 +305,58 @@
                     }
                 }
 
+                // Split-view: Ctrl+L to toggle Claude window-in-window.
+                if (k === 'ctrl+l') {
+                    s.splitViewEnabled = !s.splitViewEnabled;
+                    if (s.splitViewEnabled) {
+                        // Start screenshot polling.
+                        return [s, tea.tick(100, 'claude-screenshot')];
+                    } else {
+                        // Reset split-view state on disable.
+                        s.claudeScreenshot = '';
+                        s.claudeViewOffset = 0;
+                        s.splitViewFocus = 'wizard';
+                    }
+                    return [s, null];
+                }
+
+                // Split-view keybindings (only when enabled).
+                if (s.splitViewEnabled) {
+                    // Tab switches focus between panes.
+                    if (k === 'tab' && !s.activeVerifySession) {
+                        s.splitViewFocus = (s.splitViewFocus === 'wizard') ? 'claude' : 'wizard';
+                        return [s, null];
+                    }
+                    // Ctrl+= / Ctrl+- to adjust ratio.
+                    if (k === 'ctrl++' || k === 'ctrl+=') {
+                        s.splitViewRatio = Math.min(0.8, s.splitViewRatio + 0.1);
+                        return [s, null];
+                    }
+                    if (k === 'ctrl+-') {
+                        s.splitViewRatio = Math.max(0.2, s.splitViewRatio - 0.1);
+                        return [s, null];
+                    }
+                    // Claude pane scroll (when Claude has focus).
+                    if (s.splitViewFocus === 'claude') {
+                        if (k === 'up' || k === 'k') {
+                            s.claudeViewOffset = (s.claudeViewOffset || 0) + 1;
+                            return [s, null];
+                        }
+                        if (k === 'down' || k === 'j') {
+                            s.claudeViewOffset = Math.max(0, (s.claudeViewOffset || 0) - 1);
+                            return [s, null];
+                        }
+                        if (k === 'home') {
+                            s.claudeViewOffset = 999999;
+                            return [s, null];
+                        }
+                        if (k === 'end') {
+                            s.claudeViewOffset = 0;
+                            return [s, null];
+                        }
+                    }
+                }
+
                 // Help toggle.
                 if (k === '?' || k === 'f1') {
                     s.showHelp = true;
@@ -386,6 +446,19 @@
                 }
             }
 
+            // Split-view Claude pane mouse wheel → scroll Claude screenshot.
+            if (msg.type === 'Mouse' && msg.isWheel && s.splitViewEnabled &&
+                s.splitViewFocus === 'claude') {
+                if (msg.button === 'wheel up') {
+                    s.claudeViewOffset = (s.claudeViewOffset || 0) + 3;
+                    return [s, null];
+                }
+                if (msg.button === 'wheel down') {
+                    s.claudeViewOffset = Math.max(0, (s.claudeViewOffset || 0) - 3);
+                    return [s, null];
+                }
+            }
+
             if (msg.type === 'Mouse' && msg.isWheel && s.vp) {
                 if (msg.button === 'wheel up') {
                     s.vp.scrollUp(3);
@@ -444,6 +517,10 @@
                 if (msg.id === 'check-claude') {
                     return handleClaudeCheck(s);
                 }
+                // Split-view: poll Claude screenshot.
+                if (msg.id === 'claude-screenshot') {
+                    return pollClaudeScreenshot(s);
+                }
                 return [s, null];
             }
 
@@ -485,22 +562,76 @@
                 // +2 for the two dividers (each 1 line).
                 var chromeH = lipgloss.height(titleBar) + 2 + lipgloss.height(navBar) + lipgloss.height(statusBar);
                 var vpHeight = Math.max(3, h - chromeH);
-                s.vp.setHeight(vpHeight);
-                s.vp.setContent(screenContent);
 
-                // Scrollbar.
-                if (s.scrollbar) {
-                    s.scrollbar.setViewportHeight(vpHeight);
-                    s.scrollbar.setContentHeight(s.vp.totalLineCount());
-                    s.scrollbar.setYOffset(s.vp.yOffset());
-                    s.scrollbar.setChars('\u2588', '\u2591');
-                    s.scrollbar.setThumbForeground(resolveColor(COLORS.primary));
-                    s.scrollbar.setTrackForeground(resolveColor(COLORS.border));
+                if (s.splitViewEnabled) {
+                    // Split-view: wizard top, Claude bottom.
+                    // -1 for the pane divider between them.
+                    // Minimum split requires 3 + 1 + 3 = 7 lines.
+                    var minPaneH = 3;
+                    var wizardH = Math.max(minPaneH, Math.floor(vpHeight * s.splitViewRatio));
+                    // Clamp wizardH so Claude pane gets at least minPaneH.
+                    wizardH = Math.min(wizardH, vpHeight - minPaneH - 1);
+                    var claudeH = vpHeight - wizardH - 1;
+
+                    if (wizardH < minPaneH || claudeH < minPaneH) {
+                        // Terminal too small for split view; fall through to normal mode.
+                        s.splitViewEnabled = false;
+                    }
                 }
+                if (s.splitViewEnabled) {
 
-                var vpView = s.vp.view();
-                var sbView = s.scrollbar ? s.scrollbar.view() : '';
-                screenContent = lipgloss.joinHorizontal(lipgloss.Top, vpView, sbView);
+                    // Wizard viewport.
+                    s.vp.setHeight(wizardH);
+                    s.vp.setContent(screenContent);
+
+                    if (s.scrollbar) {
+                        s.scrollbar.setViewportHeight(wizardH);
+                        s.scrollbar.setContentHeight(s.vp.totalLineCount());
+                        s.scrollbar.setYOffset(s.vp.yOffset());
+                        s.scrollbar.setChars('\u2588', '\u2591');
+                        s.scrollbar.setThumbForeground(resolveColor(
+                            s.splitViewFocus === 'wizard' ? COLORS.primary : COLORS.border));
+                        s.scrollbar.setTrackForeground(resolveColor(COLORS.border));
+                    }
+
+                    var vpView = s.vp.view();
+                    var sbView = s.scrollbar ? s.scrollbar.view() : '';
+                    var wizardPane = lipgloss.joinHorizontal(lipgloss.Top, vpView, sbView);
+
+                    // Pane divider with focus indicator and split-view hint.
+                    var focusLabel = s.splitViewFocus === 'wizard'
+                        ? '\u25b2 Wizard'
+                        : '\u25bc Claude';
+                    var splitHint = 'Tab: switch  Ctrl+L: close';
+                    var labelW = focusLabel.length + splitHint.length + 7; // ┤ (1) + space(1) + space·space(3) + space(1) + ├(1)
+                    var leftFill = repeatStr('\u2500', Math.max(1, Math.floor((w - labelW) / 2)));
+                    var rightFill = repeatStr('\u2500', Math.max(1, Math.ceil((w - labelW) / 2)));
+                    var paneDivider = styles.dim().render(
+                        leftFill + '\u2524 ' + focusLabel + ' \u00b7 ' + splitHint + ' \u251c' + rightFill);
+
+                    // Claude pane.
+                    var claudePane = renderClaudePane(s, w, claudeH);
+
+                    screenContent = lipgloss.joinVertical(lipgloss.Left,
+                        wizardPane, paneDivider, claudePane);
+                } else {
+                    // Normal (non-split) viewport.
+                    s.vp.setHeight(vpHeight);
+                    s.vp.setContent(screenContent);
+
+                    if (s.scrollbar) {
+                        s.scrollbar.setViewportHeight(vpHeight);
+                        s.scrollbar.setContentHeight(s.vp.totalLineCount());
+                        s.scrollbar.setYOffset(s.vp.yOffset());
+                        s.scrollbar.setChars('\u2588', '\u2591');
+                        s.scrollbar.setThumbForeground(resolveColor(COLORS.primary));
+                        s.scrollbar.setTrackForeground(resolveColor(COLORS.border));
+                    }
+
+                    var vpView = s.vp.view();
+                    var sbView = s.scrollbar ? s.scrollbar.view() : '';
+                    screenContent = lipgloss.joinHorizontal(lipgloss.Top, vpView, sbView);
+                }
             }
 
             // Compose.
@@ -2199,6 +2330,32 @@
 
         s.verifyingIdx++;
         return [s, tea.tick(1, 'verify-branch')];
+    }
+
+    // -----------------------------------------------------------------------
+    //  Split-View: Claude Screenshot Polling
+    // -----------------------------------------------------------------------
+    function pollClaudeScreenshot(s) {
+        // Stop polling if split view was disabled.
+        if (!s.splitViewEnabled) {
+            return [s, null];
+        }
+
+        // Capture screenshot from tuiMux if available.
+        if (typeof tuiMux !== 'undefined' && tuiMux &&
+            typeof tuiMux.screenshot === 'function') {
+            try {
+                var shot = tuiMux.screenshot();
+                if (shot !== null && shot !== undefined) {
+                    s.claudeScreenshot = String(shot);
+                }
+            } catch (e) {
+                // Swallow — screenshot may fail if Claude session ended.
+            }
+        }
+
+        // Schedule next poll at 500ms.
+        return [s, tea.tick(500, 'claude-screenshot')];
     }
 
     function handleErrorResolutionChoice(s, choice) {

@@ -94,7 +94,7 @@
       "task": "T03: Fix 'View Report' — render in scrollable viewport overlay, not raw stdout dump",
       "description": "The 'final-report' zone handler in handleScreenMouseClick (pr_split_16_tui_core.js, search: 'final-report') calls output.print(JSON.stringify(buildReport())) which dumps raw JSON to stdout outside BubbleTea context, garbling the screen. Fix: (a) Add s.showingReport boolean to wizard model state. (b) When 'final-report' zone clicked, set s.showingReport=true, format report as readable text using lipgloss (sections: Summary, Splits, Verification, Errors). (c) Render in _viewFn as full-screen overlay with viewport+scrollbar (match viewHelpOverlay pattern). (d) Esc/Enter to dismiss. (e) Add 'Copy to Clipboard' button (zone 'report-copy') calling output.copy(). (f) Remove output.print() call.",
       "acceptance": "Clicking 'View Report' opens styled scrollable overlay inside wizard. No raw stdout dump. Scrollbar when content exceeds viewport. Esc/Enter dismisses. 'Copy to Clipboard' works. Terminal never garbled.",
-      "status": "Not Started",
+      "status": "Done",
       "context": {
         "files": [
           "internal/command/pr_split_16_tui_core.js (handleScreenMouseClick — search: 'final-report')",
@@ -105,7 +105,8 @@
           "internal/command/super_document_script.js (viewport+scrollbar pattern)"
         ],
         "dependencies": []
-      }
+      },
+      "completionNotes": "Replaced output.print() with state-based overlay rendering. Added showingReport/reportContent/reportVp/reportSb to model state. formatReportForDisplay() renders human-readable report with sections (metadata, analysis, groups, plan, equivalence). viewReportOverlay() uses dedicated viewport+scrollbar inside styled card. Full input interception: Esc/Enter/q close, j/k/up/down scroll, PgUp/PgDn page, c copies to clipboard, mouse wheel scrolls. Overlay composed via lipgloss.place() consistent with help/confirmCancel patterns. Zero output.print() calls in BubbleTea context."
     },
     {
       "task": "T04: Implement plan editor modal dialogs — move-file, rename-split, merge-splits",

@@ -27,6 +27,7 @@
     var viewForState = prSplit._viewForState;
     var viewHelpOverlay = prSplit._viewHelpOverlay;
     var viewConfirmCancelOverlay = prSplit._viewConfirmCancelOverlay;
+    var viewReportOverlay = prSplit._viewReportOverlay;
 
     // Cross-chunk imports — state and handlers from chunks 13-14.
     var st = prSplit._state;
@@ -58,6 +59,11 @@
         vp.setMouseWheelEnabled(true);
         var sb = scrollbarLib.new();
 
+        // Dedicated viewport + scrollbar for the report overlay.
+        var reportVp = viewportLib.new(80, 20);
+        reportVp.setMouseWheelEnabled(true);
+        var reportSb = scrollbarLib.new();
+
         // Named lifecycle functions — exported for unit testing.
         var _initFn = function() {
             return {
@@ -80,6 +86,10 @@
                 showHelp: false,
                 showConfirmCancel: false,
                 showAdvanced: false,
+                showingReport: false,
+                reportContent: '',
+                reportVp: reportVp,
+                reportSb: reportSb,
                 selectedSplitIdx: 0,
                 isProcessing: false,
 
@@ -128,6 +138,66 @@
 
             if (s.showConfirmCancel) {
                 return updateConfirmCancel(msg, s);
+            }
+
+            // Report overlay intercepts all input when active.
+            if (s.showingReport) {
+                if (msg.type === 'Key') {
+                    var rk = msg.key;
+                    // Close overlay.
+                    if (rk === 'esc' || rk === 'enter' || rk === 'q') {
+                        s.showingReport = false;
+                        return [s, null];
+                    }
+                    // Copy report to clipboard.
+                    if (rk === 'c') {
+                        output.toClipboard(s.reportContent);
+                        return [s, null];
+                    }
+                    // Scroll navigation.
+                    if (rk === 'j' || rk === 'down') {
+                        if (s.reportVp) s.reportVp.scrollDown(1);
+                        return [s, null];
+                    }
+                    if (rk === 'k' || rk === 'up') {
+                        if (s.reportVp) s.reportVp.scrollUp(1);
+                        return [s, null];
+                    }
+                    if (rk === 'pgdown' || rk === ' ') {
+                        if (s.reportVp) s.reportVp.halfPageDown();
+                        return [s, null];
+                    }
+                    if (rk === 'pgup') {
+                        if (s.reportVp) s.reportVp.halfPageUp();
+                        return [s, null];
+                    }
+                    if (rk === 'home' || rk === 'g') {
+                        if (s.reportVp) s.reportVp.gotoTop();
+                        return [s, null];
+                    }
+                    if (rk === 'end') {
+                        if (s.reportVp) s.reportVp.gotoBottom();
+                        return [s, null];
+                    }
+                    return [s, null];
+                }
+                // Mouse wheel scrolling within report overlay.
+                if (msg.type === 'Mouse' && msg.isWheel && s.reportVp) {
+                    if (msg.button === 'wheel up') {
+                        s.reportVp.scrollUp(3);
+                        return [s, null];
+                    }
+                    if (msg.button === 'wheel down') {
+                        s.reportVp.scrollDown(3);
+                        return [s, null];
+                    }
+                }
+                // Clicking outside overlay closes it.
+                if (msg.type === 'Mouse' && msg.action === 'press' && !msg.isWheel) {
+                    s.showingReport = false;
+                    return [s, null];
+                }
+                return [s, null];
             }
 
             // Global key bindings.
@@ -325,6 +395,15 @@
                     {whitespaceChars: '\u2591', whitespaceForeground: COLORS.border});
             }
 
+            // Overlay: Report.
+            if (s.showingReport) {
+                var reportPanel = viewReportOverlay(s);
+                fullView = lipgloss.place(w, h,
+                    lipgloss.Center, lipgloss.Center,
+                    reportPanel,
+                    {whitespaceChars: '\u2591', whitespaceForeground: COLORS.border});
+            }
+
             return zone.scan(fullView);
         };
 
@@ -491,7 +570,12 @@
         // Finalization: action buttons.
         if (s.wizardState === 'FINALIZATION') {
             if (zone.inBounds('final-report', msg)) {
-                output.print(JSON.stringify(buildReport(), null, 2));
+                s.reportContent = formatReportForDisplay(buildReport());
+                if (s.reportVp) {
+                    s.reportVp.setContent(s.reportContent);
+                    s.reportVp.gotoTop();
+                }
+                s.showingReport = true;
                 return [s, null];
             }
             if (zone.inBounds('final-create-prs', msg)) {
@@ -506,6 +590,111 @@
         }
 
         return [s, null];
+    }
+
+    // -----------------------------------------------------------------------
+    //  Report Formatting — Human-readable display for the report overlay
+    // -----------------------------------------------------------------------
+
+    function formatReportForDisplay(report) {
+        if (!report) {
+            return 'Report generation failed: no data available.\n\nPress Esc to close.';
+        }
+
+        var lines = [];
+
+        lines.push('PR Split Report');
+        lines.push('═══════════════════════════════════════');
+        lines.push('');
+
+        // Metadata.
+        lines.push('Version:    ' + (report.version || 'unknown'));
+        lines.push('Base:       ' + (report.baseBranch || '—'));
+        lines.push('Strategy:   ' + (report.strategy || '—'));
+        lines.push('Dry Run:    ' + (report.dryRun ? 'yes' : 'no'));
+        lines.push('');
+
+        // Analysis.
+        if (report.analysis) {
+            lines.push('Analysis');
+            lines.push('───────────────────────────────────────');
+            lines.push('  Source Branch:  ' + (report.analysis.currentBranch || '—'));
+            lines.push('  Base Branch:    ' + (report.analysis.baseBranch || '—'));
+            lines.push('  File Count:     ' + (report.analysis.fileCount || 0));
+            if (report.analysis.files && report.analysis.files.length > 0) {
+                lines.push('');
+                for (var fi = 0; fi < report.analysis.files.length; fi++) {
+                    var f = report.analysis.files[fi];
+                    if (!f) continue;
+                    var status = '';
+                    if (report.analysis.fileStatuses && report.analysis.fileStatuses[f]) {
+                        status = ' (' + report.analysis.fileStatuses[f] + ')';
+                    }
+                    lines.push('    ' + f + status);
+                }
+            }
+            lines.push('');
+        }
+
+        // Groups.
+        if (report.groups && report.groups.length > 0) {
+            lines.push('Groups');
+            lines.push('───────────────────────────────────────');
+            for (var gi = 0; gi < report.groups.length; gi++) {
+                var g = report.groups[gi];
+                if (!g) continue;
+                lines.push('  ' + (g.name || '(unnamed)') + ' (' + (g.files ? g.files.length : 0) + ' files)');
+                if (g.files) {
+                    for (var gfi = 0; gfi < g.files.length; gfi++) {
+                        if (g.files[gfi]) lines.push('    ' + g.files[gfi]);
+                    }
+                }
+            }
+            lines.push('');
+        }
+
+        // Plan.
+        if (report.plan) {
+            lines.push('Split Plan (' + (report.plan.splitCount || 0) + ' splits)');
+            lines.push('───────────────────────────────────────');
+            if (report.plan.splits) {
+                for (var pi = 0; pi < report.plan.splits.length; pi++) {
+                    var sp = report.plan.splits[pi];
+                    if (!sp) continue;
+                    lines.push('  ' + (pi + 1) + '. ' + (sp.name || '(unnamed)'));
+                    lines.push('     Message:  ' + (sp.message || '—'));
+                    lines.push('     Files:    ' + (sp.files ? sp.files.length : 0));
+                    if (sp.files) {
+                        for (var sfi = 0; sfi < sp.files.length; sfi++) {
+                            if (sp.files[sfi]) lines.push('       ' + sp.files[sfi]);
+                        }
+                    }
+                }
+            }
+            lines.push('');
+        }
+
+        // Equivalence.
+        if (report.equivalence) {
+            lines.push('Equivalence Check');
+            lines.push('───────────────────────────────────────');
+            lines.push('  Verified:     ' + (report.equivalence.verified ? 'YES ✅' : 'NO ⚠'));
+            if (report.equivalence.splitTree) {
+                lines.push('  Split Tree:   ' + report.equivalence.splitTree);
+            }
+            if (report.equivalence.sourceTree) {
+                lines.push('  Source Tree:  ' + report.equivalence.sourceTree);
+            }
+            if (report.equivalence.error) {
+                lines.push('  Error:        ' + report.equivalence.error);
+            }
+            lines.push('');
+        }
+
+        lines.push('═══════════════════════════════════════');
+        lines.push('Press c to copy • Esc to close');
+
+        return lines.join('\n');
     }
 
     // -----------------------------------------------------------------------

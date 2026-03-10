@@ -902,6 +902,43 @@
         return styles.activeCard().width(w).render(content);
     }
 
+    // ----- Report Overlay -----
+
+    function viewReportOverlay(s) {
+        var overlayW = Math.min(72, (s.width || 80) - 6);
+        var overlayH = Math.max(8, (s.height || 24) - 6);
+
+        // Title bar.
+        var titleLine = styles.bold().render('  Split Report');
+        var hintLine = styles.dim().render(
+            '  j/k scroll • PgUp/PgDn page • c copy • Esc close');
+
+        // Use the dedicated report viewport + scrollbar.
+        var vpH = Math.max(3, overlayH - 4); // Reserve lines for title + hints + borders.
+        if (s.reportVp) {
+            s.reportVp.setWidth(Math.max(10, overlayW - 4)); // account for card padding + scrollbar
+            s.reportVp.setHeight(vpH);
+            // Content is already set via s.reportVp.setContent() in the click handler.
+        }
+
+        var vpView = s.reportVp ? s.reportVp.view() : (s.reportContent || '');
+        var sbView = '';
+        if (s.reportSb && s.reportVp) {
+            s.reportSb.setViewportHeight(vpH);
+            s.reportSb.setContentHeight(s.reportVp.totalLineCount());
+            s.reportSb.setYOffset(s.reportVp.yOffset());
+            s.reportSb.setChars('\u2588', '\u2591');
+            s.reportSb.setThumbForeground(resolveColor(COLORS.primary));
+            s.reportSb.setTrackForeground(resolveColor(COLORS.border));
+            sbView = s.reportSb.view();
+        }
+
+        var scrollContent = lipgloss.joinHorizontal(lipgloss.Top, vpView, sbView);
+
+        var inner = [titleLine, '', scrollContent, '', hintLine].join('\n');
+        return styles.activeCard().width(overlayW).render(inner);
+    }
+
     // Map wizard state to the correct screen renderer.
     function viewForState(s) {
         switch (s.wizardState) {
@@ -947,6 +984,7 @@
     prSplit._viewErrorResolutionScreen = viewErrorResolutionScreen;
     prSplit._viewHelpOverlay = viewHelpOverlay;
     prSplit._viewConfirmCancelOverlay = viewConfirmCancelOverlay;
+    prSplit._viewReportOverlay = viewReportOverlay;
     prSplit._viewForState = viewForState;
 
     // Cross-chunk exports — libraries and utilities for subsequent chunks.

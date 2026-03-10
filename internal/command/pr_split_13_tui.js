@@ -3104,6 +3104,13 @@
                 if (msg.id === 'analysis-step-3') {
                     return runAnalysisStep(s, 3);
                 }
+                // Execution steps.
+                if (msg.id === 'exec-step-0') {
+                    return runExecutionStep(s, 0);
+                }
+                if (msg.id === 'exec-step-1') {
+                    return runExecutionStep(s, 1);
+                }
                 return [s, null];
             }
 
@@ -3593,7 +3600,7 @@
         }
         s.wizardState = 'BRANCH_BUILDING';
 
-        // Dry run check.
+        // Dry run check — skip execution entirely.
         if (prSplit.runtime.dryRun) {
             s.isProcessing = false;
             s.wizardState = 'FINALIZATION';
@@ -3601,42 +3608,61 @@
             return [s, null];
         }
 
-        // Execute.
-        try {
-            var result = prSplit.executeSplit(st.planCache);
-            if (result.error) {
+        // Dispatch first execution step via tick to yield for rendering.
+        return [s, tea.tick(1, 'exec-step-0')];
+    }
+
+    // runExecutionStep: Runs a single execution step synchronously, then
+    // dispatches the next step via tick. Yields between steps so the UI
+    // can render progress and the user can cancel.
+    function runExecutionStep(s, stepIdx) {
+        // If processing was cancelled between steps, bail out.
+        if (!s.isProcessing) {
+            return [s, null];
+        }
+
+        switch (stepIdx) {
+        case 0: {
+            // Step 1: Execute the split plan (create branches).
+            try {
+                var result = prSplit.executeSplit(st.planCache);
+                if (result.error) {
+                    s.isProcessing = false;
+                    s.errorDetails = result.error;
+                    s.wizard.data.failedBranches = result.results ?
+                        result.results.filter(function(r) { return r.error; }) : [];
+                    s.wizard.transition('ERROR_RESOLUTION');
+                    s.wizardState = 'ERROR_RESOLUTION';
+                    return [s, null];
+                }
+                st.executionResultCache = result.results;
+                s.executionResults = result.results || [];
+            } catch (e) {
                 s.isProcessing = false;
-                s.errorDetails = result.error;
-                s.wizard.data.failedBranches = result.results ?
-                    result.results.filter(function(r) { return r.error; }) : [];
+                s.errorDetails = 'Execution error: ' + (e.message || String(e));
                 s.wizard.transition('ERROR_RESOLUTION');
                 s.wizardState = 'ERROR_RESOLUTION';
                 return [s, null];
             }
-            st.executionResultCache = result.results;
-            s.executionResults = result.results || [];
-        } catch (e) {
+
+            // Yield for render, then run equivalence check.
+            return [s, tea.tick(1, 'exec-step-1')];
+        }
+        case 1: {
+            // Step 2: Equivalence check.
+            s.wizard.transition('EQUIV_CHECK');
+            s.wizardState = 'EQUIV_CHECK';
+
+            var equivResult = handleEquivCheckState(s.wizard, st.planCache);
             s.isProcessing = false;
-            s.errorDetails = 'Execution error: ' + (e.message || String(e));
-            s.wizard.transition('ERROR_RESOLUTION');
-            s.wizardState = 'ERROR_RESOLUTION';
+            s.equivalenceResult = equivResult.equivalence || {};
+            s.wizardState = s.wizard.current;
+
             return [s, null];
         }
-
-        s.isProcessing = false;
-
-        // Move to equivalence check.
-        s.wizard.transition('EQUIV_CHECK');
-        s.wizardState = 'EQUIV_CHECK';
-
-        // Run equivalence check.
-        s.isProcessing = true;
-        var equivResult = handleEquivCheckState(s.wizard, st.planCache);
-        s.isProcessing = false;
-        s.equivalenceResult = equivResult.equivalence || {};
-        s.wizardState = s.wizard.current;
-
-        return [s, null];
+        default:
+            return [s, null];
+        }
     }
 
     function handleErrorResolutionChoice(s, choice) {

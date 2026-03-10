@@ -124,6 +124,16 @@
                 verifyOutput: {},          // { branchName: [line, ...] }
                 expandedVerifyBranch: null, // branchName for expandable output
 
+                // Live verification session (CaptureSession).
+                activeVerifySession: null,     // CaptureSession JS object (or null)
+                activeVerifyWorktree: null,    // worktree path for cleanup
+                activeVerifyBranch: null,      // branch name being verified
+                activeVerifyDir: null,         // base dir for worktree cleanup
+                activeVerifyStartTime: 0,      // start time for duration tracking
+                verifyViewportOffset: 0,       // scroll offset (lines from bottom)
+                verifyAutoScroll: true,        // auto-scroll to bottom
+                lastVerifyInterruptTime: 0,    // timestamp of last Ctrl+C interrupt
+
                 // Results.
                 equivalenceResult: null,
                 errorDetails: null,
@@ -155,7 +165,11 @@
                 s._prevWizardState = s.wizardState;
             }
 
-            // Overlays intercept all input when active.
+            // Overlays intercept all user input when active, but Tick
+            // messages always pass through — they are programmatic
+            // continuations (e.g. verify-poll) that must not be dropped.
+            if (msg.type !== 'Tick') {
+
             if (s.showHelp) {
                 if (msg.type === 'Key') {
                     // Any key closes help.
@@ -234,9 +248,55 @@
                 return updateEditorDialog(msg, s);
             }
 
+            } // end: if (msg.type !== 'Tick') — overlay guard
+
             // Global key bindings.
             if (msg.type === 'Key') {
                 var k = msg.key;
+
+                // Live verify session: intercept Ctrl+C to stop verification
+                // instead of showing the cancel dialog.
+                // First Ctrl+C sends SIGINT; second within 2s sends SIGKILL
+                // (handles processes that ignore SIGINT).
+                if (k === 'ctrl+c' && s.activeVerifySession) {
+                    var now = Date.now();
+                    if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < 2000) {
+                        // Double Ctrl+C — force kill.
+                        try { s.activeVerifySession.kill(); } catch (e) { /* ignore */ }
+                    } else {
+                        // First Ctrl+C — graceful interrupt.
+                        try { s.activeVerifySession.interrupt(); } catch (e) { /* ignore */ }
+                    }
+                    s.lastVerifyInterruptTime = now;
+                    return [s, null];
+                }
+
+                // Live verify session: ↑/↓ scroll the output viewport.
+                if (s.activeVerifySession) {
+                    if (k === 'up' || k === 'k') {
+                        s.verifyAutoScroll = false;
+                        s.verifyViewportOffset = (s.verifyViewportOffset || 0) + 1;
+                        return [s, null];
+                    }
+                    if (k === 'down' || k === 'j') {
+                        s.verifyViewportOffset = Math.max(0, (s.verifyViewportOffset || 0) - 1);
+                        if (s.verifyViewportOffset === 0) {
+                            s.verifyAutoScroll = true;
+                        }
+                        return [s, null];
+                    }
+                    if (k === 'home') {
+                        s.verifyAutoScroll = false;
+                        s.verifyViewportOffset = 999999; // far back
+                        return [s, null];
+                    }
+                    if (k === 'end') {
+                        s.verifyViewportOffset = 0;
+                        s.verifyAutoScroll = true;
+                        return [s, null];
+                    }
+                }
+
                 // Help toggle.
                 if (k === '?' || k === 'f1') {
                     s.showHelp = true;
@@ -309,6 +369,23 @@
             // Wheel events must be checked BEFORE press — wheel events
             // have action:"press" AND isWheel:true, so the press guard
             // would intercept them and send them to handleMouseClick.
+
+            // Live verify session mouse wheel → scroll output viewport.
+            if (msg.type === 'Mouse' && msg.isWheel && s.activeVerifySession) {
+                if (msg.button === 'wheel up') {
+                    s.verifyAutoScroll = false;
+                    s.verifyViewportOffset = (s.verifyViewportOffset || 0) + 3;
+                    return [s, null];
+                }
+                if (msg.button === 'wheel down') {
+                    s.verifyViewportOffset = Math.max(0, (s.verifyViewportOffset || 0) - 3);
+                    if (s.verifyViewportOffset === 0) {
+                        s.verifyAutoScroll = true;
+                    }
+                    return [s, null];
+                }
+            }
+
             if (msg.type === 'Mouse' && msg.isWheel && s.vp) {
                 if (msg.button === 'wheel up') {
                     s.vp.scrollUp(3);
@@ -351,6 +428,9 @@
                 }
                 if (msg.id === 'verify-branch') {
                     return runVerifyBranch(s);
+                }
+                if (msg.id === 'verify-poll') {
+                    return pollVerifySession(s);
                 }
                 // Automated pipeline polling.
                 if (msg.id === 'auto-poll') {
@@ -496,10 +576,29 @@
     // -----------------------------------------------------------------------
 
     function updateConfirmCancel(msg, s) {
+        // Helper to clean up any active verify session before quitting.
+        function cleanupActiveSession() {
+            if (s.activeVerifySession) {
+                try { s.activeVerifySession.close(); } catch (e) { /* best effort */ }
+            }
+            if (s.activeVerifyWorktree && s.activeVerifyDir) {
+                try { prSplit.cleanupVerifyWorktree(s.activeVerifyDir, s.activeVerifyWorktree); } catch (e) { /* best effort */ }
+            }
+            s.activeVerifySession = null;
+            s.activeVerifyWorktree = null;
+            s.activeVerifyBranch = null;
+            s.activeVerifyDir = null;
+            s.activeVerifyStartTime = 0;
+            s.verifyViewportOffset = 0;
+            s.verifyAutoScroll = true;
+            s.lastVerifyInterruptTime = 0;
+        }
+
         if (msg.type === 'Key') {
             var k = msg.key;
             if (k === 'y' || k === 'enter') {
                 s.showConfirmCancel = false;
+                cleanupActiveSession();
                 s.wizard.cancel();
                 s.wizardState = 'CANCELLED';
                 return [s, tea.quit()];
@@ -512,6 +611,7 @@
         if (msg.type === 'Mouse' && msg.action === 'press') {
             if (zone.inBounds('confirm-yes', msg)) {
                 s.showConfirmCancel = false;
+                cleanupActiveSession();
                 s.wizard.cancel();
                 s.wizardState = 'CANCELLED';
                 return [s, tea.quit()];
@@ -814,6 +914,19 @@
             return handleBack(s);
         }
         if (zone.inBounds('nav-cancel', msg)) {
+            // During active verification, clicking cancel sends SIGINT
+            // (consistent with Ctrl+C) instead of opening the cancel dialog
+            // to prevent session/worktree leaks from unguarded quit.
+            if (s.activeVerifySession) {
+                var now = Date.now();
+                if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < 2000) {
+                    try { s.activeVerifySession.kill(); } catch (e) { /* ignore */ }
+                } else {
+                    try { s.activeVerifySession.interrupt(); } catch (e) { /* ignore */ }
+                }
+                s.lastVerifyInterruptTime = now;
+                return [s, null];
+            }
             s.showConfirmCancel = true;
             return [s, null];
         }
@@ -864,8 +977,21 @@
             }
         }
 
-        // Execution: expand/collapse verification output.
+        // Execution: expand/collapse verification output + interrupt.
         if (s.wizardState === 'BRANCH_BUILDING' && st.planCache && st.planCache.splits) {
+            // Interrupt active verify session via stop button.
+            // Same double-click pattern as Ctrl+C: first click sends
+            // SIGINT, second click within 2s sends SIGKILL.
+            if (s.activeVerifySession && zone.inBounds('verify-interrupt', msg)) {
+                var now = Date.now();
+                if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < 2000) {
+                    try { s.activeVerifySession.kill(); } catch (e) { /* ignore */ }
+                } else {
+                    try { s.activeVerifySession.interrupt(); } catch (e) { /* ignore */ }
+                }
+                s.lastVerifyInterruptTime = now;
+                return [s, null];
+            }
             for (var vi = 0; vi < st.planCache.splits.length; vi++) {
                 var vbranch = st.planCache.splits[vi].name;
                 if (zone.inBounds('verify-expand-' + vbranch, msg)) {
@@ -1792,6 +1918,21 @@
         s.verifyingIdx = -1;
         s.verifyOutput = {};
         s.expandedVerifyBranch = null;
+        // Reset live verification session state.
+        if (s.activeVerifySession) {
+            try { s.activeVerifySession.close(); } catch (e) { /* best effort */ }
+        }
+        if (s.activeVerifyWorktree && s.activeVerifyDir) {
+            try { prSplit.cleanupVerifyWorktree(s.activeVerifyDir, s.activeVerifyWorktree); } catch (e) { /* best effort */ }
+        }
+        s.activeVerifySession = null;
+        s.activeVerifyWorktree = null;
+        s.activeVerifyBranch = null;
+        s.activeVerifyDir = null;
+        s.activeVerifyStartTime = 0;
+        s.verifyViewportOffset = 0;
+        s.verifyAutoScroll = true;
+        s.lastVerifyInterruptTime = 0;
 
         // Transition: PLAN_REVIEW → BRANCH_BUILDING.
         if (s.wizard.current === 'PLAN_REVIEW') {
@@ -1881,9 +2022,9 @@
     }
 
     // ── Per-branch verification (tick-based stepping) ────────────
-    // Verifies one branch per tick so BubbleTea can render progress
-    // between each. Uses prSplit.verifySplit() directly instead of
-    // verifySplits() to maintain per-tick control.
+    // Verifies one branch at a time. Uses CaptureSession (PTY + VTerm)
+    // for live output when available, falling back to blocking verifySplit
+    // on platforms without PTY support (Windows).
     function runVerifyBranch(s) {
         if (!s.isProcessing) return [s, null];
 
@@ -1923,8 +2064,6 @@
             return [s, tea.tick(1, 'verify-branch')];
         }
 
-        // Capture output lines.
-        var outputLines = [];
         var dir = prSplit.runtime.dir || '.';
         var scopedCmd = prSplit.runtime.verifyCommand;
         // Scoped verify: filter command based on split's files if applicable.
@@ -1933,25 +2072,130 @@
             if (scoped) scopedCmd = scoped;
         }
 
-        var branchStart = Date.now();
-        var verifyResult = prSplit.verifySplit(branchName, {
+        // Try CaptureSession for live output (PTY-based).
+        var sessionResult = prSplit.startVerifySession(branchName, {
             dir: dir,
             verifyCommand: scopedCmd,
-            verifyTimeoutMs: (typeof prSplitConfig !== 'undefined' && prSplitConfig.timeoutMs) ? prSplitConfig.timeoutMs : 0,
-            outputFn: function(line) { outputLines.push(line); }
+            rows: 24,
+            cols: Math.max(80, (s.width || 80) - 8)
         });
-        var duration = Date.now() - branchStart;
 
+        if (sessionResult.skipped) {
+            s.verificationResults.push({
+                name: branchName,
+                passed: true,
+                skipped: true,
+                error: null,
+                output: '',
+                duration: 0
+            });
+            s.verifyingIdx++;
+            return [s, tea.tick(1, 'verify-branch')];
+        }
+
+        if (sessionResult.error && !sessionResult.session) {
+            // CaptureSession failed to start — fall back to blocking verifySplit.
+            var outputLines = [];
+            var branchStart = Date.now();
+            var verifyResult = prSplit.verifySplit(branchName, {
+                dir: dir,
+                verifyCommand: scopedCmd,
+                verifyTimeoutMs: (typeof prSplitConfig !== 'undefined' && prSplitConfig.timeoutMs) ? prSplitConfig.timeoutMs : 0,
+                outputFn: function(line) { outputLines.push(line); }
+            });
+            var duration = Date.now() - branchStart;
+
+            s.verifyOutput[branchName] = outputLines;
+            s.verificationResults.push({
+                name: branchName,
+                passed: verifyResult.passed,
+                skipped: verifyResult.skipped || false,
+                error: verifyResult.error || null,
+                output: verifyResult.output || '',
+                duration: duration,
+                preExisting: verifyResult.preExisting || false
+            });
+
+            s.verifyingIdx++;
+            return [s, tea.tick(1, 'verify-branch')];
+        }
+
+        // CaptureSession started — store state for polling.
+        s.activeVerifySession = sessionResult.session;
+        s.activeVerifyWorktree = sessionResult.worktreeDir;
+        s.activeVerifyBranch = branchName;
+        s.activeVerifyDir = sessionResult.dir;
+        s.activeVerifyStartTime = sessionResult.startTime;
+        s.verifyViewportOffset = 0;
+        s.verifyAutoScroll = true;
+
+        // Poll every 100ms for live output updates.
+        return [s, tea.tick(100, 'verify-poll')];
+    }
+
+    // ── Live verification poll ───────────────────────────────────
+    // Polls the active CaptureSession for output and completion.
+    // On completion, records the result and advances to next branch.
+    function pollVerifySession(s) {
+        if (!s.activeVerifySession) return [s, null];
+
+        // Check timeout.
+        var timeoutMs = (typeof prSplitConfig !== 'undefined' && prSplitConfig.timeoutMs)
+            ? prSplitConfig.timeoutMs : 0;
+        if (timeoutMs > 0 && (Date.now() - s.activeVerifyStartTime) >= timeoutMs) {
+            // Timeout — kill the process.
+            try { s.activeVerifySession.kill(); } catch (e) { /* ignore */ }
+        }
+
+        if (!s.activeVerifySession.isDone()) {
+            // Still running — schedule next poll.
+            return [s, tea.tick(100, 'verify-poll')];
+        }
+
+        // Process exited — capture result.
+        var exitCode = s.activeVerifySession.exitCode();
+        var output = s.activeVerifySession.output();
+        var duration = Date.now() - s.activeVerifyStartTime;
+        var branchName = s.activeVerifyBranch;
+
+        // Close session and clean up worktree.
+        try { s.activeVerifySession.close(); } catch (e) { /* ignore */ }
+        if (s.activeVerifyWorktree && s.activeVerifyDir) {
+            prSplit.cleanupVerifyWorktree(s.activeVerifyDir, s.activeVerifyWorktree);
+        }
+
+        // Store output lines for expandable display.
+        var outputLines = output.split('\n').filter(function(line) { return line.length > 0; });
         s.verifyOutput[branchName] = outputLines;
+
+        // Check if timeout was the cause.
+        var isTimeout = timeoutMs > 0 && duration >= timeoutMs;
+        var errorMsg = null;
+        if (isTimeout) {
+            errorMsg = 'verify timeout after ' + duration + 'ms (limit: ' + timeoutMs + 'ms)';
+        } else if (exitCode !== 0) {
+            errorMsg = 'verify failed (exit ' + exitCode + ')';
+        }
+
         s.verificationResults.push({
             name: branchName,
-            passed: verifyResult.passed,
-            skipped: verifyResult.skipped || false,
-            error: verifyResult.error || null,
-            output: verifyResult.output || '',
+            passed: exitCode === 0 && !isTimeout,
+            skipped: false,
+            error: errorMsg,
+            output: output,
             duration: duration,
-            preExisting: verifyResult.preExisting || false
+            preExisting: false
         });
+
+        // Clear active session state.
+        s.activeVerifySession = null;
+        s.activeVerifyWorktree = null;
+        s.activeVerifyBranch = null;
+        s.activeVerifyDir = null;
+        s.activeVerifyStartTime = 0;
+        s.verifyViewportOffset = 0;
+        s.verifyAutoScroll = true;
+        s.lastVerifyInterruptTime = 0;
 
         s.verifyingIdx++;
         return [s, tea.tick(1, 'verify-branch')];

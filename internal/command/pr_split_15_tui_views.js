@@ -922,6 +922,75 @@
 
             // Verification progress bar.
             if (verifyResults.length < splits.length && s.isProcessing) {
+                // ── Live CaptureSession viewport ─────────────────────
+                if (s.activeVerifySession) {
+                    lines.push('');
+                    var liveOutput = s.activeVerifySession.output();
+                    var liveLines = liveOutput.split('\n');
+                    // Remove trailing empty lines from VTerm output.
+                    while (liveLines.length > 0 && liveLines[liveLines.length - 1] === '') {
+                        liveLines.pop();
+                    }
+
+                    var viewWidth = Math.max(40, (s.width || 80) - 8);
+                    var viewHeight = 12; // content rows inside the border
+                    var elapsed = ((Date.now() - s.activeVerifyStartTime) / 1000).toFixed(1);
+                    var titleText = ' Verifying: ' + s.activeVerifyBranch + ' (' + elapsed + 's) ';
+
+                    // Determine visible window (auto-scroll or manual offset).
+                    var totalLines = liveLines.length;
+                    var startLine;
+                    if (s.verifyAutoScroll || s.verifyViewportOffset <= 0) {
+                        startLine = Math.max(0, totalLines - viewHeight);
+                    } else {
+                        startLine = Math.max(0, totalLines - viewHeight - s.verifyViewportOffset);
+                    }
+                    var endLine = Math.min(totalLines, startLine + viewHeight);
+
+                    // Build viewport content lines.
+                    var contentLines = [];
+                    for (var vl = startLine; vl < endLine; vl++) {
+                        var ln = liveLines[vl] || '';
+                        if (ln.length > viewWidth - 2) {
+                            ln = ln.substring(0, viewWidth - 5) + '...';
+                        }
+                        contentLines.push(ln);
+                    }
+                    // Pad to fill viewport height.
+                    while (contentLines.length < viewHeight) {
+                        contentLines.push('');
+                    }
+
+                    var vpContent = contentLines.join('\n');
+
+                    // Scrollbar indicator.
+                    var scrollIndicator = '';
+                    if (totalLines > viewHeight) {
+                        if (s.verifyAutoScroll) {
+                            scrollIndicator = ' [auto-scroll]';
+                        } else {
+                            var scrollPct = Math.round((startLine / Math.max(1, totalLines - viewHeight)) * 100);
+                            scrollIndicator = ' [' + scrollPct + '%]';
+                        }
+                    }
+
+                    // Footer with keybinding hints.
+                    var footer = styles.dim().render(
+                        '\u2191\u2193: Scroll' + scrollIndicator + '  ' +
+                        zone.mark('verify-interrupt', 'Ctrl+C: Stop  2\u00d7Ctrl+C: Force Kill'));
+
+                    // Render bordered viewport using lipgloss.
+                    var vpStyle = lipgloss.newStyle()
+                        .border(lipgloss.roundedBorder())
+                        .borderForeground(COLORS.warning)
+                        .width(viewWidth)
+                        .padding(0, 1);
+
+                    lines.push('  ' + styles.warningBadge().render(titleText));
+                    lines.push(vpStyle.render(vpContent));
+                    lines.push('  ' + footer);
+                }
+
                 lines.push('');
                 var vProgress = verifyResults.length / splits.length;
                 lines.push('  ' + renderProgressBar(vProgress, (s.width || 80) - 8));

@@ -284,7 +284,8 @@
       "task": "T14: Integrate CaptureSession into pr-split TUI for live command output",
       "description": "Embed verification output: (a) CaptureSession per verify command. (b) Poll output via tick. (c) Bordered viewport with title. (d) Scroll support. (e) Stop button. (f) Freeze on completion.",
       "acceptance": "Live terminal viewport during verification. Auto-scroll. Manual scroll back. Interrupt works. Styled border. Freezes on done.",
-      "status": "Not Started",
+      "status": "Done",
+      "completionNotes": "startVerifySession/cleanupVerifyWorktree in 06_verification.js. runVerifyBranch now launches CaptureSession (falls back to blocking verifySplit on Windows). pollVerifySession polls isDone() every 100ms. Live bordered viewport in viewExecutionScreen with auto-scroll, manual scroll (↑↓/wheel/Home/End), Ctrl+C/click interrupt, elapsed timer. Output freezes on done. 7 new model state fields.",
       "context": {
         "files": [
           "internal/command/pr_split_16_tui_core.js",

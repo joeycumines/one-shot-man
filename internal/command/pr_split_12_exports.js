@@ -45,6 +45,7 @@
         'verifySplit', 'verifySplits',
         'verifyEquivalence', 'verifyEquivalenceDetailed',
         'cleanupBranches',
+        'startVerifySession', 'cleanupVerifyWorktree',
 
         // Chunk 07: PR creation
         'createPRs',

@@ -16,12 +16,27 @@
 - **T09**: DONE. Committed `d3c640b5`. Deferred terminal finalizer, all 8 exit paths audited safe.
 - **T10**: DONE. Committed `b50859e5`. Claude availability check + Test Connection button on CONFIG screen.
 - **T11**: DONE. Committed `4cb8793b`. Per-branch verification display in execution screen with 3-step pipeline.
-- **T12+T13**: DONE. CaptureSession + JS bindings. R2 3rd attempt (2/2 PASS). Pending commit.
-- **Blueprint**: 33 tasks. T01-T13=Done, T14-T33=Not Started.
+- **T12+T13**: DONE. Committed `e73b2ae8`. CaptureSession + JS bindings. R2 3rd attempt (2/2 PASS).
+- **T14**: DONE. Pending commit. CaptureSession integration into verification TUI. R2 (2/2 PASS).
+- **Blueprint**: 33 tasks. T01-T14=Done, T15-T33=Not Started.
 
 ### Next Step
 
-**T14: Integrate CaptureSession into pr-split TUI for live command output.**
+**T15: Build Claude window-in-window split-view via termmux screenshot.**
+
+### T14 Implementation Details (for Next Takumi)
+
+- Files changed: pr_split_06_verification.js, pr_split_12_exports.js, pr_split_15_tui_views.js, pr_split_16_tui_core.js
+- startVerifySession(): creates temp worktree + CaptureSession (PTY+VTerm). Fail-fast: require('osm:termmux') before worktree creation. try-catch wraps newCaptureSession+start.
+- cleanupVerifyWorktree(): removes temp worktree via gitExec.
+- pollVerifySession(): 100ms tick poll — null guard, timeout→kill, isDone→cleanup+advance, running→reschedule.
+- runVerifyBranch(): async CaptureSession approach; falls back to blocking verifySplit() on Windows.
+- 8 model state fields: activeVerifySession, activeVerifyWorktree, activeVerifyBranch, activeVerifyDir, activeVerifyStartTime, verifyViewportOffset, verifyAutoScroll, lastVerifyInterruptTime.
+- Tick passthrough: overlays guarded by `if (msg.type !== 'Tick')` to prevent killing async poll chains.
+- Double Ctrl+C/click: first=SIGINT, second within 2s=SIGKILL (keyboard, click zone, nav-cancel).
+- updateConfirmCancel: cleanupActiveSession() before quit for defense-in-depth.
+- Live bordered viewport: auto-scroll, manual scroll (↑↓/Home/End/wheel), line truncation, elapsed timer, scroll indicators.
+- Footer: "↑↓: Scroll  Ctrl+C: Stop  2×Ctrl+C: Force Kill" with clickable verify-interrupt zone.
 
 ### T12+T13 Implementation Details (for Next Takumi)
 

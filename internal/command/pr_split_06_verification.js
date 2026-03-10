@@ -323,6 +323,82 @@
     }
 
     // -----------------------------------------------------------------------
+    //  startVerifySession — non-blocking variant using CaptureSession
+    //
+    //  Creates a temporary git worktree and spawns the verify command in a
+    //  CaptureSession (PTY + VTerm). Returns immediately so the TUI can
+    //  poll output via ticks. Caller is responsible for cleanup via
+    //  cleanupVerifyWorktree() after the session completes.
+    //
+    //  Returns:
+    //    { session, worktreeDir, dir, branchName, startTime }  on success
+    //    { skipped: true }                                     if no verify command
+    //    { error: string }                                     on failure
+    // -----------------------------------------------------------------------
+    function startVerifySession(branchName, config) {
+        config = config || {};
+        var dir = resolveDir(config.dir || '.');
+        var command = config.verifyCommand || prSplit.runtime.verifyCommand;
+
+        if (!command) {
+            return { skipped: true, session: null, worktreeDir: null };
+        }
+
+        // Eagerly load termmux BEFORE creating the worktree so a missing
+        // module fails fast without leaving an orphaned worktree.
+        var termmux = require('osm:termmux');
+        var rows = config.rows || 24;
+        var cols = config.cols || 120;
+
+        // Create a temporary worktree for this branch.
+        var worktreeDir = dir + '/../.osm-verify-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
+
+        var wtAdd = gitExec(dir, ['worktree', 'add', worktreeDir, branchName]);
+        if (wtAdd.code !== 0) {
+            // Branch might be checked out elsewhere; fallback to detached HEAD.
+            gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
+            wtAdd = gitExec(dir, ['worktree', 'add', '--detach', worktreeDir, branchName]);
+            if (wtAdd.code !== 0) {
+                return {
+                    error: 'create worktree failed: ' + wtAdd.stderr.trim(),
+                    session: null,
+                    worktreeDir: null
+                };
+            }
+        }
+
+        try {
+            var session = termmux.newCaptureSession('sh', ['-c', command], {
+                dir: worktreeDir,
+                rows: rows,
+                cols: cols
+            });
+            session.start();
+        } catch (e) {
+            gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
+            return {
+                error: 'start verify session failed: ' + e.message,
+                session: null,
+                worktreeDir: null
+            };
+        }
+
+        return {
+            session: session,
+            worktreeDir: worktreeDir,
+            dir: dir,
+            branchName: branchName,
+            startTime: Date.now()
+        };
+    }
+
+    // cleanupVerifyWorktree removes a temporary worktree created by
+    // startVerifySession.
+    function cleanupVerifyWorktree(dir, worktreeDir) {
+        gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
+    }
+
+    // -----------------------------------------------------------------------
     //  Exports
     // -----------------------------------------------------------------------
     prSplit.verifySplit = verifySplit;
@@ -330,4 +406,6 @@
     prSplit.verifyEquivalence = verifyEquivalence;
     prSplit.verifyEquivalenceDetailed = verifyEquivalenceDetailed;
     prSplit.cleanupBranches = cleanupBranches;
+    prSplit.startVerifySession = startVerifySession;
+    prSplit.cleanupVerifyWorktree = cleanupVerifyWorktree;
 })(globalThis.prSplit);

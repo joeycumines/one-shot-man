@@ -2877,3 +2877,884 @@ func TestClaudeCodeExecutor_SpawnHealthCheck_DeadProcess(t *testing.T) {
 		t.Error("expected handle to be null after health check cleanup")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T01: Expanded real-Claude integration tests
+// ---------------------------------------------------------------------------
+
+// TestIntegration_ClaudeClassificationAccuracy creates a known 3-category
+// diff (api/db/docs) and validates that a real Claude agent classifies files
+// into at least 3 meaningful categories with correct file assignments.
+//
+// Run with:
+//
+//	go test -race -v -count=1 -timeout=10m -integration \
+//	  -claude-command=claude ./internal/command/... \
+//	  -run TestIntegration_ClaudeClassificationAccuracy
+func TestIntegration_ClaudeClassificationAccuracy(t *testing.T) {
+	skipIfNoClaude(t)
+	verifyClaudeAuth(t)
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	// Create a repo with 3 distinct categories:
+	// 1. API package (handler, types, routes)
+	// 2. Database package (conn, migrate, schema)
+	// 3. Documentation (README, api-ref, getting-started)
+	tp := setupTestPipeline(t, TestPipelineOpts{
+		InitialFiles: []TestPipelineFile{
+			{"pkg/api/handler.go", "package api\n\nfunc Handler() {}\n"},
+			{"pkg/db/conn.go", "package db\n\nfunc Connect() error { return nil }\n"},
+			{"docs/README.md", "# Project\n"},
+		},
+		FeatureFiles: []TestPipelineFile{
+			// API changes — 3 files, clearly API-related
+			{"pkg/api/handler.go", "package api\n\nimport \"net/http\"\n\nfunc Handler(w http.ResponseWriter, r *http.Request) {\n\tw.WriteHeader(http.StatusOK)\n}\n"},
+			{"pkg/api/types.go", "package api\n\ntype Request struct {\n\tMethod string\n\tPath   string\n}\n\ntype Response struct {\n\tStatus int\n\tBody   string\n}\n"},
+			{"pkg/api/routes.go", "package api\n\nfunc RegisterRoutes() {\n\t// Wire HTTP endpoints\n}\n"},
+			// Database changes — 3 files, clearly DB-related
+			{"pkg/db/conn.go", "package db\n\nimport \"database/sql\"\n\nfunc Connect(dsn string) (*sql.DB, error) {\n\treturn sql.Open(\"postgres\", dsn)\n}\n"},
+			{"pkg/db/migrate.go", "package db\n\nfunc Migrate(dsn string) error {\n\t// Run database migrations\n\treturn nil\n}\n"},
+			{"pkg/db/schema.go", "package db\n\nconst CreateUsersTable = `\nCREATE TABLE IF NOT EXISTS users (\n\tid SERIAL PRIMARY KEY,\n\tname TEXT NOT NULL\n);\n`\n"},
+			// Documentation changes — 3 files, clearly docs
+			{"docs/README.md", "# Project\n\nA web service with API and database.\n\n## Quick Start\n\nRun `go run ./cmd/app`.\n"},
+			{"docs/api-reference.md", "# API Reference\n\n## Endpoints\n\n### GET /health\n\nReturns 200 OK.\n\n### POST /users\n\nCreates a new user.\n"},
+			{"docs/getting-started.md", "# Getting Started\n\n## Prerequisites\n\n- Go 1.21+\n- PostgreSQL 15+\n\n## Installation\n\n```bash\ngo install ./cmd/app\n```\n"},
+		},
+		ConfigOverrides: map[string]any{
+			"claudeCommand": claudeTestCommand,
+			"claudeArgs":    []string(claudeTestArgs),
+			"_evalTimeout":  10 * time.Minute,
+		},
+	})
+
+	// Run analysis to get the file list.
+	analysisRaw, err := tp.EvalJS(`JSON.stringify(globalThis.prSplit.analyzeDiff({
+		baseBranch: 'main',
+		dir: ` + jsString(tp.Dir) + `
+	}))`)
+	if err != nil {
+		t.Fatalf("analyzeDiff failed: %v", err)
+	}
+	var analysis struct {
+		Files        []string          `json:"files"`
+		FileStatuses map[string]string `json:"fileStatuses"`
+	}
+	if err := json.Unmarshal([]byte(analysisRaw.(string)), &analysis); err != nil {
+		t.Fatalf("parse analysis: %v", err)
+	}
+	if len(analysis.Files) != 9 {
+		t.Fatalf("expected 9 changed files, got %d: %v", len(analysis.Files), analysis.Files)
+	}
+	t.Logf("Analyzed %d files: %v", len(analysis.Files), analysis.Files)
+
+	// Now run the full auto-split pipeline with real Claude.
+	t.Log("Starting auto-split with real Claude for classification accuracy test...")
+	raw, err := tp.EvalJS(`JSON.stringify(await globalThis.prSplit.automatedSplit({
+		baseBranch: 'main',
+		dir: ` + jsString(tp.Dir) + `,
+		strategy: 'directory',
+		classifyTimeoutMs: 300000,
+		planTimeoutMs: 300000,
+		resolveTimeoutMs: 300000,
+		disableTUI: true
+	}))`)
+	if err != nil {
+		t.Fatalf("automatedSplit failed: %v", err)
+	}
+
+	var result struct {
+		Error  *string `json:"error"`
+		Report struct {
+			Error              *string `json:"error"`
+			FallbackUsed       bool    `json:"fallbackUsed"`
+			ClaudeInteractions int     `json:"claudeInteractions"`
+			Mode               string  `json:"mode"`
+			Classification     []struct {
+				Name        string   `json:"name"`
+				Description string   `json:"description"`
+				Files       []string `json:"files"`
+			} `json:"classification"`
+			Plan struct {
+				Splits []struct {
+					Name    string   `json:"name"`
+					Files   []string `json:"files"`
+					Message string   `json:"message"`
+				} `json:"splits"`
+			} `json:"plan"`
+			Splits []struct {
+				Name  string `json:"name"`
+				SHA   string `json:"sha"`
+				Error string `json:"error"`
+			} `json:"splits"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse result: %v\nraw: %s", err, raw)
+	}
+	t.Logf("Full result: %s", raw)
+
+	if result.Error != nil {
+		t.Fatalf("pipeline error: %s", *result.Error)
+	}
+	if result.Report.Error != nil {
+		t.Fatalf("report error: %s", *result.Report.Error)
+	}
+
+	// If fallback was used, log warning but still validate what we can.
+	if result.Report.FallbackUsed {
+		t.Log("WARNING: Pipeline fell back to heuristic — classification accuracy test is limited")
+		// Even with fallback, we should get at least 3 groups from directory strategy.
+	}
+
+	// --- Classification accuracy assertions ---
+
+	if len(result.Report.Classification) < 3 {
+		t.Errorf("expected at least 3 categories (api/db/docs), got %d: %v",
+			len(result.Report.Classification), result.Report.Classification)
+	}
+
+	// Build file-to-category map.
+	fileToCat := make(map[string]string)
+	for _, cat := range result.Report.Classification {
+		for _, f := range cat.Files {
+			fileToCat[f] = cat.Name
+		}
+	}
+	t.Logf("File-to-category mapping: %v", fileToCat)
+
+	// Verify all 9 files are classified.
+	for _, f := range analysis.Files {
+		if _, ok := fileToCat[f]; !ok {
+			t.Errorf("file %q not classified in any category", f)
+		}
+	}
+
+	// Verify API files are grouped together (same category).
+	apiFiles := []string{"pkg/api/handler.go", "pkg/api/types.go", "pkg/api/routes.go"}
+	apiCats := make(map[string]bool)
+	for _, f := range apiFiles {
+		if cat, ok := fileToCat[f]; ok {
+			apiCats[cat] = true
+		}
+	}
+	if len(apiCats) > 1 {
+		t.Errorf("API files should be in the same category, but split across %d: %v", len(apiCats), apiCats)
+	}
+
+	// Verify DB files are grouped together.
+	dbFiles := []string{"pkg/db/conn.go", "pkg/db/migrate.go", "pkg/db/schema.go"}
+	dbCats := make(map[string]bool)
+	for _, f := range dbFiles {
+		if cat, ok := fileToCat[f]; ok {
+			dbCats[cat] = true
+		}
+	}
+	if len(dbCats) > 1 {
+		t.Errorf("DB files should be in the same category, but split across %d: %v", len(dbCats), dbCats)
+	}
+
+	// Verify docs files are grouped together.
+	docFiles := []string{"docs/README.md", "docs/api-reference.md", "docs/getting-started.md"}
+	docCats := make(map[string]bool)
+	for _, f := range docFiles {
+		if cat, ok := fileToCat[f]; ok {
+			docCats[cat] = true
+		}
+	}
+	if len(docCats) > 1 {
+		t.Errorf("docs files should be in the same category, but split across %d: %v", len(docCats), docCats)
+	}
+
+	// Verify API and DB are in DIFFERENT categories.
+	if len(apiCats) == 1 && len(dbCats) == 1 {
+		var apiCat, dbCat string
+		for c := range apiCats {
+			apiCat = c
+		}
+		for c := range dbCats {
+			dbCat = c
+		}
+		if apiCat == dbCat {
+			t.Errorf("API and DB files should be in different categories, both in %q", apiCat)
+		}
+	}
+}
+
+// TestIntegration_ClaudeSplitPlanQuality runs the auto-split pipeline with
+// real Claude and validates the generated split plan has:
+//   - Valid branch names (non-empty, no spaces, starts with branchPrefix)
+//   - Non-empty commit messages for every split
+//   - No orphaned files (every analyzed file appears in exactly one split)
+//   - No duplicate files across splits
+//
+// Run with:
+//
+//	go test -race -v -count=1 -timeout=10m -integration \
+//	  -claude-command=claude ./internal/command/... \
+//	  -run TestIntegration_ClaudeSplitPlanQuality
+func TestIntegration_ClaudeSplitPlanQuality(t *testing.T) {
+	skipIfNoClaude(t)
+	verifyClaudeAuth(t)
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	tp := setupTestPipeline(t, TestPipelineOpts{
+		InitialFiles: []TestPipelineFile{
+			{"pkg/core/core.go", "package core\n\nfunc Version() string { return \"1.0\" }\n"},
+			{"pkg/util/util.go", "package util\n\nfunc Help() string { return \"help\" }\n"},
+			{"cmd/main.go", "package main\n\nfunc main() {}\n"},
+			{"docs/README.md", "# Project\n"},
+		},
+		FeatureFiles: []TestPipelineFile{
+			{"pkg/core/core.go", "package core\n\nfunc Version() string { return \"2.0\" }\n\nfunc Init() error { return nil }\n"},
+			{"pkg/core/config.go", "package core\n\ntype Config struct {\n\tPort int\n\tDebug bool\n}\n"},
+			{"pkg/util/util.go", "package util\n\nfunc Help() string { return \"help v2\" }\n"},
+			{"pkg/util/format.go", "package util\n\nfunc Format(s string) string { return s }\n"},
+			{"cmd/main.go", "package main\n\nimport \"fmt\"\n\nfunc main() { fmt.Println(\"v2\") }\n"},
+			{"cmd/serve.go", "package main\n\nfunc serve() error { return nil }\n"},
+			{"docs/README.md", "# Project v2\n\nUpdated documentation.\n"},
+			{"docs/changelog.md", "# Changelog\n\n## v2.0\n\n- Major update\n"},
+		},
+		ConfigOverrides: map[string]any{
+			"claudeCommand": claudeTestCommand,
+			"claudeArgs":    []string(claudeTestArgs),
+			"branchPrefix":  "split/",
+			"_evalTimeout":  10 * time.Minute,
+		},
+	})
+
+	// Run analysis first to get file count.
+	analysisRaw, err := tp.EvalJS(`JSON.stringify(globalThis.prSplit.analyzeDiff({
+		baseBranch: 'main',
+		dir: ` + jsString(tp.Dir) + `
+	}))`)
+	if err != nil {
+		t.Fatalf("analyzeDiff: %v", err)
+	}
+	var analysis struct {
+		Files []string `json:"files"`
+	}
+	if err := json.Unmarshal([]byte(analysisRaw.(string)), &analysis); err != nil {
+		t.Fatalf("parse analysis: %v", err)
+	}
+	t.Logf("Analyzed %d files", len(analysis.Files))
+
+	// Run full pipeline.
+	t.Log("Starting auto-split with real Claude for plan quality test...")
+	raw, err := tp.EvalJS(`JSON.stringify(await globalThis.prSplit.automatedSplit({
+		baseBranch: 'main',
+		dir: ` + jsString(tp.Dir) + `,
+		strategy: 'directory',
+		classifyTimeoutMs: 300000,
+		planTimeoutMs: 300000,
+		resolveTimeoutMs: 300000,
+		disableTUI: true
+	}))`)
+	if err != nil {
+		t.Fatalf("automatedSplit: %v", err)
+	}
+
+	var result struct {
+		Error  *string `json:"error"`
+		Report struct {
+			Error        *string `json:"error"`
+			FallbackUsed bool    `json:"fallbackUsed"`
+			Plan         struct {
+				Splits []struct {
+					Name    string   `json:"name"`
+					Files   []string `json:"files"`
+					Message string   `json:"message"`
+				} `json:"splits"`
+			} `json:"plan"`
+			Splits []struct {
+				Name  string `json:"name"`
+				SHA   string `json:"sha"`
+				Error string `json:"error"`
+			} `json:"splits"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse result: %v\nraw: %s", err, raw)
+	}
+	t.Logf("Result: %s", raw)
+
+	if result.Error != nil {
+		t.Fatalf("pipeline error: %s", *result.Error)
+	}
+	if result.Report.Error != nil {
+		t.Fatalf("report error: %s", *result.Report.Error)
+	}
+
+	splits := result.Report.Plan.Splits
+	if len(splits) == 0 {
+		t.Fatal("no splits in plan")
+	}
+
+	// --- Plan quality assertions ---
+
+	// 1. Every split has valid branch name.
+	for i, s := range splits {
+		if s.Name == "" {
+			t.Errorf("split %d has empty name", i)
+			continue
+		}
+		if strings.Contains(s.Name, " ") {
+			t.Errorf("split %d name %q contains spaces", i, s.Name)
+		}
+		if !strings.HasPrefix(s.Name, "split/") {
+			t.Errorf("split %d name %q doesn't start with 'split/' prefix", i, s.Name)
+		}
+	}
+
+	// 2. Every split has non-empty commit message.
+	for i, s := range splits {
+		if s.Message == "" {
+			t.Errorf("split %d (%s) has empty commit message", i, s.Name)
+		}
+	}
+
+	// 3. No orphaned files: every analyzed file must appear in exactly one split.
+	fileToSplit := make(map[string]string)
+	for _, s := range splits {
+		for _, f := range s.Files {
+			if existingSplit, exists := fileToSplit[f]; exists {
+				t.Errorf("file %q appears in both %q and %q (duplicate)", f, existingSplit, s.Name)
+			}
+			fileToSplit[f] = s.Name
+		}
+	}
+	for _, f := range analysis.Files {
+		if _, ok := fileToSplit[f]; !ok {
+			t.Errorf("file %q present in analysis but orphaned (not in any split)", f)
+		}
+	}
+
+	// 4. All split files must be real files from the analysis.
+	analysisSet := make(map[string]bool)
+	for _, f := range analysis.Files {
+		analysisSet[f] = true
+	}
+	for _, s := range splits {
+		for _, f := range s.Files {
+			if !analysisSet[f] {
+				t.Errorf("split %q references file %q which is not in the analysis", s.Name, f)
+			}
+		}
+	}
+
+	// 5. If branches were actually created, verify they exist in git.
+	if len(result.Report.Splits) > 0 {
+		branches := gitBranchList(t, tp.Dir)
+		splitBranches := filterPrefix(branches, "split/")
+		t.Logf("Created %d split branches: %v", len(splitBranches), splitBranches)
+		for _, s := range result.Report.Splits {
+			if s.Error != "" {
+				t.Errorf("split %s had error: %s", s.Name, s.Error)
+			}
+		}
+	}
+
+	t.Logf("Plan quality verified: %d splits, %d files, no orphans, no duplicates",
+		len(splits), len(fileToSplit))
+}
+
+// TestIntegration_ClaudeMCP_RoundTrip validates that the MCP callback
+// round-trip delivers parseable JSON matching the expected schema when
+// Claude calls reportClassification and reportSplitPlan via MCP tools.
+//
+// This test starts an MCP server, invokes Claude in headless mode with
+// a classification prompt, and validates the full round-trip:
+//   - Claude calls reportClassification with valid categories JSON
+//   - Each category has name (string), files ([]string), description (string)
+//   - All specified files appear in the classification
+//
+// Run with:
+//
+//	go test -race -v -count=1 -timeout=5m -integration \
+//	  -claude-command=claude ./internal/command/... \
+//	  -run TestIntegration_ClaudeMCP_RoundTrip
+func TestIntegration_ClaudeMCP_RoundTrip(t *testing.T) {
+	skipIfNoClaude(t)
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	osmExe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("resolve osm executable: %v", err)
+	}
+
+	// Pre-flight Claude check.
+	{
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		args := []string{"-p", "Reply with the word PONG", "--max-turns", "1"}
+		if integrationModel != "" {
+			args = append(args, "--model", integrationModel)
+		}
+		cmd := exec.CommandContext(ctx, claudeTestCommand, args...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Skipf("Claude not functional: %v\noutput: %s", err, out)
+		}
+	}
+
+	// Set up MCP server with both tools to validate schema.
+	srv := mcp.NewServer(&mcp.Implementation{
+		Name:    "test-mcp-roundtrip",
+		Version: "1.0.0",
+	}, nil)
+
+	classificationCh := make(chan json.RawMessage, 1)
+	planCh := make(chan json.RawMessage, 1)
+
+	srv.AddTool(&mcp.Tool{
+		Name:        "reportClassification",
+		Description: "Report file classification results. You MUST call this tool.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"categories": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"name": {"type": "string", "description": "Category name"},
+							"description": {"type": "string", "description": "Short commit message"},
+							"files": {"type": "array", "items": {"type": "string"}, "description": "File paths in this category"}
+						},
+						"required": ["name", "files"]
+					}
+				}
+			},
+			"required": ["categories"]
+		}`),
+	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		t.Logf("MCP: reportClassification called (%d bytes)", len(req.Params.Arguments))
+		select {
+		case classificationCh <- req.Params.Arguments:
+		default:
+		}
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: "Classification received. Now call reportSplitPlan with a split plan."}},
+		}, nil
+	})
+
+	srv.AddTool(&mcp.Tool{
+		Name:        "reportSplitPlan",
+		Description: "Report the split plan. Call this AFTER reportClassification.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"stages": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"name": {"type": "string", "description": "Branch name"},
+							"files": {"type": "array", "items": {"type": "string"}, "description": "Files in this split"},
+							"message": {"type": "string", "description": "Commit message"}
+						},
+						"required": ["name", "files", "message"]
+					}
+				}
+			},
+			"required": ["stages"]
+		}`),
+	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		t.Logf("MCP: reportSplitPlan called (%d bytes)", len(req.Params.Arguments))
+		select {
+		case planCh <- req.Params.Arguments:
+		default:
+		}
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: "Split plan received."}},
+		}, nil
+	})
+
+	// Listen on Unix socket.
+	tmpDir := t.TempDir()
+	sockPath := filepath.Join(tmpDir, "mcp.sock")
+	ln, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	go func() {
+		for {
+			conn, aErr := ln.Accept()
+			if aErr != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				transport := &mcp.IOTransport{Reader: conn, Writer: conn}
+				session, sErr := srv.Connect(ctx, transport, nil)
+				if sErr != nil {
+					fmt.Fprintf(os.Stderr, "[roundtrip-mcp] connect error: %v\n", sErr)
+					return
+				}
+				_ = session.Wait()
+			}()
+		}
+	}()
+
+	// MCP config JSON.
+	mcpConfig := map[string]any{
+		"mcpServers": map[string]any{
+			"osm-callback": map[string]any{
+				"command": osmExe,
+				"args":    []string{"mcp-bridge", "unix", sockPath},
+			},
+		},
+	}
+	configBytes, err := json.MarshalIndent(mcpConfig, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal mcp config: %v", err)
+	}
+	configPath := filepath.Join(tmpDir, "mcp-config.json")
+	if err := os.WriteFile(configPath, configBytes, 0600); err != nil {
+		t.Fatalf("write mcp config: %v", err)
+	}
+
+	// Prompt that requires calling both tools.
+	prompt := `You have access to two MCP tools: reportClassification and reportSplitPlan.
+
+Here are changed files in a pull request:
+- cmd/main.go (entry point update)
+- cmd/serve.go (new serve subcommand)
+- pkg/auth/login.go (new authentication logic)
+- pkg/auth/token.go (new token validation)
+- docs/README.md (documentation update)
+- docs/auth.md (new auth documentation)
+
+Step 1: Call reportClassification with categories grouping these files logically.
+Step 2: Call reportSplitPlan with a split plan using branch names starting with "split/".
+
+You MUST call both tools. Do NOT just describe the classification in text.`
+
+	claudeArgs := []string{
+		"-p", prompt,
+		"--mcp-config", configPath,
+		"--dangerously-skip-permissions",
+		"--max-turns", "10",
+	}
+	if integrationModel != "" {
+		claudeArgs = append(claudeArgs, "--model", integrationModel)
+	}
+
+	t.Logf("Running: %s %s", claudeTestCommand, strings.Join(claudeArgs, " "))
+	cmd := exec.CommandContext(ctx, claudeTestCommand, claudeArgs...)
+	cmd.Dir = tmpDir
+	claudeOut, claudeErr := cmd.CombinedOutput()
+	t.Logf("Claude output (%d bytes):\n%s", len(claudeOut), string(claudeOut))
+	if claudeErr != nil {
+		t.Logf("Claude exit error: %v", claudeErr)
+	}
+
+	// --- Validate classification schema ---
+	select {
+	case data := <-classificationCh:
+		t.Logf("Classification payload: %s", string(data))
+		var classification struct {
+			Categories []struct {
+				Name        string   `json:"name"`
+				Description string   `json:"description"`
+				Files       []string `json:"files"`
+			} `json:"categories"`
+		}
+		if err := json.Unmarshal(data, &classification); err != nil {
+			t.Fatalf("classification JSON schema error: %v\nraw: %s", err, data)
+		}
+		if len(classification.Categories) == 0 {
+			t.Error("classification has no categories")
+		}
+		allFiles := make(map[string]bool)
+		for _, cat := range classification.Categories {
+			if cat.Name == "" {
+				t.Error("category has empty name")
+			}
+			if len(cat.Files) == 0 {
+				t.Errorf("category %q has no files", cat.Name)
+			}
+			for _, f := range cat.Files {
+				if f == "" {
+					t.Error("category contains empty file path")
+				}
+				allFiles[f] = true
+			}
+		}
+		expectedFiles := []string{
+			"cmd/main.go", "cmd/serve.go",
+			"pkg/auth/login.go", "pkg/auth/token.go",
+			"docs/README.md", "docs/auth.md",
+		}
+		for _, ef := range expectedFiles {
+			if !allFiles[ef] {
+				t.Errorf("expected file %q not in classification", ef)
+			}
+		}
+		t.Logf("Classification validated: %d categories, %d files", len(classification.Categories), len(allFiles))
+
+	case <-time.After(10 * time.Second):
+		t.Fatal("reportClassification was never called")
+	}
+
+	// --- Validate split plan schema ---
+	select {
+	case data := <-planCh:
+		t.Logf("Split plan payload: %s", string(data))
+		var plan struct {
+			Stages []struct {
+				Name    string   `json:"name"`
+				Files   []string `json:"files"`
+				Message string   `json:"message"`
+			} `json:"stages"`
+		}
+		if err := json.Unmarshal(data, &plan); err != nil {
+			t.Fatalf("split plan JSON schema error: %v\nraw: %s", err, data)
+		}
+		if len(plan.Stages) == 0 {
+			t.Error("split plan has no stages")
+		}
+		for i, s := range plan.Stages {
+			if s.Name == "" {
+				t.Errorf("stage %d has empty name", i)
+			}
+			if len(s.Files) == 0 {
+				t.Errorf("stage %d (%s) has no files", i, s.Name)
+			}
+			if s.Message == "" {
+				t.Errorf("stage %d (%s) has empty message", i, s.Name)
+			}
+		}
+		t.Logf("Split plan validated: %d stages", len(plan.Stages))
+
+	case <-time.After(10 * time.Second):
+		t.Log("WARNING: reportSplitPlan was not called (Claude may not have completed both steps)")
+		// Not a hard failure — some models might not complete both tool calls.
+	}
+}
+
+// TestIntegration_ClaudeFallbackToHeuristic verifies that when the
+// configured Claude command is invalid/unavailable, the pipeline falls
+// back to heuristic mode without hanging or panicking.
+//
+// Run with:
+//
+//	go test -race -v -count=1 -timeout=2m -integration \
+//	  -claude-command=claude ./internal/command/... \
+//	  -run TestIntegration_ClaudeFallbackToHeuristic
+func TestIntegration_ClaudeFallbackToHeuristic(t *testing.T) {
+	skipIfNotIntegration(t)
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	tp := setupTestPipeline(t, TestPipelineOpts{
+		InitialFiles: []TestPipelineFile{
+			{"pkg/core.go", "package pkg\n\nfunc Core() {}\n"},
+			{"cmd/main.go", "package main\n\nfunc main() {}\n"},
+			{"docs/README.md", "# Project\n"},
+		},
+		FeatureFiles: []TestPipelineFile{
+			{"pkg/core.go", "package pkg\n\nfunc Core() string { return \"v2\" }\n"},
+			{"pkg/helper.go", "package pkg\n\nfunc Helper() {}\n"},
+			{"cmd/main.go", "package main\n\nimport \"fmt\"\n\nfunc main() { fmt.Println(\"v2\") }\n"},
+			{"docs/README.md", "# Project v2\n\nUpdated.\n"},
+			{"docs/changelog.md", "# Changelog\n\n## v2\n\n- Updated\n"},
+		},
+		ConfigOverrides: map[string]any{
+			// Deliberately invalid command — should trigger fallback.
+			"claudeCommand": "/nonexistent/invalid-claude-binary-that-does-not-exist",
+			"claudeArgs":    []string{},
+			"branchPrefix":  "split/",
+			"_evalTimeout":  2 * time.Minute,
+		},
+	})
+
+	start := time.Now()
+	t.Log("Starting auto-split with invalid Claude command (expecting heuristic fallback)...")
+	raw, err := tp.EvalJS(`JSON.stringify(await globalThis.prSplit.automatedSplit({
+		baseBranch: 'main',
+		dir: ` + jsString(tp.Dir) + `,
+		strategy: 'directory',
+		classifyTimeoutMs: 10000,
+		planTimeoutMs: 10000,
+		resolveTimeoutMs: 10000,
+		disableTUI: true
+	}))`)
+	elapsed := time.Since(start)
+	t.Logf("Pipeline completed in %s", elapsed)
+
+	if err != nil {
+		t.Fatalf("automatedSplit failed: %v", err)
+	}
+
+	var result struct {
+		Error  *string `json:"error"`
+		Report struct {
+			Error        *string `json:"error"`
+			Mode         string  `json:"mode"`
+			FallbackUsed bool    `json:"fallbackUsed"`
+			Plan         struct {
+				Splits []struct {
+					Name  string   `json:"name"`
+					Files []string `json:"files"`
+				} `json:"splits"`
+			} `json:"plan"`
+			Splits []struct {
+				Name string `json:"name"`
+			} `json:"splits"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse result: %v\nraw: %s", err, raw)
+	}
+	t.Logf("Result: %s", raw)
+
+	// --- Fallback assertions ---
+
+	// 1. Pipeline should complete successfully (with fallback).
+	if result.Error != nil {
+		// Some implementations may return an error for invalid command — that's OK
+		// as long as it fell back. If there's an error AND no fallback, that's a bug.
+		t.Logf("Pipeline returned error (may be expected): %s", *result.Error)
+	}
+
+	// 2. Fallback should be used.
+	if !result.Report.FallbackUsed {
+		t.Error("expected fallbackUsed=true with invalid Claude command")
+	}
+
+	// 3. Splits should still be created via heuristic.
+	if len(result.Report.Plan.Splits) == 0 && len(result.Report.Splits) == 0 {
+		t.Error("expected heuristic to produce splits even without Claude")
+	}
+
+	// 4. Should complete within a reasonable time (not hang on Claude spawn).
+	if elapsed > 60*time.Second {
+		t.Errorf("fallback took too long (%s) — may be hanging on Claude spawn", elapsed)
+	}
+}
+
+// TestIntegration_ClaudeConflictResolution creates a repository with known
+// conflicts and verifies the error resolution flow works when Claude is
+// available but branch execution fails due to conflicts.
+//
+// Run with:
+//
+//	go test -race -v -count=1 -timeout=10m -integration \
+//	  -claude-command=claude ./internal/command/... \
+//	  -run TestIntegration_ClaudeConflictResolution
+func TestIntegration_ClaudeConflictResolution(t *testing.T) {
+	skipIfNoClaude(t)
+	verifyClaudeAuth(t)
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	// Create a repo where the feature branch has inter-dependent changes
+	// that will likely cause cherry-pick conflicts when split.
+	tp := setupTestPipeline(t, TestPipelineOpts{
+		InitialFiles: []TestPipelineFile{
+			{"pkg/core/core.go", "package core\n\nvar Version = \"1.0\"\n\nfunc Init() {\n\t// original init\n}\n"},
+			{"pkg/api/api.go", "package api\n\nimport \"example.com/pkg/core\"\n\nfunc Start() {\n\t_ = core.Version\n}\n"},
+			{"cmd/main.go", "package main\n\nfunc main() {}\n"},
+		},
+		FeatureFiles: []TestPipelineFile{
+			// Both files modify in ways that depend on each other:
+			// core.go adds NewFeature that api.go calls.
+			{"pkg/core/core.go", "package core\n\nvar Version = \"2.0\"\n\nfunc Init() {\n\t// updated init for v2\n}\n\nfunc NewFeature() string {\n\treturn \"feature\"\n}\n"},
+			{"pkg/api/api.go", "package api\n\nimport \"example.com/pkg/core\"\n\nfunc Start() {\n\t_ = core.Version\n\t_ = core.NewFeature()\n}\n\nfunc HandleV2() string {\n\treturn core.NewFeature()\n}\n"},
+			{"cmd/main.go", "package main\n\nimport (\n\t\"fmt\"\n\t\"example.com/pkg/core\"\n)\n\nfunc main() {\n\tfmt.Println(core.Version)\n\tfmt.Println(core.NewFeature())\n}\n"},
+		},
+		ConfigOverrides: map[string]any{
+			"claudeCommand": claudeTestCommand,
+			"claudeArgs":    []string(claudeTestArgs),
+			"branchPrefix":  "split/",
+			"_evalTimeout":  10 * time.Minute,
+		},
+	})
+
+	t.Log("Starting auto-split with conflict-prone repo...")
+	raw, err := tp.EvalJS(`JSON.stringify(await globalThis.prSplit.automatedSplit({
+		baseBranch: 'main',
+		dir: ` + jsString(tp.Dir) + `,
+		strategy: 'directory',
+		classifyTimeoutMs: 300000,
+		planTimeoutMs: 300000,
+		resolveTimeoutMs: 300000,
+		maxResolveRetries: 2,
+		disableTUI: true
+	}))`)
+	if err != nil {
+		t.Fatalf("automatedSplit: %v", err)
+	}
+
+	var result struct {
+		Error  *string `json:"error"`
+		Report struct {
+			Error              *string `json:"error"`
+			Mode               string  `json:"mode"`
+			FallbackUsed       bool    `json:"fallbackUsed"`
+			ClaudeInteractions int     `json:"claudeInteractions"`
+			Steps              []struct {
+				Name  string `json:"name"`
+				Error string `json:"error"`
+			} `json:"steps"`
+			Splits []struct {
+				Name  string `json:"name"`
+				SHA   string `json:"sha"`
+				Error string `json:"error"`
+			} `json:"splits"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("parse result: %v\nraw: %s", err, raw)
+	}
+	t.Logf("Result: %s", raw)
+
+	// This test validates the pipeline handles conflicts gracefully.
+	// It might succeed (Claude resolves conflicts), fall back to heuristic,
+	// or complete with partial errors. All are acceptable as long as:
+	// 1. No panic or hang.
+	// 2. Report structure is complete.
+	// 3. Steps are tracked.
+
+	if len(result.Report.Steps) == 0 {
+		t.Error("expected at least one pipeline step in report")
+	}
+
+	// Log all steps with their status.
+	for _, s := range result.Report.Steps {
+		if s.Error != "" {
+			t.Logf("  Step %s: ERROR: %s", s.Name, s.Error)
+		} else {
+			t.Logf("  Step %s: OK", s.Name)
+		}
+	}
+
+	// If splits were created, verify they exist in git.
+	createdSplits := 0
+	for _, s := range result.Report.Splits {
+		if s.SHA != "" {
+			createdSplits++
+		}
+	}
+	if createdSplits > 0 {
+		branches := gitBranchList(t, tp.Dir)
+		splitBranches := filterPrefix(branches, "split/")
+		t.Logf("Created %d split branches: %v", len(splitBranches), splitBranches)
+	}
+
+	t.Logf("Conflict test completed: %d steps, %d splits created, fallback=%v",
+		len(result.Report.Steps), createdSplits, result.Report.FallbackUsed)
+}

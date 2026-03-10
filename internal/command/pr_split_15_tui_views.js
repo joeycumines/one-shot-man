@@ -155,6 +155,19 @@
             return lipgloss.newStyle()
                 .bold(true)
                 .foreground(COLORS.warning);
+        },
+        focusedCard: function() {
+            return lipgloss.newStyle()
+                .border(lipgloss.doubleBorder())
+                .borderForeground(COLORS.warning)
+                .padding(1, 2);
+        },
+        focusedButton: function() {
+            return lipgloss.newStyle()
+                .bold(true)
+                .foreground(COLORS.text)
+                .background(COLORS.warning)
+                .padding(0, 2);
         }
     };
 
@@ -268,8 +281,10 @@
                 if (narrow && nextLabel.length > 8) {
                     nextLabel = nextLabel.split(' ')[0];
                 }
+                var nextBtnStyle = s._isNavNextFocused
+                    ? styles.focusedButton() : styles.primaryButton();
                 nextBtn = zone.mark('nav-next',
-                    styles.primaryButton().render(nextLabel + ' \u2192'));
+                    nextBtnStyle.render(nextLabel + ' \u2192'));
             }
         }
 
@@ -452,13 +467,17 @@
         lines.push(styles.bold().render('Strategy'));
         var strategies = ['auto', 'heuristic', 'directory'];
         var currentMode = runtime.mode || 'heuristic';
+        // Focus: indices 0-2 map to strategies in CONFIG screen.
+        var focusIdx = s.focusIndex || 0;
         for (var si = 0; si < strategies.length; si++) {
             var strat = strategies[si];
             var selected = (strat === currentMode);
+            var isFocused = (focusIdx === si);
             var bullet = selected ? styles.primaryButton().render(' \u25cf ') : '  \u25cb ';
+            var focusPointer = isFocused ? styles.statusActive().render('\u25b8 ') : '  ';
             var label = styles.label().render(strat.charAt(0).toUpperCase() + strat.slice(1));
             var stratId = 'strategy-' + strat;
-            lines.push('  ' + zone.mark(stratId, bullet + ' ' + label));
+            lines.push(focusPointer + zone.mark(stratId, bullet + ' ' + label));
         }
         lines.push('');
 
@@ -559,11 +578,16 @@
         // Split cards.
         var w = (s.width || 80) - 8;
         var selectedIdx = s.selectedSplitIdx || 0;
+        // Focus: indices 0..N-1 = split cards, N = plan-edit, N+1 = plan-regenerate.
+        var focusIdx = s.focusIndex || 0;
+        var splitCount = plan.splits.length;
 
         for (var i = 0; i < plan.splits.length; i++) {
             var split = plan.splits[i];
             var isSelected = (i === selectedIdx);
-            var cardStyle = isSelected ? styles.activeCard() : styles.inactiveCard();
+            var isFocused = (focusIdx === i);
+            var cardStyle = isFocused ? styles.focusedCard() :
+                            isSelected ? styles.activeCard() : styles.inactiveCard();
             var cardId = 'split-card-' + i;
 
             var cardContent = '';
@@ -586,11 +610,15 @@
         }
 
         // Action buttons.
+        var editFocused = (focusIdx === splitCount);
+        var regenFocused = (focusIdx === splitCount + 1);
+        var editBtnStyle = editFocused ? styles.focusedButton() : styles.secondaryButton();
+        var regenBtnStyle = regenFocused ? styles.focusedButton() : styles.secondaryButton();
         lines.push('');
         lines.push(
-            zone.mark('plan-edit', styles.secondaryButton().render('Edit Plan \u270f')) +
+            zone.mark('plan-edit', editBtnStyle.render('Edit Plan \u270f')) +
             '  ' +
-            zone.mark('plan-regenerate', styles.secondaryButton().render('Regenerate \ud83d\udd04'))
+            zone.mark('plan-regenerate', regenBtnStyle.render('Regenerate \ud83d\udd04'))
         );
 
         return lines.join('\n');
@@ -634,13 +662,23 @@
             }
 
             if (isSelected) {
+                // Focus: split cards occupy indices 0..N-1;
+                // editor buttons are N, N+1, N+2.
+                var focusIdx = s.focusIndex || 0;
+                var splitCount = plan.splits.length;
+                var moveFocused = (focusIdx === splitCount);
+                var renameFocused = (focusIdx === splitCount + 1);
+                var mergeFocused = (focusIdx === splitCount + 2);
+                var moveBtnStyle = moveFocused ? styles.focusedButton() : styles.secondaryButton();
+                var renameBtnStyle = renameFocused ? styles.focusedButton() : styles.secondaryButton();
+                var mergeBtnStyle = mergeFocused ? styles.focusedButton() : styles.secondaryButton();
                 lines.push('');
                 lines.push(
-                    zone.mark('editor-move', styles.secondaryButton().render('Move File')) +
+                    zone.mark('editor-move', moveBtnStyle.render('Move File')) +
                     '  ' +
-                    zone.mark('editor-rename', styles.secondaryButton().render('Rename Split')) +
+                    zone.mark('editor-rename', renameBtnStyle.render('Rename Split')) +
                     '  ' +
-                    zone.mark('editor-merge', styles.secondaryButton().render('Merge Splits'))
+                    zone.mark('editor-merge', mergeBtnStyle.render('Merge Splits'))
                 );
             }
         }
@@ -829,28 +867,32 @@
             lines.push('');
         }
 
-        // Resolution options.
+        // Resolution options with focus styling.
+        var focusIdx = s.focusIndex || 0;
+        var resolveButtons = [
+            {id: 'resolve-auto',   label: 'Auto-Resolve', desc: 'Let Claude fix the issues',           isPrimary: true},
+            {id: 'resolve-manual', label: 'Manual Fix',   desc: 'Switch to Claude pane to fix manually', isPrimary: false},
+            {id: 'resolve-skip',   label: 'Skip',         desc: 'Skip failed branches',               isPrimary: false},
+            {id: 'resolve-retry',  label: 'Retry',        desc: 'Regenerate plan from scratch',        isPrimary: false},
+            {id: 'resolve-abort',  label: 'Abort',        desc: 'Cancel the split',                   isPrimary: false}
+        ];
         lines.push(styles.bold().render('Choose Resolution:'));
         lines.push('');
-        lines.push('  ' + zone.mark('resolve-auto',
-            styles.primaryButton().render('Auto-Resolve')) +
-            styles.dim().render('  Let Claude fix the issues'));
-        lines.push('');
-        lines.push('  ' + zone.mark('resolve-manual',
-            styles.secondaryButton().render('Manual Fix')) +
-            styles.dim().render('  Switch to Claude pane to fix manually'));
-        lines.push('');
-        lines.push('  ' + zone.mark('resolve-skip',
-            styles.secondaryButton().render('Skip')) +
-            styles.dim().render('  Skip failed branches'));
-        lines.push('');
-        lines.push('  ' + zone.mark('resolve-retry',
-            styles.secondaryButton().render('Retry')) +
-            styles.dim().render('  Regenerate plan from scratch'));
-        lines.push('');
-        lines.push('  ' + zone.mark('resolve-abort',
-            styles.secondaryButton().render('Abort')) +
-            styles.dim().render('  Cancel the split'));
+        for (var ri = 0; ri < resolveButtons.length; ri++) {
+            var rb = resolveButtons[ri];
+            var isFocused = (focusIdx === ri);
+            var btnStyle;
+            if (isFocused) {
+                btnStyle = styles.focusedButton();
+            } else if (rb.isPrimary) {
+                btnStyle = styles.primaryButton();
+            } else {
+                btnStyle = styles.secondaryButton();
+            }
+            lines.push('  ' + zone.mark(rb.id, btnStyle.render(rb.label)) +
+                styles.dim().render('  ' + rb.desc));
+            if (ri < resolveButtons.length - 1) lines.push('');
+        }
 
         return lines.join('\n');
     }

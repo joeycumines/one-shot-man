@@ -148,7 +148,8 @@
       "task": "T06: Implement visible keyboard focus indicators on interactive elements",
       "description": "handleNavDown/handleNavUp cycle elements but no visible focus ring. Fix: (a) Add s.focusIndex per-screen field, reset on screen transition. (b) Each view function applies distinct lipgloss style (double border or accent bg) to focused element. (c) Tab increments, Shift+Tab decrements, wrap-around. (d) Enter activates focused element. (e) Match super_document selectedStyle. (f) Define focusable element lists per screen.",
       "acceptance": "Tab/Shift+Tab cycles with visible focus ring. Config: strategy options + Start. Plan review: chunks + buttons. Focus wraps. Enter activates. Resets on transition.",
-      "status": "Not Started",
+      "status": "Done",
+      "completionNotes": "Focus system: focusIndex + _prevWizardState in model state. getFocusElements() returns per-screen element arrays. j/k = splits-only clamped nav (handleListNav). Tab/Shift+Tab = full focus cycling with wrap (handleNavDown/handleNavUp). Enter activates focused element via handleFocusActivate (strategy selection, button activation, dialog opening). Visual indicators: focusedCard (double border, warning color) and focusedButton (warning bg) styles. Config: pointer on focused strategy. PlanReview: double-border on focused card, amber buttons when focused. NavBar: nav-next button uses focusedButton style when focused. Focus resets to 0 on wizard state transition. Tests updated: NavigationKeys and AllKeyBindingsRespond now set focusIndex + _prevWizardState.",
       "context": {
         "files": [
           "internal/command/pr_split_16_tui_core.js (handleNavDown, handleNavUp)",

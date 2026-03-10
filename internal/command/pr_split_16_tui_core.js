@@ -101,6 +101,10 @@
                 activeEditorDialog: null,  // 'move' | 'rename' | 'merge' | null
                 editorDialogState: {},
 
+                // Focus system.
+                focusIndex: 0,
+                _prevWizardState: null,
+
                 // Analysis progress.
                 analysisSteps: [],
                 analysisProgress: -1,
@@ -132,6 +136,12 @@
                     return [s, tea.clearScreen()];
                 }
                 return [s, null];
+            }
+
+            // Reset focus index on wizard state transition.
+            if (s.wizardState !== s._prevWizardState) {
+                s.focusIndex = 0;
+                s._prevWizardState = s.wizardState;
             }
 
             // Overlays intercept all input when active.
@@ -230,17 +240,20 @@
                 if (k === 'esc') {
                     return handleBack(s);
                 }
-                // Enter — forward action.
+                // Enter — activate focused element or forward action.
                 if (k === 'enter') {
+                    var activated = handleFocusActivate(s);
+                    if (activated) return activated;
                     return handleNext(s);
                 }
-                // Navigation: j/k, up/down, tab/shift+tab.
+                // Navigation: j/k/up/down = list navigation (splits only).
                 if (k === 'j' || k === 'down') {
-                    return handleNavDown(s);
+                    return handleListNav(s, 1);
                 }
                 if (k === 'k' || k === 'up') {
-                    return handleNavUp(s);
+                    return handleListNav(s, -1);
                 }
+                // Tab/Shift+Tab = full focus cycling across all elements.
                 if (k === 'tab') {
                     return handleNavDown(s);
                 }
@@ -346,7 +359,16 @@
             // Divider.
             var divider = styles.divider().render(repeatStr('\u2500', w));
 
-            // Navigation bar.
+            // Navigation bar — compute nav-next focus flag.
+            var focusElems = getFocusElements(s);
+            s._isNavNextFocused = false;
+            if (focusElems.length > 0) {
+                var lastElem = focusElems[focusElems.length - 1];
+                if (lastElem && lastElem.type === 'nav' &&
+                    (s.focusIndex || 0) === focusElems.length - 1) {
+                    s._isNavNextFocused = true;
+                }
+            }
             var navBar = renderNavBar(s);
 
             // Status bar.
@@ -443,6 +465,7 @@
         prSplit._wizardInit = _initFn;
         prSplit._wizardUpdate = _updateFn;
         prSplit._wizardView = _viewFn;
+        prSplit._getFocusElements = getFocusElements;
 
         return model;
     }
@@ -1072,23 +1095,199 @@
         }
     }
 
-    function handleNavDown(s) {
+    // -----------------------------------------------------------------------
+    //  Focus System — keyboard-driven focus cycling across interactive elements
+    // -----------------------------------------------------------------------
+
+    // Returns an array of {id, type} describing focusable elements for the
+    // current wizard screen.  Both handlers and views reference this so the
+    // mapping lives in one place.
+    function getFocusElements(s) {
+        switch (s.wizardState) {
+            case 'IDLE':
+            case 'CONFIG':
+            case 'BASELINE_FAIL': {
+                return [
+                    {id: 'strategy-auto',      type: 'strategy'},
+                    {id: 'strategy-heuristic',  type: 'strategy'},
+                    {id: 'strategy-directory',  type: 'strategy'},
+                    {id: 'nav-next',            type: 'nav'}
+                ];
+            }
+            case 'PLAN_REVIEW': {
+                var elems = [];
+                var n = (st.planCache && st.planCache.splits) ? st.planCache.splits.length : 0;
+                for (var i = 0; i < n; i++) {
+                    elems.push({id: 'split-card-' + i, type: 'card'});
+                }
+                elems.push({id: 'plan-edit',       type: 'button'});
+                elems.push({id: 'plan-regenerate',  type: 'button'});
+                elems.push({id: 'nav-next',         type: 'nav'});
+                return elems;
+            }
+            case 'PLAN_EDITOR': {
+                var elems = [];
+                var n = (st.planCache && st.planCache.splits) ? st.planCache.splits.length : 0;
+                for (var i = 0; i < n; i++) {
+                    elems.push({id: 'edit-split-' + i, type: 'card'});
+                }
+                elems.push({id: 'editor-move',    type: 'button'});
+                elems.push({id: 'editor-rename',  type: 'button'});
+                elems.push({id: 'editor-merge',   type: 'button'});
+                elems.push({id: 'nav-next',       type: 'nav'});
+                return elems;
+            }
+            case 'ERROR_RESOLUTION': {
+                return [
+                    {id: 'resolve-auto',   type: 'button'},
+                    {id: 'resolve-manual', type: 'button'},
+                    {id: 'resolve-skip',   type: 'button'},
+                    {id: 'resolve-retry',  type: 'button'},
+                    {id: 'resolve-abort',  type: 'button'}
+                ];
+            }
+            default:
+                return [];
+        }
+    }
+
+    // List navigation (j/k/up/down): navigates splits only, clamped.
+    // Also syncs focusIndex to the selected split card.
+    function handleListNav(s, delta) {
         if (s.wizardState === 'PLAN_REVIEW' || s.wizardState === 'PLAN_EDITOR') {
-            if (st.planCache && st.planCache.splits) {
-                s.selectedSplitIdx = Math.min(
-                    (s.selectedSplitIdx || 0) + 1,
-                    st.planCache.splits.length - 1
-                );
+            var splitCount = (st.planCache && st.planCache.splits)
+                ? st.planCache.splits.length : 0;
+            if (splitCount > 0) {
+                var newIdx = (s.selectedSplitIdx || 0) + delta;
+                newIdx = Math.max(0, Math.min(newIdx, splitCount - 1));
+                s.selectedSplitIdx = newIdx;
+                // Keep focusIndex in sync with the split card.
+                s.focusIndex = newIdx;
             }
         }
         return [s, null];
     }
 
-    function handleNavUp(s) {
-        if (s.wizardState === 'PLAN_REVIEW' || s.wizardState === 'PLAN_EDITOR') {
-            s.selectedSplitIdx = Math.max((s.selectedSplitIdx || 0) - 1, 0);
+    // Full focus cycling (Tab/Shift+Tab): cycles through ALL focusable
+    // elements including buttons and nav.
+    function handleNavDown(s) {
+        var elems = getFocusElements(s);
+        if (elems.length > 0) {
+            s.focusIndex = ((s.focusIndex || 0) + 1) % elems.length;
         }
+        // Sync selectedSplitIdx when focus lands on a card.
+        syncSplitSelection(s, elems);
         return [s, null];
+    }
+
+    function handleNavUp(s) {
+        var elems = getFocusElements(s);
+        if (elems.length > 0) {
+            var idx = (s.focusIndex || 0) - 1;
+            s.focusIndex = idx < 0 ? elems.length - 1 : idx;
+        }
+        // Sync selectedSplitIdx when focus lands on a card.
+        syncSplitSelection(s, elems);
+        return [s, null];
+    }
+
+    // When focus lands on a split card, keep selectedSplitIdx in sync.
+    function syncSplitSelection(s, elems) {
+        if (!elems || !elems.length) return;
+        var focused = elems[s.focusIndex || 0];
+        if (!focused) return;
+        if (focused.type === 'card') {
+            // Extract the card index from the id (e.g. 'split-card-2' → 2).
+            var parts = focused.id.split('-');
+            var idx = parseInt(parts[parts.length - 1], 10);
+            if (!isNaN(idx)) {
+                s.selectedSplitIdx = idx;
+            }
+        }
+    }
+
+    // Try to activate the currently focused element.
+    // Returns [s, cmd] if activation happened, or null if Enter
+    // should fall through to handleNext().
+    function handleFocusActivate(s) {
+        var elems = getFocusElements(s);
+        if (!elems.length) return null;
+        var focused = elems[s.focusIndex || 0];
+        if (!focused) return null;
+
+        // nav-next — let Enter fall through to handleNext().
+        if (focused.type === 'nav') return null;
+
+        // Strategy selection on CONFIG screen.
+        if (focused.type === 'strategy') {
+            var stratName = focused.id.replace('strategy-', '');
+            prSplit.runtime.mode = stratName;
+            return [s, null];
+        }
+
+        // Split card selection.
+        if (focused.type === 'card') {
+            syncSplitSelection(s, elems);
+            return [s, null];
+        }
+
+        // Button activation — simulate a click on the zone.
+        if (focused.type === 'button') {
+            // Plan review buttons.
+            if (focused.id === 'plan-edit' && !s.isProcessing) {
+                s.wizard.transition('PLAN_EDITOR');
+                s.wizardState = 'PLAN_EDITOR';
+                return [s, null];
+            }
+            if (focused.id === 'plan-regenerate' && !s.isProcessing) {
+                handlePlanReviewState(s.wizard, 'regenerate');
+                s.wizardState = 'CONFIG';
+                s.wizard.reset();
+                s.wizard.transition('CONFIG');
+                return [s, null];
+            }
+            // Plan editor buttons — open dialogs.
+            if (focused.id === 'editor-move') {
+                var splitIdx = s.selectedSplitIdx || 0;
+                var fileIdx = s.selectedFileIdx || 0;
+                if (st.planCache && st.planCache.splits &&
+                    st.planCache.splits[splitIdx] &&
+                    st.planCache.splits[splitIdx].files &&
+                    st.planCache.splits[splitIdx].files[fileIdx] &&
+                    st.planCache.splits.length > 1) {
+                    s.activeEditorDialog = 'move';
+                    s.editorDialogState = { targetIdx: 0 };
+                }
+                return [s, null];
+            }
+            if (focused.id === 'editor-rename') {
+                var splitIdx = s.selectedSplitIdx || 0;
+                if (st.planCache && st.planCache.splits &&
+                    st.planCache.splits[splitIdx]) {
+                    s.activeEditorDialog = 'rename';
+                    s.editorDialogState = {
+                        inputText: st.planCache.splits[splitIdx].name || ''
+                    };
+                }
+                return [s, null];
+            }
+            if (focused.id === 'editor-merge') {
+                if (st.planCache && st.planCache.splits &&
+                    st.planCache.splits.length > 1) {
+                    s.activeEditorDialog = 'merge';
+                    s.editorDialogState = { selected: {}, cursorIdx: 0 };
+                }
+                return [s, null];
+            }
+            // Error resolution buttons.
+            if (focused.id.indexOf('resolve-') === 0) {
+                var choice = focused.id.replace('resolve-', '');
+                return handleErrorResolutionChoice(s,
+                    choice === 'auto' ? 'auto-resolve' : choice);
+            }
+        }
+
+        return null;
     }
 
     // -----------------------------------------------------------------------

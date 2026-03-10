@@ -3594,11 +3594,13 @@ func TestChunk13_WizardUpdate_NavigationKeys(t *testing.T) {
 		var s = globalThis.prSplit._wizardInit();
 		s.needsInitClear = false;
 		s.selectedSplitIdx = 0;
+		s.focusIndex = 0;
 		// Properly transition wizard through valid path to PLAN_REVIEW.
 		s.wizard.transition('CONFIG');
 		s.wizard.transition('PLAN_GENERATION');
 		s.wizard.transition('PLAN_REVIEW');
 		s.wizardState = 'PLAN_REVIEW';
+		s._prevWizardState = 'PLAN_REVIEW';
 
 		// Set up plan cache with 3 splits so navigation has room.
 		globalThis.prSplit._state.planCache = {
@@ -3745,6 +3747,7 @@ func TestChunk13_WizardUpdate_AllKeyBindingsRespond(t *testing.T) {
 			var s = globalThis.prSplit._wizardInit();
 			s.needsInitClear = false;
 			s.selectedSplitIdx = 1;
+			s.focusIndex = 1;
 			s.isProcessing = false;
 			// Reset shared wizard before each test case.
 			s.wizard.reset();
@@ -3761,6 +3764,7 @@ func TestChunk13_WizardUpdate_AllKeyBindingsRespond(t *testing.T) {
 				};
 			}
 			s.wizardState = state;
+			s._prevWizardState = state;
 			var result = globalThis.prSplit._wizardUpdate({type: 'Key', key: key}, s);
 			if (!checkFn(result[0], result[1])) {
 				errors.push(label + ' (key=' + key + ', state=' + state + ')');

@@ -8,8 +8,10 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
@@ -17,6 +19,7 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/termmux"
 
 	termmuxmod "github.com/joeycumines/one-shot-man/internal/builtin/termmux"
+	"golang.org/x/term"
 )
 
 //go:embed pr_split_template.md
@@ -218,7 +221,17 @@ func (c *PrSplitCommand) SetupFlags(fs *flag.FlagSet) {
 
 // Execute runs the pr-split command.
 func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error {
-	ctx := context.Background()
+	// Set up context with signal handling. In test mode, use a plain
+	// cancellable context to avoid interfering with test harness signals.
+	// In production, SIGINT/SIGTERM cancel the context for graceful shutdown.
+	var ctx context.Context
+	var stop context.CancelFunc
+	if c.testMode {
+		ctx, stop = context.WithCancel(context.Background())
+	} else {
+		ctx, stop = signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	}
+	defer stop()
 
 	// Apply config defaults — flags override config values. Config keys
 	// are namespaced under the "pr-split" command section or global:
@@ -336,10 +349,44 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		return err
 	}
 
-	// Only run interactive mode if requested and not in test mode.
-	// Launches the BubbleTea wizard (full-screen TUI) instead of go-prompt.
-	// tea.run() blocks until the user exits the wizard.
+	// Interactive mode: launch BubbleTea wizard with signal handling.
 	if c.interactive && !c.testMode {
+		// Double-SIGINT force-exit handler. After the first signal cancels
+		// ctx (triggering BubbleTea's graceful quit via context propagation),
+		// a second SIGINT force-exits with best-effort terminal restoration.
+		// This prevents the user from being stuck if graceful shutdown hangs
+		// (e.g., Claude subprocess won't terminate).
+		var savedTermState *term.State
+		if term.IsTerminal(termFd) {
+			savedTermState, _ = term.GetState(termFd)
+		}
+		done := make(chan struct{})
+		defer close(done)
+		go func() {
+			<-ctx.Done()
+			stop() // Deregister NotifyContext; next signal hits sigCh below.
+
+			sigCh := make(chan os.Signal, 1)
+			signal.Notify(sigCh, os.Interrupt)
+			defer signal.Stop(sigCh)
+
+			select {
+			case <-sigCh:
+				// Second interrupt — force exit with terminal restore.
+				if savedTermState != nil {
+					_ = term.Restore(termFd, savedTermState)
+				}
+				// Best-effort: exit alt screen + show cursor.
+				fmt.Fprint(os.Stderr, "\x1b[?1049l\x1b[?25h")
+				slog.Error("pr-split: force-exit on double SIGINT")
+				os.Exit(130) // 128 + SIGINT(2)
+			case <-done:
+				// Graceful shutdown completed; goroutine exits cleanly.
+			}
+		}()
+
+		// Launch BubbleTea wizard (full-screen TUI). tea.run() blocks until
+		// the user exits the wizard or context is cancelled.
 		wizardScript := engine.LoadScriptFromString(
 			"pr-split/wizard-launch",
 			`globalThis.prSplit.startWizard();`)

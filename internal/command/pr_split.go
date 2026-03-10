@@ -67,6 +67,15 @@ var prSplitChunk12Exports string
 //go:embed pr_split_13_tui.js
 var prSplitChunk13TUI string
 
+//go:embed pr_split_14_tui_commands.js
+var prSplitChunk14TUICommands string
+
+//go:embed pr_split_15_tui_views.js
+var prSplitChunk15TUIViews string
+
+//go:embed pr_split_16_tui_core.js
+var prSplitChunk16TUICore string
+
 // prSplitChunks defines the ordered sequence of chunk files for the split
 // architecture. Each entry is (name, source) loaded in order.
 var prSplitChunks = []struct {
@@ -87,6 +96,9 @@ var prSplitChunks = []struct {
 	{"11_utilities", &prSplitChunk11Utilities},
 	{"12_exports", &prSplitChunk12Exports},
 	{"13_tui", &prSplitChunk13TUI},
+	{"14_tui_commands", &prSplitChunk14TUICommands},
+	{"15_tui_views", &prSplitChunk15TUIViews},
+	{"16_tui_core", &prSplitChunk16TUICore},
 }
 
 // loadChunkedScript loads all pr-split chunk files in order into the engine.

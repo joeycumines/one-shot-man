@@ -10,13 +10,14 @@ import (
 //  Chunk 13: TUI — command dispatch, buildReport, mode registration
 // ---------------------------------------------------------------------------
 
-// allChunksForTUI lists all 14 chunks needed for full TUI tests.
+// allChunksForTUI lists all 17 chunks needed for full TUI tests.
 // Not used directly with loadChunkEngine (since TUI needs mock globals
-// injected between 00-12 and 13), but referenced in documentation.
+// injected between 00-12 and 13-16), but referenced in documentation.
 var _ = []string{ // compile-time proof the list is valid
 	"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation",
 	"05_execution", "06_verification", "07_prcreation", "08_conflict",
-	"09_claude", "10_pipeline", "11_utilities", "12_exports", "13_tui",
+	"09_claude", "10_pipeline", "11_utilities", "12_exports",
+	"13_tui", "14_tui_commands", "15_tui_views", "16_tui_core",
 }
 
 // setupTUIMocks is JS that sets up minimal tui/ctx/output/log mocks
@@ -62,7 +63,7 @@ const setupTUIMocks = `
 })();
 `
 
-// loadTUIEngine loads chunks 00-12, injects TUI mocks, then loads chunk 13.
+// loadTUIEngine loads chunks 00-12, injects TUI mocks, then loads chunks 13-16.
 // Returns evalJS function.
 func loadTUIEngine(t testing.TB) func(string) (any, error) {
 	t.Helper()
@@ -74,9 +75,20 @@ func loadTUIEngine(t testing.TB) func(string) (any, error) {
 		t.Fatalf("failed to inject TUI mocks: %v", err)
 	}
 
-	// Evaluate chunk 13 source directly.
-	if _, err := evalJS(prSplitChunk13TUI); err != nil {
-		t.Fatalf("failed to load chunk 13: %v", err)
+	// Evaluate TUI chunks (13-16) in order.
+	tuiChunks := []struct {
+		name   string
+		source string
+	}{
+		{"13_tui", prSplitChunk13TUI},
+		{"14_tui_commands", prSplitChunk14TUICommands},
+		{"15_tui_views", prSplitChunk15TUIViews},
+		{"16_tui_core", prSplitChunk16TUICore},
+	}
+	for _, chunk := range tuiChunks {
+		if _, err := evalJS(chunk.source); err != nil {
+			t.Fatalf("failed to load chunk %s: %v", chunk.name, err)
+		}
 	}
 
 	return evalJS
@@ -98,9 +110,20 @@ func TestChunk13_GuardSkipsWithoutTUI(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Chunk 13 should not crash even without tui/ctx/output.
-	if _, err := evalJS(prSplitChunk13TUI); err != nil {
-		t.Fatalf("chunk 13 should not error without TUI globals: %v", err)
+	// Chunks 13-16 should not crash even without tui/ctx/output.
+	tuiChunks := []struct {
+		name   string
+		source string
+	}{
+		{"13_tui", prSplitChunk13TUI},
+		{"14_tui_commands", prSplitChunk14TUICommands},
+		{"15_tui_views", prSplitChunk15TUIViews},
+		{"16_tui_core", prSplitChunk16TUICore},
+	}
+	for _, chunk := range tuiChunks {
+		if _, err := evalJS(chunk.source); err != nil {
+			t.Fatalf("chunk %s should not error without TUI globals: %v", chunk.name, err)
+		}
 	}
 
 	// _buildCommands should NOT be defined since the guard bailed out.

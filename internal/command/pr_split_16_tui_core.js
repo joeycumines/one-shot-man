@@ -1,0 +1,1045 @@
+'use strict';
+// pr_split_16_tui_core.js — TUI: BubbleTea model, update/view, handlers, pipeline, launch
+// Dependencies: chunks 00-15 must be loaded first.
+// Requires Go-injected globals: tui, ctx, output, log, prSplitConfig, tuiMux.
+
+(function(prSplit) {
+
+    if (typeof tui === 'undefined' || typeof ctx === 'undefined' ||
+        typeof output === 'undefined') { return; }
+
+    // Cross-chunk imports — libraries from chunk 15.
+    var tea = prSplit._tea;
+    var lipgloss = prSplit._lipgloss;
+    var zone = prSplit._zone;
+    var viewportLib = prSplit._viewportLib;
+    var scrollbarLib = prSplit._scrollbarLib;
+    var COLORS = prSplit._COLORS;
+    var resolveColor = prSplit._resolveColor;
+    var repeatStr = prSplit._repeatStr;
+    var styles = prSplit._wizardStyles;
+
+    // Cross-chunk imports — renderers and views from chunk 15.
+    var renderTitleBar = prSplit._renderTitleBar;
+    var renderNavBar = prSplit._renderNavBar;
+    var renderStatusBar = prSplit._renderStatusBar;
+    var renderProgressBar = prSplit._renderProgressBar;
+    var viewForState = prSplit._viewForState;
+    var viewHelpOverlay = prSplit._viewHelpOverlay;
+    var viewConfirmCancelOverlay = prSplit._viewConfirmCancelOverlay;
+
+    // Cross-chunk imports — state and handlers from chunks 13-14.
+    var st = prSplit._state;
+    var tuiState = prSplit._tuiState;
+    var WizardState = prSplit.WizardState;
+    var buildReport = prSplit._buildReport;
+    var buildCommands = prSplit._buildCommands;
+    var handleConfigState = prSplit._handleConfigState;
+    var handlePlanReviewState = prSplit._handlePlanReviewState;
+    var handlePlanEditorState = prSplit._handlePlanEditorState;
+    var handleEquivCheckState = prSplit._handleEquivCheckState;
+    var handleErrorResolutionState = prSplit._handleErrorResolutionState;
+    var handleFinalizationState = prSplit._handleFinalizationState;
+
+    // -----------------------------------------------------------------------
+    //  BubbleTea Model — init / update / view (T020-T025)
+    // -----------------------------------------------------------------------
+
+    function createWizardModel() {
+        var wizard = new WizardState();
+        prSplit._wizardState = wizard;
+
+        // Track transitions to update the TUI model state.
+        wizard.onTransition(function(from, to, data) {
+            log.printf('wizard: %s \u2192 %s', from, to);
+        });
+
+        var vp = viewportLib.new(80, 24);
+        vp.setMouseWheelEnabled(true);
+        var sb = scrollbarLib.new();
+
+        // Named lifecycle functions — exported for unit testing.
+        var _initFn = function() {
+            return {
+                // Wizard state.
+                wizard: wizard,
+                wizardState: 'IDLE',
+
+                // Dimensions.
+                width: 80,
+                height: 24,
+
+                // Viewport.
+                vp: vp,
+                scrollbar: sb,
+
+                // Time.
+                startTime: Date.now(),
+
+                // UI state.
+                showHelp: false,
+                showConfirmCancel: false,
+                showAdvanced: false,
+                selectedSplitIdx: 0,
+                isProcessing: false,
+
+                // Analysis progress.
+                analysisSteps: [],
+                analysisProgress: -1,
+
+                // Execution state.
+                executionResults: [],
+                executingIdx: 0,
+
+                // Results.
+                equivalenceResult: null,
+                errorDetails: null,
+
+                // First render flag.
+                needsInitClear: true
+            };
+        };
+
+        var _updateFn = function(msg, s) {
+            // WindowSize — always handle.
+            if (msg.type === 'WindowSize') {
+                s.width = msg.width;
+                s.height = msg.height;
+
+                if (s.needsInitClear) {
+                    s.needsInitClear = false;
+                    // Start the wizard on first render.
+                    s.wizardState = 'CONFIG';
+                    wizard.transition('CONFIG');
+                    return [s, tea.clearScreen()];
+                }
+                return [s, null];
+            }
+
+            // Overlays intercept all input when active.
+            if (s.showHelp) {
+                if (msg.type === 'Key') {
+                    // Any key closes help.
+                    s.showHelp = false;
+                    return [s, null];
+                }
+                return [s, null];
+            }
+
+            if (s.showConfirmCancel) {
+                return updateConfirmCancel(msg, s);
+            }
+
+            // Global key bindings.
+            if (msg.type === 'Key') {
+                var k = msg.key;
+                // Help toggle.
+                if (k === '?' || k === 'f1') {
+                    s.showHelp = true;
+                    return [s, null];
+                }
+                // Cancel.
+                if (k === 'ctrl+c') {
+                    s.showConfirmCancel = true;
+                    return [s, null];
+                }
+                // Escape — back or close.
+                if (k === 'esc') {
+                    return handleBack(s);
+                }
+                // Enter — forward action.
+                if (k === 'enter') {
+                    return handleNext(s);
+                }
+                // Navigation: j/k, up/down, tab/shift+tab.
+                if (k === 'j' || k === 'down') {
+                    return handleNavDown(s);
+                }
+                if (k === 'k' || k === 'up') {
+                    return handleNavUp(s);
+                }
+                if (k === 'tab') {
+                    return handleNavDown(s);
+                }
+                if (k === 'shift+tab') {
+                    return handleNavUp(s);
+                }
+                // Viewport scroll.
+                if (k === 'pgdown') {
+                    if (s.vp) s.vp.halfPageDown();
+                    return [s, null];
+                }
+                if (k === 'pgup') {
+                    if (s.vp) s.vp.halfPageUp();
+                    return [s, null];
+                }
+                if (k === 'home') {
+                    if (s.vp) s.vp.gotoTop();
+                    return [s, null];
+                }
+                if (k === 'end') {
+                    if (s.vp) s.vp.gotoBottom();
+                    return [s, null];
+                }
+                // Screen-specific key shortcuts.
+                if (k === 'e' && s.wizardState === 'PLAN_REVIEW' && !s.isProcessing) {
+                    // Enter plan editor.
+                    s.wizard.transition('PLAN_EDITOR');
+                    s.wizardState = 'PLAN_EDITOR';
+                    return [s, null];
+                }
+                // termmux toggle.
+                if (k === 'ctrl+]') {
+                    if (typeof tuiMux !== 'undefined' && tuiMux &&
+                        typeof tuiMux.switchTo === 'function') {
+                        tuiMux.switchTo('claude');
+                    }
+                    return [s, null];
+                }
+            }
+
+            // Mouse handling.
+            if (msg.type === 'Mouse' && msg.action === 'press') {
+                return handleMouseClick(msg, s);
+            }
+
+            // Mouse wheel for viewport.
+            if (msg.type === 'Mouse') {
+                if (msg.action === 'wheelUp' && s.vp) {
+                    s.vp.scrollUp(3);
+                    return [s, null];
+                }
+                if (msg.action === 'wheelDown' && s.vp) {
+                    s.vp.scrollDown(3);
+                    return [s, null];
+                }
+            }
+
+            // Tick-based async analysis steps.
+            // Each step runs synchronously but yields between steps for rendering and cancel.
+            if (msg.type === 'Tick') {
+                if (msg.id === 'analysis-step-0') {
+                    return runAnalysisStep(s, 0);
+                }
+                if (msg.id === 'analysis-step-1') {
+                    return runAnalysisStep(s, 1);
+                }
+                if (msg.id === 'analysis-step-2') {
+                    return runAnalysisStep(s, 2);
+                }
+                if (msg.id === 'analysis-step-3') {
+                    return runAnalysisStep(s, 3);
+                }
+                // Execution steps.
+                if (msg.id === 'exec-step-0') {
+                    return runExecutionStep(s, 0);
+                }
+                if (msg.id === 'exec-step-1') {
+                    return runExecutionStep(s, 1);
+                }
+                // Automated pipeline polling.
+                if (msg.id === 'auto-poll') {
+                    return handleAutoSplitPoll(s);
+                }
+                return [s, null];
+            }
+
+            return [s, null];
+        };
+
+        var _viewFn = function(s) {
+            var w = s.width || 80;
+            var h = s.height || 24;
+
+            // Title bar.
+            var titleBar = renderTitleBar(s);
+
+            // Divider.
+            var divider = styles.divider().render(repeatStr('\u2500', w));
+
+            // Navigation bar.
+            var navBar = renderNavBar(s);
+
+            // Status bar.
+            var statusBar = renderStatusBar(s);
+
+            // Screen content.
+            var screenContent = viewForState(s);
+
+            // Wrap in viewport.
+            if (s.vp) {
+                s.vp.setWidth(w);
+                // Reserve chrome lines dynamically from actual rendered heights.
+                // +2 for the two dividers (each 1 line).
+                var chromeH = lipgloss.height(titleBar) + 2 + lipgloss.height(navBar) + lipgloss.height(statusBar);
+                var vpHeight = Math.max(3, h - chromeH);
+                s.vp.setHeight(vpHeight);
+                s.vp.setContent(screenContent);
+
+                // Scrollbar.
+                if (s.scrollbar) {
+                    s.scrollbar.setViewportHeight(vpHeight);
+                    s.scrollbar.setContentHeight(s.vp.totalLineCount());
+                    s.scrollbar.setYOffset(s.vp.yOffset());
+                    s.scrollbar.setChars('\u2588', '\u2591');
+                    s.scrollbar.setThumbForeground(resolveColor(COLORS.primary));
+                    s.scrollbar.setTrackForeground(resolveColor(COLORS.border));
+                }
+
+                var vpView = s.vp.view();
+                var sbView = s.scrollbar ? s.scrollbar.view() : '';
+                screenContent = lipgloss.joinHorizontal(lipgloss.Top, vpView, sbView);
+            }
+
+            // Compose.
+            var fullView = lipgloss.joinVertical(lipgloss.Left,
+                titleBar,
+                divider,
+                screenContent,
+                divider,
+                navBar,
+                statusBar
+            );
+
+            // Overlay: Help.
+            if (s.showHelp) {
+                var helpPanel = viewHelpOverlay(s);
+                fullView = lipgloss.place(w, h,
+                    lipgloss.Center, lipgloss.Center,
+                    helpPanel,
+                    {whitespaceChars: '\u2591', whitespaceForeground: COLORS.border});
+            }
+
+            // Overlay: Confirm Cancel.
+            if (s.showConfirmCancel) {
+                var confirmPanel = viewConfirmCancelOverlay(s);
+                fullView = lipgloss.place(w, h,
+                    lipgloss.Center, lipgloss.Center,
+                    confirmPanel,
+                    {whitespaceChars: '\u2591', whitespaceForeground: COLORS.border});
+            }
+
+            return zone.scan(fullView);
+        };
+
+        var model = tea.newModel({
+            init: _initFn,
+
+            update: _updateFn,
+
+            view: _viewFn
+        });
+
+        // Export lifecycle functions for unit testing.
+        prSplit._wizardInit = _initFn;
+        prSplit._wizardUpdate = _updateFn;
+        prSplit._wizardView = _viewFn;
+
+        return model;
+    }
+
+    // -----------------------------------------------------------------------
+    //  Update Handlers — screen-specific input handling
+    // -----------------------------------------------------------------------
+
+    function updateConfirmCancel(msg, s) {
+        if (msg.type === 'Key') {
+            var k = msg.key;
+            if (k === 'y' || k === 'enter') {
+                s.showConfirmCancel = false;
+                s.wizard.cancel();
+                s.wizardState = 'CANCELLED';
+                return [s, tea.quit()];
+            }
+            if (k === 'n' || k === 'esc') {
+                s.showConfirmCancel = false;
+                return [s, null];
+            }
+        }
+        if (msg.type === 'Mouse' && msg.action === 'press') {
+            if (zone.inBounds('confirm-yes', msg)) {
+                s.showConfirmCancel = false;
+                s.wizard.cancel();
+                s.wizardState = 'CANCELLED';
+                return [s, tea.quit()];
+            }
+            if (zone.inBounds('confirm-no', msg)) {
+                s.showConfirmCancel = false;
+                return [s, null];
+            }
+        }
+        return [s, null];
+    }
+
+    function handleMouseClick(msg, s) {
+        // Navigation bar clicks.
+        if (zone.inBounds('nav-back', msg)) {
+            return handleBack(s);
+        }
+        if (zone.inBounds('nav-cancel', msg)) {
+            s.showConfirmCancel = true;
+            return [s, null];
+        }
+        if (zone.inBounds('nav-next', msg)) {
+            return handleNext(s);
+        }
+        // Claude status badge.
+        if (zone.inBounds('claude-status', msg)) {
+            if (typeof tuiMux !== 'undefined' && tuiMux &&
+                typeof tuiMux.switchTo === 'function') {
+                tuiMux.switchTo('claude');
+            }
+            return [s, null];
+        }
+        // Screen-specific zone clicks.
+        return handleScreenMouseClick(msg, s);
+    }
+
+    function handleScreenMouseClick(msg, s) {
+        // Config screen: strategy selection, advanced toggle.
+        if (s.wizardState === 'CONFIG' || s.wizardState === 'IDLE') {
+            var strategies = ['auto', 'heuristic', 'directory'];
+            for (var si = 0; si < strategies.length; si++) {
+                if (zone.inBounds('strategy-' + strategies[si], msg)) {
+                    prSplit.runtime.mode = strategies[si];
+                    return [s, null];
+                }
+            }
+            if (zone.inBounds('toggle-advanced', msg)) {
+                s.showAdvanced = !s.showAdvanced;
+                return [s, null];
+            }
+        }
+
+        // Plan review: split card selection + edit button.
+        if (s.wizardState === 'PLAN_REVIEW') {
+            if (st.planCache && st.planCache.splits) {
+                for (var i = 0; i < st.planCache.splits.length; i++) {
+                    if (zone.inBounds('split-card-' + i, msg)) {
+                        s.selectedSplitIdx = i;
+                        return [s, null];
+                    }
+                }
+            }
+            if (zone.inBounds('plan-edit', msg) && !s.isProcessing) {
+                s.wizard.transition('PLAN_EDITOR');
+                s.wizardState = 'PLAN_EDITOR';
+                return [s, null];
+            }
+            if (zone.inBounds('plan-regenerate', msg) && !s.isProcessing) {
+                handlePlanReviewState(s.wizard, 'regenerate');
+                s.wizardState = 'CONFIG';
+                s.wizard.reset();
+                s.wizard.transition('CONFIG');
+                return [s, null];
+            }
+        }
+
+        // Plan editor: split selection, file selection, action buttons.
+        if (s.wizardState === 'PLAN_EDITOR') {
+            if (st.planCache && st.planCache.splits) {
+                for (var i = 0; i < st.planCache.splits.length; i++) {
+                    if (zone.inBounds('edit-split-' + i, msg)) {
+                        s.selectedSplitIdx = i;
+                        return [s, null];
+                    }
+                    // File selection within currently selected split.
+                    if (i === (s.selectedSplitIdx || 0) && st.planCache.splits[i].files) {
+                        for (var fi = 0; fi < st.planCache.splits[i].files.length; fi++) {
+                            if (zone.inBounds('edit-file-' + i + '-' + fi, msg)) {
+                                s.selectedFileIdx = fi;
+                                return [s, null];
+                            }
+                        }
+                    }
+                }
+            }
+            // Editor action buttons.
+            if (zone.inBounds('editor-move', msg)) {
+                // TODO: Implement move-file dialog (future enhancement).
+                log.printf('editor-move: not yet implemented');
+                return [s, null];
+            }
+            if (zone.inBounds('editor-rename', msg)) {
+                // TODO: Implement rename-split dialog (future enhancement).
+                log.printf('editor-rename: not yet implemented');
+                return [s, null];
+            }
+            if (zone.inBounds('editor-merge', msg)) {
+                // TODO: Implement merge-splits dialog (future enhancement).
+                log.printf('editor-merge: not yet implemented');
+                return [s, null];
+            }
+        }
+
+        // Error resolution: resolution choice buttons.
+        if (s.wizardState === 'ERROR_RESOLUTION') {
+            var resolveChoices = ['auto', 'manual', 'skip', 'retry', 'abort'];
+            for (var ri = 0; ri < resolveChoices.length; ri++) {
+                if (zone.inBounds('resolve-' + resolveChoices[ri], msg)) {
+                    return handleErrorResolutionChoice(s, resolveChoices[ri] === 'auto' ? 'auto-resolve' : resolveChoices[ri]);
+                }
+            }
+        }
+
+        // Finalization: action buttons.
+        if (s.wizardState === 'FINALIZATION') {
+            if (zone.inBounds('final-report', msg)) {
+                output.print(JSON.stringify(buildReport(), null, 2));
+                return [s, null];
+            }
+            if (zone.inBounds('final-create-prs', msg)) {
+                handleFinalizationState(s.wizard, 'create-prs');
+                return [s, null];
+            }
+            if (zone.inBounds('final-done', msg)) {
+                handleFinalizationState(s.wizard, 'done');
+                s.wizardState = 'DONE';
+                return [s, tea.quit()];
+            }
+        }
+
+        return [s, null];
+    }
+
+    // -----------------------------------------------------------------------
+    //  Navigation Handlers — Back / Next / Up / Down
+    // -----------------------------------------------------------------------
+
+    function handleBack(s) {
+        switch (s.wizardState) {
+            case 'PLAN_REVIEW':
+                s.wizardState = 'CONFIG';
+                s.wizard.reset();
+                s.wizard.transition('CONFIG');
+                return [s, null];
+            case 'PLAN_EDITOR':
+                s.wizardState = 'PLAN_REVIEW';
+                handlePlanEditorState(s.wizard, 'back', st.planCache);
+                return [s, null];
+            default:
+                return [s, null];
+        }
+    }
+
+    function handleNext(s) {
+        if (s.isProcessing) return [s, null];
+
+        switch (s.wizardState) {
+            case 'IDLE':
+            case 'CONFIG':
+                // If mode is 'auto' (AI-assisted), dispatch the full
+                // automated pipeline (Claude classification → plan → execute).
+                if (prSplit.runtime.mode === 'auto') {
+                    return startAutoAnalysis(s);
+                }
+                return startAnalysis(s);
+            case 'PLAN_REVIEW':
+                return startExecution(s);
+            case 'PLAN_EDITOR':
+                // Save edits and return to review.
+                handlePlanEditorState(s.wizard, 'save', st.planCache);
+                s.wizardState = 'PLAN_REVIEW';
+                return [s, null];
+            case 'ERROR_RESOLUTION':
+                return handleErrorResolutionChoice(s, 'auto-resolve');
+            case 'FINALIZATION':
+                handleFinalizationState(s.wizard, 'done');
+                s.wizardState = 'DONE';
+                return [s, tea.quit()];
+            default:
+                return [s, null];
+        }
+    }
+
+    function handleNavDown(s) {
+        if (s.wizardState === 'PLAN_REVIEW' || s.wizardState === 'PLAN_EDITOR') {
+            if (st.planCache && st.planCache.splits) {
+                s.selectedSplitIdx = Math.min(
+                    (s.selectedSplitIdx || 0) + 1,
+                    st.planCache.splits.length - 1
+                );
+            }
+        }
+        return [s, null];
+    }
+
+    function handleNavUp(s) {
+        if (s.wizardState === 'PLAN_REVIEW' || s.wizardState === 'PLAN_EDITOR') {
+            s.selectedSplitIdx = Math.max((s.selectedSplitIdx || 0) - 1, 0);
+        }
+        return [s, null];
+    }
+
+    // -----------------------------------------------------------------------
+    //  Async Pipeline Handlers — drive wizard state machine
+    // -----------------------------------------------------------------------
+
+    function startAnalysis(s) {
+        s.isProcessing = true;
+        s.analysisProgress = 0;
+        s.analysisSteps = [
+            { label: 'Analyze diff', active: true, done: false },
+            { label: 'Group files', active: false, done: false },
+            { label: 'Generate plan', active: false, done: false },
+            { label: 'Validate plan', active: false, done: false }
+        ];
+
+        // Run config state handler.
+        var configResult = handleConfigState({
+            baseBranch: prSplit.runtime.baseBranch,
+            dir: prSplit.runtime.dir,
+            strategy: prSplit.runtime.strategy,
+            verifyCommand: prSplit.runtime.verifyCommand
+        });
+
+        if (configResult.error) {
+            s.isProcessing = false;
+            s.errorDetails = configResult.error;
+            s.wizardState = 'ERROR';
+            return [s, null];
+        }
+
+        // Transition to CONFIG if needed.
+        if (s.wizard.current === 'IDLE') {
+            s.wizard.transition('CONFIG');
+        }
+
+        // Dispatch first analysis step via tick to yield for rendering.
+        // Each step runs on the next tick, allowing BubbleTea to render
+        // progress between steps and letting the user cancel with Ctrl+C.
+        return [s, tea.tick(1, 'analysis-step-0')];
+    }
+
+    // runAnalysisStep: Runs a single analysis step synchronously, then
+    // dispatches the next step via tick. Each step blocks the event loop
+    // for its duration (~1-5s), but between steps the UI can render and
+    // the user can cancel.
+    function runAnalysisStep(s, stepIdx) {
+        // If processing was cancelled (e.g., user hit Ctrl+C between steps),
+        // bail out without running the step.
+        if (!s.isProcessing) {
+            return [s, null];
+        }
+
+        switch (stepIdx) {
+        case 0: {
+            // Step 1: Analyze diff.
+            s.analysisSteps[0].active = true;
+            var analysisStart = Date.now();
+            try {
+                st.analysisCache = prSplit.analyzeDiff({ baseBranch: prSplit.runtime.baseBranch });
+            } catch (e) {
+                s.isProcessing = false;
+                s.errorDetails = 'Analysis failed: ' + (e.message || String(e));
+                s.wizardState = 'ERROR';
+                return [s, null];
+            }
+            s.analysisSteps[0].done = true;
+            s.analysisSteps[0].active = false;
+            s.analysisSteps[0].elapsed = Date.now() - analysisStart;
+            s.analysisProgress = 0.25;
+
+            if (st.analysisCache.error) {
+                s.isProcessing = false;
+                s.errorDetails = st.analysisCache.error;
+                s.wizardState = 'ERROR';
+                return [s, null];
+            }
+            if (!st.analysisCache.files || st.analysisCache.files.length === 0) {
+                s.isProcessing = false;
+                s.errorDetails = 'No changes found between branches.';
+                s.wizardState = 'CONFIG';
+                return [s, null];
+            }
+
+            // Yield for render, then dispatch step 1.
+            return [s, tea.tick(1, 'analysis-step-1')];
+        }
+        case 1: {
+            // Step 2: Group files.
+            s.analysisSteps[1].active = true;
+            var groupStart = Date.now();
+            st.groupsCache = prSplit.applyStrategy(
+                st.analysisCache.files, prSplit.runtime.strategy);
+            s.analysisSteps[1].done = true;
+            s.analysisSteps[1].active = false;
+            s.analysisSteps[1].elapsed = Date.now() - groupStart;
+            s.analysisProgress = 0.5;
+
+            // Yield for render, then dispatch step 2.
+            return [s, tea.tick(1, 'analysis-step-2')];
+        }
+        case 2: {
+            // Step 3: Create plan.
+            s.analysisSteps[2].active = true;
+            var planStart = Date.now();
+            st.planCache = prSplit.createSplitPlan(st.groupsCache, {
+                baseBranch: prSplit.runtime.baseBranch,
+                sourceBranch: st.analysisCache.currentBranch,
+                branchPrefix: prSplit.runtime.branchPrefix,
+                verifyCommand: prSplit.runtime.verifyCommand,
+                fileStatuses: st.analysisCache.fileStatuses
+            });
+            s.analysisSteps[2].done = true;
+            s.analysisSteps[2].active = false;
+            s.analysisSteps[2].elapsed = Date.now() - planStart;
+            s.analysisProgress = 0.75;
+
+            // Yield for render, then dispatch step 3.
+            return [s, tea.tick(1, 'analysis-step-3')];
+        }
+        case 3: {
+            // Step 4: Validate.
+            s.analysisSteps[3].active = true;
+            var validation = prSplit.validatePlan(st.planCache);
+            s.analysisSteps[3].done = true;
+            s.analysisSteps[3].active = false;
+            s.analysisProgress = 1.0;
+
+            if (!validation.valid) {
+                s.isProcessing = false;
+                s.errorDetails = 'Plan validation failed: ' + validation.errors.join('; ');
+                s.wizardState = 'ERROR';
+                return [s, null];
+            }
+
+            s.isProcessing = false;
+
+            // Transition wizard to PLAN_GENERATION then PLAN_REVIEW.
+            if (s.wizard.current === 'CONFIG') {
+                s.wizard.transition('PLAN_GENERATION');
+            }
+            s.wizard.transition('PLAN_REVIEW');
+            s.wizardState = 'PLAN_REVIEW';
+            return [s, null];
+        }
+        default:
+            return [s, null];
+        }
+    }
+
+    // startAutoAnalysis: Dispatches the full automated pipeline (Claude
+    // classification → plan → execute → verify) as an async Promise.
+    // The pipeline runs on the JS event loop independently. We poll for
+    // completion via ticks so BubbleTea can render progress and the user
+    // can cancel.
+    function startAutoAnalysis(s) {
+        s.isProcessing = true;
+        s.analysisProgress = 0;
+        s.analysisSteps = [
+            { label: 'Spawning Claude', active: true, done: false },
+            { label: 'Classifying files', active: false, done: false },
+            { label: 'Generating plan', active: false, done: false },
+            { label: 'Executing splits', active: false, done: false }
+        ];
+
+        // Run config state handler (same as heuristic path).
+        var configResult = handleConfigState({
+            baseBranch: prSplit.runtime.baseBranch,
+            dir: prSplit.runtime.dir,
+            strategy: prSplit.runtime.strategy,
+            verifyCommand: prSplit.runtime.verifyCommand
+        });
+
+        if (configResult.error) {
+            s.isProcessing = false;
+            s.errorDetails = configResult.error;
+            s.wizardState = 'ERROR';
+            return [s, null];
+        }
+
+        if (s.wizard.current === 'IDLE') {
+            s.wizard.transition('CONFIG');
+        }
+
+        // Initialize Claude executor if needed.
+        if (!st.claudeExecutor) {
+            st.claudeExecutor = new (prSplit.ClaudeCodeExecutor)(prSplitConfig);
+        }
+
+        // Verify Claude is available before launching pipeline.
+        if (!st.claudeExecutor.isAvailable()) {
+            // Fall back to heuristic analysis.
+            log.printf('auto-analysis: Claude not available — falling back to heuristic');
+            return startAnalysis(s);
+        }
+
+        // Build config for automatedSplit (mirrors REPL 'run' command).
+        var autoConfig = {
+            baseBranch: prSplit.runtime.baseBranch,
+            strategy: prSplit.runtime.strategy,
+            cleanupOnFailure: prSplitConfig.cleanupOnFailure
+        };
+        if (prSplitConfig.timeoutMs > 0) {
+            autoConfig.classifyTimeoutMs = prSplitConfig.timeoutMs;
+            autoConfig.planTimeoutMs = prSplitConfig.timeoutMs;
+            autoConfig.resolveTimeoutMs = prSplitConfig.timeoutMs;
+            autoConfig.verifyTimeoutMs = prSplitConfig.timeoutMs;
+        }
+
+        // Launch the pipeline as an async Promise. It runs on the JS
+        // event loop independently of BubbleTea's message loop.
+        s.autoSplitRunning = true;
+        s.autoSplitResult = null;
+        prSplit.automatedSplit(autoConfig).then(
+            function(result) {
+                s.autoSplitResult = result;
+                s.autoSplitRunning = false;
+            },
+            function(err) {
+                s.autoSplitResult = { error: (err && err.message) ? err.message : String(err) };
+                s.autoSplitRunning = false;
+            }
+        );
+
+        // Poll for completion every 500ms.
+        return [s, tea.tick(500, 'auto-poll')];
+    }
+
+    // handleAutoSplitPoll: Called every 500ms to check if the async
+    // automatedSplit pipeline has completed. Updates progress indicators
+    // and handles the final result.
+    function handleAutoSplitPoll(s) {
+        // If cancelled, stop polling.
+        if (!s.isProcessing) {
+            return [s, null];
+        }
+
+        // Still running — update progress from pipeline state and poll again.
+        if (s.autoSplitRunning) {
+            // Read progress from pipeline's telemetry state.
+            var pipelineState = prSplit._state || {};
+            var telemetry = pipelineState.telemetryData || {};
+
+            // Infer progress from what caches are populated.
+            if (pipelineState.planCache) {
+                s.analysisSteps[0].done = true; s.analysisSteps[0].active = false;
+                s.analysisSteps[1].done = true; s.analysisSteps[1].active = false;
+                s.analysisSteps[2].done = true; s.analysisSteps[2].active = false;
+                s.analysisSteps[3].active = true;
+                s.analysisProgress = 0.75;
+            } else if (pipelineState.groupsCache) {
+                s.analysisSteps[0].done = true; s.analysisSteps[0].active = false;
+                s.analysisSteps[1].done = true; s.analysisSteps[1].active = false;
+                s.analysisSteps[2].active = true;
+                s.analysisProgress = 0.5;
+            } else if (pipelineState.analysisCache) {
+                s.analysisSteps[0].done = true; s.analysisSteps[0].active = false;
+                s.analysisSteps[1].active = true;
+                s.analysisProgress = 0.25;
+            }
+
+            return [s, tea.tick(500, 'auto-poll')];
+        }
+
+        // Pipeline completed — process result.
+        var result = s.autoSplitResult;
+        s.isProcessing = false;
+
+        if (result && result.error) {
+            s.errorDetails = result.error;
+            s.wizardState = 'ERROR';
+            return [s, null];
+        }
+
+        // Populate caches from pipeline report.
+        var report = (result && result.report) || {};
+        if (report.analysis) { st.analysisCache = report.analysis; }
+        if (report.classification) { st.groupsCache = report.classification; }
+        if (report.plan) { st.planCache = report.plan; }
+        if (report.splits) {
+            st.executionResultCache = report.splits;
+            s.executionResults = report.splits;
+        }
+        if (report.equivalence) {
+            s.equivalenceResult = report.equivalence;
+        }
+
+        // Mark all analysis steps done.
+        for (var i = 0; i < s.analysisSteps.length; i++) {
+            s.analysisSteps[i].done = true;
+            s.analysisSteps[i].active = false;
+        }
+        s.analysisProgress = 1.0;
+
+        // Determine which state to transition to based on what the
+        // pipeline completed. If execution happened, go to EQUIV_CHECK
+        // or FINALIZATION. If only planning, go to PLAN_REVIEW.
+        if (s.wizard.current === 'IDLE' || s.wizard.current === 'CONFIG') {
+            s.wizard.transition('CONFIG');
+            s.wizard.transition('PLAN_GENERATION');
+        }
+
+        if (report.splits && report.splits.length > 0) {
+            // Pipeline completed execution — go to finalization.
+            s.wizard.transition('PLAN_REVIEW');
+            if (report.equivalence) {
+                s.wizard.transition('BRANCH_BUILDING');
+                s.wizard.transition('EQUIV_CHECK');
+                s.wizardState = s.wizard.current;
+            } else {
+                s.wizard.transition('BRANCH_BUILDING');
+                s.wizardState = 'BRANCH_BUILDING';
+            }
+        } else if (report.plan || st.planCache) {
+            // Pipeline completed planning — go to plan review.
+            s.wizard.transition('PLAN_REVIEW');
+            s.wizardState = 'PLAN_REVIEW';
+        } else {
+            // Pipeline didn't produce enough data — error.
+            s.errorDetails = 'Automated pipeline completed without a plan.';
+            s.wizardState = 'ERROR';
+        }
+
+        return [s, null];
+    }
+
+    function startExecution(s) {
+        if (!st.planCache || !st.planCache.splits || st.planCache.splits.length === 0) {
+            s.errorDetails = 'No plan to execute.';
+            return [s, null];
+        }
+
+        s.isProcessing = true;
+        s.executionResults = [];
+        s.executingIdx = 0;
+
+        // Transition: PLAN_REVIEW → BRANCH_BUILDING.
+        if (s.wizard.current === 'PLAN_REVIEW') {
+            handlePlanReviewState(s.wizard, 'approve');
+        }
+        s.wizardState = 'BRANCH_BUILDING';
+
+        // Dry run check — skip execution entirely.
+        if (prSplit.runtime.dryRun) {
+            s.isProcessing = false;
+            s.wizardState = 'FINALIZATION';
+            s.wizard.transition('FINALIZATION');
+            return [s, null];
+        }
+
+        // Dispatch first execution step via tick to yield for rendering.
+        return [s, tea.tick(1, 'exec-step-0')];
+    }
+
+    // runExecutionStep: Runs a single execution step synchronously, then
+    // dispatches the next step via tick. Yields between steps so the UI
+    // can render progress and the user can cancel.
+    function runExecutionStep(s, stepIdx) {
+        // If processing was cancelled between steps, bail out.
+        if (!s.isProcessing) {
+            return [s, null];
+        }
+
+        switch (stepIdx) {
+        case 0: {
+            // Step 1: Execute the split plan (create branches).
+            try {
+                var result = prSplit.executeSplit(st.planCache);
+                if (result.error) {
+                    s.isProcessing = false;
+                    s.errorDetails = result.error;
+                    s.wizard.data.failedBranches = result.results ?
+                        result.results.filter(function(r) { return r.error; }) : [];
+                    s.wizard.transition('ERROR_RESOLUTION');
+                    s.wizardState = 'ERROR_RESOLUTION';
+                    return [s, null];
+                }
+                st.executionResultCache = result.results;
+                s.executionResults = result.results || [];
+            } catch (e) {
+                s.isProcessing = false;
+                s.errorDetails = 'Execution error: ' + (e.message || String(e));
+                s.wizard.transition('ERROR_RESOLUTION');
+                s.wizardState = 'ERROR_RESOLUTION';
+                return [s, null];
+            }
+
+            // Yield for render, then run equivalence check.
+            return [s, tea.tick(1, 'exec-step-1')];
+        }
+        case 1: {
+            // Step 2: Equivalence check.
+            s.wizard.transition('EQUIV_CHECK');
+            s.wizardState = 'EQUIV_CHECK';
+
+            var equivResult = handleEquivCheckState(s.wizard, st.planCache);
+            s.isProcessing = false;
+            s.equivalenceResult = equivResult.equivalence || {};
+            s.wizardState = s.wizard.current;
+
+            return [s, null];
+        }
+        default:
+            return [s, null];
+        }
+    }
+
+    function handleErrorResolutionChoice(s, choice) {
+        var result = handleErrorResolutionState(s.wizard, choice);
+        s.wizardState = s.wizard.current;
+
+        if (choice === 'manual' && typeof tuiMux !== 'undefined' && tuiMux &&
+            typeof tuiMux.switchTo === 'function') {
+            tuiMux.switchTo('claude');
+        }
+
+        return [s, null];
+    }
+
+    // -----------------------------------------------------------------------
+    //  Program Launch (T025 + T027)
+    // -----------------------------------------------------------------------
+
+    var _wizardModel = createWizardModel();
+
+    // Export for Go-side launching and test access.
+    prSplit._wizardModel = _wizardModel;
+    prSplit._createWizardModel = createWizardModel;
+
+    // startWizard — called by pr_split.go to launch the BubbleTea wizard.
+    // Blocks the calling goroutine until the user exits the wizard.
+    prSplit.startWizard = function() {
+        return tea.run(_wizardModel, {altScreen: true, mouse: true});
+    };
+
+    // -----------------------------------------------------------------------
+    //  Mode Registration — commands remain for programmatic/test dispatch.
+    //  The BubbleTea wizard above is launched by pr_split.go for interactive
+    //  use. This registration exposes all commands so existing tests and
+    //  the scripting API continue to work.
+    // -----------------------------------------------------------------------
+
+    ctx.run('register-mode', function() {
+        var runtime = prSplit.runtime;
+        tui.registerMode({
+            name: prSplit._MODE_NAME,
+            tui: {
+                title: 'PR Split',
+                prompt: '(pr-split) > '
+            },
+            onEnter: function() {
+                output.print('PR Split Wizard active. Type "help" for commands.');
+                output.print('');
+                output.print('Config: base=' + runtime.baseBranch + ' strategy=' + runtime.strategy +
+                    ' max=' + runtime.maxFiles + (runtime.dryRun ? ' [DRY RUN]' : ''));
+            },
+            commands: function() {
+                return buildCommands(tuiState);
+            }
+        });
+    });
+
+    ctx.run('enter-pr-split', function() {
+        tui.switchMode(prSplit._MODE_NAME);
+    });
+
+})(globalThis.prSplit);
+
+// ---------------------------------------------------------------------------
+//  CommonJS exports for require() compatibility (test environments).
+// ---------------------------------------------------------------------------
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = globalThis.prSplit;
+}

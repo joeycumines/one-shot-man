@@ -199,20 +199,22 @@
             }
 
             // Mouse handling.
-            if (msg.type === 'Mouse' && msg.action === 'press') {
-                return handleMouseClick(msg, s);
-            }
-
-            // Mouse wheel for viewport.
-            if (msg.type === 'Mouse') {
-                if (msg.action === 'wheelUp' && s.vp) {
+            // Wheel events must be checked BEFORE press — wheel events
+            // have action:"press" AND isWheel:true, so the press guard
+            // would intercept them and send them to handleMouseClick.
+            if (msg.type === 'Mouse' && msg.isWheel && s.vp) {
+                if (msg.button === 'wheel up') {
                     s.vp.scrollUp(3);
                     return [s, null];
                 }
-                if (msg.action === 'wheelDown' && s.vp) {
+                if (msg.button === 'wheel down') {
                     s.vp.scrollDown(3);
                     return [s, null];
                 }
+            }
+
+            if (msg.type === 'Mouse' && msg.action === 'press' && !msg.isWheel) {
+                return handleMouseClick(msg, s);
             }
 
             // Tick-based async analysis steps.
@@ -590,11 +592,14 @@
         ];
 
         // Run config state handler.
+        // Pass outputFn to suppress output.print (which would corrupt
+        // BubbleTea terminal). Use log.printf instead — safe in TUI context.
         var configResult = handleConfigState({
             baseBranch: prSplit.runtime.baseBranch,
             dir: prSplit.runtime.dir,
             strategy: prSplit.runtime.strategy,
-            verifyCommand: prSplit.runtime.verifyCommand
+            verifyCommand: prSplit.runtime.verifyCommand,
+            outputFn: function(s) { log.printf('wizard: %s', s); }
         });
 
         if (configResult.error) {
@@ -739,11 +744,13 @@
         ];
 
         // Run config state handler (same as heuristic path).
+        // Pass outputFn to suppress output.print in TUI context.
         var configResult = handleConfigState({
             baseBranch: prSplit.runtime.baseBranch,
             dir: prSplit.runtime.dir,
             strategy: prSplit.runtime.strategy,
-            verifyCommand: prSplit.runtime.verifyCommand
+            verifyCommand: prSplit.runtime.verifyCommand,
+            outputFn: function(s) { log.printf('wizard: %s', s); }
         });
 
         if (configResult.error) {

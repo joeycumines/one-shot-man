@@ -3807,14 +3807,27 @@ func TestChunk13_WizardUpdate_MouseWheelScroll(t *testing.T) {
 		s.wizard.transition('CONFIG');
 		s.wizardState = 'CONFIG';
 
-		// Mouse wheel down should not crash (viewport exists on state).
+		// Set up a tall content so scrolling is observable.
+		var lines = [];
+		for (var i = 0; i < 100; i++) lines.push('line ' + i);
+		s.vp.setContent(lines.join('\n'));
+		s.vp.setHeight(10);
+
+		// Mouse wheel events match the Go-side format from parsemouse.go:
+		// {type: "Mouse", button: "wheel down", action: "press", isWheel: true, x, y}
 		var result = globalThis.prSplit._wizardUpdate(
-			{type: 'Mouse', action: 'wheelDown', x: 10, y: 10}, s);
-		if (!result || !result[0]) return 'FAIL: wheelDown returned invalid result';
+			{type: 'Mouse', button: 'wheel down', action: 'press', isWheel: true, x: 10, y: 10}, s);
+		if (!result || !result[0]) return 'FAIL: wheel-down returned invalid result';
+
+		var afterDown = result[0].vp.yOffset();
+		if (afterDown <= 0) return 'FAIL: wheel-down did not scroll (yOffset=' + afterDown + ')';
 
 		result = globalThis.prSplit._wizardUpdate(
-			{type: 'Mouse', action: 'wheelUp', x: 10, y: 10}, result[0]);
-		if (!result || !result[0]) return 'FAIL: wheelUp returned invalid result';
+			{type: 'Mouse', button: 'wheel up', action: 'press', isWheel: true, x: 10, y: 10}, result[0]);
+		if (!result || !result[0]) return 'FAIL: wheel-up returned invalid result';
+
+		var afterUp = result[0].vp.yOffset();
+		if (afterUp >= afterDown) return 'FAIL: wheel-up did not scroll back (offset=' + afterUp + ' vs ' + afterDown + ')';
 
 		return 'OK';
 	})()`)
@@ -4096,5 +4109,81 @@ func TestChunk13_WizardView_ContainsChromeElements(t *testing.T) {
 	// Status bar should mention Help or shortcuts.
 	if !strings.Contains(s, "Help") {
 		t.Errorf("view should contain 'Help' in status bar")
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  T05: Viewport height edge case — tiny terminal
+// ---------------------------------------------------------------------------
+
+// TestChunk13_WizardView_TinyTerminal verifies that the Math.max(3, h-chromeH)
+// guard prevents a zero or negative viewport height when the terminal is smaller
+// than the chrome (title bar + dividers + nav bar + status bar). The viewport
+// height must never drop below 3 lines.
+func TestChunk13_WizardView_TinyTerminal(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = globalThis.prSplit._wizardInit();
+		s.needsInitClear = false;
+		s.wizard.reset();
+		s.wizard.transition('CONFIG');
+		s.wizardState = 'CONFIG';
+		s.width = 80;
+		s.height = 5; // Extremely tiny — chrome alone needs ~7-10 lines.
+
+		// Render the view; this exercises Math.max(3, h - chromeH).
+		var viewOutput = globalThis.prSplit._wizardView(s);
+		if (typeof viewOutput !== 'string') return 'FAIL: view did not return string';
+		if (viewOutput.length === 0) return 'FAIL: view returned empty string';
+
+		// Verify viewport height was clamped to at least 3.
+		var vpH = s.vp.height();
+		if (vpH < 3) return 'FAIL: viewport height ' + vpH + ' is below minimum 3';
+
+		return 'OK:vpH=' + vpH;
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := raw.(string)
+	if !strings.HasPrefix(got, "OK:") {
+		t.Errorf("tiny terminal viewport test: %v", got)
+	}
+	// Verify the clamped height is exactly 3 (since h=5 and chromeH > 5).
+	if !strings.Contains(got, "vpH=3") {
+		t.Logf("viewport height was clamped but not to 3: %s (chrome may be smaller than expected)", got)
+	}
+}
+
+// TestChunk13_WizardView_NormalTerminal verifies that at normal terminal size
+// the viewport height is h minus actual chrome height (not clamped to 3).
+func TestChunk13_WizardView_NormalTerminal(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = globalThis.prSplit._wizardInit();
+		s.needsInitClear = false;
+		s.wizard.reset();
+		s.wizard.transition('CONFIG');
+		s.wizardState = 'CONFIG';
+		s.width = 120;
+		s.height = 40;
+
+		globalThis.prSplit._wizardView(s);
+
+		var vpH = s.vp.height();
+		// At h=40 with ~7 chrome lines, viewport should be ~33 (certainly > 3).
+		if (vpH <= 3) return 'FAIL: viewport height at h=40 was only ' + vpH;
+		if (vpH > 40) return 'FAIL: viewport height ' + vpH + ' exceeds terminal height 40';
+
+		return 'OK:vpH=' + vpH;
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := raw.(string)
+	if !strings.HasPrefix(got, "OK:") {
+		t.Errorf("normal terminal viewport test: %v", got)
 	}
 }

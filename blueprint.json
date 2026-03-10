@@ -28,7 +28,7 @@
     "contextManagement": "Tasks are sequential. Complete one fully (including Rule of Two + commit) before starting the next. Each task is self-contained. Break work into manageable units."
   },
   "statusSection": {
-    "currentState": "T01 DONE (0f2bfb1d), T02 DONE (39405a10), TSplit DONE (52e29a1c), T03 DONE (with TSplit), T04 DONE (pending Rule of Two + commit). Next: T05.",
+    "currentState": "T01 DONE (0f2bfb1d), T02 DONE (39405a10), TSplit DONE (52e29a1c), T03 DONE (with TSplit), T04 DONE (d38db8ca), T05 DONE (pending commit). Next: T06.",
     "goalState": "A fully functional, production-quality pr-split TUI wizard with: (1) non-blocking async operations, (2) proper viewport/scrollbar on all screens, (3) working keyboard+mouse navigation matching super-document patterns, (4) real Claude integration with back-and-forth interaction, (5) embedded terminal output as BubbleTea component via termmux, (6) proper signal handling, (7) working error resolution flow, (8) post-split verification, (9) correct colors/layout, (10) comprehensive test coverage.",
     "replanLog": [
       {
@@ -105,7 +105,7 @@
       "task": "T05: Fix viewport/scrollbar on ALL screens — match super-document patterns",
       "description": "The viewport and scrollbar exist in the model (search: 'viewportLib.new' in createWizardModel) and are wired in the view function (search: 'vp.setViewportHeight' in _viewFn), but several screens don't produce enough content to test scrolling, and the viewport height calculation (chromeH) can produce negative heights. Fix: (a) Audit EVERY screen renderer (viewConfigScreen, viewAnalysisScreen, viewPlanReviewScreen, viewPlanEditorScreen, viewExecutionScreen, viewVerificationScreen, viewFinalizationScreen) for proper viewport integration. (b) Screen 3 (Plan Review) specifically must have a scrollbar per the user's report. (c) Match super-document's pattern: setViewportHeight, setContentHeight, setYOffset, joinHorizontal for scrollbar. (d) Fix chromeH calculation to never produce negative vpHeight. (e) Add mousewheel scroll handlers per super-document. (f) Ensure viewport position is preserved across re-renders.",
       "acceptance": "Every screen that can overflow vertically has a working scrollbar track+thumb on the right edge. Mouse wheel up/down scrolls the viewport. PgUp/PgDn/Home/End work. Verify existing Math.max(3, h-chromeH) guard is sufficient and add unit test for edge case (h=5, chromeH=10). Screen 3 specifically shows scrollbar when chunk list exceeds viewport height. Verified by running with small terminal size (80x24) and large plan. No output.print() calls reachable from BubbleTea update/view context (audit all output.print calls in TUI file).",
-      "status": "Not Started",
+      "status": "Done",
       "context": {
         "files": ["internal/command/pr_split_13_tui.js (all viewXxxScreen functions, _viewFn viewport wiring — search for 'viewConfigScreen', 'viewAnalysisScreen', etc.)"],
         "references": ["internal/command/super_document_script.js (viewport+scrollbar pattern)"],

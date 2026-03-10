@@ -318,17 +318,18 @@
             verifyTimeoutMs = automatedDefaults.verifyTimeoutMs;
         }
         if (verifyCommand && verifyCommand !== 'true') {
+            var printFn = (typeof config.outputFn === 'function') ? config.outputFn : function(s) { output.print(s); };
             if (verifyTimeoutMs > 0) {
-                output.print('[auto-split] Verify baseline (timeout ' + Math.ceil(verifyTimeoutMs / 1000) + 's)...');
+                printFn('[auto-split] Verify baseline (timeout ' + Math.ceil(verifyTimeoutMs / 1000) + 's)...');
             } else {
-                output.print('[auto-split] Verify baseline...');
+                printFn('[auto-split] Verify baseline...');
             }
             var baselineStart = Date.now();
             var baselineResult = verifySplit(runtime.baseBranch, {
                 verifyCommand: verifyCommand,
                 dir: dir,
                 verifyTimeoutMs: verifyTimeoutMs,
-                outputFn: function(line) { output.print(line); }
+                outputFn: printFn
             });
             var baselineElapsedMs = Date.now() - baselineStart;
             // Worktree isolation: user's branch is never modified, no restore needed.
@@ -341,7 +342,7 @@
                     baselineDurationMs: baselineElapsedMs
                 };
             }
-            output.print('[auto-split] Verify baseline OK (' + baselineElapsedMs + 'ms)');
+            printFn('[auto-split] Verify baseline OK (' + baselineElapsedMs + 'ms)');
         }
 
         return { error: null };

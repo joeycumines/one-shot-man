@@ -848,11 +848,105 @@
             lines.push('  ' + icon + ' ' + statusText);
         }
 
-        // Overall progress.
-        if (splits.length > 0) {
+        // Overall progress (branch creation phase).
+        if (splits.length > 0 && results.length < splits.length) {
             lines.push('');
             var progress = results.length / splits.length;
             lines.push('  ' + renderProgressBar(progress, (s.width || 80) - 8));
+        }
+
+        // ── Per-branch verification section ──────────────────────
+        var verifyResults = s.verificationResults || [];
+        var verifyIdx = s.verifyingIdx;
+        if (verifyIdx >= 0 || verifyResults.length > 0) {
+            lines.push('');
+            lines.push(styles.bold().render('Verifying Branches'));
+            lines.push('');
+
+            for (var vi = 0; vi < splits.length; vi++) {
+                var vr = verifyResults[vi];
+                var vicon, vtext;
+                var branchName = splits[vi].name;
+
+                if (vr && vr.skipped) {
+                    vicon = styles.dim().render(' \u2014 ');
+                    vtext = styles.dim().render(branchName + ' (skipped)');
+                } else if (vr && vr.passed) {
+                    vicon = styles.successBadge().render(' \u2713 ');
+                    var durationStr = vr.duration ? ' (' + (vr.duration / 1000).toFixed(1) + 's)' : '';
+                    vtext = styles.label().render(branchName) +
+                        styles.dim().render(durationStr);
+                } else if (vr && !vr.passed) {
+                    vicon = styles.errorBadge().render(' \u2718 ');
+                    var vdurStr = vr.duration ? ' (' + (vr.duration / 1000).toFixed(1) + 's)' : '';
+                    vtext = styles.label().render(branchName) +
+                        styles.dim().render(vdurStr);
+                    if (vr.preExisting) {
+                        vtext += ' ' + styles.warningBadge().render(' pre-existing ');
+                    }
+                    // Error summary.
+                    if (vr.error) {
+                        lines.push('  ' + vicon + ' ' + vtext);
+                        lines.push('    ' + styles.dim().render(vr.error));
+                        // Expandable output.
+                        var outputLines = s.verifyOutput && s.verifyOutput[branchName];
+                        if (outputLines && outputLines.length > 0) {
+                            if (s.expandedVerifyBranch === branchName) {
+                                lines.push('    ' + zone.mark('verify-collapse-' + branchName,
+                                    styles.dim().render('\u25bc Hide Output')));
+                                var maxLines = Math.min(outputLines.length, 20);
+                                for (var ol = 0; ol < maxLines; ol++) {
+                                    lines.push('    ' + styles.dim().render(outputLines[ol]));
+                                }
+                                if (outputLines.length > 20) {
+                                    lines.push('    ' + styles.dim().render(
+                                        '... (' + (outputLines.length - 20) + ' more lines)'));
+                                }
+                            } else {
+                                lines.push('    ' + zone.mark('verify-expand-' + branchName,
+                                    styles.dim().render('\u25b6 Show Output (' + outputLines.length + ' lines)')));
+                            }
+                        }
+                        continue; // Already pushed icon+text above.
+                    }
+                } else if (vi === verifyIdx && s.isProcessing) {
+                    vicon = styles.warningBadge().render(' \u25b6 ');
+                    vtext = styles.statusActive().render(branchName + '...');
+                } else {
+                    vicon = styles.dim().render(' \u25cb ');
+                    vtext = styles.dim().render(branchName);
+                }
+
+                lines.push('  ' + vicon + ' ' + vtext);
+            }
+
+            // Verification progress bar.
+            if (verifyResults.length < splits.length && s.isProcessing) {
+                lines.push('');
+                var vProgress = verifyResults.length / splits.length;
+                lines.push('  ' + renderProgressBar(vProgress, (s.width || 80) - 8));
+            }
+
+            // Verification summary (after all complete).
+            if (verifyResults.length === splits.length) {
+                var passCount = 0;
+                var failCount = 0;
+                var skipCount = 0;
+                for (var vs = 0; vs < verifyResults.length; vs++) {
+                    if (verifyResults[vs].skipped) skipCount++;
+                    else if (verifyResults[vs].passed) passCount++;
+                    else failCount++;
+                }
+                lines.push('');
+                var summaryLine = '  ' + styles.successBadge().render(' ' + passCount + ' passed ');
+                if (failCount > 0) {
+                    summaryLine += ' ' + styles.errorBadge().render(' ' + failCount + ' failed ');
+                }
+                if (skipCount > 0) {
+                    summaryLine += ' ' + styles.dim().render(' ' + skipCount + ' skipped');
+                }
+                lines.push(summaryLine);
+            }
         }
 
         return lines.join('\n');

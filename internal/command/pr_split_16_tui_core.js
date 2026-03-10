@@ -118,6 +118,12 @@
                 executionResults: [],
                 executingIdx: 0,
 
+                // Verification state (per-branch, after branch creation).
+                verificationResults: [],   // Array parallel to splits
+                verifyingIdx: -1,          // -1=not started, 0..N=in progress, N=done
+                verifyOutput: {},          // { branchName: [line, ...] }
+                expandedVerifyBranch: null, // branchName for expandable output
+
                 // Results.
                 equivalenceResult: null,
                 errorDetails: null,
@@ -339,6 +345,12 @@
                 }
                 if (msg.id === 'exec-step-1') {
                     return runExecutionStep(s, 1);
+                }
+                if (msg.id === 'exec-step-2') {
+                    return runExecutionStep(s, 2);
+                }
+                if (msg.id === 'verify-branch') {
+                    return runVerifyBranch(s);
                 }
                 // Automated pipeline polling.
                 if (msg.id === 'auto-poll') {
@@ -849,6 +861,21 @@
             if (zone.inBounds('toggle-advanced', msg)) {
                 s.showAdvanced = !s.showAdvanced;
                 return [s, null];
+            }
+        }
+
+        // Execution: expand/collapse verification output.
+        if (s.wizardState === 'BRANCH_BUILDING' && st.planCache && st.planCache.splits) {
+            for (var vi = 0; vi < st.planCache.splits.length; vi++) {
+                var vbranch = st.planCache.splits[vi].name;
+                if (zone.inBounds('verify-expand-' + vbranch, msg)) {
+                    s.expandedVerifyBranch = vbranch;
+                    return [s, null];
+                }
+                if (zone.inBounds('verify-collapse-' + vbranch, msg)) {
+                    s.expandedVerifyBranch = null;
+                    return [s, null];
+                }
             }
         }
 
@@ -1748,7 +1775,7 @@
         s.wizard.transition('EQUIV_CHECK');
         s.wizardState = 'EQUIV_CHECK';
         s.isProcessing = true;
-        return [s, tea.tick(1, 'exec-step-1')];
+        return [s, tea.tick(1, 'exec-step-2')];
     }
 
     function startExecution(s) {
@@ -1760,6 +1787,11 @@
         s.isProcessing = true;
         s.executionResults = [];
         s.executingIdx = 0;
+        // Reset verification state from any prior run.
+        s.verificationResults = [];
+        s.verifyingIdx = -1;
+        s.verifyOutput = {};
+        s.expandedVerifyBranch = null;
 
         // Transition: PLAN_REVIEW → BRANCH_BUILDING.
         if (s.wizard.current === 'PLAN_REVIEW') {
@@ -1812,11 +1844,23 @@
                 return [s, null];
             }
 
-            // Yield for render, then run equivalence check.
+            // Yield for render, then start per-branch verification.
             return [s, tea.tick(1, 'exec-step-1')];
         }
         case 1: {
-            // Step 2: Equivalence check.
+            // Step 2: Initialize per-branch verification.
+            // If no verify command configured, skip straight to equiv check.
+            if (!prSplit.runtime.verifyCommand) {
+                return [s, tea.tick(1, 'exec-step-2')];
+            }
+            s.verificationResults = [];
+            s.verifyingIdx = 0;
+            s.verifyOutput = {};
+            s.expandedVerifyBranch = null;
+            return [s, tea.tick(1, 'verify-branch')];
+        }
+        case 2: {
+            // Step 3: Equivalence check.
             // Guard: only transition if not already in EQUIV_CHECK
             // (handleResolvePoll pre-transitions for the skip/resolve paths).
             if (s.wizard.current !== 'EQUIV_CHECK') {
@@ -1834,6 +1878,83 @@
         default:
             return [s, null];
         }
+    }
+
+    // ── Per-branch verification (tick-based stepping) ────────────
+    // Verifies one branch per tick so BubbleTea can render progress
+    // between each. Uses prSplit.verifySplit() directly instead of
+    // verifySplits() to maintain per-tick control.
+    function runVerifyBranch(s) {
+        if (!s.isProcessing) return [s, null];
+
+        var splits = st.planCache.splits;
+        if (!splits || s.verifyingIdx >= splits.length) {
+            // All branches verified — move to equiv check.
+            return [s, tea.tick(1, 'exec-step-2')];
+        }
+
+        var split = splits[s.verifyingIdx];
+        var branchName = split.name;
+
+        // Check dependency chain — skip if any dependency failed.
+        var deps = split.dependencies || [];
+        var skipReason = '';
+        for (var d = 0; d < deps.length; d++) {
+            for (var r = 0; r < s.verificationResults.length; r++) {
+                if (s.verificationResults[r].name === deps[d] &&
+                    !s.verificationResults[r].passed &&
+                    !s.verificationResults[r].preExisting) {
+                    skipReason = 'skipped: dependency ' + deps[d] + ' failed';
+                    break;
+                }
+            }
+            if (skipReason) break;
+        }
+
+        if (skipReason) {
+            s.verificationResults.push({
+                name: branchName,
+                passed: false,
+                skipped: true,
+                error: skipReason,
+                duration: 0
+            });
+            s.verifyingIdx++;
+            return [s, tea.tick(1, 'verify-branch')];
+        }
+
+        // Capture output lines.
+        var outputLines = [];
+        var dir = prSplit.runtime.dir || '.';
+        var scopedCmd = prSplit.runtime.verifyCommand;
+        // Scoped verify: filter command based on split's files if applicable.
+        if (typeof prSplit.scopedVerifyCommand === 'function' && split.files) {
+            var scoped = prSplit.scopedVerifyCommand(split.files, scopedCmd);
+            if (scoped) scopedCmd = scoped;
+        }
+
+        var branchStart = Date.now();
+        var verifyResult = prSplit.verifySplit(branchName, {
+            dir: dir,
+            verifyCommand: scopedCmd,
+            verifyTimeoutMs: (typeof prSplitConfig !== 'undefined' && prSplitConfig.timeoutMs) ? prSplitConfig.timeoutMs : 0,
+            outputFn: function(line) { outputLines.push(line); }
+        });
+        var duration = Date.now() - branchStart;
+
+        s.verifyOutput[branchName] = outputLines;
+        s.verificationResults.push({
+            name: branchName,
+            passed: verifyResult.passed,
+            skipped: verifyResult.skipped || false,
+            error: verifyResult.error || null,
+            output: verifyResult.output || '',
+            duration: duration,
+            preExisting: verifyResult.preExisting || false
+        });
+
+        s.verifyingIdx++;
+        return [s, tea.tick(1, 'verify-branch')];
     }
 
     function handleErrorResolutionChoice(s, choice) {
@@ -1885,9 +2006,9 @@
 
         case 'skip':
             // Transition to EQUIV_CHECK happened in handleErrorResolutionState.
-            // Dispatch equivalence check via the existing exec-step-1 handler.
+            // Dispatch equivalence check via the exec-step-2 handler.
             s.isProcessing = true;
-            return [s, tea.tick(1, 'exec-step-1')];
+            return [s, tea.tick(1, 'exec-step-2')];
 
         case 'retry':
             // Transition to PLAN_GENERATION happened. Re-run analysis.

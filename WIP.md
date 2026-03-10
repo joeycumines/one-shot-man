@@ -14,11 +14,24 @@
 - **T07**: DONE. Committed `3cb6f2dd`. Responsive layout breakpoints (compact/standard/wide).
 - **T08**: DONE. Committed `bb9b10c5`. Signal handling: SIGINT/SIGTERM context, double-SIGINT force-exit.
 - **T09**: DONE. Committed `d3c640b5`. Deferred terminal finalizer, all 8 exit paths audited safe.
-- **Blueprint**: 33 tasks. T01-T09=Done, T10-T33=Not Started.
+- **T10**: DONE. Committed `b50859e5`. Claude availability check + Test Connection button on CONFIG screen.
+- **Blueprint**: 33 tasks. T01-T10=Done, T11-T33=Not Started.
 
 ### Next Step
 
-**T10: Add strategy validation UI — Claude availability check and connection test.**
+**T11: Wire post-split verification display into TUI execution screen.**
+
+### T10 Implementation Details (for Next Takumi)
+
+- Files changed: pr_split_16_tui_core.js, pr_split_15_tui_views.js
+- State: claudeCheckStatus (null/checking/available/unavailable), claudeResolvedInfo, claudeCheckError
+- handleClaudeCheck(): prSplitConfig guard → temp executor → resolve() → cache/fallback
+- Trigger points: handleFocusActivate (auto select), handleScreenMouseClick (auto zone), test-claude button
+- Re-entry guard: skip if claudeCheckStatus === 'checking'
+- State clearing: nulls all 3 fields when switching away from auto
+- getFocusElements: conditional test-claude at index 3
+- startAutoAnalysis: top-level prSplitConfig guard as defense-in-depth
+- View: 3 rendering states (spinner / green badge + cmd/provider / red badge + error + fallback)
 
 ### T06 Implementation Details (for Next Takumi)
 

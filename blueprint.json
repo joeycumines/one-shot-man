@@ -236,7 +236,8 @@
       "task": "T11: Wire post-split verification display into TUI execution screen",
       "description": "verifySplits() called but UI display minimal. Enhance: (a) Per-branch verification status as it completes. (b) Collect output in s.branchErrors. (c) 'Show Output' expandable per failed branch. (d) Equiv check after all verifications. (e) Update viewVerificationScreen.",
       "acceptance": "Each branch shows progress. Pass=checkmark. Fail=cross with summary. Expandable output. Equiv after all verify.",
-      "status": "Not Started",
+      "status": "Done",
+      "completionNotes": "Added tick-based per-branch verification (runVerifyBranch) between branch creation and equiv check. Model state: verificationResults[], verifyingIdx, verifyOutput{}, expandedVerifyBranch. runExecutionStep now 3 steps: branches→verify→equiv. viewExecutionScreen enhanced with 'Verifying Branches' section showing per-branch ✓/✗/▶/○ with duration, dependency skip detection, expandable output for failures (zone-based Show/Hide Output), and summary badges. Mouse expand/collapse in handleScreenMouseClick.",
       "context": {
         "files": [
           "internal/command/pr_split_16_tui_core.js (runExecutionStep)",

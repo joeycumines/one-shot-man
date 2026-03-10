@@ -3089,6 +3089,24 @@
                 }
             }
 
+            // Tick-based async analysis steps.
+            // Each step runs synchronously but yields between steps for rendering and cancel.
+            if (msg.type === 'Tick') {
+                if (msg.id === 'analysis-step-0') {
+                    return runAnalysisStep(s, 0);
+                }
+                if (msg.id === 'analysis-step-1') {
+                    return runAnalysisStep(s, 1);
+                }
+                if (msg.id === 'analysis-step-2') {
+                    return runAnalysisStep(s, 2);
+                }
+                if (msg.id === 'analysis-step-3') {
+                    return runAnalysisStep(s, 3);
+                }
+                return [s, null];
+            }
+
             return [s, null];
         };
 
@@ -3445,83 +3463,118 @@
             s.wizard.transition('CONFIG');
         }
 
-        // Step 1: Analyze diff.
-        s.analysisSteps[0].active = true;
-        var analysisStart = Date.now();
-        try {
-            st.analysisCache = prSplit.analyzeDiff({ baseBranch: prSplit.runtime.baseBranch });
-        } catch (e) {
-            s.isProcessing = false;
-            s.errorDetails = 'Analysis failed: ' + (e.message || String(e));
-            s.wizardState = 'ERROR';
-            return [s, null];
-        }
-        s.analysisSteps[0].done = true;
-        s.analysisSteps[0].active = false;
-        s.analysisSteps[0].elapsed = Date.now() - analysisStart;
-        s.analysisProgress = 0.25;
+        // Dispatch first analysis step via tick to yield for rendering.
+        // Each step runs on the next tick, allowing BubbleTea to render
+        // progress between steps and letting the user cancel with Ctrl+C.
+        return [s, tea.tick(1, 'analysis-step-0')];
+    }
 
-        if (st.analysisCache.error) {
-            s.isProcessing = false;
-            s.errorDetails = st.analysisCache.error;
-            s.wizardState = 'ERROR';
-            return [s, null];
-        }
-        if (!st.analysisCache.files || st.analysisCache.files.length === 0) {
-            s.isProcessing = false;
-            s.errorDetails = 'No changes found between branches.';
-            s.wizardState = 'CONFIG';
+    // runAnalysisStep: Runs a single analysis step synchronously, then
+    // dispatches the next step via tick. Each step blocks the event loop
+    // for its duration (~1-5s), but between steps the UI can render and
+    // the user can cancel.
+    function runAnalysisStep(s, stepIdx) {
+        // If processing was cancelled (e.g., user hit Ctrl+C between steps),
+        // bail out without running the step.
+        if (!s.isProcessing) {
             return [s, null];
         }
 
-        // Step 2: Group files.
-        s.analysisSteps[1].active = true;
-        var groupStart = Date.now();
-        st.groupsCache = prSplit.applyStrategy(
-            st.analysisCache.files, prSplit.runtime.strategy);
-        s.analysisSteps[1].done = true;
-        s.analysisSteps[1].active = false;
-        s.analysisSteps[1].elapsed = Date.now() - groupStart;
-        s.analysisProgress = 0.5;
+        switch (stepIdx) {
+        case 0: {
+            // Step 1: Analyze diff.
+            s.analysisSteps[0].active = true;
+            var analysisStart = Date.now();
+            try {
+                st.analysisCache = prSplit.analyzeDiff({ baseBranch: prSplit.runtime.baseBranch });
+            } catch (e) {
+                s.isProcessing = false;
+                s.errorDetails = 'Analysis failed: ' + (e.message || String(e));
+                s.wizardState = 'ERROR';
+                return [s, null];
+            }
+            s.analysisSteps[0].done = true;
+            s.analysisSteps[0].active = false;
+            s.analysisSteps[0].elapsed = Date.now() - analysisStart;
+            s.analysisProgress = 0.25;
 
-        // Step 3: Create plan.
-        s.analysisSteps[2].active = true;
-        var planStart = Date.now();
-        st.planCache = prSplit.createSplitPlan(st.groupsCache, {
-            baseBranch: prSplit.runtime.baseBranch,
-            sourceBranch: st.analysisCache.currentBranch,
-            branchPrefix: prSplit.runtime.branchPrefix,
-            verifyCommand: prSplit.runtime.verifyCommand,
-            fileStatuses: st.analysisCache.fileStatuses
-        });
-        s.analysisSteps[2].done = true;
-        s.analysisSteps[2].active = false;
-        s.analysisSteps[2].elapsed = Date.now() - planStart;
-        s.analysisProgress = 0.75;
+            if (st.analysisCache.error) {
+                s.isProcessing = false;
+                s.errorDetails = st.analysisCache.error;
+                s.wizardState = 'ERROR';
+                return [s, null];
+            }
+            if (!st.analysisCache.files || st.analysisCache.files.length === 0) {
+                s.isProcessing = false;
+                s.errorDetails = 'No changes found between branches.';
+                s.wizardState = 'CONFIG';
+                return [s, null];
+            }
 
-        // Step 4: Validate.
-        s.analysisSteps[3].active = true;
-        var validation = prSplit.validatePlan(st.planCache);
-        s.analysisSteps[3].done = true;
-        s.analysisSteps[3].active = false;
-        s.analysisProgress = 1.0;
+            // Yield for render, then dispatch step 1.
+            return [s, tea.tick(1, 'analysis-step-1')];
+        }
+        case 1: {
+            // Step 2: Group files.
+            s.analysisSteps[1].active = true;
+            var groupStart = Date.now();
+            st.groupsCache = prSplit.applyStrategy(
+                st.analysisCache.files, prSplit.runtime.strategy);
+            s.analysisSteps[1].done = true;
+            s.analysisSteps[1].active = false;
+            s.analysisSteps[1].elapsed = Date.now() - groupStart;
+            s.analysisProgress = 0.5;
 
-        if (!validation.valid) {
+            // Yield for render, then dispatch step 2.
+            return [s, tea.tick(1, 'analysis-step-2')];
+        }
+        case 2: {
+            // Step 3: Create plan.
+            s.analysisSteps[2].active = true;
+            var planStart = Date.now();
+            st.planCache = prSplit.createSplitPlan(st.groupsCache, {
+                baseBranch: prSplit.runtime.baseBranch,
+                sourceBranch: st.analysisCache.currentBranch,
+                branchPrefix: prSplit.runtime.branchPrefix,
+                verifyCommand: prSplit.runtime.verifyCommand,
+                fileStatuses: st.analysisCache.fileStatuses
+            });
+            s.analysisSteps[2].done = true;
+            s.analysisSteps[2].active = false;
+            s.analysisSteps[2].elapsed = Date.now() - planStart;
+            s.analysisProgress = 0.75;
+
+            // Yield for render, then dispatch step 3.
+            return [s, tea.tick(1, 'analysis-step-3')];
+        }
+        case 3: {
+            // Step 4: Validate.
+            s.analysisSteps[3].active = true;
+            var validation = prSplit.validatePlan(st.planCache);
+            s.analysisSteps[3].done = true;
+            s.analysisSteps[3].active = false;
+            s.analysisProgress = 1.0;
+
+            if (!validation.valid) {
+                s.isProcessing = false;
+                s.errorDetails = 'Plan validation failed: ' + validation.errors.join('; ');
+                s.wizardState = 'ERROR';
+                return [s, null];
+            }
+
             s.isProcessing = false;
-            s.errorDetails = 'Plan validation failed: ' + validation.errors.join('; ');
-            s.wizardState = 'ERROR';
+
+            // Transition wizard to PLAN_GENERATION then PLAN_REVIEW.
+            if (s.wizard.current === 'CONFIG') {
+                s.wizard.transition('PLAN_GENERATION');
+            }
+            s.wizard.transition('PLAN_REVIEW');
+            s.wizardState = 'PLAN_REVIEW';
             return [s, null];
         }
-
-        s.isProcessing = false;
-
-        // Transition wizard to PLAN_GENERATION then PLAN_REVIEW.
-        if (s.wizard.current === 'CONFIG') {
-            s.wizard.transition('PLAN_GENERATION');
+        default:
+            return [s, null];
         }
-        s.wizard.transition('PLAN_REVIEW');
-        s.wizardState = 'PLAN_REVIEW';
-        return [s, null];
     }
 
     function startExecution(s) {

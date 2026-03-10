@@ -1,24 +1,36 @@
 # WIP — Takumi's Desperate Diary
 
 ## Current State
-Blueprint v2 created with all Review Pass 1 findings applied. About to run Review Pass 1 (reset counter = 0) on corrected blueprint.
+**TASK:** T01 — Fix blocking startAnalysis() → tick-based async
+**STATUS:** Code edits COMPLETE. Need build verification + Rule of Two + git commit.
 
-## What Was Fixed (Review Pass 1 Findings)
-1. ✅ Replaced all fragile line numbers with function-name-only references across 15 context.files entries
-2. ✅ Rewrote T08 to acknowledge existing resolveColor() + hasDarkBackground() + COLORS {light,dark} infrastructure
-3. ✅ Added output.print() audit to T05 acceptance criteria
-4. ✅ Added Claude crash detection/retry to T15 acceptance criteria
-5. ✅ Updated T05 re: Math.max(3,...) guard — changed to "verify + add unit test"
-6. ✅ Added replanLog documenting all changes
+## What Was Done (T01)
+1. ✅ Added Tick message handler in `_updateFn` (between mouseWheel and final return)
+   - Dispatches `analysis-step-0` through `analysis-step-3` to `runAnalysisStep(s, N)`
+2. ✅ Refactored `startAnalysis(s)` to only set up state + return `tea.tick(1, 'analysis-step-0')`
+   - No longer calls analyzeDiff/applyStrategy/createSplitPlan/validatePlan synchronously
+3. ✅ Created `runAnalysisStep(s, stepIdx)` — runs ONE step per tick call:
+   - Step 0: analyzeDiff (try/catch, error → ERROR state)
+   - Step 1: applyStrategy
+   - Step 2: createSplitPlan
+   - Step 3: validatePlan → transition to PLAN_REVIEW
+   - Each step returns `[s, tea.tick(1, 'analysis-step-N+1')]` to yield for render
+4. ✅ Removed orphaned old synchronous code (duplicate Step 4: Validate block)
+5. ✅ Cancellation: each step checks `!s.isProcessing` at top and bails
 
-## NOT YET DONE (from review)
-- T11 reordering (reviewer suggested moving CaptureSession earlier) — kept in place because it has no dependents blocking critical path tasks T01-T10. The Go work (T11-T12) runs in parallel conceptually.
+## Architecture Decision
+- Using `tea.tick(1, 'analysis-step-N')` pattern (1ms ticks) to yield between steps
+- Each step still blocks event loop during execution (~1-5s each)
+- BUT between steps: BubbleTea renders, user can Ctrl+C to cancel
+- This is the simplest approach using existing infrastructure (no Go changes)
+- True non-blocking requires CaptureSession (T11-T12 territory)
 
 ## Next Steps
-1. Run Review Pass 1 (subagent) on corrected blueprint
-2. If PASS → Run Review Pass 2
-3. If both PASS → git-commit blueprint.json
-4. Begin T01 execution (fix blocking startAnalysis)
+1. Run `make` or `make make-all-with-log` — verify build/lint/test pass
+2. Rule of Two: spawn 2 contiguous review subagents
+3. git-commit T01
+4. Update blueprint.json: T01 → "Done"
+5. Begin T02 (startExecution — same tick pattern)
 
 ## File Paths
 - Blueprint: `/Users/joeyc/dev/one-shot-man/blueprint.json`

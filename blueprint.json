@@ -129,7 +129,8 @@
       "task": "T05: Audit and remove all output.print() calls reachable from BubbleTea context",
       "description": "output.print() bypasses BubbleTea rendering. Search all TUI chunks (13-16): (a) Determine if each call is reachable during _updateFn or _viewFn. (b) Replace BubbleTea-reachable calls with state-based rendering. (c) REPL-mode output.print calls acceptable only before tea.run() — verify gating. (d) Check handleFinalizationState for output.print in create-prs/report paths. (e) Re-verify handleErrorResolutionState manual branch clean.",
       "acceptance": "Zero output.print() reachable from BubbleTea update/view. grep confirms REPL-only pre-start prints. No stdout corruption during wizard.",
-      "status": "Not Started",
+      "status": "Done",
+      "completionNotes": "Exhaustive audit of all output.print() in TUI chunks 13-16. Zero dangerous calls found. Chunk 14 (REPL commands): ~25 handlers all REPL-only, never called from _updateFn/_viewFn. Chunk 16 (onEnter): fires before tea.run(). Chunk 13 (handleConfigState printFn): suppressed via outputFn in BubbleTea context. handleErrorResolutionState/handleFinalizationState: correctly avoid output.print(). No code changes needed.",
       "context": {
         "files": [
           "internal/command/pr_split_16_tui_core.js",

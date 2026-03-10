@@ -632,17 +632,17 @@
                         styles.dim().render(split.files[fi])));
                 }
             }
-        }
 
-        if (isSelected) {
-            lines.push('');
-            lines.push(
-                zone.mark('editor-move', styles.secondaryButton().render('Move File')) +
-                '  ' +
-                zone.mark('editor-rename', styles.secondaryButton().render('Rename Split')) +
-                '  ' +
-                zone.mark('editor-merge', styles.secondaryButton().render('Merge Splits'))
-            );
+            if (isSelected) {
+                lines.push('');
+                lines.push(
+                    zone.mark('editor-move', styles.secondaryButton().render('Move File')) +
+                    '  ' +
+                    zone.mark('editor-rename', styles.secondaryButton().render('Rename Split')) +
+                    '  ' +
+                    zone.mark('editor-merge', styles.secondaryButton().render('Merge Splits'))
+                );
+            }
         }
 
         return lines.join('\n');

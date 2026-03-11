@@ -414,10 +414,11 @@
       "task": "T21: Integration tests for TUI async pipeline — state machine flow coverage",
       "description": "Extend wizard integration tests: (a) Happy path all states. (b) Error recovery. (c) Cancel from every state. (d) Auto-split path. (e) Heuristic fallback. (f) Plan rejection. (g) Plan edit roundtrip.",
       "acceptance": ">=7 flow paths. State transitions verified. Error recovery E2E. Cancel from each state. No external deps. All platforms.",
-      "status": "Not Started",
+      "status": "Done",
       "context": {
         "files": [
-          "internal/command/pr_split_wizard_integration_test.go"
+          "internal/command/pr_split_wizard_integration_test.go",
+          "internal/command/pr_split_15_tui_views_test.go"
         ],
         "references": [
           "internal/command/pr_split_integration_test.go"
@@ -426,7 +427,8 @@
           "T06",
           "T11"
         ]
-      }
+      },
+      "completionNotes": "Added 12 new test functions (15 total) covering: HappyPath (7 transitions), PlanEditRoundtrip (9), ErrorRetry (11), ErrorAutoResolve (9), CancelFromAllStates (7 cancellable states + idempotent), ForceCancel (3 states + DONE noop), BaselineFailAbort (3), FinalizationReport (8), ErrorAbort (6), TransitionListener (listener args), PauseResume (2 pausable + 1 non-pausable), InvalidTransitions (4 invalid edges). Also includes T19's missed pr_split_15_tui_views_test.go (45 view tests). R2: 2/2 PASS (restarted once for T29→T21 comment fix). Build passes all platforms."
     },
     {
       "task": "T22: VTerm-based integration tests for TUI rendering end-to-end",

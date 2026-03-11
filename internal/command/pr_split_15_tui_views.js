@@ -1494,22 +1494,42 @@
     // ----- Help Overlay (T019) -----
 
     function viewHelpOverlay(s) {
-        var w = Math.min(60, (s.width || 80) - 4);
+        var w = Math.min(64, (s.width || 80) - 4);
         var lines = [];
 
         lines.push(styles.bold().render('Keyboard Shortcuts'));
         lines.push('');
-        lines.push(padRight('  ? / F1', 20) + 'Toggle this help');
-        lines.push(padRight('  Tab', 20) + 'Next field / option');
-        lines.push(padRight('  Shift+Tab', 20) + 'Previous field / option');
-        lines.push(padRight('  Enter', 20) + 'Confirm / select');
-        lines.push(padRight('  Esc', 20) + 'Back / close overlay');
-        lines.push(padRight('  Ctrl+C', 20) + 'Cancel wizard');
-        lines.push(padRight('  Ctrl+]', 20) + 'Toggle Claude pane');
-        lines.push(padRight('  j / \u2193', 20) + 'Move down');
-        lines.push(padRight('  k / \u2191', 20) + 'Move up');
-        lines.push(padRight('  PgUp / PgDn', 20) + 'Scroll page');
-        lines.push(padRight('  Home / End', 20) + 'Jump to top / bottom');
+
+        // -- Global Navigation --
+        lines.push(styles.label().render('Navigation'));
+        lines.push(padRight('  ? / F1', 22) + 'Toggle this help');
+        lines.push(padRight('  Tab', 22) + 'Next field / option');
+        lines.push(padRight('  Shift+Tab', 22) + 'Previous field / option');
+        lines.push(padRight('  Enter', 22) + 'Confirm / select');
+        lines.push(padRight('  Esc', 22) + 'Back / close overlay');
+        lines.push(padRight('  Ctrl+C', 22) + 'Cancel wizard');
+        lines.push('');
+
+        // -- Scrolling --
+        lines.push(styles.label().render('Scrolling'));
+        lines.push(padRight('  j / \u2193', 22) + 'Move down / scroll');
+        lines.push(padRight('  k / \u2191', 22) + 'Move up / scroll');
+        lines.push(padRight('  PgUp / PgDn', 22) + 'Scroll page');
+        lines.push(padRight('  Home / End', 22) + 'Jump to top / bottom');
+        lines.push('');
+
+        // -- Plan Editor --
+        lines.push(styles.label().render('Plan Editor'));
+        lines.push(padRight('  e', 22) + 'Edit / rename split');
+        lines.push(padRight('  Space', 22) + 'Toggle file checkbox');
+        lines.push(padRight('  Shift+\u2191 / \u2193', 22) + 'Reorder files');
+        lines.push('');
+
+        // -- Claude / Split View --
+        lines.push(styles.label().render('Claude Integration'));
+        lines.push(padRight('  Ctrl+]', 22) + 'Switch to Claude pane');
+        lines.push(padRight('  Ctrl+L', 22) + 'Toggle split view');
+        lines.push(padRight('  Ctrl+= / Ctrl+-', 22) + 'Resize split view');
 
         var content = lines.join('\n');
         return styles.activeCard().width(w).render(content);

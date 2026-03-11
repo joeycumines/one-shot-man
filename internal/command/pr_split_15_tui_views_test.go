@@ -88,6 +88,7 @@ func assertZoneMarks(t *testing.T, evalJS func(string) (any, error), viewExpr st
 // ---------------------------------------------------------------------------
 
 func TestViews_TextOnColor_Exists(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit._wizardColors.textOnColor)`)
@@ -101,6 +102,7 @@ func TestViews_TextOnColor_Exists(t *testing.T) {
 }
 
 func TestViews_AllStylesRenderNonEmpty(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	raw, err := evalJS(`
@@ -135,6 +137,7 @@ func TestViews_AllStylesRenderNonEmpty(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestViews_StepDots_SpacedCorrectly(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._renderStepDots({wizardState: 'PLAN_REVIEW'})`)
@@ -153,6 +156,7 @@ func TestViews_StepDots_SpacedCorrectly(t *testing.T) {
 }
 
 func TestViews_StepDots_AllStates(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	states := []string{"IDLE", "CONFIG", "PLAN_GENERATION", "PLAN_REVIEW",
@@ -176,6 +180,7 @@ func TestViews_StepDots_AllStates(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestViews_NavBar_ZoneMarks(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	assertZoneMarks(t, evalJS, `globalThis.prSplit._renderNavBar({
@@ -184,6 +189,7 @@ func TestViews_NavBar_ZoneMarks(t *testing.T) {
 }
 
 func TestViews_NavBar_ProcessingHidesNextZone(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._renderNavBar({
@@ -200,6 +206,7 @@ func TestViews_NavBar_ProcessingHidesNextZone(t *testing.T) {
 }
 
 func TestViews_NavBar_NarrowOmitsLabels(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._renderNavBar({
@@ -221,6 +228,7 @@ func TestViews_NavBar_NarrowOmitsLabels(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestViews_ConfigScreen_ZoneMarks(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	assertZoneMarks(t, evalJS, `globalThis.prSplit._viewConfigScreen({
@@ -229,6 +237,7 @@ func TestViews_ConfigScreen_ZoneMarks(t *testing.T) {
 }
 
 func TestViews_ConfigScreen_ClaudeTestZone(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	assertZoneMarks(t, evalJS, `globalThis.prSplit._viewConfigScreen({
@@ -239,6 +248,7 @@ func TestViews_ConfigScreen_ClaudeTestZone(t *testing.T) {
 }
 
 func TestViews_ConfigScreen_ClaudeStatuses(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	cases := []struct {
@@ -279,6 +289,7 @@ func TestViews_ConfigScreen_ClaudeStatuses(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestViews_PlanReviewScreen_ZoneMarks(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	if _, err := evalJS(viewTestPlanState); err != nil {
@@ -291,6 +302,7 @@ func TestViews_PlanReviewScreen_ZoneMarks(t *testing.T) {
 }
 
 func TestViews_PlanReviewScreen_SplitNames(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	if _, err := evalJS(viewTestPlanState); err != nil {
@@ -313,6 +325,7 @@ func TestViews_PlanReviewScreen_SplitNames(t *testing.T) {
 }
 
 func TestViews_PlanReviewScreen_SelectedSplitFiles(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	if _, err := evalJS(viewTestPlanState); err != nil {
@@ -335,6 +348,7 @@ func TestViews_PlanReviewScreen_SelectedSplitFiles(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestViews_PlanEditorScreen_ZoneMarks(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	if _, err := evalJS(viewTestPlanState); err != nil {
@@ -348,6 +362,7 @@ func TestViews_PlanEditorScreen_ZoneMarks(t *testing.T) {
 }
 
 func TestViews_PlanEditorScreen_SplitZoneMarks(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	if _, err := evalJS(viewTestPlanState); err != nil {
@@ -365,6 +380,7 @@ func TestViews_PlanEditorScreen_SplitZoneMarks(t *testing.T) {
 }
 
 func TestViews_PlanEditorScreen_ValidationErrors(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	if _, err := evalJS(viewTestPlanState); err != nil {
@@ -390,6 +406,7 @@ func TestViews_PlanEditorScreen_ValidationErrors(t *testing.T) {
 }
 
 func TestViews_PlanEditorScreen_InlineTitleEdit(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	if _, err := evalJS(viewTestPlanState); err != nil {
@@ -413,6 +430,7 @@ func TestViews_PlanEditorScreen_InlineTitleEdit(t *testing.T) {
 }
 
 func TestViews_PlanEditorScreen_FileCheckboxes(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	if _, err := evalJS(viewTestPlanState); err != nil {
@@ -433,6 +451,7 @@ func TestViews_PlanEditorScreen_FileCheckboxes(t *testing.T) {
 }
 
 func TestViews_PlanEditorScreen_NoPlan(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	if _, err := evalJS(`globalThis.prSplit._state.planCache = null`); err != nil {
@@ -456,6 +475,7 @@ func TestViews_PlanEditorScreen_NoPlan(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestViews_ExecutionScreen_SplitListing(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	if _, err := evalJS(viewTestPlanState); err != nil {
@@ -479,6 +499,7 @@ func TestViews_ExecutionScreen_SplitListing(t *testing.T) {
 }
 
 func TestViews_ExecutionScreen_ErrorDisplay(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	if _, err := evalJS(viewTestPlanState); err != nil {
@@ -499,6 +520,7 @@ func TestViews_ExecutionScreen_ErrorDisplay(t *testing.T) {
 }
 
 func TestViews_ErrorResolutionScreen_ZoneMarks(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	// error-ask-claude only renders when st.claudeExecutor is set.
@@ -517,6 +539,7 @@ func TestViews_ErrorResolutionScreen_ZoneMarks(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestViews_FinalizationScreen_ZoneMarks(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	if _, err := evalJS(viewTestPlanState); err != nil {
@@ -534,6 +557,7 @@ func TestViews_FinalizationScreen_ZoneMarks(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestViews_ConfirmCancelOverlay_ZoneMarks(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	assertZoneMarks(t, evalJS, `globalThis.prSplit._viewConfirmCancelOverlay({width: 80})`,
@@ -545,6 +569,7 @@ func TestViews_ConfirmCancelOverlay_ZoneMarks(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestViews_MoveFileDialog_ZoneMarks(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	if _, err := evalJS(viewTestPlanState); err != nil {
@@ -573,6 +598,7 @@ func TestViews_MoveFileDialog_ZoneMarks(t *testing.T) {
 }
 
 func TestViews_MoveFileDialog_ShowsFileName(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	if _, err := evalJS(viewTestPlanState); err != nil {
@@ -592,6 +618,7 @@ func TestViews_MoveFileDialog_ShowsFileName(t *testing.T) {
 }
 
 func TestViews_RenameSplitDialog_ZoneMarks(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	if _, err := evalJS(viewTestPlanState); err != nil {
@@ -622,6 +649,7 @@ func TestViews_RenameSplitDialog_ZoneMarks(t *testing.T) {
 }
 
 func TestViews_RenameSplitDialog_ShowsCurrentName(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	if _, err := evalJS(viewTestPlanState); err != nil {
@@ -641,6 +669,7 @@ func TestViews_RenameSplitDialog_ShowsCurrentName(t *testing.T) {
 }
 
 func TestViews_MergeSplitsDialog_ZoneMarks(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	if _, err := evalJS(viewTestPlanState); err != nil {
@@ -673,6 +702,7 @@ func TestViews_MergeSplitsDialog_ZoneMarks(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestViews_ClaudePane_NoMux(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._renderClaudePane({
@@ -687,6 +717,7 @@ func TestViews_ClaudePane_NoMux(t *testing.T) {
 }
 
 func TestViews_ClaudePane_FocusedRendersNonEmpty(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._renderClaudePane({
@@ -702,6 +733,7 @@ func TestViews_ClaudePane_FocusedRendersNonEmpty(t *testing.T) {
 }
 
 func TestViews_ClaudePane_WithScreenshot(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	// Inject a mock tuiMux with screenshot function.
@@ -735,6 +767,7 @@ func TestViews_ClaudePane_WithScreenshot(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestViews_ClaudeConvoOverlay_EmptyHistory(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._viewClaudeConvoOverlay({
@@ -757,6 +790,7 @@ func TestViews_ClaudeConvoOverlay_EmptyHistory(t *testing.T) {
 }
 
 func TestViews_ClaudeConvoOverlay_ErrorResolutionContext(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._viewClaudeConvoOverlay({
@@ -775,6 +809,7 @@ func TestViews_ClaudeConvoOverlay_ErrorResolutionContext(t *testing.T) {
 }
 
 func TestViews_ClaudeConvoOverlay_WithMessages(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._viewClaudeConvoOverlay({
@@ -805,6 +840,7 @@ func TestViews_ClaudeConvoOverlay_WithMessages(t *testing.T) {
 }
 
 func TestViews_ClaudeConvoOverlay_SendingState(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._viewClaudeConvoOverlay({
@@ -825,6 +861,7 @@ func TestViews_ClaudeConvoOverlay_SendingState(t *testing.T) {
 }
 
 func TestViews_ClaudeConvoOverlay_ErrorBanner(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._viewClaudeConvoOverlay({
@@ -848,6 +885,7 @@ func TestViews_ClaudeConvoOverlay_ErrorBanner(t *testing.T) {
 }
 
 func TestViews_ClaudeConvoOverlay_ScrollOffset(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	// Create a history with many messages to force scrolling.
@@ -879,6 +917,7 @@ func TestViews_ClaudeConvoOverlay_ScrollOffset(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestViews_LayoutMode_Breakpoints(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	// Layout breakpoints from source: <60 = compact, >100 = wide, else standard.
@@ -916,6 +955,7 @@ func TestViews_LayoutMode_Breakpoints(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestViews_TitleBar_CompactOmitsName(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._renderTitleBar({
@@ -934,6 +974,7 @@ func TestViews_TitleBar_CompactOmitsName(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestViews_NoPanicAtZeroWidth(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	if _, err := evalJS(viewTestPlanState); err != nil {
@@ -970,6 +1011,7 @@ func TestViews_NoPanicAtZeroWidth(t *testing.T) {
 }
 
 func TestViews_NoPanicAtTinyWidth(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	if _, err := evalJS(viewTestPlanState); err != nil {
@@ -1007,6 +1049,7 @@ func TestViews_NoPanicAtTinyWidth(t *testing.T) {
 }
 
 func TestViews_NoPanicAtLargeWidth(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	if _, err := evalJS(viewTestPlanState); err != nil {
@@ -1043,6 +1086,7 @@ func TestViews_NoPanicAtLargeWidth(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestViews_ViewForState_AllStates(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	if _, err := evalJS(viewTestPlanState); err != nil {
@@ -1084,6 +1128,7 @@ func TestViews_ViewForState_AllStates(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestViews_AnalysisScreen_AllStepsDone(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._viewAnalysisScreen({
@@ -1104,6 +1149,7 @@ func TestViews_AnalysisScreen_AllStepsDone(t *testing.T) {
 }
 
 func TestViews_AnalysisScreen_NoSteps(t *testing.T) {
+	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._viewAnalysisScreen({

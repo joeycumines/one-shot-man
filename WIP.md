@@ -24,14 +24,15 @@
 - **T18**: DONE. Committed `e076236e`. WCAG AA contrast audit. R2 (2/2 PASS).
 - **T19**: DONE. Committed `5359e8a3`. Comprehensive TUI view tests (45 functions). R2 (2/2 PASS).
 - **T20**: DONE. Committed `b8f5cd72`. Comprehensive TUI core tests (58 functions). R2 attempt 2 (2/2 PASS).
-- **T21**: DONE. Committed `0e4a6b50`. 12 new wizard integration tests (15 total, ≥15 flow paths). R2 restarted 1x (T29→T21 comment fix), final 2/2 PASS. Note: T19's views_test.go (45 tests) was written during T21 but missed the commit — included in T23 commit.
+- **T21**: DONE. Committed `0e4a6b50`. 12 new wizard integration tests (15 total, ≥15 flow paths). R2 restarted 1x (T29→T21 comment fix), final 2/2 PASS.
 - **T22**: DONE. Committed `0b65b868`. 6 new VTerm observation tests + 3 helpers. R2 restarted 2x (plan-regeneration fix), final 2/2 PASS.
-- **T23**: DONE. Zone audit: 34 unique zone ID patterns, all have handlers. Found/fixed 1 bug: confirm cancel dialog missing !msg.isWheel guard. Added regression test. Also includes T19's missed views_test.go. R2 PENDING.
-- **Blueprint**: 33 tasks. T01-T23=Done, T24-T33=Not Started.
+- **T23**: DONE. Committed `2e7dd18d`. Zone audit: 34 unique zone ID patterns, all have handlers. Found/fixed 1 bug: confirm cancel dialog missing !msg.isWheel guard. Added regression test. R2 (2/2 PASS).
+- **T24**: DONE. Keyboard routing audit: help overlay updated (4 sections, 16+ bindings, e→"Edit / rename split"). 46 view tests with t.Parallel(). 6 new routing tests. All screens respond. R2 PENDING.
+- **Blueprint**: 33 tasks. T01-T24=Done, T25-T33=Not Started.
 
 ### Next Step
 
-**T24: Audit keyboard routing — key events reach screen-specific handlers.**
+**T25: Implement Claude crash detection and recovery in pipeline.**
 
 ### Pre-existing JS bugs noted during T21 R2
 - `WizardState.prototype.forceCancel()` fires listener with `(FORCE_CANCEL, FORCE_CANCEL, data)` instead of `(originalFrom, FORCE_CANCEL, data)` — the from arg is wrong because `this.current` is already mutated before notify.

@@ -480,7 +480,8 @@
       "task": "T24: Audit keyboard routing — key events reach screen-specific handlers",
       "description": "Audit: (a) Map shortcuts per screen. (b) Verify not swallowed by sub-components. (c) Arrow context-aware. (d) PgUp/PgDn/Home/End to viewport. (e) j/k aliases.",
       "acceptance": "All screens respond to shortcuts. Context-appropriate. Not swallowed. All in help overlay.",
-      "status": "Not Started",
+      "status": "Done",
+      "completionNotes": "Audited complete keyboard routing chain (190-560 lines). Verified: (a) overlay guard properly gates Tick messages through, (b) 6 overlay interceptors correctly swallow input, (c) arrows context-aware (verify session scroll, claude pane scroll, PLAN_REVIEW splits, PLAN_EDITOR files), (d) PgUp/PgDn/Home/End routed to main viewport, (e) j/k wired as aliases. Updated help overlay with 4 sections (Navigation, Scrolling, Plan Editor, Claude Integration) covering all 16+ bindings. Added 6 new tests.",
       "context": {
         "files": [
           "internal/command/pr_split_16_tui_core.js (_updateFn)",

@@ -1507,6 +1507,60 @@ func TestChunk16_MouseClick_ConfirmCancelZones(t *testing.T) {
 	}
 }
 
+// T23: Verify wheel events are NOT interpreted as clicks in the confirm
+// cancel dialog. Prior to the fix, the mouse press guard was missing
+// the !msg.isWheel filter, meaning a scroll over "Yes" could
+// accidentally confirm cancellation.
+func TestChunk16_ConfirmCancel_WheelDoesNotTriggerZones(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		// Wheel over confirm-yes should NOT cancel.
+		var s = initState('CONFIG');
+		s.showConfirmCancel = true;
+		var restore = mockZoneHit('confirm-yes');
+		try {
+			var r = sendWheel(s, 'up');
+			if (!r[0].showConfirmCancel) return 'FAIL: wheel-up dismissed confirm overlay';
+			if (r[0].wizardState === 'CANCELLED') return 'FAIL: wheel-up triggered cancel';
+			r = sendWheel(r[0], 'down');
+			if (!r[0].showConfirmCancel) return 'FAIL: wheel-down dismissed confirm overlay';
+			if (r[0].wizardState === 'CANCELLED') return 'FAIL: wheel-down triggered cancel';
+		} finally { restore(); }
+
+		// And confirm-no shouldn't trigger either.
+		s = initState('CONFIG');
+		s.showConfirmCancel = true;
+		restore = mockZoneHit('confirm-no');
+		try {
+			var r = sendWheel(s, 'up');
+			if (!r[0].showConfirmCancel) return 'FAIL: wheel-up on no dismissed overlay';
+			r = sendWheel(r[0], 'down');
+			if (!r[0].showConfirmCancel) return 'FAIL: wheel-down on no dismissed overlay';
+		} finally { restore(); }
+
+		// Real click should still work after wheels.
+		s = initState('CONFIG');
+		s.showConfirmCancel = true;
+		restore = mockZoneHit('confirm-yes');
+		try {
+			sendWheel(s, 'up'); // wheel first — harmless
+			var r = sendClick(s); // real click — should trigger
+			if (r[0].showConfirmCancel) return 'FAIL: click after wheel did not dismiss';
+			if (r[0].wizardState !== 'CANCELLED') return 'FAIL: click after wheel state=' + r[0].wizardState;
+		} finally { restore(); }
+
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("confirm cancel wheel guard: %v", raw)
+	}
+}
+
 func TestChunk16_MouseClick_ClaudeStatusBadge(t *testing.T) {
 	t.Parallel()
 	evalJS := loadTUIEngineWithHelpers(t)

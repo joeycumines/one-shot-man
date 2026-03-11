@@ -461,7 +461,8 @@
       "task": "T23: Audit mouse zone coverage — every zone.mark() has a handler",
       "description": "Audit: (a) Inventory all zone IDs from views. (b) Verify handlers exist. (c) Add missing handlers. (d) Test with scrolled viewports. (e) Verify wheel forwarding.",
       "acceptance": "Every zone.mark() has handler. All clicks work. Scrolled viewport correct. Wheel scrolls.",
-      "status": "Not Started",
+      "status": "Done",
+      "completionNotes": "Inventoried 34 unique zone ID patterns (44 zone.mark calls) across 7 screens. All 34 have matching zone.inBounds handlers (34 total). Found and fixed 1 bug: confirm cancel dialog missing !msg.isWheel guard — scrolling over 'Yes' could accidentally confirm cancellation. Added regression test TestChunk16_ConfirmCancel_WheelDoesNotTriggerZones. Verified wheel handling across 4 contexts (report overlay, verify session, Claude pane, main viewport). Scrolled viewport correct (only visible zones rendered/scannable).",
       "context": {
         "files": [
           "internal/command/pr_split_16_tui_core.js (handleScreenMouseClick)",

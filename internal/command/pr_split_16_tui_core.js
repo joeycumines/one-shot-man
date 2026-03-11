@@ -881,7 +881,7 @@
                 return [s, null];
             }
         }
-        if (msg.type === 'Mouse' && msg.action === 'press') {
+        if (msg.type === 'Mouse' && msg.action === 'press' && !msg.isWheel) {
             if (zone.inBounds('confirm-yes', msg)) {
                 s.showConfirmCancel = false;
                 cleanupActiveSession();

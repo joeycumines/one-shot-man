@@ -519,7 +519,7 @@
       "task": "T26: Unit tests for all REPL commands in buildCommands()",
       "description": "Audit and expand: (a) Inventory all commands. (b) Valid + invalid args tests. (c) Edge cases (move non-existent, empty rename, etc). (d) State mutations verified.",
       "acceptance": "Every command >=2 tests. Edge cases covered. Help text non-empty. State correct. All platforms.",
-      "status": "Not Started",
+      "status": "Done",
       "context": {
         "files": [
           "internal/command/pr_split_14_tui_commands.js",
@@ -527,7 +527,8 @@
         ],
         "references": [],
         "dependencies": []
-      }
+      },
+      "completionNotes": "Committed fba15b51. Expanded from 11→35 test functions (387→1910 lines). 24 new test functions with 90+ subtests covering all 32 buildCommands. Shared-pipeline optimization for set (17 subtests) and hud (7 subtests). Added extractJSON helper for report JSON extraction. Fixed BuildCommandsAllDispatchable (added hud, documented override/abort exclusion). Bumped config.mk timeout 15m→20m (actual ~16m runtime). R2: 2/2 PASS (1 reset for adding hud to expectedCmds)."
     },
     {
       "task": "T27: Benchmark tests for view rendering performance",

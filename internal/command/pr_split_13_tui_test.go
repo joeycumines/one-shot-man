@@ -2710,7 +2710,7 @@ func TestChunk13_WizardColors_AllKeysPresent(t *testing.T) {
 
 	expected := []string{
 		"border", "error", "muted", "primary", "secondary",
-		"success", "surface", "text", "textDim", "warning",
+		"success", "surface", "text", "textDim", "textOnColor", "warning",
 	}
 	if len(keys) != len(expected) {
 		t.Fatalf("COLORS has %d keys, want %d\n  got:  %v\n  want: %v",

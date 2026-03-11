@@ -20,12 +20,13 @@
 - **T14**: DONE. Committed `ab15b3e5`. CaptureSession integration into verification TUI. R2 (2/2 PASS).
 - **T15**: DONE. Committed `5cd75ac7`. Claude window-in-window split-view. R2 (2/2 PASS).
 - **T16**: DONE. Committed `629c9f44`. Interactive Claude conversation overlay. R2 (2/2 PASS).
-- **T17**: IN PROGRESS. Plan editor inline editing, file checkboxes, reorder, validation. Build passes. R2 attempt 4, 2/2 PASS.
-- **Blueprint**: 33 tasks. T01-T17=Done, T18-T33=Not Started.
+- **T17**: DONE. Committed `619d57f7`. Plan editor inline editing. R2 attempt 4 (2/2 PASS).
+- **T18**: DONE. Committed `e076236e`. WCAG AA contrast audit. R2 (2/2 PASS).
+- **Blueprint**: 33 tasks. T01-T18=Done, T19-T33=Not Started.
 
 ### Next Step
 
-**T17: Commit, then start T18.**
+**T19: Comprehensive unit tests for all TUI screen renderers.**
 
 ### T17 Implementation Details
 

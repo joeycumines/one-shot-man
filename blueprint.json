@@ -361,7 +361,7 @@
       "task": "T18: Audit COLORS values for WCAG AA contrast compliance",
       "description": "Audit color pairs: (a) Extract text-on-bg pairs. (b) Calculate contrast for dark/light. (c) Fix below WCAG AA. (d) Test muted readability. (e) Fix step dots alignment. (f) Fix border alignment.",
       "acceptance": "All pairs pass WCAG AA (4.5:1). Correct in dark+light. Dots centered. Borders aligned.",
-      "status": "Not Started",
+      "status": "Done",
       "context": {
         "files": [
           "internal/command/pr_split_15_tui_views.js (COLORS, resolveColor, styles)"

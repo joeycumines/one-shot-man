@@ -65,7 +65,7 @@ H2:  Bold + Text color                        "Plan Overview"
 Body: Default                                  Regular content
 Dim:  TextDim color + Faint                    Helper text, hints
 Code: Monospace (inherent in terminal)         File paths, branch names
-Badge: Inverted (bg=color, fg=black)           Status badges
+Badge: Inverted (bg=color, fg=textOnColor)     Status badges
 ```
 
 ### Borders

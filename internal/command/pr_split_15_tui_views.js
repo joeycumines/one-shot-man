@@ -23,18 +23,20 @@
 
     // Adaptive color palette: auto-detects light/dark terminal background.
     // Uses {light, dark} objects resolved by lipgloss.AdaptiveColor.
-    // Palette: high-contrast, distinct hues, WCAG AA compliant.
+    // WCAG AA compliant: all text-on-background pairs >= 4.5:1 contrast.
+    // textOnColor is the inverse text for colored (non-surface) backgrounds.
     var COLORS = {
-        primary:   {light: '#6D28D9', dark: '#A78BFA'},  // Purple accent
-        secondary: {light: '#4338CA', dark: '#818CF8'},  // Indigo
-        success:   {light: '#15803D', dark: '#4ADE80'},  // Green
-        warning:   {light: '#A16207', dark: '#FACC15'},  // Amber
-        error:     {light: '#DC2626', dark: '#F87171'},  // Red
-        muted:     {light: '#6B7280', dark: '#9CA3AF'},  // Gray
-        surface:   {light: '#F3F4F6', dark: '#1F2937'},  // Card bg
-        border:    {light: '#D1D5DB', dark: '#4B5563'},  // Borders
-        text:      {light: '#111827', dark: '#F9FAFB'},  // Primary text
-        textDim:   {light: '#6B7280', dark: '#9CA3AF'}   // Secondary text
+        primary:     {light: '#6D28D9', dark: '#A78BFA'},  // Purple accent
+        secondary:   {light: '#4338CA', dark: '#818CF8'},  // Indigo
+        success:     {light: '#15803D', dark: '#4ADE80'},  // Green
+        warning:     {light: '#A16207', dark: '#FACC15'},  // Amber
+        error:       {light: '#DC2626', dark: '#F87171'},  // Red
+        muted:       {light: '#6B7280', dark: '#9CA3AF'},  // Gray
+        surface:     {light: '#F3F4F6', dark: '#1F2937'},  // Card bg
+        border:      {light: '#D1D5DB', dark: '#4B5563'},  // Borders
+        text:        {light: '#111827', dark: '#F9FAFB'},  // Primary text
+        textDim:     {light: '#6B7280', dark: '#9CA3AF'},  // Secondary text
+        textOnColor: {light: '#FFFFFF', dark: '#000000'}   // Text on colored bg (WCAG AA)
     };
 
     // Resolve adaptive color to a plain string (for APIs that don't support objects).
@@ -50,7 +52,7 @@
         titleBar: function() {
             return lipgloss.newStyle()
                 .bold(true)
-                .foreground(COLORS.text)
+                .foreground(COLORS.textOnColor)
                 .background(COLORS.primary)
                 .padding(0, 1);
         },
@@ -79,28 +81,28 @@
         successBadge: function() {
             return lipgloss.newStyle()
                 .bold(true)
-                .foreground('#000000')
+                .foreground(COLORS.textOnColor)
                 .background(COLORS.success)
                 .padding(0, 1);
         },
         warningBadge: function() {
             return lipgloss.newStyle()
                 .bold(true)
-                .foreground('#000000')
+                .foreground(COLORS.textOnColor)
                 .background(COLORS.warning)
                 .padding(0, 1);
         },
         errorBadge: function() {
             return lipgloss.newStyle()
                 .bold(true)
-                .foreground('#000000')
+                .foreground(COLORS.textOnColor)
                 .background(COLORS.error)
                 .padding(0, 1);
         },
         primaryButton: function() {
             return lipgloss.newStyle()
                 .bold(true)
-                .foreground(COLORS.text)
+                .foreground(COLORS.textOnColor)
                 .background(COLORS.primary)
                 .padding(0, 2);
         },
@@ -165,7 +167,7 @@
         focusedButton: function() {
             return lipgloss.newStyle()
                 .bold(true)
-                .foreground(COLORS.text)
+                .foreground(COLORS.textOnColor)
                 .background(COLORS.warning)
                 .padding(0, 2);
         }
@@ -271,6 +273,7 @@
         var stepIdx = STATE_TO_STEP[s.wizardState] || 0;
         var dots = '';
         for (var i = 0; i < 7; i++) {
+            if (i > 0) dots += ' ';
             if (i <= stepIdx) {
                 dots += styles.progressFull().render('\u25cf');
             } else {

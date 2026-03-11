@@ -22,11 +22,13 @@
 - **T16**: DONE. Committed `629c9f44`. Interactive Claude conversation overlay. R2 (2/2 PASS).
 - **T17**: DONE. Committed `619d57f7`. Plan editor inline editing. R2 attempt 4 (2/2 PASS).
 - **T18**: DONE. Committed `e076236e`. WCAG AA contrast audit. R2 (2/2 PASS).
-- **Blueprint**: 33 tasks. T01-T18=Done, T19-T33=Not Started.
+- **T19**: DONE. Committed `5359e8a3`. Comprehensive TUI view tests (45 functions). R2 (2/2 PASS).
+- **T20**: DONE. Comprehensive TUI core tests (58 functions). R2 attempt 2 (2/2 PASS).
+- **Blueprint**: 33 tasks. T01-T20=Done, T21-T33=Not Started.
 
 ### Next Step
 
-**T19: Comprehensive unit tests for all TUI screen renderers.**
+**T21: Robust error handling and retry logic.**
 
 ### T17 Implementation Details
 

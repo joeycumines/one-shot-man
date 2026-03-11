@@ -376,7 +376,7 @@
       "task": "T19: Comprehensive unit tests for all TUI screen renderers",
       "description": "Test all 10 view functions: (a) Various state configs. (b) Zone marks present. (c) No panics at extreme sizes. (d) Responsive differences. (e) Correct styling.",
       "acceptance": "All 10 tested. Zone marks verified. No panics. >=90% coverage. All platforms.",
-      "status": "Not Started",
+      "status": "Done",
       "context": {
         "files": [
           "internal/command/pr_split_15_tui_views.js",
@@ -395,7 +395,7 @@
       "task": "T20: Comprehensive unit tests for keyboard and mouse event handling",
       "description": "Test _updateFn and handleMouseClick: (a) Tab cycling per screen. (b) Arrow nav. (c) Enter activation. (d) Esc back. (e) Every zone click. (f) Wheel scroll. (g) All wizard states.",
       "acceptance": "All inputs tested on all screens. Every zone ID covered. All platforms.",
-      "status": "Not Started",
+      "status": "Done",
       "context": {
         "files": [
           "internal/command/pr_split_16_tui_core.js",

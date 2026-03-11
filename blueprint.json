@@ -499,18 +499,21 @@
       "task": "T25: Implement Claude crash detection and recovery in pipeline",
       "description": "Ongoing health monitoring: (a) isAlive() poll every 5s. (b) On death: cancel waitForLogged, ERROR_RESOLUTION with diagnostic. (c) Recovery: Restart/Fallback/Abort. (d) Heartbeat timeout (60s). (e) Wire into handleAutoSplitPoll.",
       "acceptance": "Crash detected <10s. Recovery options work. Heartbeat timeout triggers. Restart re-spawns.",
-      "status": "Not Started",
+      "status": "Done",
       "context": {
         "files": [
-          "internal/command/pr_split_16_tui_core.js (handleAutoSplitPoll)",
-          "internal/command/pr_split_10_pipeline.js",
-          "internal/command/pr_split_09_claude.js"
+          "internal/command/pr_split_16_tui_core.js (handleAutoSplitPoll, handleErrorResolutionChoice, getFocusElements)",
+          "internal/command/pr_split_10_pipeline.js (AUTOMATED_DEFAULTS, aliveCheckFn)",
+          "internal/command/pr_split_09_claude.js (restart, captureDiagnostic)",
+          "internal/command/pr_split_13_tui.js (VALID_TRANSITIONS)",
+          "internal/command/pr_split_15_tui_views.js (viewErrorResolutionScreen)"
         ],
         "references": [],
         "dependencies": [
           "T08"
         ]
-      }
+      },
+      "completionNotes": "5 JS files modified: (1) pr_split_09_claude.js: restart() and captureDiagnostic() methods on ClaudeCodeExecutor. (2) pr_split_10_pipeline.js: AUTOMATED_DEFAULTS with claudeHealthPollMs=5000, claudeHeartbeatTimeoutMs=60000; heartbeat timeout from constant not watchdog*2; aliveCheckFn checks state.claudeCrashDetected. (3) pr_split_13_tui.js: ERROR_RESOLUTION added as valid transition from PLAN_GENERATION and EQUIV_CHECK. (4) pr_split_15_tui_views.js: crash-specific error resolution UI (Restart Claude, Heuristic Mode, Abort). (5) pr_split_16_tui_core.js: crash detection in handleAutoSplitPoll (isAlive poll every 5s), handleErrorResolutionChoice refactored to intercept crash choices before handleErrorResolutionState (prevents wizard.cancel() fallthrough), getFocusElements/click handler for crash buttons, initial state fields. 14 new tests: 9 in chunk 16, 3 in chunk 13, 2 in chunk 09. Critical bug fixed: crash choices would trigger wizard.cancel() via handleErrorResolutionState default fallthrough."
     },
     {
       "task": "T26: Unit tests for all REPL commands in buildCommands()",

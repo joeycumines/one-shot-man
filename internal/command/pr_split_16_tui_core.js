@@ -163,6 +163,14 @@
                     scrollOffset: 0            // scroll offset in history view
                 },
 
+                // Auto-split pipeline state.
+                autoSplitRunning: false,
+                autoSplitResult: null,
+
+                // Claude crash detection.
+                claudeCrashDetected: false,
+                lastClaudeHealthCheckMs: 0,
+
                 // Results.
                 equivalenceResult: null,
                 errorDetails: null,
@@ -1367,6 +1375,19 @@
 
         // Error resolution: resolution choice buttons.
         if (s.wizardState === 'ERROR_RESOLUTION') {
+            // Crash-specific recovery buttons.
+            if (s.claudeCrashDetected) {
+                if (zone.inBounds('resolve-restart-claude', msg)) {
+                    return handleErrorResolutionChoice(s, 'restart-claude');
+                }
+                if (zone.inBounds('resolve-fallback-heuristic', msg)) {
+                    return handleErrorResolutionChoice(s, 'fallback-heuristic');
+                }
+                if (zone.inBounds('resolve-abort', msg)) {
+                    return handleErrorResolutionChoice(s, 'abort');
+                }
+            }
+            // Standard resolution buttons.
             var resolveChoices = ['auto', 'manual', 'skip', 'retry', 'abort'];
             for (var ri = 0; ri < resolveChoices.length; ri++) {
                 if (zone.inBounds('resolve-' + resolveChoices[ri], msg)) {
@@ -1639,14 +1660,22 @@
                 return elems;
             }
             case 'ERROR_RESOLUTION': {
-                var elems = [
-                    {id: 'resolve-auto',   type: 'button'},
-                    {id: 'resolve-manual', type: 'button'},
-                    {id: 'resolve-skip',   type: 'button'},
-                    {id: 'resolve-retry',  type: 'button'},
-                    {id: 'resolve-abort',  type: 'button'}
-                ];
-                if (st.claudeExecutor) {
+                var elems = [];
+                if (s.claudeCrashDetected) {
+                    // Crash-specific recovery options.
+                    elems.push({id: 'resolve-restart-claude',     type: 'button'});
+                    elems.push({id: 'resolve-fallback-heuristic', type: 'button'});
+                    elems.push({id: 'resolve-abort',              type: 'button'});
+                } else {
+                    elems = [
+                        {id: 'resolve-auto',   type: 'button'},
+                        {id: 'resolve-manual', type: 'button'},
+                        {id: 'resolve-skip',   type: 'button'},
+                        {id: 'resolve-retry',  type: 'button'},
+                        {id: 'resolve-abort',  type: 'button'}
+                    ];
+                }
+                if (st.claudeExecutor && !s.claudeCrashDetected) {
                     elems.push({id: 'error-ask-claude', type: 'button'});
                 }
                 return elems;
@@ -2100,8 +2129,8 @@
     }
 
     // handleAutoSplitPoll: Called every 500ms to check if the async
-    // automatedSplit pipeline has completed. Updates progress indicators
-    // and handles the final result.
+    // automatedSplit pipeline has completed. Updates progress indicators,
+    // performs periodic Claude health checks, and handles the final result.
     function handleAutoSplitPoll(s) {
         // If cancelled, stop polling.
         if (!s.isProcessing) {
@@ -2110,6 +2139,37 @@
 
         // Still running — update progress from pipeline state and poll again.
         if (s.autoSplitRunning) {
+            // Claude health check: poll isAlive() every 5 seconds.
+            var healthPollMs = prSplit.AUTOMATED_DEFAULTS.claudeHealthPollMs || 5000;
+            var now = Date.now();
+            if (!s.lastClaudeHealthCheckMs || (now - s.lastClaudeHealthCheckMs >= healthPollMs)) {
+                s.lastClaudeHealthCheckMs = now;
+                var executor = st.claudeExecutor;
+                if (executor && executor.handle &&
+                    typeof executor.handle.isAlive === 'function') {
+                    if (!executor.handle.isAlive()) {
+                        // Claude process died — capture diagnostic output.
+                        var diagnostic = '';
+                        if (typeof executor.captureDiagnostic === 'function') {
+                            diagnostic = executor.captureDiagnostic();
+                        }
+                        log.printf('auto-split: Claude crash detected by TUI health poll');
+
+                        // Signal the pipeline to abort on its next aliveCheck.
+                        st.claudeCrashDetected = true;
+
+                        // Transition to error resolution with crash context.
+                        s.isProcessing = false;
+                        s.autoSplitRunning = false;
+                        s.claudeCrashDetected = true;
+                        s.errorDetails = 'Claude process crashed unexpectedly.' +
+                            (diagnostic ? '\n\nLast output:\n' + diagnostic : '');
+                        s.wizard.transition('ERROR_RESOLUTION');
+                        s.wizardState = 'ERROR_RESOLUTION';
+                        return [s, null];
+                    }
+                }
+            }
             // Read progress from pipeline's telemetry state.
             var pipelineState = prSplit._state || {};
             var telemetry = pipelineState.telemetryData || {};
@@ -2876,6 +2936,52 @@
     }
 
     function handleErrorResolutionChoice(s, choice) {
+        // Crash-recovery choices bypass the wizard state machine entirely
+        // because handleErrorResolutionState treats unknown choices as
+        // 'abort' and calls wizard.cancel(). Instead, crash-recovery
+        // resets the wizard to a resumable state (PLAN_GENERATION) so
+        // startAnalysis can take over.
+        if (choice === 'restart-claude') {
+            var executor = st.claudeExecutor;
+            if (!executor) {
+                s.errorDetails = 'No Claude executor available for restart.';
+                return [s, null];
+            }
+            var restartOpts = {};
+            if (prSplit._mcpCallbackObj && prSplit._mcpCallbackObj.mcpConfigPath) {
+                restartOpts.mcpConfigPath = prSplit._mcpCallbackObj.mcpConfigPath;
+            }
+            var restartResult = executor.restart(null, restartOpts);
+            if (restartResult.error) {
+                s.errorDetails = 'Claude restart failed: ' + restartResult.error;
+                // Keep claudeCrashDetected=true so crash-specific UI stays active.
+                return [s, null];
+            }
+            // Only clear crash flags after successful restart.
+            s.claudeCrashDetected = false;
+            st.claudeCrashDetected = false;
+            log.printf('auto-split: Claude restarted successfully, session=%s', restartResult.sessionId || '(none)');
+            // Re-attach to tuiMux if available.
+            if (executor.handle && typeof tuiMux !== 'undefined' && tuiMux &&
+                typeof tuiMux.attach === 'function') {
+                try { tuiMux.attach(executor.handle); } catch (e) { /* best effort */ }
+            }
+            // Reset wizard to PLAN_GENERATION so startAnalysis picks up.
+            s.wizard.transition('PLAN_GENERATION');
+            s.wizardState = 'PLAN_GENERATION';
+            return startAnalysis(s);
+        }
+
+        if (choice === 'fallback-heuristic') {
+            s.claudeCrashDetected = false;
+            st.claudeCrashDetected = false;
+            prSplit.runtime.mode = 'heuristic';
+            // Reset wizard to PLAN_GENERATION so startAnalysis picks up.
+            s.wizard.transition('PLAN_GENERATION');
+            s.wizardState = 'PLAN_GENERATION';
+            return startAnalysis(s);
+        }
+
         var result = handleErrorResolutionState(s.wizard, choice);
         s.wizardState = s.wizard.current;
 

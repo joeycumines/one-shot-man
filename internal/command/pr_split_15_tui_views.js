@@ -1420,7 +1420,12 @@
     function viewErrorResolutionScreen(s) {
         var lines = [];
 
-        lines.push(styles.errorBadge().render(' Error Resolution '));
+        // Crash-specific header.
+        if (s.claudeCrashDetected) {
+            lines.push(styles.errorBadge().render(' Claude Process Crashed '));
+        } else {
+            lines.push(styles.errorBadge().render(' Error Resolution '));
+        }
         lines.push('');
 
         if (s.errorDetails) {
@@ -1443,49 +1448,80 @@
             lines.push('');
         }
 
-        // Resolution options with focus styling.
+        // Resolution options — crash-specific or standard.
         var focusIdx = s.focusIndex || 0;
-        var resolveButtons = [
-            {id: 'resolve-auto',   label: 'Auto-Resolve', desc: 'Let Claude fix the issues',           isPrimary: true},
-            {id: 'resolve-manual', label: 'Manual Fix',   desc: 'Switch to Claude pane to fix manually', isPrimary: false},
-            {id: 'resolve-skip',   label: 'Skip',         desc: 'Skip failed branches',               isPrimary: false},
-            {id: 'resolve-retry',  label: 'Retry',        desc: 'Regenerate plan from scratch',        isPrimary: false},
-            {id: 'resolve-abort',  label: 'Abort',        desc: 'Cancel the split',                   isPrimary: false}
-        ];
-        lines.push(styles.bold().render('Choose Resolution:'));
-        lines.push('');
         var compact = layoutMode(s) === 'compact';
-        for (var ri = 0; ri < resolveButtons.length; ri++) {
-            var rb = resolveButtons[ri];
-            var isFocused = (focusIdx === ri);
-            var btnStyle;
-            if (isFocused) {
-                btnStyle = styles.focusedButton();
-            } else if (rb.isPrimary) {
-                btnStyle = styles.primaryButton();
-            } else {
-                btnStyle = styles.secondaryButton();
-            }
-            var line = '  ' + zone.mark(rb.id, btnStyle.render(rb.label));
-            if (!compact) {
-                line += styles.dim().render('  ' + rb.desc);
-            }
-            lines.push(line);
-            if (ri < resolveButtons.length - 1) lines.push('');
-        }
 
-        // "Ask Claude" interactive conversation button (T16).
-        if (st.claudeExecutor) {
+        if (s.claudeCrashDetected) {
+            // Crash recovery options.
+            var crashButtons = [
+                {id: 'resolve-restart-claude',     label: 'Restart Claude', desc: 'Re-spawn Claude process and resume', isPrimary: true},
+                {id: 'resolve-fallback-heuristic', label: 'Heuristic Mode', desc: 'Continue without Claude (local splitting)', isPrimary: false},
+                {id: 'resolve-abort',              label: 'Abort',          desc: 'Cancel the split',                      isPrimary: false}
+            ];
+            lines.push(styles.bold().render('Recovery Options:'));
             lines.push('');
-            lines.push(styles.dim().render(repeatStr('\u2500', Math.min(40, (s.width || 80) - 12))));
+            for (var ci = 0; ci < crashButtons.length; ci++) {
+                var cb = crashButtons[ci];
+                var isCrashFocused = (focusIdx === ci);
+                var crashBtnStyle;
+                if (isCrashFocused) {
+                    crashBtnStyle = styles.focusedButton();
+                } else if (cb.isPrimary) {
+                    crashBtnStyle = styles.primaryButton();
+                } else {
+                    crashBtnStyle = styles.secondaryButton();
+                }
+                var crashLine = '  ' + zone.mark(cb.id, crashBtnStyle.render(cb.label));
+                if (!compact) {
+                    crashLine += styles.dim().render('  ' + cb.desc);
+                }
+                lines.push(crashLine);
+                if (ci < crashButtons.length - 1) lines.push('');
+            }
+        } else {
+            // Standard resolution options.
+            var resolveButtons = [
+                {id: 'resolve-auto',   label: 'Auto-Resolve', desc: 'Let Claude fix the issues',           isPrimary: true},
+                {id: 'resolve-manual', label: 'Manual Fix',   desc: 'Switch to Claude pane to fix manually', isPrimary: false},
+                {id: 'resolve-skip',   label: 'Skip',         desc: 'Skip failed branches',               isPrimary: false},
+                {id: 'resolve-retry',  label: 'Retry',        desc: 'Regenerate plan from scratch',        isPrimary: false},
+                {id: 'resolve-abort',  label: 'Abort',        desc: 'Cancel the split',                   isPrimary: false}
+            ];
+            lines.push(styles.bold().render('Choose Resolution:'));
             lines.push('');
-            var askClaudeFocused = (focusIdx === resolveButtons.length);
-            var askClaudeStyle = askClaudeFocused
-                ? styles.focusedButton()
-                : styles.secondaryButton();
-            lines.push('  ' + zone.mark('error-ask-claude',
-                askClaudeStyle.render('\ud83e\udd16 Ask Claude')) +
-                styles.dim().render('  Chat with Claude about this error'));
+            for (var ri = 0; ri < resolveButtons.length; ri++) {
+                var rb = resolveButtons[ri];
+                var isFocused = (focusIdx === ri);
+                var btnStyle;
+                if (isFocused) {
+                    btnStyle = styles.focusedButton();
+                } else if (rb.isPrimary) {
+                    btnStyle = styles.primaryButton();
+                } else {
+                    btnStyle = styles.secondaryButton();
+                }
+                var line = '  ' + zone.mark(rb.id, btnStyle.render(rb.label));
+                if (!compact) {
+                    line += styles.dim().render('  ' + rb.desc);
+                }
+                lines.push(line);
+                if (ri < resolveButtons.length - 1) lines.push('');
+            }
+
+            // "Ask Claude" interactive conversation button (T16).
+            if (st.claudeExecutor) {
+                lines.push('');
+                lines.push(styles.dim().render(repeatStr('\u2500', Math.min(40, (s.width || 80) - 12))));
+                lines.push('');
+                var askClaudeFocused = (focusIdx === resolveButtons.length);
+                var askClaudeStyle = askClaudeFocused
+                    ? styles.focusedButton()
+                    : styles.secondaryButton();
+                lines.push('  ' + zone.mark('error-ask-claude',
+                    askClaudeStyle.render('\ud83e\udd16 Ask Claude')) +
+                    styles.dim().render('  Chat with Claude about this error'));
+            }
         }
 
         return lines.join('\n');

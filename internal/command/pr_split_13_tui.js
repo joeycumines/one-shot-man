@@ -51,14 +51,14 @@
     // Valid transitions: { fromState: { toState: true, ... }, ... }
     var VALID_TRANSITIONS = {
         'IDLE':             { 'CONFIG': true },
-        'CONFIG':           { 'PLAN_GENERATION': true, 'BASELINE_FAIL': true, 'BRANCH_BUILDING': true, 'CANCELLED': true, 'ERROR': true },
+        'CONFIG':           { 'PLAN_GENERATION': true, 'BASELINE_FAIL': true, 'BRANCH_BUILDING': true, 'ERROR_RESOLUTION': true, 'CANCELLED': true, 'ERROR': true },
         'BASELINE_FAIL':    { 'PLAN_GENERATION': true, 'CANCELLED': true },
-        'PLAN_GENERATION':  { 'PLAN_REVIEW': true, 'CANCELLED': true, 'FORCE_CANCEL': true, 'PAUSED': true, 'ERROR': true },
+        'PLAN_GENERATION':  { 'PLAN_REVIEW': true, 'ERROR_RESOLUTION': true, 'CANCELLED': true, 'FORCE_CANCEL': true, 'PAUSED': true, 'ERROR': true },
         'PLAN_REVIEW':      { 'PLAN_EDITOR': true, 'BRANCH_BUILDING': true, 'PLAN_GENERATION': true, 'CANCELLED': true },
         'PLAN_EDITOR':      { 'PLAN_REVIEW': true },
         'BRANCH_BUILDING':  { 'EQUIV_CHECK': true, 'ERROR_RESOLUTION': true, 'CANCELLED': true, 'FORCE_CANCEL': true, 'PAUSED': true, 'ERROR': true },
         'ERROR_RESOLUTION': { 'EQUIV_CHECK': true, 'BRANCH_BUILDING': true, 'PLAN_GENERATION': true, 'CANCELLED': true, 'FORCE_CANCEL': true },
-        'EQUIV_CHECK':      { 'FINALIZATION': true, 'CANCELLED': true, 'ERROR': true },
+        'EQUIV_CHECK':      { 'FINALIZATION': true, 'ERROR_RESOLUTION': true, 'CANCELLED': true, 'ERROR': true },
         'FINALIZATION':     { 'FINALIZATION': true, 'DONE': true },
         'DONE':             { 'IDLE': true },
         'CANCELLED':        { 'DONE': true },

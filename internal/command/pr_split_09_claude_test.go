@@ -519,3 +519,184 @@ func TestChunk09_ClaudeCodeExecutor_Close(t *testing.T) {
 		t.Error("expected resolved null after close")
 	}
 }
+
+// ---------------------------------------------------------------------------
+//  T025: Crash recovery — restart() and captureDiagnostic()
+// ---------------------------------------------------------------------------
+
+func TestChunk09_ClaudeCodeExecutor_CaptureDiagnostic(t *testing.T) {
+	t.Parallel()
+	evalJS := loadChunkEngine(t, nil, claudeChunks...)
+
+	result, err := evalJS(`
+		(function() {
+			var ex = new globalThis.prSplit.ClaudeCodeExecutor({});
+			// No handle — should return empty string.
+			var d1 = ex.captureDiagnostic();
+
+			// Handle with receive returning data.
+			ex.handle = {
+				receive: function() { return 'error: segfault at 0x0\npanic: runtime error'; }
+			};
+			var d2 = ex.captureDiagnostic();
+
+			// Handle with receive that throws (simulating dead process EOF).
+			ex.handle = {
+				receive: function() { throw new Error('EOF'); }
+			};
+			var d3 = ex.captureDiagnostic();
+
+			// Handle without receive method.
+			ex.handle = {};
+			var d4 = ex.captureDiagnostic();
+
+			return JSON.stringify({
+				noHandle: d1,
+				withData: d2,
+				throwsEOF: d3,
+				noReceive: d4
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var data struct {
+		NoHandle  string `json:"noHandle"`
+		WithData  string `json:"withData"`
+		ThrowsEOF string `json:"throwsEOF"`
+		NoReceive string `json:"noReceive"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &data); err != nil {
+		t.Fatal(err)
+	}
+	if data.NoHandle != "" {
+		t.Errorf("captureDiagnostic with no handle should be empty, got %q", data.NoHandle)
+	}
+	if data.WithData != "error: segfault at 0x0\npanic: runtime error" {
+		t.Errorf("captureDiagnostic with data got %q", data.WithData)
+	}
+	if data.ThrowsEOF != "" {
+		t.Errorf("captureDiagnostic with EOF throw should be empty, got %q", data.ThrowsEOF)
+	}
+	if data.NoReceive != "" {
+		t.Errorf("captureDiagnostic with no receive should be empty, got %q", data.NoReceive)
+	}
+}
+
+func TestChunk09_ClaudeCodeExecutor_Restart(t *testing.T) {
+	t.Parallel()
+	evalJS := loadChunkEngine(t, nil, claudeChunks...)
+
+	result, err := evalJS(`
+		(function() {
+			var closeCalled = false;
+			var resolveCalled = false;
+			var spawnCalled = false;
+			var spawnOpts = null;
+
+			var ex = new globalThis.prSplit.ClaudeCodeExecutor({
+				claudeCommand: '/usr/bin/test-claude'
+			});
+			ex.handle = { close: function() { closeCalled = true; } };
+			ex.sessionId = 'old-session';
+			ex.resolved = { command: '/usr/bin/test-claude', type: 'explicit' };
+
+			// Mock resolve and spawn.
+			var origResolve = ex.resolve;
+			ex.resolve = function() {
+				resolveCalled = true;
+				ex.resolved = { command: '/usr/bin/test-claude', type: 'explicit' };
+				return { error: null };
+			};
+			var origSpawn = ex.spawn;
+			ex.spawn = function(sid, opts) {
+				spawnCalled = true;
+				spawnOpts = opts;
+				ex.handle = { isAlive: function() { return true; } };
+				ex.sessionId = 'new-session';
+				return { error: null, sessionId: 'new-session' };
+			};
+
+			var result = ex.restart(null, { mcpConfigPath: '/tmp/mcp.json' });
+			return JSON.stringify({
+				closeCalled: closeCalled,
+				resolveCalled: resolveCalled,
+				spawnCalled: spawnCalled,
+				error: result.error,
+				sessionId: result.sessionId,
+				mcpConfigPath: spawnOpts ? spawnOpts.mcpConfigPath : ''
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var data struct {
+		CloseCalled   bool    `json:"closeCalled"`
+		ResolveCalled bool    `json:"resolveCalled"`
+		SpawnCalled   bool    `json:"spawnCalled"`
+		Error         *string `json:"error"`
+		SessionId     string  `json:"sessionId"`
+		McpConfigPath string  `json:"mcpConfigPath"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &data); err != nil {
+		t.Fatal(err)
+	}
+	if !data.CloseCalled {
+		t.Error("restart should call close()")
+	}
+	if !data.ResolveCalled {
+		t.Error("restart should call resolve()")
+	}
+	if !data.SpawnCalled {
+		t.Error("restart should call spawn()")
+	}
+	if data.Error != nil {
+		t.Errorf("restart error should be null, got %v", *data.Error)
+	}
+	if data.SessionId != "new-session" {
+		t.Errorf("restart sessionId should be 'new-session', got %q", data.SessionId)
+	}
+	if data.McpConfigPath != "/tmp/mcp.json" {
+		t.Errorf("restart should pass mcpConfigPath, got %q", data.McpConfigPath)
+	}
+}
+
+func TestChunk09_ClaudeCodeExecutor_Restart_ResolveFails(t *testing.T) {
+	t.Parallel()
+	evalJS := loadChunkEngine(t, nil, claudeChunks...)
+
+	result, err := evalJS(`
+		(function() {
+			var ex = new globalThis.prSplit.ClaudeCodeExecutor({});
+			ex.handle = { close: function() {} };
+
+			// Mock resolve to fail.
+			ex.resolve = function() {
+				return { error: 'binary not found' };
+			};
+
+			var r = ex.restart();
+			return JSON.stringify({ error: r.error });
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var data struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &data); err != nil {
+		t.Fatal(err)
+	}
+	if data.Error == "" {
+		t.Error("restart with failed resolve should return error")
+	}
+	if !strings.Contains(data.Error, "resolve failed") {
+		t.Errorf("error should mention resolve failed, got %q", data.Error)
+	}
+}

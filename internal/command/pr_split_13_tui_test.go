@@ -4191,3 +4191,137 @@ func TestChunk13_WizardView_NormalTerminal(t *testing.T) {
 		t.Errorf("normal terminal viewport test: %v", got)
 	}
 }
+
+// ---------------------------------------------------------------------------
+//  T025: Crash recovery — new transition paths
+// ---------------------------------------------------------------------------
+
+// TestChunk13_WizardState_CrashTransitions verifies that the new
+// ERROR_RESOLUTION transitions from PLAN_GENERATION and EQUIV_CHECK are valid.
+func TestChunk13_WizardState_CrashTransitions(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+
+		// PLAN_GENERATION → ERROR_RESOLUTION (crash during classification/plan).
+		var w1 = new prSplit.WizardState();
+		w1.transition('CONFIG');
+		w1.transition('PLAN_GENERATION');
+		try {
+			w1.transition('ERROR_RESOLUTION');
+			if (w1.current !== 'ERROR_RESOLUTION') {
+				errors.push('PLAN_GENERATION→ERROR_RESOLUTION: current is ' + w1.current);
+			}
+		} catch (e) {
+			errors.push('PLAN_GENERATION→ERROR_RESOLUTION threw: ' + e.message);
+		}
+
+		// EQUIV_CHECK → ERROR_RESOLUTION (crash during equivalence check).
+		var w2 = new prSplit.WizardState();
+		w2.transition('CONFIG');
+		w2.transition('PLAN_GENERATION');
+		w2.transition('PLAN_REVIEW');
+		w2.transition('BRANCH_BUILDING');
+		w2.transition('EQUIV_CHECK');
+		try {
+			w2.transition('ERROR_RESOLUTION');
+			if (w2.current !== 'ERROR_RESOLUTION') {
+				errors.push('EQUIV_CHECK→ERROR_RESOLUTION: current is ' + w2.current);
+			}
+		} catch (e) {
+			errors.push('EQUIV_CHECK→ERROR_RESOLUTION threw: ' + e.message);
+		}
+
+		// BRANCH_BUILDING → ERROR_RESOLUTION (already existed).
+		var w3 = new prSplit.WizardState();
+		w3.transition('CONFIG');
+		w3.transition('PLAN_GENERATION');
+		w3.transition('PLAN_REVIEW');
+		w3.transition('BRANCH_BUILDING');
+		try {
+			w3.transition('ERROR_RESOLUTION');
+			if (w3.current !== 'ERROR_RESOLUTION') {
+				errors.push('BRANCH_BUILDING→ERROR_RESOLUTION: current is ' + w3.current);
+			}
+		} catch (e) {
+			errors.push('BRANCH_BUILDING→ERROR_RESOLUTION threw: ' + e.message);
+		}
+
+		// CONFIG → ERROR_RESOLUTION (crash during auto-split pipeline).
+		var w4 = new prSplit.WizardState();
+		w4.transition('CONFIG');
+		try {
+			w4.transition('ERROR_RESOLUTION');
+			if (w4.current !== 'ERROR_RESOLUTION') {
+				errors.push('CONFIG→ERROR_RESOLUTION: current is ' + w4.current);
+			}
+		} catch (e) {
+			errors.push('CONFIG→ERROR_RESOLUTION threw: ' + e.message);
+		}
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("crash transitions: %v", raw)
+	}
+}
+
+// TestChunk13_ViewErrorResolutionScreen_CrashMode verifies the crash-specific
+// view rendering in the error resolution screen.
+func TestChunk13_ViewErrorResolutionScreen_CrashMode(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = {
+			wizardState: 'ERROR_RESOLUTION',
+			width: 80,
+			claudeCrashDetected: true,
+			errorDetails: 'Claude process crashed unexpectedly.\n\nLast output:\nsegfault',
+			wizard: { data: {} }
+		};
+		var rendered = globalThis.prSplit._viewErrorResolutionScreen(s);
+
+		var errors = [];
+		// Crash-specific header.
+		if (rendered.indexOf('Crashed') < 0) {
+			errors.push('should contain "Crashed" header');
+		}
+		// Crash-specific buttons.
+		if (rendered.indexOf('Restart Claude') < 0) {
+			errors.push('should contain "Restart Claude" button');
+		}
+		if (rendered.indexOf('Heuristic') < 0) {
+			errors.push('should contain "Heuristic" button');
+		}
+		if (rendered.indexOf('Abort') < 0) {
+			errors.push('should contain "Abort" button');
+		}
+		// Should NOT contain standard buttons.
+		if (rendered.indexOf('Auto-Resolve') >= 0) {
+			errors.push('should NOT contain "Auto-Resolve" in crash mode');
+		}
+		if (rendered.indexOf('Manual Fix') >= 0) {
+			errors.push('should NOT contain "Manual Fix" in crash mode');
+		}
+		// Diagnostic output should appear.
+		if (rendered.indexOf('segfault') < 0) {
+			errors.push('should contain diagnostic output "segfault"');
+		}
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("error resolution crash mode view: %v", raw)
+	}
+}

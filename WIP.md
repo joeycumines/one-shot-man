@@ -27,12 +27,30 @@
 - **T21**: DONE. Committed `0e4a6b50`. 12 new wizard integration tests (15 total, ≥15 flow paths). R2 restarted 1x (T29→T21 comment fix), final 2/2 PASS.
 - **T22**: DONE. Committed `0b65b868`. 6 new VTerm observation tests + 3 helpers. R2 restarted 2x (plan-regeneration fix), final 2/2 PASS.
 - **T23**: DONE. Committed `2e7dd18d`. Zone audit: 34 unique zone ID patterns, all have handlers. Found/fixed 1 bug: confirm cancel dialog missing !msg.isWheel guard. Added regression test. R2 (2/2 PASS).
-- **T24**: DONE. Keyboard routing audit: help overlay updated (4 sections, 16+ bindings, e→"Edit / rename split"). 46 view tests with t.Parallel(). 6 new routing tests. All screens respond. R2 PENDING.
-- **Blueprint**: 33 tasks. T01-T24=Done, T25-T33=Not Started.
+- **T24**: DONE. Committed `9901a1c2`. Keyboard routing audit: help overlay updated (4 sections, 16+ bindings, e→"Edit / rename split"). 46 view tests with t.Parallel(). 6 new routing tests. R2 (2/2 PASS).
+- **T25**: IN PROGRESS. Claude crash detection and recovery. All code + 14 tests written. Build passes. Pending: lint, R2, commit.
+- **Blueprint**: 33 tasks. T01-T24=Done, T25=In Progress (pending commit), T26-T33=Not Started.
 
 ### Next Step
 
-**T25: Implement Claude crash detection and recovery in pipeline.**
+**T25: Run lint → R2 → Commit. Then T26.**
+
+### T25 Implementation Details (for Next Takumi)
+
+- JS files changed: pr_split_09_claude.js, pr_split_10_pipeline.js, pr_split_13_tui.js, pr_split_15_tui_views.js, pr_split_16_tui_core.js
+- Test files changed: pr_split_09_claude_test.go, pr_split_13_tui_test.go, pr_split_16_tui_core_test.go
+- ClaudeCodeExecutor additions: restart(sessionId, opts) closes+re-resolves+re-spawns; captureDiagnostic() reads last PTY output from dying process
+- AUTOMATED_DEFAULTS: claudeHealthPollMs=5000 (poll every 5s), claudeHeartbeatTimeoutMs=60000 (was watchdogIdleMs*2)
+- aliveCheckFn: checks state.claudeCrashDetected flag first (prevents pipeline from continuing with dead Claude)
+- handleAutoSplitPoll: checks executor.handle.isAlive() every 5s; on death→sets claudeCrashDetected=true, captures diagnostic, transitions to ERROR_RESOLUTION
+- VALID_TRANSITIONS updated: PLAN_GENERATION→ERROR_RESOLUTION, EQUIV_CHECK→ERROR_RESOLUTION (Claude can crash during either)
+- CRITICAL BUG FIX: handleErrorResolutionChoice now intercepts 'restart-claude' and 'fallback-heuristic' BEFORE calling handleErrorResolutionState. handleErrorResolutionState has default fallthrough calling wizard.cancel() for unknown choices.
+- Recovery: 'restart-claude' calls executor.restart(), clears crash flag, restarts analysis. 'fallback-heuristic' sets mode to 'heuristic', clears crash flag, restarts analysis.
+- viewErrorResolutionScreen: conditional crash UI (3 buttons) vs standard UI (5 buttons)
+- getFocusElements: conditional crash buttons (resolve-restart-claude, resolve-fallback-heuristic, resolve-abort)
+- Initial state: claudeCrashDetected=false, lastClaudeHealthCheckMs=0 in createWizardModel _initFn
+- 14 new tests: 9 in chunk16 (auto-poll, restart, fallback, abort, focus elements, focus activate, plan-gen transition, initial state, view), 3 in chunk13 (plan-gen→error, equiv→error, crash view), 2 in chunk09 (captureDiagnostic, restart)
+- Test fix: CrashDetection_PlanGenerationTransition manually builds wizard state (reset→CONFIG→PLAN_GENERATION) because initState() helper doesn't support PLAN_GENERATION
 
 ### Pre-existing JS bugs noted during T21 R2
 - `WizardState.prototype.forceCancel()` fires listener with `(FORCE_CANCEL, FORCE_CANCEL, data)` instead of `(originalFrom, FORCE_CANCEL, data)` — the from arg is wrong because `this.current` is already mutated before notify.

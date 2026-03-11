@@ -206,6 +206,33 @@
         this.resolved = null;
     };
 
+    // captureDiagnostic: Attempt to read last output from the dying
+    // process handle for post-mortem analysis.
+    ClaudeCodeExecutor.prototype.captureDiagnostic = function() {
+        if (!this.handle) return '';
+        var output = '';
+        if (typeof this.handle.receive === 'function') {
+            try {
+                var chunk = this.handle.receive();
+                if (chunk) { output = chunk; }
+            } catch (e) { /* EOF expected for dead process */ }
+        }
+        return output;
+    };
+
+    // restart: Close the current session and spawn a new one.
+    // Returns the same shape as spawn(): { error, sessionId }.
+    ClaudeCodeExecutor.prototype.restart = function(sessionId, opts) {
+        log.printf('ClaudeCodeExecutor.restart: closing existing session');
+        this.close();
+        var resolveResult = this.resolve();
+        if (resolveResult.error) {
+            return { error: 'restart resolve failed: ' + resolveResult.error };
+        }
+        log.printf('ClaudeCodeExecutor.restart: spawning new session');
+        return this.spawn(sessionId, opts);
+    };
+
     // -----------------------------------------------------------------------
     //  Prompt Templates (Go text/template syntax)
     // -----------------------------------------------------------------------

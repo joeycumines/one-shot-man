@@ -69,7 +69,9 @@
         verifyTimeoutMs: 600000,    // 10 minutes per branch for verify step
         pipelineTimeoutMs: 7200000, // 120 minutes overall pipeline timeout
         stepTimeoutMs: 3600000,     // 60 minutes per step
-        watchdogIdleMs: 900000      // 15 minutes no-progress watchdog
+        watchdogIdleMs: 900000,     // 15 minutes no-progress watchdog
+        claudeHealthPollMs: 5000,   // TUI polls isAlive() every 5 seconds
+        claudeHeartbeatTimeoutMs: 60000  // 60 seconds heartbeat timeout
     };
 
     // Delay between text and newline writes to defeat PTY coalescing.
@@ -1343,8 +1345,8 @@
             // Heartbeat tool — Claude calls periodically to signal liveness.
             // Heartbeat timeout: if Claude has sent at least one heartbeat but
             // then goes silent for longer than this, waitForLogged aborts.
-            // Default: 2× the watchdog idle time.
-            var heartbeatTimeoutMs = config.heartbeatTimeoutMs || (watchdogIdleMs * 2);
+            // Default: claudeHeartbeatTimeoutMs from AUTOMATED_DEFAULTS (60s).
+            var heartbeatTimeoutMs = config.heartbeatTimeoutMs || AUTOMATED_DEFAULTS.claudeHeartbeatTimeoutMs;
             mcpCallbackObj.addTool('heartbeat',
                 'Send a heartbeat to indicate Claude is still actively working. Call this periodically during long-running analysis.',
                 {
@@ -1407,7 +1409,11 @@
         sessionId = executor.sessionId;
 
         // Heartbeat function: checks if the Claude process is still alive.
+        // Also checks for crash detection flag set by the TUI health poll.
         aliveCheckFn = function() {
+            if (state.claudeCrashDetected) {
+                return false;
+            }
             if (!claudeExecutor || !claudeExecutor.handle ||
                 typeof claudeExecutor.handle.isAlive !== 'function' ||
                 !claudeExecutor.handle.isAlive()) {
@@ -1768,6 +1774,9 @@
                 if (!resumeSpawn.error) {
                     sessionId = resumeSpawn.sessionId;
                     aliveCheckFn = function() {
+                        if (state.claudeCrashDetected) {
+                            return false;
+                        }
                         return claudeExecutor && claudeExecutor.handle &&
                                typeof claudeExecutor.handle.isAlive === 'function' &&
                                claudeExecutor.handle.isAlive();

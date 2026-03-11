@@ -24,12 +24,13 @@
 - **T18**: DONE. Committed `e076236e`. WCAG AA contrast audit. R2 (2/2 PASS).
 - **T19**: DONE. Committed `5359e8a3`. Comprehensive TUI view tests (45 functions). R2 (2/2 PASS).
 - **T20**: DONE. Committed `b8f5cd72`. Comprehensive TUI core tests (58 functions). R2 attempt 2 (2/2 PASS).
-- **T21**: DONE. 12 new wizard integration tests (15 total, ≥15 flow paths). Also includes T19's missed views_test.go (45 tests). R2 restarted 1x (T29→T21 comment fix), final 2/2 PASS.
-- **Blueprint**: 33 tasks. T01-T21=Done, T22-T33=Not Started.
+- **T21**: DONE. Committed `0e4a6b50`. 12 new wizard integration tests (15 total, ≥15 flow paths). Also includes T19's missed views_test.go (45 tests). R2 restarted 1x (T29→T21 comment fix), final 2/2 PASS.
+- **T22**: DONE. 6 new VTerm observation tests + 3 helpers. R2 restarted 2x (plan-regeneration fix), final 2/2 PASS.
+- **Blueprint**: 33 tasks. T01-T22=Done, T23-T33=Not Started.
 
 ### Next Step
 
-**T22: VTerm-based integration tests for TUI rendering end-to-end.**
+**T23: Audit mouse zone coverage — every zone.mark() has a handler.**
 
 ### Pre-existing JS bugs noted during T21 R2
 - `WizardState.prototype.forceCancel()` fires listener with `(FORCE_CANCEL, FORCE_CANCEL, data)` instead of `(originalFrom, FORCE_CANCEL, data)` — the from arg is wrong because `this.current` is already mutated before notify.

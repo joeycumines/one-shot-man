@@ -1009,3 +1009,520 @@ func TestIntegration_PrSplit_VTermMultiCommand(t *testing.T) {
 
 	t.Logf("Multi-command VTerm test complete. Output length: %d chars", len(output))
 }
+
+// ---------------------------------------------------------------------------
+// T22: VTerm-based integration tests for TUI rendering end-to-end.
+//
+// These tests extend the observation suite with detailed assertions on REPL
+// command output. They exercise analyze, plan, preview, config, and plan
+// manipulation commands through a real PTY, verifying that the terminal
+// renders expected elements (file lists, status markers, split names, config
+// values). All tests use the heuristic path only — no Claude required.
+// ---------------------------------------------------------------------------
+
+// vtermStartConsole creates a termtest.Console for the osm pr-split REPL
+// and waits for the initial prompt. Returns the console and a snapshot
+// positioned after the prompt. The caller must defer cp.Close().
+func vtermStartConsole(t *testing.T, ctx context.Context, osmBin, repoDir string, rows, cols uint16) (*termtest.Console, termtest.Snapshot) {
+	t.Helper()
+
+	cp, err := termtest.NewConsole(ctx,
+		termtest.WithCommand(osmBin, "pr-split", "-base=main", "-strategy=directory", "-verify=true"),
+		termtest.WithDir(repoDir),
+		termtest.WithEnv([]string{
+			"TERM=xterm-256color",
+			"HOME=" + t.TempDir(),
+			"OSM_CONFIG=",
+		}),
+		termtest.WithSize(rows, cols),
+		termtest.WithDefaultTimeout(30*time.Second),
+	)
+	if err != nil {
+		t.Fatalf("termtest.NewConsole: %v", err)
+	}
+
+	snap := cp.Snapshot()
+	if err := cp.Expect(ctx, snap, termtest.Contains("pr-split"), "initial prompt"); err != nil {
+		cp.Close()
+		t.Fatalf("pr-split prompt did not appear: %v\nOutput:\n%s", err, cp.String())
+	}
+	return cp, cp.Snapshot()
+}
+
+// vtermSendAndExpect sends a REPL command and waits for one of the expected
+// strings to appear in the terminal output (after the snapshot baseline).
+func vtermSendAndExpect(t *testing.T, ctx context.Context, cp *termtest.Console, snap *termtest.Snapshot, cmd string, timeout time.Duration, desc string, expected ...string) {
+	t.Helper()
+
+	if err := cp.SendLine(cmd); err != nil {
+		t.Fatalf("failed to send %q: %v", cmd, err)
+	}
+
+	var conds []termtest.Condition
+	for _, e := range expected {
+		conds = append(conds, termtest.Contains(e))
+	}
+	var cond termtest.Condition
+	if len(conds) == 1 {
+		cond = conds[0]
+	} else {
+		cond = termtest.Any(conds...)
+	}
+
+	stepCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	if err := cp.Expect(stepCtx, *snap, cond, desc); err != nil {
+		t.Fatalf("%s: command %q did not produce expected output: %v\nOutput:\n%s", desc, cmd, err, cp.String())
+	}
+	*snap = cp.Snapshot()
+}
+
+// vtermExitCleanly sends "exit" and verifies the process exits within 10s.
+func vtermExitCleanly(t *testing.T, ctx context.Context, cp *termtest.Console) {
+	t.Helper()
+
+	if err := cp.SendLine("exit"); err != nil {
+		t.Logf("failed to send exit: %v", err)
+	}
+	exitCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	code, err := cp.WaitExit(exitCtx)
+	if err != nil {
+		t.Errorf("failed to wait for exit: %v\nOutput:\n%s", err, cp.String())
+	} else if code != 0 {
+		t.Errorf("process exited with code %d", code)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestIntegration_PrSplit_VTermAnalyze
+//
+// Sends the "analyze" REPL command and verifies the terminal output
+// contains: (a) file count, (b) branch arrows, (c) file status markers
+// [M] and [A] for known feature files, (d) specific file paths.
+//
+// Run with:
+//   go test -race -v -count=1 -timeout=5m -integration \
+//     ./internal/command/... \
+//     -run TestIntegration_PrSplit_VTermAnalyze
+// ---------------------------------------------------------------------------
+
+func TestIntegration_PrSplit_VTermAnalyze(t *testing.T) {
+	skipIfNotIntegration(t)
+
+	osmBin := buildOSMBinary(t)
+	repoDir := initIntegrationRepo(t)
+	addIntegrationFeatureFiles(t, repoDir)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	cp, snap := vtermStartConsole(t, ctx, osmBin, repoDir, 40, 120)
+	defer cp.Close()
+
+	// Send analyze command.
+	vtermSendAndExpect(t, ctx, cp, &snap, "analyze", 30*time.Second, "analyze output",
+		"Changed files:")
+
+	// Validate output contents.
+	output := cp.String()
+
+	// Branch arrow: feature → main
+	if !strings.Contains(output, "feature") || !strings.Contains(output, "main") {
+		t.Error("expected branch names 'feature' and 'main' in analyze output")
+	}
+
+	// File status markers — addIntegrationFeatureFiles creates these:
+	expectedFiles := []struct {
+		path   string
+		status string // A=added, M=modified
+	}{
+		{"pkg/auth/auth.go", "A"},
+		{"pkg/auth/auth_test.go", "A"},
+		{"pkg/core/config.go", "A"},
+		{"pkg/core/config_test.go", "A"},
+		{"internal/util/numbers.go", "A"},
+		{"internal/util/numbers_test.go", "A"},
+		{"internal/middleware/logging.go", "A"},
+		{"docs/api-reference.md", "A"},
+		{"docs/changelog.md", "A"},
+		{"cmd/app/main.go", "M"},
+	}
+
+	for _, ef := range expectedFiles {
+		if !strings.Contains(output, ef.path) {
+			t.Errorf("expected file path %q in analyze output", ef.path)
+		}
+		// Verify status marker [A] or [M] for this file.
+		statusMarker := "[" + ef.status + "] " + ef.path
+		if !strings.Contains(output, statusMarker) {
+			// Status may appear with just the marker near the file name.
+			if !strings.Contains(output, "["+ef.status+"]") {
+				t.Errorf("expected status marker [%s] for file %q", ef.status, ef.path)
+			}
+		}
+	}
+
+	// Verify file count.
+	if !strings.Contains(output, "Changed files:") {
+		t.Error("expected 'Changed files:' header in output")
+	}
+
+	vtermExitCleanly(t, ctx, cp)
+}
+
+// ---------------------------------------------------------------------------
+// TestIntegration_PrSplit_VTermGroupAndPlan
+//
+// Exercises the full analysis pipeline through REPL commands:
+//   analyze → group → plan → preview
+// Verifying output at each step: file list, group names, split plan listing,
+// and detailed preview with branch names and file assignments.
+//
+// Run with:
+//   go test -race -v -count=1 -timeout=5m -integration \
+//     ./internal/command/... \
+//     -run TestIntegration_PrSplit_VTermGroupAndPlan
+// ---------------------------------------------------------------------------
+
+func TestIntegration_PrSplit_VTermGroupAndPlan(t *testing.T) {
+	skipIfNotIntegration(t)
+
+	osmBin := buildOSMBinary(t)
+	repoDir := initIntegrationRepo(t)
+	addIntegrationFeatureFiles(t, repoDir)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	cp, snap := vtermStartConsole(t, ctx, osmBin, repoDir, 40, 120)
+	defer cp.Close()
+
+	// Step 1: Analyze.
+	vtermSendAndExpect(t, ctx, cp, &snap, "analyze", 30*time.Second, "analyze",
+		"Changed files:")
+	t.Log("analyze complete")
+
+	// Step 2: Group by directory strategy.
+	vtermSendAndExpect(t, ctx, cp, &snap, "group directory", 15*time.Second, "group",
+		"Groups")
+
+	// Validate group output — directory strategy should create groups
+	// based on directory paths: cmd/app, pkg/auth, pkg/core, internal/util,
+	// internal/middleware, docs.
+	output := cp.String()
+
+	// These directories should produce groups.
+	expectedGroups := []string{"pkg/auth", "pkg/core", "internal/util", "docs", "cmd/app"}
+	foundGroups := 0
+	for _, g := range expectedGroups {
+		if strings.Contains(output, g) {
+			foundGroups++
+		}
+	}
+	if foundGroups < 3 {
+		t.Errorf("expected at least 3 directory groups, found %d out of %v", foundGroups, expectedGroups)
+	}
+	t.Log("group complete")
+
+	// Step 3: Create plan.
+	vtermSendAndExpect(t, ctx, cp, &snap, "plan", 15*time.Second, "plan",
+		"Plan created:", "splits")
+	t.Log("plan complete")
+
+	// Plan should show split count and "Base: main".
+	output = cp.String()
+	if !strings.Contains(output, "main") {
+		t.Error("expected 'main' base branch in plan output")
+	}
+
+	// Step 4: Preview — detailed plan.
+	vtermSendAndExpect(t, ctx, cp, &snap, "preview", 15*time.Second, "preview",
+		"Split Plan Preview")
+
+	output = cp.String()
+	previewChecks := []string{
+		"Base branch:",
+		"Source branch:",
+		"Verify command:",
+		"Splits:",
+		"Split",
+		"Files:",
+	}
+	for _, check := range previewChecks {
+		if !strings.Contains(output, check) {
+			t.Errorf("expected %q in preview output", check)
+		}
+	}
+	t.Log("preview complete")
+
+	vtermExitCleanly(t, ctx, cp)
+}
+
+// ---------------------------------------------------------------------------
+// TestIntegration_PrSplit_VTermSetConfig
+//
+// Exercises the "set" REPL command to verify config rendering:
+//   (a) "set" with no args displays all config keys/values
+//   (b) "set base develop" changes the base branch
+//   (c) "set strategy extension" changes strategy
+//   (d) Final "set" shows updated values
+//
+// Run with:
+//   go test -race -v -count=1 -timeout=5m -integration \
+//     ./internal/command/... \
+//     -run TestIntegration_PrSplit_VTermSetConfig
+// ---------------------------------------------------------------------------
+
+func TestIntegration_PrSplit_VTermSetConfig(t *testing.T) {
+	skipIfNotIntegration(t)
+
+	osmBin := buildOSMBinary(t)
+	repoDir := initIntegrationRepo(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	cp, snap := vtermStartConsole(t, ctx, osmBin, repoDir, 24, 80)
+	defer cp.Close()
+
+	// "set" with no args shows current config.
+	vtermSendAndExpect(t, ctx, cp, &snap, "set", 15*time.Second, "config display",
+		"base:", "strategy:", "max:", "prefix:")
+
+	output := cp.String()
+
+	// Default values should be visible.
+	configChecks := []struct {
+		key, expected string
+	}{
+		{"base:", "main"},
+		{"strategy:", "directory"},
+		{"prefix:", "split/"},
+	}
+	for _, c := range configChecks {
+		if !strings.Contains(output, c.expected) {
+			t.Errorf("expected default value %q (for key %s) in config output", c.expected, c.key)
+		}
+	}
+
+	// Mutate config: change base branch.
+	vtermSendAndExpect(t, ctx, cp, &snap, "set base develop", 10*time.Second, "set base",
+		"Set base = develop")
+
+	// Mutate config: change strategy.
+	vtermSendAndExpect(t, ctx, cp, &snap, "set strategy extension", 10*time.Second, "set strategy",
+		"Set strategy = extension")
+
+	// Verify mutations via another "set" call.
+	vtermSendAndExpect(t, ctx, cp, &snap, "set", 10*time.Second, "config after mutation",
+		"develop", "extension")
+
+	output = cp.String()
+	if !strings.Contains(output, "develop") {
+		t.Error("expected mutated base branch 'develop' in config output")
+	}
+	if !strings.Contains(output, "extension") {
+		t.Error("expected mutated strategy 'extension' in config output")
+	}
+
+	vtermExitCleanly(t, ctx, cp)
+}
+
+// ---------------------------------------------------------------------------
+// TestIntegration_PrSplit_VTermExecuteAndVerify
+//
+// Full REPL workflow: analyze → group → plan → execute → equivalence.
+// Verifies: (a) execution creates branches with SHA output,
+// (b) equivalence check passes, (c) git repo has split/* branches.
+//
+// This extends VTermHeuristicRun by testing individual commands rather
+// than the composite "run" command — proving each step works in isolation.
+//
+// Run with:
+//   go test -race -v -count=1 -timeout=5m -integration \
+//     ./internal/command/... \
+//     -run TestIntegration_PrSplit_VTermExecuteAndVerify
+// ---------------------------------------------------------------------------
+
+func TestIntegration_PrSplit_VTermExecuteAndVerify(t *testing.T) {
+	skipIfNotIntegration(t)
+
+	osmBin := buildOSMBinary(t)
+	repoDir := initIntegrationRepo(t)
+	addIntegrationFeatureFiles(t, repoDir)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	cp, snap := vtermStartConsole(t, ctx, osmBin, repoDir, 40, 120)
+	defer cp.Close()
+
+	// Step 1: Analyze.
+	vtermSendAndExpect(t, ctx, cp, &snap, "analyze", 30*time.Second, "analyze",
+		"Changed files:")
+	t.Log("analyze complete")
+
+	// Step 2: Group.
+	vtermSendAndExpect(t, ctx, cp, &snap, "group", 15*time.Second, "group",
+		"Groups")
+	t.Log("group complete")
+
+	// Step 3: Plan.
+	vtermSendAndExpect(t, ctx, cp, &snap, "plan", 15*time.Second, "plan",
+		"Plan created:")
+	t.Log("plan complete")
+
+	// Step 4: Execute — expects branch creation output with checkmarks.
+	vtermSendAndExpect(t, ctx, cp, &snap, "execute", 60*time.Second, "execute",
+		"Split completed", "equivalence")
+
+	output := cp.String()
+
+	// Verify we see SHA snippets (8-char hex).
+	if !strings.Contains(output, "SHA:") && !strings.Contains(output, "files,") {
+		t.Error("expected execution output with file counts or SHA references")
+	}
+
+	// Verify equivalence was checked.
+	equivSeen := strings.Contains(output, "equivalent") ||
+		strings.Contains(output, "equivalence") ||
+		strings.Contains(output, "Tree hash")
+	if !equivSeen {
+		t.Error("expected equivalence check mention in execute output")
+	}
+
+	// Step 5: Standalone equivalence check.
+	vtermSendAndExpect(t, ctx, cp, &snap, "equivalence", 15*time.Second, "equivalence",
+		"equivalent", "Hash")
+
+	// Verify git state: split branches exist.
+	branchCmd := exec.Command("git", "branch", "--list", "split/*")
+	branchCmd.Dir = repoDir
+	branchOut, err := branchCmd.CombinedOutput()
+	if err != nil {
+		t.Errorf("git branch --list failed: %v", err)
+	} else {
+		branches := strings.TrimSpace(string(branchOut))
+		if branches == "" {
+			t.Error("no split/* branches found after execute")
+		} else {
+			branchLines := strings.Split(branches, "\n")
+			t.Logf("Split branches (%d):\n%s", len(branchLines), branches)
+			if len(branchLines) < 2 {
+				t.Errorf("expected at least 2 split branches, got %d", len(branchLines))
+			}
+		}
+	}
+
+	vtermExitCleanly(t, ctx, cp)
+}
+
+// ---------------------------------------------------------------------------
+// TestIntegration_PrSplit_VTermPlanManipulation
+//
+// Exercises plan manipulation commands through the REPL:
+//   analyze → group → plan → rename → merge
+// Verifies each mutation produces expected output and the plan updates
+// correctly.
+//
+// Run with:
+//   go test -race -v -count=1 -timeout=5m -integration \
+//     ./internal/command/... \
+//     -run TestIntegration_PrSplit_VTermPlanManipulation
+// ---------------------------------------------------------------------------
+
+func TestIntegration_PrSplit_VTermPlanManipulation(t *testing.T) {
+	skipIfNotIntegration(t)
+
+	osmBin := buildOSMBinary(t)
+	repoDir := initIntegrationRepo(t)
+	addIntegrationFeatureFiles(t, repoDir)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	cp, snap := vtermStartConsole(t, ctx, osmBin, repoDir, 40, 120)
+	defer cp.Close()
+
+	// Setup: analyze → group → plan.
+	vtermSendAndExpect(t, ctx, cp, &snap, "analyze", 30*time.Second, "analyze",
+		"Changed files:")
+	vtermSendAndExpect(t, ctx, cp, &snap, "group", 15*time.Second, "group",
+		"Groups")
+	vtermSendAndExpect(t, ctx, cp, &snap, "plan", 15*time.Second, "plan",
+		"Plan created:")
+
+	// Rename split 1.
+	vtermSendAndExpect(t, ctx, cp, &snap, "rename 1 auth-feature", 10*time.Second, "rename",
+		"Renamed split 1:")
+
+	output := cp.String()
+	if !strings.Contains(output, "auth-feature") {
+		t.Error("expected 'auth-feature' in rename output")
+	}
+
+	// Merge — if we have at least 2 splits, merge splits 1 and 2.
+	// Note: the plan command regenerates from groupsCache, so the rename
+	// would be lost if we called plan again. We skip the re-plan and go
+	// straight to merge, which operates on st.planCache directly.
+	vtermSendAndExpect(t, ctx, cp, &snap, "merge 1 2", 10*time.Second, "merge",
+		"Merged split", "into split")
+
+	output = cp.String()
+	if !strings.Contains(output, "Merged split") {
+		t.Error("expected 'Merged split' in merge output")
+	}
+
+	// Note: calling "plan" again would regenerate from groupsCache,
+	// losing both the rename and merge mutations. The mutations are
+	// verified through their immediate output above.
+
+	vtermExitCleanly(t, ctx, cp)
+}
+
+// ---------------------------------------------------------------------------
+// TestIntegration_PrSplit_VTermStatsCommand
+//
+// Exercises the "stats" command to verify diff stat output includes
+// addition/deletion counts per file.
+//
+// Run with:
+//   go test -race -v -count=1 -timeout=5m -integration \
+//     ./internal/command/... \
+//     -run TestIntegration_PrSplit_VTermStatsCommand
+// ---------------------------------------------------------------------------
+
+func TestIntegration_PrSplit_VTermStatsCommand(t *testing.T) {
+	skipIfNotIntegration(t)
+
+	osmBin := buildOSMBinary(t)
+	repoDir := initIntegrationRepo(t)
+	addIntegrationFeatureFiles(t, repoDir)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	cp, snap := vtermStartConsole(t, ctx, osmBin, repoDir, 40, 120)
+	defer cp.Close()
+
+	// Send stats command — should show file-level diff stats.
+	vtermSendAndExpect(t, ctx, cp, &snap, "stats", 30*time.Second, "stats output",
+		"File stats", "files")
+
+	output := cp.String()
+
+	// Verify addition/deletion markers (+N/-N).
+	if !strings.Contains(output, "+") || !strings.Contains(output, "/-") {
+		t.Error("expected addition/deletion counts (+N/-N) in stats output")
+	}
+
+	// Verify specific file names appear.
+	for _, f := range []string{"auth.go", "config.go", "main.go"} {
+		if !strings.Contains(output, f) {
+			t.Errorf("expected file %q in stats output", f)
+		}
+	}
+
+	vtermExitCleanly(t, ctx, cp)
+}

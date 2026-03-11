@@ -28,12 +28,13 @@
 - **T22**: DONE. Committed `0b65b868`. 6 new VTerm observation tests + 3 helpers. R2 restarted 2x (plan-regeneration fix), final 2/2 PASS.
 - **T23**: DONE. Committed `2e7dd18d`. Zone audit: 34 unique zone ID patterns, all have handlers. Found/fixed 1 bug: confirm cancel dialog missing !msg.isWheel guard. Added regression test. R2 (2/2 PASS).
 - **T24**: DONE. Committed `9901a1c2`. Keyboard routing audit: help overlay updated (4 sections, 16+ bindings, e→"Edit / rename split"). 46 view tests with t.Parallel(). 6 new routing tests. R2 (2/2 PASS).
-- **T25**: IN PROGRESS. Claude crash detection and recovery. All code + 14 tests written. Build passes. Pending: lint, R2, commit.
-- **Blueprint**: 33 tasks. T01-T24=Done, T25=In Progress (pending commit), T26-T33=Not Started.
+- **T25**: DONE. Committed `ae70a966`. Claude crash detection and recovery. 5 JS files + 3 test files. 16 new tests. R2 caught 3 bugs: stale comment, missing resume aliveCheckFn check, crash flag cleared before restart, CONFIG→ERROR_RESOLUTION missing. Final R2 attempt 4 (2/2 PASS).
+- **T26**: DONE. Exhaustive REPL subcommand tests. 35 test functions, 90+ subtests, all 32 commands covered. Fixed BuildCommandsAllDispatchable (added hud). Timeout bumped 15m→20m. R2 (2/2 PASS).
+- **Blueprint**: 33 tasks. T01-T26=Done, T27-T33=Not Started.
 
 ### Next Step
 
-**T25: Run lint → R2 → Commit. Then T26.**
+**T27: Next task per blueprint.json.**
 
 ### T25 Implementation Details (for Next Takumi)
 

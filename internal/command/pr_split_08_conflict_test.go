@@ -152,10 +152,11 @@ func TestChunk08_ResolveConflicts_MockStrategy_AllPass(t *testing.T) {
 	result, err := evalJS(`
 		await (async function() {
 			var origGitExec = globalThis.prSplit._gitExec;
+			var origGitExecAsync = globalThis.prSplit._gitExecAsync;
 			var origExecv = globalThis.prSplit._modules.exec.execv;
 
 			var gitCalls = [];
-			globalThis.prSplit._gitExec = function(dir, args) {
+			var gitMock = function(dir, args) {
 				gitCalls.push(args.join(' '));
 				if (args[0] === 'rev-parse' && args[1] === '--abbrev-ref') {
 					return { code: 0, stdout: 'main\n', stderr: '' };
@@ -163,8 +164,13 @@ func TestChunk08_ResolveConflicts_MockStrategy_AllPass(t *testing.T) {
 				if (args[0] === 'checkout') {
 					return { code: 0, stdout: '', stderr: '' };
 				}
-				return origGitExec(dir, args);
+				if (args[0] === 'worktree') {
+					return { code: 0, stdout: '', stderr: '' };
+				}
+				return { code: 0, stdout: '', stderr: '' };
 			};
+			globalThis.prSplit._gitExec = gitMock;
+			globalThis.prSplit._gitExecAsync = gitMock;
 			globalThis.prSplit._modules.exec.execv = function(args) {
 				return { code: 0, stdout: 'ok\n', stderr: '' };
 			};
@@ -181,6 +187,7 @@ func TestChunk08_ResolveConflicts_MockStrategy_AllPass(t *testing.T) {
 			var out = await globalThis.prSplit.resolveConflicts(plan, {});
 
 			globalThis.prSplit._gitExec = origGitExec;
+			globalThis.prSplit._gitExecAsync = origGitExecAsync;
 			globalThis.prSplit._modules.exec.execv = origExecv;
 
 			return JSON.stringify({
@@ -225,18 +232,24 @@ func TestChunk08_ResolveConflicts_MockStrategy_FixApplied(t *testing.T) {
 	result, err := evalJS(`
 		await (async function() {
 			var origGitExec = globalThis.prSplit._gitExec;
+			var origGitExecAsync = globalThis.prSplit._gitExecAsync;
 			var origExecv = globalThis.prSplit._modules.exec.execv;
 
 			var verifyCallCount = 0;
-			globalThis.prSplit._gitExec = function(dir, args) {
+			var gitMock = function(dir, args) {
 				if (args[0] === 'rev-parse' && args[1] === '--abbrev-ref') {
 					return { code: 0, stdout: 'main\n', stderr: '' };
 				}
 				if (args[0] === 'checkout') {
 					return { code: 0, stdout: '', stderr: '' };
 				}
+				if (args[0] === 'worktree') {
+					return { code: 0, stdout: '', stderr: '' };
+				}
 				return { code: 0, stdout: '', stderr: '' };
 			};
+			globalThis.prSplit._gitExec = gitMock;
+			globalThis.prSplit._gitExecAsync = gitMock;
 			globalThis.prSplit._modules.exec.execv = function(args) {
 				verifyCallCount++;
 				if (verifyCallCount <= 1) {
@@ -260,6 +273,7 @@ func TestChunk08_ResolveConflicts_MockStrategy_FixApplied(t *testing.T) {
 			var out = await globalThis.prSplit.resolveConflicts(plan, { strategies: [customStrategy] });
 
 			globalThis.prSplit._gitExec = origGitExec;
+			globalThis.prSplit._gitExecAsync = origGitExecAsync;
 			globalThis.prSplit._modules.exec.execv = origExecv;
 
 			return JSON.stringify({
@@ -303,17 +317,23 @@ func TestChunk08_ResolveConflicts_RetryBudgetExhausted(t *testing.T) {
 	result, err := evalJS(`
 		await (async function() {
 			var origGitExec = globalThis.prSplit._gitExec;
+			var origGitExecAsync = globalThis.prSplit._gitExecAsync;
 			var origExecv = globalThis.prSplit._modules.exec.execv;
 
-			globalThis.prSplit._gitExec = function(dir, args) {
+			var gitMock = function(dir, args) {
 				if (args[0] === 'rev-parse' && args[1] === '--abbrev-ref') {
 					return { code: 0, stdout: 'main\n', stderr: '' };
 				}
 				if (args[0] === 'checkout') {
 					return { code: 0, stdout: '', stderr: '' };
 				}
+				if (args[0] === 'worktree') {
+					return { code: 0, stdout: '', stderr: '' };
+				}
 				return { code: 0, stdout: '', stderr: '' };
 			};
+			globalThis.prSplit._gitExec = gitMock;
+			globalThis.prSplit._gitExecAsync = gitMock;
 			globalThis.prSplit._modules.exec.execv = function(args) {
 				return { code: 1, stdout: '', stderr: 'test failed' };
 			};
@@ -340,6 +360,7 @@ func TestChunk08_ResolveConflicts_RetryBudgetExhausted(t *testing.T) {
 			});
 
 			globalThis.prSplit._gitExec = origGitExec;
+			globalThis.prSplit._gitExecAsync = origGitExecAsync;
 			globalThis.prSplit._modules.exec.execv = origExecv;
 
 			return JSON.stringify({

@@ -365,6 +365,52 @@
         }
     }
 
+    // gitAddChangedFilesAsync is the non-blocking version of gitAddChangedFiles.
+    // Uses gitExecAsync (exec.spawn) so the event loop stays responsive during BubbleTea TUI.
+    // T31: async version for pipeline use.
+    async function gitAddChangedFilesAsync(dir) {
+        var gitExecAsync = prSplit._gitExecAsync;
+        var status = await gitExecAsync(dir, ['status', '--porcelain']);
+        if (status.code !== 0 || status.stdout.trim() === '') {
+            return;
+        }
+        var EXCLUDED = ['.pr-split-plan.json'];
+        var lines = status.stdout.split('\n');
+        var files = [];
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            if (line.length < 3) continue;
+            var path = line.substring(3);
+            var arrowIdx = path.indexOf(' -> ');
+            if (arrowIdx >= 0) {
+                path = path.substring(arrowIdx + 4);
+            }
+            if (path.charAt(0) === '"' && path.charAt(path.length - 1) === '"') {
+                path = path.substring(1, path.length - 1);
+            }
+            var excluded = false;
+            for (var e = 0; e < EXCLUDED.length; e++) {
+                if (path === EXCLUDED[e] || path.indexOf('/' + EXCLUDED[e]) >= 0) {
+                    excluded = true;
+                    break;
+                }
+            }
+            if (!excluded) {
+                files.push(path);
+            }
+        }
+        if (files.length > 0) {
+            var addArgs = ['add', '--'];
+            for (var f = 0; f < files.length; f++) {
+                addArgs.push(files[f]);
+            }
+            var addResult = await gitExecAsync(dir, addArgs);
+            if (addResult.code !== 0 && typeof log !== 'undefined' && log.warn) {
+                log.warn('pr-split: git add failed in gitAddChangedFilesAsync: ' + addResult.stderr.trim());
+            }
+        }
+    }
+
     // dirname extracts the directory at the given depth from a file path.
     function dirname(filepath, depth) {
         depth = depth || 1;
@@ -469,6 +515,7 @@
     prSplit._resolveDir = resolveDir;
     prSplit._shellQuote = shellQuote;
     prSplit._gitAddChangedFiles = gitAddChangedFiles;
+    prSplit._gitAddChangedFilesAsync = gitAddChangedFilesAsync;
     prSplit._dirname = dirname;
     prSplit._fileExtension = fileExtension;
     prSplit._sanitizeBranchName = sanitizeBranchName;

@@ -22,24 +22,24 @@
                 if (osmod) return osmod.fileExists(path);
                 return exec.execv(['test', '-f', path]).code === 0;
             },
-            fix: function(dir) {
+            fix: async function(dir) {
                 var exec = prSplit._modules.exec;
-                var gitExec = prSplit._gitExec;
+                var gitExecAsync = prSplit._gitExecAsync;
                 var shellQuote = prSplit._shellQuote;
                 var tidyResult = exec.execv(['sh', '-c',
                     'cd ' + shellQuote(dir) + ' && go mod tidy']);
                 if (tidyResult.code !== 0) {
                     return { fixed: false, error: 'go mod tidy failed: ' + tidyResult.stderr.trim() };
                 }
-                var status = gitExec(dir, ['status', '--porcelain', 'go.mod', 'go.sum']);
+                var status = await gitExecAsync(dir, ['status', '--porcelain', 'go.mod', 'go.sum']);
                 if (status.stdout.trim() === '') {
                     return { fixed: false, error: 'go mod tidy succeeded but made no changes to go.mod/go.sum — strategy not applicable for this failure' };
                 }
-                var addRes = gitExec(dir, ['add', 'go.mod', 'go.sum']);
+                var addRes = await gitExecAsync(dir, ['add', 'go.mod', 'go.sum']);
                 if (addRes.code !== 0) {
                     return { fixed: false, error: 'git add go.mod/go.sum failed: ' + addRes.stderr.trim() };
                 }
-                var commit = gitExec(dir, ['commit', '-m', 'fix: go mod tidy for split']);
+                var commit = await gitExecAsync(dir, ['commit', '-m', 'fix: go mod tidy for split']);
                 if (commit.code !== 0) {
                     return { fixed: false, error: 'commit failed: ' + commit.stderr.trim() };
                 }
@@ -55,24 +55,24 @@
                 if (osmod) return osmod.fileExists(path);
                 return exec.execv(['test', '-f', path]).code === 0;
             },
-            fix: function(dir) {
+            fix: async function(dir) {
                 var exec = prSplit._modules.exec;
-                var gitExec = prSplit._gitExec;
+                var gitExecAsync = prSplit._gitExecAsync;
                 var shellQuote = prSplit._shellQuote;
                 var dlResult = exec.execv(['sh', '-c',
                     'cd ' + shellQuote(dir) + ' && go mod download']);
                 if (dlResult.code !== 0) {
                     return { fixed: false, error: 'go mod download failed: ' + dlResult.stderr.trim() };
                 }
-                var status = gitExec(dir, ['status', '--porcelain', 'go.sum']);
+                var status = await gitExecAsync(dir, ['status', '--porcelain', 'go.sum']);
                 if (status.stdout.trim() === '') {
                     return { fixed: false, error: 'go mod download succeeded but made no changes to go.sum — strategy not applicable for this failure' };
                 }
-                var addRes = gitExec(dir, ['add', 'go.sum']);
+                var addRes = await gitExecAsync(dir, ['add', 'go.sum']);
                 if (addRes.code !== 0) {
                     return { fixed: false, error: 'git add go.sum failed: ' + addRes.stderr.trim() };
                 }
-                var commit = gitExec(dir, ['commit', '-m', 'fix: update go.sum for split']);
+                var commit = await gitExecAsync(dir, ['commit', '-m', 'fix: update go.sum for split']);
                 if (commit.code !== 0) {
                     return { fixed: false, error: 'commit failed: ' + commit.stderr.trim() };
                 }
@@ -87,11 +87,11 @@
                        verifyOutput.indexOf('imported and not used') >= 0 ||
                        verifyOutput.indexOf('could not import') >= 0;
             },
-            fix: function(dir) {
+            fix: async function(dir) {
                 var exec = prSplit._modules.exec;
-                var gitExec = prSplit._gitExec;
+                var gitExecAsync = prSplit._gitExecAsync;
                 var shellQuote = prSplit._shellQuote;
-                var gitAddChangedFiles = prSplit._gitAddChangedFiles;
+                var gitAddChangedFilesAsync = prSplit._gitAddChangedFilesAsync;
                 var which = exec.execv(['which', 'goimports']);
                 if (which.code === 0) {
                     var result = exec.execv(['sh', '-c',
@@ -102,12 +102,12 @@
                 } else {
                     return { fixed: false, error: 'goimports not available' };
                 }
-                var status = gitExec(dir, ['status', '--porcelain']);
+                var status = await gitExecAsync(dir, ['status', '--porcelain']);
                 if (status.stdout.trim() === '') {
                     return { fixed: false, error: 'goimports made no changes' };
                 }
-                gitAddChangedFiles(dir);
-                var commit = gitExec(dir, ['commit', '-m', 'fix: goimports for split']);
+                await gitAddChangedFilesAsync(dir);
+                var commit = await gitExecAsync(dir, ['commit', '-m', 'fix: goimports for split']);
                 if (commit.code !== 0) {
                     return { fixed: false, error: 'commit failed: ' + commit.stderr.trim() };
                 }
@@ -123,22 +123,22 @@
                 if (osmod) return osmod.fileExists(path);
                 return exec.execv(['test', '-f', path]).code === 0;
             },
-            fix: function(dir) {
+            fix: async function(dir) {
                 var exec = prSplit._modules.exec;
-                var gitExec = prSplit._gitExec;
+                var gitExecAsync = prSplit._gitExecAsync;
                 var shellQuote = prSplit._shellQuote;
-                var gitAddChangedFiles = prSplit._gitAddChangedFiles;
+                var gitAddChangedFilesAsync = prSplit._gitAddChangedFilesAsync;
                 var result = exec.execv(['sh', '-c',
                     'cd ' + shellQuote(dir) + ' && npm install --no-audit --no-fund 2>&1']);
                 if (result.code !== 0) {
                     return { fixed: false, error: 'npm install failed: ' + (result.stderr || result.stdout || '').trim() };
                 }
-                var status = gitExec(dir, ['status', '--porcelain']);
+                var status = await gitExecAsync(dir, ['status', '--porcelain']);
                 if (status.stdout.trim() === '') {
                     return { fixed: false, error: 'npm install made no changes' };
                 }
-                gitAddChangedFiles(dir);
-                var commit = gitExec(dir, ['commit', '-m', 'fix: npm install for split']);
+                await gitAddChangedFilesAsync(dir);
+                var commit = await gitExecAsync(dir, ['commit', '-m', 'fix: npm install for split']);
                 if (commit.code !== 0) {
                     return { fixed: false, error: 'commit failed: ' + commit.stderr.trim() };
                 }
@@ -162,11 +162,11 @@
                     'cd ' + shellQuote(dir) + ' && grep -rl "//go:generate" --include="*.go" . 2>/dev/null | head -1']);
                 return goGen.code === 0 && goGen.stdout.trim() !== '';
             },
-            fix: function(dir) {
+            fix: async function(dir) {
                 var exec = prSplit._modules.exec;
-                var gitExec = prSplit._gitExec;
+                var gitExecAsync = prSplit._gitExecAsync;
                 var shellQuote = prSplit._shellQuote;
-                var gitAddChangedFiles = prSplit._gitAddChangedFiles;
+                var gitAddChangedFilesAsync = prSplit._gitAddChangedFilesAsync;
                 var hasMakeTarget = exec.execv(['sh', '-c',
                     'cd ' + shellQuote(dir) + ' && grep -q "^generate:" Makefile 2>/dev/null']).code === 0;
                 var result;
@@ -178,12 +178,12 @@
                 if (result.code !== 0) {
                     return { fixed: false, error: 'generate failed: ' + result.stderr.trim() };
                 }
-                var status = gitExec(dir, ['status', '--porcelain']);
+                var status = await gitExecAsync(dir, ['status', '--porcelain']);
                 if (status.stdout.trim() === '') {
                     return { fixed: false, error: 'generate made no changes' };
                 }
-                gitAddChangedFiles(dir);
-                var commit = gitExec(dir, ['commit', '-m', 'fix: run code generation for split']);
+                await gitAddChangedFilesAsync(dir);
+                var commit = await gitExecAsync(dir, ['commit', '-m', 'fix: run code generation for split']);
                 if (commit.code !== 0) {
                     return { fixed: false, error: 'commit failed: ' + commit.stderr.trim() };
                 }
@@ -198,20 +198,20 @@
                        verifyOutput.indexOf('cannot find') >= 0 ||
                        verifyOutput.indexOf('file not found') >= 0;
             },
-            fix: function(dir, failedBranch, plan) {
-                var gitExec = prSplit._gitExec;
-                var gitAddChangedFiles = prSplit._gitAddChangedFiles;
+            fix: async function(dir, failedBranch, plan) {
+                var gitExecAsync = prSplit._gitExecAsync;
+                var gitAddChangedFilesAsync = prSplit._gitAddChangedFilesAsync;
                 if (!plan || !plan.sourceBranch) {
                     return { fixed: false, error: 'no source branch to pull files from' };
                 }
-                var diffFiles = gitExec(dir, ['diff', '--name-only', failedBranch, plan.sourceBranch]);
+                var diffFiles = await gitExecAsync(dir, ['diff', '--name-only', failedBranch, plan.sourceBranch]);
                 if (diffFiles.code !== 0 || diffFiles.stdout.trim() === '') {
                     return { fixed: false, error: 'no candidate files to add' };
                 }
                 var candidates = diffFiles.stdout.trim().split('\n');
                 var added = 0;
                 for (var f = 0; f < candidates.length; f++) {
-                    var co = gitExec(dir, ['checkout', plan.sourceBranch, '--', candidates[f]]);
+                    var co = await gitExecAsync(dir, ['checkout', plan.sourceBranch, '--', candidates[f]]);
                     if (co.code === 0) {
                         added++;
                     }
@@ -219,8 +219,8 @@
                 if (added === 0) {
                     return { fixed: false, error: 'no files could be checked out from source' };
                 }
-                gitAddChangedFiles(dir);
-                var commit = gitExec(dir, ['commit', '-m', 'fix: add missing files from source branch']);
+                await gitAddChangedFilesAsync(dir);
+                var commit = await gitExecAsync(dir, ['commit', '-m', 'fix: add missing files from source branch']);
                 if (commit.code !== 0) {
                     return { fixed: false, error: 'commit failed: ' + commit.stderr.trim() };
                 }
@@ -242,8 +242,8 @@
                 var waitForLogged = prSplit.waitForLogged;
                 var mcpCallbackObj = prSplit._mcpCallbackObj;
                 var validateResolution = prSplit.validateResolution;
-                var gitExec = prSplit._gitExec;
-                var gitAddChangedFiles = prSplit._gitAddChangedFiles;
+                var gitExecAsync = prSplit._gitExecAsync;
+                var gitAddChangedFilesAsync = prSplit._gitAddChangedFilesAsync;
                 var shellQuote = prSplit._shellQuote;
                 var osmod = prSplit._modules.osmod;
                 var exec = prSplit._modules.exec;
@@ -300,10 +300,10 @@
                         exec.execv(['sh', '-c', 'cd ' + shellQuote(dir) + ' && ' + resolution.commands[c]]);
                     }
                 }
-                var status = gitExec(dir, ['status', '--porcelain']);
+                var status = await gitExecAsync(dir, ['status', '--porcelain']);
                 if (status.stdout.trim() !== '') {
-                    gitAddChangedFiles(dir);
-                    var commit = gitExec(dir, ['commit', '--amend', '--no-edit']);
+                    await gitAddChangedFilesAsync(dir);
+                    var commit = await gitExecAsync(dir, ['commit', '--amend', '--no-edit']);
                     if (commit.code !== 0) {
                         return { fixed: false, error: 'commit failed: ' + commit.stderr.trim() };
                     }
@@ -317,7 +317,7 @@
     // For each split: checkout → verify → if fails, try strategies with retry budget.
     // Returns: {fixed: [], errors: [], totalRetries, branchRetries, reSplitNeeded, reSplitFiles, reSplitReason}
     prSplit.resolveConflicts = async function resolveConflicts(plan, options) {
-        var gitExec = prSplit._gitExec;
+        var gitExecAsync = prSplit._gitExecAsync;
         var resolveDir = prSplit._resolveDir;
         var exec = prSplit._modules.exec;
         var shellQuote = prSplit._shellQuote;
@@ -391,7 +391,7 @@
             // Create a temporary worktree for this branch so the user's CWD
             // remains untouched during fix attempts.
             var worktreeDir = dir + '/../.osm-fix-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
-            var wtAdd = gitExec(dir, ['worktree', 'add', worktreeDir, split.name]);
+            var wtAdd = await gitExecAsync(dir, ['worktree', 'add', worktreeDir, split.name]);
             if (wtAdd.code !== 0) {
                 errorsOut.push({ name: split.name, error: 'create worktree failed: ' + wtAdd.stderr.trim() });
                 continue;
@@ -399,7 +399,7 @@
 
             var verifyResult = exec.execv(['sh', '-c', 'cd ' + shellQuote(worktreeDir) + ' && ' + verifyCommand]);
             if (verifyResult.code === 0) {
-                gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
+                await gitExecAsync(dir, ['worktree', 'remove', '--force', worktreeDir]);
                 continue;
             }
 
@@ -463,7 +463,7 @@
             }
 
             // Cleanup worktree for this branch.
-            gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
+            await gitExecAsync(dir, ['worktree', 'remove', '--force', worktreeDir]);
         }
 
         return {

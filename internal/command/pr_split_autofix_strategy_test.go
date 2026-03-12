@@ -614,7 +614,7 @@ func TestAutoFixStrategy_GoModTidy_Fix(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		val, err := evalJS(`JSON.stringify(getStrategy('go-mod-tidy').fix('.'))`)
+		val, err := evalJS(`JSON.stringify(await getStrategy('go-mod-tidy').fix('.'))`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -654,7 +654,7 @@ func TestAutoFixStrategy_GoModTidy_Fix(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		val, err := evalJS(`JSON.stringify(getStrategy('go-mod-tidy').fix('.'))`)
+		val, err := evalJS(`JSON.stringify(await getStrategy('go-mod-tidy').fix('.'))`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -678,7 +678,7 @@ func TestAutoFixStrategy_GoModTidy_Fix(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		val, err := evalJS(`JSON.stringify(getStrategy('go-mod-tidy').fix('.'))`)
+		val, err := evalJS(`JSON.stringify(await getStrategy('go-mod-tidy').fix('.'))`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -704,7 +704,7 @@ func TestAutoFixStrategy_GoModTidy_Fix(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		val, err := evalJS(`JSON.stringify(getStrategy('go-mod-tidy').fix('.'))`)
+		val, err := evalJS(`JSON.stringify(await getStrategy('go-mod-tidy').fix('.'))`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -740,7 +740,7 @@ func TestAutoFixStrategy_GoGenerateSum_Fix(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		val, err := evalJS(`JSON.stringify(getStrategy('go-generate-sum').fix('.'))`)
+		val, err := evalJS(`JSON.stringify(await getStrategy('go-generate-sum').fix('.'))`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -760,7 +760,7 @@ func TestAutoFixStrategy_GoGenerateSum_Fix(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		val, err := evalJS(`JSON.stringify(getStrategy('go-generate-sum').fix('.'))`)
+		val, err := evalJS(`JSON.stringify(await getStrategy('go-generate-sum').fix('.'))`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -799,7 +799,7 @@ func TestAutoFixStrategy_AddMissingFiles_Fix(t *testing.T) {
 		}
 
 		val, err := evalJS(`JSON.stringify(
-			getStrategy('add-missing-files').fix('.', 'split/01-api', {sourceBranch: 'feature', splits: []}, 'no such file or directory')
+			await getStrategy('add-missing-files').fix('.', 'split/01-api', {sourceBranch: 'feature', splits: []}, 'no such file or directory')
 		)`)
 		if err != nil {
 			t.Fatal(err)
@@ -815,7 +815,7 @@ func TestAutoFixStrategy_AddMissingFiles_Fix(t *testing.T) {
 			t.Fatal(err)
 		}
 		val, err := evalJS(`JSON.stringify(
-			getStrategy('add-missing-files').fix('.', 'branch-1', {splits: []}, 'file not found')
+			await getStrategy('add-missing-files').fix('.', 'branch-1', {splits: []}, 'file not found')
 		)`)
 		if err != nil {
 			t.Fatal(err)
@@ -841,7 +841,7 @@ func TestAutoFixStrategy_AddMissingFiles_Fix(t *testing.T) {
 		}
 
 		val, err := evalJS(`JSON.stringify(
-			getStrategy('add-missing-files').fix('.', 'split/01', {sourceBranch: 'feature', splits: []}, 'no such file')
+			await getStrategy('add-missing-files').fix('.', 'split/01', {sourceBranch: 'feature', splits: []}, 'no such file')
 		)`)
 		if err != nil {
 			t.Fatal(err)
@@ -868,7 +868,7 @@ func TestAutoFixStrategy_AddMissingFiles_Fix(t *testing.T) {
 		}
 
 		val, err := evalJS(`JSON.stringify(
-			getStrategy('add-missing-files').fix('.', 'split/01', {sourceBranch: 'feature', splits: []}, 'no such file')
+			await getStrategy('add-missing-files').fix('.', 'split/01', {sourceBranch: 'feature', splits: []}, 'no such file')
 		)`)
 		if err != nil {
 			t.Fatal(err)
@@ -913,7 +913,7 @@ func TestAutoFixStrategy_GoBuildMissingImports_Fix(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		val, err := evalJS(`JSON.stringify(getStrategy('go-build-missing-imports').fix('.'))`)
+		val, err := evalJS(`JSON.stringify(await getStrategy('go-build-missing-imports').fix('.'))`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -943,7 +943,7 @@ func TestAutoFixStrategy_GoBuildMissingImports_Fix(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		val, err := evalJS(`JSON.stringify(getStrategy('go-build-missing-imports').fix('.'))`)
+		val, err := evalJS(`JSON.stringify(await getStrategy('go-build-missing-imports').fix('.'))`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -969,7 +969,7 @@ func TestAutoFixStrategy_GoBuildMissingImports_Fix(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		val, err := evalJS(`JSON.stringify(getStrategy('go-build-missing-imports').fix('.'))`)
+		val, err := evalJS(`JSON.stringify(await getStrategy('go-build-missing-imports').fix('.'))`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1006,7 +1006,7 @@ func TestAutoFixStrategy_NpmInstall_Fix(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		val, err := evalJS(`JSON.stringify(getStrategy('npm-install').fix('.'))`)
+		val, err := evalJS(`JSON.stringify(await getStrategy('npm-install').fix('.'))`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1035,7 +1035,7 @@ func TestAutoFixStrategy_NpmInstall_Fix(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		val, err := evalJS(`JSON.stringify(getStrategy('npm-install').fix('.'))`)
+		val, err := evalJS(`JSON.stringify(await getStrategy('npm-install').fix('.'))`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1059,7 +1059,7 @@ func TestAutoFixStrategy_NpmInstall_Fix(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		val, err := evalJS(`JSON.stringify(getStrategy('npm-install').fix('.'))`)
+		val, err := evalJS(`JSON.stringify(await getStrategy('npm-install').fix('.'))`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1101,7 +1101,7 @@ func TestAutoFixStrategy_MakeGenerate_Fix(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		val, err := evalJS(`JSON.stringify(getStrategy('make-generate').fix('.'))`)
+		val, err := evalJS(`JSON.stringify(await getStrategy('make-generate').fix('.'))`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1131,7 +1131,7 @@ func TestAutoFixStrategy_MakeGenerate_Fix(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		val, err := evalJS(`JSON.stringify(getStrategy('make-generate').fix('.'))`)
+		val, err := evalJS(`JSON.stringify(await getStrategy('make-generate').fix('.'))`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1159,7 +1159,7 @@ func TestAutoFixStrategy_MakeGenerate_Fix(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		val, err := evalJS(`JSON.stringify(getStrategy('make-generate').fix('.'))`)
+		val, err := evalJS(`JSON.stringify(await getStrategy('make-generate').fix('.'))`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1183,7 +1183,7 @@ func TestAutoFixStrategy_MakeGenerate_Fix(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		val, err := evalJS(`JSON.stringify(getStrategy('make-generate').fix('.'))`)
+		val, err := evalJS(`JSON.stringify(await getStrategy('make-generate').fix('.'))`)
 		if err != nil {
 			t.Fatal(err)
 		}

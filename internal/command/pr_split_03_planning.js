@@ -10,6 +10,7 @@
 (function(prSplit) {
     var runtime = prSplit.runtime;
     var gitExec = prSplit._gitExec;
+    var gitExecAsync = prSplit._gitExecAsync;
     var resolveDir = prSplit._resolveDir;
     var sanitizeBranchName = prSplit._sanitizeBranchName;
     var padIndex = prSplit._padIndex;
@@ -45,6 +46,55 @@
             var groupData = groups[name];
             // Support both new format {files: [...], description: "..."} and
             // legacy format (plain array of files).
+            var files = Array.isArray(groupData) ? groupData : (groupData.files || []);
+            var description = (typeof groupData === 'object' && !Array.isArray(groupData))
+                ? (groupData.description || '')
+                : '';
+            splits.push({
+                name: sanitizeBranchName(branchPrefix + padIndex(i + 1) + '-' + name),
+                files: files.slice().sort(),
+                message: description || (commitPrefix + name),
+                order: i,
+                dependencies: i === 0 ? [] : [splits[i - 1].name]
+            });
+        }
+
+        return {
+            baseBranch: baseBranch,
+            sourceBranch: sourceBranch,
+            dir: dir,
+            verifyCommand: verifyCommand,
+            fileStatuses: fileStatuses,
+            splits: splits
+        };
+    }
+
+    // createSplitPlanAsync is the non-blocking version of createSplitPlan.
+    // Uses gitExecAsync (exec.spawn) so the event loop stays responsive during BubbleTea TUI.
+    // T31: async version for pipeline use.
+    async function createSplitPlanAsync(groups, config) {
+        var gitExecAsync = prSplit._gitExecAsync;
+        if (!groups || typeof groups !== 'object') groups = {};
+        config = config || {};
+        var dir = resolveDir(config.dir || '.');
+        var baseBranch = config.baseBranch || runtime.baseBranch;
+        var branchPrefix = config.branchPrefix || runtime.branchPrefix;
+        var commitPrefix = config.commitPrefix || '';
+        var verifyCommand = config.verifyCommand || runtime.verifyCommand;
+        var fileStatuses = config.fileStatuses || {};
+
+        var sourceBranch = config.sourceBranch;
+        if (!sourceBranch) {
+            var result = await gitExecAsync(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+            sourceBranch = result.code === 0 ? result.stdout.trim() : 'HEAD';
+        }
+
+        var groupNames = Object.keys(groups).sort();
+        var splits = [];
+
+        for (var i = 0; i < groupNames.length; i++) {
+            var name = groupNames[i];
+            var groupData = groups[name];
             var files = Array.isArray(groupData) ? groupData : (groupData.files || []);
             var description = (typeof groupData === 'object' && !Array.isArray(groupData))
                 ? (groupData.description || '')
@@ -194,6 +244,7 @@
     // -----------------------------------------------------------------------
     prSplit.DEFAULT_PLAN_PATH = DEFAULT_PLAN_PATH;
     prSplit.createSplitPlan = createSplitPlan;
+    prSplit.createSplitPlanAsync = createSplitPlanAsync;
     prSplit.savePlan = savePlan;
     prSplit.loadPlan = loadPlan;
 })(globalThis.prSplit);

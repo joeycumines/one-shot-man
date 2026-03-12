@@ -7,6 +7,7 @@
 
 (function(prSplit) {
     var gitExec = prSplit._gitExec;
+    var gitExecAsync = prSplit._gitExecAsync;
     var resolveDir = prSplit._resolveDir;
     var shellQuote = prSplit._shellQuote;
     var scopedVerifyCommand = prSplit.scopedVerifyCommand;
@@ -399,6 +400,271 @@
     }
 
     // -----------------------------------------------------------------------
+    //  Async versions for pipeline use (T31)
+    //  Uses gitExecAsync (exec.spawn) so the event loop stays responsive.
+    // -----------------------------------------------------------------------
+
+    // verifySplitAsync is the non-blocking version of verifySplit.
+    // Git worktree setup/teardown uses gitExecAsync. The actual verify
+    // command still uses exec.execStream (see T34 for full async verify).
+    async function verifySplitAsync(branchName, config) {
+        var gitExecAsync = prSplit._gitExecAsync;
+        config = config || {};
+        var dir = resolveDir(config.dir || '.');
+        var command = config.verifyCommand || prSplit.runtime.verifyCommand;
+        var timeoutMs = config.verifyTimeoutMs || 0;
+        var outputFn = config.outputFn || null;
+
+        if (!command) {
+            return { name: branchName, passed: true, output: '', error: null, skipped: true, duration: 0 };
+        }
+
+        var worktreeDir = dir + '/../.osm-verify-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
+
+        var wtAdd = await gitExecAsync(dir, ['worktree', 'add', worktreeDir, branchName]);
+        if (wtAdd.code !== 0) {
+            await gitExecAsync(dir, ['worktree', 'remove', '--force', worktreeDir]);
+            wtAdd = await gitExecAsync(dir, ['worktree', 'add', '--detach', worktreeDir, branchName]);
+            if (wtAdd.code !== 0) {
+                return {
+                    name: branchName,
+                    passed: false,
+                    output: '',
+                    error: 'create worktree failed: ' + wtAdd.stderr.trim()
+                };
+            }
+        }
+
+        async function cleanupWorktreeAsync() {
+            await gitExecAsync(dir, ['worktree', 'remove', '--force', worktreeDir]);
+        }
+
+        var startMs = Date.now();
+        var shellCmd = 'cd ' + shellQuote(worktreeDir) + ' && ' + command;
+
+        if (timeoutMs > 0) {
+            var timeoutSec = Math.ceil(timeoutMs / 1000);
+            shellCmd = 'timeout ' + timeoutSec + ' sh -c ' + shellQuote(shellCmd);
+        }
+
+        var stdoutBuf = '';
+        var stderrBuf = '';
+        var prefix = '  [verify ' + branchName + '] ';
+
+        function emitChunk(chunk) {
+            if (!outputFn) return;
+            var lines = chunk.split('\n');
+            for (var i = 0; i < lines.length; i++) {
+                if (lines[i]) {
+                    outputFn(prefix + lines[i]);
+                }
+            }
+        }
+
+        // NOTE: exec.execStream is still blocking. T34 will convert this
+        // to CaptureSession for full non-blocking verification.
+        var result = exec.execStream(['sh', '-c', shellCmd], {
+            onStdout: function(chunk) {
+                stdoutBuf += chunk;
+                emitChunk(chunk);
+            },
+            onStderr: function(chunk) {
+                stderrBuf += chunk;
+                emitChunk(chunk);
+            }
+        });
+        var elapsedMs = Date.now() - startMs;
+
+        await cleanupWorktreeAsync();
+
+        if (timeoutMs > 0 && (result.code === 124 || elapsedMs >= timeoutMs)) {
+            return {
+                name: branchName,
+                passed: false,
+                output: stdoutBuf,
+                error: 'verify timeout after ' + elapsedMs + 'ms (limit: ' + timeoutMs + 'ms)'
+            };
+        }
+
+        return {
+            name: branchName,
+            passed: result.code === 0,
+            output: stdoutBuf,
+            error: result.code !== 0 ? 'verify failed (exit ' + result.code + '): ' + stderrBuf : null
+        };
+    }
+
+    // verifySplitsAsync is the non-blocking version of verifySplits.
+    async function verifySplitsAsync(plan, options) {
+        options = options || {};
+        if (!plan || !plan.splits) {
+            return { allPassed: false, results: [], error: 'verifySplits: invalid plan — missing splits array' };
+        }
+        var dir = resolveDir(plan.dir || '.');
+        var verifyTimeoutMs = options.verifyTimeoutMs || 0;
+        var onBranchStart = typeof options.onBranchStart === 'function' ? options.onBranchStart : null;
+        var onBranchDone = typeof options.onBranchDone === 'function' ? options.onBranchDone : null;
+        var onBranchOutput = typeof options.onBranchOutput === 'function' ? options.onBranchOutput : null;
+        var results = [];
+        var allPassed = true;
+        var failedBranches = {};
+
+        // Pre-existing failure detection: run verification on the source
+        // branch first.
+        var baselineFailure = null;
+        if (plan.verifyCommand && plan.sourceBranch) {
+            var baselineResult = await verifySplitAsync(plan.sourceBranch, {
+                dir: dir,
+                verifyCommand: plan.verifyCommand,
+                verifyTimeoutMs: verifyTimeoutMs,
+                outputFn: options.outputFn || null
+            });
+            if (!baselineResult.passed) {
+                baselineFailure = baselineResult;
+            }
+        }
+
+        for (var i = 0; i < plan.splits.length; i++) {
+            if (prSplit.isCancelled()) {
+                return { allPassed: false, results: results, error: 'verification cancelled by user' };
+            }
+
+            var split = plan.splits[i];
+
+            var deps = split.dependencies || [];
+            var skipReason = '';
+            for (var d = 0; d < deps.length; d++) {
+                if (failedBranches[deps[d]]) {
+                    skipReason = 'skipped: dependency ' + deps[d] + ' failed';
+                    break;
+                }
+            }
+            if (skipReason) {
+                if (onBranchDone) { onBranchDone(split.name, false, 0, 0, true, false); }
+                results.push({ name: split.name, passed: false, skipped: true, error: skipReason });
+                allPassed = false;
+                failedBranches[split.name] = true;
+                continue;
+            }
+
+            var baseCmd = plan.verifyCommand;
+            var scopedCmd = scopedVerifyCommand(split.files, baseCmd);
+
+            if (onBranchStart) { onBranchStart(split.name); }
+            var branchStartTime = Date.now();
+
+            var branchOutputFn = options.outputFn || null;
+            if (onBranchOutput) {
+                var baseFn = branchOutputFn;
+                var brName = split.name;
+                branchOutputFn = function(line) {
+                    if (baseFn) { baseFn(line); }
+                    onBranchOutput(brName, line);
+                };
+            }
+            var result = await verifySplitAsync(split.name, {
+                dir: dir,
+                verifyCommand: scopedCmd,
+                verifyTimeoutMs: verifyTimeoutMs,
+                outputFn: branchOutputFn
+            });
+            if (scopedCmd !== baseCmd) {
+                result.scopedVerify = scopedCmd;
+            }
+
+            if (!result.passed && baselineFailure) {
+                result.preExisting = true;
+                result.error = (result.error || 'verification failed') + ' (pre-existing on ' + plan.sourceBranch + ')';
+            }
+
+            var branchElapsedMs = Date.now() - branchStartTime;
+            if (onBranchDone) {
+                onBranchDone(split.name, result.passed, result.exitCode || 0, branchElapsedMs, false, !!result.preExisting);
+            }
+
+            results.push(result);
+            if (!result.passed && !result.preExisting) {
+                allPassed = false;
+                failedBranches[split.name] = true;
+            }
+        }
+
+        return { allPassed: allPassed, results: results, error: null };
+    }
+
+    // verifyEquivalenceAsync is the non-blocking version of verifyEquivalence.
+    async function verifyEquivalenceAsync(plan) {
+        var gitExecAsync = prSplit._gitExecAsync;
+        if (!plan) {
+            return { equivalent: false, splitTree: '', sourceTree: '', error: 'invalid plan' };
+        }
+        var dir = resolveDir(plan.dir || '.');
+
+        if (!plan.splits || plan.splits.length === 0) {
+            return { equivalent: false, splitTree: '', sourceTree: '', error: 'no splits in plan' };
+        }
+
+        var lastSplit = plan.splits[plan.splits.length - 1].name;
+
+        var splitTreeResult = await gitExecAsync(dir, ['rev-parse', lastSplit + '^{tree}']);
+        if (splitTreeResult.code !== 0) {
+            return {
+                equivalent: false,
+                splitTree: '',
+                sourceTree: '',
+                error: 'failed to get split tree: ' + splitTreeResult.stderr.trim()
+            };
+        }
+        var splitTree = splitTreeResult.stdout.trim();
+
+        var sourceTreeResult = await gitExecAsync(dir, ['rev-parse', plan.sourceBranch + '^{tree}']);
+        if (sourceTreeResult.code !== 0) {
+            return {
+                equivalent: false,
+                splitTree: splitTree,
+                sourceTree: '',
+                error: 'failed to get source tree: ' + sourceTreeResult.stderr.trim()
+            };
+        }
+        var sourceTree = sourceTreeResult.stdout.trim();
+
+        return {
+            equivalent: splitTree === sourceTree,
+            splitTree: splitTree,
+            sourceTree: sourceTree,
+            error: null
+        };
+    }
+
+    // cleanupBranchesAsync is the non-blocking version of cleanupBranches.
+    async function cleanupBranchesAsync(plan) {
+        var gitExecAsync = prSplit._gitExecAsync;
+        if (!plan || !plan.splits) {
+            return { deleted: [], errors: ['cleanupBranches: invalid plan — missing splits array'] };
+        }
+        var dir = resolveDir(plan.dir || '.');
+        var deleted = [];
+        var errors = [];
+
+        var coRes = await gitExecAsync(dir, ['checkout', plan.baseBranch]);
+        if (coRes.code !== 0) {
+            await gitExecAsync(dir, ['checkout', '--detach', 'HEAD']);
+        }
+
+        for (var i = 0; i < plan.splits.length; i++) {
+            var name = plan.splits[i].name;
+            var result = await gitExecAsync(dir, ['branch', '-D', name]);
+            if (result.code === 0) {
+                deleted.push(name);
+            } else {
+                errors.push(name + ': ' + result.stderr.trim());
+            }
+        }
+
+        return { deleted: deleted, errors: errors };
+    }
+
+    // -----------------------------------------------------------------------
     //  Exports
     // -----------------------------------------------------------------------
     prSplit.verifySplit = verifySplit;
@@ -408,4 +674,8 @@
     prSplit.cleanupBranches = cleanupBranches;
     prSplit.startVerifySession = startVerifySession;
     prSplit.cleanupVerifyWorktree = cleanupVerifyWorktree;
+    prSplit.verifySplitAsync = verifySplitAsync;
+    prSplit.verifySplitsAsync = verifySplitsAsync;
+    prSplit.verifyEquivalenceAsync = verifyEquivalenceAsync;
+    prSplit.cleanupBranchesAsync = cleanupBranchesAsync;
 })(globalThis.prSplit);

@@ -822,6 +822,23 @@ func TestAutoSplit_CancelDuringExecution_EmitsResumeAndCleansUp(t *testing.T) {
 		t.Fatalf("exec override: %v", err)
 	}
 
+	// Also override _gitExecAsync for the async pipeline path (T31).
+	if _, err := tp.EvalJS(`
+		var _origGitExecAsyncCancel = prSplit._gitExecAsync;
+		prSplit._gitExecAsync = function(dir, args) {
+			for (var i = 0; i < args.length; i++) {
+				if (args[i] === 'checkout' && i + 1 < args.length && args[i+1] === '-b' &&
+					i + 2 < args.length && typeof args[i+2] === 'string' &&
+					args[i+2].indexOf('split/') === 0) {
+					_cancelTriggered = true;
+				}
+			}
+			return _origGitExecAsyncCancel(dir, args);
+		};
+	`); err != nil {
+		t.Fatalf("gitExecAsync cancel hook: %v", err)
+	}
+
 	// Wire _cancelSource to the trigger flag for cooperative cancellation.
 	if _, err := tp.EvalJS(`
 		globalThis.prSplit._cancelSource = function(q) {

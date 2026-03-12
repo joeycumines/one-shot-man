@@ -211,7 +211,11 @@ const chunkCompatShim = `
         'renderColorizedDiff', 'getSplitDiff',
         'buildDependencyGraph', 'renderAsciiGraph',
         'analyzeRetrospective',
-        'cleanupExecutor'
+        'cleanupExecutor',
+        // T31 async versions — proxied so tests can override via bare globals.
+        'analyzeDiffAsync', 'createSplitPlanAsync', 'executeSplitAsync',
+        'verifySplitAsync', 'verifySplitsAsync', 'verifyEquivalenceAsync',
+        'cleanupBranchesAsync'
     ];
 
     funcNames.forEach(function(k) {

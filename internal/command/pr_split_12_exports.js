@@ -17,13 +17,13 @@
     var EXPECTED_EXPORTS = [
         // Chunk 00: Core
         '_state', '_modules', '_style', '_cfg', '_COMMAND_NAME', '_MODE_NAME',
-        'runtime', '_gitExec', '_gitExecAsync', '_resolveDir', '_shellQuote', '_gitAddChangedFiles',
+        'runtime', '_gitExec', '_gitExecAsync', '_resolveDir', '_shellQuote', '_gitAddChangedFiles', '_gitAddChangedFilesAsync',
         '_dirname', '_fileExtension', '_sanitizeBranchName', '_padIndex',
         'discoverVerifyCommand', 'scopedVerifyCommand',
         'isCancelled', 'isPaused', 'isForceCancelled',
 
         // Chunk 01: Analysis
-        'analyzeDiff', 'analyzeDiffStats',
+        'analyzeDiff', 'analyzeDiffAsync', 'analyzeDiffStats',
 
         // Chunk 02: Grouping
         'groupByDirectory', 'groupByExtension', 'groupByPattern',
@@ -32,19 +32,19 @@
         'applyStrategy', 'selectStrategy',
 
         // Chunk 03: Planning
-        'DEFAULT_PLAN_PATH', 'createSplitPlan', 'savePlan', 'loadPlan',
+        'DEFAULT_PLAN_PATH', 'createSplitPlan', 'createSplitPlanAsync', 'savePlan', 'loadPlan',
 
         // Chunk 04: Validation
         'validateClassification', 'validatePlan',
         'validateSplitPlan', 'validateResolution',
 
         // Chunk 05: Execution
-        'executeSplit',
+        'executeSplit', 'executeSplitAsync',
 
         // Chunk 06: Verification
-        'verifySplit', 'verifySplits',
-        'verifyEquivalence', 'verifyEquivalenceDetailed',
-        'cleanupBranches',
+        'verifySplit', 'verifySplitAsync', 'verifySplits', 'verifySplitsAsync',
+        'verifyEquivalence', 'verifyEquivalenceAsync', 'verifyEquivalenceDetailed',
+        'cleanupBranches', 'cleanupBranchesAsync',
         'startVerifySession', 'cleanupVerifyWorktree',
 
         // Chunk 07: PR creation

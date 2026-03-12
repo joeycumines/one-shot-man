@@ -590,7 +590,7 @@
     // Emits before/after log entries so IPC timeouts can be diagnosed
     // post-mortem.
     async function waitForLogged(toolName, timeoutMs, opts) {
-        var mcpCb = prSplit._mcpCallbackObj;
+        var mcpCb = prSplit._mcpCallbackObj || mcpCallbackObj;
         // Prefer non-blocking waitForAsync (Promise-based); fall back to
         // blocking waitFor for backward compatibility with test mocks and
         // older MCPCallback implementations.
@@ -755,13 +755,13 @@
 
     // Runs the standard heuristic split flow when Claude is unavailable.
     async function heuristicFallback(analysis, config, report) {
-        // Late-bind cross-chunk dependencies.
+        // Late-bind cross-chunk dependencies (async versions for non-blocking).
         var runtime = prSplit.runtime;
         var applyStrategy = prSplit.applyStrategy;
-        var createSplitPlan = prSplit.createSplitPlan;
-        var executeSplit = prSplit.executeSplit;
-        var verifySplits = prSplit.verifySplits;
-        var verifyEquivalence = prSplit.verifyEquivalence;
+        var createSplitPlan = prSplit.createSplitPlanAsync;
+        var executeSplit = prSplit.executeSplitAsync;
+        var verifySplits = prSplit.verifySplitsAsync;
+        var verifyEquivalence = prSplit.verifyEquivalenceAsync;
         var resolveConflicts = prSplit.resolveConflicts;
         var state = prSplit._state;
 
@@ -773,7 +773,7 @@
         });
         state.groupsCache = groups;
 
-        var plan = createSplitPlan(groups, {
+        var plan = await createSplitPlan(groups, {
             baseBranch: analysis.baseBranch,
             sourceBranch: analysis.currentBranch,
             branchPrefix: runtime.branchPrefix,
@@ -784,20 +784,20 @@
         report.plan = plan;
 
         if (!runtime.dryRun) {
-            var execResult = executeSplit(plan);
+            var execResult = await executeSplit(plan);
             if (execResult.error) {
                 report.error = execResult.error;
                 return { error: execResult.error, report: report };
             }
             report.splits = execResult.results || [];
 
-            var verifyObj = verifySplits(plan);
+            var verifyObj = await verifySplits(plan);
             var failures = verifyObj.results.filter(function(r) { return !r.passed; });
             if (failures.length > 0) {
                 await resolveConflicts(plan);
             }
 
-            var equiv = verifyEquivalence(plan);
+            var equiv = await verifyEquivalence(plan);
             if (!equiv.equivalent) {
                 report.error = 'tree hash mismatch after heuristic split';
             }
@@ -847,9 +847,9 @@
         var resolveDir = prSplit._resolveDir;
         var renderConflictPrompt = prSplit.renderConflictPrompt;
         var validateResolution = prSplit.validateResolution;
-        var verifySplit = prSplit.verifySplit;
-        var gitExec = prSplit._gitExec;
-        var gitAddChangedFiles = prSplit._gitAddChangedFiles;
+        var verifySplitAsync = prSplit.verifySplitAsync;
+        var gitExecAsync = prSplit._gitExecAsync;
+        var gitAddChangedFilesAsync = prSplit._gitAddChangedFilesAsync;
         var shellQuote = prSplit._shellQuote;
         var osmod = prSplit._modules.osmod;
         var exec = prSplit._modules.exec;
@@ -989,7 +989,7 @@
                 // without touching the user's CWD.
                 var patchBranch = fail.branch || fail.name;
                 var patchWorktreeDir = dir + '/../.osm-resolve-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
-                var patchWtAdd = gitExec(dir, ['worktree', 'add', patchWorktreeDir, patchBranch]);
+                var patchWtAdd = await gitExecAsync(dir, ['worktree', 'add', patchWorktreeDir, patchBranch]);
                 if (patchWtAdd.code !== 0) {
                     log.printf('auto-split: failed to create worktree for %s: %s', patchBranch, patchWtAdd.stderr.trim());
                     continue;
@@ -1003,8 +1003,8 @@
                             osmod.writeFile(patchWorktreeDir + '/' + patch.file, patch.content);
                         }
                     }
-                    gitAddChangedFiles(patchWorktreeDir);
-                    var patchCommit = gitExec(patchWorktreeDir, ['commit', '--amend', '--no-edit']);
+                    await gitAddChangedFilesAsync(patchWorktreeDir);
+                    var patchCommit = await gitExecAsync(patchWorktreeDir, ['commit', '--amend', '--no-edit']);
                     if (patchCommit.code !== 0) {
                         log.printf('auto-split: patch commit failed for %s: %s', patchBranch, patchCommit.stderr.trim());
                     }
@@ -1015,18 +1015,18 @@
                     for (var c = 0; c < resolution.commands.length; c++) {
                         exec.execv(['sh', '-c', 'cd ' + shellQuote(patchWorktreeDir) + ' && ' + resolution.commands[c]]);
                     }
-                    gitAddChangedFiles(patchWorktreeDir);
-                    var cmdCommit = gitExec(patchWorktreeDir, ['commit', '--amend', '--no-edit']);
+                    await gitAddChangedFilesAsync(patchWorktreeDir);
+                    var cmdCommit = await gitExecAsync(patchWorktreeDir, ['commit', '--amend', '--no-edit']);
                     if (cmdCommit.code !== 0) {
                         log.printf('auto-split: command commit failed for %s: %s', patchBranch, cmdCommit.stderr.trim());
                     }
                 }
 
                 // Cleanup resolution worktree before re-verify.
-                gitExec(dir, ['worktree', 'remove', '--force', patchWorktreeDir]);
+                await gitExecAsync(dir, ['worktree', 'remove', '--force', patchWorktreeDir]);
 
-                // Re-verify this branch (verifySplit creates its own worktree).
-                var reVerify = verifySplit(fail.branch || fail.name, { verifyCommand: runtime.verifyCommand });
+                // Re-verify this branch (verifySplitAsync creates its own worktree).
+                var reVerify = await verifySplitAsync(fail.branch || fail.name, { verifyCommand: runtime.verifyCommand });
                 if (reVerify.passed) {
                     fixed = true;
                     output.print('[auto-split] Fixed: ' + (fail.branch || fail.name));
@@ -1057,18 +1057,18 @@
         var gitExec = prSplit._gitExec;
         var isCancelled = prSplit.isCancelled;
         var isPaused = prSplit.isPaused;
-        var analyzeDiff = prSplit.analyzeDiff;
-        var createSplitPlan = prSplit.createSplitPlan;
+        var analyzeDiff = prSplit.analyzeDiffAsync;
+        var createSplitPlan = prSplit.createSplitPlanAsync;
         var savePlan = prSplit.savePlan;
         var loadPlan = prSplit.loadPlan;
         var DEFAULT_PLAN_PATH = prSplit.DEFAULT_PLAN_PATH;
         var validateClassification = prSplit.validateClassification;
         var validateSplitPlan = prSplit.validateSplitPlan;
         var validatePlan = prSplit.validatePlan;
-        var executeSplit = prSplit.executeSplit;
-        var verifySplits = prSplit.verifySplits;
-        var verifyEquivalence = prSplit.verifyEquivalence;
-        var cleanupBranches = prSplit.cleanupBranches;
+        var executeSplit = prSplit.executeSplitAsync;
+        var verifySplits = prSplit.verifySplitsAsync;
+        var verifyEquivalence = prSplit.verifyEquivalenceAsync;
+        var cleanupBranches = prSplit.cleanupBranchesAsync;
         var ClaudeCodeExecutor = prSplit.ClaudeCodeExecutor;
         var renderClassificationPrompt = prSplit.renderClassificationPrompt;
         var padIndex = prSplit._padIndex;
@@ -1264,9 +1264,9 @@
         // Step 1: Analyze diff.
         var analysis;
         if (!resuming) {
-        analysis = await step('Analyze diff', function() {
+        analysis = await step('Analyze diff', async function() {
             updateDetail('Analyze diff', 'Reading git diff...');
-            var result = analyzeDiff(config);
+            var result = await analyzeDiff(config);
             if (!result.error && result.files) {
                 updateDetail('Analyze diff', result.files.length + ' files found');
             }
@@ -1702,7 +1702,7 @@
 
             // Generate plan locally from classification.
             var groups = classificationToGroups(classification.classification);
-            var plan = createSplitPlan(groups, {
+            var plan = await createSplitPlan(groups, {
                 baseBranch: analysis.baseBranch,
                 sourceBranch: analysis.currentBranch,
                 branchPrefix: runtime.branchPrefix,
@@ -1725,12 +1725,12 @@
         savePlan(null, 'Generate split plan');
 
         // Step 6: Execute split.
-        var execResult = await step('Execute split plan', function() {
+        var execResult = await step('Execute split plan', async function() {
             if (runtime.dryRun) {
                 return { error: null, dryRun: true };
             }
             updateDetail('Execute split plan', plan.splits.length + ' branches to create...');
-            var result = executeSplit(plan, {
+            var result = await executeSplit(plan, {
                 progressFn: function(msg) { updateDetail('Execute split plan', msg); }
             });
             if (result.error) {
@@ -1744,7 +1744,7 @@
             report.error = execResult.error;
             if (config.cleanupOnFailure && plan && plan.splits && plan.splits.length > 0) {
                 emitOutput('[auto-split] Cleaning up split branches due to execution failure...');
-                var cleanResult = cleanupBranches(plan);
+                var cleanResult = await cleanupBranches(plan);
                 if (cleanResult.deleted.length > 0) {
                     emitOutput('[auto-split] Deleted ' + cleanResult.deleted.length + ' branches');
                 }
@@ -1802,9 +1802,9 @@
         }
 
         // Step 7: Verify splits.
-        var verifyResult = await step('Verify splits', function() {
+        var verifyResult = await step('Verify splits', async function() {
             updateDetail('Verify splits', 'Running verification command on each branch...');
-            var verifyObj = verifySplits(plan, {
+            var verifyObj = await verifySplits(plan, {
                 verifyTimeoutMs: config.verifyTimeoutMs || AUTOMATED_DEFAULTS.verifyTimeoutMs,
                 outputFn: emitOutput,
                 onBranchStart: null,
@@ -1874,7 +1874,7 @@
             if (resolved.reSplitNeeded && reSplitCount < maxReSplits) {
                 reSplitCount++;
                 output.print('[auto-split] Re-split requested — re-classifying...');
-                cleanupBranches(plan);
+                await cleanupBranches(plan);
                 var reClassifyResult = await step('Re-classify (retry ' + reSplitCount + ')', async function() {
                     var constraintPrompt = 'Re-classify these files with the constraint: ' +
                         resolved.reSplitReason + '\n\nUse the reportClassification MCP tool.\n';
@@ -1904,7 +1904,7 @@
                 });
                 if (!reClassifyResult.error) {
                     var newGroups = classificationToGroups(reClassifyResult.classification);
-                    plan = createSplitPlan(newGroups, {
+                    plan = await createSplitPlan(newGroups, {
                         baseBranch: analysis.baseBranch,
                         sourceBranch: analysis.currentBranch,
                         branchPrefix: runtime.branchPrefix,
@@ -1913,15 +1913,15 @@
                     });
                     state.planCache = plan;
                     report.plan = plan;
-                    var reExec = await step('Re-execute split', function() {
-                        var result = executeSplit(plan);
+                    var reExec = await step('Re-execute split', async function() {
+                        var result = await executeSplit(plan);
                         if (result.error) return { error: result.error };
                         report.splits = result.results || [];
                         return { error: null };
                     });
                     if (!reExec.error) {
-                        await step('Re-verify splits', function() {
-                            return { error: null, results: verifySplits(plan) };
+                        await step('Re-verify splits', async function() {
+                            return { error: null, results: await verifySplits(plan) };
                         });
                     }
                 }
@@ -1932,8 +1932,8 @@
         }
 
         // Step 10: Equivalence check and report.
-        var equivResult = await step('Verify equivalence', function() {
-            var result = verifyEquivalence(plan);
+        var equivResult = await step('Verify equivalence', async function() {
+            var result = await verifyEquivalence(plan);
             return { error: result.equivalent ? null : 'tree hash mismatch', result: result };
         });
 
@@ -1960,7 +1960,7 @@
         // Clean up split branches on pipeline failure if configured.
         if (config.cleanupOnFailure && report.error && plan && plan.splits && plan.splits.length > 0) {
             emitOutput('[auto-split] Cleaning up split branches due to pipeline failure...');
-            var cleanResult = cleanupBranches(plan);
+            var cleanResult = await cleanupBranches(plan);
             if (cleanResult.deleted.length > 0) {
                 emitOutput('[auto-split] Deleted ' + cleanResult.deleted.length + ' branches');
             }

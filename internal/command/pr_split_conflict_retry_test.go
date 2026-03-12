@@ -1588,7 +1588,7 @@ func TestPrSplitCommand_AddMissingFilesFixNoSourceBranch(t *testing.T) {
 
 	// fix() without a source branch should return error.
 	val, err := evalJS(`JSON.stringify(
-		globalThis.prSplit.AUTO_FIX_STRATEGIES[5].fix('.', 'branch-1', {splits:[]}, 'file not found')
+		await globalThis.prSplit.AUTO_FIX_STRATEGIES[5].fix('.', 'branch-1', {splits:[]}, 'file not found')
 	)`)
 	if err != nil {
 		t.Fatal(err)
@@ -1612,11 +1612,11 @@ func TestPrSplitCommand_GoMissingImportsFixNoGoimports(t *testing.T) {
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// If goimports is not available at the given path, fix should fail gracefully.
-	val, err := evalJS(`(function() {
+	val, err := evalJS(`(async function() {
 		// Call fix on nonexistent dir — it'll try 'which goimports'.
 		// If goimports IS available, it'll fail on the nonexistent dir.
 		// Either way, fixed should be false.
-		var result = globalThis.prSplit.AUTO_FIX_STRATEGIES[2].fix('/nonexistent/no-such-dir');
+		var result = await globalThis.prSplit.AUTO_FIX_STRATEGIES[2].fix('/nonexistent/no-such-dir');
 		return JSON.stringify(result);
 	})()`)
 	if err != nil {

@@ -63,7 +63,14 @@
       "T23: Mouse zone coverage audit (34 zone IDs, all handlers, wheel guard fix)",
       "T24: Keyboard routing audit (6 overlay interceptors, arrows context-aware, help updated)",
       "T25: Claude crash detection and recovery (5s health poll, 60s heartbeat, restart/fallback/abort)",
-      "T26: REPL command unit tests (35 test functions, 90+ subtests, all 32 commands)"
+      "T26: REPL command unit tests (35 test functions, 90+ subtests, all 32 commands)",
+      "T27: Mux.ChildScreen() ANSI + Mux.WriteToChild() input — termmux extensions with JS bindings and 11 tests",
+      "T28: Claude split-view ANSI rendering — RenderContentANSI, ContentANSI, ChildScreen ANSI, renderClaudePane ANSI-aware, fallback to plain",
+      "T29: Claude pane keyboard input forwarding — keyToTermBytes, CLAUDE_RESERVED_KEYS, writeToChild, INPUT badge, scroll keys before PTY",
+      "T30: gitExecAsync() non-blocking git helper — exec.spawn with parallel stream collection, same {stdout,stderr,code} shape, export",
+      "T31: Convert automatedSplit pipeline to gitExecAsync — 8 async functions, 7 strategy fix() methods, heuristicFallback/resolveConflictsWithClaude, late-binding, 13 test files updated",
+      "T61: mcpCallback.waitForAsync() — non-blocking Promise-based MCP tool wait with aliveCheck trampoline, 9 tests, 47/47 pass",
+      "T62: Pipeline async conversion — waitForLogged dual-path, step callbacks async, spawn/restart async, handleRestartClaudePoll, scroll keys, 485 tests pass"
     ],
     "replanLog": [
       {
@@ -293,7 +300,8 @@
       "task": "T31: Convert automatedSplit() pipeline git calls to gitExecAsync",
       "description": "The automatedSplit() async pipeline (pr_split_10_pipeline.js) calls blocking gitExec() extensively. Since automatedSplit is already async and its Promise continuations run on the Goja microtask queue (blocking the event loop during each synchronous call), convert ALL git calls within the pipeline to await gitExecAsync(). ALSO requires T62: waitForLogged must use waitForAsync to avoid MCP callback blocking. Changes: (a) Audit all gitExec() calls in pr_split_10_pipeline.js — replace with await gitExecAsync(). Count: search for gitExec( in the file. (b) Audit all gitExec() calls reachable from automatedSplit: in pr_split_01_analysis.js (analyzeDiff), pr_split_02_grouping.js, pr_split_03_planning.js, pr_split_04_validation.js, pr_split_05_execution.js (executeSplit), pr_split_06_verification.js (verifySplit, verifyEquivalence), pr_split_08_conflict.js (resolveConflicts). (c) For each function called by the pipeline: create an async version that uses gitExecAsync. E.g., analyzeDiffAsync(), executeSplitAsync(), verifySplitAsync(). (d) Update automatedSplit to call the async versions. (e) Keep synchronous versions for REPL/heuristic-tick callers. (f) Verify: during automatedSplit, the BubbleTea UI remains responsive (ticks process, render occurs, cancel works within 1s).",
       "acceptance": "automatedSplit() completes successfully with all git operations AND MCP waits non-blocking. BubbleTea renders during pipeline execution (verifiable by checking that claude-screenshot ticks receive screenshots while pipeline runs). Ctrl+C cancels within 1 second at any point during pipeline. REPL commands still use synchronous gitExec. All existing pipeline tests pass.",
-      "status": "Not Started",
+      "status": "Done",
+      "completionNotes": "Created async versions of 8 core functions across 6 JS chunks: gitAddChangedFilesAsync (00), analyzeDiffAsync (01), createSplitPlanAsync (03), executeSplitAsync (05), verifySplitAsync/verifySplitsAsync/verifyEquivalenceAsync/cleanupBranchesAsync (06). All 7 autofix strategy fix() methods converted to async. automatedSplit binds to *Async versions. heuristicFallback binds to *Async versions. resolveConflictsWithClaude uses gitExecAsync. All async functions use late-binding pattern (capture prSplit._gitExecAsync inside function body, not at IIFE scope). waitForLogged fallback to bare mcpCallbackObj for test mocks. Compat shim updated with async names. Export manifest updated. 13 test files updated. Rule of Two: Pass 1 + Pass 2 green.",
       "context": {
         "files": [
           "internal/command/pr_split_10_pipeline.js (automatedSplit — line 1040+, 60+ gitExec calls reachable)",
@@ -834,7 +842,8 @@
       "task": "T62: Convert automatedSplit pipeline to use waitForAsync instead of waitFor",
       "description": "automatedSplit() in pr_split_10_pipeline.js calls waitForLogged() which calls mcpCb.waitFor() — this blocks for minutes. Convert to waitForAsync: (a) In waitForLogged function (line ~608), call mcpCb.waitForAsync() instead of mcpCb.waitFor(). Since waitForAsync returns a Promise, add 'await' before the call. (b) waitForLogged is already in an async context (called from automatedSplit which is async), so 'await' is valid. (c) The aliveCheck callback needs conversion: since waitForAsync runs on a goroutine, it can't call JS functions. Instead, set up an alive-check mechanism: poll an atomic 'cancelled' flag, set by the JS side on cancel. (d) Update all waitForLogged callers to await the result (they should already be in async contexts). (e) Verify: during Claude classification/plan generation, the UI remains responsive (Claude pane updates, cancel works, progress updates). (f) Test: start auto pipeline, verify Claude screenshot updates during classification wait. (g) Also convert the exec.execv(['sleep', '0.3']) in pr_split_09_claude.js spawn health check to use a non-blocking alternative (setTimeout via Promise).",
       "acceptance": "During auto-split pipeline, UI remains fully responsive while waiting for Claude MCP responses. Claude pane screenshot updates every 500ms. Ctrl+C cancel processes within 1s during any MCP wait. Progress callbacks fire. Classification still completes correctly via MCP. All existing pipeline tests pass.",
-      "status": "Not Started",
+      "status": "Done",
+      "completionNotes": "waitForLogged converted to async with dual-path (useAsync prefers waitForAsync, useSync falls back to waitFor for test mocks). All 6 callers in pr_split_10_pipeline.js and 1 in pr_split_08_conflict.js now use await. step() callbacks made async. exec.execv sleep replaced with setTimeout Promise in ClaudeCodeExecutor.spawn(). handleRestartClaudePoll tick-based polling for async restart. CrashRecovery test mocks updated to return Promise.resolve(). Scroll keys (up/down/j/k/home/end) handled before PTY forwarding. shellQuote fix in claude-fix strategy. 485 tests pass, 0 failures, -race clean. Committed as 205db03b.",
       "context": {
         "files": [
           "internal/command/pr_split_10_pipeline.js (waitForLogged at line ~608, automatedSplit)",

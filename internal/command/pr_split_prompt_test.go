@@ -423,9 +423,9 @@ func TestHeuristicFallback_TreeHashMismatch(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldDir) })
 
-	// Override verifyEquivalence to always return a mismatch.
+	// Override verifyEquivalenceAsync to always return a mismatch.
 	if _, err := tp.EvalJS(`
-		verifyEquivalence = function(plan) {
+		verifyEquivalenceAsync = function(plan) {
 			return { equivalent: false, splitTree: 'aaa', sourceTree: 'bbb', error: null };
 		};
 	`); err != nil {

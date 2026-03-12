@@ -510,10 +510,10 @@ func TestAutoSplit_CrashRecovery_AfterExecute(t *testing.T) {
 		}
 	}()
 
-	// Override verifySplits to throw — simulating a crash after Step 6.
+	// Override verifySplitsAsync to throw — simulating a crash after Step 6.
 	if _, err := tp.EvalJS(`
-		var _origVerifySplits = verifySplits;
-		verifySplits = function() { throw new Error('simulated crash during verify'); };
+		var _origVerifySplitsAsync = verifySplitsAsync;
+		verifySplitsAsync = function() { throw new Error('simulated crash during verify'); };
 	`); err != nil {
 		t.Fatal(err)
 	}
@@ -585,8 +585,8 @@ func TestAutoSplit_CrashRecovery_AfterExecute(t *testing.T) {
 	}
 	t.Logf("lastCompletedStep: %q", savedPlan.LastCompletedStep)
 
-	// Restore verifySplits for resume.
-	if _, err := tp.EvalJS(`verifySplits = _origVerifySplits;`); err != nil {
+	// Restore verifySplitsAsync for resume.
+	if _, err := tp.EvalJS(`verifySplitsAsync = _origVerifySplitsAsync;`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1628,11 +1628,11 @@ func TestAutoSplit_CleanupOnFailure(t *testing.T) {
 		}
 	}()
 
-	// Override executeSplit to create one branch, then return an error.
+	// Override executeSplitAsync to create one branch, then return an error.
 	// This simulates a partial execution failure where branches exist.
 	overrideExec := `
-		var _origExecuteSplit = executeSplit;
-		executeSplit = function(plan, options) {
+		var _origExecuteSplitAsync = executeSplitAsync;
+		executeSplitAsync = function(plan, options) {
 			// Create the first branch for real to prove cleanup works.
 			gitExec('.', ['checkout', plan.baseBranch]);
 			gitExec('.', ['checkout', '-b', plan.splits[0].name]);
@@ -1777,9 +1777,9 @@ func TestAutoSplit_CleanupOnFailure_Disabled(t *testing.T) {
 		}
 	}()
 
-	// Override executeSplit: create first branch, then fail.
+	// Override executeSplitAsync: create first branch, then fail.
 	overrideExec := `
-		executeSplit = function(plan, options) {
+		executeSplitAsync = function(plan, options) {
 			gitExec('.', ['checkout', plan.baseBranch]);
 			gitExec('.', ['checkout', '-b', plan.splits[0].name]);
 			gitExec('.', ['checkout', plan.sourceBranch, '--', plan.splits[0].files[0]]);
@@ -1949,6 +1949,23 @@ func TestAutoSplit_ErrorFeedback_ResumeInstructions(t *testing.T) {
 		};
 	`); err != nil {
 		t.Fatalf("exec override: %v", err)
+	}
+
+	// Also override _gitExecAsync for the async pipeline path (T31).
+	if _, err := tp.EvalJS(`
+		var _origGitExecAsyncEF = prSplit._gitExecAsync;
+		prSplit._gitExecAsync = function(dir, args) {
+			for (var i = 0; i < args.length; i++) {
+				if (args[i] === 'checkout' && i + 1 < args.length && args[i+1] === '-b' &&
+					i + 2 < args.length && typeof args[i+2] === 'string' &&
+					args[i+2].indexOf('split/') === 0) {
+					return Promise.resolve({ code: 1, stdout: '', stderr: 'simulated: branch creation failed for testing', error: 'simulated: branch creation failed for testing' });
+				}
+			}
+			return _origGitExecAsyncEF(dir, args);
+		};
+	`); err != nil {
+		t.Fatalf("gitExecAsync override: %v", err)
 	}
 
 	// Run automatedSplit → heuristic → executeSplit fails → finishTUI emits resume.
@@ -2400,14 +2417,14 @@ func TestWaitForLogged_Success(t *testing.T) {
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	val, err := evalJS(`(function() {
+	val, err := evalJS(`(async function() {
 		// Set up mock mcpCallbackObj.
 		mcpCallbackObj = {
 			waitFor: function(name, timeout, opts) {
 				return { data: { result: 42 }, error: null };
 			}
 		};
-		var result = waitForLogged('testTool', 5000, {});
+		var result = await waitForLogged('testTool', 5000, {});
 		return JSON.stringify(result);
 	})()`)
 	if err != nil {
@@ -2435,13 +2452,13 @@ func TestWaitForLogged_Timeout(t *testing.T) {
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	val, err := evalJS(`(function() {
+	val, err := evalJS(`(async function() {
 		mcpCallbackObj = {
 			waitFor: function(name, timeout, opts) {
 				return { data: null, error: 'timeout waiting for ' + name };
 			}
 		};
-		var result = waitForLogged('reportClassification', 1000, {});
+		var result = await waitForLogged('reportClassification', 1000, {});
 		return JSON.stringify(result);
 	})()`)
 	if err != nil {
@@ -2473,7 +2490,7 @@ func TestWaitForLogged_HeartbeatTimeout(t *testing.T) {
 	// Mock mcpCallbackObj with:
 	// - waitFor that calls aliveCheck repeatedly before "timing out"
 	// - lastCallTime that returns a STALE timestamp (heartbeat long ago)
-	val, err := evalJS(`(function() {
+	val, err := evalJS(`(async function() {
 		var aliveCheckCallCount = 0;
 		mcpCallbackObj = {
 			waitFor: function(name, timeout, opts) {
@@ -2497,7 +2514,7 @@ func TestWaitForLogged_HeartbeatTimeout(t *testing.T) {
 				return 0;
 			}
 		};
-		var result = waitForLogged('reportClassification', 5000, {
+		var result = await waitForLogged('reportClassification', 5000, {
 			heartbeatTool: 'heartbeat',
 			heartbeatTimeoutMs: 5000  // 5 second timeout, but heartbeat is 60s old
 		});
@@ -2523,7 +2540,7 @@ func TestWaitForLogged_HeartbeatFresh_NoAbort(t *testing.T) {
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Mock where heartbeat is fresh (just received) — should NOT abort.
-	val, err := evalJS(`(function() {
+	val, err := evalJS(`(async function() {
 		mcpCallbackObj = {
 			waitFor: function(name, timeout, opts) {
 				// Call aliveCheck — should return true (heartbeat is fresh).
@@ -2543,7 +2560,7 @@ func TestWaitForLogged_HeartbeatFresh_NoAbort(t *testing.T) {
 				return 0;
 			}
 		};
-		var result = waitForLogged('reportClassification', 5000, {
+		var result = await waitForLogged('reportClassification', 5000, {
 			heartbeatTool: 'heartbeat',
 			heartbeatTimeoutMs: 30000  // 30 second timeout, heartbeat is 1s old
 		});
@@ -2569,7 +2586,7 @@ func TestWaitForLogged_HeartbeatNeverReceived_GracePeriod(t *testing.T) {
 
 	// Mock where heartbeat was NEVER called (lastCallTime returns 0).
 	// Should NOT abort — grace period until first heartbeat arrives.
-	val, err := evalJS(`(function() {
+	val, err := evalJS(`(async function() {
 		mcpCallbackObj = {
 			waitFor: function(name, timeout, opts) {
 				if (opts && typeof opts.aliveCheck === 'function') {
@@ -2584,7 +2601,7 @@ func TestWaitForLogged_HeartbeatNeverReceived_GracePeriod(t *testing.T) {
 				return 0;  // Never called.
 			}
 		};
-		var result = waitForLogged('reportClassification', 5000, {
+		var result = await waitForLogged('reportClassification', 5000, {
 			heartbeatTool: 'heartbeat',
 			heartbeatTimeoutMs: 1  // Even with 1ms timeout, grace period applies.
 		});

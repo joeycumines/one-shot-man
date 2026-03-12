@@ -299,6 +299,33 @@ func (m *Mux) ChildExitOutput() string {
 	return vtm.String()
 }
 
+// ChildScreen returns the VTerm buffer as ANSI-styled content suitable for
+// embedding in a TUI pane (e.g., inside a lipgloss border). This preserves
+// SGR colors, bold, underline, etc. but omits cursor-positioning and erase
+// sequences that would conflict with BubbleTea rendering.
+// Returns an empty string if no VTerm is allocated or no child is attached.
+func (m *Mux) ChildScreen() string {
+	m.mu.Lock()
+	vtm := m.vterm
+	m.mu.Unlock()
+	if vtm == nil {
+		return ""
+	}
+	return vtm.ContentANSI()
+}
+
+// WriteToChild sends raw bytes to the attached child process's stdin.
+// Returns ErrNoChild if no child is attached. Thread-safe.
+func (m *Mux) WriteToChild(p []byte) (int, error) {
+	m.mu.Lock()
+	child := m.child
+	m.mu.Unlock()
+	if child == nil {
+		return 0, ErrNoChild
+	}
+	return child.Write(p)
+}
+
 // handleResize is called when the terminal is resized (SIGWINCH).
 // It updates the internal dimensions, resizes the VTerm (accounting for
 // the status bar), calls the resize callback to propagate to the child

@@ -429,14 +429,23 @@
     //  Split-View: Claude Pane Renderer (T15)
     // -----------------------------------------------------------------------
     function renderClaudePane(s, width, height) {
-        var screenshot = s.claudeScreenshot || '';
+        // T28: Prefer ANSI-styled content (claudeScreen), fall back to plain text.
+        var ansiContent = s.claudeScreen || '';
+        var plainContent = s.claudeScreenshot || '';
+        var content = ansiContent || plainContent;
+        var isANSI = !!ansiContent;
         var hasMux = (typeof tuiMux !== 'undefined' && tuiMux &&
-            typeof tuiMux.screenshot === 'function');
+            typeof tuiMux.childScreen === 'function');
+        // Backward-compat: also check for screenshot-only mux.
+        if (!hasMux) {
+            hasMux = (typeof tuiMux !== 'undefined' && tuiMux &&
+                typeof tuiMux.screenshot === 'function');
+        }
 
         // Height budget: border adds 2 lines (top + bottom).
         // Content height = height - 2. First content line is the title.
         var contentH = Math.max(1, height - 2);
-        var viewH = Math.max(1, contentH - 1); // lines for screenshot text
+        var viewH = Math.max(1, contentH - 1); // lines for content text
         var viewW = Math.max(10, width - 6);    // border(2) + padding(2) + safety(2)
 
         // Focus indicator.
@@ -444,7 +453,7 @@
         var borderColor = isFocused ? COLORS.primary : COLORS.border;
 
         // Placeholder when no Claude session is available.
-        if (!hasMux || !screenshot) {
+        if (!hasMux || !content) {
             var placeholder = styles.dim().render(
                 hasMux ? 'Waiting for Claude output...'
                        : 'No Claude session attached');
@@ -465,8 +474,8 @@
             return phStyle.render(phLines.join('\n'));
         }
 
-        // Parse screenshot into lines.
-        var lines = screenshot.split('\n');
+        // Parse content into lines.
+        var lines = content.split('\n');
         while (lines.length > 0 && lines[lines.length - 1] === '') {
             lines.pop();
         }
@@ -485,8 +494,10 @@
             }
         }
 
-        // Title line (rendered inside the border as first content line).
-        var titleText = styles.bold().render(' Claude' + scrollInfo + ' ');
+        // Title line: show mode indicator (T28) and input indicator (T29).
+        var modeTag = isANSI ? '' : ' [plain]';
+        var inputTag = isFocused ? ' INPUT' : '';
+        var titleText = styles.bold().render(' Claude' + inputTag + modeTag + scrollInfo + ' ');
 
         // Determine visible window based on scroll offset.
         var startLine;
@@ -497,12 +508,25 @@
         }
         var endLine = Math.min(totalLines, startLine + viewH);
 
-        // Build viewport content.
+        // Build viewport content with ANSI-aware line truncation.
         var contentLines = [titleText];
         for (var ci = startLine; ci < endLine; ci++) {
             var ln = lines[ci] || '';
-            if (ln.length > viewW) {
-                ln = ln.substring(0, viewW - 3) + '...';
+            // Use lipgloss.width for ANSI-aware visual width calculation.
+            var visualW = lipgloss.width(ln);
+            if (visualW > viewW) {
+                // Truncate: strip ANSI-unaware substring is risky, so we
+                // attempt a visual-width-aware truncation. Since lipgloss
+                // doesn't expose truncate(), we use a simple approach: if
+                // the line has ANSI codes, trim iteratively; for plain text
+                // use substring.
+                if (isANSI) {
+                    // For ANSI lines, let lipgloss.newStyle().maxWidth()
+                    // handle truncation — it's ANSI-aware.
+                    ln = lipgloss.newStyle().maxWidth(viewW).render(ln);
+                } else {
+                    ln = ln.substring(0, viewW - 3) + '...';
+                }
             }
             contentLines.push(ln);
         }

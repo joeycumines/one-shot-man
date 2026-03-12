@@ -143,3 +143,107 @@ func TestRenderFullScreen_ConsecutiveCalls(t *testing.T) {
 		t.Error("RenderFullScreen not idempotent across 3 calls")
 	}
 }
+
+// ── T28: RenderContentANSI tests ─────────────────────────────────
+
+func TestRenderContentANSI_NoPositioningSequences(t *testing.T) {
+	scr := NewScreen(3, 10)
+	scr.PutChar('H')
+	scr.PutChar('i')
+
+	out := RenderContentANSI(scr)
+	// Must NOT have CUP (\x1b[row;colH) or EL (\x1b[K) or cursor sequences.
+	if strings.Contains(out, "\x1b[K") {
+		t.Errorf("RenderContentANSI should not contain EL (\\x1b[K), got %q", out)
+	}
+	// CUP sequence: \x1b[digits;digitsH
+	if strings.Contains(out, ";1H") {
+		t.Errorf("RenderContentANSI should not contain CUP (;1H), got %q", out)
+	}
+	if strings.Contains(out, "\x1b[?25") {
+		t.Errorf("RenderContentANSI should not contain cursor visibility sequences, got %q", out)
+	}
+}
+
+func TestRenderContentANSI_PreservesColors(t *testing.T) {
+	scr := NewScreen(2, 10)
+	scr.CurAttr = Attr{FG: color{kind: kind8, value: 1}} // red
+	scr.PutChar('E')
+	scr.PutChar('R')
+	scr.PutChar('R')
+	scr.CurAttr = Attr{}
+
+	out := RenderContentANSI(scr)
+	// Should contain SGR color escape for red.
+	if !strings.Contains(out, "\x1b[") {
+		t.Errorf("RenderContentANSI should contain ANSI SGR, got %q", out)
+	}
+	// Characters should be present (possibly interleaved with SGR sequences).
+	if !strings.ContainsRune(out, 'E') || !strings.ContainsRune(out, 'R') {
+		t.Errorf("RenderContentANSI should contain characters E and R, got %q", out)
+	}
+	// Should end with SGR reset.
+	if !strings.Contains(out, "\x1b[0m") {
+		t.Errorf("RenderContentANSI should contain SGR reset, got %q", out)
+	}
+}
+
+func TestRenderContentANSI_LinesJoinedByNewlines(t *testing.T) {
+	scr := NewScreen(3, 10)
+	scr.PutChar('A')
+	scr.CurRow = 1
+	scr.CurCol = 0
+	scr.PutChar('B')
+	scr.CurRow = 2
+	scr.CurCol = 0
+	scr.PutChar('C')
+
+	out := RenderContentANSI(scr)
+	parts := strings.Split(out, "\n")
+	if len(parts) != 3 {
+		t.Fatalf("expected 3 lines, got %d (output: %q)", len(parts), out)
+	}
+	// First line should contain 'A', second 'B', third 'C'.
+	if !strings.Contains(parts[0], "A") {
+		t.Errorf("line 0 should contain 'A', got %q", parts[0])
+	}
+	if !strings.Contains(parts[1], "B") {
+		t.Errorf("line 1 should contain 'B', got %q", parts[1])
+	}
+	if !strings.Contains(parts[2], "C") {
+		t.Errorf("line 2 should contain 'C', got %q", parts[2])
+	}
+}
+
+func TestRenderContentANSI_EmptyRowsAreBlank(t *testing.T) {
+	scr := NewScreen(3, 10)
+	// Only put content on row 0 — rows 1-2 should be empty.
+	scr.PutChar('X')
+
+	out := RenderContentANSI(scr)
+	parts := strings.Split(out, "\n")
+	if len(parts) != 3 {
+		t.Fatalf("expected 3 lines, got %d (output: %q)", len(parts), out)
+	}
+	// Row 1 and 2 should be empty strings (no content, no SGR).
+	if parts[1] != "" {
+		t.Errorf("empty row should be blank, got %q", parts[1])
+	}
+	if parts[2] != "" {
+		t.Errorf("empty row should be blank, got %q", parts[2])
+	}
+}
+
+func TestRenderContentANSI_Idempotent(t *testing.T) {
+	scr := NewScreen(3, 10)
+	scr.CurAttr = Attr{Bold: true, FG: color{kind: kind8, value: 2}}
+	scr.PutChar('G')
+	scr.PutChar('O')
+	scr.CurAttr = Attr{}
+
+	out1 := RenderContentANSI(scr)
+	out2 := RenderContentANSI(scr)
+	if out1 != out2 {
+		t.Error("RenderContentANSI not idempotent")
+	}
+}

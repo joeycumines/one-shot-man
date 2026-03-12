@@ -241,6 +241,58 @@
         return exec.execv(cmd);
     }
 
+    // gitExecAsync runs a git command asynchronously using exec.spawn().
+    // Returns a Promise<{stdout: string, stderr: string, code: number, error: boolean, message: string}>.
+    // Unlike gitExec (blocking), this does NOT freeze the event loop during execution,
+    // allowing BubbleTea to continue rendering and processing events.
+    //
+    // T30: Critical for unblocking the TUI event loop during git operations.
+    async function gitExecAsync(dir, args) {
+        var gitArgs = [];
+        if (dir && dir !== '' && dir !== '.') {
+            gitArgs.push('-C');
+            gitArgs.push(dir);
+        }
+        for (var i = 0; i < args.length; i++) {
+            gitArgs.push(args[i]);
+        }
+
+        var child = exec.spawn('git', gitArgs);
+
+        // Collect stdout and stderr in parallel to avoid deadlock
+        // (process may fill stderr buffer before we finish reading stdout).
+        async function readAll(stream) {
+            var buf = '';
+            while (true) {
+                var chunk = await stream.read();
+                if (chunk.done) break;
+                if (chunk.value !== undefined && chunk.value !== null) {
+                    buf += String(chunk.value);
+                }
+            }
+            return buf;
+        }
+
+        var results = await Promise.all([
+            readAll(child.stdout),
+            readAll(child.stderr),
+            child.wait()
+        ]);
+
+        var stdout = results[0];
+        var stderr = results[1];
+        var waitResult = results[2];
+        var code = (waitResult && waitResult.code !== undefined) ? waitResult.code : 0;
+
+        return {
+            stdout: stdout,
+            stderr: stderr,
+            code: code,
+            error: code !== 0,
+            message: code !== 0 ? 'exit status ' + code : ''
+        };
+    }
+
     // resolveDir resolves a directory path to an absolute path. When dir is
     // empty, falsy, or '.', it resolves to the current working directory.
     // This prevents git operations from being affected by later CWD changes
@@ -413,6 +465,7 @@
 
     // Internal helpers.
     prSplit._gitExec = gitExec;
+    prSplit._gitExecAsync = gitExecAsync;
     prSplit._resolveDir = resolveDir;
     prSplit._shellQuote = shellQuote;
     prSplit._gitAddChangedFiles = gitAddChangedFiles;

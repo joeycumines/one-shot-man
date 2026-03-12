@@ -335,6 +335,29 @@ func WrapMux(ctx context.Context, runtime *goja.Runtime, mux *parent.Mux) goja.V
 		return mux.ChildExitOutput()
 	})
 
+	// ── childScreen() → string ───────────────────────────
+	// Returns the VTerm buffer as ANSI escape-sequence output suitable for
+	// rendering in a terminal or TUI pane. Unlike screenshot() (plain text),
+	// this preserves colors, cursor position, and formatting.
+	_ = obj.Set("childScreen", func() string {
+		return mux.ChildScreen()
+	})
+
+	// ── writeToChild(data) ───────────────────────────────
+	// Sends raw bytes to the attached child process's stdin. Accepts a string.
+	// Throws if no child is attached.
+	_ = obj.Set("writeToChild", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("writeToChild: data argument is required"))
+		}
+		data := call.Argument(0).String()
+		n, err := mux.WriteToChild([]byte(data))
+		if err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return runtime.ToValue(n)
+	})
+
 	// ── lastActivityMs() → int64 ─────────────────────────
 	// Returns milliseconds since the last child process output, or -1 if
 	// no output has been received yet. Used by the HUD overlay to show an

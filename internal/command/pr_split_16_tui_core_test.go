@@ -2902,15 +2902,16 @@ func TestChunk16_CrashRecovery_ClickZones(t *testing.T) {
 		var errors = [];
 
 		// Mock a minimal ClaudeCodeExecutor for restart.
+		// restart() returns a Promise (async, matching the real implementation).
 		var restartCalled = false;
 		var mockExecutor = {
 			handle: { isAlive: function() { return true; } },
 			resolve: function() { return { error: null }; },
-			spawn: function() { return { error: null, sessionId: 'restarted-session' }; },
+			spawn: function() { return Promise.resolve({ error: null, sessionId: 'restarted-session' }); },
 			close: function() {},
 			restart: function() {
 				restartCalled = true;
-				return { error: null, sessionId: 'restarted-session' };
+				return Promise.resolve({ error: null, sessionId: 'restarted-session' });
 			}
 		};
 		globalThis.prSplit._state.claudeExecutor = mockExecutor;
@@ -2922,6 +2923,9 @@ func TestChunk16_CrashRecovery_ClickZones(t *testing.T) {
 		};
 
 		// Test 1: restart-claude zone click.
+		// After click, restart is async — the model enters a "restarting" state.
+		// claudeCrashDetected is NOT immediately cleared; it's handled by the
+		// restart-claude-poll tick handler after the Promise resolves.
 		var s = initState('ERROR_RESOLUTION');
 		s.claudeCrashDetected = true;
 		var restore = mockZoneHit('resolve-restart-claude');
@@ -2931,8 +2935,20 @@ func TestChunk16_CrashRecovery_ClickZones(t *testing.T) {
 			if (!restartCalled) {
 				errors.push('restart: executor.restart() not called');
 			}
-			if (r[0].claudeCrashDetected) {
-				errors.push('restart: claudeCrashDetected should be cleared');
+			// Async restart: model should be in restarting state.
+			if (!r[0].claudeRestarting) {
+				errors.push('restart: claudeRestarting should be true while async restart is in progress');
+			}
+			// claudeCrashDetected is still true — cleared by poll handler later.
+			if (!r[0].claudeCrashDetected) {
+				errors.push('restart: claudeCrashDetected should still be true during async restart');
+			}
+			if (r[0].errorDetails !== 'Restarting Claude...') {
+				errors.push('restart: errorDetails should show restarting message, got: ' + r[0].errorDetails);
+			}
+			// Should have returned a tick command for polling.
+			if (!r[1]) {
+				errors.push('restart: expected a tick command (non-null) for restart polling');
 			}
 		} finally { restore(); }
 
@@ -3038,13 +3054,13 @@ func TestChunk16_FocusActivate_CrashButtons(t *testing.T) {
 	raw, err := evalJS(`(function() {
 		var errors = [];
 
-		// Mock executor for restart.
+		// Mock executor for restart (returns Promise, matching async impl).
 		var restartCalled = false;
 		globalThis.prSplit._state.claudeExecutor = {
 			handle: { isAlive: function() { return true; } },
 			restart: function() {
 				restartCalled = true;
-				return { error: null, sessionId: 'restarted' };
+				return Promise.resolve({ error: null, sessionId: 'restarted' });
 			}
 		};
 
@@ -3229,11 +3245,11 @@ func TestChunk16_CrashRecovery_RestartFailure(t *testing.T) {
 	evalJS := loadTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
-		// Mock executor that fails on restart.
+		// Mock executor that fails on restart (returns Promise with error).
 		globalThis.prSplit._state.claudeExecutor = {
 			handle: { isAlive: function() { return false; } },
 			restart: function() {
-				return { error: 'Claude binary not found' };
+				return Promise.resolve({ error: 'Claude binary not found' });
 			}
 		};
 
@@ -3241,19 +3257,25 @@ func TestChunk16_CrashRecovery_RestartFailure(t *testing.T) {
 		s.claudeCrashDetected = true;
 
 		// Click restart button.
+		// The restart is now async: the model enters a "restarting" state.
+		// The actual error is surfaced by the restart-claude-poll tick handler.
 		var restore = mockZoneHit('resolve-restart-claude');
 		try {
 			var r = sendClick(s);
-			if (!r[0].errorDetails || r[0].errorDetails.indexOf('restart failed') < 0) {
-				return 'FAIL: errorDetails should mention restart failure, got: ' + r[0].errorDetails;
+			// Model should be in restarting state immediately.
+			if (!r[0].claudeRestarting) {
+				return 'FAIL: claudeRestarting should be true during async restart, got false';
 			}
-			// Should still be in ERROR_RESOLUTION (not transitioned away).
-			if (r[0].wizardState !== 'ERROR_RESOLUTION') {
-				return 'FAIL: should stay in ERROR_RESOLUTION on restart failure, got ' + r[0].wizardState;
+			if (r[0].errorDetails !== 'Restarting Claude...') {
+				return 'FAIL: errorDetails should be "Restarting Claude..." during async restart, got: ' + r[0].errorDetails;
 			}
-			// Crash flag must remain true so crash-specific UI stays active.
+			// Crash flag must remain true (not cleared until poll handler runs).
 			if (!r[0].claudeCrashDetected) {
-				return 'FAIL: claudeCrashDetected should remain true on restart failure';
+				return 'FAIL: claudeCrashDetected should remain true during async restart';
+			}
+			// Should have a tick command for polling.
+			if (!r[1]) {
+				return 'FAIL: expected a tick command for restart polling';
 			}
 		} finally { restore(); }
 		return 'OK';

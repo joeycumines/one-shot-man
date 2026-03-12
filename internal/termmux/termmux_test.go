@@ -1132,6 +1132,118 @@ func TestChildExitOutput_EmptyAfterDetach(t *testing.T) {
 	}
 }
 
+// ── T27 Tests: ChildScreen and WriteToChild ────────────────────────
+
+func TestChildScreen_EmptyBeforeAttach(t *testing.T) {
+	var stdin, stdout bytes.Buffer
+	m := New(&stdin, &stdout, -1)
+	if got := m.ChildScreen(); got != "" {
+		t.Errorf("ChildScreen() before Attach = %q; want empty", got)
+	}
+}
+
+func TestChildScreen_ReturnsANSI(t *testing.T) {
+	childR, childW := io.Pipe()
+	mc := &pipeMockChild{r: childR, w: io.Discard}
+
+	var stdout bytes.Buffer
+	m := New(bytes.NewReader(nil), &stdout, -1)
+	if err := m.Attach(mc); err != nil {
+		t.Fatalf("Attach error: %v", err)
+	}
+
+	// Write colored output (red text via ANSI).
+	childW.Write([]byte("\x1b[31mERROR\x1b[0m normal text"))
+	time.Sleep(150 * time.Millisecond) // let teeLoop process
+
+	got := m.ChildScreen()
+	// ChildScreen should return ANSI escape sequences.
+	if !strings.Contains(got, "\x1b[") {
+		t.Errorf("ChildScreen() = %q; want ANSI escape sequences (\\x1b[)", got)
+	}
+
+	// Plain text ChildExitOutput should NOT have ANSI escapes in cell content.
+	plainGot := m.ChildExitOutput()
+	if !strings.Contains(plainGot, "ERROR") {
+		t.Errorf("ChildExitOutput() = %q; want to contain 'ERROR'", plainGot)
+	}
+
+	childW.Close()
+	<-m.teeDone
+}
+
+func TestChildScreen_EmptyAfterDetach(t *testing.T) {
+	childR, childW := io.Pipe()
+	mc := &pipeMockChild{r: childR, w: io.Discard}
+
+	var stdout bytes.Buffer
+	m := New(bytes.NewReader(nil), &stdout, -1)
+	if err := m.Attach(mc); err != nil {
+		t.Fatalf("Attach error: %v", err)
+	}
+
+	childW.Write([]byte("\x1b[31mOutput\x1b[0m"))
+	time.Sleep(100 * time.Millisecond)
+	childW.Close()
+	<-m.teeDone
+
+	if err := m.Detach(); err != nil {
+		t.Fatalf("Detach error: %v", err)
+	}
+
+	if got := m.ChildScreen(); got != "" {
+		t.Errorf("ChildScreen() after Detach = %q; want empty", got)
+	}
+}
+
+func TestWriteToChild_NoChild(t *testing.T) {
+	var stdin, stdout bytes.Buffer
+	m := New(&stdin, &stdout, -1)
+
+	_, err := m.WriteToChild([]byte("hello"))
+	if !errors.Is(err, ErrNoChild) {
+		t.Fatalf("WriteToChild without child: got %v; want ErrNoChild", err)
+	}
+}
+
+func TestWriteToChild_ForwardsToChild(t *testing.T) {
+	childR, childW := io.Pipe()
+	// Use a pipe for the write side so we can read what was written.
+	writeR, writeW := io.Pipe()
+	mc := &pipeMockChild{r: childR, w: writeW}
+
+	var stdout bytes.Buffer
+	m := New(bytes.NewReader(nil), &stdout, -1)
+	if err := m.Attach(mc); err != nil {
+		t.Fatalf("Attach error: %v", err)
+	}
+
+	const want = "hello claude\n"
+	go func() {
+		n, err := m.WriteToChild([]byte(want))
+		if err != nil {
+			t.Errorf("WriteToChild error: %v", err)
+		}
+		if n != len(want) {
+			t.Errorf("WriteToChild n = %d; want %d", n, len(want))
+		}
+	}()
+
+	buf := make([]byte, 256)
+	n, err := writeR.Read(buf)
+	if err != nil {
+		t.Fatalf("Read from child write pipe: %v", err)
+	}
+	if got := string(buf[:n]); got != want {
+		t.Errorf("child received %q; want %q", got, want)
+	}
+
+	childW.Close()
+	writeW.Close()
+	writeR.Close()
+	<-m.teeDone
+}
+
 // ── T013 Tests: Detach cancels ReadLoop context ────────────────────
 
 func TestDetach_CancelsReaderContext(t *testing.T) {

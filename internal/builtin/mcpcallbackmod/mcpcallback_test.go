@@ -1450,3 +1450,337 @@ func TestMCPCallback_RapidInitClose_NoLeakedDirs(t *testing.T) {
 		}
 	}
 }
+
+// --- waitForAsync tests ---
+
+func TestMCPCallback_WaitForAsync_Timeout(t *testing.T) {
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	runAsync(t, p, `
+		var srv = mcpMod.createServer('test', '1.0.0');
+		var cb = mcpCbMod.MCPCallback({ server: srv });
+		cb.addTool('testTool', 'test');
+		cb.initSync();
+
+		var result = await cb.waitForAsync('testTool', 200);
+		if (!result.error) throw new Error('expected timeout error');
+		if (result.error.indexOf('timeout') === -1) throw new Error('unexpected error: ' + result.error);
+		if (result.data !== null) throw new Error('data should be null on timeout');
+
+		cb.closeSync();
+	`)
+}
+
+func TestMCPCallback_WaitForAsync_NotRegistered(t *testing.T) {
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	runAsync(t, p, `
+		var srv = mcpMod.createServer('test', '1.0.0');
+		var cb = mcpCbMod.MCPCallback({ server: srv });
+		cb.initSync();
+
+		var result = await cb.waitForAsync('nonExistent', 100);
+		if (!result.error) throw new Error('expected error');
+		if (result.error.indexOf('not registered') === -1) throw new Error('unexpected error: ' + result.error);
+
+		cb.closeSync();
+	`)
+}
+
+func TestMCPCallback_WaitForAsync_EmptyName(t *testing.T) {
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	runAsync(t, p, `
+		var srv = mcpMod.createServer('test', '1.0.0');
+		var cb = mcpCbMod.MCPCallback({ server: srv });
+		cb.initSync();
+
+		var result = await cb.waitForAsync('', 100);
+		if (!result.error) throw new Error('expected error');
+		if (result.error.indexOf('tool name is required') === -1) throw new Error('unexpected error: ' + result.error);
+
+		cb.closeSync();
+	`)
+}
+
+func TestMCPCallback_WaitForAsync_AliveCheck(t *testing.T) {
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	runAsync(t, p, `
+		var srv = mcpMod.createServer('test', '1.0.0');
+		var cb = mcpCbMod.MCPCallback({ server: srv });
+		cb.addTool('testTool', 'test');
+		cb.initSync();
+
+		var checkCount = 0;
+		var result = await cb.waitForAsync('testTool', 5000, {
+			aliveCheck: function() {
+				checkCount++;
+				return checkCount < 3; // Die on 3rd check
+			},
+			checkIntervalMs: 100
+		});
+		if (!result.error) throw new Error('expected error');
+		if (result.error.indexOf('process exited') === -1) throw new Error('unexpected: ' + result.error);
+		if (checkCount < 3) throw new Error('expected at least 3 alive checks, got ' + checkCount);
+
+		cb.closeSync();
+	`)
+}
+
+func TestMCPCallback_WaitForAsync_ProgressCallback(t *testing.T) {
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	runAsync(t, p, `
+		var srv = mcpMod.createServer('test', '1.0.0');
+		var cb = mcpCbMod.MCPCallback({ server: srv });
+		cb.addTool('testTool', 'test');
+		cb.initSync();
+
+		var progressCalled = 0;
+		var result = await cb.waitForAsync('testTool', 500, {
+			onProgress: function(elapsed, total) {
+				progressCalled++;
+				if (typeof elapsed !== 'number') throw new Error('elapsed should be number');
+				if (typeof total !== 'number') throw new Error('total should be number');
+			},
+			checkIntervalMs: 100
+		});
+		// Should timeout, but progress should have been called
+		if (!result.error) throw new Error('expected timeout');
+		if (progressCalled === 0) throw new Error('expected onProgress calls, got 0');
+
+		cb.closeSync();
+	`)
+}
+
+func TestMCPCallback_WaitForAsync_NonBlocking(t *testing.T) {
+	// Critical test: proves the event loop is free while waitForAsync waits.
+	// We start a waitForAsync, then verify that setTimeout still fires during
+	// the wait (which would be impossible with the blocking waitFor).
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	runAsync(t, p, `
+		var srv = mcpMod.createServer('test', '1.0.0');
+		var cb = mcpCbMod.MCPCallback({ server: srv });
+		cb.addTool('testTool', 'test');
+		cb.initSync();
+
+		var timerFired = false;
+
+		// Start the async wait (200ms timeout)
+		var waitPromise = cb.waitForAsync('testTool', 200);
+
+		// Schedule a timer that must fire while waitForAsync is pending
+		await new Promise(function(resolve) {
+			setTimeout(function() {
+				timerFired = true;
+				resolve();
+			}, 50);
+		});
+
+		// If we got here, the event loop was free — the timer fired!
+		if (!timerFired) throw new Error('event loop was blocked: timer did not fire');
+
+		// Now await the waitForAsync (it will timeout)
+		var result = await waitPromise;
+		if (!result.error) throw new Error('expected timeout error');
+
+		cb.closeSync();
+	`)
+}
+
+func TestMCPCallback_WaitForAsync_EndToEnd(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix domain socket — skipped on Windows")
+	}
+
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	type connInfo struct {
+		address   string
+		transport string
+	}
+	infoCh := make(chan connInfo, 1)
+
+	runOnLoop(t, p, func() {
+		vm := p.Runtime()
+		_ = vm.Set("__reportConnInfo", func(addr, trans string) {
+			infoCh <- connInfo{address: addr, transport: trans}
+		})
+	})
+
+	// Use runAsync since waitForAsync returns a Promise
+	resultCh := make(chan error, 1)
+	if err := p.Loop().Submit(func() {
+		vm := p.Runtime()
+		_ = vm.Set("__asyncDone", func() { resultCh <- nil })
+		_ = vm.Set("__asyncFail", func(msg string) { resultCh <- errors.New(msg) })
+		_, runErr := vm.RunString(`
+			(async function() {
+				var srv = mcpMod.createServer('test', '1.0.0');
+				var cb = mcpCbMod.MCPCallback({ server: srv });
+				cb.addTool('reportClassification', 'Report classification', {
+					type: 'object',
+					properties: {
+						categories: {
+							type: 'array',
+							items: {
+								type: 'object',
+								properties: {
+									name: { type: 'string' },
+									files: { type: 'array', items: { type: 'string' } }
+								}
+							}
+						}
+					}
+				});
+				cb.initSync();
+				__reportConnInfo(cb.address, cb.transport);
+
+				var result = await cb.waitForAsync('reportClassification', 10000);
+				if (result.error) throw new Error('waitForAsync failed: ' + result.error);
+				if (!result.data) throw new Error('expected data');
+				if (!result.data.categories) throw new Error('expected categories in data');
+				if (result.data.categories.length !== 1) throw new Error('expected 1 category');
+				if (result.data.categories[0].name !== 'types') throw new Error('expected name=types');
+				if (result.data.categories[0].files.length !== 2) throw new Error('expected 2 files');
+
+				cb.closeSync();
+			})()
+			.then(function() { __asyncDone(); })
+			.catch(function(e) { __asyncFail(e.message || String(e)); });
+		`)
+		if runErr != nil {
+			resultCh <- runErr
+		}
+	}); err != nil {
+		t.Fatalf("submit failed: %v", err)
+	}
+
+	// Wait for the JS to report connection info, then connect as MCP client
+	select {
+	case info := <-infoCh:
+		time.Sleep(100 * time.Millisecond)
+
+		var conn net.Conn
+		var err error
+		if info.transport == "unix" {
+			conn, err = net.Dial("unix", info.address)
+		} else {
+			conn, err = net.Dial("tcp", info.address)
+		}
+		if err != nil {
+			t.Fatalf("failed to connect: %v", err)
+		}
+		defer conn.Close()
+
+		// MCP initialize
+		reqJSON := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0.0"}}}` + "\n"
+		if _, err = conn.Write([]byte(reqJSON)); err != nil {
+			t.Fatalf("failed to write initialize: %v", err)
+		}
+
+		buf := make([]byte, 8192)
+		if _, err = conn.Read(buf); err != nil {
+			t.Fatalf("failed to read initialize response: %v", err)
+		}
+
+		notifJSON := `{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}` + "\n"
+		if _, err = conn.Write([]byte(notifJSON)); err != nil {
+			t.Fatalf("failed to write initialized: %v", err)
+		}
+		time.Sleep(50 * time.Millisecond)
+
+		// Call the tool
+		toolArgs := `{"categories":[{"name":"types","files":["a.go","b.go"]}]}`
+		callJSON := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"reportClassification","arguments":` + toolArgs + `}}` + "\n"
+		if _, err = conn.Write([]byte(callJSON)); err != nil {
+			t.Fatalf("failed to write tool call: %v", err)
+		}
+
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for connection info")
+	}
+
+	select {
+	case err := <-resultCh:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(15 * time.Second):
+		t.Fatal("test timed out waiting for JS completion")
+	}
+}
+
+func TestMCPCallback_WaitForAsync_ContextCancellation(t *testing.T) {
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	parentCtx, parentCancel := context.WithCancel(context.Background())
+
+	runOnLoop(t, p, func() {
+		vm := p.Runtime()
+		_ = vm.Set("__parentCtx", vm.ToValue(parentCtx))
+	})
+
+	// Cancel after a delay
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		parentCancel()
+	}()
+
+	runAsync(t, p, `
+		var srv = mcpMod.createServer('test', '1.0.0');
+		var cb = mcpCbMod.MCPCallback({ server: srv, __testContext: __parentCtx });
+		cb.addTool('testTool', 'test');
+		await cb.init();
+
+		var result = await cb.waitForAsync('testTool', 10000);
+		if (!result.error) throw new Error('expected error from context cancellation');
+		if (result.error.indexOf('closed') === -1) throw new Error('unexpected error: ' + result.error);
+
+		await cb.close();
+	`)
+}
+
+func TestMCPCallback_WaitForAsync_ResultShape(t *testing.T) {
+	// Verify that the Promise resolves with {data, error} shape
+	// matching the synchronous waitFor contract exactly.
+	p := testutil.NewTestEventLoopProvider()
+	t.Cleanup(p.Stop)
+	loadModules(t, p)
+
+	runAsync(t, p, `
+		var srv = mcpMod.createServer('test', '1.0.0');
+		var cb = mcpCbMod.MCPCallback({ server: srv });
+		cb.addTool('testTool', 'test');
+		cb.initSync();
+
+		var result = await cb.waitForAsync('testTool', 200);
+
+		// Verify shape
+		if (typeof result !== 'object') throw new Error('result should be object, got ' + typeof result);
+		if (!('data' in result)) throw new Error('result missing data property');
+		if (!('error' in result)) throw new Error('result missing error property');
+		if (result.data !== null) throw new Error('expected data=null on timeout');
+		if (typeof result.error !== 'string') throw new Error('expected error to be string, got ' + typeof result.error);
+
+		cb.closeSync();
+	`)
+}

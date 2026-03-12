@@ -589,9 +589,14 @@
 
     // Emits before/after log entries so IPC timeouts can be diagnosed
     // post-mortem.
-    function waitForLogged(toolName, timeoutMs, opts) {
+    async function waitForLogged(toolName, timeoutMs, opts) {
         var mcpCb = prSplit._mcpCallbackObj;
-        if (!mcpCb || typeof mcpCb.waitFor !== 'function') {
+        // Prefer non-blocking waitForAsync (Promise-based); fall back to
+        // blocking waitFor for backward compatibility with test mocks and
+        // older MCPCallback implementations.
+        var useAsync = mcpCb && typeof mcpCb.waitForAsync === 'function';
+        var useSync = mcpCb && typeof mcpCb.waitFor === 'function';
+        if (!useAsync && !useSync) {
             return { data: null, error: 'MCP callback not initialized — ensure mcpConfigPath is provided via osm:mcpcallback module' };
         }
 
@@ -646,9 +651,16 @@
             return true;
         };
 
-        log.printf('auto-split waitFor: tool=%s timeout=%dms', toolName, timeoutMs);
+        log.printf('auto-split waitFor: tool=%s timeout=%dms async=%s', toolName, timeoutMs, String(useAsync));
         var startMs = Date.now();
-        var result = mcpCb.waitFor(toolName, timeoutMs, wrappedOpts);
+        var result;
+        if (useAsync) {
+            result = await mcpCb.waitForAsync(toolName, timeoutMs, wrappedOpts);
+        } else {
+            // Synchronous fallback — blocks the event loop but required for
+            // backward compatibility when waitForAsync is not available.
+            result = mcpCb.waitFor(toolName, timeoutMs, wrappedOpts);
+        }
         var elapsedMs = Date.now() - startMs;
         if (forceCancelledByUser) {
             return { data: null, error: 'force cancelled by user' };
@@ -926,7 +938,7 @@
                 // Wait for resolution via mcpcallback.
                 var mcpCb = prSplit._mcpCallbackObj;
                 mcpCb.resetWaiter('reportResolution');
-                var resolutionPoll = waitForLogged('reportResolution', timeouts.resolve, {
+                var resolutionPoll = await waitForLogged('reportResolution', timeouts.resolve, {
                     aliveCheck: aliveCheckFn,
                     heartbeatTool: 'heartbeat',
                     heartbeatTimeoutMs: heartbeatTimeoutMs,
@@ -1377,7 +1389,7 @@
         if (!resuming) {
 
         // Step 2: Spawn Claude (or fall back to heuristic).
-        var executor = await step('Spawn Claude', function() {
+        var executor = await step('Spawn Claude', async function() {
             updateDetail('Spawn Claude', 'Resolving Claude executable...');
             claudeExecutor = state.claudeExecutor;
             if (!claudeExecutor) {
@@ -1392,7 +1404,7 @@
             updateDetail('Spawn Claude', 'Starting Claude process...');
             var spawnOpts = {};
             spawnOpts.mcpConfigPath = mcpCallbackObj.mcpConfigPath;
-            var spawnResult = claudeExecutor.spawn(null, spawnOpts);
+            var spawnResult = await claudeExecutor.spawn(null, spawnOpts);
             if (spawnResult.error) {
                 return { error: spawnResult.error };
             }
@@ -1572,9 +1584,9 @@
         }
 
         // Step 4: Receive classification.
-        var classification = await step('Receive classification', function() {
+        var classification = await step('Receive classification', async function() {
             updateDetail('Receive classification', 'Waiting for classification...');
-            var pollResult = waitForLogged('reportClassification', timeouts.classify, {
+            var pollResult = await waitForLogged('reportClassification', timeouts.classify, {
                 aliveCheck: aliveCheckFn,
                 heartbeatTool: 'heartbeat',
                 heartbeatTimeoutMs: heartbeatTimeoutMs,
@@ -1644,9 +1656,9 @@
         }
 
         // Step 5: Generate plan (from Claude or locally).
-        var planResult = await step('Generate split plan', function() {
+        var planResult = await step('Generate split plan', async function() {
             updateDetail('Generate split plan', 'Checking for Claude-generated plan...');
-            var planPoll = waitForLogged('reportSplitPlan', 5000, {
+            var planPoll = await waitForLogged('reportSplitPlan', 5000, {
                 aliveCheck: aliveCheckFn,
                 heartbeatTool: 'heartbeat',
                 heartbeatTimeoutMs: heartbeatTimeoutMs,
@@ -1770,7 +1782,7 @@
             }
             var resumeResolve = claudeExecutor.resolve();
             if (!resumeResolve.error) {
-                var resumeSpawn = claudeExecutor.spawn(null, { mcpConfigPath: mcpCallbackObj.mcpConfigPath });
+                var resumeSpawn = await claudeExecutor.spawn(null, { mcpConfigPath: mcpCallbackObj.mcpConfigPath });
                 if (!resumeSpawn.error) {
                     sessionId = resumeSpawn.sessionId;
                     aliveCheckFn = function() {
@@ -1873,7 +1885,7 @@
                     report.claudeInteractions++;
                     recordConversation('re-classify', constraintPrompt, '');
                     mcpCallbackObj.resetWaiter('reportClassification');
-                    var rePoll = waitForLogged('reportClassification', timeouts.classify, {
+                    var rePoll = await waitForLogged('reportClassification', timeouts.classify, {
                         aliveCheck: aliveCheckFn,
                         heartbeatTool: 'heartbeat',
                         heartbeatTimeoutMs: heartbeatTimeoutMs,

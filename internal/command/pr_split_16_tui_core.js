@@ -149,6 +149,7 @@
                 splitViewRatio: 0.6,           // wizard gets this fraction of content height
                 splitViewFocus: 'wizard',      // 'wizard' or 'claude' — which pane is focused
                 claudeScreenshot: '',          // cached plain-text screenshot from tuiMux
+                claudeScreen: '',              // cached ANSI-styled screen from tuiMux (T28)
                 claudeViewOffset: 0,           // scroll offset in Claude pane (lines from bottom)
 
                 // Claude conversation (T16).
@@ -390,6 +391,7 @@
                     } else {
                         // Reset split-view state on disable.
                         s.claudeScreenshot = '';
+                        s.claudeScreen = '';
                         s.claudeViewOffset = 0;
                         s.splitViewFocus = 'wizard';
                     }
@@ -412,8 +414,10 @@
                         s.splitViewRatio = Math.max(0.2, s.splitViewRatio - 0.1);
                         return [s, null];
                     }
-                    // Claude pane scroll (when Claude has focus).
+                    // T29: Claude pane keyboard input forwarding.
+                    // When Claude pane is focused, forward non-reserved keys to child PTY.
                     if (s.splitViewFocus === 'claude') {
+                        // Viewport scroll keys — scroll the Claude pane output.
                         if (k === 'up' || k === 'k') {
                             s.claudeViewOffset = (s.claudeViewOffset || 0) + 1;
                             return [s, null];
@@ -422,12 +426,35 @@
                             s.claudeViewOffset = Math.max(0, (s.claudeViewOffset || 0) - 1);
                             return [s, null];
                         }
+                        if (k === 'pgup') {
+                            s.claudeViewOffset = (s.claudeViewOffset || 0) + 5;
+                            return [s, null];
+                        }
+                        if (k === 'pgdown') {
+                            s.claudeViewOffset = Math.max(0, (s.claudeViewOffset || 0) - 5);
+                            return [s, null];
+                        }
                         if (k === 'home') {
                             s.claudeViewOffset = 999999;
                             return [s, null];
                         }
                         if (k === 'end') {
                             s.claudeViewOffset = 0;
+                            return [s, null];
+                        }
+                        // Forward non-reserved keys to Claude's PTY.
+                        if (!CLAUDE_RESERVED_KEYS[k]) {
+                            var bytes = keyToTermBytes(k);
+                            if (bytes !== null && typeof tuiMux !== 'undefined' && tuiMux &&
+                                typeof tuiMux.writeToChild === 'function') {
+                                try {
+                                    tuiMux.writeToChild(bytes);
+                                    // Auto-scroll to bottom on input (follow live output).
+                                    s.claudeViewOffset = 0;
+                                } catch (e) {
+                                    // Swallow — write may fail if child ended.
+                                }
+                            }
                             return [s, null];
                         }
                     }
@@ -649,6 +676,10 @@
                 // Resolve-conflicts polling.
                 if (msg.id === 'resolve-poll') {
                     return handleResolvePoll(s);
+                }
+                // Claude restart polling (non-blocking restart flow).
+                if (msg.id === 'restart-claude-poll') {
+                    return handleRestartClaudePoll(s);
                 }
                 // Claude availability check (CONFIG screen).
                 if (msg.id === 'check-claude') {
@@ -2300,6 +2331,42 @@
         return [s, tea.tick(1, 'exec-step-2')];
     }
 
+    // handleRestartClaudePoll — polls for async Claude restart completion.
+    // Called via tea.tick(500, 'restart-claude-poll') from the restart-claude
+    // crash-recovery handler. Mirrors the resolve-poll pattern.
+    function handleRestartClaudePoll(s) {
+        if (s.claudeRestarting) {
+            // Still restarting — keep polling.
+            return [s, tea.tick(500, 'restart-claude-poll')];
+        }
+
+        var result = s.restartResult;
+        s.restartResult = null;
+
+        if (!result || result.error) {
+            s.errorDetails = (result && result.error) || 'Claude restart failed (unknown error)';
+            // Keep claudeCrashDetected=true so crash-specific UI stays.
+            return [s, null];
+        }
+
+        // Successful restart — clear crash flags and resume pipeline.
+        s.claudeCrashDetected = false;
+        st.claudeCrashDetected = false;
+        log.printf('auto-split: Claude restarted successfully, session=%s', result.sessionId || '(none)');
+
+        // Re-attach to tuiMux if available.
+        var executor = st.claudeExecutor;
+        if (executor && executor.handle && typeof tuiMux !== 'undefined' && tuiMux &&
+            typeof tuiMux.attach === 'function') {
+            try { tuiMux.attach(executor.handle); } catch (e) { /* best effort */ }
+        }
+
+        // Reset wizard to PLAN_GENERATION so startAnalysis picks up.
+        s.wizard.transition('PLAN_GENERATION');
+        s.wizardState = 'PLAN_GENERATION';
+        return startAnalysis(s);
+    }
+
     function startExecution(s) {
         if (!st.planCache || !st.planCache.splits || st.planCache.splits.length === 0) {
             s.errorDetails = 'No plan to execute.';
@@ -2598,6 +2665,109 @@
     }
 
     // -----------------------------------------------------------------------
+    //  Split-View: Key-to-Terminal-Bytes Conversion (T29)
+    // -----------------------------------------------------------------------
+
+    // Reserved keys that should NOT be forwarded to Claude when Claude pane
+    // is focused. These stay with the wizard for pane management.
+    var CLAUDE_RESERVED_KEYS = {
+        'tab': true,        // switch focus between panes
+        'ctrl+l': true,     // close split-view
+        'ctrl+]': true,     // full Claude passthrough
+        'ctrl++': true,     // adjust split ratio
+        'ctrl+=': true,     // adjust split ratio
+        'ctrl+-': true,     // adjust split ratio
+        'up': true,         // scroll Claude pane viewport up
+        'down': true,       // scroll Claude pane viewport down
+        'k': true,          // scroll Claude pane viewport up (vim)
+        'j': true,          // scroll Claude pane viewport down (vim)
+        'pgup': true,       // scroll Claude pane up (page)
+        'pgdown': true,     // scroll Claude pane down (page)
+        'home': true,       // scroll Claude pane to top
+        'end': true,        // scroll Claude pane to bottom
+        'f1': true          // help
+    };
+
+    // Convert BubbleTea key string to terminal byte sequence for PTY forwarding.
+    // Returns the bytes as a string, or null if the key can't be converted.
+    function keyToTermBytes(key) {
+        // Named special keys → terminal escape sequences.
+        switch (key) {
+            case 'enter':     return '\r';
+            case 'backspace': return '\x7f';
+            case 'space':     return ' ';
+            case 'escape':    return '\x1b';
+            case 'delete':    return '\x1b[3~';
+            case 'up':        return '\x1b[A';
+            case 'down':      return '\x1b[B';
+            case 'right':     return '\x1b[C';
+            case 'left':      return '\x1b[D';
+            case 'home':      return '\x1b[H';
+            case 'end':       return '\x1b[F';
+            case 'pgup':      return '\x1b[5~';
+            case 'pgdown':    return '\x1b[6~';
+            case 'insert':    return '\x1b[2~';
+            case 'f1':        return '\x1bOP';
+            case 'f2':        return '\x1bOQ';
+            case 'f3':        return '\x1bOR';
+            case 'f4':        return '\x1bOS';
+            case 'f5':        return '\x1b[15~';
+            case 'f6':        return '\x1b[17~';
+            case 'f7':        return '\x1b[18~';
+            case 'f8':        return '\x1b[19~';
+            case 'f9':        return '\x1b[20~';
+            case 'f10':       return '\x1b[21~';
+            case 'f11':       return '\x1b[23~';
+            case 'f12':       return '\x1b[24~';
+        }
+
+        // Ctrl+letter → control character (0x01-0x1A for a-z).
+        if (key.length > 5 && key.substring(0, 5) === 'ctrl+') {
+            var ch = key.substring(5);
+            if (ch.length === 1) {
+                var code = ch.charCodeAt(0);
+                // a-z → 0x01-0x1A
+                if (code >= 97 && code <= 122) {
+                    return String.fromCharCode(code - 96);
+                }
+                // A-Z → 0x01-0x1A
+                if (code >= 65 && code <= 90) {
+                    return String.fromCharCode(code - 64);
+                }
+            }
+        }
+
+        // Alt+key → ESC prefix + key bytes.
+        if (key.length > 4 && key.substring(0, 4) === 'alt+') {
+            var inner = keyToTermBytes(key.substring(4));
+            if (inner !== null) {
+                return '\x1b' + inner;
+            }
+        }
+
+        // Paste content: bracketed paste "[content]" → just the content.
+        if (key.length > 2 && key.charAt(0) === '[' && key.charAt(key.length - 1) === ']') {
+            return key.substring(1, key.length - 1);
+        }
+
+        // Single printable character → send as-is.
+        if (key.length === 1) {
+            return key;
+        }
+
+        // Multi-character unknown keys (e.g., Unicode) → send as-is.
+        if (key.length > 1 && key.indexOf('+') === -1) {
+            return key;
+        }
+
+        return null;
+    }
+
+    // Expose keyToTermBytes for testing (T29).
+    prSplit._keyToTermBytes = keyToTermBytes;
+    prSplit._CLAUDE_RESERVED_KEYS = CLAUDE_RESERVED_KEYS;
+
+    // -----------------------------------------------------------------------
     //  Split-View: Claude Screenshot Polling
     // -----------------------------------------------------------------------
     function pollClaudeScreenshot(s) {
@@ -2606,16 +2776,24 @@
             return [s, null];
         }
 
-        // Capture screenshot from tuiMux if available.
-        if (typeof tuiMux !== 'undefined' && tuiMux &&
-            typeof tuiMux.screenshot === 'function') {
+        // Capture ANSI screen from tuiMux if available (T28: full color rendering).
+        if (typeof tuiMux !== 'undefined' && tuiMux) {
             try {
-                var shot = tuiMux.screenshot();
-                if (shot !== null && shot !== undefined) {
-                    s.claudeScreenshot = String(shot);
+                if (typeof tuiMux.childScreen === 'function') {
+                    var screen = tuiMux.childScreen();
+                    if (screen !== null && screen !== undefined) {
+                        s.claudeScreen = String(screen);
+                    }
+                }
+                // Also capture plain-text for fallback and test assertions.
+                if (typeof tuiMux.screenshot === 'function') {
+                    var shot = tuiMux.screenshot();
+                    if (shot !== null && shot !== undefined) {
+                        s.claudeScreenshot = String(shot);
+                    }
                 }
             } catch (e) {
-                // Swallow — screenshot may fail if Claude session ended.
+                // Swallow — screen capture may fail if Claude session ended.
             }
         }
 
@@ -2819,7 +2997,7 @@
         // Use same pattern as automatedSplit: Promise + tick polling.
         var convoState = convo; // capture reference for closure
         prSplit.sendToHandle(executor.handle, prompt).then(
-            function(sendResult) {
+            async function(sendResult) {
                 if (sendResult && sendResult.error) {
                     convoState.lastError = 'Send failed: ' + sendResult.error;
                     convoState.sending = false;
@@ -2829,7 +3007,7 @@
 
                 if (toolToWait) {
                     // Wait for Claude to call the expected MCP tool.
-                    var waitResult = prSplit.waitForLogged(toolToWait, timeoutMs, {
+                    var waitResult = await prSplit.waitForLogged(toolToWait, timeoutMs, {
                         aliveCheck: function() {
                             return (executor.handle &&
                                 typeof executor.handle.isAlive === 'function' &&
@@ -2951,25 +3129,18 @@
             if (prSplit._mcpCallbackObj && prSplit._mcpCallbackObj.mcpConfigPath) {
                 restartOpts.mcpConfigPath = prSplit._mcpCallbackObj.mcpConfigPath;
             }
-            var restartResult = executor.restart(null, restartOpts);
-            if (restartResult.error) {
-                s.errorDetails = 'Claude restart failed: ' + restartResult.error;
-                // Keep claudeCrashDetected=true so crash-specific UI stays active.
-                return [s, null];
-            }
-            // Only clear crash flags after successful restart.
-            s.claudeCrashDetected = false;
-            st.claudeCrashDetected = false;
-            log.printf('auto-split: Claude restarted successfully, session=%s', restartResult.sessionId || '(none)');
-            // Re-attach to tuiMux if available.
-            if (executor.handle && typeof tuiMux !== 'undefined' && tuiMux &&
-                typeof tuiMux.attach === 'function') {
-                try { tuiMux.attach(executor.handle); } catch (e) { /* best effort */ }
-            }
-            // Reset wizard to PLAN_GENERATION so startAnalysis picks up.
-            s.wizard.transition('PLAN_GENERATION');
-            s.wizardState = 'PLAN_GENERATION';
-            return startAnalysis(s);
+            // Non-blocking restart: launch as Promise, poll via tick.
+            s.claudeRestarting = true;
+            s.restartResult = null;
+            s.errorDetails = 'Restarting Claude...';
+            executor.restart(null, restartOpts).then(function(restartResult) {
+                s.claudeRestarting = false;
+                s.restartResult = restartResult;
+            }, function(err) {
+                s.claudeRestarting = false;
+                s.restartResult = { error: 'Claude restart error: ' + ((err && err.message) || String(err)) };
+            });
+            return [s, tea.tick(500, 'restart-claude-poll')];
         }
 
         if (choice === 'fallback-heuristic') {

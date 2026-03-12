@@ -59,3 +59,50 @@ func RenderFullScreen(scr *Screen) string {
 	}
 	return b.String()
 }
+
+// RenderContentANSI produces ANSI-styled content suitable for embedding inside
+// another terminal UI component (e.g., a BubbleTea pane with a lipgloss border).
+// Unlike RenderFullScreen, this does NOT emit cursor positioning (CUP), erase
+// (EL), or cursor visibility sequences. Each row is rendered with SGR color/style
+// attributes, trailing blank cells are stripped, and rows are joined by newlines.
+// An SGR reset (\x1b[0m) is inserted at the end of each non-empty row.
+func RenderContentANSI(scr *Screen) string {
+	var b strings.Builder
+	var prevAttr Attr
+
+	for r := 0; r < scr.Rows; r++ {
+		if r > 0 {
+			b.WriteByte('\n')
+		}
+
+		// Find last non-default cell in this row (same logic as RenderFullScreen).
+		last := -1
+		for c := scr.Cols - 1; c >= 0; c-- {
+			cell := scr.Cells[r][c]
+			if cell.Ch != ' ' || !cell.Attr.IsZero() {
+				last = c
+				break
+			}
+		}
+
+		if last >= 0 {
+			for c := 0; c <= last; c++ {
+				cell := scr.Cells[r][c]
+				if cell.Ch == 0 {
+					continue // wide-char placeholder
+				}
+				diff := SGRDiff(prevAttr, cell.Attr)
+				if diff != "" {
+					b.WriteString(diff)
+				}
+				prevAttr = cell.Attr
+				b.WriteRune(cell.Ch)
+			}
+			// Reset attributes at end of row to prevent color bleeding.
+			b.WriteString("\x1b[0m")
+			prevAttr = Attr{}
+		}
+	}
+
+	return b.String()
+}

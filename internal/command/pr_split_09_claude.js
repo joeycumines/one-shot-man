@@ -82,7 +82,8 @@
     };
 
     // spawn creates an MCP session and launches the Claude process.
-    ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
+    // Returns a Promise that resolves with { error, sessionId }.
+    ClaudeCodeExecutor.prototype.spawn = async function(sessionId, opts) {
         var exec = prSplit._modules.exec;
         opts = opts || {};
 
@@ -163,7 +164,8 @@
 
         // Post-spawn health check: verify process is still alive.
         if (this.handle && typeof this.handle.isAlive === 'function') {
-            exec.execv(['sleep', '0.3']);
+            // Non-blocking 300ms delay — yields event loop for BubbleTea rendering.
+            await new Promise(function(resolve) { setTimeout(resolve, 300); });
             if (!this.handle.isAlive()) {
                 var lastOutput = '';
                 if (typeof this.handle.receive === 'function') {
@@ -221,8 +223,8 @@
     };
 
     // restart: Close the current session and spawn a new one.
-    // Returns the same shape as spawn(): { error, sessionId }.
-    ClaudeCodeExecutor.prototype.restart = function(sessionId, opts) {
+    // Returns a Promise (same shape as spawn): { error, sessionId }.
+    ClaudeCodeExecutor.prototype.restart = async function(sessionId, opts) {
         log.printf('ClaudeCodeExecutor.restart: closing existing session');
         this.close();
         var resolveResult = this.resolve();
@@ -230,7 +232,7 @@
             return { error: 'restart resolve failed: ' + resolveResult.error };
         }
         log.printf('ClaudeCodeExecutor.restart: spawning new session');
-        return this.spawn(sessionId, opts);
+        return await this.spawn(sessionId, opts);
     };
 
     // -----------------------------------------------------------------------

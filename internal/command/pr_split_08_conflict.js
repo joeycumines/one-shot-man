@@ -244,6 +244,7 @@
                 var validateResolution = prSplit.validateResolution;
                 var gitExec = prSplit._gitExec;
                 var gitAddChangedFiles = prSplit._gitAddChangedFiles;
+                var shellQuote = prSplit._shellQuote;
                 var osmod = prSplit._modules.osmod;
                 var exec = prSplit._modules.exec;
                 var AUTOMATED_DEFAULTS = prSplit.AUTOMATED_DEFAULTS || {};
@@ -271,7 +272,7 @@
                     return { fixed: false, error: 'failed to send to Claude: ' + sendResult.error };
                 }
                 mcpCallbackObj.resetWaiter('reportResolution');
-                var resolutionPoll = waitForLogged('reportResolution', resolveTimeoutMs, {
+                var resolutionPoll = await waitForLogged('reportResolution', resolveTimeoutMs, {
                     aliveCheck: aliveCheckFn,
                     checkIntervalMs: pollIntervalMs
                 });

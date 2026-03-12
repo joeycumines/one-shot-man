@@ -209,6 +209,16 @@ func (v *VTerm) RenderFullScreen() string {
 	return RenderFullScreen(v.active)
 }
 
+// ContentANSI returns the active screen as ANSI-styled lines suitable for
+// embedding in a TUI pane (e.g., inside a lipgloss border). Unlike
+// RenderFullScreen, this omits cursor-positioning, erase, and cursor-visibility
+// sequences — only SGR color/style attributes are preserved. Thread-safe.
+func (v *VTerm) ContentANSI() string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return RenderContentANSI(v.active)
+}
+
 // String returns a plain-text representation of the active screen for
 // diagnostics and test assertions. Each row is the sequence of non-NUL
 // runes (trailing spaces stripped), joined by newlines. Thread-safe.

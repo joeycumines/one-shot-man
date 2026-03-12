@@ -71,6 +71,7 @@ func TestModule_NewMux_ReturnsObject(t *testing.T) {
 		var m = require('osm:termmux').newMux();
 		var methods = ['attach', 'detach', 'hasChild', 'switchTo', 'activeSide',
 			'setStatus', 'setToggleKey', 'setStatusEnabled', 'setResizeFunc', 'screenshot',
+			'childScreen', 'writeToChild',
 			'on', 'off', 'pollEvents', 'fromModel'];
 		var missing = [];
 		for (var i = 0; i < methods.length; i++) {
@@ -1453,4 +1454,133 @@ func TestModule_LastActivityMs_PositiveAfterOutput(t *testing.T) {
 
 	childW.Close()
 	childR.Close()
+}
+
+// ── T27 Tests: childScreen() and writeToChild() JS bindings ────────
+
+func TestModule_ChildScreen_NoChild(t *testing.T) {
+	runtime, _ := testRequire(t)
+
+	v, err := runtime.RunString(`
+		var m = require('osm:termmux').newMux();
+		m.childScreen();
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	if v.String() != "" {
+		t.Errorf("childScreen() = %q, want empty", v.String())
+	}
+}
+
+func TestModule_ChildScreen_ReturnsANSI(t *testing.T) {
+	vm := goja.New()
+	mux := parent.New(strings.NewReader(""), io.Discard, -1)
+
+	childR, childW := io.Pipe()
+	mc := &pipeMockChild{r: childR, w: io.Discard}
+
+	if err := mux.Attach(mc); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write ANSI colored output.
+	childW.Write([]byte("\x1b[31mERROR\x1b[0m ok"))
+	time.Sleep(150 * time.Millisecond)
+
+	obj := WrapMux(context.Background(), vm, mux)
+	fn, ok := goja.AssertFunction(obj.ToObject(vm).Get("childScreen"))
+	if !ok {
+		t.Fatal("childScreen is not a function")
+	}
+	val, err := fn(goja.Undefined())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := val.String()
+	if !strings.Contains(got, "\x1b[") {
+		t.Errorf("childScreen() = %q; want ANSI escape sequences", got)
+	}
+
+	childW.Close()
+	childR.Close()
+}
+
+func TestModule_WriteToChild_NoChild(t *testing.T) {
+	runtime, _ := testRequire(t)
+
+	// writeToChild with no child should throw.
+	v, err := runtime.RunString(`
+		var m = require('osm:termmux').newMux();
+		try { m.writeToChild('hello'); 'no error'; } catch(e) { 'caught:' + e.message; }
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	got := v.String()
+	if !strings.Contains(got, "caught:") {
+		t.Errorf("writeToChild without child should throw; got %q", got)
+	}
+}
+
+func TestModule_WriteToChild_Forwards(t *testing.T) {
+	vm := goja.New()
+	registry := require.NewRegistry()
+	registry.RegisterNativeModule("osm:termmux", Require(context.Background(), nil, nil))
+	registry.Enable(vm)
+
+	// Create a pipe to capture what the child receives.
+	childR, childW := io.Pipe()
+	readR, readW := io.Pipe()
+	mc := &pipeMockChild{r: childR, w: readW}
+
+	mux := parent.New(strings.NewReader(""), io.Discard, -1)
+	if err := mux.Attach(mc); err != nil {
+		t.Fatal(err)
+	}
+
+	obj := WrapMux(context.Background(), vm, mux)
+	_ = vm.Set("__mux", obj)
+
+	// Write to child via JS binding.
+	done := make(chan string, 1)
+	go func() {
+		buf := make([]byte, 256)
+		n, _ := readR.Read(buf)
+		done <- string(buf[:n])
+	}()
+
+	_, err := vm.RunString(`__mux.writeToChild('hello claude')`)
+	if err != nil {
+		t.Fatalf("writeToChild: %v", err)
+	}
+
+	select {
+	case got := <-done:
+		if got != "hello claude" {
+			t.Errorf("child received %q; want 'hello claude'", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout waiting for child to receive data")
+	}
+
+	childW.Close()
+	readW.Close()
+	readR.Close()
+}
+
+func TestModule_WriteToChild_MissingArg(t *testing.T) {
+	runtime, _ := testRequire(t)
+
+	v, err := runtime.RunString(`
+		var m = require('osm:termmux').newMux();
+		try { m.writeToChild(); 'no error'; } catch(e) { 'caught:' + e.message; }
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	got := v.String()
+	if !strings.Contains(got, "caught:") {
+		t.Errorf("writeToChild without args should throw; got %q", got)
+	}
 }

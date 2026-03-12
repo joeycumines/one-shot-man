@@ -17,7 +17,7 @@
     var EXPECTED_EXPORTS = [
         // Chunk 00: Core
         '_state', '_modules', '_style', '_cfg', '_COMMAND_NAME', '_MODE_NAME',
-        'runtime', '_gitExec', '_resolveDir', '_shellQuote', '_gitAddChangedFiles',
+        'runtime', '_gitExec', '_gitExecAsync', '_resolveDir', '_shellQuote', '_gitAddChangedFiles',
         '_dirname', '_fileExtension', '_sanitizeBranchName', '_padIndex',
         'discoverVerifyCommand', 'scopedVerifyCommand',
         'isCancelled', 'isPaused', 'isForceCancelled',

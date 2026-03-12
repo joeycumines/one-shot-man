@@ -205,6 +205,7 @@ func jsCallbackFactory(rt *goja.Runtime, adapter *gojaeventloop.Adapter, loop *g
 		_ = obj.Set("addTool", cb.jsAddTool())
 		_ = obj.Set("initSync", cb.jsInitSync())
 		_ = obj.Set("waitFor", cb.jsWaitFor())
+		_ = obj.Set("waitForAsync", cb.jsWaitForAsync())
 		_ = obj.Set("closeSync", cb.jsCloseSync())
 		_ = obj.Set("resetWaiter", cb.jsResetWaiter())
 		_ = obj.Set("lastCallTime", cb.jsLastCallTime())
@@ -877,6 +878,179 @@ func (cb *mcpCallback) jsWaitFor() func(call goja.FunctionCall) goja.Value {
 				return cb.waitResult(nil, "MCPCallback closed during wait for "+name)
 			}
 		}
+	}
+}
+
+// jsWaitForAsync returns the JS method:
+//
+//	waitForAsync(name, timeoutMs?, opts?) → Promise<{data, error}>
+//
+// Non-blocking version of waitFor. Returns a Promise that resolves with the
+// same {data, error} shape as the synchronous waitFor so callers can migrate
+// by adding `await` and changing the method name.
+//
+// The event loop remains free to service microtasks, timers, and I/O while
+// the goroutine waits for the tool call on the internal channel.
+//
+// opts.aliveCheck and opts.onProgress callbacks are invoked on the event loop
+// goroutine via loop.Submit trampolines — Goja thread safety is preserved.
+func (cb *mcpCallback) jsWaitForAsync() func(call goja.FunctionCall) goja.Value {
+	return func(call goja.FunctionCall) goja.Value {
+		name := call.Argument(0).String()
+		if name == "" {
+			promise, resolve, _ := cb.adapter.JS().NewChainedPromise()
+			resolve(cb.waitResult(nil, "waitForAsync: tool name is required"))
+			return cb.adapter.GojaWrapPromise(promise)
+		}
+
+		timeoutMs := int64(600000) // default 10 min
+		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
+			timeoutMs = call.Argument(1).ToInteger()
+		}
+		if timeoutMs < 100 {
+			timeoutMs = 100
+		}
+
+		// Parse optional opts object
+		var aliveCheckFn goja.Callable
+		var progressFn goja.Callable
+		checkIntervalMs := int64(5000)
+
+		if len(call.Arguments) > 2 && !goja.IsUndefined(call.Argument(2)) && !goja.IsNull(call.Argument(2)) {
+			opts := call.Argument(2).ToObject(cb.runtime)
+			if v := opts.Get("aliveCheck"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				aliveCheckFn, _ = goja.AssertFunction(v)
+			}
+			if v := opts.Get("onProgress"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				progressFn, _ = goja.AssertFunction(v)
+			}
+			if v := opts.Get("checkIntervalMs"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				checkIntervalMs = v.ToInteger()
+				if checkIntervalMs < 100 {
+					checkIntervalMs = 100
+				}
+			}
+		}
+
+		cb.toolMu.RLock()
+		waiter, ok := cb.toolWaiters[name]
+		cb.toolMu.RUnlock()
+
+		if !ok {
+			promise, resolve, _ := cb.adapter.JS().NewChainedPromise()
+			resolve(cb.waitResult(nil, "waitForAsync: tool not registered: "+name))
+			return cb.adapter.GojaWrapPromise(promise)
+		}
+
+		// Get cancellation context
+		cb.mu.Lock()
+		ctx := cb.ctx
+		cb.mu.Unlock()
+
+		promise, resolve, _ := cb.adapter.JS().NewChainedPromise()
+
+		go func() {
+			timeout := time.Duration(timeoutMs) * time.Millisecond
+			deadline := time.NewTimer(timeout)
+			defer deadline.Stop()
+
+			interval := time.Duration(checkIntervalMs) * time.Millisecond
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
+
+			startTime := time.Now()
+			capturedTimeoutMs := timeoutMs // capture for closures
+
+			// Pre-compute context done channel to avoid IIFE per iteration
+			var ctxDone <-chan struct{}
+			if ctx != nil {
+				ctxDone = ctx.Done()
+			} else {
+				ctxDone = make(chan struct{}) // never fires
+			}
+
+			// resolveOnLoop schedules promise resolution on the event loop
+			// goroutine where Goja operations are safe.
+			resolveOnLoop := func(data any, errMsg string) {
+				if submitErr := cb.loop.Submit(func() {
+					result := cb.runtime.NewObject()
+					if data != nil {
+						_ = result.Set("data", cb.runtime.ToValue(data))
+					} else {
+						_ = result.Set("data", goja.Null())
+					}
+					if errMsg != "" {
+						_ = result.Set("error", errMsg)
+					} else {
+						_ = result.Set("error", goja.Null())
+					}
+					resolve(result)
+				}); submitErr != nil {
+					// Event loop gone — nothing to do
+				}
+			}
+
+			for {
+				select {
+				case data := <-waiter.ch:
+					var parsed any
+					if len(data) > 0 {
+						if err := json.Unmarshal(data, &parsed); err != nil {
+							resolveOnLoop(nil, "waitForAsync: failed to parse tool data: "+err.Error())
+							return
+						}
+					}
+					resolveOnLoop(parsed, "")
+					return
+
+				case <-ticker.C:
+					// Alive check — trampoline to event loop goroutine for Goja safety
+					if aliveCheckFn != nil {
+						aliveCh := make(chan bool, 1)
+						if submitErr := cb.loop.Submit(func() {
+							ret, callErr := aliveCheckFn(goja.Undefined())
+							aliveCh <- (callErr != nil || ret.ToBoolean())
+						}); submitErr != nil {
+							resolveOnLoop(nil, "event loop terminated during wait for "+name)
+							return
+						}
+						select {
+						case alive := <-aliveCh:
+							if !alive {
+								resolveOnLoop(nil, "process exited during wait for "+name)
+								return
+							}
+						case <-deadline.C:
+							resolveOnLoop(nil, fmt.Sprintf("timeout waiting for %s after %dms", name, capturedTimeoutMs))
+							return
+						case <-ctxDone:
+							resolveOnLoop(nil, "MCPCallback closed during wait for "+name)
+							return
+						}
+					}
+
+					// Progress callback — fire-and-forget on event loop
+					if progressFn != nil {
+						elapsed := time.Since(startTime).Milliseconds()
+						_ = cb.loop.Submit(func() {
+							_, _ = progressFn(goja.Undefined(),
+								cb.runtime.ToValue(elapsed),
+								cb.runtime.ToValue(capturedTimeoutMs))
+						})
+					}
+
+				case <-deadline.C:
+					resolveOnLoop(nil, fmt.Sprintf("timeout waiting for %s after %dms", name, capturedTimeoutMs))
+					return
+
+				case <-ctxDone:
+					resolveOnLoop(nil, "MCPCallback closed during wait for "+name)
+					return
+				}
+			}
+		}()
+
+		return cb.adapter.GojaWrapPromise(promise)
 	}
 }
 

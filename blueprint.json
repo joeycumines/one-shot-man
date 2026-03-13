@@ -80,6 +80,7 @@
       "T36: Create resolveAsync (exec.spawn-based non-blocking which/version/list checks) + convert handleClaudeCheck to Promise+poll pattern. handleClaudeCheckPoll at 50ms. Cached st.claudeExecutor. progressFn for animated status. Belt-and-suspenders s.claudeCheckStatus='checking' in async launch. Re-entry guard (claudeCheckRunning). Strategy switch-away cleanup (claudeCheckRunning+progressMsg). 11 new tests.",
       "T37: Convert verifySplit fallback to async verifySplitAsync + handleVerifyFallbackPoll at 100ms. runVerifyFallbackAsync with cancel guards (isProcessing + wizard.current checks at await boundaries). .then() rejection handler records failure via verifyFallbackError. Zero remaining sync verifySplit/cleanupBranches calls from TUI. cleanupBranches not called from TUI (audit confirmed). 8 new tests.",
       "T38: Fix split-view Tab behavior — Tab→Ctrl+Tab for pane switching, Tab cycles wizard focusable elements in split-view, Tab forwards to Claude PTY when Claude focused. CLAUDE_RESERVED_KEYS updated (ctrl+tab replaces tab). keyToTermBytes('tab')='\\t'. Help overlay updated with Ctrl+Tab and Claude Integration section. Pane divider hint updated. focusIndex preserved on Ctrl+L toggle. 7 new tests + 2 existing tests updated.",
+      "T39: Fix expand/collapse state management — verify-collapse guard only fires when clicked branch matches expandedVerifyBranch. Escape collapses expanded sections (expandedVerifyBranch, showAdvanced) before back-nav. Chevrons normalized: ▶/▼ (U+25B6/U+25BC) for both Advanced Options and verify output. Expanded Advanced Options header now has zone.mark for clickable collapse. expandedSplitIdx does not exist (plan review has no expand/collapse). 6 new tests.",
       "T61-old: mcpCallback.waitForAsync() — non-blocking Promise-based MCP tool wait with aliveCheck trampoline, 9 tests, 47/47 pass",
       "T62-old: Pipeline async conversion — waitForLogged dual-path, step callbacks async, spawn/restart async, handleRestartClaudePoll, scroll keys, 485 tests pass"
     ],
@@ -258,7 +259,7 @@
         "Escape collapses current expanded section before triggering back-navigation",
         "All expand/collapse interactions tested (verify, advanced options, split detail)"
       ],
-      "status": "Not Started",
+      "status": "Done",
       "context": {
         "files": [
           "internal/command/pr_split_16_tui_core.js:1314 (expandedVerifyBranch = null — collapse)",

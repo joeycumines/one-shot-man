@@ -1,11 +1,11 @@
 # WIP — Work In Progress (Takumi's Desperate Diary)
 
-## Current Task: T39 — Fix expand/collapse state management
+## Current Task: T40 — Complete tab navigation across ALL screens
 
 ## Session State
 - **Branch:** `wip`
-- **Last Commit:** T38 (pending Rule of Two)
-- **Blueprint Status:** T01-T38 Done. T39-T72 Not Started.
+- **Last Commit:** T39 (pending Rule of Two)
+- **Blueprint Status:** T01-T39 Done. T40-T72 Not Started.
 - **Tests baseline:** ALL packages PASS (pick-and-place flaky due to build cache, unrelated). ~134s for pr-split with -race.
 - **Session start:** 2026-03-13 10:37:36 (9h mandate)
 - **Blueprint Schema:** Tasks use `acceptanceCriteria` (array of strings), NOT `acceptance` (string).
@@ -21,6 +21,15 @@
 - **Preserved:** focusIndex NOT reset on Ctrl+L toggle (was already correct)
 - **Updated:** 2 existing tests (SplitView_TabFocusSwitch, TabBehaviorInSplitView) — Tab→Ctrl+Tab
 - 7 new tests: TabCyclesFocusInSplitViewWizard, CtrlTabSwitchesPanes, TabForwardedToClaudePTY, CtrlLPreservesFocusIndex, HelpOverlayBindings, PaneDividerHint, TabInClaudeFocusDoesNotCycleWizard
+
+## T39 Changes (this session)
+### Fix expand/collapse state management — per-item, not global reset
+- **Fixed:** verify-collapse guard: only fires when `vbranch === s.expandedVerifyBranch` (defensive)
+- **Added:** Escape collapses `expandedVerifyBranch` and `showAdvanced` before back-navigation in `handleBack`
+- **Normalized:** Chevrons: Advanced Options now uses ▶/▼ (U+25B6/U+25BC) matching verify output (was ▸/▾)
+- **Fixed:** Expanded Advanced Options header now has `zone.mark('toggle-advanced', ...)` for clickable collapse
+- **Note:** `expandedSplitIdx` does NOT exist — plan review has no expand/collapse, only selection
+- 6 new tests: VerifyCollapseGuard, AccordionBehavior, EscapeCollapsesBeforeBackNav, AdvancedOptionsToggle, ChevronConsistency, ExpandResetOnExecution
 
 ## T37 Changes (this session)
 ### Converted verifySplit fallback path to async
@@ -53,10 +62,10 @@
 4. ~~EVENT LOOP BLOCKING: verifySplit/verifyEquivalence~~ → **FIXED T35 (verifyEquivalenceAsync) + T37 (verifySplitAsync fallback)**
 5. ~~tuiMux BOOTSTRAP GAP~~ → **VERIFIED T33 — architecture connected**
 6. ~~**Tab BROKEN in split-view**~~ → **FIXED T38 — Tab cycles wizard elements, Ctrl+Tab switches panes**
-7. **Expand/collapse BROKEN**: collapse sets expandedVerifyBranch=null clearing ALL state
+7. ~~**Expand/collapse BROKEN**~~ → **FIXED T39 — collapse guard, escape collapses, chevrons normalized**
 8. **Integration tests SHALLOW**: no wizard+real-Claude, no Mux lifecycle, no TUI rendering tests
 
 ## Next Steps
-1. **IMMEDIATE:** Rule of Two review on T38 diff → commit
-2. T39: Fix expand/collapse state management
-3. Continue T40-T72 sequentially
+1. **IMMEDIATE:** Rule of Two review on T39 diff → commit
+2. T40: Complete tab navigation across ALL screens
+3. Continue T41-T72 sequentially

@@ -774,7 +774,8 @@
 
         // Advanced options toggle.
         if (s.showAdvanced) {
-            lines.push(styles.dim().render('\u25be Advanced Options'));
+            lines.push(zone.mark('toggle-advanced',
+                styles.dim().render('\u25bc Advanced Options')));
             lines.push('  Max files per chunk: ' +
                 styles.fieldValue().render(String(runtime.maxFiles || 10)));
             lines.push('  Branch prefix:       ' +
@@ -784,7 +785,7 @@
             lines.push('  ' + (runtime.dryRun ? '\u2611' : '\u2610') + ' Dry run');
         } else {
             lines.push(zone.mark('toggle-advanced',
-                styles.dim().render('\u25b8 Advanced Options')));
+                styles.dim().render('\u25b6 Advanced Options')));
         }
 
         return lines.join('\n');

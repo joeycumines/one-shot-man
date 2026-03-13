@@ -1325,7 +1325,8 @@
                     s.expandedVerifyBranch = vbranch;
                     return [s, null];
                 }
-                if (zone.inBounds('verify-collapse-' + vbranch, msg)) {
+                // Only collapse if the clicked branch IS the currently expanded one.
+                if (vbranch === s.expandedVerifyBranch && zone.inBounds('verify-collapse-' + vbranch, msg)) {
                     s.expandedVerifyBranch = null;
                     return [s, null];
                 }
@@ -1594,6 +1595,18 @@
     }
 
     function handleBack(s) {
+        // T39: Collapse any expanded section before back-navigation.
+        // Only check expandedVerifyBranch on screens that use it (BRANCH_BUILDING).
+        if (s.wizardState === 'BRANCH_BUILDING' && s.expandedVerifyBranch !== null && s.expandedVerifyBranch !== undefined) {
+            s.expandedVerifyBranch = null;
+            return [s, null];
+        }
+        // Only check showAdvanced on CONFIG (where it's visible).
+        if ((s.wizardState === 'CONFIG' || s.wizardState === 'IDLE') && s.showAdvanced) {
+            s.showAdvanced = false;
+            return [s, null];
+        }
+
         switch (s.wizardState) {
             case 'PLAN_REVIEW':
                 s.wizardState = 'CONFIG';

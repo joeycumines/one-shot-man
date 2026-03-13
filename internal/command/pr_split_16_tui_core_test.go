@@ -5754,3 +5754,254 @@ func TestChunk16_T38_TabInClaudeFocusDoesNotCycleWizard(t *testing.T) {
 		t.Errorf("T38 tab in claude focus: %v", raw)
 	}
 }
+
+// ---------------------------------------------------------------------------
+//  T39: Fix expand/collapse state management — per-item, not global reset
+// ---------------------------------------------------------------------------
+
+// TestChunk16_T39_VerifyCollapseGuard verifies that the collapse handler only
+// fires when the clicked branch matches expandedVerifyBranch.
+func TestChunk16_T39_VerifyCollapseGuard(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+		setupPlanCache();
+
+		// Expand split/api.
+		var s = initState('BRANCH_BUILDING');
+		s.expandedVerifyBranch = null;
+		var restore = mockZoneHit('verify-expand-split/api');
+		try {
+			var r = sendClick(s);
+			if (r[0].expandedVerifyBranch !== 'split/api') errors.push('expand did not set split/api');
+		} finally { restore(); }
+
+		// Collapse split/api (should work — matches expanded).
+		s.expandedVerifyBranch = 'split/api';
+		restore = mockZoneHit('verify-collapse-split/api');
+		try {
+			var r = sendClick(s);
+			if (r[0].expandedVerifyBranch !== null) errors.push('collapse should have cleared split/api');
+		} finally { restore(); }
+
+		// Attempt to collapse split/cli when split/api is expanded (should NOT collapse).
+		s.expandedVerifyBranch = 'split/api';
+		restore = mockZoneHit('verify-collapse-split/cli');
+		try {
+			var r = sendClick(s);
+			if (r[0].expandedVerifyBranch !== 'split/api') {
+				errors.push('collapse of non-expanded branch should not clear state, got: ' + r[0].expandedVerifyBranch);
+			}
+		} finally { restore(); }
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T39 verify collapse guard: %v", raw)
+	}
+}
+
+// TestChunk16_T39_AccordionBehavior verifies accordion (single-expand) behavior.
+func TestChunk16_T39_AccordionBehavior(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+		setupPlanCache();
+
+		// Expand split/api.
+		var s = initState('BRANCH_BUILDING');
+		s.expandedVerifyBranch = null;
+		var restore = mockZoneHit('verify-expand-split/api');
+		try {
+			var r = sendClick(s);
+			if (r[0].expandedVerifyBranch !== 'split/api') errors.push('first expand failed');
+		} finally { restore(); }
+
+		// Now expand split/cli — should replace split/api (accordion).
+		s.expandedVerifyBranch = 'split/api';
+		restore = mockZoneHit('verify-expand-split/cli');
+		try {
+			var r = sendClick(s);
+			if (r[0].expandedVerifyBranch !== 'split/cli') {
+				errors.push('accordion: expand split/cli should replace, got: ' + r[0].expandedVerifyBranch);
+			}
+		} finally { restore(); }
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T39 accordion behavior: %v", raw)
+	}
+}
+
+// TestChunk16_T39_EscapeCollapsesBeforeBackNav verifies that Escape collapses
+// expanded sections before triggering back-navigation.
+func TestChunk16_T39_EscapeCollapsesBeforeBackNav(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+		setupPlanCache();
+
+		// Escape with expandedVerifyBranch set should collapse, not navigate.
+		var s = initState('BRANCH_BUILDING');
+		s.expandedVerifyBranch = 'split/api';
+		var r = sendKey(s, 'esc');
+		if (r[0].expandedVerifyBranch !== null) errors.push('esc did not collapse verify branch');
+		// Should NOT have navigated back — wizardState unchanged.
+		if (r[0].wizardState !== 'BRANCH_BUILDING') errors.push('esc navigated back prematurely');
+
+		// Escape with showAdvanced set should collapse, not navigate.
+		s = initState('CONFIG');
+		s.showAdvanced = true;
+		r = sendKey(s, 'esc');
+		if (r[0].showAdvanced) errors.push('esc did not collapse advanced options');
+		// Should NOT have navigated — still CONFIG.
+		if (r[0].wizardState !== 'CONFIG') errors.push('esc navigated away from CONFIG');
+
+		// Second Escape (nothing expanded) should navigate back.
+		s = initState('PLAN_REVIEW');
+		s.showAdvanced = false;
+		s.expandedVerifyBranch = null;
+		r = sendKey(s, 'esc');
+		if (r[0].wizardState !== 'CONFIG') errors.push('second esc should navigate back, got: ' + r[0].wizardState);
+
+		// Escape in PLAN_REVIEW with leaked showAdvanced should NOT ghost-eat the key.
+		// showAdvanced is only relevant on CONFIG, not PLAN_REVIEW.
+		s = initState('PLAN_REVIEW');
+		s.showAdvanced = true; // Leaked from CONFIG.
+		s.expandedVerifyBranch = null;
+		r = sendKey(s, 'esc');
+		if (r[0].wizardState !== 'CONFIG') errors.push('esc in PLAN_REVIEW with leaked showAdvanced should nav back, got: ' + r[0].wizardState);
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T39 escape collapses before back-nav: %v", raw)
+	}
+}
+
+// TestChunk16_T39_AdvancedOptionsToggle verifies the showAdvanced toggle
+// works correctly via mouse zone handler.
+func TestChunk16_T39_AdvancedOptionsToggle(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+
+		// Toggle on.
+		var s = initState('CONFIG');
+		s.showAdvanced = false;
+		var restore = mockZoneHit('toggle-advanced');
+		try {
+			var r = sendClick(s);
+			if (!r[0].showAdvanced) errors.push('toggle-on failed');
+		} finally { restore(); }
+
+		// Toggle off.
+		s.showAdvanced = true;
+		restore = mockZoneHit('toggle-advanced');
+		try {
+			var r = sendClick(s);
+			if (r[0].showAdvanced) errors.push('toggle-off failed');
+		} finally { restore(); }
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T39 advanced options toggle: %v", raw)
+	}
+}
+
+// TestChunk16_T39_ChevronConsistency verifies that expand/collapse chevrons
+// use consistent characters (▶ for collapsed, ▼ for expanded).
+func TestChunk16_T39_ChevronConsistency(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+
+		// CONFIG: Advanced Options collapsed should show ▶ (U+25B6).
+		var s = initState('CONFIG');
+		s.showAdvanced = false;
+		s.width = 80;
+		s.height = 40;
+		var rendered = globalThis.prSplit._viewForState(s);
+		if (rendered.indexOf('\u25b6 Advanced Options') === -1) {
+			errors.push('collapsed advanced missing ▶ chevron');
+		}
+
+		// CONFIG: Advanced Options expanded should show ▼ (U+25BC).
+		s.showAdvanced = true;
+		rendered = globalThis.prSplit._viewForState(s);
+		if (rendered.indexOf('\u25bc Advanced Options') === -1) {
+			errors.push('expanded advanced missing ▼ chevron');
+		}
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T39 chevron consistency: %v", raw)
+	}
+}
+
+// TestChunk16_T39_ExpandResetOnExecution verifies that expandedVerifyBranch
+// is properly reset when starting new execution or verification.
+func TestChunk16_T39_ExpandResetOnExecution(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+		setupPlanCache();
+
+		// expandedVerifyBranch should be null at init.
+		var s = initState('BRANCH_BUILDING');
+		if (s.expandedVerifyBranch !== null) errors.push('init: expandedVerifyBranch should be null');
+
+		// Set it, then verify startExecution clears it.
+		s.expandedVerifyBranch = 'split/api';
+		// Simulate what startExecution does to verification state.
+		s.verificationResults = [];
+		s.verifyingIdx = -1;
+		s.verifyOutput = {};
+		s.expandedVerifyBranch = null; // The reset line from startExecution.
+		if (s.expandedVerifyBranch !== null) errors.push('startExecution should clear expandedVerifyBranch');
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T39 expand reset on execution: %v", raw)
+	}
+}

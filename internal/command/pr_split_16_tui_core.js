@@ -122,6 +122,10 @@
                 claudeCheckProgressMsg: '', // progress message from resolveAsync
                 userHasSelectedStrategy: false, // T42: true when user manually selects a strategy
 
+                // T43: Config validation state.
+                configValidationError: null,   // null | error string (shown inline on CONFIG)
+                availableBranches: [],         // branches from 'git branch --list' on auto-detect failure
+
                 // Analysis progress.
                 analysisSteps: [],
                 analysisProgress: -1,
@@ -2000,6 +2004,8 @@
     function startAnalysis(s) {
         s.isProcessing = true;
         s.analysisProgress = 0;
+        s.configValidationError = null; // T43: clear previous validation error on retry
+        s.availableBranches = [];       // T43: clear branch list on retry
         s.analysisSteps = [
             { label: 'Analyze diff', active: true, done: false },
             { label: 'Group files', active: false, done: false },
@@ -2019,9 +2025,13 @@
         });
 
         if (configResult.error) {
+            // T43: Stay on CONFIG with inline validation error instead of jumping to ERROR.
             s.isProcessing = false;
-            s.errorDetails = configResult.error;
-            s.wizardState = 'ERROR';
+            s.configValidationError = configResult.error;
+            if (configResult.availableBranches) {
+                s.availableBranches = configResult.availableBranches;
+            }
+            s.wizardState = 'CONFIG';
             return [s, null];
         }
 
@@ -2281,6 +2291,8 @@
 
         s.isProcessing = true;
         s.analysisProgress = 0;
+        s.configValidationError = null; // T43: clear previous validation error on retry
+        s.availableBranches = [];       // T43: clear branch list on retry
         s.analysisSteps = [
             { label: 'Spawning Claude', active: true, done: false },
             { label: 'Classifying files', active: false, done: false },
@@ -2299,9 +2311,13 @@
         });
 
         if (configResult.error) {
+            // T43: Stay on CONFIG with inline validation error instead of jumping to ERROR.
             s.isProcessing = false;
-            s.errorDetails = configResult.error;
-            s.wizardState = 'ERROR';
+            s.configValidationError = configResult.error;
+            if (configResult.availableBranches) {
+                s.availableBranches = configResult.availableBranches;
+            }
+            s.wizardState = 'CONFIG';
             return [s, null];
         }
 

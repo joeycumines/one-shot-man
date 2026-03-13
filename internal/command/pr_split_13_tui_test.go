@@ -1079,6 +1079,156 @@ func TestChunk13_HandleConfigState_GitFails(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+//  T43: Graceful error recovery for stale/missing branch
+// ---------------------------------------------------------------------------
+
+func TestChunk13_T43_EmptyRepoDetection(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		prSplit._gitExec = function(dir, args) {
+			if (args[0] === 'rev-parse' && args[1] === '--abbrev-ref') {
+				return { code: 128, stdout: '', stderr: "fatal: ambiguous argument 'HEAD': unknown revision" };
+			}
+			if (args[0] === 'rev-parse' && args[1] === '--verify') {
+				return { code: 128, stdout: '', stderr: 'fatal: not a valid object name' };
+			}
+			if (args[0] === 'branch') {
+				return { code: 0, stdout: 'main\ndev\n', stderr: '' };
+			}
+			return { code: 0, stdout: '', stderr: '' };
+		};
+		prSplit.runtime.baseBranch = 'main';
+
+		var result = prSplit._handleConfigState({});
+		JSON.stringify({
+			hasError: !!result.error,
+			mentionsCommit: result.error ? result.error.indexOf('No commits') >= 0 : false,
+			hasBranches: !!(result.availableBranches && result.availableBranches.length > 0),
+			branchCount: result.availableBranches ? result.availableBranches.length : 0
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"hasError":true,"mentionsCommit":true,"hasBranches":true,"branchCount":2}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+func TestChunk13_T43_DetachedHEAD(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		prSplit._gitExec = function(dir, args) {
+			if (args[0] === 'rev-parse' && args[1] === '--abbrev-ref') {
+				return { code: 0, stdout: 'HEAD\n', stderr: '' };
+			}
+			if (args[0] === 'rev-parse' && args[1] === '--verify') {
+				return { code: 0, stdout: 'abc123\n', stderr: '' };
+			}
+			if (args[0] === 'branch') {
+				return { code: 0, stdout: 'main\nfeature\n', stderr: '' };
+			}
+			return { code: 0, stdout: '', stderr: '' };
+		};
+		prSplit.runtime.baseBranch = 'main';
+
+		var result = prSplit._handleConfigState({});
+		JSON.stringify({
+			hasError: !!result.error,
+			mentionsDetached: result.error ? result.error.indexOf('Detached HEAD') >= 0 : false,
+			hasBranches: !!(result.availableBranches && result.availableBranches.length > 0)
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"hasError":true,"mentionsDetached":true,"hasBranches":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+func TestChunk13_T43_TargetBranchNotExist(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		prSplit._gitExec = function(dir, args) {
+			if (args[0] === 'rev-parse' && args[1] === '--abbrev-ref') {
+				return { code: 0, stdout: 'feature\n', stderr: '' };
+			}
+			if (args[0] === 'rev-parse' && args[1] === '--verify') {
+				// Both local and remote fail.
+				return { code: 128, stdout: '', stderr: 'fatal: Needed a single revision' };
+			}
+			return { code: 0, stdout: '', stderr: '' };
+		};
+		prSplit.runtime.baseBranch = 'nonexistent-branch';
+
+		var result = prSplit._handleConfigState({});
+		JSON.stringify({
+			hasError: !!result.error,
+			mentionsTarget: result.error ? result.error.indexOf('nonexistent-branch') >= 0 : false,
+			mentionsNotExist: result.error ? result.error.indexOf('does not exist') >= 0 : false
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"hasError":true,"mentionsTarget":true,"mentionsNotExist":true}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+func TestChunk13_T43_TargetBranchExistsRemote(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		prSplit._gitExec = function(dir, args) {
+			if (args[0] === 'rev-parse' && args[1] === '--abbrev-ref') {
+				return { code: 0, stdout: 'feature\n', stderr: '' };
+			}
+			if (args[0] === 'rev-parse' && args[1] === '--verify') {
+				var ref = args[2] || '';
+				// Local fails, remote succeeds.
+				if (ref.indexOf('refs/heads/') === 0) {
+					return { code: 128, stdout: '', stderr: 'fatal: not found' };
+				}
+				if (ref.indexOf('refs/remotes/origin/') === 0) {
+					return { code: 0, stdout: 'abc123\n', stderr: '' };
+				}
+				return { code: 128, stdout: '', stderr: '' };
+			}
+			return { code: 0, stdout: '', stderr: '' };
+		};
+		prSplit.verifySplit = function() { return { passed: true }; };
+		prSplit.runtime.baseBranch = 'main';
+		prSplit.runtime.verifyCommand = '';
+
+		var result = prSplit._handleConfigState({});
+		JSON.stringify({ error: result.error });
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"error":null}`
+	if got != want {
+		t.Errorf("remote target branch should be accepted: got %s, want %s", got, want)
+	}
+}
+
 // TestChunk13_HandleConfigState_BaselinePass tests the happy path: valid config
 // and passing baseline verification → PLAN_GENERATION.
 func TestChunk13_HandleConfigState_BaselinePass(t *testing.T) {

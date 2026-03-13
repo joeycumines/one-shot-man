@@ -263,7 +263,7 @@
      * Called when the wizard enters CONFIG state.
      *
      * @param {Object} config - Pipeline configuration overrides.
-     * @returns {Object} { error, resume, checkpoint, baselineFailed, baselineError }
+     * @returns {Object} { error, availableBranches, resume, checkpoint, baselineFailed, baselineError }
      */
     function handleConfigState(config) {
         var runtime = prSplit.runtime;
@@ -276,6 +276,7 @@
 
         // --- Step 1: Validate required configuration ---
         var errors = [];
+        var availableBranches = null; // T43: populated on branch detection failure
 
         if (!runtime.baseBranch) {
             errors.push('baseBranch is required (set via config or "set baseBranch <name>")');
@@ -284,16 +285,53 @@
         // Detect source branch (current branch).
         var branchResult = gitExec(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
         if (branchResult.code !== 0) {
-            errors.push('cannot determine current branch: ' + (branchResult.stderr || '').trim());
+            // T43: Distinguish empty repo from other failures.
+            var stderrMsg = (branchResult.stderr || '').trim();
+            if (stderrMsg.indexOf('ambiguous argument') !== -1 ||
+                stderrMsg.indexOf('bad default revision') !== -1 ||
+                stderrMsg.indexOf('unknown revision') !== -1) {
+                errors.push('No commits on current branch. Please make at least one commit before splitting.');
+            } else {
+                errors.push('Cannot determine current branch: ' + stderrMsg);
+            }
+            // T43: Try to list available branches as fallback.
+            var branchListResult = gitExec(dir, ['branch', '--list', '--format=%(refname:short)']);
+            if (branchListResult.code === 0 && branchListResult.stdout.trim()) {
+                availableBranches = branchListResult.stdout.trim().split('\n');
+            }
         } else {
             var sourceBranch = branchResult.stdout.trim();
-            if (sourceBranch === runtime.baseBranch) {
-                errors.push('currently on base branch (' + runtime.baseBranch + '); checkout a feature branch first');
+            // T43: Detect detached HEAD state.
+            if (sourceBranch === 'HEAD') {
+                errors.push('Detached HEAD state detected. Please checkout a branch before splitting (git checkout <branch>).');
+                // T43: List available branches for reference.
+                var detachedBranchList = gitExec(dir, ['branch', '--list', '--format=%(refname:short)']);
+                if (detachedBranchList.code === 0 && detachedBranchList.stdout.trim()) {
+                    availableBranches = detachedBranchList.stdout.trim().split('\n');
+                }
+            } else if (sourceBranch === runtime.baseBranch) {
+                errors.push('Currently on base branch (' + runtime.baseBranch + '); checkout a feature branch first');
+            }
+        }
+
+        // T43: Validate target (base) branch exists.
+        if (runtime.baseBranch) {
+            var targetCheck = gitExec(dir, ['rev-parse', '--verify', 'refs/heads/' + runtime.baseBranch]);
+            if (targetCheck.code !== 0) {
+                // Also check for remote tracking branch.
+                var remoteCheck = gitExec(dir, ['rev-parse', '--verify', 'refs/remotes/origin/' + runtime.baseBranch]);
+                if (remoteCheck.code !== 0) {
+                    errors.push('Target branch "' + runtime.baseBranch + '" does not exist locally or as origin remote');
+                }
             }
         }
 
         if (errors.length > 0) {
-            return { error: errors.join('; ') };
+            var result = { error: errors.join('; ') };
+            if (availableBranches) {
+                result.availableBranches = availableBranches;
+            }
+            return result;
         }
 
         // --- Step 2: Check for --resume flag ---

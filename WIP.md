@@ -1,24 +1,26 @@
 # WIP — Work In Progress (Takumi's Desperate Diary)
 
-## Current Task: T43 — Graceful error recovery for stale/missing branch on CONFIG screen
+## Current Task: T44 — Mux process output into TUI during long-running operations
 
 ## Session State
 - **Branch:** `wip`
-- **Last Commit:** T42 (pending amend)
-- **Blueprint Status:** T01-T42 Done. T43-T72 Not Started.
-- **Tests baseline:** ALL packages PASS (49/49). ~794s for internal/command with -race.
+- **Last Commit:** T43 (pending amend)
+- **Blueprint Status:** T01-T43 Done. T44-T72 Not Started.
+- **Tests baseline:** ALL packages PASS (49/49). ~718s for internal/command with -race.
 - **Session start:** 2026-03-13 10:37:36 (9h mandate)
 - **Blueprint Schema:** Tasks use `acceptanceCriteria` (array of strings), NOT `acceptance` (string).
 
-## T42 Changes (this session — Rule of Two PASSED)
-### Default to Claude strategy when Claude is available
-- **Added:** `userHasSelectedStrategy: false` to init state (pr_split_16_tui_core.js:123)
-- **Changed:** First WindowSize handler returns `tea.batch(tea.clearScreen(), tea.tick(1, 'auto-detect-claude'))` instead of just `tea.clearScreen()`
-- **Added:** `auto-detect-claude` tick handler: skips if userHasSelectedStrategy or if claudeCheckStatus already set; else calls handleClaudeCheck(s)
-- **Modified:** `runClaudeCheckAsync` success path: sets `prSplit.runtime.mode = 'auto'` when `!s.userHasSelectedStrategy`
-- **Set `userHasSelectedStrategy = true`** on all 4 manual paths: mouse strategy click, mouse Test Connection, keyboard strategy activate, keyboard Test Connection
-- **Updated views:** '(auto-selected)' hint when Claude available and auto-detected; 'Using heuristic strategy' (was 'Fell back to Heuristic strategy')
-- **7 new tests:** AutoDetectClaudeOnStartup, AutoDetectSkipsWhenUserSelected, ManualSelectSetsFlag, AutoDetectUnavailableFallback, AutoDetectSkipsWhenAlreadyChecking, ViewShowsAutoStrategyHint, InitReturnsBatchCommand
+## T43 Changes (this session — Rule of Two PASSED)
+### Graceful error recovery for stale/missing branch on CONFIG screen
+- **Fixed:** `startAnalysis` and `startAutoAnalysis` now stay on CONFIG with `configValidationError` instead of jumping to dead-end ERROR state
+- **Added:** Init state fields: `configValidationError: null`, `availableBranches: []`
+- **Enhanced `handleConfigState`:**
+  - Empty repo detection: 3 stderr patterns (ambiguous argument, bad default revision, unknown revision)
+  - Detached HEAD detection: `sourceBranch === 'HEAD'`
+  - Target branch existence: `git rev-parse --verify refs/heads/<branch>` + remote fallback
+  - Available branches fallback: `git branch --list --format=%(refname:short)`
+- **Updated view:** Inline ⚠ Configuration Error badge + error card + Available branches list (capped at 15)
+- **9 new tests:** 4 in chunk13 (EmptyRepoDetection, DetachedHEAD, TargetBranchNotExist, TargetBranchExistsRemote), 5 in chunk16 (ConfigErrorStaysOnCONFIG, AutoAnalysisConfigErrorStaysOnCONFIG, RetryCleansPreviousError, ViewShowsInlineValidationError, ViewNoBranchesWhenEmpty)
 
 ## T41 Changes (this session — Rule of Two PASSED)
 ### Fix inline title editing + navigation conflict

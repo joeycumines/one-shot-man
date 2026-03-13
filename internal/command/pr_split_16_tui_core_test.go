@@ -5548,6 +5548,214 @@ func TestChunk16_T42_InitReturnsBatchCommand(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+//  T43: Config validation stays on CONFIG (not ERROR)
+// ---------------------------------------------------------------------------
+
+func TestChunk16_T43_ConfigErrorStaysOnCONFIG(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		// Mock gitExec to simulate empty repo (rev-parse HEAD fails).
+		prSplit._gitExec = function(dir, args) {
+			if (args[0] === 'rev-parse' && args[1] === '--abbrev-ref') {
+				return { code: 128, stdout: '', stderr: "fatal: ambiguous argument 'HEAD'" };
+			}
+			if (args[0] === 'rev-parse' && args[1] === '--verify') {
+				return { code: 128, stdout: '', stderr: 'fatal: not found' };
+			}
+			if (args[0] === 'branch') {
+				return { code: 0, stdout: 'main\ndev\n', stderr: '' };
+			}
+			return { code: 0, stdout: '', stderr: '' };
+		};
+		prSplit.runtime.baseBranch = 'main';
+		prSplit.runtime.mode = 'heuristic';
+
+		var s = initState('CONFIG');
+		// Set focus to nav-next (index 4 for CONFIG with heuristic mode).
+		s.focusIndex = 4;
+		// Simulate pressing Enter on nav-next → handleNext → startAnalysis.
+		var r = sendKey(s, 'enter');
+		s = r[0];
+
+		// T43: Should stay on CONFIG, NOT jump to ERROR.
+		if (s.wizardState !== 'CONFIG') return 'FAIL: should stay on CONFIG, got: ' + s.wizardState;
+		// Should have inline validation error.
+		if (!s.configValidationError) return 'FAIL: configValidationError should be set';
+		if (s.configValidationError.indexOf('No commits') === -1) return 'FAIL: error should mention No commits, got: ' + s.configValidationError;
+		// Should NOT set errorDetails (which is the old ERROR state pattern).
+		if (s.errorDetails) return 'FAIL: errorDetails should be null for config validation, got: ' + s.errorDetails;
+		// Should have available branches.
+		if (!s.availableBranches || s.availableBranches.length !== 2) return 'FAIL: should have 2 available branches';
+		if (s.availableBranches[0] !== 'main') return 'FAIL: first branch should be main';
+		// Should not be processing.
+		if (s.isProcessing) return 'FAIL: should not be processing';
+
+		return 'OK';
+	})()`);
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("config error stays on CONFIG: %v", raw)
+	}
+}
+
+func TestChunk16_T43_AutoAnalysisConfigErrorStaysOnCONFIG(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		// Mock gitExec to simulate detached HEAD.
+		prSplit._gitExec = function(dir, args) {
+			if (args[0] === 'rev-parse' && args[1] === '--abbrev-ref') {
+				return { code: 0, stdout: 'HEAD\n', stderr: '' };
+			}
+			if (args[0] === 'rev-parse' && args[1] === '--verify') {
+				return { code: 0, stdout: 'abc123\n', stderr: '' };
+			}
+			if (args[0] === 'branch') {
+				return { code: 0, stdout: 'main\nfeature\n', stderr: '' };
+			}
+			return { code: 0, stdout: '', stderr: '' };
+		};
+		prSplit.runtime.baseBranch = 'main';
+		prSplit.runtime.mode = 'auto'; // Use auto path (startAutoAnalysis).
+
+		var s = initState('CONFIG');
+		// Set focus to nav-next (index 5 for CONFIG with auto mode — test-claude at 3).
+		s.focusIndex = 5;
+		var r = sendKey(s, 'enter');
+		s = r[0];
+
+		// T43: Auto path should also stay on CONFIG.
+		if (s.wizardState !== 'CONFIG') return 'FAIL: should stay on CONFIG, got: ' + s.wizardState;
+		if (!s.configValidationError) return 'FAIL: configValidationError should be set';
+		if (s.configValidationError.indexOf('Detached HEAD') === -1) return 'FAIL: should mention Detached HEAD';
+		if (!s.availableBranches || s.availableBranches.length !== 2) return 'FAIL: should have available branches';
+
+		return 'OK';
+	})()`);
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("auto analysis config error stays on CONFIG: %v", raw)
+	}
+}
+
+func TestChunk16_T43_RetryCleansPreviousError(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var callCount = 0;
+		prSplit._gitExec = function(dir, args) {
+			if (args[0] === 'rev-parse' && args[1] === '--abbrev-ref') {
+				callCount++;
+				if (callCount <= 1) {
+					// First attempt: fail (empty repo).
+					return { code: 128, stdout: '', stderr: "fatal: ambiguous argument 'HEAD'" };
+				}
+				// Second attempt: succeed (user made a commit).
+				return { code: 0, stdout: 'feature\n', stderr: '' };
+			}
+			if (args[0] === 'rev-parse' && args[1] === '--verify') {
+				if (callCount <= 1) return { code: 128, stdout: '', stderr: 'fatal: not found' };
+				return { code: 0, stdout: 'abc123\n', stderr: '' };
+			}
+			if (args[0] === 'branch') {
+				return { code: 0, stdout: 'main\n', stderr: '' };
+			}
+			return { code: 0, stdout: '', stderr: '' };
+		};
+		prSplit.verifySplit = function() { return { passed: true }; };
+		prSplit.runtime.baseBranch = 'main';
+		prSplit.runtime.mode = 'heuristic';
+		prSplit.runtime.verifyCommand = '';
+
+		var s = initState('CONFIG');
+		s.focusIndex = 4; // nav-next for heuristic mode
+
+		// First attempt: fails.
+		var r = sendKey(s, 'enter');
+		s = r[0];
+		if (!s.configValidationError) return 'FAIL: first attempt should set error';
+		if (s.availableBranches.length !== 1) return 'FAIL: first attempt should list branches';
+
+		// Second attempt: succeeds (error clears).
+		r = sendKey(s, 'enter');
+		s = r[0];
+		if (s.configValidationError) return 'FAIL: retry should clear configValidationError';
+		if (s.availableBranches.length !== 0) return 'FAIL: retry should clear availableBranches';
+
+		return 'OK';
+	})()`);
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("retry cleans previous error: %v", raw)
+	}
+}
+
+func TestChunk16_T43_ViewShowsInlineValidationError(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.configValidationError = 'No commits on current branch.';
+		s.availableBranches = ['main', 'develop', 'feature-x'];
+
+		var view = globalThis.prSplit._viewForState(s);
+
+		// Should show inline error.
+		if (view.indexOf('Configuration Error') === -1) return 'FAIL: should show Configuration Error badge';
+		if (view.indexOf('No commits') === -1) return 'FAIL: should show error text';
+		// Should show available branches.
+		if (view.indexOf('Available branches') === -1) return 'FAIL: should show Available branches header';
+		if (view.indexOf('main') === -1) return 'FAIL: should list main branch';
+		if (view.indexOf('develop') === -1) return 'FAIL: should list develop branch';
+		if (view.indexOf('feature-x') === -1) return 'FAIL: should list feature-x branch';
+
+		return 'OK';
+	})()`);
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("view shows inline validation error: %v", raw)
+	}
+}
+
+func TestChunk16_T43_ViewNoBranchesWhenEmpty(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.configValidationError = 'Cannot determine current branch: not a git repo';
+		s.availableBranches = [];
+
+		var view = globalThis.prSplit._viewForState(s);
+
+		// Should show error but NOT "Available branches" section.
+		if (view.indexOf('Configuration Error') === -1) return 'FAIL: should show error';
+		if (view.indexOf('Available branches') !== -1) return 'FAIL: should NOT show branches when empty';
+
+		return 'OK';
+	})()`);
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("view no branches when empty: %v", raw)
+	}
+}
+
+// ---------------------------------------------------------------------------
 //  T37: Async Verify Fallback Tests
 // ---------------------------------------------------------------------------
 

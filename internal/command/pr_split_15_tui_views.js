@@ -795,6 +795,25 @@
                 styles.dim().render('\u25b6 Advanced Options')));
         }
 
+        // T43: Inline config validation error.
+        if (s.configValidationError) {
+            lines.push('');
+            lines.push('  ' + styles.errorBadge().render(' \u26a0 Configuration Error '));
+            lines.push('  ' + styles.errorCard().width(Math.max(30, (s.width || 80) - 12)).render(
+                s.configValidationError));
+            // Show available branches if populated.
+            if (s.availableBranches && s.availableBranches.length > 0) {
+                lines.push('');
+                lines.push('  ' + styles.bold().render('Available branches:'));
+                for (var bi = 0; bi < s.availableBranches.length && bi < 15; bi++) {
+                    lines.push('    \u2022 ' + styles.fieldValue().render(s.availableBranches[bi]));
+                }
+                if (s.availableBranches.length > 15) {
+                    lines.push('    ' + styles.dim().render('... and ' + (s.availableBranches.length - 15) + ' more'));
+                }
+            }
+        }
+
         return lines.join('\n');
     }
 

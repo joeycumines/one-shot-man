@@ -85,7 +85,8 @@
       "T62-old: Pipeline async conversion — waitForLogged dual-path, step callbacks async, spawn/restart async, handleRestartClaudePoll, scroll keys, 485 tests pass",
       "T40: Complete tab navigation ALL screens — FINALIZATION focus elements (final-report, final-create-prs, final-done, nav-next) with keyboard activation and visual focus indicators. CONFIG toggle-advanced with ▸ pointer. ERROR_RESOLUTION nav-next. BRANCH_BUILDING 'e' expand/collapse. Help overlay Branch Building section. 10 new tests + 6 existing updated.",
       "T41: Fix inline title editing + navigation conflict — defense-in-depth guard in handleListNav (editorTitleEditing check). Title editing interceptor already catches all keys; guard prevents future bypass corruption. 5 new tests verifying edit-nav isolation.",
-      "T42: Default to Claude strategy when Claude is available — auto-detect Claude on startup via 'auto-detect-claude' tick from first WindowSize. resolveAsync success auto-sets mode='auto' unless user manually selected strategy. View shows '(auto-selected)' hint. userHasSelectedStrategy flag prevents auto-override of manual choice. 7 new tests."
+      "T42: Default to Claude strategy when Claude is available — auto-detect Claude on startup via 'auto-detect-claude' tick from first WindowSize. resolveAsync success auto-sets mode='auto' unless user manually selected strategy. View shows '(auto-selected)' hint. userHasSelectedStrategy flag prevents auto-override of manual choice. 7 new tests.",
+      "T43: Graceful error recovery for stale/missing branch — Config validation errors (empty repo, detached HEAD, nonexistent target branch) now stay on CONFIG screen with inline warning instead of jumping to dead-end ERROR state. handleConfigState enhanced with empty-repo detection (3 stderr patterns), detached HEAD detection, target branch existence validation (local + remote fallback), and available branch list fallback. 9 new tests (4 chunk13 + 5 chunk16)."
     ],
     "replanLog": [
       {
@@ -349,7 +350,7 @@
         "Detached HEAD state handled gracefully",
         "All CONFIG validation tests pass"
       ],
-      "status": "Not Started",
+      "status": "Done",
       "context": {
         "files": [
           "internal/command/pr_split_16_tui_core.js (handleConfigState — branch validation)",

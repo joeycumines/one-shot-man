@@ -579,10 +579,11 @@
                     }
                     return [s, null];
                 }
-                // termmux toggle.
+                // termmux toggle — only if Claude child is attached.
                 if (k === 'ctrl+]') {
                     if (typeof tuiMux !== 'undefined' && tuiMux &&
-                        typeof tuiMux.switchTo === 'function') {
+                        typeof tuiMux.switchTo === 'function' &&
+                        (typeof tuiMux.hasChild !== 'function' || tuiMux.hasChild())) {
                         tuiMux.switchTo('claude');
                     }
                     return [s, null];
@@ -1248,7 +1249,8 @@
         // Claude status badge.
         if (zone.inBounds('claude-status', msg)) {
             if (typeof tuiMux !== 'undefined' && tuiMux &&
-                typeof tuiMux.switchTo === 'function') {
+                typeof tuiMux.switchTo === 'function' &&
+                (typeof tuiMux.hasChild !== 'function' || tuiMux.hasChild())) {
                 tuiMux.switchTo('claude');
             }
             return [s, null];
@@ -2776,25 +2778,33 @@
             return [s, null];
         }
 
+        // Guard: no tuiMux or no attached child — set empty screen so
+        // renderClaudePane shows "No Claude session attached" placeholder.
+        if (typeof tuiMux === 'undefined' || !tuiMux ||
+            (typeof tuiMux.hasChild === 'function' && !tuiMux.hasChild())) {
+            s.claudeScreen = '';
+            s.claudeScreenshot = '';
+            // Continue polling — the child may attach later (e.g., during auto-split).
+            return [s, tea.tick(500, 'claude-screenshot')];
+        }
+
         // Capture ANSI screen from tuiMux if available (T28: full color rendering).
-        if (typeof tuiMux !== 'undefined' && tuiMux) {
-            try {
-                if (typeof tuiMux.childScreen === 'function') {
-                    var screen = tuiMux.childScreen();
-                    if (screen !== null && screen !== undefined) {
-                        s.claudeScreen = String(screen);
-                    }
+        try {
+            if (typeof tuiMux.childScreen === 'function') {
+                var screen = tuiMux.childScreen();
+                if (screen !== null && screen !== undefined) {
+                    s.claudeScreen = String(screen);
                 }
-                // Also capture plain-text for fallback and test assertions.
-                if (typeof tuiMux.screenshot === 'function') {
-                    var shot = tuiMux.screenshot();
-                    if (shot !== null && shot !== undefined) {
-                        s.claudeScreenshot = String(shot);
-                    }
-                }
-            } catch (e) {
-                // Swallow — screen capture may fail if Claude session ended.
             }
+            // Also capture plain-text for fallback and test assertions.
+            if (typeof tuiMux.screenshot === 'function') {
+                var shot = tuiMux.screenshot();
+                if (shot !== null && shot !== undefined) {
+                    s.claudeScreenshot = String(shot);
+                }
+            }
+        } catch (e) {
+            // Swallow — screen capture may fail if Claude session ended.
         }
 
         // Schedule next poll at 500ms.
@@ -3194,7 +3204,8 @@
                     (s.wizard.data && s.wizard.data.failedBranches) || []
             };
             if (typeof tuiMux !== 'undefined' && tuiMux &&
-                typeof tuiMux.switchTo === 'function') {
+                typeof tuiMux.switchTo === 'function' &&
+                (typeof tuiMux.hasChild !== 'function' || tuiMux.hasChild())) {
                 tuiMux.switchTo('claude');
             }
             return [s, null];

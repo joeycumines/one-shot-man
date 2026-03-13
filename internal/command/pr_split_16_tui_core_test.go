@@ -3318,5 +3318,224 @@ func TestChunk16_CrashRecovery_NoExecutor(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+//  T33: tuiMux bootstrap — hasChild guards and pollClaudeScreenshot
+// ---------------------------------------------------------------------------
+
+// TestChunk16_PollClaudeScreenshot_NoMux verifies that pollClaudeScreenshot
+// clears screen state and continues polling when tuiMux is undefined.
+func TestChunk16_PollClaudeScreenshot_NoMux(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		// Remove tuiMux to simulate headless/test context.
+		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		globalThis.tuiMux = undefined;
+
+		var s = initState('PLAN_REVIEW');
+		s.splitViewEnabled = true;
+		s.claudeScreen = 'stale-ansi-data';
+		s.claudeScreenshot = 'stale-plain-data';
+
+		// Send claude-screenshot tick.
+		var result = update({type: 'Tick', id: 'claude-screenshot'}, s);
+		var state = result[0];
+		var cmd = result[1];
+
+		// Restore tuiMux.
+		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
+		else delete globalThis.tuiMux;
+
+		// Verify state was cleared and polling continues.
+		var cleared = (state.claudeScreen === '' && state.claudeScreenshot === '');
+		var polls = (cmd !== null); // Should return a tick command to continue polling.
+
+		if (!cleared) return 'FAIL: screen not cleared, claudeScreen=' + JSON.stringify(state.claudeScreen) +
+			', claudeScreenshot=' + JSON.stringify(state.claudeScreenshot);
+		if (!polls) return 'FAIL: expected polling to continue (non-null cmd)';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("pollClaudeScreenshot no mux: %v", raw)
+	}
+}
+
+// TestChunk16_PollClaudeScreenshot_NoChild verifies that pollClaudeScreenshot
+// clears screen state when tuiMux exists but hasChild() returns false.
+func TestChunk16_PollClaudeScreenshot_NoChild(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		// Mock tuiMux with hasChild() returning false.
+		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		globalThis.tuiMux = {
+			hasChild: function() { return false; },
+			screenshot: function() { return 'should-not-be-called'; },
+			childScreen: function() { return 'should-not-be-called'; }
+		};
+
+		var s = initState('PLAN_REVIEW');
+		s.splitViewEnabled = true;
+		s.claudeScreen = 'stale-ansi';
+		s.claudeScreenshot = 'stale-plain';
+
+		var result = update({type: 'Tick', id: 'claude-screenshot'}, s);
+		var state = result[0];
+		var cmd = result[1];
+
+		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
+		else delete globalThis.tuiMux;
+
+		var cleared = (state.claudeScreen === '' && state.claudeScreenshot === '');
+		var polls = (cmd !== null);
+
+		if (!cleared) return 'FAIL: screen not cleared';
+		if (!polls) return 'FAIL: expected polling to continue';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("pollClaudeScreenshot no child: %v", raw)
+	}
+}
+
+// TestChunk16_PollClaudeScreenshot_WithChild verifies that pollClaudeScreenshot
+// captures screen data when tuiMux has an attached child.
+func TestChunk16_PollClaudeScreenshot_WithChild(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		globalThis.tuiMux = {
+			hasChild: function() { return true; },
+			childScreen: function() { return 'ansi-content-here'; },
+			screenshot: function() { return 'plain-content-here'; }
+		};
+
+		var s = initState('PLAN_REVIEW');
+		s.splitViewEnabled = true;
+		s.claudeScreen = '';
+		s.claudeScreenshot = '';
+
+		var result = update({type: 'Tick', id: 'claude-screenshot'}, s);
+		var state = result[0];
+		var cmd = result[1];
+
+		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
+		else delete globalThis.tuiMux;
+
+		if (state.claudeScreen !== 'ansi-content-here')
+			return 'FAIL: claudeScreen=' + JSON.stringify(state.claudeScreen);
+		if (state.claudeScreenshot !== 'plain-content-here')
+			return 'FAIL: claudeScreenshot=' + JSON.stringify(state.claudeScreenshot);
+		if (!cmd) return 'FAIL: expected polling to continue';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("pollClaudeScreenshot with child: %v", raw)
+	}
+}
+
+// TestChunk16_PollClaudeScreenshot_SplitViewDisabled verifies that
+// pollClaudeScreenshot stops polling when split view is disabled.
+func TestChunk16_PollClaudeScreenshot_SplitViewDisabled(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('PLAN_REVIEW');
+		s.splitViewEnabled = false;
+
+		var result = update({type: 'Tick', id: 'claude-screenshot'}, s);
+		var cmd = result[1];
+
+		if (cmd !== null) return 'FAIL: expected null cmd when split view disabled, got: ' + JSON.stringify(cmd);
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("pollClaudeScreenshot split view disabled: %v", raw)
+	}
+}
+
+// TestChunk16_SwitchTo_NoChild verifies Ctrl+] does NOT call switchTo
+// when tuiMux.hasChild() returns false (prevents blocking on empty mux).
+func TestChunk16_SwitchTo_NoChild(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var switchCalled = false;
+		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		globalThis.tuiMux = {
+			hasChild: function() { return false; },
+			switchTo: function() { switchCalled = true; },
+			screenshot: function() { return ''; },
+			childScreen: function() { return ''; }
+		};
+
+		var s = initState('PLAN_REVIEW');
+		sendKey(s, 'ctrl+]');
+
+		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
+		else delete globalThis.tuiMux;
+
+		if (switchCalled) return 'FAIL: switchTo called despite no child';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("switchTo no child: %v", raw)
+	}
+}
+
+// TestChunk16_SwitchTo_WithChild verifies Ctrl+] calls switchTo when
+// tuiMux.hasChild() returns true.
+func TestChunk16_SwitchTo_WithChild(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var switchCalled = false;
+		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		globalThis.tuiMux = {
+			hasChild: function() { return true; },
+			switchTo: function() { switchCalled = true; },
+			screenshot: function() { return ''; },
+			childScreen: function() { return ''; }
+		};
+
+		var s = initState('PLAN_REVIEW');
+		sendKey(s, 'ctrl+]');
+
+		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
+		else delete globalThis.tuiMux;
+
+		if (!switchCalled) return 'FAIL: switchTo not called despite child attached';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("switchTo with child: %v", raw)
+	}
+}
+
 // Ensure unused imports are referenced.
 var _ = strings.Contains

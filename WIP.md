@@ -1,26 +1,27 @@
 # WIP — Work In Progress (Takumi's Desperate Diary)
 
-## Current Task: T32 — Integration test baseline (COMPLETING — Rule of Two pending)
+## Current Task: T33 — tuiMux bootstrap (COMPLETING — Rule of Two pending)
 
 ## Session State
 - **Branch:** `wip`
-- **Last Commit:** T31 (wip@3403da70 — blueprint rewrite)
-- **Blueprint Status:** T01-T31 + T61-T62-old Done. T32 IN PROGRESS (fixes applied, `make all` PASSES). T33-T72 Not Started.
-- **Tests baseline:** ALL 49 packages PASS (`make all` exit 0). Zero failures. 708s for internal/command.
+- **Last Commit:** T32 (wip@726b4f6e)
+- **Blueprint Status:** T01-T33 Done. T34-T72 Not Started.
+- **Tests baseline:** ALL packages PASS (`make all`). 937s for internal/command with -race.
 - **Session start:** 2026-03-13 10:37:36 (9h mandate)
 - **Blueprint Schema:** Tasks use `acceptanceCriteria` (array of strings), NOT `acceptance` (string).
 
-## T32 Fixes Applied (this session)
-1. **5 unit test fixes** (async IIFE wrappers):
-   - `pr_split_09_claude_test.go`: 2 restart tests → `(async function() { await ex.restart(...) })()`
-   - `pr_split_integration_test.go`: 3 spawn tests → `(async function() { await originalSpawn.call(...) })()`
-2. **7 VTerm integration test fixes** (REPL mode + prompt pattern):
-   - `pr_split_termmux_observation_test.go`: All 7 test functions + vtermStartConsole helper
-   - Added `-interactive=false` flag to force REPL mode instead of BubbleTea TUI
-   - Changed `Contains("pr-split")` → `Contains("(pr-split)")` (11 instances total)
-3. **Baseline doc:** `scratch/integration-test-baseline.md` — updated with post-fix state
-4. **Make target:** `config.mk` has `test-targeted` for focused test runs
-5. **Verification:** `make all` → 49/49 packages PASS, 0 failures
+## T33 Findings (this session)
+### Architecture is CONNECTED — no bootstrap gap
+- Go-side: `termmux.New()` → `engine.SetGlobal("tuiMux", WrapMux(mux))` (pr_split.go:339,345)
+- JS-side: `automatedSplit()` pipeline calls `tuiMux.attach(claudeExecutor.handle)` (pipeline.js:1438)
+- Type chain: JS handle → Goja export → `map[string]any{"_goHandle": *ptyAgentHandle}` → `resolveChild` Case 2 → `StringIO` assertion → `WrapStringIO` → `Mux.Attach()` → VTerm + teeLoop
+- Re-attach on restart: tui_core.js:2357-2361
+- renderClaudePane already shows "No Claude session attached" placeholder
+
+### Changes Made
+1. `pollClaudeScreenshot`: Added `hasChild()` guard — clears screen state when no child, continues polling
+2. `switchTo` (3 sites): Added backward-compatible `hasChild()` guard — `(typeof tuiMux.hasChild !== 'function' || tuiMux.hasChild())`
+3. 6 new unit tests: NoMux, NoChild, WithChild, SplitViewDisabled, SwitchTo_NoChild, SwitchTo_WithChild
 
 ## CRITICAL FINDINGS FROM DEEP ANALYSIS (2026-03-13)
 1. **EVENT LOOP BLOCKING**: runAnalysisStep (line 1938) calls sync analyzeDiff/applyStrategy/createSplitPlan — async versions EXIST but NOT used from TUI
@@ -33,7 +34,7 @@
 8. **Integration tests SHALLOW**: no wizard+real-Claude, no Mux lifecycle, no TUI rendering tests
 
 ## Next Steps
-1. **IMMEDIATE:** Rule of Two review on current diff → commit as T32
-2. T33: tuiMux bootstrap fix
-3. T34: Convert runAnalysisStep to async
-4. Continue T35-T72 sequentially
+1. **IMMEDIATE:** Rule of Two review on T33 diff → commit
+2. T34: Convert runAnalysisStep to async
+3. T35: Convert runExecutionStep to async
+4. Continue T36-T72 sequentially

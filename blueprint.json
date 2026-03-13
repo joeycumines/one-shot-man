@@ -74,6 +74,7 @@
       "T30: gitExecAsync() non-blocking git helper — exec.spawn with parallel stream collection, same {stdout,stderr,code} shape, export",
       "T31: Convert automatedSplit pipeline to gitExecAsync — 8 async functions, 7 strategy fix() methods, heuristicFallback/resolveConflictsWithClaude, late-binding, 13 test files updated",
       "T32: Integration test baseline + fix — 5 async unit test regressions fixed, 7 VTerm tests fixed (-interactive=false + prompt pattern), baseline doc at scratch/integration-test-baseline.md, 49/49 packages PASS",
+      "T33: tuiMux bootstrap verified — architecture connected (Go→JS injection → automatedSplit attach → pollClaudeScreenshot → renderClaudePane). Added hasChild() guards to pollClaudeScreenshot + 3 switchTo sites. 6 new tests.",
       "T61-old: mcpCallback.waitForAsync() — non-blocking Promise-based MCP tool wait with aliveCheck trampoline, 9 tests, 47/47 pass",
       "T62-old: Pipeline async conversion — waitForLogged dual-path, step callbacks async, spawn/restart async, handleRestartClaudePoll, scroll keys, 485 tests pass"
     ],
@@ -132,19 +133,16 @@
         "Split-view (Ctrl+L) shows live Claude output rendered from childScreen()",
         "pollClaudeScreenshot guard shows 'No Claude attached' when tuiMux is undefined or has no child"
       ],
-      "status": "Not Started",
+      "status": "Done",
       "context": {
         "files": [
-          "internal/command/pr_split.go (Go-side Mux creation and JS injection)",
-          "internal/command/pr_split_16_tui_core.js:4 (tuiMux global reference)",
-          "internal/command/pr_split_16_tui_core.js:2773 (pollClaudeScreenshot)",
-          "internal/command/pr_split_16_tui_core.js:451 (writeToChild usage)",
-          "internal/command/pr_split_10_pipeline.js (automatedSplit — Claude spawn point)",
-          "internal/command/pr_split_09_claude.js:87 (spawn method)",
-          "internal/command/pr_split_13_tui.js:81 (TUI init, WizardState constructor)",
-          "internal/builtin/termmux/module.go (WrapMux — JS binding for attach, childScreen, writeToChild)"
+          "internal/command/pr_split_16_tui_core.js (pollClaudeScreenshot, switchTo guards)",
+          "internal/command/pr_split_16_tui_core_test.go (6 new tests)",
+          "internal/command/pr_split_10_pipeline.js:1438 (attach call in automatedSplit)",
+          "internal/builtin/termmux/module.go (resolveChild, WrapMux)"
         ],
-        "dependencies": []
+        "dependencies": [],
+        "deliverables": "Architecture verified connected end-to-end. pollClaudeScreenshot improved with hasChild() guard. switchTo guarded at all 3 call sites with backward-compatible pattern. 6 new unit tests all PASS."
       }
     },
     {

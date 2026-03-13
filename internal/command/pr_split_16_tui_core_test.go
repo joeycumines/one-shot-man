@@ -1,6 +1,7 @@
 package command
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -3534,6 +3535,468 @@ func TestChunk16_SwitchTo_WithChild(t *testing.T) {
 	}
 	if raw != "OK" {
 		t.Errorf("switchTo with child: %v", raw)
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  T34: Async Analysis Pipeline Tests
+// ---------------------------------------------------------------------------
+
+// TestChunk16_AnalysisPoll_StillRunning verifies that handleAnalysisPoll
+// continues polling when analysis is still running.
+func TestChunk16_AnalysisPoll_StillRunning(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.isProcessing = true;
+		s.analysisRunning = true;
+		s.analysisError = null;
+
+		var r = update({type: 'Tick', id: 'analysis-poll'}, s);
+		if (!r[1]) return 'FAIL: should return a tick cmd when still running';
+		if (!r[0].analysisRunning) return 'FAIL: analysisRunning should still be true';
+		if (!r[0].isProcessing) return 'FAIL: isProcessing should still be true';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("analysis-poll still running: %v", raw)
+	}
+}
+
+// TestChunk16_AnalysisPoll_Cancelled verifies that handleAnalysisPoll
+// stops polling when processing was cancelled.
+func TestChunk16_AnalysisPoll_Cancelled(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.isProcessing = false;
+		s.analysisRunning = false;
+		s.analysisError = null;
+
+		var r = update({type: 'Tick', id: 'analysis-poll'}, s);
+		if (r[1] !== null) return 'FAIL: should return null cmd on cancel, got: ' + r[1];
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("analysis-poll cancelled: %v", raw)
+	}
+}
+
+// TestChunk16_AnalysisPoll_ErrorFromPromise verifies that handleAnalysisPoll
+// transitions to ERROR state when the async pipeline rejects.
+func TestChunk16_AnalysisPoll_ErrorFromPromise(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.isProcessing = true;
+		s.analysisRunning = false;
+		s.analysisError = 'git diff failed: permission denied';
+
+		var r = update({type: 'Tick', id: 'analysis-poll'}, s);
+		if (r[0].wizardState !== 'ERROR') return 'FAIL: wizardState should be ERROR, got: ' + r[0].wizardState;
+		if (r[0].isProcessing) return 'FAIL: isProcessing should be false';
+		if (!r[0].errorDetails || r[0].errorDetails.indexOf('permission denied') < 0) {
+			return 'FAIL: errorDetails should contain error, got: ' + r[0].errorDetails;
+		}
+		if (r[1] !== null) return 'FAIL: should return null cmd on error';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("analysis-poll error: %v", raw)
+	}
+}
+
+// TestChunk16_AnalysisPoll_CompletedSuccess verifies that handleAnalysisPoll
+// accepts the final state when analysis completed successfully (state
+// already transitioned by the async function).
+func TestChunk16_AnalysisPoll_CompletedSuccess(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		// Simulate async pipeline having completed successfully:
+		// analysisRunning=false, analysisError=null, wizardState already
+		// transitioned to PLAN_REVIEW by runAnalysisAsync.
+		var s = initState('PLAN_REVIEW');
+		s.isProcessing = false;
+		s.analysisRunning = false;
+		s.analysisError = null;
+
+		var r = update({type: 'Tick', id: 'analysis-poll'}, s);
+		// Should return null cmd (stop polling), state unchanged.
+		if (r[1] !== null) return 'FAIL: should return null cmd on success';
+		if (r[0].wizardState !== 'PLAN_REVIEW') return 'FAIL: wizardState should be PLAN_REVIEW, got: ' + r[0].wizardState;
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("analysis-poll success: %v", raw)
+	}
+}
+
+// TestChunk16_AnalysisAsync_HappyPath exercises the full startAnalysis →
+// runAnalysisAsync → handleAnalysisPoll flow with mocked async functions.
+// Creates a real git repo so handleConfigState succeeds.
+func TestChunk16_AnalysisAsync_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	// Create a real git repo so handleConfigState succeeds.
+	dir := initGitRepo(t)
+	writeFile(t, filepath.Join(dir, "a.go"), "package a\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "initial")
+	gitCmd(t, dir, "checkout", "-b", "feature")
+	writeFile(t, filepath.Join(dir, "b.go"), "package b\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "feature changes")
+
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(async function() {
+		// Save originals.
+		var origAnalyzeDiffAsync = globalThis.prSplit.analyzeDiffAsync;
+		var origApplyStrategy = globalThis.prSplit.applyStrategy;
+		var origCreateSplitPlanAsync = globalThis.prSplit.createSplitPlanAsync;
+		var origValidatePlan = globalThis.prSplit.validatePlan;
+
+		try {
+			// Mock analysis functions (called via prSplit.xxx dynamic lookup).
+			globalThis.prSplit.analyzeDiffAsync = async function(config) {
+				return {
+					files: ['a.go', 'b.go', 'c.go'],
+					fileStatuses: { 'a.go': 'M', 'b.go': 'A', 'c.go': 'M' },
+					error: null,
+					baseBranch: 'main',
+					currentBranch: 'feature'
+				};
+			};
+			globalThis.prSplit.applyStrategy = function(files, strategy) {
+				return { 'group1': ['a.go', 'b.go'], 'group2': ['c.go'] };
+			};
+			globalThis.prSplit.createSplitPlanAsync = async function(groups, config) {
+				return {
+					baseBranch: 'main',
+					sourceBranch: 'feature',
+					splits: [
+						{ name: 'split/01-group1', files: ['a.go', 'b.go'], message: 'group1', order: 0, dependencies: [] },
+						{ name: 'split/02-group2', files: ['c.go'], message: 'group2', order: 1, dependencies: ['split/01-group1'] }
+					]
+				};
+			};
+			globalThis.prSplit.validatePlan = function(plan) {
+				return { valid: true, errors: [] };
+			};
+
+			// Set up CONFIG state and runtime pointing to real git repo.
+			var s = initState('CONFIG');
+			globalThis.prSplit.runtime.baseBranch = 'main';
+			globalThis.prSplit.runtime.dir = '` + escapeJSPath(dir) + `';
+			globalThis.prSplit.runtime.strategy = 'directory';
+			globalThis.prSplit.runtime.mode = 'heuristic';
+			s.focusIndex = 3; // nav-next element
+
+			// Trigger startAnalysis via enter key on nav-next.
+			var r = sendKey(s, 'enter');
+			s = r[0];
+
+			// startAnalysis launched the async pipeline.
+			if (!s.isProcessing) {
+				return 'FAIL: isProcessing should be true after startAnalysis, state=' + s.wizardState +
+					', error=' + s.errorDetails;
+			}
+
+			// Let microtasks resolve (mocked functions resolve immediately).
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			// Poll to finalize.
+			r = update({type: 'Tick', id: 'analysis-poll'}, s);
+			s = r[0];
+
+			// After completion, should be PLAN_REVIEW.
+			if (s.wizardState !== 'PLAN_REVIEW') {
+				return 'FAIL: expected PLAN_REVIEW, got ' + s.wizardState +
+					', error=' + s.errorDetails + ', isProcessing=' + s.isProcessing +
+					', analysisRunning=' + s.analysisRunning;
+			}
+			if (s.isProcessing) return 'FAIL: isProcessing should be false';
+			if (s.analysisRunning) return 'FAIL: analysisRunning should be false';
+
+			// Verify all steps completed.
+			for (var i = 0; i < 4; i++) {
+				if (!s.analysisSteps[i].done) return 'FAIL: step ' + i + ' not done';
+			}
+			if (s.analysisProgress !== 1.0) return 'FAIL: progress should be 1.0, got ' + s.analysisProgress;
+
+			return 'OK';
+		} finally {
+			globalThis.prSplit.analyzeDiffAsync = origAnalyzeDiffAsync;
+			globalThis.prSplit.applyStrategy = origApplyStrategy;
+			globalThis.prSplit.createSplitPlanAsync = origCreateSplitPlanAsync;
+			globalThis.prSplit.validatePlan = origValidatePlan;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("analysis async happy path: %v", raw)
+	}
+}
+
+// TestChunk16_AnalysisAsync_AnalyzeDiffError verifies error handling when
+// analyzeDiffAsync throws an exception.
+func TestChunk16_AnalysisAsync_AnalyzeDiffError(t *testing.T) {
+	t.Parallel()
+
+	dir := initGitRepo(t)
+	writeFile(t, filepath.Join(dir, "a.go"), "package a\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "initial")
+	gitCmd(t, dir, "checkout", "-b", "feature")
+
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(async function() {
+		var origAnalyzeDiffAsync = globalThis.prSplit.analyzeDiffAsync;
+
+		try {
+			globalThis.prSplit.analyzeDiffAsync = async function() {
+				throw new Error('git: not a git repository');
+			};
+
+			var s = initState('CONFIG');
+			globalThis.prSplit.runtime.baseBranch = 'main';
+			globalThis.prSplit.runtime.dir = '` + escapeJSPath(dir) + `';
+			globalThis.prSplit.runtime.strategy = 'directory';
+			globalThis.prSplit.runtime.mode = 'heuristic';
+			s.focusIndex = 3; // nav-next element
+
+			var r = sendKey(s, 'enter');
+			s = r[0];
+
+			if (!s.isProcessing) {
+				return 'FAIL: isProcessing should be true, state=' + s.wizardState + ', error=' + s.errorDetails;
+			}
+
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			r = update({type: 'Tick', id: 'analysis-poll'}, s);
+			s = r[0];
+
+			if (s.wizardState !== 'ERROR') {
+				return 'FAIL: expected ERROR, got ' + s.wizardState + ', error=' + s.errorDetails;
+			}
+			if (!s.errorDetails || s.errorDetails.indexOf('not a git repository') < 0) {
+				return 'FAIL: errorDetails should mention git error, got: ' + s.errorDetails;
+			}
+			if (s.isProcessing) return 'FAIL: isProcessing should be false';
+
+			return 'OK';
+		} finally {
+			globalThis.prSplit.analyzeDiffAsync = origAnalyzeDiffAsync;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("analysis async diff error: %v", raw)
+	}
+}
+
+// TestChunk16_AnalysisAsync_NoChanges verifies that when analyzeDiffAsync
+// returns empty files, the wizard goes back to CONFIG.
+func TestChunk16_AnalysisAsync_NoChanges(t *testing.T) {
+	t.Parallel()
+
+	dir := initGitRepo(t)
+	writeFile(t, filepath.Join(dir, "a.go"), "package a\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "initial")
+	gitCmd(t, dir, "checkout", "-b", "feature")
+
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(async function() {
+		var origAnalyzeDiffAsync = globalThis.prSplit.analyzeDiffAsync;
+
+		try {
+			globalThis.prSplit.analyzeDiffAsync = async function() {
+				return { files: [], fileStatuses: {}, error: null, baseBranch: 'main', currentBranch: 'feature' };
+			};
+
+			var s = initState('CONFIG');
+			globalThis.prSplit.runtime.baseBranch = 'main';
+			globalThis.prSplit.runtime.dir = '` + escapeJSPath(dir) + `';
+			globalThis.prSplit.runtime.strategy = 'directory';
+			globalThis.prSplit.runtime.mode = 'heuristic';
+			s.focusIndex = 3; // nav-next element
+
+			var r = sendKey(s, 'enter');
+			s = r[0];
+
+			if (!s.isProcessing) {
+				return 'FAIL: isProcessing should be true, state=' + s.wizardState + ', error=' + s.errorDetails;
+			}
+
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			r = update({type: 'Tick', id: 'analysis-poll'}, s);
+			s = r[0];
+
+			if (s.wizardState !== 'CONFIG') {
+				return 'FAIL: expected CONFIG (no changes), got ' + s.wizardState;
+			}
+			if (s.isProcessing) return 'FAIL: isProcessing should be false';
+			if (!s.errorDetails || s.errorDetails.indexOf('No changes') < 0) {
+				return 'FAIL: errorDetails should mention no changes, got: ' + s.errorDetails;
+			}
+
+			return 'OK';
+		} finally {
+			globalThis.prSplit.analyzeDiffAsync = origAnalyzeDiffAsync;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("analysis async no changes: %v", raw)
+	}
+}
+
+// TestChunk16_AnalysisAsync_ValidationFailure verifies that a validatePlan
+// failure transitions to ERROR.
+func TestChunk16_AnalysisAsync_ValidationFailure(t *testing.T) {
+	t.Parallel()
+
+	dir := initGitRepo(t)
+	writeFile(t, filepath.Join(dir, "a.go"), "package a\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "initial")
+	gitCmd(t, dir, "checkout", "-b", "feature")
+	writeFile(t, filepath.Join(dir, "b.go"), "package b\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "feature")
+
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(async function() {
+		var origAnalyzeDiffAsync = globalThis.prSplit.analyzeDiffAsync;
+		var origApplyStrategy = globalThis.prSplit.applyStrategy;
+		var origCreateSplitPlanAsync = globalThis.prSplit.createSplitPlanAsync;
+		var origValidatePlan = globalThis.prSplit.validatePlan;
+
+		try {
+			globalThis.prSplit.analyzeDiffAsync = async function() {
+				return {
+					files: ['a.go'], fileStatuses: { 'a.go': 'M' },
+					error: null, baseBranch: 'main', currentBranch: 'feature'
+				};
+			};
+			globalThis.prSplit.applyStrategy = function() {
+				return { 'group1': ['a.go'] };
+			};
+			globalThis.prSplit.createSplitPlanAsync = async function() {
+				return {
+					baseBranch: 'main', sourceBranch: 'feature',
+					splits: [{ name: 'split/01', files: [], message: 'empty', order: 0, dependencies: [] }]
+				};
+			};
+			globalThis.prSplit.validatePlan = function() {
+				return { valid: false, errors: ['split split/01 has no files'] };
+			};
+
+			var s = initState('CONFIG');
+			globalThis.prSplit.runtime.baseBranch = 'main';
+			globalThis.prSplit.runtime.dir = '` + escapeJSPath(dir) + `';
+			globalThis.prSplit.runtime.strategy = 'directory';
+			globalThis.prSplit.runtime.mode = 'heuristic';
+			s.focusIndex = 3; // nav-next element
+
+			var r = sendKey(s, 'enter');
+			s = r[0];
+
+			if (!s.isProcessing) {
+				return 'FAIL: isProcessing should be true, state=' + s.wizardState + ', error=' + s.errorDetails;
+			}
+
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			r = update({type: 'Tick', id: 'analysis-poll'}, s);
+			s = r[0];
+
+			if (s.wizardState !== 'ERROR') {
+				return 'FAIL: expected ERROR, got ' + s.wizardState;
+			}
+			if (!s.errorDetails || s.errorDetails.indexOf('no files') < 0) {
+				return 'FAIL: errorDetails should mention validation, got: ' + s.errorDetails;
+			}
+
+			return 'OK';
+		} finally {
+			globalThis.prSplit.analyzeDiffAsync = origAnalyzeDiffAsync;
+			globalThis.prSplit.applyStrategy = origApplyStrategy;
+			globalThis.prSplit.createSplitPlanAsync = origCreateSplitPlanAsync;
+			globalThis.prSplit.validatePlan = origValidatePlan;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("analysis async validation failure: %v", raw)
+	}
+}
+
+// TestChunk16_AnalysisAsync_NoSyncCallsRemain verifies that the old sync
+// analysis tick IDs are no longer handled by the update function.
+func TestChunk16_AnalysisAsync_NoSyncCallsRemain(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.isProcessing = true;
+
+		// Old tick IDs should be ignored (return [s, null]).
+		var oldTicks = ['analysis-step-0', 'analysis-step-1', 'analysis-step-2', 'analysis-step-3'];
+		for (var i = 0; i < oldTicks.length; i++) {
+			var r = update({type: 'Tick', id: oldTicks[i]}, s);
+			if (r[1] !== null) return 'FAIL: old tick ' + oldTicks[i] + ' should return null cmd';
+		}
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("no sync calls remain: %v", raw)
 	}
 }
 

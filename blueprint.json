@@ -75,6 +75,7 @@
       "T31: Convert automatedSplit pipeline to gitExecAsync — 8 async functions, 7 strategy fix() methods, heuristicFallback/resolveConflictsWithClaude, late-binding, 13 test files updated",
       "T32: Integration test baseline + fix — 5 async unit test regressions fixed, 7 VTerm tests fixed (-interactive=false + prompt pattern), baseline doc at scratch/integration-test-baseline.md, 49/49 packages PASS",
       "T33: tuiMux bootstrap verified — architecture connected (Go→JS injection → automatedSplit attach → pollClaudeScreenshot → renderClaudePane). Added hasChild() guards to pollClaudeScreenshot + 3 switchTo sites. 6 new tests.",
+      "T34: runAnalysisStep → async runAnalysisAsync + handleAnalysisPoll. analyzeDiffAsync/createSplitPlanAsync replace sync. 100ms poll. 9 new tests. Zero blocking calls from TUI tick handlers.",
       "T61-old: mcpCallback.waitForAsync() — non-blocking Promise-based MCP tool wait with aliveCheck trampoline, 9 tests, 47/47 pass",
       "T62-old: Pipeline async conversion — waitForLogged dual-path, step callbacks async, spawn/restart async, handleRestartClaudePoll, scroll keys, 485 tests pass"
     ],
@@ -156,7 +157,8 @@
         "All analysis-related tests pass",
         "Zero remaining calls to sync analyzeDiff/applyStrategy/createSplitPlan from TUI tick handlers (verified by grep)"
       ],
-      "status": "Not Started",
+      "status": "Done",
+      "deliverables": "Replaced sync runAnalysisStep with async runAnalysisAsync + handleAnalysisPoll. analyzeDiffAsync and createSplitPlanAsync used instead of sync versions. 100ms poll tick for responsive spinner. Cancel checks between all steps. 9 new tests (4 poll-state + 4 async-flow + 1 no-sync-calls). Old analysis-step-0..3 tick IDs removed. 49/49 packages pass.",
       "context": {
         "files": [
           "internal/command/pr_split_16_tui_core.js:1938 (runAnalysisStep — the blocking function)",

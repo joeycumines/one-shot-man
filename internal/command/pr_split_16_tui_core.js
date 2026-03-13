@@ -639,20 +639,11 @@
                 return handleMouseClick(msg, s);
             }
 
-            // Tick-based async analysis steps.
-            // Each step runs synchronously but yields between steps for rendering and cancel.
+            // Tick-based polling and execution steps.
             if (msg.type === 'Tick') {
-                if (msg.id === 'analysis-step-0') {
-                    return runAnalysisStep(s, 0);
-                }
-                if (msg.id === 'analysis-step-1') {
-                    return runAnalysisStep(s, 1);
-                }
-                if (msg.id === 'analysis-step-2') {
-                    return runAnalysisStep(s, 2);
-                }
-                if (msg.id === 'analysis-step-3') {
-                    return runAnalysisStep(s, 3);
+                // Heuristic analysis polling (async Promise+poll pattern).
+                if (msg.id === 'analysis-poll') {
+                    return handleAnalysisPoll(s);
                 }
                 // Execution steps.
                 if (msg.id === 'exec-step-0') {
@@ -1927,118 +1918,141 @@
             s.wizard.transition('CONFIG');
         }
 
-        // Dispatch first analysis step via tick to yield for rendering.
-        // Each step runs on the next tick, allowing BubbleTea to render
-        // progress between steps and letting the user cancel with Ctrl+C.
-        return [s, tea.tick(1, 'analysis-step-0')];
+        // Launch all analysis steps as an async pipeline on the event loop.
+        // The Promise resolves when all steps complete. We poll for
+        // completion via tea.tick so BubbleTea can render progress, animate
+        // the spinner, and let the user cancel with Ctrl+C.
+        s.analysisRunning = true;
+        s.analysisError = null;
+        runAnalysisAsync(s).then(
+            function() {
+                s.analysisRunning = false;
+            },
+            function(err) {
+                s.analysisError = (err && err.message) ? err.message : String(err);
+                s.analysisRunning = false;
+            }
+        );
+
+        // Poll at 100ms for responsive spinner animation.
+        return [s, tea.tick(100, 'analysis-poll')];
     }
 
-    // runAnalysisStep: Runs a single analysis step synchronously, then
-    // dispatches the next step via tick. Each step blocks the event loop
-    // for its duration (~1-5s), but between steps the UI can render and
-    // the user can cancel.
-    function runAnalysisStep(s, stepIdx) {
-        // If processing was cancelled (e.g., user hit Ctrl+C between steps),
-        // bail out without running the step.
-        if (!s.isProcessing) {
-            return [s, null];
-        }
-
-        switch (stepIdx) {
-        case 0: {
-            // Step 1: Analyze diff.
-            s.analysisSteps[0].active = true;
-            var analysisStart = Date.now();
-            try {
-                st.analysisCache = prSplit.analyzeDiff({ baseBranch: prSplit.runtime.baseBranch });
-            } catch (e) {
-                s.isProcessing = false;
-                s.errorDetails = 'Analysis failed: ' + (e.message || String(e));
-                s.wizardState = 'ERROR';
-                return [s, null];
-            }
-            s.analysisSteps[0].done = true;
-            s.analysisSteps[0].active = false;
-            s.analysisSteps[0].elapsed = Date.now() - analysisStart;
-            s.analysisProgress = 0.25;
-
-            if (st.analysisCache.error) {
-                s.isProcessing = false;
-                s.errorDetails = st.analysisCache.error;
-                s.wizardState = 'ERROR';
-                return [s, null];
-            }
-            if (!st.analysisCache.files || st.analysisCache.files.length === 0) {
-                s.isProcessing = false;
-                s.errorDetails = 'No changes found between branches.';
-                s.wizardState = 'CONFIG';
-                return [s, null];
-            }
-
-            // Yield for render, then dispatch step 1.
-            return [s, tea.tick(1, 'analysis-step-1')];
-        }
-        case 1: {
-            // Step 2: Group files.
-            s.analysisSteps[1].active = true;
-            var groupStart = Date.now();
-            st.groupsCache = prSplit.applyStrategy(
-                st.analysisCache.files, prSplit.runtime.strategy);
-            s.analysisSteps[1].done = true;
-            s.analysisSteps[1].active = false;
-            s.analysisSteps[1].elapsed = Date.now() - groupStart;
-            s.analysisProgress = 0.5;
-
-            // Yield for render, then dispatch step 2.
-            return [s, tea.tick(1, 'analysis-step-2')];
-        }
-        case 2: {
-            // Step 3: Create plan.
-            s.analysisSteps[2].active = true;
-            var planStart = Date.now();
-            st.planCache = prSplit.createSplitPlan(st.groupsCache, {
-                baseBranch: prSplit.runtime.baseBranch,
-                sourceBranch: st.analysisCache.currentBranch,
-                branchPrefix: prSplit.runtime.branchPrefix,
-                verifyCommand: prSplit.runtime.verifyCommand,
-                fileStatuses: st.analysisCache.fileStatuses
-            });
-            s.analysisSteps[2].done = true;
-            s.analysisSteps[2].active = false;
-            s.analysisSteps[2].elapsed = Date.now() - planStart;
-            s.analysisProgress = 0.75;
-
-            // Yield for render, then dispatch step 3.
-            return [s, tea.tick(1, 'analysis-step-3')];
-        }
-        case 3: {
-            // Step 4: Validate.
-            s.analysisSteps[3].active = true;
-            var validation = prSplit.validatePlan(st.planCache);
-            s.analysisSteps[3].done = true;
-            s.analysisSteps[3].active = false;
-            s.analysisProgress = 1.0;
-
-            if (!validation.valid) {
-                s.isProcessing = false;
-                s.errorDetails = 'Plan validation failed: ' + validation.errors.join('; ');
-                s.wizardState = 'ERROR';
-                return [s, null];
-            }
-
+    // runAnalysisAsync: Runs all 4 analysis steps as an async function.
+    // Uses analyzeDiffAsync and createSplitPlanAsync (non-blocking I/O
+    // via exec.spawn), and calls applyStrategy/validatePlan inline (pure
+    // compute, sub-millisecond). Updates s.analysisSteps progress between
+    // each step so the poll handler can render progress.
+    async function runAnalysisAsync(s) {
+        // ── Step 0: Analyze diff (I/O-bound: git rev-parse, merge-base, diff) ──
+        s.analysisSteps[0].active = true;
+        var analysisStart = Date.now();
+        try {
+            st.analysisCache = await prSplit.analyzeDiffAsync({ baseBranch: prSplit.runtime.baseBranch });
+        } catch (e) {
             s.isProcessing = false;
+            s.errorDetails = 'Analysis failed: ' + (e.message || String(e));
+            s.wizardState = 'ERROR';
+            return;
+        }
+        s.analysisSteps[0].done = true;
+        s.analysisSteps[0].active = false;
+        s.analysisSteps[0].elapsed = Date.now() - analysisStart;
+        s.analysisProgress = 0.25;
 
-            // Transition wizard to PLAN_GENERATION then PLAN_REVIEW.
-            if (s.wizard.current === 'CONFIG') {
-                s.wizard.transition('PLAN_GENERATION');
-            }
-            s.wizard.transition('PLAN_REVIEW');
-            s.wizardState = 'PLAN_REVIEW';
+        // Check for cancellation between steps.
+        if (!s.isProcessing) return;
+
+        if (st.analysisCache.error) {
+            s.isProcessing = false;
+            s.errorDetails = st.analysisCache.error;
+            s.wizardState = 'ERROR';
+            return;
+        }
+        if (!st.analysisCache.files || st.analysisCache.files.length === 0) {
+            s.isProcessing = false;
+            s.errorDetails = 'No changes found between branches.';
+            s.wizardState = 'CONFIG';
+            return;
+        }
+
+        // ── Step 1: Group files (pure compute, non-blocking) ──
+        if (!s.isProcessing) return;
+        s.analysisSteps[1].active = true;
+        var groupStart = Date.now();
+        st.groupsCache = prSplit.applyStrategy(
+            st.analysisCache.files, prSplit.runtime.strategy);
+        s.analysisSteps[1].done = true;
+        s.analysisSteps[1].active = false;
+        s.analysisSteps[1].elapsed = Date.now() - groupStart;
+        s.analysisProgress = 0.5;
+
+        // ── Step 2: Create plan (I/O-bound: optional git rev-parse) ──
+        if (!s.isProcessing) return;
+        s.analysisSteps[2].active = true;
+        var planStart = Date.now();
+        st.planCache = await prSplit.createSplitPlanAsync(st.groupsCache, {
+            baseBranch: prSplit.runtime.baseBranch,
+            sourceBranch: st.analysisCache.currentBranch,
+            branchPrefix: prSplit.runtime.branchPrefix,
+            verifyCommand: prSplit.runtime.verifyCommand,
+            fileStatuses: st.analysisCache.fileStatuses
+        });
+        s.analysisSteps[2].done = true;
+        s.analysisSteps[2].active = false;
+        s.analysisSteps[2].elapsed = Date.now() - planStart;
+        s.analysisProgress = 0.75;
+
+        // ── Step 3: Validate plan (pure compute, non-blocking) ──
+        if (!s.isProcessing) return;
+        s.analysisSteps[3].active = true;
+        var validation = prSplit.validatePlan(st.planCache);
+        s.analysisSteps[3].done = true;
+        s.analysisSteps[3].active = false;
+        s.analysisProgress = 1.0;
+
+        if (!validation.valid) {
+            s.isProcessing = false;
+            s.errorDetails = 'Plan validation failed: ' + validation.errors.join('; ');
+            s.wizardState = 'ERROR';
+            return;
+        }
+
+        s.isProcessing = false;
+
+        // Transition wizard to PLAN_GENERATION then PLAN_REVIEW.
+        if (s.wizard.current === 'CONFIG') {
+            s.wizard.transition('PLAN_GENERATION');
+        }
+        s.wizard.transition('PLAN_REVIEW');
+        s.wizardState = 'PLAN_REVIEW';
+    }
+
+    // handleAnalysisPoll: Called every 100ms to check if the async
+    // analysis pipeline has completed. Updates spinner animation and
+    // handles cancellation.
+    function handleAnalysisPoll(s) {
+        // If cancelled (Ctrl+C), stop polling.
+        if (!s.isProcessing && !s.analysisRunning) {
             return [s, null];
         }
-        default:
+
+        // Still running — poll again for spinner animation.
+        if (s.analysisRunning) {
+            return [s, tea.tick(100, 'analysis-poll')];
+        }
+
+        // Pipeline completed. Check for error set by .then() rejection.
+        if (s.analysisError) {
+            s.isProcessing = false;
+            s.errorDetails = s.analysisError;
+            s.wizardState = 'ERROR';
             return [s, null];
         }
+
+        // Success or handled inline (error/cancel paths set state directly).
+        // The async function already transitioned the wizard state.
+        return [s, null];
     }
 
     // startAutoAnalysis: Dispatches the full automated pipeline (Claude

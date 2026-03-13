@@ -28,15 +28,19 @@
     },
     {
       "warning": "exec.spawn() returns a Promise-based ChildHandle with stdout/stderr ReadableStreams and await-able wait(). This is the REQUIRED interface for non-blocking subprocess operations in async JS contexts. exec.execv() is ONLY acceptable in REPL mode or pre-BubbleTea contexts."
+    },
+    {
+      "warning": "tuiMux is the global Mux instance connecting the TUI to the Claude child process. It is created Go-side (pr_split.go) and injected as a JS global. pollClaudeScreenshot() reads tuiMux.childScreen() for ANSI. writeToChild() sends keyboard input. These MUST be connected end-to-end for the Claude pane to function."
     }
   ],
   "mandatoryDirectives": {
     "contextManagement": "Tasks are sequential. Complete one fully (including Rule of Two + commit) before starting the next. Each task is self-contained. Break work into manageable units.",
     "claudeIntegrationMandate": "The core value proposition of osm pr-split is DEEP Claude integration with an interactive, muxed terminal pane embedded in the TUI. Every wizard phase must surface Claude's capabilities: prompting, classification, plan review feedback, error diagnosis, conflict resolution. The Claude pane must be ANSI-rendered, accept keyboard input when focused, and be switchable between screenshot mode and full passthrough.",
-    "eventLoopMandate": "The Goja event loop processes microtasks (Promise continuations) after each _updateFn call. ANY blocking call in a Promise continuation freezes the UI until the call returns. All subprocess calls in async contexts MUST use exec.spawn() + await. Heuristic tick handlers MUST yield between operations via tea.tick()."
+    "eventLoopMandate": "The Goja event loop processes microtasks (Promise continuations) after each _updateFn call. ANY blocking call in a Promise continuation freezes the UI until the call returns. All subprocess calls in async contexts MUST use exec.spawn() + await. Heuristic tick handlers MUST yield between operations via tea.tick().",
+    "integrationTestMandate": "Real-Claude integration tests MUST validate all Claude interaction flows end-to-end. Run via `make integration-test-prsplit`. These tests spawn real Claude processes, exercise muxed terminal pane rendering, verify ANSI output, and test keyboard input forwarding. They are the ultimate proof the system works."
   },
   "statusSection": {
-    "goalState": "A fully functional, production-quality pr-split TUI wizard with: (1) ANSI-rendered interactive Claude terminal pane with keyboard forwarding, (2) non-blocking async operations via exec.spawn throughout, (3) proper viewport/scrollbar on all screens, (4) working keyboard+mouse navigation matching super-document patterns, (5) real Claude integration with back-and-forth interaction in EVERY wizard phase, (6) embedded terminal output as BubbleTea component via termmux, (7) proper signal handling, (8) working error resolution flow with Claude diagnostics, (9) post-split verification with live CaptureSession output, (10) correct colors/layout with WCAG AA compliance, (11) comprehensive test coverage including real-Claude integration tests and VTerm observation tests, (12) exhaustive documentation of flows, architecture, and interactive patterns.",
+    "goalState": "A fully functional, production-quality pr-split TUI wizard with: (1) ANSI-rendered interactive Claude terminal pane with keyboard forwarding WORKING END-TO-END, (2) non-blocking async operations via exec.spawn throughout ALL TUI paths (heuristic AND auto), (3) proper viewport/scrollbar on all screens, (4) working keyboard+mouse navigation matching super-document patterns including in split-view mode, (5) real Claude integration with back-and-forth interaction in EVERY wizard phase, (6) embedded terminal output as BubbleTea component via termmux Mux with live ANSI rendering, (7) proper signal handling, (8) working error resolution flow with Claude diagnostics, (9) post-split verification with live CaptureSession output, (10) correct colors/layout with WCAG AA compliance, (11) comprehensive test coverage including real-Claude integration tests and VTerm observation tests, (12) exhaustive documentation of flows, architecture, and interactive patterns, (13) process output visible during all long-running operations via muxed CaptureSession panes.",
     "completedWork": [
       "T01: Real-Claude integration tests (classification accuracy, plan quality, MCP round-trip, fallback, conflict resolution)",
       "T02: Mock MCP pipeline tests (schema validation, error recovery, edge cases)",
@@ -69,8 +73,8 @@
       "T29: Claude pane keyboard input forwarding — keyToTermBytes, CLAUDE_RESERVED_KEYS, writeToChild, INPUT badge, scroll keys before PTY",
       "T30: gitExecAsync() non-blocking git helper — exec.spawn with parallel stream collection, same {stdout,stderr,code} shape, export",
       "T31: Convert automatedSplit pipeline to gitExecAsync — 8 async functions, 7 strategy fix() methods, heuristicFallback/resolveConflictsWithClaude, late-binding, 13 test files updated",
-      "T61: mcpCallback.waitForAsync() — non-blocking Promise-based MCP tool wait with aliveCheck trampoline, 9 tests, 47/47 pass",
-      "T62: Pipeline async conversion — waitForLogged dual-path, step callbacks async, spawn/restart async, handleRestartClaudePoll, scroll keys, 485 tests pass"
+      "T61-old: mcpCallback.waitForAsync() — non-blocking Promise-based MCP tool wait with aliveCheck trampoline, 9 tests, 47/47 pass",
+      "T62-old: Pipeline async conversion — waitForLogged dual-path, step callbacks async, spawn/restart async, handleRestartClaudePoll, scroll keys, 485 tests pass"
     ],
     "replanLog": [
       {
@@ -85,177 +89,209 @@
       },
       {
         "trigger": "Deep analysis of mcpcallbackmod/mcpcallback.go revealed jsWaitFor() blocks the Goja event loop goroutine for up to 5-30 minutes via for/select loop. This is the SINGLE MOST CRITICAL blocking bug. Also identified missing CHANGELOG task.",
-        "affectedTasks": "T61 (waitForAsync), T62 (pipeline conversion), T63 (CHANGELOG) added. T31 dependencies updated: T31 now also depends on T62 (pipeline must use waitForAsync). Execution order: T27→T28→T29→T30→T61→T62→T31→T32→T33→T34→T35→...→T63.",
-        "changes": "3 new tasks (T61-T63). T31 dependency chain corrected. Total: 63 tasks (26 Done, 37 Not Started)."
+        "affectedTasks": "T61 (waitForAsync), T62 (pipeline conversion), T63 (CHANGELOG) added. T31 dependencies updated.",
+        "changes": "3 new tasks (T61-T63). T31 dependency chain corrected."
+      },
+      {
+        "trigger": "FULL REWRITE — Hana-mandated deep architectural planning phase. User testing revealed: (1) ALL heuristic-path TUI operations still block event loop — async versions exist (T30/T31) but TUI calls sync versions, (2) tuiMux bootstrap is incomplete — Claude process not properly attached to Mux in TUI context, (3) Tab navigation breaks in split-view (toggles panes instead of cycling elements), (4) expand/collapse sets expandedVerifyBranch=null clearing ALL state, (5) Test Connection blocks on sync executor.resolve(), (6) No process output feedback during make/branch creation, (7) integration tests are shallow (no wizard+real-Claude, no Mux lifecycle, no TUI rendering). Observations object removed — each issue now an explicit task with code-verified descriptions and acceptance criteria.",
+        "affectedTasks": "All T32-T63 replaced with T32-T69 (38 tasks). Task descriptions rewritten with verified file:line references from actual code inspection. New tasks added: tuiMux bootstrap fix (T33), Claude default strategy (T42), stale branch recovery (T43), muxed process output (T44), Claude crash recovery integration tests (T55). Observations object removed entirely.",
+        "changes": "Complete rewrite of 38 pending tasks. Old tasks renumbered and resequenced by dependency. Integration test baseline (T32) remains first. All descriptions verified against actual code state via 4 subagent deep-analysis passes."
       }
     ]
   },
   "sequentialTasks": [
     {
-      "task": "you MUST expand all of these observations into ACTIONABLE IMPROVEMENTS / REFINEMENTS THAT FULLY ADDRESS ALL ISSUES",
-      "observations": [
-        "Heuristic analysis is the default, but claude should be the default if available",
-        "The test connection button does literally nothing (page 1)",
-        "EDIT: Actually, I will give you the benefit of the doubt for this one. This was an error state when I was on a branch with no commits yet. Acceptable behavior, somewhat. Page two just looks like this:\n\n \uD83D\uDD00 PR Split Wizard                               Step 7/7: Finalization  ⏱ 0:21\n────────────────────────────────────────────────────────────────────────────────\n  Error\n\ncannot determine current branch: fatal: ambiguous argument 'HEAD': unknown revis\nUse '--' to separate paths from revisions, like this:\n'git <command> [<revision>...] -- [<file>...]'\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n────────────────────────────────────────────────────────────────────────────────\n╭──────────╮  ╭──────────╮\n│  ← Back  │  │  Cancel  │                                         ● ● ● ● ● ● ●\n╰──────────╯  ╰──────────╯\n────────────────────────────────────────────────────────────────────────────────\nCtrl+] Claude  Ctrl+L Split             ? Help             ⏸\uFE0F Claude: no outpu",
-        "Clicking start (after fixing the issue above by actually checking out the branch) resulted in the event loop BLOCKING (it MUST NOT BLOCK, EVER) and the root cause has been confirmed - it was running the tests/checks/whatever (it was running make): 2026/03/13 09:43:01 ERROR bubbletea: Update: RunJSSync error, returning nil cmd (breaks tick loop!) error=\"operation timed out after 5s (consider increasing timeout or checking for infinite loops in JS code)\" msgType=Mouse\n                                                              2026/03/13 09:43:11 ERROR bubbletea: Update: RunJSSync error, returning nil cmd (breaks tick loop!) error=\"operation timed out after 5s (consider increasing timeout or checking for infinite loops in JS code)\" msgType=Key\n                                          2026/03/13 09:43:21 ERROR bubbletea: Update: RunJSSync error, returning nil cmd (breaks tick loop!) error=\"operation timed out after 5s (consider increasing timeout or checking for infinite loops in JS code)\" msgType=Mouse\n                        2026/03/13 09:43:31 ERROR bubbletea: Update: RunJSSync error, returning nil cmd (breaks tick loop!) error=\"operation timed out after 5s (consider increasing timeout or checking for infinite loops in JS code)\" msgType=Mouse\n      2026/03/13 09:43:41 ERROR bubbletea: Update: RunJSSync error, returning nil cmd (breaks tick loop!) error=\"operation timed out after 5s (consider increasing timeout or checking for infinite loops in JS code)\" msgType=Mouse\n\n\n",
-        "It did eventually render that it was 'processing' but there is no feedback to view or interact with the running make process or its output - this is a fatal flaw. Why not mux the bloody thing? PROPERLY. This is what I saw:  \uD83D\uDD00 PR Split Wizard                                  Step 1/7: Configure  ⏱ 4:06\n────────────────────────────────────────────────────────────────────────────────Repository                                                                        .                                                                             \nSource Branch                                                                     ╭────────────────────────────────────────────────────────────────────╮        │                                                                    │\n│  (auto-detect)                                                     │          │                                                                    │          ╰────────────────────────────────────────────────────────────────────╯          \nTarget Branch                                                                     ╭────────────────────────────────────────────────────────────────────╮        │                                                                    │          │  main                                                              │\n│                                                                    │          ╰────────────────────────────────────────────────────────────────────╯                                                                                          Strategy\n     ●    Auto                                                                  ▸   ○  Heuristic                                                                    ○  Directory\n                                                                                    ✓ Claude available                                                              Command:  ollama                                                                Provider: explicit\n  ╭─────────────────────╮                                                       │   Test Connection   │                                                         ╰─────────────────────╯                                                         \n▸ Advanced Options                                                                                                                                                                                                                              \n────────────────────────────────────────────────────────────────────────────────╭──────────╮                                                                    │  Cancel  │                                    ● ○ ○ ○ ○ ○ ○    Processing...  ╰──────────╯\n────────────────────────────────────────────────────────────────────────────────\nCtrl+] Claude  Ctrl+L Split             ? Help             ⏸\uFE0F Claude: no output",
-        "It failed to show any output in the 'split' pane, nor did it ever progress beyond here:  \uD83D\uDD00 PR Split Wizard                                  Step 1/7: Configure  ⏱ 7:40\n────────────────────────────────────────────────────────────────────────────────Repository                                                                        .                                                                             \nSource Branch                                                                     ╭────────────────────────────────────────────────────────────────────╮        │                                                                    │\n│  (auto-detect)                                                     │          │                                                                    │          ╰────────────────────────────────────────────────────────────────────╯          \nTarget Branch                                                                     ╭────────────────────────────────────────────────────────────────────╮        │                                                                    │          │  main                                                              │\n│                                                                    │          ╰────────────────────────────────────────────────────────────────────╯                                                                                          Strategy\n     ●    Auto                                                                  ───────────────────┤ ▲ Wizard · Tab: switch  Ctrl+L: close ├────────────────────╭──────────────────────────────────────────────────────────────────────────────╮\n│                                                                              ││                                                                              ││                                                                              ││                                                                              │\n│Waiting for Claude output...                                                  ││Ctrl+] to toggle Claude · Ctrl+L to close split                               ││                                                                              ││                                                                              │\n│                                                                              ││                                                                              ││                                                                              │╰──────────────────────────────────────────────────────────────────────────────╯\n────────────────────────────────────────────────────────────────────────────────╭──────────╮                                                                    │  Cancel  │                                    ● ○ ○ ○ ○ ○ ○    Processing...  ╰──────────╯\n────────────────────────────────────────────────────────────────────────────────\nCtrl+] Claude  Ctrl+L Split             ? Help             ⏸\uFE0F Claude: no output"
-      ]
-    },
-    {
-      "task": "T32: Convert heuristic-path runAnalysisStep to async Promise+poll pattern",
-      "description": "runAnalysisStep(s, stepIdx) is called from BubbleTea tick handlers and directly calls analyzeDiff() → gitExec() → blocks. Convert to Promise+poll pattern matching the automatedSplit approach. Changes: (a) Create startAnalysisAsync(s) that launches analyzeDiff as a Promise (using the async version from T31), stores the Promise in s.analysisPending, and starts polling via tea.tick(100, 'analysis-poll'). (b) Create handleAnalysisPoll(s) that checks if s.analysisPending has resolved: if no, continue polling; if yes, process result and advance to next step. (c) Each analysis step (0-3) becomes a Promise: step 0=analyzeDiff, step 1=applyStrategy, step 2=createSplitPlan, step 3=validatePlan. Each resolves into the next via chaining. (d) Update _updateFn to replace analysis-step-N ticks with analysis-poll. (e) Remove the old runAnalysisStep function. (f) Verify: during heuristic analysis, the UI remains responsive, spinner/progress updates, cancel works immediately.",
-      "acceptance": "Heuristic analysis path is fully non-blocking. Progress spinner updates during analysis. Cancel via Ctrl+C processes within 1 second during any analysis step. View renders correctly between steps. All analysis tests pass.",
+      "task": "T32: Run integration-test-prsplit target and document failure baseline",
+      "description": "Run `make integration-test-prsplit` with real Claude to establish a truthful baseline of what works and what is broken. This MUST come first — you cannot fix what you haven't measured. Steps: (a) Run `make integration-test-prsplit` and capture full output. (b) Run `make integration-test-prsplit-mcp` for mock tests. (c) Document each test: name, pass/fail, failure reason, blocking call if any. (d) If tests hang (expected due to blocking event loop), use timeout + kill to capture state. (e) Add any discovered failures as new tasks to the blueprint immediately. (f) Save baseline report to scratch/integration-test-baseline.md. (g) Run the full test suite `make make-all-with-log` and confirm non-integration tests pass.",
+      "acceptanceCriteria": [
+        "Baseline report exists at scratch/integration-test-baseline.md documenting every integration test name, pass/fail status, and failure reason",
+        "Full `make` (non-integration tests) passes with zero failures",
+        "Any newly discovered issues are added to blueprint.json as new tasks",
+        "Report includes specific failure analysis per test, including blocking call identification for hung tests"
+      ],
       "status": "Not Started",
       "context": {
         "files": [
-          "internal/command/pr_split_16_tui_core.js (runAnalysisStep — search for analysis-step, line ~700)"
+          "internal/command/pr_split_integration_test.go",
+          "internal/command/pr_split_local_integration_test.go",
+          "internal/command/pr_split_wizard_integration_test.go",
+          "project.mk (integration-test-prsplit, integration-test-prsplit-mcp targets)"
+        ],
+        "dependencies": []
+      }
+    },
+    {
+      "task": "T33: Fix tuiMux bootstrap — ensure Claude process attaches to Mux in TUI context",
+      "description": "The tuiMux global exists in JS (pr_split_16_tui_core.js:4) and has childScreen()/writeToChild() calls (lines 2783, 451), but the bootstrap path from Go → JS is incomplete: Claude is spawned by automatedSplit() pipeline (pr_split_10_pipeline.js) but NOT attached to the Mux that the TUI views read from. Steps: (a) In pr_split.go, verify the Mux instance created Go-side is injected as the `tuiMux` JS global. Trace the exact injection path. (b) In pr_split_10_pipeline.js automatedSplit(), after Claude executor.spawn(), call tuiMux.attach(handle) where handle is the Claude ChildHandle. (c) Verify the attachment survives across wizard states (Mux not garbage collected). (d) In pr_split_13_tui.js, verify the TUI init function properly sets up tuiMux references BEFORE pollClaudeScreenshot starts. (e) Add a guard in pollClaudeScreenshot (line 2773): if tuiMux is undefined or has no child, show 'No Claude attached' instead of silently failing. (f) Test: start wizard with auto strategy, verify childScreen() returns non-empty string after Claude spawns.",
+      "acceptanceCriteria": [
+        "tuiMux.childScreen() returns non-empty ANSI output from Claude after executor.spawn() completes",
+        "tuiMux.writeToChild() sends input to Claude PTY and input is received by the child process",
+        "Split-view (Ctrl+L) shows live Claude output rendered from childScreen()",
+        "pollClaudeScreenshot guard shows 'No Claude attached' when tuiMux is undefined or has no child"
+      ],
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "internal/command/pr_split.go (Go-side Mux creation and JS injection)",
+          "internal/command/pr_split_16_tui_core.js:4 (tuiMux global reference)",
+          "internal/command/pr_split_16_tui_core.js:2773 (pollClaudeScreenshot)",
+          "internal/command/pr_split_16_tui_core.js:451 (writeToChild usage)",
+          "internal/command/pr_split_10_pipeline.js (automatedSplit — Claude spawn point)",
+          "internal/command/pr_split_09_claude.js:87 (spawn method)",
+          "internal/command/pr_split_13_tui.js:81 (TUI init, WizardState constructor)",
+          "internal/builtin/termmux/module.go (WrapMux — JS binding for attach, childScreen, writeToChild)"
+        ],
+        "dependencies": []
+      }
+    },
+    {
+      "task": "T34: Convert runAnalysisStep to async Promise+poll pattern",
+      "description": "runAnalysisStep() at pr_split_16_tui_core.js:1938 is called from tick handlers and directly calls synchronous functions that block the event loop: analyzeDiff() at line 1951, applyStrategy() at line 1983, createSplitPlan() at line 1997, validatePlan() at line 2015. Async versions of these functions EXIST (created in T31) but are NOT called. Convert to Promise+poll: (a) Create startAnalysisAsync(s) that launches each step as a Promise using the *Async variants: analyzeDiffAsync(), applyStrategyAsync() (if exists, else wrap), createSplitPlanAsync(). Store Promise in s.analysisPending. Start polling via tea.tick(100, 'analysis-poll'). (b) Create handleAnalysisPoll(s) that checks if s.analysisPending has resolved: if no → continue polling; if yes → extract result, advance step, chain next async operation. (c) Update _updateFn tick dispatch: replace analysis-step-N ticks with analysis-poll. (d) Remove synchronous runAnalysisStep function. (e) Verify: during heuristic analysis, the UI remains responsive — send mouse/key events during analysis and confirm they process. Spinner updates between steps.",
+      "acceptanceCriteria": [
+        "Heuristic analysis path is fully non-blocking — UI remains responsive during all analysis steps",
+        "Progress spinner animates during analysis (frames cycle at ~100ms)",
+        "Cancel via Ctrl+C processes within 1 second during any analysis step",
+        "View renders correctly between analysis steps with proper state transitions",
+        "All analysis-related tests pass",
+        "Zero remaining calls to sync analyzeDiff/applyStrategy/createSplitPlan from TUI tick handlers (verified by grep)"
+      ],
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "internal/command/pr_split_16_tui_core.js:1938 (runAnalysisStep — the blocking function)",
+          "internal/command/pr_split_16_tui_core.js:1951 (analyzeDiff sync call)",
+          "internal/command/pr_split_16_tui_core.js:1983 (applyStrategy sync call)",
+          "internal/command/pr_split_16_tui_core.js:1997 (createSplitPlan sync call)",
+          "internal/command/pr_split_10_pipeline.js (analyzeDiffAsync, createSplitPlanAsync — async versions to use)"
         ],
         "references": [
-          "internal/command/pr_split_16_tui_core.js (startAutoAnalysis — Promise+poll pattern reference at line ~2049)"
+          "internal/command/pr_split_16_tui_core.js (startAutoAnalysis — existing Promise+poll pattern at ~2080)"
         ],
-        "dependencies": [
-          "T31"
-        ]
+        "dependencies": []
       }
     },
     {
-      "task": "T33: Convert heuristic-path runExecutionStep to per-branch yielding",
-      "description": "runExecutionStep(s, 0) calls prSplit.executeSplit() which creates ALL branches sequentially via blocking gitExec() calls. This blocks for total_branches × branch_creation_time. Convert to per-branch yielding. Changes: (a) Create executeSplitAsync(plan, config) async function that yields between branches: for each split, await gitExecAsync for checkout/apply/commit, then yield via await new Promise(resolve => setTimeout(resolve, 1)). (b) Launch as Promise in startExecutionAsync(s) (same Promise+poll pattern as T32). (c) Report per-branch progress to model state: s.executionBranchIdx, s.executionBranchTotal, s.executionCurrentBranch. (d) Update viewExecutionScreen to show per-branch progress during creation (not just after). (e) Polling checks s.executionRunning flag every 100ms. (f) Cancel aborts mid-branch and cleans up partial branches.",
-      "acceptance": "Branch creation shows per-branch progress in real-time. UI responsive during execution. Cancel mid-creation cleans up partial branches. All existing execution tests pass. Performance: no worse than 10% overhead vs blocking path.",
+      "task": "T35: Convert runExecutionStep to async with per-branch yielding",
+      "description": "runExecutionStep() at pr_split_16_tui_core.js calls prSplit.executeSplit(st.planCache) at line 2431 which creates ALL branches sequentially via blocking gitExec() calls. This blocks the event loop for 5-30 seconds total. executeSplitAsync() EXISTS (pr_split_05_execution.js:221) but is NOT called from TUI. Convert to async with per-branch progress: (a) Create startExecutionAsync(s) that launches executeSplitAsync (uses exec.spawn internally) as a Promise. Store in s.executionPending. Start polling via tea.tick(100, 'execution-poll'). (b) Modify executeSplitAsync to emit per-branch progress: after each branch, resolve a progress callback with {branchIdx, branchTotal, branchName, status}. Store in s.executionBranchIdx/Total/Current. (c) Update viewExecutionScreen to show per-branch progress bar during creation. (d) Replace the exec-step-0 tick handler with execution-poll dispatch. (e) Cancel mid-branch via s.executionCancelled flag checked between branches. (f) Also fix exec-step-2 (line ~2475): handleEquivCheckState() internally calls sync verifyEquivalence() — replace with verifyEquivalenceAsync() (pr_split_06_verification.js:596).",
+      "acceptanceCriteria": [
+        "Branch creation shows per-branch progress in real-time (branchIdx/branchTotal/branchName visible)",
+        "UI responsive during execution — cancel processes within 1 second",
+        "Equivalence check (verifyEquivalenceAsync) is non-blocking",
+        "All existing execution tests pass",
+        "Zero remaining calls to sync executeSplit/verifyEquivalence from TUI context (verified by grep)"
+      ],
       "status": "Not Started",
       "context": {
         "files": [
-          "internal/command/pr_split_16_tui_core.js (runExecutionStep — search for exec-step, line ~640)",
-          "internal/command/pr_split_05_execution.js (executeSplit)"
+          "internal/command/pr_split_16_tui_core.js:2431 (executeSplit sync call in runExecutionStep)",
+          "internal/command/pr_split_16_tui_core.js:2475 (verifyEquivalence sync call in handleEquivCheckState)",
+          "internal/command/pr_split_05_execution.js:221 (executeSplitAsync — exists, not called from TUI)",
+          "internal/command/pr_split_06_verification.js:596 (verifyEquivalenceAsync — exists, not called from TUI)"
+        ],
+        "dependencies": []
+      }
+    },
+    {
+      "task": "T36: Create resolveAsync and convert handleClaudeCheck to non-blocking",
+      "description": "handleClaudeCheck() at pr_split_16_tui_core.js:2049 calls executor.resolve() (pr_split_09_claude.js:32) which runs synchronous exec.execv(['which', 'claude']) and exec.execv(['claude', '--version']), blocking the TUI for 300-500ms+. No async version exists. Steps: (a) In pr_split_09_claude.js, create ClaudeCodeExecutor.prototype.resolveAsync = async function() that uses exec.spawn() + await for all subprocess calls (which, version checks). Return same {command, provider, version, error} shape. (b) In handleClaudeCheck (line 2049), replace synchronous resolve() call with Promise+poll pattern: var p = executor.resolveAsync(); s.claudeCheckPending = p; return tea.tick(50, 'claude-check-poll'). (c) Create handleClaudeCheckPoll that checks resolution. (d) Show animated status during check: 'Resolving binary...' → 'Checking version...' → 'Connected!' or error message. (e) Cache successful result in st.claudeExecutor to avoid re-checking on strategy toggle. (f) On failure, show actionable error: 'Claude not found — install claude CLI or set CLAUDE_COMMAND env var'.",
+      "acceptanceCriteria": [
+        "Test Connection button shows animated status progression ('Resolving binary...' → 'Checking version...' → 'Connected!')",
+        "TUI responsive during check — no freeze (resolveAsync uses exec.spawn)",
+        "Successful check shows Claude version string",
+        "Failed check shows actionable error: 'Claude not found — install claude CLI or set CLAUDE_COMMAND env var'",
+        "Cached result in st.claudeExecutor avoids redundant checks on strategy toggle",
+        "All Claude-related tests pass"
+      ],
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "internal/command/pr_split_16_tui_core.js:2049 (handleClaudeCheck — blocking resolve call)",
+          "internal/command/pr_split_16_tui_core.js:2058 (executor.resolve() sync call)",
+          "internal/command/pr_split_09_claude.js:32 (resolve method — uses exec.execv)",
+          "internal/command/pr_split_09_claude.js:87 (spawn method — reference for async pattern)"
+        ],
+        "dependencies": []
+      }
+    },
+    {
+      "task": "T37: Convert verifySplit fallback path to async in TUI",
+      "description": "runVerifyBranch() at pr_split_16_tui_core.js:2563 has a fallback path that calls sync prSplit.verifySplit() when CaptureSession is unavailable. verifySplitAsync() EXISTS (pr_split_06_verification.js:410) but is NOT called. Also cleanupBranches() may block. Steps: (a) Replace sync verifySplit(branchName, opts) at line 2563 with Promise: var p = prSplit.verifySplitAsync(branchName, opts); s.verifyPending = p; return tea.tick(100, 'verify-poll'). (b) Create handleVerifyPoll(s) that checks resolution and updates s.verifyResults. (c) Also audit cleanupBranches (pr_split_06_verification.js) — if called from TUI, use cleanupBranchesAsync(). (d) Verify: verification runs without freezing TUI. Progress indicator visible. Cancel works.",
+      "acceptanceCriteria": [
+        "Verification fallback path uses verifySplitAsync and is non-blocking",
+        "Progress indicator visible during verification",
+        "Cancel works during verification",
+        "All existing verification tests pass",
+        "Zero remaining sync verifySplit/cleanupBranches calls from TUI context (verified by grep)"
+      ],
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "internal/command/pr_split_16_tui_core.js:2563 (verifySplit sync fallback)",
+          "internal/command/pr_split_06_verification.js:410 (verifySplitAsync — exists)",
+          "internal/command/pr_split_06_verification.js:640 (cleanupBranchesAsync — exists)"
+        ],
+        "dependencies": []
+      }
+    },
+    {
+      "task": "T38: Fix split-view Tab behavior — cycle elements within active pane",
+      "description": "When split-view is enabled, Tab at pr_split_16_tui_core.js:~405 only toggles between wizard/claude panes (s.splitViewFocus). This completely breaks in-pane navigation — user cannot Tab between buttons, cards, or inputs within the wizard pane while split-view is open. Fix: (a) Change Tab behavior when splitViewFocus === 'wizard': Tab cycles through focusable elements within the wizard pane (same as normal mode). Only Ctrl+Tab or a dedicated key (e.g., Ctrl+`) switches between panes. (b) When splitViewFocus === 'claude': Tab still forwards to Claude PTY (standard terminal behavior). Ctrl+Tab switches back to wizard. (c) Update Ctrl+L (toggle split-view) to preserve focus state — don't reset focusIndex when toggling. (d) Update help overlay to show correct keybindings for split-view mode. (e) Add test: Tab in split-view cycles wizard elements, Ctrl+Tab switches panes.",
+      "acceptanceCriteria": [
+        "Tab cycles through wizard focusable elements while in split-view wizard focus",
+        "Ctrl+Tab (or designated key) switches between wizard and Claude panes",
+        "Claude pane receives Tab as terminal input when Claude pane is focused",
+        "Help overlay shows correct keybindings for split-view mode",
+        "Focus index preserved when toggling split-view (Ctrl+L)",
+        "Existing tab navigation tests pass"
+      ],
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "internal/command/pr_split_16_tui_core.js:~405 (split-view Tab handler — toggles panes)",
+          "internal/command/pr_split_16_tui_core.js:615 (normal Tab handler — cycles elements)",
+          "internal/command/pr_split_16_tui_core.js:1650 (getFocusElements — element arrays)"
         ],
         "references": [
-          "internal/command/pr_split_16_tui_core.js (startAutoAnalysis — Promise+poll pattern)"
+          "internal/command/super_document_script.js (focus cycling reference)"
         ],
-        "dependencies": [
-          "T31"
-        ]
+        "dependencies": []
       }
     },
     {
-      "task": "T34: Convert verifyEquivalence to non-blocking via CaptureSession",
-      "description": "verifyEquivalence() in pr_split_06_verification.js runs multiple blocking git commands (merge-base, diff-tree, tree comparisons). Convert to non-blocking. Changes: (a) Create verifyEquivalenceAsync() that uses gitExecAsync for all git operations. (b) Launch as Promise in the execution pipeline (polled with tick). (c) Report progress: s.equivCheckStatus = 'running' | 'pass' | 'fail'. (d) Show spinner/progress during equivalence check. (e) If equivalence check involves large diffs, stream output via CaptureSession for live display. (f) Update viewVerificationScreen to show progress during check.",
-      "acceptance": "Equivalence check runs without blocking UI. Progress indicator visible. Cancel works. Result displayed correctly (pass/fail with tree hashes). All existing verification tests pass.",
+      "task": "T39: Fix expand/collapse state management — per-item, not global reset",
+      "description": "Collapse handler at pr_split_16_tui_core.js:1314 sets s.expandedVerifyBranch = null, which clears ALL expanded state regardless of which branch was collapsed. The system only supports ONE expanded branch at a time. Also found at lines 2383, 2463. Fix: (a) If the design intent is single-expand (accordion): collapse handler should only clear if the clicked branch matches s.expandedVerifyBranch. Currently it always clears, which is correct for accordion — BUT the expand/collapse zone detection loop (lines 854-859) has a logic issue: the collapse check runs for ALL branches, not just the expanded one, meaning clicking in ANOTHER branch's collapse zone when it's not expanded still fires. Add guard: if (vbranch === s.expandedVerifyBranch) before collapse. (b) Also fix: Advanced Options expand/collapse on CONFIG screen — verify toggle state persists (s.showAdvanced). (c) Also fix: Split detail expansion on PLAN_REVIEW — verify s.expandedSplitIdx toggles correctly and only clears on the correct split. (d) Add explicit visual chevrons: ▶ (collapsed) / ▼ (expanded). (e) Ensure Escape collapses current expanded section before back-nav.",
+      "acceptanceCriteria": [
+        "Collapse handler only fires when the clicked branch matches s.expandedVerifyBranch",
+        "Accordion behavior correct — one expanded item at a time",
+        "Visual chevrons rendered: ▶ (collapsed) / ▼ (expanded)",
+        "Escape collapses current expanded section before triggering back-navigation",
+        "All expand/collapse interactions tested (verify, advanced options, split detail)"
+      ],
       "status": "Not Started",
       "context": {
         "files": [
-          "internal/command/pr_split_06_verification.js (verifyEquivalence — search for verifyEquivalence)",
-          "internal/command/pr_split_16_tui_core.js (exec-step-2 handler)"
+          "internal/command/pr_split_16_tui_core.js:1314 (expandedVerifyBranch = null — collapse)",
+          "internal/command/pr_split_16_tui_core.js:854 (verify-expand/collapse zone loop)",
+          "internal/command/pr_split_15_tui_views.js (viewExecutionScreen, viewConfigScreen, viewPlanReviewScreen — chevron rendering)"
         ],
-        "references": [
-          "internal/command/pr_split_00_core.js (gitExecAsync from T30)"
-        ],
-        "dependencies": [
-          "T30"
-        ]
+        "dependencies": []
       }
     },
     {
-      "task": "T35: Fix 'Test Connection' to actually test Claude MCP round-trip",
-      "description": "Current 'Test Connection' (handleClaudeCheck in pr_split_16_tui_core.js) only checks if Claude binary exists via executor.resolve(). This is useless — it doesn't verify Claude can actually communicate. Fix: (a) Change handleClaudeCheck to actually spawn Claude (with a minimal prompt), wait for MCP handshake, verify MCP callback registration, then kill the process. (b) Add a timeout (10s) for the connection test. (c) Show detailed status progression: 'Resolving binary...' → 'Spawning Claude...' → 'Testing MCP...' → 'Connected!' or error. (d) Display Claude provider type (claude CLI, ollama, etc.) and version. (e) Cache successful test — don't re-test on every strategy toggle. (f) On failure, show actionable error message (e.g., 'Claude not found — install claude CLI or configure CLAUDE_COMMAND'). (g) Make the process async (non-blocking) using the Promise+poll pattern. (h) Clean up spawned Claude process on completion or timeout.",
-      "acceptance": "Test Connection spawns Claude, verifies MCP handshake, and reports success with version info. Failure after timeout shows actionable error. UI responsive during test. Process cleaned up. Cached result avoids redundant tests.",
+      "task": "T40: Complete tab navigation across ALL screens — add missing focusable elements",
+      "description": "getFocusElements() at pr_split_16_tui_core.js:1650 defines focusable elements per screen. Audit reveals PLAN_EDITOR (line 565-576) only cycles split cards + buttons, missing file items within selected split. Systematic audit: (a) For each wizard state (CONFIG, PLAN_GENERATION, PLAN_REVIEW, PLAN_EDITOR, BRANCH_BUILDING, EQUIV_CHECK, FINALIZATION, ERROR_RESOLUTION), enumerate ALL interactive elements rendered by the corresponding view function. (b) Compare against getFocusElements() arrays. (c) Add missing elements: PLAN_EDITOR file checkboxes, CONFIG strategy radio buttons individually (not just the group), CONFIG text inputs, ERROR_RESOLUTION choice buttons. (d) Verify wrap-around at boundaries. (e) Verify Enter activates the correct action for each focused element. (f) Verify visual focus indicator renders on every focusable element. (g) Add test: iterate all screens, verify element count matches expected.",
+      "acceptanceCriteria": [
+        "Tab reaches every interactive element on every screen (CONFIG, PLAN_GENERATION, PLAN_REVIEW, PLAN_EDITOR, BRANCH_BUILDING, EQUIV_CHECK, FINALIZATION, ERROR_RESOLUTION)",
+        "Shift+Tab reverses focus order correctly",
+        "Wrap-around works at focus boundaries (last → first, first → last)",
+        "Enter activates correct action for each focused element",
+        "Visual focus indicator renders on every focusable element",
+        "Test verifies element count-parity between getFocusElements() and rendered interactive elements per screen"
+      ],
       "status": "Not Started",
       "context": {
         "files": [
-          "internal/command/pr_split_16_tui_core.js (handleClaudeCheck — search: check-claude, line ~2018)",
-          "internal/command/pr_split_09_claude.js (ClaudeCodeExecutor — resolve, spawn, isAvailable)"
-        ],
-        "references": [
-          "internal/command/pr_split_10_pipeline.js (MCP callback registration pattern)"
-        ],
-        "dependencies": [
-          "T30"
-        ]
-      }
-    },
-    {
-      "task": "T36: Auto-attach Claude pane when Claude spawns during wizard",
-      "description": "Currently the user must manually open the Claude split-view (Ctrl+L) to see Claude's output. Claude should auto-attach with visual notification. Changes: (a) When automatedSplit spawns Claude (in the pipeline), emit an event or set a flag: s.claudeAttached = true. (b) In handleAutoSplitPoll, detect s.claudeAttached transition (false→true) and auto-enable split-view if terminal has enough height (>=12 lines). (c) Show transient notification: 'Claude connected — Ctrl+L to toggle, Ctrl+] for full terminal'. (d) Auto-start screenshot polling. (e) If split-view was manually closed, don't re-open (track s.claudeManuallyDismissed). (f) Show a persistent Claude badge in status bar when Claude is running — clickable to open split-view.",
-      "acceptance": "When auto strategy spawns Claude, split-view opens automatically showing Claude output. Notification visible for 3s. Manually closing split-view stays closed. Status bar shows Claude badge. Badge clickable. Small terminals skip auto-open.",
-      "status": "Not Started",
-      "context": {
-        "files": [
-          "internal/command/pr_split_16_tui_core.js (handleAutoSplitPoll, status bar rendering)",
-          "internal/command/pr_split_15_tui_views.js (renderStatusBar — Claude badge)",
-          "internal/command/pr_split_10_pipeline.js (automatedSplit — Claude spawn point)"
-        ],
-        "references": [],
-        "dependencies": [
-          "T28"
-        ]
-      }
-    },
-    {
-      "task": "T37: Claude inline feedback during PLAN_GENERATION — detect questions, send answers",
-      "description": "During PLAN_GENERATION with auto strategy, Claude may ask clarification questions (visible in its terminal output). Enhance the experience: (a) In handleAutoSplitPoll, detect when Claude's screenshot contains question markers (?, '>', 'please', 'clarif', 'would you') combined with Claude being idle (no recent output for >2s). (b) When detected, show an inline prompt at the bottom of the analysis screen: 'Claude is asking: [last line]. Type your response:'. (c) User types response, Enter sends via tuiMux.write(response + '\\r'). (d) Claude pane auto-scrolls to show the interaction. (e) Track conversation in s.claudeConversations[] for history. (f) Add keyboard shortcut (Ctrl+R or Enter when question detected) to focus the input field.",
-      "acceptance": "Claude questions detected and surfaced inline without user opening split-view. User can respond directly. Response sent to Claude. Claude pane scrolls. History tracked. Non-blocking.",
-      "status": "Not Started",
-      "context": {
-        "files": [
-          "internal/command/pr_split_16_tui_core.js (handleAutoSplitPoll — Claude output analysis)",
-          "internal/command/pr_split_15_tui_views.js (viewAnalysisScreen — inline prompt)"
-        ],
-        "references": [
-          "internal/command/pr_split_16_tui_core.js (updateClaudeConvo — existing conversation pattern)"
-        ],
-        "dependencies": [
-          "T29",
-          "T36"
-        ]
-      }
-    },
-    {
-      "task": "T38: 'Ask Claude' on PLAN_REVIEW with inline response rendering",
-      "description": "The PLAN_REVIEW screen has an 'Ask Claude' button (T16). Enhance for richer interaction: (a) When clicked, open inline text input below the plan cards. (b) Pre-fill with context: 'Regarding split [selected split name]: '. (c) On Enter, send prompt to Claude via sendToHandle. (d) Show 'Waiting for Claude...' spinner. (e) Parse Claude's MCP response (waitForLogged with a 'planFeedback' tool) and display inline. (f) If Claude suggests plan modifications, offer 'Apply Suggestions' button that auto-edits the plan. (g) Track Q&A history in s.planQA[]. (h) Keep the conversation context (multiple rounds).",
-      "acceptance": "Ask Claude opens text input with context. Sends prompt. Claude response rendered inline in styled card. Apply Suggestions modifies plan. Multi-round conversation. Non-blocking. Cancel works.",
-      "status": "Not Started",
-      "context": {
-        "files": [
-          "internal/command/pr_split_16_tui_core.js (handleFocusActivate for ask-claude zone)",
-          "internal/command/pr_split_15_tui_views.js (viewPlanReviewScreen — Ask Claude section)"
-        ],
-        "references": [
-          "internal/command/pr_split_10_pipeline.js (sendToHandle, waitForLogged)"
-        ],
-        "dependencies": [
-          "T29",
-          "T36"
-        ]
-      }
-    },
-    {
-      "task": "T39: Claude context injection in ERROR_RESOLUTION with diagnostic info",
-      "description": "When entering ERROR_RESOLUTION, Claude should receive rich diagnostic context automatically. Changes: (a) On transition to ERROR_RESOLUTION, if Claude is alive: compile error context (error message, stack trace, affected branch, recent git log, build output). (b) Send context to Claude via sendToHandle as a structured prompt: 'A build error occurred in branch X: [error]. The build output was: [output]. Please analyze this error and suggest a fix.' (c) Wait for Claude's response via waitForLogged (with 'errorDiagnosis' tool). (d) Display Claude's diagnosis inline on the ERROR_RESOLUTION screen. (e) If Claude suggests fix commands, offer 'Apply Fix' button. (f) If applying fix: run commands via exec.spawn (non-blocking), show CaptureSession output, re-verify. (g) Show Claude's confidence level if available.",
-      "acceptance": "Error context auto-sent to Claude on ERROR_RESOLUTION entry. Claude's diagnosis displayed inline. Fix commands executable. Re-verification automatic. Non-blocking throughout. Fallback to manual if Claude unavailable.",
-      "status": "Not Started",
-      "context": {
-        "files": [
-          "internal/command/pr_split_16_tui_core.js (handleErrorResolutionState, handleErrorResolutionChoice)",
-          "internal/command/pr_split_15_tui_views.js (viewErrorResolutionScreen)",
-          "internal/command/pr_split_08_conflict.js (resolveConflicts)"
-        ],
-        "references": [
-          "internal/command/pr_split_10_pipeline.js (sendToHandle, waitForLogged)"
-        ],
-        "dependencies": [
-          "T31",
-          "T36"
-        ]
-      }
-    },
-    {
-      "task": "T40: Audit and fix tab navigation completeness across ALL screens",
-      "description": "Tab/Shift+Tab navigation must reach EVERY focusable element on EVERY screen. Systematic audit: (a) For each wizard state (CONFIG, PLAN_GENERATION, PLAN_REVIEW, PLAN_EDITOR, BRANCH_BUILDING, EQUIV_CHECK, FINALIZATION, ERROR_RESOLUTION), enumerate ALL interactive elements (buttons, toggles, strategy selectors, split cards, file checkboxes, expand/collapse toggles). (b) Compare against getFocusElements() arrays — identify any missing elements. (c) Add missing elements to getFocusElements(). (d) Verify wrap-around works at boundaries for every screen. (e) Verify Enter activates the correct action for every focused element. (f) Verify visual focus indicator renders on every focusable element. (g) Add test: TestTabNavigationCompleteness — iterate all screens, verify element count matches expected.",
-      "acceptance": "Tab reaches every interactive element on every screen. Shift+Tab reverses. Wrap-around works. Enter activates correct action. Visual focus visible on all. Test verifies count-parity between rendered elements and getFocusElements() arrays.",
-      "status": "Not Started",
-      "context": {
-        "files": [
-          "internal/command/pr_split_16_tui_core.js (getFocusElements — line ~1619)",
+          "internal/command/pr_split_16_tui_core.js:1650 (getFocusElements)",
           "internal/command/pr_split_15_tui_views.js (all viewXxxScreen functions)"
         ],
         "references": [
@@ -265,56 +301,221 @@
       }
     },
     {
-      "task": "T41: Fix expand/collapse interactions for verification output, advanced options, split details",
-      "description": "Expand/collapse UI pattern has multiple issues: clicking to expand works but collapse may not, scrolled viewports affect zone detection, and some expand toggles lack visual indicators. Audit and fix: (a) Verification output expand/collapse (verify-expand-{branch}/verify-collapse-{branch} zones): verify collapse actually clears s.expandedVerifyBranch. Test with scrolled viewport. (b) Advanced options on CONFIG screen: verify expand/collapse toggle for advanced settings panel. (c) Split detail expansion on PLAN_REVIEW: clicking a split card should expand/collapse file list. Verify s.expandedSplitIdx toggles correctly. (d) Add explicit collapse affordance (▼/▶ chevron, 'Show less' text). (e) Ensure Escape collapses any expanded section before navigating back. (f) Test all expand/collapse interactions via VTerm observation.",
-      "acceptance": "Every expand/collapse interaction works bidirectionally. Visual chevrons indicate state. Escape collapses before back-nav. Scrolled viewport doesn't break zone detection. All interaction paths tested.",
+      "task": "T41: Fix inline title editing + navigation conflict in plan editor",
+      "description": "In PLAN_EDITOR, when editing a split title inline (s.editorTitleEditing=true at pr_split_16_tui_core.js:305-341), pressing j/k still triggers handleListNav() (line ~1722) which changes s.selectedFileIdx. This corrupts the edit context: user types 'j' in title → title gets 'j' BUT selection also moves. If user presses Enter, title saves to the wrong split. Fix: (a) In handleListNav() at its definition (~line 1722) or at its call sites (~lines 485, 488), add guard: if (s.editorTitleEditing) return [s, null]; — skip navigation while editing. (b) Similarly guard all navigation keys (j/k/up/down/pgup/pgdn) when any inline edit is active. (c) Add Escape to cancel edit (restore original title). (d) Add Enter to confirm edit (save to correct split index, which is s.editorTitleEditingIdx, NOT s.selectedSplitIdx). (e) Verify: start editing split title → type characters → press j → only 'j' appears in title, no navigation. (f) Verify: start editing → press Escape → original title restored.",
+      "acceptanceCriteria": [
+        "Navigation keys (j/k/up/down/pgup/pgdn) disabled during inline title edit (s.editorTitleEditing guard in handleListNav)",
+        "Title editing confined to correct split via s.editorTitleEditingIdx (not s.selectedSplitIdx)",
+        "Escape cancels edit and restores original title",
+        "Enter confirms edit and saves to correct split index",
+        "No corruption of selection state during edit — typing 'j' only adds 'j' to title",
+        "Test verifies edit-nav isolation"
+      ],
       "status": "Not Started",
       "context": {
         "files": [
-          "internal/command/pr_split_16_tui_core.js (handleScreenMouseClick — verify-expand/collapse zones at ~line 1264)",
-          "internal/command/pr_split_15_tui_views.js (viewExecutionScreen, viewConfigScreen, viewPlanReviewScreen)"
-        ],
-        "references": [],
-        "dependencies": []
-      }
-    },
-    {
-      "task": "T42: Add loading indicators for all async operations",
-      "description": "Several async operations lack visual feedback beyond progress bars. Add spinners and contextual loading indicators: (a) Claude connection test: spinning dots with status text. (b) Analysis steps: per-step spinner (⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ cycle). (c) Branch creation: per-branch spinner. (d) Equivalence check: spinner with 'Checking tree hashes...' text. (e) Claude response wait: spinner with 'Waiting for Claude...' and elapsed time. (f) Implement spinner as BubbleTea tick-based animation (100ms cycle). (g) Add s.spinnerFrame counter, increment on tick.",
-      "acceptance": "Every async operation shows a spinner while waiting. Spinner animates smoothly (no flicker). Spinners stop immediately when operation completes. No render glitches. Consistent spinner style across all screens.",
-      "status": "Not Started",
-      "context": {
-        "files": [
-          "internal/command/pr_split_15_tui_views.js (all screen renderers)",
-          "internal/command/pr_split_16_tui_core.js (tick handlers)"
-        ],
-        "references": [
-          "internal/command/super_document_script.js (spinner patterns if any)"
+          "internal/command/pr_split_16_tui_core.js:305 (inline edit handler)",
+          "internal/command/pr_split_16_tui_core.js:~1722 (handleListNav definition — missing edit guard)",
+          "internal/command/pr_split_16_tui_core.js:~485 (handleListNav call site)"
         ],
         "dependencies": []
       }
     },
     {
-      "task": "T43: Claude output search — Ctrl+F in Claude pane with match highlighting",
-      "description": "Add search functionality to the Claude pane (similar to terminal search): (a) Ctrl+F when Claude pane is focused opens search bar at top of Claude pane. (b) Text input with live incremental search. (c) Matches highlighted with inverse colors in the rendered output. (d) n/N to cycle through matches. (e) Esc to close search. (f) Match count displayed. (g) Search works on plain-text buffer (from screenshot/output) even though rendered in ANSI. (h) Implement as overlay within the Claude pane bounds.",
-      "acceptance": "Ctrl+F opens search bar. Typing filters/highlights matches. n/N cycles. Esc closes. Match count displayed. Works on ANSI-rendered content without garbling. Performance acceptable on large buffers.",
+      "task": "T42: Default to Claude strategy when Claude is available",
+      "description": "Currently, prSplit.runtime.mode defaults to 'heuristic'. When Claude is available, it should default to 'auto' (Claude-powered). The user reported heuristic is the default even when Claude is available — this undermines the core value proposition. Fix: (a) In pr_split_16_tui_core.js createWizardModel() (line ~50), set initial strategy based on Claude availability: if prSplitConfig.claude or env CLAUDE_COMMAND → default to 'auto'. (b) On CONFIG screen load, trigger async Claude availability check (the resolveAsync from T36). If Claude found → auto-select 'auto' strategy. If not → auto-select 'heuristic'. (c) Show visual indication: '✓ Claude available — using auto strategy' or '⚠ Claude not found — using heuristic'. (d) User can still manually switch strategy. (e) Persist strategy preference if user manually changes it.",
+      "acceptanceCriteria": [
+        "Auto strategy selected by default when Claude is available (via resolveAsync check)",
+        "Heuristic strategy auto-selected as fallback when Claude is unavailable",
+        "Visual indication shows selected strategy and Claude status ('✓ Claude available' or '⚠ Claude not found')",
+        "Manual strategy override works and persists",
+        "No blocking during Claude detection"
+      ],
       "status": "Not Started",
       "context": {
         "files": [
-          "internal/command/pr_split_16_tui_core.js (Claude pane key handler)",
-          "internal/command/pr_split_15_tui_views.js (renderClaudePane — add search overlay)"
+          "internal/command/pr_split_16_tui_core.js:50 (createWizardModel — initial state)",
+          "internal/command/pr_split_16_tui_core.js:2049 (handleClaudeCheck — availability)"
         ],
-        "references": [],
         "dependencies": [
-          "T28",
-          "T29"
+          "T36"
         ]
       }
     },
     {
-      "task": "T44: Integration test: UI responsiveness during pipeline (cancel within 1s)",
-      "description": "Write integration tests that verify the BubbleTea UI remains responsive during asynchronous pipeline operations. These MUST exercise the non-blocking conversions from T31-T34. Tests: (a) TestIntegration_UIResponsiveDuringAnalysis: start heuristic analysis, send TickMsg during analysis, verify view renders (non-empty output). (b) TestIntegration_UIResponsiveDuringExecution: start branch creation, verify tick processing during creation. (c) TestIntegration_CancelDuringPipeline: start auto-split pipeline, send Ctrl+C after 500ms, verify cancel processed within 1s. (d) TestIntegration_ClaudeScreenshotDuringPipeline: start auto-split, verify claude-screenshot ticks produce output while pipeline runs. (e) All tests use mock MCP or minimal Claude to avoid external dependencies. (f) Add to integration-test-prsplit-mcp target.",
-      "acceptance": "Tests verify non-blocking behavior. Cancel processed within 1s. View renders during pipeline. Claude screenshots update during pipeline. All tests pass. No external dependencies (except mock Claude for test d).",
+      "task": "T43: Graceful error recovery for stale/missing branch on CONFIG screen",
+      "description": "User reported: on a branch with no commits yet, wizard jumps to Step 7/7 Finalization with error 'cannot determine current branch: fatal: ambiguous argument HEAD'. This is because the config validation at handleConfigState() calls rev-parse HEAD which fails on an empty repo/branch. Fix: (a) On CONFIG screen enter, check for empty repo state: git rev-parse HEAD fails → show friendly message 'No commits on current branch. Please make at least one commit before splitting.' (b) Don't jump to error state — stay on CONFIG, show inline warning. (c) If source branch is set to '(auto-detect)' and auto-detect fails, show dropdown of available branches from `git branch --list`. (d) Validate source branch existence before proceeding: git rev-parse --verify refs/heads/<branch>. (e) If target branch doesn't exist, offer to create it or show error. (f) Add graceful handle for detached HEAD state.",
+      "acceptanceCriteria": [
+        "Empty repo (git rev-parse HEAD fails) shows friendly inline warning on CONFIG screen instead of jumping to error state",
+        "Auto-detect failure for source branch shows dropdown of available branches from `git branch --list`",
+        "Source and target branch existence validated before proceeding (git rev-parse --verify)",
+        "Detached HEAD state handled gracefully",
+        "All CONFIG validation tests pass"
+      ],
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "internal/command/pr_split_16_tui_core.js (handleConfigState — branch validation)",
+          "internal/command/pr_split_00_core.js (gitExec for rev-parse)"
+        ],
+        "dependencies": [
+          "T34"
+        ]
+      }
+    },
+    {
+      "task": "T44: Mux process output into TUI during long-running operations",
+      "description": "User reported: after clicking Start, the TUI shows 'Processing...' but gives NO feedback about what's happening (e.g., `make` running). There's no way to see or interact with the running process. Fix by muxing process output into a CaptureSession rendered via a tabbed pane in the split-view area: (a) Add a tab bar to the split-view pane area: [Claude] [Output]. Switch via Ctrl+Shift+O or clicking tabs. (b) When analysis starts, create a CaptureSession capturing git command output, display in Output tab. (c) When execution starts (executeSplit), stream per-branch output via CaptureSession in Output tab. (d) When make/tests run during verification, stream make output. (e) Reuse renderClaudePane infrastructure for Output tab (ANSI rendering, scrolling, viewport). (f) Minimum terminal height guard: if <15 lines, show output tab but hide Claude tab. (g) tea.tick-based polling for output updates (100ms). (h) Register zone.mark() IDs for tab bar clicks and output scroll-wheel. (i) Allow scrolling through output history.",
+      "acceptanceCriteria": [
+        "All long-running operations (analysis, execution, verification) show live output in TUI via Output tab",
+        "Git commands, make output, and branch creation output all visible in Output tab",
+        "Output panel is scrollable with scroll history",
+        "ANSI rendering intact in Output tab (reuses renderClaudePane infrastructure)",
+        "Tab bar with [Claude] [Output] tabs switchable via Ctrl+Shift+O or click",
+        "No blocking — output polling via tea.tick at 100ms"
+      ],
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "internal/command/pr_split_16_tui_core.js (tick handlers for analysis, execution)",
+          "internal/command/pr_split_15_tui_views.js (renderClaudePane — reuse for output)",
+          "internal/builtin/termmux/module.go (CaptureSession bindings)"
+        ],
+        "dependencies": [
+          "T34",
+          "T35"
+        ]
+      }
+    },
+    {
+      "task": "T45: Auto-attach Claude pane when Claude spawns during wizard",
+      "description": "Currently the user must manually open the Claude split-view (Ctrl+L). User reported 'Waiting for Claude output...' with no visible output pane. When Claude spawns in the pipeline, the TUI should auto-open the split-view. Steps: (a) In the MCP pipeline (automatedSplit), after Claude executor spawns and is attached to tuiMux (T33), set a flag or emit an event: s.claudeJustSpawned = true. (b) In handleAutoSplitPoll, detect s.claudeJustSpawned and auto-enable split-view: s.splitViewEnabled = true; s.splitViewFocus = 'wizard'. Only if terminal height >= 12 lines. (c) Show transient notification: 'Claude connected — Ctrl+L to toggle, Ctrl+] for passthrough'. (d) If user manually closes split-view (s.claudeManuallyDismissed), don't re-open. (e) Show persistent Claude badge in status bar when Claude is running (clickable to re-open split-view). (f) On Claude crash/exit, auto-close split-view and show notification.",
+      "acceptanceCriteria": [
+        "Split-view auto-opens when Claude spawns (s.splitViewEnabled set to true)",
+        "Claude output visible immediately after spawn via childScreen()",
+        "Manual dismiss (Ctrl+L) respected — auto-open does not re-trigger after s.claudeManuallyDismissed",
+        "Status bar shows persistent clickable Claude badge when Claude is running",
+        "Small terminals (<12 lines) skip auto-open",
+        "Split-view auto-closes on Claude crash/exit with notification"
+      ],
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "internal/command/pr_split_16_tui_core.js (handleAutoSplitPoll, status bar)",
+          "internal/command/pr_split_15_tui_views.js (renderStatusBar — Claude badge)",
+          "internal/command/pr_split_10_pipeline.js (automatedSplit — Claude spawn point)"
+        ],
+        "dependencies": [
+          "T33"
+        ]
+      }
+    },
+    {
+      "task": "T46: Claude inline feedback during PLAN_GENERATION — detect questions, send answers",
+      "description": "During PLAN_GENERATION with auto strategy, Claude may ask clarification questions (visible in terminal output). Enhance: (a) In handleAutoSplitPoll, detect when Claude's screen (s.claudeScreen) contains question markers (?, '>', 'please', 'clarif', 'would you') combined with idle state (no output for >2s via tuiMux.lastActivityMs()). (b) When detected, show inline prompt at bottom of analysis screen: 'Claude asks: [last line]. Type response:'. (c) User types response, Enter sends via tuiMux.writeToChild(response + '\\r'). (d) Claude pane auto-scrolls. (e) Track conversation in s.claudeConversations[] for history. (f) Keyboard shortcut (Enter or Ctrl+R when question detected) to focus input. (g) Register zone.mark() IDs for the inline prompt input field and submit button. (h) Create 20+ representative Claude output snapshots as test fixtures for question-detection validation.",
+      "acceptanceCriteria": [
+        "Claude questions detected via question markers (?, '>', 'please', 'clarif', 'would you') combined with idle state (no output for >2s)",
+        "False-positive rate <10% on 20+ representative Claude output test fixtures",
+        "User can respond directly from wizard via inline prompt with Enter to send",
+        "Response sent to Claude via tuiMux.writeToChild(response + '\\r') and pane auto-scrolls",
+        "Conversation history tracked in s.claudeConversations[]",
+        "Detection non-blocking — only shown when confidence is high (idle >2s + question markers + no recent tool calls)",
+        "zone.mark() IDs registered for inline prompt input field and submit button"
+      ],
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "internal/command/pr_split_16_tui_core.js (handleAutoSplitPoll — Claude output analysis)",
+          "internal/command/pr_split_15_tui_views.js (viewAnalysisScreen — inline prompt)"
+        ],
+        "dependencies": [
+          "T33",
+          "T45"
+        ]
+      }
+    },
+    {
+      "task": "T47: Ask Claude on PLAN_REVIEW with inline response rendering",
+      "description": "PLAN_REVIEW has Ask Claude button (T16). Enhance: (a) When clicked, open inline text input below plan cards. Pre-fill with context: 'Regarding split [selected split name]: '. (b) On Enter, send prompt to Claude via sendToHandle. Show spinner. (c) Parse Claude MCP response (waitForLogged with 'planFeedback' tool) and display inline. (d) If Claude suggests modifications, offer 'Apply Suggestions' button. (e) processClaudeConvoResult() at ~line 3087 updates planCache but has NO UI state transition — fix: after plan update, refresh PLAN_REVIEW view and show diff of what changed. (f) Track Q&A history in s.planQA[]. (g) Keep conversation context (multiple rounds). (h) Register zone.mark() IDs for text input, submit button, and 'Apply Suggestions' button.",
+      "acceptanceCriteria": [
+        "Ask Claude button opens inline text input pre-filled with context ('Regarding split [selected split name]: ')",
+        "Prompt sent to Claude via sendToHandle and response rendered inline on PLAN_REVIEW screen",
+        "Apply Suggestions button modifies planCache with visible diff of what changed",
+        "Multi-round conversation supported with Q&A history in s.planQA[]",
+        "All operations non-blocking",
+        "Cancel works during Claude response wait",
+        "zone.mark() IDs registered for text input, submit button, and Apply Suggestions button"
+      ],
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "internal/command/pr_split_16_tui_core.js:~3087 (processClaudeConvoResult — plan update without UI transition)",
+          "internal/command/pr_split_15_tui_views.js (viewPlanReviewScreen — Ask Claude section)"
+        ],
+        "dependencies": [
+          "T33",
+          "T45"
+        ]
+      }
+    },
+    {
+      "task": "T48: Claude context injection in ERROR_RESOLUTION with diagnostic info",
+      "description": "When entering ERROR_RESOLUTION, Claude should receive diagnostic context automatically. Steps: (a) On transition to ERROR_RESOLUTION, if Claude is alive: compile error context (error message, stack trace, affected branch, recent git log, build output snapshot). (b) Send to Claude via sendToHandle as structured prompt. (c) Wait for Claude diagnosis via waitForLogged ('errorDiagnosis' tool). (d) Display Claude's diagnosis inline on ERROR_RESOLUTION screen. (e) If Claude suggests fix commands, offer 'Apply Fix' button. (f) Apply Fix: run commands via exec.spawn (non-blocking), show CaptureSession output, re-verify. (g) Fallback to manual if Claude unavailable. (h) Register zone.mark() IDs for 'Apply Fix' button and diagnosis display area.",
+      "acceptanceCriteria": [
+        "Error context (error message, stack trace, affected branch, recent git log, build output) auto-sent to Claude on ERROR_RESOLUTION entry",
+        "Claude's diagnosis displayed inline on ERROR_RESOLUTION screen",
+        "Apply Fix button runs suggested commands via exec.spawn (non-blocking) with CaptureSession output",
+        "Re-verification runs automatically after fix is applied",
+        "Fallback to manual resolution when Claude is unavailable",
+        "zone.mark() IDs registered for Apply Fix button and diagnosis display area"
+      ],
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "internal/command/pr_split_16_tui_core.js (handleErrorResolutionState, handleErrorResolutionChoice)",
+          "internal/command/pr_split_15_tui_views.js (viewErrorResolutionScreen)",
+          "internal/command/pr_split_08_conflict.js (resolveConflicts)"
+        ],
+        "dependencies": [
+          "T33",
+          "T35"
+        ]
+      }
+    },
+    {
+      "task": "T49: Loading indicators for all async operations — spinner animations",
+      "description": "Several async operations lack visual feedback. Add consistent spinner animations: (a) Claude connection test: ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ with status text. (b) Analysis steps: per-step spinner with step name. (c) Branch creation: per-branch spinner with branch name and count. (d) Equivalence check: spinner with 'Checking tree hashes...' text. (e) Claude response wait: spinner with 'Waiting for Claude...' and elapsed time counter. (f) Implement spinner as BubbleTea tick-based animation (100ms cycle). Add s.spinnerFrame counter, increment on spinner-tick. (g) Define spinner component function: spin(frame) → character. (h) Consistent style across all screens.",
+      "acceptanceCriteria": [
+        "Every async operation (Claude connection, analysis, branch creation, equiv check, Claude response wait) shows animated spinner",
+        "Spinner animates smoothly at 100ms frame rate with no flicker (Braille pattern: ⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏)",
+        "Spinner stops immediately on operation completion",
+        "Consistent spinner style across all screens",
+        "No render glitches during spinner animation"
+      ],
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "internal/command/pr_split_15_tui_views.js (all screen renderers — add spinner calls)",
+          "internal/command/pr_split_16_tui_core.js (tick handlers — add spinner-tick)"
+        ],
+        "dependencies": [
+          "T34",
+          "T35",
+          "T36"
+        ]
+      }
+    },
+    {
+      "task": "T50: Integration test: UI responsiveness during pipeline (cancel within 1s)",
+      "description": "Write integration tests that PROVE the BubbleTea UI remains responsive during async pipeline operations (validating T34-T37 conversions). Tests: (a) TestIntegration_UIResponsiveDuringAnalysis: start heuristic analysis, send TickMsg during analysis, verify view returns non-empty string (render works). (b) TestIntegration_UIResponsiveDuringExecution: start branch creation, send key events, verify they process (not queued/dropped). (c) TestIntegration_CancelDuringPipeline: start auto-split pipeline, send Ctrl+C after 500ms, verify cancel processed within 1s (measure wall time). (d) TestIntegration_SpinnerAnimatesDuringPipeline: start pipeline, capture 3 consecutive view renders, verify spinner frame changes between renders. (e) Use mock MCP or minimal setup to avoid Claude dependency. (f) Add to integration-test-prsplit-mcp make target.",
+      "acceptanceCriteria": [
+        "TestIntegration_UIResponsiveDuringAnalysis: view returns non-empty string during heuristic analysis",
+        "TestIntegration_UIResponsiveDuringExecution: key events process (not queued/dropped) during branch creation",
+        "TestIntegration_CancelDuringPipeline: Ctrl+C processed within 1s (measured wall time)",
+        "TestIntegration_SpinnerAnimatesDuringPipeline: 3 consecutive renders show different spinner frames",
+        "All tests pass without real Claude (mock MCP or minimal setup)",
+        "Tests added to integration-test-prsplit-mcp make target in project.mk"
+      ],
       "status": "Not Started",
       "context": {
         "files": [
@@ -325,50 +526,73 @@
           "internal/command/pr_split_wizard_integration_test.go (existing wizard test patterns)"
         ],
         "dependencies": [
-          "T32",
-          "T33",
-          "T34"
+          "T34",
+          "T35",
+          "T37"
         ]
       }
     },
     {
-      "task": "T45: VTerm integration tests for Claude pane ANSI rendering",
-      "description": "Write VTerm-based observation tests that verify Claude pane renders ANSI correctly. Tests: (a) TestVTerm_ClaudePaneANSIColors: spawn Claude-like process that produces colored output, verify Claude pane contains ANSI sequences in render. (b) TestVTerm_ClaudePanePlainFallback: spawn process with plain output, verify fallback rendering. (c) TestVTerm_ClaudePaneScrolling: produce large output, verify scroll offset changes with keyboard. (d) TestVTerm_ClaudePaneFocusIndicator: verify border color changes when focus switches. (e) All use CaptureSession-based VTerm observation (not real Claude).",
-      "acceptance": "ANSI rendering verified in VTerm screenshots. Scrolling works. Focus indicator visible. Plain fallback works. Tests use mock processes. All pass on unix.",
+      "task": "T51: VTerm integration tests for Claude pane ANSI rendering",
+      "description": "Write VTerm-based observation tests verifying Claude pane renders ANSI correctly via childScreen(). Tests: (a) TestVTerm_ClaudePaneANSIColors: spawn mock process that produces colored output (echo -e '\\033[31mRed\\033[0m'), attach to Mux, verify childScreen() output contains ANSI SGR sequences. (b) TestVTerm_ClaudePanePlainFallback: spawn plain text process, verify renderClaudePane shows [plain] tag and plain content. (c) TestVTerm_ClaudePaneScrolling: produce large output (>50 lines), verify s.claudeScrollOffset changes with PgUp/PgDn. (d) TestVTerm_ClaudePaneFocusIndicator: render split-view, toggle focus, verify border style changes. (e) All use CaptureSession with mock commands (no real Claude).",
+      "acceptanceCriteria": [
+        "TestVTerm_ClaudePaneANSIColors: childScreen() output contains ANSI SGR sequences from colored mock process",
+        "TestVTerm_ClaudePanePlainFallback: renderClaudePane shows [plain] tag for plain text process",
+        "TestVTerm_ClaudePaneScrolling: s.claudeScrollOffset changes with PgUp/PgDn on >50 line output",
+        "TestVTerm_ClaudePaneFocusIndicator: border style changes on focus toggle in split-view",
+        "All tests mock-only — no real Claude needed"
+      ],
       "status": "Not Started",
       "context": {
         "files": [
           "internal/command/pr_split_claude_pane_test.go (new file)"
         ],
         "references": [
-          "internal/command/pr_split_termmux_observation_test.go (VTerm test patterns)"
+          "internal/command/pr_split_termmux_observation_test.go (VTerm test patterns if exists)"
         ],
         "dependencies": [
-          "T28"
+          "T33"
         ]
       }
     },
     {
-      "task": "T46: VTerm integration tests for Claude pane keyboard input forwarding",
-      "description": "Write VTerm-based tests that verify keyboard input reaches Claude when Claude pane is focused. Tests: (a) TestVTerm_ClaudePaneKeyInput: open split-view, switch focus to Claude, type 'hello\\r', verify Claude process receives input (mock process echoes). (b) TestVTerm_ClaudePaneReservedKeys: verify Ctrl+L, Tab, Ctrl+C NOT forwarded to Claude. (c) TestVTerm_ClaudePanePaste: send multi-char paste, verify received as single chunk. (d) TestVTerm_ClaudePaneBackspace: verify backspace (\\x7f) forwarded correctly.",
-      "acceptance": "Keyboard input forwarding verified end-to-end via VTerm observation. Reserved keys stay with wizard. Paste works. Backspace works. Tests use mock echo process.",
+      "task": "T52: VTerm integration tests for Claude pane keyboard input forwarding",
+      "description": "Write VTerm-based tests verifying keyboard input reaches Claude process when Claude pane is focused. Tests: (a) TestVTerm_ClaudePaneKeyInput: open split-view, set focus to Claude, send key events ('hello\\r'), verify mock echo process received input (check output contains 'hello'). (b) TestVTerm_ClaudePaneReservedKeys: send Ctrl+L, Tab, Ctrl+C — verify NOT forwarded to Claude (wizard handles them). (c) TestVTerm_ClaudePaneArrowKeys: send Up/Down/Left/Right, verify ANSI escape sequences forwarded via keyToTermBytes(). (d) TestVTerm_ClaudePaneCtrlKeys: send Ctrl+A, Ctrl+E — verify forwarded as control chars.",
+      "acceptanceCriteria": [
+        "TestVTerm_ClaudePaneKeyInput: key events ('hello\\r') forwarded to mock echo process and output contains 'hello'",
+        "TestVTerm_ClaudePaneReservedKeys: Ctrl+L, Tab, Ctrl+C NOT forwarded to Claude (wizard handles them)",
+        "TestVTerm_ClaudePaneArrowKeys: Up/Down/Left/Right forwarded as correct ANSI escape sequences via keyToTermBytes()",
+        "TestVTerm_ClaudePaneCtrlKeys: Ctrl+A, Ctrl+E forwarded as control characters",
+        "All tests use mock echo process"
+      ],
       "status": "Not Started",
       "context": {
         "files": [
           "internal/command/pr_split_claude_pane_test.go"
         ],
         "references": [
-          "internal/command/pr_split_termmux_observation_test.go (VTerm test patterns)"
+          "internal/command/pr_split_16_tui_core.js:451 (writeToChild usage)",
+          "internal/command/pr_split_16_tui_core.js:2722 (keyToTermBytes)"
         ],
         "dependencies": [
-          "T29"
+          "T33",
+          "T38"
         ]
       }
     },
     {
-      "task": "T47: End-to-end Claude integration test: full wizard flow with real Claude",
-      "description": "Write a comprehensive integration test that exercises the FULL wizard flow with a real Claude process. This is the ultimate validation that everything works together: (a) TestIntegration_FullWizardFlowRealClaude: create test repo with 10+ files in 3 categories, start wizard with auto strategy, verify: Claude spawns, split-view auto-opens, classification completes, plan generated, plan review displays correct splits, execute splits, verify equivalence passes, finalization shows report. (b) Test must use real Claude (via integration flag) with the PRSPLIT test infrastructure. (c) Timeout: 10 minutes. (d) Assert intermediate states: analysis progress updates, Claude screenshot non-empty, plan has >=3 splits. (e) Skip cleanly when Claude unavailable.",
-      "acceptance": "Full wizard flow completes successfully with real Claude. All intermediate states verified. Claude pane rendered. Classification accurate. Equivalence passes. Takes <10min. Clean skip without Claude.",
+      "task": "T53: End-to-end Claude integration test: full wizard flow with real Claude",
+      "description": "The ULTIMATE validation test. Exercise the FULL wizard flow with a real Claude process. TestIntegration_FullWizardFlowRealClaude: (a) Create test repo with 10+ files in 3+ directories. (b) Start wizard with auto strategy. (c) Assert: Claude spawns (tuiMux.hasChild() returns true). (d) Assert: split-view auto-opens (s.splitViewEnabled is true after T45). (e) Assert: Claude pane shows ANSI output (childScreen() non-empty). (f) Assert: classification completes (s.analysisCache populated). (g) Assert: plan review displays >=3 splits. (h) Execute splits. (i) Assert: equivalence passes. (j) Assert: finalization shows report. (k) Total timeout: 10 min. (l) Skip cleanly when Claude unavailable. (m) Add to integration-test-prsplit make target.",
+      "acceptanceCriteria": [
+        "Test repo with 10+ files in 3+ directories created for test",
+        "Claude spawns and tuiMux.hasChild() returns true",
+        "Split-view auto-opens and Claude pane shows non-empty ANSI output via childScreen()",
+        "Classification completes with s.analysisCache populated containing >=3 splits",
+        "Execution succeeds and equivalence check passes",
+        "Finalization shows report",
+        "Total test timeout <10 minutes",
+        "Test cleanly skips when Claude is unavailable"
+      ],
       "status": "Not Started",
       "context": {
         "files": [
@@ -379,243 +603,422 @@
           "project.mk (integration-test-prsplit target)"
         ],
         "dependencies": [
-          "T31",
-          "T36"
+          "T33",
+          "T34",
+          "T35",
+          "T45"
         ]
       }
     },
     {
-      "task": "T48: Integration test: Claude pane auto-attach on spawn",
-      "description": "Test that Claude pane auto-attaches when Claude spawns. Tests: (a) TestIntegration_ClaudePaneAutoAttach: start auto strategy, verify split-view enables within 5s of Claude spawn. (b) TestIntegration_ClaudePaneAutoAttach_SmallTerminal: set terminal to 10 lines, verify split-view NOT auto-opened (too small). (c) TestIntegration_ClaudePaneManualDismiss: auto-attach, dismiss with Ctrl+L, verify not re-opened. (d) TestIntegration_ClaudeBadge: verify status bar shows Claude badge when running.",
-      "acceptance": "Auto-attach works on normal terminals. Skipped on small terminals. Manual dismiss respected. Badge visible. All use mock Claude.",
+      "task": "T54: Integration test: Claude pane auto-attach and lifecycle",
+      "description": "Test Claude pane auto-attach and full lifecycle. Tests: (a) TestIntegration_ClaudePaneAutoAttach: start auto strategy → verify split-view enables within 5s of Claude spawn. (b) TestIntegration_ClaudePaneAutoAttach_SmallTerminal: set terminal 10 lines → verify split-view NOT opened (too small). (c) TestIntegration_ClaudePaneManualDismiss: auto-attach, dismiss Ctrl+L, verify not re-opened. (d) TestIntegration_ClaudeBadge: verify status bar shows Claude badge. (e) TestIntegration_ClaudePaneExitCleanup: kill Claude process → verify split-view auto-closes, notification shown. (f) All use mock Claude process.",
+      "acceptanceCriteria": [
+        "TestIntegration_ClaudePaneAutoAttach: split-view enables within 5s of Claude spawn",
+        "TestIntegration_ClaudePaneAutoAttach_SmallTerminal: split-view NOT opened at 10-line terminal height",
+        "TestIntegration_ClaudePaneManualDismiss: dismissed split-view not re-opened automatically",
+        "TestIntegration_ClaudeBadge: status bar shows Claude badge",
+        "TestIntegration_ClaudePaneExitCleanup: split-view auto-closes and notification shows on Claude process exit",
+        "All tests use mock Claude process"
+      ],
       "status": "Not Started",
       "context": {
         "files": [
           "internal/command/pr_split_claude_pane_test.go"
         ],
-        "references": [
-          "internal/command/pr_split_wizard_integration_test.go"
-        ],
         "dependencies": [
-          "T36"
+          "T45"
         ]
       }
     },
     {
-      "task": "T49: Benchmark tests for view rendering performance",
-      "description": "Add benchmarks for view rendering: (a) Config/PlanReview/PlanReviewLarge(50 splits)/Execution/Finalization views. (b) Assert <16ms standard, <50ms large (60fps budget). (c) Track allocs/op. (d) Claude pane ANSI rendering benchmark. (e) Split-view rendering benchmark. (f) Add to project.mk bench-prsplit target.",
-      "acceptance": "Benchmarks exist and run. Standard views <16ms. Large <50ms. Can track regressions. project.mk target works.",
+      "task": "T55: Integration test: Claude crash recovery and restart flow",
+      "description": "T25 implemented crash detection but has NO tests. Write integration tests: (a) TestIntegration_ClaudeCrashDetection: spawn Claude mock that exits after 3s, verify s.claudeCrashDetected becomes true within 10s (5s health poll). (b) TestIntegration_ClaudeCrashRecovery_Restart: after crash detected, choose 'Restart Claude', verify new process spawns and attaches to Mux. (c) TestIntegration_ClaudeCrashRecovery_Fallback: after crash, choose 'Switch to Heuristic', verify strategy changes and pipeline continues. (d) TestIntegration_ClaudeCrashRecovery_Abort: after crash, choose 'Cancel', verify clean exit. (e) TestIntegration_ClaudeHeartbeat: verify 60s heartbeat check triggers when Claude becomes idle.",
+      "acceptanceCriteria": [
+        "TestIntegration_ClaudeCrashDetection: s.claudeCrashDetected becomes true within 10s of mock process exit",
+        "TestIntegration_ClaudeCrashRecovery_Restart: new process spawns and attaches to Mux after choosing 'Restart Claude'",
+        "TestIntegration_ClaudeCrashRecovery_Fallback: strategy changes to heuristic and pipeline continues after choosing 'Switch to Heuristic'",
+        "TestIntegration_ClaudeCrashRecovery_Abort: clean exit after choosing 'Cancel'",
+        "TestIntegration_ClaudeHeartbeat: 60s heartbeat check triggers when Claude becomes idle",
+        "All tests mock-based"
+      ],
       "status": "Not Started",
       "context": {
         "files": [
-          "internal/command/pr_split_benchmark_test.go (new file)"
-        ],
-        "references": [
-          "internal/termmux/vt/bench_test.go (benchmark patterns)"
+          "internal/command/pr_split_16_tui_core.js:~172 (claudeCrashDetected declaration), ~1410 (check), ~2190 (set)",
+          "internal/command/pr_split_claude_pane_test.go (new tests)"
         ],
         "dependencies": [
-          "T28"
+          "T33",
+          "T45"
         ]
       }
     },
     {
-      "task": "T50: Edge-case hardening tests for pipeline robustness",
-      "description": "Expand edge cases: (a) Empty diff. (b) Single file. (c) Only deletions. (d) Binary files. (e) 10,000 files. (f) Special chars in paths. (g) Branch collision. (h) Concurrent instances. All must handle gracefully with non-blocking operations.",
-      "acceptance": "All 8 pass. Empty=early exit. Single=1 split. Binary=graceful. Large=no OOM. Special=safe. Collision=error. Concurrent=rejected.",
+      "task": "T56: Claude output search — Ctrl+F in Claude pane with match highlighting",
+      "description": "Add search in Claude pane: (a) Ctrl+F when Claude focused opens search bar at top. (b) Live incremental search with match highlighting (inverse colors). (c) n/N to cycle matches. (d) Esc closes search. (e) Match count. (f) Search on plain-text buffer (screenshot) for matching, highlight in ANSI render. (g) Overlay within Claude pane bounds.",
+      "acceptanceCriteria": [
+        "Ctrl+F when Claude pane focused opens search bar at top of pane",
+        "Live incremental search with match highlighting (inverse colors) as user types",
+        "n/N cycles through matches forward/backward",
+        "Esc closes search bar",
+        "Match count displayed (e.g., '3/7 matches')",
+        "Search operates on plain-text buffer but highlights in ANSI render",
+        "Performance acceptable on large buffers (>1000 lines)"
+      ],
       "status": "Not Started",
       "context": {
         "files": [
-          "internal/command/pr_split_edge_hardening_test.go (new file)"
-        ],
-        "references": [],
-        "dependencies": []
-      }
-    },
-    {
-      "task": "T51: Fuzz tests for classification parsing and plan validation",
-      "description": "Add fuzz tests: (a) FuzzClassificationParsing. (b) FuzzSplitPlanValidation. (c) FuzzPromptRendering. (d) Seed from real responses. (e) Add fuzz-prsplit target to project.mk.",
-      "acceptance": "30s each no panics. >=5 seeds each. project.mk target. All stable.",
-      "status": "Not Started",
-      "context": {
-        "files": [
-          "internal/command/pr_split_fuzz_test.go (new file)",
-          "project.mk"
-        ],
-        "references": [
-          "internal/termmux/vt/ (fuzz test patterns)"
-        ],
-        "dependencies": []
-      }
-    },
-    {
-      "task": "T52: Drastically rewrite docs/pr-split-tui-design.md with Claude integration flows",
-      "description": "The design doc is stale and doesn't reflect the current architecture. DRASTIC rewrite: (a) Remove all outdated sections. (b) Add: 17-chunk architecture overview with dependency graph. (c) Add: ANSI Claude pane rendering architecture (Mux.ChildScreen → renderClaudePane → BubbleTea viewport). (d) Add: Claude pane input forwarding flow (keypress → tuiMux.write → child PTY). (e) Add: Non-blocking operation architecture (exec.spawn → Promise → poll pattern). (f) Add: Interactive Claude flows per wizard phase (CONFIG: test connection, PLAN_GENERATION: inline Q&A, PLAN_REVIEW: ask Claude, ERROR_RESOLUTION: diagnostics). (g) Add: State machine diagram with all transitions. (h) Add: Complete keyboard shortcuts table. (i) Add: Layout diagram for split-view (wizard + Claude + divider). (j) Add: Signal handling flow. (k) Reference all relevant source files. (l) Proofread for accuracy against current code.",
-      "acceptance": "Design doc accurately reflects current implementation including ANSI rendering, input forwarding, non-blocking operations, and Claude integration flows. No stale references. Useful for onboarding new developers. All source file references verified accurate.",
-      "status": "Not Started",
-      "context": {
-        "files": [
-          "docs/pr-split-tui-design.md"
-        ],
-        "references": [
-          "docs/architecture-pr-split-chunks.md",
-          "internal/command/pr_split.go",
-          "internal/command/pr_split_16_tui_core.js",
-          "internal/command/pr_split_15_tui_views.js"
+          "internal/command/pr_split_16_tui_core.js (Claude pane key handler)",
+          "internal/command/pr_split_15_tui_views.js (renderClaudePane — search overlay)"
         ],
         "dependencies": [
-          "T28",
-          "T29",
-          "T31",
-          "T36",
-          "T37",
-          "T38",
-          "T39"
+          "T33",
+          "T38"
         ]
       }
     },
     {
-      "task": "T53: Update docs/architecture-pr-split-chunks.md with current 17-chunk inventory",
-      "description": "Update: (a) All 17 chunks with line counts, exports, dependencies. (b) IIFE pattern documentation. (c) Dependency matrix. (d) Embed directives. (e) Adding-chunk guide. (f) Deadcode notes. (g) Note async patterns (exec.spawn, Promise+poll). (h) Note ANSI rendering path.",
-      "acceptance": "17 chunks accurately listed. Matrix complete. Guidelines actionable. Consistent with pr_split.go chunk loading. Async patterns documented.",
-      "status": "Not Started",
-      "context": {
-        "files": [
-          "docs/architecture-pr-split-chunks.md",
-          "internal/command/pr_split.go"
-        ],
-        "references": [],
-        "dependencies": [
-          "T31"
-        ]
-      }
-    },
-    {
-      "task": "T54: Audit REPL mode output.print gating",
-      "description": "Verify: (a) output.print only in REPL mode. (b) Mode selection gates correctly. (c) Document contract. (d) Verify that REPL commands still use synchronous gitExec (not the new gitExecAsync) since blocking is acceptable in REPL mode.",
-      "acceptance": "Verified unreachable from BubbleTea. Documented. grep confirms. REPL still uses gitExec.",
-      "status": "Not Started",
-      "context": {
-        "files": [
-          "internal/command/pr_split_16_tui_core.js (registerMode section)",
-          "internal/command/pr_split_14_tui_commands.js"
-        ],
-        "references": [],
-        "dependencies": [
-          "T31"
-        ]
-      }
-    },
-    {
-      "task": "T55: Session persistence — wizard state checkpoint and resume after crash/cancel",
-      "description": "Checkpoint system: (a) Save wizard state on every state transition (JSON to ~/.config/osm/pr-split-session.json). (b) On startup, check for session file — offer 'Resume' or 'Start Fresh'. (c) State includes: wizard state, plan cache, analysis cache, groups cache, execution progress, error context, Claude session info. (d) Delete session file on successful completion (FINALIZATION→DONE). (e) Session lock file to prevent concurrent pr-split instances on same repo. (f) Handle stale locks (check PID).",
-      "acceptance": "Cancel→restart offers Resume. Crash→restart offers Resume. Completion deletes session. Start Fresh clears session. Lock prevents concurrent. Stale locks handled.",
+      "task": "T57: Session persistence — wizard state checkpoint and resume after crash/cancel",
+      "description": "Checkpoint system: (a) Save state on every wizard state transition (JSON to ~/.config/osm/pr-split-session.json). (b) On startup, check for session file → offer 'Resume' or 'Start Fresh'. (c) Persist the COMPLETED RESULTS of async operations and the current step index — do NOT serialize in-flight Promises (they serialize to {}). On resume, skip completed steps and re-launch any incomplete async operation from the last checkpoint step-progress state. State includes: wizard state, plan cache, analysis cache, groups cache, execution step index and per-branch results, error context, Claude session info. (d) Delete on successful completion. (e) Session lock file (check PID). (f) Handle stale locks.",
+      "acceptanceCriteria": [
+        "Cancel→restart offers 'Resume' or 'Start Fresh' options",
+        "Crash→restart offers 'Resume' or 'Start Fresh' options",
+        "Successful completion deletes session file at ~/.config/osm/pr-split-session.json",
+        "'Start Fresh' clears all persisted state",
+        "Session lock file prevents concurrent instances (checks PID)",
+        "Stale lock files (dead PID) handled gracefully",
+        "Step-progress state (not in-flight Promises) properly serialized; resume re-enters at correct wizard step"
+      ],
       "status": "Not Started",
       "context": {
         "files": [
           "internal/command/pr_split_16_tui_core.js",
           "internal/command/pr_split_13_tui.js"
         ],
-        "references": [
-          "internal/session/",
-          "internal/storage/"
-        ],
-        "dependencies": []
+        "dependencies": [
+          "T34",
+          "T35",
+          "T36",
+          "T37"
+        ]
       }
     },
     {
-      "task": "T56: Multiple Claude session management — named sessions, switchable panes",
-      "description": "Support multiple named Claude sessions that can be switched between: (a) Add s.claudeSessions map keyed by name (e.g., 'analysis', 'review', 'resolution'). (b) Each session has its own CaptureSession/Mux attachment. (c) Claude pane shows session selector (tabs or dropdown). (d) Switch between sessions via Ctrl+1..9 or Tab when session selector is focused. (e) Kill/restart individual sessions. (f) Session-specific history. (g) Default: single 'main' session (backward compatible).",
-      "acceptance": "Multiple Claude sessions creatable and switchable. Each has independent stdout/buffer. Session selector visible. Ctrl+1..9 switches. Kill/restart per session. Single-session backward compatible.",
+      "task": "T58: Multiple Claude session management — named sessions, switchable panes",
+      "description": "Support multiple named Claude sessions: (a) s.claudeSessions map keyed by name ('analysis', 'review', 'resolution'). (b) Each has own CaptureSession/Mux. (c) Session selector tabs in Claude pane. (d) Ctrl+1..9 or Tab in selector. (e) Kill/restart individual sessions. (f) Session-specific history. (g) Default: single 'main' session (backward compatible).",
+      "acceptanceCriteria": [
+        "Multiple named Claude sessions creatable via s.claudeSessions map (keyed by name: 'analysis', 'review', 'resolution')",
+        "Each session has independent CaptureSession/Mux buffers",
+        "Session selector tabs visible in Claude pane",
+        "Session switching works via Ctrl+1..9 or Tab in selector",
+        "Individual sessions can be killed and restarted",
+        "Default single 'main' session provides backward compatibility"
+      ],
       "status": "Not Started",
       "context": {
         "files": [
           "internal/command/pr_split_16_tui_core.js",
           "internal/command/pr_split_15_tui_views.js (Claude pane session selector)"
         ],
-        "references": [
-          "internal/builtin/termmux/module.go"
-        ],
         "dependencies": [
-          "T28",
-          "T29"
+          "T33",
+          "T45"
         ]
       }
     },
     {
-      "task": "T57: Cross-platform validation — macOS native, Linux container, Windows",
-      "description": "Verify all functionality works across platforms: (a) Run make-all-with-log on macOS (native). (b) Run make-all-in-container on Linux (Docker). (c) Run make-all-run-windows on Windows (Docker). (d) File platform-specific bugs for any failures. (e) Fix all failures. (f) Verify CaptureSession works on all platforms. (g) Verify signal handling on all platforms. (h) Verify terminal rendering on all platforms.",
-      "acceptance": "All three platform targets pass. No platform-specific regressions. CaptureSession works. Signals work. Rendering correct.",
+      "task": "T59: Benchmark tests for view rendering performance",
+      "description": "Add benchmarks: (a) Config/PlanReview/PlanReviewLarge(50 splits)/Execution/Finalization views. (b) Assert <16ms standard, <50ms large (60fps). (c) Track allocs/op. (d) Claude pane ANSI rendering. (e) Split-view rendering. (f) project.mk bench-prsplit target.",
+      "acceptanceCriteria": [
+        "Benchmark tests exist for Config, PlanReview, PlanReviewLarge (50 splits), Execution, and Finalization views",
+        "Standard views render in <16ms (60fps target)",
+        "Large views (50+ splits) render in <50ms",
+        "Benchmarks track allocs/op for regression detection",
+        "bench-prsplit target added to project.mk"
+      ],
       "status": "Not Started",
       "context": {
         "files": [
-          "config.mk (make-all-with-log, make-all-in-container, make-all-run-windows)"
+          "internal/command/pr_split_benchmark_test.go (new file)",
+          "project.mk"
         ],
-        "references": [],
+        "dependencies": []
+      }
+    },
+    {
+      "task": "T60: Edge-case hardening tests",
+      "description": "Expand edge cases: (a) Empty diff. (b) Single file. (c) Only deletions. (d) Binary files. (e) 10,000 files. (f) Special chars in paths. (g) Branch collision. (h) Concurrent instances. All handled gracefully with non-blocking.",
+      "acceptanceCriteria": [
+        "Empty diff produces early exit with message",
+        "Single file produces exactly 1 split",
+        "Binary files handled gracefully (not diff-parsed)",
+        "10,000 files handled without OOM",
+        "Special characters in file paths handled safely",
+        "Branch name collision produces clear error message",
+        "Concurrent wizard instances rejected via lock",
+        "All 8 edge-case tests pass"
+      ],
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "internal/command/pr_split_edge_hardening_test.go (new file)"
+        ],
+        "dependencies": []
+      }
+    },
+    {
+      "task": "T61: Fuzz tests for classification parsing and plan validation",
+      "description": "Add fuzz tests: (a) FuzzClassificationParsing. (b) FuzzSplitPlanValidation. (c) FuzzPromptRendering. (d) Seed from real responses. (e) fuzz-prsplit target in project.mk.",
+      "acceptanceCriteria": [
+        "FuzzClassificationParsing, FuzzSplitPlanValidation, and FuzzPromptRendering run 30s each with no panics",
+        "Each fuzz test has >=5 seed corpus entries from real Claude responses",
+        "fuzz-prsplit target added to project.mk"
+      ],
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "internal/command/pr_split_fuzz_test.go (new file)",
+          "project.mk"
+        ],
+        "dependencies": []
+      }
+    },
+    {
+      "task": "T62: Audit REPL mode output.print gating",
+      "description": "Verify: (a) output.print only reached in REPL mode. (b) Mode selection gates correctly. (c) Document contract. (d) REPL still uses gitExec (sync is OK in REPL).",
+      "acceptanceCriteria": [
+        "output.print verified unreachable from BubbleTea code paths",
+        "Mode selection gate documented with contract description",
+        "Grep search confirms no output.print calls in TUI-reachable paths",
+        "REPL mode verified to use sync gitExec (acceptable for non-TUI context)"
+      ],
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "internal/command/pr_split_16_tui_core.js (registerMode section)",
+          "internal/command/pr_split_14_tui_commands.js"
+        ],
+        "dependencies": []
+      }
+    },
+    {
+      "task": "T63: Drastically rewrite docs/pr-split-tui-design.md with Claude integration flows",
+      "description": "Design doc is ~30% stale. DRASTIC rewrite: (a) Remove outdated sections. (b) 17-chunk architecture with dependency graph. (c) ANSI Claude pane rendering architecture (Mux.ChildScreen → renderClaudePane → viewport). (d) Claude input forwarding flow (keypress → tuiMux.writeToChild → PTY). (e) Non-blocking operation architecture (exec.spawn → Promise → poll). (f) Interactive Claude flows per wizard phase (CONFIG: test connection, PLAN_GENERATION: inline Q&A, PLAN_REVIEW: ask Claude, ERROR_RESOLUTION: diagnostics). (g) State machine with ALL transitions. (h) Keyboard shortcuts table (normal + split-view modes). (i) Layout diagram for split-view. (j) Signal handling flow. (k) All source file references verified.",
+      "acceptanceCriteria": [
+        "Design doc accurately reflects current 17-chunk architecture with dependency graph",
+        "No stale references — all file paths and function names verified against codebase",
+        "ANSI Claude pane rendering architecture documented (Mux.ChildScreen → renderClaudePane → viewport)",
+        "Non-blocking operation architecture documented (exec.spawn → Promise → poll)",
+        "Interactive Claude flows documented for every wizard phase",
+        "State machine with ALL transitions documented",
+        "Keyboard shortcuts table covers both normal and split-view modes"
+      ],
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "docs/pr-split-tui-design.md"
+        ],
+        "dependencies": [
+          "T33",
+          "T34",
+          "T35",
+          "T45",
+          "T46",
+          "T47",
+          "T48"
+        ]
+      }
+    },
+    {
+      "task": "T64: Update docs/architecture-pr-split-chunks.md with current chunk inventory",
+      "description": "Update: (a) All 17 chunks with line counts, exports, dependencies. (b) IIFE pattern. (c) Dependency matrix. (d) Embed directives. (e) Adding-chunk guide. (f) Async patterns (exec.spawn, Promise+poll). (g) ANSI rendering path.",
+      "acceptanceCriteria": [
+        "All 17 chunks listed with line counts, exports, and dependencies",
+        "Dependency matrix complete",
+        "Adding-chunk guidelines actionable and accurate",
+        "Chunk inventory consistent with pr_split.go embed directives",
+        "Async patterns (exec.spawn, Promise+poll) documented"
+      ],
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "docs/architecture-pr-split-chunks.md",
+          "internal/command/pr_split.go"
+        ],
         "dependencies": [
           "T34"
         ]
       }
     },
     {
-      "task": "T58: Render cycle performance profiling — find and fix hot paths",
-      "description": "Profile the TUI render cycle to identify and fix performance bottlenecks: (a) Add instrumentation to _viewFn to measure total render time. (b) Profile splitView rendering (both panes + divider). (c) Profile ANSI rendering in Claude pane. (d) Identify any O(n²) patterns in view rendering. (e) Optimize hot paths (cache computed values, reduce allocations). (f) Verify 60fps target (<16ms per frame) under normal load.",
-      "acceptance": "Render cycle instrumented. Hot paths identified. Optimized to <16ms standard, <50ms worst case. No O(n²) patterns. 60fps achievable.",
+      "task": "T65: Cross-platform validation (macOS, Linux, Windows)",
+      "description": "Run all targets on all platforms: (a) make-all-with-log (macOS native). (b) make-all-in-container (Linux Docker). (c) make-all-run-windows (Windows Docker). (d) File and fix platform bugs. (e) CaptureSession works everywhere. (f) Signals work everywhere. (g) Rendering correct everywhere.",
+      "acceptanceCriteria": [
+        "make-all-with-log passes on macOS",
+        "make-all-in-container passes on Linux (Docker)",
+        "make-all-run-windows passes on Windows (Docker)",
+        "CaptureSession works on all platforms",
+        "Signal handling works on all platforms",
+        "TUI rendering correct on all platforms"
+      ],
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "config.mk (make-all-with-log, make-all-in-container, make-all-run-windows)"
+        ],
+        "dependencies": [
+          "T37"
+        ]
+      }
+    },
+    {
+      "task": "T66: Render cycle performance profiling — find and fix hot paths",
+      "description": "Profile TUI render cycle: (a) Instrument _viewFn for render time. (b) Profile split-view rendering. (c) Profile ANSI Claude pane. (d) Find O(n²) patterns. (e) Optimize (cache computed values, reduce allocs). (f) Verify 60fps (<16ms/frame).",
+      "acceptanceCriteria": [
+        "Hot paths in _viewFn identified via render time instrumentation",
+        "Standard views optimized to <16ms render time",
+        "Worst-case views optimized to <50ms render time",
+        "No O(n²) patterns remain in view rendering",
+        "60fps achievable on standard terminal (verified by benchmark)"
+      ],
       "status": "Not Started",
       "context": {
         "files": [
           "internal/command/pr_split_16_tui_core.js (_viewFn)",
           "internal/command/pr_split_15_tui_views.js"
         ],
-        "references": [],
         "dependencies": [
-          "T49"
+          "T59"
         ]
       }
     },
     {
-      "task": "T59: Accessibility review — contrast ratios, keyboard-only workflow completeness",
-      "description": "Review and fix accessibility: (a) Re-verify WCAG AA contrast ratios for new ANSI-rendered content. (b) Verify complete keyboard-only workflow (no mouse required at any point). (c) Add descriptive alt-text equivalents for icons/badges (accessible via ? help). (d) Verify screen reader compatibility hints (if applicable to TUI). (e) Test with high-contrast terminal theme. (f) Test with light terminal theme.",
-      "acceptance": "All contrast ratios pass WCAG AA. Complete keyboard-only workflow. High-contrast and light themes render correctly. Help text describes all visual indicators.",
+      "task": "T67: Accessibility review — contrast ratios, keyboard-only workflow",
+      "description": "Review and fix: (a) WCAG AA contrast ratios for new ANSI content. (b) Complete keyboard-only workflow (no mouse needed). (c) Descriptive alt-text for icons/badges (via ? help). (d) High-contrast terminal theme test. (e) Light terminal theme test.",
+      "acceptanceCriteria": [
+        "All color pairs pass WCAG AA contrast ratios",
+        "Complete keyboard-only workflow verified (no mouse required for any operation)",
+        "High-contrast terminal theme renders correctly",
+        "Light terminal theme renders correctly",
+        "Help overlay describes all visual indicators and badges"
+      ],
       "status": "Not Started",
       "context": {
         "files": [
           "internal/command/pr_split_15_tui_views.js (COLORS, styles)"
         ],
-        "references": [],
         "dependencies": [
-          "T28",
           "T40"
         ]
       }
     },
     {
-      "task": "T60: Visual polish pass — smooth scrolling, transition animations, refinement",
-      "description": "Final visual polish: (a) Smooth scroll transitions (interpolated viewport jumps instead of instant). (b) Fade-in for overlay open (progressive render over 2-3 frames). (c) Consistent padding and alignment across all screens. (d) Icon consistency (all screens use same emoji/unicode style). (e) Whitespace balance: no cramped or sparse areas. (f) Final typography review: heading hierarchy, label styles, data formatting. (g) Screenshot documentation of every screen state for docs/.",
-      "acceptance": "Scroll transitions smooth. Overlays animate in. Padding consistent. Icons consistent. Typography clean. Screenshots captured for documentation.",
+      "task": "T68: Visual polish pass — smooth scrolling, transitions, refinement",
+      "description": "Final polish: (a) Smooth scroll transitions (interpolated viewport jumps over 2-3 frames via sequential tea.tick). (b) Progressive rendering for overlay open (character-reveal or color ramp over 2-3 frames, not opacity-based — terminals don't support opacity). (c) Consistent padding and alignment. (d) Icon consistency. (e) Whitespace balance. (f) Typography review. (g) Screenshot documentation for docs/.",
+      "acceptanceCriteria": [
+        "Smooth scroll transitions via interpolated viewport jumps over 2-3 frames using sequential tea.tick",
+        "Overlay open uses progressive rendering (character-reveal or color ramp over 2-3 frames)",
+        "Consistent padding and alignment across all screens",
+        "Icon usage consistent throughout",
+        "Typography clean and intentional",
+        "Screenshots captured and saved in docs/ for documentation"
+      ],
       "status": "Not Started",
       "context": {
         "files": [
           "internal/command/pr_split_15_tui_views.js",
           "internal/command/pr_split_16_tui_core.js"
         ],
-        "references": [],
         "dependencies": [
-          "T52"
+          "T63"
         ]
       }
     },
     {
-      "task": "T63: Update CHANGELOG.md with all changes from T27-T62",
-      "description": "Update CHANGELOG.md following Keep a Changelog 1.1.0 specification: (a) Add [Unreleased] section (or update existing). (b) 'Added' entries: Mux.ChildScreen ANSI rendering, Mux.WriteToChild input forwarding, Claude pane ANSI display, Claude pane keyboard interaction, gitExecAsync non-blocking git, waitForAsync non-blocking MCP wait, Claude auto-attach, Claude inline feedback, Claude search (Ctrl+F), session persistence, multiple Claude sessions. (c) 'Changed' entries: Pipeline converted to non-blocking, runAnalysisStep async, runExecutionStep per-branch yield, verifyEquivalence non-blocking, 'Test Connection' now tests real MCP, design docs rewritten. (d) 'Fixed' entries: Event loop blocking during pipeline, tab navigation gaps, expand/collapse interactions. (e) Proofread all entries for accuracy.",
-      "acceptance": "CHANGELOG.md follows Keep a Changelog format. All T27-T62 changes have entries. Entries are accurate. No stale content.",
+      "task": "T69: Claude interaction in PLAN_EDITOR — 'Ask Claude: should this file move?'",
+      "description": "PLAN_EDITOR currently has no Claude interaction, violating the mandate that EVERY wizard phase surfaces Claude capabilities. Add: (a) When a file is selected in the editor, show 'Ask Claude' option (keybinding: Ctrl+A or context menu). (b) Pre-fill prompt: 'Should [filename] be in split [current split] or would it fit better in [other split names]?'. (c) Send via sendToHandle. (d) Parse response and display inline: 'Claude suggests: move to [split name]'. (e) If user accepts, execute file move immediately (existing move-file infrastructure from T04). (f) Register zone.mark() for Ask Claude button in editor context. (g) Works only when Claude is alive; hidden otherwise.",
+      "acceptanceCriteria": [
+        "Ask Claude option available in PLAN_EDITOR when a file is selected (Ctrl+A or context menu)",
+        "Prompt pre-filled with contextual file and split information",
+        "Claude response rendered inline ('Claude suggests: move to [split name]')",
+        "Accept applies file move using existing move-file infrastructure from T04",
+        "Option hidden when Claude is unavailable",
+        "zone.mark() registered for Ask Claude button in editor context",
+        "All operations non-blocking"
+      ],
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "internal/command/pr_split_16_tui_core.js (PLAN_EDITOR handlers)",
+          "internal/command/pr_split_15_tui_views.js (viewPlanEditorScreen)"
+        ],
+        "dependencies": [
+          "T47"
+        ]
+      }
+    },
+    {
+      "task": "T70: Claude interaction in EQUIV_CHECK — tree-hash mismatch diagnosis",
+      "description": "EQUIV_CHECK phase has no Claude interaction. When equivalence check shows a tree-hash mismatch, Claude should diagnose the issue before routing to ERROR_RESOLUTION. Add: (a) If equiv check fails (tree hashes don't match), and Claude is alive: send diagnostic context to Claude with diff of expected vs actual trees. (b) Claude analyzes mismatch and suggests root cause (e.g., 'File X was in the source branch but not in any split branch'). (c) Display diagnosis inline on EQUIV_CHECK screen. (d) Offer 'Fix Automatically' if Claude suggests a specific fix (e.g., add missing file to a split). (e) Register zone.mark() for diagnosis area and Fix button. (f) Fallback to ERROR_RESOLUTION if Claude unavailable or no fix suggested.",
+      "acceptanceCriteria": [
+        "Equivalence mismatch sends diff of expected vs actual trees to Claude for diagnosis",
+        "Claude's root cause analysis displayed inline on EQUIV_CHECK screen",
+        "Fix Automatically button available when Claude suggests a specific fix",
+        "Fallback to ERROR_RESOLUTION when Claude is unavailable or no fix suggested",
+        "zone.mark() IDs registered for diagnosis area and Fix button",
+        "All operations non-blocking"
+      ],
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "internal/command/pr_split_16_tui_core.js (handleEquivCheckState)",
+          "internal/command/pr_split_15_tui_views.js (viewEquivCheckScreen)"
+        ],
+        "dependencies": [
+          "T35",
+          "T48"
+        ]
+      }
+    },
+    {
+      "task": "T71: Claude interaction in FINALIZATION — draft PR descriptions",
+      "description": "FINALIZATION phase shows a summary report but has no Claude interaction. Add: (a) After finalization report renders, if Claude is alive, automatically send split plan summary to Claude and request PR description drafts for each split branch. (b) Display drafts inline below each split summary: 'Suggested PR Title: [title]\\nSuggested PR Body: [body]'. (c) 'Copy to Clipboard' button per draft. (d) Option to edit drafts inline before copying. (e) Register zone.mark() for copy buttons and edit areas. (f) Works asynchronously — report shows immediately, drafts populate as Claude responds.",
+      "acceptanceCriteria": [
+        "Claude drafts PR title and body for each split branch after finalization report renders",
+        "Drafts rendered inline below each split summary",
+        "Copy-to-clipboard button works per draft",
+        "Drafts editable inline before copying",
+        "zone.mark() IDs registered for copy buttons and edit areas",
+        "Report shows immediately; drafts populate asynchronously as Claude responds"
+      ],
+      "status": "Not Started",
+      "context": {
+        "files": [
+          "internal/command/pr_split_16_tui_core.js (handleFinalizationState)",
+          "internal/command/pr_split_15_tui_views.js (viewFinalizationScreen)"
+        ],
+        "dependencies": [
+          "T47"
+        ]
+      }
+    },
+    {
+      "task": "T72: Update CHANGELOG.md with all changes",
+      "description": "Update CHANGELOG.md per Keep a Changelog 1.1.0: (a) 'Added' entries for all new features (ANSI Claude pane, input forwarding, auto-attach, search, session persistence, Claude interaction in all wizard phases, etc.). (b) 'Changed' entries for async conversions, design doc rewrite. (c) 'Fixed' entries for event loop blocking, tab navigation, expand/collapse, stale branch error. (d) Proofread.",
+      "acceptanceCriteria": [
+        "CHANGELOG.md follows Keep a Changelog 1.1.0 format",
+        "All changes from T32-T71 documented under appropriate categories (Added, Changed, Fixed)",
+        "All entries accurate and specific",
+        "No stale or outdated content"
+      ],
       "status": "Not Started",
       "context": {
         "files": [
           "CHANGELOG.md"
         ],
-        "references": [],
         "dependencies": [
-          "T60"
+          "T71"
         ]
       }
     }
@@ -641,11 +1044,15 @@
     },
     {
       "type": "POST_EXECUTION_WARNING_REPEATED",
-      "alert": "Claude pane MUST use ANSI rendering via Mux.ChildScreen()/vtm.RenderFullScreen(). plain-text screenshot() is only for diagnostics and test assertions."
+      "alert": "Claude pane MUST use ANSI rendering via Mux.ChildScreen()/vtm.RenderFullScreen(). screenshot() is for diagnostics/assertions only."
     },
     {
       "type": "POST_EXECUTION_WARNING_REPEATED",
       "alert": "Interactive Claude keyboard input forwarding via Mux.WriteToChild() when Claude pane is focused. Reserve Ctrl+L/Tab/Ctrl+C/Ctrl+]/F1/? for wizard control."
+    },
+    {
+      "type": "POST_EXECUTION_WARNING_REPEATED",
+      "alert": "tuiMux bootstrap MUST be complete: Go creates Mux → injects as JS global → pipeline spawns Claude → attaches to Mux → poll/render cycle reads childScreen(). Any break in this chain = dead Claude pane."
     }
   ]
 }

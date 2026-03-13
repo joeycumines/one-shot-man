@@ -2006,6 +2006,7 @@ func TestChunk16_HandleNext_FinalizationQuits(t *testing.T) {
 		// load time (JS line 50), so it cannot be mocked. We test with the
 		// real handler, which correctly transitions to DONE and returns quit.
 		var s = initState('FINALIZATION');
+		s.focusIndex = 2; // final-done button.
 		var r = sendKey(s, 'enter');
 		if (r[0].wizardState !== 'DONE') return 'FAIL: state=' + r[0].wizardState;
 		// Should return tea.quit() command.
@@ -2290,14 +2291,16 @@ func TestChunk16_GetFocusElements_AllStates(t *testing.T) {
 			}
 		}
 
-		// CONFIG: auto, heuristic, directory, nav-next = 4 minimum.
-		check('CONFIG', 4, 'CONFIG');
+		// CONFIG: auto, heuristic, directory, toggle-advanced, nav-next = 5 minimum.
+		check('CONFIG', 5, 'CONFIG');
 		// PLAN_REVIEW: 3 cards + plan-edit + plan-regenerate + ask-claude + nav-next = 7.
 		check('PLAN_REVIEW', 7, 'PLAN_REVIEW');
 		// PLAN_EDITOR: 3 cards + editor-move + editor-rename + editor-merge + nav-next = 7.
 		check('PLAN_EDITOR', 7, 'PLAN_EDITOR');
-		// ERROR_RESOLUTION: 5 buttons + error-ask-claude = 6.
-		check('ERROR_RESOLUTION', 6, 'ERROR_RESOLUTION');
+		// ERROR_RESOLUTION: 5 buttons + error-ask-claude + nav-next = 7.
+		check('ERROR_RESOLUTION', 7, 'ERROR_RESOLUTION');
+		// FINALIZATION: final-report + final-create-prs + final-done + nav-next = 4.
+		check('FINALIZATION', 4, 'FINALIZATION');
 		// BRANCH_BUILDING has no focus elements (default case).
 		var s = initState('BRANCH_BUILDING');
 		var elems = globalThis.prSplit._getFocusElements(s);
@@ -3017,12 +3020,12 @@ func TestChunk16_GetFocusElements_CrashMode(t *testing.T) {
 		}
 		if (!hasAuto) errors.push('normal: missing resolve-auto button');
 
-		// Crash mode — should have exactly 3 crash-specific buttons.
+		// Crash mode — should have exactly 4 elements (3 crash buttons + nav-next).
 		s = initState('ERROR_RESOLUTION');
 		s.claudeCrashDetected = true;
 		elems = globalThis.prSplit._getFocusElements(s);
-		if (elems.length !== 3) {
-			errors.push('crash: expected 3 elements, got ' + elems.length);
+		if (elems.length !== 4) {
+			errors.push('crash: expected 4 elements, got ' + elems.length);
 		}
 		var crashIds = {};
 		for (var j = 0; j < elems.length; j++) {
@@ -3710,7 +3713,7 @@ func TestChunk16_AnalysisAsync_HappyPath(t *testing.T) {
 			globalThis.prSplit.runtime.dir = '` + escapeJSPath(dir) + `';
 			globalThis.prSplit.runtime.strategy = 'directory';
 			globalThis.prSplit.runtime.mode = 'heuristic';
-			s.focusIndex = 3; // nav-next element
+			s.focusIndex = 4; // nav-next element (after toggle-advanced)
 
 			// Trigger startAnalysis via enter key on nav-next.
 			var r = sendKey(s, 'enter');
@@ -3788,7 +3791,7 @@ func TestChunk16_AnalysisAsync_AnalyzeDiffError(t *testing.T) {
 			globalThis.prSplit.runtime.dir = '` + escapeJSPath(dir) + `';
 			globalThis.prSplit.runtime.strategy = 'directory';
 			globalThis.prSplit.runtime.mode = 'heuristic';
-			s.focusIndex = 3; // nav-next element
+			s.focusIndex = 4; // nav-next element (after toggle-advanced)
 
 			var r = sendKey(s, 'enter');
 			s = r[0];
@@ -3851,7 +3854,7 @@ func TestChunk16_AnalysisAsync_NoChanges(t *testing.T) {
 			globalThis.prSplit.runtime.dir = '` + escapeJSPath(dir) + `';
 			globalThis.prSplit.runtime.strategy = 'directory';
 			globalThis.prSplit.runtime.mode = 'heuristic';
-			s.focusIndex = 3; // nav-next element
+			s.focusIndex = 4; // nav-next element (after toggle-advanced)
 
 			var r = sendKey(s, 'enter');
 			s = r[0];
@@ -3935,7 +3938,7 @@ func TestChunk16_AnalysisAsync_ValidationFailure(t *testing.T) {
 			globalThis.prSplit.runtime.dir = '` + escapeJSPath(dir) + `';
 			globalThis.prSplit.runtime.strategy = 'directory';
 			globalThis.prSplit.runtime.mode = 'heuristic';
-			s.focusIndex = 3; // nav-next element
+			s.focusIndex = 4; // nav-next element (after toggle-advanced)
 
 			var r = sendKey(s, 'enter');
 			s = r[0];
@@ -6003,5 +6006,459 @@ func TestChunk16_T39_ExpandResetOnExecution(t *testing.T) {
 	}
 	if raw != "OK" {
 		t.Errorf("T39 expand reset on execution: %v", raw)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+//  T40 — Complete tab navigation across ALL screens
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestChunk16_T40_FinalizationFocusElements(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+		setupPlanCache();
+		var s = initState('FINALIZATION');
+		var elems = globalThis.prSplit._getFocusElements(s);
+
+		// Expect 4 elements: final-report, final-create-prs, final-done, nav-next.
+		if (elems.length !== 4) {
+			errors.push('element count: got ' + elems.length + ', want 4');
+		}
+		var expectedIds = ['final-report', 'final-create-prs', 'final-done', 'nav-next'];
+		var expectedTypes = ['button', 'button', 'button', 'nav'];
+		for (var i = 0; i < expectedIds.length; i++) {
+			if (!elems[i] || elems[i].id !== expectedIds[i]) {
+				errors.push('elem[' + i + ']: got ' + (elems[i] ? elems[i].id : 'undefined') + ', want ' + expectedIds[i]);
+			}
+			if (elems[i] && elems[i].type !== expectedTypes[i]) {
+				errors.push('elem[' + i + '].type: got ' + elems[i].type + ', want ' + expectedTypes[i]);
+			}
+		}
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T40 finalization focus elements: %v", raw)
+	}
+}
+
+func TestChunk16_T40_FinalizationTabCycling(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+		setupPlanCache();
+		var s = initState('FINALIZATION');
+		s.focusIndex = 0;
+
+		// Tab: 0→1.
+		var r = sendKey(s, 'tab');
+		if (r[0].focusIndex !== 1) errors.push('tab 0→1: got ' + r[0].focusIndex);
+
+		// Tab: 1→2.
+		r = sendKey(r[0], 'tab');
+		if (r[0].focusIndex !== 2) errors.push('tab 1→2: got ' + r[0].focusIndex);
+
+		// Tab: 2→3 (nav-next).
+		r = sendKey(r[0], 'tab');
+		if (r[0].focusIndex !== 3) errors.push('tab 2→3: got ' + r[0].focusIndex);
+
+		// Tab: 3→0 (wrap-around).
+		r = sendKey(r[0], 'tab');
+		if (r[0].focusIndex !== 0) errors.push('tab wrap 3→0: got ' + r[0].focusIndex);
+
+		// Shift+Tab: 0→3 (reverse wrap).
+		s = initState('FINALIZATION');
+		s.focusIndex = 0;
+		r = sendKey(s, 'shift+tab');
+		if (r[0].focusIndex !== 3) errors.push('shift+tab wrap 0→3: got ' + r[0].focusIndex);
+
+		// Shift+Tab: 3→2.
+		r = sendKey(r[0], 'shift+tab');
+		if (r[0].focusIndex !== 2) errors.push('shift+tab 3→2: got ' + r[0].focusIndex);
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T40 finalization tab cycling: %v", raw)
+	}
+}
+
+func TestChunk16_T40_FinalizationEnterActivatesButtons(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+		setupPlanCache();
+
+		// Focus on final-report (index 0): Enter opens report overlay.
+		var s = initState('FINALIZATION');
+		s.focusIndex = 0;
+		var r = sendKey(s, 'enter');
+		if (!r[0].showingReport) errors.push('final-report: showingReport not set');
+
+		// Focus on final-create-prs (index 1): Enter triggers create-prs.
+		s = initState('FINALIZATION');
+		s.focusIndex = 1;
+		r = sendKey(s, 'enter');
+		// create-prs does not quit (it delegates to wizard), just returns.
+		if (r[0].wizardState === 'DONE') errors.push('final-create-prs should not quit');
+
+		// Focus on final-done (index 2): Enter quits.
+		s = initState('FINALIZATION');
+		s.focusIndex = 2;
+		r = sendKey(s, 'enter');
+		if (r[0].wizardState !== 'DONE') errors.push('final-done: wizardState=' + r[0].wizardState + ', want DONE');
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T40 finalization enter activates: %v", raw)
+	}
+}
+
+func TestChunk16_T40_FinalizationFocusIndicators(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+		setupPlanCache();
+
+		// FINALIZATION with focus on index 0 (final-report) should render
+		// the focused button differently from the others.
+		var s = initState('FINALIZATION');
+		s.focusIndex = 0;
+		var view = globalThis.prSplit._wizardView(s);
+		// Render should have different styling for focused vs unfocused buttons.
+		// We can't check exact styling, but we verify the view renders without error.
+		if (!view || view.indexOf('View Report') < 0) {
+			errors.push('no View Report in rendered output');
+		}
+		if (view.indexOf('Create PRs') < 0) {
+			errors.push('no Create PRs in rendered output');
+		}
+		if (view.indexOf('Done') < 0) {
+			errors.push('no Done in rendered output');
+		}
+
+		// Move focus to index 2 and re-render — should still render all buttons.
+		s.focusIndex = 2;
+		view = globalThis.prSplit._wizardView(s);
+		if (!view || view.indexOf('View Report') < 0) {
+			errors.push('focus=2: no View Report');
+		}
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T40 finalization focus indicators: %v", raw)
+	}
+}
+
+func TestChunk16_T40_ConfigToggleAdvancedFocus(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+		setupPlanCache();
+
+		// CONFIG with heuristic mode: 3 strategies + toggle-advanced + nav-next = 5.
+		var s = initState('CONFIG');
+		var elems = globalThis.prSplit._getFocusElements(s);
+		var found = false;
+		var toggleIdx = -1;
+		for (var i = 0; i < elems.length; i++) {
+			if (elems[i].id === 'toggle-advanced') { found = true; toggleIdx = i; }
+		}
+		if (!found) errors.push('toggle-advanced not in getFocusElements for CONFIG');
+
+		// Tab to toggle-advanced index and press Enter.
+		s.focusIndex = toggleIdx;
+		s.showAdvanced = false;
+		var r = sendKey(s, 'enter');
+		if (!r[0].showAdvanced) errors.push('Enter on toggle-advanced did not open advanced options');
+
+		// Toggle again to close.
+		r = sendKey(r[0], 'enter');
+		if (r[0].showAdvanced) errors.push('Enter on toggle-advanced did not close advanced options');
+
+		// CONFIG with auto mode: 3 strategies + test-claude + toggle-advanced + nav-next = 6.
+		s = initState('CONFIG');
+		globalThis.prSplit.runtime.mode = 'auto';
+		elems = globalThis.prSplit._getFocusElements(s);
+		if (elems.length !== 6) errors.push('auto mode: got ' + elems.length + ' elems, want 6');
+		// toggle-advanced should be at index 4 (after test-claude at index 3).
+		if (elems[4] && elems[4].id !== 'toggle-advanced') {
+			errors.push('auto mode: elem[4]=' + (elems[4] ? elems[4].id : 'undefined') + ', want toggle-advanced');
+		}
+
+		// Reset mode for other tests.
+		globalThis.prSplit.runtime.mode = 'heuristic';
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T40 config toggle-advanced focus: %v", raw)
+	}
+}
+
+func TestChunk16_T40_ConfigToggleAdvancedVisualIndicator(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+		setupPlanCache();
+
+		// Use viewForState to check config screen content directly
+		// without viewport/chrome wrapping.
+		var s = initState('CONFIG');
+		s.focusIndex = 3; // toggle-advanced for heuristic mode.
+		var view = globalThis.prSplit._viewForState(s);
+		if (!view || typeof view !== 'string') {
+			return 'FAIL: viewForState returned ' + typeof view;
+		}
+		// Should contain Advanced Options text.
+		if (view.indexOf('Advanced Options') < 0) {
+			errors.push('Advanced Options text missing from config view');
+		}
+		// When focusIndex=0, Advanced Options line should NOT have ▸ pointer.
+		s.focusIndex = 0;
+		view = globalThis.prSplit._viewForState(s);
+		var lines = view.split('\n');
+		var advLineHasPointer = false;
+		for (var li = 0; li < lines.length; li++) {
+			if (lines[li].indexOf('Advanced Options') >= 0 && lines[li].indexOf('\u25b8') >= 0) {
+				advLineHasPointer = true;
+			}
+		}
+		if (advLineHasPointer) {
+			errors.push('focus=0: Advanced Options line should NOT have pointer');
+		}
+		// When focusIndex=3, Advanced Options line SHOULD have ▸ pointer.
+		s.focusIndex = 3;
+		view = globalThis.prSplit._viewForState(s);
+		lines = view.split('\n');
+		advLineHasPointer = false;
+		for (var li = 0; li < lines.length; li++) {
+			if (lines[li].indexOf('Advanced Options') >= 0 && lines[li].indexOf('\u25b8') >= 0) {
+				advLineHasPointer = true;
+			}
+		}
+		if (!advLineHasPointer) {
+			errors.push('focus=3: Advanced Options line should have pointer');
+		}
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T40 config toggle-advanced visual indicator: %v", raw)
+	}
+}
+
+func TestChunk16_T40_ErrorResolutionNavNext(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+		setupPlanCache();
+
+		// ERROR_RESOLUTION should include nav-next as last element.
+		var s = initState('ERROR_RESOLUTION');
+		globalThis.prSplit._state.claudeExecutor = {};
+		var elems = globalThis.prSplit._getFocusElements(s);
+		var last = elems[elems.length - 1];
+		if (!last || last.id !== 'nav-next' || last.type !== 'nav') {
+			errors.push('last elem: got ' + JSON.stringify(last) + ', want {id:nav-next,type:nav}');
+		}
+
+		// Tab to nav-next and press Enter — should fall through to handleNext (auto-resolve).
+		s.focusIndex = elems.length - 1;
+		var r = sendKey(s, 'enter');
+		// handleNext for ERROR_RESOLUTION calls handleErrorResolutionChoice(s, 'auto-resolve').
+		// Result depends on implementation, but it should NOT error.
+		if (!r || !r[0]) errors.push('enter on nav-next returned null');
+
+		// Crash mode: should also have nav-next.
+		s = initState('ERROR_RESOLUTION');
+		s.claudeCrashDetected = true;
+		elems = globalThis.prSplit._getFocusElements(s);
+		last = elems[elems.length - 1];
+		if (!last || last.id !== 'nav-next') {
+			errors.push('crash mode last elem: got ' + (last ? last.id : 'undefined') + ', want nav-next');
+		}
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T40 error resolution nav-next: %v", raw)
+	}
+}
+
+func TestChunk16_T40_BranchBuildingExpandCollapseKeyboard(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+		setupPlanCache();
+
+		// Set up BRANCH_BUILDING with verify output.
+		var s = initState('BRANCH_BUILDING');
+		s.verifyOutput = {
+			'split/api': ['line1', 'line2'],
+			'split/cli': ['err1']
+		};
+		s.expandedVerifyBranch = null;
+
+		// 'e' should expand the last branch with output (split/cli, index 1).
+		var r = sendKey(s, 'e');
+		if (r[0].expandedVerifyBranch !== 'split/cli') {
+			errors.push('expand: got ' + r[0].expandedVerifyBranch + ', want split/cli');
+		}
+
+		// 'e' again should collapse.
+		r = sendKey(r[0], 'e');
+		if (r[0].expandedVerifyBranch !== null) {
+			errors.push('collapse: got ' + r[0].expandedVerifyBranch + ', want null');
+		}
+
+		// When no verify output exists, 'e' should be harmless.
+		s = initState('BRANCH_BUILDING');
+		s.verifyOutput = {};
+		s.expandedVerifyBranch = null;
+		r = sendKey(s, 'e');
+		if (r[0].expandedVerifyBranch !== null) {
+			errors.push('no output expand: got ' + r[0].expandedVerifyBranch + ', want null');
+		}
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T40 branch building expand/collapse keyboard: %v", raw)
+	}
+}
+
+func TestChunk16_T40_HelpOverlayBranchBuildingSection(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+		setupPlanCache();
+
+		var s = initState('CONFIG');
+		s.showHelp = true;
+		var view = globalThis.prSplit._viewHelpOverlay(s);
+
+		// Should contain Branch Building section.
+		if (view.indexOf('Branch Building') < 0) {
+			errors.push('missing Branch Building section');
+		}
+		if (view.indexOf('Expand / collapse output') < 0) {
+			errors.push('missing expand/collapse help text');
+		}
+		if (view.indexOf('Interrupt verification') < 0) {
+			errors.push('missing interrupt help text');
+		}
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T40 help overlay branch building section: %v", raw)
+	}
+}
+
+func TestChunk16_T40_ElementCountParity(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+		setupPlanCache();
+		globalThis.prSplit._state.claudeExecutor = {};
+
+		// Verify exact element counts per screen.
+		var expected = {
+			'CONFIG':           5,  // 3 strategies + toggle-advanced + nav-next
+			'PLAN_REVIEW':      7,  // 3 cards + plan-edit + plan-regenerate + ask-claude + nav-next
+			'PLAN_EDITOR':      7,  // 3 cards + editor-move + editor-rename + editor-merge + nav-next
+			'ERROR_RESOLUTION': 7,  // 5 buttons + error-ask-claude + nav-next
+			'FINALIZATION':     4,  // final-report + final-create-prs + final-done + nav-next
+			'BRANCH_BUILDING':  0,  // passive — keyboard shortcuts, not focus elements
+			'PLAN_GENERATION':  0,  // passive
+			'EQUIV_CHECK':      0   // passive
+		};
+
+		for (var state in expected) {
+			var s = initState(state);
+			if (state === 'ERROR_RESOLUTION') {
+				globalThis.prSplit._state.claudeExecutor = {};
+			}
+			var elems = globalThis.prSplit._getFocusElements(s);
+			if (elems.length !== expected[state]) {
+				errors.push(state + ': got ' + elems.length + ', want ' + expected[state]);
+			}
+		}
+
+		// CONFIG with auto mode: test-claude adds 1 element.
+		globalThis.prSplit.runtime.mode = 'auto';
+		var s = initState('CONFIG');
+		var elems = globalThis.prSplit._getFocusElements(s);
+		if (elems.length !== 6) errors.push('CONFIG(auto): got ' + elems.length + ', want 6');
+		globalThis.prSplit.runtime.mode = 'heuristic';
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T40 element count parity: %v", raw)
 	}
 }

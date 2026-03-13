@@ -526,6 +526,24 @@
                     return [s, null];
                 }
                 // Screen-specific key shortcuts.
+                // BRANCH_BUILDING: 'e' toggles expand/collapse on the
+                // most recently verified branch with output.
+                if (k === 'e' && s.wizardState === 'BRANCH_BUILDING') {
+                    if (s.expandedVerifyBranch !== null && s.expandedVerifyBranch !== undefined) {
+                        // Collapse the currently expanded branch.
+                        s.expandedVerifyBranch = null;
+                    } else if (st.planCache && st.planCache.splits && s.verifyOutput) {
+                        // Find the last branch that has verification output to expand.
+                        for (var ei = st.planCache.splits.length - 1; ei >= 0; ei--) {
+                            var eBranch = st.planCache.splits[ei].name;
+                            if (s.verifyOutput[eBranch] && s.verifyOutput[eBranch].length > 0) {
+                                s.expandedVerifyBranch = eBranch;
+                                break;
+                            }
+                        }
+                    }
+                    return [s, null];
+                }
                 if (k === 'e' && s.wizardState === 'PLAN_REVIEW' && !s.isProcessing) {
                     // Enter plan editor.
                     return enterPlanEditor(s);
@@ -1691,6 +1709,8 @@
                     s.claudeCheckStatus) {
                     elems.push({id: 'test-claude', type: 'button'});
                 }
+                // Advanced options toggle — always reachable by Tab.
+                elems.push({id: 'toggle-advanced', type: 'button'});
                 elems.push({id: 'nav-next', type: 'nav'});
                 return elems;
             }
@@ -1737,6 +1757,16 @@
                 if (st.claudeExecutor && !s.claudeCrashDetected) {
                     elems.push({id: 'error-ask-claude', type: 'button'});
                 }
+                elems.push({id: 'nav-next', type: 'nav'});
+                return elems;
+            }
+            case 'FINALIZATION': {
+                var elems = [
+                    {id: 'final-report',     type: 'button'},
+                    {id: 'final-create-prs', type: 'button'},
+                    {id: 'final-done',       type: 'button'}
+                ];
+                elems.push({id: 'nav-next', type: 'nav'});
                 return elems;
             }
             default:
@@ -1912,6 +1942,30 @@
             // Ask Claude about error.
             if (focused.id === 'error-ask-claude') {
                 return openClaudeConvo(s, 'error-resolution');
+            }
+            // Toggle advanced options on CONFIG screen.
+            if (focused.id === 'toggle-advanced') {
+                s.showAdvanced = !s.showAdvanced;
+                return [s, null];
+            }
+            // Finalization buttons.
+            if (focused.id === 'final-report') {
+                s.reportContent = formatReportForDisplay(buildReport());
+                if (s.reportVp) {
+                    s.reportVp.setContent(s.reportContent);
+                    s.reportVp.gotoTop();
+                }
+                s.showingReport = true;
+                return [s, null];
+            }
+            if (focused.id === 'final-create-prs') {
+                handleFinalizationState(s.wizard, 'create-prs');
+                return [s, null];
+            }
+            if (focused.id === 'final-done') {
+                handleFinalizationState(s.wizard, 'done');
+                s.wizardState = 'DONE';
+                return [s, tea.quit()];
             }
         }
 

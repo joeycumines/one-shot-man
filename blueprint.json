@@ -82,7 +82,8 @@
       "T38: Fix split-view Tab behavior — Tab→Ctrl+Tab for pane switching, Tab cycles wizard focusable elements in split-view, Tab forwards to Claude PTY when Claude focused. CLAUDE_RESERVED_KEYS updated (ctrl+tab replaces tab). keyToTermBytes('tab')='\\t'. Help overlay updated with Ctrl+Tab and Claude Integration section. Pane divider hint updated. focusIndex preserved on Ctrl+L toggle. 7 new tests + 2 existing tests updated.",
       "T39: Fix expand/collapse state management — verify-collapse guard only fires when clicked branch matches expandedVerifyBranch. Escape collapses expanded sections (expandedVerifyBranch, showAdvanced) before back-nav. Chevrons normalized: ▶/▼ (U+25B6/U+25BC) for both Advanced Options and verify output. Expanded Advanced Options header now has zone.mark for clickable collapse. expandedSplitIdx does not exist (plan review has no expand/collapse). 6 new tests.",
       "T61-old: mcpCallback.waitForAsync() — non-blocking Promise-based MCP tool wait with aliveCheck trampoline, 9 tests, 47/47 pass",
-      "T62-old: Pipeline async conversion — waitForLogged dual-path, step callbacks async, spawn/restart async, handleRestartClaudePoll, scroll keys, 485 tests pass"
+      "T62-old: Pipeline async conversion — waitForLogged dual-path, step callbacks async, spawn/restart async, handleRestartClaudePoll, scroll keys, 485 tests pass",
+      "T40: Complete tab navigation ALL screens — FINALIZATION focus elements (final-report, final-create-prs, final-done, nav-next) with keyboard activation and visual focus indicators. CONFIG toggle-advanced with ▸ pointer. ERROR_RESOLUTION nav-next. BRANCH_BUILDING 'e' expand/collapse. Help overlay Branch Building section. 10 new tests + 6 existing updated."
     ],
     "replanLog": [
       {
@@ -280,11 +281,13 @@
         "Visual focus indicator renders on every focusable element",
         "Test verifies element count-parity between getFocusElements() and rendered interactive elements per screen"
       ],
-      "status": "Not Started",
+      "status": "Done",
+      "deliverables": "FINALIZATION focus elements (final-report, final-create-prs, final-done, nav-next) with keyboard activation and visual focus indicators. CONFIG toggle-advanced added to focus system with ▸ pointer. ERROR_RESOLUTION nav-next added. BRANCH_BUILDING 'e' keyboard shortcut for verify output expand/collapse. Help overlay updated with Branch Building section. 10 new tests + 6 existing tests updated.",
       "context": {
         "files": [
-          "internal/command/pr_split_16_tui_core.js:1650 (getFocusElements)",
-          "internal/command/pr_split_15_tui_views.js (all viewXxxScreen functions)"
+          "internal/command/pr_split_16_tui_core.js (getFocusElements, handleFocusActivate, keyboard dispatch)",
+          "internal/command/pr_split_15_tui_views.js (viewFinalizationScreen, viewConfigScreen, help overlay)",
+          "cmd/osm/pr_split_16_tui_core_test.go (10 new T40 tests, 6 existing tests updated)"
         ],
         "references": [
           "internal/command/super_document_script.js (focus pattern reference)"

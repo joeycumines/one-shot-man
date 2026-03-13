@@ -1,14 +1,27 @@
 # WIP — Work In Progress (Takumi's Desperate Diary)
 
-## Current Task: T40 — Complete tab navigation across ALL screens
+## Current Task: T41 — Fix inline title editing + navigation conflict in plan editor
 
 ## Session State
 - **Branch:** `wip`
-- **Last Commit:** T39 (pending Rule of Two)
-- **Blueprint Status:** T01-T39 Done. T40-T72 Not Started.
-- **Tests baseline:** ALL packages PASS (pick-and-place flaky due to build cache, unrelated). ~134s for pr-split with -race.
+- **Last Commit:** T40 (pending amend)
+- **Blueprint Status:** T01-T40 Done. T41-T72 Not Started.
+- **Tests baseline:** ALL packages PASS. ~134s for pr-split with -race.
 - **Session start:** 2026-03-13 10:37:36 (9h mandate)
 - **Blueprint Schema:** Tasks use `acceptanceCriteria` (array of strings), NOT `acceptance` (string).
+
+## T40 Changes (this session — Rule of Two PASSED)
+### Complete tab navigation across ALL screens
+- **Added:** FINALIZATION focus elements: `[final-report, final-create-prs, final-done, nav-next]` (4 elements)
+- **Added:** handleFocusActivate handlers for `toggle-advanced`, `final-report`, `final-create-prs`, `final-done`
+- **Added:** CONFIG `toggle-advanced` in focus system with `▸` pointer indicator (dynamic index)
+- **Added:** ERROR_RESOLUTION `nav-next` (after error-ask-claude, both normal and crash mode)
+- **Added:** BRANCH_BUILDING `'e'` keyboard shortcut for expand/collapse verify output
+- **Added:** viewFinalizationScreen focus-aware button styling (focusedButton/primaryButton/secondaryButton)
+- **Added:** Help overlay "Branch Building" section with `e` and `Ctrl+C` shortcuts
+- **Updated:** 6 existing tests (CONFIG nav-next index 3→4, FINALIZATION element counts, crash mode)
+- **10 new tests:** FinalizationFocusElements, FinalizationTabCycling, FinalizationEnterActivatesButtons, FinalizationFocusIndicators, ConfigToggleAdvancedFocus, ConfigToggleAdvancedVisualIndicator, ErrorResolutionNavNext, BranchBuildingExpandCollapseKeyboard, HelpOverlayBranchBuildingSection, ElementCountParity
+- **Rule of Two:** Pass 1 FAIL (nav-next missing from FINALIZATION) → fixed → Pass 1 v2 PASS → Pass 2 PASS
 
 ## T38 Changes (this session)
 ### Fix split-view Tab behavior — cycle elements within active pane
@@ -66,6 +79,6 @@
 8. **Integration tests SHALLOW**: no wizard+real-Claude, no Mux lifecycle, no TUI rendering tests
 
 ## Next Steps
-1. **IMMEDIATE:** Rule of Two review on T39 diff → commit
-2. T40: Complete tab navigation across ALL screens
-3. Continue T41-T72 sequentially
+1. **IMMEDIATE:** Commit T40 (Rule of Two PASSED)
+2. T41: Fix inline title editing + navigation conflict in plan editor
+3. Continue T42-T72 sequentially

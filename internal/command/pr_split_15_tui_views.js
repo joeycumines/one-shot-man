@@ -773,8 +773,12 @@
         lines.push('');
 
         // Advanced options toggle.
+        // Focus index: 3 (or 4 if test-claude is shown) maps to toggle-advanced.
+        var advancedFocusIdx = (currentMode === 'auto' || s.claudeCheckStatus) ? 4 : 3;
+        var advFocused = (focusIdx === advancedFocusIdx);
+        var advPrefix = advFocused ? styles.statusActive().render('\u25b8 ') : '  ';
         if (s.showAdvanced) {
-            lines.push(zone.mark('toggle-advanced',
+            lines.push(advPrefix + zone.mark('toggle-advanced',
                 styles.dim().render('\u25bc Advanced Options')));
             lines.push('  Max files per chunk: ' +
                 styles.fieldValue().render(String(runtime.maxFiles || 10)));
@@ -784,7 +788,7 @@
                 styles.fieldValue().render(runtime.verifyCommand || 'true'));
             lines.push('  ' + (runtime.dryRun ? '\u2611' : '\u2610') + ' Dry run');
         } else {
-            lines.push(zone.mark('toggle-advanced',
+            lines.push(advPrefix + zone.mark('toggle-advanced',
                 styles.dim().render('\u25b6 Advanced Options')));
         }
 
@@ -1422,24 +1426,29 @@
 
         // Actions.
         var compact = layoutMode(s) === 'compact';
+        // Focus indices: 0=final-report, 1=final-create-prs, 2=final-done.
+        var focusIdx = s.focusIndex || 0;
+        var reportStyle  = (focusIdx === 0) ? styles.focusedButton() : styles.secondaryButton();
+        var createStyle  = (focusIdx === 1) ? styles.focusedButton() : styles.primaryButton();
+        var doneStyle    = (focusIdx === 2) ? styles.focusedButton() : styles.primaryButton();
         lines.push('');
         if (compact) {
             lines.push(zone.mark('final-report',
-                styles.secondaryButton().render('View Report')));
+                reportStyle.render('View Report')));
             lines.push(zone.mark('final-create-prs',
-                styles.primaryButton().render('Create PRs')));
+                createStyle.render('Create PRs')));
             lines.push(zone.mark('final-done',
-                styles.primaryButton().render('Done')));
+                doneStyle.render('Done')));
         } else {
             lines.push(
                 zone.mark('final-report',
-                    styles.secondaryButton().render('View Report')) +
+                    reportStyle.render('View Report')) +
                 '  ' +
                 zone.mark('final-create-prs',
-                    styles.primaryButton().render('Create PRs')) +
+                    createStyle.render('Create PRs')) +
                 '  ' +
                 zone.mark('final-done',
-                    styles.primaryButton().render('Done'))
+                    doneStyle.render('Done'))
             );
         }
 
@@ -1590,6 +1599,12 @@
         lines.push(padRight('  e', 22) + 'Edit / rename split');
         lines.push(padRight('  Space', 22) + 'Toggle file checkbox');
         lines.push(padRight('  Shift+\u2191 / \u2193', 22) + 'Reorder files');
+        lines.push('');
+
+        // -- Branch Building --
+        lines.push(styles.label().render('Branch Building'));
+        lines.push(padRight('  e', 22) + 'Expand / collapse output');
+        lines.push(padRight('  Ctrl+C', 22) + 'Interrupt verification');
         lines.push('');
 
         // -- Claude / Split View --

@@ -1758,16 +1758,22 @@ func TestChunk16_MouseClick_ClaudeStatusBadge(t *testing.T) {
 	evalJS := loadTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
-		var switchedTo = null;
+		// T45: Clicking claude-status badge now opens split-view instead of
+		// calling tuiMux.switchTo(), so we mock tuiMux with hasChild().
 		globalThis.tuiMux = {
-			switchTo: function(name) { switchedTo = name; }
+			hasChild: function() { return true; },
+			screenshot: function() { return ''; },
+			childScreen: function() { return ''; },
+			lastActivityMs: function() { return 500; }
 		};
 
 		var s = initState('CONFIG');
 		var restore = mockZoneHit('claude-status');
 		try {
-			sendClick(s);
-			if (switchedTo !== 'claude') return 'FAIL: claude-status did not switch to claude pane';
+			var r = sendClick(s);
+			s = r[0];
+			if (!s.splitViewEnabled) return 'FAIL: claude-status should open split-view';
+			if (s.splitViewTab !== 'claude') return 'FAIL: tab should be claude, got ' + s.splitViewTab;
 		} finally {
 			restore();
 			delete globalThis.tuiMux;
@@ -6303,6 +6309,504 @@ func TestChunk16_T44_OutputBufferCapAtLimit(t *testing.T) {
 	// The last line should always be 'line-5009' (the very last one pushed).
 	if fmt.Sprint(m["last"]) != "line-5009" {
 		t.Errorf("last line = %v, expected 'line-5009'", m["last"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  T45: Auto-attach Claude pane when Claude spawns during wizard
+// ---------------------------------------------------------------------------
+
+// TestChunk16_T45_InitStateHasAutoAttachFields verifies that new T45 state
+// fields are initialized correctly.
+func TestChunk16_T45_InitStateHasAutoAttachFields(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		return {
+			claudeAutoAttached: s.claudeAutoAttached,
+			claudeManuallyDismissed: s.claudeManuallyDismissed,
+			claudeAutoAttachNotif: s.claudeAutoAttachNotif,
+			claudeAutoAttachNotifAt: s.claudeAutoAttachNotifAt
+		};
+	})()`)
+	if err != nil {
+		t.Fatalf("eval error: %v", err)
+	}
+	m := raw.(map[string]any)
+	if m["claudeAutoAttached"] != false {
+		t.Errorf("claudeAutoAttached = %v, want false", m["claudeAutoAttached"])
+	}
+	if m["claudeManuallyDismissed"] != false {
+		t.Errorf("claudeManuallyDismissed = %v, want false", m["claudeManuallyDismissed"])
+	}
+	if m["claudeAutoAttachNotif"] != "" {
+		t.Errorf("claudeAutoAttachNotif = %v, want empty", m["claudeAutoAttachNotif"])
+	}
+	if numVal(m["claudeAutoAttachNotifAt"]) != 0 {
+		t.Errorf("claudeAutoAttachNotifAt = %v, want 0", m["claudeAutoAttachNotifAt"])
+	}
+}
+
+// TestChunk16_T45_AutoAttachOnAutoPoll verifies that handleAutoSplitPoll
+// auto-enables split-view when tuiMux has a child attached.
+func TestChunk16_T45_AutoAttachOnAutoPoll(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		// Mock tuiMux with hasChild() returning true (Claude attached).
+		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		globalThis.tuiMux = {
+			hasChild: function() { return true; },
+			screenshot: function() { return ''; },
+			childScreen: function() { return ''; },
+			lastActivityMs: function() { return 500; }
+		};
+
+		// Mock alive Claude executor — prevent crash detection.
+		globalThis.prSplit._state.claudeExecutor = {
+			handle: {
+				isAlive: function() { return true; }
+			}
+		};
+
+		var s = initState('BRANCH_BUILDING');
+		s.autoSplitRunning = true;
+		s.isProcessing = true;
+		s.height = 30;
+		s.lastClaudeHealthCheckMs = Date.now(); // skip health check
+
+		// Send auto-poll tick.
+		var r = update({type: 'Tick', id: 'auto-poll'}, s);
+		var ns = r[0];
+
+		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
+		else delete globalThis.tuiMux;
+
+		var errors = [];
+		if (!ns.splitViewEnabled) errors.push('splitViewEnabled should be true');
+		if (ns.splitViewFocus !== 'wizard') errors.push('focus: got ' + ns.splitViewFocus + ', want wizard');
+		if (ns.splitViewTab !== 'claude') errors.push('tab: got ' + ns.splitViewTab + ', want claude');
+		if (!ns.claudeAutoAttached) errors.push('claudeAutoAttached should be true');
+		if (!ns.claudeAutoAttachNotif) errors.push('notification should be set');
+		if (ns.claudeAutoAttachNotifAt === 0) errors.push('notifAt should be > 0');
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("auto-attach on auto-poll: %v", raw)
+	}
+}
+
+// TestChunk16_T45_AutoAttachSkippedSmallTerminal verifies that auto-attach
+// does NOT trigger when terminal height < 12 lines.
+func TestChunk16_T45_AutoAttachSkippedSmallTerminal(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		globalThis.tuiMux = {
+			hasChild: function() { return true; },
+			screenshot: function() { return ''; },
+			childScreen: function() { return ''; },
+			lastActivityMs: function() { return 500; }
+		};
+		globalThis.prSplit._state.claudeExecutor = {
+			handle: { isAlive: function() { return true; } }
+		};
+
+		var s = initState('BRANCH_BUILDING');
+		s.autoSplitRunning = true;
+		s.isProcessing = true;
+		s.height = 10; // too small
+		s.lastClaudeHealthCheckMs = Date.now();
+
+		var r = update({type: 'Tick', id: 'auto-poll'}, s);
+		var ns = r[0];
+
+		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
+		else delete globalThis.tuiMux;
+
+		if (ns.splitViewEnabled) return 'FAIL: splitViewEnabled should be false for small terminal';
+		if (ns.claudeAutoAttached) return 'FAIL: claudeAutoAttached should be false';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("auto-attach small terminal: %v", raw)
+	}
+}
+
+// TestChunk16_T45_ManualDismissPreventsAutoReopen verifies that Ctrl+L close
+// sets claudeManuallyDismissed, preventing auto-attach from re-opening.
+func TestChunk16_T45_ManualDismissPreventsAutoReopen(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('BRANCH_BUILDING');
+		s.splitViewEnabled = true;
+
+		// User presses Ctrl+L to close split-view.
+		var r = sendKey(s, 'ctrl+l');
+		s = r[0];
+
+		if (s.splitViewEnabled) return 'FAIL: splitViewEnabled should be false after Ctrl+L';
+		if (!s.claudeManuallyDismissed) return 'FAIL: claudeManuallyDismissed should be true';
+
+		// Now simulate auto-poll with Claude available — should NOT auto-open.
+		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		globalThis.tuiMux = {
+			hasChild: function() { return true; },
+			screenshot: function() { return ''; },
+			childScreen: function() { return ''; },
+			lastActivityMs: function() { return 500; }
+		};
+		globalThis.prSplit._state.claudeExecutor = {
+			handle: { isAlive: function() { return true; } }
+		};
+
+		s.autoSplitRunning = true;
+		s.isProcessing = true;
+		s.height = 30;
+		s.lastClaudeHealthCheckMs = Date.now();
+
+		r = update({type: 'Tick', id: 'auto-poll'}, s);
+		s = r[0];
+
+		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
+		else delete globalThis.tuiMux;
+
+		if (s.splitViewEnabled) return 'FAIL: splitViewEnabled should still be false — manual dismiss respected';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("manual dismiss prevents auto-reopen: %v", raw)
+	}
+}
+
+// TestChunk16_T45_CtrlLReopenClearsDismiss verifies that pressing Ctrl+L to
+// re-open split-view clears the claudeManuallyDismissed flag.
+func TestChunk16_T45_CtrlLReopenClearsDismiss(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('PLAN_REVIEW');
+		s.splitViewEnabled = true;
+
+		// Close with Ctrl+L.
+		var r = sendKey(s, 'ctrl+l');
+		s = r[0];
+		if (!s.claudeManuallyDismissed) return 'FAIL: should be dismissed after close';
+
+		// Re-open with Ctrl+L.
+		r = sendKey(s, 'ctrl+l');
+		s = r[0];
+		if (!s.splitViewEnabled) return 'FAIL: splitViewEnabled should be true after re-open';
+		if (s.claudeManuallyDismissed) return 'FAIL: claudeManuallyDismissed should be cleared on re-open';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("Ctrl+L reopen clears dismiss: %v", raw)
+	}
+}
+
+// TestChunk16_T45_CrashCloseSplitView verifies that when Claude crashes during
+// auto-split, the split-view is auto-closed with a notification.
+func TestChunk16_T45_CrashCloseSplitView(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		// Mock dead Claude.
+		globalThis.prSplit._state.claudeExecutor = {
+			handle: {
+				isAlive: function() { return false; },
+				receive: function() { return 'segfault'; }
+			},
+			captureDiagnostic: function() { return 'crash dump'; }
+		};
+
+		var s = initState('BRANCH_BUILDING');
+		s.autoSplitRunning = true;
+		s.isProcessing = true;
+		s.splitViewEnabled = true;
+		s.claudeAutoAttached = true;
+		s.lastClaudeHealthCheckMs = 0; // Force health check.
+
+		var r = update({type: 'Tick', id: 'auto-poll'}, s);
+		var ns = r[0];
+
+		var errors = [];
+		if (ns.splitViewEnabled) errors.push('splitViewEnabled should be false after crash');
+		if (!ns.claudeAutoAttachNotif) errors.push('notification should be set');
+		if (ns.claudeAutoAttachNotif.indexOf('crashed') < 0) errors.push('notif should mention crash: ' + ns.claudeAutoAttachNotif);
+		if (ns.wizardState !== 'ERROR_RESOLUTION') errors.push('wizardState: got ' + ns.wizardState);
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("crash closes split-view: %v", raw)
+	}
+}
+
+// TestChunk16_T45_ClaudeStatusBadgeOpensView verifies that clicking the
+// claude-status zone mark opens split-view when Claude is running.
+func TestChunk16_T45_ClaudeStatusBadgeOpensView(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		globalThis.tuiMux = {
+			hasChild: function() { return true; },
+			screenshot: function() { return ''; },
+			childScreen: function() { return ''; },
+			lastActivityMs: function() { return 500; }
+		};
+
+		var s = initState('PLAN_REVIEW');
+		s.splitViewEnabled = false;
+		s.claudeManuallyDismissed = true; // Previously dismissed.
+
+		// Click claude-status zone.
+		var restore = mockZoneHit('claude-status');
+		var r = update({type: 'Mouse', action: 'press', button: 'left', x: 10, y: 10}, s);
+		restore();
+		var ns = r[0];
+
+		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
+		else delete globalThis.tuiMux;
+
+		var errors = [];
+		if (!ns.splitViewEnabled) errors.push('splitViewEnabled should be true');
+		if (ns.claudeManuallyDismissed) errors.push('claudeManuallyDismissed should be cleared');
+		if (ns.splitViewFocus !== 'wizard') errors.push('focus: got ' + ns.splitViewFocus + ', want wizard');
+		if (ns.splitViewTab !== 'claude') errors.push('tab: got ' + ns.splitViewTab + ', want claude');
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("claude-status badge opens view: %v", raw)
+	}
+}
+
+// TestChunk16_T45_ExitAutoClosesSplitView verifies that pollClaudeScreenshot
+// auto-closes the split-view when Claude exits (hasChild becomes false) and
+// the auto-split pipeline is no longer running.
+func TestChunk16_T45_ExitAutoClosesSplitView(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		// Mock tuiMux with no child (Claude exited).
+		globalThis.tuiMux = {
+			hasChild: function() { return false; },
+			screenshot: function() { return ''; },
+			childScreen: function() { return ''; }
+		};
+
+		var s = initState('PLAN_REVIEW');
+		s.splitViewEnabled = true;
+		s.claudeAutoAttached = true;
+		s.autoSplitRunning = false; // Pipeline done.
+
+		// Send screenshot poll tick.
+		var r = update({type: 'Tick', id: 'claude-screenshot'}, s);
+		var ns = r[0];
+		var cmd = r[1];
+
+		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
+		else delete globalThis.tuiMux;
+
+		var errors = [];
+		if (ns.splitViewEnabled) errors.push('splitViewEnabled should be false');
+		if (!ns.claudeAutoAttachNotif) errors.push('notification should be set');
+		if (ns.claudeAutoAttachNotif.indexOf('ended') < 0) errors.push('notif should mention ended: ' + ns.claudeAutoAttachNotif);
+		if (cmd !== null) errors.push('cmd should be null (stop polling)');
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("exit auto-closes split-view: %v", raw)
+	}
+}
+
+// TestChunk16_T45_NoAutoCloseWhenPipelineRunning verifies that
+// pollClaudeScreenshot does NOT auto-close when the pipeline is still running
+// (child may re-attach after restart).
+func TestChunk16_T45_NoAutoCloseWhenPipelineRunning(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		globalThis.tuiMux = {
+			hasChild: function() { return false; },
+			screenshot: function() { return ''; },
+			childScreen: function() { return ''; }
+		};
+
+		var s = initState('BRANCH_BUILDING');
+		s.splitViewEnabled = true;
+		s.claudeAutoAttached = true;
+		s.autoSplitRunning = true; // Pipeline still running.
+
+		var r = update({type: 'Tick', id: 'claude-screenshot'}, s);
+		var ns = r[0];
+		var cmd = r[1];
+
+		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
+		else delete globalThis.tuiMux;
+
+		if (!ns.splitViewEnabled) return 'FAIL: splitViewEnabled should stay true while pipeline running';
+		if (cmd === null) return 'FAIL: should continue polling';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("no auto-close when pipeline running: %v", raw)
+	}
+}
+
+// TestChunk16_T45_NotificationRenderedInStatusBar verifies the transient
+// notification banner appears in the status bar output.
+func TestChunk16_T45_NotificationRenderedInStatusBar(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('PLAN_REVIEW');
+		s.width = 80;
+		s.claudeAutoAttachNotif = 'Claude connected';
+		s.claudeAutoAttachNotifAt = Date.now();
+
+		var statusBar = globalThis.prSplit._renderStatusBar(s);
+		if (statusBar.indexOf('Claude connected') < 0) {
+			return 'FAIL: notification not found in status bar';
+		}
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("notification in status bar: %v", raw)
+	}
+}
+
+// TestChunk16_T45_NotificationAutoExpires verifies that the notification
+// auto-clears after 5 seconds.
+func TestChunk16_T45_NotificationAutoExpires(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('PLAN_REVIEW');
+		s.width = 80;
+		s.claudeAutoAttachNotif = 'Claude connected';
+		s.claudeAutoAttachNotifAt = Date.now() - 6000; // 6s ago — expired
+
+		var statusBar = globalThis.prSplit._renderStatusBar(s);
+		if (statusBar.indexOf('Claude connected') >= 0) {
+			return 'FAIL: expired notification should not be shown';
+		}
+		if (s.claudeAutoAttachNotif !== '') {
+			return 'FAIL: claudeAutoAttachNotif should be cleared, got: ' + s.claudeAutoAttachNotif;
+		}
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("notification auto-expires: %v", raw)
+	}
+}
+
+// TestChunk16_T45_AutoAttachFiresOnlyOnce verifies that auto-attach does not
+// re-trigger after claudeAutoAttached is already true.
+func TestChunk16_T45_AutoAttachFiresOnlyOnce(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		globalThis.tuiMux = {
+			hasChild: function() { return true; },
+			screenshot: function() { return ''; },
+			childScreen: function() { return ''; },
+			lastActivityMs: function() { return 500; }
+		};
+		globalThis.prSplit._state.claudeExecutor = {
+			handle: { isAlive: function() { return true; } }
+		};
+
+		var s = initState('BRANCH_BUILDING');
+		s.autoSplitRunning = true;
+		s.isProcessing = true;
+		s.height = 30;
+		s.lastClaudeHealthCheckMs = Date.now();
+
+		// First poll — should auto-attach.
+		var r = update({type: 'Tick', id: 'auto-poll'}, s);
+		s = r[0];
+		if (!s.claudeAutoAttached) {
+			if (savedMux !== undefined) globalThis.tuiMux = savedMux;
+			else delete globalThis.tuiMux;
+			return 'FAIL: first poll should auto-attach';
+		}
+
+		// Manually close.
+		s.splitViewEnabled = false;
+
+		// Second poll — should NOT re-attach (claudeAutoAttached is true).
+		s.lastClaudeHealthCheckMs = Date.now();
+		r = update({type: 'Tick', id: 'auto-poll'}, s);
+		s = r[0];
+
+		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
+		else delete globalThis.tuiMux;
+
+		if (s.splitViewEnabled) return 'FAIL: should NOT re-attach after first trigger';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("auto-attach fires only once: %v", raw)
 	}
 }
 

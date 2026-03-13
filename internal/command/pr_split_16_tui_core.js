@@ -173,6 +173,12 @@
                 claudeScreen: '',              // cached ANSI-styled screen from tuiMux (T28)
                 claudeViewOffset: 0,           // scroll offset in Claude pane (lines from bottom)
 
+                // T45: Auto-attach Claude pane state.
+                claudeAutoAttached: false,     // true once auto-attach has fired (prevents re-trigger)
+                claudeManuallyDismissed: false, // true when user explicitly closed split-view via Ctrl+L
+                claudeAutoAttachNotif: '',     // transient notification text (auto-dismissed after 5s)
+                claudeAutoAttachNotifAt: 0,    // Date.now() when notification was set
+
                 // T44: Process output capture state.
                 outputLines: [],               // accumulated output buffer (strings, may contain ANSI)
                 outputViewOffset: 0,           // scroll offset in output pane (lines from bottom)
@@ -413,9 +419,14 @@
                 if (k === 'ctrl+l') {
                     s.splitViewEnabled = !s.splitViewEnabled;
                     if (s.splitViewEnabled) {
+                        // T45: User re-opened — clear manual dismiss flag.
+                        s.claudeManuallyDismissed = false;
                         // Start screenshot polling. Preserve focusIndex.
                         return [s, tea.tick(100, 'claude-screenshot')];
                     } else {
+                        // T45: User explicitly closed — set manual dismiss flag
+                        // so auto-attach does not re-open the pane.
+                        s.claudeManuallyDismissed = true;
                         // Reset split-view state on disable. Preserve focusIndex.
                         s.claudeScreenshot = '';
                         s.claudeScreen = '';
@@ -1374,12 +1385,21 @@
         if (zone.inBounds('nav-next', msg)) {
             return handleNext(s);
         }
-        // Claude status badge.
+        // Claude status badge — T45: click to re-open split-view if closed.
         if (zone.inBounds('claude-status', msg)) {
             if (typeof tuiMux !== 'undefined' && tuiMux &&
-                typeof tuiMux.switchTo === 'function' &&
                 (typeof tuiMux.hasChild !== 'function' || tuiMux.hasChild())) {
-                tuiMux.switchTo('claude');
+                // T45: If split-view is not open, open it (re-clears manual dismiss).
+                if (!s.splitViewEnabled) {
+                    s.splitViewEnabled = true;
+                    s.splitViewFocus = 'wizard';
+                    s.splitViewTab = 'claude';
+                    s.claudeManuallyDismissed = false;
+                    return [s, tea.tick(100, 'claude-screenshot')];
+                }
+                // Already open — switch to Claude tab.
+                s.splitViewTab = 'claude';
+                s.splitViewFocus = 'claude';
             }
             return [s, null];
         }
@@ -2527,12 +2547,45 @@
                         s.claudeCrashDetected = true;
                         s.errorDetails = 'Claude process crashed unexpectedly.' +
                             (diagnostic ? '\n\nLast output:\n' + diagnostic : '');
+                        // T45: Auto-close split-view on Claude crash with notification.
+                        if (s.splitViewEnabled) {
+                            s.splitViewEnabled = false;
+                            s.claudeScreenshot = '';
+                            s.claudeScreen = '';
+                            s.claudeViewOffset = 0;
+                            s.splitViewFocus = 'wizard';
+                            s.splitViewTab = 'claude';
+                            s.claudeAutoAttachNotif = 'Claude crashed \u2014 split-view closed';
+                            s.claudeAutoAttachNotifAt = Date.now();
+                        }
                         s.wizard.transition('ERROR_RESOLUTION');
                         s.wizardState = 'ERROR_RESOLUTION';
                         return [s, null];
                     }
                 }
             }
+            // T45: Auto-attach Claude pane when Claude spawns.
+            // Trigger once: when tuiMux has a child (Claude attached by pipeline),
+            // split-view is not yet enabled, user hasn't manually dismissed, and
+            // terminal is tall enough.
+            if (!s.claudeAutoAttached && !s.splitViewEnabled && !s.claudeManuallyDismissed &&
+                s.height >= 12 &&
+                typeof tuiMux !== 'undefined' && tuiMux &&
+                typeof tuiMux.hasChild === 'function' && tuiMux.hasChild()) {
+                s.splitViewEnabled = true;
+                s.splitViewFocus = 'wizard';   // keep wizard focused
+                s.splitViewTab = 'claude';     // show Claude tab
+                s.claudeAutoAttached = true;
+                s.claudeAutoAttachNotif = 'Claude connected \u2014 Ctrl+L to toggle, Ctrl+] for passthrough';
+                s.claudeAutoAttachNotifAt = Date.now();
+                log.printf('auto-split: auto-attached Claude pane (height=%d)', s.height);
+                // Start screenshot polling immediately via batched tick.
+                return [s, tea.batch(
+                    tea.tick(100, 'claude-screenshot'),
+                    tea.tick(500, 'auto-poll')
+                )];
+            }
+
             // Read progress from pipeline's telemetry state.
             var pipelineState = prSplit._state || {};
             var telemetry = pipelineState.telemetryData || {};
@@ -3322,6 +3375,16 @@
             (typeof tuiMux.hasChild === 'function' && !tuiMux.hasChild())) {
             s.claudeScreen = '';
             s.claudeScreenshot = '';
+            // T45: If Claude was auto-attached and the child disappears,
+            // auto-close split-view and show notification.
+            if (s.claudeAutoAttached && !s.autoSplitRunning) {
+                s.splitViewEnabled = false;
+                s.splitViewFocus = 'wizard';
+                s.splitViewTab = 'claude';
+                s.claudeAutoAttachNotif = 'Claude session ended \u2014 split-view closed';
+                s.claudeAutoAttachNotifAt = Date.now();
+                return [s, null]; // stop polling
+            }
             // Continue polling — the child may attach later (e.g., during auto-split).
             return [s, tea.tick(500, 'claude-screenshot')];
         }

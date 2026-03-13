@@ -1,17 +1,17 @@
 # WIP — Work In Progress (Takumi's Desperate Diary)
 
-## Current Task: T45 — Auto-attach Claude pane when Claude spawns during wizard
+## Current Task: T46 — Claude inline feedback during PLAN_GENERATION
 
 ## Session State
 - **Branch:** `wip`
-- **Last Commit:** T44 (committing now)
-- **Blueprint Status:** T01-T44 Done. T45 next.
+- **Last Commit:** T45 (committing now)
+- **Blueprint Status:** T01-T45 Done. T46 next.
 - **Tests baseline:** ALL packages PASS (49/49). ~718s for internal/command with -race.
 - **Session start:** 2026-03-13 10:37:36 (9h mandate)
 - **Blueprint Schema:** Tasks use `acceptanceCriteria` (array of strings), NOT `acceptance` (string).
 
-## T44 Changes (COMMITTED — Rule of Two PASSED)
-### Mux process output into TUI during long-running operations
+## T45 Changes (COMMITTED — Rule of Two PASSED)
+### Auto-attach Claude pane when Claude spawns during wizard
 - **Added:** Init state fields: `splitViewTab: 'claude'`, `outputLines: []`, `outputViewOffset: 0`, `outputAutoScroll: true`
 - **Added:** `renderOutputPane(s, width, height)` in pr_split_15_tui_views.js — mirrors renderClaudePane, reads from s.outputLines, placeholder text, scroll indicator, ANSI-safe truncation
 - **Added:** Tab bar in split-view pane divider: `[Claude] [Output]` with zone.mark() for clicks, output line count badge

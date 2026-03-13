@@ -408,7 +408,22 @@
             statusLine = parts;
         }
 
-        return styles.dim().render(
+        // T45: Transient notification banner (auto-dismiss after 5s).
+        var notifLine = '';
+        if (s.claudeAutoAttachNotif && s.claudeAutoAttachNotifAt) {
+            var elapsed = Date.now() - s.claudeAutoAttachNotifAt;
+            if (elapsed < 5000) {
+                notifLine = styles.primaryButton().render(
+                    ' \u2139 ' + s.claudeAutoAttachNotif + ' '
+                ) + '\n';
+            } else {
+                // Auto-dismiss: clear the notification.
+                s.claudeAutoAttachNotif = '';
+                s.claudeAutoAttachNotifAt = 0;
+            }
+        }
+
+        return notifLine + styles.dim().render(
             styles.divider().render(repeatStr('\u2500', w))
         ) + '\n' + statusLine;
     }

@@ -1145,7 +1145,12 @@
                     styles.dim().render(' \u2192 ' + (result.sha ? result.sha.substring(0, 8) : ''));
             } else if (i === currentIdx && s.isProcessing) {
                 icon = styles.warningBadge().render(' \u25b6 ');
-                statusText = styles.statusActive().render(split.name + '...');
+                var activeLabel = split.name + '...';
+                // Show per-branch progress if available from async progressFn.
+                if (s.executionProgressMsg && s.executionBranchTotal > 0) {
+                    activeLabel = split.name + ' (' + (currentIdx + 1) + '/' + s.executionBranchTotal + ')';
+                }
+                statusText = styles.statusActive().render(activeLabel);
             } else {
                 icon = styles.dim().render(' \u25cb ');
                 statusText = styles.dim().render(split.name);

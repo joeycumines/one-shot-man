@@ -76,6 +76,7 @@
       "T32: Integration test baseline + fix — 5 async unit test regressions fixed, 7 VTerm tests fixed (-interactive=false + prompt pattern), baseline doc at scratch/integration-test-baseline.md, 49/49 packages PASS",
       "T33: tuiMux bootstrap verified — architecture connected (Go→JS injection → automatedSplit attach → pollClaudeScreenshot → renderClaudePane). Added hasChild() guards to pollClaudeScreenshot + 3 switchTo sites. 6 new tests.",
       "T34: runAnalysisStep → async runAnalysisAsync + handleAnalysisPoll. analyzeDiffAsync/createSplitPlanAsync replace sync. 100ms poll. 9 new tests. Zero blocking calls from TUI tick handlers.",
+      "T35: runExecutionStep → async runExecutionAsync + handleExecutionPoll + startEquivCheck + runEquivCheckAsync + handleEquivPoll. executeSplitAsync with progressFn for per-branch progress. verifyEquivalenceAsync for equiv check. All exec-step-0/1/2 removed. Fixed wizard state desync (try/catch+wizard.current pattern). Fixed cancel handler isProcessing reset. Cancel guards on all async functions. 15 new tests.",
       "T61-old: mcpCallback.waitForAsync() — non-blocking Promise-based MCP tool wait with aliveCheck trampoline, 9 tests, 47/47 pass",
       "T62-old: Pipeline async conversion — waitForLogged dual-path, step callbacks async, spawn/restart async, handleRestartClaudePoll, scroll keys, 485 tests pass"
     ],
@@ -183,7 +184,8 @@
         "All existing execution tests pass",
         "Zero remaining calls to sync executeSplit/verifyEquivalence from TUI context (verified by grep)"
       ],
-      "status": "Not Started",
+      "status": "Done",
+      "deliverables": "Replaced sync runExecutionStep with async runExecutionAsync + handleExecutionPoll + startEquivCheck + runEquivCheckAsync + handleEquivPoll. executeSplitAsync used for branch creation with progressFn updating s.executingIdx/executionBranchTotal in real-time. verifyEquivalenceAsync used for equiv check. All 4 exec-step-2 callers updated to use startEquivCheck. Removed dead handleEquivCheckState variable. Added executionRunning/executionError/executionNextStep/executionBranchTotal/executionProgressMsg/equivRunning/equivError to init state. Updated viewExecutionScreen to show branchIdx/branchTotal progress. 13 new tests all PASS.",
       "context": {
         "files": [
           "internal/command/pr_split_16_tui_core.js:2431 (executeSplit sync call in runExecutionStep)",

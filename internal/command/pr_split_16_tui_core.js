@@ -43,7 +43,6 @@
     var handleConfigState = prSplit._handleConfigState;
     var handlePlanReviewState = prSplit._handlePlanReviewState;
     var handlePlanEditorState = prSplit._handlePlanEditorState;
-    var handleEquivCheckState = prSplit._handleEquivCheckState;
     var handleErrorResolutionState = prSplit._handleErrorResolutionState;
     var handleFinalizationState = prSplit._handleFinalizationState;
 
@@ -127,6 +126,15 @@
                 // Execution state.
                 executionResults: [],
                 executingIdx: 0,
+                executionRunning: false,
+                executionError: null,
+                executionNextStep: null,
+                executionBranchTotal: 0,
+                executionProgressMsg: '',
+
+                // Equivalence check state.
+                equivRunning: false,
+                equivError: null,
 
                 // Verification state (per-branch, after branch creation).
                 verificationResults: [],   // Array parallel to splits
@@ -645,15 +653,13 @@
                 if (msg.id === 'analysis-poll') {
                     return handleAnalysisPoll(s);
                 }
-                // Execution steps.
-                if (msg.id === 'exec-step-0') {
-                    return runExecutionStep(s, 0);
+                // Execution polling (async Promise+poll pattern).
+                if (msg.id === 'execution-poll') {
+                    return handleExecutionPoll(s);
                 }
-                if (msg.id === 'exec-step-1') {
-                    return runExecutionStep(s, 1);
-                }
-                if (msg.id === 'exec-step-2') {
-                    return runExecutionStep(s, 2);
+                // Equivalence check polling (async Promise+poll pattern).
+                if (msg.id === 'equiv-poll') {
+                    return handleEquivPoll(s);
                 }
                 if (msg.id === 'verify-branch') {
                     return runVerifyBranch(s);
@@ -902,6 +908,7 @@
             var k = msg.key;
             if (k === 'y' || k === 'enter') {
                 s.showConfirmCancel = false;
+                s.isProcessing = false;
                 cleanupActiveSession();
                 s.wizard.cancel();
                 s.wizardState = 'CANCELLED';
@@ -915,6 +922,7 @@
         if (msg.type === 'Mouse' && msg.action === 'press' && !msg.isWheel) {
             if (zone.inBounds('confirm-yes', msg)) {
                 s.showConfirmCancel = false;
+                s.isProcessing = false;
                 cleanupActiveSession();
                 s.wizard.cancel();
                 s.wizardState = 'CANCELLED';
@@ -1950,9 +1958,11 @@
         try {
             st.analysisCache = await prSplit.analyzeDiffAsync({ baseBranch: prSplit.runtime.baseBranch });
         } catch (e) {
+            if (s.wizard.current === 'CANCELLED') return; // wizard already cancelled
             s.isProcessing = false;
             s.errorDetails = 'Analysis failed: ' + (e.message || String(e));
-            s.wizardState = 'ERROR';
+            try { s.wizard.transition('ERROR'); } catch (te) { /* terminal state */ }
+            s.wizardState = s.wizard.current;
             return;
         }
         s.analysisSteps[0].done = true;
@@ -1961,12 +1971,13 @@
         s.analysisProgress = 0.25;
 
         // Check for cancellation between steps.
-        if (!s.isProcessing) return;
+        if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
 
         if (st.analysisCache.error) {
             s.isProcessing = false;
             s.errorDetails = st.analysisCache.error;
-            s.wizardState = 'ERROR';
+            try { s.wizard.transition('ERROR'); } catch (te) { /* terminal state */ }
+            s.wizardState = s.wizard.current;
             return;
         }
         if (!st.analysisCache.files || st.analysisCache.files.length === 0) {
@@ -1977,7 +1988,7 @@
         }
 
         // ── Step 1: Group files (pure compute, non-blocking) ──
-        if (!s.isProcessing) return;
+        if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
         s.analysisSteps[1].active = true;
         var groupStart = Date.now();
         st.groupsCache = prSplit.applyStrategy(
@@ -1988,7 +1999,7 @@
         s.analysisProgress = 0.5;
 
         // ── Step 2: Create plan (I/O-bound: optional git rev-parse) ──
-        if (!s.isProcessing) return;
+        if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
         s.analysisSteps[2].active = true;
         var planStart = Date.now();
         st.planCache = await prSplit.createSplitPlanAsync(st.groupsCache, {
@@ -2004,7 +2015,7 @@
         s.analysisProgress = 0.75;
 
         // ── Step 3: Validate plan (pure compute, non-blocking) ──
-        if (!s.isProcessing) return;
+        if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
         s.analysisSteps[3].active = true;
         var validation = prSplit.validatePlan(st.planCache);
         s.analysisSteps[3].done = true;
@@ -2014,13 +2025,16 @@
         if (!validation.valid) {
             s.isProcessing = false;
             s.errorDetails = 'Plan validation failed: ' + validation.errors.join('; ');
-            s.wizardState = 'ERROR';
+            try { s.wizard.transition('ERROR'); } catch (te) { /* terminal state */ }
+            s.wizardState = s.wizard.current;
             return;
         }
 
         s.isProcessing = false;
 
         // Transition wizard to PLAN_GENERATION then PLAN_REVIEW.
+        // Guard against CANCELLED (user may have cancelled during last step).
+        if (s.wizard.current === 'CANCELLED') return;
         if (s.wizard.current === 'CONFIG') {
             s.wizard.transition('PLAN_GENERATION');
         }
@@ -2046,7 +2060,8 @@
         if (s.analysisError) {
             s.isProcessing = false;
             s.errorDetails = s.analysisError;
-            s.wizardState = 'ERROR';
+            try { s.wizard.transition('ERROR'); } catch (e) { /* already terminal */ }
+            s.wizardState = s.wizard.current;
             return [s, null];
         }
 
@@ -2344,7 +2359,7 @@
         s.wizard.transition('EQUIV_CHECK');
         s.wizardState = 'EQUIV_CHECK';
         s.isProcessing = true;
-        return [s, tea.tick(1, 'exec-step-2')];
+        return startEquivCheck(s);
     }
 
     // handleRestartClaudePoll — polls for async Claude restart completion.
@@ -2427,77 +2442,209 @@
             return [s, null];
         }
 
-        // Dispatch first execution step via tick to yield for rendering.
-        return [s, tea.tick(1, 'exec-step-0')];
+        // Launch async execution pipeline. executeSplitAsync uses
+        // exec.spawn for non-blocking git operations. We pass a progressFn
+        // that updates s.executingIdx in real-time so the poll handler can
+        // render per-branch progress with spinner animation.
+        s.executionRunning = true;
+        s.executionError = null;
+        runExecutionAsync(s).then(
+            function() {
+                s.executionRunning = false;
+            },
+            function(err) {
+                s.executionError = (err && err.message) ? err.message : String(err);
+                s.executionRunning = false;
+            }
+        );
+
+        // Poll at 100ms for responsive spinner animation.
+        return [s, tea.tick(100, 'execution-poll')];
     }
 
-    // runExecutionStep: Runs a single execution step synchronously, then
-    // dispatches the next step via tick. Yields between steps so the UI
-    // can render progress and the user can cancel.
-    function runExecutionStep(s, stepIdx) {
-        // If processing was cancelled between steps, bail out.
-        if (!s.isProcessing) {
+    // runExecutionAsync: Runs the split execution as an async function.
+    // Uses executeSplitAsync (non-blocking I/O via exec.spawn) with a
+    // progressFn that updates s.executingIdx for real-time per-branch
+    // progress in the TUI. On completion, chains to per-branch verification
+    // or equivalence check.
+    async function runExecutionAsync(s) {
+        var result;
+        try {
+            result = await prSplit.executeSplitAsync(st.planCache, {
+                progressFn: function(msg) {
+                    // Parse branch index from progress messages like
+                    // "Creating branch 2/5: split/02-feature".
+                    var match = msg.match(/(\d+)\/(\d+)/);
+                    if (match) {
+                        s.executingIdx = parseInt(match[1], 10) - 1;
+                        s.executionBranchTotal = parseInt(match[2], 10);
+                    }
+                    s.executionProgressMsg = msg;
+                }
+            });
+        } catch (e) {
+            if (s.wizard.current === 'CANCELLED') return; // wizard already cancelled
+            s.isProcessing = false;
+            s.errorDetails = 'Execution error: ' + (e.message || String(e));
+            try { s.wizard.transition('ERROR_RESOLUTION'); } catch (te) { /* terminal state */ }
+            s.wizardState = s.wizard.current;
+            return;
+        }
+
+        if (!s.isProcessing || s.wizard.current === 'CANCELLED') return; // cancelled
+
+        if (result.error) {
+            s.isProcessing = false;
+            s.errorDetails = result.error;
+            s.wizard.data.failedBranches = result.results ?
+                result.results.filter(function(r) { return r.error; }) : [];
+            try { s.wizard.transition('ERROR_RESOLUTION'); } catch (te) { /* terminal state */ }
+            s.wizardState = s.wizard.current;
+            return;
+        }
+
+        st.executionResultCache = result.results;
+        s.executionResults = result.results || [];
+
+        // Chain: If verify command configured, start per-branch verification.
+        // Otherwise, start the equivalence check.
+        // (These set state directly; the poll handler will detect completion.)
+        s.executionNextStep = prSplit.runtime.verifyCommand ? 'verify' : 'equiv';
+    }
+
+    // handleExecutionPoll: Called every 100ms to check if the async
+    // execution pipeline has completed. Updates spinner animation and
+    // handles cancellation.
+    function handleExecutionPoll(s) {
+        // If cancelled, stop polling.
+        if (!s.isProcessing && !s.executionRunning) {
             return [s, null];
         }
 
-        switch (stepIdx) {
-        case 0: {
-            // Step 1: Execute the split plan (create branches).
-            try {
-                var result = prSplit.executeSplit(st.planCache);
-                if (result.error) {
-                    s.isProcessing = false;
-                    s.errorDetails = result.error;
-                    s.wizard.data.failedBranches = result.results ?
-                        result.results.filter(function(r) { return r.error; }) : [];
-                    s.wizard.transition('ERROR_RESOLUTION');
-                    s.wizardState = 'ERROR_RESOLUTION';
-                    return [s, null];
-                }
-                st.executionResultCache = result.results;
-                s.executionResults = result.results || [];
-            } catch (e) {
-                s.isProcessing = false;
-                s.errorDetails = 'Execution error: ' + (e.message || String(e));
-                s.wizard.transition('ERROR_RESOLUTION');
-                s.wizardState = 'ERROR_RESOLUTION';
-                return [s, null];
-            }
-
-            // Yield for render, then start per-branch verification.
-            return [s, tea.tick(1, 'exec-step-1')];
+        // Still running — poll again for spinner animation.
+        if (s.executionRunning) {
+            return [s, tea.tick(100, 'execution-poll')];
         }
-        case 1: {
-            // Step 2: Initialize per-branch verification.
-            // If no verify command configured, skip straight to equiv check.
-            if (!prSplit.runtime.verifyCommand) {
-                return [s, tea.tick(1, 'exec-step-2')];
-            }
+
+        // Pipeline completed. Check for error set by .then() rejection.
+        if (s.executionError) {
+            s.isProcessing = false;
+            s.errorDetails = s.executionError;
+            try { s.wizard.transition('ERROR_RESOLUTION'); } catch (te) { /* terminal state */ }
+            s.wizardState = s.wizard.current;
+            return [s, null];
+        }
+
+        // Check what the async function determined as the next step.
+        if (s.executionNextStep === 'verify') {
+            // Start per-branch verification.
+            s.executionNextStep = null;
             s.verificationResults = [];
             s.verifyingIdx = 0;
             s.verifyOutput = {};
             s.expandedVerifyBranch = null;
             return [s, tea.tick(1, 'verify-branch')];
         }
-        case 2: {
-            // Step 3: Equivalence check.
-            // Guard: only transition if not already in EQUIV_CHECK
-            // (handleResolvePoll pre-transitions for the skip/resolve paths).
-            if (s.wizard.current !== 'EQUIV_CHECK') {
-                s.wizard.transition('EQUIV_CHECK');
+
+        if (s.executionNextStep === 'equiv') {
+            // Start equivalence check.
+            s.executionNextStep = null;
+            return startEquivCheck(s);
+        }
+
+        // Async function set state directly (error paths). Stop polling.
+        return [s, null];
+    }
+
+    // startEquivCheck: Launches the async equivalence check pipeline.
+    // Called after execution completes (directly or after per-branch verify).
+    function startEquivCheck(s) {
+        // Guard: only transition if not already in EQUIV_CHECK
+        // (handleResolvePoll pre-transitions for skip/resolve paths).
+        if (s.wizard.current !== 'EQUIV_CHECK') {
+            s.wizard.transition('EQUIV_CHECK');
+        }
+        s.wizardState = 'EQUIV_CHECK';
+
+        s.equivRunning = true;
+        s.equivError = null;
+        runEquivCheckAsync(s).then(
+            function() {
+                s.equivRunning = false;
+            },
+            function(err) {
+                s.equivError = (err && err.message) ? err.message : String(err);
+                s.equivRunning = false;
             }
-            s.wizardState = 'EQUIV_CHECK';
+        );
 
-            var equivResult = handleEquivCheckState(s.wizard, st.planCache);
+        return [s, tea.tick(100, 'equiv-poll')];
+    }
+
+    // runEquivCheckAsync: Runs equivalence check as an async function.
+    // Uses verifyEquivalenceAsync (non-blocking I/O via exec.spawn).
+    async function runEquivCheckAsync(s) {
+        var equivResult;
+        try {
+            equivResult = await prSplit.verifyEquivalenceAsync(st.planCache);
+        } catch (e) {
+            if (s.wizard.current === 'CANCELLED') return; // wizard already cancelled
             s.isProcessing = false;
-            s.equivalenceResult = equivResult.equivalence || {};
+            s.errorDetails = 'Equivalence check failed: ' + (e.message || String(e));
+            try { s.wizard.transition('ERROR'); } catch (te) { /* terminal state */ }
             s.wizardState = s.wizard.current;
+            return;
+        }
 
+        if (!s.isProcessing || s.wizard.current === 'CANCELLED') return; // cancelled
+
+        // Defensive: treat null/undefined result as error.
+        if (!equivResult) {
+            s.isProcessing = false;
+            s.errorDetails = 'Equivalence check returned no result.';
+            try { s.wizard.transition('ERROR'); } catch (te) { /* terminal state */ }
+            s.wizardState = s.wizard.current;
+            return;
+        }
+
+        // Annotate with skip information.
+        var skipped = s.wizard.data && s.wizard.data.skippedBranches;
+        if (skipped && skipped.length > 0) {
+            equivResult.skippedBranches = skipped.map(function(b) { return b.name || b; });
+            equivResult.incomplete = true;
+        }
+        s.wizard.data.equivalence = equivResult;
+        s.equivalenceResult = equivResult;
+
+        s.isProcessing = false;
+        try { s.wizard.transition('FINALIZATION', { equivalence: equivResult }); } catch (te) { /* terminal state */ }
+        s.wizardState = s.wizard.current;
+    }
+
+    // handleEquivPoll: Called every 100ms to check if the async
+    // equivalence check has completed.
+    function handleEquivPoll(s) {
+        // If cancelled, stop polling.
+        if (!s.isProcessing && !s.equivRunning) {
             return [s, null];
         }
-        default:
+
+        // Still running — poll again.
+        if (s.equivRunning) {
+            return [s, tea.tick(100, 'equiv-poll')];
+        }
+
+        // Pipeline completed. Check for error.
+        if (s.equivError) {
+            s.isProcessing = false;
+            s.errorDetails = 'Equivalence check failed: ' + s.equivError;
+            try { s.wizard.transition('ERROR'); } catch (e) { /* already terminal */ }
+            s.wizardState = s.wizard.current;
             return [s, null];
         }
+
+        // Success — state already transitioned by runEquivCheckAsync.
+        return [s, null];
     }
 
     // ── Per-branch verification (tick-based stepping) ────────────
@@ -2510,7 +2657,7 @@
         var splits = st.planCache.splits;
         if (!splits || s.verifyingIdx >= splits.length) {
             // All branches verified — move to equiv check.
-            return [s, tea.tick(1, 'exec-step-2')];
+            return startEquivCheck(s);
         }
 
         var split = splits[s.verifyingIdx];
@@ -3226,9 +3373,9 @@
 
         case 'skip':
             // Transition to EQUIV_CHECK happened in handleErrorResolutionState.
-            // Dispatch equivalence check via the exec-step-2 handler.
+            // Dispatch equivalence check via async startEquivCheck.
             s.isProcessing = true;
-            return [s, tea.tick(1, 'exec-step-2')];
+            return startEquivCheck(s);
 
         case 'retry':
             // Transition to PLAN_GENERATION happened. Re-run analysis.

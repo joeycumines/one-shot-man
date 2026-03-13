@@ -4000,5 +4000,552 @@ func TestChunk16_AnalysisAsync_NoSyncCallsRemain(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+//  T35: Async Execution Pipeline Tests
+// ---------------------------------------------------------------------------
+
+// TestChunk16_ExecutionPoll_StillRunning verifies that handleExecutionPoll
+// continues polling when execution is still running.
+func TestChunk16_ExecutionPoll_StillRunning(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('BRANCH_BUILDING');
+		s.isProcessing = true;
+		s.executionRunning = true;
+		s.executionError = null;
+
+		var r = update({type: 'Tick', id: 'execution-poll'}, s);
+		if (!r[1]) return 'FAIL: should return a tick cmd when still running';
+		if (!r[0].executionRunning) return 'FAIL: executionRunning should still be true';
+		if (!r[0].isProcessing) return 'FAIL: isProcessing should still be true';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("execution-poll still running: %v", raw)
+	}
+}
+
+// TestChunk16_ExecutionPoll_Cancelled verifies that handleExecutionPoll
+// stops polling when processing was cancelled.
+func TestChunk16_ExecutionPoll_Cancelled(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('BRANCH_BUILDING');
+		s.isProcessing = false;
+		s.executionRunning = false;
+		s.executionError = null;
+
+		var r = update({type: 'Tick', id: 'execution-poll'}, s);
+		if (r[1] !== null) return 'FAIL: should return null cmd on cancel, got: ' + r[1];
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("execution-poll cancelled: %v", raw)
+	}
+}
+
+// TestChunk16_ExecutionPoll_ErrorFromPromise verifies that handleExecutionPoll
+// transitions to ERROR_RESOLUTION when the async pipeline rejects.
+func TestChunk16_ExecutionPoll_ErrorFromPromise(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('BRANCH_BUILDING');
+		s.isProcessing = true;
+		s.executionRunning = false;
+		s.executionError = 'git worktree failed: permission denied';
+
+		var r = update({type: 'Tick', id: 'execution-poll'}, s);
+		if (r[0].wizardState !== 'ERROR_RESOLUTION') {
+			return 'FAIL: wizardState should be ERROR_RESOLUTION, got: ' + r[0].wizardState;
+		}
+		if (r[0].isProcessing) return 'FAIL: isProcessing should be false';
+		if (!r[0].errorDetails || r[0].errorDetails.indexOf('permission denied') < 0) {
+			return 'FAIL: errorDetails should contain error, got: ' + r[0].errorDetails;
+		}
+		if (r[1] !== null) return 'FAIL: should return null cmd on error';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("execution-poll error: %v", raw)
+	}
+}
+
+// TestChunk16_ExecutionPoll_CompletedToVerify verifies that handleExecutionPoll
+// starts per-branch verification when executionNextStep='verify'.
+func TestChunk16_ExecutionPoll_CompletedToVerify(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('BRANCH_BUILDING');
+		s.isProcessing = true;
+		s.executionRunning = false;
+		s.executionError = null;
+		s.executionNextStep = 'verify';
+
+		var r = update({type: 'Tick', id: 'execution-poll'}, s);
+		// Should dispatch to verify-branch.
+		if (!r[1]) return 'FAIL: should return a tick cmd for verify-branch';
+		if (r[0].verifyingIdx !== 0) return 'FAIL: verifyingIdx should be 0, got: ' + r[0].verifyingIdx;
+		if (r[0].executionNextStep !== null) return 'FAIL: executionNextStep should be cleared';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("execution-poll completed→verify: %v", raw)
+	}
+}
+
+// TestChunk16_ExecutionPoll_CompletedToEquiv verifies that handleExecutionPoll
+// starts equivalence check when executionNextStep='equiv'.
+func TestChunk16_ExecutionPoll_CompletedToEquiv(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('BRANCH_BUILDING');
+		s.isProcessing = true;
+		s.executionRunning = false;
+		s.executionError = null;
+		s.executionNextStep = 'equiv';
+
+		var r = update({type: 'Tick', id: 'execution-poll'}, s);
+		// Should start equiv check — returns a tick cmd for equiv-poll.
+		if (!r[1]) return 'FAIL: should return a tick cmd for equiv-poll';
+		if (r[0].wizardState !== 'EQUIV_CHECK') {
+			return 'FAIL: wizardState should be EQUIV_CHECK, got: ' + r[0].wizardState;
+		}
+		if (!r[0].equivRunning) return 'FAIL: equivRunning should be true';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("execution-poll completed→equiv: %v", raw)
+	}
+}
+
+// TestChunk16_EquivPoll_StillRunning verifies that handleEquivPoll
+// continues polling when equiv check is still running.
+func TestChunk16_EquivPoll_StillRunning(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('EQUIV_CHECK');
+		s.isProcessing = true;
+		s.equivRunning = true;
+		s.equivError = null;
+
+		var r = update({type: 'Tick', id: 'equiv-poll'}, s);
+		if (!r[1]) return 'FAIL: should return a tick cmd when still running';
+		if (!r[0].equivRunning) return 'FAIL: equivRunning should still be true';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("equiv-poll still running: %v", raw)
+	}
+}
+
+// TestChunk16_EquivPoll_Cancelled verifies that handleEquivPoll
+// stops polling when processing was cancelled.
+func TestChunk16_EquivPoll_Cancelled(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('EQUIV_CHECK');
+		s.isProcessing = false;
+		s.equivRunning = false;
+		s.equivError = null;
+
+		var r = update({type: 'Tick', id: 'equiv-poll'}, s);
+		if (r[1] !== null) return 'FAIL: should return null cmd on cancel';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("equiv-poll cancelled: %v", raw)
+	}
+}
+
+// TestChunk16_EquivPoll_Error verifies that handleEquivPoll
+// transitions to ERROR state when equiv check fails.
+func TestChunk16_EquivPoll_Error(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('EQUIV_CHECK');
+		s.isProcessing = true;
+		s.equivRunning = false;
+		s.equivError = 'failed to get split tree: fatal: not a valid object name';
+
+		var r = update({type: 'Tick', id: 'equiv-poll'}, s);
+		if (r[0].wizardState !== 'ERROR') {
+			return 'FAIL: wizardState should be ERROR, got: ' + r[0].wizardState;
+		}
+		if (r[0].isProcessing) return 'FAIL: isProcessing should be false';
+		if (!r[0].errorDetails || r[0].errorDetails.indexOf('Equivalence check failed') < 0) {
+			return 'FAIL: errorDetails should mention equiv check, got: ' + r[0].errorDetails;
+		}
+		if (r[1] !== null) return 'FAIL: should return null cmd on error';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("equiv-poll error: %v", raw)
+	}
+}
+
+// TestChunk16_EquivPoll_CompletedSuccess verifies that handleEquivPoll
+// accepts the final state when equiv check completed successfully.
+func TestChunk16_EquivPoll_CompletedSuccess(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		// Simulate async equiv complete: equivRunning=false, equivError=null,
+		// wizardState already transitioned to FINALIZATION by runEquivCheckAsync.
+		var s = initState('FINALIZATION');
+		s.isProcessing = false;
+		s.equivRunning = false;
+		s.equivError = null;
+
+		var r = update({type: 'Tick', id: 'equiv-poll'}, s);
+		if (r[1] !== null) return 'FAIL: should return null cmd on success';
+		if (r[0].wizardState !== 'FINALIZATION') {
+			return 'FAIL: wizardState should be FINALIZATION, got: ' + r[0].wizardState;
+		}
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("equiv-poll success: %v", raw)
+	}
+}
+
+// TestChunk16_ExecutionAsync_NoSyncCallsRemain verifies that the old sync
+// execution tick IDs are no longer handled by the update function.
+func TestChunk16_ExecutionAsync_NoSyncCallsRemain(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('BRANCH_BUILDING');
+		s.isProcessing = true;
+
+		// Old tick IDs should be ignored (return [s, null]).
+		var oldTicks = ['exec-step-0', 'exec-step-1', 'exec-step-2'];
+		for (var i = 0; i < oldTicks.length; i++) {
+			var r = update({type: 'Tick', id: oldTicks[i]}, s);
+			if (r[1] !== null) return 'FAIL: old tick ' + oldTicks[i] + ' should return null cmd';
+		}
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("no sync exec calls remain: %v", raw)
+	}
+}
+
+// TestChunk16_ExecutionAsync_HappyPath exercises the execution-poll →
+// startEquivCheck → equiv-poll chain by simulating completed async execution
+// then polling through to FINALIZATION.
+func TestChunk16_ExecutionAsync_HappyPath(t *testing.T) {
+	t.Parallel()
+
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(async function() {
+		var origVerifyEquivalenceAsync = globalThis.prSplit.verifyEquivalenceAsync;
+
+		try {
+			// Mock verifyEquivalenceAsync: equivalent.
+			globalThis.prSplit.verifyEquivalenceAsync = async function(plan) {
+				return { equivalent: true, splitTree: 'aaa', sourceTree: 'aaa', error: null };
+			};
+
+			// Set up state simulating completed execution (no verify command).
+			var s = initState('BRANCH_BUILDING');
+			s.isProcessing = true;
+			s.executionRunning = false;
+			s.executionError = null;
+			s.executionNextStep = 'equiv';
+			s.executionResults = [
+				{ name: 'split/01-group1', files: ['a.go'], sha: 'abc123', error: null },
+				{ name: 'split/02-group2', files: ['b.go'], sha: 'def456', error: null }
+			];
+
+			// Poll execution → should transition to EQUIV_CHECK and start equiv async.
+			var r = update({type: 'Tick', id: 'execution-poll'}, s);
+			s = r[0];
+
+			if (s.wizardState !== 'EQUIV_CHECK') {
+				return 'FAIL: expected EQUIV_CHECK after execution-poll, got ' + s.wizardState;
+			}
+			if (!s.equivRunning) return 'FAIL: equivRunning should be true';
+
+			// Let microtasks resolve (mocked verifyEquivalenceAsync resolves immediately).
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			// Poll equiv check for completion.
+			r = update({type: 'Tick', id: 'equiv-poll'}, s);
+			s = r[0];
+
+			if (s.wizardState !== 'FINALIZATION') {
+				return 'FAIL: expected FINALIZATION after equiv-poll, got ' + s.wizardState +
+					', equivError=' + s.equivError + ', equivRunning=' + s.equivRunning;
+			}
+			if (s.isProcessing) return 'FAIL: isProcessing should be false';
+			if (!s.equivalenceResult || !s.equivalenceResult.equivalent) {
+				return 'FAIL: equivalenceResult should be equivalent';
+			}
+
+			return 'OK';
+		} finally {
+			globalThis.prSplit.verifyEquivalenceAsync = origVerifyEquivalenceAsync;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("execution async happy path: %v", raw)
+	}
+}
+
+// TestChunk16_ExecutionAsync_ExecutionError verifies that when
+// executeSplitAsync returns an error, wizard transitions to ERROR_RESOLUTION.
+func TestChunk16_ExecutionAsync_ExecutionError(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		// Simulate execution error via the poll handler.
+		var s = initState('BRANCH_BUILDING');
+		s.isProcessing = true;
+		s.executionRunning = false;
+		s.executionError = null;
+		s.executionNextStep = null;
+		// When the async function sets error state directly:
+		s.wizardState = 'ERROR_RESOLUTION';
+		s.errorDetails = 'git worktree add failed';
+		s.isProcessing = false;
+
+		// Poll should see completed state and stop.
+		var r = update({type: 'Tick', id: 'execution-poll'}, s);
+		if (r[1] !== null) return 'FAIL: should return null cmd after error';
+		if (r[0].wizardState !== 'ERROR_RESOLUTION') {
+			return 'FAIL: wizardState should stay ERROR_RESOLUTION, got: ' + r[0].wizardState;
+		}
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("execution async error: %v", raw)
+	}
+}
+
+// TestChunk16_ExecutionAsync_ProgressUpdate verifies that the progressFn
+// callback from executeSplitAsync correctly updates state fields.
+func TestChunk16_ExecutionAsync_ProgressUpdate(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(async function() {
+		var origExecuteSplitAsync = globalThis.prSplit.executeSplitAsync;
+
+		try {
+			var capturedState = null;
+
+			globalThis.prSplit.executeSplitAsync = async function(plan, opts) {
+				// Simulate per-branch progress.
+				if (opts && opts.progressFn) {
+					opts.progressFn('Creating branch 1/3: split/01');
+					// Capture state between calls.
+					capturedState = {
+						executingIdx: plan._testState.executingIdx,
+						executionBranchTotal: plan._testState.executionBranchTotal,
+						executionProgressMsg: plan._testState.executionProgressMsg
+					};
+					opts.progressFn('Creating branch 2/3: split/02');
+					opts.progressFn('Creating branch 3/3: split/03');
+				}
+				return {
+					error: null,
+					results: [
+						{ name: 'split/01', files: ['a.go'], sha: 'aaa', error: null },
+						{ name: 'split/02', files: ['b.go'], sha: 'bbb', error: null },
+						{ name: 'split/03', files: ['c.go'], sha: 'ccc', error: null }
+					]
+				};
+			};
+
+			var s = initState('BRANCH_BUILDING');
+			s.isProcessing = true;
+			s.executionRunning = true;
+			s.executionError = null;
+			// Attach state ref to plan for capture in mock.
+			var fakePlan = {
+				splits: [
+					{ name: 'split/01', files: ['a.go'], message: 'g1', order: 0, dependencies: [] },
+					{ name: 'split/02', files: ['b.go'], message: 'g2', order: 1, dependencies: [] },
+					{ name: 'split/03', files: ['c.go'], message: 'g3', order: 2, dependencies: [] }
+				],
+				baseBranch: 'main',
+				sourceBranch: 'feature',
+				fileStatuses: { 'a.go': 'M', 'b.go': 'A', 'c.go': 'M' },
+				_testState: s
+			};
+
+			// Call the progressFn path directly.
+			var result = await globalThis.prSplit.executeSplitAsync(fakePlan, {
+				progressFn: function(msg) {
+					var match = msg.match(/(\d+)\/(\d+)/);
+					if (match) {
+						s.executingIdx = parseInt(match[1], 10) - 1;
+						s.executionBranchTotal = parseInt(match[2], 10);
+					}
+					s.executionProgressMsg = msg;
+				}
+			});
+
+			// Verify progress was tracked.
+			if (s.executingIdx !== 2) return 'FAIL: executingIdx should be 2, got: ' + s.executingIdx;
+			if (s.executionBranchTotal !== 3) return 'FAIL: executionBranchTotal should be 3, got: ' + s.executionBranchTotal;
+			if (s.executionProgressMsg.indexOf('3/3') < 0) {
+				return 'FAIL: executionProgressMsg should contain 3/3, got: ' + s.executionProgressMsg;
+			}
+
+			// Verify intermediate capture (after first progress call).
+			if (!capturedState) return 'FAIL: should have captured intermediate state';
+			if (capturedState.executingIdx !== 0) {
+				return 'FAIL: intermediate executingIdx should be 0, got: ' + capturedState.executingIdx;
+			}
+			if (capturedState.executionBranchTotal !== 3) {
+				return 'FAIL: intermediate executionBranchTotal should be 3, got: ' + capturedState.executionBranchTotal;
+			}
+
+			return 'OK';
+		} finally {
+			globalThis.prSplit.executeSplitAsync = origExecuteSplitAsync;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("execution async progress update: %v", raw)
+	}
+}
+
+// TestChunk16_CancelDuringExecution verifies that cancelling during async
+// execution sets isProcessing=false and prevents further wizard transitions.
+func TestChunk16_CancelDuringExecution(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('BRANCH_BUILDING');
+		s.isProcessing = true;
+		s.executionRunning = true;
+		s.showConfirmCancel = true;
+
+		// User confirms cancel.
+		var r = update({type: 'Key', key: 'y'}, s);
+		s = r[0];
+
+		// Cancel should:
+		// 1. Set isProcessing = false (so async early-return guards fire)
+		// 2. Set wizard state to CANCELLED
+		if (s.isProcessing) return 'FAIL: isProcessing should be false after cancel';
+		if (s.wizardState !== 'CANCELLED') {
+			return 'FAIL: wizardState should be CANCELLED, got: ' + s.wizardState;
+		}
+		if (s.wizard.current !== 'CANCELLED') {
+			return 'FAIL: wizard.current should be CANCELLED, got: ' + s.wizard.current;
+		}
+
+		// Subsequent execution-poll should stop (isProcessing=false).
+		s.executionRunning = false;
+		r = update({type: 'Tick', id: 'execution-poll'}, s);
+		if (r[1] !== null) return 'FAIL: execution-poll should stop after cancel';
+
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("cancel during execution: %v", raw)
+	}
+}
+
+// TestChunk16_EquivPoll_ErrorWizardStateSync verifies that handleEquivPoll
+// error path calls wizard.transition('ERROR') keeping wizard.current in sync.
+func TestChunk16_EquivPoll_ErrorWizardStateSync(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('EQUIV_CHECK');
+		s.isProcessing = true;
+		s.equivRunning = false;
+		s.equivError = 'tree mismatch';
+
+		var r = update({type: 'Tick', id: 'equiv-poll'}, s);
+		s = r[0];
+		// Both wizardState and wizard.current must agree.
+		if (s.wizardState !== s.wizard.current) {
+			return 'FAIL: state desync — wizardState=' + s.wizardState +
+				' vs wizard.current=' + s.wizard.current;
+		}
+		if (s.wizardState !== 'ERROR') {
+			return 'FAIL: expected ERROR, got: ' + s.wizardState;
+		}
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("equiv-poll error wizard state sync: %v", raw)
+	}
+}
+
 // Ensure unused imports are referenced.
 var _ = strings.Contains

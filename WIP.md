@@ -1,14 +1,26 @@
 # WIP — Work In Progress (Takumi's Desperate Diary)
 
-## Current Task: T37 — async verifySplit fallback path (Rule of Two pending)
+## Current Task: T39 — Fix expand/collapse state management
 
 ## Session State
 - **Branch:** `wip`
-- **Last Commit:** T36 (wip@3856bc10)
-- **Blueprint Status:** T01-T37 Done. T38-T72 Not Started.
+- **Last Commit:** T38 (pending Rule of Two)
+- **Blueprint Status:** T01-T38 Done. T39-T72 Not Started.
 - **Tests baseline:** ALL packages PASS (pick-and-place flaky due to build cache, unrelated). ~134s for pr-split with -race.
 - **Session start:** 2026-03-13 10:37:36 (9h mandate)
 - **Blueprint Schema:** Tasks use `acceptanceCriteria` (array of strings), NOT `acceptance` (string).
+
+## T38 Changes (this session)
+### Fix split-view Tab behavior — cycle elements within active pane
+- **Changed:** Tab → Ctrl+Tab for pane switching (pr_split_16_tui_core.js:~418)
+- **Result:** Tab now cycles wizard focusable elements even in split-view (via handleNavDown/handleNavUp at normal path)
+- **Changed:** CLAUDE_RESERVED_KEYS: removed 'tab', added 'ctrl+tab' — Tab forwards to Claude PTY when Claude focused
+- **Added:** `case 'tab': return '\t'` in keyToTermBytes for PTY forwarding
+- **Updated:** Help overlay: added "Claude Integration" section with Ctrl+Tab, Ctrl+L, Ctrl+]/Ctrl±
+- **Updated:** Pane divider hint: "Ctrl+Tab: switch  Ctrl+L: close"
+- **Preserved:** focusIndex NOT reset on Ctrl+L toggle (was already correct)
+- **Updated:** 2 existing tests (SplitView_TabFocusSwitch, TabBehaviorInSplitView) — Tab→Ctrl+Tab
+- 7 new tests: TabCyclesFocusInSplitViewWizard, CtrlTabSwitchesPanes, TabForwardedToClaudePTY, CtrlLPreservesFocusIndex, HelpOverlayBindings, PaneDividerHint, TabInClaudeFocusDoesNotCycleWizard
 
 ## T37 Changes (this session)
 ### Converted verifySplit fallback path to async
@@ -40,11 +52,11 @@
 3. ~~EVENT LOOP BLOCKING: handleClaudeCheck~~ → **FIXED T36 — resolveAsync uses exec.spawn**
 4. ~~EVENT LOOP BLOCKING: verifySplit/verifyEquivalence~~ → **FIXED T35 (verifyEquivalenceAsync) + T37 (verifySplitAsync fallback)**
 5. ~~tuiMux BOOTSTRAP GAP~~ → **VERIFIED T33 — architecture connected**
-6. **Tab BROKEN in split-view**: Tab at ~line 405 only toggles between panes instead of cycling elements
+6. ~~**Tab BROKEN in split-view**~~ → **FIXED T38 — Tab cycles wizard elements, Ctrl+Tab switches panes**
 7. **Expand/collapse BROKEN**: collapse sets expandedVerifyBranch=null clearing ALL state
 8. **Integration tests SHALLOW**: no wizard+real-Claude, no Mux lifecycle, no TUI rendering tests
 
 ## Next Steps
-1. **IMMEDIATE:** Rule of Two review on T37 diff → commit
-2. T38: Fix split-view Tab behavior
-3. Continue T39-T72 sequentially
+1. **IMMEDIATE:** Rule of Two review on T38 diff → commit
+2. T39: Fix expand/collapse state management
+3. Continue T40-T72 sequentially

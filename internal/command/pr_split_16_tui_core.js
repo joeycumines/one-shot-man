@@ -400,10 +400,10 @@
                 if (k === 'ctrl+l') {
                     s.splitViewEnabled = !s.splitViewEnabled;
                     if (s.splitViewEnabled) {
-                        // Start screenshot polling.
+                        // Start screenshot polling. Preserve focusIndex.
                         return [s, tea.tick(100, 'claude-screenshot')];
                     } else {
-                        // Reset split-view state on disable.
+                        // Reset split-view state on disable. Preserve focusIndex.
                         s.claudeScreenshot = '';
                         s.claudeScreen = '';
                         s.claudeViewOffset = 0;
@@ -414,8 +414,8 @@
 
                 // Split-view keybindings (only when enabled).
                 if (s.splitViewEnabled) {
-                    // Tab switches focus between panes.
-                    if (k === 'tab' && !s.activeVerifySession) {
+                    // Ctrl+Tab switches focus between wizard and Claude panes.
+                    if (k === 'ctrl+tab' && !s.activeVerifySession) {
                         s.splitViewFocus = (s.splitViewFocus === 'wizard') ? 'claude' : 'wizard';
                         return [s, null];
                     }
@@ -784,7 +784,7 @@
                     var focusLabel = s.splitViewFocus === 'wizard'
                         ? '\u25b2 Wizard'
                         : '\u25bc Claude';
-                    var splitHint = 'Tab: switch  Ctrl+L: close';
+                    var splitHint = 'Ctrl+Tab: switch  Ctrl+L: close';
                     var labelW = focusLabel.length + splitHint.length + 7; // ┤ (1) + space(1) + space·space(3) + space(1) + ├(1)
                     var leftFill = repeatStr('\u2500', Math.max(1, Math.floor((w - labelW) / 2)));
                     var rightFill = repeatStr('\u2500', Math.max(1, Math.ceil((w - labelW) / 2)));
@@ -2959,7 +2959,7 @@
     // Reserved keys that should NOT be forwarded to Claude when Claude pane
     // is focused. These stay with the wizard for pane management.
     var CLAUDE_RESERVED_KEYS = {
-        'tab': true,        // switch focus between panes
+        'ctrl+tab': true,   // switch focus between panes
         'ctrl+l': true,     // close split-view
         'ctrl+]': true,     // full Claude passthrough
         'ctrl++': true,     // adjust split ratio
@@ -2982,6 +2982,7 @@
         // Named special keys → terminal escape sequences.
         switch (key) {
             case 'enter':     return '\r';
+            case 'tab':       return '\t';
             case 'backspace': return '\x7f';
             case 'space':     return ' ';
             case 'escape':    return '\x1b';

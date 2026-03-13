@@ -896,20 +896,20 @@ func TestChunk16_SplitView_TabFocusSwitch(t *testing.T) {
 		s.splitViewEnabled = true;
 		s.splitViewFocus = 'wizard';
 
-		// Tab switches to Claude pane.
-		var r = sendKey(s, 'tab');
-		if (r[0].splitViewFocus !== 'claude') return 'FAIL: tab did not switch to claude';
+		// Ctrl+Tab switches to Claude pane.
+		var r = sendKey(s, 'ctrl+tab');
+		if (r[0].splitViewFocus !== 'claude') return 'FAIL: ctrl+tab did not switch to claude';
 
-		// Tab switches back to wizard.
-		r = sendKey(r[0], 'tab');
-		if (r[0].splitViewFocus !== 'wizard') return 'FAIL: tab did not switch to wizard';
+		// Ctrl+Tab switches back to wizard.
+		r = sendKey(r[0], 'ctrl+tab');
+		if (r[0].splitViewFocus !== 'wizard') return 'FAIL: ctrl+tab did not switch to wizard';
 
-		// Tab during active verify session does NOT switch focus (split-view tab guard).
+		// Ctrl+Tab during active verify session does NOT switch focus (split-view tab guard).
 		r[0].activeVerifySession = {interrupt:function(){},kill:function(){},close:function(){},isRunning:function(){return true;},output:function(){return '';},screen:function(){return '';}};
 		r[0].splitViewFocus = 'wizard';
-		r = sendKey(r[0], 'tab');
-		// During verify session, tab should NOT switch panes (it falls through to different handler).
-		if (r[0].splitViewFocus !== 'wizard') return 'FAIL: tab during verify should not switch focus';
+		r = sendKey(r[0], 'ctrl+tab');
+		// During verify session, ctrl+tab should NOT switch panes (it falls through to different handler).
+		if (r[0].splitViewFocus !== 'wizard') return 'FAIL: ctrl+tab during verify should not switch focus';
 
 		return 'OK';
 	})()`)
@@ -917,7 +917,7 @@ func TestChunk16_SplitView_TabFocusSwitch(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("split view tab: %v", raw)
+		t.Errorf("split view ctrl+tab: %v", raw)
 	}
 }
 
@@ -2602,23 +2602,23 @@ func TestChunk16_TabBehaviorInSplitView(t *testing.T) {
 		var r = sendKey(s, 'tab');
 		if (r[0].focusIndex === 0) errors.push('normal tab did not cycle focus');
 
-		// Split-view mode: Tab switches pane focus.
+		// Split-view mode: Ctrl+Tab switches pane focus.
 		s = initState('CONFIG');
 		s.splitViewEnabled = true;
 		s.splitViewFocus = 'wizard';
-		r = sendKey(s, 'tab');
-		if (r[0].splitViewFocus !== 'claude') errors.push('split-view tab did not switch to claude');
-		r = sendKey(r[0], 'tab');
-		if (r[0].splitViewFocus !== 'wizard') errors.push('split-view tab did not switch back to wizard');
+		r = sendKey(s, 'ctrl+tab');
+		if (r[0].splitViewFocus !== 'claude') errors.push('split-view ctrl+tab did not switch to claude');
+		r = sendKey(r[0], 'ctrl+tab');
+		if (r[0].splitViewFocus !== 'wizard') errors.push('split-view ctrl+tab did not switch back to wizard');
 
-		// Split-view + verify session: Tab should pass through (not switch panes).
+		// Split-view + verify session: Ctrl+Tab should pass through (not switch panes).
 		s = initState('BRANCH_BUILDING');
 		s.splitViewEnabled = true;
 		s.splitViewFocus = 'wizard';
 		s.activeVerifySession = {interrupt: function(){}, kill: function(){}};
-		r = sendKey(s, 'tab');
-		// When verify session is active, tab should NOT switch panes.
-		if (r[0].splitViewFocus !== 'wizard') errors.push('split-view+verify tab should not switch pane');
+		r = sendKey(s, 'ctrl+tab');
+		// When verify session is active, ctrl+tab should NOT switch panes.
+		if (r[0].splitViewFocus !== 'wizard') errors.push('split-view+verify ctrl+tab should not switch pane');
 
 		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
 		return 'OK';
@@ -5489,3 +5489,268 @@ func TestChunk16_VerifyFallback_CancelDuringAsync(t *testing.T) {
 
 // Ensure unused imports are referenced.
 var _ = strings.Contains
+
+// ---------------------------------------------------------------------------
+//  T38: Fix split-view Tab behavior — cycle elements within active pane
+// ---------------------------------------------------------------------------
+
+// TestChunk16_T38_TabCyclesFocusInSplitViewWizard verifies that Tab cycles
+// through wizard focusable elements when split-view is enabled and wizard
+// pane is focused (not switching panes).
+func TestChunk16_T38_TabCyclesFocusInSplitViewWizard(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+
+		// Tab in split-view with wizard focused should cycle focusIndex.
+		var s = initState('CONFIG');
+		s.splitViewEnabled = true;
+		s.splitViewFocus = 'wizard';
+		s.focusIndex = 0;
+		var r = sendKey(s, 'tab');
+		if (r[0].splitViewFocus !== 'wizard') errors.push('tab switched pane (should stay wizard)');
+		if (r[0].focusIndex === 0) errors.push('tab did not advance focusIndex');
+
+		// Shift+Tab also cycles (backwards) within wizard pane.
+		s = initState('CONFIG');
+		s.splitViewEnabled = true;
+		s.splitViewFocus = 'wizard';
+		s.focusIndex = 1;
+		r = sendKey(s, 'shift+tab');
+		if (r[0].splitViewFocus !== 'wizard') errors.push('shift+tab switched pane');
+		if (r[0].focusIndex !== 0) errors.push('shift+tab did not decrement focusIndex');
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T38 tab cycles focus in split-view wizard: %v", raw)
+	}
+}
+
+// TestChunk16_T38_CtrlTabSwitchesPanes verifies that Ctrl+Tab toggles
+// between wizard and Claude panes in split-view.
+func TestChunk16_T38_CtrlTabSwitchesPanes(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+
+		// Ctrl+Tab: wizard → claude.
+		var s = initState('CONFIG');
+		s.splitViewEnabled = true;
+		s.splitViewFocus = 'wizard';
+		var r = sendKey(s, 'ctrl+tab');
+		if (r[0].splitViewFocus !== 'claude') errors.push('ctrl+tab did not switch to claude');
+
+		// Ctrl+Tab: claude → wizard.
+		r = sendKey(r[0], 'ctrl+tab');
+		if (r[0].splitViewFocus !== 'wizard') errors.push('ctrl+tab did not switch back to wizard');
+
+		// Ctrl+Tab does nothing when split-view is disabled.
+		s = initState('CONFIG');
+		s.splitViewEnabled = false;
+		s.splitViewFocus = 'wizard';
+		r = sendKey(s, 'ctrl+tab');
+		if (r[0].splitViewFocus !== 'wizard') errors.push('ctrl+tab switched pane when split-view disabled');
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T38 ctrl+tab switches panes: %v", raw)
+	}
+}
+
+// TestChunk16_T38_TabForwardedToClaudePTY verifies that Tab in split-view
+// with Claude pane focused is forwarded to the child PTY (not intercepted).
+func TestChunk16_T38_TabForwardedToClaudePTY(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+
+		// Tab should NOT be in CLAUDE_RESERVED_KEYS (so it forwards to PTY).
+		var reserved = globalThis.prSplit._CLAUDE_RESERVED_KEYS;
+		if (reserved['tab']) errors.push('tab is in CLAUDE_RESERVED_KEYS (should not be)');
+
+		// Ctrl+Tab SHOULD be reserved (stays with wizard for pane switching).
+		if (!reserved['ctrl+tab']) errors.push('ctrl+tab not in CLAUDE_RESERVED_KEYS');
+
+		// keyToTermBytes should map tab → '\t'.
+		var bytes = globalThis.prSplit._keyToTermBytes('tab');
+		if (bytes !== '\t') errors.push('keyToTermBytes(tab) = ' + JSON.stringify(bytes) + ', want "\\t"');
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T38 tab forwarded to Claude PTY: %v", raw)
+	}
+}
+
+// TestChunk16_T38_CtrlLPreservesFocusIndex verifies that toggling split-view
+// via Ctrl+L does not reset focusIndex.
+func TestChunk16_T38_CtrlLPreservesFocusIndex(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+
+		// Set a non-zero focusIndex, then toggle split-view on + off — verify preserved.
+		var s = initState('CONFIG');
+		s.focusIndex = 2;
+		s.splitViewEnabled = false;
+
+		// Enable split-view.
+		var r = sendKey(s, 'ctrl+l');
+		if (!r[0].splitViewEnabled) errors.push('ctrl+l did not enable split-view');
+		if (r[0].focusIndex !== 2) errors.push('enable: focusIndex changed from 2 to ' + r[0].focusIndex);
+
+		// Disable split-view.
+		r = sendKey(r[0], 'ctrl+l');
+		if (r[0].splitViewEnabled) errors.push('ctrl+l did not disable split-view');
+		if (r[0].focusIndex !== 2) errors.push('disable: focusIndex changed from 2 to ' + r[0].focusIndex);
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T38 ctrl+l preserves focusIndex: %v", raw)
+	}
+}
+
+// TestChunk16_T38_HelpOverlayBindings verifies that the help overlay shows
+// Ctrl+Tab for pane switching and the correct split-view section.
+func TestChunk16_T38_HelpOverlayBindings(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+
+		var s = initState('CONFIG');
+		s.showHelp = true;
+		s.width = 80;
+		s.height = 40;
+		var rendered = globalThis.prSplit._viewHelpOverlay(s);
+
+		if (rendered.indexOf('Ctrl+Tab') === -1) {
+			errors.push('help overlay missing Ctrl+Tab');
+		}
+		if (rendered.indexOf('Switch wizard / Claude') === -1) {
+			errors.push('help overlay missing pane switch description');
+		}
+		if (rendered.indexOf('Ctrl+L') === -1) {
+			errors.push('help overlay missing Ctrl+L');
+		}
+		if (rendered.indexOf('Toggle split view') === -1) {
+			errors.push('help overlay missing toggle split view description');
+		}
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T38 help overlay bindings: %v", raw)
+	}
+}
+
+// TestChunk16_T38_PaneDividerHint verifies the split-view pane divider
+// shows the updated keybinding hint with Ctrl+Tab.
+func TestChunk16_T38_PaneDividerHint(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+
+		var s = initState('CONFIG');
+		s.splitViewEnabled = true;
+		s.splitViewFocus = 'wizard';
+		s.width = 120;
+		s.height = 40;
+		s.claudeScreen = 'claude output here';
+		var rendered = globalThis.prSplit._wizardView(s);
+
+		// The pane divider should mention Ctrl+Tab, not bare Tab.
+		if (rendered.indexOf('Ctrl+Tab') === -1) {
+			errors.push('pane divider missing Ctrl+Tab hint');
+		}
+		// Should NOT have bare 'Tab:' as a standalone hint label (old behavior).
+		// Note: 'Ctrl+Tab:' contains 'Tab:' so we check for the old exact pattern.
+		var idx = rendered.indexOf('Tab:');
+		while (idx !== -1) {
+			// Check if this 'Tab:' is preceded by 'Ctrl+' — if so, it's fine.
+			var prefix = rendered.substring(Math.max(0, idx - 5), idx);
+			if (prefix.indexOf('Ctrl+') === -1) {
+				errors.push('pane divider has bare Tab: hint (old) at pos ' + idx);
+				break;
+			}
+			idx = rendered.indexOf('Tab:', idx + 1);
+		}
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T38 pane divider hint: %v", raw)
+	}
+}
+
+// TestChunk16_T38_TabInClaudeFocusDoesNotCycleWizard verifies that Tab
+// when Claude pane is focused does NOT cycle wizard focusable elements.
+func TestChunk16_T38_TabInClaudeFocusDoesNotCycleWizard(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+
+		// When Claude pane is focused, Tab should NOT change focusIndex.
+		var s = initState('CONFIG');
+		s.splitViewEnabled = true;
+		s.splitViewFocus = 'claude';
+		s.focusIndex = 0;
+		var r = sendKey(s, 'tab');
+		if (r[0].focusIndex !== 0) {
+			errors.push('tab in claude focus changed focusIndex from 0 to ' + r[0].focusIndex);
+		}
+		// Focus should remain on Claude.
+		if (r[0].splitViewFocus !== 'claude') {
+			errors.push('focus changed from claude to ' + r[0].splitViewFocus);
+		}
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T38 tab in claude focus: %v", raw)
+	}
+}

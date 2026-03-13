@@ -79,6 +79,7 @@
       "T35: runExecutionStep → async runExecutionAsync + handleExecutionPoll + startEquivCheck + runEquivCheckAsync + handleEquivPoll. executeSplitAsync with progressFn for per-branch progress. verifyEquivalenceAsync for equiv check. All exec-step-0/1/2 removed. Fixed wizard state desync (try/catch+wizard.current pattern). Fixed cancel handler isProcessing reset. Cancel guards on all async functions. 15 new tests.",
       "T36: Create resolveAsync (exec.spawn-based non-blocking which/version/list checks) + convert handleClaudeCheck to Promise+poll pattern. handleClaudeCheckPoll at 50ms. Cached st.claudeExecutor. progressFn for animated status. Belt-and-suspenders s.claudeCheckStatus='checking' in async launch. Re-entry guard (claudeCheckRunning). Strategy switch-away cleanup (claudeCheckRunning+progressMsg). 11 new tests.",
       "T37: Convert verifySplit fallback to async verifySplitAsync + handleVerifyFallbackPoll at 100ms. runVerifyFallbackAsync with cancel guards (isProcessing + wizard.current checks at await boundaries). .then() rejection handler records failure via verifyFallbackError. Zero remaining sync verifySplit/cleanupBranches calls from TUI. cleanupBranches not called from TUI (audit confirmed). 8 new tests.",
+      "T38: Fix split-view Tab behavior — Tab→Ctrl+Tab for pane switching, Tab cycles wizard focusable elements in split-view, Tab forwards to Claude PTY when Claude focused. CLAUDE_RESERVED_KEYS updated (ctrl+tab replaces tab). keyToTermBytes('tab')='\\t'. Help overlay updated with Ctrl+Tab and Claude Integration section. Pane divider hint updated. focusIndex preserved on Ctrl+L toggle. 7 new tests + 2 existing tests updated.",
       "T61-old: mcpCallback.waitForAsync() — non-blocking Promise-based MCP tool wait with aliveCheck trampoline, 9 tests, 47/47 pass",
       "T62-old: Pipeline async conversion — waitForLogged dual-path, step callbacks async, spawn/restart async, handleRestartClaudePoll, scroll keys, 485 tests pass"
     ],
@@ -234,7 +235,7 @@
         "Focus index preserved when toggling split-view (Ctrl+L)",
         "Existing tab navigation tests pass"
       ],
-      "status": "Not Started",
+      "status": "Done",
       "context": {
         "files": [
           "internal/command/pr_split_16_tui_core.js:~405 (split-view Tab handler — toggles panes)",

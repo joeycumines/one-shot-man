@@ -1593,8 +1593,9 @@
 
         // -- Claude / Split View --
         lines.push(styles.label().render('Claude Integration'));
-        lines.push(padRight('  Ctrl+]', 22) + 'Switch to Claude pane');
         lines.push(padRight('  Ctrl+L', 22) + 'Toggle split view');
+        lines.push(padRight('  Ctrl+Tab', 22) + 'Switch wizard / Claude pane');
+        lines.push(padRight('  Ctrl+]', 22) + 'Full Claude passthrough');
         lines.push(padRight('  Ctrl+= / Ctrl+-', 22) + 'Resize split view');
 
         var content = lines.join('\n');

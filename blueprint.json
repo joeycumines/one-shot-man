@@ -83,7 +83,8 @@
       "T39: Fix expand/collapse state management — verify-collapse guard only fires when clicked branch matches expandedVerifyBranch. Escape collapses expanded sections (expandedVerifyBranch, showAdvanced) before back-nav. Chevrons normalized: ▶/▼ (U+25B6/U+25BC) for both Advanced Options and verify output. Expanded Advanced Options header now has zone.mark for clickable collapse. expandedSplitIdx does not exist (plan review has no expand/collapse). 6 new tests.",
       "T61-old: mcpCallback.waitForAsync() — non-blocking Promise-based MCP tool wait with aliveCheck trampoline, 9 tests, 47/47 pass",
       "T62-old: Pipeline async conversion — waitForLogged dual-path, step callbacks async, spawn/restart async, handleRestartClaudePoll, scroll keys, 485 tests pass",
-      "T40: Complete tab navigation ALL screens — FINALIZATION focus elements (final-report, final-create-prs, final-done, nav-next) with keyboard activation and visual focus indicators. CONFIG toggle-advanced with ▸ pointer. ERROR_RESOLUTION nav-next. BRANCH_BUILDING 'e' expand/collapse. Help overlay Branch Building section. 10 new tests + 6 existing updated."
+      "T40: Complete tab navigation ALL screens — FINALIZATION focus elements (final-report, final-create-prs, final-done, nav-next) with keyboard activation and visual focus indicators. CONFIG toggle-advanced with ▸ pointer. ERROR_RESOLUTION nav-next. BRANCH_BUILDING 'e' expand/collapse. Help overlay Branch Building section. 10 new tests + 6 existing updated.",
+      "T41: Fix inline title editing + navigation conflict — defense-in-depth guard in handleListNav (editorTitleEditing check). Title editing interceptor already catches all keys; guard prevents future bypass corruption. 5 new tests verifying edit-nav isolation."
     ],
     "replanLog": [
       {
@@ -306,12 +307,12 @@
         "No corruption of selection state during edit — typing 'j' only adds 'j' to title",
         "Test verifies edit-nav isolation"
       ],
-      "status": "Not Started",
+      "status": "Done",
+      "deliverables": "Defense-in-depth guard in handleListNav (editorTitleEditing check). Title editing interceptor (lines 309-348) already catches all keys, guard prevents future bypass corruption. 5 new tests: JKDoesNotMoveFile, ArrowsSwallowed, HandleListNavGuard_DirectCall, SplitIdxStable, FocusCycleBlocked.",
       "context": {
         "files": [
-          "internal/command/pr_split_16_tui_core.js:305 (inline edit handler)",
-          "internal/command/pr_split_16_tui_core.js:~1722 (handleListNav definition — missing edit guard)",
-          "internal/command/pr_split_16_tui_core.js:~485 (handleListNav call site)"
+          "internal/command/pr_split_16_tui_core.js:1780 (handleListNav — new guard)",
+          "internal/command/pr_split_16_tui_core_test.go (5 new T41 tests)"
         ],
         "dependencies": []
       }

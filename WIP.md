@@ -1,14 +1,20 @@
 # WIP — Work In Progress (Takumi's Desperate Diary)
 
-## Current Task: T41 — Fix inline title editing + navigation conflict in plan editor
+## Current Task: T42 — Default to Claude strategy when Claude is available
 
 ## Session State
 - **Branch:** `wip`
-- **Last Commit:** T40 (pending amend)
-- **Blueprint Status:** T01-T40 Done. T41-T72 Not Started.
+- **Last Commit:** T41 (pending amend)
+- **Blueprint Status:** T01-T41 Done. T42-T72 Not Started.
 - **Tests baseline:** ALL packages PASS. ~134s for pr-split with -race.
 - **Session start:** 2026-03-13 10:37:36 (9h mandate)
 - **Blueprint Schema:** Tasks use `acceptanceCriteria` (array of strings), NOT `acceptance` (string).
+
+## T41 Changes (this session — Rule of Two PASSED)
+### Fix inline title editing + navigation conflict
+- **Added:** Defense-in-depth guard in `handleListNav`: `if (s.editorTitleEditing) return [s, null];`
+- **Context:** Title editing interceptor (lines 309-348) already catches all keys before handleListNav reaches them. Guard prevents corruption if future code bypasses interceptor.
+- **5 new tests:** JKDoesNotMoveFile, ArrowsSwallowed, HandleListNavGuard_DirectCall, SplitIdxStable, FocusCycleBlocked
 
 ## T40 Changes (this session — Rule of Two PASSED)
 ### Complete tab navigation across ALL screens
@@ -79,6 +85,6 @@
 8. **Integration tests SHALLOW**: no wizard+real-Claude, no Mux lifecycle, no TUI rendering tests
 
 ## Next Steps
-1. **IMMEDIATE:** Commit T40 (Rule of Two PASSED)
-2. T41: Fix inline title editing + navigation conflict in plan editor
-3. Continue T42-T72 sequentially
+1. **IMMEDIATE:** Commit T41 (Rule of Two PASSED)
+2. T42: Default to Claude strategy when Claude is available
+3. Continue T43-T72 sequentially

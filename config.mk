@@ -116,7 +116,7 @@ test-targeted:
 	fi
 	cd $(PROJECT_ROOT) && go test -race -count=1 -timeout=$(or $(TIMEOUT),3m) \
 		-run "$$(cat $(PROJECT_ROOT)/scratch/test-run-pattern.txt | tr -d '\n')" \
-		$(or $(PKG),./internal/command/...) 2>&1 | tail -80
+		$(or $(PKG),./internal/command/...) $(EXTRA_TEST_FLAGS) 2>&1 | tail -$(or $(TAIL),80)
 
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 endif

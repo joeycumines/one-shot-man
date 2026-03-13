@@ -1778,6 +1778,13 @@
     //   PLAN_REVIEW → navigates splits, clamped, syncs focusIndex.
     //   PLAN_EDITOR → navigates files within the selected split (T17).
     function handleListNav(s, delta) {
+        // T41: Defense-in-depth — skip navigation while inline title editing is active.
+        // The title editing interceptor (lines 309-348) already catches keys before
+        // they reach handleListNav, but this guard prevents corruption if any future
+        // code path bypasses the interceptor.
+        if (s.editorTitleEditing) {
+            return [s, null];
+        }
         if (s.wizardState === 'PLAN_REVIEW') {
             var splitCount = (st.planCache && st.planCache.splits)
                 ? st.planCache.splits.length : 0;

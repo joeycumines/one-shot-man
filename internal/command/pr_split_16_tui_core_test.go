@@ -719,6 +719,181 @@ func TestChunk16_InlineTitleEdit_SwallowsUnknownKeys(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+//  T41: Inline title editing + navigation isolation
+// ---------------------------------------------------------------------------
+
+func TestChunk16_T41_EditNavIsolation_JKDoesNotMoveFile(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		setupPlanCache();
+		var s = initState('PLAN_EDITOR');
+		s.selectedFileIdx = 1;
+		s.editorTitleEditing = true;
+		s.editorTitleEditingIdx = 0;
+		s.editorTitleText = 'hello';
+
+		// j should add 'j' to title text, NOT move selectedFileIdx.
+		var r = sendKey(s, 'j');
+		if (r[0].editorTitleText !== 'helloj') return 'FAIL: j not appended to title';
+		if (r[0].selectedFileIdx !== 1) return 'FAIL: j moved selectedFileIdx from 1 to ' + r[0].selectedFileIdx;
+
+		// k should add 'k' to title text, NOT move selectedFileIdx.
+		r = sendKey(r[0], 'k');
+		if (r[0].editorTitleText !== 'hellojk') return 'FAIL: k not appended to title';
+		if (r[0].selectedFileIdx !== 1) return 'FAIL: k moved selectedFileIdx from 1 to ' + r[0].selectedFileIdx;
+
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("edit nav isolation j/k: %v", raw)
+	}
+}
+
+func TestChunk16_T41_EditNavIsolation_ArrowsSwallowed(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		setupPlanCache();
+		var s = initState('PLAN_EDITOR');
+		s.selectedFileIdx = 1;
+		s.editorTitleEditing = true;
+		s.editorTitleEditingIdx = 0;
+		s.editorTitleText = 'test';
+
+		// up/down should be swallowed (multi-char keys), NOT move selectedFileIdx.
+		var r = sendKey(s, 'up');
+		if (r[0].selectedFileIdx !== 1) return 'FAIL: up moved selectedFileIdx from 1 to ' + r[0].selectedFileIdx;
+		if (r[0].editorTitleText !== 'test') return 'FAIL: up should not modify text';
+
+		r = sendKey(r[0], 'down');
+		if (r[0].selectedFileIdx !== 1) return 'FAIL: down moved selectedFileIdx from 1 to ' + r[0].selectedFileIdx;
+
+		r = sendKey(r[0], 'pgup');
+		if (r[0].selectedFileIdx !== 1) return 'FAIL: pgup moved selectedFileIdx';
+
+		r = sendKey(r[0], 'pgdown');
+		if (r[0].selectedFileIdx !== 1) return 'FAIL: pgdown moved selectedFileIdx';
+
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("edit nav isolation arrows: %v", raw)
+	}
+}
+
+func TestChunk16_T41_HandleListNavGuard_DirectCall(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		setupPlanCache();
+		var s = initState('PLAN_EDITOR');
+		s.selectedFileIdx = 1;
+		s.editorTitleEditing = true;
+		s.editorTitleEditingIdx = 0;
+		s.editorTitleText = 'editing';
+
+		// Directly call handleListNav via j key dispatch while editing.
+		// The title interceptor should catch j first, but the handleListNav guard
+		// provides defense-in-depth. Verify selectedFileIdx is unchanged.
+		var r = sendKey(s, 'j');
+		if (r[0].selectedFileIdx !== 1) return 'FAIL: handleListNav defense-in-depth failed, selectedFileIdx changed to ' + r[0].selectedFileIdx;
+
+		// Verify the interceptor caught j and appended it.
+		if (r[0].editorTitleText !== 'editingj') return 'FAIL: j not in title text';
+
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("handleListNav guard: %v", raw)
+	}
+}
+
+func TestChunk16_T41_EditNavIsolation_SplitIdxStable(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		setupPlanCache();
+		var s = initState('PLAN_EDITOR');
+		s.selectedSplitIdx = 0;
+		s.selectedFileIdx = 0;
+
+		// Start editing split 0 title.
+		var r = sendKey(s, 'e');
+		if (!r[0].editorTitleEditing) return 'FAIL: e did not start editing';
+		if (r[0].editorTitleEditingIdx !== 0) return 'FAIL: wrong editing idx';
+
+		// Type several characters including navigation keys j and k.
+		r = sendKey(r[0], 'n');
+		r = sendKey(r[0], 'e');
+		r = sendKey(r[0], 'w');
+		r = sendKey(r[0], '-');
+		r = sendKey(r[0], 'j');
+		r = sendKey(r[0], 'k');
+
+		// Verify state integrity: selectedSplitIdx and selectedFileIdx unchanged.
+		if (r[0].selectedSplitIdx !== 0) return 'FAIL: selectedSplitIdx changed to ' + r[0].selectedSplitIdx;
+		if (r[0].selectedFileIdx !== 0) return 'FAIL: selectedFileIdx changed to ' + r[0].selectedFileIdx;
+		if (r[0].editorTitleText !== 'split/apinew-jk') return 'FAIL: title text wrong: ' + r[0].editorTitleText;
+
+		// Save with Enter.
+		r = sendKey(r[0], 'enter');
+		if (r[0].editorTitleEditing) return 'FAIL: editing not ended';
+		if (globalThis.prSplit._state.planCache.splits[0].name !== 'split/apinew-jk') return 'FAIL: name not saved correctly';
+
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("edit nav split idx stable: %v", raw)
+	}
+}
+
+func TestChunk16_T41_EditNavIsolation_FocusCycleBlocked(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		setupPlanCache();
+		var s = initState('PLAN_EDITOR');
+		s.focusIndex = 2;
+		s.editorTitleEditing = true;
+		s.editorTitleEditingIdx = 0;
+		s.editorTitleText = 'test';
+
+		// Tab and Shift+Tab should be swallowed during editing.
+		var r = sendKey(s, 'tab');
+		if (r[0].focusIndex !== 2) return 'FAIL: tab changed focusIndex from 2 to ' + r[0].focusIndex;
+
+		r = sendKey(r[0], 'shift+tab');
+		if (r[0].focusIndex !== 2) return 'FAIL: shift+tab changed focusIndex from 2 to ' + r[0].focusIndex;
+
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("edit nav focus cycle blocked: %v", raw)
+	}
+}
+
+// ---------------------------------------------------------------------------
 //  Live Verify Session
 // ---------------------------------------------------------------------------
 

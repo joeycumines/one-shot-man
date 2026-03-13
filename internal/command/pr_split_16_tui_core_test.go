@@ -5067,5 +5067,425 @@ func TestChunk16_ClaudeCheck_SwitchAwayCleansUp(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+//  T37: Async Verify Fallback Tests
+// ---------------------------------------------------------------------------
+
+// TestChunk16_VerifyFallback_LaunchesAsync verifies that runVerifyBranch
+// launches async verifySplitAsync when CaptureSession fails.
+func TestChunk16_VerifyFallback_LaunchesAsync(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		setupPlanCache();
+		globalThis.prSplit.runtime.dir = '.';
+		globalThis.prSplit.runtime.verifyCommand = 'make test';
+
+		// Mock startVerifySession to fail (trigger fallback).
+		var origStartVerify = globalThis.prSplit.startVerifySession;
+		globalThis.prSplit.startVerifySession = function() {
+			return { error: 'no PTY support', session: null };
+		};
+
+		// Mock verifySplitAsync to track calls.
+		var origVerifyAsync = globalThis.prSplit.verifySplitAsync;
+		var asyncCalled = false;
+		globalThis.prSplit.verifySplitAsync = async function(branchName, opts) {
+			asyncCalled = true;
+			return { name: branchName, passed: true, output: '', error: null, skipped: false, duration: 100 };
+		};
+
+		// Also check sync verifySplit is NOT called.
+		var origSync = globalThis.prSplit.verifySplit;
+		var syncCalled = false;
+		globalThis.prSplit.verifySplit = function() {
+			syncCalled = true;
+			return { passed: true };
+		};
+
+		try {
+			var s = initState('EXECUTING');
+			s.isProcessing = true;
+			s.verificationResults = [];
+			s.verifyingIdx = 0;
+			s.verifyOutput = {};
+
+			var r = update({type: 'Tick', id: 'verify-branch'}, s);
+			s = r[0];
+
+			if (syncCalled) return 'FAIL: sync verifySplit was called';
+			if (!s.verifyFallbackRunning) return 'FAIL: verifyFallbackRunning should be true';
+			if (!r[1]) return 'FAIL: should return poll tick';
+			return 'OK';
+		} finally {
+			globalThis.prSplit.startVerifySession = origStartVerify;
+			globalThis.prSplit.verifySplitAsync = origVerifyAsync;
+			globalThis.prSplit.verifySplit = origSync;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify fallback launches async: %v", raw)
+	}
+}
+
+// TestChunk16_VerifyFallback_PollStillRunning verifies that the fallback
+// poll handler continues polling when verification is still running.
+func TestChunk16_VerifyFallback_PollStillRunning(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('EXECUTING');
+		s.verifyFallbackRunning = true;
+
+		var r = update({type: 'Tick', id: 'verify-fallback-poll'}, s);
+		if (!r[1]) return 'FAIL: should return poll tick when still running';
+		if (!r[0].verifyFallbackRunning) return 'FAIL: should still be running';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify fallback poll still running: %v", raw)
+	}
+}
+
+// TestChunk16_VerifyFallback_PollCompleted verifies that the fallback
+// poll handler advances to next branch when verification completes.
+func TestChunk16_VerifyFallback_PollCompleted(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		setupPlanCache();
+		var s = initState('EXECUTING');
+		s.isProcessing = true;
+		s.verifyFallbackRunning = false;
+		s.verifyFallbackError = null;
+
+		var r = update({type: 'Tick', id: 'verify-fallback-poll'}, s);
+		if (r[1] === null) return 'FAIL: should return verify-branch tick to continue';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify fallback poll completed: %v", raw)
+	}
+}
+
+// TestChunk16_VerifyFallback_AsyncHappyPath exercises the full fallback
+// verification chain: verify-branch → verify-fallback-poll → complete.
+func TestChunk16_VerifyFallback_AsyncHappyPath(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(async function() {
+		setupPlanCache();
+		globalThis.prSplit.runtime.dir = '.';
+		globalThis.prSplit.runtime.verifyCommand = 'make test';
+
+		var origStartVerify = globalThis.prSplit.startVerifySession;
+		globalThis.prSplit.startVerifySession = function() {
+			return { error: 'no PTY', session: null };
+		};
+
+		var origVerifyAsync = globalThis.prSplit.verifySplitAsync;
+		var verifiedBranches = [];
+		globalThis.prSplit.verifySplitAsync = async function(branchName, opts) {
+			verifiedBranches.push(branchName);
+			return { name: branchName, passed: true, output: 'all good', error: null, skipped: false, duration: 50 };
+		};
+
+		try {
+			var s = initState('EXECUTING');
+			s.isProcessing = true;
+			s.verificationResults = [];
+			s.verifyingIdx = 0;
+			s.verifyOutput = {};
+
+			// First branch: launch async.
+			var r = update({type: 'Tick', id: 'verify-branch'}, s);
+			s = r[0];
+			if (!s.verifyFallbackRunning) return 'FAIL: should be running after verify-branch';
+
+			// Let microtasks resolve.
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			// Poll — should be complete.
+			r = update({type: 'Tick', id: 'verify-fallback-poll'}, s);
+			s = r[0];
+
+			if (s.verifyFallbackRunning) return 'FAIL: should not be running after poll';
+			if (s.verificationResults.length !== 1) {
+				return 'FAIL: expected 1 result, got: ' + s.verificationResults.length;
+			}
+			if (!s.verificationResults[0].passed) return 'FAIL: first branch should pass';
+			if (s.verifyingIdx !== 1) return 'FAIL: verifyingIdx should be 1, got: ' + s.verifyingIdx;
+			if (verifiedBranches[0] !== 'split/api') {
+				return 'FAIL: expected split/api, got: ' + verifiedBranches[0];
+			}
+			return 'OK';
+		} finally {
+			globalThis.prSplit.startVerifySession = origStartVerify;
+			globalThis.prSplit.verifySplitAsync = origVerifyAsync;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify fallback async happy path: %v", raw)
+	}
+}
+
+// TestChunk16_VerifyFallback_AsyncError exercises the error path when
+// verifySplitAsync returns a failure result.
+func TestChunk16_VerifyFallback_AsyncError(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(async function() {
+		setupPlanCache();
+		globalThis.prSplit.runtime.dir = '.';
+		globalThis.prSplit.runtime.verifyCommand = 'make test';
+
+		var origStartVerify = globalThis.prSplit.startVerifySession;
+		globalThis.prSplit.startVerifySession = function() {
+			return { error: 'no PTY', session: null };
+		};
+
+		var origVerifyAsync = globalThis.prSplit.verifySplitAsync;
+		globalThis.prSplit.verifySplitAsync = async function(branchName, opts) {
+			return { name: branchName, passed: false, output: 'FAIL', error: 'verify failed (exit 1): test error', skipped: false, duration: 50 };
+		};
+
+		try {
+			var s = initState('EXECUTING');
+			s.isProcessing = true;
+			s.verificationResults = [];
+			s.verifyingIdx = 0;
+			s.verifyOutput = {};
+
+			var r = update({type: 'Tick', id: 'verify-branch'}, s);
+			s = r[0];
+
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			r = update({type: 'Tick', id: 'verify-fallback-poll'}, s);
+			s = r[0];
+
+			if (s.verificationResults.length !== 1) {
+				return 'FAIL: expected 1 result, got: ' + s.verificationResults.length;
+			}
+			if (s.verificationResults[0].passed) return 'FAIL: should not have passed';
+			if (!s.verificationResults[0].error || s.verificationResults[0].error.indexOf('verify failed') < 0) {
+				return 'FAIL: expected verify error, got: ' + s.verificationResults[0].error;
+			}
+			return 'OK';
+		} finally {
+			globalThis.prSplit.startVerifySession = origStartVerify;
+			globalThis.prSplit.verifySplitAsync = origVerifyAsync;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify fallback async error: %v", raw)
+	}
+}
+
+// TestChunk16_VerifyFallback_AsyncThrows exercises the path where
+// verifySplitAsync throws an unexpected exception.
+func TestChunk16_VerifyFallback_AsyncThrows(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(async function() {
+		setupPlanCache();
+		globalThis.prSplit.runtime.dir = '.';
+		globalThis.prSplit.runtime.verifyCommand = 'make test';
+
+		var origStartVerify = globalThis.prSplit.startVerifySession;
+		globalThis.prSplit.startVerifySession = function() {
+			return { error: 'no PTY', session: null };
+		};
+
+		var origVerifyAsync = globalThis.prSplit.verifySplitAsync;
+		globalThis.prSplit.verifySplitAsync = async function() {
+			throw new Error('worktree crash: ENOENT');
+		};
+
+		try {
+			var s = initState('EXECUTING');
+			s.isProcessing = true;
+			s.verificationResults = [];
+			s.verifyingIdx = 0;
+			s.verifyOutput = {};
+
+			var r = update({type: 'Tick', id: 'verify-branch'}, s);
+			s = r[0];
+
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			r = update({type: 'Tick', id: 'verify-fallback-poll'}, s);
+			s = r[0];
+
+			if (s.verifyFallbackRunning) return 'FAIL: should not be running';
+			if (!s.verifyFallbackError && s.verificationResults.length === 0) {
+				return 'FAIL: should have recorded error';
+			}
+			// The poll handler should record a failure result from verifyFallbackError.
+			if (s.verificationResults.length !== 1) {
+				return 'FAIL: expected 1 result from error handler, got: ' + s.verificationResults.length;
+			}
+			if (!s.verificationResults[0].error || s.verificationResults[0].error.indexOf('ENOENT') < 0) {
+				return 'FAIL: expected ENOENT in error, got: ' + s.verificationResults[0].error;
+			}
+			return 'OK';
+		} finally {
+			globalThis.prSplit.startVerifySession = origStartVerify;
+			globalThis.prSplit.verifySplitAsync = origVerifyAsync;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify fallback async throws: %v", raw)
+	}
+}
+
+// TestChunk16_VerifyFallback_NoSyncCalls verifies that the old sync
+// prSplit.verifySplit() is never called from the TUI verify path.
+func TestChunk16_VerifyFallback_NoSyncCalls(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		setupPlanCache();
+		globalThis.prSplit.runtime.dir = '.';
+		globalThis.prSplit.runtime.verifyCommand = 'make test';
+
+		var origStartVerify = globalThis.prSplit.startVerifySession;
+		globalThis.prSplit.startVerifySession = function() {
+			return { error: 'no PTY', session: null };
+		};
+
+		var origSync = globalThis.prSplit.verifySplit;
+		var syncCalled = false;
+		globalThis.prSplit.verifySplit = function() {
+			syncCalled = true;
+			return { passed: true, name: 'test' };
+		};
+
+		var origAsync = globalThis.prSplit.verifySplitAsync;
+		globalThis.prSplit.verifySplitAsync = async function(branchName, opts) {
+			return { name: branchName, passed: true, output: '', error: null, skipped: false, duration: 10 };
+		};
+
+		try {
+			var s = initState('EXECUTING');
+			s.isProcessing = true;
+			s.verificationResults = [];
+			s.verifyingIdx = 0;
+			s.verifyOutput = {};
+
+			update({type: 'Tick', id: 'verify-branch'}, s);
+			if (syncCalled) return 'FAIL: sync verifySplit was called';
+			return 'OK';
+		} finally {
+			globalThis.prSplit.startVerifySession = origStartVerify;
+			globalThis.prSplit.verifySplit = origSync;
+			globalThis.prSplit.verifySplitAsync = origAsync;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify fallback no sync calls: %v", raw)
+	}
+}
+
+// TestChunk16_VerifyFallback_CancelDuringAsync verifies that cancellation
+// during async fallback verification is respected.
+func TestChunk16_VerifyFallback_CancelDuringAsync(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(async function() {
+		setupPlanCache();
+		globalThis.prSplit.runtime.dir = '.';
+		globalThis.prSplit.runtime.verifyCommand = 'make test';
+
+		var origStartVerify = globalThis.prSplit.startVerifySession;
+		globalThis.prSplit.startVerifySession = function() {
+			return { error: 'no PTY', session: null };
+		};
+
+		var origVerifyAsync = globalThis.prSplit.verifySplitAsync;
+		var resolveVerify;
+		globalThis.prSplit.verifySplitAsync = function(branchName, opts) {
+			// Return a pending promise that we control.
+			return new Promise(function(resolve) {
+				resolveVerify = resolve;
+			});
+		};
+
+		try {
+			var s = initState('EXECUTING');
+			s.isProcessing = true;
+			s.verificationResults = [];
+			s.verifyingIdx = 0;
+			s.verifyOutput = {};
+
+			// Launch fallback verification.
+			var r = update({type: 'Tick', id: 'verify-branch'}, s);
+			s = r[0];
+			if (!s.verifyFallbackRunning) return 'FAIL: should be running';
+
+			// Cancel while async is pending.
+			s.isProcessing = false;
+			try { s.wizard.transition('CANCEL'); } catch(e) {}
+			s.wizardState = s.wizard.current;
+
+			// Resolve the pending verify after cancel.
+			resolveVerify({ name: 'split/api', passed: true, output: '', error: null, skipped: false, duration: 10 });
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			// The async function should have bailed — no results pushed.
+			if (s.verificationResults.length !== 0) {
+				return 'FAIL: expected 0 results after cancel, got: ' + s.verificationResults.length;
+			}
+			return 'OK';
+		} finally {
+			globalThis.prSplit.startVerifySession = origStartVerify;
+			globalThis.prSplit.verifySplitAsync = origVerifyAsync;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify fallback cancel during async: %v", raw)
+	}
+}
+
 // Ensure unused imports are referenced.
 var _ = strings.Contains

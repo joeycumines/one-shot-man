@@ -154,6 +154,10 @@
                 verifyAutoScroll: true,        // auto-scroll to bottom
                 lastVerifyInterruptTime: 0,    // timestamp of last Ctrl+C interrupt
 
+                // Fallback verification (async, when CaptureSession unavailable).
+                verifyFallbackRunning: false,  // true while async verifySplitAsync is running
+                verifyFallbackError: null,     // error string from fallback verification
+
                 // Split-view (Claude window-in-window).
                 splitViewEnabled: false,       // true when split-view is active
                 splitViewRatio: 0.6,           // wizard gets this fraction of content height
@@ -668,6 +672,9 @@
                 }
                 if (msg.id === 'verify-poll') {
                     return pollVerifySession(s);
+                }
+                if (msg.id === 'verify-fallback-poll') {
+                    return handleVerifyFallbackPoll(s);
                 }
                 // Automated pipeline polling.
                 if (msg.id === 'auto-poll') {
@@ -2712,7 +2719,7 @@
 
     // ── Per-branch verification (tick-based stepping) ────────────
     // Verifies one branch at a time. Uses CaptureSession (PTY + VTerm)
-    // for live output when available, falling back to blocking verifySplit
+    // for live output when available, falling back to async verifySplitAsync
     // on platforms without PTY support (Windows).
     function runVerifyBranch(s) {
         if (!s.isProcessing) return [s, null];
@@ -2783,30 +2790,23 @@
         }
 
         if (sessionResult.error && !sessionResult.session) {
-            // CaptureSession failed to start — fall back to blocking verifySplit.
-            var outputLines = [];
-            var branchStart = Date.now();
-            var verifyResult = prSplit.verifySplit(branchName, {
-                dir: dir,
-                verifyCommand: scopedCmd,
-                verifyTimeoutMs: (typeof prSplitConfig !== 'undefined' && prSplitConfig.timeoutMs) ? prSplitConfig.timeoutMs : 0,
-                outputFn: function(line) { outputLines.push(line); }
-            });
-            var duration = Date.now() - branchStart;
+            // CaptureSession failed to start — use async verifySplitAsync.
+            s.verifyFallbackRunning = true;
+            s.verifyFallbackError = null;
 
-            s.verifyOutput[branchName] = outputLines;
-            s.verificationResults.push({
-                name: branchName,
-                passed: verifyResult.passed,
-                skipped: verifyResult.skipped || false,
-                error: verifyResult.error || null,
-                output: verifyResult.output || '',
-                duration: duration,
-                preExisting: verifyResult.preExisting || false
-            });
+            var timeoutMs = (typeof prSplitConfig !== 'undefined' && prSplitConfig.timeoutMs) ? prSplitConfig.timeoutMs : 0;
+            runVerifyFallbackAsync(s, branchName, dir, scopedCmd, timeoutMs).then(
+                function() {
+                    s.verifyFallbackRunning = false;
+                },
+                function(err) {
+                    s.verifyFallbackRunning = false;
+                    s.verifyFallbackError = (err && err.message) ? err.message : String(err);
+                }
+            );
 
-            s.verifyingIdx++;
-            return [s, tea.tick(1, 'verify-branch')];
+            // Poll at 100ms for completion.
+            return [s, tea.tick(100, 'verify-fallback-poll')];
         }
 
         // CaptureSession started — store state for polling.
@@ -2887,6 +2887,68 @@
         s.lastVerifyInterruptTime = 0;
 
         s.verifyingIdx++;
+        return [s, tea.tick(1, 'verify-branch')];
+    }
+
+    // ── Async verify fallback (when CaptureSession unavailable) ──
+    // Uses verifySplitAsync for non-blocking verification. The result
+    // is stored directly on s so the poll handler can consume it.
+    async function runVerifyFallbackAsync(s, branchName, dir, scopedCmd, timeoutMs) {
+        if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
+
+        var outputLines = [];
+        var branchStart = Date.now();
+        var verifyResult = await prSplit.verifySplitAsync(branchName, {
+            dir: dir,
+            verifyCommand: scopedCmd,
+            verifyTimeoutMs: timeoutMs,
+            outputFn: function(line) { outputLines.push(line); }
+        });
+        var duration = Date.now() - branchStart;
+
+        if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
+
+        s.verifyOutput[branchName] = outputLines;
+        s.verificationResults.push({
+            name: branchName,
+            passed: verifyResult.passed,
+            skipped: verifyResult.skipped || false,
+            error: verifyResult.error || null,
+            output: verifyResult.output || '',
+            duration: duration,
+            preExisting: verifyResult.preExisting || false
+        });
+
+        s.verifyingIdx++;
+    }
+
+    // handleVerifyFallbackPoll: Called every 100ms during async fallback
+    // verification. When complete, continues to the next branch.
+    function handleVerifyFallbackPoll(s) {
+        // Still running — keep polling.
+        if (s.verifyFallbackRunning) {
+            return [s, tea.tick(100, 'verify-fallback-poll')];
+        }
+
+        // Error in the .then rejection handler — record a failure result.
+        if (s.verifyFallbackError) {
+            var branchName = (st.planCache && st.planCache.splits &&
+                s.verifyingIdx < st.planCache.splits.length)
+                ? st.planCache.splits[s.verifyingIdx].name : 'unknown';
+            s.verificationResults.push({
+                name: branchName,
+                passed: false,
+                skipped: false,
+                error: s.verifyFallbackError,
+                output: '',
+                duration: 0,
+                preExisting: false
+            });
+            s.verifyingIdx++;
+            s.verifyFallbackError = null;
+        }
+
+        // Completed — advance to next branch.
         return [s, tea.tick(1, 'verify-branch')];
     }
 

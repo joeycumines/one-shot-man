@@ -78,6 +78,7 @@
       "T34: runAnalysisStep → async runAnalysisAsync + handleAnalysisPoll. analyzeDiffAsync/createSplitPlanAsync replace sync. 100ms poll. 9 new tests. Zero blocking calls from TUI tick handlers.",
       "T35: runExecutionStep → async runExecutionAsync + handleExecutionPoll + startEquivCheck + runEquivCheckAsync + handleEquivPoll. executeSplitAsync with progressFn for per-branch progress. verifyEquivalenceAsync for equiv check. All exec-step-0/1/2 removed. Fixed wizard state desync (try/catch+wizard.current pattern). Fixed cancel handler isProcessing reset. Cancel guards on all async functions. 15 new tests.",
       "T36: Create resolveAsync (exec.spawn-based non-blocking which/version/list checks) + convert handleClaudeCheck to Promise+poll pattern. handleClaudeCheckPoll at 50ms. Cached st.claudeExecutor. progressFn for animated status. Belt-and-suspenders s.claudeCheckStatus='checking' in async launch. Re-entry guard (claudeCheckRunning). Strategy switch-away cleanup (claudeCheckRunning+progressMsg). 11 new tests.",
+      "T37: Convert verifySplit fallback to async verifySplitAsync + handleVerifyFallbackPoll at 100ms. runVerifyFallbackAsync with cancel guards (isProcessing + wizard.current checks at await boundaries). .then() rejection handler records failure via verifyFallbackError. Zero remaining sync verifySplit/cleanupBranches calls from TUI. cleanupBranches not called from TUI (audit confirmed). 8 new tests.",
       "T61-old: mcpCallback.waitForAsync() — non-blocking Promise-based MCP tool wait with aliveCheck trampoline, 9 tests, 47/47 pass",
       "T62-old: Pipeline async conversion — waitForLogged dual-path, step callbacks async, spawn/restart async, handleRestartClaudePoll, scroll keys, 485 tests pass"
     ],
@@ -220,15 +221,7 @@
         "All existing verification tests pass",
         "Zero remaining sync verifySplit/cleanupBranches calls from TUI context (verified by grep)"
       ],
-      "status": "Not Started",
-      "context": {
-        "files": [
-          "internal/command/pr_split_16_tui_core.js:2563 (verifySplit sync fallback)",
-          "internal/command/pr_split_06_verification.js:410 (verifySplitAsync — exists)",
-          "internal/command/pr_split_06_verification.js:640 (cleanupBranchesAsync — exists)"
-        ],
-        "dependencies": []
-      }
+      "status": "Done"
     },
     {
       "task": "T38: Fix split-view Tab behavior — cycle elements within active pane",

@@ -118,6 +118,8 @@
                 claudeCheckStatus: null,   // null | 'checking' | 'available' | 'unavailable'
                 claudeResolvedInfo: null,  // null | { command, type }
                 claudeCheckError: null,    // null | error string
+                claudeCheckRunning: false, // true while async resolveAsync is running
+                claudeCheckProgressMsg: '', // progress message from resolveAsync
 
                 // Analysis progress.
                 analysisSteps: [],
@@ -682,6 +684,9 @@
                 // Claude availability check (CONFIG screen).
                 if (msg.id === 'check-claude') {
                     return handleClaudeCheck(s);
+                }
+                if (msg.id === 'claude-check-poll') {
+                    return handleClaudeCheckPoll(s);
                 }
                 // Split-view: poll Claude screenshot.
                 if (msg.id === 'claude-screenshot') {
@@ -1274,6 +1279,8 @@
                     s.claudeCheckStatus = null;
                     s.claudeResolvedInfo = null;
                     s.claudeCheckError = null;
+                    s.claudeCheckRunning = false;
+                    s.claudeCheckProgressMsg = '';
                     return [s, null];
                 }
             }
@@ -1808,6 +1815,8 @@
             s.claudeCheckStatus = null;
             s.claudeResolvedInfo = null;
             s.claudeCheckError = null;
+            s.claudeCheckRunning = false;
+            s.claudeCheckProgressMsg = '';
             return [s, null];
         }
 
@@ -2074,9 +2083,12 @@
     // classification → plan → execute → verify) as an async Promise.
     // ── Claude availability check (CONFIG screen) ────────────────────
     // Called via tea.tick('check-claude') when user selects 'auto'.
-    // Creates a temporary executor, calls resolve(), and caches the
+    // Creates a temporary executor, calls resolveAsync(), and caches the
     // result for the view layer. On failure, auto-falls back to
     // heuristic mode so the user isn't stuck.
+    //
+    // Uses Promise+poll pattern: resolveAsync runs non-blocking subprocess
+    // checks (which, version), the poll handler checks completion every 50ms.
     function handleClaudeCheck(s) {
         // Guard: prSplitConfig is injected from Go and may be absent in tests.
         if (typeof prSplitConfig === 'undefined') {
@@ -2085,8 +2097,48 @@
             s.claudeResolvedInfo = null;
             return [s, null];
         }
+
+        // Guard: already checking — don't double-launch.
+        if (s.claudeCheckRunning) {
+            return [s, tea.tick(50, 'claude-check-poll')];
+        }
+
+        // Use cached executor if available (avoids redundant re-checks).
+        if (st.claudeExecutor && st.claudeExecutor.resolved) {
+            s.claudeCheckStatus = 'available';
+            s.claudeResolvedInfo = st.claudeExecutor.resolved;
+            s.claudeCheckError = null;
+            return [s, null];
+        }
+
         var executor = new (prSplit.ClaudeCodeExecutor)(prSplitConfig);
-        var result = executor.resolve();
+        s.claudeCheckStatus = 'checking';
+        s.claudeCheckRunning = true;
+        s.claudeCheckProgressMsg = 'Resolving binary\u2026';
+
+        runClaudeCheckAsync(s, executor).then(
+            function() {
+                s.claudeCheckRunning = false;
+            },
+            function(err) {
+                s.claudeCheckStatus = 'unavailable';
+                s.claudeCheckError = (err && err.message) ? err.message : String(err);
+                s.claudeResolvedInfo = null;
+                prSplit.runtime.mode = 'heuristic';
+                s.claudeCheckRunning = false;
+            }
+        );
+
+        // Poll at 50ms for responsive status updates.
+        return [s, tea.tick(50, 'claude-check-poll')];
+    }
+
+    // runClaudeCheckAsync: Async function that runs resolveAsync on the
+    // executor. Updates s.claudeCheckProgressMsg for the view.
+    async function runClaudeCheckAsync(s, executor) {
+        var result = await executor.resolveAsync(function(msg) {
+            s.claudeCheckProgressMsg = msg;
+        });
 
         if (result.error) {
             s.claudeCheckStatus = 'unavailable';
@@ -2101,6 +2153,17 @@
             // Cache the resolved executor for startAutoAnalysis().
             st.claudeExecutor = executor;
         }
+    }
+
+    // handleClaudeCheckPoll: Called every 50ms to check if the async
+    // Claude check has completed.
+    function handleClaudeCheckPoll(s) {
+        // Still running — keep polling.
+        if (s.claudeCheckRunning) {
+            return [s, tea.tick(50, 'claude-check-poll')];
+        }
+
+        // Completed — view will render the final status.
         return [s, null];
     }
 

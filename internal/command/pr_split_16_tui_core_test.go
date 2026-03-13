@@ -4547,5 +4547,525 @@ func TestChunk16_EquivPoll_ErrorWizardStateSync(t *testing.T) {
 	}
 }
 
+// ---------------------------------------------------------------------------
+//  T36: Async Claude Check Tests
+// ---------------------------------------------------------------------------
+
+// TestChunk16_ClaudeCheck_NoPrSplitConfig verifies that handleClaudeCheck
+// returns 'unavailable' when prSplitConfig is deleted (simulates missing config).
+func TestChunk16_ClaudeCheck_NoPrSplitConfig(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		// Save and delete prSplitConfig to simulate missing config.
+		var saved = globalThis.prSplitConfig;
+		delete globalThis.prSplitConfig;
+		try {
+			var s = initState('CONFIG');
+			var r = update({type: 'Tick', id: 'check-claude'}, s);
+			s = r[0];
+			if (s.claudeCheckStatus !== 'unavailable') {
+				return 'FAIL: expected unavailable, got: ' + JSON.stringify(s.claudeCheckStatus);
+			}
+			if (!s.claudeCheckError || s.claudeCheckError.indexOf('test mode') < 0) {
+				return 'FAIL: expected test mode error, got: ' + s.claudeCheckError;
+			}
+			if (r[1] !== null) return 'FAIL: should return null cmd';
+			return 'OK';
+		} finally {
+			globalThis.prSplitConfig = saved;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("claude check no config: %v", raw)
+	}
+}
+
+// TestChunk16_ClaudeCheck_CachedExecutor verifies that handleClaudeCheck
+// returns cached result from st.claudeExecutor without launching async work.
+func TestChunk16_ClaudeCheck_CachedExecutor(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		// Set up prSplitConfig so we don't hit test mode guard.
+		globalThis.prSplitConfig = { claudeCommand: 'claude' };
+
+		// Pre-cache an executor with resolved info.
+		globalThis.prSplit._state.claudeExecutor = {
+			resolved: { command: 'claude', type: 'claude-code' }
+		};
+
+		var s = initState('CONFIG');
+		var r = update({type: 'Tick', id: 'check-claude'}, s);
+		s = r[0];
+
+		if (s.claudeCheckStatus !== 'available') {
+			return 'FAIL: expected available, got: ' + s.claudeCheckStatus;
+		}
+		if (!s.claudeResolvedInfo || s.claudeResolvedInfo.command !== 'claude') {
+			return 'FAIL: expected resolved info from cache';
+		}
+		if (s.claudeCheckRunning) return 'FAIL: should not be running (cached)';
+		if (r[1] !== null) return 'FAIL: should return null cmd (cached)';
+
+		// Clean up.
+		delete globalThis.prSplitConfig;
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("claude check cached: %v", raw)
+	}
+}
+
+// TestChunk16_ClaudeCheck_LaunchesAsync verifies that handleClaudeCheck
+// launches async resolveAsync and returns a poll tick when prSplitConfig exists.
+func TestChunk16_ClaudeCheck_LaunchesAsync(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		// Mock prSplitConfig.
+		globalThis.prSplitConfig = { claudeCommand: '' };
+
+		// Clear any cached executor.
+		globalThis.prSplit._state.claudeExecutor = null;
+
+		// Mock ClaudeCodeExecutor to track resolveAsync call.
+		var origCtor = globalThis.prSplit.ClaudeCodeExecutor;
+		var asyncCalled = false;
+		var MockExecutor = function(config) {
+			this.command = config.claudeCommand || '';
+			this.resolved = null;
+		};
+		MockExecutor.prototype.resolveAsync = async function(progressFn) {
+			asyncCalled = true;
+			if (progressFn) progressFn('Resolving binary…');
+			return { error: null };
+		};
+		globalThis.prSplit.ClaudeCodeExecutor = MockExecutor;
+
+		try {
+			var s = initState('CONFIG');
+			var r = update({type: 'Tick', id: 'check-claude'}, s);
+			s = r[0];
+
+			if (!s.claudeCheckRunning) return 'FAIL: claudeCheckRunning should be true';
+			if (s.claudeCheckStatus !== 'checking') {
+				return 'FAIL: expected checking status, got: ' + s.claudeCheckStatus;
+			}
+			if (!r[1]) return 'FAIL: should return a poll tick cmd';
+			return 'OK';
+		} finally {
+			globalThis.prSplit.ClaudeCodeExecutor = origCtor;
+			delete globalThis.prSplitConfig;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("claude check launches async: %v", raw)
+	}
+}
+
+// TestChunk16_ClaudeCheckPoll_StillRunning verifies that handleClaudeCheckPoll
+// continues polling when check is still running.
+func TestChunk16_ClaudeCheckPoll_StillRunning(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.claudeCheckRunning = true;
+		s.claudeCheckStatus = 'checking';
+
+		var r = update({type: 'Tick', id: 'claude-check-poll'}, s);
+		if (!r[1]) return 'FAIL: should return a poll tick when still running';
+		if (!r[0].claudeCheckRunning) return 'FAIL: claudeCheckRunning should still be true';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("claude-check-poll still running: %v", raw)
+	}
+}
+
+// TestChunk16_ClaudeCheckPoll_Completed verifies that handleClaudeCheckPoll
+// stops polling when check is complete.
+func TestChunk16_ClaudeCheckPoll_Completed(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.claudeCheckRunning = false;
+		s.claudeCheckStatus = 'available';
+		s.claudeResolvedInfo = { command: 'claude', type: 'claude-code' };
+
+		var r = update({type: 'Tick', id: 'claude-check-poll'}, s);
+		if (r[1] !== null) return 'FAIL: should return null cmd when complete';
+		if (r[0].claudeCheckStatus !== 'available') {
+			return 'FAIL: status should be available, got: ' + r[0].claudeCheckStatus;
+		}
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("claude-check-poll completed: %v", raw)
+	}
+}
+
+// TestChunk16_ClaudeCheck_AsyncHappyPath exercises the full async
+// check-claude → claude-check-poll chain with a mocked resolveAsync.
+func TestChunk16_ClaudeCheck_AsyncHappyPath(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(async function() {
+		globalThis.prSplitConfig = { claudeCommand: '' };
+		globalThis.prSplit._state.claudeExecutor = null;
+
+		var origCtor = globalThis.prSplit.ClaudeCodeExecutor;
+		var progressMessages = [];
+		var MockExecutor = function(config) {
+			this.command = config.claudeCommand || '';
+			this.resolved = null;
+		};
+		MockExecutor.prototype.resolveAsync = async function(progressFn) {
+			if (progressFn) {
+				progressFn('Resolving binary…');
+				progressMessages.push('Resolving binary…');
+				progressFn('Checking version…');
+				progressMessages.push('Checking version…');
+			}
+			this.resolved = { command: 'claude', type: 'claude-code' };
+			return { error: null };
+		};
+		globalThis.prSplit.ClaudeCodeExecutor = MockExecutor;
+
+		try {
+			var s = initState('CONFIG');
+
+			// Trigger check.
+			var r = update({type: 'Tick', id: 'check-claude'}, s);
+			s = r[0];
+			if (!s.claudeCheckRunning) return 'FAIL: should be running after check-claude';
+
+			// Let microtasks resolve.
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			// Poll — should be complete.
+			r = update({type: 'Tick', id: 'claude-check-poll'}, s);
+			s = r[0];
+
+			if (s.claudeCheckRunning) return 'FAIL: should not be running after poll';
+			if (s.claudeCheckStatus !== 'available') {
+				return 'FAIL: expected available, got: ' + s.claudeCheckStatus;
+			}
+			if (!s.claudeResolvedInfo || s.claudeResolvedInfo.command !== 'claude') {
+				return 'FAIL: expected resolved info';
+			}
+			if (s.claudeCheckError) return 'FAIL: should have no error';
+			if (progressMessages.length < 2) {
+				return 'FAIL: expected progress messages, got: ' + progressMessages.length;
+			}
+			if (r[1] !== null) return 'FAIL: should return null cmd on completion';
+
+			return 'OK';
+		} finally {
+			globalThis.prSplit.ClaudeCodeExecutor = origCtor;
+			delete globalThis.prSplitConfig;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("claude check async happy path: %v", raw)
+	}
+}
+
+// TestChunk16_ClaudeCheck_AsyncError exercises the error path when
+// resolveAsync returns an error.
+func TestChunk16_ClaudeCheck_AsyncError(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(async function() {
+		globalThis.prSplitConfig = { claudeCommand: '' };
+		globalThis.prSplit._state.claudeExecutor = null;
+
+		var origCtor = globalThis.prSplit.ClaudeCodeExecutor;
+		var MockExecutor = function(config) {
+			this.command = config.claudeCommand || '';
+			this.resolved = null;
+		};
+		MockExecutor.prototype.resolveAsync = async function(progressFn) {
+			if (progressFn) progressFn('Resolving binary…');
+			return { error: 'No Claude-compatible binary found. Install Claude Code CLI (claude) or Ollama (ollama), or set --claude-command explicitly.' };
+		};
+		globalThis.prSplit.ClaudeCodeExecutor = MockExecutor;
+
+		try {
+			var s = initState('CONFIG');
+			var r = update({type: 'Tick', id: 'check-claude'}, s);
+			s = r[0];
+
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			r = update({type: 'Tick', id: 'claude-check-poll'}, s);
+			s = r[0];
+
+			if (s.claudeCheckStatus !== 'unavailable') {
+				return 'FAIL: expected unavailable, got: ' + s.claudeCheckStatus;
+			}
+			if (!s.claudeCheckError || s.claudeCheckError.indexOf('Install Claude Code CLI') < 0) {
+				return 'FAIL: expected actionable error, got: ' + s.claudeCheckError;
+			}
+			if (s.claudeCheckRunning) return 'FAIL: should not be running';
+			if (globalThis.prSplit.runtime.mode !== 'heuristic') {
+				return 'FAIL: should have fallen back to heuristic';
+			}
+			return 'OK';
+		} finally {
+			globalThis.prSplit.ClaudeCodeExecutor = origCtor;
+			delete globalThis.prSplitConfig;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("claude check async error: %v", raw)
+	}
+}
+
+// TestChunk16_ClaudeCheck_AsyncThrows exercises the path where
+// resolveAsync throws an unexpected exception (not a result.error).
+func TestChunk16_ClaudeCheck_AsyncThrows(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(async function() {
+		globalThis.prSplitConfig = { claudeCommand: '' };
+		globalThis.prSplit._state.claudeExecutor = null;
+
+		var origCtor = globalThis.prSplit.ClaudeCodeExecutor;
+		var MockExecutor = function(config) {
+			this.command = config.claudeCommand || '';
+			this.resolved = null;
+		};
+		MockExecutor.prototype.resolveAsync = async function(progressFn) {
+			throw new Error('exec.spawn crashed: ENOENT');
+		};
+		globalThis.prSplit.ClaudeCodeExecutor = MockExecutor;
+
+		try {
+			var s = initState('CONFIG');
+			var r = update({type: 'Tick', id: 'check-claude'}, s);
+			s = r[0];
+
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			r = update({type: 'Tick', id: 'claude-check-poll'}, s);
+			s = r[0];
+
+			if (s.claudeCheckStatus !== 'unavailable') {
+				return 'FAIL: expected unavailable, got: ' + s.claudeCheckStatus;
+			}
+			if (!s.claudeCheckError || s.claudeCheckError.indexOf('ENOENT') < 0) {
+				return 'FAIL: expected ENOENT in error, got: ' + s.claudeCheckError;
+			}
+			if (s.claudeCheckRunning) return 'FAIL: should not be running';
+			return 'OK';
+		} finally {
+			globalThis.prSplit.ClaudeCodeExecutor = origCtor;
+			delete globalThis.prSplitConfig;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("claude check async throws: %v", raw)
+	}
+}
+
+// TestChunk16_ClaudeCheck_OldSyncRemoved verifies that the old synchronous
+// resolve() call is no longer used by handleClaudeCheck (it always goes async
+// or uses cache).
+func TestChunk16_ClaudeCheck_OldSyncRemoved(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		globalThis.prSplitConfig = { claudeCommand: '' };
+		globalThis.prSplit._state.claudeExecutor = null;
+
+		var origCtor = globalThis.prSplit.ClaudeCodeExecutor;
+		var syncResolveCalled = false;
+		var MockExecutor = function(config) {
+			this.command = config.claudeCommand || '';
+			this.resolved = null;
+		};
+		MockExecutor.prototype.resolve = function() {
+			syncResolveCalled = true;
+			return { error: null };
+		};
+		MockExecutor.prototype.resolveAsync = async function(progressFn) {
+			this.resolved = { command: 'claude', type: 'claude-code' };
+			return { error: null };
+		};
+		globalThis.prSplit.ClaudeCodeExecutor = MockExecutor;
+
+		try {
+			var s = initState('CONFIG');
+			update({type: 'Tick', id: 'check-claude'}, s);
+			if (syncResolveCalled) return 'FAIL: sync resolve() was called';
+			return 'OK';
+		} finally {
+			globalThis.prSplit.ClaudeCodeExecutor = origCtor;
+			delete globalThis.prSplitConfig;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("old sync removed: %v", raw)
+	}
+}
+
+// TestChunk16_ClaudeCheck_ReentryGuard verifies that calling handleClaudeCheck
+// while already running does NOT launch a second async operation.
+func TestChunk16_ClaudeCheck_ReentryGuard(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		globalThis.prSplitConfig = { claudeCommand: '' };
+		globalThis.prSplit._state.claudeExecutor = null;
+
+		var origCtor = globalThis.prSplit.ClaudeCodeExecutor;
+		var launchCount = 0;
+		var MockExecutor = function(config) {
+			this.command = config.claudeCommand || '';
+			this.resolved = null;
+		};
+		MockExecutor.prototype.resolveAsync = async function(progressFn) {
+			launchCount++;
+			this.resolved = { command: 'claude', type: 'claude-code' };
+			return { error: null };
+		};
+		globalThis.prSplit.ClaudeCodeExecutor = MockExecutor;
+
+		try {
+			var s = initState('CONFIG');
+			// First call — should launch async.
+			var r = update({type: 'Tick', id: 'check-claude'}, s);
+			s = r[0];
+			if (!s.claudeCheckRunning) return 'FAIL: should be running after first call';
+
+			// Second call while still running — should NOT launch again.
+			r = update({type: 'Tick', id: 'check-claude'}, s);
+			s = r[0];
+			if (launchCount !== 1) {
+				return 'FAIL: expected 1 launch, got: ' + launchCount;
+			}
+			if (!r[1]) return 'FAIL: should return poll tick even on re-entry';
+			return 'OK';
+		} finally {
+			globalThis.prSplit.ClaudeCodeExecutor = origCtor;
+			delete globalThis.prSplitConfig;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("claude check re-entry guard: %v", raw)
+	}
+}
+
+// TestChunk16_ClaudeCheck_SwitchAwayCleansUp verifies that switching from
+// 'auto' strategy to another clears all async check state fields.
+func TestChunk16_ClaudeCheck_SwitchAwayCleansUp(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		globalThis.prSplitConfig = { claudeCommand: '' };
+		globalThis.prSplit._state.claudeExecutor = null;
+
+		var origCtor = globalThis.prSplit.ClaudeCodeExecutor;
+		var MockExecutor = function(config) {
+			this.command = config.claudeCommand || '';
+			this.resolved = null;
+		};
+		MockExecutor.prototype.resolveAsync = async function(progressFn) {
+			// Simulate slow resolution — won't complete in this test.
+			return new Promise(function() {});
+		};
+		globalThis.prSplit.ClaudeCodeExecutor = MockExecutor;
+
+		try {
+			var s = initState('CONFIG');
+			// Launch async check.
+			var r = update({type: 'Tick', id: 'check-claude'}, s);
+			s = r[0];
+			if (!s.claudeCheckRunning) return 'FAIL: should be running';
+
+			// Simulate switching to 'heuristic' via mouse click on strategy zone.
+			var z = globalThis.prSplit._zone;
+			var origInBounds = z.inBounds;
+			z.inBounds = function(id) { return id === 'strategy-heuristic'; };
+			try {
+				r = update({type: 'Mouse', button: 'left', action: 'press', isWheel: false, x: 10, y: 10}, s);
+			} finally {
+				z.inBounds = origInBounds;
+			}
+			s = r[0];
+
+			if (s.claudeCheckRunning !== false) {
+				return 'FAIL: claudeCheckRunning should be false after switch, got: ' + s.claudeCheckRunning;
+			}
+			if (s.claudeCheckProgressMsg !== '') {
+				return 'FAIL: claudeCheckProgressMsg should be empty after switch';
+			}
+			if (s.claudeCheckStatus !== null) {
+				return 'FAIL: claudeCheckStatus should be null, got: ' + s.claudeCheckStatus;
+			}
+			return 'OK';
+		} finally {
+			globalThis.prSplit.ClaudeCodeExecutor = origCtor;
+			delete globalThis.prSplitConfig;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("claude check switch away cleans up: %v", raw)
+	}
+}
+
 // Ensure unused imports are referenced.
 var _ = strings.Contains

@@ -81,6 +81,100 @@
         };
     };
 
+    // resolveAsync determines which Claude binary to use, non-blocking.
+    // Uses exec.spawn() instead of exec.execv() so the TUI event loop
+    // is not frozen during subprocess execution.
+    // Accepts an optional progressFn(msg) callback for status updates.
+    // Returns a Promise<{ error: string|null }>.
+    ClaudeCodeExecutor.prototype.resolveAsync = async function(progressFn) {
+        var exec = prSplit._modules.exec;
+        var self = this;
+
+        // Helper: run a command async, return {stdout, stderr, code}.
+        async function runAsync(args) {
+            var child = exec.spawn(args[0], args.slice(1));
+            async function readAll(stream) {
+                var buf = '';
+                while (true) {
+                    var chunk = await stream.read();
+                    if (chunk.done) break;
+                    if (chunk.value !== undefined && chunk.value !== null) {
+                        buf += String(chunk.value);
+                    }
+                }
+                return buf;
+            }
+            var results = await Promise.all([
+                readAll(child.stdout),
+                readAll(child.stderr),
+                child.wait()
+            ]);
+            return {
+                stdout: results[0],
+                stderr: results[1],
+                code: (results[2] && results[2].code !== undefined) ? results[2].code : 0
+            };
+        }
+
+        function progress(msg) {
+            if (progressFn) progressFn(msg);
+        }
+
+        if (self.command) {
+            progress('Resolving binary: ' + self.command + '…');
+            var check = await runAsync(['which', self.command]);
+            if (check.code !== 0) {
+                return { error: 'Claude command not found: ' + self.command };
+            }
+            self.resolved = { command: self.command, type: 'explicit' };
+            return { error: null };
+        }
+
+        progress('Resolving binary…');
+        var claudeCheck = await runAsync(['which', 'claude']);
+        if (claudeCheck.code === 0) {
+            progress('Checking version…');
+            var versionCheck = await runAsync(['claude', '--version']);
+            if (versionCheck.code !== 0) {
+                return {
+                    error: 'Claude found at ' + claudeCheck.stdout.trim() +
+                           ' but version check failed (exit ' + versionCheck.code + '): ' +
+                           (versionCheck.stderr || versionCheck.stdout || '').trim()
+                };
+            }
+            self.resolved = { command: 'claude', type: 'claude-code' };
+            return { error: null };
+        }
+
+        var ollamaCheck = await runAsync(['which', 'ollama']);
+        if (ollamaCheck.code === 0) {
+            progress('Checking Ollama…');
+            if (self.model) {
+                var listCheck = await runAsync(['ollama', 'list']);
+                if (listCheck.code !== 0) {
+                    return {
+                        error: 'Ollama found but list command failed (exit ' + listCheck.code + '): ' +
+                               (listCheck.stderr || listCheck.stdout || '').trim()
+                    };
+                }
+                var modelOutput = (listCheck.stdout || '');
+                if (modelOutput.indexOf(self.model) === -1) {
+                    return {
+                        error: 'Ollama found but model ' + self.model + ' not available. ' +
+                               'Available models: ' + modelOutput.trim().split('\n').slice(1).join(', ')
+                    };
+                }
+            }
+            self.resolved = { command: 'ollama', type: 'ollama' };
+            return { error: null };
+        }
+
+        return {
+            error: 'No Claude-compatible binary found. Install Claude Code CLI ' +
+                   '(claude) or Ollama (ollama), or set --claude-command explicitly.'
+        };
+    };
+
     // spawn creates an MCP session and launches the Claude process.
     // Returns a Promise that resolves with { error, sessionId }.
     ClaudeCodeExecutor.prototype.spawn = async function(sessionId, opts) {

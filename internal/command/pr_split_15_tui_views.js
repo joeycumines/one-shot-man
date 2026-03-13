@@ -743,8 +743,9 @@
 
         // Claude availability status (shown after strategy buttons).
         if (s.claudeCheckStatus === 'checking') {
+            var checkMsg = s.claudeCheckProgressMsg || 'Checking Claude availability\u2026';
             lines.push('');
-            lines.push('  ' + styles.statusActive().render('\u23f3 Checking Claude availability\u2026'));
+            lines.push('  ' + styles.statusActive().render('\u23f3 ' + checkMsg));
         }
         if (s.claudeCheckStatus === 'available' && s.claudeResolvedInfo) {
             lines.push('');

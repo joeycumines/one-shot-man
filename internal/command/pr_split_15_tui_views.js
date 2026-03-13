@@ -749,7 +749,10 @@
         }
         if (s.claudeCheckStatus === 'available' && s.claudeResolvedInfo) {
             lines.push('');
-            lines.push('  ' + styles.successBadge().render(' \u2713 Claude available '));
+            var claudeStatusMsg = s.userHasSelectedStrategy
+                ? ' \u2713 Claude available '
+                : ' \u2713 Claude available \u2014 using auto strategy ';
+            lines.push('  ' + styles.successBadge().render(claudeStatusMsg));
             lines.push('    Command:  ' + styles.fieldValue().render(s.claudeResolvedInfo.command || '?'));
             lines.push('    Provider: ' + styles.fieldValue().render(s.claudeResolvedInfo.type || '?'));
         }
@@ -759,7 +762,7 @@
             if (s.claudeCheckError) {
                 lines.push('    ' + styles.dim().render(s.claudeCheckError));
             }
-            lines.push('    ' + styles.dim().render('\u2192 Fell back to Heuristic strategy'));
+            lines.push('    ' + styles.dim().render('\u2192 Using heuristic strategy'));
         }
 
         // Test Connection button.

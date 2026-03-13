@@ -5246,6 +5246,308 @@ func TestChunk16_ClaudeCheck_SwitchAwayCleansUp(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+//  T42: Default to Claude strategy when Claude is available
+// ---------------------------------------------------------------------------
+
+func TestChunk16_T42_AutoDetectClaudeOnStartup(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(async function() {
+		globalThis.prSplitConfig = { claudeCommand: '' };
+		globalThis.prSplit._state.claudeExecutor = null;
+
+		var origCtor = globalThis.prSplit.ClaudeCodeExecutor;
+		var MockExecutor = function(config) {
+			this.command = config.claudeCommand || '';
+			this.resolved = null;
+		};
+		MockExecutor.prototype.resolveAsync = async function(progressFn) {
+			if (progressFn) progressFn('Checking...');
+			this.resolved = { command: 'claude', type: 'claude-code' };
+			return { error: null };
+		};
+		globalThis.prSplit.ClaudeCodeExecutor = MockExecutor;
+
+		try {
+			var s = initState('CONFIG');
+			// Verify initial state: mode is heuristic, no strategy selected.
+			if (prSplit.runtime.mode !== 'heuristic') return 'FAIL: initial mode should be heuristic, got: ' + prSplit.runtime.mode;
+			if (s.userHasSelectedStrategy) return 'FAIL: userHasSelectedStrategy should be false initially';
+
+			// Fire auto-detect-claude tick (simulates what happens after first WindowSize).
+			var r = update({type: 'Tick', id: 'auto-detect-claude'}, s);
+			s = r[0];
+
+			// Should start checking.
+			if (s.claudeCheckStatus !== 'checking') return 'FAIL: should be checking, got: ' + s.claudeCheckStatus;
+
+			// Let microtasks resolve (resolveAsync completes).
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+
+			// Poll to complete.
+			r = update({type: 'Tick', id: 'claude-check-poll'}, s);
+			s = r[0];
+
+			// Claude is available — mode should be auto.
+			if (s.claudeCheckStatus !== 'available') return 'FAIL: should be available, got: ' + s.claudeCheckStatus;
+			if (prSplit.runtime.mode !== 'auto') return 'FAIL: mode should auto-switch to auto, got: ' + prSplit.runtime.mode;
+			if (s.userHasSelectedStrategy) return 'FAIL: auto-detect should NOT set userHasSelectedStrategy';
+
+			return 'OK';
+		} finally {
+			globalThis.prSplit.ClaudeCodeExecutor = origCtor;
+			delete globalThis.prSplitConfig;
+			prSplit.runtime.mode = 'heuristic';
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("auto detect claude on startup: %v", raw)
+	}
+}
+
+func TestChunk16_T42_AutoDetectSkipsWhenUserSelected(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		globalThis.prSplitConfig = { claudeCommand: '' };
+		globalThis.prSplit._state.claudeExecutor = null;
+
+		var origCtor = globalThis.prSplit.ClaudeCodeExecutor;
+		var resolveCallCount = 0;
+		var MockExecutor = function(config) {
+			this.command = config.claudeCommand || '';
+			this.resolved = null;
+		};
+		MockExecutor.prototype.resolveAsync = async function(progressFn) {
+			resolveCallCount++;
+			this.resolved = { command: 'claude', type: 'claude-code' };
+			return { error: null };
+		};
+		globalThis.prSplit.ClaudeCodeExecutor = MockExecutor;
+
+		try {
+			var s = initState('CONFIG');
+			// User manually selects heuristic strategy.
+			s.userHasSelectedStrategy = true;
+			prSplit.runtime.mode = 'heuristic';
+
+			// Fire auto-detect-claude tick.
+			var r = update({type: 'Tick', id: 'auto-detect-claude'}, s);
+			s = r[0];
+
+			// Should skip entirely — no check launched.
+			if (s.claudeCheckStatus !== null) return 'FAIL: should not start checking when user selected, got: ' + s.claudeCheckStatus;
+			if (resolveCallCount !== 0) return 'FAIL: resolveAsync should not be called, count: ' + resolveCallCount;
+			if (prSplit.runtime.mode !== 'heuristic') return 'FAIL: mode should stay heuristic, got: ' + prSplit.runtime.mode;
+
+			return 'OK';
+		} finally {
+			globalThis.prSplit.ClaudeCodeExecutor = origCtor;
+			delete globalThis.prSplitConfig;
+			prSplit.runtime.mode = 'heuristic';
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("auto detect skips when user selected: %v", raw)
+	}
+}
+
+func TestChunk16_T42_ManualSelectSetsFlag(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		globalThis.prSplitConfig = { claudeCommand: '' };
+		var s = initState('CONFIG');
+		if (s.userHasSelectedStrategy) return 'FAIL: should start false';
+
+		// Simulate keyboard strategy selection (via handleFocusActivate).
+		s.focusIndex = 1; // strategy-heuristic
+		var r = sendKey(s, 'enter');
+		s = r[0];
+		if (!s.userHasSelectedStrategy) return 'FAIL: enter on strategy should set flag';
+
+		// Reset and test mouse click.
+		s.userHasSelectedStrategy = false;
+		var z = globalThis.prSplit._zone;
+		var origInBounds = z.inBounds;
+		z.inBounds = function(id) { return id === 'strategy-directory'; };
+		try {
+			r = update({type: 'Mouse', button: 'left', action: 'press', isWheel: false, x: 10, y: 10}, s);
+		} finally {
+			z.inBounds = origInBounds;
+		}
+		s = r[0];
+		if (!s.userHasSelectedStrategy) return 'FAIL: mouse click on strategy should set flag';
+
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("manual select sets flag: %v", raw)
+	}
+}
+
+func TestChunk16_T42_AutoDetectUnavailableFallback(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(async function() {
+		globalThis.prSplitConfig = { claudeCommand: '' };
+		globalThis.prSplit._state.claudeExecutor = null;
+
+		var origCtor = globalThis.prSplit.ClaudeCodeExecutor;
+		var MockExecutor = function(config) {
+			this.command = config.claudeCommand || '';
+			this.resolved = null;
+		};
+		MockExecutor.prototype.resolveAsync = async function(progressFn) {
+			return { error: 'Claude not found' };
+		};
+		globalThis.prSplit.ClaudeCodeExecutor = MockExecutor;
+
+		try {
+			var s = initState('CONFIG');
+			prSplit.runtime.mode = 'heuristic';
+
+			// Fire auto-detect.
+			var r = update({type: 'Tick', id: 'auto-detect-claude'}, s);
+			s = r[0];
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+			r = update({type: 'Tick', id: 'claude-check-poll'}, s);
+			s = r[0];
+
+			// Claude unavailable — should stay heuristic.
+			if (s.claudeCheckStatus !== 'unavailable') return 'FAIL: should be unavailable, got: ' + s.claudeCheckStatus;
+			if (prSplit.runtime.mode !== 'heuristic') return 'FAIL: mode should stay heuristic, got: ' + prSplit.runtime.mode;
+			if (s.claudeCheckError !== 'Claude not found') return 'FAIL: error not set';
+
+			return 'OK';
+		} finally {
+			globalThis.prSplit.ClaudeCodeExecutor = origCtor;
+			delete globalThis.prSplitConfig;
+			prSplit.runtime.mode = 'heuristic';
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("auto detect unavailable fallback: %v", raw)
+	}
+}
+
+func TestChunk16_T42_AutoDetectSkipsWhenAlreadyChecking(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.claudeCheckStatus = 'checking';
+
+		// Fire auto-detect — should skip (already checking).
+		var r = update({type: 'Tick', id: 'auto-detect-claude'}, s);
+		s = r[0];
+
+		// Nothing changes.
+		if (s.claudeCheckStatus !== 'checking') return 'FAIL: should stay checking';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("auto detect skips when already checking: %v", raw)
+	}
+}
+
+func TestChunk16_T42_ViewShowsAutoStrategyHint(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.claudeCheckStatus = 'available';
+		s.claudeResolvedInfo = { command: 'claude', type: 'claude-code' };
+		s.userHasSelectedStrategy = false;
+		prSplit.runtime.mode = 'auto';
+
+		var view = globalThis.prSplit._viewForState(s);
+		if (view.indexOf('using auto strategy') === -1) {
+			return 'FAIL: should show auto strategy hint when auto-detected, got view: ' + view.substring(0, 200);
+		}
+
+		// When user manually selected, should not show the hint.
+		s.userHasSelectedStrategy = true;
+		view = globalThis.prSplit._viewForState(s);
+		if (view.indexOf('using auto strategy') !== -1) {
+			return 'FAIL: should NOT show auto strategy hint when user selected';
+		}
+		if (view.indexOf('Claude available') === -1) {
+			return 'FAIL: should still show Claude available';
+		}
+
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("view shows auto strategy hint: %v", raw)
+	}
+}
+
+func TestChunk16_T42_InitReturnsBatchCommand(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('IDLE');
+		s.needsInitClear = true;
+
+		// Simulate first WindowSize message.
+		var r = update({type: 'WindowSize', width: 120, height: 40}, s);
+		s = r[0];
+		var cmd = r[1];
+
+		if (s.wizardState !== 'CONFIG') return 'FAIL: should transition to CONFIG';
+
+		// Verify command is a batch (clearScreen + tick).
+		if (!cmd) return 'FAIL: should return a command';
+		if (cmd._cmdType !== 'batch') return 'FAIL: command should be batch, got: ' + cmd._cmdType;
+		if (!cmd.cmds || cmd.cmds.length !== 2) return 'FAIL: batch should have 2 commands, got: ' + (cmd.cmds ? cmd.cmds.length : 'null');
+
+		// First command is clearScreen.
+		if (cmd.cmds[0]._cmdType !== 'clearScreen') return 'FAIL: first cmd should be clearScreen, got: ' + cmd.cmds[0]._cmdType;
+		// Second command is tick for auto-detect-claude.
+		if (cmd.cmds[1]._cmdType !== 'tick') return 'FAIL: second cmd should be tick, got: ' + cmd.cmds[1]._cmdType;
+		if (cmd.cmds[1].id !== 'auto-detect-claude') return 'FAIL: tick id should be auto-detect-claude, got: ' + cmd.cmds[1].id;
+
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("init returns batch command: %v", raw)
+	}
+}
+
+// ---------------------------------------------------------------------------
 //  T37: Async Verify Fallback Tests
 // ---------------------------------------------------------------------------
 

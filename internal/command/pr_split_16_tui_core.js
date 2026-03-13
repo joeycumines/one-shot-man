@@ -120,6 +120,7 @@
                 claudeCheckError: null,    // null | error string
                 claudeCheckRunning: false, // true while async resolveAsync is running
                 claudeCheckProgressMsg: '', // progress message from resolveAsync
+                userHasSelectedStrategy: false, // T42: true when user manually selects a strategy
 
                 // Analysis progress.
                 analysisSteps: [],
@@ -206,7 +207,8 @@
                     // Start the wizard on first render.
                     s.wizardState = 'CONFIG';
                     wizard.transition('CONFIG');
-                    return [s, tea.clearScreen()];
+                    // T42: Auto-detect Claude on startup to default to 'auto' strategy.
+                    return [s, tea.batch(tea.clearScreen(), tea.tick(1, 'auto-detect-claude'))];
                 }
                 return [s, null];
             }
@@ -708,6 +710,14 @@
                 }
                 // Claude availability check (CONFIG screen).
                 if (msg.id === 'check-claude') {
+                    return handleClaudeCheck(s);
+                }
+                // T42: Auto-detect Claude on startup to default to 'auto' strategy.
+                if (msg.id === 'auto-detect-claude') {
+                    // Skip if user already manually selected a strategy.
+                    if (s.userHasSelectedStrategy) return [s, null];
+                    // Skip if already checking or detected.
+                    if (s.claudeCheckStatus) return [s, null];
                     return handleClaudeCheck(s);
                 }
                 if (msg.id === 'claude-check-poll') {
@@ -1295,6 +1305,7 @@
             for (var si = 0; si < strategies.length; si++) {
                 if (zone.inBounds('strategy-' + strategies[si], msg)) {
                     prSplit.runtime.mode = strategies[si];
+                    s.userHasSelectedStrategy = true; // T42: manual selection overrides auto-detect
                     // Trigger Claude check for 'auto'.
                     if (strategies[si] === 'auto') {
                         s.claudeCheckStatus = 'checking';
@@ -1314,6 +1325,7 @@
                 if (s.claudeCheckStatus === 'checking') return [s, null];
                 s.claudeCheckStatus = 'checking';
                 prSplit.runtime.mode = 'auto';
+                s.userHasSelectedStrategy = true; // T42: manual action overrides auto-detect
                 return [s, tea.tick(1, 'check-claude')];
             }
             if (zone.inBounds('toggle-advanced', msg)) {
@@ -1863,6 +1875,7 @@
         if (focused.type === 'strategy') {
             var stratName = focused.id.replace('strategy-', '');
             prSplit.runtime.mode = stratName;
+            s.userHasSelectedStrategy = true; // T42: manual selection overrides auto-detect
             // Trigger Claude availability check for 'auto' strategy.
             if (stratName === 'auto') {
                 s.claudeCheckStatus = 'checking';
@@ -1882,6 +1895,7 @@
             if (s.claudeCheckStatus === 'checking') return [s, null];
             s.claudeCheckStatus = 'checking';
             prSplit.runtime.mode = 'auto';
+            s.userHasSelectedStrategy = true; // T42: manual action overrides auto-detect
             return [s, tea.tick(1, 'check-claude')];
         }
 
@@ -2233,6 +2247,11 @@
             s.claudeCheckError = null;
             // Cache the resolved executor for startAutoAnalysis().
             st.claudeExecutor = executor;
+            // T42: Auto-select 'auto' strategy when Claude detected on startup,
+            // unless the user has already manually selected a different strategy.
+            if (!s.userHasSelectedStrategy) {
+                prSplit.runtime.mode = 'auto';
+            }
         }
     }
 

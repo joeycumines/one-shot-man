@@ -84,7 +84,8 @@
       "T61-old: mcpCallback.waitForAsync() — non-blocking Promise-based MCP tool wait with aliveCheck trampoline, 9 tests, 47/47 pass",
       "T62-old: Pipeline async conversion — waitForLogged dual-path, step callbacks async, spawn/restart async, handleRestartClaudePoll, scroll keys, 485 tests pass",
       "T40: Complete tab navigation ALL screens — FINALIZATION focus elements (final-report, final-create-prs, final-done, nav-next) with keyboard activation and visual focus indicators. CONFIG toggle-advanced with ▸ pointer. ERROR_RESOLUTION nav-next. BRANCH_BUILDING 'e' expand/collapse. Help overlay Branch Building section. 10 new tests + 6 existing updated.",
-      "T41: Fix inline title editing + navigation conflict — defense-in-depth guard in handleListNav (editorTitleEditing check). Title editing interceptor already catches all keys; guard prevents future bypass corruption. 5 new tests verifying edit-nav isolation."
+      "T41: Fix inline title editing + navigation conflict — defense-in-depth guard in handleListNav (editorTitleEditing check). Title editing interceptor already catches all keys; guard prevents future bypass corruption. 5 new tests verifying edit-nav isolation.",
+      "T42: Default to Claude strategy when Claude is available — auto-detect Claude on startup via 'auto-detect-claude' tick from first WindowSize. resolveAsync success auto-sets mode='auto' unless user manually selected strategy. View shows '(auto-selected)' hint. userHasSelectedStrategy flag prevents auto-override of manual choice. 7 new tests."
     ],
     "replanLog": [
       {
@@ -327,7 +328,7 @@
         "Manual strategy override works and persists",
         "No blocking during Claude detection"
       ],
-      "status": "Not Started",
+      "status": "Done",
       "context": {
         "files": [
           "internal/command/pr_split_16_tui_core.js:50 (createWizardModel — initial state)",

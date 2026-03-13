@@ -72,6 +72,7 @@ func TestIntegration_AutoSplitClaude_VTermObservation(t *testing.T) {
 		"-base=main",
 		"-strategy=directory",
 		"-verify=true", // always-pass verify command for testing
+		"-interactive=false",
 		"-claude-command=" + claudeTestCommand,
 	}
 	for _, a := range claudeTestArgs {
@@ -110,7 +111,7 @@ func TestIntegration_AutoSplitClaude_VTermObservation(t *testing.T) {
 	// -----------------------------------------------------------------------
 	t.Log("Phase 1: Waiting for pr-split prompt...")
 	snap := cp.Snapshot()
-	if err := cp.Expect(ctx, snap, termtest.Contains("pr-split"), "prompt appears"); err != nil {
+	if err := cp.Expect(ctx, snap, termtest.Contains("(pr-split)"), "prompt appears"); err != nil {
 		t.Fatalf("pr-split prompt did not appear: %v\nOutput:\n%s", err, cp.String())
 	}
 	t.Logf("Prompt appeared.")
@@ -186,7 +187,7 @@ func TestIntegration_AutoSplitClaude_VTermObservation(t *testing.T) {
 	}
 
 	qCtx, qCancel := context.WithTimeout(ctx, 15*time.Second)
-	if err := cp.Expect(qCtx, snap, termtest.Contains("pr-split"), "prompt after q"); err != nil {
+	if err := cp.Expect(qCtx, snap, termtest.Contains("(pr-split)"), "prompt after q"); err != nil {
 		qCancel()
 		t.Log("Prompt did not return — sending second q for force cancel")
 		snap = cp.Snapshot()
@@ -194,7 +195,7 @@ func TestIntegration_AutoSplitClaude_VTermObservation(t *testing.T) {
 			t.Logf("Failed to send second q: %v", err)
 		}
 		q2Ctx, q2Cancel := context.WithTimeout(ctx, 15*time.Second)
-		if err := cp.Expect(q2Ctx, snap, termtest.Contains("pr-split"), "prompt after second q"); err != nil {
+		if err := cp.Expect(q2Ctx, snap, termtest.Contains("(pr-split)"), "prompt after second q"); err != nil {
 			q2Cancel()
 			t.Error("HANG DETECTED: prompt did not return after two q presses")
 		} else {
@@ -292,6 +293,7 @@ func TestIntegration_PrSplit_VTerm_AutoSplitOllamaExactCommand(t *testing.T) {
 		"pr-split",
 		"--log-file=" + logPath,
 		"--log-level=debug",
+		"-interactive=false",
 		"-claude-command=ollama",
 		"-claude-arg=launch",
 		"-claude-arg=claude",
@@ -321,7 +323,7 @@ func TestIntegration_PrSplit_VTerm_AutoSplitOllamaExactCommand(t *testing.T) {
 	defer cp.Close()
 
 	snap := cp.Snapshot()
-	if err := cp.Expect(ctx, snap, termtest.Contains("pr-split"), "prompt appears"); err != nil {
+	if err := cp.Expect(ctx, snap, termtest.Contains("(pr-split)"), "prompt appears"); err != nil {
 		t.Fatalf("prompt did not appear: %v\nOutput:\n%s\nLog:\n%s", err, cp.String(), readFileForDiag(logPath))
 	}
 	t.Logf("Prompt appeared.")
@@ -405,14 +407,14 @@ func TestIntegration_PrSplit_VTerm_AutoSplitOllamaExactCommand(t *testing.T) {
 		t.Logf("Failed to send q: %v", err)
 	}
 	qCtx, qCancel := context.WithTimeout(ctx, 15*time.Second)
-	if err := cp.Expect(qCtx, snap, termtest.Contains("pr-split"), "prompt after q"); err != nil {
+	if err := cp.Expect(qCtx, snap, termtest.Contains("(pr-split)"), "prompt after q"); err != nil {
 		qCancel()
 		snap = cp.Snapshot()
 		if err := cp.Send("q"); err != nil {
 			t.Logf("Failed to send second q: %v", err)
 		}
 		q2Ctx, q2Cancel := context.WithTimeout(ctx, 20*time.Second)
-		if err := cp.Expect(q2Ctx, snap, termtest.Contains("pr-split"), "prompt after second q"); err != nil {
+		if err := cp.Expect(q2Ctx, snap, termtest.Contains("(pr-split)"), "prompt after second q"); err != nil {
 			q2Cancel()
 			t.Fatalf("prompt did not return after q/q force-cancel: %v\nOutput:\n%s\nLog:\n%s", err, cp.String(), readFileForDiag(logPath))
 		}
@@ -478,7 +480,7 @@ func TestIntegration_PrSplit_VTermCleanExit(t *testing.T) {
 	}
 
 	cp, err := termtest.NewConsole(ctx,
-		termtest.WithCommand(osmBin, "pr-split", "-base=main"),
+		termtest.WithCommand(osmBin, "pr-split", "-base=main", "-interactive=false"),
 		termtest.WithDir(repoDir),
 		termtest.WithEnv([]string{
 			"TERM=xterm-256color",
@@ -496,7 +498,7 @@ func TestIntegration_PrSplit_VTermCleanExit(t *testing.T) {
 
 	// Wait for the prompt.
 	snap := cp.Snapshot()
-	if err := cp.Expect(ctx, snap, termtest.Contains("pr-split"), "prompt appears"); err != nil {
+	if err := cp.Expect(ctx, snap, termtest.Contains("(pr-split)"), "prompt appears"); err != nil {
 		t.Fatalf("pr-split prompt did not appear: %v\nOutput:\n%s", err, cp.String())
 	}
 
@@ -572,6 +574,7 @@ func TestIntegration_PrSplit_VTermHeuristicRun(t *testing.T) {
 			"-base=main",
 			"-strategy=directory",
 			"-verify=true", // always-pass
+			"-interactive=false",
 		),
 		termtest.WithDir(repoDir),
 		termtest.WithEnv([]string{
@@ -589,7 +592,7 @@ func TestIntegration_PrSplit_VTermHeuristicRun(t *testing.T) {
 
 	// Wait for prompt.
 	snap := cp.Snapshot()
-	if err := cp.Expect(ctx, snap, termtest.Contains("pr-split"), "prompt appears"); err != nil {
+	if err := cp.Expect(ctx, snap, termtest.Contains("(pr-split)"), "prompt appears"); err != nil {
 		t.Fatalf("pr-split prompt did not appear: %v\nOutput:\n%s", err, cp.String())
 	}
 	t.Log("Prompt appeared")
@@ -739,6 +742,7 @@ func TestIntegration_PrSplit_VTermAutoSplitFallback(t *testing.T) {
 			"-base=main",
 			"-strategy=directory",
 			"-verify=true",
+			"-interactive=false",
 			// Force Claude spawn failure → heuristic fallback.
 			"-claude-command=/nonexistent-claude-binary-for-test",
 		),
@@ -758,7 +762,7 @@ func TestIntegration_PrSplit_VTermAutoSplitFallback(t *testing.T) {
 
 	// Wait for prompt.
 	snap := cp.Snapshot()
-	if err := cp.Expect(ctx, snap, termtest.Contains("pr-split"), "prompt appears"); err != nil {
+	if err := cp.Expect(ctx, snap, termtest.Contains("(pr-split)"), "prompt appears"); err != nil {
 		t.Fatalf("pr-split prompt did not appear: %v\nOutput:\n%s", err, cp.String())
 	}
 	t.Log("Prompt appeared")
@@ -903,7 +907,7 @@ func TestIntegration_PrSplit_VTermMultiCommand(t *testing.T) {
 	}
 
 	cp, err := termtest.NewConsole(ctx,
-		termtest.WithCommand(osmBin, "pr-split", "-base=main"),
+		termtest.WithCommand(osmBin, "pr-split", "-base=main", "-interactive=false"),
 		termtest.WithDir(repoDir),
 		termtest.WithEnv([]string{
 			"TERM=xterm-256color",
@@ -921,7 +925,7 @@ func TestIntegration_PrSplit_VTermMultiCommand(t *testing.T) {
 
 	// --- Wait for initial prompt ---
 	snap := cp.Snapshot()
-	if err := cp.Expect(ctx, snap, termtest.Contains("pr-split"), "initial prompt"); err != nil {
+	if err := cp.Expect(ctx, snap, termtest.Contains("(pr-split)"), "initial prompt"); err != nil {
 		t.Fatalf("initial prompt did not appear: %v\nOutput:\n%s", err, cp.String())
 	}
 	t.Log("Initial prompt appeared")
@@ -1027,7 +1031,7 @@ func vtermStartConsole(t *testing.T, ctx context.Context, osmBin, repoDir string
 	t.Helper()
 
 	cp, err := termtest.NewConsole(ctx,
-		termtest.WithCommand(osmBin, "pr-split", "-base=main", "-strategy=directory", "-verify=true"),
+		termtest.WithCommand(osmBin, "pr-split", "-base=main", "-strategy=directory", "-verify=true", "-interactive=false"),
 		termtest.WithDir(repoDir),
 		termtest.WithEnv([]string{
 			"TERM=xterm-256color",
@@ -1042,7 +1046,7 @@ func vtermStartConsole(t *testing.T, ctx context.Context, osmBin, repoDir string
 	}
 
 	snap := cp.Snapshot()
-	if err := cp.Expect(ctx, snap, termtest.Contains("pr-split"), "initial prompt"); err != nil {
+	if err := cp.Expect(ctx, snap, termtest.Contains("(pr-split)"), "initial prompt"); err != nil {
 		cp.Close()
 		t.Fatalf("pr-split prompt did not appear: %v\nOutput:\n%s", err, cp.String())
 	}

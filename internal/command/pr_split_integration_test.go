@@ -1541,7 +1541,7 @@ func TestIntegration_SpawnHealthCheck_DeadProcess(t *testing.T) {
 	// The health check (sleep 0.3 + isAlive()) should detect this
 	// and return a diagnostic error.
 	raw, err := evalJS(`
-		(function() {
+		(async function() {
 			var tmpDir = '` + escapedTmpDir + `';
 
 			var executor = new ClaudeCodeExecutor({
@@ -1582,7 +1582,7 @@ func TestIntegration_SpawnHealthCheck_DeadProcess(t *testing.T) {
 			};
 
 			var originalSpawn = ClaudeCodeExecutor.prototype.spawn;
-			var result = originalSpawn.call(executor, null, { mcpConfigPath: tmpDir + '/mcp-config.json' });
+			var result = await originalSpawn.call(executor, null, { mcpConfigPath: tmpDir + '/mcp-config.json' });
 			return JSON.stringify(result);
 		})()
 	`)
@@ -1620,7 +1620,7 @@ func TestIntegration_SpawnHealthCheck_AliveProcess(t *testing.T) {
 	// Simulate a spawn where the handle is alive after the health check.
 	// Should return success (error: null).
 	raw, err := evalJS(`
-		(function() {
+		(async function() {
 			var tmpDir = '` + escapedTmpDir + `';
 
 			var executor = new ClaudeCodeExecutor({
@@ -1661,7 +1661,7 @@ func TestIntegration_SpawnHealthCheck_AliveProcess(t *testing.T) {
 			};
 
 			var originalSpawn = ClaudeCodeExecutor.prototype.spawn;
-			var result = originalSpawn.call(executor, null, { mcpConfigPath: tmpDir + '/mcp-config.json' });
+			var result = await originalSpawn.call(executor, null, { mcpConfigPath: tmpDir + '/mcp-config.json' });
 			return JSON.stringify(result);
 		})()
 	`)
@@ -2787,7 +2787,7 @@ func TestClaudeCodeExecutor_SpawnHealthCheck_DeadProcess(t *testing.T) {
 	escapedTmpDir = strings.ReplaceAll(escapedTmpDir, `'`, `\'`)
 
 	raw, err := evalJS(`
-		(function() {
+		(async function() {
 			var tmpDir = '` + escapedTmpDir + `';
 
 			var executor = new ClaudeCodeExecutor({
@@ -2830,7 +2830,7 @@ func TestClaudeCodeExecutor_SpawnHealthCheck_DeadProcess(t *testing.T) {
 			};
 
 			var originalSpawn = ClaudeCodeExecutor.prototype.spawn;
-			var result = originalSpawn.call(executor, null, {
+			var result = await originalSpawn.call(executor, null, {
 				mcpConfigPath: tmpDir + '/mcp.json'
 			});
 

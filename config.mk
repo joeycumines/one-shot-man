@@ -99,5 +99,24 @@ git-commit-blueprint:
 	echo "Committed. Cleaning up scratch/commit-msg.txt..." && \
 	rm -f scratch/commit-msg.txt
 
+.PHONY: git-amend-all
+git-amend-all: ## Stage all changes and amend last commit
+git-amend-all:
+	cd $(PROJECT_ROOT) && \
+	git add -A && \
+	git commit --amend --no-edit
+
+.PHONY: test-targeted
+test-targeted: ## Run targeted tests from scratch/test-run-pattern.txt TIMEOUT=3m PKG=./internal/command/...
+test-targeted: SHELL := /bin/bash
+test-targeted:
+	@if [ ! -f $(PROJECT_ROOT)/scratch/test-run-pattern.txt ]; then \
+		echo "ERROR: scratch/test-run-pattern.txt required"; \
+		exit 1; \
+	fi
+	cd $(PROJECT_ROOT) && go test -race -count=1 -timeout=$(or $(TIMEOUT),3m) \
+		-run "$$(cat $(PROJECT_ROOT)/scratch/test-run-pattern.txt | tr -d '\n')" \
+		$(or $(PKG),./internal/command/...) 2>&1 | tail -80
+
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 endif

@@ -590,7 +590,7 @@ func TestChunk09_ClaudeCodeExecutor_Restart(t *testing.T) {
 	evalJS := loadChunkEngine(t, nil, claudeChunks...)
 
 	result, err := evalJS(`
-		(function() {
+		(async function() {
 			var closeCalled = false;
 			var resolveCalled = false;
 			var spawnCalled = false;
@@ -619,7 +619,7 @@ func TestChunk09_ClaudeCodeExecutor_Restart(t *testing.T) {
 				return { error: null, sessionId: 'new-session' };
 			};
 
-			var result = ex.restart(null, { mcpConfigPath: '/tmp/mcp.json' });
+			var result = await ex.restart(null, { mcpConfigPath: '/tmp/mcp.json' });
 			return JSON.stringify({
 				closeCalled: closeCalled,
 				resolveCalled: resolveCalled,
@@ -670,7 +670,7 @@ func TestChunk09_ClaudeCodeExecutor_Restart_ResolveFails(t *testing.T) {
 	evalJS := loadChunkEngine(t, nil, claudeChunks...)
 
 	result, err := evalJS(`
-		(function() {
+		(async function() {
 			var ex = new globalThis.prSplit.ClaudeCodeExecutor({});
 			ex.handle = { close: function() {} };
 
@@ -679,7 +679,7 @@ func TestChunk09_ClaudeCodeExecutor_Restart_ResolveFails(t *testing.T) {
 				return { error: 'binary not found' };
 			};
 
-			var r = ex.restart();
+			var r = await ex.restart();
 			return JSON.stringify({ error: r.error });
 		})()
 	`)

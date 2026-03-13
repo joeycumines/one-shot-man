@@ -86,7 +86,8 @@
       "T40: Complete tab navigation ALL screens — FINALIZATION focus elements (final-report, final-create-prs, final-done, nav-next) with keyboard activation and visual focus indicators. CONFIG toggle-advanced with ▸ pointer. ERROR_RESOLUTION nav-next. BRANCH_BUILDING 'e' expand/collapse. Help overlay Branch Building section. 10 new tests + 6 existing updated.",
       "T41: Fix inline title editing + navigation conflict — defense-in-depth guard in handleListNav (editorTitleEditing check). Title editing interceptor already catches all keys; guard prevents future bypass corruption. 5 new tests verifying edit-nav isolation.",
       "T42: Default to Claude strategy when Claude is available — auto-detect Claude on startup via 'auto-detect-claude' tick from first WindowSize. resolveAsync success auto-sets mode='auto' unless user manually selected strategy. View shows '(auto-selected)' hint. userHasSelectedStrategy flag prevents auto-override of manual choice. 7 new tests.",
-      "T43: Graceful error recovery for stale/missing branch — Config validation errors (empty repo, detached HEAD, nonexistent target branch) now stay on CONFIG screen with inline warning instead of jumping to dead-end ERROR state. handleConfigState enhanced with empty-repo detection (3 stderr patterns), detached HEAD detection, target branch existence validation (local + remote fallback), and available branch list fallback. 9 new tests (4 chunk13 + 5 chunk16)."
+      "T43: Graceful error recovery for stale/missing branch — Config validation errors (empty repo, detached HEAD, nonexistent target branch) now stay on CONFIG screen with inline warning instead of jumping to dead-end ERROR state. handleConfigState enhanced with empty-repo detection (3 stderr patterns), detached HEAD detection, target branch existence validation (local + remote fallback), and available branch list fallback. 9 new tests (4 chunk13 + 5 chunk16).",
+      "T44: Mux process output into TUI — New Output tab in split-view pane shows live git/make/verification output. Tab bar [Claude][Output] switchable via Ctrl+O or click. gitExecAsync enhanced with optional outputFn callback + global _outputCaptureFn fallback for zero-callsite-change capture. renderOutputPane reuses renderClaudePane ANSI infrastructure (lipgloss maxWidth truncation, focus-aware borders). Output capture installed in startAnalysis, startAutoAnalysis, runExecutionAsync (progressFn pipe), pollVerifySession (completed output pipe). 5000-line buffer cap with trim-to-4000. Scroll keys (up/down/j/k/pgup/pgdown/home/end), mouse wheel, auto-scroll. Zone marks for tab clicks. 14 new tests + numVal helper."
     ],
     "replanLog": [
       {
@@ -372,18 +373,7 @@
         "Tab bar with [Claude] [Output] tabs switchable via Ctrl+Shift+O or click",
         "No blocking — output polling via tea.tick at 100ms"
       ],
-      "status": "Not Started",
-      "context": {
-        "files": [
-          "internal/command/pr_split_16_tui_core.js (tick handlers for analysis, execution)",
-          "internal/command/pr_split_15_tui_views.js (renderClaudePane — reuse for output)",
-          "internal/builtin/termmux/module.go (CaptureSession bindings)"
-        ],
-        "dependencies": [
-          "T34",
-          "T35"
-        ]
-      }
+      "status": "Done"
     },
     {
       "task": "T45: Auto-attach Claude pane when Claude spawns during wizard",

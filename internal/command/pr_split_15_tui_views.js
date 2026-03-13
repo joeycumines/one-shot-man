@@ -647,11 +647,99 @@
         return overlayStyle.render(lines.join('\n'));
     }
 
+    // -----------------------------------------------------------------------
+    //  Split-View: Output Pane Renderer (T44)
+    // -----------------------------------------------------------------------
+    function renderOutputPane(s, width, height) {
+        var lines = s.outputLines || [];
+        var totalLines = lines.length;
+
+        // Height budget: border adds 2 lines (top + bottom).
+        var contentH = Math.max(1, height - 2);
+        var viewH = Math.max(1, contentH - 1); // lines for content text (1 for title)
+        var viewW = Math.max(10, width - 6);    // border(2) + padding(2) + safety(2)
+
+        // Focus indicator.
+        var isFocused = (s.splitViewFocus === 'claude' && s.splitViewTab === 'output');
+        var borderColor = isFocused ? COLORS.primary : COLORS.border;
+
+        // Placeholder when no output is available.
+        if (totalLines === 0) {
+            var placeholder = styles.dim().render('No process output yet');
+            var hint = styles.dim().render('Output from git, make, and analysis will appear here');
+
+            var phLines = [];
+            var phPadTop = Math.max(0, Math.floor((contentH - 2) / 2));
+            for (var pi = 0; pi < phPadTop; pi++) phLines.push('');
+            phLines.push(placeholder);
+            phLines.push(hint);
+            while (phLines.length < contentH) phLines.push('');
+
+            var phStyle = lipgloss.newStyle()
+                .border(lipgloss.roundedBorder())
+                .borderForeground(borderColor)
+                .width(width - 2)
+                .height(contentH);
+            return phStyle.render(phLines.join('\n'));
+        }
+
+        // Scroll indicator.
+        var scrollInfo = '';
+        var offset = s.outputViewOffset || 0;
+        if (totalLines > viewH) {
+            if (offset <= 0) {
+                scrollInfo = ' [live]';
+            } else {
+                var startForPct = Math.max(0, totalLines - viewH - offset);
+                var pct = Math.round((startForPct / Math.max(1, totalLines - viewH)) * 100);
+                scrollInfo = ' [' + pct + '%]';
+            }
+        }
+
+        // Title line.
+        var titleText = styles.bold().render(' Output' + scrollInfo +
+            ' \u2014 ' + totalLines + ' line' + (totalLines !== 1 ? 's' : '') + ' ');
+
+        // Determine visible window based on scroll offset.
+        var startLine;
+        if (offset <= 0) {
+            startLine = Math.max(0, totalLines - viewH);
+        } else {
+            startLine = Math.max(0, totalLines - viewH - offset);
+        }
+        var endLine = Math.min(totalLines, startLine + viewH);
+
+        // Build viewport content with ANSI-aware line truncation.
+        var contentLines = [titleText];
+        for (var ci = startLine; ci < endLine; ci++) {
+            var ln = lines[ci] || '';
+            var visualW = lipgloss.width(ln);
+            if (visualW > viewW) {
+                // Use lipgloss maxWidth for ANSI-safe truncation.
+                ln = lipgloss.newStyle().maxWidth(viewW).render(ln);
+            }
+            contentLines.push(ln);
+        }
+        // Pad to fill contentH.
+        while (contentLines.length < contentH) {
+            contentLines.push('');
+        }
+
+        var paneStyle = lipgloss.newStyle()
+            .border(lipgloss.roundedBorder())
+            .borderForeground(borderColor)
+            .width(width - 2)
+            .height(contentH);
+
+        return paneStyle.render(contentLines.join('\n'));
+    }
+
     // Export chrome for testing.
     prSplit._renderTitleBar = renderTitleBar;
     prSplit._renderNavBar = renderNavBar;
     prSplit._renderStatusBar = renderStatusBar;
     prSplit._renderClaudePane = renderClaudePane;
+    prSplit._renderOutputPane = renderOutputPane;
     prSplit._renderStepDots = renderStepDots;
     prSplit._viewClaudeConvoOverlay = viewClaudeConvoOverlay;
 
@@ -1633,6 +1721,7 @@
         lines.push(styles.label().render('Claude Integration'));
         lines.push(padRight('  Ctrl+L', 22) + 'Toggle split view');
         lines.push(padRight('  Ctrl+Tab', 22) + 'Switch wizard / Claude pane');
+        lines.push(padRight('  Ctrl+O', 22) + 'Switch Claude / Output tab');
         lines.push(padRight('  Ctrl+]', 22) + 'Full Claude passthrough');
         lines.push(padRight('  Ctrl+= / Ctrl+-', 22) + 'Resize split view');
 

@@ -247,7 +247,9 @@
     // allowing BubbleTea to continue rendering and processing events.
     //
     // T30: Critical for unblocking the TUI event loop during git operations.
-    async function gitExecAsync(dir, args) {
+    // T44: Optional third parameter `options` with `outputFn(line)` callback
+    //      to stream output chunks to the TUI Output tab in real-time.
+    async function gitExecAsync(dir, args, options) {
         var gitArgs = [];
         if (dir && dir !== '' && dir !== '.') {
             gitArgs.push('-C');
@@ -257,25 +259,50 @@
             gitArgs.push(args[i]);
         }
 
+        var outputFn = (options && typeof options.outputFn === 'function') ? options.outputFn : null;
+
+        // T44: Fall back to global output capture function if no explicit outputFn.
+        // This allows all gitExecAsync calls (including those in analysis/execution chunks)
+        // to pipe output to the TUI Output tab without modifying every call site.
+        if (!outputFn && typeof prSplit._outputCaptureFn === 'function') {
+            outputFn = prSplit._outputCaptureFn;
+        }
+
+        // T44: Emit command header to output callback.
+        if (outputFn) {
+            outputFn('\u276f git ' + args.join(' '));
+        }
+
         var child = exec.spawn('git', gitArgs);
 
         // Collect stdout and stderr in parallel to avoid deadlock
         // (process may fill stderr buffer before we finish reading stdout).
-        async function readAll(stream) {
+        async function readAll(stream, streamOutputFn) {
             var buf = '';
             while (true) {
                 var chunk = await stream.read();
                 if (chunk.done) break;
                 if (chunk.value !== undefined && chunk.value !== null) {
-                    buf += String(chunk.value);
+                    var chunkStr = String(chunk.value);
+                    buf += chunkStr;
+                    // T44: Stream each chunk line-by-line to the output callback.
+                    if (streamOutputFn) {
+                        var chunkLines = chunkStr.split('\n');
+                        for (var cl = 0; cl < chunkLines.length; cl++) {
+                            var line = chunkLines[cl];
+                            // Skip trailing empty line from split (last \n produces empty string).
+                            if (cl === chunkLines.length - 1 && line === '') continue;
+                            streamOutputFn(line);
+                        }
+                    }
                 }
             }
             return buf;
         }
 
         var results = await Promise.all([
-            readAll(child.stdout),
-            readAll(child.stderr),
+            readAll(child.stdout, outputFn),
+            readAll(child.stderr, outputFn),
             child.wait()
         ]);
 

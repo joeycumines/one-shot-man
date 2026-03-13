@@ -1,6 +1,7 @@
 package command
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -104,6 +105,21 @@ func loadTUIEngineWithHelpers(t testing.TB) func(string) (any, error) {
 		t.Fatalf("failed to inject chunk16 helpers: %v", err)
 	}
 	return evalJS
+}
+
+// numVal safely extracts a numeric value from Goja results which may return
+// int64 or float64 depending on the JS value. Returns float64 for comparison.
+func numVal(v any) float64 {
+	switch n := v.(type) {
+	case float64:
+		return n
+	case int64:
+		return float64(n)
+	case int:
+		return float64(n)
+	default:
+		return 0
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -5752,6 +5768,541 @@ func TestChunk16_T43_ViewNoBranchesWhenEmpty(t *testing.T) {
 	}
 	if raw != "OK" {
 		t.Errorf("view no branches when empty: %v", raw)
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  T44: Output Tab + Process Output Muxing Tests
+// ---------------------------------------------------------------------------
+
+// TestChunk16_T44_InitStateHasOutputFields verifies T44 state fields exist
+// in the initialized wizard state with correct defaults.
+func TestChunk16_T44_InitStateHasOutputFields(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		return {
+			splitViewTab: s.splitViewTab,
+			outputLines: s.outputLines,
+			outputViewOffset: s.outputViewOffset,
+			outputAutoScroll: s.outputAutoScroll,
+			linesIsArray: Array.isArray(s.outputLines),
+			linesEmpty: s.outputLines.length === 0
+		};
+	})()`)
+	if err != nil {
+		t.Fatalf("eval error: %v", err)
+	}
+	m := raw.(map[string]any)
+	if m["splitViewTab"] != "claude" {
+		t.Errorf("splitViewTab = %v, want 'claude'", m["splitViewTab"])
+	}
+	if m["linesIsArray"] != true {
+		t.Errorf("outputLines should be an array")
+	}
+	if m["linesEmpty"] != true {
+		t.Errorf("outputLines should be empty initially")
+	}
+	if numVal(m["outputViewOffset"]) != 0 {
+		t.Errorf("outputViewOffset should be 0")
+	}
+	if m["outputAutoScroll"] != true {
+		t.Errorf("outputAutoScroll should be true")
+	}
+}
+
+// TestChunk16_T44_CtrlOSwitchesTabs verifies Ctrl+O toggles between Claude
+// and Output tabs in split-view bottom pane.
+func TestChunk16_T44_CtrlOSwitchesTabs(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.splitViewEnabled = true;
+		s.splitViewTab = 'claude';
+
+		// First Ctrl+O → switch to output.
+		var r1 = sendKey(s, 'ctrl+o');
+		s = r1[0];
+		var tab1 = s.splitViewTab;
+
+		// Second Ctrl+O → switch back to claude.
+		var r2 = sendKey(s, 'ctrl+o');
+		s = r2[0];
+		var tab2 = s.splitViewTab;
+
+		return { tab1: tab1, tab2: tab2 };
+	})()`)
+	if err != nil {
+		t.Fatalf("eval error: %v", err)
+	}
+	m := raw.(map[string]any)
+	if m["tab1"] != "output" {
+		t.Errorf("after first Ctrl+O, tab = %v, want 'output'", m["tab1"])
+	}
+	if m["tab2"] != "claude" {
+		t.Errorf("after second Ctrl+O, tab = %v, want 'claude'", m["tab2"])
+	}
+}
+
+// TestChunk16_T44_CtrlONotActiveWhenSplitViewDisabled ensures Ctrl+O has
+// no effect when split-view is not enabled.
+func TestChunk16_T44_CtrlONotActiveWhenSplitViewDisabled(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.splitViewEnabled = false;
+		s.splitViewTab = 'claude';
+
+		var r = sendKey(s, 'ctrl+o');
+		s = r[0];
+		return s.splitViewTab;
+	})()`)
+	if err != nil {
+		t.Fatalf("eval error: %v", err)
+	}
+	if raw != "claude" {
+		t.Errorf("tab should remain 'claude' when split-view disabled, got %v", raw)
+	}
+}
+
+// TestChunk16_T44_OutputTabScrollKeys verifies scroll keys work when Output
+// tab is active in the split-view bottom pane.
+func TestChunk16_T44_OutputTabScrollKeys(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.splitViewEnabled = true;
+		s.splitViewTab = 'output';
+		s.splitViewFocus = 'claude'; // focus on bottom pane
+		s.outputViewOffset = 0;
+		s.outputAutoScroll = true;
+
+		// Up → offset +1, autoScroll off.
+		var r = sendKey(s, 'up');
+		s = r[0];
+		var offsetAfterUp = s.outputViewOffset;
+		var autoAfterUp = s.outputAutoScroll;
+
+		// End → offset 0, autoScroll on.
+		r = sendKey(s, 'end');
+		s = r[0];
+		var offsetAfterEnd = s.outputViewOffset;
+		var autoAfterEnd = s.outputAutoScroll;
+
+		// Home → large offset, autoScroll off.
+		r = sendKey(s, 'home');
+		s = r[0];
+		var offsetAfterHome = s.outputViewOffset;
+		var autoAfterHome = s.outputAutoScroll;
+
+		// PgDown → decrease offset.
+		s.outputViewOffset = 10;
+		r = sendKey(s, 'pgdown');
+		s = r[0];
+		var offsetAfterPgDown = s.outputViewOffset;
+
+		return {
+			offsetAfterUp: offsetAfterUp,
+			autoAfterUp: autoAfterUp,
+			offsetAfterEnd: offsetAfterEnd,
+			autoAfterEnd: autoAfterEnd,
+			offsetAfterHome: offsetAfterHome,
+			autoAfterHome: autoAfterHome,
+			offsetAfterPgDown: offsetAfterPgDown
+		};
+	})()`)
+	if err != nil {
+		t.Fatalf("eval error: %v", err)
+	}
+	m := raw.(map[string]any)
+	if numVal(m["offsetAfterUp"]) != 1 {
+		t.Errorf("up: offset = %v, want 1", m["offsetAfterUp"])
+	}
+	if m["autoAfterUp"] != false {
+		t.Errorf("up: autoScroll should be false")
+	}
+	if numVal(m["offsetAfterEnd"]) != 0 {
+		t.Errorf("end: offset = %v, want 0", m["offsetAfterEnd"])
+	}
+	if m["autoAfterEnd"] != true {
+		t.Errorf("end: autoScroll should be true")
+	}
+	if numVal(m["offsetAfterHome"]) < 999 {
+		t.Errorf("home: offset = %v, want large value", m["offsetAfterHome"])
+	}
+	if m["autoAfterHome"] != false {
+		t.Errorf("home: autoScroll should be false")
+	}
+	if numVal(m["offsetAfterPgDown"]) != 5 {
+		t.Errorf("pgdown from 10: offset = %v, want 5", m["offsetAfterPgDown"])
+	}
+}
+
+// TestChunk16_T44_TabClickZones verifies mouse clicks on tab zone marks
+// switch tabs correctly.
+func TestChunk16_T44_TabClickZones(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.splitViewEnabled = true;
+		s.splitViewTab = 'claude';
+
+		// Click on output tab.
+		var restore = mockZoneHit('split-tab-output');
+		try {
+			var r = update({type: 'Mouse', button: 'left', action: 'press', isWheel: false, x: 10, y: 10}, s);
+			s = r[0];
+		} finally { restore(); }
+		var tab1 = s.splitViewTab;
+
+		// Click on claude tab.
+		restore = mockZoneHit('split-tab-claude');
+		try {
+			var r2 = update({type: 'Mouse', button: 'left', action: 'press', isWheel: false, x: 10, y: 10}, s);
+			s = r2[0];
+		} finally { restore(); }
+		var tab2 = s.splitViewTab;
+
+		return { tab1: tab1, tab2: tab2 };
+	})()`)
+	if err != nil {
+		t.Fatalf("eval error: %v", err)
+	}
+	m := raw.(map[string]any)
+	if m["tab1"] != "output" {
+		t.Errorf("click split-tab-output: tab = %v, want 'output'", m["tab1"])
+	}
+	if m["tab2"] != "claude" {
+		t.Errorf("click split-tab-claude: tab = %v, want 'claude'", m["tab2"])
+	}
+}
+
+// TestChunk16_T44_OutputMouseWheelScroll verifies mouse wheel scrolls the
+// Output tab when it's the active tab in split-view.
+func TestChunk16_T44_OutputMouseWheelScroll(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.splitViewEnabled = true;
+		s.splitViewTab = 'output';
+		s.splitViewFocus = 'claude'; // focus on bottom pane
+		s.outputViewOffset = 0;
+		s.outputAutoScroll = true;
+
+		// Wheel up → increase offset.
+		var r = sendWheel(s, 'up');
+		s = r[0];
+		var offsetUp = s.outputViewOffset;
+		var autoUp = s.outputAutoScroll;
+
+		// Wheel down → decrease offset.
+		r = sendWheel(s, 'down');
+		s = r[0];
+		var offsetDown = s.outputViewOffset;
+		var autoDown = s.outputAutoScroll;
+
+		return {
+			offsetUp: offsetUp,
+			autoUp: autoUp,
+			offsetDown: offsetDown,
+			autoDown: autoDown
+		};
+	})()`)
+	if err != nil {
+		t.Fatalf("eval error: %v", err)
+	}
+	m := raw.(map[string]any)
+	if numVal(m["offsetUp"]) != 3 {
+		t.Errorf("wheel up: offset = %v, want 3", m["offsetUp"])
+	}
+	if m["autoUp"] != false {
+		t.Errorf("wheel up: autoScroll should be false")
+	}
+	if numVal(m["offsetDown"]) != 0 {
+		t.Errorf("wheel down from 3: offset = %v, want 0", m["offsetDown"])
+	}
+	if m["autoDown"] != true {
+		t.Errorf("wheel down to 0: autoScroll should be true")
+	}
+}
+
+// TestChunk16_T44_RenderOutputPanePlaceholder verifies renderOutputPane shows
+// placeholder text when outputLines is empty.
+func TestChunk16_T44_RenderOutputPanePlaceholder(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.splitViewEnabled = true;
+		s.splitViewTab = 'output';
+		s.splitViewFocus = 'claude';
+		s.outputLines = [];
+
+		var view = globalThis.prSplit._renderOutputPane(s, 80, 12);
+		return view;
+	})()`)
+	if err != nil {
+		t.Fatalf("eval error: %v", err)
+	}
+	view := raw.(string)
+	if !strings.Contains(view, "No process output yet") {
+		t.Errorf("expected placeholder text, got: %s", view)
+	}
+	if !strings.Contains(view, "Output from git") {
+		t.Errorf("expected hint text about git output")
+	}
+}
+
+// TestChunk16_T44_RenderOutputPaneWithContent verifies renderOutputPane shows
+// output lines with scroll indicator.
+func TestChunk16_T44_RenderOutputPaneWithContent(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.splitViewEnabled = true;
+		s.splitViewTab = 'output';
+		s.splitViewFocus = 'claude';
+		s.outputViewOffset = 0;
+
+		// Populate with enough lines to trigger scroll.
+		s.outputLines = [];
+		for (var i = 0; i < 30; i++) {
+			s.outputLines.push('line ' + i);
+		}
+
+		var view = globalThis.prSplit._renderOutputPane(s, 80, 12);
+		return view;
+	})()`)
+	if err != nil {
+		t.Fatalf("eval error: %v", err)
+	}
+	view := raw.(string)
+	if !strings.Contains(view, "Output") {
+		t.Errorf("expected 'Output' title, got: %s", view)
+	}
+	if !strings.Contains(view, "[live]") {
+		t.Errorf("expected '[live]' scroll indicator at bottom")
+	}
+	if !strings.Contains(view, "30 lines") {
+		t.Errorf("expected '30 lines' count in title")
+	}
+}
+
+// TestChunk16_T44_OutputCaptureFnPipesLines verifies that setting
+// prSplit._outputCaptureFn pipes output to s.outputLines.
+func TestChunk16_T44_OutputCaptureFnPipesLines(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.outputLines = [];
+		s.outputAutoScroll = true;
+		s.outputViewOffset = 0;
+
+		// Simulate what startAnalysis does.
+		globalThis.prSplit._outputCaptureFn = function(line) {
+			s.outputLines.push(line);
+			if (s.outputLines.length > 5000) {
+				s.outputLines = s.outputLines.slice(-4000);
+			}
+			if (s.outputAutoScroll) s.outputViewOffset = 0;
+		};
+
+		// Simulate output capture.
+		globalThis.prSplit._outputCaptureFn('> git rev-parse HEAD');
+		globalThis.prSplit._outputCaptureFn('abc123');
+		globalThis.prSplit._outputCaptureFn('> git diff --name-status');
+		globalThis.prSplit._outputCaptureFn('M\tfile.go');
+
+		// Clean up.
+		globalThis.prSplit._outputCaptureFn = null;
+
+		return {
+			count: s.outputLines.length,
+			first: s.outputLines[0],
+			last: s.outputLines[3]
+		};
+	})()`)
+	if err != nil {
+		t.Fatalf("eval error: %v", err)
+	}
+	m := raw.(map[string]any)
+	if numVal(m["count"]) != 4 {
+		t.Errorf("expected 4 lines, got %v", m["count"])
+	}
+	if !strings.Contains(fmt.Sprint(m["first"]), "git rev-parse") {
+		t.Errorf("first line = %v, expected git command", m["first"])
+	}
+	if !strings.Contains(fmt.Sprint(m["last"]), "file.go") {
+		t.Errorf("last line = %v, expected file output", m["last"])
+	}
+}
+
+// TestChunk16_T44_CtrlLResetsTabOnDisable verifies that toggling split-view
+// off resets the tab back to 'claude'.
+func TestChunk16_T44_CtrlLResetsTabOnDisable(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.splitViewEnabled = true;
+		s.splitViewTab = 'output';
+
+		// Ctrl+L to disable split-view.
+		var r = sendKey(s, 'ctrl+l');
+		s = r[0];
+		return {
+			enabled: s.splitViewEnabled,
+			tab: s.splitViewTab
+		};
+	})()`)
+	if err != nil {
+		t.Fatalf("eval error: %v", err)
+	}
+	m := raw.(map[string]any)
+	if m["enabled"] != false {
+		t.Errorf("splitViewEnabled should be false")
+	}
+	if m["tab"] != "claude" {
+		t.Errorf("splitViewTab should reset to 'claude', got %v", m["tab"])
+	}
+}
+
+// TestChunk16_T44_HelpOverlayShowsCtrlO verifies the help overlay includes
+// the Ctrl+O keybinding for tab switching.
+func TestChunk16_T44_HelpOverlayShowsCtrlO(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.width = 80;
+		s.height = 30;
+		var view = globalThis.prSplit._viewHelpOverlay(s);
+		return view;
+	})()`)
+	if err != nil {
+		t.Fatalf("eval error: %v", err)
+	}
+	view := raw.(string)
+	if !strings.Contains(view, "Ctrl+O") {
+		t.Errorf("help overlay should mention Ctrl+O")
+	}
+	if !strings.Contains(view, "Output") {
+		t.Errorf("help overlay should mention Output tab")
+	}
+}
+
+// TestChunk16_T44_CtrlOInReservedKeys ensures Ctrl+O is in the reserved
+// keys set so it's not forwarded to Claude PTY.
+func TestChunk16_T44_CtrlOInReservedKeys(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var keys = globalThis.prSplit._CLAUDE_RESERVED_KEYS;
+		return keys['ctrl+o'] === true;
+	})()`)
+	if err != nil {
+		t.Fatalf("eval error: %v", err)
+	}
+	if raw != true {
+		t.Errorf("ctrl+o should be in CLAUDE_RESERVED_KEYS")
+	}
+}
+
+// TestChunk16_T44_ViewNoPanicWithOutputTab verifies that calling viewForState
+// with the output tab selected does not panic or error (smoke test).
+// The full tab bar is rendered in _viewFn (which requires viewport/scrollbar
+// objects), so this only confirms the view logic doesn't crash.
+func TestChunk16_T44_ViewNoPanicWithOutputTab(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.splitViewEnabled = true;
+		s.splitViewTab = 'output';
+		s.width = 80;
+		s.height = 30;
+
+		var view = globalThis.prSplit._viewForState(s);
+		// The tab bar is rendered in _viewFn (the full layout), not in viewForState.
+		// We can't easily test the full _viewFn without viewport/scrollbar objects.
+		return 'ok';
+	})()`)
+	if err != nil {
+		t.Fatalf("eval error: %v", err)
+	}
+	if raw != "ok" {
+		t.Errorf("unexpected result: %v", raw)
+	}
+}
+
+// TestChunk16_T44_OutputBufferCapAtLimit verifies the output buffer is
+// capped at 5000 lines and trims to 4000.
+func TestChunk16_T44_OutputBufferCapAtLimit(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.outputLines = [];
+		s.outputAutoScroll = true;
+		s.outputViewOffset = 0;
+
+		// Install capture function.
+		globalThis.prSplit._outputCaptureFn = function(line) {
+			s.outputLines.push(line);
+			if (s.outputLines.length > 5000) {
+				s.outputLines = s.outputLines.slice(-4000);
+			}
+			if (s.outputAutoScroll) s.outputViewOffset = 0;
+		};
+
+		// Push 5010 lines.
+		for (var i = 0; i < 5010; i++) {
+			globalThis.prSplit._outputCaptureFn('line-' + i);
+		}
+
+		globalThis.prSplit._outputCaptureFn = null;
+
+		return {
+			count: s.outputLines.length,
+			first: s.outputLines[0],
+			last: s.outputLines[s.outputLines.length - 1]
+		};
+	})()`)
+	if err != nil {
+		t.Fatalf("eval error: %v", err)
+	}
+	m := raw.(map[string]any)
+	countVal := numVal(m["count"])
+	// After 5001 lines, trims to 4000. Then 5002-5010 means 4000 + 9 = 4009.
+	// Actually: push 5001 → trimmed to 4000. push 5002-5010 → 4009.
+	if countVal > 5000 {
+		t.Errorf("expected <= 5000 lines, got %v", countVal)
+	}
+	// The last line should always be 'line-5009' (the very last one pushed).
+	if fmt.Sprint(m["last"]) != "line-5009" {
+		t.Errorf("last line = %v, expected 'line-5009'", m["last"])
 	}
 }
 

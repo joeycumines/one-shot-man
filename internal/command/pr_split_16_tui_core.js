@@ -25,6 +25,7 @@
     var renderStatusBar = prSplit._renderStatusBar;
     var renderProgressBar = prSplit._renderProgressBar;
     var renderClaudePane = prSplit._renderClaudePane;
+    var renderOutputPane = prSplit._renderOutputPane;  // T44
     var viewForState = prSplit._viewForState;
     var viewHelpOverlay = prSplit._viewHelpOverlay;
     var viewConfirmCancelOverlay = prSplit._viewConfirmCancelOverlay;
@@ -167,9 +168,15 @@
                 splitViewEnabled: false,       // true when split-view is active
                 splitViewRatio: 0.6,           // wizard gets this fraction of content height
                 splitViewFocus: 'wizard',      // 'wizard' or 'claude' — which pane is focused
+                splitViewTab: 'claude',        // T44: 'claude' | 'output' — active tab in split-view bottom pane
                 claudeScreenshot: '',          // cached plain-text screenshot from tuiMux
                 claudeScreen: '',              // cached ANSI-styled screen from tuiMux (T28)
                 claudeViewOffset: 0,           // scroll offset in Claude pane (lines from bottom)
+
+                // T44: Process output capture state.
+                outputLines: [],               // accumulated output buffer (strings, may contain ANSI)
+                outputViewOffset: 0,           // scroll offset in output pane (lines from bottom)
+                outputAutoScroll: true,        // auto-scroll to latest output
 
                 // Claude conversation (T16).
                 claudeConvo: {
@@ -414,6 +421,7 @@
                         s.claudeScreen = '';
                         s.claudeViewOffset = 0;
                         s.splitViewFocus = 'wizard';
+                        s.splitViewTab = 'claude'; // T44: reset tab on disable
                     }
                     return [s, null];
                 }
@@ -434,9 +442,49 @@
                         s.splitViewRatio = Math.max(0.2, s.splitViewRatio - 0.1);
                         return [s, null];
                     }
+                    // T44: Ctrl+O switches between Claude and Output tabs in split-view bottom pane.
+                    if (k === 'ctrl+o') {
+                        s.splitViewTab = (s.splitViewTab === 'claude') ? 'output' : 'claude';
+                        return [s, null];
+                    }
                     // T29: Claude pane keyboard input forwarding.
                     // When Claude pane is focused, forward non-reserved keys to child PTY.
                     if (s.splitViewFocus === 'claude') {
+                        // T44: Output tab scroll keys (when output tab is active).
+                        if (s.splitViewTab === 'output') {
+                            if (k === 'up' || k === 'k') {
+                                s.outputViewOffset = (s.outputViewOffset || 0) + 1;
+                                s.outputAutoScroll = false;
+                                return [s, null];
+                            }
+                            if (k === 'down' || k === 'j') {
+                                s.outputViewOffset = Math.max(0, (s.outputViewOffset || 0) - 1);
+                                if (s.outputViewOffset === 0) s.outputAutoScroll = true;
+                                return [s, null];
+                            }
+                            if (k === 'pgup') {
+                                s.outputViewOffset = (s.outputViewOffset || 0) + 5;
+                                s.outputAutoScroll = false;
+                                return [s, null];
+                            }
+                            if (k === 'pgdown') {
+                                s.outputViewOffset = Math.max(0, (s.outputViewOffset || 0) - 5);
+                                if (s.outputViewOffset === 0) s.outputAutoScroll = true;
+                                return [s, null];
+                            }
+                            if (k === 'home') {
+                                s.outputViewOffset = 999999;
+                                s.outputAutoScroll = false;
+                                return [s, null];
+                            }
+                            if (k === 'end') {
+                                s.outputViewOffset = 0;
+                                s.outputAutoScroll = true;
+                                return [s, null];
+                            }
+                            // Output tab is read-only — don't forward to PTY, don't scroll Claude.
+                            return [s, null];
+                        }
                         // Viewport scroll keys — scroll the Claude pane output.
                         if (k === 'up' || k === 'k') {
                             s.claudeViewOffset = (s.claudeViewOffset || 0) + 1;
@@ -650,15 +698,31 @@
             }
 
             // Split-view Claude pane mouse wheel → scroll Claude screenshot.
+            // T44: Also handle Output tab scrolling.
             if (msg.type === 'Mouse' && msg.isWheel && s.splitViewEnabled &&
                 s.splitViewFocus === 'claude') {
-                if (msg.button === 'wheel up') {
-                    s.claudeViewOffset = (s.claudeViewOffset || 0) + 3;
-                    return [s, null];
-                }
-                if (msg.button === 'wheel down') {
-                    s.claudeViewOffset = Math.max(0, (s.claudeViewOffset || 0) - 3);
-                    return [s, null];
+                if (s.splitViewTab === 'output') {
+                    // Output tab scrolling.
+                    if (msg.button === 'wheel up') {
+                        s.outputViewOffset = (s.outputViewOffset || 0) + 3;
+                        s.outputAutoScroll = false;
+                        return [s, null];
+                    }
+                    if (msg.button === 'wheel down') {
+                        s.outputViewOffset = Math.max(0, (s.outputViewOffset || 0) - 3);
+                        if (s.outputViewOffset === 0) s.outputAutoScroll = true;
+                        return [s, null];
+                    }
+                } else {
+                    // Claude tab scrolling.
+                    if (msg.button === 'wheel up') {
+                        s.claudeViewOffset = (s.claudeViewOffset || 0) + 3;
+                        return [s, null];
+                    }
+                    if (msg.button === 'wheel down') {
+                        s.claudeViewOffset = Math.max(0, (s.claudeViewOffset || 0) - 3);
+                        return [s, null];
+                    }
                 }
             }
 
@@ -812,22 +876,43 @@
                     var sbView = s.scrollbar ? s.scrollbar.view() : '';
                     var wizardPane = lipgloss.joinHorizontal(lipgloss.Top, vpView, sbView);
 
-                    // Pane divider with focus indicator and split-view hint.
+                    // Pane divider with tab bar and split-view hint.
+                    // T44: Tab bar: [Claude] [Output] with active/inactive styling.
+                    var claudeTabLabel = s.splitViewTab === 'claude'
+                        ? styles.primaryButton().render(' Claude ')
+                        : styles.dim().render(' Claude ');
+                    var outputTabLabel = s.splitViewTab === 'output'
+                        ? styles.primaryButton().render(' Output ')
+                        : styles.dim().render(' Output ');
+                    var outputCount = (s.outputLines && s.outputLines.length > 0)
+                        ? styles.dim().render('(' + s.outputLines.length + ')') : '';
+                    var tabBar = zone.mark('split-tab-claude', claudeTabLabel) + ' ' +
+                        zone.mark('split-tab-output', outputTabLabel) +
+                        (outputCount ? ' ' + outputCount : '');
                     var focusLabel = s.splitViewFocus === 'wizard'
                         ? '\u25b2 Wizard'
-                        : '\u25bc Claude';
-                    var splitHint = 'Ctrl+Tab: switch  Ctrl+L: close';
-                    var labelW = focusLabel.length + splitHint.length + 7; // ┤ (1) + space(1) + space·space(3) + space(1) + ├(1)
+                        : (s.splitViewTab === 'output' ? '\u25bc Output' : '\u25bc Claude');
+                    var splitHint = 'Ctrl+Tab: switch  Ctrl+O: tab  Ctrl+L: close';
+                    // T44: labelW must include tabBar visual width + all separator decorators.
+                    // Template: leftFill + '┤ ' + tabBar + ' · ' + focusLabel + ' · ' + splitHint + ' ├' + rightFill
+                    // Decorators: ┤(1)+space(1) + ' · '(3) + ' · '(3) + space(1)+├(1) = 10
+                    var tabBarW = lipgloss.width(tabBar);
+                    var labelW = tabBarW + focusLabel.length + splitHint.length + 10;
                     var leftFill = repeatStr('\u2500', Math.max(1, Math.floor((w - labelW) / 2)));
                     var rightFill = repeatStr('\u2500', Math.max(1, Math.ceil((w - labelW) / 2)));
                     var paneDivider = styles.dim().render(
-                        leftFill + '\u2524 ' + focusLabel + ' \u00b7 ' + splitHint + ' \u251c' + rightFill);
+                        leftFill + '\u2524 ' + tabBar + ' \u00b7 ' + focusLabel + ' \u00b7 ' + splitHint + ' \u251c' + rightFill);
 
-                    // Claude pane.
-                    var claudePane = renderClaudePane(s, w, claudeH);
+                    // T44: Bottom pane — switch between Claude and Output tab.
+                    var bottomPane;
+                    if (s.splitViewTab === 'output') {
+                        bottomPane = renderOutputPane(s, w, claudeH);
+                    } else {
+                        bottomPane = renderClaudePane(s, w, claudeH);
+                    }
 
                     screenContent = lipgloss.joinVertical(lipgloss.Left,
-                        wizardPane, paneDivider, claudePane);
+                        wizardPane, paneDivider, bottomPane);
                 } else {
                     // Normal (non-split) viewport.
                     s.vp.setHeight(vpHeight);
@@ -1297,6 +1382,17 @@
                 tuiMux.switchTo('claude');
             }
             return [s, null];
+        }
+        // T44: Split-view tab bar clicks.
+        if (s.splitViewEnabled) {
+            if (zone.inBounds('split-tab-claude', msg)) {
+                s.splitViewTab = 'claude';
+                return [s, null];
+            }
+            if (zone.inBounds('split-tab-output', msg)) {
+                s.splitViewTab = 'output';
+                return [s, null];
+            }
         }
         // Screen-specific zone clicks.
         return handleScreenMouseClick(msg, s);
@@ -2046,6 +2142,20 @@
         // the spinner, and let the user cancel with Ctrl+C.
         s.analysisRunning = true;
         s.analysisError = null;
+
+        // T44: Install global output capture to pipe git command output to Output tab.
+        prSplit._outputCaptureFn = function(line) {
+            s.outputLines.push(line);
+            // Cap output buffer at 5000 lines to prevent unbounded memory growth.
+            if (s.outputLines.length > 5000) {
+                s.outputLines = s.outputLines.slice(-4000);
+            }
+            // Auto-scroll to bottom when new output arrives.
+            if (s.outputAutoScroll) {
+                s.outputViewOffset = 0;
+            }
+        };
+
         runAnalysisAsync(s).then(
             function() {
                 s.analysisRunning = false;
@@ -2354,6 +2464,18 @@
         // event loop independently of BubbleTea's message loop.
         s.autoSplitRunning = true;
         s.autoSplitResult = null;
+
+        // T44: Install global output capture to pipe git command output to Output tab.
+        prSplit._outputCaptureFn = function(line) {
+            s.outputLines.push(line);
+            if (s.outputLines.length > 5000) {
+                s.outputLines = s.outputLines.slice(-4000);
+            }
+            if (s.outputAutoScroll) {
+                s.outputViewOffset = 0;
+            }
+        };
+
         prSplit.automatedSplit(autoConfig).then(
             function(result) {
                 s.autoSplitResult = result;
@@ -2659,6 +2781,11 @@
                         s.executionBranchTotal = parseInt(match[2], 10);
                     }
                     s.executionProgressMsg = msg;
+                    // T44: Pipe progress message to Output tab.
+                    if (s.outputLines) {
+                        s.outputLines.push('\u25b6 ' + msg);
+                        if (s.outputAutoScroll) s.outputViewOffset = 0;
+                    }
                 }
             });
         } catch (e) {
@@ -2966,6 +3093,20 @@
         var outputLines = output.split('\n').filter(function(line) { return line.length > 0; });
         s.verifyOutput[branchName] = outputLines;
 
+        // T44: Pipe verification output to the Output tab buffer.
+        if (s.outputLines) {
+            s.outputLines.push('\u2500\u2500\u2500 Verify: ' + branchName + ' (exit ' + exitCode + ') \u2500\u2500\u2500');
+            for (var voi = 0; voi < outputLines.length; voi++) {
+                s.outputLines.push(outputLines[voi]);
+            }
+            if (s.outputLines.length > 5000) {
+                s.outputLines = s.outputLines.slice(-4000);
+            }
+            if (s.outputAutoScroll) {
+                s.outputViewOffset = 0;
+            }
+        }
+
         // Check if timeout was the cause.
         var isTimeout = timeoutMs > 0 && duration >= timeoutMs;
         var errorMsg = null;
@@ -3070,6 +3211,7 @@
     var CLAUDE_RESERVED_KEYS = {
         'ctrl+tab': true,   // switch focus between panes
         'ctrl+l': true,     // close split-view
+        'ctrl+o': true,     // T44: switch between Claude/Output tabs
         'ctrl+]': true,     // full Claude passthrough
         'ctrl++': true,     // adjust split ratio
         'ctrl+=': true,     // adjust split ratio

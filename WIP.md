@@ -1,14 +1,35 @@
 # WIP — Work In Progress (Takumi's Desperate Diary)
 
-## Current Task: T44 — Mux process output into TUI during long-running operations
+## Current Task: T45 — Auto-attach Claude pane when Claude spawns during wizard
 
 ## Session State
 - **Branch:** `wip`
-- **Last Commit:** T43 (pending amend)
-- **Blueprint Status:** T01-T43 Done. T44-T72 Not Started.
+- **Last Commit:** T44 (committing now)
+- **Blueprint Status:** T01-T44 Done. T45 next.
 - **Tests baseline:** ALL packages PASS (49/49). ~718s for internal/command with -race.
 - **Session start:** 2026-03-13 10:37:36 (9h mandate)
 - **Blueprint Schema:** Tasks use `acceptanceCriteria` (array of strings), NOT `acceptance` (string).
+
+## T44 Changes (COMMITTED — Rule of Two PASSED)
+### Mux process output into TUI during long-running operations
+- **Added:** Init state fields: `splitViewTab: 'claude'`, `outputLines: []`, `outputViewOffset: 0`, `outputAutoScroll: true`
+- **Added:** `renderOutputPane(s, width, height)` in pr_split_15_tui_views.js — mirrors renderClaudePane, reads from s.outputLines, placeholder text, scroll indicator, ANSI-safe truncation
+- **Added:** Tab bar in split-view pane divider: `[Claude] [Output]` with zone.mark() for clicks, output line count badge
+- **Added:** `Ctrl+O` keybinding to toggle between Claude and Output tabs
+- **Added:** `ctrl+o` to CLAUDE_RESERVED_KEYS (not forwarded to Claude PTY)
+- **Added:** Output tab scroll keys: up/down/j/k/pgup/pgdown/home/end when splitViewTab === 'output' && splitViewFocus === 'claude'
+- **Added:** Output tab mouse wheel scroll (wheel up/down when output tab active)
+- **Modified:** `gitExecAsync` in pr_split_00_core.js: accepts optional 3rd `options` param with `outputFn`, falls back to global `prSplit._outputCaptureFn`
+- **Modified:** `startAnalysis` and `startAutoAnalysis`: install `prSplit._outputCaptureFn` before launching async pipeline
+- **Modified:** `runExecutionAsync`: progressFn now also pipes messages to `s.outputLines`
+- **Modified:** `pollVerifySession`: pipes completed verification output to `s.outputLines` with section header
+- **Modified:** Help overlay: added `Ctrl+O  Switch Claude / Output tab` line
+- **Modified:** `Ctrl+L` toggle: resets `splitViewTab` to 'claude' on disable
+- **Added:** Tab click handling in `handleMouseClick`: `split-tab-claude`, `split-tab-output` zone clicks
+- **Output buffer cap:** 5000 lines max, trims to 4000 on overflow
+- **14 new tests in pr_split_16_tui_core_test.go:** InitStateHasOutputFields, CtrlOSwitchesTabs, CtrlONotActiveWhenSplitViewDisabled, OutputTabScrollKeys, TabClickZones, OutputMouseWheelScroll, RenderOutputPanePlaceholder, RenderOutputPaneWithContent, OutputCaptureFnPipesLines, CtrlLResetsTabOnDisable, HelpOverlayShowsCtrlO, CtrlOInReservedKeys, ViewNoPanicWithOutputTab, OutputBufferCapAtLimit
+- **Helper added:** `numVal(v any) float64` for safe Goja int64/float64 extraction
+- **Bug fixed:** labelW calculation in tab bar divider — added `lipgloss.width(tabBar)` + corrected decorator count to 10
 
 ## T43 Changes (this session — Rule of Two PASSED)
 ### Graceful error recovery for stale/missing branch on CONFIG screen

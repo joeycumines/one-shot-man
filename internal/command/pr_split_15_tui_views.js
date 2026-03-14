@@ -924,9 +924,11 @@
         }
 
         // Test Connection button.
+        // Compute focused element using the actual focus system.
+        var focusElems = prSplit._getFocusElements ? prSplit._getFocusElements(s) : [];
+        var focusedElemId = (focusElems[focusIdx] || {}).id || '';
         if (currentMode === 'auto' || s.claudeCheckStatus) {
-            // Focus index 3 = test-claude button (after 3 strategy items).
-            var testFocused = (focusIdx === 3);
+            var testFocused = (focusedElemId === 'test-claude');
             var testBtnStyle = testFocused ? styles.focusedButton() : styles.secondaryButton();
             lines.push('  ' + zone.mark('test-claude',
                 testBtnStyle.render(' Test Connection ')));
@@ -934,20 +936,59 @@
         lines.push('');
 
         // Advanced options toggle.
-        // Focus index: 3 (or 4 if test-claude is shown) maps to toggle-advanced.
-        var advancedFocusIdx = (currentMode === 'auto' || s.claudeCheckStatus) ? 4 : 3;
-        var advFocused = (focusIdx === advancedFocusIdx);
+        // focusElems and focusedElemId already computed above.
+
+        var advFocused = (focusedElemId === 'toggle-advanced');
         var advPrefix = advFocused ? styles.statusActive().render('\u25b8 ') : '  ';
         if (s.showAdvanced) {
             lines.push(advPrefix + zone.mark('toggle-advanced',
                 styles.dim().render('\u25bc Advanced Options')));
-            lines.push('  Max files per chunk: ' +
-                styles.fieldValue().render(String(runtime.maxFiles || 10)));
-            lines.push('  Branch prefix:       ' +
-                styles.fieldValue().render(runtime.branchPrefix || 'split/'));
-            lines.push('  Verify command:      ' +
-                styles.fieldValue().render(runtime.verifyCommand || 'true'));
-            lines.push('  ' + (runtime.dryRun ? '\u2611' : '\u2610') + ' Dry run');
+
+            // Compute label width for column alignment.
+            var labels = ['Max files per chunk', 'Branch prefix', 'Verify command'];
+            var maxLabelLen = 0;
+            for (var li = 0; li < labels.length; li++) {
+                if (labels[li].length > maxLabelLen) maxLabelLen = labels[li].length;
+            }
+            var padLabel = function(lbl) {
+                var pad = '';
+                for (var pi = lbl.length; pi < maxLabelLen; pi++) pad += ' ';
+                return lbl + pad;
+            };
+
+            // Render each advanced field with zone mark, focus indicator, and edit mode.
+            var fieldDefs = [
+                { id: 'config-maxFiles',       label: 'Max files per chunk', field: 'maxFiles',       value: String(runtime.maxFiles || 10) },
+                { id: 'config-branchPrefix',   label: 'Branch prefix',       field: 'branchPrefix',   value: runtime.branchPrefix || 'split/' },
+                { id: 'config-verifyCommand',  label: 'Verify command',      field: 'verifyCommand',  value: runtime.verifyCommand || 'true' }
+            ];
+            for (var fi = 0; fi < fieldDefs.length; fi++) {
+                var fd = fieldDefs[fi];
+                var isFieldFocused = (focusedElemId === fd.id);
+                var isEditing = (s.configFieldEditing === fd.field);
+                var fieldPrefix = isFieldFocused ? ('  ' + styles.statusActive().render('\u25b8') + ' ') : '    ';
+                var displayVal;
+                if (isEditing) {
+                    // Show edit buffer with cursor indicator.
+                    var editBuf = (s.configFieldValue || '') + '\u2588';
+                    displayVal = styles.primaryButton().render(' ' + editBuf + ' ');
+                } else if (isFieldFocused) {
+                    displayVal = styles.focusedButton().render(' ' + fd.value + ' ');
+                } else {
+                    displayVal = styles.fieldValue().render(fd.value);
+                }
+                lines.push(fieldPrefix + zone.mark(fd.id,
+                    padLabel(fd.label) + ':  ' + displayVal));
+            }
+
+            // Dry run checkbox with zone mark and focus indicator.
+            var dryFocused = (focusedElemId === 'config-dryRun');
+            var dryPrefix = dryFocused ? ('  ' + styles.statusActive().render('\u25b8') + ' ') : '    ';
+            var dryCheck = runtime.dryRun ? '\u2611' : '\u2610';
+            var dryLabel = dryFocused
+                ? styles.focusedButton().render(' ' + dryCheck + ' Dry run ')
+                : dryCheck + ' Dry run';
+            lines.push(dryPrefix + zone.mark('config-dryRun', dryLabel));
         } else {
             lines.push(advPrefix + zone.mark('toggle-advanced',
                 styles.dim().render('\u25b6 Advanced Options')));

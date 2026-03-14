@@ -46,13 +46,13 @@
   "sequentialTasks": [
     {
       "task": "Unblock Event Loop in Config & Verify Phases",
-      "description": "STUB (you need to expand this once you reach it, you fuckwit - do not skip this): Resolve the fundamental event loop blocking causing 'Resolving binary: ollama...' infinite hangs, the state machine locking into 'Processing...', and the verify command freezing the UI with zero output. Ensure all async operations properly yield.",
-      "status": "Not Started"
+      "description": "Converted all blocking subprocess calls in async code paths to non-blocking exec.spawn() with async ReadableStream consumption. ClaudeCodeExecutor.spawn()/restart() use resolveAsync() instead of blocking resolve(). verifySplitAsync() uses exec.spawn('sh', ...) instead of exec.execStream(). Pipeline automatedSplit() both resolve() call sites converted. Added isAvailableAsync(). All 39+ test mocks updated. Commit: 917915fa.",
+      "status": "Done"
     },
     {
       "task": "Fix Config UI Interactivity and Alignment",
-      "description": "STUB (you need to expand this once you reach it, you fuckwit - do not skip this): Fix visual misalignment between the 'Test Connection' button and the branch selection panels. Restore/implement interactivity WITHIN the 'Advanced Options' section, branch dropdowns, and verify command configuration fields.",
-      "status": "Not Started"
+      "description": "Implemented inline config field editing for maxFiles (digit-only), branchPrefix, verifyCommand with keyboard interceptor (Enter/Esc/Backspace/Ctrl+U). Added dry-run checkbox toggle. Focus system extended with dynamic element IDs (field/checkbox types) exposed when showAdvanced=true. j/k navigation on CONFIG screen. Mouse click-to-edit fields, click-outside-blur, click-toggle dry run. State cleanup in ALL exit paths (toggle collapse, handleBack, handleNext, mouse blur). Column-aligned rendering with focus arrows and edit-mode cursor. focusIndex clamped on element removal. Initial state explicitly initialized.",
+      "status": "Done"
     },
     {
       "task": "Split Massive Test Files and Chunks",

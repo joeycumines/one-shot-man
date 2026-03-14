@@ -107,6 +107,10 @@
                 editorTitleEditing: false,      // true when inline title edit is active
                 editorTitleEditingIdx: -1,      // split index being edited (-1 = none)
                 editorTitleText: '',            // current title text buffer
+
+                // Config field inline editing state.
+                configFieldEditing: null,       // field name being edited (e.g. 'maxFiles') or null
+                configFieldValue: '',           // current text buffer for inline edit
                 editorCheckedFiles: {},         // { 'splitIdx-fileIdx': true } for checked files
                 editorValidationErrors: [],     // validation errors from save attempt
                 editorFileDetailExpanded: false, // show enhanced file detail panel
@@ -477,6 +481,57 @@
                     return [s, null];
                 }
                 // Swallow all other keys during edit.
+                return [s, null];
+            }
+
+            // Config field inline editing interceptor.
+            // When a config field is being edited, capture keystrokes as text input.
+            if (s.configFieldEditing && msg.type === 'Key') {
+                var cfk = msg.key;
+                if (cfk === 'enter') {
+                    // Commit edited value back to runtime.
+                    var field = s.configFieldEditing;
+                    var val = (s.configFieldValue || '').trim();
+                    if (field === 'maxFiles') {
+                        var n = parseInt(val, 10);
+                        if (!isNaN(n) && n > 0) prSplit.runtime.maxFiles = n;
+                    } else if (field === 'branchPrefix') {
+                        if (val) prSplit.runtime.branchPrefix = val;
+                    } else if (field === 'verifyCommand') {
+                        prSplit.runtime.verifyCommand = val || 'true';
+                    }
+                    s.configFieldEditing = null;
+                    s.configFieldValue = '';
+                    return [s, null];
+                }
+                if (cfk === 'esc') {
+                    // Cancel editing without saving.
+                    s.configFieldEditing = null;
+                    s.configFieldValue = '';
+                    return [s, null];
+                }
+                if (cfk === 'backspace') {
+                    var cfv = s.configFieldValue || '';
+                    s.configFieldValue = cfv.slice(0, -1);
+                    return [s, null];
+                }
+                if (cfk === 'ctrl+u') {
+                    s.configFieldValue = '';
+                    return [s, null];
+                }
+                // For maxFiles, only accept digits.
+                if (s.configFieldEditing === 'maxFiles') {
+                    if (cfk.length === 1 && cfk >= '0' && cfk <= '9') {
+                        s.configFieldValue = (s.configFieldValue || '') + cfk;
+                    }
+                    return [s, null];
+                }
+                // Single character input for text fields.
+                if (cfk.length === 1) {
+                    s.configFieldValue = (s.configFieldValue || '') + cfk;
+                    return [s, null];
+                }
+                // Swallow all other keys during config field edit.
                 return [s, null];
             }
 
@@ -1547,6 +1602,15 @@
     function handleScreenMouseClick(msg, s) {
         // Config screen: strategy selection, advanced toggle, Test Connection.
         if (s.wizardState === 'CONFIG' || s.wizardState === 'IDLE') {
+            // If a config field is being edited and the click is outside that field,
+            // cancel editing (like blur on a form input).
+            if (s.configFieldEditing) {
+                var editZoneId = 'config-' + s.configFieldEditing;
+                if (!zone.inBounds(editZoneId, msg)) {
+                    s.configFieldEditing = null;
+                    s.configFieldValue = '';
+                }
+            }
             var strategies = ['auto', 'heuristic', 'directory'];
             for (var si = 0; si < strategies.length; si++) {
                 if (zone.inBounds('strategy-' + strategies[si], msg)) {
@@ -1576,6 +1640,53 @@
             }
             if (zone.inBounds('toggle-advanced', msg)) {
                 s.showAdvanced = !s.showAdvanced;
+                if (!s.showAdvanced) {
+                    s.configFieldEditing = null;
+                    s.configFieldValue = '';
+                    // Clamp focus index to new (shorter) element list.
+                    var newElems = getFocusElements(s);
+                    if (s.focusIndex >= newElems.length) {
+                        s.focusIndex = Math.max(0, newElems.length - 1);
+                    }
+                }
+                return [s, null];
+            }
+            // Advanced option field clicks — enter inline edit mode.
+            var configFields = ['config-maxFiles', 'config-branchPrefix', 'config-verifyCommand'];
+            for (var cfi = 0; cfi < configFields.length; cfi++) {
+                if (zone.inBounds(configFields[cfi], msg)) {
+                    var fieldName = configFields[cfi].replace('config-', '');
+                    var runtime = prSplit.runtime;
+                    s.configFieldEditing = fieldName;
+                    if (fieldName === 'maxFiles') {
+                        s.configFieldValue = String(runtime.maxFiles || 10);
+                    } else if (fieldName === 'branchPrefix') {
+                        s.configFieldValue = runtime.branchPrefix || 'split/';
+                    } else if (fieldName === 'verifyCommand') {
+                        s.configFieldValue = runtime.verifyCommand || 'true';
+                    }
+                    // Update focus to match the clicked field.
+                    var elems = getFocusElements(s);
+                    for (var ei = 0; ei < elems.length; ei++) {
+                        if (elems[ei].id === configFields[cfi]) {
+                            s.focusIndex = ei;
+                            break;
+                        }
+                    }
+                    return [s, null];
+                }
+            }
+            // Dry run checkbox toggle.
+            if (zone.inBounds('config-dryRun', msg)) {
+                prSplit.runtime.dryRun = !prSplit.runtime.dryRun;
+                // Update focus to match the clicked checkbox.
+                var elems = getFocusElements(s);
+                for (var ei = 0; ei < elems.length; ei++) {
+                    if (elems[ei].id === 'config-dryRun') {
+                        s.focusIndex = ei;
+                        break;
+                    }
+                }
                 return [s, null];
             }
         }
@@ -1880,6 +1991,13 @@
         // Only check showAdvanced on CONFIG (where it's visible).
         if ((s.wizardState === 'CONFIG' || s.wizardState === 'IDLE') && s.showAdvanced) {
             s.showAdvanced = false;
+            s.configFieldEditing = null;
+            s.configFieldValue = '';
+            // Clamp focus index to new (shorter) element list.
+            var backElems = getFocusElements(s);
+            if (s.focusIndex >= backElems.length) {
+                s.focusIndex = Math.max(0, backElems.length - 1);
+            }
             return [s, null];
         }
 
@@ -1910,6 +2028,9 @@
         switch (s.wizardState) {
             case 'IDLE':
             case 'CONFIG':
+                // Clear any active config field editing before leaving CONFIG.
+                s.configFieldEditing = null;
+                s.configFieldValue = '';
                 // If mode is 'auto' (AI-assisted), dispatch the full
                 // automated pipeline (Claude classification → plan → execute).
                 if (prSplit.runtime.mode === 'auto') {
@@ -1969,6 +2090,13 @@
                 }
                 // Advanced options toggle — always reachable by Tab.
                 elems.push({id: 'toggle-advanced', type: 'button'});
+                // When advanced section is expanded, expose its fields.
+                if (s.showAdvanced) {
+                    elems.push({id: 'config-maxFiles',       type: 'field'});
+                    elems.push({id: 'config-branchPrefix',   type: 'field'});
+                    elems.push({id: 'config-verifyCommand',  type: 'field'});
+                    elems.push({id: 'config-dryRun',         type: 'checkbox'});
+                }
                 elems.push({id: 'nav-next', type: 'nav'});
                 return elems;
             }
@@ -2042,6 +2170,14 @@
         // code path bypasses the interceptor.
         if (s.editorTitleEditing) {
             return [s, null];
+        }
+        // Config field editing also intercepts before this, but guard anyway.
+        if (s.configFieldEditing) {
+            return [s, null];
+        }
+        // CONFIG/IDLE/BASELINE_FAIL: j/k cycles focus like Tab/Shift-Tab.
+        if (s.wizardState === 'CONFIG' || s.wizardState === 'IDLE' || s.wizardState === 'BASELINE_FAIL') {
+            return delta > 0 ? handleNavDown(s) : handleNavUp(s);
         }
         if (s.wizardState === 'PLAN_REVIEW') {
             var splitCount = (st.planCache && st.planCache.splits)
@@ -2213,6 +2349,15 @@
             // Toggle advanced options on CONFIG screen.
             if (focused.id === 'toggle-advanced') {
                 s.showAdvanced = !s.showAdvanced;
+                if (!s.showAdvanced) {
+                    s.configFieldEditing = null;
+                    s.configFieldValue = '';
+                    // Clamp focus index to new (shorter) element list.
+                    var newElems = getFocusElements(s);
+                    if (s.focusIndex >= newElems.length) {
+                        s.focusIndex = Math.max(0, newElems.length - 1);
+                    }
+                }
                 return [s, null];
             }
             // Finalization buttons.
@@ -2234,6 +2379,29 @@
                 s.wizardState = 'DONE';
                 return [s, tea.quit()];
             }
+        }
+
+        // Config field activation — enter inline edit mode.
+        if (focused.type === 'field') {
+            var fieldName = focused.id.replace('config-', '');
+            var runtime = prSplit.runtime;
+            s.configFieldEditing = fieldName;
+            if (fieldName === 'maxFiles') {
+                s.configFieldValue = String(runtime.maxFiles || 10);
+            } else if (fieldName === 'branchPrefix') {
+                s.configFieldValue = runtime.branchPrefix || 'split/';
+            } else if (fieldName === 'verifyCommand') {
+                s.configFieldValue = runtime.verifyCommand || 'true';
+            } else {
+                s.configFieldValue = '';
+            }
+            return [s, null];
+        }
+
+        // Config checkbox toggle — dry run.
+        if (focused.type === 'checkbox' && focused.id === 'config-dryRun') {
+            prSplit.runtime.dryRun = !prSplit.runtime.dryRun;
+            return [s, null];
         }
 
         return null;

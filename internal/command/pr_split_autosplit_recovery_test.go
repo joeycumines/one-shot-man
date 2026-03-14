@@ -120,6 +120,7 @@ func TestAutoSplit_PipelineTimeout(t *testing.T) {
 			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
 		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
 			return { error: null, sessionId: 'mock-timeout' };
 		};
@@ -287,6 +288,7 @@ func TestAutoSplit_SaveAndResume(t *testing.T) {
 			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
 		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
 			return { error: null, sessionId: 'mock-resume' };
 		};
@@ -491,6 +493,7 @@ func TestAutoSplit_CrashRecovery_AfterExecute(t *testing.T) {
 			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
 		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
 			return { error: null, sessionId: 'mock-crash' };
 		};
@@ -760,6 +763,9 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 			};
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() {
+			return { error: null };
+		};
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() {
 			return { error: null };
 		};
 		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
@@ -1097,6 +1103,7 @@ func TestAutoSplit_AllStepsReportTiming(t *testing.T) {
 			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
 		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
 			return { error: null, sessionId: 'mock-timing' };
 		};
@@ -1203,6 +1210,9 @@ func TestHeuristicFallback_Report(t *testing.T) {
 			this.config = config;
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() {
+			return { error: 'claude not found' };
+		};
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() {
 			return { error: 'claude not found' };
 		};
 		ClaudeCodeExecutor.prototype.spawn = function() {
@@ -1606,6 +1616,7 @@ func TestAutoSplit_CleanupOnFailure(t *testing.T) {
 			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
 		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
 			return { error: null, sessionId: 'mock-session-cleanup' };
 		};
@@ -1755,6 +1766,7 @@ func TestAutoSplit_CleanupOnFailure_Disabled(t *testing.T) {
 			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
 		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
 			return { error: null, sessionId: 'mock-session-noclean' };
 		};
@@ -1922,6 +1934,9 @@ func TestAutoSplit_ErrorFeedback_ResumeInstructions(t *testing.T) {
 		ClaudeCodeExecutor.prototype.resolve = function() {
 			return { error: 'claude not found' };
 		};
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() {
+			return { error: 'claude not found' };
+		};
 		ClaudeCodeExecutor.prototype.spawn = function() {
 			return { error: 'not resolved' };
 		};
@@ -2076,6 +2091,7 @@ func TestAutoSplit_ResumeClaudeResolveFails(t *testing.T) {
 			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
 		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
 			return { error: null, sessionId: 'mock-session' };
 		};
@@ -2132,6 +2148,9 @@ func TestAutoSplit_ResumeClaudeResolveFails(t *testing.T) {
 	if _, err := tp.EvalJS(`
 		ClaudeCodeExecutor = function(config) { this.config = config; };
 		ClaudeCodeExecutor.prototype.resolve = function() {
+			return { error: 'claude binary not found' };
+		};
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() {
 			return { error: 'claude binary not found' };
 		};
 		ClaudeCodeExecutor.prototype.spawn = function() {
@@ -2338,6 +2357,7 @@ func TestAutoSplit_StepTimeout(t *testing.T) {
 			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
 		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
 			return { error: null, sessionId: 'mock-timeout' };
 		};
@@ -2801,6 +2821,7 @@ func TestIntegration_AutoSplitMockMCP_DoubleInvocation(t *testing.T) {
 			};
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
 		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
 			return { error: null, sessionId: 'mock-session-double-' + Date.now() };
 		};
@@ -2958,6 +2979,7 @@ func TestIntegration_AutoSplitMockMCP_OverlappingFiles(t *testing.T) {
 			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
 		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
 			return { error: null, sessionId: 'mock-overlap' };
 		};
@@ -3111,6 +3133,7 @@ func TestIntegration_AutoSplitMockMCP_VerifyFailure(t *testing.T) {
 			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
 		ClaudeCodeExecutor.prototype.spawn = function(sid, opts) {
 			return { error: null, sessionId: 'mock-verify-fail' };
 		};
@@ -3243,6 +3266,7 @@ func TestIntegration_AutoSplitMockMCP_CancelDuringExecution(t *testing.T) {
 			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
 		ClaudeCodeExecutor.prototype.spawn = function(sid, opts) {
 			return { error: null, sessionId: 'mock-cancel' };
 		};
@@ -3374,6 +3398,7 @@ func TestIntegration_AutoSplitMockMCP_ConflictResolution(t *testing.T) {
 			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
 		ClaudeCodeExecutor.prototype.spawn = function(sid, opts) {
 			return { error: null, sessionId: 'mock-resolve' };
 		};
@@ -3516,6 +3541,7 @@ func TestAutoSplit_WatchdogTimeout(t *testing.T) {
 			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
 		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
 			return { error: null, sessionId: 'mock-watchdog' };
 		};
@@ -3585,6 +3611,7 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_ClassificationTimeout(t *tes
 			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
 		ClaudeCodeExecutor.prototype.spawn = function(sid, opts) {
 			return { error: null, sessionId: 'mock-class-timeout' };
 		};
@@ -3698,6 +3725,7 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_PlanFallbackToLocal(t *testi
 			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
 		ClaudeCodeExecutor.prototype.spawn = function(sid, opts) {
 			return { error: null, sessionId: 'mock-plan-fallback' };
 		};
@@ -3831,6 +3859,7 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_ExecutionFailure(t *testing.
 			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
 		ClaudeCodeExecutor.prototype.spawn = function(sid, opts) {
 			return { error: null, sessionId: 'mock-exec-fail' };
 		};
@@ -3956,6 +3985,7 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_AllBranchesFailVerify(t *tes
 			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
 		ClaudeCodeExecutor.prototype.spawn = function(sid, opts) {
 			return { error: null, sessionId: 'mock-all-fail' };
 		};
@@ -4074,6 +4104,7 @@ const mockClaudeSetupJS = `
 		this.handle = { send: function() {}, isAlive: function() { return true; } };
 	};
 	ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+	ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
 	ClaudeCodeExecutor.prototype.spawn = function(sid, opts) {
 		return { error: null, sessionId: 'mock-' + sid };
 	};

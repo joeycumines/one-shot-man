@@ -1397,7 +1397,9 @@
                 state.claudeExecutor = claudeExecutor;
                 prSplit._claudeExecutor = claudeExecutor;
             }
-            var resolveResult = claudeExecutor.resolve();
+            var resolveResult = await claudeExecutor.resolveAsync(function(msg) {
+                updateDetail('Spawn Claude', msg);
+            });
             if (resolveResult.error) {
                 return { error: resolveResult.error };
             }
@@ -1780,7 +1782,7 @@
                 state.claudeExecutor = claudeExecutor;
                 prSplit._claudeExecutor = claudeExecutor;
             }
-            var resumeResolve = claudeExecutor.resolve();
+            var resumeResolve = await claudeExecutor.resolveAsync();
             if (!resumeResolve.error) {
                 var resumeSpawn = await claudeExecutor.spawn(null, { mcpConfigPath: mcpCallbackObj.mcpConfigPath });
                 if (!resumeSpawn.error) {

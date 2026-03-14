@@ -65,6 +65,7 @@ func TestIntegration_WizardBaselineRetry(t *testing.T) {
 			};
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
 		ClaudeCodeExecutor.prototype.spawn = function(sid, opts) {
 			return { error: null, sessionId: 'mock-session-baseline-retry' };
 		};

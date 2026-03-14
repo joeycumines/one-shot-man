@@ -189,7 +189,7 @@
             }
         }
 
-        var resolveResult = this.resolve();
+        var resolveResult = await this.resolveAsync();
         if (resolveResult.error) {
             return { error: resolveResult.error };
         }
@@ -289,7 +289,18 @@
     };
 
     ClaudeCodeExecutor.prototype.isAvailable = function() {
+        // Synchronous check: only returns true if already resolved.
+        // For TUI contexts, use isAvailableAsync() to avoid blocking.
+        if (this.resolved) return true;
         var result = this.resolve();
+        return !result.error;
+    };
+
+    // isAvailableAsync: non-blocking version of isAvailable.
+    // Returns a Promise<boolean>. Safe to call from BubbleTea update handlers.
+    ClaudeCodeExecutor.prototype.isAvailableAsync = async function() {
+        if (this.resolved) return true;
+        var result = await this.resolveAsync();
         return !result.error;
     };
 
@@ -321,7 +332,7 @@
     ClaudeCodeExecutor.prototype.restart = async function(sessionId, opts) {
         log.printf('ClaudeCodeExecutor.restart: closing existing session');
         this.close();
-        var resolveResult = this.resolve();
+        var resolveResult = await this.resolveAsync();
         if (resolveResult.error) {
             return { error: 'restart resolve failed: ' + resolveResult.error };
         }

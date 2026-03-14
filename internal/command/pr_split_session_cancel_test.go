@@ -790,6 +790,9 @@ func TestAutoSplit_CancelDuringExecution_EmitsResumeAndCleansUp(t *testing.T) {
 		ClaudeCodeExecutor.prototype.resolve = function() {
 			return { error: 'claude not found' };
 		};
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() {
+			return { error: 'claude not found' };
+		};
 		ClaudeCodeExecutor.prototype.spawn = function() {
 			return { error: 'not resolved' };
 		};

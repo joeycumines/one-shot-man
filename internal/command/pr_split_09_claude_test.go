@@ -603,9 +603,9 @@ func TestChunk09_ClaudeCodeExecutor_Restart(t *testing.T) {
 			ex.sessionId = 'old-session';
 			ex.resolved = { command: '/usr/bin/test-claude', type: 'explicit' };
 
-			// Mock resolve and spawn.
+			// Mock resolveAsync and spawn.
 			var origResolve = ex.resolve;
-			ex.resolve = function() {
+			ex.resolveAsync = async function() {
 				resolveCalled = true;
 				ex.resolved = { command: '/usr/bin/test-claude', type: 'explicit' };
 				return { error: null };
@@ -674,8 +674,8 @@ func TestChunk09_ClaudeCodeExecutor_Restart_ResolveFails(t *testing.T) {
 			var ex = new globalThis.prSplit.ClaudeCodeExecutor({});
 			ex.handle = { close: function() {} };
 
-			// Mock resolve to fail.
-			ex.resolve = function() {
+			// Mock resolveAsync to fail.
+			ex.resolveAsync = async function() {
 				return { error: 'binary not found' };
 			};
 

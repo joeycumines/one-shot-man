@@ -103,6 +103,39 @@ func gitMockSetupJS() string {
         return {code: r.code, error: r.error, message: r.message};
     };
 
+    // Mock exec.spawn to route through the same mock dispatcher as execv.
+    // Returns a ChildHandle-compatible object with ReadableStream stdout/stderr
+    // and an async wait() method. Used by verifySplitAsync (exec.spawn('sh',...)).
+    execMod.spawn = function(cmd, args) {
+        var fullArgv = [cmd].concat(args || []);
+        var r = execMod.execv(fullArgv);
+        var stdoutRead = false;
+        var stderrRead = false;
+        return {
+            stdout: {
+                read: function() {
+                    if (!stdoutRead) {
+                        stdoutRead = true;
+                        if (r.stdout) return Promise.resolve({done: false, value: r.stdout});
+                    }
+                    return Promise.resolve({done: true});
+                }
+            },
+            stderr: {
+                read: function() {
+                    if (!stderrRead) {
+                        stderrRead = true;
+                        if (r.stderr) return Promise.resolve({done: false, value: r.stderr});
+                    }
+                    return Promise.resolve({done: true});
+                }
+            },
+            wait: function() { return Promise.resolve({code: r.code}); },
+            isAlive: function() { return false; },
+            close: function() {}
+        };
+    };
+
     // Mock _gitExecAsync to route through the same mock dispatcher as execv.
     // This ensures async git calls in resolveConflictsWithClaude, strategies,
     // heuristicFallback, etc. hit the same mock responses.

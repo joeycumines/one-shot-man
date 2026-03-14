@@ -134,6 +134,7 @@ func TestBenchmark_AutoSplitLargeRepo(t *testing.T) {
 			};
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
 		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
 			return { error: null, sessionId: 'mock-session-bench' };
 		};

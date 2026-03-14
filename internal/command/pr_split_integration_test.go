@@ -1200,7 +1200,7 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 	// Test: claude-code type should have --dangerously-skip-permissions
 	// We mock the cm object including newMCPInstance to capture spawn args.
 	raw, err := evalJS(`
-		(function() {
+		(async function() {
 			var tmpDir = '` + escapedTmpDir + `';
 
 			// Create a ClaudeCodeExecutor with claude-code type.
@@ -1213,6 +1213,7 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 			// Mock resolve so spawn() doesn't need real claude/ollama on PATH.
 			executor.resolved = { command: 'mock-claude', type: 'claude-code' };
 			executor.resolve = function() { return { error: null }; };
+			executor.resolveAsync = async function() { return { error: null }; };
 			executor.sessionId = 'test-session';
 
 			// Override cm methods to capture spawn args.
@@ -1242,7 +1243,7 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 
 			// Call spawn with mcpConfigPath (mandatory since mcpcallback is sole IPC).
 			var originalSpawn = ClaudeCodeExecutor.prototype.spawn;
-			originalSpawn.call(executor, null, { mcpConfigPath: tmpDir + '/mcp-config.json' });
+			await originalSpawn.call(executor, null, { mcpConfigPath: tmpDir + '/mcp-config.json' });
 
 			if (!capturedArgs) {
 				return JSON.stringify({ error: 'spawn did not capture args' });
@@ -1303,7 +1304,7 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 
 	// Negative case: ollama type should NOT have --dangerously-skip-permissions.
 	rawOllama, err := evalJS(`
-		(function() {
+		(async function() {
 			var tmpDir = '` + escapedTmpDir + `';
 
 			var executor = new ClaudeCodeExecutor({
@@ -1314,6 +1315,7 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 
 			executor.resolved = { command: 'mock-ollama', type: 'ollama' };
 			executor.resolve = function() { return { error: null }; };
+			executor.resolveAsync = async function() { return { error: null }; };
 			executor.sessionId = 'test-session-ollama';
 
 			var capturedArgs = null;
@@ -1341,7 +1343,7 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 			};
 
 			var originalSpawn = ClaudeCodeExecutor.prototype.spawn;
-			originalSpawn.call(executor, null, { mcpConfigPath: tmpDir + '/mcp-config.json' });
+			await originalSpawn.call(executor, null, { mcpConfigPath: tmpDir + '/mcp-config.json' });
 
 			if (!capturedArgs) {
 				return JSON.stringify({ error: 'ollama spawn did not capture args' });
@@ -1378,7 +1380,7 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 	// Third case: explicit type with command name containing 'claude'
 	// should have --dangerously-skip-permissions (basename detection).
 	rawExplicitClaude, err := evalJS(`
-		(function() {
+		(async function() {
 			var tmpDir = '` + escapedTmpDir + `';
 
 			var executor = new ClaudeCodeExecutor({
@@ -1389,6 +1391,7 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 
 			executor.resolved = { command: '/usr/local/bin/claude-code', type: 'explicit' };
 			executor.resolve = function() { return { error: null }; };
+			executor.resolveAsync = async function() { return { error: null }; };
 			executor.sessionId = 'test-session-explicit-claude';
 
 			var capturedArgs = null;
@@ -1416,7 +1419,7 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 			};
 
 			var originalSpawn = ClaudeCodeExecutor.prototype.spawn;
-			originalSpawn.call(executor, null, { mcpConfigPath: tmpDir + '/mcp-config.json' });
+			await originalSpawn.call(executor, null, { mcpConfigPath: tmpDir + '/mcp-config.json' });
 
 			if (!capturedArgs) {
 				return JSON.stringify({ error: 'explicit-claude spawn did not capture args' });
@@ -1452,7 +1455,7 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 	// Fourth case: explicit type with non-claude command name should NOT
 	// have --dangerously-skip-permissions.
 	rawExplicitOther, err := evalJS(`
-		(function() {
+		(async function() {
 			var tmpDir = '` + escapedTmpDir + `';
 
 			var executor = new ClaudeCodeExecutor({
@@ -1463,6 +1466,7 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 
 			executor.resolved = { command: '/opt/bin/my-custom-tool', type: 'explicit' };
 			executor.resolve = function() { return { error: null }; };
+			executor.resolveAsync = async function() { return { error: null }; };
 			executor.sessionId = 'test-session-explicit-other';
 
 			var capturedArgs = null;
@@ -1490,7 +1494,7 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 			};
 
 			var originalSpawn = ClaudeCodeExecutor.prototype.spawn;
-			originalSpawn.call(executor, null, { mcpConfigPath: tmpDir + '/mcp-config.json' });
+			await originalSpawn.call(executor, null, { mcpConfigPath: tmpDir + '/mcp-config.json' });
 
 			if (!capturedArgs) {
 				return JSON.stringify({ error: 'explicit-other spawn did not capture args' });
@@ -1552,6 +1556,7 @@ func TestIntegration_SpawnHealthCheck_DeadProcess(t *testing.T) {
 
 			executor.resolved = { command: 'fake-claude', type: 'claude-code' };
 			executor.resolve = function() { return { error: null }; };
+			executor.resolveAsync = async function() { return { error: null }; };
 			executor.sessionId = 'test-session-health';
 
 			var mockRegistry = {
@@ -1631,6 +1636,7 @@ func TestIntegration_SpawnHealthCheck_AliveProcess(t *testing.T) {
 
 			executor.resolved = { command: 'fake-claude', type: 'claude-code' };
 			executor.resolve = function() { return { error: null }; };
+			executor.resolveAsync = async function() { return { error: null }; };
 			executor.sessionId = 'test-session-healthy';
 
 			var mockRegistry = {
@@ -1914,6 +1920,7 @@ func TestIntegration_AutoSplitMockMCP_OutputObservation(t *testing.T) {
 			this.handle = { send: function() {}, isAlive: function() { return true; } };
 		};
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: null }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };
 		ClaudeCodeExecutor.prototype.spawn = function(sessionId, opts) {
 			return { error: null, sessionId: 'mock-tui-obs' };
 		};
@@ -2798,6 +2805,7 @@ func TestClaudeCodeExecutor_SpawnHealthCheck_DeadProcess(t *testing.T) {
 			// Pre-set resolved so spawn doesn't call resolve().
 			executor.resolved = { command: 'fake-claude', type: 'claude-code' };
 			executor.resolve = function() { return { error: null }; };
+			executor.resolveAsync = async function() { return { error: null }; };
 			executor.sessionId = 'test-health-check';
 
 			// Mock cm: registry.spawn returns a handle that is immediately dead.

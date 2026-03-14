@@ -412,6 +412,7 @@ func TestAutoSplit_EmptyDiff(t *testing.T) {
 	if _, err := tp.EvalJS(`
 		ClaudeCodeExecutor = function(config) { this.config = config; };
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: 'not available' }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: 'not available' }; };
 		ClaudeCodeExecutor.prototype.spawn = function() { return { error: 'not resolved' }; };
 		ClaudeCodeExecutor.prototype.close = function() {};
 		ClaudeCodeExecutor.prototype.kill = function() {};
@@ -472,6 +473,7 @@ func TestAutoSplit_SingleFile(t *testing.T) {
 	if _, err := tp.EvalJS(`
 		ClaudeCodeExecutor = function(config) { this.config = config; };
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: 'not available' }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: 'not available' }; };
 		ClaudeCodeExecutor.prototype.spawn = function() { return { error: 'not resolved' }; };
 		ClaudeCodeExecutor.prototype.close = function() {};
 		ClaudeCodeExecutor.prototype.kill = function() {};
@@ -544,6 +546,7 @@ func TestAutoSplit_LargeDiff(t *testing.T) {
 	if _, err := tp.EvalJS(`
 		ClaudeCodeExecutor = function(config) { this.config = config; };
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: 'not available' }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: 'not available' }; };
 		ClaudeCodeExecutor.prototype.spawn = function() { return { error: 'not resolved' }; };
 		ClaudeCodeExecutor.prototype.close = function() {};
 		ClaudeCodeExecutor.prototype.kill = function() {};
@@ -613,6 +616,7 @@ func TestAutoSplit_BinaryFiles(t *testing.T) {
 	if _, err := tp.EvalJS(`
 		ClaudeCodeExecutor = function(config) { this.config = config; };
 		ClaudeCodeExecutor.prototype.resolve = function() { return { error: 'not available' }; };
+		ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: 'not available' }; };
 		ClaudeCodeExecutor.prototype.spawn = function() { return { error: 'not resolved' }; };
 		ClaudeCodeExecutor.prototype.close = function() {};
 		ClaudeCodeExecutor.prototype.kill = function() {};

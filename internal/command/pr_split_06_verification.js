@@ -461,23 +461,44 @@
             }
         }
 
-        // NOTE: exec.execStream is still blocking. T34 will convert this
-        // to CaptureSession for full non-blocking verification.
-        var result = exec.execStream(['sh', '-c', shellCmd], {
-            onStdout: function(chunk) {
+        // Non-blocking: use exec.spawn() so the event loop stays responsive
+        // during verification. Replaces the former blocking exec.execStream().
+        var child = exec.spawn('sh', ['-c', shellCmd]);
+
+        // Read stdout and stderr concurrently via async streams.
+        async function readStream(stream, onChunk) {
+            var buf = '';
+            while (true) {
+                var chunk = await stream.read();
+                if (chunk.done) break;
+                if (chunk.value !== undefined && chunk.value !== null) {
+                    var text = String(chunk.value);
+                    buf += text;
+                    onChunk(text);
+                }
+            }
+            return buf;
+        }
+
+        var streamResults = await Promise.all([
+            readStream(child.stdout, function(chunk) {
                 stdoutBuf += chunk;
                 emitChunk(chunk);
-            },
-            onStderr: function(chunk) {
+            }),
+            readStream(child.stderr, function(chunk) {
                 stderrBuf += chunk;
                 emitChunk(chunk);
-            }
-        });
+            }),
+            child.wait()
+        ]);
+
+        var exitResult = streamResults[2];
+        var exitCode = (exitResult && exitResult.code !== undefined) ? exitResult.code : 1;
         var elapsedMs = Date.now() - startMs;
 
         await cleanupWorktreeAsync();
 
-        if (timeoutMs > 0 && (result.code === 124 || elapsedMs >= timeoutMs)) {
+        if (timeoutMs > 0 && (exitCode === 124 || elapsedMs >= timeoutMs)) {
             return {
                 name: branchName,
                 passed: false,
@@ -488,9 +509,9 @@
 
         return {
             name: branchName,
-            passed: result.code === 0,
+            passed: exitCode === 0,
             output: stdoutBuf,
-            error: result.code !== 0 ? 'verify failed (exit ' + result.code + '): ' + stderrBuf : null
+            error: exitCode !== 0 ? 'verify failed (exit ' + exitCode + '): ' + stderrBuf : null
         };
     }
 

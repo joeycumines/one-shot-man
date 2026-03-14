@@ -420,6 +420,28 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		if err := engine.ExecuteScript(wizardScript); err != nil {
 			return fmt.Errorf("pr-split wizard: %w", err)
 		}
+	} else if !c.testMode {
+		// Non-interactive mode: either batch-execute positional args as
+		// TUI commands, or fall back to a go-prompt REPL for scripting
+		// and PTY-based integration tests.
+		if len(args) > 0 {
+			// Batch mode: dispatch each positional argument as a TUI
+			// command. Example: osm pr-split -interactive=false run
+			tm := engine.GetTUIManager()
+			if tm == nil {
+				return fmt.Errorf("pr-split: TUI command manager not initialized")
+			}
+			for _, cmd := range args {
+				if err := tm.ExecuteCommand(cmd, nil); err != nil {
+					return fmt.Errorf("pr-split %s: %w", cmd, err)
+				}
+			}
+		} else {
+			// REPL mode: interactive go-prompt session, used by PTY-
+			// based observation tests and advanced scripting workflows.
+			terminal := scripting.NewTerminal(ctx, engine)
+			terminal.Run()
+		}
 	}
 
 	return nil

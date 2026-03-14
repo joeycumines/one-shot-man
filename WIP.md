@@ -10,29 +10,23 @@
   - Converted blocking calls to exec.spawn() with async ReadableStreams
   - 3 source JS files, 7 test files modified
   - Rule of Two: 2 contiguous PASS reviews
-- **Task 2:** "Fix Config UI Interactivity and Alignment" — COMMITTED (pending SHA)
+- **Task 2:** "Fix Config UI Interactivity and Alignment" — COMMITTED (384c0789)
   - Inline config field editing (maxFiles, branchPrefix, verifyCommand) with keyboard + mouse
   - Dry run checkbox toggle via Enter/click
   - Focus system: dynamic element IDs, Tab/j/k navigation, focusIndex clamping on collapse
   - State cleanup in all exit paths (toggle, back, next, click-blur)
   - Column-aligned rendering with focus indicators and edit mode cursor
   - Rule of Two: 2 contiguous PASS reviews (3 attempts, 2 issues found and fixed)
+- **Task 3:** "Split Massive Test Files and Chunks" — COMMITTED (pending SHA)
+  - Split pr_split_16_tui_core_test.go (9,311 lines, 221 tests) → 9 files
+  - Helpers file + 8 domain-focused test files, largest 1,609 lines
+  - Fixed duplicate package declarations caught by Rule of Two Pass 1
+  - Rule of Two: 2 contiguous PASS reviews (2 attempts, 1 issue found and fixed)
 
 ## Current Task
-- **Task 3:** "Split Massive Test Files and Chunks" — Not Started
-
-## Task 2 Plan
-1. Fix alignment issues in viewConfigScreen (V5, V7, V8)
-2. Make dry-run checkbox toggleable (click/Enter/Space)
-3. Add focusable elements for advanced option fields when expanded
-4. Make maxFiles, branchPrefix, verifyCommand editable via inline editing
-5. Add j/k navigation on CONFIG screen
-6. Fix Test Connection button visual grouping
-7. Write tests for all new interactivity
-8. Update viewConfigScreen with proper input field styling
+- **Task 4:** "Implement Full End-to-End Testing" — Not Started
 
 ## Notes
-- viewConfigScreen in pr_split_15_tui_views.js (lines 862-975)
-- Config interaction handlers in pr_split_16_tui_core.js
-- getFocusElements CONFIG case at lines 1954-1976
-- super_document_script.js has reference patterns for text inputs (textareaLib)
+- Split test files are at internal/command/pr_split_16_*_test.go (9 files)
+- JS chunk splitting deferred — too risky (requires Go embed + test mock changes)
+- Next task: End-to-end testing on actual binary

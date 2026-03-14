@@ -647,13 +647,14 @@ func BenchmarkViewRendering(b *testing.B) {
 // Set with generous headroom for CI variance (similar to internal/benchmark_test.go).
 //
 // Profiling baseline (macOS Apple M-series):
-//   Config screen:      ~200-400μs  (threshold: 50ms)
-//   PlanReview (3):     ~300-600μs  (threshold: 50ms)
-//   PlanReview (50):    ~2-5ms      (threshold: 100ms)
-//   Full WizardView:    ~500-1000μs (threshold: 50ms)
-//   SplitView:          ~700-1500μs (threshold: 100ms)
-//   Claude pane (50L):  ~100-300μs  (threshold: 50ms)
-//   Claude pane (1000L):~500-2000μs (threshold: 100ms)
+//
+//	Config screen:      ~200-400μs  (threshold: 50ms)
+//	PlanReview (3):     ~300-600μs  (threshold: 50ms)
+//	PlanReview (50):    ~2-5ms      (threshold: 100ms)
+//	Full WizardView:    ~500-1000μs (threshold: 50ms)
+//	SplitView:          ~700-1500μs (threshold: 100ms)
+//	Claude pane (50L):  ~100-300μs  (threshold: 50ms)
+//	Claude pane (1000L):~500-2000μs (threshold: 100ms)
 const (
 	// Standard view rendering — must be under 50ms for 60fps-capable target.
 	thresholdStandardViewUs = 50_000

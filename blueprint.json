@@ -129,7 +129,7 @@
         "All 22 tests pass, Rule of Two verified"
       ],
       "status": "Done",
-      "commit": "pending"
+      "commit": "53d05921"
     },
     {
       "task": "VTerm integration tests for Claude pane keyboard input forwarding",
@@ -141,7 +141,15 @@
         "TestVTerm_ClaudePaneCtrlKeys: Ctrl+A, Ctrl+E forwarded as control characters",
         "All tests use mock echo process"
       ],
-      "status": "Not Started"
+      "status": "Done",
+      "commit": "pending",
+      "completionNotes": [
+        "21 tests: 8 keyToTermBytes unit tests + 1 CLAUDE_RESERVED_KEYS coverage + 12 integration tests",
+        "keyToTermBytes: printable chars, special keys (enter/tab/backspace/space/escape/delete), arrow keys, ctrl chars (ctrl+a through ctrl+z), alt keys (ESC prefix), unknown→null, bracketed paste, function keys (f1-f12)",
+        "CLAUDE_RESERVED_KEYS: verifies 17 reserved keys present and 13 non-reserved keys absent",
+        "Integration: printable→writeToChild, enter→\\r, ctrl+c→0x03, ctrl+a/e→0x01/0x05, reserved NOT forwarded, scroll changes offset NOT forward, auto-scroll-to-bottom on input, no-mux safe no-op, writeToChild throw swallowed, wizard-focused NOT forwarded, output tab read-only, ctrl+l intercepted (toggle), ctrl+tab intercepted (focus switch)",
+        "Rule of Two: Pass 1 PASS, Pass 2 PASS (zero blocking issues)"
+      ]
     },
     {
       "task": "Integration test: UI responsiveness during pipeline (cancel within 1s)",

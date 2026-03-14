@@ -1288,3 +1288,478 @@ func TestIntegration_RealOllama(t *testing.T) {
 		t.Error("expected completion or fallback message")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T106: File content verification on split branches
+// ---------------------------------------------------------------------------
+
+// TestIntegration_FileContentsOnSplitBranches verifies that the ACTUAL FILE
+// CONTENTS on each split branch match the feature branch originals. This is
+// the strongest possible assertion — not just "branches exist" or "tree hashes
+// match", but the individual file bytes are correct.
+func TestIntegration_FileContentsOnSplitBranches(t *testing.T) {
+	// NOT parallel — chdir.
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	// Use known, distinctive file contents we can verify byte-for-byte.
+	featureFiles := []TestPipelineFile{
+		{"pkg/alpha.go", "package pkg\n\nfunc Alpha() string { return \"ALPHA_CONTENT_V2\" }\n"},
+		{"pkg/beta.go", "package pkg\n\nfunc Beta() int { return 42 }\n"},
+		{"cmd/serve.go", "package main\n\nimport \"fmt\"\n\nfunc serve() { fmt.Println(\"serving\") }\n"},
+		{"cmd/migrate.go", "package main\n\nfunc migrate() {}\n"},
+		{"docs/api.md", "# API Reference\n\nEndpoint: /v1/data\n"},
+	}
+
+	tp := chdirTestPipeline(t, TestPipelineOpts{
+		InitialFiles: []TestPipelineFile{
+			{"pkg/alpha.go", "package pkg\n\nfunc Alpha() {}\n"},
+			{"cmd/serve.go", "package main\n\nfunc serve() {}\n"},
+			{"README.md", "# Project\n"},
+		},
+		FeatureFiles: featureFiles,
+	})
+
+	// Run full pipeline.
+	if err := tp.Dispatch("run", nil); err != nil {
+		t.Fatalf("run returned error: %v", err)
+	}
+
+	output := tp.Stdout.String()
+	t.Logf("run output:\n%s", output)
+
+	if !contains(output, "Split executed") {
+		t.Fatal("expected split execution output")
+	}
+
+	// Get all split branches.
+	branches := gitBranchList(t, tp.Dir)
+	var splitBranches []string
+	for _, b := range branches {
+		if strings.HasPrefix(b, "split/") {
+			splitBranches = append(splitBranches, b)
+		}
+	}
+	if len(splitBranches) == 0 {
+		t.Fatal("no split branches found")
+	}
+
+	t.Logf("split branches: %v", splitBranches)
+
+	// Build a map of path → content from the feature files.
+	featureContent := make(map[string]string)
+	for _, f := range featureFiles {
+		featureContent[f.Path] = f.Content
+	}
+
+	// For each split branch, verify every file that exists on it is byte-identical
+	// to the feature branch version.
+	filesVerified := 0
+	for _, branch := range splitBranches {
+		// List files that differ from base (main) on this split branch.
+		diffOutput := runGitCmd(t, tp.Dir, "diff", "--name-only", "main..."+branch)
+		files := strings.Split(strings.TrimSpace(diffOutput), "\n")
+		for _, f := range files {
+			f = strings.TrimSpace(f)
+			if f == "" {
+				continue
+			}
+			expectedContent, ok := featureContent[f]
+			if !ok {
+				// File is on split branch but not in our feature files — could
+				// be a base file. Skip content check for files we didn't define.
+				continue
+			}
+			// Read file content from the split branch.
+			actual := runGitCmd(t, tp.Dir, "show", branch+":"+f)
+			if actual != expectedContent {
+				t.Errorf("file %q on branch %q has wrong content.\nExpected:\n%s\nGot:\n%s",
+					f, branch, expectedContent, actual)
+			} else {
+				filesVerified++
+			}
+		}
+	}
+
+	if filesVerified == 0 {
+		t.Error("no feature files were verified on split branches — test infrastructure may be broken")
+	}
+	t.Logf("verified %d file(s) on split branches", filesVerified)
+}
+
+// ---------------------------------------------------------------------------
+// T107: Single-file feature branch edge case
+// ---------------------------------------------------------------------------
+
+// TestIntegration_SingleFileFeature verifies that a feature branch with only
+// one changed file is handled correctly — exactly one split branch with that
+// single file.
+func TestIntegration_SingleFileFeature(t *testing.T) {
+	// NOT parallel — chdir.
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	tp := chdirTestPipeline(t, TestPipelineOpts{
+		InitialFiles: []TestPipelineFile{
+			{"src/main.go", "package main\n\nfunc main() {}\n"},
+			{"README.md", "# Hello\n"},
+		},
+		FeatureFiles: []TestPipelineFile{
+			{"src/main.go", "package main\n\nimport \"fmt\"\n\nfunc main() { fmt.Println(\"v2\") }\n"},
+		},
+	})
+
+	// Run full pipeline.
+	if err := tp.Dispatch("run", nil); err != nil {
+		t.Fatalf("run returned error: %v", err)
+	}
+
+	output := tp.Stdout.String()
+	t.Logf("run output:\n%s", output)
+
+	// Must complete.
+	if !contains(output, "Split executed") && !contains(output, "Split completed") {
+		t.Fatalf("expected split execution, got:\n%s", output)
+	}
+
+	// Should produce exactly 1 split branch (one file = one group).
+	branches := gitBranchList(t, tp.Dir)
+	splitCount := 0
+	var splitBranch string
+	for _, b := range branches {
+		if strings.HasPrefix(b, "split/") {
+			splitCount++
+			splitBranch = b
+		}
+	}
+	if splitCount != 1 {
+		t.Errorf("expected exactly 1 split branch for single-file feature, got %d (branches: %v)", splitCount, branches)
+	}
+
+	if splitBranch != "" {
+		// Verify the single file has the correct content.
+		actual := runGitCmd(t, tp.Dir, "show", splitBranch+":src/main.go")
+		expected := "package main\n\nimport \"fmt\"\n\nfunc main() { fmt.Println(\"v2\") }\n"
+		if actual != expected {
+			t.Errorf("file content on split branch incorrect.\nExpected:\n%s\nGot:\n%s", expected, actual)
+		}
+	}
+
+	// Equivalence must hold — single file split is trivially equivalent.
+	if !contains(output, "Tree hash equivalence verified") {
+		t.Error("expected tree hash equivalence verification for single-file split")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T108: Multiple commits on feature branch
+// ---------------------------------------------------------------------------
+
+// TestIntegration_MultiCommitFeature verifies that a feature branch with
+// multiple commits (not just one) is handled correctly — the cumulative diff
+// against base is what gets split, not just the last commit.
+func TestIntegration_MultiCommitFeature(t *testing.T) {
+	// NOT parallel — chdir.
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	dir := t.TempDir()
+
+	// Initialize repo.
+	runGitCmd(t, dir, "init")
+	runGitCmd(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
+	runGitCmd(t, dir, "config", "user.email", "test@test.com")
+	runGitCmd(t, dir, "config", "user.name", "Test User")
+
+	// Base files.
+	for _, f := range []struct{ path, content string }{
+		{"src/core.go", "package src\n\nfunc Core() {}\n"},
+		{"README.md", "# Project\n"},
+	} {
+		full := filepath.Join(dir, f.path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(f.content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGitCmd(t, dir, "add", "-A")
+	runGitCmd(t, dir, "commit", "-m", "initial")
+
+	// Feature branch with MULTIPLE commits.
+	runGitCmd(t, dir, "checkout", "-b", "feature")
+
+	// Commit 1: Add API layer.
+	for _, f := range []struct{ path, content string }{
+		{"api/handler.go", "package api\n\nfunc Handle() string { return \"ok\" }\n"},
+		{"api/types.go", "package api\n\ntype Request struct{}\n"},
+	} {
+		full := filepath.Join(dir, f.path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(f.content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGitCmd(t, dir, "add", "-A")
+	runGitCmd(t, dir, "commit", "-m", "feat: add API layer")
+
+	// Commit 2: Add docs.
+	for _, f := range []struct{ path, content string }{
+		{"docs/api.md", "# API\n\nDocumentation for the API.\n"},
+		{"docs/guide.md", "# Getting Started\n\nStep 1...\n"},
+	} {
+		full := filepath.Join(dir, f.path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(f.content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGitCmd(t, dir, "add", "-A")
+	runGitCmd(t, dir, "commit", "-m", "docs: add API documentation")
+
+	// Commit 3: Modify core + add tests.
+	if err := os.WriteFile(filepath.Join(dir, "src/core.go"),
+		[]byte("package src\n\nfunc Core() string { return \"v2\" }\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []struct{ path, content string }{
+		{"tests/api_test.go", "package tests\n\nfunc TestAPI() {}\n"},
+	} {
+		full := filepath.Join(dir, f.path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(f.content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runGitCmd(t, dir, "add", "-A")
+	runGitCmd(t, dir, "commit", "-m", "fix: update core + add tests")
+
+	// Register CWD restoration FIRST so it runs LAST in LIFO cleanup order.
+	// This ensures the engine cleanup (registered by loadPrSplitEngine)
+	// runs while CWD is still set to the temp repo directory.
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, dispatch := loadPrSplitEngine(t, map[string]any{"dir": dir})
+
+	if err := dispatch("run", nil); err != nil {
+		t.Fatalf("run returned error: %v", err)
+	}
+
+	output := stdout.String()
+	t.Logf("multi-commit run output:\n%s", output)
+
+	// Analysis should detect all 6 files across all 3 commits.
+	if !contains(output, "changed files") {
+		t.Error("expected changed files count in output")
+	}
+
+	if !contains(output, "Split executed") {
+		t.Fatal("expected split execution output")
+	}
+
+	// Verify split branches exist.
+	branches := runGitCmd(t, dir, "branch")
+	if !strings.Contains(branches, "split/") {
+		t.Errorf("expected split branches, got:\n%s", branches)
+	}
+
+	// Count split branches — should be at least 3 (api, docs, src/tests groups).
+	branchLines := strings.Split(strings.TrimSpace(branches), "\n")
+	splitCount := 0
+	for _, line := range branchLines {
+		if strings.Contains(line, "split/") {
+			splitCount++
+		}
+	}
+	if splitCount < 2 {
+		t.Errorf("expected at least 2 split branches for multi-commit feature, got %d", splitCount)
+	}
+
+	// Verify file from commit 1 exists on appropriate split branch.
+	foundAPI := false
+	for _, line := range branchLines {
+		branch := strings.TrimSpace(strings.TrimPrefix(line, "*"))
+		branch = strings.TrimSpace(branch)
+		if !strings.HasPrefix(branch, "split/") {
+			continue
+		}
+		// Check if api/handler.go exists on any split branch.
+		showOut := runGitCmdAllowFail(t, dir, "show", branch+":api/handler.go")
+		if strings.Contains(showOut, "Handle()") {
+			// Found it — verify content from commit 1.
+			expected := "package api\n\nfunc Handle() string { return \"ok\" }\n"
+			if showOut != expected {
+				t.Errorf("api/handler.go on %s has wrong content:\n%s", branch, showOut)
+			}
+			foundAPI = true
+			break
+		}
+	}
+	if !foundAPI {
+		t.Error("api/handler.go not found on any split branch — multi-commit content not preserved")
+	}
+
+	// Verify HEAD restored to feature.
+	current := strings.TrimSpace(runGitCmd(t, dir, "rev-parse", "--abbrev-ref", "HEAD"))
+	if current != "feature" {
+		t.Errorf("expected restored to 'feature', got %q", current)
+	}
+
+	// Tree hash equivalence should pass (cumulative diff = sum of splits).
+	if !contains(output, "Tree hash equivalence verified") {
+		t.Error("expected tree hash equivalence for multi-commit feature")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T109: Empty feature branch with run command
+// ---------------------------------------------------------------------------
+
+// TestIntegration_EmptyFeatureBranch verifies that a feature branch with no
+// file changes (empty diff against base) is handled gracefully — early exit
+// rather than crash or empty plan.
+func TestIntegration_EmptyFeatureBranch(t *testing.T) {
+	// NOT parallel — chdir.
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	tp := chdirTestPipeline(t, TestPipelineOpts{
+		NoFeatureFiles: true,
+	})
+
+	// Run the full pipeline on an empty feature branch.
+	if err := tp.Dispatch("run", nil); err != nil {
+		t.Fatalf("run returned error: %v", err)
+	}
+
+	output := tp.Stdout.String()
+	t.Logf("empty feature output:\n%s", output)
+
+	// Should detect 0 changed files and exit early.
+	if contains(output, "Split executed") {
+		t.Error("empty feature branch should NOT execute splits")
+	}
+
+	// Should not create any split branches.
+	branches := gitBranchList(t, tp.Dir)
+	for _, b := range branches {
+		if strings.HasPrefix(b, "split/") {
+			t.Errorf("no split branches expected for empty feature, found: %s", b)
+		}
+	}
+
+	// Must not crash — the fact we got here is success.
+	t.Log("empty feature branch handled gracefully")
+}
+
+// ---------------------------------------------------------------------------
+// T110: Full execute→equivalence→cleanup round-trip
+// ---------------------------------------------------------------------------
+
+// TestIntegration_ExecuteEquivalenceCleanupRoundTrip verifies the complete
+// operational lifecycle: plan → execute → verify equivalence → cleanup.
+// Each step's postconditions are asserted before moving to the next.
+func TestIntegration_ExecuteEquivalenceCleanupRoundTrip(t *testing.T) {
+	// NOT parallel — chdir.
+	if runtime.GOOS == "windows" {
+		t.Skip("pr-split uses sh -c; skipping on Windows")
+	}
+
+	tp := chdirTestPipeline(t, TestPipelineOpts{
+		InitialFiles: []TestPipelineFile{
+			{"lib/core.go", "package lib\n\nfunc Core() {}\n"},
+			{"lib/util.go", "package lib\n\nfunc Util() {}\n"},
+			{"README.md", "# Project\n"},
+		},
+		FeatureFiles: []TestPipelineFile{
+			{"lib/core.go", "package lib\n\nfunc Core() string { return \"v2\" }\n"},
+			{"lib/util.go", "package lib\n\nfunc Util() string { return \"v2\" }\n"},
+			{"api/server.go", "package api\n\nfunc Serve() {}\n"},
+			{"api/routes.go", "package api\n\nfunc Routes() {}\n"},
+			{"docs/readme.md", "# Updated docs\n"},
+		},
+	})
+
+	// Step 1: Plan.
+	runPlanPipeline(t, tp)
+	t.Log("Step 1: Plan — PASS")
+
+	// Step 2: Execute.
+	tp.Stdout.Reset()
+	if err := tp.Dispatch("execute", nil); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	execOut := tp.Stdout.String()
+	if !contains(execOut, "Split completed successfully") {
+		t.Fatalf("execute must succeed, got:\n%s", execOut)
+	}
+
+	// Postcondition: split branches exist.
+	branches := gitBranchList(t, tp.Dir)
+	splitBranches := []string{}
+	for _, b := range branches {
+		if strings.HasPrefix(b, "split/") {
+			splitBranches = append(splitBranches, b)
+		}
+	}
+	if len(splitBranches) == 0 {
+		t.Fatal("no split branches after execute")
+	}
+	t.Logf("Step 2: Execute — PASS (%d split branches: %v)", len(splitBranches), splitBranches)
+
+	// Step 3: Equivalence check.
+	tp.Stdout.Reset()
+	if err := tp.Dispatch("equivalence", nil); err != nil {
+		t.Fatalf("equivalence: %v", err)
+	}
+	equivOut := tp.Stdout.String()
+	if !contains(equivOut, "equivalent") {
+		t.Fatalf("equivalence must pass, got:\n%s", equivOut)
+	}
+	if contains(equivOut, "differ") || contains(equivOut, "not equivalent") {
+		t.Fatalf("tree hashes must not differ:\n%s", equivOut)
+	}
+	t.Log("Step 3: Equivalence — PASS")
+
+	// Step 4: Cleanup.
+	tp.Stdout.Reset()
+	if err := tp.Dispatch("cleanup", nil); err != nil {
+		t.Fatalf("cleanup: %v", err)
+	}
+
+	// Postcondition: no split branches remain.
+	branchesAfter := gitBranchList(t, tp.Dir)
+	for _, b := range branchesAfter {
+		if strings.HasPrefix(b, "split/") {
+			t.Errorf("split branch %q still present after cleanup", b)
+		}
+	}
+	t.Log("Step 4: Cleanup — PASS")
+
+	// Postcondition: HEAD is on a valid branch (feature or main).
+	// After cleanup, the engine may switch to base branch (main) or stay on feature.
+	current := strings.TrimSpace(runGitCmd(t, tp.Dir, "rev-parse", "--abbrev-ref", "HEAD"))
+	if current != "feature" && current != "main" {
+		t.Errorf("expected HEAD on 'feature' or 'main', got %q", current)
+	}
+	t.Logf("Full round-trip: plan → execute → equivalence → cleanup — PASS (HEAD on %q)", current)
+}

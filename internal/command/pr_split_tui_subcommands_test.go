@@ -1050,8 +1050,28 @@ func TestPrSplitCommand_ExecuteCommand(t *testing.T) {
 			t.Fatalf("execute: %v", err)
 		}
 		out := tp.Stdout.String()
-		if !contains(out, "Split completed successfully") && !contains(out, "Error") {
-			t.Errorf("expected success or error, got: %s", out)
+
+		// Must succeed — NOT accept error as a pass condition.
+		if !contains(out, "Split completed successfully") {
+			t.Fatalf("expected 'Split completed successfully', got:\n%s", out)
+		}
+
+		// Verify actual git branches were created.
+		branches := gitBranchList(t, tp.Dir)
+		splitCount := 0
+		for _, b := range branches {
+			if strings.HasPrefix(b, "split/") {
+				splitCount++
+			}
+		}
+		if splitCount == 0 {
+			t.Errorf("expected split branches to be created, got branches: %v", branches)
+		}
+
+		// Verify HEAD was restored to feature branch.
+		current := strings.TrimSpace(runGitCmd(t, tp.Dir, "rev-parse", "--abbrev-ref", "HEAD"))
+		if current != "feature" {
+			t.Errorf("expected HEAD restored to 'feature', got %q", current)
 		}
 	})
 }
@@ -1089,6 +1109,35 @@ func TestPrSplitCommand_VerifyCommandGuards(t *testing.T) {
 			t.Errorf("expected 'Verifying', got: %s", out)
 		}
 	})
+
+	t.Run("after_execute_with_true", func(t *testing.T) {
+		// Execute first so branches exist, then verify with "true" (always passes).
+		tp := chdirTestPipeline(t, TestPipelineOpts{
+			ConfigOverrides: map[string]any{"verifyCommand": "true"},
+		})
+		runPlanPipeline(t, tp)
+		tp.Stdout.Reset()
+
+		if err := tp.Dispatch("execute", nil); err != nil {
+			t.Fatalf("execute: %v", err)
+		}
+		if !contains(tp.Stdout.String(), "Split completed successfully") {
+			t.Fatalf("execute must succeed, got:\n%s", tp.Stdout.String())
+		}
+
+		tp.Stdout.Reset()
+		if err := tp.Dispatch("verify", nil); err != nil {
+			t.Fatalf("verify: %v", err)
+		}
+		out := tp.Stdout.String()
+		if !contains(out, "Verifying") {
+			t.Errorf("expected 'Verifying' in output, got:\n%s", out)
+		}
+		// With verify command "true", all branches should pass.
+		if contains(out, "FAIL") || contains(out, "failed") {
+			t.Errorf("expected all verify passes with 'true' command, got:\n%s", out)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------
@@ -1113,15 +1162,29 @@ func TestPrSplitCommand_EquivalenceCommand(t *testing.T) {
 	t.Run("with_plan", func(t *testing.T) {
 		tp := chdirTestPipeline(t, TestPipelineOpts{})
 		runPlanPipeline(t, tp)
-		tp.Stdout.Reset()
 
+		// Execute the plan first so branches actually exist for equivalence check.
+		tp.Stdout.Reset()
+		if err := tp.Dispatch("execute", nil); err != nil {
+			t.Fatalf("execute: %v", err)
+		}
+		execOut := tp.Stdout.String()
+		if !contains(execOut, "Split completed successfully") {
+			t.Fatalf("execute must succeed before equivalence check, got:\n%s", execOut)
+		}
+
+		tp.Stdout.Reset()
 		if err := tp.Dispatch("equivalence", nil); err != nil {
 			t.Fatalf("equivalence: %v", err)
 		}
 		out := tp.Stdout.String()
-		// Should show equivalence result — either equivalent, differ, or error.
-		if !contains(out, "equivalent") && !contains(out, "differ") && !contains(out, "Error") {
-			t.Errorf("expected equivalence result, got: %s", out)
+		// After a well-formed execute, tree hashes MUST be equivalent.
+		// Do NOT accept "differ" or "Error" — that masks real failures.
+		if !contains(out, "equivalent") {
+			t.Errorf("expected equivalence success ('equivalent'), got:\n%s", out)
+		}
+		if contains(out, "differ") || contains(out, "not equivalent") {
+			t.Errorf("tree hashes differ — split was incomplete:\n%s", out)
 		}
 	})
 }
@@ -1157,6 +1220,45 @@ func TestPrSplitCommand_CleanupCommand(t *testing.T) {
 		}
 		// We accept any output — the important thing is no crash.
 		t.Logf("cleanup output: %s", tp.Stdout.String())
+	})
+
+	t.Run("after_execute_removes_branches", func(t *testing.T) {
+		tp := chdirTestPipeline(t, TestPipelineOpts{})
+		runPlanPipeline(t, tp)
+		tp.Stdout.Reset()
+
+		// Execute first to create branches.
+		if err := tp.Dispatch("execute", nil); err != nil {
+			t.Fatalf("execute: %v", err)
+		}
+		if !contains(tp.Stdout.String(), "Split completed successfully") {
+			t.Fatalf("execute must succeed, got:\n%s", tp.Stdout.String())
+		}
+
+		// Verify split branches exist before cleanup.
+		branchesBefore := gitBranchList(t, tp.Dir)
+		splitsBefore := 0
+		for _, b := range branchesBefore {
+			if strings.HasPrefix(b, "split/") {
+				splitsBefore++
+			}
+		}
+		if splitsBefore == 0 {
+			t.Fatal("expected split branches to exist before cleanup")
+		}
+
+		tp.Stdout.Reset()
+		if err := tp.Dispatch("cleanup", nil); err != nil {
+			t.Fatalf("cleanup: %v", err)
+		}
+
+		// After cleanup, no split/ branches should remain.
+		branchesAfter := gitBranchList(t, tp.Dir)
+		for _, b := range branchesAfter {
+			if strings.HasPrefix(b, "split/") {
+				t.Errorf("split branch %q still exists after cleanup", b)
+			}
+		}
 	})
 }
 

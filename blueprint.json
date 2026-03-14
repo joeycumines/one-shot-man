@@ -142,7 +142,7 @@
         "All tests use mock echo process"
       ],
       "status": "Done",
-      "commit": "pending",
+      "commit": "9b6e9300",
       "completionNotes": [
         "21 tests: 8 keyToTermBytes unit tests + 1 CLAUDE_RESERVED_KEYS coverage + 12 integration tests",
         "keyToTermBytes: printable chars, special keys (enter/tab/backspace/space/escape/delete), arrow keys, ctrl chars (ctrl+a through ctrl+z), alt keys (ESC prefix), unknown→null, bracketed paste, function keys (f1-f12)",
@@ -175,7 +175,19 @@
         "TestIntegration_ClaudePaneExitCleanup: split-view auto-closes and notification shows on Claude process exit",
         "All tests use mock Claude process"
       ],
-      "status": "Not Started"
+      "status": "Done",
+      "commit": "pending",
+      "completionNotes": [
+        "21 tests covering complete Claude pane lifecycle",
+        "Auto-attach: positive case (all conditions met), one-shot guard, dismiss prevents re-open, small terminal (height<12 boundary test at 6/8/10/11/12), no mux, no child",
+        "Auto-close: on child exit with notification, blocked during pipeline (autoSplitRunning), manually opened pane NOT auto-closed",
+        "Claude badge: LIVE (100ms), idle (5s), quiet (30s), N/A (no mux), hidden narrow (<60 cols)",
+        "Notifications: rendered in status bar, auto-dismissed after 5s, auto-attach sets Ctrl+L hint",
+        "Crash detection: dead executor closes pane, clears screen, sets crashDetected flag, errorDetails",
+        "Full 6-phase lifecycle flow: attach → interact → dismiss → no re-open → re-open → child exit close",
+        "Ctrl+L re-open clears dismiss flag, stop polling when !isProcessing",
+        "Rule of Two: Pass 1 PASS, Pass 2 PASS (zero blocking issues)"
+      ]
     },
     {
       "task": "Integration test: Claude crash recovery and restart flow",

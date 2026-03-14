@@ -11,13 +11,14 @@
 - **Task 4a:** "Strengthen pipeline integration tests" — COMMITTED (481ed20f)
 - **Task 4b:** "Actual-binary E2E tests" — COMMITTED (adf2c1c0)
 - **Task 5a:** "VTerm Claude pane rendering tests" — COMMITTED (53d05921), 22 tests
-- **Task 5b:** "VTerm keyboard input forwarding tests" — COMMITTING NOW, 21 tests
-  - 8 keyToTermBytes unit tests + 1 CLAUDE_RESERVED_KEYS + 12 integration
+- **Task 5b:** "VTerm keyboard input forwarding tests" — COMMITTED (9b6e9300), 21 tests
+- **Task 5c:** "Claude pane auto-attach lifecycle tests" — COMMITTING NOW, 21 tests
+  - Auto-attach, one-shot guard, dismiss, small terminal, badge, notification, crash, full flow
   - Rule of Two: Pass 1 PASS, Pass 2 PASS
 
 ## Current Task
-- **Next:** "Integration test: UI responsiveness during pipeline" or
-  "Integration test: Claude pane auto-attach and lifecycle"
+- **Next:** "Integration test: Claude crash recovery and restart flow" or
+  "Benchmark tests for view rendering performance" or "Edge-case hardening tests"
 
 ## Notes
 - config.mk targets: test-prsplit-binary, test-prsplit-new, test-prsplit-vterm, test-prsplit-vterm-keys

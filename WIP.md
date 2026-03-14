@@ -12,8 +12,13 @@
 - **Task 4b:** "Actual-binary E2E tests" — COMMITTED (adf2c1c0)
 - **Task 5a:** "VTerm Claude pane rendering tests" — COMMITTED (53d05921), 22 tests
 - **Task 5b:** "VTerm keyboard input forwarding tests" — COMMITTED (9b6e9300), 21 tests
-- **Task 5c:** "Claude pane auto-attach lifecycle tests" — COMMITTING NOW, 21 tests
+- **Task 5c:** "Claude pane auto-attach lifecycle tests" — COMMITTED (84ff3e6c), 21 tests
   - Auto-attach, one-shot guard, dismiss, small terminal, badge, notification, crash, full flow
+  - Rule of Two: Pass 1 PASS, Pass 2 PASS
+- **Task 6:** "Benchmark tests for view rendering performance" — COMMITTING NOW, 33 test points
+  - 24 Go benchmarks + 13 regression tests with thresholds
+  - All standard views <16ms, large <50ms on Apple M2 Pro
+  - bench-prsplit and bench-prsplit-only targets in config.mk
   - Rule of Two: Pass 1 PASS, Pass 2 PASS
 
 ## Current Task

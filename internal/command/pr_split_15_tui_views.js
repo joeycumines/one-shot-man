@@ -362,6 +362,61 @@
         }
     }
 
+    // -----------------------------------------------------------------------
+    //  T46: Inline Claude Question Prompt
+    // -----------------------------------------------------------------------
+    // When Claude asks a question during automated analysis/execution, this
+    // renders a compact inline prompt at the bottom of the affected screen.
+    // The user can type a response and press Enter to send it directly to
+    // Claude's PTY (via tuiMux.writeToChild).
+
+    function renderClaudeQuestionPrompt(s) {
+        if (!s.claudeQuestionDetected) return '';
+
+        var w = Math.max(40, (s.width || 80) - 4);
+        var lines = [];
+
+        // Question banner.
+        var questionText = s.claudeQuestionLine || '(question detected)';
+        if (questionText.length > w - 20) {
+            questionText = questionText.substring(0, w - 23) + '...';
+        }
+        lines.push(styles.warningBadge().render(' \ud83e\udd16 Claude asks ') +
+            ' ' + styles.fieldValue().render(questionText));
+
+        // Input field.
+        var inputPrefix;
+        if (s.claudeQuestionInputActive) {
+            inputPrefix = styles.bold().render('\u276f ');
+        } else {
+            inputPrefix = styles.dim().render('\u276f ');
+        }
+        var inputText = (s.claudeQuestionInputText || '') +
+            (s.claudeQuestionInputActive ? styles.dim().render('\u2588') : '');
+        var inputHint = s.claudeQuestionInputActive
+            ? styles.dim().render('  Enter: send  Esc: dismiss')
+            : styles.dim().render('  Type to respond or Esc to dismiss');
+
+        lines.push('  ' + zone.mark('claude-question-input',
+            inputPrefix + truncate(inputText, w - 16)) + inputHint);
+
+        // Conversation history count (if any).
+        if (s.claudeConversations && s.claudeConversations.length > 0) {
+            lines.push('  ' + styles.dim().render(
+                s.claudeConversations.length + ' prior Q&A exchange' +
+                (s.claudeConversations.length !== 1 ? 's' : '')));
+        }
+
+        // Wrap in a subtle bordered box.
+        var promptStyle = lipgloss.newStyle()
+            .border(lipgloss.roundedBorder())
+            .borderForeground(COLORS.warning)
+            .width(w - 2)
+            .padding(0, 1);
+
+        return '\n' + promptStyle.render(lines.join('\n'));
+    }
+
     function renderStatusBar(s) {
         var w = s.width || 80;
         var narrow = w < 60;
@@ -976,6 +1031,12 @@
                 styles.errorCard().render(st.analysisCache.error));
         }
 
+        // T46: Inline Claude question prompt (during active analysis).
+        var questionPrompt = renderClaudeQuestionPrompt(s);
+        if (questionPrompt) {
+            lines.push(questionPrompt);
+        }
+
         return lines.join('\n');
     }
 
@@ -1458,6 +1519,12 @@
                 }
                 lines.push(summaryLine);
             }
+        }
+
+        // T46: Inline Claude question prompt (during active execution).
+        var execQuestionPrompt = renderClaudeQuestionPrompt(s);
+        if (execQuestionPrompt) {
+            lines.push(execQuestionPrompt);
         }
 
         return lines.join('\n');

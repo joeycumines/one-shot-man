@@ -179,6 +179,13 @@
                 claudeAutoAttachNotif: '',     // transient notification text (auto-dismissed after 5s)
                 claudeAutoAttachNotifAt: 0,    // Date.now() when notification was set
 
+                // T46: Claude question detection state.
+                claudeQuestionDetected: false,  // true when question pattern detected in Claude output
+                claudeQuestionLine: '',         // the detected question line from Claude's output
+                claudeQuestionInputText: '',    // user's response text buffer
+                claudeQuestionInputActive: false, // user has focused the inline response input
+                claudeConversations: [],        // Q&A history [{question: string, answer: string, ts: number}]
+
                 // T44: Process output capture state.
                 outputLines: [],               // accumulated output buffer (strings, may contain ANSI)
                 outputViewOffset: 0,           // scroll offset in output pane (lines from bottom)
@@ -234,6 +241,15 @@
             if (s.wizardState !== s._prevWizardState) {
                 s.focusIndex = 0;
                 s._prevWizardState = s.wizardState;
+                // T46: Clear inline question state on screen transition to
+                // prevent orphaned input mode on screens that don't render
+                // the question prompt.
+                if (s.claudeQuestionDetected || s.claudeQuestionInputActive) {
+                    s.claudeQuestionDetected = false;
+                    s.claudeQuestionLine = '';
+                    s.claudeQuestionInputText = '';
+                    s.claudeQuestionInputActive = false;
+                }
             }
 
             // Overlays intercept all user input when active, but Tick
@@ -322,6 +338,104 @@
             // Claude conversation overlay intercepts all input when active.
             if (s.claudeConvo.active) {
                 return updateClaudeConvo(msg, s);
+            }
+
+            // T46: Inline Claude question prompt input interceptor.
+            // When the user is actively typing a response to Claude's question,
+            // intercept all keyboard input (like a mini text editor).
+            // Exception: Ctrl+L passes through so user can toggle split-view.
+            if (s.claudeQuestionInputActive && msg.type === 'Key' && msg.key !== 'ctrl+l') {
+                var qk = msg.key;
+
+                // Escape — dismiss the question prompt entirely.
+                if (qk === 'esc') {
+                    s.claudeQuestionDetected = false;
+                    s.claudeQuestionLine = '';
+                    s.claudeQuestionInputText = '';
+                    s.claudeQuestionInputActive = false;
+                    return [s, null];
+                }
+
+                // Enter — send response to Claude's PTY.
+                if (qk === 'enter') {
+                    var responseText = (s.claudeQuestionInputText || '').trim();
+                    if (responseText.length > 0) {
+                        // Record in conversation history (cap at 100 entries).
+                        s.claudeConversations.push({
+                            question: s.claudeQuestionLine,
+                            answer: responseText,
+                            ts: Date.now()
+                        });
+                        if (s.claudeConversations.length > 100) {
+                            s.claudeConversations = s.claudeConversations.slice(-80);
+                        }
+
+                        // Send to Claude PTY via tuiMux.writeToChild.
+                        if (typeof tuiMux !== 'undefined' && tuiMux &&
+                            typeof tuiMux.writeToChild === 'function') {
+                            try {
+                                tuiMux.writeToChild(responseText + '\r');
+                                log.printf('T46: sent response to Claude: %s', responseText);
+                            } catch (e) {
+                                log.printf('T46: writeToChild failed: %s', String(e));
+                            }
+                        }
+
+                        // Clear question state.
+                        s.claudeQuestionDetected = false;
+                        s.claudeQuestionLine = '';
+                        s.claudeQuestionInputText = '';
+                        s.claudeQuestionInputActive = false;
+                        // Reset throttle so we don't immediately re-detect
+                        // the same question before Claude starts streaming.
+                        s.claudeLastQuestionCheckMs = Date.now();
+                    }
+                    return [s, null];
+                }
+
+                // Backspace.
+                if (qk === 'backspace') {
+                    var qt = s.claudeQuestionInputText || '';
+                    if (qt.length > 0) {
+                        s.claudeQuestionInputText = qt.substring(0, qt.length - 1);
+                    }
+                    return [s, null];
+                }
+
+                // Ctrl+U: clear input line.
+                if (qk === 'ctrl+u') {
+                    s.claudeQuestionInputText = '';
+                    return [s, null];
+                }
+
+                // Single printable character — accumulate.
+                if (qk.length === 1) {
+                    s.claudeQuestionInputText = (s.claudeQuestionInputText || '') + qk;
+                    return [s, null];
+                }
+
+                // Consume all other keys (don't let them leak to navigation).
+                return [s, null];
+            }
+
+            // T46: When question detected but input not yet active, any
+            // printable character activates the input field.
+            if (s.claudeQuestionDetected && !s.claudeQuestionInputActive && msg.type === 'Key') {
+                var qak = msg.key;
+                if (qak.length === 1) {
+                    s.claudeQuestionInputActive = true;
+                    s.claudeQuestionInputText = qak;
+                    return [s, null];
+                }
+                // Escape still dismisses even when not actively typing.
+                if (qak === 'esc') {
+                    s.claudeQuestionDetected = false;
+                    s.claudeQuestionLine = '';
+                    s.claudeQuestionInputText = '';
+                    s.claudeQuestionInputActive = false;
+                    return [s, null];
+                }
+                // Other keys pass through to normal handling.
             }
 
             // Inline title editing intercepts all key input when active (T17).
@@ -433,6 +547,13 @@
                         s.claudeViewOffset = 0;
                         s.splitViewFocus = 'wizard';
                         s.splitViewTab = 'claude'; // T44: reset tab on disable
+                        // T46: Clear inline question state — the question prompt
+                        // wouldn't auto-dismiss with split-view disabled (no
+                        // pollClaudeScreenshot running to clear it).
+                        s.claudeQuestionDetected = false;
+                        s.claudeQuestionLine = '';
+                        s.claudeQuestionInputText = '';
+                        s.claudeQuestionInputActive = false;
                     }
                     return [s, null];
                 }
@@ -1413,6 +1534,11 @@
                 s.splitViewTab = 'output';
                 return [s, null];
             }
+        }
+        // T46: Claude question prompt click — activate input.
+        if (s.claudeQuestionDetected && zone.inBounds('claude-question-input', msg)) {
+            s.claudeQuestionInputActive = true;
+            return [s, null];
         }
         // Screen-specific zone clicks.
         return handleScreenMouseClick(msg, s);
@@ -3361,6 +3487,136 @@
     prSplit._CLAUDE_RESERVED_KEYS = CLAUDE_RESERVED_KEYS;
 
     // -----------------------------------------------------------------------
+    //  T46: Claude Question Detection
+    // -----------------------------------------------------------------------
+
+    /**
+     * detectClaudeQuestion — analyse the plain-text screenshot of Claude's
+     * terminal to determine whether Claude is asking the user a question.
+     *
+     * Heuristics (ordered by descending confidence):
+     *   1. Explicit prompt markers: lines ending with "? " or matching
+     *      common confirmation patterns (y/n, Y/N, [yes/no], proceed?).
+     *   2. Conversational question words at line start: "Do you", "Would
+     *      you", "Should I", "Can you", "Could you", "Is this", "Are you",
+     *      "Shall I", "Want me to", "May I", "Please confirm", "Please
+     *      clarify".
+     *   3. Plain question mark at end of a non-empty line.
+     *
+     * Detection only fires when Claude has been idle for ≥ idleThresholdMs
+     * (we default to 2 000 ms) — this avoids false positives while Claude
+     * is still streaming output.
+     *
+     * @param {string} plainText - Plain-text screenshot from tuiMux.screenshot()
+     * @param {number} idleMs    - Milliseconds since last PTY activity
+     * @returns {{ detected: boolean, line: string }}
+     */
+    var QUESTION_IDLE_THRESHOLD_MS = 2000;
+
+    // Explicit confirmation prompt patterns (case-insensitive).
+    var CONFIRM_PATTERNS = [
+        /\(y\/n\)/i,
+        /\[y\/n\]/i,
+        /\[yes\/no\]/i,
+        /\(yes\/no\)/i,
+        /\bproceed\s*\?/i,
+        /\bcontinue\s*\?/i,
+        /\bconfirm\s*\?/i,
+        /\boverwrite\s*\?/i,
+        /\bdelete\s*\?/i,
+        /\breplace\s*\?/i,
+        /\baccept\s*\?/i,
+        /\bapprove\s*\?/i
+    ];
+
+    // Conversational question openers (case-insensitive, anchored to line start after whitespace).
+    var QUESTION_OPENERS = [
+        /^\s*do you\b/i,
+        /^\s*would you\b/i,
+        /^\s*should I\b/i,
+        /^\s*can you\b/i,
+        /^\s*could you\b/i,
+        /^\s*is this\b/i,
+        /^\s*are you\b/i,
+        /^\s*shall I\b/i,
+        /^\s*want me to\b/i,
+        /^\s*may I\b/i,
+        /^\s*please confirm\b/i,
+        /^\s*please clarify\b/i,
+        /^\s*what would you\b/i,
+        /^\s*which\b.*\bprefer/i,
+        /^\s*how would you\b/i,
+        /^\s*where should\b/i
+    ];
+
+    function detectClaudeQuestion(plainText, idleMs) {
+        var result = { detected: false, line: '' };
+
+        // Guard: not idle long enough — Claude is likely still streaming.
+        if (typeof idleMs !== 'number' || idleMs < QUESTION_IDLE_THRESHOLD_MS) {
+            return result;
+        }
+
+        if (!plainText || typeof plainText !== 'string') {
+            return result;
+        }
+
+        // Extract trailing non-empty lines (last 15 lines of visible terminal).
+        var allLines = plainText.split('\n');
+        // Trim trailing blank lines (VTerm pads).
+        while (allLines.length > 0 && allLines[allLines.length - 1].trim() === '') {
+            allLines.pop();
+        }
+        if (allLines.length === 0) {
+            return result;
+        }
+
+        var scanCount = Math.min(15, allLines.length);
+        var scanLines = allLines.slice(allLines.length - scanCount);
+
+        // Scan from bottom to top — the question is most likely at/near the
+        // bottom of the visible output.
+        for (var i = scanLines.length - 1; i >= 0; i--) {
+            var raw = scanLines[i];
+            var trimmed = raw.trim();
+            if (trimmed.length === 0) continue;
+
+            // 1. Explicit confirmation patterns (highest confidence).
+            for (var cp = 0; cp < CONFIRM_PATTERNS.length; cp++) {
+                if (CONFIRM_PATTERNS[cp].test(trimmed)) {
+                    result.detected = true;
+                    result.line = trimmed;
+                    return result;
+                }
+            }
+
+            // 2. Conversational question openers.
+            for (var qo = 0; qo < QUESTION_OPENERS.length; qo++) {
+                if (QUESTION_OPENERS[qo].test(trimmed)) {
+                    result.detected = true;
+                    result.line = trimmed;
+                    return result;
+                }
+            }
+
+            // 3. Line ends with "?" (general question heuristic).
+            //    Only match non-trivial lines (>= 10 chars) to avoid
+            //    false positives like prompt strings "? " or single "?".
+            if (trimmed.length >= 10 && trimmed.charAt(trimmed.length - 1) === '?') {
+                result.detected = true;
+                result.line = trimmed;
+                return result;
+            }
+        }
+
+        return result;
+    }
+
+    // Expose for testing.
+    prSplit._detectClaudeQuestion = detectClaudeQuestion;
+    prSplit.QUESTION_IDLE_THRESHOLD_MS = QUESTION_IDLE_THRESHOLD_MS;
+
+    // -----------------------------------------------------------------------
     //  Split-View: Claude Screenshot Polling
     // -----------------------------------------------------------------------
     function pollClaudeScreenshot(s) {
@@ -3406,6 +3662,45 @@
             }
         } catch (e) {
             // Swallow — screen capture may fail if Claude session ended.
+        }
+
+        // T46: Claude question detection — check if Claude is asking a
+        // question, but only when processing (analysis/execution running)
+        // and the user isn't already composing a response.
+        if (s.isProcessing && !s.claudeQuestionInputActive) {
+            var now46 = Date.now();
+            // Throttle detection to every 2s to avoid churn.
+            if (!s.claudeLastQuestionCheckMs ||
+                (now46 - s.claudeLastQuestionCheckMs >= 2000)) {
+                s.claudeLastQuestionCheckMs = now46;
+
+                // Compute idle time from tuiMux.
+                var idleMs46 = 0;
+                try {
+                    if (typeof tuiMux.lastActivityMs === 'function') {
+                        idleMs46 = tuiMux.lastActivityMs();
+                    }
+                } catch (e46) {
+                    // Swallow — may fail if child ended.
+                }
+
+                var qResult = detectClaudeQuestion(s.claudeScreenshot, idleMs46);
+                if (qResult.detected && !s.claudeQuestionDetected) {
+                    // New question detected — surface it.
+                    s.claudeQuestionDetected = true;
+                    s.claudeQuestionLine = qResult.line;
+                    s.claudeQuestionInputText = '';
+                    s.claudeQuestionInputActive = false;
+                    log.printf('T46: Claude question detected: %s', qResult.line);
+                } else if (!qResult.detected && s.claudeQuestionDetected &&
+                           !s.claudeQuestionInputActive) {
+                    // Question resolved (Claude started streaming again) —
+                    // only auto-dismiss if user isn't typing a response.
+                    s.claudeQuestionDetected = false;
+                    s.claudeQuestionLine = '';
+                    s.claudeQuestionInputText = '';
+                }
+            }
         }
 
         // Schedule next poll at 500ms.

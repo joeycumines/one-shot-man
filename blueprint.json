@@ -347,7 +347,7 @@
         "bench-prsplit target added to project.mk"
       ],
       "status": "Done",
-      "commit": "pending",
+      "commit": "cfa99d04",
       "completionNotes": [
         "33 benchmark/regression test points in pr_split_16_bench_test.go",
         "BenchmarkViewRendering: 24 sub-benchmarks (Config, Analysis, PlanReview×2, PlanEditor, Execution, Verification, Finalization, ErrorResolution, Help, ConfirmCancel, WizardView×5, ClaudePane×2, SplitView, TitleBar, NavBar, StatusBar, ProgressBar, ViewForState dispatch)",
@@ -371,7 +371,15 @@
         "Concurrent wizard instances rejected via lock",
         "All 8 edge-case tests pass"
       ],
-      "status": "Not Started"
+      "status": "Done",
+      "commit": "pending",
+      "completionNotes": [
+        "17 test functions in pr_split_edge_hardening_test.go (9 existing + 8 new)",
+        "New tests: TestGrouping_TenThousandFiles (10k files via groupByDirectory), TestGrouping_TenThousandFiles_ClassificationToGroups (10k files via classificationToGroups), TestAnalyzeDiff_SpecialCharPaths (spaces/unicode/brackets in paths), TestAutoSplit_BranchCollision (pre-existing split branches), TestAutoSplit_OnlyDeletions (deletion-only diffs), TestTUI_ExtremeTerminalSizes (45 size×state combos), TestValidation_EdgeCases (6 sub-tests), TestTUI_LongNamesRendering (extremely long names)",
+        "Added DeleteFilesOnFeature field to TestPipelineOpts for deletion-only test scenarios",
+        "test-prsplit-edge make target in config.mk",
+        "Rule of Two: Pass 1 PASS, Pass 2 PASS"
+      ]
     },
     {
       "task": "Fuzz tests for classification parsing and plan validation",

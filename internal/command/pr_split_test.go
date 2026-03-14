@@ -398,6 +398,18 @@ func setupTestPipeline(t *testing.T, opts TestPipelineOpts) *TestPipeline {
 		runGitCmd(t, dir, "commit", "-m", "feature work")
 	}
 
+	// Delete files on feature branch if requested.
+	if len(opts.DeleteFilesOnFeature) > 0 {
+		for _, delPath := range opts.DeleteFilesOnFeature {
+			full := filepath.Join(dir, delPath)
+			if err := os.Remove(full); err != nil {
+				t.Fatalf("delete %s: %v", delPath, err)
+			}
+		}
+		runGitCmd(t, dir, "add", "-A")
+		runGitCmd(t, dir, "commit", "-m", "delete files on feature")
+	}
+
 	// Set up engine with config overrides.
 	// Always include the absolute temp dir path to prevent git operations
 	// from targeting the Go test package directory (B00 fix).
@@ -423,10 +435,11 @@ func setupTestPipeline(t *testing.T, opts TestPipelineOpts) *TestPipeline {
 
 // TestPipelineOpts configures setupTestPipeline.
 type TestPipelineOpts struct {
-	InitialFiles    []TestPipelineFile // files on main (nil = default set)
-	FeatureFiles    []TestPipelineFile // files on feature branch (nil = default set)
-	NoFeatureFiles  bool               // if true, feature branch has no file changes (empty commit)
-	ConfigOverrides map[string]any     // pr-split config overrides
+	InitialFiles         []TestPipelineFile // files on main (nil = default set)
+	FeatureFiles         []TestPipelineFile // files on feature branch (nil = default set)
+	NoFeatureFiles       bool               // if true, feature branch has no file changes (empty commit)
+	DeleteFilesOnFeature []string           // file paths to delete on feature branch (after creating FeatureFiles)
+	ConfigOverrides      map[string]any     // pr-split config overrides
 }
 
 // dispatchAwaitPromise dispatches a TUI command by name, calling the handler

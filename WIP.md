@@ -9,8 +9,9 @@
 3. `aa5e1d3f` — MCP Schema Alignment (T121+T122)
 4. `3a2010b1` — Async Execution Unblock: remove sync waitFor fallback (T093) + defer baseline verify (T090)
 5. `4bd7cea7` — Async Execution Unblock remainder: T078+T092+T109
+6. `99cecfe1` — EQUIV_CHECK screen enhancement: T118+T061+T079+T064
 
-## Completed Tasks (11/123)
+## Completed Tasks (15/123)
 - T028: renderStatusBar auto-dismiss → tick-based handler  
 - T072: viewReportOverlay scrollbar sync → syncReportScrollbar helper
 - T080: viewReportOverlay viewport sizing → syncReportOverlay helper
@@ -22,6 +23,10 @@
 - T078: Convert all exec.execv in resolveConflicts + AUTO_FIX_STRATEGIES to async shellExecAsync
 - T092: Async groupByDependencyAsync, selectStrategyAsync, applyStrategyAsync for non-blocking TUI
 - T109: Convert resolveConflictsWithClaude exec.execv for resolution commands to async shellExecAsync
+- T118: Fix viewVerificationScreen field names (equiv.expected→equiv.splitTree)
+- T061: Add getFocusElements/keyboard nav for EQUIV_CHECK screen
+- T079: Add VALID_TRANSITIONS EQUIV_CHECK→PLAN_REVIEW back-navigation
+- T064: Enhance viewVerificationScreen with tree hash details, warnings, hints
 
 ## Current Work
 **EQUIV_CHECK Screen Bundle: T118+T061+T079+T064 — Implementation COMPLETE, validating Rule of Two**
@@ -45,10 +50,31 @@
 - `make test-pr-split-quick` → ALL PASS ✅ (113.1s, exit_code: 0)
 
 ### Rule of Two Log (This Bundle)
+- Pass 1: ✅ PASSED (commit 99cecfe1)
+- Pass 2: ✅ PASSED (commit 99cecfe1)
+
+## Current Work
+**Layout Shift Root Fix: T011+T062+T063+T119 — Implementation COMPLETE, Rule of Two in progress**
+
+### What Was Done (This Bundle)
+- **T011**: Introduced `focusedSecondaryButton()` style — bold(true), foreground(textOnColor), background(warning), padding(0,2), border(roundedBorder()), borderForeground(warning). Matches secondaryButton width (roundedBorder = +2 horizontal chars). Swept ALL focusedButton↔secondaryButton ternaries across 6 view functions (viewConfigScreen, viewPlanReviewScreen, plan editor, viewFinalizationScreen, viewErrorResolutionScreen×2).
+- **T062**: viewFinalizationScreen "View Report" button now uses focusedSecondaryButton when focused (was focusedButton, losing border).
+- **T063**: viewErrorResolutionScreen ALL crash buttons, resolve buttons, and Ask Claude button now use focusedSecondaryButton when focused.
+- **T119**: viewPlanReviewScreen Ask Claude button unfocused changed from primaryButton() to secondaryButton() for consistency with Edit/Regen siblings. Focused uses focusedSecondaryButton.
+
+### Files Modified (Uncommitted)
+- pr_split_15_tui_views.js: Added focusedSecondaryButton() style + 8 ternary replacements across viewConfigScreen, viewPlanReviewScreen, plan editor, viewFinalizationScreen, viewErrorResolutionScreen
+- blueprint.json: Updated T011, T062, T063, T119 → done
+
+### Test Results
+- `make build` → PASS ✅
+- `make test-chunk13` → 113/113 PASS ✅
+- `make test-pr-split-quick` → ALL PASS ✅ (115.2s, exit_code: 0)
+
+### Rule of Two Log (This Bundle)
 - Pass 1: PENDING
 - Pass 2: PENDING
 
 ## Next Bundles (priority order)
-1. Layout Shift Root Fix (T011 → T062, T063, T119)
-2. Create PRs Activation Chain (T095 → T076 → T077, T083, T069)
-3. Body 1 tasks: T000, T001, T002, etc.
+1. Create PRs Activation Chain (T095 → T076 → T077, T083, T069)
+2. Body 1 tasks: T000, T001, T002, etc.

@@ -146,7 +146,7 @@
       "id": "T011",
       "title": "Fix focusedButton style: secondary buttons must not lose their border when focused",
       "description": "CONFIRMED BUG: styles.focusedButton() applies background(COLORS.warning) WITHOUT a border style. styles.secondaryButton() applies border(roundedBorder()). When a secondaryButton is focused (e.g., 'Test Connection', 'Edit Plan', field values in advanced config), it switches to focusedButton() which removes the border, causing the button to visually collapse/shrink and change shape. Fix: (1) Introduce styles.focusedSecondaryButton() that combines: bold(true), foreground(COLORS.textOnColor), background(COLORS.warning), padding(0,2), border(lipgloss.roundedBorder()), borderForeground(COLORS.warning). This maintains the same visual width as secondaryButton while highlighting focus. (2) Audit ALL locations in pr_split_15_tui_views.js where focusedButton() is applied to elements that normally render as secondaryButton, and replace with focusedSecondaryButton(). Known affected elements: Test Connection button, config field values in advanced section when focused, strategy radio buttons when focused. (3) Add a unit test that measures lipgloss.width() of focused vs unfocused state and asserts they are equal.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -699,7 +699,7 @@
       "id": "T062",
       "title": "Fix layout shift on 'View Report' button in FINALIZATION screen (focusedButton vs secondaryButton)",
       "description": "CONFIRMED BUG (second session read): viewFinalizationScreen uses: var reportStyle = (focusIdx===0) ? styles.focusedButton() : styles.secondaryButton(). When the 'View Report' button transitions from unfocused (secondaryButton with border) to focused (focusedButton without border), the button SHRINKS and the layout shifts. This is the SAME root-cause bug as T011. Fix: (1) Apply styles.focusedSecondaryButton() (introduced in T011) for the report button when focused. OR alternatively, since T011 introduces the fix, verify T011's fix is also applied here. (2) Verify createStyle and doneStyle: they use primaryButton (no border) vs focusedButton (no border) — these may be OK since neither has a border. Confirm the size is identical. (3) Add a unit test for viewFinalizationScreen at focusIndex 0, 1, 2 measuring rendered widths.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -710,7 +710,7 @@
       "id": "T063",
       "title": "Fix layout shift bug in ERROR_RESOLUTION screen: all secondary buttons change size when focused",
       "description": "CONFIRMED BUG (second session read): viewErrorResolutionScreen has FIVE standard resolution buttons and THREE crash recovery buttons, all using the pattern: var btnStyle = isFocused ? styles.focusedButton() : styles.secondaryButton(). This is the SAME root-cause bug as T011 (focusedButton has no border, secondaryButton has border). When focus moves between buttons, the layout constantly shifts. Fix: (1) Apply styles.focusedSecondaryButton() (introduced in T011) for all resolution buttons when focused. (2) Audit the 'Ask Claude' button in ERROR_RESOLUTION — same issue. (3) Audit the crash recovery buttons — same issue. (4) Add unit tests at all focusIndex values verifying consistent rendered width.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -1346,7 +1346,7 @@
       "id": "T119",
       "title": "viewPlanReviewScreen 'Ask Claude' button uses primaryButton style (unfocused) while Edit/Regen use secondaryButton — layout shift on Tab cycle",
       "description": "CONFIRMED by reading pr_split_15_tui_views.js viewPlanReviewScreen() in session 10: the three action buttons at the bottom of the PLAN_REVIEW screen are rendered as: `var editBtnStyle = editFocused ? styles.focusedButton() : styles.secondaryButton()` and `var regenBtnStyle = regenFocused ? styles.focusedButton() : styles.secondaryButton()` — BUT `var askClaudeStyle = askClaudeFocused ? styles.focusedButton() : styles.primaryButton()`. The Ask Claude button uses `primaryButton` when NOT focused, unlike the Edit and Regenerate buttons which use `secondaryButton`. Since primaryButton has different border/padding than secondaryButton (root cause: T011), when the user Tab-cycles into or out of the Ask Claude button, the horizontal row shifts — Edit and Regenerate buttons move because the row's total width changes. This is the same T011 root cause as T062 (finalization) and T063 (error resolution) but on the PLAN_REVIEW screen. Fix: Change `askClaudeStyle = askClaudeFocused ? styles.focusedButton() : styles.primaryButton()` to `askClaudeStyle = askClaudeFocused ? styles.focusedButton() : styles.secondaryButton()`. Visually, Ask Claude can still be distinguished by its emoji (🤖) or by wrapping it in a zone mark with a different background. After T011 is resolved (uniform `focusedSecondaryButton` style), this fix becomes redundant — include as part of T011's sweep. File: pr_split_15_tui_views.js viewPlanReviewScreen(). Write a test confirming all three button styles are `secondaryButton`-width when unfocused.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js"

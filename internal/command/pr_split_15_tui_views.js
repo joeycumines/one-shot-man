@@ -170,6 +170,19 @@
                 .foreground(COLORS.textOnColor)
                 .background(COLORS.warning)
                 .padding(0, 2);
+        },
+        // T011: Width-stable focus style for secondaryButton elements.
+        // secondaryButton has roundedBorder() (adds +2 H chars, +2 V lines).
+        // focusedSecondaryButton ALSO has roundedBorder() so the dimensions
+        // remain identical when focus toggles between the two.
+        focusedSecondaryButton: function() {
+            return lipgloss.newStyle()
+                .bold(true)
+                .foreground(COLORS.textOnColor)
+                .background(COLORS.warning)
+                .padding(0, 2)
+                .border(lipgloss.roundedBorder())
+                .borderForeground(COLORS.warning);
         }
     };
 
@@ -938,7 +951,7 @@
         var focusedElemId = (focusElems[focusIdx] || {}).id || '';
         if (currentMode === 'auto' || s.claudeCheckStatus) {
             var testFocused = (focusedElemId === 'test-claude');
-            var testBtnStyle = testFocused ? styles.focusedButton() : styles.secondaryButton();
+            var testBtnStyle = testFocused ? styles.focusedSecondaryButton() : styles.secondaryButton();
             lines.push('  ' + zone.mark('test-claude',
                 testBtnStyle.render(' Test Connection ')));
         }
@@ -1195,10 +1208,10 @@
         // Action buttons.
         var editFocused = (focusIdx === splitCount);
         var regenFocused = (focusIdx === splitCount + 1);
-        var editBtnStyle = editFocused ? styles.focusedButton() : styles.secondaryButton();
-        var regenBtnStyle = regenFocused ? styles.focusedButton() : styles.secondaryButton();
+        var editBtnStyle = editFocused ? styles.focusedSecondaryButton() : styles.secondaryButton();
+        var regenBtnStyle = regenFocused ? styles.focusedSecondaryButton() : styles.secondaryButton();
         var askClaudeFocused = (focusIdx === splitCount + 2);
-        var askClaudeStyle = askClaudeFocused ? styles.focusedButton() : styles.primaryButton();
+        var askClaudeStyle = askClaudeFocused ? styles.focusedSecondaryButton() : styles.secondaryButton();
         lines.push('');
         if (layoutMode(s) === 'compact') {
             lines.push(zone.mark('plan-edit', editBtnStyle.render('Edit \u270f')));
@@ -1332,9 +1345,9 @@
                 var moveFocused = (focusIdx === splitCount);
                 var renameFocused = (focusIdx === splitCount + 1);
                 var mergeFocused = (focusIdx === splitCount + 2);
-                var moveBtnStyle = moveFocused ? styles.focusedButton() : styles.secondaryButton();
-                var renameBtnStyle = renameFocused ? styles.focusedButton() : styles.secondaryButton();
-                var mergeBtnStyle = mergeFocused ? styles.focusedButton() : styles.secondaryButton();
+                var moveBtnStyle = moveFocused ? styles.focusedSecondaryButton() : styles.secondaryButton();
+                var renameBtnStyle = renameFocused ? styles.focusedSecondaryButton() : styles.secondaryButton();
+                var mergeBtnStyle = mergeFocused ? styles.focusedSecondaryButton() : styles.secondaryButton();
                 lines.push('');
                 if (compact) {
                     lines.push(zone.mark('editor-move', moveBtnStyle.render('Move')));
@@ -1722,7 +1735,7 @@
         var compact = layoutMode(s) === 'compact';
         // Focus indices: 0=final-report, 1=final-create-prs, 2=final-done.
         var focusIdx = s.focusIndex || 0;
-        var reportStyle  = (focusIdx === 0) ? styles.focusedButton() : styles.secondaryButton();
+        var reportStyle  = (focusIdx === 0) ? styles.focusedSecondaryButton() : styles.secondaryButton();
         var createStyle  = (focusIdx === 1) ? styles.focusedButton() : styles.primaryButton();
         var doneStyle    = (focusIdx === 2) ? styles.focusedButton() : styles.primaryButton();
         lines.push('');
@@ -1800,7 +1813,7 @@
                 var isCrashFocused = (focusIdx === ci);
                 var crashBtnStyle;
                 if (isCrashFocused) {
-                    crashBtnStyle = styles.focusedButton();
+                    crashBtnStyle = cb.isPrimary ? styles.focusedButton() : styles.focusedSecondaryButton();
                 } else if (cb.isPrimary) {
                     crashBtnStyle = styles.primaryButton();
                 } else {
@@ -1829,7 +1842,7 @@
                 var isFocused = (focusIdx === ri);
                 var btnStyle;
                 if (isFocused) {
-                    btnStyle = styles.focusedButton();
+                    btnStyle = rb.isPrimary ? styles.focusedButton() : styles.focusedSecondaryButton();
                 } else if (rb.isPrimary) {
                     btnStyle = styles.primaryButton();
                 } else {
@@ -1850,7 +1863,7 @@
                 lines.push('');
                 var askClaudeFocused = (focusIdx === resolveButtons.length);
                 var askClaudeStyle = askClaudeFocused
-                    ? styles.focusedButton()
+                    ? styles.focusedSecondaryButton()
                     : styles.secondaryButton();
                 lines.push('  ' + zone.mark('error-ask-claude',
                     askClaudeStyle.render('\ud83e\udd16 Ask Claude')) +

@@ -412,8 +412,12 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			}
 		}()
 
-		// Launch BubbleTea wizard (full-screen TUI). tea.run() blocks until
-		// the user exits the wizard or context is cancelled.
+		// Launch BubbleTea wizard (full-screen TUI). ExecuteScript routes the
+		// launch through the event loop; tea.run() starts BubbleTea in a
+		// goroutine and returns immediately so the event loop stays free for
+		// BubbleTea's RunJSSync callbacks. ExecuteScript automatically calls
+		// WaitForProgram() on the calling goroutine, blocking until the user
+		// exits the wizard or context is cancelled.
 		wizardScript := engine.LoadScriptFromString(
 			"pr-split/wizard-launch",
 			`globalThis.prSplit.startWizard();`)

@@ -257,6 +257,7 @@ type Manager struct {
 	ttyFd        int          // TTY file descriptor (if available)
 	program      *tea.Program // Currently running program (if any)
 	jsRunner     JSRunner     // REQUIRED: thread-safe JS execution via event loop
+	programDone  chan error   // Signals program exit; used by WaitForProgram()
 }
 
 // NewManager creates a new bubbletea manager for an engine instance.
@@ -411,6 +412,30 @@ func (m *Manager) IsTTY() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.isTTY
+}
+
+// WaitForProgram blocks until the currently running BubbleTea program exits.
+// Returns nil if no program is running. This is used by callers that need to
+// block after starting a non-blocking tea.run() — for example, ExecuteScript
+// routes the wizard launch through the event loop (so the Goja VM is only
+// accessed from a single goroutine), and then WaitForProgram keeps the
+// command goroutine alive until BubbleTea exits.
+func (m *Manager) WaitForProgram() error {
+	m.mu.Lock()
+	done := m.programDone
+	m.mu.Unlock()
+
+	if done == nil {
+		return nil
+	}
+
+	err := <-done
+
+	m.mu.Lock()
+	m.programDone = nil
+	m.mu.Unlock()
+
+	return err
 }
 
 // JsToTeaMsg converts a JavaScript message object to a tea.Msg.
@@ -1618,23 +1643,40 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 				programModel = toggleWrapper
 			}
 
-			// Run the program synchronously. This blocks until the BubbleTea
-			// program exits (user quits, error, etc.).
+			// Start the program NON-BLOCKING. BubbleTea runs in a separate
+			// goroutine so this function returns immediately — the Goja event
+			// loop goroutine is NOT blocked and can process RunJSSync
+			// callbacks from BubbleTea's Init/Update/View.
 			//
 			// Threading model:
-			// - This function is called from the goroutine running ExecuteScript()
-			// - BubbleTea runs its event loop on its own goroutine
+			// - ExecuteScript routes scripts through the event loop so ALL
+			//   Goja VM access happens on a single goroutine.
+			// - tea.run() returns immediately; BubbleTea runs on its own goroutines.
 			// - BubbleTea calls Init/Update/View via JSRunner.RunJSSync()
-			// - RunJSSync schedules on the event loop goroutine (separate from here)
-			// - The event loop is free to process requests while we block here
+			//   which schedules on the event loop goroutine.
+			// - ExecuteScript and the REPL command dispatcher automatically
+			//   call WaitForProgram() to block until BubbleTea exits.
 			//
-			// This is NOT a deadlock because:
-			// 1. We're blocking the ExecuteScript goroutine, NOT the event loop
-			// 2. The event loop goroutine is free to process RunJSSync callbacks
-			// 3. BubbleTea's goroutine can call RunJSSync and get responses
-			if err := manager.runProgram(programModel, opts...); err != nil {
-				return createError(ErrCodeProgramFailed, err.Error())
+			// Previously, tea.run() blocked the event loop goroutine, which
+			// prevented async operations (exec.spawn, Promises) from resolving
+			// — causing the "Processing…" hang in pr-split.
+
+			// Reserve the programDone slot synchronously (on the event loop
+			// goroutine) to prevent a TOCTOU race: a rapid second tea.run()
+			// call could otherwise bypass the "already running" guard in
+			// runProgram before the first goroutine sets m.program.
+			done := make(chan error, 1)
+			manager.mu.Lock()
+			if manager.programDone != nil {
+				manager.mu.Unlock()
+				return createError(ErrCodeProgramFailed, "a BubbleTea program is already running")
 			}
+			manager.programDone = done
+			manager.mu.Unlock()
+
+			go func() {
+				done <- manager.runProgram(programModel, opts...)
+			}()
 
 			return goja.Undefined()
 		})

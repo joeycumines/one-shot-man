@@ -90,8 +90,17 @@ func NewRuntimeWithRegistry(ctx context.Context, registry *require.Registry) (*R
 		registry = require.NewRegistry()
 	}
 
-	// Create the Go event loop
-	loop, err := goeventloop.New()
+	// Create the Go event loop.
+	// WithStrictMicrotaskOrdering ensures Promise .then() callbacks
+	// (microtasks) are drained after EVERY macrotask, matching standard
+	// JavaScript event-loop semantics.  Without this, microtasks are
+	// batched and only drain once per tick — which can cause BubbleTea's
+	// poll-based async pipelines to miss state mutations made by Promise
+	// resolution callbacks, leading to indefinite hangs (e.g. the pr-split
+	// "Processing…" freeze).
+	loop, err := goeventloop.New(
+		goeventloop.WithStrictMicrotaskOrdering(true),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create event loop: %w", err)
 	}

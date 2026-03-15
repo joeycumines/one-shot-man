@@ -2,6 +2,7 @@ package scripting
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -467,7 +468,22 @@ func (e *Engine) LoadScriptFromString(name, content string) *Script {
 //   - From within existing script execution context (already on event loop goroutine)
 //
 // For async-safe script loading, use Runtime.LoadScript instead.
-func (e *Engine) ExecuteScript(script *Script) (err error) {
+//
+// All Goja VM access is serialized on the event loop goroutine. This prevents
+// concurrent VM access when a script starts BubbleTea (whose goroutines also
+// use the VM via RunJSSync). Panic recovery and deferred function execution
+// also run on the event loop goroutine for the same reason.
+//
+// Uses executeOnLoop (no timeout) rather than RunOnLoopSync because scripts
+// may perform significant synchronous work (repeated exec.execv calls etc.)
+// that exceeds the 5-second RunOnLoopSync timeout.
+//
+// If the script starts a BubbleTea program via tea.run() (which is
+// non-blocking), ExecuteScript automatically blocks on WaitForProgram()
+// so the calling goroutine stays alive until the TUI exits. This wait
+// happens on the CALLING goroutine (not the event loop), so the event loop
+// remains free for BubbleTea's RunJSSync callbacks.
+func (e *Engine) ExecuteScript(script *Script) error {
 	// Create execution context for this script
 	ctx := &ExecutionContext{
 		engine: e,
@@ -475,67 +491,120 @@ func (e *Engine) ExecuteScript(script *Script) (err error) {
 		name:   script.Name,
 	}
 
-	// Set up the execution context in JavaScript
-	if err = e.setExecutionContext(ctx); err != nil {
-		return fmt.Errorf("failed to set script execution context: %w", err)
-	}
+	if err := e.executeOnLoop(func(vm *goja.Runtime) (execErr error) {
+		// Always run deferred functions on exit (even if a panic occurs).
+		// Runs ON the event loop goroutine so deferred JS callbacks do not
+		// race with any concurrent BubbleTea VM access.
+		defer func() {
+			if dErr := ctx.runDeferred(); dErr != nil {
+				if execErr != nil {
+					execErr = fmt.Errorf("execution error: %w; deferred error: %w", execErr, dErr)
+				} else {
+					execErr = dErr
+				}
+			}
+		}()
 
-	// Always run deferred functions on exit (even if a panic occurs)
-	defer func() {
-		if dErr := ctx.runDeferred(); dErr != nil {
-			if err != nil {
-				err = fmt.Errorf("execution error: %w; deferred error: %w", err, dErr)
-			} else {
-				err = dErr
+		// Recover from panics ON the event loop goroutine where script
+		// execution actually happens. A recover() on the calling goroutine
+		// cannot catch panics that occur here.
+		defer func() {
+			if r := recover(); r != nil {
+				stackTrace := string(debug.Stack())
+				panicErr := &scriptPanicError{
+					Value:      r,
+					StackTrace: stackTrace,
+					ScriptName: script.Name,
+				}
+				execErr = panicErr
+				_, _ = fmt.Fprintf(e.stderr, "\n[PANIC] Script execution panic in %q:\n  %v\n\nStack Trace:\n%s\n", script.Name, r, stackTrace)
+			}
+		}()
+
+		// Set up the execution context in JavaScript
+		if setErr := e.setExecutionContext(ctx); setErr != nil {
+			return fmt.Errorf("failed to set script execution context: %w", setErr)
+		}
+
+		// Execute the script. For file-based scripts, compile with the absolute file path
+		// as the source name. This makes goja_nodejs's getCurrentModulePath() resolve the
+		// correct directory for relative require() calls, while keeping the script in global
+		// scope (no module wrapper) so existing behavior is fully preserved.
+		// For inline/embedded scripts, use RunString as before.
+		if script.Path != "" && script.Path != "<string>" {
+			absPath, absErr := filepath.Abs(script.Path)
+			if absErr != nil {
+				return fmt.Errorf("failed to resolve script path: %w", absErr)
+			}
+			content := script.Content
+			if len(content) >= 2 && content[0] == '#' && content[1] == '!' {
+				content = "//" + content[2:]
+			}
+			prg, compileErr := goja.Compile(absPath, content, false)
+			if compileErr != nil {
+				return fmt.Errorf("script compilation failed: %w", compileErr)
+			}
+			if _, runErr := vm.RunProgram(prg); runErr != nil {
+				return fmt.Errorf("script execution failed: %w", runErr)
+			}
+		} else {
+			if _, runErr := vm.RunString(script.Content); runErr != nil {
+				return fmt.Errorf("script execution failed: %w", runErr)
 			}
 		}
-	}()
+		return nil
+	}); err != nil {
+		return err
+	}
 
-	// Recover from top-level panics so scripts cannot crash the host
-	defer func() {
-		if r := recover(); r != nil {
-			stackTrace := string(debug.Stack())
-			// Create a structured panic error for programmatic consumption
-			panicErr := &scriptPanicError{
-				Value:      r,
-				StackTrace: stackTrace,
-				ScriptName: script.Name,
-			}
-			err = panicErr
-			// Also print to stderr for visibility
-			_, _ = fmt.Fprintf(e.stderr, "\n[PANIC] Script execution panic in %q:\n  %v\n\nStack Trace:\n%s\n", script.Name, r, stackTrace)
-		}
-	}()
-
-	// Execute the script. For file-based scripts, compile with the absolute file path
-	// as the source name. This makes goja_nodejs's getCurrentModulePath() resolve the
-	// correct directory for relative require() calls, while keeping the script in global
-	// scope (no module wrapper) so existing behavior is fully preserved.
-	// For inline/embedded scripts, use RunString as before.
-	if script.Path != "" && script.Path != "<string>" {
-		absPath, absErr := filepath.Abs(script.Path)
-		if absErr != nil {
-			return fmt.Errorf("failed to resolve script path: %w", absErr)
-		}
-		// Strip shebang from content if present (same as our SourceLoader does for require'd files)
-		content := script.Content
-		if len(content) >= 2 && content[0] == '#' && content[1] == '!' {
-			content = "//" + content[2:]
-		}
-		prg, compileErr := goja.Compile(absPath, content, false)
-		if compileErr != nil {
-			return fmt.Errorf("script compilation failed: %w", compileErr)
-		}
-		if _, runErr := e.vm.RunProgram(prg); runErr != nil {
-			return fmt.Errorf("script execution failed: %w", runErr)
-		}
-	} else {
-		if _, runErr := e.vm.RunString(script.Content); runErr != nil {
-			return fmt.Errorf("script execution failed: %w", runErr)
+	// If the script started a BubbleTea program (via non-blocking tea.run()),
+	// block the calling goroutine until it exits. This runs on the CALLING
+	// goroutine, NOT the event loop, so BubbleTea's RunJSSync callbacks
+	// can still be processed. Without this, the caller returns immediately
+	// and the BubbleTea TUI runs orphaned in the background.
+	if mgr := e.bubbleteaManager; mgr != nil {
+		if waitErr := mgr.WaitForProgram(); waitErr != nil {
+			return waitErr
 		}
 	}
 
-	return err
+	return nil
+}
+
+// executeOnLoop submits a function to the event loop and blocks until it
+// completes. Unlike RunOnLoopSync this has NO timeout — scripts can take
+// arbitrarily long to execute.
+//
+// If the caller is already on the event loop goroutine, fn is executed
+// directly to prevent deadlock (Submit + blocking receive would deadlock
+// the single-threaded event loop).
+func (e *Engine) executeOnLoop(fn func(*goja.Runtime) error) error {
+	loop := e.Loop()
+	if loop == nil {
+		return errors.New("event loop not available")
+	}
+
+	// Deadlock prevention: if we are already on the event loop goroutine,
+	// run directly. Submitting work and blocking for the result would
+	// deadlock the single-threaded event loop.
+	eventLoopID := e.runtime.eventLoopGoroutineID.Load()
+	if eventLoopID > 0 && goroutineid.Get() == eventLoopID {
+		return fn(e.vm)
+	}
+
+	errCh := make(chan error, 1)
+	if submitErr := loop.Submit(func() {
+		errCh <- fn(e.vm)
+	}); submitErr != nil {
+		return fmt.Errorf("event loop not running: %w", submitErr)
+	}
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-e.runtime.Done():
+		return errors.New("runtime stopped before script completion")
+	}
 }
 
 // Logger returns the engine's logger.
@@ -546,6 +615,12 @@ func (e *Engine) Logger() *slog.Logger {
 // GetTUIManager returns the TUI manager for this engine.
 func (e *Engine) GetTUIManager() *TUIManager {
 	return e.tuiManager
+}
+
+// BubbleteaManager returns the BubbleTea manager for this engine.
+// Used to call WaitForProgram() after starting a BubbleTea program.
+func (e *Engine) BubbleteaManager() builtin.BubbleteaManager {
+	return e.bubbleteaManager
 }
 
 // GetTerminalReader returns the shared terminal reader.

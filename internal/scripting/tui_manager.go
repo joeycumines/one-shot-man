@@ -657,7 +657,21 @@ func (tm *TUIManager) executeCommand(cmd Command, args []string) (execErr error)
 			return submitErr
 		}
 
-		return <-done
+		if err := <-done; err != nil {
+			return err
+		}
+
+		// If the command started a BubbleTea program (via non-blocking
+		// tea.run()), block the REPL goroutine until it exits. Without
+		// this, the go-prompt REPL resumes immediately while BubbleTea
+		// is still running, fighting for terminal input.
+		if mgr := tm.engine.BubbleteaManager(); mgr != nil {
+			if waitErr := mgr.WaitForProgram(); waitErr != nil {
+				return waitErr
+			}
+		}
+
+		return nil
 	}
 }
 

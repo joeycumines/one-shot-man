@@ -2814,6 +2814,270 @@ func TestScopedVerifyCommand(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// T094: 3-split cumulative chain equivalence integration test
+//
+// Validates that verifyEquivalence and verifyEquivalenceDetailed correctly
+// identify the LAST split in a multi-split plan as the tree to compare
+// against the source branch. This exercises the cumulative stacked chain
+// assumption documented in pr_split_06_verification.js.
+// ---------------------------------------------------------------------------
+
+func TestVerifyEquivalence_ThreeSplitCumulativeChain(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	threeSplitPlan := `{
+		dir: '/tmp/repo',
+		sourceBranch: 'feature/big-refactor',
+		baseBranch: 'main',
+		splits: [
+			{name: 'pr-split/01-models',   files: ['internal/models/user.go', 'internal/models/order.go']},
+			{name: 'pr-split/02-handlers',  files: ['internal/handlers/user.go', 'internal/handlers/order.go']},
+			{name: 'pr-split/03-tests',     files: ['internal/models/user_test.go', 'internal/handlers/user_test.go']}
+		]
+	}`
+
+	t.Run("equivalent_when_last_split_matches_source", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Mock: ONLY the last split's tree hash is compared against source.
+		// Intermediate splits are irrelevant to equivalence.
+		if _, err := evalJS(`
+			_gitResponses['rev-parse pr-split/03-tests^{tree}'] = _gitOk('deadbeefcafe1234567890abcdef1234567890ab\n');
+			_gitResponses['rev-parse feature/big-refactor^{tree}'] = _gitOk('deadbeefcafe1234567890abcdef1234567890ab\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalence(` + threeSplitPlan + `))`)
+		if err != nil {
+			t.Fatalf("evalJS failed: %v", err)
+		}
+		r := parseVerifyEquivResult(t, raw)
+
+		if !r.Equivalent {
+			t.Error("expected equivalent: last split tree matches source tree")
+		}
+		if r.Error != nil {
+			t.Errorf("unexpected error: %q", *r.Error)
+		}
+		if r.SplitTree != "deadbeefcafe1234567890abcdef1234567890ab" {
+			t.Errorf("splitTree: got %q, want deadbeefcafe...", r.SplitTree)
+		}
+		if r.SourceTree != "deadbeefcafe1234567890abcdef1234567890ab" {
+			t.Errorf("sourceTree: got %q, want deadbeefcafe...", r.SourceTree)
+		}
+	})
+
+	t.Run("non_equivalent_when_last_split_differs", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			_gitResponses['rev-parse pr-split/03-tests^{tree}'] = _gitOk('aaaa1111bbbb2222cccc3333dddd4444eeee5555\n');
+			_gitResponses['rev-parse feature/big-refactor^{tree}'] = _gitOk('ffff6666aaaa7777bbbb8888cccc9999dddd0000\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalence(` + threeSplitPlan + `))`)
+		if err != nil {
+			t.Fatalf("evalJS failed: %v", err)
+		}
+		r := parseVerifyEquivResult(t, raw)
+
+		if r.Equivalent {
+			t.Error("expected non-equivalent: last split tree differs from source")
+		}
+		if r.Error != nil {
+			t.Errorf("unexpected error: %q", *r.Error)
+		}
+		if r.SplitTree != "aaaa1111bbbb2222cccc3333dddd4444eeee5555" {
+			t.Errorf("splitTree: got %q", r.SplitTree)
+		}
+		if r.SourceTree != "ffff6666aaaa7777bbbb8888cccc9999dddd0000" {
+			t.Errorf("sourceTree: got %q", r.SourceTree)
+		}
+	})
+
+	t.Run("only_last_split_is_examined", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// We deliberately provide NO mock for split/01 or split/02 rev-parse.
+		// If the code ever tries to look up intermediate splits, the mock
+		// will return an error via the default handler. Only the last split
+		// (split/03-tests) should be queried.
+		if _, err := evalJS(`
+			_gitResponses['rev-parse pr-split/03-tests^{tree}'] = _gitOk('abc123def456\n');
+			_gitResponses['rev-parse feature/big-refactor^{tree}'] = _gitOk('abc123def456\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalence(` + threeSplitPlan + `))`)
+		if err != nil {
+			t.Fatalf("evalJS failed: %v", err)
+		}
+		r := parseVerifyEquivResult(t, raw)
+
+		if !r.Equivalent {
+			t.Error("expected equivalent — only last split should be examined")
+		}
+		if r.Error != nil {
+			t.Errorf("unexpected error: %q", *r.Error)
+		}
+
+		// Inspect git mock calls to confirm only last split was queried.
+		callsRaw, err := evalJS(`JSON.stringify(globalThis._gitCalls)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		callsStr, _ := callsRaw.(string)
+		if strings.Contains(callsStr, "pr-split/01-models") {
+			t.Error("verifyEquivalence should NOT query intermediate split pr-split/01-models")
+		}
+		if strings.Contains(callsStr, "pr-split/02-handlers") {
+			t.Error("verifyEquivalence should NOT query intermediate split pr-split/02-handlers")
+		}
+		if !strings.Contains(callsStr, "pr-split/03-tests") {
+			t.Error("verifyEquivalence MUST query the last split pr-split/03-tests")
+		}
+	})
+}
+
+func TestVerifyEquivalenceDetailed_ThreeSplitDiffInfo(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(gitMockSetupJS()); err != nil {
+		t.Fatalf("failed to install git mock: %v", err)
+	}
+
+	threeSplitPlan := `{
+		dir: '/tmp/repo',
+		sourceBranch: 'feature/big-refactor',
+		baseBranch: 'main',
+		splits: [
+			{name: 'pr-split/01-models',   files: ['internal/models/user.go', 'internal/models/order.go']},
+			{name: 'pr-split/02-handlers',  files: ['internal/handlers/user.go']},
+			{name: 'pr-split/03-tests',     files: ['internal/models/user_test.go', 'internal/handlers/user_test.go']}
+		]
+	}`
+
+	t.Run("detailed_equivalent_returns_empty_diff", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			_gitResponses['rev-parse pr-split/03-tests^{tree}'] = _gitOk('matchhash123\n');
+			_gitResponses['rev-parse feature/big-refactor^{tree}'] = _gitOk('matchhash123\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed(` + threeSplitPlan + `))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifyEquivResult(t, raw)
+
+		if !r.Equivalent {
+			t.Error("expected equivalent")
+		}
+		if r.DiffSummary != "" {
+			t.Errorf("expected empty diffSummary, got %q", r.DiffSummary)
+		}
+		if len(r.DiffFiles) != 0 {
+			t.Errorf("expected empty diffFiles, got %v", r.DiffFiles)
+		}
+	})
+
+	t.Run("detailed_non_equivalent_reports_multi_file_diff", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`
+			_gitResponses['rev-parse pr-split/03-tests^{tree}'] = _gitOk('aaa\n');
+			_gitResponses['rev-parse feature/big-refactor^{tree}'] = _gitOk('bbb\n');
+			_gitResponses['diff --stat pr-split/03-tests feature/big-refactor'] =
+				_gitOk(' internal/handlers/order.go | 12 ++++++------\n internal/models/order.go   |  5 ++---\n 2 files changed, 9 insertions(+), 8 deletions(-)\n');
+			_gitResponses['diff --name-only pr-split/03-tests feature/big-refactor'] =
+				_gitOk('internal/handlers/order.go\ninternal/models/order.go\n');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed(` + threeSplitPlan + `))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifyEquivResult(t, raw)
+
+		if r.Equivalent {
+			t.Error("expected non-equivalent")
+		}
+		if r.Error != nil {
+			t.Errorf("unexpected error: %q", *r.Error)
+		}
+
+		// Verify diff details
+		if r.DiffSummary == "" {
+			t.Error("expected non-empty diffSummary")
+		}
+		if !strings.Contains(r.DiffSummary, "2 files changed") {
+			t.Errorf("diffSummary should mention '2 files changed', got %q", r.DiffSummary)
+		}
+
+		wantFiles := []string{"internal/handlers/order.go", "internal/models/order.go"}
+		if len(r.DiffFiles) != len(wantFiles) {
+			t.Fatalf("diffFiles: got %v, want %v", r.DiffFiles, wantFiles)
+		}
+		for i, want := range wantFiles {
+			if r.DiffFiles[i] != want {
+				t.Errorf("diffFiles[%d]: got %q, want %q", i, r.DiffFiles[i], want)
+			}
+		}
+	})
+
+	t.Run("detailed_diff_failure_gracefully_returns_empty", func(t *testing.T) {
+		if _, err := evalJS(resetGitMockJS); err != nil {
+			t.Fatal(err)
+		}
+		// Trees differ but diff commands fail.
+		if _, err := evalJS(`
+			_gitResponses['rev-parse pr-split/03-tests^{tree}'] = _gitOk('xxx\n');
+			_gitResponses['rev-parse feature/big-refactor^{tree}'] = _gitOk('yyy\n');
+			_gitResponses['diff --stat pr-split/03-tests feature/big-refactor'] = _gitFail('fatal: bad revision');
+			_gitResponses['diff --name-only pr-split/03-tests feature/big-refactor'] = _gitFail('fatal: bad revision');
+		`); err != nil {
+			t.Fatal(err)
+		}
+
+		raw, err := evalJS(`JSON.stringify(globalThis.prSplit.verifyEquivalenceDetailed(` + threeSplitPlan + `))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := parseVerifyEquivResult(t, raw)
+
+		if r.Equivalent {
+			t.Error("expected non-equivalent")
+		}
+		if r.DiffSummary != "" {
+			t.Errorf("expected empty diffSummary on diff failure, got %q", r.DiffSummary)
+		}
+		if len(r.DiffFiles) != 0 {
+			t.Errorf("expected empty diffFiles on diff failure, got %v", r.DiffFiles)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
 // T73: buildReport null caches and populated caches
 // ---------------------------------------------------------------------------
 

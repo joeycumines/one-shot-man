@@ -216,7 +216,19 @@
     }
 
     // -----------------------------------------------------------------------
-    //  verifyEquivalence — tree-SHA comparison between splits and source
+    //  verifyEquivalence — tree-SHA comparison of last split vs source
+    //
+    //  DESIGN NOTE (T094): This check relies on the CUMULATIVE CHAIN model.
+    //  executeSplit/executeSplitAsync in pr_split_05_execution.js builds
+    //  branches as a stacked chain: each split inherits ALL content from
+    //  the previous split (via `currentBase = split.name`). The last split
+    //  is therefore the accumulation of baseBranch + ALL changed files
+    //  (each checked out from sourceBranch). Comparing its tree SHA against
+    //  sourceBranch^{tree} is a bit-perfect integrity check.
+    //
+    //  If the execution model ever changes to INDEPENDENT branches (each
+    //  starting from baseBranch), this check would need redesign — likely
+    //  a combined merge or tree-walk approach.
     // -----------------------------------------------------------------------
     function verifyEquivalence(plan) {
         if (!plan) {

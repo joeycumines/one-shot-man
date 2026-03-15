@@ -2108,6 +2108,20 @@
             }
             case 'ERROR_RESOLUTION':
                 return handleErrorResolutionChoice(s, 'auto-resolve');
+            case 'BRANCH_BUILDING':
+                // T121: Safety net — if the user reaches BRANCH_BUILDING
+                // (e.g., after automated split completes), advance to
+                // EQUIV_CHECK so they can review equivalence results.
+                s.isProcessing = true;
+                return startEquivCheck(s);
+            case 'EQUIV_CHECK':
+                // T121: When equivalence results are already cached (automated
+                // path) or the async check completed, allow manual advance.
+                if (s.equivalenceResult && !s.isProcessing) {
+                    try { s.wizard.transition('FINALIZATION'); } catch (te) { /* already there */ }
+                    s.wizardState = s.wizard.current;
+                }
+                return [s, null];
             case 'FINALIZATION':
                 handleFinalizationState(s.wizard, 'done');
                 s.wizardState = 'DONE';
@@ -4199,10 +4213,12 @@
      * formatClaudeResponse — formats structured MCP tool response for display.
      */
     function formatClaudeResponse(toolName, data) {
-        if (toolName === 'reportSplitPlan' && data && data.splits) {
-            var parts = ['Revised plan (' + data.splits.length + ' splits):'];
-            for (var i = 0; i < data.splits.length; i++) {
-                var sp = data.splits[i];
+        // T122: MCP schema uses 'stages'; accept both field names.
+        var splits = (toolName === 'reportSplitPlan' && data) ? (data.stages || data.splits) : null;
+        if (splits && splits.length > 0) {
+            var parts = ['Revised plan (' + splits.length + ' splits):'];
+            for (var i = 0; i < splits.length; i++) {
+                var sp = splits[i];
                 parts.push('  ' + (i + 1) + '. ' + (sp.name || 'split-' + i) +
                     ' (' + (sp.files ? sp.files.length : 0) + ' files)');
             }
@@ -4218,13 +4234,17 @@
      * processClaudeConvoResult — applies structured result to wizard state.
      */
     function processClaudeConvoResult(convo, toolName, data) {
-        if (toolName === 'reportSplitPlan' && data && data.splits) {
+        // T122: MCP schema uses 'stages'; accept both field names.
+        var splits = (toolName === 'reportSplitPlan' && data) ? (data.stages || data.splits) : null;
+        if (splits) {
             // Update the plan cache with the revised plan from Claude.
             if (st.planCache) {
-                st.planCache.splits = data.splits;
+                st.planCache.splits = splits;
                 if (data.baseBranch) {
                     st.planCache.baseBranch = data.baseBranch;
                 }
+                // Mark that plan was revised so TUI can reset selectedSplitIdx.
+                st.planRevised = true;
             }
         }
         // reportResolution results are handled by the existing error resolution flow.
@@ -4240,6 +4260,12 @@
         // If still sending, keep polling.
         if (convo.sending) {
             return [s, tea.tick(200, 'claude-convo-poll')];
+        }
+
+        // T122: If plan was revised by Claude, reset split selection.
+        if (st.planRevised) {
+            st.planRevised = false;
+            s.selectedSplitIdx = 0;
         }
 
         // Async operation completed. UI will update on next render.

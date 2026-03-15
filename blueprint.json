@@ -332,7 +332,7 @@
       "id": "T028",
       "title": "Global chrome: fix side effects in view functions (auto-dismiss logic must move to update)",
       "description": "BUG CATEGORY: Pure view functions (renderStatusBar, renderClaudePane, etc.) contain state mutation (side effects). This violates the elm-architecture principle and can cause subtle bugs where the view creates phantom state transitions. CONFIRMED instances: (1) renderStatusBar (pr_split_15_tui_views.js ~line 480): sets s.claudeAutoAttachNotif = '' and s.claudeAutoAttachNotifAt = 0 INSIDE the view to auto-dismiss the Claude auto-attach notification. This means the notification is cleared as a side-effect of rendering — if View is called in a test or inspection context the notification will vanish without a user event. Fix: In the _updateFn handler that SETS s.claudeAutoAttachNotif, also dispatch a tea.tick(5000, 'dismiss-attach-notif'). Then add a handler in _updateFn: if (msg.type === 'dismiss-attach-notif') { s.claudeAutoAttachNotif = ''; s.claudeAutoAttachNotifAt = 0; }. Remove all such mutations from renderStatusBar. (2) _viewFn (pr_split_16_tui_core.js ~lines 1005-1035): sets s._isNavNextFocused and calls s.vp.setWidth/setHeight — see T120 for the specific fix. (3) viewReportOverlay (pr_split_15_tui_views.js ~lines 1938-1950): calls s.reportVp.setWidth(), s.reportVp.setHeight(), s.reportSb.setViewportHeight(), s.reportSb.setContentHeight(), s.reportSb.setYOffset() — these five calls mutate the report viewport and scrollbar in every render; see T072 and T080 for specific fixes. Audit ALL render functions for state mutations — search for any assignment to `s.` inside any function passed to viewForState or any function named render*/view*. Required deliverable: (4) Create a tea.tick('notification-dismiss') and handle it in _updateFn to auto-dismiss after 5s. (5) Write a test helper that calls every view function with a frozen (Object.freeze) state copy and asserts no TypeError is thrown — this catches all remaining view mutations.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -812,7 +812,7 @@
       "id": "T072",
       "title": "Fix side effects in viewReportOverlay: scrollbar update must move to tick handler",
       "description": "CONFIRMED BUG (sessions 3 and 11): viewReportOverlay in pr_split_15_tui_views.js calls FIVE state-mutating methods on every render: (1) s.reportVp.setWidth(overlayW - 2), (2) s.reportVp.setHeight(overlayH - 6), (3) s.reportSb.setViewportHeight(overlayH - 6), (4) s.reportSb.setContentHeight(s.reportVp.totalLineCount()), (5) s.reportSb.setYOffset(s.reportVp.YOffset). These are all state mutations inside a BubbleTea view function and violate the elm-architecture principle. Concrete impact: (a) Between two BubbleTea render passes (e.g., during resize handling), calling viewReportOverlay mutates reportSb's content height — if called for snapshot testing, the scrollbar model drifts. (b) s.reportSb.setYOffset inside view can silently reset scroll position if the viewport hasn't scrolled yet. Fix: (1) Move dimension updates to _updateFn: when msg.type === 'open-report' fires, initialise s.reportVp.setWidth/setHeight and s.reportSb.setViewportHeight/setContentHeight. (2) On WindowSize: update if s.showingReport is true. (3) On 'report-scroll' (j/k presses), update only s.reportSb.setYOffset after viewport scrolls. (4) viewReportOverlay must become read-only: only call s.reportVp.view() and s.reportSb.view() — zero writes. (5) Write a test: freeze `s` before calling viewReportOverlay, assert no TypeError (no mutations). Note: T080 overlaps with this task (same function, viewport dimension mutations); these two tasks can be implemented as a single commit.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -903,7 +903,7 @@
       "id": "T080",
       "title": "viewReportOverlay mutates viewport and scrollbar dimensions inside view function",
       "description": "CONFIRMED by reading pr_split_15_tui_views.js viewReportOverlay() in session 11 (same confirmation as T072 — they point to the same five-call mutation in the same function). For full detail of the five mutating calls (s.reportVp.setWidth, s.reportVp.setHeight, s.reportSb.setViewportHeight, s.reportSb.setContentHeight, s.reportSb.setYOffset), see T072. T072 and T080 SHOULD BE IMPLEMENTED AS A SINGLE COMMIT since they both address the same view function. This task serves as the 'viewport dimension' sub-task of that combined fix, while T072 is the 'scrollbar sync tick' sub-task. Fix (viewport-specific): (1) Move s.reportVp.setWidth(overlayW - 2) and s.reportVp.setHeight(overlayH - 6) to the update handler: when msg.type === 'open-report' fires AND on WindowSize events (if showingReport). (2) The overlayW/overlayH computation (derived from s.width, s.height, and border margins) should be a pure helper: computeOverlayDimensions(s) → {overlayW, overlayH, contentW, contentH}. This helper is pure (no mutations) and can be called from both _updateFn and viewReportOverlay for layout purposes. (3) viewReportOverlay reads s.reportVp.view() only — no setWidth/setHeight. (4) On terminal resize during open report: _updateFn WindowSize handler calls computeOverlayDimensions + updates reportVp + reportSb. (5) Write test: confirm viewReportOverlay output is deterministic across two calls with frozen state.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -1356,7 +1356,7 @@
       "id": "T120",
       "title": "_viewFn (BubbleTea View) mutates s._isNavNextFocused and calls s.vp.setWidth/setHeight — state mutations inside pure View function",
       "description": "CONFIRMED by reading pr_split_16_tui_core.js _viewFn (createWizardModel closure) in session 10, lines ~1005-1035. The BubbleTea View function (`_viewFn`) which must be a pure function performs two categories of state mutation: (1) Derived state: `s._isNavNextFocused = false; ... s._isNavNextFocused = true;` — this computes the nav-next focus flag BEFORE calling renderNavBar(s) so that renderNavBar can read it from `s`. This is a benign derived value, but mutating `s` inside the View violates BubbleTea's model immutability contract. (2) Viewport resize: `s.vp.setWidth(w); s.vp.setHeight(vpHeight);` — this resizes the main content viewport (a bubbletea.Viewport component) inside the View function. The Viewport component itself tracks scroll state; resizing it during View can cause double-render artifacts if BubbleTea calls View multiple times or if scroll position is adjusted as a side effect. This is the same pattern as T080 (viewReportOverlay) and T028 (renderStatusBar) but on the central layout viewport. Fix: (1) REMOVE `s._isNavNextFocused` mutation from _viewFn. Instead, compute the flag locally in renderNavBar: `var focusElems = getFocusElements(s); var isNavNextFocused = (focusElems.length > 0 && (s.focusIndex||0) === focusElems.length-1 && focusElems[focusElems.length-1].type==='nav'); var nextBtnStyle = isNavNextFocused ? styles.focusedButton() : styles.primaryButton()`. (2) MOVE `s.vp.setWidth/setHeight` calls to the WindowResize handler in `_updateFn`: `if (msg.type === 'WindowSize') { s._viewportW = msg.width; s._viewportH = msg.height; ... ; if (s.vp) { s.vp.setWidth(vpW); s.vp.setHeight(vpH); } }`. Cache last-rendered dimensions in `s._lastW` and `s._lastH`. (3) Write a test verifying _viewFn can be called twice consecutively without changing the model's focusIndex or viewport dimensions.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_16_tui_core.js",
@@ -1668,9 +1668,9 @@
     "body_1_verify": 20,
     "body_2_ui": 51,
     "body_3_expand": 52,
-    "completed": 0,
+    "completed": 4,
     "in_progress": 0,
-    "not_started": 123,
+    "not_started": 119,
     "refinement_sessions": 13,
     "last_refined": "2026-03-15 (session 13 FINAL — corrected total: T000 was always present (body:1, Claude convo anchor-stability rearchitecture task) but miscounted in earlier sessions. FINAL BODY COUNTS verified by grep: body_1=20 (T000-T010 + T058,T059,T078,T093-T095,T111,T113,T115), body_2=51, body_3=52, total=123. T121 corrected from body:1 to body:2. Added task_relationships section with 21 dependency pairs and 13 commit bundles. Deepened T028/T072/T080/T120 descriptions with exact mutation call sites. Stripped stale 'NOT been fully read' prefaces from T023/T046/T047/T049. WIP.md FILES READ STATUS: all 17 JS chunks COMPLETE. WIP.md body:3 list corrected to include T110.)"
   }

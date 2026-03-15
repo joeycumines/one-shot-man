@@ -798,6 +798,8 @@
             }
 
             var equiv = await verifyEquivalence(plan);
+            // T121: Propagate equivalence result to report.
+            report.equivalence = equiv;
             if (!equiv.equivalent) {
                 report.error = 'tree hash mismatch after heuristic split';
             }
@@ -1938,6 +1940,12 @@
             var result = await verifyEquivalence(plan);
             return { error: result.equivalent ? null : 'tree hash mismatch', result: result };
         });
+
+        // T121: Propagate equivalence result to report so the TUI can
+        // transition from BRANCH_BUILDING → EQUIV_CHECK → FINALIZATION.
+        if (equivResult && equivResult.result) {
+            report.equivalence = equivResult.result;
+        }
 
         // Assess independence.
         report.independencePairs = assessIndependence(plan, classification.classification || {});

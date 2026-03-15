@@ -154,6 +154,7 @@ func TestChunk08_ResolveConflicts_MockStrategy_AllPass(t *testing.T) {
 			var origGitExec = globalThis.prSplit._gitExec;
 			var origGitExecAsync = globalThis.prSplit._gitExecAsync;
 			var origExecv = globalThis.prSplit._modules.exec.execv;
+			var origSpawn = globalThis.prSplit._modules.exec.spawn;
 
 			var gitCalls = [];
 			var gitMock = function(dir, args) {
@@ -174,6 +175,19 @@ func TestChunk08_ResolveConflicts_MockStrategy_AllPass(t *testing.T) {
 			globalThis.prSplit._modules.exec.execv = function(args) {
 				return { code: 0, stdout: 'ok\n', stderr: '' };
 			};
+			// Mock exec.spawn to delegate to the mocked exec.execv (T078: shellExecAsync uses spawn).
+			globalThis.prSplit._modules.exec.spawn = function(cmd, args) {
+				var fullArgv = [cmd].concat(args || []);
+				var r = globalThis.prSplit._modules.exec.execv(fullArgv);
+				var sRead = false, eRead = false;
+				return {
+					stdout: { read: function() { if (!sRead) { sRead = true; if (r.stdout) return Promise.resolve({done:false,value:r.stdout}); } return Promise.resolve({done:true}); } },
+					stderr: { read: function() { if (!eRead) { eRead = true; if (r.stderr) return Promise.resolve({done:false,value:r.stderr}); } return Promise.resolve({done:true}); } },
+					wait: function() { return Promise.resolve({code: r.code}); },
+					isAlive: function() { return false; },
+					close: function() {}
+				};
+			};
 
 			var plan = {
 				dir: '.',
@@ -189,6 +203,7 @@ func TestChunk08_ResolveConflicts_MockStrategy_AllPass(t *testing.T) {
 			globalThis.prSplit._gitExec = origGitExec;
 			globalThis.prSplit._gitExecAsync = origGitExecAsync;
 			globalThis.prSplit._modules.exec.execv = origExecv;
+			globalThis.prSplit._modules.exec.spawn = origSpawn;
 
 			return JSON.stringify({
 				fixedCount: out ? out.fixed.length : -1,
@@ -234,6 +249,7 @@ func TestChunk08_ResolveConflicts_MockStrategy_FixApplied(t *testing.T) {
 			var origGitExec = globalThis.prSplit._gitExec;
 			var origGitExecAsync = globalThis.prSplit._gitExecAsync;
 			var origExecv = globalThis.prSplit._modules.exec.execv;
+			var origSpawn = globalThis.prSplit._modules.exec.spawn;
 
 			var verifyCallCount = 0;
 			var gitMock = function(dir, args) {
@@ -257,6 +273,19 @@ func TestChunk08_ResolveConflicts_MockStrategy_FixApplied(t *testing.T) {
 				}
 				return { code: 0, stdout: 'ok\n', stderr: '' };
 			};
+			// Mock exec.spawn to delegate to the mocked exec.execv (T078: shellExecAsync uses spawn).
+			globalThis.prSplit._modules.exec.spawn = function(cmd, args) {
+				var fullArgv = [cmd].concat(args || []);
+				var r = globalThis.prSplit._modules.exec.execv(fullArgv);
+				var sRead = false, eRead = false;
+				return {
+					stdout: { read: function() { if (!sRead) { sRead = true; if (r.stdout) return Promise.resolve({done:false,value:r.stdout}); } return Promise.resolve({done:true}); } },
+					stderr: { read: function() { if (!eRead) { eRead = true; if (r.stderr) return Promise.resolve({done:false,value:r.stderr}); } return Promise.resolve({done:true}); } },
+					wait: function() { return Promise.resolve({code: r.code}); },
+					isAlive: function() { return false; },
+					close: function() {}
+				};
+			};
 
 			var customStrategy = {
 				name: 'test-fixer',
@@ -275,6 +304,7 @@ func TestChunk08_ResolveConflicts_MockStrategy_FixApplied(t *testing.T) {
 			globalThis.prSplit._gitExec = origGitExec;
 			globalThis.prSplit._gitExecAsync = origGitExecAsync;
 			globalThis.prSplit._modules.exec.execv = origExecv;
+			globalThis.prSplit._modules.exec.spawn = origSpawn;
 
 			return JSON.stringify({
 				fixedCount: out ? out.fixed.length : -1,
@@ -319,6 +349,7 @@ func TestChunk08_ResolveConflicts_RetryBudgetExhausted(t *testing.T) {
 			var origGitExec = globalThis.prSplit._gitExec;
 			var origGitExecAsync = globalThis.prSplit._gitExecAsync;
 			var origExecv = globalThis.prSplit._modules.exec.execv;
+			var origSpawn = globalThis.prSplit._modules.exec.spawn;
 
 			var gitMock = function(dir, args) {
 				if (args[0] === 'rev-parse' && args[1] === '--abbrev-ref') {
@@ -336,6 +367,19 @@ func TestChunk08_ResolveConflicts_RetryBudgetExhausted(t *testing.T) {
 			globalThis.prSplit._gitExecAsync = gitMock;
 			globalThis.prSplit._modules.exec.execv = function(args) {
 				return { code: 1, stdout: '', stderr: 'test failed' };
+			};
+			// Mock exec.spawn to delegate to the mocked exec.execv (T078: shellExecAsync uses spawn).
+			globalThis.prSplit._modules.exec.spawn = function(cmd, args) {
+				var fullArgv = [cmd].concat(args || []);
+				var r = globalThis.prSplit._modules.exec.execv(fullArgv);
+				var sRead = false, eRead = false;
+				return {
+					stdout: { read: function() { if (!sRead) { sRead = true; if (r.stdout) return Promise.resolve({done:false,value:r.stdout}); } return Promise.resolve({done:true}); } },
+					stderr: { read: function() { if (!eRead) { eRead = true; if (r.stderr) return Promise.resolve({done:false,value:r.stderr}); } return Promise.resolve({done:true}); } },
+					wait: function() { return Promise.resolve({code: r.code}); },
+					isAlive: function() { return false; },
+					close: function() {}
+				};
 			};
 
 			var failStrategy = {
@@ -362,6 +406,7 @@ func TestChunk08_ResolveConflicts_RetryBudgetExhausted(t *testing.T) {
 			globalThis.prSplit._gitExec = origGitExec;
 			globalThis.prSplit._gitExecAsync = origGitExecAsync;
 			globalThis.prSplit._modules.exec.execv = origExecv;
+			globalThis.prSplit._modules.exec.spawn = origSpawn;
 
 			return JSON.stringify({
 				fixedCount: out ? out.fixed.length : -1,

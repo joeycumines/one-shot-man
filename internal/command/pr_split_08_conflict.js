@@ -23,11 +23,11 @@
                 return exec.execv(['test', '-f', path]).code === 0;
             },
             fix: async function(dir) {
-                var exec = prSplit._modules.exec;
+                var shellExecAsync = prSplit._shellExecAsync;
                 var gitExecAsync = prSplit._gitExecAsync;
                 var shellQuote = prSplit._shellQuote;
-                var tidyResult = exec.execv(['sh', '-c',
-                    'cd ' + shellQuote(dir) + ' && go mod tidy']);
+                var tidyResult = await shellExecAsync(
+                    'cd ' + shellQuote(dir) + ' && go mod tidy');
                 if (tidyResult.code !== 0) {
                     return { fixed: false, error: 'go mod tidy failed: ' + tidyResult.stderr.trim() };
                 }
@@ -56,11 +56,11 @@
                 return exec.execv(['test', '-f', path]).code === 0;
             },
             fix: async function(dir) {
-                var exec = prSplit._modules.exec;
+                var shellExecAsync = prSplit._shellExecAsync;
                 var gitExecAsync = prSplit._gitExecAsync;
                 var shellQuote = prSplit._shellQuote;
-                var dlResult = exec.execv(['sh', '-c',
-                    'cd ' + shellQuote(dir) + ' && go mod download']);
+                var dlResult = await shellExecAsync(
+                    'cd ' + shellQuote(dir) + ' && go mod download');
                 if (dlResult.code !== 0) {
                     return { fixed: false, error: 'go mod download failed: ' + dlResult.stderr.trim() };
                 }
@@ -88,14 +88,14 @@
                        verifyOutput.indexOf('could not import') >= 0;
             },
             fix: async function(dir) {
-                var exec = prSplit._modules.exec;
+                var shellExecAsync = prSplit._shellExecAsync;
                 var gitExecAsync = prSplit._gitExecAsync;
                 var shellQuote = prSplit._shellQuote;
                 var gitAddChangedFilesAsync = prSplit._gitAddChangedFilesAsync;
-                var which = exec.execv(['which', 'goimports']);
+                var which = await shellExecAsync('which goimports');
                 if (which.code === 0) {
-                    var result = exec.execv(['sh', '-c',
-                        'cd ' + shellQuote(dir) + ' && find . -name "*.go" -exec goimports -w {} +']);
+                    var result = await shellExecAsync(
+                        'cd ' + shellQuote(dir) + ' && find . -name "*.go" -exec goimports -w {} +');
                     if (result.code !== 0) {
                         return { fixed: false, error: 'goimports failed: ' + result.stderr.trim() };
                     }
@@ -124,12 +124,12 @@
                 return exec.execv(['test', '-f', path]).code === 0;
             },
             fix: async function(dir) {
-                var exec = prSplit._modules.exec;
+                var shellExecAsync = prSplit._shellExecAsync;
                 var gitExecAsync = prSplit._gitExecAsync;
                 var shellQuote = prSplit._shellQuote;
                 var gitAddChangedFilesAsync = prSplit._gitAddChangedFilesAsync;
-                var result = exec.execv(['sh', '-c',
-                    'cd ' + shellQuote(dir) + ' && npm install --no-audit --no-fund 2>&1']);
+                var result = await shellExecAsync(
+                    'cd ' + shellQuote(dir) + ' && npm install --no-audit --no-fund 2>&1');
                 if (result.code !== 0) {
                     return { fixed: false, error: 'npm install failed: ' + (result.stderr || result.stdout || '').trim() };
                 }
@@ -163,17 +163,17 @@
                 return goGen.code === 0 && goGen.stdout.trim() !== '';
             },
             fix: async function(dir) {
-                var exec = prSplit._modules.exec;
+                var shellExecAsync = prSplit._shellExecAsync;
                 var gitExecAsync = prSplit._gitExecAsync;
                 var shellQuote = prSplit._shellQuote;
                 var gitAddChangedFilesAsync = prSplit._gitAddChangedFilesAsync;
-                var hasMakeTarget = exec.execv(['sh', '-c',
-                    'cd ' + shellQuote(dir) + ' && grep -q "^generate:" Makefile 2>/dev/null']).code === 0;
+                var hasMakeTarget = (await shellExecAsync(
+                    'cd ' + shellQuote(dir) + ' && grep -q "^generate:" Makefile 2>/dev/null')).code === 0;
                 var result;
                 if (hasMakeTarget) {
-                    result = exec.execv(['sh', '-c', 'cd ' + shellQuote(dir) + ' && make generate']);
+                    result = await shellExecAsync('cd ' + shellQuote(dir) + ' && make generate');
                 } else {
-                    result = exec.execv(['sh', '-c', 'cd ' + shellQuote(dir) + ' && go generate ./...']);
+                    result = await shellExecAsync('cd ' + shellQuote(dir) + ' && go generate ./...');
                 }
                 if (result.code !== 0) {
                     return { fixed: false, error: 'generate failed: ' + result.stderr.trim() };
@@ -245,8 +245,8 @@
                 var gitExecAsync = prSplit._gitExecAsync;
                 var gitAddChangedFilesAsync = prSplit._gitAddChangedFilesAsync;
                 var shellQuote = prSplit._shellQuote;
+                var shellExecAsync = prSplit._shellExecAsync;
                 var osmod = prSplit._modules.osmod;
-                var exec = prSplit._modules.exec;
                 var AUTOMATED_DEFAULTS = prSplit.AUTOMATED_DEFAULTS || {};
 
                 if (!claudeExecutor || !claudeExecutor.handle) {
@@ -296,8 +296,8 @@
                 }
                 if (resolution.commands && resolution.commands.length > 0) {
                     for (var c = 0; c < resolution.commands.length; c++) {
-                        // Run commands in the worktree directory.
-                        exec.execv(['sh', '-c', 'cd ' + shellQuote(dir) + ' && ' + resolution.commands[c]]);
+                        // Run commands in the worktree directory (async — T078: does not block event loop).
+                        await shellExecAsync('cd ' + shellQuote(dir) + ' && ' + resolution.commands[c]);
                     }
                 }
                 var status = await gitExecAsync(dir, ['status', '--porcelain']);
@@ -318,8 +318,8 @@
     // Returns: {fixed: [], errors: [], totalRetries, branchRetries, reSplitNeeded, reSplitFiles, reSplitReason}
     prSplit.resolveConflicts = async function resolveConflicts(plan, options) {
         var gitExecAsync = prSplit._gitExecAsync;
+        var shellExecAsync = prSplit._shellExecAsync;
         var resolveDir = prSplit._resolveDir;
-        var exec = prSplit._modules.exec;
         var shellQuote = prSplit._shellQuote;
         var isCancelled = prSplit.isCancelled;
         var runtime = prSplit.runtime;
@@ -397,7 +397,7 @@
                 continue;
             }
 
-            var verifyResult = exec.execv(['sh', '-c', 'cd ' + shellQuote(worktreeDir) + ' && ' + verifyCommand]);
+            var verifyResult = await shellExecAsync('cd ' + shellQuote(worktreeDir) + ' && ' + verifyCommand);
             if (verifyResult.code === 0) {
                 await gitExecAsync(dir, ['worktree', 'remove', '--force', worktreeDir]);
                 continue;
@@ -437,7 +437,7 @@
                         continue;
                     }
 
-                    var reVerify = exec.execv(['sh', '-c', 'cd ' + shellQuote(worktreeDir) + ' && ' + verifyCommand]);
+                    var reVerify = await shellExecAsync('cd ' + shellQuote(worktreeDir) + ' && ' + verifyCommand);
                     if (reVerify.code === 0) {
                         fixed.push({ name: split.name, strategy: strategy.name });
                         resolved = true;

@@ -320,6 +320,75 @@
         };
     }
 
+    // shellExecAsync runs an arbitrary shell command asynchronously via exec.spawn('sh', ['-c', ...]).
+    // Returns a Promise<{stdout: string, stderr: string, code: number, error: boolean, message: string}>.
+    // Unlike exec.execv(['sh', '-c', ...]) (blocking), this does NOT freeze the event loop,
+    // allowing BubbleTea to continue rendering and processing events.
+    //
+    // T078/T109: Generic async shell execution for conflict resolution strategies,
+    // verify commands, and resolution commands. Follows the same readAll + Promise.all
+    // pattern as gitExecAsync for consistent behavior.
+    //
+    // Options:
+    //   outputFn(line) — callback to stream each output line (for TUI Output tab)
+    async function shellExecAsync(command, options) {
+        options = options || {};
+        var outputFn = (options && typeof options.outputFn === 'function') ? options.outputFn : null;
+
+        // Fall back to global output capture function (same as gitExecAsync).
+        if (!outputFn && typeof prSplit._outputCaptureFn === 'function') {
+            outputFn = prSplit._outputCaptureFn;
+        }
+
+        // Emit command header to output callback.
+        if (outputFn) {
+            outputFn('\u276f ' + command);
+        }
+
+        var child = exec.spawn('sh', ['-c', command]);
+
+        // Collect stdout and stderr in parallel (same readAll pattern as gitExecAsync).
+        async function readAll(stream, streamOutputFn) {
+            var buf = '';
+            while (true) {
+                var chunk = await stream.read();
+                if (chunk.done) break;
+                if (chunk.value !== undefined && chunk.value !== null) {
+                    var chunkStr = String(chunk.value);
+                    buf += chunkStr;
+                    if (streamOutputFn) {
+                        var chunkLines = chunkStr.split('\n');
+                        for (var cl = 0; cl < chunkLines.length; cl++) {
+                            var line = chunkLines[cl];
+                            if (cl === chunkLines.length - 1 && line === '') continue;
+                            streamOutputFn(line);
+                        }
+                    }
+                }
+            }
+            return buf;
+        }
+
+        var results = await Promise.all([
+            readAll(child.stdout, outputFn),
+            readAll(child.stderr, outputFn),
+            child.wait()
+        ]);
+
+        var stdout = results[0];
+        var stderr = results[1];
+        var waitResult = results[2];
+        var code = (waitResult && waitResult.code !== undefined) ? waitResult.code : 0;
+
+        return {
+            stdout: stdout,
+            stderr: stderr,
+            code: code,
+            error: code !== 0,
+            message: code !== 0 ? 'exit status ' + code : ''
+        };
+    }
+
     // resolveDir resolves a directory path to an absolute path. When dir is
     // empty, falsy, or '.', it resolves to the current working directory.
     // This prevents git operations from being affected by later CWD changes
@@ -539,6 +608,7 @@
     // Internal helpers.
     prSplit._gitExec = gitExec;
     prSplit._gitExecAsync = gitExecAsync;
+    prSplit._shellExecAsync = shellExecAsync;
     prSplit._resolveDir = resolveDir;
     prSplit._shellQuote = shellQuote;
     prSplit._gitAddChangedFiles = gitAddChangedFiles;

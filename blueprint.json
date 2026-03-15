@@ -881,7 +881,7 @@
       "id": "T078",
       "title": "resolveConflicts uses sync exec.execv for verify command — freezes TUI during conflict resolution",
       "description": "CONFIRMED by reading pr_split_08_conflict.js: resolveConflicts() contains two synchronous exec.execv calls for running the verify command: (1) The initial verify: `var verifyResult = exec.execv(['sh', '-c', 'cd ' + shellQuote(worktreeDir) + ' && ' + verifyCommand])` — if verifyCommand takes 30s (e.g., full test suite), the TUI freezes for 30s. (2) The re-verify after each strategy fix: `var reVerify = exec.execv(...)`. Both are called inside an async function body but are actually synchronous because exec.execv is a blocking call on the Goja runtime, not Promise-based. Fix: (1) Use prSplit._gitExecAsync or exec.spawn equivalents for verify command execution. (2) Since resolveConflicts is used in the automated pipeline (not directly from TUI), add a progressFn callback parameter so callers can update UI state. (3) The fix strategy functions themselves also use sync exec.execv for go mod tidy, npm install, etc. — audit ALL strategy.fix() functions and async-ify the subprocess calls where they may take >1s. (4) Add tests that verify resolveConflicts does not block the event loop (use a timer-based check).",
-      "status": "not-started",
+      "status": "done",
       "body": 1,
       "files_affected": [
         "internal/command/pr_split_08_conflict.js"
@@ -1041,7 +1041,7 @@
       "id": "T092",
       "title": "Async grouping: 'auto' strategy computes all 5 groupings synchronously — blocks event loop",
       "description": "CONFIRMED (session 5): pr_split_02_grouping.js selectStrategy() runs ALL 5 grouping strategies synchronously, including groupByDependency() which calls osmod.readFile() or exec.execv(['cat', file]) for every .go file to parse imports. For a Go repo with 200 changed .go files, this means 200+ synchronous file I/O calls in a loop. This is called from runAnalysisAsync (async function in pr_split_16_tui_core.js) — but the sync file reads inside groupByDependency block the Goja event loop for the duration. Fix: (1) Create groupByDependencyAsync(files, options) that uses prSplit._gitExecAsync (exec.spawn pattern) for file reads instead of exec.execv. (2) Create selectStrategyAsync(files, options) that awaits each strategy's result. (3) In runAnalysisAsync, replace groupByDirectory/applyStrategy/selectStrategy calls with the async variants. (4) The sync variants (groupByDirectory etc.) must remain for REPL/test use. (5) Note: groupByDirectory, groupByExtension, groupByChunks, groupByPattern are already in-memory (no I/O) — they are fast and need no async variant. Only groupByDependency needs async. (6) Export groupByDependencyAsync and selectStrategyAsync from pr_split_02_grouping.js. (7) Write a benchmark test: 200 go files, confirm selectStrategyAsync completes without blocking the event loop for >50ms.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_02_grouping.js",
@@ -1238,7 +1238,7 @@
       "id": "T109",
       "title": "resolveConflictsWithClaude runs resolution.commands via exec.execv (sync) — blocks Goja event loop",
       "description": "CONFIRMED by reading pr_split_10_pipeline.js resolveConflictsWithClaude() in session 8 (lines ~1020-1025): after applying patches, the code runs each resolution.commands[c] via: exec.execv(['sh', '-c', 'cd ' + shellQuote(patchWorktreeDir) + ' && ' + resolution.commands[c]]). exec.execv is a BLOCKING synchronous call that freezes the entire Goja event loop for the duration of the shell command. If Claude suggests 'go mod tidy', 'npm install', 'cargo build', or any similar slow command, this blocks for 10-120+ seconds. During this freeze: (1) All tea.tick messages are queued but not processed, (2) The TUI becomes completely unresponsive, (3) No heartbeat from Claude can be processed, (4) No Ctrl+C/Ctrl+P can be detected. Then gitAddChangedFilesAsync (async) is called — but the damage is already done. This is distinct from T103 (worktree path fragility) — T109 is specifically about sync vs. async execution. Fix: (1) Replace exec.execv with exec.spawn wrapped in a Promise: `await new Promise(function(resolve) { exec.spawn(['sh', '-c', shellQuote(patchWorktreeDir) + ' && ' + cmd], { onExit: resolve }); })`. (2) Enforce a per-command timeout via a race with setTimeout Promise (default 60s, configurable via config.resolveCommandTimeoutMs). (3) Stream command stdout/stderr to emitOutput() for live TUI display of repair progress. (4) Write a unit test verifying that a 200ms resolution command does not block the event loop for more than 50ms on the calling thread.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_10_pipeline.js",

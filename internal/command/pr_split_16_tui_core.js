@@ -2558,7 +2558,7 @@
 
     // runAnalysisAsync: Runs all 5 analysis steps as an async function.
     // Step 0: Verify baseline (non-blocking via verifySplitAsync).
-    // Steps 1-4: analyzeDiffAsync, applyStrategy, createSplitPlanAsync,
+    // Steps 1-4: analyzeDiffAsync, applyStrategyAsync, createSplitPlanAsync,
     // validatePlan. Updates s.analysisSteps progress between each step so
     // the poll handler can render progress.
     async function runAnalysisAsync(s) {
@@ -2638,11 +2638,11 @@
             return;
         }
 
-        // ── Step 2: Group files (pure compute, non-blocking) ──
+        // ── Step 2: Group files (T092: async for dependency/auto strategies) ──
         if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
         s.analysisSteps[2].active = true;
         var groupStart = Date.now();
-        st.groupsCache = prSplit.applyStrategy(
+        st.groupsCache = await prSplit.applyStrategyAsync(
             st.analysisCache.files, prSplit.runtime.strategy);
         s.analysisSteps[2].done = true;
         s.analysisSteps[2].active = false;

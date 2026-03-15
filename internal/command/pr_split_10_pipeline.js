@@ -71,7 +71,8 @@
         stepTimeoutMs: 3600000,     // 60 minutes per step
         watchdogIdleMs: 900000,     // 15 minutes no-progress watchdog
         claudeHealthPollMs: 5000,   // TUI polls isAlive() every 5 seconds
-        claudeHeartbeatTimeoutMs: 60000  // 60 seconds heartbeat timeout
+        claudeHeartbeatTimeoutMs: 60000, // 60 seconds heartbeat timeout
+        resolveCommandTimeoutMs: 120000 // 2 minutes per resolution command
     };
 
     // Delay between text and newline writes to defeat PTY coalescing.
@@ -845,9 +846,9 @@
         var verifySplitAsync = prSplit.verifySplitAsync;
         var gitExecAsync = prSplit._gitExecAsync;
         var gitAddChangedFilesAsync = prSplit._gitAddChangedFilesAsync;
+        var shellExecAsync = prSplit._shellExecAsync;
         var shellQuote = prSplit._shellQuote;
         var osmod = prSplit._modules.osmod;
-        var exec = prSplit._modules.exec;
         var runtime = prSplit.runtime;
         var state = prSplit._state;
         var claudeExec = state.claudeExecutor;
@@ -864,6 +865,11 @@
                        AUTOMATED_DEFAULTS.resolveWallClockTimeoutMs);
         var deadlineStart = Date.now();
         var deadline = deadlineStart + wallClockMs;
+
+        // Per-command timeout for resolution commands (T109).
+        var commandTimeoutMs = (timeouts && typeof timeouts.commandMs === 'number')
+            ? timeouts.commandMs
+            : AUTOMATED_DEFAULTS.resolveCommandTimeoutMs;
 
         for (var i = 0; i < failures.length; i++) {
             if (Date.now() >= deadline) {
@@ -1005,15 +1011,35 @@
                     }
                 }
 
-                // Run suggested commands in worktree.
+                // Run suggested commands in worktree (async — T109: does not block event loop).
+                // Each command has a per-command timeout (resolveCommandTimeoutMs).
                 if (resolution.commands && resolution.commands.length > 0) {
+                    var commandsAborted = false;
                     for (var c = 0; c < resolution.commands.length; c++) {
-                        exec.execv(['sh', '-c', 'cd ' + shellQuote(patchWorktreeDir) + ' && ' + resolution.commands[c]]);
+                        var cmdTimeoutPromise = new Promise(function(resolve) {
+                            setTimeout(function() { resolve({ stdout: '', stderr: 'command timed out', code: -1, error: true, message: 'timed out after ' + commandTimeoutMs + 'ms' }); }, commandTimeoutMs);
+                        });
+                        var cmdResult = await Promise.race([
+                            shellExecAsync('cd ' + shellQuote(patchWorktreeDir) + ' && ' + resolution.commands[c]),
+                            cmdTimeoutPromise
+                        ]);
+                        if (cmdResult.code === -1 && cmdResult.message && cmdResult.message.indexOf('timed out') !== -1) {
+                            log.printf('auto-split: resolution command timed out for %s after %dms: %s',
+                                patchBranch, commandTimeoutMs, resolution.commands[c]);
+                            commandsAborted = true;
+                            break;
+                        }
+                        if (cmdResult.code !== 0) {
+                            log.printf('auto-split: resolution command failed for %s: %s (exit %d)',
+                                patchBranch, (cmdResult.stderr || cmdResult.stdout || '').trim(), cmdResult.code);
+                        }
                     }
-                    await gitAddChangedFilesAsync(patchWorktreeDir);
-                    var cmdCommit = await gitExecAsync(patchWorktreeDir, ['commit', '--amend', '--no-edit']);
-                    if (cmdCommit.code !== 0) {
-                        log.printf('auto-split: command commit failed for %s: %s', patchBranch, cmdCommit.stderr.trim());
+                    if (!commandsAborted) {
+                        await gitAddChangedFilesAsync(patchWorktreeDir);
+                        var cmdCommit = await gitExecAsync(patchWorktreeDir, ['commit', '--amend', '--no-edit']);
+                        if (cmdCommit.code !== 0) {
+                            log.printf('auto-split: command commit failed for %s: %s', patchBranch, cmdCommit.stderr.trim());
+                        }
                     }
                 }
 
@@ -1101,7 +1127,8 @@
         var timeouts = {
             classify: config.classifyTimeoutMs || AUTOMATED_DEFAULTS.classifyTimeoutMs,
             plan: config.planTimeoutMs || AUTOMATED_DEFAULTS.planTimeoutMs,
-            resolve: config.resolveTimeoutMs || AUTOMATED_DEFAULTS.resolveTimeoutMs
+            resolve: config.resolveTimeoutMs || AUTOMATED_DEFAULTS.resolveTimeoutMs,
+            commandMs: config.resolveCommandTimeoutMs || AUTOMATED_DEFAULTS.resolveCommandTimeoutMs
         };
         var pollInterval = config.pollIntervalMs || AUTOMATED_DEFAULTS.pollIntervalMs;
         // Use typeof check: 0 is a valid value for retry/re-split counts (meaning "none").

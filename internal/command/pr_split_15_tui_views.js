@@ -314,7 +314,17 @@
                 if (narrow && nextLabel.length > 8) {
                     nextLabel = nextLabel.split(' ')[0];
                 }
-                var nextBtnStyle = s._isNavNextFocused
+                // T120: Compute nav-next focus locally (pure — no state mutation).
+                var focusElems = prSplit._getFocusElements ? prSplit._getFocusElements(s) : [];
+                var isNavNextFocused = false;
+                if (focusElems.length > 0) {
+                    var lastElem = focusElems[focusElems.length - 1];
+                    if (lastElem && lastElem.type === 'nav' &&
+                        (s.focusIndex || 0) === focusElems.length - 1) {
+                        isNavNextFocused = true;
+                    }
+                }
+                var nextBtnStyle = isNavNextFocused
                     ? styles.focusedButton() : styles.primaryButton();
                 nextBtn = zone.mark('nav-next',
                     nextBtnStyle.render(nextLabel + ' \u2192'));
@@ -463,7 +473,9 @@
             statusLine = parts;
         }
 
-        // T45: Transient notification banner (auto-dismiss after 5s).
+        // T45: Transient notification banner (auto-dismiss via tick, not view).
+        // T028: The notification is now dismissed by a 'dismiss-attach-notif'
+        // tick handler in _updateFn, not here. The view only reads state.
         var notifLine = '';
         if (s.claudeAutoAttachNotif && s.claudeAutoAttachNotifAt) {
             var elapsed = Date.now() - s.claudeAutoAttachNotifAt;
@@ -471,11 +483,8 @@
                 notifLine = styles.primaryButton().render(
                     ' \u2139 ' + s.claudeAutoAttachNotif + ' '
                 ) + '\n';
-            } else {
-                // Auto-dismiss: clear the notification.
-                s.claudeAutoAttachNotif = '';
-                s.claudeAutoAttachNotifAt = 0;
             }
+            // No else — dismiss is handled by 'dismiss-attach-notif' tick.
         }
 
         return notifLine + styles.dim().render(
@@ -1877,39 +1886,60 @@
 
     // ----- Report Overlay -----
 
-    function viewReportOverlay(s) {
+    // Pure helper: compute overlay dimensions from terminal size.
+    // No side effects — safe to call from both update and view.
+    function computeReportOverlayDims(s) {
         var overlayW = Math.min(72, (s.width || 80) - 6);
         var overlayH = Math.max(8, (s.height || 24) - 6);
+        var vpW = Math.max(10, overlayW - 4); // card padding + scrollbar
+        var vpH = Math.max(3, overlayH - 4);  // title + hints + borders
+        return { overlayW: overlayW, overlayH: overlayH, vpW: vpW, vpH: vpH };
+    }
+
+    // Sync viewport and scrollbar dimensions to current terminal size.
+    // Called from _updateFn when the report overlay opens or terminal resizes.
+    function syncReportOverlay(s) {
+        var dims = computeReportOverlayDims(s);
+        if (s.reportVp) {
+            s.reportVp.setWidth(dims.vpW);
+            s.reportVp.setHeight(dims.vpH);
+        }
+        if (s.reportSb && s.reportVp) {
+            s.reportSb.setViewportHeight(dims.vpH);
+            s.reportSb.setContentHeight(s.reportVp.totalLineCount());
+            s.reportSb.setYOffset(s.reportVp.yOffset());
+            // Scrollbar cosmetics — set once on open, not every render.
+            s.reportSb.setChars('\u2588', '\u2591');
+            s.reportSb.setThumbForeground(resolveColor(COLORS.primary));
+            s.reportSb.setTrackForeground(resolveColor(COLORS.border));
+        }
+    }
+
+    // Sync scrollbar scroll position after viewport scroll events.
+    // Lightweight — only updates yOffset and content height.
+    function syncReportScrollbar(s) {
+        if (s.reportSb && s.reportVp) {
+            s.reportSb.setContentHeight(s.reportVp.totalLineCount());
+            s.reportSb.setYOffset(s.reportVp.yOffset());
+        }
+    }
+
+    // PURE view function — reads viewport/scrollbar state, writes nothing.
+    function viewReportOverlay(s) {
+        var dims = computeReportOverlayDims(s);
 
         // Title bar.
         var titleLine = styles.bold().render('  Split Report');
         var hintLine = styles.dim().render(
             '  j/k scroll • PgUp/PgDn page • c copy • Esc close');
 
-        // Use the dedicated report viewport + scrollbar.
-        var vpH = Math.max(3, overlayH - 4); // Reserve lines for title + hints + borders.
-        if (s.reportVp) {
-            s.reportVp.setWidth(Math.max(10, overlayW - 4)); // account for card padding + scrollbar
-            s.reportVp.setHeight(vpH);
-            // Content is already set via s.reportVp.setContent() in the click handler.
-        }
-
         var vpView = s.reportVp ? s.reportVp.view() : (s.reportContent || '');
-        var sbView = '';
-        if (s.reportSb && s.reportVp) {
-            s.reportSb.setViewportHeight(vpH);
-            s.reportSb.setContentHeight(s.reportVp.totalLineCount());
-            s.reportSb.setYOffset(s.reportVp.yOffset());
-            s.reportSb.setChars('\u2588', '\u2591');
-            s.reportSb.setThumbForeground(resolveColor(COLORS.primary));
-            s.reportSb.setTrackForeground(resolveColor(COLORS.border));
-            sbView = s.reportSb.view();
-        }
+        var sbView = (s.reportSb) ? s.reportSb.view() : '';
 
         var scrollContent = lipgloss.joinHorizontal(lipgloss.Top, vpView, sbView);
 
         var inner = [titleLine, '', scrollContent, '', hintLine].join('\n');
-        return styles.activeCard().width(overlayW).render(inner);
+        return styles.activeCard().width(dims.overlayW).render(inner);
     }
 
     // ----- Move File Dialog Overlay -----
@@ -2102,6 +2132,9 @@
     prSplit._viewHelpOverlay = viewHelpOverlay;
     prSplit._viewConfirmCancelOverlay = viewConfirmCancelOverlay;
     prSplit._viewReportOverlay = viewReportOverlay;
+    prSplit._syncReportOverlay = syncReportOverlay;
+    prSplit._syncReportScrollbar = syncReportScrollbar;
+    prSplit._computeReportOverlayDims = computeReportOverlayDims;
     prSplit._viewMoveFileDialog = viewMoveFileDialog;
     prSplit._viewRenameSplitDialog = viewRenameSplitDialog;
     prSplit._viewMergeSplitsDialog = viewMergeSplitsDialog;

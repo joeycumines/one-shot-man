@@ -30,6 +30,8 @@
     var viewHelpOverlay = prSplit._viewHelpOverlay;
     var viewConfirmCancelOverlay = prSplit._viewConfirmCancelOverlay;
     var viewReportOverlay = prSplit._viewReportOverlay;
+    var syncReportOverlay = prSplit._syncReportOverlay;
+    var syncReportScrollbar = prSplit._syncReportScrollbar;
     var viewMoveFileDialog = prSplit._viewMoveFileDialog;
     var viewRenameSplitDialog = prSplit._viewRenameSplitDialog;
     var viewMergeSplitsDialog = prSplit._viewMergeSplitsDialog;
@@ -224,11 +226,46 @@
             };
         };
 
+        // T120: Sync main viewport and scrollbar dimensions from current
+        // terminal size. Called from _updateFn on WindowSize events and
+        // state transitions — NOT from _viewFn (which must be pure).
+        // Uses a conservative chrome estimate (8 lines) since the exact
+        // rendered chrome heights aren't available in the update handler.
+        var CHROME_ESTIMATE = 8; // title(1) + 2 dividers + nav(~3) + status(~2)
+        function syncMainViewport(s) {
+            if (!s.vp) return;
+            var w = s.width || 80;
+            var h = s.height || 24;
+            var vpHeight = Math.max(3, h - CHROME_ESTIMATE);
+            s.vp.setWidth(w);
+
+            if (s.splitViewEnabled) {
+                var minPaneH = 3;
+                var wizardH = Math.max(minPaneH, Math.floor(vpHeight * (s.splitViewRatio || 0.5)));
+                wizardH = Math.min(wizardH, vpHeight - minPaneH - 1);
+                if (wizardH >= minPaneH) {
+                    s.vp.setHeight(wizardH);
+                } else {
+                    s.vp.setHeight(vpHeight);
+                }
+            } else {
+                s.vp.setHeight(vpHeight);
+            }
+        }
+
         var _updateFn = function(msg, s) {
             // WindowSize — always handle.
             if (msg.type === 'WindowSize') {
                 s.width = msg.width;
                 s.height = msg.height;
+
+                // T120: Sync viewport dimensions from update, not view.
+                syncMainViewport(s);
+
+                // Sync report overlay dimensions if currently open.
+                if (s.showingReport) {
+                    syncReportOverlay(s);
+                }
 
                 if (s.needsInitClear) {
                     s.needsInitClear = false;
@@ -288,29 +325,29 @@
                         output.toClipboard(s.reportContent);
                         return [s, null];
                     }
-                    // Scroll navigation.
+                    // Scroll navigation — sync scrollbar after each scroll op.
                     if (rk === 'j' || rk === 'down') {
-                        if (s.reportVp) s.reportVp.scrollDown(1);
+                        if (s.reportVp) { s.reportVp.scrollDown(1); syncReportScrollbar(s); }
                         return [s, null];
                     }
                     if (rk === 'k' || rk === 'up') {
-                        if (s.reportVp) s.reportVp.scrollUp(1);
+                        if (s.reportVp) { s.reportVp.scrollUp(1); syncReportScrollbar(s); }
                         return [s, null];
                     }
                     if (rk === 'pgdown' || rk === ' ') {
-                        if (s.reportVp) s.reportVp.halfPageDown();
+                        if (s.reportVp) { s.reportVp.halfPageDown(); syncReportScrollbar(s); }
                         return [s, null];
                     }
                     if (rk === 'pgup') {
-                        if (s.reportVp) s.reportVp.halfPageUp();
+                        if (s.reportVp) { s.reportVp.halfPageUp(); syncReportScrollbar(s); }
                         return [s, null];
                     }
                     if (rk === 'home' || rk === 'g') {
-                        if (s.reportVp) s.reportVp.gotoTop();
+                        if (s.reportVp) { s.reportVp.gotoTop(); syncReportScrollbar(s); }
                         return [s, null];
                     }
                     if (rk === 'end') {
-                        if (s.reportVp) s.reportVp.gotoBottom();
+                        if (s.reportVp) { s.reportVp.gotoBottom(); syncReportScrollbar(s); }
                         return [s, null];
                     }
                     return [s, null];
@@ -319,10 +356,12 @@
                 if (msg.type === 'Mouse' && msg.isWheel && s.reportVp) {
                     if (msg.button === 'wheel up') {
                         s.reportVp.scrollUp(3);
+                        syncReportScrollbar(s);
                         return [s, null];
                     }
                     if (msg.button === 'wheel down') {
                         s.reportVp.scrollDown(3);
+                        syncReportScrollbar(s);
                         return [s, null];
                     }
                 }
@@ -587,6 +626,7 @@
                 // Split-view: Ctrl+L to toggle Claude window-in-window.
                 if (k === 'ctrl+l') {
                     s.splitViewEnabled = !s.splitViewEnabled;
+                    syncMainViewport(s); // T120: sync dimensions after toggle.
                     if (s.splitViewEnabled) {
                         // T45: User re-opened — clear manual dismiss flag.
                         s.claudeManuallyDismissed = false;
@@ -623,10 +663,12 @@
                     // Ctrl+= / Ctrl+- to adjust ratio.
                     if (k === 'ctrl++' || k === 'ctrl+=') {
                         s.splitViewRatio = Math.min(0.8, s.splitViewRatio + 0.1);
+                        syncMainViewport(s); // T120: sync dimensions after ratio change.
                         return [s, null];
                     }
                     if (k === 'ctrl+-') {
                         s.splitViewRatio = Math.max(0.2, s.splitViewRatio - 0.1);
+                        syncMainViewport(s); // T120: sync dimensions after ratio change.
                         return [s, null];
                     }
                     // T44: Ctrl+O switches between Claude and Output tabs in split-view bottom pane.
@@ -986,6 +1028,16 @@
                 if (msg.id === 'claude-convo-poll') {
                     return pollClaudeConvo(s);
                 }
+                // T028: Auto-dismiss transient notification after 5s.
+                // Guard: only dismiss if the current notification is old enough
+                // to prevent a stale tick from clearing a newer notification.
+                if (msg.id === 'dismiss-attach-notif') {
+                    if (s.claudeAutoAttachNotifAt && (Date.now() - s.claudeAutoAttachNotifAt) >= 4500) {
+                        s.claudeAutoAttachNotif = '';
+                        s.claudeAutoAttachNotifAt = 0;
+                    }
+                    return [s, null];
+                }
                 return [s, null];
             }
 
@@ -1002,16 +1054,9 @@
             // Divider.
             var divider = styles.divider().render(repeatStr('\u2500', w));
 
-            // Navigation bar — compute nav-next focus flag.
-            var focusElems = getFocusElements(s);
-            s._isNavNextFocused = false;
-            if (focusElems.length > 0) {
-                var lastElem = focusElems[focusElems.length - 1];
-                if (lastElem && lastElem.type === 'nav' &&
-                    (s.focusIndex || 0) === focusElems.length - 1) {
-                    s._isNavNextFocused = true;
-                }
-            }
+            // Navigation bar.
+            // T120: _isNavNextFocused is now computed locally inside
+            // renderNavBar — no state mutation in _viewFn.
             var navBar = renderNavBar(s);
 
             // Status bar.
@@ -1022,35 +1067,41 @@
 
             // Wrap in viewport.
             if (s.vp) {
-                s.vp.setWidth(w);
-                // Reserve chrome lines dynamically from actual rendered heights.
-                // +2 for the two dividers (each 1 line).
+                // T120: Viewport width/height are sized by syncMainViewport()
+                // in the update handler (WindowSize, split-view toggle).
+                // Here we only compute layout dimensions for rendering, call
+                // setContent (per-frame), and sync the scrollbar post-content.
                 var chromeH = lipgloss.height(titleBar) + 2 + lipgloss.height(navBar) + lipgloss.height(statusBar);
                 var vpHeight = Math.max(3, h - chromeH);
 
-                if (s.splitViewEnabled) {
+                // Determine if split-view is viable at current terminal size
+                // without mutating s.splitViewEnabled (view purity).
+                var splitViewViable = s.splitViewEnabled;
+                var wizardH = 0;
+                var claudeH = 0;
+                if (splitViewViable) {
                     // Split-view: wizard top, Claude bottom.
                     // -1 for the pane divider between them.
                     // Minimum split requires 3 + 1 + 3 = 7 lines.
                     var minPaneH = 3;
-                    var wizardH = Math.max(minPaneH, Math.floor(vpHeight * s.splitViewRatio));
+                    wizardH = Math.max(minPaneH, Math.floor(vpHeight * s.splitViewRatio));
                     // Clamp wizardH so Claude pane gets at least minPaneH.
                     wizardH = Math.min(wizardH, vpHeight - minPaneH - 1);
-                    var claudeH = vpHeight - wizardH - 1;
+                    claudeH = vpHeight - wizardH - 1;
 
                     if (wizardH < minPaneH || claudeH < minPaneH) {
-                        // Terminal too small for split view; fall through to normal mode.
-                        s.splitViewEnabled = false;
+                        // Terminal too small for split view; render normal
+                        // but don't mutate state — restored on next resize.
+                        splitViewViable = false;
                     }
                 }
-                if (s.splitViewEnabled) {
+                if (splitViewViable) {
 
-                    // Wizard viewport.
-                    s.vp.setHeight(wizardH);
+                    // Wizard viewport — height already set by syncMainViewport.
                     s.vp.setContent(screenContent);
 
                     if (s.scrollbar) {
-                        s.scrollbar.setViewportHeight(wizardH);
+                        s.scrollbar.setViewportHeight(s.vp.height());
                         s.scrollbar.setContentHeight(s.vp.totalLineCount());
                         s.scrollbar.setYOffset(s.vp.yOffset());
                         s.scrollbar.setChars('\u2588', '\u2591');
@@ -1101,12 +1152,11 @@
                     screenContent = lipgloss.joinVertical(lipgloss.Left,
                         wizardPane, paneDivider, bottomPane);
                 } else {
-                    // Normal (non-split) viewport.
-                    s.vp.setHeight(vpHeight);
+                    // Normal (non-split) viewport — height set by syncMainViewport.
                     s.vp.setContent(screenContent);
 
                     if (s.scrollbar) {
-                        s.scrollbar.setViewportHeight(vpHeight);
+                        s.scrollbar.setViewportHeight(s.vp.height());
                         s.scrollbar.setContentHeight(s.vp.totalLineCount());
                         s.scrollbar.setYOffset(s.vp.yOffset());
                         s.scrollbar.setChars('\u2588', '\u2591');
@@ -1571,6 +1621,7 @@
                     s.splitViewFocus = 'wizard';
                     s.splitViewTab = 'claude';
                     s.claudeManuallyDismissed = false;
+                    syncMainViewport(s); // T120: sync dimensions after toggle.
                     return [s, tea.tick(100, 'claude-screenshot')];
                 }
                 // Already open — switch to Claude tab.
@@ -1843,6 +1894,7 @@
                     s.reportVp.gotoTop();
                 }
                 s.showingReport = true;
+                syncReportOverlay(s);
                 return [s, null];
             }
             if (zone.inBounds('final-create-prs', msg)) {
@@ -2368,6 +2420,7 @@
                     s.reportVp.gotoTop();
                 }
                 s.showingReport = true;
+                syncReportOverlay(s);
                 return [s, null];
             }
             if (focused.id === 'final-create-prs') {
@@ -2851,10 +2904,11 @@
                             s.splitViewTab = 'claude';
                             s.claudeAutoAttachNotif = 'Claude crashed \u2014 split-view closed';
                             s.claudeAutoAttachNotifAt = Date.now();
+                            syncMainViewport(s); // T120: sync dimensions after close.
                         }
                         s.wizard.transition('ERROR_RESOLUTION');
                         s.wizardState = 'ERROR_RESOLUTION';
-                        return [s, null];
+                        return [s, tea.tick(5000, 'dismiss-attach-notif')];
                     }
                 }
             }
@@ -2870,13 +2924,16 @@
                 s.splitViewFocus = 'wizard';   // keep wizard focused
                 s.splitViewTab = 'claude';     // show Claude tab
                 s.claudeAutoAttached = true;
+                syncMainViewport(s); // T120: sync dimensions after auto-attach.
                 s.claudeAutoAttachNotif = 'Claude connected \u2014 Ctrl+L to toggle, Ctrl+] for passthrough';
                 s.claudeAutoAttachNotifAt = Date.now();
                 log.printf('auto-split: auto-attached Claude pane (height=%d)', s.height);
                 // Start screenshot polling immediately via batched tick.
+                // T028: Also schedule dismiss tick for the notification.
                 return [s, tea.batch(
                     tea.tick(100, 'claude-screenshot'),
-                    tea.tick(500, 'auto-poll')
+                    tea.tick(500, 'auto-poll'),
+                    tea.tick(5000, 'dismiss-attach-notif')
                 )];
             }
 
@@ -3805,9 +3862,11 @@
                 s.splitViewEnabled = false;
                 s.splitViewFocus = 'wizard';
                 s.splitViewTab = 'claude';
+                syncMainViewport(s); // T120: sync dimensions after auto-close.
                 s.claudeAutoAttachNotif = 'Claude session ended \u2014 split-view closed';
                 s.claudeAutoAttachNotifAt = Date.now();
-                return [s, null]; // stop polling
+                // T028: Schedule tick to dismiss the notification.
+                return [s, tea.tick(5000, 'dismiss-attach-notif')]; // stop polling
             }
             // Continue polling — the child may attach later (e.g., during auto-split).
             return [s, tea.tick(500, 'claude-screenshot')];

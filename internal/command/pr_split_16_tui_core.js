@@ -3291,8 +3291,11 @@
         // Determine which state to transition to based on what the
         // pipeline completed. If execution happened, go to EQUIV_CHECK
         // or FINALIZATION. If only planning, go to PLAN_REVIEW.
-        if (s.wizard.current === 'IDLE' || s.wizard.current === 'CONFIG') {
+        // T121: Guard against self-transition (CONFIG→CONFIG throws).
+        if (s.wizard.current === 'IDLE') {
             s.wizard.transition('CONFIG');
+        }
+        if (s.wizard.current === 'CONFIG') {
             s.wizard.transition('PLAN_GENERATION');
         }
 

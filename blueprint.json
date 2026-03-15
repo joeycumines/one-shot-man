@@ -1367,17 +1367,6 @@
       "id": "T121",
       "title": "automatedSplit never sets report.equivalence — user TRAPPED at BRANCH_BUILDING state after automated split, cannot reach FINALIZATION",
       "description": "CONFIRMED by reading pr_split_10_pipeline.js automatedSplit() (session 12) and cross-referencing TUI code (pr_split_16_tui_core.js lines 2928, 2946-2960, handleNext lines 2025-2068). SEVERITY: CRITICAL — the user is permanently trapped at BRANCH_BUILDING state after automated split. ROOT CAUSE: automatedSplit Step 10 captures equivalence locally: `var equivResult = await step('Verify equivalence', ...)` — `equivResult.result` has the full equivalence data but `report.equivalence` is NEVER assigned. In handleAutoSplitPoll line 2946: `if (report.equivalence) { s.wizard.transition('BRANCH_BUILDING'); s.wizard.transition('EQUIV_CHECK'); }` — since report.equivalence is always undefined/falsy, this branch is NEVER taken. The ELSE branch (line 2954) always executes: `s.wizard.transition('BRANCH_BUILDING'); s.wizardState = 'BRANCH_BUILDING'`. Additionally, handleNext() (line 2025) has NO case for 'BRANCH_BUILDING' — falls through to `default: return [s, null]`. So pressing Enter from BRANCH_BUILDING does NOTHING. No tick auto-advances from BRANCH_BUILDING to EQUIV_CHECK in the automated path. Therefore: (1) After automated split completes, wizard is permanently stuck at BRANCH_BUILDING. (2) User sees the execution progress screen (all branches ✓) with no path forward. (3) The 'Done', 'Create PRs', and 'View Report' buttons of FINALIZATION screen NEVER appear. (4) The equivalence check ran internally in the pipeline but neither the result nor the transition was propagated. FIXES REQUIRED: (1) In automatedSplit, after Step 10: add `report.equivalence = equivResult && equivResult.result ? equivResult.result : null;`. (2) Also fix heuristicFallback: add `report.equivalence = equiv;` before the error assignment. (3) Add a 'BRANCH_BUILDING' case to handleNext that calls startEquivCheck(s) when the automated split has completed — this provides the fallback for users who somehow reach BRANCH_BUILDING without the auto-advancement. (4) Tests: assert report.equivalence is set after automatedSplit; assert that handleAutoSplitPoll transitions to EQUIV_CHECK when report.equivalence is truthy; assert handleNext from BRANCH_BUILDING calls startEquivCheck.",
-      "status": "not-started",
-      "body": 2,
-      "files_affected": [
-        "internal/command/pr_split_10_pipeline.js",
-        "internal/command/pr_split_16_tui_core.js"
-      ]
-    },
-    {
-      "id": "T122",
-      "title": "processClaudeConvoResult/formatClaudeResponse check data.splits but reportSplitPlan MCP schema uses data.stages — Ask Claude plan update is always a silent no-op",
-      "description": "CONFIRMED by cross-referencing pr_split_10_pipeline.js (mcpCallbackObj.addTool schema, lines 1321-1340) with pr_split_16_tui_core.js processClaudeConvoResult (line 4162) and formatClaudeResponse (line 4143) in session 12.",
       "status": "done",
       "body": 2,
       "files_affected": [

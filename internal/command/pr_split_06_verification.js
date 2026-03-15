@@ -146,7 +146,7 @@
         }
 
         for (var i = 0; i < plan.splits.length; i++) {
-            if (prSplit.isCancelled()) {
+            if (prSplit.isCancelled() || prSplit.isForceCancelled()) {  // T117: honor force-cancel
                 return { allPassed: false, results: results, error: 'verification cancelled by user' };
             }
 
@@ -546,7 +546,7 @@
         }
 
         for (var i = 0; i < plan.splits.length; i++) {
-            if (prSplit.isCancelled()) {
+            if (prSplit.isCancelled() || prSplit.isForceCancelled()) {  // T117: honor force-cancel
                 return { allPassed: false, results: results, error: 'verification cancelled by user' };
             }
 

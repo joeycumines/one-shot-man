@@ -322,6 +322,7 @@
         var resolveDir = prSplit._resolveDir;
         var shellQuote = prSplit._shellQuote;
         var isCancelled = prSplit.isCancelled;
+        var isForceCancelled = prSplit.isForceCancelled;  // T117: honor force-cancel
         var runtime = prSplit.runtime;
         var AUTOMATED_DEFAULTS = prSplit.AUTOMATED_DEFAULTS || {};
 
@@ -358,7 +359,7 @@
         var reSplitFiles = [];
 
         for (var i = 0; i < plan.splits.length; i++) {
-            if (isCancelled()) {
+            if (isCancelled() || isForceCancelled()) {  // T117: honor force-cancel
                 return {
                     fixed: fixed, errors: errorsOut,
                     totalRetries: totalRetries, branchRetries: branchRetries,
@@ -410,7 +411,7 @@
                 if (Date.now() >= deadline) {
                     break;
                 }
-                if (isCancelled()) {
+                if (isCancelled() || isForceCancelled()) {  // T117: honor force-cancel
                     break;
                 }
 
@@ -419,7 +420,7 @@
                     if (Date.now() >= deadline) {
                         break;
                     }
-                    if (isCancelled()) {
+                    if (isCancelled() || isForceCancelled()) {  // T117: honor force-cancel
                         break;
                     }
                     var strategy = strategies[s];

@@ -840,6 +840,7 @@
     async function resolveConflictsWithClaude(failures, sessionId, timeouts, pollInterval, maxAttemptsPerBranch, report, aliveCheckFn, heartbeatTimeoutMs) {
         // Late-bind cross-chunk dependencies.
         var isCancelled = prSplit.isCancelled;
+        var isForceCancelled = prSplit.isForceCancelled;  // T117
         var resolveDir = prSplit._resolveDir;
         var renderConflictPrompt = prSplit.renderConflictPrompt;
         var validateResolution = prSplit.validateResolution;
@@ -875,7 +876,7 @@
             if (Date.now() >= deadline) {
                 return { reSplitNeeded: false, reSplitReason: 'wall-clock timeout after ' + (Date.now() - deadlineStart) + 'ms (limit: ' + wallClockMs + 'ms)' };
             }
-            if (isCancelled()) {
+            if (isCancelled() || isForceCancelled()) {  // T117
                 return { reSplitNeeded: false, reSplitReason: 'cancelled by user' };
             }
 
@@ -886,7 +887,7 @@
                 if (Date.now() >= deadline) {
                     return { reSplitNeeded: false, reSplitReason: 'wall-clock timeout after ' + (Date.now() - deadlineStart) + 'ms (limit: ' + wallClockMs + 'ms)' };
                 }
-                if (isCancelled()) {
+                if (isCancelled() || isForceCancelled()) {  // T117
                     return { reSplitNeeded: false, reSplitReason: 'cancelled by user' };
                 }
 
@@ -900,7 +901,7 @@
                     if (Date.now() >= deadline) {
                         return { reSplitNeeded: false, reSplitReason: 'wall-clock timeout during backoff' };
                     }
-                    if (isCancelled()) {
+                    if (isCancelled() || isForceCancelled()) {  // T117
                         return { reSplitNeeded: false, reSplitReason: 'cancelled during backoff' };
                     }
                 }
@@ -1077,6 +1078,7 @@
         var runtime = prSplit.runtime;
         var gitExec = prSplit._gitExec;
         var isCancelled = prSplit.isCancelled;
+        var isForceCancelled = prSplit.isForceCancelled;  // T117
         var isPaused = prSplit.isPaused;
         var analyzeDiff = prSplit.analyzeDiffAsync;
         var createSplitPlan = prSplit.createSplitPlanAsync;
@@ -1180,7 +1182,7 @@
         // step() wrapper for pipeline steps. Supports both sync and async callbacks.
         async function step(name, fn) {
             // Check cancellation before each step.
-            if (isCancelled()) {
+            if (isCancelled() || isForceCancelled()) {  // T117
                 return { error: 'cancelled by user' };
             }
             // Check pause — save checkpoint and exit cleanly.

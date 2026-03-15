@@ -301,7 +301,8 @@
 
         // Cancellation check helper.
         function cancelled() {
-            return typeof prSplit.isCancelled === 'function' && prSplit.isCancelled();
+            return (typeof prSplit.isCancelled === 'function' && prSplit.isCancelled()) ||
+                (typeof prSplit.isForceCancelled === 'function' && prSplit.isForceCancelled());  // T117: honor force-cancel
         }
 
         var results = [];

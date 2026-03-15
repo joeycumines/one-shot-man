@@ -92,7 +92,7 @@
         var currentBase = plan.baseBranch;
 
         for (var i = 0; i < plan.splits.length; i++) {
-            if (prSplit.isCancelled()) {
+            if (prSplit.isCancelled() || prSplit.isForceCancelled()) {  // T117: honor force-cancel
                 cleanupWorktree();
                 return { error: 'cancelled by user after ' + i + ' of ' + plan.splits.length + ' branches', results: results };
             }
@@ -113,7 +113,7 @@
             }
 
             for (var j = 0; j < split.files.length; j++) {
-                if (prSplit.isCancelled()) {
+                if (prSplit.isCancelled() || prSplit.isForceCancelled()) {  // T117: honor force-cancel
                     splitResult.error = 'cancelled by user after ' + j + ' of ' + split.files.length + ' files in ' + split.name;
                     results.push(splitResult);
                     cleanupWorktree();
@@ -286,7 +286,7 @@
         var currentBase = plan.baseBranch;
 
         for (var i = 0; i < plan.splits.length; i++) {
-            if (prSplit.isCancelled()) {
+            if (prSplit.isCancelled() || prSplit.isForceCancelled()) {  // T117: honor force-cancel
                 await cleanupWorktreeAsync();
                 return { error: 'cancelled by user after ' + i + ' of ' + plan.splits.length + ' branches', results: results };
             }
@@ -307,7 +307,7 @@
             }
 
             for (var j = 0; j < split.files.length; j++) {
-                if (prSplit.isCancelled()) {
+                if (prSplit.isCancelled() || prSplit.isForceCancelled()) {  // T117: honor force-cancel
                     splitResult.error = 'cancelled by user after ' + j + ' of ' + split.files.length + ' files in ' + split.name;
                     results.push(splitResult);
                     await cleanupWorktreeAsync();

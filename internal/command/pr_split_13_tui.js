@@ -495,6 +495,7 @@
 
         opts = opts || {};
         var isCancelled = opts.isCancelled || function() { return false; };
+        var isForceCancelled = (typeof prSplit.isForceCancelled === 'function') ? prSplit.isForceCancelled : function() { return false; };  // T117
 
         if (!plan || !plan.splits || plan.splits.length === 0) {
             wizard.error('no plan or empty plan to execute — run "plan" first');
@@ -509,7 +510,7 @@
         }
 
         // Check for cancellation.
-        if (isCancelled()) {
+        if (isCancelled() || isForceCancelled()) {  // T117
             wizard.cancel();
             return { action: 'cancelled', state: 'CANCELLED', results: execResult.results };
         }
@@ -518,7 +519,7 @@
         var results = [];
         var failedBranches = [];
         for (var i = 0; i < execResult.results.length; i++) {
-            if (isCancelled()) {
+            if (isCancelled() || isForceCancelled()) {  // T117
                 wizard.cancel();
                 return { action: 'cancelled', state: 'CANCELLED', results: results, failedBranches: failedBranches };
             }

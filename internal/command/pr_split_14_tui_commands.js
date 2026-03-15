@@ -719,7 +719,7 @@
                         // at each step boundary.
                         prSplit._cancelSource = function(query) {
                             if (query === 'cancelled') return wizard.current === 'CANCELLED';
-                            if (query === 'forceCancelled') return wizard.current === 'CANCELLED';
+                            if (query === 'forceCancelled') return wizard.current === 'FORCE_CANCEL';  // T117: was 'CANCELLED' — bug
                             if (query === 'paused') return false; // pause not yet wired to wizard
                             return false;
                         };
@@ -825,7 +825,7 @@
                     // Wire cooperative cancellation for the override pipeline run.
                     prSplit._cancelSource = function(query) {
                         if (query === 'cancelled') return wizard.current === 'CANCELLED';
-                        if (query === 'forceCancelled') return wizard.current === 'CANCELLED';
+                        if (query === 'forceCancelled') return wizard.current === 'FORCE_CANCEL';  // T117: was 'CANCELLED' — bug
                         return false;
                     };
 

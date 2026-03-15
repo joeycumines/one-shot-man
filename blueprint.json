@@ -37,7 +37,7 @@
       "id": "T001",
       "title": "Audit startAnalysis and runAnalysisAsync for all 'Processing... forever' hang scenarios",
       "description": "The 'Processing... forever' bug is a POTENTIALLY PREVIOUS correctness failure. Comprehensively audit the full analysis pipeline: (1) startAnalysis() triggers isProcessing=true and returns tea.tick(100, 'analysis-poll'). (2) runAnalysisAsync() is the Promise-based async function; it must set s.isProcessing=false on ALL exit paths (success, error, validation-fail, no-changes). (3) handleAnalysisPoll() must keep re-scheduling the tick while s.analysisRunning=true, AND must stop cleanly when s.isProcessing=false AND s.analysisRunning=false. (4) Find race conditions: if s.isProcessing is cleared before s.analysisRunning, the poll may stop scheduling before the success path runs. (5) Find edge cases: what happens if analyzeDiffAsync hangs indefinitely? There is no timeout, no user-visible progress indicator beyond 'Processing...'. (6) What happens if the git repo has no base branch? configValidationError must be set, the modal must close. (7) Produce a written audit in docs/ of all hang scenarios identified and their status (fixed/open).",
-      "status": "not-started",
+      "status": "done",
       "body": 1,
       "files_affected": [
         "internal/command/pr_split_16_tui_core.js",
@@ -59,7 +59,7 @@
       "id": "T003",
       "title": "Audit the full startVerifySession → pollVerifySession → runVerifyBranch PTY pipeline",
       "description": "The async verify pipeline exists in code but has never been end-to-end validated through an actual binary run. The specific audit must cover: (1) startVerifySession in pr_split_06_verification.js — does it correctly create a git worktree, start the CaptureSession, and return {session, worktreeDir, startTime}? What happens if the worktree dir already exists? (2) pollVerifySession — does it correctly detect isDone(), read exitCode(), capture output(), call cleanupVerifyWorktree(), and push to verificationResults[]? (3) runVerifyBranch — verify skip logic, dependency checking, fallback to verifySplitAsync, and correct state transitions. (4) handleVerifyFallbackPoll — verify it correctly advances after async completion. (5) Write a Go test (or extend pr_split_06_verification_test.go) that runs startVerifySession with a real shell command and validates full lifecycle. (6) Confirm CaptureSession.Interrupt() and Kill() behave correctly from JS via the bound JS method.",
-      "status": "not-started",
+      "status": "done",
       "body": 1,
       "files_affected": [
         "internal/command/pr_split_06_verification.js",
@@ -71,7 +71,7 @@
       "id": "T004",
       "title": "Confirm CaptureSession JS binding exposes all required methods (isDone, exitCode, output, close, interrupt, kill)",
       "description": "The JS code in runVerifyBranch and pollVerifySession calls: s.activeVerifySession.isDone(), .exitCode(), .output(), .close(), .interrupt(), .kill(). These must be bound from termmux.CaptureSession to the Goja runtime via internal/builtin/termmux. Read internal/builtin/termmux to confirm: (1) All six methods are exposed. (2) output() returns a string (not bytes). (3) isDone() returns a bool. (4) exitCode() returns an int. (5) interrupt() and kill() both work from JS context. (6) close() properly releases resources. Write a unit test in pr_split_pty_unix_test.go or termmux_observation_test.go that creates a real CaptureSession from JS and validates all methods.",
-      "status": "not-started",
+      "status": "done",
       "body": 1,
       "files_affected": [
         "internal/builtin/termmux",
@@ -82,7 +82,7 @@
       "id": "T005",
       "title": "Fix verify live viewport rendering in viewExecutionScreen (Screen 5) to use ANSI rendering",
       "description": "The current verify live viewport in viewExecutionScreen uses s.activeVerifySession.output() which returns raw PTY output (VT100/ANSI escape codes). The current code does a naive truncation with string.substring() which corrupts ANSI codes. Fix: (1) Replace the VT100-aware output source: use s.activeVerifySession.Screen() which returns the rendered VT100 screen (clean text per-line), or use lipgloss.newStyle().maxWidth().render() for ANSI-safe truncation. (2) The verify viewport bordered box must correctly calculate its content width: subtract border(2) + padding(2) from the available width. (3) Verify the scrollbar math: startLine, endLine, totalLines, verifyViewportOffset must work correctly at all height settings. (4) Add a unit test that feeds known ANSI escape sequences into the verify view and confirms they don't corrupt the rendered output.",
-      "status": "not-started",
+      "status": "done",
       "body": 1,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -365,7 +365,7 @@
       "id": "T031",
       "title": "Confirm cancel confirmation overlay works correctly and has proper tab focus",
       "description": "Audit viewConfirmCancelOverlay and its handler: (1) The overlay appears when showConfirmCancel=true. (2) It must have two buttons: 'Cancel' (confirm cancel) and 'Keep Going' (dismiss). (3) Both must be zone-marked and keyboard accessible. (4) Tab within the overlay must cycle between the two buttons only (not the underlying screen). (5) Pressing Enter on 'Cancel' must: stop any active processing, transition to CANCELLED, call tea.quit(). (6) Pressing Escape must dismiss the overlay (same as 'Keep Going'). (7) The overlay must show contextual text: if active verification is running, warn 'Verification in progress — continue will kill the verify process.' (8) Write unit tests for both button activations.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -513,7 +513,7 @@
       "id": "T045",
       "title": "Remove config.mk error blocker after blueprint approval",
       "description": "PREREQUISITE: Blueprint is approved by Hana. Action: Remove the $(error ...) directive at line 3 of config.mk. This unblocks all make targets. Verify: (1) make record-session-start still works. (2) make build succeeds. (3) make test-pr-split-quick runs. This is a one-line change to config.mk. Must be committed as its own standalone commit.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "config.mk"
@@ -756,7 +756,7 @@
       "id": "T067",
       "title": "Clean up stale .pr-split-plan.json artifact in internal/command/",
       "description": "CONFIRMED ISSUE: internal/command/.pr-split-plan.json is a stale real plan file checked into the repository. This was produced by a real 'osm pr-split' run and should NOT be committed. Actions: (1) Delete the file: git rm internal/command/.pr-split-plan.json. (2) Add to .gitignore: echo '.pr-split-plan.json' >> .gitignore (or add to the appropriate .gitignore). (3) Confirm that the pr-split code uses the DEFAULT_PLAN_PATH (from pr_split_03_planning.js) which defaults to .pr-split-plan.json in the working directory, and this is also listed in .gitignore. (4) The committed file may contain real branch names or file paths from the developer's machine — check for sensitive information. (5) This must be its own commit. No review gate needed for this trivial cleanup.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/.pr-split-plan.json",
@@ -870,7 +870,7 @@
       "id": "T077",
       "title": "createPRs silently ignores runtime.dryRun — creates real PRs in dry-run mode",
       "description": "CONFIRMED by reading pr_split_07_prcreation.js: createPRs() does NOT check prSplit.runtime.dryRun anywhere. If a user configures dry-run mode in the wizard config screen, the 'Create PRs' button in finalization will still push branches and create real GitHub PRs. Fix: (1) In createPRs() (and the async wrapper T076 creates), check `prSplit.runtime.dryRun` at the start. (2) In dry-run mode, simulated push and PR creation output should be logged to results with a '[DRY RUN]' prefix. (3) The TUI finalization screen should display 'DRY RUN — no changes pushed' prominently in the PR creation results area. (4) Add a unit test: run createPRs with runtime.dryRun=true and confirm exec.execv is never called with 'push' or 'gh'.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_07_prcreation.js",
@@ -938,7 +938,7 @@
       "id": "T083",
       "title": "createPRs no-diff skip returns skipped=true but TUI never shows which PRs were skipped",
       "description": "CONFIRMED by reading pr_split_07_prcreation.js lines 120-130: when `git diff --quiet base head` returns 0 (no changes), the PR creation sets results[pi].skipped=true and results[pi].skipReason='no changes between X and Y'. However, the TUI finalization screen (viewFinalizationScreen) only shows a list of split names and the equivalence result — it never reads results[pi].skipped. A user could click 'Create PRs', see it apparently complete, and not realize 2 of 5 PRs were silently skipped. Fix: (1) After PR creation completes, store the full results array in s.prCreationResults = results. (2) In viewFinalizationScreen, after PR creation, show per-PR status rows with icons: ✓ created (with URL), — skipped (with reason), ✗ failed (with error). (3) A 'skipped' entry must show the skipReason prominently. (4) Total counts: 'X PRs created, Y skipped, Z failed'. (5) Write tests verifying skipReason appears in the finalization view.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_07_prcreation.js",
@@ -950,7 +950,7 @@
       "id": "T084",
       "title": "VALID_TRANSITIONS['PAUSED'] has no resume paths — pause feature is a dead-end",
       "description": "CONFIRMED by reading pr_split_13_tui.js VALID_TRANSITIONS: PAUSED state can only transition to DONE. PAUSABLE_STATES includes PLAN_GENERATION and BRANCH_BUILDING. But there is NO path from PAUSED back to either of these states. This means once a user pauses (T059 feature), they can only quit — not resume. Fix: (1) Add 'PLAN_GENERATION' and 'BRANCH_BUILDING' to VALID_TRANSITIONS['PAUSED']. (2) Add a 'resume' choice to the pause handling (a 'Resume' button in a paused state overlay). (3) In the TUI, when the wizard is PAUSED (from PLAN_GENERATION context), resuming should transition back to PLAN_GENERATION and re-trigger the analysis poll. From BRANCH_BUILDING context, resuming transitions back to BRANCH_BUILDING and re-triggers the verify poll. (4) The pause context (which state was paused from) must be stored in wizard.data.pausedFrom. (5) Write state machine tests verifying PAUSED → PLAN_GENERATION and PAUSED → BRANCH_BUILDING transitions work. (6) This task is a prerequisite for T059 (pause/resume verify).",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_13_tui.js",
@@ -1063,7 +1063,7 @@
       "id": "T094",
       "title": "verifyEquivalenceDetailed.diffFiles compares only lastSplit vs source — correctness depends on cumulative branch assumption",
       "description": "CONFIRMED by reading pr_split_06_verification.js verifyEquivalenceDetailed() in session 6: builds diffFiles by calling gitExec(dir, ['diff', '--name-only', lastSplit, plan.sourceBranch]) where lastSplit = plan.splits[plan.splits.length - 1].name — always the FINAL split. verifyEquivalence() compares rev-parse lastSplit^{tree} vs sourceBranch^{tree} tree hashes. This is ONLY correct if splits form a CUMULATIVE chain (e.g., split2 is based on split1, progressively accumulating all files — each split includes all prior content plus new changes). If instead splits are INDEPENDENT branches off the same base (each holding only its own files), then lastSplit only has its subset and both the tree hash comparison and the diffFiles output would be wrong/meaningless. REQUIRED INVESTIGATION: (1) Read pr_split_05_execution.js fully to determine whether branches are cumulative or independent. (2) If cumulative chain: add a DESIGN NOTE comment in verifyEquivalence() stating the chain assumption explicitly. (3) If independent: the equivalence check must be redesigned — likely using a combined merge or tree-walk approach. (4) Either way, write an integration test with a known 3-split structure and verify equivalence detection is accurate. (5) Fix verifyEquivalenceDetailed to compare the FULL combined tree vs source if independent.",
-      "status": "not-started",
+      "status": "done",
       "body": 1,
       "files_affected": [
         "internal/command/pr_split_06_verification.js",
@@ -1260,7 +1260,7 @@
       "id": "T111",
       "title": "renderClassificationPrompt silently sends empty string to Claude when osm:text/template unavailable",
       "description": "CONFIRMED by reading pr_split_09_claude.js renderPrompt() and renderClassificationPrompt() in session 9: renderPrompt() returns { text: string, error: string|null }. When osm:text/template is unavailable, it returns { text: '', error: 'osm:text/template module not available' }. But renderClassificationPrompt(), renderSplitPlanPrompt(), and renderConflictPrompt() do NOT check renderPrompt().error — they propagate the result but callers don't inspect it. In automatedSplit() step 3, the code sends renderResult.text to Claude without verifying renderResult.error. If template rendering fails, Claude receives an empty string prompt, has zero context for classification, and produces undefined output or generic error. Fix: (1) In renderClassificationPrompt, renderSplitPlanPrompt, and renderConflictPrompt: ensure callers receive the error — add jsdoc annotations. (2) In automatedSplit() step 3 (sendToHandle pre-flight): add `if (renderResult.error) { return { error: 'Failed to render classification prompt: ' + renderResult.error }; }` before calling sendToHandle. (3) In resolveConflictsWithClaude: check renderConflictPrompt result.error before sending. (4) Write a unit test: mock prSplit._modules.template = null, assert renderClassificationPrompt returns { text: '', error: string } and automatedSplit returns an error at step 3 without calling sendToHandle.",
-      "status": "not-started",
+      "status": "done",
       "body": 1,
       "files_affected": [
         "internal/command/pr_split_09_claude.js",
@@ -1281,7 +1281,7 @@
       "id": "T113",
       "title": "startAutoAnalysis calls synchronous isAvailable() from BubbleTea Update handler — blocks event loop when executor not yet resolved",
       "description": "CONFIRMED by reading pr_split_16_tui_core.js startAutoAnalysis() in session 9: the code calls `st.claudeExecutor.isAvailable()` — the SYNCHRONOUS ClaudeCodeExecutor.prototype.isAvailable() which calls resolve() → exec.execv(['which', 'claude']) — a BLOCKING subprocess call. This runs in the BubbleTea Update handler (via handleNext → startAutoAnalysis when mode==='auto'). The synchronous version short-circuits (`if (this.resolved) return true;`) ONLY if handleClaudeCheck has already run and populated `st.claudeExecutor.resolved`. In the following edge cases, the blocking call DOES occur: (a) User selects 'auto' strategy and immediately presses Enter/Next before the auto-detect tick runs; (b) `st.claudeExecutor` is null and gets created fresh in startAutoAnalysis without prior resolution; (c) In tests or headless mode where handleClaudeCheck is never triggered. Fix: (1) Add a guard: if st.claudeExecutor is freshly created AND st.claudeExecutor.resolved === null, schedule `return [s, tea.tick(1, 'check-claude')];` to defer to HandleClaudeCheck. Set a pending flag `s.pendingAutoAnalysis = true`. (2) In handleClaudeCheckPoll when check completes and `s.pendingAutoAnalysis` is true, clear the flag and call `return startAutoAnalysis(s)`. (3) Document that startAutoAnalysis assumes claudeExecutor.resolved is already populated. (4) Write a TUI test ensuring startAutoAnalysis when called with an unresolved executor schedules check-claude instead of blocking.",
-      "status": "not-started",
+      "status": "done",
       "body": 1,
       "files_affected": [
         "internal/command/pr_split_16_tui_core.js"
@@ -1301,7 +1301,7 @@
       "id": "T115",
       "title": "pollVerifySession (PTY-based path) hardcodes preExisting:false — pre-existing failures always treated as new on all Unix systems",
       "description": "CONFIRMED by reading pr_split_16_tui_core.js pollVerifySession() in session 9: when the primary PTY-based CaptureSession verification completes, the result always has `preExisting: false` hardcoded. ONLY the async fallback path (runVerifyFallbackAsync, used when CaptureSession unavailable) correctly propagates `verifyResult.preExisting` from verifySplitAsync(). On every Unix system (macOS, Linux — all systems with PTY support), the primary PTY path is used — meaning preExisting is NEVER set to true via the primary path. The consequence: every pre-existing failure (one that also fails on the base branch) is treated as a new failure, triggering resolveConflictsWithClaude for failures that CAN'T be fixed by changing the split. This wastes AI API calls, adds latency, and generates misleading 'resolution' suggestions. Fix: (1) After the CaptureSession completes and exitCode !== 0, run a quick async check on the BASE branch: `var baseResult = await prSplit.verifySplitAsync(plan.baseBranch, {...})`. (2) Cache the base result (keyed by baseBranch) to avoid re-running for each split. (3) If base also fails: set `preExisting: true` in the result, add a gray 'pre-existing' badge in viewVerificationScreen. (4) In the error resolution screen, show '(this failure also exists on base branch — cannot fix by modifying split)'. (5) In resolveConflictsWithClaude, skip branches with preExisting:true unless config.resolvePreExisting is true. (6) Write a test: mock verify on base branch as failing, mock verify on split as failing, assert pollVerifySession produces preExisting:true.",
-      "status": "not-started",
+      "status": "done",
       "body": 1,
       "files_affected": [
         "internal/command/pr_split_16_tui_core.js",
@@ -1313,7 +1313,7 @@
       "id": "T116",
       "title": "handleAutoSplitPoll two error paths set s.wizardState='ERROR' without wizard.transition() — state machine diverges from render state",
       "description": "CONFIRMED by reading pr_split_16_tui_core.js handleAutoSplitPoll() completion handler in session 9: two error paths exist: (1) `if (result && result.error) { s.errorDetails = result.error; s.wizardState = 'ERROR'; return [s, null]; }` and (2) the 'no plan or splits' else: `s.errorDetails = '...'; s.wizardState = 'ERROR'; return [s, null];` — NEITHER calls `s.wizard.transition('ERROR')`. After these paths, `s.wizard.current` (state machine's underlying state) is still CONFIG or whatever it was before, while `s.wizardState` says 'ERROR'. Functions that check `wizard.current` will behave incorrectly: handleFinalizationState returns error because wizard.current !== 'FINALIZATION'; handleBack hit the default case and does nothing; handleNext switch hits wrong case based on stale wizard.current. Fix: (1) Insert `try { s.wizard.transition('ERROR'); } catch (te) { /* not reachable from all states — force it */ }` before each `s.wizardState = 'ERROR'`. (2) If the transition fails (ErrorTransition), force-set s.wizardState to a displayable error state and log the inconsistency. (3) Audit ALL occurrences of `s.wizardState =` in the file to verify each has a corresponding `s.wizard.transition()` or uses `s.wizardState = s.wizard.current` after a transition. (4) Write a unit test: simulate pipeline result.error, assert s.wizard.current === s.wizardState === 'ERROR' after handleAutoSplitPoll.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_16_tui_core.js"
@@ -1323,7 +1323,7 @@
       "id": "T117",
       "title": "executeSplitAsync and executeSplit only check isCancelled() — isForceCancelled() (double Ctrl+C) ignored, no immediate abort",
       "description": "CONFIRMED by reading pr_split_05_execution.js (both executeSplit sync at lines 1-217 and executeSplitAsync at lines 218-420 in sessions 6-9): every cancellation check calls `prSplit.isCancelled()`. `prSplit.isForceCancelled()` is defined in pr_split_00_core.js (checks _cancelSource('forceCancelled')) but NEVER called in execution code. In the TUI, double-pressing Ctrl+C triggers the FORCE_CANCEL state and sets `_cancelSource` to return true for 'forceCancelled'. However, since executeSplit(Async) never checks this, force-cancel users experience identical slow cancellation — the loop continues until the next `isCancelled()` check point (potentially through another split or multiple files). Users expect immediate abort from force-cancel. Fix: (1) In executeSplit() and executeSplitAsync(): change each `if (prSplit.isCancelled())` to `if (prSplit.isCancelled() || prSplit.isForceCancelled())`. For force-cancel specifically: `if (prSplit.isForceCancelled()) { cleanupWorktreeIfSafe(); return { error: 'force-cancelled by user', results: results }; }` — consider skipping worktree cleanup on force-cancel to abort faster. (2) Similarly for startVerifySession / pollVerifySession: kill the CaptureSession immediately when isForceCancelled() returns true (currently only isCancelled() is checked before stopping poll). (3) Write a unit test: set _cancelSource to return true for 'forceCancelled', call executeSplitAsync with 5 splits, assert it returns after 0 splits processed (no splits completed).",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_05_execution.js",

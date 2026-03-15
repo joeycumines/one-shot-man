@@ -1288,6 +1288,8 @@
             s.showConfirmCancel = false;
             s.confirmCancelFocus = 0;  // reset for next open
             s.isProcessing = false;
+            s.analysisRunning = false; // T001: stop orphaned analysis poll ticks
+            s.autoSplitRunning = false; // T001: same for auto-split pipeline
             cleanupActiveSession();
             s.wizard.cancel();
             s.wizardState = 'CANCELLED';
@@ -2794,8 +2796,17 @@
         if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
         s.analysisSteps[2].active = true;
         var groupStart = Date.now();
-        st.groupsCache = await prSplit.applyStrategyAsync(
-            st.analysisCache.files, prSplit.runtime.strategy);
+        try {
+            st.groupsCache = await prSplit.applyStrategyAsync(
+                st.analysisCache.files, prSplit.runtime.strategy);
+        } catch (e) {
+            if (s.wizard.current === 'CANCELLED') return; // T001: guard
+            s.isProcessing = false;
+            s.errorDetails = 'Grouping failed: ' + (e.message || String(e));
+            try { s.wizard.transition('ERROR'); } catch (te) { /* terminal state */ }
+            s.wizardState = s.wizard.current;
+            return;
+        }
         s.analysisSteps[2].done = true;
         s.analysisSteps[2].active = false;
         s.analysisSteps[2].elapsed = Date.now() - groupStart;
@@ -2805,13 +2816,22 @@
         if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
         s.analysisSteps[3].active = true;
         var planStart = Date.now();
-        st.planCache = await prSplit.createSplitPlanAsync(st.groupsCache, {
-            baseBranch: prSplit.runtime.baseBranch,
-            sourceBranch: st.analysisCache.currentBranch,
-            branchPrefix: prSplit.runtime.branchPrefix,
-            verifyCommand: prSplit.runtime.verifyCommand,
-            fileStatuses: st.analysisCache.fileStatuses
-        });
+        try {
+            st.planCache = await prSplit.createSplitPlanAsync(st.groupsCache, {
+                baseBranch: prSplit.runtime.baseBranch,
+                sourceBranch: st.analysisCache.currentBranch,
+                branchPrefix: prSplit.runtime.branchPrefix,
+                verifyCommand: prSplit.runtime.verifyCommand,
+                fileStatuses: st.analysisCache.fileStatuses
+            });
+        } catch (e) {
+            if (s.wizard.current === 'CANCELLED') return; // T001: guard
+            s.isProcessing = false;
+            s.errorDetails = 'Plan creation failed: ' + (e.message || String(e));
+            try { s.wizard.transition('ERROR'); } catch (te) { /* terminal state */ }
+            s.wizardState = s.wizard.current;
+            return;
+        }
         s.analysisSteps[3].done = true;
         s.analysisSteps[3].active = false;
         s.analysisSteps[3].elapsed = Date.now() - planStart;

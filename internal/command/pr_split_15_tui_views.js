@@ -1500,10 +1500,14 @@
                 // ── Live CaptureSession viewport ─────────────────────
                 if (s.activeVerifySession) {
                     lines.push('');
-                    var liveOutput = s.activeVerifySession.output();
+                    // T005: Use screen() for ANSI-escaped VT100 rendering
+                    // instead of output() which strips all formatting.
+                    var liveOutput = s.activeVerifySession.screen();
                     var liveLines = liveOutput.split('\n');
-                    // Remove trailing empty lines from VTerm output.
-                    while (liveLines.length > 0 && liveLines[liveLines.length - 1] === '') {
+                    // Remove trailing empty lines from VTerm screen output.
+                    // screen() may include ANSI reset codes on empty lines,
+                    // so we check visual width rather than string equality.
+                    while (liveLines.length > 0 && lipgloss.width(liveLines[liveLines.length - 1]) === 0) {
                         liveLines.pop();
                     }
 
@@ -1522,12 +1526,15 @@
                     }
                     var endLine = Math.min(totalLines, startLine + viewHeight);
 
-                    // Build viewport content lines.
+                    // Build viewport content lines with ANSI-aware truncation.
                     var contentLines = [];
                     for (var vl = startLine; vl < endLine; vl++) {
                         var ln = liveLines[vl] || '';
-                        if (ln.length > viewWidth - 2) {
-                            ln = ln.substring(0, viewWidth - 5) + '...';
+                        // T005: Use lipgloss.width for ANSI-aware visual width,
+                        // and lipgloss maxWidth for ANSI-safe truncation.
+                        var visualW = lipgloss.width(ln);
+                        if (visualW > viewWidth - 2) {
+                            ln = lipgloss.newStyle().maxWidth(viewWidth - 2).render(ln);
                         }
                         contentLines.push(ln);
                     }

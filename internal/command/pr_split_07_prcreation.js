@@ -27,9 +27,29 @@
         var pushOnly = options.pushOnly || false;
         var autoMerge = options.autoMerge || false;
         var mergeMethod = options.mergeMethod || 'squash';
+        var dryRun = options.dryRun || false;
 
         if (!plan.splits || plan.splits.length === 0) {
             return { error: 'no splits in plan — run "plan" or "run" to generate splits first', results: [] };
+        }
+
+        // T077: Dry-run mode — simulate all operations, no real git/gh calls.
+        if (dryRun) {
+            var dryResults = [];
+            for (var d = 0; d < plan.splits.length; d++) {
+                var drySplit = plan.splits[d];
+                var dryBase = d === 0 ? plan.baseBranch : plan.splits[d - 1].name;
+                dryResults.push({
+                    name: drySplit.name,
+                    pushed: false,
+                    prUrl: '',
+                    error: null,
+                    dryRun: true,
+                    dryRunMsg: '[DRY RUN] Would push ' + drySplit.name +
+                        (pushOnly ? '' : ' and create PR (base: ' + dryBase + ')')
+                });
+            }
+            return { error: null, results: dryResults, dryRun: true };
         }
 
         // Late-bound references for mockability.
@@ -230,9 +250,30 @@
         var autoMerge = options.autoMerge || false;
         var mergeMethod = options.mergeMethod || 'squash';
         var progressFn = options.progressFn || null;
+        var dryRun = options.dryRun || false;
 
         if (!plan.splits || plan.splits.length === 0) {
             return { error: 'no splits in plan \u2014 run "plan" or "run" to generate splits first', results: [] };
+        }
+
+        // T077: Dry-run mode — simulate all operations, no real git/gh calls.
+        if (dryRun) {
+            var dryResults = [];
+            for (var d = 0; d < plan.splits.length; d++) {
+                var drySplit = plan.splits[d];
+                var dryBase = d === 0 ? plan.baseBranch : plan.splits[d - 1].name;
+                if (progressFn) progressFn('[DRY RUN] ' + (d + 1) + '/' + plan.splits.length + ': ' + drySplit.name);
+                dryResults.push({
+                    name: drySplit.name,
+                    pushed: false,
+                    prUrl: '',
+                    error: null,
+                    dryRun: true,
+                    dryRunMsg: '[DRY RUN] Would push ' + drySplit.name +
+                        (pushOnly ? '' : ' and create PR (base: ' + dryBase + ')')
+                });
+            }
+            return { error: null, results: dryResults, dryRun: true };
         }
 
         var gitExecAsync = prSplit._gitExecAsync;

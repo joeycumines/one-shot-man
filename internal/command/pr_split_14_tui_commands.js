@@ -436,12 +436,18 @@
                     output.print('Creating PRs for ' + effectivePlan.splits.length + ' splits...');
                     var result = prSplit.createPRs(effectivePlan, {
                         draft: draft, pushOnly: pushOnly,
-                        autoMerge: autoMerge, mergeMethod: mergeMethod
+                        autoMerge: autoMerge, mergeMethod: mergeMethod,
+                        dryRun: runtime.dryRun || false  // T077
                     });
+                    if (result.dryRun) {
+                        output.print('[DRY RUN] No branches pushed, no PRs created.');
+                    }
                     if (result.error) { output.print('Error: ' + result.error); return; }
                     for (var i = 0; i < result.results.length; i++) {
                         var r = result.results[i];
-                        if (r.error) {
+                        if (r.dryRun) {
+                            output.print('  \u25cb ' + r.name + (r.dryRunMsg ? ': ' + r.dryRunMsg : ''));
+                        } else if (r.error) {
                             output.print('  ' + style.error('\u274c') + ' ' + r.name + ': ' + r.error);
                         } else if (r.prUrl) {
                             output.print('  ' + style.success('\u2713') + ' ' + r.name + ' \u2192 ' + style.info(r.prUrl));

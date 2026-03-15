@@ -226,6 +226,7 @@
                 prCreationError: null,      // error string from createPRs or null
                 prCreationResults: null,    // array of per-PR results or null
                 prCreationProgressMsg: '',  // real-time progress message from progressFn
+                prCreationDryRun: false,    // T077: true if results are from dry-run
 
                 // First render flag.
                 needsInitClear: true
@@ -3580,6 +3581,7 @@
             pushOnly: prSplit.runtime.pushOnly || false,
             autoMerge: prSplit.runtime.autoMerge || false,
             mergeMethod: prSplit.runtime.mergeMethod || 'squash',
+            dryRun: prSplit.runtime.dryRun || false,  // T077
             progressFn: function(msg) {
                 s.prCreationProgressMsg = msg;
             }
@@ -3588,6 +3590,7 @@
         // T076: Fully async — uses exec.spawn for all git/gh operations.
         prSplit.createPRsAsync(effectivePlan, opts).then(function(result) {
             s.prCreationResults = result.results || [];
+            s.prCreationDryRun = result.dryRun || false;  // T077
             if (result.error) {
                 s.prCreationError = result.error;
             }

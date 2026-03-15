@@ -1745,11 +1745,21 @@
         }
         if (s.prCreationResults && s.prCreationResults.length > 0 && !s.prCreationRunning) {
             lines.push('');
+            // T077: Show dry-run badge prominently.
+            if (s.prCreationDryRun) {
+                lines.push('  ' + styles.warningBadge().render(' DRY RUN ') +
+                    styles.dim().render('  No branches pushed, no PRs created.'));
+                lines.push('');
+            }
             lines.push(styles.bold().render('  PR Results:'));
-            var created = 0, skipped = 0, failed = 0;
+            var created = 0, skipped = 0, failed = 0, dryRunCount = 0;
             for (var ri = 0; ri < s.prCreationResults.length; ri++) {
                 var pr = s.prCreationResults[ri];
-                if (pr.error) {
+                if (pr.dryRun) {
+                    dryRunCount++;
+                    lines.push('    ' + styles.dim().render('\u25cb ' + pr.name +
+                        (pr.dryRunMsg ? ': ' + pr.dryRunMsg : '')));
+                } else if (pr.error) {
                     failed++;
                     lines.push('    ' + styles.errorBadge().render(' \u2718 ') + ' ' +
                         styles.fieldValue().render(pr.name) +
@@ -1773,7 +1783,9 @@
                 }
             }
             lines.push('');
-            var summary = '  ' + created + ' created';
+            var summary = s.prCreationDryRun ?
+                '  DRY RUN: ' + dryRunCount + ' simulated' :
+                '  ' + created + ' created';
             if (skipped > 0) summary += ', ' + skipped + ' skipped';
             if (failed > 0) summary += ', ' + failed + ' failed';
             lines.push(styles.dim().render(summary));

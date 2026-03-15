@@ -419,6 +419,14 @@
 
     // -----------------------------------------------------------------------
     //  Prompt Rendering
+    //
+    //  T111 DESIGN NOTE: renderPrompt returns { text: string, error: string|null }.
+    //  ALL callers MUST check .error before using .text. When .error is non-null,
+    //  .text is the empty string '' — sending it to Claude produces undefined
+    //  behavior (silent empty prompt). Current call sites in chunks 08 and 10
+    //  correctly check .error (see automatedSplit step 3, resolveConflictsWithClaude,
+    //  claude-fix strategy). This contract is enforced by test coverage:
+    //  TestRenderPrompt_TemplateModuleNull, TestRenderPrompt_TemplateExecuteThrows.
     // -----------------------------------------------------------------------
 
     function renderPrompt(tmplStr, data) {

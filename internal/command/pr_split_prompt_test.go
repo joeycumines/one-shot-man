@@ -462,3 +462,175 @@ func TestHeuristicFallback_TreeHashMismatch(t *testing.T) {
 		t.Errorf("expected error containing 'tree hash mismatch', got: %s", *result.Error)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T111: Error path tests — template module unavailable
+//
+// When prSplit._modules.template is null/unset, all render*Prompt functions
+// must return { text: '', error: <non-empty> }. Callers must NOT silently
+// send the empty .text to Claude.
+// ---------------------------------------------------------------------------
+
+func TestRenderPrompt_TemplateModuleNull(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Null out the template module.
+	_, err := evalJS(`globalThis.prSplit._modules.template = null`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// renderClassificationPrompt should return error.
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.renderClassificationPrompt(
+		{ baseBranch: 'main', files: ['foo.go'], fileStatuses: { 'foo.go': 'A' } },
+		{}
+	))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result struct {
+		Text  string `json:"text"`
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Error == "" {
+		t.Fatal("expected error when template module is null")
+	}
+	if !strings.Contains(result.Error, "not available") {
+		t.Errorf("error should mention unavailability, got: %s", result.Error)
+	}
+	if result.Text != "" {
+		t.Errorf("text should be empty when error is returned, got: %q", result.Text)
+	}
+}
+
+func TestRenderPrompt_TemplateModuleNull_AllFunctions(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Null out the template module.
+	_, err := evalJS(`globalThis.prSplit._modules.template = null`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Test all three render functions with null template module.
+	tests := []struct {
+		name string
+		js   string
+	}{
+		{
+			"renderClassificationPrompt",
+			`JSON.stringify(globalThis.prSplit.renderClassificationPrompt(
+				{ baseBranch: 'main', files: ['x.go'], fileStatuses: { 'x.go': 'A' } }, {}
+			))`,
+		},
+		{
+			"renderSplitPlanPrompt",
+			`JSON.stringify(globalThis.prSplit.renderSplitPlanPrompt('test classification', {}))`,
+		},
+		{
+			"renderConflictPrompt",
+			`JSON.stringify(globalThis.prSplit.renderConflictPrompt({
+				branchName: 'split/api', exitCode: 1, errorOutput: 'tests failed'
+			}))`,
+		},
+	}
+
+	for _, tc := range tests {
+		val, err := evalJS(tc.js)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+
+		var result struct {
+			Text  string `json:"text"`
+			Error string `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+			t.Fatalf("%s: parse error: %v", tc.name, err)
+		}
+		if result.Error == "" {
+			t.Errorf("%s: expected error when template module is null", tc.name)
+		}
+		if result.Text != "" {
+			t.Errorf("%s: text should be empty on error, got %q", tc.name, result.Text)
+		}
+	}
+}
+
+func TestRenderPrompt_TemplateExecuteThrows(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Replace template.execute with a function that throws.
+	_, err := evalJS(`globalThis.prSplit._modules.template = {
+		execute: function() { throw new Error('template parse error: unexpected EOF'); }
+	}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.renderClassificationPrompt(
+		{ baseBranch: 'main', files: ['x.go'], fileStatuses: { 'x.go': 'A' } }, {}
+	))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result struct {
+		Text  string `json:"text"`
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Error == "" {
+		t.Fatal("expected error when template.execute throws")
+	}
+	if !strings.Contains(result.Error, "template render failed") {
+		t.Errorf("error should mention render failure, got: %s", result.Error)
+	}
+	if !strings.Contains(result.Error, "unexpected EOF") {
+		t.Errorf("error should include original message, got: %s", result.Error)
+	}
+	if result.Text != "" {
+		t.Errorf("text should be empty on error, got: %q", result.Text)
+	}
+}
+
+func TestRenderPrompt_RenderPromptDirect(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Test renderPrompt directly — success case.
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.renderPrompt(
+		'Hello {{.Name}}',
+		{ Name: 'Takumi' }
+	))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result struct {
+		Text  string `json:"text"`
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Error != "" {
+		t.Fatalf("unexpected error: %s", result.Error)
+	}
+	if !strings.Contains(result.Text, "Hello Takumi") {
+		t.Errorf("expected 'Hello Takumi' in text, got: %q", result.Text)
+	}
+}

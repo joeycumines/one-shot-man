@@ -58,7 +58,7 @@
         'PLAN_EDITOR':      { 'PLAN_REVIEW': true },
         'BRANCH_BUILDING':  { 'EQUIV_CHECK': true, 'ERROR_RESOLUTION': true, 'CANCELLED': true, 'FORCE_CANCEL': true, 'PAUSED': true, 'ERROR': true },
         'ERROR_RESOLUTION': { 'EQUIV_CHECK': true, 'BRANCH_BUILDING': true, 'PLAN_GENERATION': true, 'CANCELLED': true, 'FORCE_CANCEL': true },
-        'EQUIV_CHECK':      { 'FINALIZATION': true, 'ERROR_RESOLUTION': true, 'CANCELLED': true, 'ERROR': true },
+        'EQUIV_CHECK':      { 'FINALIZATION': true, 'PLAN_REVIEW': true, 'ERROR_RESOLUTION': true, 'CANCELLED': true, 'ERROR': true },
         'FINALIZATION':     { 'FINALIZATION': true, 'DONE': true },
         'DONE':             { 'IDLE': true },
         'CANCELLED':        { 'DONE': true },

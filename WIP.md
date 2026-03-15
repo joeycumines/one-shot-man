@@ -8,7 +8,7 @@
 2. `f4e0406a` — Enforce BubbleTea view function purity (T028+T072+T080+T120)
 3. `aa5e1d3f` — MCP Schema Alignment (T121+T122)
 4. `3a2010b1` — Async Execution Unblock: remove sync waitFor fallback (T093) + defer baseline verify (T090)
-5. (pending) — Async Execution Unblock remainder: T078+T092+T109
+5. `4bd7cea7` — Async Execution Unblock remainder: T078+T092+T109
 
 ## Completed Tasks (11/123)
 - T028: renderStatusBar auto-dismiss → tick-based handler  
@@ -24,27 +24,31 @@
 - T109: Convert resolveConflictsWithClaude exec.execv for resolution commands to async shellExecAsync
 
 ## Current Work
-**Rule of Two PASSED for T078+T092+T109 bundle — committing now**
+**EQUIV_CHECK Screen Bundle: T118+T061+T079+T064 — Implementation COMPLETE, validating Rule of Two**
 
-### Rule of Two Log
-- Pass 1 (first attempt): FAIL — 4 issues found
-  - Issue 1 (Medium): T078 not marked done → FIXED
-  - Issue 2 (Low): Stale comment → FIXED
-  - Issue 3 (Medium): Missing per-command timeout → FIXED (Promise.race + resolveCommandTimeoutMs)
-  - Issue 4 (Low): Missing benchmark tests → DEFERRED to T053
-- Pass 1 (retry): PASS ✅
-- Pass 2: PASS ✅ — Two contiguous clean runs confirmed
+### What Was Done (This Bundle)
+- **T118**: Fixed broken field names in viewVerificationScreen (equiv.expected→equiv.splitTree, equiv.actual→equiv.sourceTree). Added diffFiles/diffSummary display with overflow handling (up to 20 files, then "... and N more").
+- **T064**: Added expandable tree hash details on FAIL, warning sections for skipped branches with reasons, "Next steps" hints on failure, processing state with progress messaging.
+- **T079**: Added PLAN_REVIEW to VALID_TRANSITIONS for EQUIV_CHECK. Added "Revise Plan" button to viewVerificationScreen. Wired handleBack for EQUIV_CHECK→PLAN_REVIEW with branch cleanup.
+- **T061**: Added getFocusElements case for EQUIV_CHECK with 3 buttons (equiv-reverify, equiv-revise, nav-next). Wired handleFocusActivate and handleScreenMouseClick for all EQUIV_CHECK buttons. Modified runEquivCheckAsync to dwell on failures (no auto-transition on FAIL, only on PASS).
+- **T075**: DEFERRED — blocked by T089+T108 (verifyEquivalenceDetailedAsync does not exist yet)
 
-Files modified (uncommitted):
-- pr_split_00_core.js: Added shellExecAsync helper
-- pr_split_02_grouping.js: Added groupByDependencyAsync, selectStrategyAsync, applyStrategyAsync
-- pr_split_08_conflict.js: Converted all exec.execv in strategies + resolveConflicts to shellExecAsync
-- pr_split_08_conflict_test.go: Added exec.spawn mock to 3 resolveConflicts tests
-- pr_split_10_pipeline.js: Converted resolveConflictsWithClaude exec.execv to shellExecAsync + per-command timeout
-- pr_split_16_tui_core.js: Updated runAnalysisAsync to use applyStrategyAsync
-- config.mk: Added test-chunk08 and test-chunk13 Make targets
+### Files Modified (Uncommitted)
+- pr_split_15_tui_views.js: Complete rewrite of viewVerificationScreen (T118+T064)
+- pr_split_13_tui.js: Added PLAN_REVIEW to EQUIV_CHECK transitions (T079)
+- pr_split_16_tui_core.js: Added getFocusElements/handleFocusActivate/handleScreenMouseClick/handleBack for EQUIV_CHECK (T061+T079), modified runEquivCheckAsync dwell-on-fail (T061)
+- blueprint.json: Updated T118, T061, T079, T064 → done
+
+### Test Results
+- `make build` → PASS ✅
+- `make test-chunk13` → 113/113 PASS ✅
+- `make test-pr-split-quick` → ALL PASS ✅ (113.1s, exit_code: 0)
+
+### Rule of Two Log (This Bundle)
+- Pass 1: PENDING
+- Pass 2: PENDING
 
 ## Next Bundles (priority order)
-1. EQUIV_CHECK Screen Bundle (T118, T075, T061, T079, T064)
-2. Layout Shift Root Fix (T011 → T062, T063, T119)
-3. Create PRs Activation Chain (T095 → T076 → T077, T083, T069)
+1. Layout Shift Root Fix (T011 → T062, T063, T119)
+2. Create PRs Activation Chain (T095 → T076 → T077, T083, T069)
+3. Body 1 tasks: T000, T001, T002, etc.

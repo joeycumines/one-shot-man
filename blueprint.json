@@ -687,7 +687,7 @@
       "id": "T061",
       "title": "Fix Screen 6 (EQUIV_CHECK): add getFocusElements, Re-verify button, and keyboard navigation",
       "description": "CONFIRMED BUG (second session read): getFocusElements() in pr_split_16_tui_core.js returns [] for EQUIV_CHECK state (default case of switch). The EQUIV_CHECK screen is dead — no Tab navigation, no keyboard-activatable elements. Fix: (1) Add {id: 'nav-next', type: 'nav'} to allow Tab-to-Continue navigation. (2) Add a 'Re-verify' button that triggers startEquivCheck(s) on the equivalence check. Zone: 'equiv-reverify'. (3) Add getFocusElements case for EQUIV_CHECK: [{id: 'equiv-reverify', type: 'button'}, {id: 'nav-next', type: 'nav'}]. (4) In handleFocusActivate, add 'equiv-reverify' → startEquivCheck(s) activation. (5) In handleScreenMouseClick, add EQUIV_CHECK clause for 'equiv-reverify' zone. (6) Add 'Re-verify' button to viewVerificationScreen above the result display. (7) Write unit tests verifying the focus list and button activation.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_16_tui_core.js",
@@ -721,7 +721,7 @@
       "id": "T064",
       "title": "Enhance viewVerificationScreen: add expandable warning details and tree hash display",
       "description": "The current viewVerificationScreen is minimal (17 lines of logic). Enhance: (1) When equiv.equivalent is false, show the file-level diff: which files differ between the combined split tree and the source tree (if that data is available in equiv). (2) Add a 'Details' expandable section showing the exact tree hash comparison with context. (3) When equiv.skippedBranches is non-empty, show which branches were skipped and WHY (the skippedBranches field should include reason strings, not just names). (4) Add a 'Next steps' hint when verification fails: 'Possible causes: missing files in splits, merge conflicts, empty commits.' (5) When isProcessing=true, show which step is currently running (tree hash computation, etc.) — this requires the equiv check to report progress.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -891,7 +891,7 @@
       "id": "T079",
       "title": "VALID_TRANSITIONS missing EQUIV_CHECK → PLAN_REVIEW — user cannot go back from equivalence check",
       "description": "CONFIRMED by reading pr_split_13_tui.js VALID_TRANSITIONS: EQUIV_CHECK only transitions to FINALIZATION, ERROR_RESOLUTION, CANCELLED, or ERROR. There is no path back to PLAN_REVIEW. This means: if the equivalence check fails (e.g., tree hash mismatch) and the user wants to adjust the plan (re-split differently), they must cancel and start over. Fix: (1) Add 'PLAN_REVIEW' to VALID_TRANSITIONS['EQUIV_CHECK']. (2) Add a 'Revise Plan' button to viewVerificationScreen (EQUIV_CHECK) that triggers transition to PLAN_REVIEW. (3) The nav-back button in the nav bar must also work from EQUIV_CHECK (currently Back is shown for stepIdx > 0, but EQUIV_CHECK is step 5, so Back IS shown — but there's no handler for it in EQUIV_CHECK state). (4) Audit STATE_TO_STEP map — EQUIV_CHECK is step 5, PLAN_REVIEW is step 2. A back from step 5 → step 2 should work. (5) Confirm the nav-back handler in pr_split_16_tui_core.js correctly handles EQUIV_CHECK → PLAN_REVIEW. (6) Write transition tests.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_13_tui.js",
@@ -1335,7 +1335,7 @@
       "id": "T118",
       "title": "viewVerificationScreen (EQUIV_CHECK) renders equiv.expected/equiv.actual which are always undefined — tree hashes always blank on FAIL",
       "description": "CONFIRMED by reading pr_split_15_tui_views.js lines 1601-1610 in session 9. In viewVerificationScreen, the FAIL branch renders:\n  lines.push('    Expected: ' + styles.fieldValue().render(equiv.expected));\n  lines.push('    Actual:   ' + styles.fieldValue().render(equiv.actual));\nBUT verifyEquivalenceDetailed() (pr_split_07_verify.js) returns the object:\n  { equivalent: bool, splitTree: string, sourceTree: string, diffFiles: string[], diffSummary: string, error: string }\nThe fields 'expected' and 'actual' are NEVER set — they are always undefined in JavaScript. This means the FAIL path always renders two blank lines for the tree hashes, giving the user ZERO information about why equivalence verification failed. Additionally: (1) equiv.diffFiles (list of differing files) and equiv.diffSummary are available in the result but never displayed on this screen — the user cannot see which files differ. Fix: (1) Change equiv.expected → equiv.splitTree, equiv.actual → equiv.sourceTree in the viewVerificationScreen FAIL block. (2) After the tree hash lines, add: if (equiv.diffFiles && equiv.diffFiles.length > 0) { lines.push('    Diff files: ' + equiv.diffFiles.join(', ')); } (3) If equiv.diffSummary, add a summary line. (4) Write a test that calls viewVerificationScreen with a mocked state where s.equivalenceResult = { equivalent: false, splitTree: 'abc123', sourceTree: 'def456', diffFiles: ['a.go', 'b.go'] } and asserts both hash values appear in the output and both file names appear.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",

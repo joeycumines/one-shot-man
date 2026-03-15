@@ -1589,8 +1589,10 @@
         lines.push('');
 
         if (s.isProcessing) {
+            // T064: Show which step is currently running.
+            var step = (s.equivStep) ? s.equivStep : 'Checking tree hash equivalence';
             lines.push('  ' + styles.warningBadge().render(' \u25b6 ') +
-                ' Checking tree hash equivalence...');
+                ' ' + step + '...');
             lines.push('');
             lines.push('  ' + renderProgressBar(0.5, (s.width || 80) - 8));
         } else if (s.equivalenceResult) {
@@ -1604,21 +1606,71 @@
             } else if (equiv.error) {
                 lines.push('  ' + styles.errorBadge().render(' ERROR ') + ' ' + equiv.error);
             } else {
+                // T118: Fix field names (was equiv.expected/equiv.actual — always undefined).
                 lines.push('  ' + styles.errorBadge().render(' FAIL ') +
                     ' Tree hash mismatch');
-                if (equiv.expected) {
-                    lines.push('    Expected: ' + styles.fieldValue().render(equiv.expected));
+                if (equiv.splitTree) {
+                    lines.push('    Split tree:  ' + styles.fieldValue().render(equiv.splitTree));
                 }
-                if (equiv.actual) {
-                    lines.push('    Actual:   ' + styles.fieldValue().render(equiv.actual));
+                if (equiv.sourceTree) {
+                    lines.push('    Source tree: ' + styles.fieldValue().render(equiv.sourceTree));
                 }
+
+                // T118/T064: Display diffFiles list when available.
+                if (equiv.diffFiles && equiv.diffFiles.length > 0) {
+                    lines.push('');
+                    lines.push('  ' + styles.bold().render('Files differing from source (' + equiv.diffFiles.length + '):'));
+                    var maxShow = 20;
+                    for (var d = 0; d < Math.min(equiv.diffFiles.length, maxShow); d++) {
+                        lines.push('    ' + styles.dim().render('\u2022 ') + equiv.diffFiles[d]);
+                    }
+                    if (equiv.diffFiles.length > maxShow) {
+                        lines.push(styles.dim().render('    ... and ' + (equiv.diffFiles.length - maxShow) + ' more'));
+                    }
+                }
+
+                // T118: Display diffSummary if available.
+                if (equiv.diffSummary) {
+                    lines.push('');
+                    lines.push(styles.dim().render('  ' + equiv.diffSummary));
+                }
+
+                // T064: "Next steps" hint on failure.
+                lines.push('');
+                lines.push(styles.dim().render('  Possible causes: files moved between splits, uncommitted changes,'));
+                lines.push(styles.dim().render('  or merge conflicts during branch creation. Try re-verifying or'));
+                lines.push(styles.dim().render('  revising the split plan.'));
             }
 
-            // Skipped branches note.
+            // T064: Skipped branches with detail.
             if (equiv.skippedBranches && equiv.skippedBranches.length > 0) {
                 lines.push('');
                 lines.push(styles.warningBadge().render(' Note ') +
-                    ' Skipped ' + equiv.skippedBranches.length + ' branch(es)');
+                    ' Skipped ' + equiv.skippedBranches.length + ' branch(es):');
+                for (var sk = 0; sk < equiv.skippedBranches.length; sk++) {
+                    var branch = equiv.skippedBranches[sk];
+                    if (typeof branch === 'object' && branch.name) {
+                        lines.push('    ' + styles.dim().render('\u2022 ') + branch.name +
+                            (branch.reason ? styles.dim().render(' \u2014 ' + branch.reason) : ''));
+                    } else {
+                        lines.push('    ' + styles.dim().render('\u2022 ') + String(branch));
+                    }
+                }
+            }
+
+            // T061: Action buttons (visible when not processing).
+            if (!equiv.equivalent) {
+                lines.push('');
+                var zone = prSplit._modules.zone;
+                if (zone) {
+                    lines.push('  ' + zone.mark('equiv-reverify', styles.secondaryButton().render(' Re-verify ')) +
+                        '  ' + zone.mark('equiv-revise', styles.secondaryButton().render(' Revise Plan ')) +
+                        '  ' + zone.mark('nav-next', styles.primaryButton().render(' Continue \u25b6 ')));
+                } else {
+                    lines.push('  ' + styles.secondaryButton().render(' Re-verify ') +
+                        '  ' + styles.secondaryButton().render(' Revise Plan ') +
+                        '  ' + styles.primaryButton().render(' Continue \u25b6 '));
+                }
             }
         }
 

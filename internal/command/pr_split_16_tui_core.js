@@ -1885,6 +1885,26 @@
             }
         }
 
+        // T061/T079: EQUIV_CHECK — Re-verify and Revise Plan buttons.
+        if (s.wizardState === 'EQUIV_CHECK' && !s.isProcessing) {
+            if (zone.inBounds('equiv-reverify', msg)) {
+                s.isProcessing = true;
+                s.equivalenceResult = null;
+                return startEquivCheck(s);
+            }
+            if (zone.inBounds('equiv-revise', msg)) {
+                try { s.wizard.transition('PLAN_REVIEW'); } catch (te) { /* ignore */ }
+                s.wizardState = s.wizard.current;
+                s.isProcessing = false;
+                return [s, null];
+            }
+            if (zone.inBounds('nav-next', msg)) {
+                try { s.wizard.transition('FINALIZATION'); } catch (te) { /* already there */ }
+                s.wizardState = s.wizard.current;
+                return [s, null];
+            }
+        }
+
         // Finalization: action buttons.
         if (s.wizardState === 'FINALIZATION') {
             if (zone.inBounds('final-report', msg)) {
@@ -2069,6 +2089,14 @@
                 s.wizardState = 'PLAN_REVIEW';
                 handlePlanEditorState(s.wizard, 'back', st.planCache);
                 return [s, null];
+            // T079: EQUIV_CHECK → PLAN_REVIEW (back-navigation).
+            case 'EQUIV_CHECK':
+                if (!s.isProcessing) {
+                    try { s.wizard.transition('PLAN_REVIEW'); } catch (te) { /* ignore */ }
+                    s.wizardState = s.wizard.current;
+                    s.isProcessing = false;
+                }
+                return [s, null];
             default:
                 return [s, null];
         }
@@ -2219,6 +2247,19 @@
                     {id: 'final-done',       type: 'button'}
                 ];
                 elems.push({id: 'nav-next', type: 'nav'});
+                return elems;
+            }
+            // T061: EQUIV_CHECK focus elements — Re-verify, Revise Plan,
+            // Continue. Only show actionable buttons when not processing.
+            case 'EQUIV_CHECK': {
+                var elems = [];
+                if (!s.isProcessing && s.equivalenceResult) {
+                    if (!s.equivalenceResult.equivalent) {
+                        elems.push({id: 'equiv-reverify', type: 'button'});
+                        elems.push({id: 'equiv-revise',   type: 'button'});
+                    }
+                    elems.push({id: 'nav-next', type: 'nav'});
+                }
                 return elems;
             }
             default:
@@ -2424,6 +2465,19 @@
                         s.focusIndex = Math.max(0, newElems.length - 1);
                     }
                 }
+                return [s, null];
+            }
+            // T061: EQUIV_CHECK buttons.
+            if (focused.id === 'equiv-reverify') {
+                s.isProcessing = true;
+                s.equivalenceResult = null;
+                return startEquivCheck(s);
+            }
+            // T079: Revise Plan — go back to PLAN_REVIEW from EQUIV_CHECK.
+            if (focused.id === 'equiv-revise') {
+                try { s.wizard.transition('PLAN_REVIEW'); } catch (te) { /* ignore */ }
+                s.wizardState = s.wizard.current;
+                s.isProcessing = false;
                 return [s, null];
             }
             // Finalization buttons.
@@ -3433,8 +3487,15 @@
         s.equivalenceResult = equivResult;
 
         s.isProcessing = false;
-        try { s.wizard.transition('FINALIZATION', { equivalence: equivResult }); } catch (te) { /* terminal state */ }
-        s.wizardState = s.wizard.current;
+
+        // T061: On PASS, auto-transition to FINALIZATION.
+        // On FAIL/mismatch, stay on EQUIV_CHECK so user can interact
+        // with Re-verify/Revise Plan/Continue buttons.
+        if (equivResult.equivalent) {
+            try { s.wizard.transition('FINALIZATION', { equivalence: equivResult }); } catch (te) { /* terminal state */ }
+            s.wizardState = s.wizard.current;
+        }
+        // On mismatch: wizardState stays EQUIV_CHECK, view shows results + buttons.
     }
 
     // handleEquivPoll: Called every 100ms to check if the async

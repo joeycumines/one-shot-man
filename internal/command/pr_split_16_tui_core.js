@@ -2962,6 +2962,19 @@
             return [s, tea.tick(50, 'claude-check-poll')];
         }
 
+        // T113: If startAutoAnalysis deferred to us because the executor
+        // wasn't resolved yet, dispatch it now that the check is done.
+        if (s.pendingAutoAnalysis) {
+            s.pendingAutoAnalysis = false;
+            if (s.claudeCheckStatus === 'available' && st.claudeExecutor && st.claudeExecutor.resolved) {
+                log.printf('auto-analysis: executor resolved — resuming pipeline');
+                return startAutoAnalysis(s);
+            }
+            // Claude unavailable — fall back to heuristic.
+            log.printf('auto-analysis: Claude unavailable after async check — falling back');
+            return startAnalysis(s);
+        }
+
         // Completed — view will render the final status.
         return [s, null];
     }
@@ -3023,11 +3036,15 @@
             st.claudeExecutor = new (prSplit.ClaudeCodeExecutor)(prSplitConfig);
         }
 
-        // Verify Claude is available before launching pipeline.
-        if (!st.claudeExecutor.isAvailable()) {
-            // Fall back to heuristic analysis.
-            log.printf('auto-analysis: Claude not available — falling back to heuristic');
-            return startAnalysis(s);
+        // T113: Avoid calling the synchronous isAvailable() here — it invokes
+        // exec.execv('which claude') which blocks the BubbleTea event loop.
+        // Instead, check the cached resolution state and defer to the async
+        // check-claude tick if the executor hasn't resolved yet.
+        if (!st.claudeExecutor.resolved) {
+            // Executor not yet resolved — defer via async check-claude.
+            log.printf('auto-analysis: executor not yet resolved — deferring to async check');
+            s.pendingAutoAnalysis = true;
+            return [s, tea.tick(1, 'check-claude')];
         }
 
         // Build config for automatedSplit (mirrors REPL 'run' command).

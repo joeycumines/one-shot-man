@@ -1731,19 +1731,72 @@
                 '  Total time: ' + Math.floor(totalSec / 60) + 'm ' + (totalSec % 60) + 's'));
         }
 
+        // T095+T076: PR creation state display with real-time progress.
+        if (s.prCreationRunning) {
+            lines.push('');
+            var progressDetail = s.prCreationProgressMsg || 'Pushing branches and creating pull requests';
+            lines.push('  ' + styles.warningBadge().render(' Creating PRs\u2026 ') +
+                styles.dim().render('  ' + progressDetail));
+        }
+        if (s.prCreationError) {
+            lines.push('');
+            lines.push('  ' + styles.errorBadge().render(' PR Creation Error '));
+            lines.push('  ' + styles.dim().render(s.prCreationError));
+        }
+        if (s.prCreationResults && s.prCreationResults.length > 0 && !s.prCreationRunning) {
+            lines.push('');
+            lines.push(styles.bold().render('  PR Results:'));
+            var created = 0, skipped = 0, failed = 0;
+            for (var ri = 0; ri < s.prCreationResults.length; ri++) {
+                var pr = s.prCreationResults[ri];
+                if (pr.error) {
+                    failed++;
+                    lines.push('    ' + styles.errorBadge().render(' \u2718 ') + ' ' +
+                        styles.fieldValue().render(pr.name) +
+                        styles.dim().render(': ' + pr.error));
+                } else if (pr.skipped) {
+                    skipped++;
+                    lines.push('    ' + styles.warningBadge().render(' \u2014 ') + ' ' +
+                        styles.fieldValue().render(pr.name) +
+                        styles.dim().render(': ' + (pr.skipReason || 'skipped')));
+                } else if (pr.prUrl) {
+                    created++;
+                    lines.push('    ' + styles.successBadge().render(' \u2713 ') + ' ' +
+                        styles.fieldValue().render(pr.name) +
+                        styles.dim().render(' \u2192 ') +
+                        styles.fieldValue().render(pr.prUrl));
+                } else {
+                    created++;
+                    lines.push('    ' + styles.successBadge().render(' \u2713 ') + ' ' +
+                        styles.fieldValue().render(pr.name) +
+                        styles.dim().render(' (pushed)'));
+                }
+            }
+            lines.push('');
+            var summary = '  ' + created + ' created';
+            if (skipped > 0) summary += ', ' + skipped + ' skipped';
+            if (failed > 0) summary += ', ' + failed + ' failed';
+            lines.push(styles.dim().render(summary));
+        }
+
         // Actions.
         var compact = layoutMode(s) === 'compact';
         // Focus indices: 0=final-report, 1=final-create-prs, 2=final-done.
         var focusIdx = s.focusIndex || 0;
         var reportStyle  = (focusIdx === 0) ? styles.focusedSecondaryButton() : styles.secondaryButton();
-        var createStyle  = (focusIdx === 1) ? styles.focusedButton() : styles.primaryButton();
+        // T095: Disable Create PRs button while running or after results
+        var canCreatePRs = !s.prCreationRunning && !s.prCreationResults;
+        var createLabel = s.prCreationRunning ? 'Creating\u2026' :
+                         (s.prCreationResults ? 'PRs Created' : 'Create PRs');
+        var createStyle  = !canCreatePRs ? styles.disabledButton() :
+                           ((focusIdx === 1) ? styles.focusedButton() : styles.primaryButton());
         var doneStyle    = (focusIdx === 2) ? styles.focusedButton() : styles.primaryButton();
         lines.push('');
         if (compact) {
             lines.push(zone.mark('final-report',
                 reportStyle.render('View Report')));
             lines.push(zone.mark('final-create-prs',
-                createStyle.render('Create PRs')));
+                createStyle.render(createLabel)));
             lines.push(zone.mark('final-done',
                 doneStyle.render('Done')));
         } else {
@@ -1752,7 +1805,7 @@
                     reportStyle.render('View Report')) +
                 '  ' +
                 zone.mark('final-create-prs',
-                    createStyle.render('Create PRs')) +
+                    createStyle.render(createLabel)) +
                 '  ' +
                 zone.mark('final-done',
                     doneStyle.render('Done'))

@@ -858,7 +858,7 @@
       "id": "T076",
       "title": "createPRs uses sync exec.execv for all GH CLI and git push calls — freezes TUI",
       "description": "CONFIRMED by reading pr_split_07_prcreation.js: createPRs() uses synchronous exec.execv for EVERY operation — git push (per branch), gh pr create (per branch), and gh pr merge (if auto-merge enabled). On a 10-branch stack with 500ms network latency each, this blocks the Goja event loop for 5+ seconds, completely freezing the TUI. Implement: (1) Create createPRsAsync() that uses prSplit._gitExecAsync and exec.spawn equivalents for all gh CLI calls. (2) Wire the TUI's 'final-create-prs' button click to an async poll-based flow (like executeSplitAsync) so the TUI remains responsive. (3) Show a real-time progress view in the FINALIZATION screen while PRs are being created — one row per split with status icons. (4) On failure, show which push/PR failed with the gh CLI error message. (5) The synchronous createPRs() must be kept for REPL/CLI usage — only the TUI path needs the async variant. (6) Write tests verifying per-PR progress events reach the TUI state.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_07_prcreation.js",
@@ -1075,7 +1075,7 @@
       "id": "T095",
       "title": "CRITICAL: TUI 'Create PRs' button is a dead stub — prsRequested flag is never consumed anywhere in the update loop",
       "description": "CRITICAL BUG confirmed by reading pr_split_16_tui_core.js and pr_split_13_tui.js in session 6. The full 'Create PRs' click path: handleFinalizationState(wizard, 'create-prs') is called, which executes ONLY wizard.transition('FINALIZATION', {prsRequested: true}) — a self-transition. Searching pr_split_16_tui_core.js for any handler that reads prsRequested yields ZERO results. The flag is set and never consumed. The REPL 'create-prs' command at line ~411 of pr_split_14_tui_commands.js correctly calls prSplit.createPRs() directly, but the TUI wizard path is a complete dead-end. NOTE: T069 covers the testing work once this is fixed; T076 covers making createPRs() async. This task is the prerequisite: wire up the missing execution bridge in the TUI. Fix: (1) In the FINALIZATION state section of pr_split_16_tui_core.js _updateFn, add a guard check: if wizard.current==='FINALIZATION' && wizard.data.prsRequested===true && !s.prCreationStarted, set s.prCreationStarted=true, s.prCreationInProgress=true and call startCreatePRsAsync(s). (2) startCreatePRsAsync(s) wraps the call to prSplit.createPRs() with Promise.resolve().then(...) to yield the event loop. (3) Wire a 'create-prs-poll' tea.tick for progress updates that writes results to s.prCreationResults[]. (4) Show in-progress state in viewFinalizationScreen while PRs are being created. (5) Once T076 is complete, replace the sync createPRs() call with the async variant. (6) Write a test asserting createPRs is called when the 'Create PRs' zone is clicked.",
-      "status": "not-started",
+      "status": "done",
       "body": 1,
       "files_affected": [
         "internal/command/pr_split_16_tui_core.js",

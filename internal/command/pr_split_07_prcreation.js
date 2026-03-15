@@ -156,4 +156,212 @@
     //  Exports
     // -----------------------------------------------------------------------
     prSplit.createPRs = createPRs;
+
+    // -----------------------------------------------------------------------
+    //  createPRsAsync — non-blocking variant for TUI use (T076)
+    // -----------------------------------------------------------------------
+    // Identical logic to createPRs but uses exec.spawn via _gitExecAsync
+    // and a local ghExecAsync helper instead of blocking exec.execv.
+    // This keeps the Goja event loop free so BubbleTea can continue
+    // rendering and processing events during push/PR/merge operations.
+    //
+    // Additional options over createPRs:
+    //   progressFn(msg)  — callback for per-step progress updates
+    //
+    // The synchronous createPRs is preserved for REPL / CLI / test usage.
+
+    // ghExecAsync — spawn 'gh' with args array, collect stdout+stderr,
+    // return {stdout, stderr, code, error, message}.
+    // Uses exec.spawn directly (not shell) to avoid quoting issues
+    // with PR titles/bodies that contain special characters.
+    async function ghExecAsync(args, options) {
+        var exec = prSplit._modules.exec;
+        var outputFn = (options && typeof options.outputFn === 'function') ? options.outputFn : null;
+        if (!outputFn && typeof prSplit._outputCaptureFn === 'function') {
+            outputFn = prSplit._outputCaptureFn;
+        }
+        if (outputFn) outputFn('\u276f gh ' + args.join(' '));
+
+        var child = exec.spawn('gh', args);
+
+        async function readAll(stream, streamOutputFn) {
+            var buf = '';
+            while (true) {
+                var chunk = await stream.read();
+                if (chunk.done) break;
+                if (chunk.value !== undefined && chunk.value !== null) {
+                    var chunkStr = String(chunk.value);
+                    buf += chunkStr;
+                    if (streamOutputFn) {
+                        var lines = chunkStr.split('\n');
+                        for (var cl = 0; cl < lines.length; cl++) {
+                            var line = lines[cl];
+                            if (cl === lines.length - 1 && line === '') continue;
+                            streamOutputFn(line);
+                        }
+                    }
+                }
+            }
+            return buf;
+        }
+
+        var results = await Promise.all([
+            readAll(child.stdout, outputFn),
+            readAll(child.stderr, outputFn),
+            child.wait()
+        ]);
+        var code = (results[2] && results[2].code !== undefined) ? results[2].code : 0;
+        return {
+            stdout: results[0],
+            stderr: results[1],
+            code: code,
+            error: code !== 0,
+            message: code !== 0 ? 'exit status ' + code : ''
+        };
+    }
+
+    async function createPRsAsync(plan, options) {
+        options = options || {};
+        var resolveDir = prSplit._resolveDir;
+        var dir = resolveDir(plan.dir || '.');
+        var draft = options.draft !== false;
+        var remote = options.remote || 'origin';
+        var pushOnly = options.pushOnly || false;
+        var autoMerge = options.autoMerge || false;
+        var mergeMethod = options.mergeMethod || 'squash';
+        var progressFn = options.progressFn || null;
+
+        if (!plan.splits || plan.splits.length === 0) {
+            return { error: 'no splits in plan \u2014 run "plan" or "run" to generate splits first', results: [] };
+        }
+
+        var gitExecAsync = prSplit._gitExecAsync;
+
+        // Pre-flight: verify gh CLI is available.
+        if (!pushOnly) {
+            if (progressFn) progressFn('Checking gh CLI availability\u2026');
+            var ghCheck = await ghExecAsync(['--version']);
+            if (ghCheck.code !== 0) {
+                return { error: 'gh CLI not found \u2014 install GitHub CLI (https://cli.github.com) or use --push-only', results: [] };
+            }
+        }
+
+        // Pre-flight: verify baseBranch exists on the remote.
+        if (!pushOnly) {
+            if (progressFn) progressFn('Verifying base branch "' + plan.baseBranch + '" on remote\u2026');
+            var remoteCheck = await gitExecAsync(dir, ['ls-remote', '--heads', remote, plan.baseBranch]);
+            if (remoteCheck.code !== 0 || remoteCheck.stdout.trim() === '') {
+                return {
+                    error: 'base branch "' + plan.baseBranch + '" not found on remote "' + remote + '" \u2014 push it first or check the branch name',
+                    results: []
+                };
+            }
+        }
+
+        // Cancellation check helper.
+        function cancelled() {
+            return typeof prSplit.isCancelled === 'function' && prSplit.isCancelled();
+        }
+
+        var results = [];
+        var total = plan.splits.length;
+
+        // Step 1: Push all split branches.
+        for (var i = 0; i < total; i++) {
+            if (cancelled()) return { error: 'cancelled by user', results: results };
+            var split = plan.splits[i];
+            if (progressFn) progressFn('Pushing ' + (i + 1) + '/' + total + ': ' + split.name);
+            var pushResult = await gitExecAsync(dir, ['push', '-f', remote, split.name]);
+            if (pushResult.code !== 0) {
+                results.push({
+                    name: split.name,
+                    pushed: false,
+                    prUrl: '',
+                    error: 'push failed: ' + pushResult.stderr.trim()
+                });
+                return { error: 'push failed for ' + split.name + ': ' + pushResult.stderr.trim(), results: results };
+            }
+            results.push({
+                name: split.name,
+                pushed: true,
+                prUrl: '',
+                error: null
+            });
+        }
+
+        if (pushOnly) {
+            return { error: null, results: results };
+        }
+
+        // Step 2: Create PRs, stacked.
+        for (var pi = 0; pi < total; pi++) {
+            if (cancelled()) return { error: 'cancelled by user', results: results };
+            var prSplit2 = plan.splits[pi];
+            var base = pi === 0 ? plan.baseBranch : plan.splits[pi - 1].name;
+            if (progressFn) progressFn('Creating PR ' + (pi + 1) + '/' + total + ': ' + prSplit2.name);
+            var title = '[' + padIndex(pi + 1) + '/' + padIndex(total) + '] ' + prSplit2.message;
+            var body = 'Part ' + (pi + 1) + ' of ' + total + ' \u2014 auto-generated by `osm pr-split`.\n\n';
+            body += '**Files:**\n';
+            for (var j = 0; j < prSplit2.files.length; j++) {
+                body += '- `' + prSplit2.files[j] + '`\n';
+            }
+            if (pi < total - 1) {
+                body += '\n> \u26a0\ufe0f **Stacked PR** \u2014 merge in order. Next: `' + plan.splits[pi + 1].name + '`';
+            } else {
+                body += '\n> \u2705 **Last PR in stack** \u2014 merging this completes the split.';
+            }
+
+            // Pre-check: verify the head branch has actual changes from
+            // the base. Avoids GraphQL error "No commits between base and head".
+            var diffCheck = await gitExecAsync(dir, ['diff', '--quiet', base, prSplit2.name]);
+            if (diffCheck.code === 0) {
+                // Exit code 0 means no diff — skip PR creation.
+                results[pi].error = null;
+                results[pi].skipped = true;
+                results[pi].skipReason = 'no changes between "' + base + '" and "' + prSplit2.name + '" \u2014 skipping PR creation';
+                continue;
+            }
+
+            var ghArgs = ['pr', 'create',
+                '--base', base,
+                '--head', prSplit2.name,
+                '--title', title,
+                '--body', body
+            ];
+            if (draft) {
+                ghArgs.push('--draft');
+            }
+
+            var ghResult = await ghExecAsync(ghArgs);
+            if (ghResult.code !== 0) {
+                results[pi].error = 'gh pr create failed: ' + ghResult.stderr.trim();
+            } else {
+                results[pi].prUrl = ghResult.stdout.trim();
+            }
+        }
+
+        // Step 3: Auto-merge via merge queue (if enabled).
+        if (autoMerge) {
+            for (var k = 0; k < total; k++) {
+                if (cancelled()) return { error: 'cancelled by user', results: results };
+                var splitForMerge = plan.splits[k];
+                if (results[k].error || results[k].skipped) continue;
+                if (progressFn) progressFn('Enabling auto-merge ' + (k + 1) + '/' + total + ': ' + splitForMerge.name);
+                var mergeArgs = ['pr', 'merge', splitForMerge.name,
+                    '--' + mergeMethod,
+                    '--auto'
+                ];
+                var mergeResult = await ghExecAsync(mergeArgs);
+                if (mergeResult.code !== 0) {
+                    results[k].mergeError = 'auto-merge failed: ' + mergeResult.stderr.trim();
+                } else {
+                    results[k].autoMerge = true;
+                }
+            }
+        }
+
+        return { error: null, results: results };
+    }
+
+    prSplit.createPRsAsync = createPRsAsync;
 })(globalThis.prSplit);

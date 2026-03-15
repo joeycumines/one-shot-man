@@ -221,6 +221,12 @@
                 equivalenceResult: null,
                 errorDetails: null,
 
+                // PR creation state (T095+T076).
+                prCreationRunning: false,   // true while async createPRs is in flight
+                prCreationError: null,      // error string from createPRs or null
+                prCreationResults: null,    // array of per-PR results or null
+                prCreationProgressMsg: '',  // real-time progress message from progressFn
+
                 // First render flag.
                 needsInitClear: true
             };
@@ -1027,6 +1033,10 @@
                 // Claude conversation: poll for async send/wait completion.
                 if (msg.id === 'claude-convo-poll') {
                     return pollClaudeConvo(s);
+                }
+                // T095: PR creation polling.
+                if (msg.id === 'pr-creation-poll') {
+                    return handlePRCreationPoll(s);
                 }
                 // T028: Auto-dismiss transient notification after 5s.
                 // Guard: only dismiss if the current notification is old enough
@@ -1919,7 +1929,7 @@
             }
             if (zone.inBounds('final-create-prs', msg)) {
                 handleFinalizationState(s.wizard, 'create-prs');
-                return [s, null];
+                return startPRCreation(s);
             }
             if (zone.inBounds('final-done', msg)) {
                 handleFinalizationState(s.wizard, 'done');
@@ -2493,7 +2503,7 @@
             }
             if (focused.id === 'final-create-prs') {
                 handleFinalizationState(s.wizard, 'create-prs');
-                return [s, null];
+                return startPRCreation(s);
             }
             if (focused.id === 'final-done') {
                 handleFinalizationState(s.wizard, 'done');
@@ -3521,6 +3531,81 @@
         }
 
         // Success — state already transitioned by runEquivCheckAsync.
+        return [s, null];
+    }
+
+    // ── T095+T076: PR Creation (fully async + poll) ──────────────
+    // Wires the 'Create PRs' FINALIZATION button to call
+    // prSplit.createPRsAsync() — the non-blocking variant that uses
+    // exec.spawn for git push + gh CLI calls. The TUI remains fully
+    // responsive during the entire push/PR-create/auto-merge pipeline.
+
+    function startPRCreation(s) {
+        // Guard: already running or already completed.
+        if (s.prCreationRunning) return [s, null];
+        if (s.prCreationResults) return [s, null];
+
+        // Check prerequisites.
+        if (!st.planCache || !st.planCache.splits || st.planCache.splits.length === 0) {
+            s.prCreationError = 'No plan available \u2014 run Execute Plan first.';
+            return [s, null];
+        }
+
+        s.prCreationRunning = true;
+        s.prCreationError = null;
+        s.prCreationResults = null;
+        s.prCreationProgressMsg = '';
+
+        // Build effective plan: filter out skipped branches.
+        var effectivePlan = st.planCache;
+        if (st.skipBranchSet) {
+            var skipSet = st.skipBranchSet;
+            var filtered = [];
+            for (var f = 0; f < effectivePlan.splits.length; f++) {
+                if (!skipSet[effectivePlan.splits[f].name]) {
+                    filtered.push(effectivePlan.splits[f]);
+                }
+            }
+            if (filtered.length < effectivePlan.splits.length) {
+                log.info('[pr-split] Excluding ' +
+                    (effectivePlan.splits.length - filtered.length) +
+                    ' skipped branch(es) from PR creation.');
+            }
+            effectivePlan = Object.assign({}, effectivePlan, { splits: filtered });
+        }
+
+        // Collect options from runtime config.
+        var opts = {
+            draft: prSplit.runtime.draft !== false,
+            pushOnly: prSplit.runtime.pushOnly || false,
+            autoMerge: prSplit.runtime.autoMerge || false,
+            mergeMethod: prSplit.runtime.mergeMethod || 'squash',
+            progressFn: function(msg) {
+                s.prCreationProgressMsg = msg;
+            }
+        };
+
+        // T076: Fully async — uses exec.spawn for all git/gh operations.
+        prSplit.createPRsAsync(effectivePlan, opts).then(function(result) {
+            s.prCreationResults = result.results || [];
+            if (result.error) {
+                s.prCreationError = result.error;
+            }
+            s.prCreationRunning = false;
+        })['catch'](function(err) {
+            s.prCreationError = (err && err.message) ? err.message : String(err);
+            s.prCreationRunning = false;
+        });
+
+        return [s, tea.tick(200, 'pr-creation-poll')];
+    }
+
+    function handlePRCreationPoll(s) {
+        // Still running — keep polling for spinner animation + progress.
+        if (s.prCreationRunning) {
+            return [s, tea.tick(200, 'pr-creation-poll')];
+        }
+        // Done — no further ticks needed. View will read prCreationResults.
         return [s, null];
     }
 

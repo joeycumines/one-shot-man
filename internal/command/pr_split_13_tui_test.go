@@ -714,6 +714,100 @@ func TestChunk13_WizardState_Pause(t *testing.T) {
 	}
 }
 
+// TestChunk13_WizardState_PauseResume tests T084: PAUSED → resume back to original state.
+func TestChunk13_WizardState_PauseResume(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var results = [];
+
+		// Resume from PAUSED (paused from PLAN_GENERATION) → PLAN_GENERATION
+		var ws1 = new globalThis.prSplit.WizardState();
+		ws1.transition('CONFIG');
+		ws1.transition('PLAN_GENERATION');
+		ws1.pause();
+		results.push({ before: ws1.current, pausedFrom: ws1.data.pausedFrom });
+		var ok1 = ws1.resume();
+		results.push({ after: ws1.current, resumed: ok1 });
+
+		// Resume from PAUSED (paused from BRANCH_BUILDING) → BRANCH_BUILDING
+		var ws2 = new globalThis.prSplit.WizardState();
+		ws2.transition('CONFIG');
+		ws2.transition('PLAN_GENERATION');
+		ws2.transition('PLAN_REVIEW');
+		ws2.transition('BRANCH_BUILDING');
+		ws2.pause();
+		results.push({ before: ws2.current, pausedFrom: ws2.data.pausedFrom });
+		var ok2 = ws2.resume();
+		results.push({ after: ws2.current, resumed: ok2 });
+
+		// Resume from non-PAUSED state — should be no-op
+		var ws3 = new globalThis.prSplit.WizardState();
+		ws3.transition('CONFIG');
+		var ok3 = ws3.resume();
+		results.push({ current: ws3.current, resumed: ok3 });
+
+		// Cancel from PAUSED via cancel() method (T084: must not no-op)
+		var ws4 = new globalThis.prSplit.WizardState();
+		ws4.transition('CONFIG');
+		ws4.transition('PLAN_GENERATION');
+		ws4.pause();
+		ws4.cancel();
+		results.push({ cancelledViaMethod: ws4.current, cancelCleansPausedFrom: (ws4.data.pausedFrom === undefined) });
+
+		// Cancel from PAUSED via transition() (T084: direct transition also works)
+		var ws5 = new globalThis.prSplit.WizardState();
+		ws5.transition('CONFIG');
+		ws5.transition('PLAN_GENERATION');
+		ws5.pause();
+		ws5.transition('CANCELLED');
+		results.push({ cancelledViaTx: ws5.current });
+
+		// Resume with undefined pausedFrom — manual transition to PAUSED without pause()
+		var ws6 = new globalThis.prSplit.WizardState();
+		ws6.transition('CONFIG');
+		ws6.transition('PLAN_GENERATION');
+		ws6.transition('PAUSED');  // direct transition, pausedFrom not set
+		var ok6 = ws6.resume();
+		results.push({ directPause: ws6.current, resumed: ok6 });
+
+		// Resume with non-pausable pausedFrom — corrupted data
+		var ws7 = new globalThis.prSplit.WizardState();
+		ws7.transition('CONFIG');
+		ws7.transition('PLAN_GENERATION');
+		ws7.pause();
+		ws7.data.pausedFrom = 'CONFIG';  // corrupt to non-pausable state
+		var ok7 = ws7.resume();
+		results.push({ corruptPause: ws7.current, resumed: ok7 });
+
+		// pausedFrom is cleared after successful resume
+		var ws8 = new globalThis.prSplit.WizardState();
+		ws8.transition('CONFIG');
+		ws8.transition('PLAN_GENERATION');
+		ws8.pause();
+		ws8.resume();
+		results.push({ afterResume: ws8.current, pausedFromCleared: (ws8.data.pausedFrom === undefined) });
+
+		// forceCancel from PAUSED cleans pausedFrom
+		var ws9 = new globalThis.prSplit.WizardState();
+		ws9.transition('CONFIG');
+		ws9.transition('PLAN_GENERATION');
+		ws9.pause();
+		ws9.forceCancel();
+		results.push({ forceCancelled: ws9.current, fCancelCleansPausedFrom: (ws9.data.pausedFrom === undefined) });
+
+		JSON.stringify(results);
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `[{"before":"PAUSED","pausedFrom":"PLAN_GENERATION"},{"after":"PLAN_GENERATION","resumed":true},{"before":"PAUSED","pausedFrom":"BRANCH_BUILDING"},{"after":"BRANCH_BUILDING","resumed":true},{"current":"CONFIG","resumed":false},{"cancelledViaMethod":"CANCELLED","cancelCleansPausedFrom":true},{"cancelledViaTx":"CANCELLED"},{"directPause":"PAUSED","resumed":false},{"corruptPause":"PAUSED","resumed":false},{"afterResume":"PLAN_GENERATION","pausedFromCleared":true},{"forceCancelled":"FORCE_CANCEL","fCancelCleansPausedFrom":true}]`
+	if got != want {
+		t.Errorf("pause resume:\ngot  %s\nwant %s", got, want)
+	}
+}
+
 // TestChunk13_WizardState_ErrorFromAnyActive tests error transition.
 func TestChunk13_WizardState_ErrorFromAnyActive(t *testing.T) {
 	evalJS := loadTUIEngine(t)

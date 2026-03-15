@@ -1939,6 +1939,16 @@
             }
         }
 
+        // T084: PAUSED screen — resume or quit.
+        if (s.wizardState === 'PAUSED') {
+            if (zone.inBounds('pause-resume', msg)) {
+                return handlePauseResume(s);
+            }
+            if (zone.inBounds('pause-quit', msg)) {
+                return handlePauseQuit(s);
+            }
+        }
+
         return [s, null];
     }
 
@@ -2113,8 +2123,40 @@
         }
     }
 
+    // T084: Resume from PAUSED — transition back to the paused-from state
+    // and re-trigger the appropriate pipeline. If pausedFrom is PLAN_GENERATION,
+    // restart analysis. If BRANCH_BUILDING, restart the execution pipeline.
+    function handlePauseResume(s) {
+        if (s.wizardState !== 'PAUSED') return [s, null];
+        var resumed = s.wizard.resume();
+        if (!resumed) {
+            return handlePauseQuit(s);
+        }
+        s.wizardState = s.wizard.current;
+        // Re-trigger the pipeline for the resumed state.
+        if (s.wizardState === 'PLAN_GENERATION') {
+            return startAnalysis(s);
+        }
+        if (s.wizardState === 'BRANCH_BUILDING') {
+            return startExecution(s);
+        }
+        // Defensive: unknown resumed state — cancel.
+        return handlePauseQuit(s);
+    }
+
+    // T084: Quit from PAUSED — cancel the wizard and exit.
+    function handlePauseQuit(s) {
+        try { s.wizard.cancel(); } catch (te) { /* ignore */ }
+        s.wizardState = s.wizard.current;
+        return [s, tea.quit()];
+    }
+
     function handleNext(s) {
-        if (s.isProcessing) return [s, null];
+        if (s.isProcessing) {
+            // T084: PAUSED is reachable while isProcessing is still set (paused mid-pipeline).
+            if (s.wizardState === 'PAUSED') return handlePauseResume(s);
+            return [s, null];
+        }
 
         switch (s.wizardState) {
             case 'IDLE':
@@ -2272,6 +2314,13 @@
                     elems.push({id: 'nav-next', type: 'nav'});
                 }
                 return elems;
+            }
+            // T084: PAUSED — resume or quit.
+            case 'PAUSED': {
+                return [
+                    {id: 'pause-resume', type: 'button'},
+                    {id: 'pause-quit',   type: 'button'}
+                ];
             }
             default:
                 return [];
@@ -2510,6 +2559,13 @@
                 handleFinalizationState(s.wizard, 'done');
                 s.wizardState = 'DONE';
                 return [s, tea.quit()];
+            }
+            // T084: PAUSED screen buttons.
+            if (focused.id === 'pause-resume') {
+                return handlePauseResume(s);
+            }
+            if (focused.id === 'pause-quit') {
+                return handlePauseQuit(s);
             }
         }
 

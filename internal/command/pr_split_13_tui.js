@@ -63,7 +63,7 @@
         'DONE':             { 'IDLE': true },
         'CANCELLED':        { 'DONE': true },
         'FORCE_CANCEL':     { 'DONE': true },
-        'PAUSED':           { 'DONE': true },
+        'PAUSED':           { 'DONE': true, 'PLAN_GENERATION': true, 'BRANCH_BUILDING': true, 'CANCELLED': true },  // T084: resume paths
         'ERROR':            { 'DONE': true }
     };
 
@@ -115,9 +115,14 @@
 
     /**
      * cancel — transition to CANCELLED from any non-terminal active state.
-     * No-op if already terminal.
+     * No-op if already terminal (except PAUSED, which allows cancellation).
      */
     WizardState.prototype.cancel = function() {
+        if (this.current === 'PAUSED') {
+            delete this.data.pausedFrom;  // T084: clean up before cancel
+            this.transition('CANCELLED');
+            return;
+        }
         if (TERMINAL_STATES[this.current]) return;
         this.transition('CANCELLED');
     };
@@ -130,6 +135,7 @@
         if (this.current === 'DONE' || this.current === 'FORCE_CANCEL') return;
         // Force cancel bypasses normal transition matrix — always allowed
         // from active states and even from CANCELLED.
+        delete this.data.pausedFrom;  // T084: clean up if force-cancelling from PAUSED
         this.history.push({ from: this.current, to: 'FORCE_CANCEL', at: Date.now() });
         this.current = 'FORCE_CANCEL';
         for (var j = 0; j < this.listeners.length; j++) {
@@ -139,14 +145,32 @@
 
     /**
      * pause — transition to PAUSED if current state supports pausing.
+     * Stores the paused-from state for resume.
      */
     WizardState.prototype.pause = function() {
         if (!PAUSABLE_STATES[this.current]) return;
+        this.data.pausedFrom = this.current;  // T084: remember origin for resume
         this.transition('PAUSED');
     };
 
     /**
+     * resume — transition from PAUSED back to the original state.
+     * Only works when current === 'PAUSED' and pausedFrom is recorded.
+     * @returns {boolean} true if resumed, false if no-op.
+     */
+    WizardState.prototype.resume = function() {  // T084
+        if (this.current !== 'PAUSED') return false;
+        var target = this.data.pausedFrom;
+        if (!target || !PAUSABLE_STATES[target]) return false;
+        this.transition(target);
+        delete this.data.pausedFrom;  // clean up stale resume context
+        return true;
+    };
+
+    /**
      * error — transition to ERROR from any non-terminal state.
+     * NOTE: PAUSED is in TERMINAL_STATES so error() is a no-op from PAUSED.
+     * This is intentional — PAUSED has no running pipeline that could error.
      * @param {string} [message] - Error description.
      */
     WizardState.prototype.error = function(message) {

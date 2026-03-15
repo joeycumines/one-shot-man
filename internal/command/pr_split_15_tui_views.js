@@ -2242,6 +2242,31 @@
             case 'FORCE_CANCEL':
                 return styles.warningBadge().render(' Cancelled ') +
                     '\n\nThe PR split was cancelled.';
+            case 'PAUSED': {  // T084: dedicated PAUSED screen with resume/quit buttons
+                var pausedFrom = (s.wizard && s.wizard.data && s.wizard.data.pausedFrom) || 'unknown';
+                var lines = [];
+                lines.push(styles.warningBadge().render(' Paused '));
+                lines.push('');
+                lines.push('Pipeline paused from ' + styles.fieldValue().render(pausedFrom) + ' state.');
+                var ckpt = s.wizard && s.wizard.checkpoint;
+                if (ckpt) {
+                    lines.push('Checkpoint saved: ' + ckpt);
+                }
+                lines.push('');
+                var focusElems = prSplit._getFocusElements ? prSplit._getFocusElements(s) : [];
+                var focusIdx = s.focusIndex || 0;
+                var focusedElemId = (focusElems[focusIdx] || {}).id || '';
+                var resumeBtn = (focusedElemId === 'pause-resume')
+                    ? styles.focusedButton().render(' Resume ')
+                    : styles.primaryButton().render(' Resume ');
+                var quitBtn = (focusedElemId === 'pause-quit')
+                    ? styles.focusedSecondaryButton().render(' Quit ')
+                    : styles.secondaryButton().render(' Quit ');
+                lines.push(zone.mark('pause-resume', resumeBtn) + '  ' + zone.mark('pause-quit', quitBtn));
+                lines.push('');
+                lines.push(styles.dim().render('Press Enter to activate focused button, or Ctrl+C to cancel.'));
+                return lines.join('\n');
+            }
             case 'ERROR':
                 return styles.errorBadge().render(' Error ') +
                     '\n\n' + (s.errorDetails || 'An unexpected error occurred.');

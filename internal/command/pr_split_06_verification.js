@@ -412,13 +412,42 @@
     }
 
     // -----------------------------------------------------------------------
+    //  DESIGN NOTE (T003): PTY Verify Pipeline Audit
+    //
+    //  The async verification pipeline (startVerifySession → pollVerifySession
+    //  → runVerifyBranch in chunk 16) was audited for correctness:
+    //
+    //  1. CaptureSession lifecycle: readerLoop stores exitCode BEFORE closing
+    //     the done channel, so isDone() → exitCode() is always safe. The TUI
+    //     polls isDone() at 100ms intervals — no busy-wait or race.
+    //
+    //  2. Worktree cleanup: cleanupVerifyWorktree is best-effort (fire-and-forget
+    //     `git worktree remove --force`). Failures are silent by design — a
+    //     dangling worktree is harmless and will be GC'd on next prune.
+    //
+    //  3. Dual-path architecture: runVerifyBranch tries CaptureSession first
+    //     (PTY + VTerm for live output) and falls back to verifySplitAsync
+    //     (exec.spawn) if CaptureSession creation fails (e.g., PTY unavailable
+    //     on the platform). Note: require('osm:termmux') must succeed;
+    //     a missing module is a fatal error.
+    //
+    //  4. preExisting detection: pollVerifySession hard-codes preExisting=false
+    //     because CaptureSession results don't carry baseline info. T115 will
+    //     add proper pre-existing detection to the PTY path.
+    //
+    //  5. Async variants (verifySplitAsync, verifySplitsAsync,
+    //     verifyEquivalenceAsync) now have unit test coverage via mocked
+    //     _gitExecAsync and exec.spawn infrastructure.
+    // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
     //  Async versions for pipeline use (T31)
     //  Uses gitExecAsync (exec.spawn) so the event loop stays responsive.
     // -----------------------------------------------------------------------
 
     // verifySplitAsync is the non-blocking version of verifySplit.
     // Git worktree setup/teardown uses gitExecAsync. The actual verify
-    // command still uses exec.execStream (see T34 for full async verify).
+    // command uses exec.spawn (see T34 for full CaptureSession-based verify).
     async function verifySplitAsync(branchName, config) {
         var gitExecAsync = prSplit._gitExecAsync;
         config = config || {};

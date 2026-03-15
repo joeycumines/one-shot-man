@@ -3803,6 +3803,199 @@ func TestChunk13_WizardUpdate_ConfirmCancel_Enter(t *testing.T) {
 	}
 }
 
+// TestChunk13_ConfirmCancel_TabFocusCycling tests T031: Tab cycles between Yes/No buttons.
+func TestChunk13_ConfirmCancel_TabFocusCycling(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var results = [];
+
+		// Initial state: confirmCancelFocus = 0 (Yes) when overlay opens via ctrl+c.
+		var s = globalThis.prSplit._wizardInit();
+		s.needsInitClear = false;
+		s.wizard.transition('CONFIG');
+		s.wizardState = 'CONFIG';
+		// Trigger overlay via ctrl+c to verify initialization.
+		var r1 = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'ctrl+c'}, s);
+		s = r1[0];
+		results.push({ opened: s.showConfirmCancel, initialFocus: s.confirmCancelFocus });
+
+		// Tab to No (1).
+		var r2 = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'tab'}, s);
+		s = r2[0];
+		results.push({ afterTab1: s.confirmCancelFocus });
+
+		// Tab wraps back to Yes (0).
+		var r3 = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'tab'}, s);
+		s = r3[0];
+		results.push({ afterTab2: s.confirmCancelFocus });
+
+		// Shift+Tab to No (1).
+		var r4 = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'shift+tab'}, s);
+		s = r4[0];
+		results.push({ afterShiftTab: s.confirmCancelFocus });
+
+		// Enter while focused on No (1) → dismiss, NOT cancel.
+		var r5 = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'enter'}, s);
+		s = r5[0];
+		results.push({ enterOnNo: s.wizardState, dismissed: !s.showConfirmCancel });
+
+		// Re-open overlay and Enter on Yes (default) → cancel.
+		s.showConfirmCancel = true;
+		s.confirmCancelFocus = 0;
+		var r6 = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'enter'}, s);
+		s = r6[0];
+		results.push({ enterOnYes: s.wizardState });
+
+		return JSON.stringify(results);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := raw.(string)
+	want := `[{"opened":true,"initialFocus":0},{"afterTab1":1},{"afterTab2":0},{"afterShiftTab":1},{"enterOnNo":"CONFIG","dismissed":true},{"enterOnYes":"CANCELLED"}]`
+	if got != want {
+		t.Errorf("tab focus cycling:\ngot  %s\nwant %s", got, want)
+	}
+}
+
+// TestChunk13_ConfirmCancel_ViewButtonText tests T031: button text and overlay structure.
+// NOTE: zone.mark wraps content in ANSI escape sequences containing the zone ID,
+// so we verify the button text and overlay structure rather than literal zone IDs.
+// Mouse clicks via zone.inBounds are not testable outside a real terminal.
+func TestChunk13_ConfirmCancel_ViewButtonText(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var results = [];
+
+		// Verify button text and overlay structure.
+		var s = { width: 80, confirmCancelFocus: 0 };
+		var v = globalThis.prSplit._viewConfirmCancelOverlay(s);
+
+		results.push({
+			hasYesText: v.indexOf('Yes, Cancel') >= 0,
+			hasNoText: v.indexOf('No, Continue') >= 0,
+			hasCancelTitle: v.indexOf('Cancel') >= 0,
+			hasHint: v.indexOf('Tab') >= 0
+		});
+
+		return JSON.stringify(results);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := raw.(string)
+	want := `[{"hasYesText":true,"hasNoText":true,"hasCancelTitle":true,"hasHint":true}]`
+	if got != want {
+		t.Errorf("button text:\ngot  %s\nwant %s", got, want)
+	}
+}
+
+// TestChunk13_ConfirmCancel_ContextualText tests T031: overlay shows verify-specific text.
+func TestChunk13_ConfirmCancel_ContextualText(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var results = [];
+
+		// Without active verify session — default text.
+		var s1 = { width: 80, showConfirmCancel: true, confirmCancelFocus: 0 };
+		var v1 = globalThis.prSplit._viewConfirmCancelOverlay(s1);
+		results.push({
+			hasDefault: v1.indexOf('cancel the PR split') >= 0,
+			noVerify: v1.indexOf('verification') < 0
+		});
+
+		// With active verify session — contextual text.
+		var s2 = { width: 80, showConfirmCancel: true, confirmCancelFocus: 0, activeVerifySession: {} };
+		var v2 = globalThis.prSplit._viewConfirmCancelOverlay(s2);
+		results.push({
+			hasVerify: v2.indexOf('verification') >= 0 || v2.indexOf('Verification') >= 0,
+			noDefault: v2.indexOf('cancel the PR split') < 0
+		});
+
+		return JSON.stringify(results);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := raw.(string)
+	want := `[{"hasDefault":true,"noVerify":true},{"hasVerify":true,"noDefault":true}]`
+	if got != want {
+		t.Errorf("contextual text:\ngot  %s\nwant %s", got, want)
+	}
+}
+
+// TestChunk13_ConfirmCancel_FocusResetOnDismiss tests T031: confirmCancelFocus resets when overlay closes.
+func TestChunk13_ConfirmCancel_FocusResetOnDismiss(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = globalThis.prSplit._wizardInit();
+		s.needsInitClear = false;
+		s.wizard.transition('CONFIG');
+		s.wizardState = 'CONFIG';
+		s.showConfirmCancel = true;
+		s.confirmCancelFocus = 1;  // focus on No
+
+		// Dismiss via 'n'.
+		var r = globalThis.prSplit._wizardUpdate({type: 'Key', key: 'n'}, s);
+		return JSON.stringify({ focus: r[0].confirmCancelFocus, dismissed: !r[0].showConfirmCancel });
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := raw.(string)
+	want := `{"focus":0,"dismissed":true}`
+	if got != want {
+		t.Errorf("focus reset:\ngot  %s\nwant %s", got, want)
+	}
+}
+
+// TestChunk13_ConfirmCancel_ViewFocusStyling tests T031: focusedErrorBadge style exists
+// and both focus states render without error. In a no-color terminal the rendered
+// strings may be identical (only the background color differs), so we verify the
+// style infrastructure rather than comparing raw output.
+func TestChunk13_ConfirmCancel_ViewFocusStyling(t *testing.T) {
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var results = [];
+		var st = globalThis.prSplit._wizardStyles;
+
+		// Verify focusedErrorBadge style exists and is callable.
+		var feOk = typeof st.focusedErrorBadge === 'function';
+		var feRendered = feOk ? st.focusedErrorBadge().render('test') : '';
+
+		// Verify errorBadge style exists (for comparison).
+		var ebRendered = st.errorBadge().render('test');
+
+		// Both focus states render the overlay without crash.
+		var s1 = { width: 80, confirmCancelFocus: 0 };
+		var v1 = globalThis.prSplit._viewConfirmCancelOverlay(s1);
+		var s2 = { width: 80, confirmCancelFocus: 1 };
+		var v2 = globalThis.prSplit._viewConfirmCancelOverlay(s2);
+
+		results.push({
+			focusedErrorBadgeExists: feOk,
+			bothRender: v1.length > 0 && v2.length > 0,
+			hasTabHint: v1.indexOf('Tab') >= 0,
+			hasEnterHint: v1.indexOf('Enter') >= 0 || v1.indexOf('confirm') >= 0
+		});
+
+		return JSON.stringify(results);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := raw.(string)
+	want := `[{"focusedErrorBadgeExists":true,"bothRender":true,"hasTabHint":true,"hasEnterHint":true}]`
+	if got != want {
+		t.Errorf("focus styling:\ngot  %s\nwant %s", got, want)
+	}
+}
+
 // TestChunk13_WizardUpdate_WindowSize verifies WindowSize msg sets dimensions
 // and transitions to CONFIG on first render.
 func TestChunk13_WizardUpdate_WindowSize(t *testing.T) {

@@ -183,6 +183,15 @@
                 .padding(0, 2)
                 .border(lipgloss.roundedBorder())
                 .borderForeground(COLORS.warning);
+        },
+        // T031: Width-stable focus style for errorBadge elements.
+        // errorBadge uses padding(0,1), so focusedErrorBadge must match.
+        focusedErrorBadge: function() {
+            return lipgloss.newStyle()
+                .bold(true)
+                .foreground(COLORS.textOnColor)
+                .background(COLORS.warning)
+                .padding(0, 1);
         }
     };
 
@@ -1999,16 +2008,32 @@
 
         lines.push(styles.warningBadge().render(' Cancel Wizard? '));
         lines.push('');
-        lines.push('Are you sure you want to cancel the PR split?');
-        lines.push('All progress will be lost.');
+        // T031: contextual text — defensive: if a verify session is still
+        // referenced when the overlay opens (e.g. race between SIGINT cleanup
+        // and user interaction), show a verification-specific warning.
+        if (s.activeVerifySession) {
+            lines.push('A verification is in progress.');
+            lines.push('Cancelling will abort it and clean up the worktree.');
+        } else {
+            lines.push('Are you sure you want to cancel the PR split?');
+            lines.push('All progress will be lost.');
+        }
         lines.push('');
+        // T031: focus-aware button rendering.
+        var fi = s.confirmCancelFocus || 0;  // 0 = yes (cancel), 1 = no (continue)
+        var yesBtn = fi === 0
+            ? styles.focusedErrorBadge().render(' Yes, Cancel ')
+            : styles.errorBadge().render(' Yes, Cancel ');
+        var noBtn = fi === 1
+            ? styles.focusedButton().render(' No, Continue ')
+            : styles.primaryButton().render(' No, Continue ');
         lines.push(
-            zone.mark('confirm-yes',
-                styles.errorBadge().render(' Yes, Cancel ')) +
+            zone.mark('confirm-yes', yesBtn) +
             '    ' +
-            zone.mark('confirm-no',
-                styles.primaryButton().render(' No, Continue '))
+            zone.mark('confirm-no', noBtn)
         );
+        lines.push('');
+        lines.push(styles.dim().render('Tab to switch  ·  Enter to confirm  ·  Esc to dismiss'));
 
         var content = lines.join('\n');
         return styles.activeCard().width(w).render(content);

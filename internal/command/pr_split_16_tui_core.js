@@ -92,6 +92,7 @@
                 // UI state.
                 showHelp: false,
                 showConfirmCancel: false,
+                confirmCancelFocus: 0,  // T031: 0=Yes, 1=No
                 showAdvanced: false,
                 showingReport: false,
                 reportContent: '',
@@ -772,6 +773,7 @@
                 // Cancel.
                 if (k === 'ctrl+c') {
                     s.showConfirmCancel = true;
+                    s.confirmCancelFocus = 0;  // T031: reset focus to 'Yes' on open
                     return [s, null];
                 }
                 // Escape — back or close.
@@ -1281,33 +1283,61 @@
             s.lastVerifyInterruptTime = 0;
         }
 
+        // T031: Helper to confirm cancel and quit.
+        function confirmCancel() {
+            s.showConfirmCancel = false;
+            s.confirmCancelFocus = 0;  // reset for next open
+            s.isProcessing = false;
+            cleanupActiveSession();
+            s.wizard.cancel();
+            s.wizardState = 'CANCELLED';
+            return [s, tea.quit()];
+        }
+
+        // T031: Helper to dismiss overlay (keep going).
+        function dismissOverlay() {
+            s.showConfirmCancel = false;
+            s.confirmCancelFocus = 0;  // reset for next open
+            return [s, null];
+        }
+
+        // T031: Ensure focus index is initialized and valid.
+        if (typeof s.confirmCancelFocus !== 'number' || s.confirmCancelFocus < 0 || s.confirmCancelFocus > 1 || s.confirmCancelFocus !== s.confirmCancelFocus) {
+            s.confirmCancelFocus = 0;
+        }
+
         if (msg.type === 'Key') {
             var k = msg.key;
-            if (k === 'y' || k === 'enter') {
-                s.showConfirmCancel = false;
-                s.isProcessing = false;
-                cleanupActiveSession();
-                s.wizard.cancel();
-                s.wizardState = 'CANCELLED';
-                return [s, tea.quit()];
+            // T031: Tab / Shift+Tab cycles focus between Yes (0) and No (1).
+            if (k === 'tab') {
+                s.confirmCancelFocus = (s.confirmCancelFocus + 1) % 2;
+                return [s, null];
+            }
+            if (k === 'shift+tab') {
+                s.confirmCancelFocus = (s.confirmCancelFocus - 1 + 2) % 2;
+                return [s, null];
+            }
+            // T031: Enter activates the focused button.
+            if (k === 'enter') {
+                if (s.confirmCancelFocus === 0) {
+                    return confirmCancel();
+                }
+                return dismissOverlay();
+            }
+            // y always confirms, n/esc always dismisses (regardless of focus).
+            if (k === 'y') {
+                return confirmCancel();
             }
             if (k === 'n' || k === 'esc') {
-                s.showConfirmCancel = false;
-                return [s, null];
+                return dismissOverlay();
             }
         }
         if (msg.type === 'Mouse' && msg.action === 'press' && !msg.isWheel) {
             if (zone.inBounds('confirm-yes', msg)) {
-                s.showConfirmCancel = false;
-                s.isProcessing = false;
-                cleanupActiveSession();
-                s.wizard.cancel();
-                s.wizardState = 'CANCELLED';
-                return [s, tea.quit()];
+                return confirmCancel();
             }
             if (zone.inBounds('confirm-no', msg)) {
-                s.showConfirmCancel = false;
-                return [s, null];
+                return dismissOverlay();
             }
         }
         return [s, null];
@@ -1617,6 +1647,7 @@
                 return [s, null];
             }
             s.showConfirmCancel = true;
+            s.confirmCancelFocus = 0;  // T031: reset focus to 'Yes' on open
             return [s, null];
         }
         if (zone.inBounds('nav-next', msg)) {

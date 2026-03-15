@@ -417,10 +417,9 @@ func TestChunk16_VTerm_Lifecycle_AutoCloseOnChildExit(t *testing.T) {
 			if (!ns.claudeAutoAttachNotifAt || ns.claudeAutoAttachNotifAt <= 0) {
 				errors.push('notification timestamp should be positive');
 			}
-			// Polling should stop (null command).
-			if (cmd !== null && cmd !== undefined) {
-				errors.push('should return null command to stop polling');
-			}
+			// T028: pollClaudeScreenshot now returns a dismiss-attach-notif
+			// tick to auto-dismiss the notification. Screenshot polling still
+			// stops (no further claude-screenshot ticks are scheduled).
 
 			return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
 		} finally {
@@ -721,7 +720,10 @@ func TestChunk16_VTerm_Lifecycle_NotificationAutoDismissed(t *testing.T) {
 			if (bar.indexOf('Claude connected') !== -1) {
 				errors.push('expired notification should NOT appear in status bar');
 			}
-			// State should be cleared.
+			// T028: State clearing is handled by dismiss-attach-notif tick,
+			// not by the view function. Send the tick to verify the dismiss path.
+			var dr = update({type: 'Tick', id: 'dismiss-attach-notif'}, s);
+			s = dr[0];
 			if (s.claudeAutoAttachNotif !== '') {
 				errors.push('notification text should be cleared, got: ' + s.claudeAutoAttachNotif);
 			}

@@ -1466,6 +1466,22 @@
             // Confirm rename.
             if (k === 'enter') {
                 var text = (ds.inputText || '').trim();
+                // T096: Validate branch name characters before accepting.
+                if (text.length > 0 && prSplit.INVALID_BRANCH_CHARS && prSplit.INVALID_BRANCH_CHARS.test(text)) {
+                    ds.validationError = 'Invalid branch name: contains forbidden character';
+                    s.editorDialogState = ds;
+                    return [s, null];
+                }
+                if (text.indexOf('..') !== -1) {
+                    ds.validationError = 'Invalid branch name: contains ".."';
+                    s.editorDialogState = ds;
+                    return [s, null];
+                }
+                if (text.length >= 5 && text.slice(-5) === '.lock') {
+                    ds.validationError = 'Invalid branch name: ends with ".lock"';
+                    s.editorDialogState = ds;
+                    return [s, null];
+                }
                 if (text.length > 0 && st.planCache && st.planCache.splits) {
                     var splitIdx = s.selectedSplitIdx || 0;
                     if (st.planCache.splits[splitIdx]) {
@@ -1483,6 +1499,7 @@
                 var t = ds.inputText || '';
                 if (t.length > 0) {
                     ds.inputText = t.substring(0, t.length - 1);
+                    ds.validationError = '';  // T096: clear on edit
                     s.editorDialogState = ds;
                 }
                 return [s, null];
@@ -1490,6 +1507,7 @@
             // Typed character — single printable char (length 1).
             if (k.length === 1) {
                 ds.inputText = (ds.inputText || '') + k;
+                ds.validationError = '';  // T096: clear on edit
                 s.editorDialogState = ds;
                 return [s, null];
             }
@@ -2280,6 +2298,7 @@
                     elems.push({id: 'config-dryRun',         type: 'checkbox'});
                 }
                 elems.push({id: 'nav-next', type: 'nav'});
+                elems.push({id: 'nav-cancel', type: 'nav'});  // T012
                 return elems;
             }
             case 'PLAN_REVIEW': {
@@ -2292,6 +2311,7 @@
                 elems.push({id: 'plan-regenerate',  type: 'button'});
                 elems.push({id: 'ask-claude',       type: 'button'});
                 elems.push({id: 'nav-next',         type: 'nav'});
+                elems.push({id: 'nav-cancel', type: 'nav'});  // T012
                 return elems;
             }
             case 'PLAN_EDITOR': {
@@ -2304,6 +2324,7 @@
                 elems.push({id: 'editor-rename',  type: 'button'});
                 elems.push({id: 'editor-merge',   type: 'button'});
                 elems.push({id: 'nav-next',       type: 'nav'});
+                elems.push({id: 'nav-cancel', type: 'nav'});  // T012
                 return elems;
             }
             case 'ERROR_RESOLUTION': {
@@ -2326,6 +2347,7 @@
                     elems.push({id: 'error-ask-claude', type: 'button'});
                 }
                 elems.push({id: 'nav-next', type: 'nav'});
+                elems.push({id: 'nav-cancel', type: 'nav'});  // T012
                 return elems;
             }
             case 'FINALIZATION': {
@@ -2335,6 +2357,7 @@
                     {id: 'final-done',       type: 'button'}
                 ];
                 elems.push({id: 'nav-next', type: 'nav'});
+                elems.push({id: 'nav-cancel', type: 'nav'});  // T012
                 return elems;
             }
             // T061: EQUIV_CHECK focus elements — Re-verify, Revise Plan,
@@ -2347,6 +2370,7 @@
                         elems.push({id: 'equiv-revise',   type: 'button'});
                     }
                     elems.push({id: 'nav-next', type: 'nav'});
+                    elems.push({id: 'nav-cancel', type: 'nav'});  // T012
                 }
                 return elems;
             }
@@ -2451,6 +2475,25 @@
         if (!elems.length) return null;
         var focused = elems[s.focusIndex || 0];
         if (!focused) return null;
+
+        // T012: nav-cancel — open cancel confirmation (mirrors mouse handler).
+        // During active verification, send interrupt instead of opening the
+        // cancel dialog (same behavior as the mouse click on nav-cancel zone).
+        if (focused.id === 'nav-cancel') {
+            if (s.activeVerifySession) {
+                var now = Date.now();
+                if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < 2000) {
+                    try { s.activeVerifySession.kill(); } catch (e) { /* ignore */ }
+                } else {
+                    try { s.activeVerifySession.interrupt(); } catch (e) { /* ignore */ }
+                }
+                s.lastVerifyInterruptTime = now;
+                return [s, null];
+            }
+            s.showConfirmCancel = true;
+            s.confirmCancelFocus = 0;  // T031: reset focus to 'Yes' on open
+            return [s, null];
+        }
 
         // nav-next — let Enter fall through to handleNext().
         if (focused.type === 'nav') return null;
@@ -2637,6 +2680,8 @@
     function startAnalysis(s) {
         s.isProcessing = true;
         s.analysisProgress = 0;
+        s.analysisStartedAt = Date.now();  // T002: track start time for timeout
+        s.analysisSlowWarning = false;     // T002: reset slow warning
         s.configValidationError = null; // T43: clear previous validation error on retry
         s.availableBranches = [];       // T43: clear branch list on retry
         s.analysisSteps = [
@@ -2879,8 +2924,10 @@
     }
 
     // handleAnalysisPoll: Called every 100ms to check if the async
-    // analysis pipeline has completed. Updates spinner animation and
-    // handles cancellation.
+    // analysis pipeline has completed. Updates spinner animation,
+    // checks for timeout warning, and handles cancellation.
+    var ANALYSIS_TIMEOUT_MS = 60000; // T002: default 60s warning threshold
+
     function handleAnalysisPoll(s) {
         // If cancelled (Ctrl+C), stop polling.
         if (!s.isProcessing && !s.analysisRunning) {
@@ -2889,6 +2936,20 @@
 
         // Still running — poll again for spinner animation.
         if (s.analysisRunning) {
+            // T002: Check for slow analysis and set warning flag.
+            if (s.analysisStartedAt) {
+                var elapsed = Date.now() - s.analysisStartedAt;
+                var threshold = (typeof prSplitConfig !== 'undefined' && prSplitConfig.analysisTimeoutMs > 0)
+                    ? prSplitConfig.analysisTimeoutMs
+                    : ANALYSIS_TIMEOUT_MS;
+                if (elapsed >= threshold && !s.analysisSlowWarning) {
+                    s.analysisSlowWarning = true;
+                    s.analysisElapsedMs = elapsed;
+                }
+                if (s.analysisSlowWarning) {
+                    s.analysisElapsedMs = elapsed;
+                }
+            }
             return [s, tea.tick(100, 'analysis-poll')];
         }
 
@@ -3026,6 +3087,8 @@
 
         s.isProcessing = true;
         s.analysisProgress = 0;
+        s.analysisStartedAt = Date.now();  // T002: track start time for timeout
+        s.analysisSlowWarning = false;     // T002: reset slow warning
         s.configValidationError = null; // T43: clear previous validation error on retry
         s.availableBranches = [];       // T43: clear branch list on retry
         s.analysisSteps = [
@@ -3628,11 +3691,15 @@
     }
 
     // runEquivCheckAsync: Runs equivalence check as an async function.
-    // Uses verifyEquivalenceAsync (non-blocking I/O via exec.spawn).
+    // T075: Uses verifyEquivalenceDetailedAsync to include per-file diff
+    // info (diffFiles, diffSummary) when trees don't match.
     async function runEquivCheckAsync(s) {
         var equivResult;
         try {
-            equivResult = await prSplit.verifyEquivalenceAsync(st.planCache);
+            // T075: prefer detailed variant for diff information on mismatch;
+            // fall back to basic if the detailed export isn't available.
+            var checkFn = prSplit.verifyEquivalenceDetailedAsync || prSplit.verifyEquivalenceAsync;
+            equivResult = await checkFn(st.planCache);
         } catch (e) {
             if (s.wizard.current === 'CANCELLED') return; // wizard already cancelled
             s.isProcessing = false;

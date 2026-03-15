@@ -1088,6 +1088,18 @@
             lines.push('  ' + renderProgressBar(s.analysisProgress, (s.width || 80) - 8));
         }
 
+        // T002: Slow analysis timeout warning.
+        if (s.analysisSlowWarning && s.analysisRunning) {
+            var elSec = Math.floor((s.analysisElapsedMs || 0) / 1000);
+            lines.push('');
+            lines.push('  ' + styles.warningBadge().render(' \u23f1 Taking longer than expected ') +
+                styles.dim().render('  ' + elSec + 's elapsed'));
+            lines.push(styles.dim().render(
+                '  This may indicate a large repo, slow network, or a credential prompt.'));
+            lines.push(styles.dim().render(
+                '  Press Ctrl+C to cancel.'));
+        }
+
         // Show analysis results if available.
         if (st.analysisCache && st.analysisCache.files && !st.analysisCache.error) {
             lines.push('');
@@ -2240,6 +2252,11 @@
         var inputField = styles.activeCard().width(Math.max(20, overlayW - 8)).render(
             styles.label().render(inputDisplay));
         lines.push(inputField);
+
+        // T096: Show validation error from branch name check.
+        if (ds.validationError) {
+            lines.push(styles.errorText().render('\u26a0 ' + ds.validationError));
+        }
 
         lines.push('');
         lines.push(styles.dim().render('Type to edit \u2022 Enter confirm \u2022 Esc cancel'));

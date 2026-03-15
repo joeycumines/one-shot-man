@@ -48,7 +48,7 @@
       "id": "T002",
       "title": "Add global analysis timeout with user-visible countdown and abort option",
       "description": "The analysis pipeline has NO timeout protection. If analyzeDiffAsync hangs (e.g., git credential prompt, slow network, large repo), the user sees 'Processing...' forever with no way to abort except Ctrl+C (which doesn't kill the subprocess clearly). Implement: (1) A configurable timeout (default 60s, configurable via prSplitConfig.analysisTimeoutMs). (2) When the timeout fires (via another tea.tick check in handleAnalysisPoll), display a 'Taking longer than expected...' message in the analysis screen. (3) At 2x timeout, surface a 'This is taking unusually long — click to abort' button in the screen. (4) Abort path must kill the running exec.spawn subprocess via the cancellation mechanism. (5) Add a corresponding unit test verifying the timeout message appears at the correct threshold.",
-      "status": "not-started",
+      "status": "done",
       "body": 1,
       "files_affected": [
         "internal/command/pr_split_16_tui_core.js",
@@ -157,7 +157,7 @@
       "id": "T012",
       "title": "Add nav-cancel to all getFocusElements cycles for keyboard accessibility",
       "description": "CONFIRMED BUG: getFocusElements() in pr_split_16_tui_core.js does NOT include 'nav-cancel' for any wizard screen. This means the Cancel button is entirely keyboard-inaccessible for users who navigate by Tab. Fix: (1) Add {id: 'nav-cancel', type: 'nav'} to the focus elements list for ALL states where isProcessing is false. (2) Determine correct placement: typically after the back button and before split-specific elements, OR at the end of the list (Tab to get to Cancel last). Choose consistently. (3) In handleFocusActivate(), add a handler for focused.id === 'nav-cancel' that triggers the cancel confirmation (same as clicking nav-cancel zone). (4) Add the corresponding activation logic (sets s.showConfirmCancel = true OR triggers verify interrupt if active). (5) Add a unit test verifying nav-cancel appears in the focus list for CONFIG, PLAN_REVIEW, PLAN_EDITOR, and FINALIZATION states.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_16_tui_core.js",
@@ -622,7 +622,7 @@
       "id": "T055",
       "title": "CHANGELOG.md: update with all major recent changes",
       "description": "Update CHANGELOG.md with a new entry documenting the major changes made to osm pr-split: async analysis pipeline, PTY-based verification, all 7 screen polishes, binary E2E tests. Follow the existing CHANGELOG format.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "CHANGELOG.md"
@@ -846,7 +846,7 @@
       "id": "T075",
       "title": "Expand viewVerificationScreen to show per-branch diff details on EQUIV_CHECK failure",
       "description": "CONFIRMED (session 5): verifyEquivalenceDetailed() in pr_split_06_verification.js (lines 266-295) has been read. Its augmented result object contains: { equivalent, splitTree, sourceTree, error, diffFiles: string[], diffSummary: string }. diffFiles = array of file paths from 'git diff --name-only lastSplit sourceBranch'. diffSummary = output of 'git diff --stat lastSplit sourceBranch'. NOTE: there is NO verifyEquivalenceDetailedAsync variant — startEquivCheck in the TUI currently calls verifyEquivalenceAsync (not the Detailed variant). Implement: (1) Create verifyEquivalenceDetailedAsync() in pr_split_06_verification.js that mirrors verifyEquivalenceAsync but also runs 'git diff --stat/--name-only' async. Export it. (2) In startEquivCheck (pr_split_16_tui_core.js), replace the verifyEquivalenceAsync call with verifyEquivalenceDetailedAsync. Store the result (including diffFiles/diffSummary) in s.equivalenceResult. (3) In viewVerificationScreen, when s.equivalenceResult.equivalent===false and s.equivalenceResult.diffFiles has entries, show an expandable 'Files differing from source' section. Display count: 'N files differ'. Expand/collapse with 'e' key or zone click. (4) Each file entry shows the full relative path. (5) Also show s.equivalenceResult.diffSummary in a faint gray below (git diff --stat format). (6) When skippedBranches is non-empty, show: 'Note: N branches were skipped — equivalence expected to fail.' (7) Write unit tests with mock equivalenceResult objects for all states: equivalent=true, equivalent=false with files, equivalent=false with skippedBranches.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -961,7 +961,7 @@
       "id": "T085",
       "title": "saveCheckpoint() does not persist _state caches — resume loses computed data",
       "description": "CONFIRMED by reading pr_split_13_tui.js WizardState.saveCheckpoint() and pr_split_03_planning.js savePlan(). WizardState.saveCheckpoint() only saves {current, data} — it does NOT call prSplit.savePlan(), which is the function that persists analysisCache, groupsCache, planCache, executionResultCache, AND conversationHistory to disk. GOOD NEWS: savePlan() (pr_split_03_planning.js lines 115-166) already persists ALL the necessary data to disk in JSON format. loadPlan() already restores them. The fix is SIMPLER than originally described: (1) In WizardState.saveCheckpoint(), add a call to prSplit.savePlan(path, wizard.current) immediately before (or after) the checkpoint object is written. This uses the same DEFAULT_PLAN_PATH as the plan file. (2) The savePlan() call persists analysisCache, groupsCache, planCache, executionResultCache in full. (3) On resume (loadPlan() call in handleConfigState or the 'load-plan' auto-detect on startup), all caches are restored correctly — loadPlan() already performs this restore. (4) Add 'checkpointed: true' flag to the snapshot so the TUI can show 'Resuming from checkpoint' on startup. (5) The REPL 'auto-split --resume' handler's 'not yet implemented' note should be updated to use this mechanism. (6) Write an integration test: checkpoint at BRANCH_BUILDING via saveCheckpoint(), create a new prSplit runtime, call loadPlan(), verify analysisCache and planCache are restored with all splits.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_13_tui.js",
@@ -1088,7 +1088,7 @@
       "id": "T096",
       "title": "validatePlan missing branch name character validation — invalid-char split names pass undetected until git fails",
       "description": "CONFIRMED by reading pr_split_04_validation.js in session 6 and pr_split_16_tui_core.js updateRenameDialog() in session 10: validateSplitPlan() correctly validates branch name characters using var invalidBranchChars = /[\\s~\\^:\\\\\\*\\?\\[]/. But validatePlan() has no such check — it validates only: non-empty splits array, non-empty name, non-empty files, and no duplicate files. A plan with split.name = 'my branch:broken' passes validatePlan() but fails at git branch creation in executeSplit() with a cryptic git error. Highest risk: user-edited plans loaded via --resume from JSON — only validatePlan() is called, not validateSplitPlan(). ADDITIONAL BUG CONFIRMED (session 10): updateRenameDialog() in pr_split_16_tui_core.js (line ~1380) immediately writes the typed new name to st.planCache.splits[splitIdx].name = text on Enter press with NO branch name character validation — an invalid rename passes silently. Fix: (1) In validatePlan(), after checking split.name is non-empty, add: if (invalidBranchChars.test(split.name)) errors.push('Split \"' + split.name + '\" contains invalid branch name character at position ' + invalidBranchChars.exec(split.name).index + '. Valid names must not contain spaces, tildes, colons, carets, backslashes, asterisks, question marks, or brackets.'). (2) Also validate split.name.trim() is non-empty (handles whitespace-only names). (3) Add the regex check inline or refactor to share the test with validateSplitPlan. (4) In updateRenameDialog() (pr_split_16_tui_core.js), BEFORE writing the new name: check invalidBranchChars.test(text) — if invalid, SET s.editorValidationErrors = [\"Invalid branch name: cannot contain [\" + char + \"]\"]; do NOT write to planCache.splits; keep the dialog open. (5) Write unit tests: space in name, colon, tilde, backslash, dot-lock suffix; for rename dialog test, assert editorValidationErrors is set and planCache is unchanged on invalid rename.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_04_validation.js",
@@ -1181,7 +1181,7 @@
       "id": "T104",
       "title": "automatedSplit re-verify step after re-split always returns error:null — failures silently continue to equivalence check",
       "description": "CONFIRMED by reading pr_split_10_pipeline.js automatedSplit() in session 6 (lines 1916-1929): after re-classification and re-execution (the re-split fallback when conflicts cannot be resolved), the re-verify step is: `await step('Re-verify splits', async function() { return { error: null, results: await verifySplits(plan) }; })`. This ALWAYS returns `{ error: null }` regardless of whether the re-verified branches pass or fail — the `results` from verifySplits is captured but the step() wrapper only inspects `.error`. If re-split branches still fail verification, the pipeline continues silently to step 10 (equivalence check) with unverified branches. Fix: (1) Change the re-verify step to check the results: `var rv = await verifySplits(plan); var reFails = rv.results.filter(function(r) { return !r.passed && !r.skipped && !r.preExisting; }); if (reFails.length > 0) { return { error: reFails.length + ' branch(es) still fail after re-split: ' + reFails.map(function(r) { return r.name; }).join(', '), failures: reFails }; } return { error: null }`. (2) If re-verify fails, add it to report.conflicts and report.error. (3) Optionally: attempt a second round of conflict resolution on the re-split failures (with a separate pass counter to prevent infinite loops). (4) Write a unit test simulating a re-split where the re-verified branches still fail, and assert the pipeline returns an error.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_10_pipeline.js"
@@ -1203,7 +1203,7 @@
       "id": "T106",
       "title": "state.claudeCrashDetected never set in headless (non-TUI) mode — crashed Claude processes undetected by aliveCheckFn",
       "description": "CONFIRMED by reading pr_split_10_pipeline.js automatedSplit() in session 6: aliveCheckFn checks `if (state.claudeCrashDetected) { return false; }` before checking `claudeExecutor.handle.isAlive()`. The `state.claudeCrashDetected` flag is intended to be set by the TUI's health monitoring poll (which periodically checks if the Claude process is alive and sets this flag). BUT in headless/non-TUI mode (e.g., automated CI usage of `osm pr-split --auto`), there is no TUI health monitor running — the flag is never set. This means a Claude crash in headless mode may still return isAlive()===false (since the handle's process has exited) — so the isAlive() check DOES still work for detecting crashes. The claudeCrashDetected check is redundant in headless mode. HOWEVER: the flag may be set by the TUI before aliveCheckFn is called, causing it to short-circuit before checking isAlive() — this could mask a temporarily-dead but recovered handle. Fix: (1) Audit how claudeCrashDetected is set/cleared in the TUI health monitor. (2) In headless mode (no tuiMux), skip the claudeCrashDetected check and rely exclusively on handle.isAlive(). (3) Add a guard: `if (state.claudeCrashDetected && hasTUI) { return false; }` to only trust the flag when the TUI is active. (4) Write a test confirming aliveCheckFn returns false when isAlive() returns false even without claudeCrashDetected being set.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_10_pipeline.js",

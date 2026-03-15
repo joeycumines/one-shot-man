@@ -1458,7 +1458,10 @@
         // Heartbeat function: checks if the Claude process is still alive.
         // Also checks for crash detection flag set by the TUI health poll.
         aliveCheckFn = function() {
-            if (state.claudeCrashDetected) {
+            // T106: claudeCrashDetected is only set by the TUI health monitor.
+            // In headless mode (no tuiMux), ignore the flag to avoid false
+            // positives from uninitialized state.
+            if (tuiMux && state.claudeCrashDetected) {
                 return false;
             }
             if (!claudeExecutor || !claudeExecutor.handle ||
@@ -1821,7 +1824,8 @@
                 if (!resumeSpawn.error) {
                     sessionId = resumeSpawn.sessionId;
                     aliveCheckFn = function() {
-                        if (state.claudeCrashDetected) {
+                        // T106: Guard with tuiMux (headless safety).
+                        if (tuiMux && state.claudeCrashDetected) {
                             return false;
                         }
                         return claudeExecutor && claudeExecutor.handle &&
@@ -1956,7 +1960,26 @@
                     });
                     if (!reExec.error) {
                         await step('Re-verify splits', async function() {
-                            return { error: null, results: await verifySplits(plan) };
+                            // T104: Actually check whether re-verified branches pass.
+                            // Previously this always returned { error: null }.
+                            var rv = await verifySplits(plan, {
+                                verifyTimeoutMs: config.verifyTimeoutMs || AUTOMATED_DEFAULTS.verifyTimeoutMs,
+                                outputFn: emitOutput
+                            });
+                            if (rv.error) return { error: rv.error };
+                            var reFails = [];
+                            if (rv.results) {
+                                for (var ri = 0; ri < rv.results.length; ri++) {
+                                    var r = rv.results[ri];
+                                    if (!r.passed && !r.skipped && !r.preExisting) {
+                                        reFails.push(r.name);
+                                    }
+                                }
+                            }
+                            if (reFails.length > 0) {
+                                return { error: reFails.length + ' branch(es) still fail after re-split: ' + reFails.join(', ') };
+                            }
+                            return { error: null };
                         });
                     }
                 }

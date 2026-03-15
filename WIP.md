@@ -27,8 +27,9 @@
 21. `a2b71776` — verify automatedSplit equivalence propagation + handleNext safety net: T121
 22. `c81c78cc` — cumulative chain docs + detectLanguage grammar + restart mode-awareness: T108+T112+T114
 23. `3da6cc85` — quick-fix bundle: equiv cache, cancel overlay, analysis cache, loadPlan dedup, preExisting reason, bell restore, strategy fallback warn: T089+T081+T066+T110+T101+T097+T091+T102
+24. (pending) — batch 4: T104+T106+T085+T096+T012+T055+T075+T002
 
-## Completed Tasks (58/124)
+## Completed Tasks (64/123)
 - T028: renderStatusBar auto-dismiss → tick-based handler  
 - T072: viewReportOverlay scrollbar sync → syncReportScrollbar helper
 - T080: viewReportOverlay viewport sizing → syncReportOverlay helper
@@ -86,28 +87,19 @@
 - T103: Worktree temp path → worktreeTmpPath() helper uses TMPDIR/TMP/TEMP or /tmp + random entropy, replaces fragile /../
 - T105: DEFAULT_PLAN_PATH respects config.dir — resolvePlanPath() resolves relative to configured dir + pipeline messages use resolved path
 - T107: Surface skippedFiles in TUI — overallSkippedFiles in executeSplit result + warning section in viewExecutionScreen
+- T104: Re-verify step passes verifyTimeoutMs + checks branch pass/fail status instead of always returning success
+- T106: claudeCrashDetected guard with tuiMux — prevents false positives in headless/test mode
+- T085: saveCheckpoint calls savePlan for disk persistence of runtime caches (analysis, groups, plan, execution, conversation)
+- T096: INVALID_BRANCH_CHARS shared regex between validatePlan + validateSplitPlan + rename dialog; .lock + .. checks
+- T012: nav-cancel keyboard accessibility in all 7 wizard screens + handleFocusActivate handler matching mouse behavior
+- T055: CHANGELOG.md entries for all major pr-split changes (Added + Fixed sections)
+- T075: verifyEquivalenceDetailedAsync with per-file diff info + fallback to basic in runEquivCheckAsync
+- T002: Analysis timeout with slow warning + configurable threshold + elapsed time display + abort hint
 
 ## Current Work
-**58/124 done, 25 commits. Batch 3 (T087+T100+T098+T025+T099+T103+T105+T107) — PENDING COMMIT.**
+**64/123 done, 26 commits. Batch 4 committed.**
 
-### Batch 3: T087+T100+T098+T025+T099+T103+T105+T107
-Files modified:
-- pr_split_00_core.js: worktreeTmpPath helper + export
-- pr_split_01_analysis.js: binary file detection + skippedFiles return + createEmptyResult consistency
-- pr_split_02_grouping.js: (no change — T099 wired in chunk 16 + views)
-- pr_split_03_planning.js: resolvePlanPath + savePlan/loadPlan use it + exported
-- pr_split_05_execution.js: worktreeTmpPath import + 2 replacements + overallSkippedFiles collect
-- pr_split_06_verification.js: worktreeTmpPath import + 3 replacements
-- pr_split_10_pipeline.js: resolvePlanPath import + resolvedPlanPath for save/display
-- pr_split_11_utilities.js: MAX_CONVERSATION_HISTORY cap + configurable + one-shot log warning
-- pr_split_15_tui_views.js: STATE_LABEL_OVERRIDE + amber needsConfirm banner + skippedFiles display
-- pr_split_16_tui_core.js: selectStrategyAsync for auto + strategyNeedsConfirm/strategyAlternatives state
-
-Test results: ALL PASS (exit_code 0). One unrelated flaky timeout in TestPrSplitCommand_ResolveConflictsWithClaudePreExistingFailure (60s timeout, chunk 08 conflict resolution, not in scope).
-
-### Next Priority
-- Rule of Two review → commit
-- T002: Analysis timeout (unlocked by T001 ✅)
+### Next Priority: Batch 5
 - T032: Cancel during verify phase
 - T059: Pause/resume verify phase (unlocked by T084)
 - T000: Prompt/input anchor stability (Hana directive)

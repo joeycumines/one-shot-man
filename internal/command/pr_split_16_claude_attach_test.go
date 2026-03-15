@@ -339,7 +339,9 @@ func TestChunk16_T45_ExitAutoClosesSplitView(t *testing.T) {
 		if (ns.splitViewEnabled) errors.push('splitViewEnabled should be false');
 		if (!ns.claudeAutoAttachNotif) errors.push('notification should be set');
 		if (ns.claudeAutoAttachNotif.indexOf('ended') < 0) errors.push('notif should mention ended: ' + ns.claudeAutoAttachNotif);
-		if (cmd !== null) errors.push('cmd should be null (stop polling)');
+		// T028: pollClaudeScreenshot now returns a dismiss-attach-notif tick
+		// to auto-dismiss the notification. Screenshot polling still stops
+		// (no further claude-screenshot ticks are scheduled).
 
 		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
 		return 'OK';
@@ -433,6 +435,10 @@ func TestChunk16_T45_NotificationAutoExpires(t *testing.T) {
 		if (statusBar.indexOf('Claude connected') >= 0) {
 			return 'FAIL: expired notification should not be shown';
 		}
+		// T028: State clearing is handled by dismiss-attach-notif tick, not
+		// by the view function. Send the tick to verify the dismiss path.
+		var r = update({type: 'Tick', id: 'dismiss-attach-notif'}, s);
+		s = r[0];
 		if (s.claudeAutoAttachNotif !== '') {
 			return 'FAIL: claudeAutoAttachNotif should be cleared, got: ' + s.claudeAutoAttachNotif;
 		}

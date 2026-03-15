@@ -571,12 +571,12 @@ func TestChunk16_GetFocusElements_CrashMode(t *testing.T) {
 		}
 		if (!hasAuto) errors.push('normal: missing resolve-auto button');
 
-		// Crash mode — should have exactly 4 elements (3 crash buttons + nav-next).
+		// Crash mode — should have exactly 5 elements (3 crash buttons + nav-next + nav-cancel).
 		s = initState('ERROR_RESOLUTION');
 		s.claudeCrashDetected = true;
 		elems = globalThis.prSplit._getFocusElements(s);
-		if (elems.length !== 4) {
-			errors.push('crash: expected 4 elements, got ' + elems.length);
+		if (elems.length !== 5) {
+			errors.push('crash: expected 5 elements, got ' + elems.length);
 		}
 		var crashIds = {};
 		for (var j = 0; j < elems.length; j++) {

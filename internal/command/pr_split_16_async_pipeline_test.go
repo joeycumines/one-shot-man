@@ -755,9 +755,14 @@ func TestChunk16_ExecutionAsync_HappyPath(t *testing.T) {
 
 	raw, err := evalJS(`(async function() {
 		var origVerifyEquivalenceAsync = globalThis.prSplit.verifyEquivalenceAsync;
+		var origVerifyEquivalenceDetailedAsync = globalThis.prSplit.verifyEquivalenceDetailedAsync;
 
 		try {
-			// Mock verifyEquivalenceAsync: equivalent.
+			// Mock verifyEquivalenceDetailedAsync (checked first by runEquivCheckAsync).
+			globalThis.prSplit.verifyEquivalenceDetailedAsync = async function(plan) {
+				return { equivalent: true, splitTree: 'aaa', sourceTree: 'aaa', error: null, diffFiles: [], diffSummary: '' };
+			};
+			// Mock verifyEquivalenceAsync as fallback.
 			globalThis.prSplit.verifyEquivalenceAsync = async function(plan) {
 				return { equivalent: true, splitTree: 'aaa', sourceTree: 'aaa', error: null };
 			};
@@ -803,6 +808,7 @@ func TestChunk16_ExecutionAsync_HappyPath(t *testing.T) {
 			return 'OK';
 		} finally {
 			globalThis.prSplit.verifyEquivalenceAsync = origVerifyEquivalenceAsync;
+			globalThis.prSplit.verifyEquivalenceDetailedAsync = origVerifyEquivalenceDetailedAsync;
 		}
 	})()`)
 	if err != nil {

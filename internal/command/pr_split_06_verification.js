@@ -701,6 +701,36 @@
         };
     }
 
+    // T075: verifyEquivalenceDetailedAsync — async variant that adds
+    // per-file diff info when the trees don't match (mirrors the sync
+    // verifyEquivalenceDetailed).
+    async function verifyEquivalenceDetailedAsync(plan) {
+        var gitExecAsync = prSplit._gitExecAsync;  // Re-capture per call (consistency)
+        var base = await verifyEquivalenceAsync(plan);
+        base.diffFiles = [];
+        base.diffSummary = '';
+        if (base.error || base.equivalent) {
+            return base;
+        }
+
+        var dir = resolveDir((plan && plan.dir) || '.');
+        var lastSplit = plan.splits[plan.splits.length - 1].name;
+
+        var diffStatResult = await gitExecAsync(dir, ['diff', '--stat', lastSplit, plan.sourceBranch]);
+        if (diffStatResult.code === 0) {
+            base.diffSummary = diffStatResult.stdout.trim();
+        }
+
+        var diffNamesResult = await gitExecAsync(dir, ['diff', '--name-only', lastSplit, plan.sourceBranch]);
+        if (diffNamesResult.code === 0 && diffNamesResult.stdout.trim() !== '') {
+            base.diffFiles = diffNamesResult.stdout.trim().split('\n').filter(function(f) {
+                return f !== '';
+            });
+        }
+
+        return base;
+    }
+
     // cleanupBranchesAsync is the non-blocking version of cleanupBranches.
     async function cleanupBranchesAsync(plan) {
         var gitExecAsync = prSplit._gitExecAsync;
@@ -742,5 +772,6 @@
     prSplit.verifySplitAsync = verifySplitAsync;
     prSplit.verifySplitsAsync = verifySplitsAsync;
     prSplit.verifyEquivalenceAsync = verifyEquivalenceAsync;
+    prSplit.verifyEquivalenceDetailedAsync = verifyEquivalenceDetailedAsync;  // T075
     prSplit.cleanupBranchesAsync = cleanupBranchesAsync;
 })(globalThis.prSplit);

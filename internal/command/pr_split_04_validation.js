@@ -86,6 +86,13 @@
     // -----------------------------------------------------------------------
     //  validatePlan — validates internal split plan structure
     // -----------------------------------------------------------------------
+    // T096: Share the same invalid branch-name character regex used by
+    // validateSplitPlan so that user-edited plans loaded from JSON are also
+    // validated.  Git rejects names containing spaces, tildes (~), carets (^),
+    // colons (:), backslashes (\), asterisks (*), question marks (?), or
+    // open brackets ([).  We also reject double-dot (..) and .lock suffix.
+    var INVALID_BRANCH_CHARS = /[\s~\^:\\*\?\[]/;
+
     function validatePlan(plan) {
         var errors = [];
 
@@ -100,8 +107,20 @@
         for (var i = 0; i < plan.splits.length; i++) {
             var split = plan.splits[i];
 
-            if (!split.name) {
+            if (!split.name || (typeof split.name === 'string' && split.name.trim() === '')) {
                 errors.push('split at index ' + i + ' has no name');
+            } else if (typeof split.name === 'string') {
+                // T096: Validate branch name characters.
+                if (INVALID_BRANCH_CHARS.test(split.name)) {
+                    var m = INVALID_BRANCH_CHARS.exec(split.name);
+                    errors.push('split "' + split.name + '" contains invalid branch name character at position ' + m.index);
+                }
+                if (split.name.indexOf('..') !== -1) {
+                    errors.push('split "' + split.name + '" contains ".." which is invalid in branch names');
+                }
+                if (split.name.slice(-5) === '.lock') {
+                    errors.push('split "' + split.name + '" ends with ".lock" which is reserved by git');
+                }
             }
 
             if (!split.files || split.files.length === 0) {
@@ -142,9 +161,6 @@
 
         var allFiles = {};
         var duplicates = [];
-        // Valid branch name: no spaces, no .., no ~, no ^, no :, no backslash,
-        // no control chars.
-        var invalidBranchChars = /[\s~\^:\\*\?\[]/;
 
         for (var i = 0; i < stages.length; i++) {
             var stage = stages[i];
@@ -156,7 +172,7 @@
 
             if (!stage.name || typeof stage.name !== 'string' || stage.name.trim() === '') {
                 errors.push('stage at index ' + i + ' has no name');
-            } else if (invalidBranchChars.test(stage.name)) {
+            } else if (INVALID_BRANCH_CHARS.test(stage.name)) {
                 errors.push('stage ' + stage.name + ' has invalid branch name characters');
             }
 
@@ -261,4 +277,6 @@
     prSplit.validatePlan = validatePlan;
     prSplit.validateSplitPlan = validateSplitPlan;
     prSplit.validateResolution = validateResolution;
+    // T096: Shared regex for cross-chunk branch name validation (e.g. rename dialog).
+    prSplit.INVALID_BRANCH_CHARS = INVALID_BRANCH_CHARS;
 })(globalThis.prSplit);

@@ -146,6 +146,7 @@ func TestChunk16_VerifyFallback_AsyncHappyPath(t *testing.T) {
 			s.verificationResults = [];
 			s.verifyingIdx = 0;
 			s.verifyOutput = {};
+			s._baselineVerifyStarted = true; // Skip T115 baseline check.
 
 			// First branch: launch async.
 			var r = update({type: 'Tick', id: 'verify-branch'}, s);
@@ -954,12 +955,12 @@ func TestChunk16_T40_FinalizationFocusElements(t *testing.T) {
 		var s = initState('FINALIZATION');
 		var elems = globalThis.prSplit._getFocusElements(s);
 
-		// Expect 4 elements: final-report, final-create-prs, final-done, nav-next.
-		if (elems.length !== 4) {
-			errors.push('element count: got ' + elems.length + ', want 4');
+		// Expect 5 elements: final-report, final-create-prs, final-done, nav-next, nav-cancel.
+		if (elems.length !== 5) {
+			errors.push('element count: got ' + elems.length + ', want 5');
 		}
-		var expectedIds = ['final-report', 'final-create-prs', 'final-done', 'nav-next'];
-		var expectedTypes = ['button', 'button', 'button', 'nav'];
+		var expectedIds = ['final-report', 'final-create-prs', 'final-done', 'nav-next', 'nav-cancel'];
+		var expectedTypes = ['button', 'button', 'button', 'nav', 'nav'];
 		for (var i = 0; i < expectedIds.length; i++) {
 			if (!elems[i] || elems[i].id !== expectedIds[i]) {
 				errors.push('elem[' + i + ']: got ' + (elems[i] ? elems[i].id : 'undefined') + ', want ' + expectedIds[i]);
@@ -1002,19 +1003,23 @@ func TestChunk16_T40_FinalizationTabCycling(t *testing.T) {
 		r = sendKey(r[0], 'tab');
 		if (r[0].focusIndex !== 3) errors.push('tab 2→3: got ' + r[0].focusIndex);
 
-		// Tab: 3→0 (wrap-around).
+		// Tab: 3→4 (nav-cancel).
 		r = sendKey(r[0], 'tab');
-		if (r[0].focusIndex !== 0) errors.push('tab wrap 3→0: got ' + r[0].focusIndex);
+		if (r[0].focusIndex !== 4) errors.push('tab 3→4: got ' + r[0].focusIndex);
 
-		// Shift+Tab: 0→3 (reverse wrap).
+		// Tab: 4→0 (wrap-around).
+		r = sendKey(r[0], 'tab');
+		if (r[0].focusIndex !== 0) errors.push('tab wrap 4→0: got ' + r[0].focusIndex);
+
+		// Shift+Tab: 0→4 (reverse wrap).
 		s = initState('FINALIZATION');
 		s.focusIndex = 0;
 		r = sendKey(s, 'shift+tab');
-		if (r[0].focusIndex !== 3) errors.push('shift+tab wrap 0→3: got ' + r[0].focusIndex);
+		if (r[0].focusIndex !== 4) errors.push('shift+tab wrap 0→4: got ' + r[0].focusIndex);
 
-		// Shift+Tab: 3→2.
+		// Shift+Tab: 4→3.
 		r = sendKey(r[0], 'shift+tab');
-		if (r[0].focusIndex !== 2) errors.push('shift+tab 3→2: got ' + r[0].focusIndex);
+		if (r[0].focusIndex !== 3) errors.push('shift+tab 4→3: got ' + r[0].focusIndex);
 
 		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
 		return 'OK';
@@ -1136,11 +1141,11 @@ func TestChunk16_T40_ConfigToggleAdvancedFocus(t *testing.T) {
 		r = sendKey(r[0], 'enter');
 		if (r[0].showAdvanced) errors.push('Enter on toggle-advanced did not close advanced options');
 
-		// CONFIG with auto mode: 3 strategies + test-claude + toggle-advanced + nav-next = 6.
+		// CONFIG with auto mode: 3 strategies + test-claude + toggle-advanced + nav-next + nav-cancel = 7.
 		s = initState('CONFIG');
 		globalThis.prSplit.runtime.mode = 'auto';
 		elems = globalThis.prSplit._getFocusElements(s);
-		if (elems.length !== 6) errors.push('auto mode: got ' + elems.length + ' elems, want 6');
+		if (elems.length !== 7) errors.push('auto mode: got ' + elems.length + ' elems, want 7');
 		// toggle-advanced should be at index 4 (after test-claude at index 3).
 		if (elems[4] && elems[4].id !== 'toggle-advanced') {
 			errors.push('auto mode: elem[4]=' + (elems[4] ? elems[4].id : 'undefined') + ', want toggle-advanced');
@@ -1226,29 +1231,37 @@ func TestChunk16_T40_ErrorResolutionNavNext(t *testing.T) {
 		var errors = [];
 		setupPlanCache();
 
-		// ERROR_RESOLUTION should include nav-next as last element.
+		// ERROR_RESOLUTION should include nav-cancel as last element, nav-next as second-to-last.
 		var s = initState('ERROR_RESOLUTION');
 		globalThis.prSplit._state.claudeExecutor = {};
 		var elems = globalThis.prSplit._getFocusElements(s);
 		var last = elems[elems.length - 1];
-		if (!last || last.id !== 'nav-next' || last.type !== 'nav') {
-			errors.push('last elem: got ' + JSON.stringify(last) + ', want {id:nav-next,type:nav}');
+		if (!last || last.id !== 'nav-cancel' || last.type !== 'nav') {
+			errors.push('last elem: got ' + JSON.stringify(last) + ', want {id:nav-cancel,type:nav}');
+		}
+		var secondToLast = elems[elems.length - 2];
+		if (!secondToLast || secondToLast.id !== 'nav-next' || secondToLast.type !== 'nav') {
+			errors.push('second-to-last elem: got ' + JSON.stringify(secondToLast) + ', want {id:nav-next,type:nav}');
 		}
 
 		// Tab to nav-next and press Enter — should fall through to handleNext (auto-resolve).
-		s.focusIndex = elems.length - 1;
+		s.focusIndex = elems.length - 2;
 		var r = sendKey(s, 'enter');
 		// handleNext for ERROR_RESOLUTION calls handleErrorResolutionChoice(s, 'auto-resolve').
 		// Result depends on implementation, but it should NOT error.
 		if (!r || !r[0]) errors.push('enter on nav-next returned null');
 
-		// Crash mode: should also have nav-next.
+		// Crash mode: should have nav-cancel as last, nav-next as second-to-last.
 		s = initState('ERROR_RESOLUTION');
 		s.claudeCrashDetected = true;
 		elems = globalThis.prSplit._getFocusElements(s);
 		last = elems[elems.length - 1];
-		if (!last || last.id !== 'nav-next') {
-			errors.push('crash mode last elem: got ' + (last ? last.id : 'undefined') + ', want nav-next');
+		if (!last || last.id !== 'nav-cancel') {
+			errors.push('crash mode last elem: got ' + (last ? last.id : 'undefined') + ', want nav-cancel');
+		}
+		secondToLast = elems[elems.length - 2];
+		if (!secondToLast || secondToLast.id !== 'nav-next') {
+			errors.push('crash mode second-to-last: got ' + (secondToLast ? secondToLast.id : 'undefined') + ', want nav-next');
 		}
 
 		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
@@ -1355,14 +1368,15 @@ func TestChunk16_T40_ElementCountParity(t *testing.T) {
 
 		// Verify exact element counts per screen.
 		var expected = {
-			'CONFIG':           5,  // 3 strategies + toggle-advanced + nav-next
-			'PLAN_REVIEW':      7,  // 3 cards + plan-edit + plan-regenerate + ask-claude + nav-next
-			'PLAN_EDITOR':      7,  // 3 cards + editor-move + editor-rename + editor-merge + nav-next
-			'ERROR_RESOLUTION': 7,  // 5 buttons + error-ask-claude + nav-next
-			'FINALIZATION':     4,  // final-report + final-create-prs + final-done + nav-next
+			'CONFIG':           6,  // 3 strategies + toggle-advanced + nav-next + nav-cancel
+			'PLAN_REVIEW':      8,  // 3 cards + plan-edit + plan-regenerate + ask-claude + nav-next + nav-cancel
+			'PLAN_EDITOR':      8,  // 3 cards + editor-move + editor-rename + editor-merge + nav-next + nav-cancel
+			'ERROR_RESOLUTION': 8,  // 5 buttons + error-ask-claude + nav-next + nav-cancel
+			'FINALIZATION':     5,  // final-report + final-create-prs + final-done + nav-next + nav-cancel
 			'BRANCH_BUILDING':  0,  // passive — keyboard shortcuts, not focus elements
 			'PLAN_GENERATION':  0,  // passive
-			'EQUIV_CHECK':      0   // passive
+			'EQUIV_CHECK':      0,  // passive
+			'PAUSED':           2   // pause-resume + pause-quit (no nav-cancel — uses pause-quit)
 		};
 
 		for (var state in expected) {
@@ -1380,7 +1394,7 @@ func TestChunk16_T40_ElementCountParity(t *testing.T) {
 		globalThis.prSplit.runtime.mode = 'auto';
 		var s = initState('CONFIG');
 		var elems = globalThis.prSplit._getFocusElements(s);
-		if (elems.length !== 6) errors.push('CONFIG(auto): got ' + elems.length + ', want 6');
+		if (elems.length !== 7) errors.push('CONFIG(auto): got ' + elems.length + ', want 7');
 		globalThis.prSplit.runtime.mode = 'heuristic';
 
 		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');

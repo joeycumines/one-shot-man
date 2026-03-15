@@ -207,6 +207,11 @@
 
     /**
      * saveCheckpoint — capture current state for resume.
+     *
+     * T085: Also persists plan caches to disk via savePlan() so that a
+     * future resume (loadPlan) can restore analysisCache, groupsCache,
+     * planCache, executionResultCache, and conversationHistory.
+     *
      * @returns {Object} Checkpoint data.
      */
     WizardState.prototype.saveCheckpoint = function() {
@@ -215,6 +220,19 @@
             data: JSON.parse(JSON.stringify(this.data)),
             at: Date.now()
         };
+        // T085: Persist plan + runtime caches to disk so resume can restore
+        // them via loadPlan().  savePlan() is defined in chunk 03; guard
+        // against it not being available (e.g. minimal test environments).
+        if (typeof prSplit.savePlan === 'function') {
+            try {
+                prSplit.savePlan(null, 'checkpoint:' + this.current);
+            } catch (e) {
+                // Best-effort — checkpoint still succeeds in-memory.
+                if (typeof log !== 'undefined' && log.warn) {
+                    log.warn('saveCheckpoint: savePlan failed: ' + (e.message || e));
+                }
+            }
+        }
         return this.checkpoint;
     };
 

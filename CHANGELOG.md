@@ -70,6 +70,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `osm:exec` `execStream(cmd, args, opts)` synchronous streaming helper: line-by-line stdout/stderr callbacks (`onStdout(line)`, `onStderr(line)`) with exit code capture; used by `verifySplits` for real-time build output in TUI
 - PTY write timeout: `DefaultWriteTimeout` (30s) prevents indefinite blocking if child process hangs; configurable via `SpawnConfig.WriteTimeout` and JS `writeTimeoutMs` option; negative value disables
 - Terminal mux flicker-free panel toggle: `VTerm.RenderFullScreen()` emits CUP+content+EL per row instead of ESC[2J (erase display); eliminates flash-to-black on panel toggle
+- `osm pr-split` async analysis pipeline: `analyzeDiffAsync`, `groupByDependencyAsync`, `selectStrategyAsync`, `applyStrategyAsync` run on the goja event loop — the TUI remains responsive during diff analysis and plan generation; progress steps UI (verify baseline → analyze diff → group files → generate plan → validate plan) with per-step active/done indicators
+- `osm pr-split` PTY-based branch verification: interactive `verifySplit` sessions via `termmux.CaptureSession` — ANSI output captured in real-time, streamed to a dedicated TUI viewport with scrollback; `screen()` for ANSI-safe rendering; configurable verify command per plan; pre-existing failure detection via baseline comparison
+- `osm pr-split` equivalence check screen: tree-hash comparison with visual diff, re-verify and revise plan buttons, keyboard navigation (Tab, Enter, j/k)
+- `osm pr-split` async PR creation: `createPRsAsync` + `ghExecAsync` pipeline with per-branch progress display; dry-run mode simulates PR creation without real `gh` calls; skipped-PR display with `○` icons
+- `osm pr-split` pause/resume: `PAUSED` wizard state with dedicated screen, checkpoint save/restore via `savePlan()`, cancel/force-cancel cleanup
+- `osm pr-split` cancel overlay: two-stage cancellation with Tab focus cycling, contextual text for active verify sessions, `SIGINT`/kill escalation for PTY sessions
+- `osm pr-split` analysis timeout with user-visible slow-analysis warning and configurable threshold (`prSplitConfig.analysisTimeoutMs`, default 60s)
+- `osm pr-split` nav-cancel keyboard accessibility: Cancel button reachable via Tab in all 7 wizard screens; Enter on focused Cancel mirrors mouse click behavior (verify interrupt or cancel confirmation)
+- `osm pr-split` branch name validation: `INVALID_BRANCH_CHARS` regex shared between `validatePlan()` and `validateSplitPlan()`; rename dialog rejects invalid characters with inline error display; also validates `..` and `.lock` suffix
+- `osm pr-split` saveCheckpoint persistence: `WizardState.saveCheckpoint()` now calls `savePlan()` to persist all runtime caches (analysis, groups, plan, execution results, conversation history) to disk for crash recovery
 
 ### Changed
 - **`osm pr-split` TUI redesigned from go-prompt REPL to full BubbleTea graphical wizard**: 7-screen flow (Configure → Analysis → Plan Review → Plan Editor → Execution → Verification → Finalization) with mouse support via bubblezone, responsive layout, Lipgloss-styled UI chrome (title bar, nav bar, status bar, step dots, progress bars), overlay system (help, confirm-cancel, error resolution with auto-resolve/manual-fix/skip/retry/abort options), Claude terminal toggle via termmux integration, and async pipeline handlers for analysis and execution stages; the previous 30+ text-based REPL commands are retained for programmatic/test dispatch alongside the new graphical interface
@@ -133,6 +143,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Data race in bubbletea module via `syscall.Dup` file descriptor handling
 - Context refresh failing for paths with trailing slashes or `./` prefixes: `RefreshPath` now normalizes input via `AddPath`'s pipeline
 - TOCTOU race in mouseharness `ClickElement`: captures buffer once instead of three separate `cp.String()` calls
+- `osm pr-split` "Processing... forever" hang: BubbleTea event loop deadlock caused by `waitFor` blocking the goja event loop — replaced synchronous `waitFor` with fully async pipeline; all analysis/execution/verification steps now use Promises resolved via `tea.tick` polling; added try-catch around every async step to guarantee `isProcessing=false` on all error paths
+- `osm pr-split` binary file NaN in diff stats: `git diff --numstat` outputs `- -` for binary files — detection now flags `binary: true` with `additions: null` / `deletions: null`; stats command renders `[binary]` instead of `+null/-null`
+- `osm pr-split` skipped files visibility: files with unknown git status codes (not A/M/D/R/C/T/U) are now collected in `skippedFiles` array and displayed as a warning section in the execution screen instead of being silently dropped
+- `osm pr-split` title bar step label in terminal states: `DONE`/`CANCELLED`/`PAUSED`/`ERROR` now show meaningful labels instead of inherited "Finalization"
+- `osm pr-split` conversation history unbounded growth: capped at `MAX_CONVERSATION_HISTORY` (100 entries, configurable) with one-shot log warning on truncation
+- `osm pr-split` plan path resolution: `resolvePlanPath()` resolves relative paths against `config.dir` instead of always using CWD — `--dir=/path` now correctly places/finds plan files inside the target directory
+- `osm pr-split` worktree temp path: `worktreeTmpPath()` uses `TMPDIR`/`TMP`/`TEMP` environment variables with `/tmp` fallback and random entropy, replacing fragile `dir + '/../'` patterns that broke with non-standard directory layouts
+- `osm pr-split` `syncMainViewport` ReferenceError: `CHROME_ESTIMATE` constant and `syncMainViewport` function hoisted to IIFE scope instead of being defined inside nested closures — eliminates crash on window resize before TUI fully initialized
+- `osm pr-split` layout shift on button focus: introduced `focusedSecondaryButton()` style matching `secondaryButton()` dimensions — all button pairs now maintain consistent width whether focused or unfocused
+- `osm pr-split` pipeline re-verify fix: the re-verify step after conflict resolution now actually checks branch pass/fail status instead of always returning success
+- `osm pr-split` headless crash detection guard: `claudeCrashDetected` flag in `aliveCheckFn` only checked when `tuiMux` is present, preventing false positives in headless/test mode
 - 2 flaky behavior tree tests via atomic `GetLifecycleSnapshot()` replacing separate state queries
 - Nil-dereference in ctxutil `Require` when `exportsVal` is Go nil
 - 3 nil/undefined guard bugs in bubbletea module

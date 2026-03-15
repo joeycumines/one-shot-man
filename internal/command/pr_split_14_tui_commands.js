@@ -1188,8 +1188,10 @@
         var activity = _getActivityInfo();
         var _ws = prSplit._wizardState;
         var wizState;
-        if (typeof _ws !== 'undefined' && _ws && typeof _ws.current === 'function') {
-            wizState = _ws.current();
+        // T091: _ws.current is a string property (WizardState.current),
+        // not a function. Read it directly.
+        if (typeof _ws !== 'undefined' && _ws && typeof _ws.current === 'string') {
+            wizState = _ws.current;
         } else {
             wizState = 'N/A';
         }
@@ -1224,8 +1226,10 @@
         var activity = _getActivityInfo();
         var _ws = prSplit._wizardState;
         var wizState;
-        if (typeof _ws !== 'undefined' && _ws && typeof _ws.current === 'function') {
-            wizState = _ws.current();
+        // T091: _ws.current is a string property (WizardState.current),
+        // not a function. Read it directly.
+        if (typeof _ws !== 'undefined' && _ws && typeof _ws.current === 'string') {
+            wizState = _ws.current;
         } else {
             wizState = '?';
         }
@@ -1278,7 +1282,12 @@
 
             // Flash the status bar to draw the user's attention.
             if (typeof tuiMux.setStatus === 'function') {
-                var prevStatus = tuiState._bellPrevStatus || 'idle';
+                // T091: Capture the current HUD status dynamically instead of
+                // relying on tuiState._bellPrevStatus (which was never set).
+                // _renderHudStatusLine() produces the correct contextual status.
+                var prevStatus = (_hudEnabled && typeof _renderHudStatusLine === 'function')
+                    ? _renderHudStatusLine()
+                    : 'idle';
                 tuiMux.setStatus('\u0007 BELL — Claude needs attention');
 
                 // Restore status after 3 seconds (debounced).

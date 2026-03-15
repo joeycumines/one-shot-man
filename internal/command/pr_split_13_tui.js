@@ -265,7 +265,10 @@
                     };
                 })
             };
-            var equiv = prSplit.verifyEquivalence(st.planCache);
+            // T089: Use cached equivalence result from TUI pipeline if available,
+            // avoiding a synchronous verifyEquivalence() call that blocks the
+            // event loop on final-branch tree comparison.
+            var equiv = st.equivalenceResult || prSplit.verifyEquivalence(st.planCache);
             report.equivalence = {
                 verified: equiv.equivalent,
                 splitTree: equiv.splitTree,
@@ -691,7 +694,9 @@
             return { error: 'no plan for equivalence check — run "plan" and "execute" first', action: 'error', state: 'ERROR' };
         }
 
-        var equivResult = prSplit.verifyEquivalence(plan);
+        // T089: Prefer cached result from TUI pipeline to avoid sync git calls.
+        var equivResult = st.equivalenceResult || prSplit.verifyEquivalence(plan);
+        st.equivalenceResult = equivResult; // cache for buildReport()
 
         // Annotate with skip information so callers understand the context.
         var skipped = wizard.data && wizard.data.skippedBranches;

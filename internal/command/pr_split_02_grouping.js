@@ -335,7 +335,14 @@
             case 'auto':
                 return selectStrategy(files, options).groups;
             default:
-                return groupByDirectory(files, 1);
+                // T102: Warn on unknown strategy — silent fallback masks typos.
+                log.warn('pr-split: unknown strategy "' + strategy + '" — falling back to directory. Valid: auto, heuristic, directory, directory-deep, extension, chunks, dependency');
+                var _fallbackResult = groupByDirectory(files, 1);
+                // Use non-enumerable properties to avoid contaminating Object.keys()
+                // which downstream consumers (createSplitPlan, REPL) iterate.
+                Object.defineProperty(_fallbackResult, '_fallbackUsed', { value: true, enumerable: false });
+                Object.defineProperty(_fallbackResult, '_requestedStrategy', { value: strategy, enumerable: false });
+                return _fallbackResult;
         }
     }
 
@@ -644,7 +651,12 @@
             case 'auto':
                 return (await selectStrategyAsync(files, options)).groups;
             default:
-                return groupByDirectory(files, 1);
+                // T102: Warn on unknown strategy — silent fallback masks typos.
+                log.warn('pr-split: unknown strategy "' + strategy + '" — falling back to directory. Valid: auto, heuristic, directory, directory-deep, extension, chunks, dependency');
+                var _fallbackResultAsync = groupByDirectory(files, 1);
+                Object.defineProperty(_fallbackResultAsync, '_fallbackUsed', { value: true, enumerable: false });
+                Object.defineProperty(_fallbackResultAsync, '_requestedStrategy', { value: strategy, enumerable: false });
+                return _fallbackResultAsync;
         }
     }
 

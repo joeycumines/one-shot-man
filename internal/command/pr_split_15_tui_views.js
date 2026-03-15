@@ -2023,7 +2023,19 @@
             lines.push('Cancelling will abort it and clean up the worktree.');
         } else {
             lines.push('Are you sure you want to cancel the PR split?');
-            lines.push('All progress will be lost.');
+            // T081: Context-aware warning — branches already created persist
+            // in the repo after cancel.  Tell the user so they aren't
+            // surprised by orphaned split branches.
+            var createdCount = (s.executionResults || []).filter(function(r) {
+                return r && !r.error && r.sha;
+            }).length;
+            if (createdCount > 0) {
+                lines.push(createdCount + ' branch' + (createdCount === 1 ? '' : 'es') +
+                    ' already created \u2014 ' + styles.dim().render('these will remain in your repo.'));
+                lines.push(styles.dim().render('Clean up with: osm pr-split --cleanup'));
+            } else {
+                lines.push('All progress will be lost.');
+            }
         }
         lines.push('');
         // T031: focus-aware button rendering.

@@ -268,3 +268,69 @@ func TestChunk02_EmptyInputs(t *testing.T) {
 		})
 	}
 }
+
+// T102: applyStrategy with unknown strategy name must annotate _fallbackUsed.
+func TestChunk02_ApplyStrategy_UnknownFallback(t *testing.T) {
+	evalJS := loadChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
+
+	raw, err := evalJS(`
+		(function() {
+			var result = globalThis.prSplit.applyStrategy(
+				['pkg/a.go', 'cmd/b.go'], 'my-typo');
+			return JSON.stringify({
+				fallbackUsed: !!result._fallbackUsed,
+				requestedStrategy: result._requestedStrategy || '',
+				hasGroups: Object.keys(result).filter(function(k) {
+					return k[0] !== '_';
+				}).length > 0
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data struct {
+		FallbackUsed      bool   `json:"fallbackUsed"`
+		RequestedStrategy string `json:"requestedStrategy"`
+		HasGroups         bool   `json:"hasGroups"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &data); err != nil {
+		t.Fatal(err)
+	}
+	if !data.FallbackUsed {
+		t.Error("expected _fallbackUsed=true for unknown strategy")
+	}
+	if data.RequestedStrategy != "my-typo" {
+		t.Errorf("_requestedStrategy = %q, want 'my-typo'", data.RequestedStrategy)
+	}
+	if !data.HasGroups {
+		t.Error("expected fallback groups to be present")
+	}
+}
+
+// T102: Valid strategy names must NOT have _fallbackUsed.
+func TestChunk02_ApplyStrategy_ValidNoFallback(t *testing.T) {
+	evalJS := loadChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
+
+	raw, err := evalJS(`
+		(function() {
+			var result = globalThis.prSplit.applyStrategy(
+				['pkg/a.go', 'cmd/b.go'], 'directory');
+			return JSON.stringify({
+				fallbackUsed: !!result._fallbackUsed
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var data struct {
+		FallbackUsed bool `json:"fallbackUsed"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &data); err != nil {
+		t.Fatal(err)
+	}
+	if data.FallbackUsed {
+		t.Error("expected no _fallbackUsed for valid 'directory' strategy")
+	}
+}

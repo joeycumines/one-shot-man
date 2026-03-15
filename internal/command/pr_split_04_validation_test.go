@@ -365,11 +365,52 @@ func TestChunk04_ValidateResolution_ValidPreExisting(t *testing.T) {
 
 	vr := evalValidation(t, evalJS, `
 		JSON.stringify(globalThis.prSplit.validateResolution({
-			preExistingFailure: true
+			preExistingFailure: true,
+			reason: 'flaky test that existed before this PR'
 		}))
 	`)
 	if !vr.Valid {
 		t.Errorf("expected valid, got errors: %v", vr.Errors)
+	}
+}
+
+// T097: preExistingFailure without reason must now be rejected.
+func TestChunk04_ValidateResolution_PreExistingNoReason(t *testing.T) {
+	evalJS := loadChunkEngine(t, nil,
+		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
+
+	vr := evalValidation(t, evalJS, `
+		JSON.stringify(globalThis.prSplit.validateResolution({
+			preExistingFailure: true
+		}))
+	`)
+	if vr.Valid {
+		t.Error("expected invalid for preExistingFailure with no reason")
+	}
+	found := false
+	for _, e := range vr.Errors {
+		if strings.Contains(e, "non-empty reason") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected 'non-empty reason' error, got: %v", vr.Errors)
+	}
+}
+
+// T097: preExistingFailure with empty-string reason must also be rejected.
+func TestChunk04_ValidateResolution_PreExistingEmptyReason(t *testing.T) {
+	evalJS := loadChunkEngine(t, nil,
+		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
+
+	vr := evalValidation(t, evalJS, `
+		JSON.stringify(globalThis.prSplit.validateResolution({
+			preExistingFailure: true,
+			reason: '   '
+		}))
+	`)
+	if vr.Valid {
+		t.Error("expected invalid for preExistingFailure with whitespace-only reason")
 	}
 }
 

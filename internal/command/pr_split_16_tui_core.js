@@ -3644,6 +3644,7 @@
         }
         s.wizard.data.equivalence = equivResult;
         s.equivalenceResult = equivResult;
+        st.equivalenceResult = equivResult; // T089: cache on shared state for buildReport()
 
         s.isProcessing = false;
 

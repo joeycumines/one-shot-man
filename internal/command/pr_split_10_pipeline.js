@@ -1122,6 +1122,9 @@
         state.groupsCache = null;
         state.planCache = null;
         state.executionResultCache = [];
+        // T089: Clear cached equivalence result so stale results from a
+        // previous pipeline run are not used by buildReport().
+        state.equivalenceResult = null;
         // Also reset the prSplit-level pointers used by other chunks.
         prSplit._claudeExecutor = null;
         prSplit._mcpCallbackObj = null;
@@ -1305,6 +1308,8 @@
             return finishTUI({ error: report.error, report: report });
         }
         recordTelemetry('filesAnalyzed', analysis.files.length);
+        // T110: Cache analysis so pipeline resume skips re-analysis.
+        state.analysisCache = analysis;
         } else {
             analysis = state.analysisCache || { files: [], fileStatuses: {}, baseBranch: '', currentBranch: '' };
         }

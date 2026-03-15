@@ -744,7 +744,7 @@
       "id": "T066",
       "title": "Fix viewConfirmCancelOverlay: add keyboard Tab focus cycling within the overlay",
       "description": "CONFIRMED BUG (second session read): viewConfirmCancelOverlay has two buttons ('Yes, Cancel' and 'No, Continue') but neither is in the focus cycle when the overlay is open. The overlay intercepts ALL key events in updateConfirmCancel but does not maintain a focusable element list. Fix: (1) Add a local focus index (overlayFocusIdx) to the cancel confirmation state. (2) Tab/Shift+Tab cycles between the two buttons. (3) 'y' or Enter on focused 'Yes' cancels. (4) 'n' or Enter on focused 'No' dismisses. (5) The initial focus should be on 'No, Continue' (safe default). (6) Visually distinguish the focused button using the established focus style. (7) Extend updateConfirmCancel to handle Tab/Shift+Tab. (8) Write unit tests for both keyboard navigation paths through the overlay.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_16_tui_core.js",
@@ -914,7 +914,7 @@
       "id": "T081",
       "title": "viewConfirmCancelOverlay 'All progress will be lost' is misleading — branches NOT cleaned up on cancel",
       "description": "CONFIRMED by reading viewConfirmCancelOverlay and WizardState.cancel(): the cancel overlay shows 'All progress will be lost' but in BRANCH_BUILDING state, any branches already created via executeSplitAsync REMAIN in the git repo. The branches are NOT cleaned up on cancel. This is misleading and may leave orphaned split branches. Fix: (1) Change the cancel message to be context-aware: if wizardState is BRANCH_BUILDING or later and executionResults.length > 0, show 'N branches created — these will remain in your repo. Clean them up with: osm pr-split --cleanup'. (2) Implement 'clean up and cancel' option that deletes the created branches before cancelling. (3) In WizardState.cancel(), check if cleanupBranches() should be called. (4) The overlay should offer three options: 'Cancel (keep branches)', 'Cancel (delete branches)', 'Continue'. (5) Update the git operations section of docs/configuration.md to document cleanup behavior.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -1006,7 +1006,7 @@
       "id": "T089",
       "title": "buildReport() calls verifyEquivalence() synchronously — blocks event loop on finalization",
       "description": "CONFIRMED (session 8): pr_split_13_tui.js buildReport() at line 244 calls prSplit.verifyEquivalence(st.planCache) SYNCHRONOUSLY. FULL CALL PATH CONFIRMED: User clicks 'View Report' → handleFocusActivate(s) in pr_split_16_tui_core.js line 1840 calls formatReportForDisplay(buildReport()) — both in the _updateFn update loop. buildReport() at line 244 of pr_split_13_tui.js then calls prSplit.verifyEquivalence(st.planCache) sync. SECOND SYNC CALL: handleEquivCheckState() at line 685 of pr_split_13_tui.js also calls verifyEquivalence() sync — used by the REPL 'equiv' command, not the TUI path. THE FIX IS CLEAR: (1) In runEquivCheckAsync() (pr_split_16_tui_core.js line ~3270), after storing result in s.equivalenceResult, ALSO store it in st (the shared state): add 'st.equivalenceResult = equivResult'. (2) In buildReport(), replace 'var equiv = prSplit.verifyEquivalence(st.planCache)' with: 'var equiv = st.equivalenceResult || prSplit.verifyEquivalence(st.planCache)'. This short-circuits if already computed (typical TUI path). (3) For handleEquivCheckState() REPL handler at line 685: replace sync call with await verifyEquivalenceAsync() — make handleEquivCheckState async. (4) Write a test: call buildReport() with a pre-populated st.equivalenceResult; confirm verifyEquivalence() is NOT called a second time.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_13_tui.js",
@@ -1030,7 +1030,7 @@
       "id": "T091",
       "title": "Bell handler in pr_split_14 always restores status to 'idle' — previous status lost",
       "description": "CONFIRMED (session 5): the bell handler in pr_split_14_tui_commands.js (line 1268) reads `tuiState._bellPrevStatus || 'idle'` as the status to restore after the 3-second attention flash. BUT `tuiState._bellPrevStatus` is NEVER set anywhere in the codebase (confirmed via grep). So the bell handler always restores status to 'idle', even if the user had set a custom HUD status (e.g., via `tuiMux.setStatus(_renderHudStatusLine())`). The user's custom HUD status is permanently lost whenever a bell fires. Fix: (1) Add `tuiMux.getStatus()` binding to the Go termmux module — returns the current status string that was last set via setStatus(). (2) In the bell handler, before calling tuiMux.setStatus('BELL — Claude needs attention'), capture the current status: `var prevStatus = (typeof tuiMux.getStatus === 'function') ? tuiMux.getStatus() : 'idle'`. (3) Use prevStatus (not tuiState._bellPrevStatus) in the setTimeout restore callback. (4) ALTERNATIVE if (1) is too costly: use a module-level variable in chunk 14 to track `_lastStatusSet` — update it every time setStatus() is called from anywhere in chunk 14. (5) Write a unit test simulating a bell event and verifying the restored status matches what was set before the bell.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_14_tui_commands.js",
@@ -1100,7 +1100,7 @@
       "id": "T097",
       "title": "validateResolution accepts {preExistingFailure:true} with no patches or commands — silent no-op masks real failures",
       "description": "CONFIRMED by reading pr_split_04_validation.js validateResolution() in session 6: a resolution object with ONLY {preExistingFailure: true} — no patches, no commands, no reason — passes validation. If Claude mistakenly returns this for a failure actually caused by the split changes, the resolution is silently accepted, the branch is marked resolved without any fix applied, and it may reach FINALIZATION with hidden failures. Fix: (1) Add validation: if preExistingFailure===true, require a non-empty reason string explaining why — error: 'preExistingFailure:true requires a non-empty reason field'. (2) Add an optional cross-validation mode (prSplitConfig.verifyPreExisting=true): re-run verify on the BASE branch to confirm the failure genuinely exists before this split was applied. (3) Log a prominent WARNING when preExistingFailure=true is accepted: 'WARNING: branch [X] marked as pre-existing failure — verify this is intentional.' (4) Write unit tests: {preExistingFailure: true, reason: 'flaky test that existed before this PR'} → valid. {preExistingFailure: true} with no reason → invalid.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_04_validation.js",
@@ -1148,7 +1148,7 @@
       "id": "T101",
       "title": "loadPlan duplicates conversation history if called twice — appends without resetting prior state",
       "description": "CONFIRMED by reading pr_split_03_planning.js loadPlan() in session 6: the conversation restore loop is: for (var c = 0; c < snapshot.conversations.length; c++) { state.conversationHistory.push(snapshot.conversations[c]); }. This APPENDS to any existing conversations without clearing first. If loadPlan is called twice on the same session object (e.g., resume → retry → manual reload), all conversations are pushed again — doubling or tripling the history. The Ask Claude overlay then shows duplicated messages. Fix: (1) Replace the push loop with: state.conversationHistory = snapshot.conversations.slice(); — a single-line, idempotent replacement. (2) Add a savedAt timestamp to snapshots in savePlan(): snapshot.savedAt = Date.now(). (3) Add a dedup guard in loadPlan(): if (snapshot.savedAt && snapshot.savedAt === state._lastLoadedSavedAt) return; state._lastLoadedSavedAt = snapshot.savedAt. (4) Write a unit test: call loadPlan twice on the same snapshot; verify state.conversationHistory.length === snapshot.conversations.length (not doubled).",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_03_planning.js"
@@ -1158,7 +1158,7 @@
       "id": "T102",
       "title": "applyStrategy falls back to groupByDirectory for any unknown strategy name with no warning or signal to caller",
       "description": "CONFIRMED by reading pr_split_02_grouping.js applyStrategy() in session 6: the switch statement's default: case returns groupByDirectory(files, 1) with NO log.warn, NO thrown error, and NO indicator in the return value that the strategy name was unrecognized. If a user runs `osm pr-split --strategy=my-typo` or if a saved config file references an old strategy name, the tool silently uses directory grouping and the user has no idea why their requested strategy was ignored. Fix: (1) Add to default case: log.warn('pr-split: unknown strategy \"' + strategy + '\" — falling back to directory. Valid: auto, heuristic, directory, directory-deep, extension, chunks, dependency'). (2) Annotate the return: var result = groupByDirectory(files, 1); result._fallbackUsed = true; result._requestedStrategy = strategy; return result. (3) In the Go CLI (pr_split.go), add strategy to an allowlist validation in Execute() to reject unknown values before reaching JS. (4) In the TUI CONFIG screen handler, if applyStrategy returns _fallbackUsed===true, surface a warning badge. (5) Write unit tests: call applyStrategy with 'invalid-strategy' and confirm log.warn fires and _fallbackUsed===true; call with 'directory' and confirm _fallbackUsed is absent/false.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_02_grouping.js",
@@ -1249,7 +1249,7 @@
       "id": "T110",
       "title": "automatedSplit never assigns state.analysisCache after Step 1 — resume re-split path uses empty file lists",
       "description": "CONFIRMED by reading pr_split_01_analysis.js (session 8) and cross-referencing with pr_split_10_pipeline.js (session 7-8). analyzeDiffAsync() returns {files, fileStatuses, baseBranch, currentBranch} but does NOT populate prSplit._state.analysisCache. In automatedSplit: (1) state.analysisCache = null is reset at startup. (2) Step 1 calls analyzeDiffAsync and stores result in local var 'analysis'. (3) Nowhere in automatedSplit is state.analysisCache ever assigned from 'analysis'. (4) savePlan(null, 'Generate split plan') is called with state.analysisCache still null — the checkpoint serializes null to disk. (5) On resume path: analysis = state.analysisCache || { files: [], fileStatuses: {}, baseBranch: '', currentBranch: '' } — always falls back to the empty object. (6) If a re-split is triggered during a resumed pipeline (Step 9 re-classify/re-execute block), createSplitPlan() receives analysis.baseBranch='' and analysis.currentBranch='' — git operations fail with 'ambiguous argument' or 'unknown revision'. Impact: Only affects the re-split recovery path during resumed sessions. Normal resume (Steps 7-10) proceeds using plan.baseBranch directly without needing state.analysisCache. But re-split is a critical recovery path. Fix: After successful Step 1 completion (after the files.length===0 early-return check), add exactly one line: state.analysisCache = analysis. Write a unit test verifying savePlan writes a non-null analysisCache to disk and loadPlan restores it, and that a resumed re-split uses the correct baseBranch and currentBranch values.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_10_pipeline.js",
@@ -1372,6 +1372,16 @@
       "files_affected": [
         "internal/command/pr_split_16_tui_core.js",
         "internal/command/pr_split_10_pipeline.js"
+      ]
+    },
+    {
+      "id": "T123",
+      "title": "RUNTIME: syncMainViewport ReferenceError in handleAutoSplitPoll — function not hoisted in chunk 16 IIFE scope",
+      "description": "REPORTED BY HANA (config.mk error directive, 2026-03-16): 'ReferenceError: syncMainViewport is not defined at handleAutoSplitPoll (<eval>:3215:33(199))'. syncMainViewport is defined with `var syncMainViewport = function(s) {...}` syntax in pr_split_16_tui_core.js which means it is NOT hoisted — only the variable declaration is hoisted, the assignment happens at runtime order. If handleAutoSplitPoll executes before the syncMainViewport assignment (e.g., async callback fires before IIFE reaches the assignment), a ReferenceError occurs. This also affects all tests that trigger handleAutoSplitPoll. CONFIRMED PRE-EXISTING: error appears on both committed and uncommitted code (verified via git stash test). Fix: Either (1) convert `var syncMainViewport = function(s) {...}` to a `function syncMainViewport(s) {...}` function declaration (fully hoisted), OR (2) reorder the definition above all callers, OR (3) add a defensive guard `if (typeof syncMainViewport === 'function')` at each call site. Option 1 is cleanest. Also audit all other `var X = function(...)` patterns in chunk 16 that are called from async handlers to ensure they don't have the same hoisting bug.",
+      "status": "not-started",
+      "body": 1,
+      "files_affected": [
+        "internal/command/pr_split_16_tui_core.js"
       ]
     }
   ],

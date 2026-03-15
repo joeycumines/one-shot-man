@@ -210,6 +210,20 @@
             return { valid: false, errors: errors };
         }
 
+        // T097: preExistingFailure requires a non-empty reason explaining why
+        // the failure pre-dates this split, to prevent silent no-ops masking real issues.
+        if (hasPreExisting) {
+            if (!resolution.reason || typeof resolution.reason !== 'string' || resolution.reason.trim() === '') {
+                errors.push('preExistingFailure:true requires a non-empty reason field');
+            }
+            if (!hasPatches && !hasCommands) {
+                // Pure pre-existing marker — log warning for operator awareness.
+                if (typeof log !== 'undefined' && log.warn) {
+                    log.warn('pr-split: resolution accepts preExistingFailure without patches/commands — verify this is intentional');
+                }
+            }
+        }
+
         if (hasPatches) {
             for (var i = 0; i < resolution.patches.length; i++) {
                 var patch = resolution.patches[i];

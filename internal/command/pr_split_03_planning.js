@@ -222,11 +222,10 @@
         state.executionResultCache = snapshot.executed || [];
 
         // Restore conversation history if present (late-bound via chunk 11).
+        // T101: Use idempotent replacement (slice) instead of append to prevent
+        // duplication when loadPlan is called multiple times on the same session.
         if (snapshot.conversations && Array.isArray(snapshot.conversations)) {
-            if (!state.conversationHistory) state.conversationHistory = [];
-            for (var c = 0; c < snapshot.conversations.length; c++) {
-                state.conversationHistory.push(snapshot.conversations[c]);
-            }
+            state.conversationHistory = snapshot.conversations.slice();
         }
 
         return {

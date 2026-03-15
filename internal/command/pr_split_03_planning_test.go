@@ -481,6 +481,82 @@ func TestChunk03_DefaultPlanPath(t *testing.T) {
 	}
 }
 
+// T101: Calling loadPlan twice on the same snapshot must NOT duplicate
+// conversation history — the replacement must be idempotent.
+func TestChunk03_LoadPlan_DoubleLoadNoDuplication(t *testing.T) {
+	dir := initGitRepo(t)
+	writeFile(t, filepath.Join(dir, "x.go"), "package x")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "init")
+
+	evalJS := loadChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping", "03_planning")
+
+	planPath := filepath.Join(dir, "double-load.json")
+
+	result, err := evalJS(`
+		(function() {
+			var prSplit = globalThis.prSplit;
+
+			// Create a plan.
+			var groups = { 'grp1': ['x.go'] };
+			var plan = prSplit.createSplitPlan(groups, {
+				dir: '` + escapeJSPath(dir) + `',
+				sourceBranch: 'main'
+			});
+			prSplit._state.planCache = plan;
+
+			// Mock conversation history.
+			prSplit._state.conversationHistory = [
+				{ role: 'user', content: 'hello' },
+				{ role: 'assistant', content: 'world' }
+			];
+
+			// Provide a getConversationHistory function for savePlan.
+			prSplit.getConversationHistory = function() {
+				return prSplit._state.conversationHistory || [];
+			};
+
+			// Save (includes conversations).
+			var saveResult = prSplit.savePlan('` + escapeJSPath(planPath) + `');
+			if (saveResult.error) return 'save error: ' + saveResult.error;
+
+			// Load twice.
+			var r1 = prSplit.loadPlan('` + escapeJSPath(planPath) + `');
+			if (r1.error) return 'load1 error: ' + r1.error;
+			var r2 = prSplit.loadPlan('` + escapeJSPath(planPath) + `');
+			if (r2.error) return 'load2 error: ' + r2.error;
+
+			// Conversation history should NOT be doubled.
+			return JSON.stringify({
+				historyLength: prSplit._state.conversationHistory.length
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	str, ok := result.(string)
+	if !ok {
+		t.Fatalf("unexpected result type %T: %v", result, result)
+	}
+	if strings.HasPrefix(str, "save error:") || strings.HasPrefix(str, "load") {
+		t.Fatal(str)
+	}
+
+	var data struct {
+		HistoryLength int `json:"historyLength"`
+	}
+	if err := json.Unmarshal([]byte(str), &data); err != nil {
+		t.Fatal(err)
+	}
+
+	// Should be EXACTLY 2 (not 4 from double-push).
+	if data.HistoryLength != 2 {
+		t.Errorf("conversationHistory.length = %d after double loadPlan, want 2 (no duplication)", data.HistoryLength)
+	}
+}
+
 // ---------------------------------------------------------------------------
 //  Helpers
 // ---------------------------------------------------------------------------

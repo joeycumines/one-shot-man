@@ -8,6 +8,7 @@
     var gitExecAsync = prSplit._gitExecAsync;
     var resolveDir = prSplit._resolveDir;
     var validatePlan = prSplit.validatePlan;
+    var worktreeTmpPath = prSplit._worktreeTmpPath;
 
     // -----------------------------------------------------------------------
     //  executeSplit — creates branches for each split in a plan
@@ -79,7 +80,8 @@
 
         // Create a temporary git worktree for isolated split operations.
         // The user's CWD remains completely untouched.
-        var worktreePath = dir + '/../.osm-worktree-' + Date.now();
+        // T103: Use system temp dir to avoid fragile dir + '/../' pattern.
+        var worktreePath = worktreeTmpPath('osm-worktree-');
         var wtAdd = gitExec(dir, ['worktree', 'add', '--detach', worktreePath, plan.baseBranch]);
         if (wtAdd.code !== 0) {
             return { error: 'create worktree failed: ' + wtAdd.stderr.trim(), results: [] };
@@ -218,7 +220,15 @@
         }
 
         cleanupWorktree();
-        return { error: null, results: results };
+
+        // T107: Collect all git-ignored files across all splits for top-level reporting.
+        var overallSkipped = [];
+        for (var oi = 0; oi < results.length; oi++) {
+            if (results[oi].skippedFiles && results[oi].skippedFiles.length > 0) {
+                overallSkipped = overallSkipped.concat(results[oi].skippedFiles);
+            }
+        }
+        return { error: null, results: results, overallSkippedFiles: overallSkipped };
     }
 
     // executeSplitAsync is the non-blocking version of executeSplit.
@@ -279,7 +289,8 @@
         }
 
         // Create a temporary git worktree for isolated split operations.
-        var worktreePath = dir + '/../.osm-worktree-' + Date.now();
+        // T103: Use system temp dir to avoid fragile dir + '/../' pattern.
+        var worktreePath = worktreeTmpPath('osm-worktree-');
         var wtAdd = await gitExecAsync(dir, ['worktree', 'add', '--detach', worktreePath, plan.baseBranch]);
         if (wtAdd.code !== 0) {
             return { error: 'create worktree failed: ' + wtAdd.stderr.trim(), results: [] };
@@ -417,7 +428,15 @@
         }
 
         await cleanupWorktreeAsync();
-        return { error: null, results: results };
+
+        // T107: Collect all git-ignored files across all splits for top-level reporting.
+        var overallSkipped = [];
+        for (var oi = 0; oi < results.length; oi++) {
+            if (results[oi].skippedFiles && results[oi].skippedFiles.length > 0) {
+                overallSkipped = overallSkipped.concat(results[oi].skippedFiles);
+            }
+        }
+        return { error: null, results: results, overallSkippedFiles: overallSkipped };
     }
 
     // -----------------------------------------------------------------------

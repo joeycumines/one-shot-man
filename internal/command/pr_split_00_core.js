@@ -412,6 +412,27 @@
         return dir || '.';
     }
 
+    // T103: worktreeTmpPath generates a temporary worktree path in the system
+    // temp directory, avoiding the fragile `dir + '/../'` pattern that breaks
+    // at filesystem root or non-writable parent directories.  The random
+    // suffix provides sufficient entropy to avoid collisions from concurrent
+    // invocations.
+    function worktreeTmpPath(prefix) {
+        var base = '/tmp';
+        if (osmod && typeof osmod.getenv === 'function') {
+            var envTmp = osmod.getenv('TMPDIR') || osmod.getenv('TMP') || osmod.getenv('TEMP');
+            if (envTmp) {
+                base = envTmp;
+            }
+        }
+        // Strip trailing slash (macOS TMPDIR often ends with '/').
+        if (base.length > 1 && base.charAt(base.length - 1) === '/') {
+            base = base.substring(0, base.length - 1);
+        }
+        var entropy = Date.now() + '-' + Math.floor(Math.random() * 1000000).toString(36);
+        return base + '/.' + prefix + entropy;
+    }
+
     // shellQuote wraps a string in single quotes, escaping embedded quotes.
     function shellQuote(s) {
         return "'" + s.replace(/'/g, "'\\''") + "'";
@@ -611,6 +632,7 @@
     prSplit._shellExecAsync = shellExecAsync;
     prSplit._resolveDir = resolveDir;
     prSplit._shellQuote = shellQuote;
+    prSplit._worktreeTmpPath = worktreeTmpPath;
     prSplit._gitAddChangedFiles = gitAddChangedFiles;
     prSplit._gitAddChangedFilesAsync = gitAddChangedFilesAsync;
     prSplit._dirname = dirname;

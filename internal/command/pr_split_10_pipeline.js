@@ -1084,7 +1084,7 @@
         var createSplitPlan = prSplit.createSplitPlanAsync;
         var savePlan = prSplit.savePlan;
         var loadPlan = prSplit.loadPlan;
-        var DEFAULT_PLAN_PATH = prSplit.DEFAULT_PLAN_PATH;
+        var resolvePlanPath = prSplit.resolvePlanPath;
         var validateClassification = prSplit.validateClassification;
         var validateSplitPlan = prSplit.validateSplitPlan;
         var validatePlan = prSplit.validatePlan;
@@ -1102,6 +1102,10 @@
         var assessIndependence = prSplit.assessIndependence || function() { return []; };
         var state = prSplit._state;
         var dir = resolveDir(config.dir || '.');
+
+        // T105: Resolve plan path relative to the configured directory so
+        // save/load and display messages all reference the correct location.
+        var resolvedPlanPath = resolvePlanPath(null, dir);
 
         // Reset module-level state to prevent leakage across multiple runs
         // within the same JS VM.
@@ -1198,8 +1202,8 @@
                             break;
                         }
                     }
-                    savePlan(DEFAULT_PLAN_PATH, lastDone || 'paused');
-                    emitOutput('[auto-split] Paused — checkpoint saved to ' + DEFAULT_PLAN_PATH);
+                    savePlan(resolvedPlanPath, lastDone || 'paused');
+                    emitOutput('[auto-split] Paused — checkpoint saved to ' + resolvedPlanPath);
                     emitOutput('[auto-split] Resume with: osm pr-split --resume');
                 }
                 return { error: 'paused by user (Ctrl-P)' };
@@ -1262,11 +1266,11 @@
             // On error, emit resume instructions if a plan was saved.
             if (result.error && state.planCache && state.planCache.splits && state.planCache.splits.length > 0) {
                 try {
-                    savePlan(DEFAULT_PLAN_PATH, report.lastCompletedStep || 'error');
+                    savePlan(resolvedPlanPath, report.lastCompletedStep || 'error');
                 } catch (e) { /* best effort */ }
 
                 emitOutput('\n[auto-split] Pipeline failed: ' + result.error);
-                emitOutput('[auto-split] Plan saved to: ' + DEFAULT_PLAN_PATH);
+                emitOutput('[auto-split] Plan saved to: ' + resolvedPlanPath);
                 emitOutput('[auto-split] To resume: osm pr-split --resume\n');
             }
 

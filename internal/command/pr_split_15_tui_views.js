@@ -250,9 +250,20 @@
         'ERROR':            6
     };
 
+    // T025: Terminal/non-pipeline states override the step label to avoid
+    // showing misleading "Finalization" when the wizard is actually
+    // cancelled, paused, done, or errored.
+    var STATE_LABEL_OVERRIDE = {
+        'DONE':         'Done',
+        'CANCELLED':    'Cancelled',
+        'FORCE_CANCEL': 'Cancelled',
+        'PAUSED':       'Paused',
+        'ERROR':        'Error'
+    };
+
     function renderTitleBar(s) {
         var stepIdx = STATE_TO_STEP[s.wizardState] || 0;
-        var stepLabel = STEP_LABELS[stepIdx] || 'Unknown';
+        var stepLabel = STATE_LABEL_OVERRIDE[s.wizardState] || STEP_LABELS[stepIdx] || 'Unknown';
         var stepNum = stepIdx + 1;
         var totalSteps = 7;
         var mode = layoutMode(s);
@@ -1128,6 +1139,24 @@
         lines.push(styles.bold().render('Split Plan Overview'));
         lines.push('  Splits: ' + styles.fieldValue().render(String(plan.splits.length)));
         lines.push('  Base: ' + styles.fieldValue().render(plan.baseBranch || 'main'));
+
+        // T099: Show amber warning when auto-strategy selection has low
+        // confidence (score gap < 0.15 between winner and runner-up).
+        if (s.strategyNeedsConfirm && s.strategyAlternatives && s.strategyAlternatives.length >= 2) {
+            var alts = s.strategyAlternatives;
+            var winner = alts[0];
+            var runnerUp = alts[1];
+            var winPct = Math.round(winner.score * 100);
+            var runPct = Math.round(runnerUp.score * 100);
+            lines.push('');
+            lines.push(styles.warningBadge().render(' Low Confidence ') +
+                ' Auto-selected ' + styles.bold().render(winner.name) + ' (' + winPct + '%)' +
+                ' \u2014 ' + styles.dim().render(runnerUp.name + ' (' + runPct + '%) scored similarly.'));
+            if (s.autoStrategyName) {
+                lines.push('  Strategy: ' + styles.fieldValue().render(s.autoStrategyName));
+            }
+        }
+
         lines.push('');
 
         var w = (s.width || 80) - 8;
@@ -1428,6 +1457,23 @@
             lines.push('');
             var progress = results.length / splits.length;
             lines.push('  ' + renderProgressBar(progress, (s.width || 80) - 8));
+        }
+
+        // T107: Show warning when any branches had git-ignored files skipped.
+        var hasSkipped = false;
+        for (var ski = 0; ski < results.length; ski++) {
+            if (results[ski] && results[ski].skippedFiles && results[ski].skippedFiles.length > 0) {
+                if (!hasSkipped) {
+                    lines.push('');
+                    lines.push(styles.warningBadge().render(' Skipped Files ') +
+                        styles.dim().render(' Files matched .gitignore and were excluded:'));
+                    hasSkipped = true;
+                }
+                for (var skf = 0; skf < results[ski].skippedFiles.length; skf++) {
+                    lines.push('    ' + styles.dim().render(
+                        '\u25cb ' + results[ski].name + ': ' + results[ski].skippedFiles[skf]));
+                }
+            }
         }
 
         // ── Per-branch verification section ──────────────────────

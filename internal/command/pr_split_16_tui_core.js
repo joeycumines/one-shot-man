@@ -2799,8 +2799,19 @@
         s.analysisSteps[2].active = true;
         var groupStart = Date.now();
         try {
-            st.groupsCache = await prSplit.applyStrategyAsync(
-                st.analysisCache.files, prSplit.runtime.strategy);
+            // T099: When strategy is 'auto', use selectStrategyAsync to capture
+            // needsConfirm and scored alternatives for TUI display.
+            if (prSplit.runtime.strategy === 'auto') {
+                var autoResult = await prSplit.selectStrategyAsync(
+                    st.analysisCache.files);
+                st.groupsCache = autoResult.groups;
+                s.strategyNeedsConfirm = autoResult.needsConfirm || false;
+                s.strategyAlternatives = autoResult.scored || [];
+                s.autoStrategyName = autoResult.strategy || '';
+            } else {
+                st.groupsCache = await prSplit.applyStrategyAsync(
+                    st.analysisCache.files, prSplit.runtime.strategy);
+            }
         } catch (e) {
             if (s.wizard.current === 'CANCELLED') return; // T001: guard
             s.isProcessing = false;

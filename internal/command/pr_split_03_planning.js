@@ -19,6 +19,18 @@
 
     var DEFAULT_PLAN_PATH = '.pr-split-plan.json';
 
+    // T105: Resolve plan path relative to the configured directory rather
+    // than always using CWD.  When the user runs `osm pr-split --dir=/path`,
+    // the plan file should live inside that directory.
+    function resolvePlanPath(path, dir) {
+        path = path || DEFAULT_PLAN_PATH;
+        // If path is already absolute, use as-is.
+        if (path.charAt(0) === '/') return path;
+        var base = resolveDir(dir || '.');
+        if (base === '.' || base === '') return path;
+        return base + '/' + path;
+    }
+
     // -----------------------------------------------------------------------
     //  createSplitPlan — builds a plan from group objects
     // -----------------------------------------------------------------------
@@ -124,7 +136,7 @@
     // An optional second argument specifies the lastCompletedStep name for
     // crash recovery.  When provided, the snapshot version is bumped to 2.
     function savePlan(path, lastCompletedStep) {
-        path = path || DEFAULT_PLAN_PATH;
+        path = resolvePlanPath(path);
         if (!osmod) {
             return { error: 'osm:os module not available — cannot persist plan' };
         }
@@ -175,7 +187,7 @@
     //  loadPlan — reads a previously-saved plan snapshot from disk
     // -----------------------------------------------------------------------
     function loadPlan(path) {
-        path = path || DEFAULT_PLAN_PATH;
+        path = resolvePlanPath(path);
         if (!osmod) {
             return { error: 'osm:os module not available — cannot load plan' };
         }
@@ -242,6 +254,7 @@
     //  Exports
     // -----------------------------------------------------------------------
     prSplit.DEFAULT_PLAN_PATH = DEFAULT_PLAN_PATH;
+    prSplit.resolvePlanPath = resolvePlanPath;
     prSplit.createSplitPlan = createSplitPlan;
     prSplit.createSplitPlanAsync = createSplitPlanAsync;
     prSplit.savePlan = savePlan;

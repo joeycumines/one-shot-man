@@ -60,7 +60,12 @@
                     output.print('File stats (' + stats.files.length + ' files):');
                     for (var i = 0; i < stats.files.length; i++) {
                         var f = stats.files[i];
-                        output.print('  ' + f.name + ' (+' + f.additions + '/-' + f.deletions + ')');
+                        // T100: Binary files have null additions/deletions.
+                        if (f.binary) {
+                            output.print('  ' + f.name + ' (binary)');
+                        } else {
+                            output.print('  ' + f.name + ' (+' + (f.additions || 0) + '/-' + (f.deletions || 0) + ')');
+                        }
                     }
                 }
             },

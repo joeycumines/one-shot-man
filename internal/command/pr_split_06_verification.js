@@ -10,6 +10,7 @@
     var gitExecAsync = prSplit._gitExecAsync;
     var resolveDir = prSplit._resolveDir;
     var shellQuote = prSplit._shellQuote;
+    var worktreeTmpPath = prSplit._worktreeTmpPath;
     var scopedVerifyCommand = prSplit.scopedVerifyCommand;
     var exec = prSplit._modules.exec;
 
@@ -34,7 +35,8 @@
         }
 
         // Create a temporary worktree for this branch.
-        var worktreeDir = dir + '/../.osm-verify-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
+        // T103: Use system temp dir to avoid fragile dir + '/../' pattern.
+        var worktreeDir = worktreeTmpPath('osm-verify-');
 
         // Try proper branch checkout first (preserves branch name in HEAD).
         var wtAdd = gitExec(dir, ['worktree', 'add', worktreeDir, branchName]);
@@ -364,7 +366,8 @@
         var cols = config.cols || 120;
 
         // Create a temporary worktree for this branch.
-        var worktreeDir = dir + '/../.osm-verify-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
+        // T103: Use system temp dir to avoid fragile dir + '/../' pattern.
+        var worktreeDir = worktreeTmpPath('osm-verify-');
 
         var wtAdd = gitExec(dir, ['worktree', 'add', worktreeDir, branchName]);
         if (wtAdd.code !== 0) {
@@ -460,7 +463,7 @@
             return { name: branchName, passed: true, output: '', error: null, skipped: true, duration: 0 };
         }
 
-        var worktreeDir = dir + '/../.osm-verify-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
+        var worktreeDir = worktreeTmpPath('osm-verify-');
 
         var wtAdd = await gitExecAsync(dir, ['worktree', 'add', worktreeDir, branchName]);
         if (wtAdd.code !== 0) {

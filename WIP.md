@@ -28,7 +28,7 @@
 22. `c81c78cc` — cumulative chain docs + detectLanguage grammar + restart mode-awareness: T108+T112+T114
 23. `3da6cc85` — quick-fix bundle: equiv cache, cancel overlay, analysis cache, loadPlan dedup, preExisting reason, bell restore, strategy fallback warn: T089+T081+T066+T110+T101+T097+T091+T102
 
-## Completed Tasks (49/124)
+## Completed Tasks (58/124)
 - T028: renderStatusBar auto-dismiss → tick-based handler  
 - T072: viewReportOverlay scrollbar sync → syncReportScrollbar helper
 - T080: viewReportOverlay viewport sizing → syncReportOverlay helper
@@ -77,22 +77,36 @@
 - T097: validateResolution requires non-empty reason for preExistingFailure + whitespace rejection + warning log
 - T091: Bell handler restores HUD status dynamically via _renderHudStatusLine() + fixed _ws.current as string property (not function)
 - T102: applyStrategy/applyStrategyAsync log.warn + Object.defineProperty enumerable:false for _fallbackUsed
+- T123: syncMainViewport + CHROME_ESTIMATE hoisted to IIFE scope + analysisSteps guard
+- T087: Cap conversationHistory at MAX_CONVERSATION_HISTORY (100) entries with configurable cap + one-shot warning
+- T100: Binary file NaN fix — detect `- -` in --numstat, flag binary:true, additions/deletions null
+- T098: Unknown git status codes → skippedFiles:[{path,status}] in analyzeDiff/analyzeDiffAsync return
+- T025: Title bar step label override — DONE/CANCELLED/PAUSED/ERROR show meaningful labels, not "Finalization"
+- T099: Wire needsConfirm from selectStrategy to TUI — amber banner in viewPlanReviewScreen + autoStrategyName
+- T103: Worktree temp path → worktreeTmpPath() helper uses TMPDIR/TMP/TEMP or /tmp + random entropy, replaces fragile /../
+- T105: DEFAULT_PLAN_PATH respects config.dir — resolvePlanPath() resolves relative to configured dir + pipeline messages use resolved path
+- T107: Surface skippedFiles in TUI — overallSkippedFiles in executeSplit result + warning section in viewExecutionScreen
 
 ## Current Work
-**50/124 done, 24 commits. T123 syncMainViewport hoist + analysisSteps guard — VERIFIED.**
+**58/124 done, 25 commits. Batch 3 (T087+T100+T098+T025+T099+T103+T105+T107) — PENDING COMMIT.**
 
-### Previous: T123 — syncMainViewport ReferenceError fix
-- Hoisted CHROME_ESTIMATE + syncMainViewport from createWizardModel scope to IIFE scope (lines 52-82)
-- Added analysisSteps guard in handleAutoSplitPoll to prevent null crash when tests invoke without startAutoAnalysis
-- TestChunk16: 13 syncMainViewport ReferenceErrors → ELIMINATED, ~12 analysisSteps null crashes → ELIMINATED
-- 4 pre-existing failures remain (NOT caused by T123): notification auto-expiry (×2), verify fallback branch naming, auto-close child exit
+### Batch 3: T087+T100+T098+T025+T099+T103+T105+T107
+Files modified:
+- pr_split_00_core.js: worktreeTmpPath helper + export
+- pr_split_01_analysis.js: binary file detection + skippedFiles return + createEmptyResult consistency
+- pr_split_02_grouping.js: (no change — T099 wired in chunk 16 + views)
+- pr_split_03_planning.js: resolvePlanPath + savePlan/loadPlan use it + exported
+- pr_split_05_execution.js: worktreeTmpPath import + 2 replacements + overallSkippedFiles collect
+- pr_split_06_verification.js: worktreeTmpPath import + 3 replacements
+- pr_split_10_pipeline.js: resolvePlanPath import + resolvedPlanPath for save/display
+- pr_split_11_utilities.js: MAX_CONVERSATION_HISTORY cap + configurable + one-shot log warning
+- pr_split_15_tui_views.js: STATE_LABEL_OVERRIDE + amber needsConfirm banner + skippedFiles display
+- pr_split_16_tui_core.js: selectStrategyAsync for auto + strategyNeedsConfirm/strategyAlternatives state
 
-### Previous: T089+T081+T066+T110+T101+T097+T091+T102 — COMMITTED (3da6cc85)
-- 8 tasks in one bundle, 11 JS files + 3 test files modified
-- Rule of Two: Pass 1 FAIL (4 CRITICALs: r.status→!r.error, stale equiv cache, _ws.current() function call, _fallbackUsed Object.keys contamination) → Fixed → Pass 1 retry PASS → Pass 2 PASS
+Test results: ALL PASS (exit_code 0). One unrelated flaky timeout in TestPrSplitCommand_ResolveConflictsWithClaudePreExistingFailure (60s timeout, chunk 08 conflict resolution, not in scope).
 
 ### Next Priority
-- T123: syncMainViewport runtime ReferenceError (new, from Hana directive)
+- Rule of Two review → commit
 - T002: Analysis timeout (unlocked by T001 ✅)
 - T032: Cancel during verify phase
 - T059: Pause/resume verify phase (unlocked by T084)

@@ -165,6 +165,11 @@
 
     // recordConversation saves a Claude interaction to the history stored on
     // prSplit._state.conversationHistory.
+    // T087: Maximum number of conversation entries to retain in memory.
+    // Configurable via prSplitConfig.maxConversationHistory; defaults to 100.
+    var MAX_CONVERSATION_HISTORY = (prSplit.runtime && prSplit.runtime.maxConversationHistory) || 100;
+    var _conversationCapWarned = false;
+
     function recordConversation(action, prompt, response) {
         var state = prSplit._state;
         if (!state.conversationHistory) state.conversationHistory = [];
@@ -174,6 +179,16 @@
             prompt: prompt,
             response: response
         });
+        // T087: Trim oldest entries when history exceeds the cap.
+        if (state.conversationHistory.length > MAX_CONVERSATION_HISTORY) {
+            state.conversationHistory = state.conversationHistory.slice(
+                state.conversationHistory.length - MAX_CONVERSATION_HISTORY
+            );
+            if (!_conversationCapWarned && typeof log !== 'undefined' && log.warn) {
+                log.warn('pr-split: conversation history capped at ' + MAX_CONVERSATION_HISTORY + ' entries — oldest entries discarded');
+                _conversationCapWarned = true;
+            }
+        }
     }
 
     // getConversationHistory returns a defensive copy of all recorded

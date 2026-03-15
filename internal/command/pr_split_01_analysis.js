@@ -35,6 +35,7 @@
             return {
                 files: [],
                 fileStatuses: {},
+                skippedFiles: [],   // T098
                 error: error,
                 baseBranch: baseBranch,
                 currentBranch: currentBranch || ''
@@ -61,8 +62,10 @@
         var raw = diffResult.stdout.trim();
         var files = [];
         var fileStatuses = {};
+        var skippedFiles = [];  // T098: files with unknown git status codes
 
         // Valid status codes that executeSplit knows how to handle.
+        // A=Added, M=Modified, D=Deleted, R=Renamed, C=Copied, T=Type-changed.
         var KNOWN_STATUSES = { A: 1, M: 1, D: 1, R: 1, C: 1, T: 1 };
 
         if (raw !== '') {
@@ -84,8 +87,10 @@
                     );
                 }
 
-                // Skip unknown status codes with a warning.
+                // T098: Track files with unknown status codes so callers can
+                // surface a warning instead of silently losing files.
                 if (!KNOWN_STATUSES[status]) {
+                    skippedFiles.push({ path: parts[1], status: parts[0] });
                     if (typeof log !== 'undefined') {
                         log.warn('pr-split: unknown git status "' + parts[0] + '" for ' + parts[1] + ' — skipping');
                     }
@@ -110,6 +115,7 @@
         return {
             files: files,
             fileStatuses: fileStatuses,
+            skippedFiles: skippedFiles,
             error: null,
             baseBranch: baseBranch,
             currentBranch: currentBranch
@@ -129,6 +135,7 @@
             return {
                 files: [],
                 fileStatuses: {},
+                skippedFiles: [],   // T098
                 error: error,
                 baseBranch: baseBranch,
                 currentBranch: currentBranch || ''
@@ -154,7 +161,9 @@
         var raw = diffResult.stdout.trim();
         var files = [];
         var fileStatuses = {};
+        var skippedFiles = [];  // T098
 
+        // A=Added, M=Modified, D=Deleted, R=Renamed, C=Copied, T=Type-changed.
         var KNOWN_STATUSES = { A: 1, M: 1, D: 1, R: 1, C: 1, T: 1 };
 
         if (raw !== '') {
@@ -174,7 +183,9 @@
                     );
                 }
 
+                // T098: Track files with unknown status codes.
                 if (!KNOWN_STATUSES[status]) {
+                    skippedFiles.push({ path: parts[1], status: parts[0] });
                     if (typeof log !== 'undefined') {
                         log.warn('pr-split: unknown git status "' + parts[0] + '" for ' + parts[1] + ' — skipping');
                     }
@@ -196,6 +207,7 @@
         return {
             files: files,
             fileStatuses: fileStatuses,
+            skippedFiles: skippedFiles,
             error: null,
             baseBranch: baseBranch,
             currentBranch: currentBranch
@@ -256,11 +268,23 @@
                 if (lines[i] === '') continue;
                 var parts = lines[i].split('\t');
                 if (parts.length >= 3) {
-                    files.push({
+                    // T100: git diff --numstat outputs '- - path' for binary
+                    // files.  parseInt('-', 10) returns NaN, which `|| 0`
+                    // silently coerced to 0 — making binary files appear
+                    // weightless in size-based grouping strategies.  Detect
+                    // this and flag the file as binary with null
+                    // additions/deletions so callers can distinguish binary
+                    // from genuinely-empty files.
+                    var isBinary = (parts[0] === '-' && parts[1] === '-');
+                    var entry = {
                         name: parts[2],
-                        additions: parseInt(parts[0], 10) || 0,
-                        deletions: parseInt(parts[1], 10) || 0
-                    });
+                        additions: isBinary ? null : (parseInt(parts[0], 10) || 0),
+                        deletions: isBinary ? null : (parseInt(parts[1], 10) || 0)
+                    };
+                    if (isBinary) {
+                        entry.binary = true;
+                    }
+                    files.push(entry);
                 }
             }
         }

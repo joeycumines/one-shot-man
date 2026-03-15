@@ -591,13 +591,13 @@
     // post-mortem.
     async function waitForLogged(toolName, timeoutMs, opts) {
         var mcpCb = prSplit._mcpCallbackObj || mcpCallbackObj;
-        // Prefer non-blocking waitForAsync (Promise-based); fall back to
-        // blocking waitFor for backward compatibility with test mocks and
-        // older MCPCallback implementations.
-        var useAsync = mcpCb && typeof mcpCb.waitForAsync === 'function';
-        var useSync = mcpCb && typeof mcpCb.waitFor === 'function';
-        if (!useAsync && !useSync) {
-            return { data: null, error: 'MCP callback not initialized — ensure mcpConfigPath is provided via osm:mcpcallback module' };
+        if (!mcpCb || typeof mcpCb.waitForAsync !== 'function') {
+            // T093: Synchronous waitFor fallback removed — it blocks the
+            // entire Goja event loop (and therefore BubbleTea) for up to
+            // timeoutMs (5+ minutes).  The Go binding ALWAYS provides
+            // waitForAsync (mcpcallback.go:207-208).  If it is missing,
+            // the MCP callback was not properly initialized.
+            return { data: null, error: 'MCP callback missing waitForAsync — cannot proceed (tool: ' + toolName + ')' };
         }
 
         opts = opts || {};
@@ -651,16 +651,9 @@
             return true;
         };
 
-        log.printf('auto-split waitFor: tool=%s timeout=%dms async=%s', toolName, timeoutMs, String(useAsync));
+        log.printf('auto-split waitFor: tool=%s timeout=%dms async=true', toolName, timeoutMs);
         var startMs = Date.now();
-        var result;
-        if (useAsync) {
-            result = await mcpCb.waitForAsync(toolName, timeoutMs, wrappedOpts);
-        } else {
-            // Synchronous fallback — blocks the event loop but required for
-            // backward compatibility when waitForAsync is not available.
-            result = mcpCb.waitFor(toolName, timeoutMs, wrappedOpts);
-        }
+        var result = await mcpCb.waitForAsync(toolName, timeoutMs, wrappedOpts);
         var elapsedMs = Date.now() - startMs;
         if (forceCancelledByUser) {
             return { data: null, error: 'force cancelled by user' };

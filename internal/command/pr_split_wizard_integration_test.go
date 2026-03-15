@@ -1743,7 +1743,7 @@ func TestIntegration_WizardHandlerChain_BaselineFailAbort(t *testing.T) {
 		},
 	})
 
-	// CONFIG: baseline verify fails (checking for nonexistent file).
+	// CONFIG: get baseline verify config (T090: verify deferred to async).
 	_, err := tp.EvalJS(`
 		globalThis._tw = new prSplit.WizardState();
 		_tw.transition('CONFIG');
@@ -1752,8 +1752,12 @@ func TestIntegration_WizardHandlerChain_BaselineFailAbort(t *testing.T) {
 			strategy:   'directory',
 			verifyCommand: 'test -f .nonexistent-file'
 		});
+		// T090: handleConfigState returns baselineVerifyConfig, not verify result.
+		// Perform deferred baseline verify using the config.
+		var _bvc = _cfgResult.baselineVerifyConfig;
+		var _verifyResult = prSplit.verifySplit(prSplit.runtime.baseBranch, _bvc);
 		// Baseline should fail — .nonexistent-file doesn't exist.
-		if (!_cfgResult.baselineFailed) throw new Error('expected baseline failure');
+		if (_verifyResult.passed) throw new Error('expected baseline failure');
 		_tw.transition('BASELINE_FAIL');
 	`)
 	if err != nil {

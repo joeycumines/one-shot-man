@@ -259,17 +259,20 @@
     // -----------------------------------------------------------------------
 
     /**
-     * handleConfigState — validates configuration and runs baseline verification.
-     * Called when the wizard enters CONFIG state.
+     * handleConfigState — validates configuration and prepares baseline verify
+     * config. Called when the wizard enters CONFIG state.
+     *
+     * T090: Actual baseline verification is deferred to the async pipeline
+     * (runAnalysisAsync / automatedSplit pre-step) so the TUI event loop is
+     * never blocked by synchronous exec calls.
      *
      * @param {Object} config - Pipeline configuration overrides.
-     * @returns {Object} { error, availableBranches, resume, checkpoint, baselineFailed, baselineError }
+     * @returns {Object} { error, availableBranches, resume, checkpoint, baselineVerifyConfig }
      */
     function handleConfigState(config) {
         var runtime = prSplit.runtime;
         var gitExec = prSplit._gitExec;
         var resolveDir = prSplit._resolveDir;
-        var verifySplit = prSplit.verifySplit;
         var automatedDefaults = prSplit.AUTOMATED_DEFAULTS || {};
         var loadPlan = prSplit.loadPlan;
         var dir = resolveDir(config.dir || '.');
@@ -344,9 +347,10 @@
             log.printf('wizard: --resume specified but no valid checkpoint found; starting fresh');
         }
 
-        // --- Step 3: Run baseline verification ---
-        // Verify the base branch passes the verifyCommand before we start splitting.
-        // Skip if verifyCommand is trivial ('true') or absent.
+        // --- Step 3: Baseline verification config ---
+        // T090: Actual verification moved to async pipeline (runAnalysisAsync /
+        // automatedSplit pre-step) so the TUI event loop is never blocked.
+        // We just resolve the config here and pass it back to the caller.
         var verifyCommand = runtime.verifyCommand;
         var verifyTimeoutMs = 0;
         if (typeof config.verifyTimeoutMs === 'number' && config.verifyTimeoutMs > 0) {
@@ -355,35 +359,15 @@
                    automatedDefaults.verifyTimeoutMs > 0) {
             verifyTimeoutMs = automatedDefaults.verifyTimeoutMs;
         }
-        if (verifyCommand && verifyCommand !== 'true') {
-            var printFn = (typeof config.outputFn === 'function') ? config.outputFn : function(s) { output.print(s); };
-            if (verifyTimeoutMs > 0) {
-                printFn('[auto-split] Verify baseline (timeout ' + Math.ceil(verifyTimeoutMs / 1000) + 's)...');
-            } else {
-                printFn('[auto-split] Verify baseline...');
-            }
-            var baselineStart = Date.now();
-            var baselineResult = verifySplit(runtime.baseBranch, {
+
+        return {
+            error: null,
+            baselineVerifyConfig: {
                 verifyCommand: verifyCommand,
                 dir: dir,
-                verifyTimeoutMs: verifyTimeoutMs,
-                outputFn: printFn
-            });
-            var baselineElapsedMs = Date.now() - baselineStart;
-            // Worktree isolation: user's branch is never modified, no restore needed.
-
-            if (!baselineResult.passed) {
-                return {
-                    baselineFailed: true,
-                    baselineError: baselineResult.error || 'baseline verification failed (exit code non-zero)',
-                    baselineOutput: baselineResult.output || '',
-                    baselineDurationMs: baselineElapsedMs
-                };
+                verifyTimeoutMs: verifyTimeoutMs
             }
-            printFn('[auto-split] Verify baseline OK (' + baselineElapsedMs + 'ms)');
-        }
-
-        return { error: null };
+        };
     }
 
     prSplit._handleConfigState = handleConfigState;

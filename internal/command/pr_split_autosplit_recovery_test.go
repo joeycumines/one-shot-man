@@ -2429,7 +2429,7 @@ func TestAutoSplit_StepTimeout(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// T86: waitForLogged — thin wrapper around mcpCallbackObj.waitFor with logging
+// T86: waitForLogged — async wrapper around mcpCallbackObj.waitForAsync with logging
 // ---------------------------------------------------------------------------
 
 func TestWaitForLogged_Success(t *testing.T) {
@@ -2440,8 +2440,8 @@ func TestWaitForLogged_Success(t *testing.T) {
 	val, err := evalJS(`(async function() {
 		// Set up mock mcpCallbackObj.
 		mcpCallbackObj = {
-			waitFor: function(name, timeout, opts) {
-				return { data: { result: 42 }, error: null };
+			waitForAsync: function(name, timeout, opts) {
+				return Promise.resolve({ data: { result: 42 }, error: null });
 			}
 		};
 		var result = await waitForLogged('testTool', 5000, {});
@@ -2474,8 +2474,8 @@ func TestWaitForLogged_Timeout(t *testing.T) {
 
 	val, err := evalJS(`(async function() {
 		mcpCallbackObj = {
-			waitFor: function(name, timeout, opts) {
-				return { data: null, error: 'timeout waiting for ' + name };
+			waitForAsync: function(name, timeout, opts) {
+				return Promise.resolve({ data: null, error: 'timeout waiting for ' + name });
 			}
 		};
 		var result = await waitForLogged('reportClassification', 1000, {});
@@ -2513,18 +2513,18 @@ func TestWaitForLogged_HeartbeatTimeout(t *testing.T) {
 	val, err := evalJS(`(async function() {
 		var aliveCheckCallCount = 0;
 		mcpCallbackObj = {
-			waitFor: function(name, timeout, opts) {
+			waitForAsync: function(name, timeout, opts) {
 				// Simulate polling: call aliveCheck multiple times.
 				for (var i = 0; i < 10; i++) {
 					if (opts && typeof opts.aliveCheck === 'function') {
 						var alive = opts.aliveCheck();
 						// If heartbeat check killed us, aliveCheck returns false.
 						if (!alive) {
-							return { data: null, error: 'died via aliveCheck' };
+							return Promise.resolve({ data: null, error: 'died via aliveCheck' });
 						}
 					}
 				}
-				return { data: null, error: 'timeout waiting for ' + name };
+				return Promise.resolve({ data: null, error: 'timeout waiting for ' + name });
 			},
 			lastCallTime: function(toolName) {
 				if (toolName === 'heartbeat') {
@@ -2562,15 +2562,15 @@ func TestWaitForLogged_HeartbeatFresh_NoAbort(t *testing.T) {
 	// Mock where heartbeat is fresh (just received) — should NOT abort.
 	val, err := evalJS(`(async function() {
 		mcpCallbackObj = {
-			waitFor: function(name, timeout, opts) {
+			waitForAsync: function(name, timeout, opts) {
 				// Call aliveCheck — should return true (heartbeat is fresh).
 				if (opts && typeof opts.aliveCheck === 'function') {
 					var alive = opts.aliveCheck();
 					if (!alive) {
-						return { data: null, error: 'unexpected: aliveCheck returned false' };
+						return Promise.resolve({ data: null, error: 'unexpected: aliveCheck returned false' });
 					}
 				}
-				return { data: { ok: true }, error: null };
+				return Promise.resolve({ data: { ok: true }, error: null });
 			},
 			lastCallTime: function(toolName) {
 				if (toolName === 'heartbeat') {
@@ -2608,14 +2608,14 @@ func TestWaitForLogged_HeartbeatNeverReceived_GracePeriod(t *testing.T) {
 	// Should NOT abort — grace period until first heartbeat arrives.
 	val, err := evalJS(`(async function() {
 		mcpCallbackObj = {
-			waitFor: function(name, timeout, opts) {
+			waitForAsync: function(name, timeout, opts) {
 				if (opts && typeof opts.aliveCheck === 'function') {
 					var alive = opts.aliveCheck();
 					if (!alive) {
-						return { data: null, error: 'unexpected: aliveCheck returned false' };
+						return Promise.resolve({ data: null, error: 'unexpected: aliveCheck returned false' });
 					}
 				}
-				return { data: { ok: true }, error: null };
+				return Promise.resolve({ data: { ok: true }, error: null });
 			},
 			lastCallTime: function(toolName) {
 				return 0;  // Never called.
@@ -2637,6 +2637,69 @@ func TestWaitForLogged_HeartbeatNeverReceived_GracePeriod(t *testing.T) {
 	}
 	if result["error"] != nil {
 		t.Errorf("expected nil error (grace period for zero heartbeat), got %v", result["error"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T093: waitForLogged — returns error when waitForAsync missing
+// ---------------------------------------------------------------------------
+
+func TestWaitForLogged_MissingWaitForAsync(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Mock mcpCallbackObj with only sync waitFor — no waitForAsync.
+	// waitForLogged must return a structured error, NOT block.
+	val, err := evalJS(`(async function() {
+		mcpCallbackObj = {
+			waitFor: function(name, timeout, opts) {
+				return { data: { result: 'should-not-reach' }, error: null };
+			}
+		};
+		var result = await waitForLogged('testTool', 5000, {});
+		return JSON.stringify(result);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatal(err)
+	}
+	errStr, _ := result["error"].(string)
+	if !strings.Contains(errStr, "missing waitForAsync") {
+		t.Errorf("expected 'missing waitForAsync' error, got %q", errStr)
+	}
+	if result["data"] != nil {
+		t.Errorf("expected nil data when waitForAsync missing, got %v", result["data"])
+	}
+}
+
+func TestWaitForLogged_NilMcpCallback(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Set mcpCallbackObj to null — no callback at all.
+	val, err := evalJS(`(async function() {
+		mcpCallbackObj = null;
+		prSplit._mcpCallbackObj = null;
+		var result = await waitForLogged('testTool', 5000, {});
+		return JSON.stringify(result);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(val.(string)), &result); err != nil {
+		t.Fatal(err)
+	}
+	errStr, _ := result["error"].(string)
+	if !strings.Contains(errStr, "missing waitForAsync") {
+		t.Errorf("expected 'missing waitForAsync' error, got %q", errStr)
 	}
 }
 

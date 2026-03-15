@@ -2484,7 +2484,8 @@
         s.configValidationError = null; // T43: clear previous validation error on retry
         s.availableBranches = [];       // T43: clear branch list on retry
         s.analysisSteps = [
-            { label: 'Analyze diff', active: true, done: false },
+            { label: 'Verify baseline', active: true, done: false },
+            { label: 'Analyze diff', active: false, done: false },
             { label: 'Group files', active: false, done: false },
             { label: 'Generate plan', active: false, done: false },
             { label: 'Validate plan', active: false, done: false }
@@ -2511,6 +2512,10 @@
             s.wizardState = 'CONFIG';
             return [s, null];
         }
+
+        // T090: Stash baseline verify config on the model so
+        // runAnalysisAsync can run it asynchronously (non-blocking).
+        s._baselineVerifyConfig = configResult.baselineVerifyConfig || null;
 
         // Transition to CONFIG if needed.
         if (s.wizard.current === 'IDLE') {
@@ -2551,14 +2556,55 @@
         return [s, tea.tick(100, 'analysis-poll')];
     }
 
-    // runAnalysisAsync: Runs all 4 analysis steps as an async function.
-    // Uses analyzeDiffAsync and createSplitPlanAsync (non-blocking I/O
-    // via exec.spawn), and calls applyStrategy/validatePlan inline (pure
-    // compute, sub-millisecond). Updates s.analysisSteps progress between
-    // each step so the poll handler can render progress.
+    // runAnalysisAsync: Runs all 5 analysis steps as an async function.
+    // Step 0: Verify baseline (non-blocking via verifySplitAsync).
+    // Steps 1-4: analyzeDiffAsync, applyStrategy, createSplitPlanAsync,
+    // validatePlan. Updates s.analysisSteps progress between each step so
+    // the poll handler can render progress.
     async function runAnalysisAsync(s) {
-        // ── Step 0: Analyze diff (I/O-bound: git rev-parse, merge-base, diff) ──
-        s.analysisSteps[0].active = true;
+        // ── Step 0: Verify baseline (T090: non-blocking via verifySplitAsync) ──
+        var bvc = s._baselineVerifyConfig;
+        if (bvc && bvc.verifyCommand && bvc.verifyCommand !== 'true') {
+            s.analysisSteps[0].active = true;
+            var baseStart = Date.now();
+            try {
+                var baselineResult = await prSplit.verifySplitAsync(prSplit.runtime.baseBranch, {
+                    verifyCommand: bvc.verifyCommand,
+                    dir: bvc.dir,
+                    verifyTimeoutMs: bvc.verifyTimeoutMs,
+                    outputFn: function(line) { log.printf('wizard: %s', line); }
+                });
+                if (!baselineResult.passed) {
+                    s.isProcessing = false;
+                    s.configValidationError = 'Baseline verification failed: ' +
+                        (baselineResult.error || 'exit code non-zero') +
+                        (baselineResult.output ? '\n' + baselineResult.output : '');
+                    s.wizardState = 'CONFIG';
+                    return;
+                }
+            } catch (e) {
+                if (s.wizard.current === 'CANCELLED') return;
+                s.isProcessing = false;
+                s.configValidationError = 'Baseline verify error: ' + (e.message || String(e));
+                s.wizardState = 'CONFIG';
+                return;
+            }
+            s.analysisSteps[0].done = true;
+            s.analysisSteps[0].active = false;
+            s.analysisSteps[0].elapsed = Date.now() - baseStart;
+            log.printf('wizard: baseline verify OK (%dms)', s.analysisSteps[0].elapsed);
+        } else {
+            // No verify command — skip baseline step.
+            s.analysisSteps[0].done = true;
+            s.analysisSteps[0].active = false;
+            s.analysisSteps[0].elapsed = 0;
+        }
+        s.analysisProgress = 0.1;
+
+        if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
+
+        // ── Step 1: Analyze diff (I/O-bound: git rev-parse, merge-base, diff) ──
+        s.analysisSteps[1].active = true;
         var analysisStart = Date.now();
         try {
             st.analysisCache = await prSplit.analyzeDiffAsync({ baseBranch: prSplit.runtime.baseBranch });
@@ -2570,10 +2616,10 @@
             s.wizardState = s.wizard.current;
             return;
         }
-        s.analysisSteps[0].done = true;
-        s.analysisSteps[0].active = false;
-        s.analysisSteps[0].elapsed = Date.now() - analysisStart;
-        s.analysisProgress = 0.25;
+        s.analysisSteps[1].done = true;
+        s.analysisSteps[1].active = false;
+        s.analysisSteps[1].elapsed = Date.now() - analysisStart;
+        s.analysisProgress = 0.3;
 
         // Check for cancellation between steps.
         if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
@@ -2592,20 +2638,20 @@
             return;
         }
 
-        // ── Step 1: Group files (pure compute, non-blocking) ──
+        // ── Step 2: Group files (pure compute, non-blocking) ──
         if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
-        s.analysisSteps[1].active = true;
+        s.analysisSteps[2].active = true;
         var groupStart = Date.now();
         st.groupsCache = prSplit.applyStrategy(
             st.analysisCache.files, prSplit.runtime.strategy);
-        s.analysisSteps[1].done = true;
-        s.analysisSteps[1].active = false;
-        s.analysisSteps[1].elapsed = Date.now() - groupStart;
-        s.analysisProgress = 0.5;
+        s.analysisSteps[2].done = true;
+        s.analysisSteps[2].active = false;
+        s.analysisSteps[2].elapsed = Date.now() - groupStart;
+        s.analysisProgress = 0.55;
 
-        // ── Step 2: Create plan (I/O-bound: optional git rev-parse) ──
+        // ── Step 3: Create plan (I/O-bound: optional git rev-parse) ──
         if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
-        s.analysisSteps[2].active = true;
+        s.analysisSteps[3].active = true;
         var planStart = Date.now();
         st.planCache = await prSplit.createSplitPlanAsync(st.groupsCache, {
             baseBranch: prSplit.runtime.baseBranch,
@@ -2614,17 +2660,17 @@
             verifyCommand: prSplit.runtime.verifyCommand,
             fileStatuses: st.analysisCache.fileStatuses
         });
-        s.analysisSteps[2].done = true;
-        s.analysisSteps[2].active = false;
-        s.analysisSteps[2].elapsed = Date.now() - planStart;
-        s.analysisProgress = 0.75;
-
-        // ── Step 3: Validate plan (pure compute, non-blocking) ──
-        if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
-        s.analysisSteps[3].active = true;
-        var validation = prSplit.validatePlan(st.planCache);
         s.analysisSteps[3].done = true;
         s.analysisSteps[3].active = false;
+        s.analysisSteps[3].elapsed = Date.now() - planStart;
+        s.analysisProgress = 0.8;
+
+        // ── Step 4: Validate plan (pure compute, non-blocking) ──
+        if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
+        s.analysisSteps[4].active = true;
+        var validation = prSplit.validatePlan(st.planCache);
+        s.analysisSteps[4].done = true;
+        s.analysisSteps[4].active = false;
         s.analysisProgress = 1.0;
 
         if (!validation.valid) {
@@ -2785,7 +2831,8 @@
         s.configValidationError = null; // T43: clear previous validation error on retry
         s.availableBranches = [];       // T43: clear branch list on retry
         s.analysisSteps = [
-            { label: 'Spawning Claude', active: true, done: false },
+            { label: 'Verify baseline', active: true, done: false },
+            { label: 'Spawning Claude', active: false, done: false },
             { label: 'Classifying files', active: false, done: false },
             { label: 'Generating plan', active: false, done: false },
             { label: 'Executing splits', active: false, done: false }
@@ -2811,6 +2858,9 @@
             s.wizardState = 'CONFIG';
             return [s, null];
         }
+
+        // T090: Stash baseline verify config for async pre-step.
+        var baselineVerifyConfig = configResult.baselineVerifyConfig || null;
 
         if (s.wizard.current === 'IDLE') {
             s.wizard.transition('CONFIG');
@@ -2857,7 +2907,42 @@
             }
         };
 
-        prSplit.automatedSplit(autoConfig).then(
+        // T090: Run async baseline verify, then launch automatedSplit.
+        // Both run non-blocking on the JS event loop.
+        (async function() {
+            // Baseline verify pre-step.
+            var bvc = baselineVerifyConfig;
+            if (bvc && bvc.verifyCommand && bvc.verifyCommand !== 'true') {
+                s.analysisSteps[0].active = true;
+                var baseStart = Date.now();
+                try {
+                    var baselineResult = await prSplit.verifySplitAsync(prSplit.runtime.baseBranch, {
+                        verifyCommand: bvc.verifyCommand,
+                        dir: bvc.dir,
+                        verifyTimeoutMs: bvc.verifyTimeoutMs,
+                        outputFn: function(line) { log.printf('wizard: %s', line); }
+                    });
+                    if (!baselineResult.passed) {
+                        s.analysisSteps[0].active = false;
+                        throw new Error('Baseline verification failed: ' +
+                            (baselineResult.error || 'exit code non-zero'));
+                    }
+                } catch (e) {
+                    s.analysisSteps[0].active = false;
+                    throw e; // re-throw to outer rejection handler
+                }
+                s.analysisSteps[0].done = true;
+                s.analysisSteps[0].active = false;
+                s.analysisSteps[0].elapsed = Date.now() - baseStart;
+                log.printf('wizard: baseline verify OK (%dms)', s.analysisSteps[0].elapsed);
+            } else {
+                s.analysisSteps[0].done = true;
+                s.analysisSteps[0].active = false;
+                s.analysisSteps[0].elapsed = 0;
+            }
+            s.analysisSteps[1].active = true; // Activate 'Spawning Claude' step
+            return await prSplit.automatedSplit(autoConfig);
+        })().then(
             function(result) {
                 s.autoSplitResult = result;
                 s.autoSplitRunning = false;
@@ -2956,21 +3041,28 @@
             var telemetry = pipelineState.telemetryData || {};
 
             // Infer progress from what caches are populated.
+            // T090: Step layout is now 5 entries:
+            //   [0] Verify baseline  (always done — runs before automatedSplit)
+            //   [1] Spawning Claude
+            //   [2] Classifying files
+            //   [3] Generating plan
+            //   [4] Executing splits
+            s.analysisSteps[0].done = true; s.analysisSteps[0].active = false; // baseline always done
             if (pipelineState.planCache) {
-                s.analysisSteps[0].done = true; s.analysisSteps[0].active = false;
+                s.analysisSteps[1].done = true; s.analysisSteps[1].active = false;
+                s.analysisSteps[2].done = true; s.analysisSteps[2].active = false;
+                s.analysisSteps[3].done = true; s.analysisSteps[3].active = false;
+                s.analysisSteps[4].active = true;
+                s.analysisProgress = 0.8;
+            } else if (pipelineState.groupsCache) {
                 s.analysisSteps[1].done = true; s.analysisSteps[1].active = false;
                 s.analysisSteps[2].done = true; s.analysisSteps[2].active = false;
                 s.analysisSteps[3].active = true;
-                s.analysisProgress = 0.75;
-            } else if (pipelineState.groupsCache) {
-                s.analysisSteps[0].done = true; s.analysisSteps[0].active = false;
+                s.analysisProgress = 0.6;
+            } else if (pipelineState.analysisCache) {
                 s.analysisSteps[1].done = true; s.analysisSteps[1].active = false;
                 s.analysisSteps[2].active = true;
-                s.analysisProgress = 0.5;
-            } else if (pipelineState.analysisCache) {
-                s.analysisSteps[0].done = true; s.analysisSteps[0].active = false;
-                s.analysisSteps[1].active = true;
-                s.analysisProgress = 0.25;
+                s.analysisProgress = 0.4;
             }
 
             return [s, tea.tick(500, 'auto-poll')];

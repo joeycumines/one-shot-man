@@ -713,17 +713,17 @@ func TestPrSplitCommand_ResolveConflictsWithClaudePreExistingFailure(t *testing.
 			}
 		};
 
-		// Mock mcpCallbackObj to return resolution data on waitFor.
+		// Mock mcpCallbackObj to return resolution data on waitForAsync.
 		mcpCallbackObj = {
 			resetWaiter: function() {},
-			waitFor: function(name, timeout, opts) {
+			waitForAsync: function(name, timeout, opts) {
 				if (name === 'reportResolution') {
-					return {
+					return Promise.resolve({
 						data: { preExistingFailure: true, preExistingDetails: 'fails on main too' },
 						error: null
-					};
+					});
 				}
-				return { data: null, error: 'timeout' };
+				return Promise.resolve({ data: null, error: 'timeout' });
 			}
 		};
 
@@ -835,8 +835,8 @@ func TestPrSplitCommand_ResolveConflictsWithClaude_MaxAttemptsPerBranch(t *testi
 		// Mock mcpCallbackObj to always timeout (no resolution data).
 		mcpCallbackObj = {
 			resetWaiter: function() {},
-			waitFor: function(name, timeout, opts) {
-				return { data: null, error: 'timeout waiting for ' + name + ' after ' + timeout + 'ms' };
+			waitForAsync: function(name, timeout, opts) {
+				return Promise.resolve({ data: null, error: 'timeout waiting for ' + name + ' after ' + timeout + 'ms' });
 			}
 		};
 
@@ -1940,7 +1940,7 @@ func TestPrSplitCommand_ResolveConflictsWithClaude_SuccessfulFix(t *testing.T) {
 
 	// Exercise the successful fix path:
 	//  1. sendToHandle sends prompt → increment counter
-	//  2. mcpCallbackObj.waitFor returns resolution with patches
+	//  2. mcpCallbackObj.waitForAsync returns resolution with patches
 	//  3. osmod.writeFile applies each patch
 	//  4. gitAddChangedFiles stages modified files → gitExec(['status', '--porcelain']), gitExec(['add', '--', ...])
 	//  5. git commit --amend --no-edit
@@ -1969,18 +1969,18 @@ func TestPrSplitCommand_ResolveConflictsWithClaude_SuccessfulFix(t *testing.T) {
 		// --- Mock mcpCallbackObj: return a resolution with one patch ---
 		mcpCallbackObj = {
 			resetWaiter: function() {},
-			waitFor: function(name, timeout, opts) {
+			waitForAsync: function(name, timeout, opts) {
 				if (name === 'reportResolution') {
-					return {
+					return Promise.resolve({
 						data: {
 							patches: [
 								{ file: 'pkg/handler.go', content: 'package handler\n\nfunc Handle() {}\n' }
 							]
 						},
 						error: null
-					};
+					});
 				}
-				return { data: null, error: 'timeout' };
+				return Promise.resolve({ data: null, error: 'timeout' });
 			}
 		};
 

@@ -1018,7 +1018,7 @@
       "id": "T090",
       "title": "handleConfigState runs synchronous verifySplit() for baseline check — blocks TUI on Enter press",
       "description": "CONFIRMED (session 8): FULL CALL PATH CONFIRMED. pr_split_16_tui_core.js startAnalysis(s) at line 2429 calls handleConfigState({...}) synchronously, INSIDE the _updateFn BubbleTea update loop. handleConfigState (pr_split_13_tui.js line ~365) calls prSplit.verifySplit(runtime.baseBranch, {...}) synchronously for baseline verification. verifySplit() uses exec.execv — BLOCKING. Consequence: when user presses Enter to start analysis, the ENTIRE TUI event loop freezes for the full duration of the baseline verify command. If verifyCommand is 'make test' (30+ seconds), the terminal is completely unresponsive. GOOD NEWS: prSplit.verifySplitAsync() ALREADY EXISTS (confirmed exported from pr_split_06_verification.js). Fix: (1) Make handleConfigState an async function (add 'async' prefix). (2) Replace 'var baselineResult = verifySplit(...)' with 'var baselineResult = await prSplit.verifySplitAsync(...)'. (3) In startAnalysis(s) (pr_split_16_tui_core.js), change the handleConfigState call to be Promise-based: launch as a Promise that feeds into the existing analysisRunning pattern. OR: move the baseline check INTO runAnalysisAsync as a new async step (Step -1: Baseline verify) BEFORE the analyzeDiff step. This keeps the tea.tick polling architecture intact and allows cancellation. (4) Show a new analysis step in the PLAN_GENERATION screen: '✓ Verify baseline [elapsed]ms'. (5) Write a test verifying the TUI does not block for more than 50ms when the baseline verify takes 200ms (mock/async).",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_13_tui.js",
@@ -1053,7 +1053,7 @@
       "id": "T093",
       "title": "waitForLogged synchronous fallback blocks Goja event loop for up to 5+ minutes when waitForAsync unavailable",
       "description": "CONFIRMED by reading pr_split_10_pipeline.js waitForLogged() in session 6: when mcpCb.waitForAsync is not available on the MCP callback object, the code falls back to synchronous mcpCb.waitFor(toolName, timeoutMs, wrappedOpts). This is a fully blocking call that parks the entire Goja event loop — and therefore BubbleTea — until the MCP tool returns or timeoutMs expires. With classifyTimeoutMs=300000 (5 minutes) and planTimeoutMs=300000, this could block for 10 consecutive minutes with a completely frozen TUI, no spinner, and no cancel option. Fix: (1) Remove the synchronous fallback entirely. If mcpCb.waitForAsync is absent, immediately return a structured failure: {ok: false, error: 'MCP callback missing waitForAsync — cannot proceed with AI classification'}. (2) The Go binding that injects the mcpCallback object MUST always provide waitForAsync; confirm and enforce this in the injection code. (3) If a synchronous fallback is strictly required for backward compatibility in non-TUI REPL mode, guard it with an explicit opt-in flag AND cap its internal timeout at a hard maximum of 10 seconds. (4) Write a unit test verifying waitForLogged returns a structured error when both waitForAsync and waitFor are absent from the mock mcpCb object.",
-      "status": "not-started",
+      "status": "done",
       "body": 1,
       "files_affected": [
         "internal/command/pr_split_10_pipeline.js"
@@ -1377,8 +1377,8 @@
     {
       "id": "T122",
       "title": "processClaudeConvoResult/formatClaudeResponse check data.splits but reportSplitPlan MCP schema uses data.stages — Ask Claude plan update is always a silent no-op",
-      "description": "CONFIRMED by cross-referencing pr_split_10_pipeline.js (mcpCallbackObj.addTool schema, lines 1321-1340) with pr_split_16_tui_core.js processClaudeConvoResult (line 4162) and formatClaudeResponse (line 4143) in session 12. The MCP tool schema for 'reportSplitPlan' uses property name 'stages' (required: ['stages'], each item has {name, files, message, order}). When Claude calls reportSplitPlan, the tool arguments delivered via waitForLogged are: { stages: [...] }. BUT: (1) processClaudeConvoResult checks `if (toolName === 'reportSplitPlan' && data && data.splits)` — data.splits is always undefined (the schema property is 'stages'), so the entire plan-update block (st.planCache.splits = data.stages) never executes. The Ask Claude 'Revise Plan' feature silently does nothing to the actual plan. (2) formatClaudeResponse checks `if (toolName === 'reportSplitPlan' && data && data.splits)` — also falls through to JSON.stringify(data, null, 2), showing the user a raw JSON dump instead of a formatted plan summary. Contrast with the main automatedSplit pipeline Step 5 which correctly normalizes: `planPoll = { data: planPoll.data.stages || planPoll.data, error: null }` before using the plan. Fix: (1) In processClaudeConvoResult: change `data.splits` → `data.stages || data.splits` (for backward compat) and `st.planCache.splits = data.stages || data.splits`. (2) In formatClaudeResponse: change condition to `if (toolName === 'reportSplitPlan' && data && (data.splits || data.stages))` and `var items = data.splits || data.stages`. (3) Also add: after updating planCache, run `validatePlan(st.planCache, analysis.files)` and if invalid populate `s.editorValidationErrors`. (4) After update, reset s.selectedSplitIdx to 0 (or clamp to new plan length). (5) Write test: mock waitForLogged returning {data: {stages: [{name:'a', files:['f.go']}]}}, call submitClaudeMessage, verify st.planCache.splits was updated with the new plan.",
-      "status": "not-started",
+      "description": "CONFIRMED by cross-referencing pr_split_10_pipeline.js (mcpCallbackObj.addTool schema, lines 1321-1340) with pr_split_16_tui_core.js processClaudeConvoResult (line 4162) and formatClaudeResponse (line 4143) in session 12.",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_16_tui_core.js",
@@ -1668,9 +1668,9 @@
     "body_1_verify": 20,
     "body_2_ui": 51,
     "body_3_expand": 52,
-    "completed": 4,
+    "completed": 8,
     "in_progress": 0,
-    "not_started": 119,
+    "not_started": 115,
     "refinement_sessions": 13,
     "last_refined": "2026-03-15 (session 13 FINAL — corrected total: T000 was always present (body:1, Claude convo anchor-stability rearchitecture task) but miscounted in earlier sessions. FINAL BODY COUNTS verified by grep: body_1=20 (T000-T010 + T058,T059,T078,T093-T095,T111,T113,T115), body_2=51, body_3=52, total=123. T121 corrected from body:1 to body:2. Added task_relationships section with 21 dependency pairs and 13 commit bundles. Deepened T028/T072/T080/T120 descriptions with exact mutation call sites. Stripped stale 'NOT been fully read' prefaces from T023/T046/T047/T049. WIP.md FILES READ STATUS: all 17 JS chunks COMPLETE. WIP.md body:3 list corrected to include T110.)"
   }

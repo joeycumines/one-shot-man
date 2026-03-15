@@ -1230,140 +1230,138 @@ func TestChunk13_T43_TargetBranchExistsRemote(t *testing.T) {
 }
 
 // TestChunk13_HandleConfigState_BaselinePass tests the happy path: valid config
-// and passing baseline verification → PLAN_GENERATION.
+// returns baselineVerifyConfig with correct parameters (T090: verify deferred
+// to async pipeline).
 func TestChunk13_HandleConfigState_BaselinePass(t *testing.T) {
 	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	raw, err := evalJS(`
+		var verifyCalled = false;
 		prSplit._gitExec = function(dir, args) {
 			if (args[0] === 'rev-parse') return { code: 0, stdout: 'feature\n', stderr: '' };
 			if (args[0] === 'checkout') return { code: 0, stdout: '', stderr: '' };
 			return { code: 0, stdout: '', stderr: '' };
 		};
-		prSplit.verifySplit = function(branch, opts) {
-			return { passed: true, name: branch, output: 'ok' };
-		};
+		prSplit.verifySplit = function() { verifyCalled = true; return { passed: true }; };
 		prSplit.runtime.baseBranch = 'main';
 		prSplit.runtime.verifyCommand = 'make test';
 
 		var result = prSplit._handleConfigState({});
 		JSON.stringify({
 			error: result.error,
-			baselineFailed: !!result.baselineFailed,
-			resume: !!result.resume
+			hasConfig: !!result.baselineVerifyConfig,
+			verifyCommand: result.baselineVerifyConfig.verifyCommand,
+			verifyCalled: verifyCalled
 		});
 	`)
 	if err != nil {
 		t.Fatalf("failed: %v", err)
 	}
 	got := raw.(string)
-	want := `{"error":null,"baselineFailed":false,"resume":false}`
+	want := `{"error":null,"hasConfig":true,"verifyCommand":"make test","verifyCalled":false}`
 	if got != want {
 		t.Errorf("got %s, want %s", got, want)
 	}
 }
 
+// TestChunk13_HandleConfigState_BaselineTimeoutDefaultAndProgress tests that
+// the default timeout (600000ms from AUTOMATED_DEFAULTS) is passed through
+// baselineVerifyConfig. T090: verify is deferred, so no print output expected.
 func TestChunk13_HandleConfigState_BaselineTimeoutDefaultAndProgress(t *testing.T) {
 	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	raw, err := evalJS(`
-		var seenTimeout = -1;
+		var verifyCalled = false;
 		prSplit._gitExec = function(dir, args) {
 			if (args[0] === 'rev-parse') return { code: 0, stdout: 'feature\n', stderr: '' };
 			return { code: 0, stdout: '', stderr: '' };
 		};
-		prSplit.verifySplit = function(branch, opts) {
-			seenTimeout = opts.verifyTimeoutMs;
-			return { passed: true, name: branch, output: '' };
-		};
+		prSplit.verifySplit = function() { verifyCalled = true; return { passed: true }; };
 		prSplit.runtime.baseBranch = 'main';
 		prSplit.runtime.verifyCommand = 'make test';
 
 		var result = prSplit._handleConfigState({});
-		var hasStart = false;
-		var hasOk = false;
-		for (var i = 0; i < globalThis._prints.length; i++) {
-			if (globalThis._prints[i].indexOf('[auto-split] Verify baseline') >= 0) hasStart = true;
-			if (globalThis._prints[i].indexOf('[auto-split] Verify baseline OK') >= 0) hasOk = true;
-		}
 		JSON.stringify({
 			error: result.error,
-			seenTimeout: seenTimeout,
-			hasStart: hasStart,
-			hasOk: hasOk
+			verifyTimeoutMs: result.baselineVerifyConfig.verifyTimeoutMs,
+			verifyCalled: verifyCalled
 		});
 	`)
 	if err != nil {
 		t.Fatalf("failed: %v", err)
 	}
 	got := raw.(string)
-	want := `{"error":null,"seenTimeout":600000,"hasStart":true,"hasOk":true}`
+	want := `{"error":null,"verifyTimeoutMs":600000,"verifyCalled":false}`
 	if got != want {
 		t.Errorf("got %s, want %s", got, want)
 	}
 }
 
+// TestChunk13_HandleConfigState_BaselineTimeoutOverride tests that an explicit
+// verifyTimeoutMs in config overrides the AUTOMATED_DEFAULTS value.
 func TestChunk13_HandleConfigState_BaselineTimeoutOverride(t *testing.T) {
 	t.Parallel()
 	evalJS := loadTUIEngine(t)
 
 	raw, err := evalJS(`
-		var seenTimeout = -1;
 		prSplit._gitExec = function(dir, args) {
 			if (args[0] === 'rev-parse') return { code: 0, stdout: 'feature\n', stderr: '' };
 			return { code: 0, stdout: '', stderr: '' };
-		};
-		prSplit.verifySplit = function(branch, opts) {
-			seenTimeout = opts.verifyTimeoutMs;
-			return { passed: true, name: branch, output: '' };
 		};
 		prSplit.runtime.baseBranch = 'main';
 		prSplit.runtime.verifyCommand = 'make test';
 
 		var result = prSplit._handleConfigState({ verifyTimeoutMs: 12345 });
-		JSON.stringify({ error: result.error, seenTimeout: seenTimeout });
-	`)
-	if err != nil {
-		t.Fatalf("failed: %v", err)
-	}
-	got := raw.(string)
-	want := `{"error":null,"seenTimeout":12345}`
-	if got != want {
-		t.Errorf("got %s, want %s", got, want)
-	}
-}
-
-// TestChunk13_HandleConfigState_BaselineFail tests that failing baseline
-// verification returns baselineFailed=true.
-func TestChunk13_HandleConfigState_BaselineFail(t *testing.T) {
-	t.Parallel()
-	evalJS := loadTUIEngine(t)
-
-	raw, err := evalJS(`
-		prSplit._gitExec = function(dir, args) {
-			if (args[0] === 'rev-parse') return { code: 0, stdout: 'feature\n', stderr: '' };
-			if (args[0] === 'checkout') return { code: 0, stdout: '', stderr: '' };
-			return { code: 0, stdout: '', stderr: '' };
-		};
-		prSplit.verifySplit = function(branch, opts) {
-			return { passed: false, name: branch, error: 'make test: exit 2', output: 'FAIL' };
-		};
-		prSplit.runtime.baseBranch = 'main';
-		prSplit.runtime.verifyCommand = 'make test';
-
-		var result = prSplit._handleConfigState({});
 		JSON.stringify({
-			baselineFailed: !!result.baselineFailed,
-			hasBaselineError: !!result.baselineError
+			error: result.error,
+			verifyTimeoutMs: result.baselineVerifyConfig.verifyTimeoutMs
 		});
 	`)
 	if err != nil {
 		t.Fatalf("failed: %v", err)
 	}
 	got := raw.(string)
-	want := `{"baselineFailed":true,"hasBaselineError":true}`
+	want := `{"error":null,"verifyTimeoutMs":12345}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_HandleConfigState_BaselineVerifyDeferred tests that even when
+// verifySplit would fail, handleConfigState still returns success with
+// baselineVerifyConfig (T090: actual verification is deferred to async).
+func TestChunk13_HandleConfigState_BaselineVerifyDeferred(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`
+		var verifyCalled = false;
+		prSplit._gitExec = function(dir, args) {
+			if (args[0] === 'rev-parse') return { code: 0, stdout: 'feature\n', stderr: '' };
+			if (args[0] === 'checkout') return { code: 0, stdout: '', stderr: '' };
+			return { code: 0, stdout: '', stderr: '' };
+		};
+		prSplit.verifySplit = function() {
+			verifyCalled = true;
+			return { passed: false, error: 'make test: exit 2', output: 'FAIL' };
+		};
+		prSplit.runtime.baseBranch = 'main';
+		prSplit.runtime.verifyCommand = 'make test';
+
+		var result = prSplit._handleConfigState({});
+		JSON.stringify({
+			error: result.error,
+			hasConfig: !!result.baselineVerifyConfig,
+			verifyCalled: verifyCalled
+		});
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	want := `{"error":null,"hasConfig":true,"verifyCalled":false}`
 	if got != want {
 		t.Errorf("got %s, want %s", got, want)
 	}
@@ -1411,7 +1409,6 @@ func TestChunk13_HandleConfigState_ResumeNoCheckpoint(t *testing.T) {
 			return { code: 0, stdout: '', stderr: '' };
 		};
 		prSplit.loadPlan = function() { return { error: 'no checkpoint' }; };
-		prSplit.verifySplit = function() { return { passed: true }; };
 		prSplit.runtime.baseBranch = 'main';
 		prSplit.runtime.verifyCommand = 'make test';
 
@@ -1419,21 +1416,22 @@ func TestChunk13_HandleConfigState_ResumeNoCheckpoint(t *testing.T) {
 		JSON.stringify({
 			error: result.error,
 			resume: !!result.resume,
-			baselineFailed: !!result.baselineFailed
+			hasConfig: !!result.baselineVerifyConfig
 		});
 	`)
 	if err != nil {
 		t.Fatalf("failed: %v", err)
 	}
 	got := raw.(string)
-	want := `{"error":null,"resume":false,"baselineFailed":false}`
+	want := `{"error":null,"resume":false,"hasConfig":true}`
 	if got != want {
 		t.Errorf("got %s, want %s", got, want)
 	}
 }
 
-// TestChunk13_HandleConfigState_SkipsBaselineForTrue tests that baseline
-// verification is skipped when verifyCommand is 'true'.
+// TestChunk13_HandleConfigState_SkipsBaselineForTrue tests that when
+// verifyCommand is 'true', baselineVerifyConfig still carries that value
+// (T090: async path will skip actual verification based on this).
 func TestChunk13_HandleConfigState_SkipsBaselineForTrue(t *testing.T) {
 	t.Parallel()
 	evalJS := loadTUIEngine(t)
@@ -1449,13 +1447,17 @@ func TestChunk13_HandleConfigState_SkipsBaselineForTrue(t *testing.T) {
 		prSplit.runtime.verifyCommand = 'true';
 
 		var result = prSplit._handleConfigState({});
-		JSON.stringify({ error: result.error, verifyCalled: verifyCalled });
+		JSON.stringify({
+			error: result.error,
+			verifyCalled: verifyCalled,
+			verifyCommand: result.baselineVerifyConfig.verifyCommand
+		});
 	`)
 	if err != nil {
 		t.Fatalf("failed: %v", err)
 	}
 	got := raw.(string)
-	want := `{"error":null,"verifyCalled":false}`
+	want := `{"error":null,"verifyCalled":false,"verifyCommand":"true"}`
 	if got != want {
 		t.Errorf("got %s, want %s", got, want)
 	}
@@ -2572,6 +2574,7 @@ func TestChunk13_Wizard_PlanRejection_E2E(t *testing.T) {
 }
 
 // TestChunk13_Wizard_BaselineFailRecovery_E2E tests baseline fail → override → complete.
+// T090: handleConfigState returns baselineVerifyConfig; caller invokes verify.
 func TestChunk13_Wizard_BaselineFailRecovery_E2E(t *testing.T) {
 	t.Parallel()
 	evalJS := loadTUIEngine(t)
@@ -2589,14 +2592,18 @@ func TestChunk13_Wizard_BaselineFailRecovery_E2E(t *testing.T) {
 
 		var wizard = new prSplit.WizardState();
 
-		// CONFIG
+		// CONFIG returns baselineVerifyConfig (T090: no verify inline).
 		wizard.transition('CONFIG');
 		var configResult = prSplit._handleConfigState({});
 
-		// Baseline fails.
+		// Caller performs deferred baseline verify.
+		var bvc = configResult.baselineVerifyConfig;
+		var verifyResult = prSplit.verifySplit(prSplit.runtime.baseBranch, bvc);
+
+		// Baseline fails → transition to BASELINE_FAIL.
 		wizard.transition('BASELINE_FAIL', {
-			error: configResult.baselineError,
-			output: configResult.baselineOutput
+			error: verifyResult.error,
+			output: verifyResult.output
 		});
 
 		// Override.
@@ -2604,7 +2611,7 @@ func TestChunk13_Wizard_BaselineFailRecovery_E2E(t *testing.T) {
 
 		// Now in PLAN_GENERATION.
 		JSON.stringify({
-			baselineFailed: !!configResult.baselineFailed,
+			baselineFailed: !verifyResult.passed,
 			overrideAction: overrideResult.action,
 			final: wizard.current,
 			historyLength: wizard.history.length

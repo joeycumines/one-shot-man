@@ -734,31 +734,38 @@
                             // the saved plan — full BRANCH_BUILDING state entry from
                             // checkpoint is not yet implemented.
                             autoConfig.resumePlan = configResult.checkpoint.plan;
-                        } else if (configResult.baselineFailed) {
-                            wizard.transition('BASELINE_FAIL', {
-                                error: configResult.baselineError,
-                                output: configResult.baselineOutput
-                            });
-
-                            // --- BASELINE_FAIL menu ---
-                            output.print('');
-                            output.print(style.error('\u274c Baseline verification failed'));
-                            output.print('  Error: ' + configResult.baselineError);
-                            if (configResult.baselineOutput) {
-                                output.print('  Output: ' + style.dim(configResult.baselineOutput));
-                            }
-                            output.print('');
-                            output.print('Options:');
-                            output.print('  ' + style.warning('override') + ' — proceed to plan generation despite baseline failure');
-                            output.print('  ' + style.error('abort') + '    — cancel the auto-split');
-                            output.print('');
-                            output.print('Type "override" or "abort" at the prompt.');
-
-                            // Store wizard for override/abort commands to access.
-                            tuiState._activeWizard = wizard;
-                            tuiState._activeAutoConfig = autoConfig;
-                            return;
                         } else {
+                            // T090: Baseline verification deferred to async.
+                            var bvc = configResult.baselineVerifyConfig;
+                            var skipBaseline = !bvc || !bvc.verifyCommand || bvc.verifyCommand === 'true';
+                            if (!skipBaseline) {
+                                var verifyResult = await prSplit.verifySplitAsync(runtime.baseBranch, bvc);
+                                if (!verifyResult.passed) {
+                                    wizard.transition('BASELINE_FAIL', {
+                                        error: verifyResult.error,
+                                        output: verifyResult.output
+                                    });
+
+                                    // --- BASELINE_FAIL menu ---
+                                    output.print('');
+                                    output.print(style.error('\u274c Baseline verification failed'));
+                                    output.print('  Error: ' + verifyResult.error);
+                                    if (verifyResult.output) {
+                                        output.print('  Output: ' + style.dim(verifyResult.output));
+                                    }
+                                    output.print('');
+                                    output.print('Options:');
+                                    output.print('  ' + style.warning('override') + ' — proceed to plan generation despite baseline failure');
+                                    output.print('  ' + style.error('abort') + '    — cancel the auto-split');
+                                    output.print('');
+                                    output.print('Type "override" or "abort" at the prompt.');
+
+                                    // Store wizard for override/abort commands to access.
+                                    tuiState._activeWizard = wizard;
+                                    tuiState._activeAutoConfig = autoConfig;
+                                    return;
+                                }
+                            }
                             wizard.transition('PLAN_GENERATION');
                         }
 

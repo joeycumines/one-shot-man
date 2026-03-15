@@ -50,6 +50,35 @@
     var handleFinalizationState = prSplit._handleFinalizationState;
 
     // -----------------------------------------------------------------------
+    //  Shared Viewport Helpers
+    // -----------------------------------------------------------------------
+
+    // T120/T123: Sync main viewport and scrollbar dimensions from current
+    // terminal size. Hoisted to IIFE scope so all update handlers can call
+    // it — not just those inside createWizardModel.
+    var CHROME_ESTIMATE = 8; // title(1) + 2 dividers + nav(~3) + status(~2)
+    function syncMainViewport(s) {
+        if (!s.vp) return;
+        var w = s.width || 80;
+        var h = s.height || 24;
+        var vpHeight = Math.max(3, h - CHROME_ESTIMATE);
+        s.vp.setWidth(w);
+
+        if (s.splitViewEnabled) {
+            var minPaneH = 3;
+            var wizardH = Math.max(minPaneH, Math.floor(vpHeight * (s.splitViewRatio || 0.5)));
+            wizardH = Math.min(wizardH, vpHeight - minPaneH - 1);
+            if (wizardH >= minPaneH) {
+                s.vp.setHeight(wizardH);
+            } else {
+                s.vp.setHeight(vpHeight);
+            }
+        } else {
+            s.vp.setHeight(vpHeight);
+        }
+    }
+
+    // -----------------------------------------------------------------------
     //  BubbleTea Model — init / update / view (T020-T025)
     // -----------------------------------------------------------------------
 
@@ -233,33 +262,6 @@
                 needsInitClear: true
             };
         };
-
-        // T120: Sync main viewport and scrollbar dimensions from current
-        // terminal size. Called from _updateFn on WindowSize events and
-        // state transitions — NOT from _viewFn (which must be pure).
-        // Uses a conservative chrome estimate (8 lines) since the exact
-        // rendered chrome heights aren't available in the update handler.
-        var CHROME_ESTIMATE = 8; // title(1) + 2 dividers + nav(~3) + status(~2)
-        function syncMainViewport(s) {
-            if (!s.vp) return;
-            var w = s.width || 80;
-            var h = s.height || 24;
-            var vpHeight = Math.max(3, h - CHROME_ESTIMATE);
-            s.vp.setWidth(w);
-
-            if (s.splitViewEnabled) {
-                var minPaneH = 3;
-                var wizardH = Math.max(minPaneH, Math.floor(vpHeight * (s.splitViewRatio || 0.5)));
-                wizardH = Math.min(wizardH, vpHeight - minPaneH - 1);
-                if (wizardH >= minPaneH) {
-                    s.vp.setHeight(wizardH);
-                } else {
-                    s.vp.setHeight(vpHeight);
-                }
-            } else {
-                s.vp.setHeight(vpHeight);
-            }
-        }
 
         var _updateFn = function(msg, s) {
             // WindowSize — always handle.
@@ -3236,22 +3238,26 @@
             //   [2] Classifying files
             //   [3] Generating plan
             //   [4] Executing splits
-            s.analysisSteps[0].done = true; s.analysisSteps[0].active = false; // baseline always done
-            if (pipelineState.planCache) {
-                s.analysisSteps[1].done = true; s.analysisSteps[1].active = false;
-                s.analysisSteps[2].done = true; s.analysisSteps[2].active = false;
-                s.analysisSteps[3].done = true; s.analysisSteps[3].active = false;
-                s.analysisSteps[4].active = true;
-                s.analysisProgress = 0.8;
-            } else if (pipelineState.groupsCache) {
-                s.analysisSteps[1].done = true; s.analysisSteps[1].active = false;
-                s.analysisSteps[2].done = true; s.analysisSteps[2].active = false;
-                s.analysisSteps[3].active = true;
-                s.analysisProgress = 0.6;
-            } else if (pipelineState.analysisCache) {
-                s.analysisSteps[1].done = true; s.analysisSteps[1].active = false;
-                s.analysisSteps[2].active = true;
-                s.analysisProgress = 0.4;
+            // T123: Guard — analysisSteps may be empty if handleAutoSplitPoll
+            // fires before startAutoAnalysis populates the step array.
+            if (s.analysisSteps && s.analysisSteps.length >= 5) {
+                s.analysisSteps[0].done = true; s.analysisSteps[0].active = false; // baseline always done
+                if (pipelineState.planCache) {
+                    s.analysisSteps[1].done = true; s.analysisSteps[1].active = false;
+                    s.analysisSteps[2].done = true; s.analysisSteps[2].active = false;
+                    s.analysisSteps[3].done = true; s.analysisSteps[3].active = false;
+                    s.analysisSteps[4].active = true;
+                    s.analysisProgress = 0.8;
+                } else if (pipelineState.groupsCache) {
+                    s.analysisSteps[1].done = true; s.analysisSteps[1].active = false;
+                    s.analysisSteps[2].done = true; s.analysisSteps[2].active = false;
+                    s.analysisSteps[3].active = true;
+                    s.analysisProgress = 0.6;
+                } else if (pipelineState.analysisCache) {
+                    s.analysisSteps[1].done = true; s.analysisSteps[1].active = false;
+                    s.analysisSteps[2].active = true;
+                    s.analysisProgress = 0.4;
+                }
             }
 
             return [s, tea.tick(500, 'auto-poll')];

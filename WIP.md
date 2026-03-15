@@ -26,8 +26,9 @@
 20. `55b64062` — harden analysis pipeline error/cancel paths + hang audit: T001
 21. `a2b71776` — verify automatedSplit equivalence propagation + handleNext safety net: T121
 22. `c81c78cc` — cumulative chain docs + detectLanguage grammar + restart mode-awareness: T108+T112+T114
+23. `3da6cc85` — quick-fix bundle: equiv cache, cancel overlay, analysis cache, loadPlan dedup, preExisting reason, bell restore, strategy fallback warn: T089+T081+T066+T110+T101+T097+T091+T102
 
-## Completed Tasks (41/123)
+## Completed Tasks (49/124)
 - T028: renderStatusBar auto-dismiss → tick-based handler  
 - T072: viewReportOverlay scrollbar sync → syncReportScrollbar helper
 - T080: viewReportOverlay viewport sizing → syncReportOverlay helper
@@ -68,19 +69,31 @@
 - T108: INVARIANT cumulative chain docs in executeSplit + executeSplitAsync
 - T112: detectLanguage expanded langMap (40+ exts incl JSX/TSX/HTML/CSS), extension fallback, denylist, prompt grammar fix + 13 new test cases
 - T114: handleRestartClaudePoll mode-aware resume (plan→BRANCH_BUILDING, auto→startAutoAnalysis, heuristic→startAnalysis) + crash-recovery notification + errorDetails clear + 5 tests
+- T089: Cache equiv result on st in runEquivCheckAsync + buildReport short-circuit + pipeline reset clear
+- T081: Context-aware cancel overlay text — branch count + cleanup hint (filter: !r.error && r.sha)
+- T066: Already done by T031 (Tab focus cycling) — status-only
+- T110: automatedSplit caches analysis result in state.analysisCache after Step 1
+- T101: loadPlan conversation history idempotent slice() instead of append
+- T097: validateResolution requires non-empty reason for preExistingFailure + whitespace rejection + warning log
+- T091: Bell handler restores HUD status dynamically via _renderHudStatusLine() + fixed _ws.current as string property (not function)
+- T102: applyStrategy/applyStrategyAsync log.warn + Object.defineProperty enumerable:false for _fallbackUsed
 
 ## Current Work
-**41/123 done, 22 commits. T108+T112+T114 committed (c81c78cc). Selecting next task batch.**
+**50/124 done, 24 commits. T123 syncMainViewport hoist + analysisSteps guard — VERIFIED.**
 
-### Previous: T108+T112+T114 — COMMITTED (c81c78cc)
-- T108: INVARIANT design notes in both executeSplit and executeSplitAsync
-- T112: Expanded langMap (40+ exts), extension denylist, fallback for unknown langs, prompt grammar fix
-- T114: Mode-aware handleRestartClaudePoll with 3 paths + notification badges + stale error clear
-- Tests: 13 new detectLanguage cases + 5 restart-claude-poll tests (51 total test cases)
-- Rule of Two: Pass 1 FAIL → Fixed (CRITICAL-1 .jsx/.tsx missing) → Pass 1 PASS → Pass 2 PASS
+### Previous: T123 — syncMainViewport ReferenceError fix
+- Hoisted CHROME_ESTIMATE + syncMainViewport from createWizardModel scope to IIFE scope (lines 52-82)
+- Added analysisSteps guard in handleAutoSplitPoll to prevent null crash when tests invoke without startAutoAnalysis
+- TestChunk16: 13 syncMainViewport ReferenceErrors → ELIMINATED, ~12 analysisSteps null crashes → ELIMINATED
+- 4 pre-existing failures remain (NOT caused by T123): notification auto-expiry (×2), verify fallback branch naming, auto-close child exit
+
+### Previous: T089+T081+T066+T110+T101+T097+T091+T102 — COMMITTED (3da6cc85)
+- 8 tasks in one bundle, 11 JS files + 3 test files modified
+- Rule of Two: Pass 1 FAIL (4 CRITICALs: r.status→!r.error, stale equiv cache, _ws.current() function call, _fallbackUsed Object.keys contamination) → Fixed → Pass 1 retry PASS → Pass 2 PASS
 
 ### Next Priority
+- T123: syncMainViewport runtime ReferenceError (new, from Hana directive)
 - T002: Analysis timeout (unlocked by T001 ✅)
-- T032+T066+T081: Cancel flow hardening (unlocked by T031)
-- T089: Equiv-check detail (enables T075)
+- T032: Cancel during verify phase
 - T059: Pause/resume verify phase (unlocked by T084)
+- T000: Prompt/input anchor stability (Hana directive)

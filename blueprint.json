@@ -1378,7 +1378,7 @@
       "id": "T123",
       "title": "RUNTIME: syncMainViewport ReferenceError in handleAutoSplitPoll — function not hoisted in chunk 16 IIFE scope",
       "description": "REPORTED BY HANA (config.mk error directive, 2026-03-16): 'ReferenceError: syncMainViewport is not defined at handleAutoSplitPoll (<eval>:3215:33(199))'. syncMainViewport is defined with `var syncMainViewport = function(s) {...}` syntax in pr_split_16_tui_core.js which means it is NOT hoisted — only the variable declaration is hoisted, the assignment happens at runtime order. If handleAutoSplitPoll executes before the syncMainViewport assignment (e.g., async callback fires before IIFE reaches the assignment), a ReferenceError occurs. This also affects all tests that trigger handleAutoSplitPoll. CONFIRMED PRE-EXISTING: error appears on both committed and uncommitted code (verified via git stash test). Fix: Either (1) convert `var syncMainViewport = function(s) {...}` to a `function syncMainViewport(s) {...}` function declaration (fully hoisted), OR (2) reorder the definition above all callers, OR (3) add a defensive guard `if (typeof syncMainViewport === 'function')` at each call site. Option 1 is cleanest. Also audit all other `var X = function(...)` patterns in chunk 16 that are called from async handlers to ensure they don't have the same hoisting bug.",
-      "status": "not-started",
+      "status": "done",
       "body": 1,
       "files_affected": [
         "internal/command/pr_split_16_tui_core.js"

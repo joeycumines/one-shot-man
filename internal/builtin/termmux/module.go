@@ -606,6 +606,13 @@ func newCaptureSession(ctx context.Context, runtime *goja.Runtime, call goja.Fun
 // WrapCaptureSession wraps a [parent.CaptureSession] into a Goja object with
 // JavaScript-callable methods. Exported so callers (e.g., pr_split.go) can
 // create a Go-side CaptureSession and expose it through the same interface.
+//
+// AUDIT (T004): All 14 methods verified present and type-correct:
+//   start, isRunning, output, screen, interrupt, kill, resize, wait,
+//   write, sendEOF, close, pid, exitCode, isDone.
+// The 6 methods called by runVerifyBranch/pollVerifySession (isDone,
+// exitCode, output, close, interrupt, kill) are confirmed bound with
+// correct signatures via module_capture_test.go.
 func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.CaptureSession) goja.Value {
 	obj := runtime.NewObject()
 

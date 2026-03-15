@@ -89,6 +89,12 @@
             gitExec(dir, ['worktree', 'remove', '--force', worktreePath]);
         }
 
+        // INVARIANT (T108): Split branches form a CUMULATIVE CHAIN.
+        // Each split branches off the previous split (not baseBranch).
+        // split[0] branches off baseBranch, split[1] off split[0], etc.
+        // The final split therefore contains ALL files from ALL prior splits
+        // plus its own new files. This is why verifyEquivalence() (T094) only
+        // needs to compare the LAST split's tree SHA to sourceBranch^{tree}.
         var currentBase = plan.baseBranch;
 
         for (var i = 0; i < plan.splits.length; i++) {
@@ -283,6 +289,13 @@
             await gitExecAsync(dir, ['worktree', 'remove', '--force', worktreePath]);
         }
 
+        // INVARIANT (T108): Split branches form a CUMULATIVE CHAIN.
+        // Each split[i] is based on split[i-1] (or plan.baseBranch for i=0).
+        // After creating split[i], we set `currentBase = split[i].name` so the
+        // next iteration branches from the previous split. The final split
+        // therefore contains ALL changes from all prior splits PLUS its own.
+        // This is why verifyEquivalence only compares the LAST split's tree
+        // to the source branch's tree.
         var currentBase = plan.baseBranch;
 
         for (var i = 0; i < plan.splits.length; i++) {

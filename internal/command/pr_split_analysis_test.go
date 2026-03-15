@@ -101,6 +101,87 @@ func TestDetectLanguage(t *testing.T) {
 			invoke: `globalThis.prSplit.detectLanguage(['Main.kt', 'Util.kt'])`,
 			want:   "Kotlin",
 		},
+		// T112: Extended language map coverage.
+		{
+			name:   "Vue extension",
+			invoke: `globalThis.prSplit.detectLanguage(['App.vue', 'Header.vue'])`,
+			want:   "Vue",
+		},
+		{
+			name:   "Svelte extension",
+			invoke: `globalThis.prSplit.detectLanguage(['App.svelte', 'Nav.svelte'])`,
+			want:   "Svelte",
+		},
+		{
+			name:   "Terraform extension",
+			invoke: `globalThis.prSplit.detectLanguage(['main.tf', 'vars.tf'])`,
+			want:   "Terraform",
+		},
+		{
+			name:   "Shell extension",
+			invoke: `globalThis.prSplit.detectLanguage(['run.sh', 'build.bash'])`,
+			want:   "Shell",
+		},
+		// T112: JSX/TSX — critical React/Next.js coverage.
+		{
+			name:   "JSX maps to JavaScript",
+			invoke: `globalThis.prSplit.detectLanguage(['App.jsx', 'Header.jsx', 'index.jsx'])`,
+			want:   "JavaScript",
+		},
+		{
+			name:   "TSX maps to TypeScript",
+			invoke: `globalThis.prSplit.detectLanguage(['App.tsx', 'Page.tsx'])`,
+			want:   "TypeScript",
+		},
+		{
+			name:   "mixed JS and JSX",
+			invoke: `globalThis.prSplit.detectLanguage(['utils.js', 'App.jsx', 'api.js'])`,
+			want:   "JavaScript",
+		},
+		// T112: C/C++ header extensions.
+		{
+			name:   "C header extension",
+			invoke: `globalThis.prSplit.detectLanguage(['main.c', 'util.h'])`,
+			want:   "C",
+		},
+		{
+			name:   "C++ header extensions",
+			invoke: `globalThis.prSplit.detectLanguage(['main.cpp', 'util.hpp', 'extra.cc'])`,
+			want:   "C++",
+		},
+		// T112: CSS/HTML web extensions.
+		{
+			name:   "HTML extension",
+			invoke: `globalThis.prSplit.detectLanguage(['index.html', 'about.html', 'style.css'])`,
+			want:   "HTML",
+		},
+		{
+			name:   "CSS dominant",
+			invoke: `globalThis.prSplit.detectLanguage(['reset.css', 'app.css', 'theme.scss'])`,
+			want:   "CSS",
+		},
+		// T112: Objective-C.
+		{
+			name:   "Objective-C extension",
+			invoke: `globalThis.prSplit.detectLanguage(['AppDelegate.m', 'ViewController.m'])`,
+			want:   "Objective-C",
+		},
+		// T112: Extension-based fallback for unknown-but-real languages.
+		{
+			name:   "proto extension fallback",
+			invoke: `globalThis.prSplit.detectLanguage(['user.proto', 'order.proto', 'README.md'])`,
+			want:   "Proto",
+		},
+		{
+			name:   "hcl extension fallback",
+			invoke: `globalThis.prSplit.detectLanguage(['main.hcl', 'vars.hcl'])`,
+			want:   "Hcl",
+		},
+		{
+			name:   "only documentation files stays unknown",
+			invoke: `globalThis.prSplit.detectLanguage(['README.md', 'CHANGELOG.md', 'docs.txt', 'config.json', 'schema.yaml'])`,
+			want:   "unknown",
+		},
 	}
 
 	for _, tt := range tests {

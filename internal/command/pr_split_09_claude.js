@@ -347,7 +347,7 @@
     var CLASSIFICATION_PROMPT_TEMPLATE =
         'You are a code reviewer helping split a large pull request into smaller, ' +
         'reviewable stacked PRs.\n\n' +
-        'The repository is a {{.Language}} project' +
+        'The repository uses {{.Language}}' +
         '{{if .ModulePath}} with module path `{{.ModulePath}}`{{end}}.\n' +
         'The base branch is `{{.BaseBranch}}`.\n\n' +
         '## Changed Files\n\n' +
@@ -487,18 +487,49 @@
         var counts = {};
         var langMap = {
             '.go': 'Go', '.js': 'JavaScript', '.ts': 'TypeScript',
+            '.jsx': 'JavaScript', '.tsx': 'TypeScript',
+            '.mjs': 'JavaScript', '.cjs': 'JavaScript',
             '.py': 'Python', '.rb': 'Ruby', '.rs': 'Rust',
             '.java': 'Java', '.c': 'C', '.cpp': 'C++',
-            '.cs': 'C#', '.swift': 'Swift', '.kt': 'Kotlin'
+            '.cc': 'C++', '.cxx': 'C++', '.h': 'C', '.hpp': 'C++',
+            '.cs': 'C#', '.swift': 'Swift', '.kt': 'Kotlin',
+            '.m': 'Objective-C', '.mm': 'Objective-C++',
+            '.vue': 'Vue', '.svelte': 'Svelte', '.dart': 'Dart',
+            '.php': 'PHP', '.scala': 'Scala', '.zig': 'Zig',
+            '.lua': 'Lua', '.r': 'R', '.R': 'R',
+            '.pl': 'Perl', '.pm': 'Perl', '.ex': 'Elixir',
+            '.exs': 'Elixir', '.clj': 'Clojure', '.hs': 'Haskell',
+            '.ml': 'OCaml', '.fs': 'F#', '.sol': 'Solidity',
+            '.tf': 'Terraform', '.nix': 'Nix', '.sh': 'Shell',
+            '.bash': 'Shell', '.zsh': 'Shell',
+            '.html': 'HTML', '.htm': 'HTML',
+            '.css': 'CSS', '.scss': 'SCSS', '.sass': 'Sass', '.less': 'Less'
         };
+        // T112: Also track raw extension frequencies for unknown fallback.
+        // Denylist: documentation/config extensions that aren't programming
+        // languages.  These should never win the "most common unknown ext"
+        // contest.
+        var skipExts = {
+            '.md': true, '.txt': true, '.rst': true,
+            '.json': true, '.yaml': true, '.yml': true, '.toml': true,
+            '.xml': true, '.csv': true, '.lock': true, '.sum': true,
+            '.cfg': true, '.ini': true, '.env': true, '.conf': true,
+            '.svg': true, '.png': true, '.jpg': true, '.jpeg': true,
+            '.gif': true, '.ico': true, '.woff': true, '.woff2': true,
+            '.eot': true, '.ttf': true, '.otf': true
+        };
+        var extCounts = {};
         for (var i = 0; i < (files || []).length; i++) {
             var ext = fileExtension(files[i]);
+            if (!ext) continue;
             var lang = langMap[ext];
             if (lang) {
                 counts[lang] = (counts[lang] || 0) + 1;
+            } else if (!skipExts[ext]) {
+                extCounts[ext] = (extCounts[ext] || 0) + 1;
             }
         }
-        var best = 'unknown';
+        var best = '';
         var bestCount = 0;
         for (var k in counts) {
             if (counts[k] > bestCount) {
@@ -506,7 +537,26 @@
                 bestCount = counts[k];
             }
         }
-        return best;
+        // T112: Fallback — use the most common unrecognized extension as
+        // a pseudo-language name (e.g., '.proto' → 'Proto').  Only fires
+        // when no known language was detected AND the repo contains files
+        // with a non-documentation extension.
+        if (!best) {
+            var bestExt = '';
+            var bestExtCount = 0;
+            for (var e in extCounts) {
+                if (extCounts[e] > bestExtCount) {
+                    bestExt = e;
+                    bestExtCount = extCounts[e];
+                }
+            }
+            if (bestExt) {
+                // Strip leading dot and capitalize: '.proto' → 'Proto'
+                var raw = bestExt.replace(/^\./, '');
+                best = raw.charAt(0).toUpperCase() + raw.slice(1);
+            }
+        }
+        return best || 'unknown';
     }
 
     // -----------------------------------------------------------------------

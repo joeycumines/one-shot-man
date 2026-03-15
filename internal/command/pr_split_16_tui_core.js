@@ -3388,6 +3388,7 @@
         // Successful restart — clear crash flags and resume pipeline.
         s.claudeCrashDetected = false;
         st.claudeCrashDetected = false;
+        s.errorDetails = null; // T114: clear stale error from restart phase
         log.printf('auto-split: Claude restarted successfully, session=%s', result.sessionId || '(none)');
 
         // Re-attach to tuiMux if available.
@@ -3397,9 +3398,27 @@
             try { tuiMux.attach(executor.handle); } catch (e) { /* best effort */ }
         }
 
-        // Reset wizard to PLAN_GENERATION so startAnalysis picks up.
+        // T114: Mode-aware restart — if user was in auto mode, resume with
+        // auto analysis (Claude-based), not heuristic. If a plan already
+        // exists from before the crash, skip straight to execution.
+        if (st.planCache && st.planCache.splits && st.planCache.splits.length > 0) {
+            // Plan was generated before crash — re-execute from BRANCH_BUILDING.
+            // ERROR_RESOLUTION → BRANCH_BUILDING is a valid transition.
+            s.wizard.transition('BRANCH_BUILDING');
+            s.wizardState = 'BRANCH_BUILDING';
+            s.claudeAutoAttachNotif = 'Resumed after Claude restart \u2014 re-executing plan';
+            s.claudeAutoAttachNotifAt = Date.now();
+            return startExecution(s);
+        }
+
+        // No plan yet — restart the appropriate analysis pipeline.
         s.wizard.transition('PLAN_GENERATION');
         s.wizardState = 'PLAN_GENERATION';
+        s.claudeAutoAttachNotif = 'Resumed after Claude restart \u2014 re-analyzing';
+        s.claudeAutoAttachNotifAt = Date.now();
+        if (prSplit.runtime.mode === 'auto') {
+            return startAutoAnalysis(s);
+        }
         return startAnalysis(s);
     }
 

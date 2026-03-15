@@ -1226,7 +1226,7 @@
       "id": "T108",
       "title": "ARCHITECTURE NOTE: Confirmed cumulative branch chain — T094 design documentation and invariant enforcement",
       "description": "CONFIRMED by reading pr_split_05_execution.js executeSplitAsync() in session 6 (line ~390): the critical line `currentBase = split.name` at the end of the branch creation loop. Each split initially checks out from `currentBase` (which starts as plan.baseBranch) and then becomes the new `currentBase` for the next split. This means: split[0] branches off baseBranch, split[1] branches off split[0], split[2] branches off split[1], etc. Splits form a CUMULATIVE CHAIN — each split contains ALL the files from all prior splits PLUS its own new files. This makes verifyEquivalence (T094) CORRECT: comparing lastSplit^{tree} vs sourceBranch^{tree} does correctly detect whether the full change set has been captured. Action items: (1) Add an explicit DESIGN NOTE comment in pr_split_05_execution.js and pr_split_06_verification.js: '// INVARIANT: Split branches form a cumulative chain. split[i] is based on split[i-1]. // The final split contains ALL files from all prior splits. // This is why verifyEquivalence only needs to compare the LAST split tree to source.' (2) Add an assertion/test in pr_split_06_verification_test.go confirming that for a known 3-split cumulative-chain plan, verifyEquivalence correctly reports equivalent=true. (3) Close T094 by confirming the EXISTING implementation is correct and only the documentation is missing. (4) Update T094 status to confirm the cumulative chain — the fix required is documentation only, not redesign.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_05_execution.js",
@@ -1271,7 +1271,7 @@
       "id": "T112",
       "title": "detectLanguage returns 'unknown' for unrecognized file extensions — prompt renders 'a unknown project' (grammatical error, bad context)",
       "description": "CONFIRMED by reading pr_split_09_claude.js detectLanguage() in session 9: when no recognized extension matches (e.g., .svelte, .vue, .sol, .tf, .nix), the function returns 'unknown'. The CLASSIFICATION_PROMPT_TEMPLATE uses 'The repository is a {{.Language}} project' — substituting 'unknown' produces 'The repository is a unknown project' which is: (a) grammatically wrong (should be 'an unknown'), (b) unhelpful to Claude. Fix: (1) Add to detectLanguage: if best === 'unknown', look at extension frequencies and return the top extension as a pseudo-language (e.g., '.svelte' files → 'Svelte'). (2) In CLASSIFICATION_PROMPT_TEMPLATE, change to: '{{if .Language}}The repository is a {{.Language}} project{{else}}The repository has {{.FileCount}} changed files{{end}}.' — this requires adding FileCount to the template data. (3) Change the 'a {{.Language}}' to handle articles properly: add helper in template: '{{if vowel .Language}}an{{else}}a{{end}} {{.Language}}' OR just change to 'a {{.Language}}' → 'The repository uses {{.Language}}'. Simplest fix: '{{if .Language}}The repository uses the {{.Language}} programming language{{end}}'. (4) Write a unit test: pass a list of .svelte files to renderClassificationPrompt, assert the rendered text does not contain 'a unknown' and DOES contain useful language context.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_09_claude.js"
@@ -1291,7 +1291,7 @@
       "id": "T114",
       "title": "handleRestartClaudePoll calls startAnalysis (heuristic) after successful Claude restart — user loses Claude-based workflow",
       "description": "CONFIRMED by reading pr_split_16_tui_core.js handleRestartClaudePoll() in session 9 (end of function): after `claudeExecutor.restart()` succeeds, the handler unconditionally calls `return startAnalysis(s)`. `startAnalysis(s)` is the HEURISTIC grouping path that uses local file analysis only — it does NOT use Claude regardless of `prSplit.runtime.mode`. After a successful restart, the user sees 'Claude restarted successfully' in logs but the TUI then runs heuristic analysis, silently abandoning the Claude-based workflow. The user ends up with a heuristic plan they didn't ask for. Fix: (1) Change to mode-aware call: `if (prSplit.runtime.mode === 'auto') { return startAutoAnalysis(s); } return startAnalysis(s);`. (2) In startAutoAnalysis, if `st.planCache` already exists (plan was generated before the crash), skip to step 6 (execution) rather than re-running classification and planning. Add: `if (st.planCache && st.planCache.splits && st.planCache.splits.length > 0) { return startExecution(s); }` at the top of startAutoAnalysis. (3) Add a crash-recovery TUI notification: show a temporary badge 'Resumed after Claude crash' in the title bar for 5 seconds. (4) Write a test: simulate crash→restart with existing plan, assert startExecution is called not startAnalysis.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_16_tui_core.js"

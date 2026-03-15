@@ -3701,6 +3701,17 @@
         return [s, null];
     }
 
+    // ── T115: Pre-existing failure detection helpers ────────────
+    // These check the cached baseline verification result to determine
+    // whether a branch failure also exists on the source branch.
+    function _isPreExistingFailure(s) {
+        return !!(s._baselineVerifyResult && s._baselineVerifyResult.failed);
+    }
+    function _preExistingAnnotation(s) {
+        if (!s._baselineVerifyResult || !s._baselineVerifyResult.sourceBranch) return '';
+        return ' (pre-existing on ' + s._baselineVerifyResult.sourceBranch + ')';
+    }
+
     // ── Per-branch verification (tick-based stepping) ────────────
     // Verifies one branch at a time. Uses CaptureSession (PTY + VTerm)
     // for live output when available, falling back to async verifySplitAsync
@@ -3712,6 +3723,35 @@
         if (!splits || s.verifyingIdx >= splits.length) {
             // All branches verified — move to equiv check.
             return startEquivCheck(s);
+        }
+
+        // T115: On the very first branch, kick off an async baseline check
+        // against the source branch. The result is cached on `s` so that
+        // pollVerifySession / handleVerifyFallbackPoll can tag failures as
+        // pre-existing when the baseline also fails.
+        if (s.verifyingIdx === 0 && !s._baselineVerifyStarted) {
+            var sourceBranch = st.planCache.sourceBranch;
+            if (sourceBranch && prSplit.runtime.verifyCommand) {
+                s._baselineVerifyStarted = true;
+                s._baselineVerifyResult = null;
+                var baseDir = prSplit.runtime.dir || '.';
+                var baseTimeoutMs = (typeof prSplitConfig !== 'undefined' && prSplitConfig.timeoutMs)
+                    ? prSplitConfig.timeoutMs : 0;
+                prSplit.verifySplitAsync(sourceBranch, {
+                    dir: baseDir,
+                    verifyCommand: prSplit.runtime.verifyCommand,
+                    verifyTimeoutMs: baseTimeoutMs,
+                    outputFn: null
+                }).then(function(result) {
+                    s._baselineVerifyResult = {
+                        failed: !result.passed,
+                        sourceBranch: sourceBranch
+                    };
+                }, function() {
+                    // Baseline check errored — conservatively treat as no info.
+                    s._baselineVerifyResult = { failed: false, sourceBranch: sourceBranch };
+                });
+            }
         }
 
         var split = splits[s.verifyingIdx];
@@ -3738,7 +3778,8 @@
                 passed: false,
                 skipped: true,
                 error: skipReason,
-                duration: 0
+                duration: 0,
+                preExisting: false
             });
             s.verifyingIdx++;
             return [s, tea.tick(1, 'verify-branch')];
@@ -3767,7 +3808,8 @@
                 skipped: true,
                 error: null,
                 output: '',
-                duration: 0
+                duration: 0,
+                preExisting: false
             });
             s.verifyingIdx++;
             return [s, tea.tick(1, 'verify-branch')];
@@ -3864,6 +3906,15 @@
             errorMsg = 'verify failed (exit ' + exitCode + ')';
         }
 
+        // T115: Detect pre-existing failures using cached baseline result.
+        var preExisting = false;
+        if ((exitCode !== 0 || isTimeout) && _isPreExistingFailure(s)) {
+            preExisting = true;
+            if (errorMsg) {
+                errorMsg += _preExistingAnnotation(s);
+            }
+        }
+
         s.verificationResults.push({
             name: branchName,
             passed: exitCode === 0 && !isTimeout,
@@ -3871,7 +3922,7 @@
             error: errorMsg,
             output: output,
             duration: duration,
-            preExisting: false
+            preExisting: preExisting
         });
 
         // Clear active session state.
@@ -3907,14 +3958,27 @@
         if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
 
         s.verifyOutput[branchName] = outputLines;
+
+        // T115: Detect pre-existing failures using cached baseline result.
+        // verifySplitAsync (singular) never sets preExisting — only the batch
+        // verifySplitsAsync does, so we must check the baseline cache here.
+        var preExisting = false;
+        var errorMsg = verifyResult.error || null;
+        if (!verifyResult.passed && !verifyResult.skipped && _isPreExistingFailure(s)) {
+            preExisting = true;
+            if (errorMsg) {
+                errorMsg += _preExistingAnnotation(s);
+            }
+        }
+
         s.verificationResults.push({
             name: branchName,
             passed: verifyResult.passed,
             skipped: verifyResult.skipped || false,
-            error: verifyResult.error || null,
+            error: errorMsg,
             output: verifyResult.output || '',
             duration: duration,
-            preExisting: verifyResult.preExisting || false
+            preExisting: preExisting
         });
 
         s.verifyingIdx++;
@@ -3933,14 +3997,22 @@
             var branchName = (st.planCache && st.planCache.splits &&
                 s.verifyingIdx < st.planCache.splits.length)
                 ? st.planCache.splits[s.verifyingIdx].name : 'unknown';
+
+            // T115: Detect pre-existing failures using cached baseline result.
+            var preExisting = _isPreExistingFailure(s);
+            var fallbackError = s.verifyFallbackError;
+            if (preExisting) {
+                fallbackError += _preExistingAnnotation(s);
+            }
+
             s.verificationResults.push({
                 name: branchName,
                 passed: false,
                 skipped: false,
-                error: s.verifyFallbackError,
+                error: fallbackError,
                 output: '',
                 duration: 0,
-                preExisting: false
+                preExisting: preExisting
             });
             s.verifyingIdx++;
             s.verifyFallbackError = null;

@@ -305,7 +305,7 @@ func TestViews_NavBar_FocusNextHighlightsNext(t *testing.T) {
 
 // TestViews_NavBar_FocusCancelDoesNotHighlightNext verifies that when
 // focusIndex points to nav-cancel (last element), the Next button does NOT
-// get focusedButton styling. This was the exact T200 bug.
+// get focusedButton styling. Cancel (T302) uses focusedSecondaryButton.
 func TestViews_NavBar_FocusCancelDoesNotHighlightNext(t *testing.T) {
 	t.Parallel()
 	evalJS := loadTUIEngine(t)
@@ -329,12 +329,19 @@ func TestViews_NavBar_FocusCancelDoesNotHighlightNext(t *testing.T) {
 		t.Fatalf("expected int64, got %T: %v", raw, raw)
 	}
 
-	// Intercept focusedButton to inject a marker.
-	marker := "[[FOCUSED_BTN]]"
+	// Intercept both focusedButton and focusedSecondaryButton.
+	// After T302, Cancel uses focusedSecondaryButton when focused.
+	primaryMarker := "[[FB]]"
+	secondaryMarker := "[[FSB]]"
 	js := fmt.Sprintf(`(function() {
-		var origFocused = prSplit._wizardStyles.focusedButton;
+		var origPrimary = prSplit._wizardStyles.focusedButton;
+		var origSecondary = prSplit._wizardStyles.focusedSecondaryButton;
 		prSplit._wizardStyles.focusedButton = function() {
-			var s = origFocused();
+			var s = origPrimary();
+			return { render: function(text) { return '%s' + s.render(text); } };
+		};
+		prSplit._wizardStyles.focusedSecondaryButton = function() {
+			var s = origSecondary();
 			return { render: function(text) { return '%s' + s.render(text); } };
 		};
 		try {
@@ -343,9 +350,10 @@ func TestViews_NavBar_FocusCancelDoesNotHighlightNext(t *testing.T) {
 				focusIndex: %d
 			});
 		} finally {
-			prSplit._wizardStyles.focusedButton = origFocused;
+			prSplit._wizardStyles.focusedButton = origPrimary;
+			prSplit._wizardStyles.focusedSecondaryButton = origSecondary;
 		}
-	})()`, marker, cancelIdx)
+	})()`, primaryMarker, secondaryMarker, cancelIdx)
 
 	raw, err = evalJS(js)
 	if err != nil {
@@ -353,24 +361,21 @@ func TestViews_NavBar_FocusCancelDoesNotHighlightNext(t *testing.T) {
 	}
 	s := raw.(string)
 
-	// The marker should appear near the Cancel button text. Since the nav
-	// bar renders everything on a single horizontal line, we verify that
-	// the marker is immediately before "Cancel" (with possible whitespace),
-	// confirming the focused style was applied to Cancel, not Next.
-	markerIdx := strings.Index(s, marker)
-	if markerIdx < 0 {
-		t.Fatalf("focusedButton marker not found — Cancel button not focused when focusIndex=%d:\n%s", cancelIdx, s)
+	// Cancel should get the focusedSecondaryButton marker (T302).
+	fsbIdx := strings.Index(s, secondaryMarker)
+	if fsbIdx < 0 {
+		t.Fatalf("focusedSecondaryButton marker not found — Cancel not focused when focusIndex=%d:\n%s", cancelIdx, s)
 	}
-	// Text between marker and Cancel must be short (just whitespace/ANSI).
-	afterMarker := s[markerIdx+len(marker):]
-	cancelPos := strings.Index(afterMarker, "Cancel")
-	analysisPos := strings.Index(afterMarker, "Analysis")
+	afterFSB := s[fsbIdx+len(secondaryMarker):]
+	cancelPos := strings.Index(afterFSB, "Cancel")
 	if cancelPos < 0 {
-		t.Fatalf("'Cancel' not found after marker:\n%s", afterMarker)
+		t.Fatalf("'Cancel' not found after focusedSecondaryButton marker:\n%s", afterFSB)
 	}
-	// Verify: Cancel appears BEFORE Analysis after the marker (focus is on cancel).
-	if analysisPos >= 0 && cancelPos > analysisPos {
-		t.Errorf("focusedButton marker should be near Cancel, not Analysis:\n%s", afterMarker)
+
+	// Crucially: focusedButton (primary) must NOT appear — Next must not
+	// be highlighted when Cancel has focus. This was the original T200 bug.
+	if strings.Contains(s, primaryMarker) {
+		t.Errorf("focusedButton marker found — Next button incorrectly highlighted when Cancel focused:\n%s", s)
 	}
 }
 
@@ -1940,5 +1945,128 @@ func TestViews_VerificationScreen_FocusStyling(t *testing.T) {
 				t.Errorf("focus %d missing '%s' label", i, label)
 			}
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  T302: Nav-bar Cancel/Back focus style consistency (no layout shift)
+// ---------------------------------------------------------------------------
+
+func TestViews_NavBar_FocusStyleConsistency(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	if _, err := evalJS(viewTestPlanState); err != nil {
+		t.Fatal(err)
+	}
+
+	// Helper: render navbar with marker injection for a given state and focusIndex.
+	renderNavWithMarkers := func(state string, focusIndex int, extraState string) string {
+		t.Helper()
+		js := fmt.Sprintf(`(function() {
+			var styles = globalThis.prSplit._wizardStyles;
+			var origFSB = styles.focusedSecondaryButton;
+			var origFB = styles.focusedButton;
+			styles.focusedSecondaryButton = function() {
+				var s = origFSB();
+				return { render: function(text) { return '[[FSB]]' + s.render(text); } };
+			};
+			styles.focusedButton = function() {
+				var s = origFB();
+				return { render: function(text) { return '[[FB]]' + s.render(text); } };
+			};
+			try {
+				var s = {wizardState: '%s', width: 80, isProcessing: false, focusIndex: %d};
+				%s
+				return globalThis.prSplit._renderNavBar(s);
+			} finally {
+				styles.focusedSecondaryButton = origFSB;
+				styles.focusedButton = origFB;
+			}
+		})()`, state, focusIndex, extraState)
+		raw, err := evalJS(js)
+		if err != nil {
+			t.Fatalf("renderNavWithMarkers(%s, %d): %v", state, focusIndex, err)
+		}
+		return raw.(string)
+	}
+
+	// Helper: find focus index by ID for a given state.
+	findFocusIdx := func(state, id, extraState string) int {
+		t.Helper()
+		js := fmt.Sprintf(`(function() {
+			var s = {wizardState: '%s', isProcessing: false};
+			%s
+			var elems = globalThis.prSplit._getFocusElements(s);
+			for (var i = 0; i < elems.length; i++) {
+				if (elems[i].id === '%s') return i;
+			}
+			return -1;
+		})()`, state, extraState, id)
+		raw, err := evalJS(js)
+		if err != nil {
+			t.Fatalf("findFocusIdx(%s, %s): %v", state, id, err)
+		}
+		return int(raw.(int64))
+	}
+
+	equivExtra := "s.equivalenceResult = {equivalent: false};"
+	lineCount := func(s string) int { return strings.Count(s, "\n") + 1 }
+
+	// ---- EQUIV_CHECK: test Back and Cancel (both should use focusedSecondaryButton) ----
+	backIdx := findFocusIdx("EQUIV_CHECK", "nav-back", equivExtra)
+	cancelIdx := findFocusIdx("EQUIV_CHECK", "nav-cancel", equivExtra)
+	if backIdx < 0 || cancelIdx < 0 {
+		t.Fatalf("EQUIV_CHECK missing nav-back(%d) or nav-cancel(%d)", backIdx, cancelIdx)
+	}
+
+	outBack := renderNavWithMarkers("EQUIV_CHECK", backIdx, equivExtra)
+	if !strings.Contains(outBack, "[[FSB]]") {
+		t.Error("T302: Back button does not use focusedSecondaryButton when focused")
+	}
+	if strings.Contains(outBack, "[[FB]]") {
+		t.Error("T302: Back button should NOT use focusedButton (causes layout shift)")
+	}
+
+	outCancel := renderNavWithMarkers("EQUIV_CHECK", cancelIdx, equivExtra)
+	if !strings.Contains(outCancel, "[[FSB]]") {
+		t.Error("T302: Cancel button does not use focusedSecondaryButton when focused")
+	}
+	if strings.Contains(outCancel, "[[FB]]") {
+		t.Error("T302: Cancel button should NOT use focusedButton (causes layout shift)")
+	}
+
+	// Layout stability on EQUIV_CHECK navbar: Back, Cancel, and no-focus renders should
+	// all have the same line count (no 3→1 height shift).
+	outNone := renderNavWithMarkers("EQUIV_CHECK", 0, equivExtra) // focus on equiv-reverify
+	lcNone := lineCount(outNone)
+	if lineCount(outBack) != lcNone {
+		t.Errorf("T302: Back focus changes line count: none=%d back=%d", lcNone, lineCount(outBack))
+	}
+	if lineCount(outCancel) != lcNone {
+		t.Errorf("T302: Cancel focus changes line count: none=%d cancel=%d", lcNone, lineCount(outCancel))
+	}
+
+	// ---- PLAN_REVIEW: test Next button still uses focusedButton (primary style) ----
+	nextIdx := findFocusIdx("PLAN_REVIEW", "nav-next", "")
+	if nextIdx < 0 {
+		t.Fatal("PLAN_REVIEW missing nav-next")
+	}
+	outNext := renderNavWithMarkers("PLAN_REVIEW", nextIdx, "")
+	if !strings.Contains(outNext, "[[FB]]") {
+		t.Error("Next button should use focusedButton when focused")
+	}
+
+	// Also verify Cancel on PLAN_REVIEW uses focusedSecondaryButton.
+	prCancelIdx := findFocusIdx("PLAN_REVIEW", "nav-cancel", "")
+	if prCancelIdx < 0 {
+		t.Fatal("PLAN_REVIEW missing nav-cancel")
+	}
+	outPRCancel := renderNavWithMarkers("PLAN_REVIEW", prCancelIdx, "")
+	if !strings.Contains(outPRCancel, "[[FSB]]") {
+		t.Error("T302: Cancel on PLAN_REVIEW does not use focusedSecondaryButton")
+	}
+	if strings.Contains(outPRCancel, "[[FB]]") {
+		t.Error("T302: Cancel on PLAN_REVIEW should NOT use focusedButton")
 	}
 }

@@ -56,6 +56,13 @@
       "task": "Fix nav-bar Cancel and Back focus style: use focusedSecondaryButton instead of focusedButton",
       "description": "In `internal/command/pr_split_15_tui_views.js`, `renderNavBar()` (lines 394-425): Both Back and Cancel buttons use `focusedButton()` (NO border, changes height from 3→1 lines) when focused, but `secondaryButton()` (HAS roundedBorder, 3 lines) when unfocused. This causes a layout shift AND makes Cancel appear borderless when focused — matching the user-reported bug. Replace with `focusedSecondaryButton()` (which has matching roundedBorder per T011) for both. Specifically: line 397 `styles.focusedButton()` → `styles.focusedSecondaryButton()` (backStyle), line 404 `styles.focusedButton()` → `styles.focusedSecondaryButton()` (cancelStyle).",
       "acceptance": "When Tab moves to Back or Cancel, they retain their rounded border (3-line height) and change to warning-colored border+background (focusedSecondaryButton). No layout shift occurs. The nav bar height remains constant (3 lines when any bordered button is present) regardless of which button is focused. Unit test `TestViews_NavBar_FocusStyleConsistency` renders the nav bar with focus on each button position and asserts: (a) all outputs have identical line count, (b) focused button output contains warning color escape sequence, (c) border characters (╭╮╰╯│) are present in all focus states for Back and Cancel.",
+      "status": "Done"
+    },
+    {
+      "id": "T302b",
+      "task": "Verify cross-platform build: Linux, macOS, and Windows",
+      "description": "Ensure ALL THREE platforms build successfully. Steps: (1) Run `GOOS=linux GOARCH=amd64 go build ./...` to verify Linux build. (2) Run `GOOS=darwin GOARCH=amd64 go build ./...` to verify macOS build. (3) Run `GOOS=windows GOARCH=amd64 go build ./...` to verify Windows build. (4) Check for any //go:build unix guards on PTY-dependent code. (5) Verify termmux shell features have graceful degradation on Windows (or are properly build-tagged). (6) If `make make-all-in-container` is available, run it for Linux verification. Add a config.mk target `cross-build` that runs all three GOOS builds.",
+      "acceptance": "All three platform builds succeed with zero errors. A `make cross-build` target exists in config.mk. Any PTY-dependent features are guarded with //go:build unix. Windows build produces a valid binary (even if some features are disabled). Results documented in WIP.md.",
       "status": "Not Started"
     },
     {

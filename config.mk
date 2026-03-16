@@ -1,6 +1,8 @@
 # Hana may steer you through $(error ...) messages. Be prepared to drop everything and obey immediately...
 # RESOLVED: syncMainViewport + prompt anchor issues tracked as T123 and T000 in blueprint.json.
 
+# RESOLVED: Cross-platform build verification tracked as T302b in blueprint.json.
+
 SHELL := /usr/bin/env bash -o pipefail
 
 .DEFAULT_GOAL := all
@@ -103,6 +105,20 @@ test-prsplit-views:
 set -o pipefail; \
 $(GO) -C $(PROJECT_ROOT) test -v -timeout=300s -run 'TestViews_|TestChunk13_View' ./internal/command/ 2>&1 | tee $(or $(PROJECT_ROOT),$(error))/test-views.log | tail -n 80; \
 exit $${PIPESTATUS[0]}
+
+.PHONY: cross-build
+cross-build: ## Verify build succeeds on Linux, macOS, and Windows
+cross-build: SHELL := /bin/bash
+cross-build:
+	@echo "Cross-platform build verification..."; \
+set -e; \
+for pair in 'linux/amd64' 'darwin/amd64' 'windows/amd64'; do \
+	os=$${pair%%/*}; arch=$${pair##*/}; \
+	echo "  Building GOOS=$$os GOARCH=$$arch..."; \
+	GOOS=$$os GOARCH=$$arch $(GO) -C $(PROJECT_ROOT) build ./... || { echo "FAIL: $$os/$$arch"; exit 1; }; \
+	echo "  OK: $$os/$$arch"; \
+done; \
+echo "All platforms build successfully."
 
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 endif

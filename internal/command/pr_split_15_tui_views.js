@@ -394,14 +394,14 @@
         if (!veryNarrow && stepIdx > 0 && !s.isProcessing) {
             var backLabel = narrow ? '\u2190' : '\u2190 Back';
             var backStyle = (focusedElemId === 'nav-back')
-                ? styles.focusedButton() : styles.secondaryButton();
+                ? styles.focusedSecondaryButton() : styles.secondaryButton();
             backBtn = zone.mark('nav-back', backStyle.render(backLabel));
         }
 
         // Cancel button — T201: gets focus styling when tabbed to.
         var cancelLabel = narrow ? '\u00d7' : 'Cancel';
         var cancelStyle = (focusedElemId === 'nav-cancel')
-            ? styles.focusedButton() : styles.secondaryButton();
+            ? styles.focusedSecondaryButton() : styles.secondaryButton();
         var cancelBtn = zone.mark('nav-cancel',
             cancelStyle.render(cancelLabel));
 

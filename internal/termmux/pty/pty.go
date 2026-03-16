@@ -236,6 +236,7 @@ func (p *Process) Resize(rows, cols uint16) error {
 
 // Signal sends a signal to the child process.
 // Supported signal names: "SIGINT", "SIGTERM", "SIGKILL", "SIGHUP", "SIGQUIT".
+// On Unix: "SIGSTOP", "SIGCONT" are also supported (via extraSignals).
 func (p *Process) Signal(sig string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -331,6 +332,8 @@ func (p *Process) Close() error {
 }
 
 // parseSignal converts a signal name string to an os.Signal.
+// Platform-specific signals (SIGSTOP, SIGCONT) are resolved via
+// extraSignals defined in pty_signal_{unix,windows}.go.
 func parseSignal(name string) (os.Signal, error) {
 	switch name {
 	case "SIGINT":
@@ -344,6 +347,9 @@ func parseSignal(name string) (os.Signal, error) {
 	case "SIGQUIT":
 		return syscall.SIGQUIT, nil
 	default:
+		if sig, ok := extraSignals[name]; ok {
+			return sig, nil
+		}
 		return nil, errors.New("pty: unsupported signal: " + name)
 	}
 }

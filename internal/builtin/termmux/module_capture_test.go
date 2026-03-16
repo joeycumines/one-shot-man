@@ -49,9 +49,10 @@ func TestCaptureSession_JSBinding_AllMethods(t *testing.T) {
 		var tm = require('osm:termmux');
 		var cs = tm.newCaptureSession('echo', ['hello T004']);
 
-		// Verify all 14 methods exist and are functions.
+		// Verify all 17 methods exist and are functions.
 		var methods = [
 			'start', 'isRunning', 'output', 'screen', 'interrupt', 'kill',
+			'pause', 'resume', 'isPaused',
 			'resize', 'wait', 'write', 'sendEOF', 'close', 'pid', 'exitCode', 'isDone'
 		];
 		var missing = [];
@@ -372,6 +373,73 @@ func TestCaptureSession_JSBinding_isDoneBeforeStart(t *testing.T) {
 	if v.ToBoolean() {
 		t.Error("isDone() should be false before start()")
 	}
+}
+
+// T059: Test pause/resume/isPaused JS bindings on a real CaptureSession.
+func TestCaptureSession_JSBinding_PauseResume(t *testing.T) {
+	t.Parallel()
+
+	rt, ctx := testRequire(t)
+
+	val, err := rt.RunString(`
+		var tm = require('osm:termmux');
+		var cs = tm.newCaptureSession('sh', ['-c', 'i=0; while true; do echo "line$i"; i=$((i+1)); sleep 0.1; done']);
+		cs.start();
+		cs;
+	`)
+	if err != nil {
+		t.Fatalf("start CaptureSession: %v", err)
+	}
+	_ = ctx
+
+	// Let it produce output.
+	time.Sleep(500 * time.Millisecond)
+
+	// isPaused() should be false initially.
+	v, err := rt.RunString(`cs.isPaused()`)
+	if err != nil {
+		t.Fatalf("isPaused: %v", err)
+	}
+	if v.ToBoolean() {
+		t.Fatal("expected isPaused()=false initially")
+	}
+
+	// pause() should succeed.
+	_, err = rt.RunString(`cs.pause()`)
+	if err != nil {
+		t.Fatalf("pause: %v", err)
+	}
+
+	// isPaused() should be true.
+	v, err = rt.RunString(`cs.isPaused()`)
+	if err != nil {
+		t.Fatalf("isPaused after pause: %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("expected isPaused()=true after pause")
+	}
+
+	// resume() should succeed.
+	_, err = rt.RunString(`cs.resume()`)
+	if err != nil {
+		t.Fatalf("resume: %v", err)
+	}
+
+	// isPaused() should be false again.
+	v, err = rt.RunString(`cs.isPaused()`)
+	if err != nil {
+		t.Fatalf("isPaused after resume: %v", err)
+	}
+	if v.ToBoolean() {
+		t.Fatal("expected isPaused()=false after resume")
+	}
+
+	// Clean up.
+	_, _ = rt.RunString(`cs.kill()`)
+	time.Sleep(200 * time.Millisecond)
+	_, _ = rt.RunString(`cs.close()`)
+
+	_ = val
 }
 
 func TestCaptureSession_JSBinding_NewCaptureSessionError(t *testing.T) {

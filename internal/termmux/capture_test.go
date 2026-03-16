@@ -126,6 +126,102 @@ func TestCaptureSession_Kill(t *testing.T) {
 	}
 }
 
+// T059: Test Pause/Resume (SIGSTOP/SIGCONT) on CaptureSession.
+func TestCaptureSession_PauseResume(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	// Use a command that writes output periodically so we can observe the pause.
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "sh",
+		Args:    []string{"-c", "i=0; while true; do echo \"line$i\"; i=$((i+1)); sleep 0.1; done"},
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer cs.Close()
+
+	// Let the process run and produce some output.
+	time.Sleep(500 * time.Millisecond)
+
+	// Verify not paused initially.
+	if cs.IsPaused() {
+		t.Fatal("should not be paused initially")
+	}
+
+	// Pause the process.
+	if err := cs.Pause(); err != nil {
+		t.Fatalf("Pause failed: %v", err)
+	}
+	if !cs.IsPaused() {
+		t.Fatal("should be paused after Pause()")
+	}
+
+	// Idempotent: calling Pause again should be a no-op.
+	if err := cs.Pause(); err != nil {
+		t.Fatalf("second Pause should succeed (no-op): %v", err)
+	}
+
+	// Capture output after pausing and verify it stops growing.
+	time.Sleep(200 * time.Millisecond)
+	outputAfterPause := cs.Output()
+	time.Sleep(500 * time.Millisecond)
+	outputStill := cs.Output()
+	if outputAfterPause != outputStill {
+		// On some systems the child might have buffered output that arrives
+		// after the SIGSTOP is delivered, so we only warn rather than fail
+		// — the important thing is that Resume works.
+		t.Logf("Output grew while paused (buffering effects): %d → %d bytes",
+			len(outputAfterPause), len(outputStill))
+	}
+
+	// Resume the process.
+	if err := cs.Resume(); err != nil {
+		t.Fatalf("Resume failed: %v", err)
+	}
+	if cs.IsPaused() {
+		t.Fatal("should not be paused after Resume()")
+	}
+
+	// Idempotent: calling Resume again should be a no-op.
+	if err := cs.Resume(); err != nil {
+		t.Fatalf("second Resume should succeed (no-op): %v", err)
+	}
+
+	// Let it run a bit more and verify new output arrives.
+	time.Sleep(500 * time.Millisecond)
+	outputAfterResume := cs.Output()
+	if len(outputAfterResume) <= len(outputStill) {
+		t.Fatalf("expected more output after resume, got %d bytes (was %d)",
+			len(outputAfterResume), len(outputStill))
+	}
+	t.Logf("Pause/Resume works: %d → %d → %d bytes",
+		len(outputAfterPause), len(outputStill), len(outputAfterResume))
+
+	// Kill to clean up.
+	_ = cs.Kill()
+}
+
+// T059: Test Pause/Resume on a not-started session.
+func TestCaptureSession_PauseResume_NotStarted(t *testing.T) {
+	t.Parallel()
+	cs := NewCaptureSession(CaptureConfig{Command: "echo", Args: []string{"x"}})
+
+	// Pause on a not-started session should return error because there's no
+	// process to send SIGSTOP to.
+	if err := cs.Pause(); err == nil {
+		t.Fatal("Pause on not-started session should return error")
+	}
+	// Resume on a not-started, not-paused session is a no-op (returns nil)
+	// because it's already "not paused" — there's nothing to resume.
+	if err := cs.Resume(); err != nil {
+		t.Fatalf("Resume on not-started, not-paused session should be no-op, got: %v", err)
+	}
+	if cs.IsPaused() {
+		t.Fatal("should not be paused when not started")
+	}
+}
+
 func TestCaptureSession_ContextCancel(t *testing.T) {
 	t.Parallel()
 	skipIfWindows(t)

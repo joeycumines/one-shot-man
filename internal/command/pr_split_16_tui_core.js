@@ -196,6 +196,7 @@
                 verifyViewportOffset: 0,       // scroll offset (lines from bottom)
                 verifyAutoScroll: true,        // auto-scroll to bottom
                 lastVerifyInterruptTime: 0,    // timestamp of last Ctrl+C interrupt
+                verifyPaused: false,           // T059: true when verify is paused (SIGSTOP)
 
                 // Fallback verification (async, when CaptureSession unavailable).
                 verifyFallbackRunning: false,  // true while async verifySplitAsync is running
@@ -849,6 +850,20 @@
                     }
                     return [s, null];
                 }
+                // T059: BRANCH_BUILDING: 'z' toggles pause/resume on
+                // the active verify session. Only when a verify is running.
+                if (k === 'z' && s.wizardState === 'BRANCH_BUILDING' && s.activeVerifySession) {
+                    if (s.verifyPaused) {
+                        try { s.activeVerifySession.resume(); s.verifyPaused = false; } catch (e) {
+                            log.printf('verify: resume failed: %s', e.message || String(e));
+                        }
+                    } else {
+                        try { s.activeVerifySession.pause(); s.verifyPaused = true; } catch (e) {
+                            log.printf('verify: pause failed: %s', e.message || String(e));
+                        }
+                    }
+                    return [s, null];
+                }
                 // T006: BRANCH_BUILDING: 'p' marks the most recently failed
                 // verification as manually passed ("Mark as Passed").
                 // Only active when verification is NOT currently running and
@@ -1325,6 +1340,7 @@
             s.verifyViewportOffset = 0;
             s.verifyAutoScroll = true;
             s.lastVerifyInterruptTime = 0;
+            s.verifyPaused = false;  // T059
         }
 
         // T031: Helper to confirm cancel and quit.
@@ -1850,6 +1866,51 @@
 
         // Execution: expand/collapse verification output + interrupt.
         if (s.wizardState === 'BRANCH_BUILDING' && st.planCache && st.planCache.splits) {
+            // T059: Pause/Resume active verify session via dedicated buttons.
+            if (s.activeVerifySession && zone.inBounds('verify-pause', msg)) {
+                if (!s.verifyPaused) {
+                    try { s.activeVerifySession.pause(); s.verifyPaused = true; } catch (e) {
+                        log.printf('verify: pause failed: %s', e.message || String(e));
+                    }
+                }
+                return [s, null];
+            }
+            if (s.activeVerifySession && zone.inBounds('verify-resume', msg)) {
+                if (s.verifyPaused) {
+                    try { s.activeVerifySession.resume(); s.verifyPaused = false; } catch (e) {
+                        log.printf('verify: resume failed: %s', e.message || String(e));
+                    }
+                }
+                return [s, null];
+            }
+            // T007: Open interactive shell in the verify worktree.
+            // NOTE: tuiMux.spawnInteractive() is not yet implemented on the Go
+            // side. This handler pauses the active verify session and logs
+            // the intent. Once the Go binding is wired, it will spawn a PTY
+            // shell in activeVerifyWorktree.
+            if (s.activeVerifySession && s.activeVerifyWorktree &&
+                zone.inBounds('verify-open-shell', msg)) {
+                // Pause the verify session while the shell is open.
+                if (!s.verifyPaused) {
+                    try { s.activeVerifySession.pause(); s.verifyPaused = true; } catch (e) { /* ignore */ }
+                }
+                // TODO(T007): Replace this log with tuiMux.spawnInteractive()
+                // when the Go API is available. The shell should:
+                //   1. Open an interactive PTY in s.activeVerifyWorktree
+                //   2. On shell exit, resume the verify session:
+                //        try { s.activeVerifySession.resume(); s.verifyPaused = false; } catch(e){}
+                if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.spawnInteractive === 'function') {
+                    tuiMux.spawnInteractive({
+                        dir: s.activeVerifyWorktree,
+                        onExit: function() {
+                            try { s.activeVerifySession.resume(); s.verifyPaused = false; } catch (e) { /* ignore */ }
+                        }
+                    });
+                } else {
+                    log.printf('verify: open-shell requested for %s (tuiMux.spawnInteractive not yet available)', s.activeVerifyWorktree);
+                }
+                return [s, null];
+            }
             // Interrupt active verify session via stop button.
             // Same double-click pattern as Ctrl+C: first click sends
             // SIGINT, second click within 2s sends SIGKILL.
@@ -3576,6 +3637,7 @@
         s.verifyViewportOffset = 0;
         s.verifyAutoScroll = true;
         s.lastVerifyInterruptTime = 0;
+        s.verifyPaused = false;  // T059
 
         // Transition: PLAN_REVIEW → BRANCH_BUILDING.
         if (s.wizard.current === 'PLAN_REVIEW') {
@@ -4130,6 +4192,7 @@
         s.verifyViewportOffset = 0;
         s.verifyAutoScroll = true;
         s.lastVerifyInterruptTime = 0;
+        s.verifyPaused = false;  // T059
 
         s.verifyingIdx++;
         return [s, tea.tick(1, 'verify-branch')];

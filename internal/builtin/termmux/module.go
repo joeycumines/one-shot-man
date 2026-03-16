@@ -607,10 +607,10 @@ func newCaptureSession(ctx context.Context, runtime *goja.Runtime, call goja.Fun
 // JavaScript-callable methods. Exported so callers (e.g., pr_split.go) can
 // create a Go-side CaptureSession and expose it through the same interface.
 //
-// AUDIT (T004): All 14 methods verified present and type-correct:
+// AUDIT (T004/T059): All 17 methods verified present and type-correct:
 //
-//	start, isRunning, output, screen, interrupt, kill, resize, wait,
-//	write, sendEOF, close, pid, exitCode, isDone.
+//	start, isRunning, output, screen, interrupt, kill, pause, resume,
+//	isPaused, resize, wait, write, sendEOF, close, pid, exitCode, isDone.
 //
 // The 6 methods called by runVerifyBranch/pollVerifySession (isDone,
 // exitCode, output, close, interrupt, kill) are confirmed bound with
@@ -654,6 +654,28 @@ func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.C
 		if err := cs.Kill(); err != nil {
 			panic(runtime.NewGoError(err))
 		}
+	})
+
+	// ── pause() ─────────────────────────────────────────
+	// T059: Send SIGSTOP to suspend the child process.
+	_ = obj.Set("pause", func() {
+		if err := cs.Pause(); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+	})
+
+	// ── resume() ────────────────────────────────────────
+	// T059: Send SIGCONT to resume a paused child process.
+	_ = obj.Set("resume", func() {
+		if err := cs.Resume(); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+	})
+
+	// ── isPaused() → boolean ────────────────────────────
+	// T059: Check if the child process is currently paused.
+	_ = obj.Set("isPaused", func() bool {
+		return cs.IsPaused()
 	})
 
 	// ── resize(rows, cols) ───────────────────────────────

@@ -1674,6 +1674,10 @@
                         elapsedSuffix = elapsed + 's';
                     }
                     var titleText = ' Verifying: ' + s.activeVerifyBranch + ' (' + elapsedSuffix + ') ';
+                    // T059: Show paused indicator in viewport title.
+                    if (s.verifyPaused) {
+                        titleText = ' \u23f8 PAUSED: ' + s.activeVerifyBranch + ' (' + elapsedSuffix + ') ';
+                    }
 
                     // Determine visible window (auto-scroll or manual offset).
                     var totalLines = liveLines.length;
@@ -1716,14 +1720,33 @@
                     }
 
                     // Footer with keybinding hints.
+                    // T059: Pause/Resume button for verify subprocess.
+                    var pauseResumeBtn = '';
+                    if (s.verifyPaused) {
+                        pauseResumeBtn = zone.mark('verify-resume',
+                            styles.focusedSecondaryButton().render('\u25b6 Resume')) + '  ';
+                    } else {
+                        pauseResumeBtn = zone.mark('verify-pause',
+                            styles.secondaryButton().render('\u23f8 Pause')) + '  ';
+                    }
+                    // T007: Open Shell in verify worktree.
+                    var openShellBtn = '';
+                    if (s.activeVerifyWorktree) {
+                        openShellBtn = zone.mark('verify-open-shell',
+                            styles.secondaryButton().render('\ue795 Shell')) + '  ';
+                    }
                     var footer = styles.dim().render(
-                        '\u2191\u2193: Scroll' + scrollIndicator + '  ' +
-                        zone.mark('verify-interrupt', 'Ctrl+C: Stop  2\u00d7Ctrl+C: Force Kill'));
+                        '\u2191\u2193: Scroll' + scrollIndicator + '  ') +
+                        pauseResumeBtn + openShellBtn +
+                        zone.mark('verify-interrupt', styles.dim().render(
+                            'Ctrl+C: Stop  2\u00d7Ctrl+C: Force Kill'));
 
                     // Render bordered viewport using lipgloss.
+                    // T059: Use dim border when paused to visually indicate suspended state.
+                    var vpBorderColor = s.verifyPaused ? COLORS.muted : COLORS.warning;
                     var vpStyle = lipgloss.newStyle()
                         .border(lipgloss.roundedBorder())
-                        .borderForeground(COLORS.warning)
+                        .borderForeground(vpBorderColor)
                         .width(viewWidth)
                         .padding(0, 1);
 
@@ -2160,8 +2183,13 @@
             lines.push(styles.label().render('Branch Building'));
             lines.push(padRight('  e', 22) + 'Expand / collapse verify output');
             if (ws === 'BRANCH_BUILDING') {
+                lines.push(padRight('  z', 22) + 'Pause / resume verify (SIGSTOP/SIGCONT)');
                 lines.push(padRight('  Ctrl+C', 22) + 'Interrupt current verify (2x = force kill)');
                 lines.push(padRight('  p', 22) + 'Mark failed branch as passed (override)');
+            }
+            // T007: Open Shell hint — only shown when verify session is active.
+            if (ws === 'BRANCH_BUILDING') {
+                lines.push(padRight('  \ue795 Shell', 22) + 'Click to open interactive shell in worktree');
             }
             lines.push('');
         }

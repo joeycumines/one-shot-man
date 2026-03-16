@@ -34,8 +34,10 @@
 28. (pending) — batch 8 audit-only: T018+T019+T020+T021+T022+T046+T047+T049+T039+T052+T033+T057
 29. (pending) — batch 9: T088 output.toClipboard binding + T073 copy flash + T006 manual-complete + T071 multi-lang scopedVerify
 30. (pending) — batch 10: T036 createPRs dry-run + T040 strategy detect/retry + T043 multi-width views + T048 utilities + T053 benchmarks
+31. (pending) — batch 11: T000 anchor pipeline stability + T044 test fixes + T060 refactor assessment
+32. `0140a2df` — batch 12 (FINAL): T007+T009+T010+T041+T042+T059+T070 — ALL 123 TASKS DONE
 
-## Completed Tasks (108/123)
+## Completed Tasks (123/123 — ALL DONE)
 - T014: CONFIG screen keyboard navigation audit — Tab order, phantom focus prevention, showAdvanced clamping verified
 - T015: CONFIG Claude status rendering — all 3 states (checking/available/unavailable) correct, tests pass
 - T017: PLAN_REVIEW card selection vs focus — focusedCard precedence, activeCard revert, Execute guards 0 splits
@@ -174,11 +176,11 @@
 - Proposed 4-file split: 15a_styles, 15b_chrome, 15c_screens, 15d_dialogs
 - Conclusion: FEASIBLE but DEFER to dedicated session (T043 tests provide safety net)
 
-### Remaining 7 Tasks
-- T007: Open Shell in Worktree
-- T009: Binary E2E VerifyPTYLive
-- T010: Binary E2E CancelDuringVerify
-- T041: Binary E2E FullFlow
-- T042: Binary E2E ConfigScreen
-- T059: Pause/resume for verify
-- T070: Binary E2E PlanEditor
+### Remaining 7 Tasks → COMPLETED (Batch 12)
+- T007: Open Shell in Worktree — 'verify-open-shell' zone + Pause verify while shell open + tuiMux.spawnInteractive TODO
+- T009: Binary E2E VerifyPTYLive — PTY interactive test with -verify='sleep 0.5'
+- T010: Binary E2E CancelDuringVerify — PTY interactive test with -verify='sleep 30' + Ctrl+C cancel
+- T041: Binary E2E FullFlowToExecution — CONFIG→PLAN_REVIEW→Execute→FINALIZATION
+- T042: Binary E2E ConfigScreenNavigation — Tab through strategies, toggle advanced, cancel dialog
+- T059: Pause/resume for verify — CaptureSession.Pause()/Resume()/IsPaused() + SIGSTOP/SIGCONT + JS bindings + TUI button + 'z' keybinding + verifyPaused state + help overlay + Pause/Resume tests
+- T070: Binary E2E PlanEditorFlow — plan editor via 'e' key + execute with edited plan

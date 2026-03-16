@@ -103,3 +103,19 @@ func TestPTYSpawn_ForceKill_OrphanSurvival(t *testing.T) {
 	}
 	t.Logf("✓ Child PID %d was killed along with parent (Setpgid fix working): %v", childPID, err)
 }
+
+// T059: Test that SIGSTOP/SIGCONT are parsed correctly on Unix.
+func TestParseSignal_UnixExtensions(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{"SIGSTOP", "SIGCONT"} {
+		sig, err := parseSignal(name)
+		if err != nil {
+			t.Errorf("parseSignal(%q): unexpected error: %v", name, err)
+		}
+		if sig == nil {
+			t.Errorf("parseSignal(%q): expected signal, got nil", name)
+		}
+		t.Logf("parseSignal(%q) = %v", name, sig)
+	}
+}

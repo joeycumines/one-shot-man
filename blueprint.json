@@ -103,7 +103,7 @@
       "id": "T007",
       "title": "Implement 'Open Shell in Worktree' action for verify screen",
       "description": "Design requirement: user should be able to open an interactive shell in the verify worktree to manually set up the environment (npm install, go mod download, etc.). Implement: (1) Add an 'Open Shell' button in viewExecutionScreen when activeVerifySession IS active and s.activeVerifyWorktree is set. (2) Zone mark: 'verify-open-shell'. (3) Handler: on click, spawn an interactive PTY session in s.activeVerifyWorktree. Use tuiMux to attach the new PTY as the Claude pane substitute (or open a dedicated termmux pane). (4) The active verify session is PAUSED (not killed) while the shell is open. (5) After the shell exits, the verify pane resumes polling (the original verify command may still be running or needs restarting). (6) Document this in the UI with a tooltip. (7) If tuiMux.spawnInteractive() API doesn't exist, define the interface and add a TODO for the Go implementation.",
-      "status": "not-started",
+      "status": "done",
       "body": 1,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -125,7 +125,7 @@
       "id": "T009",
       "title": "Add binary E2E test: TestBinaryE2E_VerifyPTYLive",
       "description": "Write a binary E2E test that: (1) Builds the osm binary. (2) Creates a test git repo with multiple changed files across directories to generate a 2+ branch split. (3) Runs 'osm pr-split -base=main -strategy=directory -verify=sleep 0.5' (a command that takes ≥0.5s so the TUI can observe it running). (4) Uses PTY to navigate: past CONFIG → trigger execution → observe BRANCH_BUILDING screen showing the verify subprocess running → observe the live output viewport appearing. (5) Confirms the TUI reaches FINALIZATION or at least completes all branches. (6) Confirms 'Verifying Branches' section appears in the BRANCH_BUILDING screen output. (7) Test timeout: 120 seconds.",
-      "status": "not-started",
+      "status": "done",
       "body": 1,
       "files_affected": [
         "internal/command/pr_split_binary_e2e_test.go"
@@ -135,7 +135,7 @@
       "id": "T010",
       "title": "Add binary E2E test: TestBinaryE2E_CancelDuringVerify",
       "description": "Write a test that: (1) Starts osm pr-split with -verify='sleep 30' (long-running verify). (2) Navigates to BRANCH_BUILDING screen where verify is running. (3) Sends Ctrl+C to interrupt the active verify session. (4) Confirms the TUI shows the interrupted state (result recorded as failed/interrupted). (5) Sends Ctrl+C a second time within 2 seconds (force-kill path). (6) Confirms worktrees are cleaned up (temp dir is removed). (7) Confirms no zombie processes remain after binary exits. Test must complete within 60 seconds.",
-      "status": "not-started",
+      "status": "done",
       "body": 1,
       "files_affected": [
         "internal/command/pr_split_binary_e2e_test.go"
@@ -474,7 +474,7 @@
       "id": "T041",
       "title": "Add binary E2E test: TestBinaryE2E_FullFlowToExecution",
       "description": "Write a binary E2E test: (1) Build osm binary. (2) Create test repo with 6+ changed files in 3 directories. (3) Run pr-split with -strategy=directory. (4) Navigate through CONFIG (Enter) → PLAN_REVIEW (visible) → execute (Enter on Execute Plan) → BRANCH_BUILDING (progress visible) → FINALIZATION (all branches created). (5) Verify via git that all expected split branches exist with the correct files. (6) The test must run within 90 seconds. (7) Verify worktrees are cleaned up after execution.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_binary_e2e_test.go"
@@ -484,7 +484,7 @@
       "id": "T042",
       "title": "Add binary E2E test: TestBinaryE2E_ConfigScreenNavigation",
       "description": "Write a test that exercises the CONFIG screen keyboard navigation: (1) Tab through strategy options (auto → heuristic → directory). (2) Hit Enter on each to confirm selection works. (3) Tab to Advanced Options toggle and press Enter to expand. (4) Confirm advanced fields appear in the PTY output. (5) Edit the branchPrefix field: focus → enter edit mode → type new prefix → Enter to save. (6) Confirm the new prefix is reflected in the UI. (7) Tab to Cancel and press Enter — confirm cancel confirmation dialog appears. (8) Dismiss the dialog and verify we're still on CONFIG.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_binary_e2e_test.go"
@@ -663,7 +663,7 @@
       "id": "T059",
       "title": "Screen 5 (BRANCH_BUILDING): Add pause/resume for verify phase",
       "description": "Design: the user should be able to pause the current verification (interrupt, then resume with the same command). Implement: (1) A 'Pause' button that sends SIGSTOP to the verify process. (2) A 'Resume' button that sends SIGCONT. (3) State tracking: s.verifyPaused. (4) This requires extending CaptureSession with Pause()/Resume() methods (SIGSTOP/SIGCONT). (5) IF the OS doesn't support SIGSTOP (Windows), degrade gracefully. (6) The 'Pause' state is reflected in the help overlay and verify viewport.",
-      "status": "not-started",
+      "status": "done",
       "body": 1,
       "files_affected": [
         "internal/termmux/capture.go",
@@ -790,7 +790,7 @@
       "id": "T070",
       "title": "Add binary E2E test: TestBinaryE2E_PlanEditorFlow",
       "description": "Write a binary E2E test that exercises the plan editor (Screen 4): (1) Build osm binary. (2) Create test repo with 4+ changed files in 2+ directories. (3) Navigate: CONFIG (Enter) → wait for plan → PLAN_REVIEW → press 'e' to enter editor. (4) In editor: Tab to select a split card → Tab to 'Move File' button → Enter to open dialog → navigate to select a target split → Enter to confirm move. (5) Tab to 'Rename Split' → Enter → type new name → Enter. (6) Navigate back to PLAN_REVIEW via 'Done'. (7) Verify the plan shows the updated split names and file assignment. (8) Continue to execution (Enter on Execute Plan). (9) Verify the binary exits cleanly with git branches matching the edited plan.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_binary_e2e_test.go"

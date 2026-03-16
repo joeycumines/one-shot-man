@@ -54,6 +54,7 @@ type CaptureSession struct {
 	// Lifecycle state.
 	started  bool
 	closed   bool
+	paused   bool
 	done     chan struct{} // closed when reader goroutine exits
 	cancel   context.CancelFunc
 	exitCode int
@@ -213,6 +214,58 @@ func (cs *CaptureSession) Kill() error {
 		return errors.New("capture: not started")
 	}
 	return proc.Signal("SIGKILL")
+}
+
+// Pause sends SIGSTOP to the child process, suspending it. The process
+// can be resumed with Resume(). On platforms that do not support SIGSTOP,
+// Pause returns an error. Use IsPaused() to check the pause state.
+func (cs *CaptureSession) Pause() error {
+	cs.mu.Lock()
+	proc := cs.proc
+	if cs.paused {
+		cs.mu.Unlock()
+		return nil // already paused
+	}
+	cs.mu.Unlock()
+	if proc == nil {
+		return errors.New("capture: not started")
+	}
+	if err := proc.Signal("SIGSTOP"); err != nil {
+		return err
+	}
+	cs.mu.Lock()
+	cs.paused = true
+	cs.mu.Unlock()
+	return nil
+}
+
+// Resume sends SIGCONT to the child process, resuming it after a Pause().
+// On platforms that do not support SIGCONT, Resume returns an error.
+func (cs *CaptureSession) Resume() error {
+	cs.mu.Lock()
+	proc := cs.proc
+	if !cs.paused {
+		cs.mu.Unlock()
+		return nil // not paused
+	}
+	cs.mu.Unlock()
+	if proc == nil {
+		return errors.New("capture: not started")
+	}
+	if err := proc.Signal("SIGCONT"); err != nil {
+		return err
+	}
+	cs.mu.Lock()
+	cs.paused = false
+	cs.mu.Unlock()
+	return nil
+}
+
+// IsPaused returns true if the child process is currently paused via Pause().
+func (cs *CaptureSession) IsPaused() bool {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	return cs.paused
 }
 
 // Resize changes the PTY and VTerm dimensions. Returns an error if the

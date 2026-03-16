@@ -203,8 +203,8 @@ func TestClipboard_SystemUtilities(t *testing.T) {
 	// make PATH point only to our binDir
 	t.Setenv("PATH", binDir)
 
-	if err := clipboardCopy(ctx, nil, "from-utility"); err != nil {
-		t.Fatalf("clipboardCopy failed: %v", err)
+	if err := ClipboardCopy(ctx, nil, "from-utility"); err != nil {
+		t.Fatalf("ClipboardCopy failed: %v", err)
 	}
 	data, err := os.ReadFile(capture)
 	if err != nil {
@@ -223,8 +223,8 @@ func TestClipboard_TUISinkFallbackWhenNoSystemClipboard(t *testing.T) {
 	// Ensure no overrides
 	t.Setenv("OSM_CLIPBOARD", "")
 
-	if err := clipboardCopy(ctx, func(msg string) { sink = append(sink, msg) }, "alt"); err != nil {
-		t.Fatalf("clipboardCopy failed: %v", err)
+	if err := ClipboardCopy(ctx, func(msg string) { sink = append(sink, msg) }, "alt"); err != nil {
+		t.Fatalf("ClipboardCopy failed: %v", err)
 	}
 	if len(sink) == 0 || !strings.Contains(sink[0], "No system clipboard") {
 		t.Fatalf("expected sink message, got %#v", sink)
@@ -238,7 +238,7 @@ func TestClipboard_ErrorWhenNoSinkAvailable(t *testing.T) {
 	// Ensure no overrides
 	t.Setenv("OSM_CLIPBOARD", "")
 
-	if err := clipboardCopy(ctx, nil, "x"); err == nil {
+	if err := ClipboardCopy(ctx, nil, "x"); err == nil {
 		t.Fatalf("expected error when no sink and no system clipboard, got nil")
 	}
 }
@@ -536,8 +536,8 @@ func TestClipboardCopy_OSMClipboardFails_Fallthrough(t *testing.T) {
 	t.Setenv("OSM_CLIPBOARD", "false")
 	t.Setenv("PATH", binDir)
 
-	if err := clipboardCopy(ctx, nil, "fallthrough-text"); err != nil {
-		t.Fatalf("clipboardCopy failed: %v", err)
+	if err := ClipboardCopy(ctx, nil, "fallthrough-text"); err != nil {
+		t.Fatalf("ClipboardCopy failed: %v", err)
 	}
 	data, err := os.ReadFile(capture)
 	if err != nil {
@@ -575,8 +575,8 @@ func TestClipboardCopy_SystemUtilFails(t *testing.T) {
 
 	// System util fails → falls through to sink
 	var sink []string
-	if err := clipboardCopy(ctx, func(msg string) { sink = append(sink, msg) }, "sink-text"); err != nil {
-		t.Fatalf("clipboardCopy failed: %v", err)
+	if err := ClipboardCopy(ctx, func(msg string) { sink = append(sink, msg) }, "sink-text"); err != nil {
+		t.Fatalf("ClipboardCopy failed: %v", err)
 	}
 	if len(sink) == 0 || !strings.Contains(sink[0], "No system clipboard available") {
 		t.Fatalf("expected sink fallback, got %#v", sink)

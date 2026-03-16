@@ -2811,6 +2811,173 @@ func TestScopedVerifyCommand(t *testing.T) {
 			t.Errorf("got %q, want %q", raw, want)
 		}
 	})
+
+	// T071: Multi-language scoping tests.
+
+	t.Run("js_files_scoped_to_jest", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['src/components/Button.tsx', 'src/components/Card.tsx'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `npx jest --passWithNoTests --testPathPattern "src/components"`
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("js_multiple_dirs_scoped", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['src/utils/helper.js', 'lib/core.mjs'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `npx jest --passWithNoTests --testPathPattern "(lib|src/utils)"`
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("python_files_scoped_to_pytest", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['tests/test_auth.py', 'tests/test_db.py'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "python -m pytest tests"
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("python_multiple_dirs", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['src/auth/views.py', 'src/core/models.py'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "python -m pytest src/auth src/core"
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("rust_files_scoped_to_cargo", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['src/lib.rs', 'src/main.rs'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "cargo test"
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("mixed_go_and_js_falls_back", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['internal/cmd/foo.go', 'src/app.tsx'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "make" {
+			t.Errorf("expected fallback 'make', got %q", raw)
+		}
+	})
+
+	t.Run("mixed_python_and_rust_falls_back", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['src/lib.rs', 'tests/test_auth.py'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "make" {
+			t.Errorf("expected fallback 'make', got %q", raw)
+		}
+	})
+
+	t.Run("jest_command_is_scopable", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['src/App.tsx'],
+			'npx jest'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `npx jest --passWithNoTests --testPathPattern "src"`
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("pytest_command_is_scopable", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['tests/test_auth.py'],
+			'python -m pytest'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "python -m pytest tests"
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("cargo_test_command_is_scopable", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['src/lib.rs'],
+			'cargo test'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "cargo test"
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
+
+	t.Run("unknown_extension_falls_back", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['data/schema.sql', 'data/seed.csv'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "make" {
+			t.Errorf("expected fallback 'make', got %q", raw)
+		}
+	})
+
+	t.Run("root_level_js_file", func(t *testing.T) {
+		raw, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
+			['index.js'],
+			'make'
+		)`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `npx jest --passWithNoTests --testPathPattern "."`
+		if raw != want {
+			t.Errorf("got %q, want %q", raw, want)
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------

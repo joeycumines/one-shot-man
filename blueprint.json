@@ -93,7 +93,7 @@
       "id": "T006",
       "title": "Implement manual-complete button for verify screen (user can mark a branch as passed)",
       "description": "Design requirement: verification is meant to be interactive. The user may need to install dependencies or set up an environment before the verify command succeeds. They must be able to: mark a branch as manually verified (override the result). Implement: (1) Add a 'Mark as Passed' button in viewExecutionScreen when activeVerifySession IS active (the branch is currently being verified). (2) Zone mark: 'verify-manual-pass'. (3) Handler: in handleMouseClick for BRANCH_BUILDING state, clicking 'verify-manual-pass' should: stop the active session (sendSIGINT then cleanup), record verificationResults[verifyingIdx] = {passed: true, manuallyVerified: true, ...}, advance verifyingIdx, continue with verify-branch tick. (4) Add the element to getFocusElements for BRANCH_BUILDING screen. (5) Handle keyboard activation (Enter on focused element). (6) Write a unit test verifying the manual-pass flow stores the correct result.",
-      "status": "not-started",
+      "status": "done",
       "body": 1,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -801,7 +801,7 @@
       "id": "T071",
       "title": "Enhance scopedVerifyCommand to support npm test, pytest, and cargo test scoping",
       "description": "scopedVerifyCommand in pr_split_00_core.js currently only scopes Go test commands (when files are *.go and command is 'make' or contains 'go test'). Extend: (1) Detect TypeScript/JavaScript files (*.ts, *.tsx, *.js, *.jsx) + npm/jest commands → scope to jest --testPathPattern. (2) Detect Python files (*.py) + pytest command → scope to pytest with specific file paths. (3) Detect Rust files (*.rs) + cargo command → scope to cargo test with specific module patterns. (4) The scoping logic should be configurable via prSplitConfig.verifyScope = {go: true, jest: true, pytest: false, cargo: true}. (5) For unrecognized file types, fall back to the full command (no scoping). (6) Write unit tests for each language detection case.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_00_core.js",
@@ -823,7 +823,7 @@
       "id": "T073",
       "title": "Implement 'c copy' shortcut in Report overlay (currently advertised but not implemented)",
       "description": "CONFIRMED GAP (session 2 + session 4): viewHelpOverlay shows 'c copy' hint in the report overlay, but the copy shortcut is NOT handled anywhere in the update or report overlay handlers. Additionally CONFIRMED (session 4): the REPL 'copy' command in pr_split_14_tui_commands.js calls output.toClipboard(text) — but this method does NOT exist in the scripting API (no Go binding implements it). The REPL copy command will throw at runtime. Implementation requires: (1) PREREQUISITE — implement output.toClipboard() as a real binding in the scripting module (see T088). OS-level fallback: on macOS use 'pbcopy'; on Linux use 'xclip -selection clipboard' or 'wl-copy'; on Windows use 'clip'. (2) In the report overlay key handling (in the update loop where showingReport=true), intercept 'c' → call output.toClipboard(s.reportContent). (3) Show a brief success flash in the status bar: 'Copied to clipboard!' auto-dismissing after 3s. (4) If clipboard is not available (headless/SSH), catch the error and display 'Clipboard not available in this environment'. (5) Write a unit test that fires the 'c' key in report overlay state and verifies output.toClipboard is called with the expected content.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_16_tui_core.js",
@@ -995,7 +995,7 @@
       "id": "T088",
       "title": "Implement output.toClipboard() Go binding in scripting module (unblocks T073 + REPL copy)",
       "description": "CONFIRMED (session 4): output.toClipboard(text) is called by the REPL 'copy' command in pr_split_14_tui_commands.js, but this method does NOT exist in the Go scripting module. Any invocation of the 'copy' REPL command currently throws a JavaScript ReferenceError at runtime. Implementation required: (1) In the scripting module's output binding (locate the Go file that implements the 'output' object — likely internal/scripting/output.go or internal/builtin/output/), add a toClipboard(text string) function. (2) Platform-specific implementation: macOS — exec 'pbcopy'; Linux — try 'xclip -selection clipboard' then 'wl-copy' as fallback; Windows — exec 'clip'. (3) If no clipboard utility is available or the exec fails, return a descriptive error ('clipboard not available: pbcopy not found'). (4) Write unit tests for the function: (a) mock exec to return success, confirm content matches. (b) mock exec to fail, confirm error message is returned. (5) This is a prerequisite for T073 (TUI 'c copy' shortcut). After implementation, the REPL 'copy' command will work automatically (no changes needed to pr_split_14_tui_commands.js). (6) Add output.toClipboard documentation to docs/scripting.md.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/scripting",

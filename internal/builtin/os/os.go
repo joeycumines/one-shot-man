@@ -76,7 +76,7 @@ func Require(ctx context.Context, tuiSink func(string)) func(runtime *goja.Runti
 			}
 			ctx, cancel := context.WithTimeout(ctx, clipboardTimeout)
 			defer cancel()
-			if err := clipboardCopy(ctx, tuiSink, text); err != nil {
+			if err := ClipboardCopy(ctx, tuiSink, text); err != nil {
 				panic(runtime.NewGoError(err))
 			}
 			return goja.Undefined()
@@ -233,7 +233,11 @@ func openEditor(ctx context.Context, nameHint string, initialContent string) str
 	return string(data)
 }
 
-func clipboardCopy(ctx context.Context, tuiSink func(string), text string) error {
+// ClipboardCopy copies text to the system clipboard using platform-specific
+// utilities (pbcopy on macOS, clip on Windows, xclip/xsel/wl-copy on Linux).
+// If OSM_CLIPBOARD is set, it is used as a custom clipboard command.
+// Falls back to printing via tuiSink if no clipboard tool is available.
+func ClipboardCopy(ctx context.Context, tuiSink func(string), text string) error {
 	// override via OSM_CLIPBOARD
 	if cmdStr := os.Getenv("OSM_CLIPBOARD"); cmdStr != "" {
 		var c *exec.Cmd

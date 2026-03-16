@@ -216,6 +216,10 @@
                 claudeAutoAttachNotif: '',     // transient notification text (auto-dismissed after 5s)
                 claudeAutoAttachNotifAt: 0,    // Date.now() when notification was set
 
+                // T073: Clipboard flash notification (Report overlay copy).
+                clipboardFlash: '',             // transient flash text after copy attempt
+                clipboardFlashAt: 0,            // Date.now() when flash was set
+
                 // T46: Claude question detection state.
                 claudeQuestionDetected: false,  // true when question pattern detected in Claude output
                 claudeQuestionLine: '',         // the detected question line from Claude's output
@@ -331,10 +335,16 @@
                         s.showingReport = false;
                         return [s, null];
                     }
-                    // Copy report to clipboard.
+                    // T073: Copy report to clipboard with success flash and error fallback.
                     if (rk === 'c') {
-                        output.toClipboard(s.reportContent);
-                        return [s, null];
+                        try {
+                            output.toClipboard(s.reportContent || '');
+                            s.clipboardFlash = 'Copied to clipboard \u2713';
+                        } catch (e) {
+                            s.clipboardFlash = 'Copy failed: ' + (e.message || String(e));
+                        }
+                        s.clipboardFlashAt = Date.now();
+                        return [s, tea.tick(3000, 'dismiss-clipboard-flash')];
                     }
                     // Scroll navigation — sync scrollbar after each scroll op.
                     if (rk === 'j' || rk === 'down') {
@@ -839,6 +849,28 @@
                     }
                     return [s, null];
                 }
+                // T006: BRANCH_BUILDING: 'p' marks the most recently failed
+                // verification as manually passed ("Mark as Passed").
+                // Only active when verification is NOT currently running and
+                // there is at least one failed (non-passed, non-skipped) result.
+                if (k === 'p' && s.wizardState === 'BRANCH_BUILDING' && !s.activeVerifySession) {
+                    var vResults = s.verificationResults || [];
+                    // Find the last failed result.
+                    var failIdx = -1;
+                    for (var fi = vResults.length - 1; fi >= 0; fi--) {
+                        if (vResults[fi] && !vResults[fi].passed && !vResults[fi].skipped) {
+                            failIdx = fi;
+                            break;
+                        }
+                    }
+                    if (failIdx >= 0) {
+                        vResults[failIdx].passed = true;
+                        vResults[failIdx].manualOverride = true;
+                        vResults[failIdx].error = null;
+                        log.printf('verify: manually marked %s as passed', vResults[failIdx].name || '(unknown)');
+                    }
+                    return [s, null];
+                }
                 if (k === 'e' && s.wizardState === 'PLAN_REVIEW' && !s.isProcessing) {
                     // Enter plan editor.
                     return enterPlanEditor(s);
@@ -1051,6 +1083,14 @@
                     if (s.claudeAutoAttachNotifAt && (Date.now() - s.claudeAutoAttachNotifAt) >= 4500) {
                         s.claudeAutoAttachNotif = '';
                         s.claudeAutoAttachNotifAt = 0;
+                    }
+                    return [s, null];
+                }
+                // T073: Auto-dismiss clipboard flash after 3s.
+                if (msg.id === 'dismiss-clipboard-flash') {
+                    if (s.clipboardFlashAt && (Date.now() - s.clipboardFlashAt) >= 2500) {
+                        s.clipboardFlash = '';
+                        s.clipboardFlashAt = 0;
                     }
                     return [s, null];
                 }

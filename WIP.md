@@ -32,8 +32,9 @@
 26. `59a3b994` — batch 6: T058+T016+T030+T074+T054+T024+T037+T008
 27. `675270a1` — batch 7 audit-only: T014+T015+T017+T023+T032+T082+T029+T035+T038+T068+T069+T034
 28. (pending) — batch 8 audit-only: T018+T019+T020+T021+T022+T046+T047+T049+T039+T052+T033+T057
+29. (pending) — batch 9: T088 output.toClipboard binding + T073 copy flash + T006 manual-complete + T071 multi-lang scopedVerify
 
-## Completed Tasks (104/123)
+## Completed Tasks (108/123)
 - T014: CONFIG screen keyboard navigation audit — Tab order, phantom focus prevention, showAdvanced clamping verified
 - T015: CONFIG Claude status rendering — all 3 states (checking/available/unavailable) correct, tests pass
 - T017: PLAN_REVIEW card selection vs focus — focusedCard precedence, activeCard revert, Execute guards 0 splits
@@ -118,6 +119,10 @@
 - T027: Narrow terminal nav bar — veryNarrow (w<35) hides dots+back, compact dots at w<50, overflow protection
 - T013: Border alignment audit — verified already correct (all card styles use .width(cardW))
 - T050: Chunk load order audit — verified correct, all 17 chunks in dependency order
+- T088: output.toClipboard() Go binding — platform-specific clipboard (pbcopy/xclip/wl-copy/clip) + error handling + docs
+- T073: Report overlay 'c copy' shortcut — intercept key, toClipboard call, success flash, unavailable fallback + test
+- T006: Manual-complete button for verify screen — Mark as Passed zone, SIGINT cleanup, manuallyVerified result, keyboard activation + test
+- T071: scopedVerifyCommand multi-lang — Jest/pytest/cargo test scoping, configurable verifyScope, fallback for unknown + tests
 - T056: OSM_LOG_FILE — verified correctly wired via config schema → log_config.go → scripting engine
 - T058: Verify session elapsed time tracking + color-coded timeout countdown + ETA display
 - T016: PLAN_GENERATION abort hint during analysis + Ctrl+C audit + keyboard accessibility
@@ -141,7 +146,7 @@
 - T057: pr_split.go hardening — terminal restore on panic, double-SIGINT audit, OSM_LOG_FILE validation, injected JS globals doc
 
 ## Current Work
-**104/123 done, 29 commits. Batch 8 committed (audit-only).**
+**108/123 done, 31 commits. Batch 9 committed (clipboard, manual-complete, multi-lang verify).**
 
 ### Batch 7 Audit (12 tasks) — ALL PASS
 Comprehensive code audit performed on 2026-03-16. All 12 tasks verified correct:

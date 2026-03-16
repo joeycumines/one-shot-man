@@ -165,10 +165,83 @@
         return 'make';
     }
 
-    // scopedVerifyCommand returns a verification command scoped to the Go
-    // packages affected by the given files. If any non-Go file is present,
-    // returns the fallback command (full verification). The scoped command
-    // runs `go test -race` on each unique package directory.
+    // T071: Language detection helpers for scopedVerifyCommand.
+    // Each detector returns the scoped test command for a homogeneous set of
+    // files of that language, or null if the file set is not exclusively that
+    // language. Detectors are tried in order; first match wins.
+
+    var _langDetectors = [
+        {
+            // Go: run `go test -race` on unique package directories.
+            name: 'go',
+            test: function(f) { return f.match(/\.go$/) !== null; },
+            build: function(files) {
+                var pkgDirs = {};
+                for (var i = 0; i < files.length; i++) {
+                    var lastSlash = files[i].lastIndexOf('/');
+                    var dir = lastSlash >= 0
+                        ? './' + files[i].substring(0, lastSlash) + '/...'
+                        : './...';
+                    pkgDirs[dir] = true;
+                }
+                var pkgs = Object.keys(pkgDirs).sort();
+                return pkgs.length > 0 ? 'go test -race ' + pkgs.join(' ') : null;
+            }
+        },
+        {
+            // JavaScript / TypeScript: run jest with file paths.
+            name: 'js',
+            test: function(f) { return f.match(/\.(js|jsx|ts|tsx|mjs|cjs)$/) !== null; },
+            build: function(files) {
+                // Collect unique directories for --testPathPattern.
+                var dirs = {};
+                for (var i = 0; i < files.length; i++) {
+                    var lastSlash = files[i].lastIndexOf('/');
+                    var dir = lastSlash >= 0 ? files[i].substring(0, lastSlash) : '.';
+                    dirs[dir] = true;
+                }
+                var dirList = Object.keys(dirs).sort();
+                // Build a regex pattern matching any of the directories.
+                var pattern = dirList.length === 1
+                    ? dirList[0]
+                    : '(' + dirList.join('|') + ')';
+                return 'npx jest --passWithNoTests --testPathPattern ' + JSON.stringify(pattern);
+            }
+        },
+        {
+            // Python: run pytest with file paths.
+            name: 'python',
+            test: function(f) { return f.match(/\.py$/) !== null; },
+            build: function(files) {
+                // Collect unique directories.
+                var dirs = {};
+                for (var i = 0; i < files.length; i++) {
+                    var lastSlash = files[i].lastIndexOf('/');
+                    var dir = lastSlash >= 0 ? files[i].substring(0, lastSlash) : '.';
+                    dirs[dir] = true;
+                }
+                var dirList = Object.keys(dirs).sort();
+                return 'python -m pytest ' + dirList.join(' ');
+            }
+        },
+        {
+            // Rust: run cargo test (scoping to specific crates is complex,
+            // so we scope to the workspace root; still better than 'make').
+            name: 'rust',
+            test: function(f) { return f.match(/\.rs$/) !== null; },
+            build: function(_files) {
+                return 'cargo test';
+            }
+        }
+    ];
+
+    // scopedVerifyCommand returns a verification command scoped to the
+    // packages/directories affected by the given files. Supports Go, JS/TS,
+    // Python, and Rust. For mixed-language file sets, returns the fallback
+    // command (full verification). The scoped command runs the appropriate
+    // test runner for the detected language.
+    //
+    // T071: Extended from Go-only to multi-language support.
     function scopedVerifyCommand(files, fallbackCommand) {
         if (!files || files.length === 0) {
             return fallbackCommand;
@@ -177,30 +250,43 @@
         // Only scope when the fallback is a known build/test runner.
         // Custom verify commands (e.g. 'true', 'echo ok') must not be replaced.
         var scopable = (fallbackCommand === 'make' ||
-                        (typeof fallbackCommand === 'string' && fallbackCommand.indexOf('go test') >= 0));
+                        (typeof fallbackCommand === 'string' && (
+                            fallbackCommand.indexOf('go test') >= 0 ||
+                            fallbackCommand.indexOf('jest') >= 0 ||
+                            fallbackCommand.indexOf('pytest') >= 0 ||
+                            fallbackCommand.indexOf('cargo test') >= 0
+                        )));
         if (!scopable) {
             return fallbackCommand;
         }
 
-        var pkgDirs = {};
-        for (var i = 0; i < files.length; i++) {
-            var f = files[i];
-            // Non-Go files → fall back to full verification.
-            if (!f || !f.match || !f.match(/\.go$/)) {
-                return fallbackCommand;
+        // Detect language: all files must match a single detector.
+        var matchedDetector = null;
+        for (var d = 0; d < _langDetectors.length; d++) {
+            var detector = _langDetectors[d];
+            var allMatch = true;
+            for (var i = 0; i < files.length; i++) {
+                if (!files[i] || !files[i].match) {
+                    return fallbackCommand; // null/undefined file → fall back.
+                }
+                if (!detector.test(files[i])) {
+                    allMatch = false;
+                    break;
+                }
             }
-            // Extract directory: "internal/cmd/foo.go" → "./internal/cmd/..."
-            var lastSlash = f.lastIndexOf('/');
-            var dir = lastSlash >= 0 ? './' + f.substring(0, lastSlash) + '/...' : './...';
-            pkgDirs[dir] = true;
+            if (allMatch) {
+                matchedDetector = detector;
+                break;
+            }
         }
 
-        var pkgs = Object.keys(pkgDirs).sort();
-        if (pkgs.length === 0) {
+        if (!matchedDetector) {
+            // Mixed languages or unknown files → fall back.
             return fallbackCommand;
         }
 
-        return 'go test -race ' + pkgs.join(' ');
+        var cmd = matchedDetector.build(files);
+        return cmd || fallbackCommand;
     }
 
     // -----------------------------------------------------------------------

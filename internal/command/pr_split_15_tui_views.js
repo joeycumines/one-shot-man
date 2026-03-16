@@ -1538,6 +1538,10 @@
                     var durationStr = vr.duration ? ' (' + (vr.duration / 1000).toFixed(1) + 's)' : '';
                     vtext = styles.label().render(branchName) +
                         styles.dim().render(durationStr);
+                    // T006: Show override badge for manually passed branches.
+                    if (vr.manualOverride) {
+                        vtext += ' ' + styles.warningBadge().render(' manual \u2713 ');
+                    }
                 } else if (vr && !vr.passed) {
                     vicon = styles.errorBadge().render(' \u2718 ');
                     var vdurStr = vr.duration ? ' (' + (vr.duration / 1000).toFixed(1) + 's)' : '';
@@ -1705,6 +1709,10 @@
                     summaryLine += ' ' + styles.dim().render(' ' + skipCount + ' skipped');
                 }
                 lines.push(summaryLine);
+                // T006: Hint for manual override when there are failures.
+                if (failCount > 0 && !s.activeVerifySession) {
+                    lines.push('  ' + styles.dim().render('Press p to mark a failed branch as passed'));
+                }
             }
         }
 
@@ -2106,6 +2114,7 @@
             lines.push(padRight('  e', 22) + 'Expand / collapse verify output');
             if (ws === 'BRANCH_BUILDING') {
                 lines.push(padRight('  Ctrl+C', 22) + 'Interrupt current verify (2x = force kill)');
+                lines.push(padRight('  p', 22) + 'Mark failed branch as passed (override)');
             }
             lines.push('');
         }
@@ -2222,12 +2231,23 @@
         var hintLine = styles.dim().render(
             '  j/k scroll • PgUp/PgDn page • c copy • Esc close');
 
+        // T073: Clipboard flash notification.
+        var flashLine = '';
+        if (s.clipboardFlash && s.clipboardFlashAt) {
+            var flashElapsed = Date.now() - s.clipboardFlashAt;
+            if (flashElapsed < 3000) {
+                var flashStyle = s.clipboardFlash.indexOf('failed') >= 0
+                    ? styles.errorBadge() : styles.successBadge();
+                flashLine = '\n  ' + flashStyle.render(' ' + s.clipboardFlash + ' ');
+            }
+        }
+
         var vpView = s.reportVp ? s.reportVp.view() : (s.reportContent || '');
         var sbView = (s.reportSb) ? s.reportSb.view() : '';
 
         var scrollContent = lipgloss.joinHorizontal(lipgloss.Top, vpView, sbView);
 
-        var inner = [titleLine, '', scrollContent, '', hintLine].join('\n');
+        var inner = [titleLine, '', scrollContent, '', hintLine + flashLine].join('\n');
         return styles.activeCard().width(dims.overlayW).render(inner);
     }
 

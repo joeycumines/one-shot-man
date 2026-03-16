@@ -179,7 +179,7 @@
       "id": "T014",
       "title": "Screen 1 (CONFIG): Full keyboard navigation audit and fix",
       "description": "Exhaustive audit of Screen 1 keyboard navigation: (1) Tab order: strategy-auto → strategy-heuristic → strategy-directory → [test-claude if visible] → toggle-advanced → [advanced fields if expanded] → nav-cancel → nav-next. (2) j/k arrows cycle focus same as Tab/Shift+Tab on CONFIG screen (confirmed in handleListNav). (3) Enter on strategy selects it AND triggers Claude check if 'auto'. (4) Enter on test-claude triggers check. (5) Enter on toggle-advanced toggles. (6) When a config field is focused and Enter pressed, enters inline edit mode with cursor visible. (7) Escape from inline edit mode restores the field. (8) Confirm no phantom focus states where focusIndex leads to an element that isn't rendered (e.g., when showAdvanced is false but focusIndex points to an advanced field). Add unit tests for each Tab-stop transition.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_16_tui_core.js",
@@ -190,7 +190,7 @@
       "id": "T015",
       "title": "Screen 1 (CONFIG): Fix Claude availability status section rendering and layout",
       "description": "Audit and fix the Claude availability display on Screen 1: (1) When claudeCheckStatus==='checking', the spinner/progress message must render without layout breaks. The 'Checking Claude availability...' message must be on its own line. (2) When claudeCheckStatus==='available', the success badge and command/provider info must be clearly readable. (3) When claudeCheckStatus==='unavailable', the error badge and fallback message must be clearly formatted. (4) The 'Test Connection' button must appear immediately after the status (not on a new section header). (5) Ensure the Claude status section does NOT appear until the user has selected 'auto' strategy or explicitly triggered a check (currently it appears when claudeCheckStatus is set, which is correct, but verify there's no phantom display). (6) Write unit tests for all three claudeCheckStatus states.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -212,7 +212,7 @@
       "id": "T017",
       "title": "Screen 3 (PLAN_REVIEW): Fix card selection vs focus collision and ensure consistent styling",
       "description": "Audit Screen 3 rendering: (1) A card can be BOTH focused (focusIndex === i) AND selected (selectedSplitIdx === i) at the same time. Current code applies focusedCard style if focused, activeCard if selected. When BOTH are true, focusedCard takes precedence (correct). BUT: if the user tabs PAST the card (to Edit Plan button), the card should revert to activeCard or inactiveCard styling depending on whether it's selected. Verify this works correctly by tracing through viewPlanReviewScreen with various focusIndex/selectedSplitIdx combinations. (2) In wide layout, the left card list uses firstLine rendering without boxed card styles — verify the focus indicator (▸) renders correctly and aligns with the right detail pane. (3) The 'Execute Plan →' button in the nav bar must only activate when there's at least one split in the plan. Write unit tests for all selection/focus combinations.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -278,7 +278,7 @@
       "id": "T023",
       "title": "Screen 6 (EQUIV_CHECK): Read and fully audit viewVerificationScreen (equivalence check)",
       "description": "AUDIT COMPLETE (session 11): viewVerificationScreen function (pr_split_15_tui_views.js) handles the EQUIV_CHECK wizard state — confirmed fully read. Key findings now documented in T118 (wrong field names equiv.expected/equiv.actual), T061 (getFocusElements returns [] for EQUIV_CHECK), T075 (diffFiles/diffSummary not displayed), T079 (missing back-transition). This task covers the general viewVerificationScreen audit deliverable: Task: (1) Read the complete implementation of viewVerificationScreen. (2) Audit: does it correctly display the equivalence check results from st.analysisCache or some other state field? (3) What warnings does it show and how are they expandable? (4) Is the 'Re-verify' button present and functional? (5) Does the screen show detailed diff information between the split branches and the source? (6) Identify any rendering bugs (borders, widths, focus). (7) Verify the EQUIV_CHECK screen has proper keyboard navigation (getFocusElements for EQUIV_CHECK currently returns [] — is this correct?). (8) Write unit tests for the equivalence check screen rendering at various result states.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -343,7 +343,7 @@
       "id": "T029",
       "title": "Split-view (Ctrl+L): audit side-by-side pane proportions and rendering at all sizes",
       "description": "Audit the split-view implementation in _viewFn: (1) When splitViewEnabled=true, the screen is split into wizard pane (left) + Claude pane (right). What is the split ratio? Confirm the math: wizardW + claudeW = s.width. (2) The Ctrl++ / Ctrl+- ratio adjustment — verify bounds (min 30%, max 70% for each pane). (3) At s.width < 80, does the split view still work? Or should it auto-disable? (4) The split-view tab bar (claude/output) — confirm the tabs render correctly and keyboard switching (Ctrl+Tab / Ctrl+O) works. (5) After tuiMux is closed (child process exits), split view should auto-close. Verify this behavior. (6) Write unit tests for split-view rendering at 80, 120, 160 columns and verify pane widths.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_16_tui_core.js",
@@ -376,7 +376,7 @@
       "id": "T032",
       "title": "Audit and fix the confirm cancel path for active verify sessions",
       "description": "When the user cancels during an active verify session, there's a specific cancel path. Audit: (1) In handleMouseClick, nav-cancel check: if s.activeVerifySession, it sends SIGINT (not showConfirmCancel). This is a behavior divergence from normal cancel behavior. (2) Is this correct? The design says cancel DURING verification should send SIGINT first, then 2x = SIGKILL. But what if the user wants to actually cancel the ENTIRE wizard (not just the current verify)? (3) Proposed fix: nav-cancel during verify should show a special confirmation: 'Abort current verification and cancel wizard?' with options: 'Interrupt Verify' / 'Cancel Wizard' / 'Keep Going'. (4) Update viewConfirmCancelOverlay to be context-aware. (5) Write unit tests for the three-option cancel dialog during active verification.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_16_tui_core.js",
@@ -398,7 +398,7 @@
       "id": "T034",
       "title": "Audit analyzeDiffAsync for correctness with complex git history (merge commits, rebases)",
       "description": "The analysis uses git merge-base for the range. Audit: (1) What happens with multiple merge bases? (2) What happens if the feature branch was rebased (the common ancestor is very old, resulting in a huge diff)? (3) What happens with git worktree paths vs main repo paths? (4) Does the analysis correctly handle cherry-picked commits (may affect file tracking)? (5) Add an integration test with a rebased branch to confirm analysis works correctly.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_01_analysis.js",
@@ -409,7 +409,7 @@
       "id": "T035",
       "title": "Equivalence check (Screen 6): audit verifyEquivalence and its UI presentation",
       "description": "Audit pr_split_06_verification.js functions verifyEquivalence and verifyEquivalenceDetailed: (1) These compare the tree hash of the combined split branches against the source branch tree hash. If they match = equivalent. (2) Read the full implementation and understand the limitations: (a) does it handle file renames correctly? (b) what about empty commits? (c) binary files? (3) Understand how the result flows to the EQUIV_CHECK screen. (4) Audit the full EQUIV_CHECK state transition: who calls verifyEquivalence? Is it triggered automatically after BRANCH_BUILDING? (5) The screen 6 rendering: are warnings expandable? Does it show the tree hash diff? (6) Write a unit test verifying equivalence detection with a known set of files.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_06_verification.js",
@@ -442,7 +442,7 @@
       "id": "T038",
       "title": "Error resolution screen (ERROR_RESOLUTION): audit all recovery paths",
       "description": "Screen ERROR_RESOLUTION (maps to BRANCH_BUILDING step 4) handles branch creation errors. Audit: (1) Standard resolution options: auto-resolve (retry with Claude), manual, skip, retry, abort. (2) Claude crash recovery options: restart-claude, fallback-heuristic, abort. (3) handleErrorResolutionState in pr_split_14_tui_commands.js — read and audit each case. (4) The 'Ask Claude' button in error resolution — does it correctly route to Claude for analysis? (5) 'Skip' — what happens to the failed branch in the final split? (6) getFocusElements for ERROR_RESOLUTION correctly enumerates all buttons — verify the conditional Claude buttons are included/excluded correctly based on st.claudeExecutor. (7) Write unit tests for each resolution path.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_14_tui_commands.js",
@@ -767,7 +767,7 @@
       "id": "T068",
       "title": "Audit ClaudeCodeExecutor session lifecycle: handle ownership and cleanup on crash/cancel",
       "description": "Audit pr_split_09_claude.js ClaudeCodeExecutor methods: (1) spawn() creates an MCP session via osm:claudemux. How is the session handle stored (this.handle)? (2) On wizard cancel, is the Claude process killed? Where is cleanup triggered? (3) The crash detection path (executor.handle.isAlive()) — is isAlive() reliable? Can it return false transiently? (4) captureDiagnostic() on crash — what does it return? Does it block? (5) Session restart (handleRestartClaudePoll) — verify the new handle is correctly attached to tuiMux via tuiMux.attach(). (6) isAvailable() — what does it check? Is it checking the resolved binary or the running handle? (7) Write unit tests for each lifecycle transition: spawn → isAlive → crash → restart → isAlive again.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_09_claude.js",
@@ -778,7 +778,7 @@
       "id": "T069",
       "title": "Verify 'Create PRs' TUI button flow: handleFinalizationState → createPRs → skipped PR display",
       "description": "AUDIT COMPLETE (session 4): pr_split_07_prcreation.js confirmed using gh CLI via synchronous exec.execv (T076), ignoring dryRun (T077), and not surfacing skip results to TUI (T083). This task is now about the TUI integration: (1) Trace the full 'Create PRs' click path in the TUI: handleFinalizationState(wizard, 'create-prs') performs ONLY a self-transition FINALIZATION→FINALIZATION with data.prsRequested=true. Confirm the TUI's update loop watches for prsRequested=true and triggers the actual createPRs() call via a poll-based mechanism. (2) Locate where in pr_split_16_tui_core.js the prsRequested flag is consumed — this has not been read yet. Find the handler and document it. (3) After T076 implement createPRsAsync(), verify the TUI uses the async version (poll-based, not blocking). (4) Write an integration test: start wizard → navigate to FINALIZATION → click 'Create PRs' button → verify prsRequested=true is set → verify the poll-based PR creation flow starts → verify skipped PR results appear in the TUI (T083 dependency). Tests file: pr_split_createprs_test.go.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_07_prcreation.js",
@@ -926,7 +926,7 @@
       "id": "T082",
       "title": "resolveConflicts wall-clock timeout fires silently with no TUI state update",
       "description": "CONFIRMED by reading pr_split_08_conflict.js: resolveConflicts() has a wall-clock timeout (AUTOMATED_DEFAULTS.resolveWallClockTimeoutMs || 300000). When it fires, the error pushed to errorsOut is 'wall-clock timeout after Xms (limit: Yms)'. This is never surfaced to the TUI as a user-visible notification — the TUI's ERROR_RESOLUTION screen would just show the raw error string. Fix: (1) Define a structured error type for wall-clock timeout: {type: 'wall-clock-timeout', elapsed, limit, branch}. (2) In the TUI's ERROR_RESOLUTION view, detect this type and show a friendly message: 'Auto-fix timed out for [branch] after [elapsed]s — manual fix required'. (3) Add a countdown display in the TUI during active auto-resolve so users see time remaining. (4) The countdown should use the same tick system as other async ops. (5) Write tests confirming the timeout error type is set correctly and the TUI message matches.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_08_conflict.js",

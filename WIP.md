@@ -29,8 +29,22 @@
 23. `3da6cc85` — quick-fix bundle: equiv cache, cancel overlay, analysis cache, loadPlan dedup, preExisting reason, bell restore, strategy fallback warn: T089+T081+T066+T110+T101+T097+T091+T102
 24. `fe8e23fa` — batch 4: T104+T106+T085+T096+T012+T055+T075+T002
 25. `cc5924c4` — batch 5: T051+T086+T026+T065+T013+T027+T050+T056
+26. `59a3b994` — batch 6: T058+T016+T030+T074+T054+T024+T037+T008
+27. (pending) — batch 7 audit-only: T014+T015+T017+T023+T032+T082+T029+T035+T038+T068+T069+T034
 
-## Completed Tasks (64/123)
+## Completed Tasks (92/123)
+- T014: CONFIG screen keyboard navigation audit — Tab order, phantom focus prevention, showAdvanced clamping verified
+- T015: CONFIG Claude status rendering — all 3 states (checking/available/unavailable) correct, tests pass
+- T017: PLAN_REVIEW card selection vs focus — focusedCard precedence, activeCard revert, Execute guards 0 splits
+- T023: EQUIV_CHECK screen audit — results display, expandable warnings, Re-verify/Revise Plan buttons, keyboard nav
+- T029: Split-view pane proportions — vertical split ratio 0.6 default, Ctrl+=/- bounds 0.2–0.8, min 3 lines, fallback
+- T032: Cancel during verify — cleanupActiveSession close/worktree/null, confirmCancel stops all async before wizard.cancel
+- T034: analyzeDiffAsync correctness — merge-base parsing, R/C dest path, unknown status, binary fix, error paths
+- T035: Equivalence check audit — tree-hash comparison, diffFiles fallback, cumulative chain model, async variant
+- T038: Error resolution screen — all 7 recovery paths, getFocusElements matches buttons, handleFocusActivate routing
+- T068: ClaudeCodeExecutor lifecycle — spawn health check, close nulls, restart chains, crash diagnostic, session ownership
+- T069: Create PRs button flow — startPRCreation guards, dry-run, async poll, per-PR results display, keyboard activation
+- T082: resolveConflicts timeout — wall-clock timeout exists (300s default), errors surfaced to ERROR_RESOLUTION, not silent
 - T028: renderStatusBar auto-dismiss → tick-based handler  
 - T072: viewReportOverlay scrollbar sync → syncReportScrollbar helper
 - T080: viewReportOverlay viewport sizing → syncReportOverlay helper
@@ -114,14 +128,32 @@
 - T008: docs/pr-split-tui-design.md rewrite — PTY-based interactive verification section with ASCII mocks
 
 ## Current Work
-**80/123 done, 27 commits. Batch 6 committed.**
+**92/123 done, 28 commits. Batch 7 committed (audit-only).**
 
-### Next Priority: Batch 7 candidates
-- T032: Cancel during verify phase
-- T059: Pause/resume verify phase (unlocked by T084)
-- T000: Prompt/input anchor stability (Hana directive)
+### Batch 7 Audit (12 tasks) — ALL PASS
+Comprehensive code audit performed on 2026-03-16. All 12 tasks verified correct:
+
+| Task | Title | Verdict | Notes |
+|------|-------|---------|-------|
+| T015 | CONFIG Claude status rendering | PASS | All 3 states (checking/available/unavailable) render correctly. Tests exist and pass (TestViews_ConfigScreen_ClaudeStatuses with 3 subtests). |
+| T014 | CONFIG keyboard navigation | PASS | Tab order correct: strategies → test-claude (conditional) → toggle-advanced → fields (conditional) → nav-next → nav-cancel. No phantom focus when showAdvanced=false (fields excluded from focus list + focusIndex clamped). |
+| T017 | PLAN_REVIEW card selection vs focus | PASS | focusedCard takes precedence (checked first in ternary). activeCard reverts when focus moves away. Execute button (`startExecution`) guards against 0 splits. |
+| T023 | EQUIV_CHECK screen | PASS | Results display correct (pass/fail/error). Warnings expandable (diffFiles up to 20). Re-verify + Revise Plan buttons present. getFocusElements for EQUIV_CHECK includes all buttons conditionally. |
+| T032 | Cancel during verify | PASS | `cleanupActiveSession()` calls close(), cleanup worktree, nulls all state. `confirmCancel()` stops analysis/autoSplit/verify before wizard.cancel(). Thorough cleanup. |
+| T082 | resolveConflicts timeout | PASS | Wall-clock timeout exists (defaults 300s). On fire: pushes clear error to errorsOut, skips remaining splits. handleResolvePoll surfaces errors to user via ERROR_RESOLUTION transition. NOT silent. |
+| T029 | Split-view proportions | PASS | Vertical split (top=wizard, bottom=claude). Ratio default 0.6, adjustable Ctrl+=/-  (0.2-0.8). Min pane 3 lines. If vpHeight < 7, falls back to normal layout. Full width at all terminal widths. |
+| T035 | Equivalence check | PASS | Tree-hash comparison: last split vs source branch. Fallback: diffFiles + diffSummary on mismatch. Async variant mirrors sync. Cumulative chain model documented. |
+| T038 | Error resolution screen | PASS | All 7 recovery paths (crash: restart/fallback/abort; standard: auto/manual/skip/retry/abort + ask-claude). getFocusElements matches buttons. handleFocusActivate routes all choices correctly. |
+| T068 | ClaudeCodeExecutor lifecycle | PASS | spawn() has health check (300ms + isAlive). close() nulls all handles. restart() chains close→resolve→spawn. Crash diagnostic capture works. Session owned by st.claudeExecutor. |
+| T069 | Create PRs button flow | PASS | startPRCreation has guards (running/completed/no-plan). Dry-run from T077. Async dispatch with poll. Results display per-PR (created/skipped/failed/dryRun). Keyboard activation works. |
+| T034 | analyzeDiffAsync | PASS | Correct --name-status parsing. R/C only tracks dest path. T098 unknown status tracking. T100 binary fix in analyzeDiffStats. Error paths for branch/merge-base/diff failure all return createEmptyResult. |
+
+### Next Priority: Batch 8 candidates (31 remaining)
+- T000: Prompt/input anchor stability rearchitect
+- T006: Manual-complete button for verify screen
 - T009: Binary E2E test — TestBinaryE2E_VerifyPTYLive
-- T038: Error resolution screen audit — all recovery paths
 - T039: Worktree cleanup on abnormal exit
 - T040: Split-view (Ctrl+L) rendering audit
 - T041: Claude passthrough (Ctrl+]) audit
+- T059: Pause/resume verify phase (unlocked by T084)
+- Remaining tasks: T007, T010, T018–T022, T033, T036, T039–T048, T052–T053, T057, T059–T060, T070–T071, T073, T088

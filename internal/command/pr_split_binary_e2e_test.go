@@ -639,11 +639,10 @@ func navigateToAnalysis(t *testing.T, ptmx *os.File, buf *threadSafeBuffer) bool
 	// Let Claude auto-detect settle
 	time.Sleep(2 * time.Second)
 
-	// Tab 5 times to nav-next ("Start Analysis"), then Enter
-	for i := 0; i < 5; i++ {
-		_, _ = ptmx.Write([]byte{0x09}) // Tab
-		time.Sleep(200 * time.Millisecond)
-	}
+	// Focus nav-next ("Start Analysis") using Shift+Tab×2, then Enter.
+	// This is robust regardless of CONFIG's element count (which varies
+	// depending on Claude check status).
+	focusNavNext(ptmx)
 	time.Sleep(300 * time.Millisecond)
 	_, _ = ptmx.Write([]byte{'\r'}) // Enter
 
@@ -675,6 +674,22 @@ func cleanExit(ptmx *os.File) {
 	time.Sleep(300 * time.Millisecond)
 }
 
+// focusNavNext moves focus to the nav-next button (e.g. "Execute Plan →")
+// from ANY starting position. It exploits the fact that nav-next is ALWAYS
+// the second-to-last focus element and nav-cancel is the last.
+//
+// Strategy: Shift+Tab×2 from index 0 wraps to index (N-2) = nav-next.
+// Since state transitions always reset focusIndex to 0 (pr_split_16_tui_core.js
+// line 298), this works reliably after any screen transition.
+func focusNavNext(ptmx *os.File) {
+	// Shift+Tab = ESC [ Z in BubbleTea (CSI backtab).
+	shiftTab := []byte{0x1b, '[', 'Z'}
+	_, _ = ptmx.Write(shiftTab) // → nav-cancel (last)
+	time.Sleep(200 * time.Millisecond)
+	_, _ = ptmx.Write(shiftTab) // → nav-next (second-to-last)
+	time.Sleep(200 * time.Millisecond)
+}
+
 // ---------------------------------------------------------------------------
 // T041 — TestBinaryE2E_FullFlowToExecution
 //
@@ -696,17 +711,12 @@ func TestBinaryE2E_FullFlowToExecution(t *testing.T) {
 		t.Fatalf("failed to reach PLAN_REVIEW.\nOutput:\n%s", sanitizePTYOutput(buf.String()))
 	}
 
-	// Step 2: Press Enter/Tab to "Execute Plan" button and press Enter
-	// The PLAN_REVIEW screen has focus elements. "Execute Plan" is typically
-	// one of the first focusable buttons. Try Enter directly on it.
+	// Step 2: Focus nav-next ("Execute Plan") and press Enter.
+	// focusIndex resets to 0 on state transition; nav-next is always
+	// second-to-last. Shift+Tab×2 from 0 wraps to nav-next reliably.
 	time.Sleep(1 * time.Second) // Let render settle
-
-	// Tab through focus elements to find Execute Plan
-	for i := 0; i < 8; i++ {
-		_, _ = ptmx.Write([]byte{0x09}) // Tab
-		time.Sleep(200 * time.Millisecond)
-	}
-	_, _ = ptmx.Write([]byte{'\r'}) // Enter on current
+	focusNavNext(ptmx)
+	_, _ = ptmx.Write([]byte{'\r'}) // Enter on Execute Plan
 
 	// Step 3: Wait for BRANCH_BUILDING (execution screen)
 	if !waitForPTYOutput(t, buf, "Building", 15*time.Second) &&
@@ -859,12 +869,9 @@ func TestBinaryE2E_VerifyPTYLive(t *testing.T) {
 		t.Fatalf("failed to reach PLAN_REVIEW.\nOutput:\n%s", sanitizePTYOutput(buf.String()))
 	}
 
-	// Navigate to Execute Plan and press Enter
+	// Focus nav-next ("Execute Plan") and press Enter.
 	time.Sleep(1 * time.Second)
-	for i := 0; i < 8; i++ {
-		_, _ = ptmx.Write([]byte{0x09})
-		time.Sleep(200 * time.Millisecond)
-	}
+	focusNavNext(ptmx)
 	_, _ = ptmx.Write([]byte{'\r'})
 
 	// Wait for execution to start — BRANCH_BUILDING shows branch progress
@@ -928,12 +935,9 @@ func TestBinaryE2E_CancelDuringVerify(t *testing.T) {
 		t.Fatalf("failed to reach PLAN_REVIEW.\nOutput:\n%s", sanitizePTYOutput(buf.String()))
 	}
 
-	// Navigate to Execute Plan
+	// Focus nav-next ("Execute Plan") and press Enter.
 	time.Sleep(1 * time.Second)
-	for i := 0; i < 8; i++ {
-		_, _ = ptmx.Write([]byte{0x09})
-		time.Sleep(200 * time.Millisecond)
-	}
+	focusNavNext(ptmx)
 	_, _ = ptmx.Write([]byte{'\r'})
 
 	// Wait for execution to start
@@ -1041,11 +1045,8 @@ func TestBinaryE2E_PlanEditorFlow(t *testing.T) {
 		t.Logf("May still be in editor or transitioned elsewhere")
 	}
 
-	// Continue to execution to verify plan was preserved
-	for i := 0; i < 8; i++ {
-		_, _ = ptmx.Write([]byte{0x09})
-		time.Sleep(200 * time.Millisecond)
-	}
+	// Focus nav-next and press Enter to execute the plan.
+	focusNavNext(ptmx)
 	_, _ = ptmx.Write([]byte{'\r'})
 
 	// Wait for execution

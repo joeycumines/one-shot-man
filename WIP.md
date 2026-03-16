@@ -9,7 +9,13 @@
 3. **T205-T206: Tests** — 6 new tests: 3 for nav focus (FocusNextHighlightsNext, FocusCancelDoesNotHighlightNext, FocusStyling_AllStates×6), 3 for anchor (BestAnchorsStateFallback, PromptOnlyFallback, NoPromptMarker_HardFailure). All 9 pass.
 
 ### Session 2 Commits
-(pending) — T200-T207: fix nav focus desync, harden anchor stability, add tests
+1. `5e605cb6` — Fix nav-button focus desync and harden anchor stability (T200-T206)
+2. `e2ac5f66` — Fix binary E2E PTY test timeouts — focusNavNext Shift+Tab×2 helper (T210)
+
+### Session 2 Next Steps
+- Full test suite regression: all pr_split tests pass (265/265), PTY E2E tests pass (4/4 + 2 hang tests)
+- Pre-existing failures NOT related to pr_split: TestPickAndPlace_MousePlace_BlockedCell (PTY hang), TestRecording_SuperDocument_Interop, TestSuperDocument_REPLTUIToggle
+- Remaining: T211 (verify screen Shell button implementation — placeholder TODO)
 
 ## Session 1 (Previous)
 

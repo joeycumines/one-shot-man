@@ -86,40 +86,14 @@ check-session-time:
 		exit 1; \
 	fi
 
-.PHONY: _git-stage-t200
-_git-stage-t200: ## Stage T200-T207 files and verify
-_git-stage-t200: SHELL := /bin/bash
-_git-stage-t200:
-	cd $(PROJECT_ROOT) && \
-	git add -f \
-		internal/command/pr_split_15_tui_views.js \
-		internal/command/pr_split_10_pipeline.js \
-		internal/command/pr_split_15_tui_views_test.go \
-		internal/command/pr_split_10_pipeline_test.go \
-		blueprint.json \
-		WIP.md \
-		config.mk && \
-	echo "=== Staged files ===" && \
-	git diff --staged --stat
-
-.PHONY: _git-commit-t200
-_git-commit-t200: ## Commit T200-T207 with prepared message
-_git-commit-t200: SHELL := /bin/bash
-_git-commit-t200:
-	cd $(PROJECT_ROOT) && \
-	git commit -F .git-commit-msg.txt && \
-	echo "=== Commit result ===" && \
-	git log --oneline -1 && \
-	echo "=== Commit details ===" && \
-	git show --stat HEAD
-
-.PHONY: _git-show-t200
-_git-show-t200: ## Show the latest commit
-_git-show-t200: SHELL := /bin/bash
-_git-show-t200:
-	cd $(PROJECT_ROOT) && \
-	git log --oneline -1 && \
-	git show --stat HEAD
+.PHONY: test-binary-e2e-pty
+test-binary-e2e-pty: ## Run PTY binary E2E tests (FullFlow, VerifyPTY, PlanEditor, CancelDuringVerify)
+test-binary-e2e-pty: SHELL := /bin/bash
+test-binary-e2e-pty:
+	@echo "Running PTY binary E2E tests..."; \
+set -o pipefail; \
+$(GO) -C $(PROJECT_ROOT) test -v -timeout=300s -run 'TestBinaryE2E_(FullFlowToExecution|VerifyPTYLive|PlanEditorFlow|CancelDuringVerify)' ./internal/command/ 2>&1 | tee $(or $(PROJECT_ROOT),$(error))/test-e2e-pty.log | tail -n 80; \
+exit $${PIPESTATUS[0]}
 
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 endif

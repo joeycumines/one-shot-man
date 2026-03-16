@@ -594,9 +594,9 @@ func TestAnchorPipeline_ResolveSendConfig(t *testing.T) {
 			`"textNewlineDelayMs":10`,
 			`"textChunkBytes":512`,
 			`"textChunkDelayMs":2`,
-			`"preSubmitStableTimeoutMs":1500`,
+			`"preSubmitStableTimeoutMs":3000`,
 			`"preSubmitStablePollMs":50`,
-			`"preSubmitStableSamples":3`,
+			`"preSubmitStableSamples":2`,
 			`"inputAnchorTailChars":28`,
 			`"submitAckTimeoutMs":1500`,
 			`"submitAckPollMs":50`,
@@ -618,7 +618,7 @@ func TestAnchorPipeline_ResolveSendConfig(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer func() {
-			evalJS(`prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 1500; true`)
+			evalJS(`prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 3000; true`)
 		}()
 
 		val, err := evalJS(`JSON.stringify(prSplit._resolveSendConfig())`)

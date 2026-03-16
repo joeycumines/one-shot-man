@@ -72,12 +72,27 @@
     {
       "id": "T208",
       "title": "Rule of Two Pass 1",
-      "status": "not-started"
+      "status": "done",
+      "fix": "Subagent review PASS — 2 minor nits resolved"
     },
     {
       "id": "T209",
       "title": "Rule of Two Pass 2",
-      "status": "not-started"
+      "status": "done",
+      "fix": "Subagent review PASS — clean"
+    },
+    {
+      "id": "T210",
+      "title": "Fix binary E2E test timeouts",
+      "status": "done",
+      "bug": "TestBinaryE2E_FullFlowToExecution, TestBinaryE2E_VerifyPTYLive, TestBinaryE2E_PlanEditorFlow, TestBinaryE2E_CancelDuringVerify all timeout at ~157s — 8 Tabs overshoots nav-next landing on nav-cancel which opens cancel dialog",
+      "fix": "Created focusNavNext() helper using Shift+Tab×2 from index 0 — works regardless of element count. All 4 tests now pass in ~60s each."
+    },
+    {
+      "id": "T211",
+      "title": "Verify screen Shell button implementation",
+      "status": "not-started",
+      "bug": "Shell button is placeholder TODO — investigate feasibility"
     }
   ]
 }

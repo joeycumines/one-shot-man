@@ -155,24 +155,11 @@ func TestTUIHang_BinaryPTY_Interactive(t *testing.T) {
 		t.Logf("WARNING: '?' keypress might not have reached BubbleTea")
 	}
 
-	// Navigate to "Start Analysis" (nav-next) button using Tab keypresses.
-	//
-	// CONFIG focus elements (after Claude auto-detect fires):
-	//   0: strategy-auto
-	//   1: strategy-heuristic
-	//   2: strategy-directory
-	//   3: test-claude       (present when claudeCheckStatus is truthy)
-	//   4: toggle-advanced
-	//   5: nav-next          ← target
-	//
-	// We use plain Tab (0x09) which is unambiguous — no escape sequence
-	// parsing issues. Send 5 Tabs to advance from index 0 to index 5.
-	// Since auto-detect definitely fired (timer >2s), claudeCheckStatus
-	// is always set → 6 elements. Tab×5 → nav-next.
-	for i := 0; i < 5; i++ {
-		_, _ = ptmx.Write([]byte{0x09}) // Tab = 0x09
-		time.Sleep(200 * time.Millisecond)
-	}
+	// Navigate to "Start Analysis" (nav-next) button. Use Shift+Tab×2
+	// from index 0 (the screen transition always resets focusIndex to 0),
+	// which wraps backward to nav-next (always second-to-last element).
+	// This is robust regardless of CONFIG's element count.
+	focusNavNext(ptmx)
 
 	// Wait for Tab renders to settle.
 	time.Sleep(500 * time.Millisecond)
@@ -184,7 +171,7 @@ func TestTUIHang_BinaryPTY_Interactive(t *testing.T) {
 
 	// Press Enter to trigger "Start Analysis".
 	_, _ = ptmx.Write([]byte{'\r'})
-	t.Logf("Sent 5×Tab + Enter to trigger Start Analysis")
+	t.Logf("Sent Shift+Tab×2 + Enter to trigger Start Analysis")
 
 	// First check: see if "Processing..." appears in the nav bar.
 	// This would confirm that startAnalysis was triggered.

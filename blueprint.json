@@ -93,6 +93,30 @@
       "title": "Verify screen Shell button implementation",
       "status": "not-started",
       "bug": "Shell button is placeholder TODO — investigate feasibility"
+    },
+    {
+      "id": "T212",
+      "title": "Fix staticcheck SA4032 dead code in module_capture_test.go",
+      "status": "done",
+      "file": "internal/builtin/termmux/module_capture_test.go",
+      "bug": "6 runtime.GOOS==\"windows\" skip guards are dead code — file has //go:build unix constraint",
+      "fix": "Removed all 6 dead skip guards + unused runtime import"
+    },
+    {
+      "id": "T213",
+      "title": "Fix ResolveConflictsWithClaudePreExistingFailure test timeout",
+      "status": "done",
+      "file": "internal/command/pr_split_conflict_retry_test.go",
+      "bug": "Mock data missing 'reason' field required by T097 validation, causing 3 retries → 60s timeout. No delay zeroing.",
+      "fix": "Added reason field to mock data + zeroed SEND_TEXT_NEWLINE_DELAY_MS, SEND_TEXT_CHUNK_DELAY_MS, _RESOLVE_BACKOFF_BASE_MS"
+    },
+    {
+      "id": "T214",
+      "title": "Fix SuperDocument TUI→shell transition after non-blocking tea.run()",
+      "status": "done",
+      "files": ["internal/scripting/engine_core.go", "internal/scripting/tui_manager.go", "internal/command/super_document_script.js"],
+      "bug": "Commit 8f901df7 made tea.run() non-blocking but the tui command handler's finally block runs BEFORE BubbleTea exits, so _userRequestedShell is always false → tui.requestExit() is always called → REPL exits instead of showing (super-document) prompt",
+      "fix": "Added __postBubbleTeaExit callback mechanism: JS registers callback before tea.run(), Go executes it after WaitForProgram() returns. Both engine_core.go and tui_manager.go paths covered."
     }
   ]
 }

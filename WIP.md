@@ -10,12 +10,16 @@
 
 ### Session 2 Commits
 1. `5e605cb6` — Fix nav-button focus desync and harden anchor stability (T200-T206)
-2. `e2ac5f66` — Fix binary E2E PTY test timeouts — focusNavNext Shift+Tab×2 helper (T210)
+2. `4ea729a8` — Fix binary E2E PTY test timeouts — focusNavNext Shift+Tab×2 helper (T210)
+3. `b4e88f6f` — Fix staticcheck SA4032 + preExistingFailure test timeout (T212-T213)
+4. (pending) — Fix SuperDocument TUI→shell transition via __postBubbleTeaExit (T214)
 
-### Session 2 Next Steps
-- Full test suite regression: all pr_split tests pass (265/265), PTY E2E tests pass (4/4 + 2 hang tests)
-- Pre-existing failures NOT related to pr_split: TestPickAndPlace_MousePlace_BlockedCell (PTY hang), TestRecording_SuperDocument_Interop, TestSuperDocument_REPLTUIToggle
-- Remaining: T211 (verify screen Shell button implementation — placeholder TODO)
+### Session 2 CI Status
+- Build + lint: ✅ PASS (staticcheck clean)
+- internal/command: ✅ PASS (265 pr_split tests, 2145 total, 1011s)
+- internal/scripting: ✅ PASS (200+ tests, 477s)  
+- All pre-existing failures RESOLVED: TestPickAndPlace now passes, SuperDocument tests now pass
+- Remaining: T211 (verify screen Shell button — placeholder TODO)
 
 ## Session 1 (Previous)
 

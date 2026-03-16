@@ -566,6 +566,28 @@ func (e *Engine) ExecuteScript(script *Script) error {
 		if waitErr := mgr.WaitForProgram(); waitErr != nil {
 			return waitErr
 		}
+
+		// After BubbleTea exits, execute any registered post-exit callback
+		// on the event loop. This allows JS to defer exit/shell decisions
+		// until AFTER BubbleTea processes user input (e.g., 'q' to quit
+		// vs 's' to drop to shell). Without this, non-blocking tea.run()
+		// returns immediately and JS can't distinguish exit reasons.
+		if cbErr := e.executeOnLoop(func(vm *goja.Runtime) error {
+			cb := vm.Get("__postBubbleTeaExit")
+			if cb == nil || goja.IsUndefined(cb) || goja.IsNull(cb) {
+				return nil
+			}
+			// Clear before execution to prevent re-entry on next command.
+			vm.Set("__postBubbleTeaExit", goja.Undefined())
+			if fn, ok := goja.AssertFunction(cb); ok {
+				if _, err := fn(goja.Undefined()); err != nil {
+					return fmt.Errorf("post-BubbleTea exit callback failed: %w", err)
+				}
+			}
+			return nil
+		}); cbErr != nil {
+			return cbErr
+		}
 	}
 
 	return nil

@@ -2401,28 +2401,30 @@ function buildCommands() {
                 // Clear any previous shell request (module-level, NOT persistent)
                 _userRequestedShell = false;
 
-                try {
-                    // Launch the embedded Bubble Tea app
-                    const res = runVisualTui();
-                    if (res && res.error) {
-                        output.print("TUI Error: " + res.error);
-                    }
-                } finally {
-                    // Check if user explicitly requested shell mode (module-level flag)
+                // Register a post-BubbleTea exit callback. Since tea.run() is
+                // non-blocking, the exit/shell decision MUST be deferred until
+                // AFTER BubbleTea exits (when the user has actually pressed 'q'
+                // or 's'). The Go engine executes __postBubbleTeaExit on the
+                // event loop after WaitForProgram() returns.
+                globalThis.__postBubbleTeaExit = function () {
                     const wantedShell = _userRequestedShell;
-
-                    // Clear the flag for next time
                     _userRequestedShell = false;
 
-                    // If user pressed 'q' (not 's'), signal the shell loop to exit
-                    // The shell loop's exit checker will see this and terminate gracefully
-                    // This does NOT call os.Exit - the shell loop handles exit at the top level
                     if (!wantedShell) {
+                        // User pressed 'q' — signal REPL to exit gracefully
                         tui.requestExit();
                     } else {
-                        // Inform the user they're now in shell mode and how to get back
+                        // User pressed 's' — stay in REPL shell mode
                         output.print("Dropped to shell. Use the 'tui' command to return to the visual UI.");
                     }
+                };
+
+                // Launch the embedded Bubble Tea app (non-blocking)
+                const res = runVisualTui();
+                if (res && res.error) {
+                    output.print("TUI Error: " + res.error);
+                    // Clear callback if TUI failed to launch
+                    globalThis.__postBubbleTeaExit = undefined;
                 }
             }
         }

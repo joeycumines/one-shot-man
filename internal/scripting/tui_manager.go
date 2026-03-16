@@ -669,6 +669,26 @@ func (tm *TUIManager) executeCommand(cmd Command, args []string) (execErr error)
 			if waitErr := mgr.WaitForProgram(); waitErr != nil {
 				return waitErr
 			}
+
+			// Execute post-BubbleTea exit callback (same mechanism as
+			// engine_core.go — deferred exit/shell decisions). This is
+			// needed because REPL commands go through executeCommand,
+			// not ExecuteScript.
+			if cbErr := tm.engine.executeOnLoop(func(vm *goja.Runtime) error {
+				cb := vm.Get("__postBubbleTeaExit")
+				if cb == nil || goja.IsUndefined(cb) || goja.IsNull(cb) {
+					return nil
+				}
+				vm.Set("__postBubbleTeaExit", goja.Undefined())
+				if fn, ok := goja.AssertFunction(cb); ok {
+					if _, err := fn(goja.Undefined()); err != nil {
+						return fmt.Errorf("post-BubbleTea exit callback failed: %w", err)
+					}
+				}
+				return nil
+			}); cbErr != nil {
+				return cbErr
+			}
 		}
 
 		return nil

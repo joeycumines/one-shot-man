@@ -223,7 +223,7 @@
       "id": "T018",
       "title": "Screen 3 (PLAN_REVIEW): Audit Ask Claude overlay and plan regeneration flow",
       "description": "Audit the Ask Claude overlay in PLAN_REVIEW context: (1) openClaudeConvo() creates the convo overlay. The overlay renders alongside the main screen. (2) Verify the overlay width/height calculations use s.width and s.height correctly. (3) The input field must be fully functional: type text → Enter to send → Ctrl+Enter or Shift+Enter for newlines. (4) The conversation history scroll must work with the arrow keys while the overlay is open. (5) Plan regeneration: clicking 'Regenerate' resets the wizard to CONFIG and clears the plan cache. Confirm this doesn't leave stale state (analysisCache, groupsCache, planCache should be reset). (6) Write unit tests for overlay rendering at 80 and 120 column widths.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -234,7 +234,7 @@
       "id": "T019",
       "title": "Screen 4 (PLAN_EDITOR): Fix inline title edit cursor rendering and edit buffer consistency",
       "description": "Audit Screen 4 inline title editing: (1) When editorTitleEditing=true, the edit buffer (editorTitleText) is rendered with a cursor character (█/▏). The cursor must blink, OR be static but clearly visible. Confirm the current implementation shows the cursor correctly at the END of the text. (2) When the user types and then tabs to another element, the edit must be SAVED (or a warning shown). Currently editorTitleEditing may not be auto-committed. (3) The defensein-depth guard in handleListNav to skip navigation while editing is correct, but verify the interceptor path from _updateFn for regular key events also routes correctly through the title-edit interceptor. (4) Test: Begin editing title, type 5 chars, press Escape → should cancel edit. Begin editing, type 5 chars, press Enter → should save. Begin editing, tab to another card → should auto-save. Write unit tests for all three.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_16_tui_core.js",
@@ -245,7 +245,7 @@
       "id": "T020",
       "title": "Screen 4 (PLAN_EDITOR): Audit Move/Rename/Merge dialogs for correctness and keyboard accessibility",
       "description": "Each of the three editor dialogs (Move File, Rename Split, Merge Splits) requires a thorough audit: (1) Move Dialog: The target split list must correctly exclude the source split. Confirm updateMoveDialog correctly moves the file and updates selectedFileIdx. Edge case: moving the LAST file from a split — should the split be removed automatically or show a validation error? (2) Rename Dialog: Confirm empty input is rejected (trim check). Confirm duplicate names are warned about (or is that intentional?). (3) Merge Dialog: Moving split indices must be sorted descending before splicing (already confirmed correct). Edge: merging ALL splits into one — is that allowed? (4) All three dialogs must show zone-markered Cancel and Confirm buttons in the focus cycle. (5) Write unit tests for edge cases: empty rename, last-file-move, merge-all.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_16_tui_core.js",
@@ -256,7 +256,7 @@
       "id": "T021",
       "title": "Screen 5 (BRANCH_BUILDING): Audit branch creation phase rendering and progress",
       "description": "Audit the branch creation rendering in viewExecutionScreen: (1) The per-branch list shows ✓ / ✗ / ▶ icons correctly based on executionResults[i]. (2) The 'Executing Split Plan' title and progress bar must render at all terminal widths. (3) When execution errors occur (result.error), the error card rendering must not overflow the terminal width. Confirm styles.errorCard().width() is correctly bounded. (4) The executionProgressMsg and executionBranchTotal state fields — where are they set? The code references these but it's unclear if they're being populated. Trace the async execution pipeline (startExecution, runExecutionAsync) and confirm these fields are updated. (5) Write unit tests for viewExecutionScreen with mock executionResults at various stages: none done, 2/5 done, all done with mixed pass/fail.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -267,7 +267,7 @@
       "id": "T022",
       "title": "Screen 5 (BRANCH_BUILDING): Audit verify phase — expanded output panel, collapse, and persist",
       "description": "Audit the expandable verify output panels in viewExecutionScreen: (1) A branch with verify failure shows 'Show Output (N lines)' toggle. Clicking expands up to 20 lines of output. (2) The expanded output must use the same viewport offset system as other scrollable areas. (3) The 'Show Output' / 'Hide Output' buttons must be zone-marked and mouse-clickable. (4) Using keyboard: confirm the expanded branch can be collapsed with Enter when focused. (5) The expandedVerifyBranch state persists correctly when navigating between branches (the correct branch stays expanded). (6) Maximum displayed lines: currently hardcoded at 20. Should be either configurable or make the threshold larger. (7) Write unit tests for expand/collapse behavior at boundary (exactly 20, 21 lines).",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -387,7 +387,7 @@
       "id": "T033",
       "title": "File discovery regression: investigate and fix 'failed to identify one of the files'",
       "description": "The user reported that a real run 'failed to identify one of the files' during analysis. Audit analyzeDiffAsync in pr_split_01_analysis.js: (1) How is git diff output parsed? Are all output formats handled: modified, added, deleted, renamed (R100), type-changed? (2) For renamed files, git diff --name-status outputs 'R<pct>\\told_name\\tnew_name'. Does the parser correctly handle this three-column format? (3) For binary files, does the parser handle 'Binary files a/x and b/x differ' format? (4) Are symlinks handled? How about files with spaces in their path? (5) The fileStatuses map — is it populated for ALL files, including renamed source paths? (6) Test with a repo that has: renamed files, files with spaces, binary files, symlinks. Write a parametrized unit test for analyseDiffAsync covering all file types.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_01_analysis.js",
@@ -453,7 +453,7 @@
       "id": "T039",
       "title": "Auto-split (automated pipeline) audit: full Claude-powered flow review",
       "description": "Audit pr_split_10_pipeline.js and its TUI integration (startAutoAnalysis): (1) The automated pipeline runs Claude to classify files → generate plan → execute → verify automatically. (2) Audit automatedSplit function: does it call each step correctly? Does it handle interruption? (3) How does it interact with the wizard state machine? (4) The handleAutoSplitPoll function — how does it track progress? (5) Confirm the auto pipeline uses the same async verification infrastructure (not the sync verifySplits). (6) Write a unit test with a mock Claude executor that simulates a complete automated split.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_10_pipeline.js",
@@ -523,7 +523,7 @@
       "id": "T046",
       "title": "Deep audit of pr_split_00_core.js: runtime, _gitExec, cancel/pause, core utilities",
       "description": "AUDIT COMPLETE (sessions 8-9): pr_split_00_core.js fully read — prSplit.runtime initialization, _gitExec sync/async variants, cancel/force-cancel/pause mechanism (isCancelled, isForceCancelled, isPaused), all core utilities confirmed. Bugs found: T117 (isForceCancelled never called by execution code). This task covers the standalone audit deliverable and test writing. Task: (1) Read the complete file to understand the core runtime setup: how prSplit.runtime is initialized, how _gitExec works (sync vs async variants), cancel/pause mechanisms, and any core utilities. (2) Identify any synchronous blocking calls that could cause hangs. (3) Audit the 'pause' implementation — if it exists, is it used and does it work correctly? (4) Identify initialization order dependencies between chunks. (5) Write tests for any utility functions that lack coverage.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_00_core.js",
@@ -534,7 +534,7 @@
       "id": "T047",
       "title": "Deep audit of pr_split_05_execution.js: branch creation, cherry-pick, worktree management",
       "description": "AUDIT COMPLETE (sessions 7-9): pr_split_05_execution.js fully read (sync executeSplit lines 1-217 and executeSplitAsync lines 218-420). Cumulative chain confirmed (currentBase = split.name). Bugs found: T103 (worktree path fragility with // pattern), T117 (isForceCancelled never checked). This task covers the standalone audit deliverable and test writing. Task: (1) Read the complete implementation of branch creation: git checkout, cherry-pick, commit. (2) How are worktrees created and tracked? (3) What is the cleanup path for failed branches? (4) Does it use async exec.spawn or synchronous exec? (5) How does it report progress back to the TUI (via progressFn callbacks)? (6) Audit for any synchronous blocking that could freeze the TUI. (7) Write unit tests for the core execution flow.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_05_execution.js",
@@ -557,7 +557,7 @@
       "id": "T049",
       "title": "Audit pr_split_09_claude.js: Claude executor, conversation management",
       "description": "AUDIT COMPLETE (session 9): pr_split_09_claude.js fully read (ClaudeCodeExecutor constructor, resolve, resolveAsync, spawn, isAvailable, isAvailableAsync, close, captureDiagnostic, restart, all prompt templates, renderPrompt, detectLanguage). Bugs found: T111 (renderPrompt error not checked), T112 (detectLanguage 'unknown' grammar bug), T113 (sync isAvailable() in BubbleTea update), T114 (restart always calls startAnalysis). This task is the standalone test-writing deliverable. Task: (1) Read ClaudeCodeExecutor class: constructor, resolveAsync, execute methods. (2) How does the MCP bridge integrate? (3) How does the conversation history work for Ask Claude overlay? (4) What happens on Claude crash? (5) Audit claudeCrashDetected logic. (6) Write unit tests for conversation flow.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_09_claude.js",
@@ -590,7 +590,7 @@
       "id": "T052",
       "title": "Audit Claude question detection prompt (T46 feature): verify it works in real runs",
       "description": "The inline Claude question prompt (renderClaudeQuestionPrompt) appears when s.claudeQuestionDetected=true. Audit: (1) What sets claudeQuestionDetected? Is it set via a tick handler that polls the Claude output? (2) Is it reliable — does it detect Claude's question from the PTY output? (3) The prompt input allows sending text back to Claude's PTY. Confirm tuiMux.writeToChild() is called correctly. (4) The prompt auto-dismisses on Escape or after a response is sent. (5) Conversation history accumulates in s.claudeConversations. (6) Write a test using mock tuiMux output that simulates a Claude question and verifies the prompt appears.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_16_tui_core.js",
@@ -642,7 +642,7 @@
       "id": "T057",
       "title": "Complete pr_split.go hardening: terminal restore on panic, signal handler audit, injection doc",
       "description": "AUDIT COMPLETE (session 4): pr_split.go fully read and confirmed: (1) All prSplitConfig fields injected correctly: baseBranch, strategy, maxFiles, branchPrefix, verifyCommand, dryRun, jsonOutput, claudeCommand, claudeArgs, claudeModel, claudeConfigDir, claudeEnv (map), timeoutMs, resumeFromPlan, cleanupOnFailure. (2) term.GetState(termFd) is called before TUI launch; deferred restore is correctly set up. (3) Double-SIGINT goroutine: receives first Ctrl+C, waits 2s for second, calls os.Exit(1) if second arrives. (4) signal.NotifyContext for SIGINT/SIGTERM. (5) startWizard() called from pr_split_16_tui_core.js via globalThis.prSplit.startWizard(). Remaining action items: (A) Add a deferred recover() to catch JS panics and ensure terminal state is always restored even on panic. (B) The double-SIGINT goroutine sends to a channel that the BubbleTea loop may also consume — audit for signal double-delivery; the NotifyContext cancellation and the goroutine timer may both fire. (C) Add OSM_LOG_FILE validation in Execute(): if TUI mode and no log file is set, warn 'Running TUI without a log file; debug output is suppressed.' (D) Document all injected JS globals in docs/reference/config.md with their types and descriptions. (E) Write a test verifying terminal state is restored after a simulated panic in the TUI goroutine.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split.go",

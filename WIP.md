@@ -30,9 +30,10 @@
 24. `fe8e23fa` — batch 4: T104+T106+T085+T096+T012+T055+T075+T002
 25. `cc5924c4` — batch 5: T051+T086+T026+T065+T013+T027+T050+T056
 26. `59a3b994` — batch 6: T058+T016+T030+T074+T054+T024+T037+T008
-27. (pending) — batch 7 audit-only: T014+T015+T017+T023+T032+T082+T029+T035+T038+T068+T069+T034
+27. `675270a1` — batch 7 audit-only: T014+T015+T017+T023+T032+T082+T029+T035+T038+T068+T069+T034
+28. (pending) — batch 8 audit-only: T018+T019+T020+T021+T022+T046+T047+T049+T039+T052+T033+T057
 
-## Completed Tasks (92/123)
+## Completed Tasks (104/123)
 - T014: CONFIG screen keyboard navigation audit — Tab order, phantom focus prevention, showAdvanced clamping verified
 - T015: CONFIG Claude status rendering — all 3 states (checking/available/unavailable) correct, tests pass
 - T017: PLAN_REVIEW card selection vs focus — focusedCard precedence, activeCard revert, Execute guards 0 splits
@@ -126,9 +127,21 @@
 - T024: Finalization screen audit — View Report/Create PRs/Finish buttons, overlay, cleanup
 - T037: Checkpoint/resume audit — session persistence, epoch detection, resume offer, integration test
 - T008: docs/pr-split-tui-design.md rewrite — PTY-based interactive verification section with ASCII mocks
+- T018: PLAN_REVIEW Ask Claude overlay + plan regeneration flow audit — overlay width/height, input field, convo scroll, Regenerate cache reset
+- T019: PLAN_EDITOR inline title edit — cursor rendering, auto-commit on Tab, Escape cancel, Enter save
+- T020: PLAN_EDITOR Move/Rename/Merge dialogs — source exclusion, empty rename rejection, merge-all, zone-marked buttons
+- T021: BRANCH_BUILDING branch creation rendering — per-branch icons, progress bar, error card width bounds, executionProgressMsg tracing
+- T022: BRANCH_BUILDING verify expanded output — Show/Hide Output toggle, viewport offset, zone marks, expandedVerifyBranch persistence
+- T046: Deep audit pr_split_00_core.js — runtime init, _gitExec sync/async, cancel/pause mechanism, chunk ordering
+- T047: Deep audit pr_split_05_execution.js — branch creation, cherry-pick, worktree management, cumulative chain, async execution
+- T049: Audit pr_split_09_claude.js — ClaudeCodeExecutor lifecycle, MCP bridge, conversation history, crash detection
+- T039: Auto-split automated pipeline audit — automatedSplit flow, wizard state interaction, handleAutoSplitPoll, async verify
+- T052: Claude question detection prompt — claudeQuestionDetected trigger, writeToChild routing, auto-dismiss, conversation history
+- T033: File discovery regression — analyzeDiffAsync parsing, renamed/binary/symlink/space handling, fileStatuses completeness
+- T057: pr_split.go hardening — terminal restore on panic, double-SIGINT audit, OSM_LOG_FILE validation, injected JS globals doc
 
 ## Current Work
-**92/123 done, 28 commits. Batch 7 committed (audit-only).**
+**104/123 done, 29 commits. Batch 8 committed (audit-only).**
 
 ### Batch 7 Audit (12 tasks) — ALL PASS
 Comprehensive code audit performed on 2026-03-16. All 12 tasks verified correct:
@@ -148,12 +161,11 @@ Comprehensive code audit performed on 2026-03-16. All 12 tasks verified correct:
 | T069 | Create PRs button flow | PASS | startPRCreation has guards (running/completed/no-plan). Dry-run from T077. Async dispatch with poll. Results display per-PR (created/skipped/failed/dryRun). Keyboard activation works. |
 | T034 | analyzeDiffAsync | PASS | Correct --name-status parsing. R/C only tracks dest path. T098 unknown status tracking. T100 binary fix in analyzeDiffStats. Error paths for branch/merge-base/diff failure all return createEmptyResult. |
 
-### Next Priority: Batch 8 candidates (31 remaining)
+### Next Priority: Batch 9 candidates (19 remaining)
 - T000: Prompt/input anchor stability rearchitect
 - T006: Manual-complete button for verify screen
 - T009: Binary E2E test — TestBinaryE2E_VerifyPTYLive
-- T039: Worktree cleanup on abnormal exit
-- T040: Split-view (Ctrl+L) rendering audit
+- T040: Write unit tests for resolveConflicts (7 strategies, timeout, cancellation, budgets)
 - T041: Claude passthrough (Ctrl+]) audit
 - T059: Pause/resume verify phase (unlocked by T084)
-- Remaining tasks: T007, T010, T018–T022, T033, T036, T039–T048, T052–T053, T057, T059–T060, T070–T071, T073, T088
+- Remaining tasks: T007, T010, T036, T040–T045, T048, T053, T059–T060, T070–T071, T073, T088

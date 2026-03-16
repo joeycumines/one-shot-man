@@ -937,8 +937,14 @@ func TestAutoFixStrategy_GoBuildMissingImports_Fix(t *testing.T) {
 			t.Fatal(err)
 		}
 		// which goimports fails.
+		// After T078 async conversion, shellExecAsync routes through
+		// exec.spawn('sh', ['-c', 'which goimports']) → mock key '!sh'.
 		if _, err := evalJS(`
-			globalThis._gitResponses['!which'] = _gitFail('');
+			globalThis._gitResponses['!sh'] = function(argv) {
+				var cmd = argv.join(' ');
+				if (cmd.indexOf('which') >= 0) return _gitFail('');
+				return _gitOk('');
+			};
 		`); err != nil {
 			t.Fatal(err)
 		}

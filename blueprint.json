@@ -23,14 +23,13 @@
     {
       "id": "T000",
       "title": "ARCHITECTURE: Rearchitect prompt/input anchor stability for Submit interactions — element positioning must be provably stable",
+      "status": "done",
       "description": "CRITICAL ERROR REPORTED: 'failed to send prompt to Claude: unable to locate stable prompt/input anchors before submit'. This error occurs when the TUI attempts to route a user interaction (keyboard Enter or mouse click) to a Submit action, but the underlying element's positioning anchor cannot be reliably located at the moment of submission. Root causes analysis required: (1) ZONE TRACKING: The Ask Claude overlay (pr_split_16_tui_core.js initClaudeConvo, updateClaudeConvo, viewClaudeConvo) opens an input field with a Submit button. Is the Submit button zone-marked? The zone must be registered BEFORE the view is rendered and remain valid until the button is clicked. Audit: (a) viewClaudeConvo renders a zone.mark('claude-convo-submit', ...) button — confirm it exists and is consistent across all render passes. (b) On overlay open (initClaudeConvo): when is the zone registered? Is there a race between overlay rendering and zone availability? (c) On overlay close: are zones cleaned up? Does a stale zone registration cause anchor mismatches on the next overlay open? (2) ELEMENT POSITIONING STABILITY: The Submit button's absolute position in the terminal (row, column) must remain constant between render and input handling. The overlay dimensions are computed from s.width and s.height. Are these accurate/current? When the user presses Enter, does the event loop see the SAME s.width/s.height as the view function did? If the terminal was resized between render and input, the coordinates drift and anchors become invalid. Audit: (a) Does BubbleTea call _updateFn on WindowSize BEFORE processing KeyPress events? (b) Is s.width/s.height updated synchronously on window resize? (c) Are overlay dimensions cached or recomputed on every view call? (3) INPUT INTERCEPTION: The input field text submission (Enter key) must be routed correctly. Is Ctrl+Enter implemented for newlines? Does standard Enter always submit? Audit: (a) updateClaudeConvo key handlers: is there a race where normal Enter is intercepted at the wrong level? (b) The zone.mark for the Submit button — is it only active when the overlay is open? Are there phantom zones from previous overlays? (4) VISUAL/RENDERING CONSISTENCY: The overlay must render at a fixed position and size. Does lipgloss rendering cause pixel shifts between render passes? Audit: All lipgloss.NewStyle().width().padding().border() calls in viewClaudeConvo — confirm computed widths are deterministic and bounds-checked against s.width. REQUIRED DELIVERABLES: (1) Write a comprehensive audit document (docs/pr-split-prompt-anchor-stability.md) that investigates all four root causes. Include: (a) Zone lifecycle diagram: when zones are registered, when they're checked during input, when they're cleared. (b) Overlay coordinate mapping: how (row, col) is computed for the overlay and Submit button, and proof that they're stable across a full user interaction cycle. (c) Input routing trace: from raw BubbleTea KeyPress event through updateClaudeConvo to Submit execution. (d) Test case stub: pseudocode for a test that reproduces the error (simulating terminal resize or stale zone state). (2) Identify the SPECIFIC line number and code pattern in pr_split_16_tui_core.js or pr_split_15_tui_views.js where the anchor check fails. The error message itself ('unable to locate stable prompt/input anchors') must be grep-able in the code. (3) Propose a rearchitected design: (a) Option A: Pre-compute and cache overlay anchor positions in s (e.g., s.claudeConvoAnchor = {top, left, width}) on overlay open, then refer to cached anchors during input handling. Invalidate cache on any view parameter change (width, height). (b) Option B: Move all zone registration to a dedicated 'zone registry' module that guarantees consistency — zones are registered once and reused. (c) Option C: Use BubbleTea's built-in mouse region tracking instead of manual bubblezone; let BubbleTea handle anchor stability. (4) Create a unit test fixture: _testClaudeConvoAnchorStability() that (a) renders viewClaudeConvo, (b) extracts zone marks from the output, (c) simulates a terminal resize, (d) re-renders, (e) re-extracts zones, (f) asserts all zones remain at identical coordinates OR move to new but consistent coordinates. (5) ACCEPTANCE: The audit document is comprehensive, all four root causes are investigated (even if some are ruled out), the error's source code is identified, a rearchitected design is proposed, and a test fixture proves the solution prevents the error under simulated resize/input races. No partial acceptance — this is foundational.",
-      "status": "not-started",
       "body": 1,
       "files_affected": [
         "docs/pr-split-prompt-anchor-stability.md",
-        "internal/command/pr_split_16_tui_core.js",
-        "internal/command/pr_split_15_tui_views.js",
-        "internal/command/pr_split_16_overlays_test.go"
+        "internal/command/pr_split_10_pipeline.js",
+        "internal/command/pr_split_10_pipeline_test.go"
       ]
     },
     {
@@ -505,7 +504,7 @@
       "id": "T044",
       "title": "Ensure all test suites pass cleanly: run the full test suite",
       "description": "After the config.mk error is resolved (this can only happen after the blueprint is approved), run the full test suite and ensure zero failures: (1) make test (all unit tests). (2) make test-binary-e2e (binary E2E). (3) make test-tui-hang (hang reproducers). (4) make integration-test-prsplit-mcp (MCP mock tests). (5) All tests must pass with -race flag. (6) No flaky tests allowed — any test that passes unreliably must be fixed. (7) Record the test run output.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": []
     },
@@ -676,7 +675,7 @@
       "id": "T060",
       "title": "Refactor: extract wizard screen renderers into individual files for maintainability",
       "description": "pr_split_15_tui_views.js is extremely long (2700+ lines). As an ongoing maintainability improvement: (1) Assess whether the file can be split into logical groups: chrome.js (title/nav/status), screens_1-4.js, screens_5-7.js. (2) The chunk loading system in pr_split.go supports arbitrary chunk names — adding new chunks is straightforward. (3) Ensure all cross-chunk exports (prSplit._renderTitleBar etc.) are preserved. (4) This refactoring must preserve all existing tests. (5) If the refactoring is too risky without tests, add comprehensive tests first (T043) then refactor.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",

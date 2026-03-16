@@ -1,6 +1,53 @@
 'use strict';
 // pr_split_15_tui_views.js — TUI: BubbleTea library imports, colors, styles, chrome, screen views
 // Dependencies: chunks 00-14 must be loaded first.
+//
+// -------------------------------------------------------------------------
+// REFACTOR ASSESSMENT (T060) — 2026-03-16
+// -------------------------------------------------------------------------
+// This file is 2492 lines containing 17 view/renderer functions plus
+// shared styles, colors, layout helpers, and chrome (title/nav/status bars).
+//
+// FEASIBILITY: SPLITTING IS FEASIBLE
+//
+// Proposed split:
+//   15a_tui_styles.js  — styles, colors, COLORS, layoutMode (lines 1-225)
+//   15b_tui_chrome.js  — renderTitleBar, renderNavBar, renderStatusBar,
+//                         renderClaudePane, renderOutputPane, renderStepDots,
+//                         renderProgressBar, viewClaudeConvoOverlay (lines 226-920)
+//   15c_tui_screens.js — viewConfigScreen through viewFinalizationScreen
+//                         (lines 921-1960)
+//   15d_tui_dialogs.js — viewErrorResolutionScreen, viewHelpOverlay,
+//                         viewConfirmCancelOverlay, viewReportOverlay,
+//                         viewMoveFileDialog, viewRenameSplitDialog,
+//                         viewMergeSplitsDialog (lines 1961-2492)
+//
+// CROSS-CHUNK DEPENDENCIES:
+//   All screen functions depend on `styles`, `COLORS`, `layoutMode` (→ 15a)
+//   and `renderTitleBar`, `renderNavBar`, `renderStatusBar` (→ 15b).
+//   These are already exported as prSplit._wizardStyles, prSplit._wizardColors,
+//   prSplit._layoutMode, prSplit._renderTitleBar, etc. — so consuming chunks
+//   can read them from prSplit._ namespace across chunk boundaries.
+//
+// PREREQUISITES MET:
+//   ✅ T043 (multi-width screen tests, batch 10) provides regression coverage
+//      for all screen renderers at 60/80/120/200 widths.
+//   ✅ Chunk loading system (pr_split.go) already supports arbitrary chunk names.
+//   ✅ All cross-chunk exports use the prSplit._ convention.
+//
+// RISK ASSESSMENT:
+//   MEDIUM — The refactor is purely mechanical (move functions between files,
+//   update chunk names in pr_split.go) but the diff is large and any missed
+//   closure variable will cause a silent runtime error (undefined function).
+//   The T043 test suite provides a reliable safety net.
+//
+// RECOMMENDATION:
+//   DEFER to a dedicated refactoring session. The current 9-hour session's
+//   primary mandate is correctness, not maintainability. The file works
+//   correctly as-is; splitting it improves DX but risks destabilizing
+//   17 interrelated renderers during a session focused on other tasks.
+//   When attempted: run full TUI test suite after each chunk extraction.
+// -------------------------------------------------------------------------
 
 (function(prSplit) {
 

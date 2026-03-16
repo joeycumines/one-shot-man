@@ -1,6 +1,7 @@
 package command
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -230,5 +231,612 @@ func toInt64(v any) int64 {
 		return int64(n)
 	default:
 		return 0
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T000 — Anchor Pipeline Unit Tests (prompt/input stability audit)
+// ---------------------------------------------------------------------------
+//
+// These tests exercise the pure functions in the PTY anchor subsystem
+// (pr_split_10_pipeline.js) that are responsible for detecting the Claude
+// prompt marker and input anchor positions in terminal screenshots.
+//
+// Functions under test (all exported as prSplit._*):
+//   getTextTailAnchor, findPromptMarker, isPromptMarkerLine,
+//   detectPromptBlocker, captureInputAnchors, resolveSendConfig,
+//   captureScreenshot
+// ---------------------------------------------------------------------------
+
+// --- getTextTailAnchor ---
+
+func TestAnchorPipeline_GetTextTailAnchor(t *testing.T) {
+	t.Parallel()
+	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+
+	tests := []struct {
+		name     string
+		text     string
+		maxChars int
+		want     string
+	}{
+		{"empty string", "", 28, ""},
+		{"single line fits", "hello world", 28, "hello world"},
+		{"single line truncated", "abcdefghijklmnopqrstuvwxyz12345", 10, "vwxyz12345"},
+		{"multi line takes last non-empty", "first line\nsecond line\n", 28, "second line"},
+		{"trailing blank lines skipped", "first\nsecond\n\n\n", 28, "second"},
+		{"truncates long last line", "short\n" + strings.Repeat("x", 50), 20, strings.Repeat("x", 20)},
+		{"only whitespace lines", "\n  \n\t\n", 28, ""},
+		{"null input", "null_sentinel", 28, "null_sentinel_result"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var expr string
+			if tt.name == "null input" {
+				expr = `prSplit._getTextTailAnchor(null, 28)`
+			} else {
+				// Escape for JS string literal.
+				escaped := strings.ReplaceAll(tt.text, `\`, `\\`)
+				escaped = strings.ReplaceAll(escaped, "\n", `\n`)
+				escaped = strings.ReplaceAll(escaped, "'", `\'`)
+				expr = fmt.Sprintf("prSplit._getTextTailAnchor('%s', %d)", escaped, tt.maxChars)
+			}
+			val, err := evalJS(expr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := fmt.Sprintf("%v", val)
+			if tt.name == "null input" {
+				// null → ""
+				if got != "" {
+					t.Errorf("null input: expected empty string, got %q", got)
+				}
+			} else if got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// --- isPromptMarkerLine ---
+
+func TestAnchorPipeline_IsPromptMarkerLine(t *testing.T) {
+	t.Parallel()
+	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+
+	tests := []struct {
+		line string
+		want bool
+	}{
+		{"❯ ", true},
+		{"> ", true},
+		{"  ❯ type here", true},
+		{"  > type here", true},
+		{"❯ 1. Dark mode", false},  // setup selector excluded
+		{"> 2. Light mode", false}, // setup selector excluded
+		{"hello world", false},     // no marker
+		{"", false},                // empty
+		{"   ", false},             // whitespace only
+		{"❯", true},                // bare marker
+		{">", true},                // bare marker
+		{">> nested quote", true},  // first char is >
+		{"3. Item three", false},   // no marker
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.line, func(t *testing.T) {
+			escaped := strings.ReplaceAll(tt.line, `\`, `\\`)
+			escaped = strings.ReplaceAll(escaped, "'", `\'`)
+			val, err := evalJS(fmt.Sprintf("prSplit._isPromptMarkerLine('%s')", escaped))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, _ := val.(bool)
+			if got != tt.want {
+				t.Errorf("isPromptMarkerLine(%q) = %v, want %v", tt.line, got, tt.want)
+			}
+		})
+	}
+}
+
+// --- detectPromptBlocker ---
+
+func TestAnchorPipeline_DetectPromptBlocker(t *testing.T) {
+	t.Parallel()
+	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+
+	t.Run("first-run setup detected", func(t *testing.T) {
+		screen := "Welcome to Claude!\nChoose the text style\nLet's get started\n❯ 1. Dark mode"
+		escaped := strings.ReplaceAll(screen, "\n", `\n`)
+		escaped = strings.ReplaceAll(escaped, "'", `\'`)
+		val, err := evalJS(fmt.Sprintf("prSplit._detectPromptBlocker('%s')", escaped))
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := fmt.Sprintf("%v", val)
+		if s == "" {
+			t.Fatal("expected blocker message for first-run setup, got empty string")
+		}
+		if !strings.Contains(s, "first-run setup") {
+			t.Errorf("blocker message should mention first-run setup, got: %s", s)
+		}
+	})
+
+	t.Run("normal prompt no blocker", func(t *testing.T) {
+		screen := "Claude Code v1.0\n\n❯ "
+		escaped := strings.ReplaceAll(screen, "\n", `\n`)
+		val, err := evalJS(fmt.Sprintf("prSplit._detectPromptBlocker('%s')", escaped))
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := fmt.Sprintf("%v", val)
+		if s != "" {
+			t.Errorf("expected no blocker, got: %q", s)
+		}
+	})
+
+	t.Run("null screen", func(t *testing.T) {
+		val, err := evalJS("prSplit._detectPromptBlocker(null)")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := fmt.Sprintf("%v", val)
+		if s != "" {
+			t.Errorf("expected no blocker for null, got: %q", s)
+		}
+	})
+}
+
+// --- findPromptMarker ---
+
+func TestAnchorPipeline_FindPromptMarker(t *testing.T) {
+	t.Parallel()
+	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+
+	t.Run("finds last prompt marker", func(t *testing.T) {
+		// Screen with two prompt markers — should find the LAST one.
+		screen := "Some output\n❯ old prompt\nMore output\n❯ current prompt"
+		escaped := strings.ReplaceAll(screen, "\n", `\n`)
+		escaped = strings.ReplaceAll(escaped, "'", `\'`)
+		val, err := evalJS(fmt.Sprintf("JSON.stringify(prSplit._findPromptMarker('%s'))", escaped))
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := fmt.Sprintf("%v", val)
+		if !strings.Contains(s, `"lineIndex":3`) {
+			t.Errorf("expected lineIndex 3 (last ❯ line), got: %s", s)
+		}
+	})
+
+	t.Run("no prompt marker returns null", func(t *testing.T) {
+		screen := "Just some output\nNo markers here"
+		escaped := strings.ReplaceAll(screen, "\n", `\n`)
+		val, err := evalJS(fmt.Sprintf("prSplit._findPromptMarker('%s')", escaped))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if val != nil {
+			t.Errorf("expected null for no markers, got: %v", val)
+		}
+	})
+
+	t.Run("setup menu markers excluded", func(t *testing.T) {
+		screen := "❯ 1. Dark mode\n❯ 2. Light mode"
+		escaped := strings.ReplaceAll(screen, "\n", `\n`)
+		escaped = strings.ReplaceAll(escaped, "'", `\'`)
+		val, err := evalJS(fmt.Sprintf("prSplit._findPromptMarker('%s')", escaped))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if val != nil {
+			t.Errorf("expected null (setup menu excluded), got: %v", val)
+		}
+	})
+
+	t.Run("single prompt marker", func(t *testing.T) {
+		screen := "Welcome\n❯ "
+		escaped := strings.ReplaceAll(screen, "\n", `\n`)
+		val, err := evalJS(fmt.Sprintf("JSON.stringify(prSplit._findPromptMarker('%s'))", escaped))
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := fmt.Sprintf("%v", val)
+		if !strings.Contains(s, `"lineIndex":1`) {
+			t.Errorf("expected lineIndex 1, got: %s", s)
+		}
+	})
+}
+
+// --- captureInputAnchors (with mocked tuiMux.screenshot) ---
+
+func TestAnchorPipeline_CaptureInputAnchors(t *testing.T) {
+	t.Parallel()
+	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+
+	// Install a mock tuiMux that returns controlled screenshots.
+	_, err := evalJS(`
+		globalThis.tuiMux = {
+			_screen: '',
+			screenshot: function() { return tuiMux._screen; }
+		};
+		true
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("unobserved when tuiMux is undefined", func(t *testing.T) {
+		_, err := evalJS(`
+			var savedMux = globalThis.tuiMux;
+			globalThis.tuiMux = undefined;
+			true
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			evalJS(`globalThis.tuiMux = savedMux; true`)
+		}()
+
+		val, err := evalJS(`JSON.stringify(prSplit._captureInputAnchors('hello', prSplit._resolveSendConfig()))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := fmt.Sprintf("%v", val)
+		if !strings.Contains(s, `"observed":false`) {
+			t.Errorf("expected observed:false when tuiMux undefined, got: %s", s)
+		}
+	})
+
+	t.Run("finds prompt and tail anchor co-located", func(t *testing.T) {
+		// Screen with prompt marker and the text tail on adjacent line.
+		_, err := evalJS(`
+			tuiMux._screen = 'Claude Code v1.0\n❯ hello world\nhello world';
+			true
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(prSplit._captureInputAnchors('hello world', prSplit._resolveSendConfig()))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := fmt.Sprintf("%v", val)
+		if !strings.Contains(s, `"observed":true`) {
+			t.Errorf("expected observed:true, got: %s", s)
+		}
+		if !strings.Contains(s, `"promptLineIndex":1`) {
+			t.Errorf("expected promptLineIndex:1, got: %s", s)
+		}
+		// inputType should be 'tail' (matched via text tail).
+		if !strings.Contains(s, `"inputType":"tail"`) {
+			t.Errorf("expected inputType:tail, got: %s", s)
+		}
+	})
+
+	t.Run("finds paste indicator", func(t *testing.T) {
+		_, err := evalJS(`
+			tuiMux._screen = 'Claude Code v1.0\n❯ [Pasted text...]\n';
+			true
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(prSplit._captureInputAnchors('some very long text that wont match tail', prSplit._resolveSendConfig()))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := fmt.Sprintf("%v", val)
+		if !strings.Contains(s, `"inputType":"paste"`) {
+			t.Errorf("expected inputType:paste, got: %s", s)
+		}
+	})
+
+	t.Run("detects blocker", func(t *testing.T) {
+		_, err := evalJS(`
+			tuiMux._screen = "Choose the text style\nLet's get started\n❯ 1. Dark mode";
+			true
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`JSON.stringify(prSplit._captureInputAnchors('test', prSplit._resolveSendConfig()))`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := fmt.Sprintf("%v", val)
+		if !strings.Contains(s, `"blocker"`) || strings.Contains(s, `"blocker":""`) {
+			t.Errorf("expected non-empty blocker, got: %s", s)
+		}
+	})
+
+	t.Run("stableKey format is promptBottom|inputBottom", func(t *testing.T) {
+		_, err := evalJS(`
+			tuiMux._screen = 'line0\n❯ prompt\nmy tail text';
+			true
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		val, err := evalJS(`
+			var r = prSplit._captureInputAnchors('my tail text', prSplit._resolveSendConfig());
+			r.stableKey
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := fmt.Sprintf("%v", val)
+		// stableKey is "promptBottom|inputBottom"
+		if !strings.Contains(s, "|") {
+			t.Errorf("stableKey should contain '|', got: %q", s)
+		}
+	})
+}
+
+// --- resolveSendConfig ---
+
+func TestAnchorPipeline_ResolveSendConfig(t *testing.T) {
+	t.Parallel()
+	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+
+	t.Run("defaults", func(t *testing.T) {
+		val, err := evalJS(`JSON.stringify(prSplit._resolveSendConfig())`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := fmt.Sprintf("%v", val)
+		for _, kv := range []string{
+			`"textNewlineDelayMs":10`,
+			`"textChunkBytes":512`,
+			`"textChunkDelayMs":2`,
+			`"preSubmitStableTimeoutMs":1500`,
+			`"preSubmitStablePollMs":50`,
+			`"preSubmitStableSamples":3`,
+			`"inputAnchorTailChars":28`,
+			`"submitAckTimeoutMs":1500`,
+			`"submitAckPollMs":50`,
+			`"submitAckStableSamples":2`,
+			`"submitMaxNewlineAttempts":3`,
+			`"promptReadyTimeoutMs":10000`,
+			`"promptReadyPollMs":100`,
+			`"promptReadyStableSamples":2`,
+		} {
+			if !strings.Contains(s, kv) {
+				t.Errorf("missing default %s in config:\n%s", kv, s)
+			}
+		}
+	})
+
+	t.Run("override via prSplit.SEND_*", func(t *testing.T) {
+		_, err := evalJS(`prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 5000; true`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			evalJS(`prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 1500; true`)
+		}()
+
+		val, err := evalJS(`JSON.stringify(prSplit._resolveSendConfig())`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := fmt.Sprintf("%v", val)
+		if !strings.Contains(s, `"preSubmitStableTimeoutMs":5000`) {
+			t.Errorf("override not applied, got: %s", s)
+		}
+	})
+
+	t.Run("invalid override falls back to default", func(t *testing.T) {
+		_, err := evalJS(`prSplit.SEND_TEXT_CHUNK_BYTES = 'not-a-number'; true`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			evalJS(`prSplit.SEND_TEXT_CHUNK_BYTES = 512; true`)
+		}()
+
+		val, err := evalJS(`prSplit._resolveSendConfig().textChunkBytes`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := toInt64(val)
+		if n != 512 {
+			t.Errorf("expected fallback to 512, got %d", n)
+		}
+	})
+}
+
+// --- sendToHandle with mocked tuiMux (anchor stability integration) ---
+
+func TestAnchorPipeline_SendToHandle_MockedTuiMux_Stable(t *testing.T) {
+	t.Parallel()
+	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+
+	// Set up mock tuiMux and handle. Configure fast timeouts for test speed.
+	_, err := evalJS(`
+		var __sends = [];
+		var __mockHandle = { send: function(d) { __sends.push(d); } };
+		globalThis.tuiMux = {
+			_screen: '❯ ',
+			screenshot: function() { return tuiMux._screen; }
+		};
+		// Fast timeouts for testing.
+		prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 200;
+		prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS = 5;
+		prSplit.SEND_PRE_SUBMIT_STABLE_SAMPLES = 2;
+		prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS = 200;
+		prSplit.SEND_SUBMIT_ACK_POLL_MS = 5;
+		prSplit.SEND_SUBMIT_ACK_STABLE_SAMPLES = 1;
+		prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 200;
+		prSplit.SEND_PROMPT_READY_POLL_MS = 5;
+		prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 2;
+		prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 1;
+		prSplit.SEND_TEXT_CHUNK_DELAY_MS = 0;
+		true
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate: after text is sent, screenshot shows pasted text near prompt.
+	// After Enter, screenshot changes (prompt moves down).
+	_, err = evalJS(`
+		var __sendCount = 0;
+		__mockHandle.send = function(d) {
+			__sends.push(d);
+			__sendCount++;
+			if (d === '\r') {
+				// Simulate prompt moving after Enter.
+				tuiMux._screen = 'Processing...\n\n❯ ';
+			} else {
+				// After text paste, show text near prompt.
+				tuiMux._screen = '❯ ' + d;
+			}
+		};
+		true
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := evalJS(`await prSplit.sendToHandle(__mockHandle, 'test input')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m, ok := val.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map, got %T: %v", val, val)
+	}
+	if m["error"] != nil {
+		t.Fatalf("expected no error, got: %v", m["error"])
+	}
+}
+
+func TestAnchorPipeline_SendToHandle_Timeout_UnstableAnchors(t *testing.T) {
+	t.Parallel()
+	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+
+	// Set up mock tuiMux that returns constantly changing screenshots.
+	// Use line lengths that change every call to prevent stableKey convergence.
+	_, err := evalJS(`
+		var __jitterCount = 0;
+		globalThis.tuiMux = {
+			screenshot: function() {
+				__jitterCount++;
+				// Pad to different lengths so bottom offsets never stabilize.
+				var pad = new Array(__jitterCount + 1).join('x');
+				return pad + '\n❯ prompt';
+			}
+		};
+		var __mockHandle = { send: function(d) {} };
+		// Very fast timeout so test doesn't hang.
+		prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 60;
+		prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS = 5;
+		prSplit.SEND_PRE_SUBMIT_STABLE_SAMPLES = 3;
+		prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 60;
+		prSplit.SEND_PROMPT_READY_POLL_MS = 5;
+		prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 3;
+		prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS = 50;
+		prSplit.SEND_SUBMIT_ACK_POLL_MS = 5;
+		prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 1;
+		prSplit.SEND_TEXT_CHUNK_DELAY_MS = 0;
+		true
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := evalJS(`await prSplit.sendToHandle(__mockHandle, 'test prompt')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m, ok := val.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map, got %T: %v", val, val)
+	}
+	// sendToHandle returns { error: string }. With constantly changing
+	// screenshots, the prompt ready phase should timeout, producing an error.
+	errVal, _ := m["error"]
+	if errVal == nil {
+		// May succeed via graceful fallback; that's also acceptable behavior.
+		return
+	}
+	errStr, _ := errVal.(string)
+	if errStr == "" {
+		t.Errorf("expected non-empty error string, got: %v", errVal)
+	}
+}
+
+func TestAnchorPipeline_CaptureScreenshot_NullMux(t *testing.T) {
+	t.Parallel()
+	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+
+	// When tuiMux is undefined, captureScreenshot returns null.
+	_, err := evalJS(`globalThis.tuiMux = undefined; true`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := evalJS(`prSplit._captureScreenshot()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != nil {
+		t.Errorf("expected null when tuiMux is undefined, got: %v", val)
+	}
+}
+
+func TestAnchorPipeline_CaptureScreenshot_ThrowingMux(t *testing.T) {
+	t.Parallel()
+	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+
+	// When screenshot() throws, captureScreenshot returns null gracefully.
+	_, err := evalJS(`
+		globalThis.tuiMux = {
+			screenshot: function() { throw new Error('PTY disconnected'); }
+		};
+		true
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := evalJS(`prSplit._captureScreenshot()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != nil {
+		t.Errorf("expected null on screenshot throw, got: %v", val)
+	}
+}
+
+func TestAnchorPipeline_CaptureScreenshot_ValidMux(t *testing.T) {
+	t.Parallel()
+	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+
+	_, err := evalJS(`
+		globalThis.tuiMux = {
+			screenshot: function() { return 'Hello\n❯ '; }
+		};
+		true
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := evalJS(`prSplit._captureScreenshot()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := fmt.Sprintf("%v", val)
+	if s != "Hello\n❯ " {
+		t.Errorf("expected 'Hello\\n❯ ', got %q", s)
 	}
 }

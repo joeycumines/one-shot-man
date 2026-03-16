@@ -2059,4 +2059,13 @@
     prSplit.resolveConflictsWithClaude = resolveConflictsWithClaude;
     prSplit.automatedSplit = automatedSplit;
 
+    // Test-only exports for anchor pipeline unit testing (T000 audit).
+    prSplit._getTextTailAnchor = getTextTailAnchor;
+    prSplit._findPromptMarker = findPromptMarker;
+    prSplit._isPromptMarkerLine = isPromptMarkerLine;
+    prSplit._detectPromptBlocker = detectPromptBlocker;
+    prSplit._captureInputAnchors = captureInputAnchors;
+    prSplit._resolveSendConfig = resolveSendConfig;
+    prSplit._captureScreenshot = captureScreenshot;
+
 })(globalThis.prSplit);

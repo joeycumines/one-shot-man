@@ -1994,7 +1994,7 @@ func TestValidateResolution(t *testing.T) {
 		},
 		{
 			name:      "valid preExistingFailure",
-			js:        `JSON.stringify(globalThis.prSplit.validateResolution({preExistingFailure: true}))`,
+			js:        `JSON.stringify(globalThis.prSplit.validateResolution({preExistingFailure: true, reason: 'known flaky test in upstream'}))`,
 			wantValid: true,
 		},
 		{

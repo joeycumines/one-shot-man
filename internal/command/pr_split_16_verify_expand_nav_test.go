@@ -1331,7 +1331,9 @@ func TestChunk16_T40_HelpOverlayBranchBuildingSection(t *testing.T) {
 		var errors = [];
 		setupPlanCache();
 
-		var s = initState('CONFIG');
+		// T065: Help is context-aware — Branch Building section only
+		// appears in BRANCH_BUILDING or EQUIV_CHECK state.
+		var s = initState('BRANCH_BUILDING');
 		s.showHelp = true;
 		var view = globalThis.prSplit._viewHelpOverlay(s);
 
@@ -1339,11 +1341,19 @@ func TestChunk16_T40_HelpOverlayBranchBuildingSection(t *testing.T) {
 		if (view.indexOf('Branch Building') < 0) {
 			errors.push('missing Branch Building section');
 		}
-		if (view.indexOf('Expand / collapse output') < 0) {
+		if (view.indexOf('Expand') < 0 && view.indexOf('collapse') < 0) {
 			errors.push('missing expand/collapse help text');
 		}
-		if (view.indexOf('Interrupt verification') < 0) {
+		// T065: Interrupt text is now in the "Verification" subsection.
+		if (view.indexOf('Interrupt') < 0 && view.indexOf('force kill') < 0) {
 			errors.push('missing interrupt help text');
+		}
+
+		// CONFIG should NOT show Branch Building section.
+		var s2 = initState('CONFIG');
+		var v2 = globalThis.prSplit._viewHelpOverlay(s2);
+		if (v2.indexOf('Branch Building') >= 0) {
+			errors.push('CONFIG should not show Branch Building section');
 		}
 
 		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');

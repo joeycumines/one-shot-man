@@ -881,23 +881,13 @@
             },
 
             'edit-plan': {
-                description: 'Open interactive plan editor (BubbleTea TUI)',
+                description: 'Edit plan (TUI mode only \u2014 use move/rename/merge in REPL)',
                 usage: 'edit-plan',
                 handler: function() {
                     if (!st.planCache || !st.planCache.splits || st.planCache.splits.length === 0) {
                         output.print('No plan to edit. Run "plan" first.'); return;
                     }
-                    var items = [];
-                    for (var i = 0; i < st.planCache.splits.length; i++) {
-                        var s = st.planCache.splits[i];
-                        items.push({
-                            name: s.name || ('split-' + (i + 1)),
-                            files: s.files || [],
-                            branchName: s.branchName || s.name || '',
-                            description: s.message || ''
-                        });
-                    }
-                    output.print('[edit-plan] Plan editor not available. Use text commands: move, rename, merge.');
+                    output.print('[edit-plan] Interactive plan editing requires TUI mode (default). In REPL mode, use text commands: move <from> <to>, rename <index> <name>, merge <i> <j>.');
                 }
             },
 

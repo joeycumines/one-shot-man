@@ -168,7 +168,7 @@
       "id": "T013",
       "title": "Audit and fix border alignment for all card styles across all screens",
       "description": "Border misalignment is reported as a known bug. Audit: (1) styles.focusedCard() uses doubleBorder() — which adds 1 char on each side. styles.activeCard() and styles.inactiveCard() — what border do they use? The switch from normalBorder to doubleBorder changes the visual width by 0 (doubleBorder uses the same box-drawing chars as normalBorder for top/bottom/left/right). BUT if normalBorder vs roundedBorder are mixed, there are subtle rounding differences in corners. (2) In viewPlanReviewScreen, confirm all card styles use consistent width() settings that account for border width correctly. The card width should be: s.width - 8 - 2 (for border on each side). If .padding(1,2) is used, subtract 4 from content width. (3) In viewPlanEditorScreen, same audit. (4) Ensure no card overflows the terminal width. (5) Write a parameterized unit test at multiple terminal widths (40, 60, 80, 100, 120) verifying lipgloss.width() of rendered cards does not exceed the available width.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -310,7 +310,7 @@
       "id": "T026",
       "title": "Global chrome: fix status bar Claude status indicator and verify it polls correctly",
       "description": "Audit getClaudeStatusText in pr_split_15_tui_views.js: (1) tuiMux.lastActivityMs() returns ms since last child output. Verify the thresholds (< 2000 = LIVE, < 10000 = idle, else quiet) are appropriate. (2) The '⏸️ Claude: no output' state (ms < 0) means no output yet — this is the initial state. (3) The status badge uses zone.mark('claude-status', ...) for mouse click. (4) Verify the auto-attach notification (claudeAutoAttachNotif) auto-dismisses correctly after 5s — the dismiss logic mutates s directly which may be problematic in the render function (side effects in view). FIX: move dismiss logic to the update function (via a tick) rather than the view function.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -321,7 +321,7 @@
       "id": "T027",
       "title": "Global chrome: audit nav bar layout at narrow terminal widths (≤50 cols)",
       "description": "Audit renderNavBar at narrow widths: (1) At narrow=true (< 50 cols), labels are shortened (← instead of ← Back, × instead of Cancel). (2) The gap between left and right sections: gap = Max(2, w - leftW - rightW). At 40 cols with all buttons, is this gap ever negative? What happens? (3) The spacer lipgloss.newStyle().width(gap) — if gap is 0 or 1, does it render an empty string correctly? (4) At very narrow widths, the dots (step indicator) may push the next button off-screen. How is this handled? (5) Write unit tests at 40, 50, 60, 80 column widths verifying the nav bar renders without overflow or wrapped lines.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -568,7 +568,7 @@
       "id": "T050",
       "title": "Audit pr_split_load order and global injection: confirm no chunk has missing dependency",
       "description": "The 17 JS chunks are loaded in order (00 through 16). Each chunk has IIFE pattern attaching to globalThis.prSplit. Task: (1) Map out the dependency graph: which chunk exports what, what each chunk requires from prior chunks. (2) Confirm the declaration order in pr_split.go (allChunks slice) matches the dependency order. (3) Confirm that TUI mocks in tests correctly replace or initialize required globals before chunk loading. (4) Look for any circular dependency or ordering bug that could cause undefined function errors at runtime.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split.go",
@@ -579,7 +579,7 @@
       "id": "T051",
       "title": "Implement 'Processing...' spinner animation with frame cycling",
       "description": "Currently the 'Processing...' state in the nav bar shows a static disabled button. This provides zero visual feedback that anything is happening. Implement: (1) A spinner animation: ⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏ cycling at 100ms per frame (aligned with analysis-poll tick rate). (2) The spinner character is stored in s.spinnerFrame (0-9). (3) handleAnalysisPoll, handleExecutionPoll, and handleVerifyPoll each increment s.spinnerFrame. (4) renderNavBar uses s.spinnerFrame to render the animated spinner next to 'Processing...'. (5) The spinner also shows on the title bar when isProcessing=true. (6) Confirm the spinner advances even when no data is changing (pure animation driven by tick).",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -632,7 +632,7 @@
       "id": "T056",
       "title": "Verify correct OSM_LOG_FILE behavior: log level and file output in production runs",
       "description": "Audit log configuration for pr-split: (1) OSM_LOG_LEVEL=debug should produce debug output to OSM_LOG_FILE. (2) In TUI mode, ALL log output must go to the log file, NOT to stdout/stderr (would corrupt BubbleTea terminal rendering). (3) Confirm log.printf() in JS goes to the right place. (4) Confirm the debug log is created correctly and contains useful diagnostic information. (5) Test with a binary run (as in the PTY test) that the log file contains expected entries.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split.go"
@@ -733,7 +733,7 @@
       "id": "T065",
       "title": "Fix viewHelpOverlay to be context-aware and include all keybindings",
       "description": "CONFIRMED GAP (second session read): viewHelpOverlay is NOT context-aware — it always shows all sections regardless of current wizard state. Issues: (1) Add context-awareness: when wizardState is BRANCH_BUILDING, show the verify-specific section prominently. When EQUIV_CHECK, show the new Re-verify shortcut. (2) Missing keybindings: (a) verify scroll — ↑/↓ scrolls verify output (only when activeVerifySession is active); (b) double Ctrl+C for force-kill; (c) the verify interrupt interception of Ctrl+C (when session active, it goes to session, not wizard cancel). (3) The help overlay is closed by Esc but this is not documented. (4) The report overlay hint says 'c copy' but copying is not implemented — either implement copy or remove the hint. (5) Add unit tests verifying context-specific content appears at the right states.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -973,7 +973,7 @@
       "id": "T086",
       "title": "'edit-plan' REPL command is a stub — implement or document the gap",
       "description": "CONFIRMED by reading pr_split_14_tui_commands.js: the 'edit-plan' REPL command handler immediately prints 'Plan editor not available. Use text commands: move, rename, merge.' This is a non-functional stub. Options: (1) Option A: Implement a minimal non-BubbleTea text-driven plan editor in the REPL that prompts for move/rename/merge operations sequentially. (2) Option B: ACCEPTED GAP — officially document that interactive editing is only available in the BubbleTea TUI (osm pr-split -interactive). Update the help text to say: 'Interactive plan editing is available in TUI mode (default). In REPL mode, use: move, rename, merge, reorder commands.' (3) If Option B, mark the help text for the 'edit-plan' command with a clear direction to TUI mode. (4) Either way, remove the misleading suggestion that 'edit-plan' will work and document the REPL text-editing alternative. (5) Update docs/scripting.md to document the REPL editing pattern.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_14_tui_commands.js",

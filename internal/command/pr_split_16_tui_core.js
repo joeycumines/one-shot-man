@@ -2950,6 +2950,7 @@
                     s.analysisElapsedMs = elapsed;
                 }
             }
+            s.spinnerFrame = (s.spinnerFrame || 0) + 1;
             return [s, tea.tick(100, 'analysis-poll')];
         }
 
@@ -3334,6 +3335,7 @@
                 }
             }
 
+            s.spinnerFrame = (s.spinnerFrame || 0) + 1;
             return [s, tea.tick(500, 'auto-poll')];
         }
 
@@ -3632,6 +3634,7 @@
 
         // Still running — poll again for spinner animation.
         if (s.executionRunning) {
+            s.spinnerFrame = (s.spinnerFrame || 0) + 1;
             return [s, tea.tick(100, 'execution-poll')];
         }
 
@@ -4008,6 +4011,7 @@
 
         if (!s.activeVerifySession.isDone()) {
             // Still running — schedule next poll.
+            s.spinnerFrame = (s.spinnerFrame || 0) + 1;
             return [s, tea.tick(100, 'verify-poll')];
         }
 

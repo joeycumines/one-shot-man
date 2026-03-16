@@ -13,15 +13,22 @@ func TestChunk16_HelpOverlay_ContainsAllSections(t *testing.T) {
 	evalJS := loadTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
-		var s = initState('CONFIG');
-		var view = globalThis.prSplit._viewHelpOverlay(s);
 		var errors = [];
 
-		// Section headers.
+		// T065: Help overlay is now context-aware. Test each section
+		// appears in the appropriate wizard state.
+
+		// PLAN_EDITOR state: should show Plan Editor + global sections.
+		var s = initState('PLAN_EDITOR');
+		var view = globalThis.prSplit._viewHelpOverlay(s);
+
+		// Global sections always present.
 		if (view.indexOf('Navigation') < 0) errors.push('missing Navigation section');
 		if (view.indexOf('Scrolling') < 0) errors.push('missing Scrolling section');
-		if (view.indexOf('Plan Editor') < 0) errors.push('missing Plan Editor section');
 		if (view.indexOf('Claude') < 0) errors.push('missing Claude Integration section');
+
+		// Plan Editor section only in PLAN_EDITOR/PLAN_REVIEW.
+		if (view.indexOf('Plan Editor') < 0) errors.push('missing Plan Editor section in PLAN_EDITOR');
 
 		// Specific key bindings.
 		var keys = [
@@ -47,6 +54,11 @@ func TestChunk16_HelpOverlay_ContainsAllSections(t *testing.T) {
 				errors.push('missing key ' + keys[i][1] + ' (' + keys[i][0] + ')');
 			}
 		}
+
+		// CONFIG state should NOT show Plan Editor section.
+		var s2 = initState('CONFIG');
+		var v2 = globalThis.prSplit._viewHelpOverlay(s2);
+		if (v2.indexOf('Plan Editor') >= 0) errors.push('CONFIG should not show Plan Editor section');
 
 		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
 		return 'OK';

@@ -27,7 +27,7 @@
 21. `a2b71776` — verify automatedSplit equivalence propagation + handleNext safety net: T121
 22. `c81c78cc` — cumulative chain docs + detectLanguage grammar + restart mode-awareness: T108+T112+T114
 23. `3da6cc85` — quick-fix bundle: equiv cache, cancel overlay, analysis cache, loadPlan dedup, preExisting reason, bell restore, strategy fallback warn: T089+T081+T066+T110+T101+T097+T091+T102
-24. (pending) — batch 4: T104+T106+T085+T096+T012+T055+T075+T002
+24. `fe8e23fa` — batch 4: T104+T106+T085+T096+T012+T055+T075+T002
 
 ## Completed Tasks (64/123)
 - T028: renderStatusBar auto-dismiss → tick-based handler  
@@ -95,9 +95,17 @@
 - T055: CHANGELOG.md entries for all major pr-split changes (Added + Fixed sections)
 - T075: verifyEquivalenceDetailedAsync with per-file diff info + fallback to basic in runEquivCheckAsync
 - T002: Analysis timeout with slow warning + configurable threshold + elapsed time display + abort hint
+- T051: Spinner animation with SPINNER_FRAMES braille cycling in nav bar during processing states
+- T086: edit-plan REPL stub → informative message directing to TUI mode
+- T065: Context-aware help overlay — Plan Editor only in PLAN_EDITOR/PLAN_REVIEW, Branch Building only in BRANCH_BUILDING/EQUIV_CHECK
+- T026: Claude status idle threshold 10s→15s + statusQuiet style for quiet state
+- T027: Narrow terminal nav bar — veryNarrow (w<35) hides dots+back, compact dots at w<50, overflow protection
+- T013: Border alignment audit — verified already correct (all card styles use .width(cardW))
+- T050: Chunk load order audit — verified correct, all 17 chunks in dependency order
+- T056: OSM_LOG_FILE — verified correctly wired via config schema → log_config.go → scripting engine
 
 ## Current Work
-**64/123 done, 26 commits. Batch 4 committed.**
+**72/123 done, 26 commits. Batch 5 committed.**
 
 ### Next Priority: Batch 5
 - T032: Cancel during verify phase

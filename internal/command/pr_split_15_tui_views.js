@@ -39,6 +39,9 @@
         textOnColor: {light: '#FFFFFF', dark: '#000000'}   // Text on colored bg (WCAG AA)
     };
 
+    // Braille spinner frames for processing animation (T051).
+    var SPINNER_FRAMES = ['\u280b', '\u2819', '\u2839', '\u2838', '\u283c', '\u2834', '\u2826', '\u2827', '\u2807', '\u280f'];
+
     // Resolve adaptive color to a plain string (for APIs that don't support objects).
     function resolveColor(c) {
         if (typeof c === 'string') return c;
@@ -152,6 +155,10 @@
         statusIdle: function() {
             return lipgloss.newStyle()
                 .foreground(COLORS.muted);
+        },
+        statusQuiet: function() {
+            return lipgloss.newStyle()
+                .foreground(COLORS.textDim);
         },
         statusActive: function() {
             return lipgloss.newStyle()
@@ -304,9 +311,12 @@
 
     function renderStepDots(s) {
         var stepIdx = STATE_TO_STEP[s.wizardState] || 0;
+        var w = s.width || 80;
+        // T027: At narrow widths, omit spaces between dots to save columns.
+        var compact = w < 50;
         var dots = '';
         for (var i = 0; i < 7; i++) {
-            if (i > 0) dots += ' ';
+            if (i > 0 && !compact) dots += ' ';
             if (i <= stepIdx) {
                 dots += styles.progressFull().render('\u25cf');
             } else {
@@ -320,10 +330,13 @@
         var stepIdx = STATE_TO_STEP[s.wizardState] || 0;
         var w = s.width || 80;
         var narrow = w < 50;
+        // T027: At very narrow widths, hide dots and back button entirely.
+        // Priority order: Cancel > Next > Back > Dots.
+        var veryNarrow = w < 35;
 
-        // Back button (not on first screen).
+        // Back button (not on first screen; hidden at veryNarrow).
         var backBtn = '';
-        if (stepIdx > 0 && !s.isProcessing) {
+        if (!veryNarrow && stepIdx > 0 && !s.isProcessing) {
             var backLabel = narrow ? '\u2190' : '\u2190 Back';
             backBtn = zone.mark('nav-back',
                 styles.secondaryButton().render(backLabel));
@@ -334,13 +347,14 @@
         var cancelBtn = zone.mark('nav-cancel',
             styles.secondaryButton().render(cancelLabel));
 
-        // Dots.
-        var dots = renderStepDots(s);
+        // Dots (hidden at veryNarrow).
+        var dots = veryNarrow ? '' : renderStepDots(s);
 
         // Next/action button.
         var nextBtn = '';
         if (s.isProcessing) {
-            nextBtn = styles.disabledButton().render(narrow ? '...' : 'Processing...');
+            var frame = SPINNER_FRAMES[(s.spinnerFrame || 0) % SPINNER_FRAMES.length];
+            nextBtn = styles.disabledButton().render(narrow ? frame : frame + ' Processing...');
         } else {
             var nextLabel = getNextButtonLabel(s);
             if (nextLabel) {
@@ -373,16 +387,25 @@
             : leftParts[0];
 
         // Build right section (dots + next).
-        var rightParts = [dots];
+        var rightParts = [];
+        if (dots) rightParts.push(dots);
         if (nextBtn) rightParts.push(nextBtn);
         var rightSection = rightParts.length > 1
             ? lipgloss.joinHorizontal(lipgloss.Center, rightParts[0], '  ', rightParts[1])
-            : rightParts[0];
+            : (rightParts.length === 1 ? rightParts[0] : '');
 
         // Compose full nav bar: left ... right, spread across width.
+        // T027: If content overflows, progressively drop dots to fit.
         var leftW = lipgloss.width(leftSection);
         var rightW = lipgloss.width(rightSection);
-        var gap = Math.max(2, w - leftW - rightW);
+        if (leftW + rightW > w - 2 && dots) {
+            // Overflow: rebuild right section without dots.
+            rightParts = [];
+            if (nextBtn) rightParts.push(nextBtn);
+            rightSection = rightParts.length > 0 ? rightParts[0] : '';
+            rightW = lipgloss.width(rightSection);
+        }
+        var gap = Math.max(1, w - leftW - rightW);
         var spacer = lipgloss.newStyle().width(gap).render('');
 
         return lipgloss.joinHorizontal(lipgloss.Center, leftSection, spacer, rightSection);
@@ -533,8 +556,8 @@
         var ms = tuiMux.lastActivityMs();
         if (ms < 0) return styles.statusIdle().render('\u23f8\ufe0f Claude: no output');
         if (ms < 2000) return styles.statusActive().render('\ud83d\udd04 Claude: LIVE');
-        if (ms < 10000) return styles.statusIdle().render('\u23f3 Claude: idle (' + Math.round(ms / 1000) + 's)');
-        return styles.statusIdle().render('\ud83d\udca4 Claude: quiet');
+        if (ms < 15000) return styles.statusIdle().render('\u23f3 Claude: idle (' + Math.round(ms / 1000) + 's)');
+        return styles.statusQuiet().render('\ud83d\udca4 Claude: quiet');
     }
 
     // -----------------------------------------------------------------------
@@ -2018,11 +2041,12 @@
     function viewHelpOverlay(s) {
         var w = Math.min(64, (s.width || 80) - 4);
         var lines = [];
+        var ws = s.wizardState || '';
 
         lines.push(styles.bold().render('Keyboard Shortcuts'));
         lines.push('');
 
-        // -- Global Navigation --
+        // -- Global Navigation (always shown) --
         lines.push(styles.label().render('Navigation'));
         lines.push(padRight('  ? / F1', 22) + 'Toggle this help');
         lines.push(padRight('  Tab', 22) + 'Next field / option');
@@ -2032,7 +2056,7 @@
         lines.push(padRight('  Ctrl+C', 22) + 'Cancel wizard');
         lines.push('');
 
-        // -- Scrolling --
+        // -- Scrolling (always shown) --
         lines.push(styles.label().render('Scrolling'));
         lines.push(padRight('  j / \u2193', 22) + 'Move down / scroll');
         lines.push(padRight('  k / \u2191', 22) + 'Move up / scroll');
@@ -2040,20 +2064,26 @@
         lines.push(padRight('  Home / End', 22) + 'Jump to top / bottom');
         lines.push('');
 
-        // -- Plan Editor --
-        lines.push(styles.label().render('Plan Editor'));
-        lines.push(padRight('  e', 22) + 'Edit / rename split');
-        lines.push(padRight('  Space', 22) + 'Toggle file checkbox');
-        lines.push(padRight('  Shift+\u2191 / \u2193', 22) + 'Reorder files');
-        lines.push('');
+        // -- Plan Editor (PLAN_EDITOR / PLAN_REVIEW only) --
+        if (ws === 'PLAN_EDITOR' || ws === 'PLAN_REVIEW') {
+            lines.push(styles.label().render('Plan Editor'));
+            lines.push(padRight('  e', 22) + 'Edit / rename split');
+            lines.push(padRight('  Space', 22) + 'Toggle file checkbox');
+            lines.push(padRight('  Shift+\u2191 / \u2193', 22) + 'Reorder files');
+            lines.push('');
+        }
 
-        // -- Branch Building --
-        lines.push(styles.label().render('Branch Building'));
-        lines.push(padRight('  e', 22) + 'Expand / collapse output');
-        lines.push(padRight('  Ctrl+C', 22) + 'Interrupt verification');
-        lines.push('');
+        // -- Branch Building (BRANCH_BUILDING / EQUIV_CHECK only) --
+        if (ws === 'BRANCH_BUILDING' || ws === 'EQUIV_CHECK') {
+            lines.push(styles.label().render('Branch Building'));
+            lines.push(padRight('  e', 22) + 'Expand / collapse verify output');
+            if (ws === 'BRANCH_BUILDING') {
+                lines.push(padRight('  Ctrl+C', 22) + 'Interrupt current verify (2x = force kill)');
+            }
+            lines.push('');
+        }
 
-        // -- Claude / Split View --
+        // -- Claude / Split View (always shown) --
         lines.push(styles.label().render('Claude Integration'));
         lines.push(padRight('  Ctrl+L', 22) + 'Toggle split view');
         lines.push(padRight('  Ctrl+Tab', 22) + 'Switch wizard / Claude pane');

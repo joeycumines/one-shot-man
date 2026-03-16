@@ -3,7 +3,6 @@
 package termmux
 
 import (
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -38,9 +37,6 @@ import (
 
 func TestCaptureSession_JSBinding_AllMethods(t *testing.T) {
 	t.Parallel()
-	if runtime.GOOS == "windows" {
-		t.Skip("PTY not supported on Windows")
-	}
 
 	rt, _ := testRequire(t)
 
@@ -170,9 +166,6 @@ func TestCaptureSession_JSBinding_AllMethods(t *testing.T) {
 
 func TestCaptureSession_JSBinding_Interrupt(t *testing.T) {
 	t.Parallel()
-	if runtime.GOOS == "windows" {
-		t.Skip("PTY not supported on Windows")
-	}
 
 	rt, _ := testRequire(t)
 
@@ -218,9 +211,6 @@ func TestCaptureSession_JSBinding_Interrupt(t *testing.T) {
 
 func TestCaptureSession_JSBinding_Kill(t *testing.T) {
 	t.Parallel()
-	if runtime.GOOS == "windows" {
-		t.Skip("PTY not supported on Windows")
-	}
 
 	rt, _ := testRequire(t)
 
@@ -265,9 +255,6 @@ func TestCaptureSession_JSBinding_Kill(t *testing.T) {
 
 func TestCaptureSession_JSBinding_Resize(t *testing.T) {
 	t.Parallel()
-	if runtime.GOOS == "windows" {
-		t.Skip("PTY not supported on Windows")
-	}
 
 	rt, _ := testRequire(t)
 
@@ -297,9 +284,6 @@ func TestCaptureSession_JSBinding_Resize(t *testing.T) {
 
 func TestCaptureSession_JSBinding_WriteAndSendEOF(t *testing.T) {
 	t.Parallel()
-	if runtime.GOOS == "windows" {
-		t.Skip("PTY not supported on Windows")
-	}
 
 	rt, _ := testRequire(t)
 
@@ -355,9 +339,6 @@ func TestCaptureSession_JSBinding_WriteAndSendEOF(t *testing.T) {
 
 func TestCaptureSession_JSBinding_isDoneBeforeStart(t *testing.T) {
 	t.Parallel()
-	if runtime.GOOS == "windows" {
-		t.Skip("PTY not supported on Windows")
-	}
 
 	rt, _ := testRequire(t)
 

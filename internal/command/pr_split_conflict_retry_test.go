@@ -704,6 +704,10 @@ func TestPrSplitCommand_ResolveConflictsWithClaudePreExistingFailure(t *testing.
 	val, err := evalJS(`(async function() {
 		// Prevent text chunking — tests count raw send() calls.
 		prSplit.SEND_TEXT_CHUNK_BYTES = 1000000;
+		// Zero out delays to avoid event-loop timing issues in test.
+		prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 0;
+		prSplit.SEND_TEXT_CHUNK_DELAY_MS = 0;
+		prSplit._RESOLVE_BACKOFF_BASE_MS = 0;
 
 		var sendCallCount = 0;
 		claudeExecutor = {
@@ -719,7 +723,7 @@ func TestPrSplitCommand_ResolveConflictsWithClaudePreExistingFailure(t *testing.
 			waitForAsync: function(name, timeout, opts) {
 				if (name === 'reportResolution') {
 					return Promise.resolve({
-						data: { preExistingFailure: true, preExistingDetails: 'fails on main too' },
+						data: { preExistingFailure: true, preExistingDetails: 'fails on main too', reason: 'fails on main too' },
 						error: null
 					});
 				}

@@ -1111,6 +1111,12 @@
             lines.push('  ' + renderProgressBar(s.analysisProgress, (s.width || 80) - 8));
         }
 
+        // T016: Always show abort hint during active analysis (not just slow).
+        if (s.isProcessing && s.analysisRunning && !s.analysisSlowWarning) {
+            lines.push('');
+            lines.push(styles.dim().render('  Press Ctrl+C to cancel'));
+        }
+
         // T002: Slow analysis timeout warning.
         if (s.analysisSlowWarning && s.analysisRunning) {
             var elSec = Math.floor((s.analysisElapsedMs || 0) / 1000);
@@ -1567,7 +1573,19 @@
                     }
                 } else if (vi === verifyIdx && s.isProcessing) {
                     vicon = styles.warningBadge().render(' \u25b6 ');
-                    vtext = styles.statusActive().render(branchName + '...');
+                    // T058: Show elapsed time on the active verify branch.
+                    var activeElapsed = '';
+                    if (s.verifyElapsedMs > 0) {
+                        var activeSecs = Math.floor(s.verifyElapsedMs / 1000);
+                        var verifyTimeout = (typeof prSplitConfig !== 'undefined' && prSplitConfig.timeoutMs) ? prSplitConfig.timeoutMs : 0;
+                        if (verifyTimeout > 0) {
+                            var totalSecs = Math.floor(verifyTimeout / 1000);
+                            activeElapsed = ' (' + activeSecs + 's / ' + totalSecs + 's)';
+                        } else {
+                            activeElapsed = ' (' + activeSecs + 's)';
+                        }
+                    }
+                    vtext = styles.statusActive().render(branchName + '...' + activeElapsed);
                 } else {
                     vicon = styles.dim().render(' \u25cb ');
                     vtext = styles.dim().render(branchName);
@@ -1594,8 +1612,17 @@
 
                     var viewWidth = Math.max(40, (s.width || 80) - 8);
                     var viewHeight = 12; // content rows inside the border
-                    var elapsed = ((Date.now() - s.activeVerifyStartTime) / 1000).toFixed(1);
-                    var titleText = ' Verifying: ' + s.activeVerifyBranch + ' (' + elapsed + 's) ';
+                    // T058: Show elapsed time with timeout progress in viewport title.
+                    var elapsed = ((s.verifyElapsedMs || (Date.now() - s.activeVerifyStartTime)) / 1000).toFixed(1);
+                    var vpTimeoutMs = (typeof prSplitConfig !== 'undefined' && prSplitConfig.timeoutMs) ? prSplitConfig.timeoutMs : 0;
+                    var elapsedSuffix;
+                    if (vpTimeoutMs > 0) {
+                        var vpTotalSecs = Math.floor(vpTimeoutMs / 1000);
+                        elapsedSuffix = elapsed + 's / ' + vpTotalSecs + 's';
+                    } else {
+                        elapsedSuffix = elapsed + 's';
+                    }
+                    var titleText = ' Verifying: ' + s.activeVerifyBranch + ' (' + elapsedSuffix + ') ';
 
                     // Determine visible window (auto-scroll or manual offset).
                     var totalLines = liveLines.length;

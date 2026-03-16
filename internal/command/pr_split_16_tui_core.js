@@ -192,6 +192,7 @@
                 activeVerifyBranch: null,      // branch name being verified
                 activeVerifyDir: null,         // base dir for worktree cleanup
                 activeVerifyStartTime: 0,      // start time for duration tracking
+                verifyElapsedMs: 0,            // T058: elapsed ms updated each poll tick
                 verifyViewportOffset: 0,       // scroll offset (lines from bottom)
                 verifyAutoScroll: true,        // auto-scroll to bottom
                 lastVerifyInterruptTime: 0,    // timestamp of last Ctrl+C interrupt
@@ -1280,6 +1281,7 @@
             s.activeVerifyBranch = null;
             s.activeVerifyDir = null;
             s.activeVerifyStartTime = 0;
+            s.verifyElapsedMs = 0;
             s.verifyViewportOffset = 0;
             s.verifyAutoScroll = true;
             s.lastVerifyInterruptTime = 0;
@@ -3530,6 +3532,7 @@
         s.activeVerifyBranch = null;
         s.activeVerifyDir = null;
         s.activeVerifyStartTime = 0;
+        s.verifyElapsedMs = 0;
         s.verifyViewportOffset = 0;
         s.verifyAutoScroll = true;
         s.lastVerifyInterruptTime = 0;
@@ -3988,6 +3991,7 @@
         s.activeVerifyBranch = branchName;
         s.activeVerifyDir = sessionResult.dir;
         s.activeVerifyStartTime = sessionResult.startTime;
+        s.verifyElapsedMs = 0;   // T058: reset elapsed for new session
         s.verifyViewportOffset = 0;
         s.verifyAutoScroll = true;
 
@@ -4001,10 +4005,13 @@
     function pollVerifySession(s) {
         if (!s.activeVerifySession) return [s, null];
 
+        // T058: Update elapsed time on each tick for live display.
+        s.verifyElapsedMs = Date.now() - s.activeVerifyStartTime;
+
         // Check timeout.
         var timeoutMs = (typeof prSplitConfig !== 'undefined' && prSplitConfig.timeoutMs)
             ? prSplitConfig.timeoutMs : 0;
-        if (timeoutMs > 0 && (Date.now() - s.activeVerifyStartTime) >= timeoutMs) {
+        if (timeoutMs > 0 && s.verifyElapsedMs >= timeoutMs) {
             // Timeout — kill the process.
             try { s.activeVerifySession.kill(); } catch (e) { /* ignore */ }
         }
@@ -4079,6 +4086,7 @@
         s.activeVerifyBranch = null;
         s.activeVerifyDir = null;
         s.activeVerifyStartTime = 0;
+        s.verifyElapsedMs = 0;
         s.verifyViewportOffset = 0;
         s.verifyAutoScroll = true;
         s.lastVerifyInterruptTime = 0;

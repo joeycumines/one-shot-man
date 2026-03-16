@@ -1,10 +1,20 @@
 # PR-Split TUI: Comprehensive UI/UX Design Specification
 
-> **Status:** Implemented — BubbleTea wizard in pr_split_13_tui.js (~3570 lines), Go-side launcher in pr_split.go, 41+ new unit tests
+> **Status:** Archived — Original design spec. Implementation has evolved beyond this document.
 > **Author:** Takumi (匠)
 > **Date:** 2026-03-08
 > **Implements:** `osm pr-split` graphical wizard mode
 > **Runtime:** osm:bubbletea + osm:lipgloss + osm:bubblezone + osm:bubbles/* + osm:termmux
+
+> **T008 Update (2026-03-15):** The verification system has been significantly enhanced since
+> this spec was written. Key changes not reflected here: (1) PTY-based verification via
+> `termmux.CaptureSession` with live ANSI output streaming to a scrollable viewport,
+> (2) User-interruptible verify sessions (Ctrl+C → SIGINT, 2× → SIGKILL),
+> (3) Split-view available during verification (Ctrl+L),
+> (4) Pre-existing failure detection via baseline comparison,
+> (5) Verify elapsed time tracking with timeout progress display,
+> (6) Context-aware help overlay (keybindings vary by screen).
+> See the implementation in `pr_split_06_verification.js` and `pr_split_16_tui_core.js`.
 
 ---
 

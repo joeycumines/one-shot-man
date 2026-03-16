@@ -116,7 +116,7 @@
       "id": "T008",
       "title": "Update docs/pr-split-tui-design.md: rewrite verification section for PTY-based interactive design",
       "description": "The current design doc describes verification as a simple 'run command and show result' flow. This must be completely rewritten to reflect: (1) Verify command runs in a PTY (pty.Start), not a plain exec.Command. (2) Live output is streamed to the TUI in a scrollable bordered viewport in Screen 5 (BRANCH_BUILDING). (3) User can interrupt (Ctrl+C / 2×Ctrl+C for force-kill) the verify process. (4) User can manually mark a branch as passed. (5) User can open an interactive shell in the worktree. (6) After verification completes, the next branch starts automatically. (7) Split-view is available during verification (Ctrl+L shows Claude pane alongside verify output). (8) Screen 6 (EQUIV_CHECK) shows the post-verification equivalence results. Produce a complete rewrite of the relevant section with ASCII mocks of the new UI states.",
-      "status": "not-started",
+      "status": "done",
       "body": 1,
       "files_affected": [
         "docs/pr-split-tui-design.md"
@@ -201,7 +201,7 @@
       "id": "T016",
       "title": "Screen 2 (PLAN_GENERATION): Complete keyboard accessibility and abort during analysis",
       "description": "Audit Screen 2 (PLAN_GENERATION / Analysis) keyboard handling: (1) During analysis (isProcessing=true), Ctrl+C must trigger the cancellation flow. Confirm the Ctrl+C handler in _updateFn correctly sets s.isProcessing=false and transitions to CANCELLED. (2) The analysisSteps[] progress display must update correctly as each step completes. (3) When analysis is running, the nav bar shows 'Processing...' disabled button — confirm it is NOT focusable via Tab (it's not in getFocusElements for PLAN_GENERATION). (4) Add 'Abort' keybinding hint in the status bar during active processing. (5) getFocusElements for PLAN_GENERATION is currently empty — confirm this is intentional (no focusable elements during processing), OR add an abort button. (6) Write unit test verifying Ctrl+C during analysis transitions to CANCELLED state correctly.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -289,7 +289,7 @@
       "id": "T024",
       "title": "Screen 7 (FINALIZATION): Full audit of finalization screen rendering and actions",
       "description": "Audit Screen 7 (FINALIZATION): (1) Read viewFinalizationScreen in pr_split_15_tui_views.js (not yet read in this session). (2) Confirm 'View Report', 'Create PRs', and 'Finish' buttons all render correctly and are in the focus cycle (confirmed via getFocusElements for FINALIZATION). (3) The 'View Report' button opens the report overlay — confirm the overlay renders at the correct size and the content (formatReportForDisplay) is comprehensive. (4) The 'Create PRs' button — what does handleFinalizationState(wizard, 'create-prs') do? Does it open a browser? Does it call gh api? (5) The 'Finish' button transitions to DONE and calls tea.quit(). Confirm cleanup happens (no zombie processes, worktrees removed). (6) Write unit tests for finalization screen rendering and the overlay.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -354,7 +354,7 @@
       "id": "T030",
       "title": "Help overlay: audit completeness and accuracy of all keybindings",
       "description": "Read viewHelpOverlay in pr_split_15_tui_views.js (not yet read). Audit: (1) Does it document all keybindings: Tab/Shift+Tab (focus navigation), j/k (list navigation), Enter (activate), Escape (back/close), ? (help), Ctrl+C (cancel/interrupt), Ctrl+L (split-view), Ctrl+] (Claude passthrough), Ctrl+O (switch tab), Ctrl++ / - (resize split), ↑↓ (scroll), PgUp/PgDn (page scroll). (2) Verify-specific keybindings: ↑↓ scrolls verify output, Ctrl+C interrupts verify (not wizard). (3) The help overlay must be context-aware: show different content based on wizardState (e.g., verify screen shows interrupt hint). (4) The help overlay Esc to close must work. (5) Write a unit test that opens the help overlay in BRANCH_BUILDING state and confirms verify keybindings are shown.",
-      "status": "not-started",
+      "status": "done",
       "body": 2,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -431,7 +431,7 @@
       "id": "T037",
       "title": "Checkpoint/resume: audit session state persistence and reload",
       "description": "Audit the checkpoint/resume mechanism in WizardState and pr_split_13_tui.js: (1) What state is persisted with checkpoint()? (2) How is the epoch/session ID used for resume? (3) When the user re-runs osm pr-split on the same repo/branch, is the saved state detected and offered for resume? (4) What state can NOT be resumed (e.g., in-flight git operations)? (5) The PAUSED state — how does the wizard enter and exit this state? (6) Write an integration test that starts pr-split, creates a checkpoint, kills the process, and re-runs to confirm resume works.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_13_tui.js",
@@ -611,7 +611,7 @@
       "id": "T054",
       "title": "Scoped verify command: audit scopedVerifyCommand implementation and tests",
       "description": "scopedVerifyCommand() in pr_split_06_verification.js (or similar) is called in runVerifyBranch to scope the verify command to only files in the split. Read and audit: (1) What does scoping do? Does it append file patterns to the command? (2) Is it used for all verification or only certain strategies? (3) Does it correctly handle make targets, pytest selectors, go test package paths? (4) Write integration tests with mock verify commands that receive scoped arguments.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_06_verification.js",
@@ -653,7 +653,7 @@
       "id": "T058",
       "title": "Implement verify session progress tracking with elapsed time and ETA",
       "description": "Enhance the verify live viewport with better progress information: (1) Show elapsed time in the verify title bar: 'Verifying: branch-name (12.3s)' (already partially implemented with activeVerifyStartTime). (2) If prSplitConfig.timeoutMs is set, show a progress bar or countdown: '12.3s / 60s'. (3) Color-code: under 50% = green, 50-80% = yellow, over 80% = red (approaching timeout). (4) After timeout, show 'Timed out' badge. (5) Verify the elapsed time updates correctly on each verify-poll tick (requires reading the current time in the view, which is a view side-effect — move time reading to the tick handler).",
-      "status": "not-started",
+      "status": "done",
       "body": 1,
       "files_affected": [
         "internal/command/pr_split_15_tui_views.js",
@@ -834,7 +834,7 @@
       "id": "T074",
       "title": "Audit isCancelled/isPaused/isForceCancelled in the automated pipeline for correctness",
       "description": "pr_split_10_pipeline.js's automatedSplit function calls isCancelled() and isForceCancelled() at various points in the loop. Audit: (1) Read the full automated pipeline's cancellation check points. Are they at EVERY async await point? Or only at top-level loop boundaries? If a cancellation happens during a git operation, will it be detected promptly? (2) The cleanup path on cancellation: does automatedSplit clean up the Claude process, worktrees, and temp files? (3) prSplit.isCancelled() is set via prSplit._cancelSource — confirm this is correctly wired in pr_split.go. (4) In the TUI, Ctrl+C sets s.isProcessing=false + transitions to CANCELLED. Does this trigger the _cancelSource callback? (5) Write a test that simulates cancellation mid-pipeline and confirms all resources are cleaned up.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_10_pipeline.js",

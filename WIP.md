@@ -28,6 +28,7 @@
 22. `c81c78cc` — cumulative chain docs + detectLanguage grammar + restart mode-awareness: T108+T112+T114
 23. `3da6cc85` — quick-fix bundle: equiv cache, cancel overlay, analysis cache, loadPlan dedup, preExisting reason, bell restore, strategy fallback warn: T089+T081+T066+T110+T101+T097+T091+T102
 24. `fe8e23fa` — batch 4: T104+T106+T085+T096+T012+T055+T075+T002
+25. `cc5924c4` — batch 5: T051+T086+T026+T065+T013+T027+T050+T056
 
 ## Completed Tasks (64/123)
 - T028: renderStatusBar auto-dismiss → tick-based handler  
@@ -103,11 +104,24 @@
 - T013: Border alignment audit — verified already correct (all card styles use .width(cardW))
 - T050: Chunk load order audit — verified correct, all 17 chunks in dependency order
 - T056: OSM_LOG_FILE — verified correctly wired via config schema → log_config.go → scripting engine
+- T058: Verify session elapsed time tracking + color-coded timeout countdown + ETA display
+- T016: PLAN_GENERATION abort hint during analysis + Ctrl+C audit + keyboard accessibility
+- T030: Help overlay completeness audit — all keybindings documented, context-aware per wizardState
+- T074: Pipeline cancel/pause audit — isCancelled/isPaused/isForceCancelled at all async checkpoints
+- T054: scopedVerifyCommand audit — scoping logic, strategy coverage, integration tests
+- T024: Finalization screen audit — View Report/Create PRs/Finish buttons, overlay, cleanup
+- T037: Checkpoint/resume audit — session persistence, epoch detection, resume offer, integration test
+- T008: docs/pr-split-tui-design.md rewrite — PTY-based interactive verification section with ASCII mocks
 
 ## Current Work
-**72/123 done, 26 commits. Batch 5 committed.**
+**80/123 done, 27 commits. Batch 6 committed.**
 
-### Next Priority: Batch 5
+### Next Priority: Batch 7 candidates
 - T032: Cancel during verify phase
 - T059: Pause/resume verify phase (unlocked by T084)
 - T000: Prompt/input anchor stability (Hana directive)
+- T009: Binary E2E test — TestBinaryE2E_VerifyPTYLive
+- T038: Error resolution screen audit — all recovery paths
+- T039: Worktree cleanup on abnormal exit
+- T040: Split-view (Ctrl+L) rendering audit
+- T041: Claude passthrough (Ctrl+]) audit

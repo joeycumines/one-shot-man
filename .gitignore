@@ -66,3 +66,4 @@ test-scripts/
 /.claude/skills/skill-database-go
 /.claude/skills/slopless-researcher
 /.claude/skills/takumi-prompting
+/WIP.md

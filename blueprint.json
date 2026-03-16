@@ -1,0 +1,317 @@
+{
+  "meta": {
+    "fileName": "blueprint.json",
+    "session": "2026-03-17-prsplit-ui-termmux-refactor",
+    "mandate": "Fix EQUIV_CHECK button interactivity/visual bugs, implement verify shell integration via termmux, audit all TUI visual correctness, split oversized JS files, restructure test packages",
+    "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE.",
+    "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST — ESPECIALLY NOT TIME ESTIMATES. NEVER SPECIFY A PRIORITY OF ANY KIND."
+  },
+  "globalAlerts": [
+    {
+      "warning": "PIPE ALL BUILD OUTPUT: All make/go commands MUST be piped through `| tail -n N` or `| fold -w 200 | tail -n N` to prevent context explosion. Use `make make-all-with-log` for full suite which logs to build.log."
+    },
+    {
+      "warning": "TIMEOUT: Full test suite requires `-timeout=20m`. Use `make test-only` which sets this. Individual package tests: `go test -timeout=300s ./internal/command/...`"
+    },
+    {
+      "warning": "CHUNK LOADING ORDER: JS chunks in pr_split.go are loaded sequentially via prSplitChunks array. When splitting files, new chunks MUST be inserted in correct order and all //go:embed directives + array entries updated."
+    },
+    {
+      "warning": "RULE OF TWO: Every task MUST pass strict-review-gate (2 contiguous subagent reviews on identical diff) BEFORE commit. Each task is committed individually."
+    },
+    {
+      "warning": "NO DEAD CODE: deadcode linter runs in CI. Any new exports/functions MUST be wired. Never add to .deadcodeignore. Wire it or delete it."
+    },
+    {
+      "warning": "CROSS-PLATFORM: Code must work on Linux, macOS, and Windows. PTY-dependent features (shell integration) MUST have //go:build unix guard and graceful degradation on Windows."
+    }
+  ],
+  "mandatoryDirectives": {
+    "contextManagement": "Tasks are grouped into 6 blocks (A-F). Blocks A-B fix production bugs and should be done first. Block D is parallel investigation. Block E splits files before Block C adds new code. Block F restructures tests. Block C (largest) implements shell integration on the now-refactored codebase.",
+    "commitPolicy": "Each task is committed individually after passing the Rule of Two. Use Kubernetes-style commit messages via the git-commit Skill.",
+    "testPolicy": "Every code change MUST include tests in its acceptance criteria. Run `make make-all-with-log` after every commit to verify no regressions."
+  },
+  "statusSection": {
+    "currentState": "Blueprint created. No tasks started.",
+    "goalState": "All 6 issues fully resolved: (1) EQUIV_CHECK buttons are visually correct rectangles, focusable via Tab, and clickable via mouse; (2) Back/Cancel buttons have consistent bordered focus styling across all screens; (3) Verify shell integration provides full terminal multiplex — user can open interactive shell in verify worktree, send input to verify process, and use split-view; (4) All button rendering across all screens uses lipgloss.joinHorizontal for multi-line bordered elements; (5) All PR Split JS files are ≤1000 lines (≤800 preferred; files 800-1000 must be justified hub files documented in commit message); (6) PR Split tests are isolated into dedicated test packages with measurable speedup. All checks pass on all platforms.",
+    "replanLog": []
+  },
+  "sequentialTasks": [
+    {
+      "id": "T300",
+      "task": "Fix EQUIV_CHECK button focus styling: add focus-aware rendering to viewVerificationScreen",
+      "description": "In `internal/command/pr_split_15_tui_views.js`, function `viewVerificationScreen()` (lines 1880-1890): the three action buttons (Re-verify, Revise Plan, Continue) are always rendered with static `styles.secondaryButton()` / `styles.primaryButton()` regardless of focus state. Every other screen (config line 1046, plan-review line 1339, finalization line 2002) computes focus state and applies `focusedSecondaryButton()` / `focusedButton()`. Add the same pattern: compute `focusedElemId` from `prSplit._getFocusElements(s)` and `s.focusIndex`, then apply `focusedSecondaryButton()` when `equiv-reverify` or `equiv-revise` is focused, and `focusedButton()` when `nav-next` is focused. Use the config screen pattern (ID-based, lines 1043-1047) as the template.",
+      "acceptance": "When Tab cycles through EQUIV_CHECK focus elements, Re-verify and Revise Plan buttons visually switch to warning-colored bordered style (focusedSecondaryButton), and Continue switches to warning-colored borderless style (focusedButton). Visual feedback matches other screens. Unit test `TestViews_VerificationScreen_FocusStyling` verifies all 4 focus positions (equiv-reverify, equiv-revise, nav-next, nav-cancel) produce distinct visual output containing the correct ANSI style sequences. Existing `TestViews_*` tests continue to pass.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T301",
+      "task": "Add nav-back to EQUIV_CHECK getFocusElements",
+      "description": "In `internal/command/pr_split_16_tui_core.js`, function `getFocusElements()` case `EQUIV_CHECK` (lines 2469-2479): the focus elements list includes `equiv-reverify`, `equiv-revise`, `nav-next`, `nav-cancel` but NOT `nav-back`. The Back button IS rendered and zone-marked in `renderNavBar()` (line 396), and IS mouse-clickable (zone.inBounds handler at line 1712), but cannot be reached via Tab. Add `{id: 'nav-back', type: 'nav'}` to the elements array, positioned AFTER the in-screen buttons but BEFORE `nav-next` to match natural left-to-right tab order: `[equiv-reverify, equiv-revise, nav-back, nav-next, nav-cancel]`.",
+      "acceptance": "Tab cycling on EQUIV_CHECK screen reaches the Back button. Back button receives focusedButton styling in renderNavBar when focused (it already has the conditional at line 397). Unit test `TestFocus_EquivCheck_BackButton` verifies nav-back is in the focus elements list and that focusIndex reaching nav-back position causes the Back button to render with focused styling. Existing focus navigation tests pass.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T302",
+      "task": "Fix nav-bar Cancel and Back focus style: use focusedSecondaryButton instead of focusedButton",
+      "description": "In `internal/command/pr_split_15_tui_views.js`, `renderNavBar()` (lines 394-425): Both Back and Cancel buttons use `focusedButton()` (NO border, changes height from 3→1 lines) when focused, but `secondaryButton()` (HAS roundedBorder, 3 lines) when unfocused. This causes a layout shift AND makes Cancel appear borderless when focused — matching the user-reported bug. Replace with `focusedSecondaryButton()` (which has matching roundedBorder per T011) for both. Specifically: line 397 `styles.focusedButton()` → `styles.focusedSecondaryButton()` (backStyle), line 404 `styles.focusedButton()` → `styles.focusedSecondaryButton()` (cancelStyle).",
+      "acceptance": "When Tab moves to Back or Cancel, they retain their rounded border (3-line height) and change to warning-colored border+background (focusedSecondaryButton). No layout shift occurs. The nav bar height remains constant (3 lines when any bordered button is present) regardless of which button is focused. Unit test `TestViews_NavBar_FocusStyleConsistency` renders the nav bar with focus on each button position and asserts: (a) all outputs have identical line count, (b) focused button output contains warning color escape sequence, (c) border characters (╭╮╰╯│) are present in all focus states for Back and Cancel.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T303",
+      "task": "Fix EQUIV_CHECK button layout: replace string concatenation with lipgloss.joinHorizontal",
+      "description": "In `internal/command/pr_split_15_tui_views.js`, `viewVerificationScreen()` lines 1883-1886: buttons are joined with `+` string concatenation. When buttons use `secondaryButton()` (3-line bordered output), concatenation produces broken vertical stacking instead of proper horizontal alignment. Replace with `lipgloss.joinHorizontal(lipgloss.Center, btn1, '  ', btn2, '  ', btn3)`. The exact code block to change is the `if (zone)` branch AND the `else` fallback branch. The `lines.push('  ' + ...)` pattern should become `lines.push('  ' + lipgloss.joinHorizontal(lipgloss.Center, ...))`. Check that `lipgloss` is available in scope — it's required at the top of the file via `prSplit._modules`.",
+      "acceptance": "On EQUIV_CHECK FAIL screen, Re-verify, Revise Plan, and Continue buttons appear as properly aligned horizontal rectangles with intact rounded borders. Each button's box characters (╭╮╰╯│) form complete rectangles. The three buttons are on the same visual row (centered vertically). Screenshot: three bordered buttons side-by-side, not stacked. Unit test `TestViews_VerificationScreen_ButtonLayout` renders the EQUIV_CHECK fail state and asserts: (a) button labels appear on the same line, (b) border top-row characters (╭, ╮) appear only on line N, (c) button content appears on line N+1, (d) border bottom-row characters (╰, ╯) appear on line N+2.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T304",
+      "task": "Fix PlanReview button layout: replace string concatenation with lipgloss.joinHorizontal",
+      "description": "In `internal/command/pr_split_15_tui_views.js`, `viewPlanReviewScreen()` lines 1350-1358: the non-compact layout branch concatenates 3 bordered buttons (Edit Plan, Regenerate, Ask Claude) with `+` and `'  '` spacers. All 3 use `secondaryButton()` (bordered). Replace with `lipgloss.joinHorizontal(lipgloss.Center, ...)` for proper multi-line alignment. Additionally check: when any button is focused, `focusedSecondaryButton()` also has a border, so horizontal join is still needed.",
+      "acceptance": "On Plan Review screen (non-compact layout), Edit Plan, Regenerate, and Ask Claude buttons render as properly aligned horizontal rectangles. Border characters form complete rectangles for all 3 buttons. Unit test `TestViews_PlanReviewScreen_ButtonLayout` verifies horizontal alignment in non-compact mode. Existing plan review tests pass.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T305",
+      "task": "Fix Finalization button layout: replace string concatenation with lipgloss.joinHorizontal",
+      "description": "In `internal/command/pr_split_15_tui_views.js`, `viewFinalizationScreen()` lines 2019-2027: the non-compact layout branch concatenates View Report (secondaryButton, bordered), Create PRs (primaryButton, borderless OR disabledButton), and Done (primaryButton, borderless) with `+`. Mixed border/borderless buttons have different heights (3 vs 1 line). Replace with `lipgloss.joinHorizontal(lipgloss.Center, ...)` which properly center-aligns elements of different heights.",
+      "acceptance": "On Finalization screen (non-compact layout), all 3 buttons render horizontally aligned. View Report (bordered) is vertically centered with Create PRs and Done (borderless). No broken box characters. Unit test `TestViews_FinalizationScreen_ButtonLayout` verifies alignment in non-compact mode with mixed border styles. Existing finalization tests pass.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T306",
+      "task": "Full visual audit: sweep ALL screen renderers for string-concatenated bordered buttons",
+      "description": "Systematically search `pr_split_15_tui_views.js` for ALL instances where zone.mark'd buttons with bordered styles (secondaryButton, focusedSecondaryButton) are concatenated using `+` HORIZONTALLY on the SAME `lines.push()` call instead of `lipgloss.joinHorizontal()`. Check: viewConfigScreen, viewAnalysisScreen, viewPlanningScreen, viewExecutionScreen, viewVerificationScreen, viewFinalizationScreen, viewErrorResolutionScreen, viewPlanEditorScreen, viewSplitDetailScreen, viewHelpOverlay, viewCancelConfirm. IMPORTANT: Screens that render buttons VERTICALLY (one per `lines.push()` call with descriptions) are CORRECT and MUST NOT be changed. The error resolution screen (line 2036) renders crash-recovery buttons as a VERTICAL menu with per-button descriptions — this is intentional. Only fix instances where bordered buttons are joined HORIZONTALLY with `+`. Also check pr_split_16_tui_core.js for any button rendering in the main view function. Document all changes in a sweep list.",
+      "acceptance": "Zero instances remain where bordered button elements are joined with `+` string concatenation in any view function. Every horizontal button group in every screen uses `lipgloss.joinHorizontal()`. Regression test `TestViews_AllScreens_NoBrokenBorders` renders every screen in default state and asserts no orphaned box-drawing characters (╭ without matching ╮ on same line, etc.). All existing view tests pass.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T307",
+      "task": "Fix mouse click handling for EQUIV_CHECK buttons: verify zone boundaries work with joinHorizontal",
+      "description": "After T303 changes viewVerificationScreen to use joinHorizontal, verify that bubblezone click detection still works for the 3 buttons. The zone.mark() wrapping must produce correct zones even when the rendered content is a multi-line bordered string. In `pr_split_16_tui_core.js`, find the mouse handler section (search for `zone.inBounds('equiv-reverify'`) — if it doesn't exist, add explicit mouse handlers for `equiv-reverify`, `equiv-revise`, and `nav-next` (Continue on EQUIV_CHECK screen). The click should trigger the same action as Enter/activate on the focused element: equiv-reverify → startEquivCheck, equiv-revise → transition to PLAN_REVIEW, nav-next → handleNext().",
+      "acceptance": "All 3 EQUIV_CHECK buttons (Re-verify, Revise Plan, Continue) respond to mouse clicks with the correct action. Clicking Re-verify starts equivalence check. Clicking Revise Plan transitions to PLAN_REVIEW. Clicking Continue advances the wizard. Binary E2E test or interactive manual verification confirms click targets are aligned with visual button boundaries.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T308",
+      "task": "Audit Back button handler: prevent state corruption on EQUIV_CHECK back-navigation",
+      "description": "In `pr_split_16_tui_core.js`, the nav-back mouse handler at line 1712 (`zone.inBounds('nav-back', msg)`) handles back-navigation. When triggered from EQUIV_CHECK, it should: (1) cancel any in-progress equivalence check, (2) clear `s.equivalenceResult = null`, (3) reset `s.isProcessing = false`, (4) set `s.equivRunning = false` (used by handleEquivPoll at line ~3858 to control the poll loop — it exits when `!s.isProcessing && !s.equivRunning`), (5) set `s.equivError = null`, (6) transition wizard to previous state cleanly. Note: there is no explicit timer ID to cancel — setting isProcessing and equivRunning to false is sufficient to stop handleEquivPoll from re-scheduling. Check the wizard's VALID_TRANSITIONS to confirm EQUIV_CHECK→BRANCH_BUILDING (or wherever Back goes) is a valid transition. If cleanup is missing, add it. Also check handleNext/handleBack for EQUIV_CHECK in the non-mouse (keyboard Enter on nav-back) path.",
+      "acceptance": "Pressing Back on EQUIV_CHECK screen: (a) transitions to the previous screen without error, (b) does not leave stale equivalenceResult, isProcessing, equivRunning, or equivError state, (c) the previous screen renders correctly with its own data, (d) re-entering EQUIV_CHECK starts fresh. Test `TestState_EquivCheckBackNavigation` simulates: enter EQUIV_CHECK → set equivalenceResult (fail) + equivRunning=true → activate nav-back → assert wizardState is previous screen AND equivalenceResult is null AND isProcessing is false AND equivRunning is false AND equivError is null.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T309",
+      "task": "Research: diagnose Ctrl+] Claude switching failure",
+      "description": "The user reports being unable to interact with Claude directly on the EQUIV_CHECK screen, despite the status bar showing 'Ctrl+] Claude'. Investigate: (1) In `pr_split_16_tui_core.js`, find the `ctrl+]` handler — verify it's reachable during EQUIV_CHECK state (not gated by a state check that excludes EQUIV_CHECK). (2) Check if the EQUIV_CHECK screen has any key handling that swallows Ctrl+] before it reaches the mux toggle handler. (3) Verify the key mapping in `internal/scripting/tui_js_bridge.go` (line 588) correctly translates Ctrl+] from the terminal. (4) Check if `tuiMux.hasChild()` returns false during EQUIV_CHECK — if Claude isn't attached at that point, switchTo would be skipped. (5) Add diagnostic log.printf at the Ctrl+] handler entry point to confirm the key is received. Document findings.",
+      "acceptance": "Root cause identified and fixed. Either: (a) Ctrl+] now successfully switches to Claude passthrough from EQUIV_CHECK, or (b) if Claude is not attached during EQUIV_CHECK, the UI displays a clear message ('Claude not available') and the status bar does NOT show 'Ctrl+] Claude'. Diagnostic log entry fires on every Ctrl+] press regardless of outcome. Test `TestKeyHandling_CtrlBracket_EquivCheck` verifies the key reaches the handler and produces the expected behavior.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T310",
+      "task": "Split pr_split_15_tui_views.js into 4 files (T060 plan)",
+      "description": "Split the 2569-line pr_split_15_tui_views.js into 4 files following the documented T060 refactor plan found in the source code comments. New files in `internal/command/`:\n\n1. `pr_split_15a_tui_styles.js` (~225 lines): COLORS object, all style functions (primaryButton, secondaryButton, focusedButton, focusedSecondaryButton, etc.), layoutMode(), SPINNER_FRAMES. These are self-contained with no dependencies on other view code.\n\n2. `pr_split_15b_tui_chrome.js` (~695 lines): renderTitleBar(), renderNavBar(), renderStatusBar(), renderStepDots(), renderProgressBar(), getNextButtonLabel(), STATE_TO_STEP mapping. Depends on styles from 15a.\n\n3. `pr_split_15c_tui_screens.js` (~1040 lines): viewConfigScreen(), viewAnalysisScreen(), viewPlanningScreen(), viewPlanReviewScreen(), viewPlanEditorScreen(), viewExecutionScreen(), viewVerificationScreen(), viewFinalizationScreen(). Depends on styles (15a) and chrome (15b).\n\n4. `pr_split_15d_tui_dialogs.js` (~609 lines): viewErrorResolutionScreen(), viewHelpOverlay(), viewCancelConfirm(), viewReportOverlay(), viewSplitDetailScreen(), viewFileManagementScreen(). Depends on styles (15a) and chrome (15b).\n\nAll functions attach to the `prSplit` or module-level scope. Update `pr_split.go`: add 4 new //go:embed directives, replace the single '15_tui_views' entry in prSplitChunks with 4 ordered entries (15a, 15b, 15c, 15d). Delete the original pr_split_15_tui_views.js ONLY after confirming all tests pass.",
+      "acceptance": "Original pr_split_15_tui_views.js is deleted. 4 new files exist with correct content. `go:embed` directives in pr_split.go reference all 4 new files. prSplitChunks array loads them in order (15a→15b→15c→15d→16). `make build` succeeds. `go test -timeout=300s ./internal/command/... -run TestViews` passes — ALL existing view tests produce identical output. No function is missing or duplicated. Each new file is ≤800 lines. deadcode check passes.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T311",
+      "task": "Split pr_split_16_tui_core.js into 6 files",
+      "description": "Split the 5089-line pr_split_16_tui_core.js into 6 files to keep all below 1000 lines. Before starting, read the FULL file and identify exact function boundaries (line ranges). Proposed split after analysis:\n\n1. `pr_split_16a_tui_focus.js` (~600 lines): getFocusElements() (lines ~2400-2500), handleFocusActivate() (lines ~2576-2760), focus cycling logic (Tab/Shift-Tab handlers). Self-contained focus subsystem.\n\n2. `pr_split_16b_tui_handlers_pipeline.js` (~700 lines): handleAnalysisPoll, handlePlanPoll, handleExecutionPoll — the analysis→plan→execution async poll handlers forming the first half of the pipeline.\n\n3. `pr_split_16c_tui_handlers_verify.js` (~700 lines): handleVerificationPoll, handleEquivPoll, handleVerifyFallbackPoll, runVerifyBranch — the verify/equivalence async poll handlers.\n\n4. `pr_split_16d_tui_handlers_claude.js` (~400 lines): handleClaudeScreenshotPoll, handleAutoSplitPoll, handlePRCreationPoll — Claude-specific async poll handlers.\n\n5. `pr_split_16e_tui_state.js` (~800 lines): WizardState helpers, handleConfigState, handleBaselineFailState, handlePlanReviewState, handlePlanEditorState, handleErrorResolutionState, handleFinalizationState, startEquivCheck, startPRCreation, startAutoAnalysis, startAutoSplit.\n\n6. `pr_split_16f_tui_model.js` (~889 lines): The BubbleTea model (init/update/view), main event dispatch (key→handler routing), mouse handling, resize handling, launchTUI(), syncMainViewport.\n\nIMPORTANT: Before splitting, the executor MUST read the full file and document exact function-to-line-range mappings. The above estimates are based on analysis — actual line ranges may differ. Dependencies flow: all chunks attach functions to prSplit.* scope. 16f references all others. Load order: 16a→16b→16c→16d→16e→16f. Update pr_split.go: add 6 embed directives, replace single 16 entry with 6 ordered entries. Delete original after tests pass.",
+      "acceptance": "Original pr_split_16_tui_core.js is deleted. 6 new files exist. prSplitChunks loads 16a→16b→16c→16d→16e→16f (after 15d). `make build` succeeds. ALL existing tests pass — including binary E2E tests, TUI state tests, focus tests, mouse tests, lifecycle tests. No function missing or duplicated. Each file is ≤1000 lines (≤800 preferred). The executor documents actual line counts per file in the commit message. deadcode check passes.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T312",
+      "task": "Split pr_split_10_pipeline.js into 4 files",
+      "description": "Split the 2097-line pr_split_10_pipeline.js into 4 files to keep all under 800 lines:\n\n1. `pr_split_10a_pipeline_config.js` (~350 lines): AUTOMATED_DEFAULTS object, pipeline configuration, anchor stability constants, detectAnchors(), waitForAnchors(), pollAnchors() — the anchor detection subsystem.\n\n2. `pr_split_10b_pipeline_classify.js` (~450 lines): classifyWithClaude(), planWithClaude() — the classification and planning phase functions.\n\n3. `pr_split_10c_pipeline_execute.js` (~500 lines): executeWithClaude(), verifyWithClaude(), the retry logic wrappers for execution and verification phases.\n\n4. `pr_split_10d_pipeline_orchestrator.js` (~797 lines): automatedSplit(), automatedSplitWithRetry(), the top-level orchestration that calls phases in sequence, progress reporting, cancellation handling, error recovery.\n\nBEFORE splitting, read the full file and document exact function-to-line-range mappings. Adjust boundaries as needed to keep ALL files under 800 lines. Load order: 10a→10b→10c→10d. Update pr_split.go embed directives and prSplitChunks array.",
+      "acceptance": "Original pr_split_10_pipeline.js is deleted. 4 new files exist. All pipeline tests pass: `go test -timeout=300s ./internal/command/... -run TestPipeline`. Anchor stability tests pass. Auto-split recovery tests pass. Each file ≤800 lines. deadcode passes.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T313",
+      "task": "Split pr_split_14_tui_commands.js into 2 files",
+      "description": "Split the 1303-line pr_split_14_tui_commands.js into 2 files:\n\n1. `pr_split_14a_tui_commands.js` (~700 lines): buildCommands() function including all REPL command definitions (analyze, group, plan, execute, verify, create-prs, set, help, report, status, etc.). This is the command registry.\n\n2. `pr_split_14b_tui_state_handlers.js` (~603 lines): handlePlanReviewState(), handlePlanEditorState(), handleErrorResolutionState(), handleFinalizationState() — the wizard state entry handlers called by the TUI core when transitioning into these states.\n\nLoad order: 14a→14b. Update pr_split.go.",
+      "acceptance": "Original pr_split_14_tui_commands.js is deleted. 2 new files exist. REPL commands work in all screens. State handlers fire correctly on transitions. All TUI tests pass. Each file ≤800 lines. deadcode passes.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T314",
+      "task": "Audit all new chunk files for cross-references and closure variable access",
+      "description": "After T310-T313, the chunks have been split. Perform a systematic audit:\n\n1. For each new chunk file, verify all referenced variables/functions are either: (a) defined in the same file, (b) defined in a previously-loaded chunk (accessible via prSplit.* or closure), or (c) defined in a native module (lipgloss, tea, zone, etc.).\n\n2. Check for any closure variables that were shared between functions that are now in different files. If found, refactor to use prSplit.* properties or module-level variables.\n\n3. Run `make build` and resolve any 'undefined' runtime errors by adjusting load order or exposing functions via prSplit.*.\n\n4. Run `make test-only` and fix any test failures caused by the split.\n\nDocument all cross-reference fixes in the commit message.",
+      "acceptance": "`make make-all-with-log` passes clean. Zero 'undefined' reference errors at runtime. All 265+ PR Split tests pass. All binary E2E tests pass. No regressions in any other test suite. The chunk split is functionally invisible — behavior is identical to pre-split.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T315",
+      "task": "Design: PR Split test package structure for isolation",
+      "description": "Research and design the target test package structure. Currently all 68 PR Split test files are in `package command` (internal/command/). They access internal JS API via eval (`prSplit._dirname()`, `prSplit._modules.exec`, etc.) and share test helpers (loadPrSplitEngineWithEval, evalJS, initIntegrationRepo). The goal is to isolate PR Split tests into their own package(s) for faster parallel execution.\n\nDesign constraints:\n1. Tests need access to the JS engine with PR Split chunks loaded — this requires the `loadChunkedScript()` function and a configured scripting.Engine.\n2. Tests use `prSplit.*` globals from JS — these are runtime-bound and don't need Go exports.\n3. Test helpers (repo creation, git mocking, plan setup) are currently file-local in various test files.\n\nProposed structure:\n- `internal/command/prsplittest/` — shared test helper package (exported): NewEngine(), LoadChunks(), InitTestRepo(), EvalJS(), etc.\n- `internal/command/prsplit_unit_test/` — unit tests (separate test binary)\n- `internal/command/prsplit_integration_test/` — integration + E2E tests (separate test binary)\n\nOR: use build tags to separate test binaries within the same package.\n\nEvaluate both approaches. Consider: Go test binary isolation rules, import cycles, test helper reuse. Write the design to WIP.md.",
+      "acceptance": "WIP.md contains a detailed design document with: (a) target package structure, (b) list of functions to export, (c) migration plan for each test file, (d) expected performance improvement (estimated based on parallelization gains), (e) any blockers or compromises. Design has been validated by reading Go test tooling docs to confirm the approach works.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T316",
+      "task": "Create prsplittest helper package with shared test infrastructure",
+      "description": "Based on T315 design, create `internal/command/prsplittest/` package with exported test helper functions. At minimum:\n\n1. `engine.go`: `NewTestEngine(t testing.TB) *scripting.Engine` — creates a configured Goja engine with all PR Split chunks loaded. Handles native module registration, mock exec setup, temp dir creation.\n\n2. `eval.go`: `EvalJS(t testing.TB, engine *scripting.Engine, code string) goja.Value` — evaluates JS code in the engine and fails the test on error.\n\n3. `repo.go`: `InitTestRepo(t testing.TB) string` — creates a temp git repo with standard test commit structure. `AddFeatureFiles(t testing.TB, dir string)` — adds realistic file set for split testing.\n\n4. `assertions.go`: `AssertEquivalence(t testing.TB, engine *scripting.Engine, splits []string, source string)` — verifies tree hash equivalence.\n\nAll functions use `testing.TB` interface for compatibility with both tests and benchmarks. Use `t.TempDir()` for all file operations. No host state mutation.",
+      "acceptance": "Package compiles and exports all planned functions. At least 3 existing test files in internal/command/ have been updated to import and use prsplittest helpers (proving the API works). The helpers reduce per-test boilerplate by >50%. `make build` and `make lint` pass. deadcode shows no unused exports in prsplittest.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T317",
+      "task": "Migrate PR Split unit tests to use prsplittest helpers",
+      "description": "Update all PR Split unit test files (pr_split_02_grouping_test.go through pr_split_12_exports_test.go — the non-TUI unit tests) to import `internal/command/prsplittest` for engine creation, JS eval, and repo setup. Remove duplicated helper code from each file. Ensure each test file is self-contained (no cross-file dependencies on test helpers).\n\nTarget files (12 files):\n- pr_split_02_grouping_test.go\n- pr_split_03_planning_test.go\n- pr_split_04_validation_test.go\n- pr_split_05_execution_test.go\n- pr_split_06_verification_test.go (if exists)\n- pr_split_07_prcreation_test.go\n- pr_split_08_conflict_test.go\n- pr_split_09_claude_test.go\n- pr_split_10_pipeline_test.go\n- pr_split_11_utilities_test.go\n- pr_split_12_exports_test.go\n- pr_split_template_unit_test.go",
+      "acceptance": "All migrated test files import prsplittest. No duplicated engine creation or repo setup code remains in migrated files. All migrated tests pass: `go test -timeout=300s ./internal/command/... -run 'TestGrouping|TestPlanning|TestValidation|TestExecution|TestVerification|TestPRCreation|TestConflict|TestClaude|TestPipeline|TestUtilities|TestExports|TestTemplate'`. No regressions.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T318",
+      "task": "Migrate PR Split TUI tests to use prsplittest helpers",
+      "description": "Update all PR Split TUI test files (pr_split_13_tui_test.go through all pr_split_16_*_test.go files) to import prsplittest. These tests create engines with TUI support, so prsplittest.NewTestEngine may need a `WithTUI()` option to configure BubbleTea integration.\n\nTarget files (~25+ files):\n- pr_split_13_tui_test.go\n- pr_split_15_tui_views_test.go (update for new split file names if needed)\n- All pr_split_16_*_test.go files (focus, lifecycle, mouse, overlays, etc.)\n- pr_split_autosplit_recovery_test.go\n- pr_split_edge_hardening_test.go\n- pr_split_scope_misc_test.go\n- pr_split_mode_autofix_test.go",
+      "acceptance": "All TUI test files import prsplittest. Engine creation is unified. All TUI tests pass. No duplicated setup code. `go test -timeout=600s ./internal/command/... -run 'TestTUI|TestViews|TestFocus|TestLifecycle|TestMouse|TestOverlay'` passes.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T319",
+      "task": "Evaluate and implement test binary splitting for parallel execution",
+      "description": "Based on T315 design: implement the chosen approach for test binary isolation. If using separate test packages:\n\n1. Create `internal/command/prsplit_test/` as an external test package (`package prsplit_test` or `package command_test`).\n2. Move the slowest test files (binary E2E, integration, autosplit recovery — estimated 400+ seconds combined) to this package.\n3. Ensure both `go test ./internal/command/...` and `go test ./internal/command/prsplit_test/...` can run in parallel in CI.\n\nIf using build tags:\n1. Add `//go:build prsplit_slow` to the slowest test files.\n2. Configure `config.mk` with separate targets: `test-command-fast` (excludes slow) and `test-command-slow` (only slow).\n3. CI runs both with different parallelism.\n\nMeasure before/after wall-clock time for `go test ./internal/command/...`.",
+      "acceptance": "Measurable test performance improvement for the fast-feedback loop. Slow tests (E2E, integration, recovery) are isolated behind separate Make targets. The 'fast' PR Split test target (`make test-prsplit-fast`) completes in under 300 seconds. The full test suite (`make test-only`) still runs all tests and passes. CI pipeline unchanged.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T320",
+      "task": "Implement spawnShellSession JS helper for verify shell integration",
+      "description": "In a new or existing JS chunk (likely pr_split_06_verification.js or a new pr_split_06b_verify_shell.js if the file is already large), implement:\n\n```javascript\nfunction spawnShellSession(worktreeDir, mux, opts) {\n    // 1. Detect shell: opts.shell || process.env.SHELL || '/bin/sh'\n    // 2. Create CaptureSession: termmux.newCaptureSession(shell, [], { dir: worktreeDir, rows: opts.rows, cols: opts.cols })\n    // 3. Start the session\n    // 4. Save current mux child state (was Claude attached?)\n    // 5. If Claude attached, detach\n    // 6. Attach shell session to mux\n    // 7. Call mux.switchTo() — BLOCKING passthrough\n    // 8. On return: close shell session\n    // 9. Re-attach Claude if was previously attached\n    // 10. Call opts.onExit() callback\n    // Returns: { exitCode, output }\n}\n```\n\nThis function orchestrates the full shell lifecycle using existing termmux primitives (newCaptureSession, attach, detach, switchTo). No Go-level changes required.\n\nExpose as `prSplit.spawnShellSession` for TUI handler access.",
+      "acceptance": "Function exists, is tested, and handles: (a) happy path — shell spawns, user exits, resume works; (b) Claude was attached — Claude detaches before shell, re-attaches after; (c) Claude was NOT attached — shell works standalone; (d) shell crashes — cleanup still runs; (e) Windows graceful degradation — function checks if CaptureSession is available and throws descriptive error if not. Unit test `TestVerifyShell_SpawnAndExit` creates a mock mux, spawns a shell that immediately exits, and verifies the full lifecycle.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T321",
+      "task": "Add Shell button to verify/execution screen rendering",
+      "description": "In the BRANCH_BUILDING (execution/verification) screen renderer, add an 'Open Shell' button alongside existing verify controls. This button should:\n\n1. Only appear when `s.activeVerifySession` exists AND `s.activeVerifyWorktree` is set — meaning a verify command is running or has run in a worktree.\n2. Be zone-marked as `verify-open-shell` for click detection.\n3. Use `secondaryButton()` style (or focusedSecondaryButton when focused).\n4. Be rendered using `lipgloss.joinHorizontal()` with any adjacent buttons.\n5. Be labeled '⬒ Shell' (with terminal icon).\n\nAlso add to EQUIV_CHECK screen if verify worktree is available.\n\nUpdate `getFocusElements()` for both screens to include `{id: 'verify-open-shell', type: 'button'}` when the shell button is visible.",
+      "acceptance": "Shell button appears on execution screen when verify session is active. Shell button appears on EQUIV_CHECK screen when worktree exists. Button is focusable via Tab. Button renders as a proper bordered rectangle. Focus styling applies correctly. Unit test `TestViews_ShellButton_Visibility` verifies button appears/disappears based on verify state.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T322",
+      "task": "Wire Shell button handler: activate spawnShellSession from TUI",
+      "description": "In `pr_split_16a_tui_focus.js` (or 16d after split), add handler for `verify-open-shell` button activation in `handleFocusActivate()`:\n\n```javascript\nif (focused.id === 'verify-open-shell') {\n    // 1. Pause active verify session if running\n    if (s.activeVerifySession && !s.verifyPaused) {\n        try { s.activeVerifySession.pause(); s.verifyPaused = true; } catch (e) {}\n    }\n    // 2. Call spawnShellSession (BLOCKING — enters passthrough)\n    var result = prSplit.spawnShellSession(\n        s.activeVerifyWorktree,\n        tuiMux,\n        { rows: s.height, cols: s.width, onExit: function() {} }\n    );\n    // 3. Resume verify session\n    if (s.verifyPaused) {\n        try { s.activeVerifySession.resume(); s.verifyPaused = false; } catch (e) {}\n    }\n    return [s, null];\n}\n```\n\nAlso wire mouse handler: `if (zone.inBounds('verify-open-shell', msg)) { ... }`.",
+      "acceptance": "Clicking or pressing Enter on the Shell button: (a) pauses active verify if running, (b) opens an interactive shell in the verify worktree (full terminal passthrough), (c) resumes verify when shell exits. The toggle key (Ctrl+]) returns from shell to TUI. Test `TestVerifyShell_TUIHandler` mocks the mux and verifies pause/spawn/resume sequence.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T323",
+      "task": "Implement verify split-view mode: live output + shell side-by-side",
+      "description": "Add a split-view mode for the verify screen, similar to how Claude has split-view (Ctrl+L). Design:\n\n1. Add keyboard shortcut `Ctrl+S` (or similar non-conflicting key) to toggle verify split-view.\n2. When active: left pane shows verify output (existing CaptureSession.screen()), right pane shows shell session screen.\n3. The shell CaptureSession runs independently — it's NOT attached to the mux (that would block). Instead, poll its screen() output for display.\n4. Input focus toggles between panes via Tab or the same toggle key.\n5. When shell pane is focused, keystrokes are forwarded to the shell CaptureSession via write().\n6. When verify pane is focused, keystrokes are forwarded to the verify CaptureSession (if input forwarding is enabled).\n7. The split ratio follows the existing split-view pattern (s.splitViewRatio, Ctrl+=/- to adjust).\n\nImplement in the appropriate view renderer (pr_split_15c_tui_screens.js after split) and the model update handler (pr_split_16d_tui_model.js after split).\n\nNote: This is a secondary shell access mode (alongside the full passthrough from T322). Full passthrough is the primary mode; split-view is the advanced mode.",
+      "acceptance": "Ctrl+S on the verify screen opens a shell CaptureSession in the worktree and displays it in a split-view pane. The left pane shows live verify output. The right pane shows the shell. Tab toggles input focus between panes. Keystrokes in the shell pane go to the shell process. Ctrl+S again closes the shell and returns to full-screen verify view. The verify process continues running throughout. Test `TestVerifySplitView_Lifecycle` verifies: shell spawn, screen polling, input forwarding, close/cleanup.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T324",
+      "task": "Implement verify PTY input forwarding mode",
+      "description": "Add the ability to send keystrokes directly to the running verify process's CaptureSession. This is critical when the verify command prompts for user input (e.g., 'Do you want to continue? [y/n]').\n\n1. Add shortcut `Ctrl+T` to toggle 'input forwarding to verify' mode.\n2. When active, a visual indicator appears (e.g., '▸ INPUT → verify' badge in the status bar).\n3. All letter/number/symbol keystrokes are forwarded to `s.activeVerifySession.write(keystroke)` instead of being handled by the TUI.\n4. Special keys (Ctrl+T to exit mode, Ctrl+C to interrupt, Esc to exit mode) are still handled by the TUI.\n5. The verify output viewport auto-scrolls to bottom to show the latest output including the user's input.\n\nImplement in the key handling section of the model update function.",
+      "acceptance": "Ctrl+T on verify screen enters input forwarding mode. Typing sends keystrokes to the verify process. Verify output updates in real-time showing the input. Ctrl+T again exits input forwarding mode. Ctrl+C in forwarding mode sends SIGINT to verify. Status bar shows forwarding state. Test `TestVerifyInputForward_Keystroke` verifies: enter mode, send 'y\\n', verify CaptureSession received 'y\\n', exit mode.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T325",
+      "task": "Add verify keyboard shortcut help and status bar integration",
+      "description": "Update the verify-related screens to show available keyboard shortcuts:\n\n1. Status bar (renderStatusBar in pr_split_15b_tui_chrome.js): When on BRANCH_BUILDING or EQUIV_CHECK with active verify session, show: `Ctrl+S Shell  Ctrl+T Input  z Pause  Ctrl+C Interrupt`\n2. Help overlay (viewHelpOverlay in pr_split_15d_tui_dialogs.js): Add section for verify-specific shortcuts.\n3. Shell passthrough (when entered via T322): The mux status bar should show: `Ctrl+] Back to TUI  (shell in: <worktree-path>)`.\n4. Split-view mode: Status bar shows: `Ctrl+S Close Shell  Tab Focus  Ctrl+=/- Resize`.\n5. Input forwarding mode: Status bar shows: `▸ INPUT → verify  Ctrl+T Exit  Ctrl+C Interrupt`.\n\nEnsure all new text uses consistent typography and spacing matching existing status bar entries.",
+      "acceptance": "All verify keyboard shortcuts are discoverable via the status bar and help overlay. Status bar dynamically shows relevant shortcuts based on current mode (normal/split-view/input-forwarding/shell-passthrough). Help overlay's verify section lists all shortcuts with descriptions. No overlapping or truncated text at standard terminal width (80 cols). Test `TestStatusBar_VerifyModes` renders the status bar in each mode and asserts correct shortcut text.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T326",
+      "task": "Implement graceful degradation: verify shell on Windows",
+      "description": "The termmux CaptureSession uses PTY (pty.Process) which is Unix-only. On Windows:\n\n1. `spawnShellSession()` must check platform and return a descriptive error: 'Interactive shell in verify worktree requires Unix (Linux/macOS). On Windows, use an external terminal to navigate to the worktree path shown above.'\n2. The Shell button should still appear but be disabled (disabledButton style) with a tooltip/hover text.\n3. The split-view shell mode should be gated similarly.\n4. Input forwarding (Ctrl+T) should work on all platforms since it writes to the CaptureSession via write() — but CaptureSession itself may not be available on Windows. Gate accordingly.\n5. Add `//go:build unix` guard to any new Go code that uses PTY directly.\n\nAlternatively, investigate if `termmux.newCaptureSession` already handles Windows gracefully (returns error) and ensure the JS code handles that error.",
+      "acceptance": "On Windows: Shell button is visible but disabled with explanation text. Ctrl+S shows platform warning. No panics or crashes. On Unix: full functionality. Test `TestVerifyShell_WindowsGracefulDegradation` (build-tagged for windows) verifies disabled behavior.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T327",
+      "task": "E2E test: verify shell passthrough lifecycle",
+      "description": "Add binary E2E test `TestBinaryE2E_VerifyShellPassthrough` (Unix-only) that:\n\n1. Creates a test repo with a verify command that runs `sleep 30` (long-running).\n2. Launches osm pr-split TUI.\n3. Navigates to BRANCH_BUILDING screen.\n4. Starts verification.\n5. Tabs to Shell button and presses Enter.\n6. Verifies terminal is in shell passthrough (sends `pwd` command, checks output contains worktree path).\n7. Exits shell (sends `exit` command).\n8. Verifies TUI resumes and verify session continues.\n9. Sends Ctrl+C to interrupt verify.\n10. Verifies clean exit.\n\nUse the existing binary E2E testing pattern from `pr_split_binary_e2e_test.go`. The test runs the real osm binary with PTY interaction.",
+      "acceptance": "Test passes reliably on macOS and Linux. Shell spawns in correct worktree directory. Shell output is visible. Shell exit returns to TUI. Verify resumes after shell exit. No goroutine leaks. Test completes within 120 seconds.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T328",
+      "task": "E2E test: verify split-view and input forwarding",
+      "description": "Add binary E2E test `TestBinaryE2E_VerifySplitViewAndInput` (Unix-only) that:\n\n1. Creates a test repo with a verify command that prompts for input (e.g., reads from stdin).\n2. Launches osm pr-split TUI.\n3. Navigates to verification.\n4. Presses Ctrl+S to open split-view shell.\n5. Verifies both panes are visible (verify output and shell).\n6. Sends keystroke to shell pane (Tab to focus, then command).\n7. Closes split-view (Ctrl+S again).\n8. Presses Ctrl+T to enter input forwarding mode.\n9. Sends 'y\\n' to the verify process.\n10. Verifies verify process received the input.\n11. Exits input forwarding (Ctrl+T).\n12. Verifies clean state.\n\nUse the existing binary E2E pattern.",
+      "acceptance": "Test passes reliably on macOS and Linux. Split-view shows two panes. Input forwarding delivers keystrokes to verify process. All modes exit cleanly. No state corruption. Test completes within 120 seconds.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T329",
+      "task": "Unit tests: spawnShellSession edge cases",
+      "description": "Add comprehensive unit tests for `prSplit.spawnShellSession()`:\n\n1. `TestSpawnShell_HappyPath`: Shell spawns, exits normally, onExit called.\n2. `TestSpawnShell_ClaudeDetachReattach`: Claude is attached, shell spawns, Claude detached, shell exits, Claude re-attached.\n3. `TestSpawnShell_NoClaudeAttached`: Shell works without Claude.\n4. `TestSpawnShell_ShellCrash`: Shell process crashes (non-zero exit), cleanup still runs.\n5. `TestSpawnShell_WorktreeNotExist`: Invalid worktree path, descriptive error.\n6. `TestSpawnShell_MuxNotAvailable`: tuiMux is undefined, descriptive error.\n7. `TestSpawnShell_ConcurrentAccess`: Attempt to spawn two shells simultaneously, second is rejected.\n\nAll tests use mock mux (or real mux with mock child) and t.TempDir() for worktrees.",
+      "acceptance": "All 7 tests pass. 100% branch coverage of spawnShellSession function. No flaky tests (run 3 times clean). Tests complete within 30 seconds total.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T330",
+      "task": "Unit tests: verify split-view rendering and input forwarding",
+      "description": "Add unit tests for the split-view verify mode and input forwarding:\n\n1. `TestVerifySplitView_LayoutAtVariousWidths`: Render split-view at 80, 120, 160 columns. Both panes visible. Borders correct.\n2. `TestVerifySplitView_FocusToggle`: Tab switches focus indicator between panes.\n3. `TestVerifySplitView_ResizeRatio`: Ctrl+=/- adjusts split ratio within bounds.\n4. `TestVerifyInputForward_EnterAndExit`: Ctrl+T toggles input mode. Status bar updates.\n5. `TestVerifyInputForward_SpecialKeys`: Ctrl+C sends SIGINT in forwarding mode. Esc exits mode.\n6. `TestVerifyInputForward_RegularKeys`: Letters/numbers forwarded to CaptureSession.write().\n\nAll tests use the TUI test harness pattern from existing pr_split_16_*_test.go files.",
+      "acceptance": "All tests pass. Split-view renders correctly at all tested widths. Focus toggling works. Input forwarding delivers keystrokes. Special keys handled correctly. No regressions in existing TUI tests.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T331",
+      "task": "Add config.mk targets for PR Split test groups",
+      "description": "Add Make targets to `config.mk` for isolated PR Split test execution:\n\n1. `test-prsplit-unit`: Runs only PR Split unit tests (chunks 00-12) with 5-minute timeout.\n2. `test-prsplit-tui`: Runs only PR Split TUI tests (chunks 13-16) with 10-minute timeout.\n3. `test-prsplit-e2e`: Runs only binary E2E tests with 10-minute timeout.\n4. `test-prsplit-integration`: Runs integration tests with 10-minute timeout.\n5. `test-prsplit-all`: Runs all PR Split tests (union of above).\n6. `test-prsplit-fast`: Runs unit + TUI tests only (no E2E, no integration) for fast feedback.\n\nEach target uses `-run` regex to select the right test functions. Use `go test -timeout=Xs -v` with output piped through `fold -w 200 | tail -n 40`.",
+      "acceptance": "All 6 targets are defined in config.mk. `make test-prsplit-unit` runs only unit tests. `make test-prsplit-tui` runs only TUI tests. Each target produces log output. `make help` shows all new targets with descriptions. Targets work on macOS and Linux (E2E has Unix guard).",
+      "status": "Not Started"
+    },
+    {
+      "id": "T332",
+      "task": "Visual regression test: screenshot comparison for all screens",
+      "description": "Create a test `TestViews_VisualRegression_AllScreens` that renders every PR Split TUI screen at standard dimensions (80x24 and 120x40) and compares the output against golden files. This catches visual regressions from any future changes.\n\n1. Create golden files directory: `internal/command/testdata/golden_views/`.\n2. For each screen (CONFIG, ANALYSIS, PLANNING, PLAN_REVIEW, PLAN_EDITOR, BRANCH_BUILDING, EQUIV_CHECK, FINALIZATION, ERROR_RESOLUTION, PAUSED): render with default test state.\n3. Store rendered output as `.golden` files.\n4. Test compares rendered output to golden file, with `-update` flag to regenerate goldens.\n5. Use the existing view renderer tests as a base but add golden file comparison.\n\nThe golden files serve as the visual contract — any change to rendering must explicitly update the golden files, making visual changes deliberate.",
+      "acceptance": "Golden files exist for all screens at both resolutions. Test passes when goldens match. Test FAILS when any visual change is made without updating goldens. The `-update` flag regenerates goldens. Golden files are committed to the repo. Test runs in <10 seconds.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T333",
+      "task": "Benchmark: TUI render performance after all changes",
+      "description": "Extend `pr_split_16_bench_test.go` (or equivalent in new split file) with benchmarks that cover the new functionality:\n\n1. `BenchmarkRender_EquivCheckFailWithButtons`: Render EQUIV_CHECK fail screen with buttons. Must be <16ms.\n2. `BenchmarkRender_VerifySplitView`: Render split-view verify mode. Must be <16ms.\n3. `BenchmarkRender_NavBarAllStates`: Render nav bar with focus on each button. Must be <5ms each.\n4. `BenchmarkRender_FullScreen_80x24`: Full TUI view() at 80x24. Must be <16ms (60fps capable).\n5. `BenchmarkRender_FullScreen_120x40`: Full TUI view() at 120x40. Must be <16ms.\n\nCompare against existing benchmark baselines from pr_split_16_bench_test.go.",
+      "acceptance": "All benchmarks pass performance thresholds. No render function exceeds 16ms at standard dimensions. Results documented in benchmark output. No performance regression from pre-change baselines (within 20% tolerance).",
+      "status": "Not Started"
+    },
+    {
+      "id": "T334",
+      "task": "Documentation: update docs/scripting.md with verify shell integration",
+      "description": "Update `docs/scripting.md` and any relevant reference docs with:\n\n1. New termmux capabilities: spawnShellSession description and usage.\n2. Verify keyboard shortcuts: Ctrl+S (split-view), Ctrl+T (input forwarding), Shell button.\n3. Architecture: how the shell integrates with the existing mux (detach Claude → attach shell → passthrough → cleanup → re-attach Claude).\n4. Platform notes: Unix-only for shell, graceful degradation on Windows.\n5. Example usage in scripts: how to programmatically open a shell during verification.\n\nAlso update `docs/reference/tui-api.md` if it exists, or create a verify-integration section in the appropriate reference doc.",
+      "acceptance": "Documentation accurately describes all new verify shell features. Keyboard shortcuts are listed. Architecture diagram or description explains the mux lifecycle. Platform limitations are documented. A user reading only the docs could understand and use all new features.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T335",
+      "task": "Finalization: run full test suite on all changed files, measure test performance improvement",
+      "description": "After all tasks T300-T334:\n\n1. Run `make make-all-with-log` — full build, lint, test suite. Must pass clean.\n2. Run `make make-all-in-container` — Linux verification. Must pass clean.\n3. Measure PR Split test timing: before (baseline from WIP.md: 1011s for internal/command) vs after (with test isolation from T319).\n4. Measure total test file count and line counts for PR Split JS files (all should be ≤1000 lines, ≤800 preferred).\n5. Run `make test-prsplit-all` to verify isolated targets work.\n6. Document all measurements in WIP.md.\n\nThis is the integration verification task — it confirms everything works together.",
+      "acceptance": "All checks pass on macOS and Linux. PR Split JS files max size ≤1000 lines (≤800 preferred; any file 800-1000 must have justification in commit message). Fast test target completes in under 300s. Zero lint errors. Zero dead code. All new features work end-to-end. WIP.md contains measurement data.",
+      "status": "Not Started"
+    }
+  ],
+  "continuousVerification": {
+    "task": "Run project-defined build and test commands after EVERY significant change",
+    "description": "After each code change: `make make-all-with-log 2>&1 | tail -n 30`. After each PR Split change: `go test -timeout=300s -v ./internal/command/... -run '<relevant_pattern>' 2>&1 | tail -n 40`. After each commit: full `make make-all-with-log`.",
+    "failPolicy": "If ANY test fails, STOP IMMEDIATELY and fix the issue before proceeding. Zero tolerance for test failures, timing issues, non-determinism, or race conditions.",
+    "testCoverage": "All new code must have unit tests. All visual changes must have render tests. Shell integration must have E2E tests. Aim for 100% branch coverage on new functions."
+  },
+  "finalEnforcementProtocol": [
+    {
+      "type": "POST_EXECUTION_WARNING",
+      "alert": "PIPE ALL BUILD OUTPUT through tail/fold to prevent context explosion. Use make make-all-with-log."
+    },
+    {
+      "type": "POST_EXECUTION_WARNING_REPEATED",
+      "alert": "RULE OF TWO: Every task requires 2 contiguous subagent reviews on identical diff before commit. No exceptions."
+    },
+    {
+      "type": "POST_EXECUTION_WARNING_REPEATED",
+      "alert": "TIMEOUT: Use -timeout=20m for full suite. Individual packages: -timeout=300s. Binary E2E: -timeout=120s per test."
+    },
+    {
+      "type": "POST_EXECUTION_WARNING_REPEATED",
+      "alert": "CHUNK LOADING ORDER: After splitting JS files, verify prSplitChunks in pr_split.go loads in correct dependency order."
+    }
+  ]
+}

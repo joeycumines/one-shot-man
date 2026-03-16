@@ -87,9 +87,11 @@
     // read burst on the Claude side.
     var SEND_TEXT_CHUNK_DELAY_MS = 2;
     // Wait for prompt/input anchors to stabilize before pressing Enter.
-    var SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 1500;
+    // T203: Increased timeout from 1500→3000ms and reduced stable samples
+    // from 3→2 to handle large prompts on slow terminals (e.g. ollama).
+    var SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 3000;
     var SEND_PRE_SUBMIT_STABLE_POLL_MS = 50;
-    var SEND_PRE_SUBMIT_STABLE_SAMPLES = 3;
+    var SEND_PRE_SUBMIT_STABLE_SAMPLES = 2;
     var SEND_INPUT_ANCHOR_TAIL_CHARS = 28;
     // After pressing Enter, require anchor movement (prompt/input) that is
     // stable for multiple polls.
@@ -337,6 +339,8 @@
         var lastKey = '';
         var stableCount = 0;
         var lastState = null;
+        var pollCount = 0;
+        var bestAnchorsState = null; // T203: track best observation even if transient
         while (Date.now() - startMs < cfg.preSubmitStableTimeoutMs) {
             var cancelErr = getCancellationError();
             if (cancelErr) {
@@ -347,6 +351,7 @@
                 return { error: null, state: null, observed: false };
             }
             lastState = state;
+            pollCount++;
             if (state.stableKey === lastKey) {
                 stableCount++;
             } else {
@@ -358,20 +363,41 @@
                                 state.inputLineIndex !== -1 &&
                                 state.promptLineIndex !== -1 &&
                                 Math.abs(state.inputLineIndex - state.promptLineIndex) <= 2);
+            // T203: Track best observation with both anchors valid.
+            if (anchorsReady) {
+                bestAnchorsState = state;
+            }
             if (anchorsReady && stableCount >= cfg.preSubmitStableSamples) {
                 return { error: null, state: state, observed: true };
             }
             await new Promise(function(resolve) { setTimeout(resolve, cfg.preSubmitStablePollMs); });
         }
 
+        // T203: Graceful fallback — if we ever saw valid anchors, use that snapshot.
+        if (bestAnchorsState) {
+            log.printf('auto-split sendToHandle: anchor stabilization timeout (%dms, %d polls) — using best observed snapshot (prompt=%d, input=%d)',
+                Date.now() - startMs, pollCount,
+                bestAnchorsState.promptLineIndex, bestAnchorsState.inputLineIndex);
+            return { error: null, state: bestAnchorsState, observed: true };
+        }
+        // T203: Secondary fallback — prompt-only mode for long pastes where
+        // the text tail scrolled off-screen. If we have a stable prompt
+        // marker, proceed cautiously.
         if (lastState &&
-            lastState.inputBottom !== -1 &&
             lastState.promptBottom !== -1 &&
-            lastState.inputLineIndex !== -1 &&
-            lastState.promptLineIndex !== -1 &&
-            Math.abs(lastState.inputLineIndex - lastState.promptLineIndex) <= 2) {
+            lastState.promptLineIndex !== -1) {
+            log.printf('auto-split sendToHandle: anchor stabilization timeout (%dms, %d polls) — prompt-only fallback (prompt=%d, input=%d, key=%s)',
+                Date.now() - startMs, pollCount,
+                lastState.promptLineIndex, lastState.inputLineIndex,
+                lastState.stableKey);
             return { error: null, state: lastState, observed: true };
         }
+        // T204: Diagnostic logging on hard failure.
+        log.printf('auto-split sendToHandle: anchor detection FAILED (%dms, %d polls) — lastState: prompt=%d, input=%d, key=%s',
+            Date.now() - startMs, pollCount,
+            lastState ? lastState.promptLineIndex : -1,
+            lastState ? lastState.inputLineIndex : -1,
+            lastState ? lastState.stableKey : 'null');
         return {
             error: 'unable to locate stable prompt/input anchors before submit',
             state: lastState,

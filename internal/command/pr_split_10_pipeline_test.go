@@ -763,7 +763,7 @@ func TestAnchorPipeline_SendToHandle_Timeout_UnstableAnchors(t *testing.T) {
 	}
 	// sendToHandle returns { error: string }. With constantly changing
 	// screenshots, the prompt ready phase should timeout, producing an error.
-	errVal, _ := m["error"]
+	errVal := m["error"]
 	if errVal == nil {
 		// May succeed via graceful fallback; that's also acceptable behavior.
 		return
@@ -838,5 +838,206 @@ func TestAnchorPipeline_CaptureScreenshot_ValidMux(t *testing.T) {
 	s := fmt.Sprintf("%v", val)
 	if s != "Hello\n❯ " {
 		t.Errorf("expected 'Hello\\n❯ ', got %q", s)
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  T203: Anchor stability — bestAnchorsState fallback
+// ---------------------------------------------------------------------------
+
+// TestAnchorPipeline_BestAnchorsStateFallback verifies that when anchors
+// transiently align (both prompt and input within 2 lines) but never
+// converge for STABLE_SAMPLES consecutive polls, the pipeline falls back
+// to the best observed snapshot rather than failing.
+func TestAnchorPipeline_BestAnchorsStateFallback(t *testing.T) {
+	t.Parallel()
+	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+
+	// Phase 1 (promptReady): stable prompt marker for convergence.
+	// Phase 2 (anchorStable): jitter input line length but keep prompt stable.
+	// Phase 3 (submitAck): after Enter, shift prompt to acknowledge.
+	_, err := evalJS(`
+		var __phase = 'ready';
+		var __anchorCount = 0;
+		globalThis.tuiMux = {
+			screenshot: function() {
+				if (__phase === 'ready') {
+					return 'loading...\n❯ ';
+				}
+				if (__phase === 'anchor') {
+					__anchorCount++;
+					// Jitter: alternate input line length so stableKey oscillates.
+					var pad = (__anchorCount % 2 === 0) ? 'xx' : 'xxxx';
+					return pad + 'test prompt tail\n❯ ';
+				}
+				// After submit: shift prompt position.
+				return '❯ working on it...';
+			}
+		};
+		var __mockHandle = {
+			send: function(data) {
+				if (data === '\r') {
+					__phase = 'ack';
+				} else if (__phase === 'ready') {
+					__phase = 'anchor';
+				}
+			}
+		};
+		prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 80;
+		prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS = 5;
+		prSplit.SEND_PRE_SUBMIT_STABLE_SAMPLES = 3;
+		prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 80;
+		prSplit.SEND_PROMPT_READY_POLL_MS = 5;
+		prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 2;
+		prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS = 80;
+		prSplit.SEND_SUBMIT_ACK_POLL_MS = 5;
+		prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 1;
+		prSplit.SEND_TEXT_CHUNK_DELAY_MS = 0;
+		true
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := evalJS(`await prSplit.sendToHandle(__mockHandle, 'test prompt tail')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m, ok := val.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map, got %T: %v", val, val)
+	}
+	// T203: With oscillating but valid anchors, bestAnchorsState fallback
+	// should succeed — no fatal anchor error expected.
+	errVal := m["error"]
+	if errVal != nil {
+		errStr, _ := errVal.(string)
+		// Only fail if the error is specifically about anchor stability.
+		// Submit ack failures are acceptable since the mock is simplistic.
+		if strings.Contains(errStr, "unable to locate stable prompt/input anchors") {
+			t.Errorf("bestAnchorsState fallback should have prevented anchor error, got: %s", errStr)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  T203: Anchor stability — prompt-only fallback
+// ---------------------------------------------------------------------------
+
+// TestAnchorPipeline_PromptOnlyFallback verifies that when the text tail
+// has scrolled off-screen (no input anchor) but a prompt marker IS visible,
+// the pipeline falls back to prompt-only mode instead of failing.
+func TestAnchorPipeline_PromptOnlyFallback(t *testing.T) {
+	t.Parallel()
+	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+
+	// Screenshot shows prompt marker but NO trace of the sent text
+	// (simulates a very long paste that scrolled past the viewport).
+	_, err := evalJS(`
+		var __phase = 'ready';
+		globalThis.tuiMux = {
+			screenshot: function() {
+				if (__phase === 'ack') {
+					return '❯ thinking...';
+				}
+				return 'some other content\nmore content\n❯ ';
+			}
+		};
+		var __mockHandle = {
+			send: function(d) {
+				if (d === '\r') __phase = 'ack';
+			}
+		};
+		prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 80;
+		prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS = 5;
+		prSplit.SEND_PRE_SUBMIT_STABLE_SAMPLES = 2;
+		prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 80;
+		prSplit.SEND_PROMPT_READY_POLL_MS = 5;
+		prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 2;
+		prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS = 80;
+		prSplit.SEND_SUBMIT_ACK_POLL_MS = 5;
+		prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 1;
+		prSplit.SEND_TEXT_CHUNK_DELAY_MS = 0;
+		true
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := evalJS(`await prSplit.sendToHandle(__mockHandle, 'this text is not visible in the screenshot at all and has a unique tail that wont match')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m, ok := val.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map, got %T: %v", val, val)
+	}
+	// T203: prompt-only fallback should prevent anchor-related errors.
+	errVal := m["error"]
+	if errVal != nil {
+		errStr, _ := errVal.(string)
+		if strings.Contains(errStr, "unable to locate stable prompt/input anchors") {
+			t.Errorf("prompt-only fallback should have prevented anchor error, got: %s", errStr)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  T204: Anchor stability — no prompt marker = hard failure
+// ---------------------------------------------------------------------------
+
+// TestAnchorPipeline_NoPromptMarker_HardFailure verifies that when
+// neither a prompt marker nor input anchors are found, the pipeline
+// correctly returns an error (not a silent success).
+func TestAnchorPipeline_NoPromptMarker_HardFailure(t *testing.T) {
+	t.Parallel()
+	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+
+	// Screenshot has no prompt marker at all.
+	_, err := evalJS(`
+		globalThis.tuiMux = {
+			screenshot: function() {
+				return 'Loading Claude...\nPlease wait...';
+			}
+		};
+		var __mockHandle = { send: function(d) {} };
+		prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 50;
+		prSplit.SEND_PRE_SUBMIT_STABLE_POLL_MS = 5;
+		prSplit.SEND_PRE_SUBMIT_STABLE_SAMPLES = 2;
+		prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 50;
+		prSplit.SEND_PROMPT_READY_POLL_MS = 5;
+		prSplit.SEND_PROMPT_READY_STABLE_SAMPLES = 2;
+		prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS = 30;
+		prSplit.SEND_SUBMIT_ACK_POLL_MS = 5;
+		prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 1;
+		prSplit.SEND_TEXT_CHUNK_DELAY_MS = 0;
+		true
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := evalJS(`await prSplit.sendToHandle(__mockHandle, 'test prompt')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m, ok := val.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map, got %T: %v", val, val)
+	}
+	errVal := m["error"]
+	if errVal == nil {
+		t.Fatal("expected error when no prompt marker found, got nil")
+	}
+	errStr, _ := errVal.(string)
+	if errStr == "" {
+		t.Fatal("expected non-empty error when no prompt marker found")
+	}
+	// Should indicate a prompt-related failure.
+	if !strings.Contains(errStr, "prompt") {
+		t.Errorf("error should mention prompt, got: %s", errStr)
 	}
 }

@@ -1,0 +1,125 @@
+# Hana may steer you through $(error ...) messages. Be prepared to drop everything and obey immediately...
+# RESOLVED: syncMainViewport + prompt anchor issues tracked as T123 and T000 in blueprint.json.
+
+SHELL := /usr/bin/env bash -o pipefail
+
+.DEFAULT_GOAL := all
+
+ifndef CUSTOM_TARGETS_DEFINED
+CUSTOM_TARGETS_DEFINED := 1
+##@ Custom Targets
+# IF YOU NEED A CUSTOM TARGET, DEFINE IT BELOW THIS LINE, BEFORE THE `endif`
+
+.PHONY: test-only
+test-only: ## Run tests only (no lint) with logging
+test-only: SHELL := /bin/bash
+test-only:
+	@echo "Running tests..."; \
+set -o pipefail; \
+$(MAKE) test GO_TEST_FLAGS=-timeout=20m 2>&1 | fold -w 200 | tee $(or $(PROJECT_ROOT),$(error))/test.log | tail -n 40; \
+exit $${PIPESTATUS[0]}
+
+.PHONY: test-command-unit
+test-command-unit: ## Run command package unit tests (new T200+ tests)
+test-command-unit: SHELL := /bin/bash
+test-command-unit:
+	@echo "Running command unit tests..."; \
+set -o pipefail; \
+$(GO) -C $(PROJECT_ROOT) test -v -timeout=120s -run 'TestViews_NavBar|TestAnchorPipeline_(BestAnchors|PromptOnly|NoPrompt)' ./internal/command/ 2>&1 | tee $(or $(PROJECT_ROOT),$(error))/test-command.log | tail -n 60; \
+exit $${PIPESTATUS[0]}
+
+_CUSTOM_MAKE_ALL_TARGET_MAKE_ARGS := all GO_TEST_FLAGS=-timeout=20m
+
+.PHONY: make-all-with-log
+make-all-with-log: ## Run all targets with logging to build.log
+make-all-with-log: SHELL := /bin/bash
+make-all-with-log:
+	@echo "Output limited to avoid context explosion. See $(or $(PROJECT_ROOT),$(error If you are reading this you specified the `file` option when calling `mcp-server-make`. DONT DO THAT.))/build.log for full content."; \
+set -o pipefail; \
+$(MAKE) $(_CUSTOM_MAKE_ALL_TARGET_MAKE_ARGS) 2>&1 | fold -w 200 | tee $(or $(PROJECT_ROOT),$(error If you are reading this you specified the `file` option when calling `mcp-server-make`. DONT DO THAT.))/build.log | tail -n 15; \
+exit $${PIPESTATUS[0]}
+
+.PHONY: make-all-in-container
+make-all-in-container: ## Like `make make-all-with-log` inside a linux golang container
+make-all-in-container: SHELL := /bin/bash
+make-all-in-container:
+	@echo "Output limited to avoid context explosion. See $(or $(PROJECT_ROOT),$(error If you are reading this you specified the `file` option when calling `mcp-server-make`. DONT DO THAT.))/build.log for full content."; \
+go_version="$$($(GO) -C $(PROJECT_ROOT) mod edit -print | awk '/^go / {print $$2}')"; \
+echo "Running in container golang:$${go_version}."; \
+set -o pipefail; \
+docker run --rm -v $(PROJECT_ROOT):/work -w /work "golang:$${go_version}" bash -lc 'export PATH="/usr/local/go/bin:$$PATH" && export GOFLAGS=-buildvcs=false && { jobs="$$(nproc)" && [ "$$jobs" -gt 0 ] && jobs="-j $${jobs}" || jobs=''; } && set -x && make $${jobs} $(_CUSTOM_MAKE_ALL_TARGET_MAKE_ARGS)' 2>&1 | fold -w 200 | tee build.log | tail -n 15; \
+exit $${PIPESTATUS[0]}
+
+.PHONY: make-all-run-windows
+make-all-run-windows: ## Run all targets with logging to build.log
+make-all-run-windows: SHELL := /bin/bash
+make-all-run-windows:
+	@echo "Output limited to avoid context explosion. See $(or $(PROJECT_ROOT),$(error If you are reading this you specified the `file` option when calling `mcp-server-make`. DONT DO THAT.))/build.log for full content."; \
+set -o pipefail; \
+hack/run-on-windows.sh moo make $(_CUSTOM_MAKE_ALL_TARGET_MAKE_ARGS) 2>&1 | fold -w 200 | tee $(or $(PROJECT_ROOT),$(error If you are reading this you specified the `file` option when calling `mcp-server-make`. DONT DO THAT.))/build.log | tail -n 15; \
+exit $${PIPESTATUS[0]}
+
+.PHONY: record-session-start
+record-session-start: ## Record session start time
+record-session-start: SHELL := /bin/bash
+record-session-start:
+	@date +%s > $(PROJECT_ROOT)/.session_start
+	@echo "Session started at $$(date -r $$(cat $(PROJECT_ROOT)/.session_start) '+%Y-%m-%d %H:%M:%S')"
+
+.PHONY: check-session-time
+check-session-time: ## Check elapsed session time
+check-session-time: SHELL := /bin/bash
+check-session-time:
+	@if [ -f $(PROJECT_ROOT)/.session_start ]; then \
+		start=$$(cat $(PROJECT_ROOT)/.session_start); \
+		now=$$(date +%s); \
+		elapsed=$$((now - start)); \
+		hours=$$((elapsed / 3600)); \
+		minutes=$$(( (elapsed % 3600) / 60 )); \
+		seconds=$$((elapsed % 60)); \
+		remaining=$$((32400 - elapsed)); \
+		rem_hours=$$((remaining / 3600)); \
+		rem_minutes=$$(( (remaining % 3600) / 60 )); \
+		echo "Elapsed: $${hours}h $${minutes}m $${seconds}s | Remaining: $${rem_hours}h $${rem_minutes}m (of 9h mandate)"; \
+	else \
+		echo "No session start recorded. Run 'make record-session-start' first."; \
+		exit 1; \
+	fi
+
+.PHONY: _git-stage-t200
+_git-stage-t200: ## Stage T200-T207 files and verify
+_git-stage-t200: SHELL := /bin/bash
+_git-stage-t200:
+	cd $(PROJECT_ROOT) && \
+	git add -f \
+		internal/command/pr_split_15_tui_views.js \
+		internal/command/pr_split_10_pipeline.js \
+		internal/command/pr_split_15_tui_views_test.go \
+		internal/command/pr_split_10_pipeline_test.go \
+		blueprint.json \
+		WIP.md \
+		config.mk && \
+	echo "=== Staged files ===" && \
+	git diff --staged --stat
+
+.PHONY: _git-commit-t200
+_git-commit-t200: ## Commit T200-T207 with prepared message
+_git-commit-t200: SHELL := /bin/bash
+_git-commit-t200:
+	cd $(PROJECT_ROOT) && \
+	git commit -F .git-commit-msg.txt && \
+	echo "=== Commit result ===" && \
+	git log --oneline -1 && \
+	echo "=== Commit details ===" && \
+	git show --stat HEAD
+
+.PHONY: _git-show-t200
+_git-show-t200: ## Show the latest commit
+_git-show-t200: SHELL := /bin/bash
+_git-show-t200:
+	cd $(PROJECT_ROOT) && \
+	git log --oneline -1 && \
+	git show --stat HEAD
+
+# IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
+endif

@@ -381,18 +381,29 @@
         // Priority order: Cancel > Next > Back > Dots.
         var veryNarrow = w < 35;
 
+        // T200: Compute focused element once for all nav buttons.
+        // Previous code checked last-position which was always nav-cancel,
+        // inverting the highlight: nav-cancel rendered as focused "Next"
+        // while actual nav-next got no highlight. Fix: ID-based lookup.
+        var focusElems = prSplit._getFocusElements ? prSplit._getFocusElements(s) : [];
+        var focusIdx = s.focusIndex || 0;
+        var focusedElemId = (focusElems[focusIdx] || {}).id || '';
+
         // Back button (not on first screen; hidden at veryNarrow).
         var backBtn = '';
         if (!veryNarrow && stepIdx > 0 && !s.isProcessing) {
             var backLabel = narrow ? '\u2190' : '\u2190 Back';
-            backBtn = zone.mark('nav-back',
-                styles.secondaryButton().render(backLabel));
+            var backStyle = (focusedElemId === 'nav-back')
+                ? styles.focusedButton() : styles.secondaryButton();
+            backBtn = zone.mark('nav-back', backStyle.render(backLabel));
         }
 
-        // Cancel button.
+        // Cancel button — T201: gets focus styling when tabbed to.
         var cancelLabel = narrow ? '\u00d7' : 'Cancel';
+        var cancelStyle = (focusedElemId === 'nav-cancel')
+            ? styles.focusedButton() : styles.secondaryButton();
         var cancelBtn = zone.mark('nav-cancel',
-            styles.secondaryButton().render(cancelLabel));
+            cancelStyle.render(cancelLabel));
 
         // Dots (hidden at veryNarrow).
         var dots = veryNarrow ? '' : renderStepDots(s);
@@ -408,17 +419,8 @@
                 if (narrow && nextLabel.length > 8) {
                     nextLabel = nextLabel.split(' ')[0];
                 }
-                // T120: Compute nav-next focus locally (pure — no state mutation).
-                var focusElems = prSplit._getFocusElements ? prSplit._getFocusElements(s) : [];
-                var isNavNextFocused = false;
-                if (focusElems.length > 0) {
-                    var lastElem = focusElems[focusElems.length - 1];
-                    if (lastElem && lastElem.type === 'nav' &&
-                        (s.focusIndex || 0) === focusElems.length - 1) {
-                        isNavNextFocused = true;
-                    }
-                }
-                var nextBtnStyle = isNavNextFocused
+                // T200: Direct ID check — not position-based.
+                var nextBtnStyle = (focusedElemId === 'nav-next')
                     ? styles.focusedButton() : styles.primaryButton();
                 nextBtn = zone.mark('nav-next',
                     nextBtnStyle.render(nextLabel + ' \u2192'));

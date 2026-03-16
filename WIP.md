@@ -1,7 +1,17 @@
 # WIP — Takumi's Desperate Diary
 
-## Session Start
-2026-03-15 13:57:48 (9-hour mandate → ~22:57:48)
+## Session 2 Start
+2026-03-16 17:23:05 (9-hour mandate → ~02:23:05)
+
+### Session 2 Bugs Found & Fixed
+1. **T200-T202: Nav Button Focus Desync** — `renderNavBar()` used position-based check `focusElems[length-1]` which was always `nav-cancel`, inverted the focus highlight. Fixed: ID-based check `focusedElemId === 'nav-next'`. Also added focus styling for Cancel and Back buttons.
+2. **T203-T204: Anchor Stability** — Timeout too aggressive (1500ms→3000ms), stable samples reduced (3→2). Added `bestAnchorsState` fallback for jittering-but-valid layouts, `prompt-only` fallback for scrolled-off text tails, diagnostic logging on hard failure.
+3. **T205-T206: Tests** — 6 new tests: 3 for nav focus (FocusNextHighlightsNext, FocusCancelDoesNotHighlightNext, FocusStyling_AllStates×6), 3 for anchor (BestAnchorsStateFallback, PromptOnlyFallback, NoPromptMarker_HardFailure). All 9 pass.
+
+### Session 2 Commits
+(pending) — T200-T207: fix nav focus desync, harden anchor stability, add tests
+
+## Session 1 (Previous)
 
 ## Commits This Session
 1. `8f901df7` — Fix BubbleTea event loop deadlock causing "Processing..." TUI hang

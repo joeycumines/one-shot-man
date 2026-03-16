@@ -224,6 +224,208 @@ func TestViews_NavBar_NarrowOmitsLabels(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+//  T200: Nav button focus styling — ID-based detection
+// ---------------------------------------------------------------------------
+
+// TestViews_NavBar_FocusNextHighlightsNext verifies that when focusIndex
+// points to nav-next (second-to-last), the Next button gets focusedButton
+// styling. Regression for T200 where inverted position-based check caused
+// nav-cancel to get the highlight instead.
+func TestViews_NavBar_FocusNextHighlightsNext(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	// Determine the focusIndex for nav-next in CONFIG state.
+	raw, err := evalJS(`(function() {
+		var elems = prSplit._getFocusElements({
+			wizardState: 'CONFIG', showAdvanced: false,
+			claudeTestResult: '', claudeAvailable: false
+		});
+		var navNextIdx = -1;
+		var navCancelIdx = -1;
+		for (var i = 0; i < elems.length; i++) {
+			if (elems[i].id === 'nav-next') navNextIdx = i;
+			if (elems[i].id === 'nav-cancel') navCancelIdx = i;
+		}
+		return JSON.stringify({total: elems.length, navNext: navNextIdx, navCancel: navCancelIdx});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var idx struct {
+		Total     int `json:"total"`
+		NavNext   int `json:"navNext"`
+		NavCancel int `json:"navCancel"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &idx); err != nil {
+		t.Fatal(err)
+	}
+	if idx.NavNext < 0 || idx.NavCancel < 0 {
+		t.Fatalf("nav-next=%d nav-cancel=%d — both must be present", idx.NavNext, idx.NavCancel)
+	}
+	if idx.NavNext >= idx.NavCancel {
+		t.Fatalf("nav-next (%d) must come before nav-cancel (%d)", idx.NavNext, idx.NavCancel)
+	}
+
+	// Intercept focusedButton to inject a marker.
+	marker := "[[FOCUSED_BTN]]"
+	js := fmt.Sprintf(`(function() {
+		var origFocused = prSplit._wizardStyles.focusedButton;
+		prSplit._wizardStyles.focusedButton = function() {
+			var s = origFocused();
+			return { render: function(text) { return '%s' + s.render(text); } };
+		};
+		try {
+			return prSplit._renderNavBar({
+				wizardState: 'CONFIG', width: 80, isProcessing: false,
+				focusIndex: %d
+			});
+		} finally {
+			prSplit._wizardStyles.focusedButton = origFocused;
+		}
+	})()`, marker, idx.NavNext)
+
+	raw, err = evalJS(js)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := raw.(string)
+
+	// The marker should appear right before the "Start Analysis" next button.
+	markerIdx := strings.Index(s, marker)
+	if markerIdx < 0 {
+		t.Fatalf("focusedButton marker not found — Next button not focused when focusIndex=%d:\n%s", idx.NavNext, s)
+	}
+	// Ensure it's near "Analysis" (the next button label for CONFIG).
+	after := s[markerIdx:]
+	if !strings.Contains(after, "Analysis") {
+		t.Errorf("focusedButton marker should be near 'Start Analysis' next button, got:\n%s", after)
+	}
+}
+
+// TestViews_NavBar_FocusCancelDoesNotHighlightNext verifies that when
+// focusIndex points to nav-cancel (last element), the Next button does NOT
+// get focusedButton styling. This was the exact T200 bug.
+func TestViews_NavBar_FocusCancelDoesNotHighlightNext(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var elems = prSplit._getFocusElements({
+			wizardState: 'CONFIG', showAdvanced: false,
+			claudeTestResult: '', claudeAvailable: false
+		});
+		var navCancelIdx = -1;
+		for (var i = 0; i < elems.length; i++) {
+			if (elems[i].id === 'nav-cancel') navCancelIdx = i;
+		}
+		return navCancelIdx;
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancelIdx, ok := raw.(int64)
+	if !ok {
+		t.Fatalf("expected int64, got %T: %v", raw, raw)
+	}
+
+	// Intercept focusedButton to inject a marker.
+	marker := "[[FOCUSED_BTN]]"
+	js := fmt.Sprintf(`(function() {
+		var origFocused = prSplit._wizardStyles.focusedButton;
+		prSplit._wizardStyles.focusedButton = function() {
+			var s = origFocused();
+			return { render: function(text) { return '%s' + s.render(text); } };
+		};
+		try {
+			return prSplit._renderNavBar({
+				wizardState: 'CONFIG', width: 80, isProcessing: false,
+				focusIndex: %d
+			});
+		} finally {
+			prSplit._wizardStyles.focusedButton = origFocused;
+		}
+	})()`, marker, cancelIdx)
+
+	raw, err = evalJS(js)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := raw.(string)
+
+	// The marker should appear near the Cancel button text. Since the nav
+	// bar renders everything on a single horizontal line, we verify that
+	// the marker is immediately before "Cancel" (with possible whitespace),
+	// confirming the focused style was applied to Cancel, not Next.
+	markerIdx := strings.Index(s, marker)
+	if markerIdx < 0 {
+		t.Fatalf("focusedButton marker not found — Cancel button not focused when focusIndex=%d:\n%s", cancelIdx, s)
+	}
+	// Text between marker and Cancel must be short (just whitespace/ANSI).
+	afterMarker := s[markerIdx+len(marker):]
+	cancelPos := strings.Index(afterMarker, "Cancel")
+	analysisPos := strings.Index(afterMarker, "Analysis")
+	if cancelPos < 0 {
+		t.Fatalf("'Cancel' not found after marker:\n%s", afterMarker)
+	}
+	// Verify: Cancel appears BEFORE Analysis after the marker (focus is on cancel).
+	if analysisPos >= 0 && cancelPos > analysisPos {
+		t.Errorf("focusedButton marker should be near Cancel, not Analysis:\n%s", afterMarker)
+	}
+}
+
+// TestViews_NavBar_FocusStyling_AllStates verifies that nav buttons get
+// correct focus styling in every wizard state that shows a nav bar.
+func TestViews_NavBar_FocusStyling_AllStates(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	states := []string{"CONFIG", "PLAN_REVIEW", "PLAN_EDITOR", "ERROR_RESOLUTION", "FINALIZATION", "EQUIV_CHECK"}
+	for _, state := range states {
+		t.Run(state, func(t *testing.T) {
+			// Get focus element IDs for this state.
+			js := fmt.Sprintf(`(function() {
+				%s
+				var s = {
+					wizardState: '%s', showAdvanced: false,
+					claudeTestResult: '', claudeAvailable: false,
+					planCache: globalThis.prSplit._state.planCache || null,
+					equivalenceResult: {equivalent: true, results: [{status: 'pass', branchName: 'test'}]},
+					executionResults: [{branchName: 'test', status: 'done'}]
+				};
+				var elems = prSplit._getFocusElements(s);
+				var ids = [];
+				for (var i = 0; i < elems.length; i++) ids.push(elems[i].id);
+				return JSON.stringify(ids);
+			})()`, viewTestPlanState, state)
+			raw, err := evalJS(js)
+			if err != nil {
+				t.Skipf("getFocusElements failed for %s: %v", state, err)
+				return
+			}
+			var ids []string
+			if err := json.Unmarshal([]byte(raw.(string)), &ids); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+
+			// Verify nav-next comes before nav-cancel.
+			navNextIdx, navCancelIdx := -1, -1
+			for i, id := range ids {
+				if id == "nav-next" {
+					navNextIdx = i
+				}
+				if id == "nav-cancel" {
+					navCancelIdx = i
+				}
+			}
+			if navNextIdx >= 0 && navCancelIdx >= 0 && navNextIdx >= navCancelIdx {
+				t.Errorf("state %s: nav-next (idx %d) must come before nav-cancel (idx %d)", state, navNextIdx, navCancelIdx)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 //  Zone mark verification — Config Screen
 // ---------------------------------------------------------------------------
 

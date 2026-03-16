@@ -1879,14 +1879,24 @@
             if (!equiv.equivalent) {
                 lines.push('');
                 var zone = prSplit._modules.zone;
+                // T300: Compute focused element for focus-aware button styling.
+                var focusElems = prSplit._getFocusElements ? prSplit._getFocusElements(s) : [];
+                var focusIdx = s.focusIndex || 0;
+                var focusedElemId = (focusElems[focusIdx] || {}).id || '';
+                var reverifyStyle = (focusedElemId === 'equiv-reverify')
+                    ? styles.focusedSecondaryButton() : styles.secondaryButton();
+                var reviseStyle = (focusedElemId === 'equiv-revise')
+                    ? styles.focusedSecondaryButton() : styles.secondaryButton();
+                var continueStyle = (focusedElemId === 'nav-next')
+                    ? styles.focusedButton() : styles.primaryButton();
                 if (zone) {
-                    lines.push('  ' + zone.mark('equiv-reverify', styles.secondaryButton().render(' Re-verify ')) +
-                        '  ' + zone.mark('equiv-revise', styles.secondaryButton().render(' Revise Plan ')) +
-                        '  ' + zone.mark('nav-next', styles.primaryButton().render(' Continue \u25b6 ')));
+                    lines.push('  ' + zone.mark('equiv-reverify', reverifyStyle.render(' Re-verify ')) +
+                        '  ' + zone.mark('equiv-revise', reviseStyle.render(' Revise Plan ')) +
+                        '  ' + zone.mark('nav-next', continueStyle.render(' Continue \u25b6 ')));
                 } else {
-                    lines.push('  ' + styles.secondaryButton().render(' Re-verify ') +
-                        '  ' + styles.secondaryButton().render(' Revise Plan ') +
-                        '  ' + styles.primaryButton().render(' Continue \u25b6 '));
+                    lines.push('  ' + reverifyStyle.render(' Re-verify ') +
+                        '  ' + reviseStyle.render(' Revise Plan ') +
+                        '  ' + continueStyle.render(' Continue \u25b6 '));
                 }
             }
         }

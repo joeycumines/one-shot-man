@@ -95,5 +95,14 @@ set -o pipefail; \
 $(GO) -C $(PROJECT_ROOT) test -v -timeout=300s -run 'TestBinaryE2E_(FullFlowToExecution|VerifyPTYLive|PlanEditorFlow|CancelDuringVerify)' ./internal/command/ 2>&1 | tee $(or $(PROJECT_ROOT),$(error))/test-e2e-pty.log | tail -n 80; \
 exit $${PIPESTATUS[0]}
 
+.PHONY: test-prsplit-views
+test-prsplit-views: ## Run PR Split views tests (chunk 15 + chunk 13 view tests)
+test-prsplit-views: SHELL := /bin/bash
+test-prsplit-views:
+	@echo "Running PR Split views tests..."; \
+set -o pipefail; \
+$(GO) -C $(PROJECT_ROOT) test -v -timeout=300s -run 'TestViews_|TestChunk13_View' ./internal/command/ 2>&1 | tee $(or $(PROJECT_ROOT),$(error))/test-views.log | tail -n 80; \
+exit $${PIPESTATUS[0]}
+
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 endif

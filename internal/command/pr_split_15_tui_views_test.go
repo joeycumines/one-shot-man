@@ -1816,3 +1816,122 @@ func TestViews_MultiWidth_Chrome(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+//  T300: EQUIV_CHECK button focus styling
+// ---------------------------------------------------------------------------
+
+func TestViews_VerificationScreen_FocusStyling(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	// Set up plan cache so the verification screen can render.
+	if _, err := evalJS(viewTestPlanState); err != nil {
+		t.Fatal(err)
+	}
+
+	// T300: Verify focus styling on EQUIV_CHECK buttons.
+	// Lipgloss strips colors in test context, so we monkey-patch
+	// focusedSecondaryButton and focusedButton to inject markers.
+	renderWithMarker := func(focusIndex int) string {
+		t.Helper()
+		js := fmt.Sprintf(`(function() {
+			var styles = globalThis.prSplit._wizardStyles;
+			var origFSB = styles.focusedSecondaryButton;
+			var origFB = styles.focusedButton;
+			styles.focusedSecondaryButton = function() {
+				var s = origFSB();
+				return { render: function(text) { return '[[FSB]]' + s.render(text); } };
+			};
+			styles.focusedButton = function() {
+				var s = origFB();
+				return { render: function(text) { return '[[FB]]' + s.render(text); } };
+			};
+			try {
+				return globalThis.prSplit._viewVerificationScreen({
+					wizardState: 'EQUIV_CHECK', width: 80,
+					isProcessing: false, focusIndex: %d,
+					equivalenceResult: {equivalent: false, expected: 'abc123', actual: 'def456'}
+				});
+			} finally {
+				styles.focusedSecondaryButton = origFSB;
+				styles.focusedButton = origFB;
+			}
+		})()`, focusIndex)
+		raw, err := evalJS(js)
+		if err != nil {
+			t.Fatalf("renderWithMarker(%d) failed: %v", focusIndex, err)
+		}
+		return raw.(string)
+	}
+
+	// Focus 0 = equiv-reverify → focusedSecondaryButton marker near "Re-verify"
+	out0 := renderWithMarker(0)
+	if !strings.Contains(out0, "FAIL") {
+		t.Error("focus 0: missing FAIL indicator")
+	}
+	fsbIdx := strings.Index(out0, "[[FSB]]")
+	if fsbIdx < 0 {
+		t.Fatal("focus 0: focusedSecondaryButton marker not found — Re-verify not receiving focus style")
+	}
+	afterFSB := out0[fsbIdx:]
+	// The marker precedes the bordered button: [[FSB]]╭...╮\n│ Re-verify │\n╰...╯
+	// Check within a larger window to account for the multi-line border.
+	checkLen := len(afterFSB)
+	if checkLen > 200 {
+		checkLen = 200
+	}
+	if !strings.Contains(afterFSB[:checkLen], "Re-verify") {
+		t.Errorf("focus 0: FSB marker should be near 'Re-verify', got:\n%s", afterFSB[:checkLen])
+	}
+	// Re-verify should NOT have focusedButton marker
+	if strings.Contains(out0, "[[FB]]") {
+		t.Error("focus 0: nav-next should NOT have focusedButton marker (focus on equiv-reverify)")
+	}
+
+	// Focus 1 = equiv-revise → focusedSecondaryButton marker near "Revise Plan"
+	out1 := renderWithMarker(1)
+	fsbIdx = strings.Index(out1, "[[FSB]]")
+	if fsbIdx < 0 {
+		t.Fatal("focus 1: focusedSecondaryButton marker not found — Revise Plan not receiving focus style")
+	}
+	afterFSB = out1[fsbIdx:]
+	checkLen = len(afterFSB)
+	if checkLen > 200 {
+		checkLen = 200
+	}
+	if !strings.Contains(afterFSB[:checkLen], "Revise Plan") {
+		t.Errorf("focus 1: FSB marker should be near 'Revise Plan', got:\n%s", afterFSB[:checkLen])
+	}
+
+	// Focus 2 = nav-next → focusedButton marker near "Continue"
+	out2 := renderWithMarker(2)
+	fbIdx := strings.Index(out2, "[[FB]]")
+	if fbIdx < 0 {
+		t.Fatal("focus 2: focusedButton marker not found — Continue not receiving focus style")
+	}
+	afterFB := out2[fbIdx:]
+	checkLen = len(afterFB)
+	if checkLen > 100 {
+		checkLen = 100
+	}
+	if !strings.Contains(afterFB[:checkLen], "Continue") {
+		t.Errorf("focus 2: FB marker should be near 'Continue', got:\n%s", afterFB[:checkLen])
+	}
+
+	// Focus 3 = nav-cancel → neither marker appears in the button area
+	// (nav-cancel is in the navbar, not in viewVerificationScreen)
+	out3 := renderWithMarker(3)
+	if strings.Contains(out3, "[[FSB]]") || strings.Contains(out3, "[[FB]]") {
+		t.Error("focus 3 (nav-cancel): no focus markers should appear on in-screen buttons")
+	}
+
+	// All outputs should contain all 3 button labels.
+	for i, out := range []string{out0, out1, out2, out3} {
+		for _, label := range []string{"Re-verify", "Revise Plan", "Continue"} {
+			if !strings.Contains(out, label) {
+				t.Errorf("focus %d missing '%s' label", i, label)
+			}
+		}
+	}
+}

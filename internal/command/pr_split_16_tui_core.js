@@ -2472,6 +2472,7 @@
                         elems.push({id: 'equiv-reverify', type: 'button'});
                         elems.push({id: 'equiv-revise',   type: 'button'});
                     }
+                    elems.push({id: 'nav-back', type: 'nav'});    // T301
                     elems.push({id: 'nav-next', type: 'nav'});
                     elems.push({id: 'nav-cancel', type: 'nav'});  // T012
                 }
@@ -2596,6 +2597,11 @@
             s.showConfirmCancel = true;
             s.confirmCancelFocus = 0;  // T031: reset focus to 'Yes' on open
             return [s, null];
+        }
+
+        // T301: nav-back — invoke handleBack (mirrors mouse handler at line 1712).
+        if (focused.id === 'nav-back') {
+            return handleBack(s);
         }
 
         // nav-next — let Enter fall through to handleNext().

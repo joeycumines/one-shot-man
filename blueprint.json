@@ -49,7 +49,7 @@
       "task": "Add nav-back to EQUIV_CHECK getFocusElements",
       "description": "In `internal/command/pr_split_16_tui_core.js`, function `getFocusElements()` (starts at line 2378), case `EQUIV_CHECK` (lines 2466-2478): the focus elements list includes `equiv-reverify`, `equiv-revise`, `nav-next`, `nav-cancel` but NOT `nav-back`. The Back button IS rendered and zone-marked in `renderNavBar()` (line 396), and IS mouse-clickable (zone.inBounds handler at line 1712), but cannot be reached via Tab. Add `{id: 'nav-back', type: 'nav'}` to the elements array, positioned AFTER the in-screen buttons but BEFORE `nav-next` to match natural left-to-right tab order: `[equiv-reverify, equiv-revise, nav-back, nav-next, nav-cancel]`.",
       "acceptance": "Tab cycling on EQUIV_CHECK screen reaches the Back button. Back button receives focusedButton styling in renderNavBar when focused (it already has the conditional at line 397). Unit test `TestFocus_EquivCheck_BackButton` verifies nav-back is in the focus elements list and that focusIndex reaching nav-back position causes the Back button to render with focused styling. Existing focus navigation tests pass.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T302",

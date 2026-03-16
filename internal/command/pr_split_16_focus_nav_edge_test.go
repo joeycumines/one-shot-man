@@ -713,6 +713,14 @@ func TestChunk16_GetFocusElements_AllStates(t *testing.T) {
 		check('ERROR_RESOLUTION', 7, 'ERROR_RESOLUTION');
 		// FINALIZATION: final-report + final-create-prs + final-done + nav-next = 4.
 		check('FINALIZATION', 4, 'FINALIZATION');
+		// T301: EQUIV_CHECK with failed equivalence: equiv-reverify + equiv-revise + nav-back + nav-next + nav-cancel = 5.
+		var eqs = initState('EQUIV_CHECK');
+		eqs.isProcessing = false;
+		eqs.equivalenceResult = {equivalent: false};
+		var eqElems = globalThis.prSplit._getFocusElements(eqs);
+		if (!eqElems || eqElems.length < 5) {
+			errors.push('EQUIV_CHECK: got ' + (eqElems ? eqElems.length : 0) + ' elements, want >= 5');
+		}
 		// BRANCH_BUILDING has no focus elements (default case).
 		var s = initState('BRANCH_BUILDING');
 		var elems = globalThis.prSplit._getFocusElements(s);
@@ -862,5 +870,113 @@ func TestChunk16_InlineTitleEdit_EnterWithEmptyDoesNotSave(t *testing.T) {
 	}
 	if raw != "OK" {
 		t.Errorf("inline edit empty save: %v", raw)
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  T301: EQUIV_CHECK focus elements include nav-back
+// ---------------------------------------------------------------------------
+
+func TestChunk16_GetFocusElements_EquivCheckIncludesNavBack(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		setupPlanCache();
+		var errors = [];
+
+		// Case 1: equivalence failed (equivalent=false) — all buttons visible.
+		var s = initState('EQUIV_CHECK');
+		s.isProcessing = false;
+		s.equivalenceResult = {equivalent: false};
+		var elems = globalThis.prSplit._getFocusElements(s);
+
+		// Expect: equiv-reverify, equiv-revise, nav-back, nav-next, nav-cancel
+		var expectedIds = ['equiv-reverify', 'equiv-revise', 'nav-back', 'nav-next', 'nav-cancel'];
+		if (elems.length !== expectedIds.length) {
+			errors.push('equiv-fail: got ' + elems.length + ' elements, want ' + expectedIds.length);
+		}
+		for (var i = 0; i < expectedIds.length; i++) {
+			if (!elems[i] || elems[i].id !== expectedIds[i]) {
+				errors.push('equiv-fail[' + i + ']: got "' + (elems[i] ? elems[i].id : 'undefined') + '", want "' + expectedIds[i] + '"');
+			}
+		}
+
+		// Case 2: equivalence succeeded (equivalent=true) — no reverify/revise.
+		s = initState('EQUIV_CHECK');
+		s.isProcessing = false;
+		s.equivalenceResult = {equivalent: true};
+		elems = globalThis.prSplit._getFocusElements(s);
+
+		// Expect: nav-back, nav-next, nav-cancel
+		var expectedPass = ['nav-back', 'nav-next', 'nav-cancel'];
+		if (elems.length !== expectedPass.length) {
+			errors.push('equiv-pass: got ' + elems.length + ' elements, want ' + expectedPass.length);
+		}
+		for (var i = 0; i < expectedPass.length; i++) {
+			if (!elems[i] || elems[i].id !== expectedPass[i]) {
+				errors.push('equiv-pass[' + i + ']: got "' + (elems[i] ? elems[i].id : 'undefined') + '", want "' + expectedPass[i] + '"');
+			}
+		}
+
+		// Case 3: isProcessing=true → no elements at all.
+		s = initState('EQUIV_CHECK');
+		s.isProcessing = true;
+		s.equivalenceResult = {equivalent: false};
+		elems = globalThis.prSplit._getFocusElements(s);
+		if (elems.length !== 0) {
+			errors.push('processing: got ' + elems.length + ' elements, want 0');
+		}
+
+		// Case 4: no equivalenceResult → no elements.
+		s = initState('EQUIV_CHECK');
+		s.isProcessing = false;
+		s.equivalenceResult = null;
+		elems = globalThis.prSplit._getFocusElements(s);
+		if (elems.length !== 0) {
+			errors.push('no-result: got ' + elems.length + ' elements, want 0');
+		}
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("EQUIV_CHECK focus elements: %v", raw)
+	}
+}
+
+// TestChunk16_FocusActivate_NavBack_EquivCheck verifies that pressing
+// Enter on nav-back in EQUIV_CHECK calls handleBack (→ PLAN_REVIEW),
+// NOT handleNext (→ FINALIZATION).
+func TestChunk16_FocusActivate_NavBack_EquivCheck(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		setupPlanCache();
+		var s = initState('EQUIV_CHECK');
+		s.isProcessing = false;
+		s.equivalenceResult = {equivalent: false};
+
+		// Focus elements: [equiv-reverify(0), equiv-revise(1), nav-back(2), nav-next(3), nav-cancel(4)]
+		s.focusIndex = 2; // nav-back
+
+		var r = sendKey(s, 'enter');
+		if (r[0].wizardState === 'FINALIZATION') {
+			return 'FAIL: Enter on nav-back triggered handleNext → FINALIZATION (should call handleBack → PLAN_REVIEW)';
+		}
+		if (r[0].wizardState !== 'PLAN_REVIEW') {
+			return 'FAIL: Enter on nav-back should transition to PLAN_REVIEW, got ' + r[0].wizardState;
+		}
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("nav-back activation: %v", raw)
 	}
 }

@@ -1904,30 +1904,37 @@ func TestViews_VerificationScreen_FocusStyling(t *testing.T) {
 		t.Errorf("focus 1: FSB marker should be near 'Revise Plan', got:\n%s", afterFSB[:checkLen])
 	}
 
-	// Focus 2 = nav-next → focusedButton marker near "Continue"
+	// Focus 2 = nav-back → neither marker appears on in-screen buttons
+	// (nav-back is in the navbar, not in viewVerificationScreen)
 	out2 := renderWithMarker(2)
-	fbIdx := strings.Index(out2, "[[FB]]")
-	if fbIdx < 0 {
-		t.Fatal("focus 2: focusedButton marker not found — Continue not receiving focus style")
+	if strings.Contains(out2, "[[FSB]]") || strings.Contains(out2, "[[FB]]") {
+		t.Error("focus 2 (nav-back): no focus markers should appear on in-screen buttons")
 	}
-	afterFB := out2[fbIdx:]
+
+	// Focus 3 = nav-next → focusedButton marker near "Continue"
+	out3 := renderWithMarker(3)
+	fbIdx := strings.Index(out3, "[[FB]]")
+	if fbIdx < 0 {
+		t.Fatal("focus 3: focusedButton marker not found — Continue not receiving focus style")
+	}
+	afterFB := out3[fbIdx:]
 	checkLen = len(afterFB)
 	if checkLen > 100 {
 		checkLen = 100
 	}
 	if !strings.Contains(afterFB[:checkLen], "Continue") {
-		t.Errorf("focus 2: FB marker should be near 'Continue', got:\n%s", afterFB[:checkLen])
+		t.Errorf("focus 3: FB marker should be near 'Continue', got:\n%s", afterFB[:checkLen])
 	}
 
-	// Focus 3 = nav-cancel → neither marker appears in the button area
+	// Focus 4 = nav-cancel → neither marker appears in the button area
 	// (nav-cancel is in the navbar, not in viewVerificationScreen)
-	out3 := renderWithMarker(3)
-	if strings.Contains(out3, "[[FSB]]") || strings.Contains(out3, "[[FB]]") {
-		t.Error("focus 3 (nav-cancel): no focus markers should appear on in-screen buttons")
+	out4 := renderWithMarker(4)
+	if strings.Contains(out4, "[[FSB]]") || strings.Contains(out4, "[[FB]]") {
+		t.Error("focus 4 (nav-cancel): no focus markers should appear on in-screen buttons")
 	}
 
 	// All outputs should contain all 3 button labels.
-	for i, out := range []string{out0, out1, out2, out3} {
+	for i, out := range []string{out0, out1, out2, out3, out4} {
 		for _, label := range []string{"Re-verify", "Revise Plan", "Continue"} {
 			if !strings.Contains(out, label) {
 				t.Errorf("focus %d missing '%s' label", i, label)

@@ -203,6 +203,13 @@ func TestChunk16_HandleNext_EquivCheck_CachedResult_AdvancesToFinalization(t *te
 		};
 		s.focusIndex = 0;
 
+		// T301: With nav-back now in focus elements, focusIndex=0 is nav-back
+		// when equivalent=true. Find nav-next index to trigger handleNext.
+		var elems = globalThis.prSplit._getFocusElements(s);
+		for (var i = 0; i < elems.length; i++) {
+			if (elems[i].id === 'nav-next') { s.focusIndex = i; break; }
+		}
+
 		// Send 'enter' to trigger handleNext from EQUIV_CHECK.
 		var r = sendKey(s, 'enter');
 		var state = r[0];

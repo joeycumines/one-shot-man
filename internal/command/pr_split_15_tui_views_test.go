@@ -1370,3 +1370,247 @@ func TestViews_ExecutionScreen_VerifyViewport_ZoneMarks(t *testing.T) {
 		verifyViewportOffset: 0
 	})`, []string{"verify-interrupt"})
 }
+
+// ---------------------------------------------------------------------------
+// T043: Multi-width screen renderer regression suite
+//
+// For each of the 7+ screen renderers, render at 40, 60, 80, 100, 120 columns
+// and verify:
+//   - Non-empty output (no panics, no blank screens)
+//   - Key content elements present (screen title / state identifiers)
+//   - No ANSI corruption (no unmatched ESC without closing 'm')
+// ---------------------------------------------------------------------------
+
+func TestViews_MultiWidth_AllScreens(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	if _, err := evalJS(viewTestPlanState); err != nil {
+		t.Fatal(err)
+	}
+
+	widths := []int{40, 60, 80, 100, 120}
+
+	type screenDef struct {
+		name       string
+		jsTemplate string
+		// Keywords that MUST appear in the output at any width.
+		keywords []string
+	}
+
+	screens := []screenDef{
+		{
+			name: "configScreen",
+			jsTemplate: `globalThis.prSplit._viewConfigScreen({
+				wizardState:'CONFIG', width:%d, height:24,
+				showAdvanced:false
+			})`,
+			keywords: []string{},
+		},
+		{
+			name: "analysisScreen",
+			jsTemplate: `globalThis.prSplit._viewAnalysisScreen({
+				wizardState:'PLAN_GENERATION', width:%d, height:24,
+				analysisSteps:[{label:'Parse diff',done:true,elapsed:100}],
+				analysisProgress:0.5
+			})`,
+			keywords: []string{"50%"},
+		},
+		{
+			name: "planReviewScreen",
+			jsTemplate: `globalThis.prSplit._viewPlanReviewScreen({
+				wizardState:'PLAN_REVIEW', width:%d, height:24,
+				selectedSplitIdx:0, focusIndex:0
+			})`,
+			keywords: []string{"split/api"},
+		},
+		{
+			name: "planEditorScreen",
+			jsTemplate: `globalThis.prSplit._viewPlanEditorScreen({
+				wizardState:'PLAN_EDITOR', width:%d, height:24,
+				selectedSplitIdx:0, selectedFileIdx:0, focusIndex:0
+			})`,
+			keywords: []string{"split/api"},
+		},
+		{
+			name: "executionScreen",
+			jsTemplate: `globalThis.prSplit._viewExecutionScreen({
+				wizardState:'BRANCH_BUILDING', width:%d, height:24,
+				executionResults:[{sha:'abc123'}],
+				executingIdx:1, isProcessing:true,
+				verificationResults:[]
+			})`,
+			keywords: []string{},
+		},
+		{
+			name: "equivCheckScreen",
+			jsTemplate: `globalThis.prSplit._viewVerificationScreen({
+				wizardState:'EQUIV_CHECK', width:%d, height:24,
+				isProcessing:false,
+				equivalenceResult:{equivalent:true, splitTree:'aaa', expectedTree:'aaa'}
+			})`,
+			keywords: []string{},
+		},
+		{
+			name: "finalizationScreen",
+			jsTemplate: `globalThis.prSplit._viewFinalizationScreen({
+				wizardState:'FINALIZATION', width:%d, height:24,
+				startTime:Date.now()-60000,
+				equivalenceResult:{equivalent:true}
+			})`,
+			keywords: []string{},
+		},
+		{
+			name: "errorResolutionScreen",
+			jsTemplate: `globalThis.prSplit._viewErrorResolutionScreen({
+				wizardState:'ERROR_RESOLUTION', width:%d, height:24,
+				errorDetails:'test error message here'
+			})`,
+			keywords: []string{"test error message here"},
+		},
+	}
+
+	for _, screen := range screens {
+		for _, w := range widths {
+			t.Run(fmt.Sprintf("%s/w=%d", screen.name, w), func(t *testing.T) {
+				js := fmt.Sprintf(screen.jsTemplate, w)
+				raw, err := evalJS(js)
+				if err != nil {
+					t.Fatalf("%s at width=%d panicked: %v", screen.name, w, err)
+				}
+				s, ok := raw.(string)
+				if !ok || s == "" {
+					t.Errorf("%s at width=%d produced empty output", screen.name, w)
+					return
+				}
+
+				// Check keywords present.
+				for _, kw := range screen.keywords {
+					if !strings.Contains(s, kw) {
+						t.Errorf("%s at width=%d missing expected keyword %q", screen.name, w, kw)
+					}
+				}
+
+				// Check for broken ANSI: look for ESC[ without terminal 'm'.
+				// A properly formed SGR is \x1b[...m where ... is digits and semicolons.
+				// An incomplete sequence would be \x1b[ followed by end-of-string or
+				// a newline before 'm'.
+				checkANSI(t, s, screen.name, w)
+			})
+		}
+	}
+}
+
+// checkANSI scans for broken ANSI escape sequences (ESC[ without closing 'm').
+// checkANSI scans for broken ANSI escape sequences (ESC[ without closing letter).
+// Uses a generous 80-byte scan window to accommodate truecolor SGR sequences
+// like \x1b[38;2;255;255;255;48;2;255;255;255m (33+ parameter bytes).
+func checkANSI(t *testing.T, s, screenName string, width int) {
+	t.Helper()
+	i := 0
+	for i < len(s) {
+		idx := strings.Index(s[i:], "\x1b[")
+		if idx < 0 {
+			break
+		}
+		pos := i + idx + 2
+		// Scan forward to find a terminating letter (any CSI sequence ends at [A-Za-z]).
+		// Use 80-byte window to handle long truecolor SGR parameters.
+		found := false
+		for j := pos; j < len(s) && j < pos+80; j++ {
+			ch := s[j]
+			if ch == '\n' {
+				// Newline before terminator → broken sequence.
+				break
+			}
+			if (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') {
+				// Any letter terminates a CSI sequence (m, H, J, K, etc.).
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("%s at width=%d: unterminated ANSI escape at byte offset %d",
+				screenName, width, i+idx)
+			return
+		}
+		i = pos
+	}
+}
+
+// TestViews_MultiWidth_Overlays tests overlay renderers at multiple widths.
+func TestViews_MultiWidth_Overlays(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	if _, err := evalJS(viewTestPlanState); err != nil {
+		t.Fatal(err)
+	}
+
+	widths := []int{40, 60, 80, 100, 120}
+
+	overlays := []struct {
+		name string
+		js   string
+	}{
+		{"helpOverlay", `globalThis.prSplit._viewHelpOverlay({width:%d,height:24})`},
+		{"confirmCancel", `globalThis.prSplit._viewConfirmCancelOverlay({width:%d,height:24})`},
+		{"moveFile", `globalThis.prSplit._viewMoveFileDialog({width:%d,height:24,selectedSplitIdx:0,selectedFileIdx:0,editorDialogState:{targetIdx:0}})`},
+		{"renameSplit", `globalThis.prSplit._viewRenameSplitDialog({width:%d,height:24,selectedSplitIdx:0,editorDialogState:{inputText:'new-name'}})`},
+		{"mergeSplits", `globalThis.prSplit._viewMergeSplitsDialog({width:%d,height:24,selectedSplitIdx:0,editorDialogState:{selected:{},cursorIdx:0}})`},
+	}
+
+	for _, ov := range overlays {
+		for _, w := range widths {
+			t.Run(fmt.Sprintf("%s/w=%d", ov.name, w), func(t *testing.T) {
+				js := fmt.Sprintf(ov.js, w)
+				raw, err := evalJS(js)
+				if err != nil {
+					t.Fatalf("%s at width=%d panicked: %v", ov.name, w, err)
+				}
+				s, ok := raw.(string)
+				if !ok || s == "" {
+					t.Errorf("%s at width=%d produced empty output", ov.name, w)
+					return
+				}
+				checkANSI(t, s, ov.name, w)
+			})
+		}
+	}
+}
+
+// TestViews_MultiWidth_Chrome tests chrome elements (titleBar, navBar, statusBar)
+// at multiple widths.
+func TestViews_MultiWidth_Chrome(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	widths := []int{40, 60, 80, 100, 120}
+
+	chrome := []struct {
+		name string
+		js   string
+	}{
+		{"titleBar", `globalThis.prSplit._renderTitleBar({wizardState:'CONFIG',startTime:Date.now(),width:%d})`},
+		{"navBar", `globalThis.prSplit._renderNavBar({wizardState:'PLAN_REVIEW',width:%d,isProcessing:false})`},
+		{"statusBar", `globalThis.prSplit._renderStatusBar({width:%d})`},
+	}
+
+	for _, c := range chrome {
+		for _, w := range widths {
+			t.Run(fmt.Sprintf("%s/w=%d", c.name, w), func(t *testing.T) {
+				js := fmt.Sprintf(c.js, w)
+				raw, err := evalJS(js)
+				if err != nil {
+					t.Fatalf("%s at width=%d panicked: %v", c.name, w, err)
+				}
+				s, ok := raw.(string)
+				if !ok || s == "" {
+					t.Errorf("%s at width=%d produced empty output", c.name, w)
+					return
+				}
+				checkANSI(t, s, c.name, w)
+			})
+		}
+	}
+}

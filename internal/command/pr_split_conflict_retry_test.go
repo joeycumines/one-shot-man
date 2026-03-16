@@ -2120,3 +2120,344 @@ func TestPrSplitCommand_ResolveConflictsWithClaude_SuccessfulFix(t *testing.T) {
 		t.Error("Expected sh -c verify command call (from verifySplit)")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T040: Strategy detect() unit tests for all 7 AUTO_FIX_STRATEGIES
+// ---------------------------------------------------------------------------
+
+func TestPrSplitCommand_StrategyDetect_GoModTidy(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// Mock osmod.fileExists to return true for go.mod check.
+	val, err := evalJS(`(function() {
+		var osmod = globalThis.prSplit._modules.osmod;
+		osmod.fileExists = function(path) { return path.indexOf('go.mod') >= 0; };
+		var s = globalThis.prSplit.AUTO_FIX_STRATEGIES[0]; // go-mod-tidy
+		return JSON.stringify({
+			name: s.name,
+			detectTrue: s.detect('.'),
+			detectFalse: (function() {
+				osmod.fileExists = function() { return false; };
+				return s.detect('.');
+			})()
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(val.(string)), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out["name"] != "go-mod-tidy" {
+		t.Errorf("expected strategy name 'go-mod-tidy', got %v", out["name"])
+	}
+	if out["detectTrue"] != true {
+		t.Error("go-mod-tidy detect should return true when go.mod exists")
+	}
+	if out["detectFalse"] != false {
+		t.Error("go-mod-tidy detect should return false when go.mod absent")
+	}
+}
+
+func TestPrSplitCommand_StrategyDetect_GoGenerateSum(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`(function() {
+		var osmod = globalThis.prSplit._modules.osmod;
+		osmod.fileExists = function(path) { return path.indexOf('go.sum') >= 0; };
+		var s = globalThis.prSplit.AUTO_FIX_STRATEGIES[1]; // go-generate-sum
+		return JSON.stringify({
+			name: s.name,
+			detectTrue: s.detect('.'),
+			detectFalse: (function() {
+				osmod.fileExists = function() { return false; };
+				return s.detect('.');
+			})()
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(val.(string)), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out["name"] != "go-generate-sum" {
+		t.Errorf("expected strategy name 'go-generate-sum', got %v", out["name"])
+	}
+	if out["detectTrue"] != true {
+		t.Error("go-generate-sum detect should return true when go.sum exists")
+	}
+	if out["detectFalse"] != false {
+		t.Error("go-generate-sum detect should return false when go.sum absent")
+	}
+}
+
+func TestPrSplitCommand_StrategyDetect_GoBuildMissingImports(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`(function() {
+		var s = globalThis.prSplit.AUTO_FIX_STRATEGIES[2]; // go-build-missing-imports
+		return JSON.stringify({
+			name: s.name,
+			undefined_match: s.detect('.', 'error: undefined: myFunc'),
+			imported_not_used: s.detect('.', 'imported and not used: "fmt"'),
+			could_not_import: s.detect('.', 'could not import github.com/pkg'),
+			no_match: s.detect('.', 'test passed successfully'),
+			empty_output: s.detect('.', ''),
+			null_output: s.detect('.', null)
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(val.(string)), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out["name"] != "go-build-missing-imports" {
+		t.Errorf("expected strategy name 'go-build-missing-imports', got %v", out["name"])
+	}
+	if out["undefined_match"] != true {
+		t.Error("detect should match 'undefined:' in verify output")
+	}
+	if out["imported_not_used"] != true {
+		t.Error("detect should match 'imported and not used' in verify output")
+	}
+	if out["could_not_import"] != true {
+		t.Error("detect should match 'could not import' in verify output")
+	}
+	if out["no_match"] != false {
+		t.Error("detect should return false for non-matching output")
+	}
+	if out["empty_output"] != false {
+		t.Error("detect should return false for empty output")
+	}
+	if out["null_output"] != false {
+		t.Error("detect should return false for null output")
+	}
+}
+
+func TestPrSplitCommand_StrategyDetect_NpmInstall(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`(function() {
+		var osmod = globalThis.prSplit._modules.osmod;
+		osmod.fileExists = function(path) { return path.indexOf('package.json') >= 0; };
+		var s = globalThis.prSplit.AUTO_FIX_STRATEGIES[3]; // npm-install
+		return JSON.stringify({
+			name: s.name,
+			detectTrue: s.detect('.'),
+			detectFalse: (function() {
+				osmod.fileExists = function() { return false; };
+				return s.detect('.');
+			})()
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(val.(string)), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out["name"] != "npm-install" {
+		t.Errorf("expected strategy name 'npm-install', got %v", out["name"])
+	}
+	if out["detectTrue"] != true {
+		t.Error("npm-install detect should return true when package.json exists")
+	}
+	if out["detectFalse"] != false {
+		t.Error("npm-install detect should return false when package.json absent")
+	}
+}
+
+func TestPrSplitCommand_StrategyDetect_AddMissingFiles(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`(function() {
+		var s = globalThis.prSplit.AUTO_FIX_STRATEGIES[5]; // add-missing-files
+		return JSON.stringify({
+			name: s.name,
+			no_such: s.detect('.', 'open pkg/util.go: no such file or directory'),
+			cannot_find: s.detect('.', 'error TS2307: cannot find module "./types"'),
+			file_not_found: s.detect('.', 'FileNotFoundError: file not found: config.yaml'),
+			no_match: s.detect('.', 'test compilation succeeded'),
+			null_output: s.detect('.', null)
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(val.(string)), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out["name"] != "add-missing-files" {
+		t.Errorf("expected strategy name 'add-missing-files', got %v", out["name"])
+	}
+	if out["no_such"] != true {
+		t.Error("detect should match 'no such file or directory'")
+	}
+	if out["cannot_find"] != true {
+		t.Error("detect should match 'cannot find'")
+	}
+	if out["file_not_found"] != true {
+		t.Error("detect should match 'file not found'")
+	}
+	if out["no_match"] != false {
+		t.Error("detect should return false for non-matching output")
+	}
+	if out["null_output"] != false {
+		t.Error("detect should return false for null output")
+	}
+}
+
+func TestPrSplitCommand_StrategyDetect_ClaudeFix(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// claude-fix strategy detect checks Claude executor availability.
+	val, err := evalJS(`(function() {
+		var s = globalThis.prSplit.AUTO_FIX_STRATEGIES[6]; // claude-fix
+		// Without claudeExecutor set, detect should return false.
+		var noExecutor = s.detect('.', 'any output');
+		// With executor, should return true.
+		globalThis.claudeExecutor = {
+			handle: { isAlive: function() { return true; } },
+			isAvailable: function() { return true; }
+		};
+		prSplit._claudeExecutor = globalThis.claudeExecutor;
+		var withExecutor = s.detect('.', 'any output');
+		// Clean up.
+		delete globalThis.claudeExecutor;
+		prSplit._claudeExecutor = null;
+		return JSON.stringify({
+			name: s.name,
+			detectWithoutExecutor: noExecutor,
+			detectWithExecutor: withExecutor
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(val.(string)), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out["name"] != "claude-fix" {
+		t.Errorf("expected strategy name 'claude-fix', got %v", out["name"])
+	}
+	if out["detectWithoutExecutor"] != false {
+		t.Error("claude-fix detect should return false without executor")
+	}
+	if out["detectWithExecutor"] != true {
+		t.Error("claude-fix detect should return true with available executor")
+	}
+}
+
+func TestPrSplitCommand_StrategyCount_Seven(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`globalThis.prSplit.AUTO_FIX_STRATEGIES.length`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := int64(0)
+	switch v := val.(type) {
+	case int64:
+		count = v
+	case float64:
+		count = int64(v)
+	}
+	if count != 7 {
+		t.Errorf("expected 7 AUTO_FIX_STRATEGIES, got %d", count)
+	}
+}
+
+// TestPrSplitCommand_ResolveConflicts_CustomStrategyRetryLoopFires exercises
+// the retry loop with a custom strategy: verify always fails (exit 1), strategy
+// detect/fix fires on each retry until budget exhausted. Confirms the loop
+// correctly invokes custom strategies and tracks retries.
+func TestPrSplitCommand_ResolveConflicts_CustomStrategyRetryLoopFires(t *testing.T) {
+	t.Parallel()
+
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on Windows — git test repo setup uses Unix commands")
+	}
+
+	dir := setupTestGitRepo(t)
+
+	// Create a branch for the split.
+	cmd := exec.Command("git", "-C", dir, "checkout", "-b", "split/retry-ok")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to create branch: %s (%v)", out, err)
+	}
+	cmd = exec.Command("git", "-C", dir, "checkout", "main")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("Failed to checkout main: %s (%v)", out, err)
+	}
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	val, err := evalJS(`(async function() {
+		var fixCalled = 0;
+		var customStrategy = {
+			name: 'always-fails-fix',
+			detect: function() { return true; },
+			fix: function(dir, branch, plan, verifyOutput, options) {
+				fixCalled++;
+				// Report fixed=true so the loop re-verifies, but verify always fails.
+				return { fixed: true, error: null };
+			}
+		};
+
+		var result = await globalThis.prSplit.resolveConflicts({
+			dir: '` + strings.ReplaceAll(dir, `\`, `\\`) + `',
+			splits: [
+				{ name: 'split/retry-ok', files: ['a.go'] }
+			],
+			verifyCommand: 'exit 1'
+		}, {
+			retryBudget: 3,
+			perBranchRetryBudget: 3,
+			strategies: [customStrategy]
+		});
+
+		return JSON.stringify({
+			fixCalled: fixCalled,
+			totalRetries: result.totalRetries,
+			errCount: result.errors.length
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out struct {
+		FixCalled    int `json:"fixCalled"`
+		TotalRetries int `json:"totalRetries"`
+		ErrCount     int `json:"errCount"`
+	}
+	if err := json.Unmarshal([]byte(val.(string)), &out); err != nil {
+		t.Fatal(err)
+	}
+	// fix should be called at least once.
+	if out.FixCalled < 1 {
+		t.Errorf("expected fix to be called at least once, got %d", out.FixCalled)
+	}
+	// Total retries should be > 0.
+	if out.TotalRetries < 1 {
+		t.Errorf("expected totalRetries >= 1, got %d", out.TotalRetries)
+	}
+	// Branch ultimately fails because verify always exits 1.
+	if out.ErrCount < 1 {
+		t.Errorf("expected errCount >= 1 (branch never passes verify), got %d", out.ErrCount)
+	}
+}

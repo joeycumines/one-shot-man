@@ -420,7 +420,7 @@
       "id": "T036",
       "title": "Write unit tests for createPRs flow (stacking, dry-run, skip, title format)",
       "description": "AUDIT COMPLETE (session 4): pr_split_07_prcreation.js has been fully read. Confirmed: uses gh CLI with exec.execv (SYNCHRONOUS — see T076), stacks PRs with PR[i].base = (i==0) ? baseBranch : splits[i-1].name, uses padIndex for '[01/05] message' title format, does NOT check runtime.dryRun (see T077), and has no-diff skip logic (see T083). This task is now exclusively about testing: (1) Write unit tests for createPRs with mock exec.execv interceptor: verify correct stacking order (each PR points to previous branch). (2) Test dry-run mode once T077 fix is applied: verify no gh or git push calls with dryRun=true. (3) Test no-diff skip (T083): when git diff returns 0, verify PR is skipped with correct skipReason. (4) Test padIndex title formatting: '01/05', '10/10', single-item plan '01/01'. (5) Test authentication failure handling: gh non-zero exit code → error recorded in results[i].error. (6) Test auto-merge: when plan.autoMerge=true and mergeable=true, verify additional gh pr merge call is dispatched. Tests file: pr_split_createprs_test.go.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_07_prcreation.js",
@@ -464,7 +464,7 @@
       "id": "T040",
       "title": "Write unit tests for resolveConflicts (7 strategies, timeout, cancellation, budgets)",
       "description": "AUDIT COMPLETE (session 4): pr_split_08_conflict.js has been fully read. Confirmed: 7 AUTO_FIX_STRATEGIES (go-mod-tidy, go-generate-sum, go-build-missing-imports, npm-install, make-generate, add-missing-files, claude-fix), all using synchronous exec.execv (see T078 for async fix). Wall-clock timeout at 300s fires with structured error message (see T082). Per-branch budget (default 2 retries), global budget (default 3 retries). isCancelled() checked at branch boundaries. This task is now exclusively about testing: (1) Write unit tests for resolveConflicts with a mock verify command that initially fails then succeeds. Confirm the loop correctly tracks retries. (2) Test each of the 7 strategies against mock conditions: go-mod-tidy (*.go files changed), npm-install (package-lock.json changed), etc. (3) Test wall-clock timeout: use a mock that takes 400s (exceeds 300s default). Verify results[i].error contains 'wall-clock timeout after'. (4) Test per-branch budget: if all 2 retries exhausted on one branch with global budget remaining, branch is skipped and loop continues. (5) Test isCancelled() is honoured between branches. (6) Test claude-fix strategy: verify the MCP call to claude-fix is dispatched correctly with the right error message in the prompt. Tests file: pr_split_conflict_retry_test.go.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_08_conflict.js",
@@ -495,7 +495,7 @@
       "id": "T043",
       "title": "Add unit tests for ALL 7 screen renderers at multiple terminal widths",
       "description": "Extend pr_split_15_tui_views_test.go with comprehensive render tests: For each of the 7 screens, write tests at 40, 60, 80, 100, 120 column widths. For each test: (1) The rendered output does not exceed the terminal width (lipgloss.width(output) <= termWidth). (2) No ANSI escape sequence corruption (no half-written ESC codes). (3) Key elements are present: screen title, expected button labels, navigation hints. (4) For processing states, 'Processing...' appears in the correct location. (5) For error states, error messages render within bounds. This is a comprehensive regression suite.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_15_tui_views_test.go"
@@ -545,7 +545,7 @@
       "id": "T048",
       "title": "Add unit tests for pr_split_11_utilities.js and validate pr_split_12_exports.js completeness",
       "description": "AUDIT COMPLETE (session 4): pr_split_11_utilities.js fully read — exports: extractDirs, extractGoImports, extractGoPkgs, splitsAreIndependentFromMaps, assessIndependence, splitsAreIndependent, recordConversation (unbounded — see T087), getConversationHistory, recordTelemetry, getTelemetrySummary, saveTelemetry, renderColorizedDiff, getSplitDiff, buildDependencyGraph, renderAsciiGraph, analyzeRetrospective. pr_split_12_exports.js fully read — validates ~75 EXPECTED_EXPORTS, sets VERSION='6.0.0', exposes _missingExports. This task is now exclusively about testing: (1) Write unit tests for assessIndependence() — create mock file graphs with known dependencies/independencies, verify correct result. (2) Test buildDependencyGraph() with a Go project structure; verify the ASCII graph renders correctly with cycles noted. (3) Test renderColorizedDiff() with real git diff output containing + and - lines; verify added=green, removed=red ANSI in output. (4) Test getSplitDiff() edge cases: empty diff, diff with binary files. (5) Run the binary in debug mode and assert prSplit._missingExports is empty (no validation warnings). If any exports are missing, they must be added in the appropriate chunk. Tests file: pr_split_utils_test.go. Note: conversationHistory unbounded memory issue is tracked in T087.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_11_utilities.js",
@@ -601,7 +601,7 @@
       "id": "T053",
       "title": "Performance audit: 'auto' grouping strategy + large repos (100+ changed files)",
       "description": "CONFIRMED (session 5): pr_split_02_grouping.js selectStrategy() computes ALL 5 grouping strategies synchronously: directory, directory-deep, extension, chunks, AND dependency. The 'dependency' strategy (groupByDependency) reads EVERY .go file via osmod.readFile() or exec.execv(['cat', file]) to parse imports. For a Go repo with 200 changed .go files, this means 200 synchronous file reads per 'auto' strategy call. For TUI + PLAN_GENERATION state, this all runs in runAnalysisAsync which IS async (uses prSplit._gitExecAsync) — but the groupByDependency file reads are STILL sync inside the async function because they use exec.execv, not exec.spawn. Full audit: (1) Create a benchmark test: git repo with 200 changed .go files, measure time for selectStrategy() to complete. (2) Measure how many ms the Goja event loop is blocked. If it exceeds 100ms, the TUI misses frames. (3) Proposed fix (see T092): create groupByDependencyAsync() that uses exec.spawn for file reads, and selectStrategyAsync() that awaits all 5 strategies. (4) Also test 100-file go repo with all other grouping strategies to confirm they're fast (<10ms each). (5) Memory: confirm no unbounded growing of outputLines/verifyOutput arrays (cap at 5000 lines — verify it works). (6) Add benchmarks for plan review rendering at 50+ splits. (7) Tests file: pr_split_benchmark_test.go.",
-      "status": "not-started",
+      "status": "done",
       "body": 3,
       "files_affected": [
         "internal/command/pr_split_benchmark_test.go"

@@ -2,6 +2,7 @@ package command
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -1126,5 +1127,164 @@ func TestCreatePRs_EmptyDiffSkipsPR(t *testing.T) {
 	}
 	if count != 0 {
 		t.Errorf("expected 0 gh pr create calls for empty diffs, got %d", count)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// T036: Additional createPRs tests
+// ---------------------------------------------------------------------------
+
+func TestCreatePRs_DryRunMode(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(execMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := testPlanJS("main", ".")
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `, {dryRun: true}))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Parse with extended fields.
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(val.(string)), &raw); err != nil {
+		t.Fatal(err)
+	}
+
+	// Top-level dryRun flag.
+	if raw["dryRun"] != true {
+		t.Errorf("expected top-level dryRun=true, got %v", raw["dryRun"])
+	}
+	if raw["error"] != nil {
+		t.Errorf("expected no top-level error, got %v", raw["error"])
+	}
+
+	results, ok := raw["results"].([]any)
+	if !ok || len(results) != 2 {
+		t.Fatalf("expected 2 results, got %v", raw["results"])
+	}
+
+	for i, r := range results {
+		entry, ok := r.(map[string]any)
+		if !ok {
+			t.Fatalf("result[%d] not a map", i)
+		}
+		if entry["dryRun"] != true {
+			t.Errorf("result[%d] expected dryRun=true", i)
+		}
+		if entry["pushed"] != false {
+			t.Errorf("result[%d] expected pushed=false in dry-run", i)
+		}
+		dryMsg, _ := entry["dryRunMsg"].(string)
+		if !strings.Contains(dryMsg, "[DRY RUN]") {
+			t.Errorf("result[%d] expected dryRunMsg containing '[DRY RUN]', got %q", i, dryMsg)
+		}
+		if !strings.Contains(dryMsg, "Would push") {
+			t.Errorf("result[%d] expected dryRunMsg containing 'Would push', got %q", i, dryMsg)
+		}
+	}
+
+	// Verify ZERO exec calls — dry-run should not call any external commands.
+	callCount, err := evalJS(`globalThis._execCalls.length`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := int64(0)
+	switch v := callCount.(type) {
+	case int64:
+		count = v
+	case float64:
+		count = int64(v)
+	}
+	if count != 0 {
+		t.Errorf("expected 0 exec calls in dry-run mode, got %d", count)
+	}
+}
+
+func TestCreatePRs_DryRunPushOnly(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(execMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	plan := testPlanJS("main", ".")
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit.createPRs(` + plan + `, {dryRun: true, pushOnly: true}))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(val.(string)), &raw); err != nil {
+		t.Fatal(err)
+	}
+
+	results, ok := raw["results"].([]any)
+	if !ok || len(results) != 2 {
+		t.Fatalf("expected 2 results, got %v", raw["results"])
+	}
+
+	// In push-only dry-run, message should NOT mention "create PR".
+	for i, r := range results {
+		entry := r.(map[string]any)
+		dryMsg, _ := entry["dryRunMsg"].(string)
+		if strings.Contains(dryMsg, "create PR") {
+			t.Errorf("result[%d] push-only dry-run should not mention creating PRs, got %q", i, dryMsg)
+		}
+	}
+}
+
+func TestCreatePRs_WidePadding_12Splits(t *testing.T) {
+	t.Parallel()
+
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	if _, err := evalJS(execMockSetupJS()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Build a plan with 12 splits.
+	val, err := evalJS(`(function() {
+		var splits = [];
+		for (var i = 0; i < 12; i++) {
+			splits.push({name: 'split/' + (i < 9 ? '0' : '') + (i+1) + '-part', message: 'Part ' + (i+1), files: ['file' + i + '.go']});
+		}
+		var plan = {baseBranch: 'main', dir: '.', splits: splits};
+		return JSON.stringify(globalThis.prSplit.createPRs(plan, {dryRun: true}));
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(val.(string)), &raw); err != nil {
+		t.Fatal(err)
+	}
+
+	results, ok := raw["results"].([]any)
+	if !ok || len(results) != 12 {
+		t.Fatalf("expected 12 results, got %d", len(results))
+	}
+	// Every entry must be dryRun=true and dryRunMsg should reference its branch.
+	for i, r := range results {
+		entry := r.(map[string]any)
+		if entry["dryRun"] != true {
+			t.Errorf("result[%d] expected dryRun=true", i)
+		}
+		dryMsg, _ := entry["dryRunMsg"].(string)
+		if dryMsg == "" {
+			t.Errorf("result[%d] expected non-empty dryRunMsg", i)
+		}
+		// Verify 2-digit zero-padded branch name appears in the dryRunMsg.
+		expectedBranch := fmt.Sprintf("%02d", i+1)
+		if !strings.Contains(dryMsg, expectedBranch) {
+			t.Errorf("result[%d] expected dryRunMsg to contain '%s', got %q", i, expectedBranch, dryMsg)
+		}
 	}
 }

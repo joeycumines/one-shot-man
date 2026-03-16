@@ -33,6 +33,7 @@
 27. `675270a1` — batch 7 audit-only: T014+T015+T017+T023+T032+T082+T029+T035+T038+T068+T069+T034
 28. (pending) — batch 8 audit-only: T018+T019+T020+T021+T022+T046+T047+T049+T039+T052+T033+T057
 29. (pending) — batch 9: T088 output.toClipboard binding + T073 copy flash + T006 manual-complete + T071 multi-lang scopedVerify
+30. (pending) — batch 10: T036 createPRs dry-run + T040 strategy detect/retry + T043 multi-width views + T048 utilities + T053 benchmarks
 
 ## Completed Tasks (108/123)
 - T014: CONFIG screen keyboard navigation audit — Tab order, phantom focus prevention, showAdvanced clamping verified
@@ -144,9 +145,14 @@
 - T052: Claude question detection prompt — claudeQuestionDetected trigger, writeToChild routing, auto-dismiss, conversation history
 - T033: File discovery regression — analyzeDiffAsync parsing, renamed/binary/symlink/space handling, fileStatuses completeness
 - T057: pr_split.go hardening — terminal restore on panic, double-SIGINT audit, OSM_LOG_FILE validation, injected JS globals doc
+- T036: createPRs dry-run tests — DryRunMode (zero exec calls + flag verification), DryRunPushOnly (no "create PR" text), WidePadding_12Splits (zero-padded [01/12]..[12/12] format)
+- T040: Strategy detect/retry tests — 6 strategy detect tests (GoModTidy, GoGenerateSum, GoBuildMissingImports, NpmInstall, AddMissingFiles, ClaudeFix), StrategyCount_Seven, StrategyDetectSignatures, CustomStrategyRetryLoopFires (real git repo)
+- T043: Multi-width view tests — 8 screens × 5 widths, 5 overlays × 5 widths, 3 chrome × 5 widths + checkANSI helper (80-byte scan window)
+- T048: Utilities tests — GetSplitDiff_HappyPath, FallbackOnBranchDiffFailure, MissingExportsIsEmpty (chunks 00-12)
+- T053: Performance benchmarks — BenchmarkSelectStrategy (200 files ~19ms), BenchmarkSelectStrategy_LargeRepo (320 files ~30ms), TestSelectStrategy_ResultShape
 
 ## Current Work
-**108/123 done, 31 commits. Batch 9 committed (clipboard, manual-complete, multi-lang verify).**
+**113/123 done, 32 commits. Batch 10 committed (createPRs dry-run + strategies + multi-width views + utilities + benchmarks).**
 
 ### Batch 7 Audit (12 tasks) — ALL PASS
 Comprehensive code audit performed on 2026-03-16. All 12 tasks verified correct:

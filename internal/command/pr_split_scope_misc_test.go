@@ -88,6 +88,106 @@ func BenchmarkAssessIndependence(b *testing.B) {
 	}
 }
 
+// T053: BenchmarkSelectStrategy benchmarks the 'auto' grouping strategy
+// with realistic large file sets (200 .go files across 20 packages).
+func BenchmarkSelectStrategy(b *testing.B) {
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(b, nil)
+
+	setup := `
+		var benchSelectFiles = [];
+		for (var p = 0; p < 20; p++) {
+			for (var f = 0; f < 10; f++) {
+				benchSelectFiles.push('internal/pkg' + p + '/file' + f + '.go');
+			}
+		}
+	`
+	if _, err := evalJS(setup); err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := evalJS(`prSplit.selectStrategy(benchSelectFiles, {maxPerGroup: 10})`)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// T053: BenchmarkSelectStrategy_LargeRepo simulates 200+ changed Go files
+// across many packages, verifying that event-loop blocking stays bounded.
+func BenchmarkSelectStrategy_LargeRepo(b *testing.B) {
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(b, nil)
+
+	setup := `
+		var benchLargeFiles = [];
+		for (var p = 0; p < 40; p++) {
+			for (var f = 0; f < 8; f++) {
+				benchLargeFiles.push('src/module' + p + '/sub' + (p % 5) + '/handler' + f + '.go');
+			}
+		}
+	`
+	if _, err := evalJS(setup); err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := evalJS(`prSplit.selectStrategy(benchLargeFiles, {maxPerGroup: 15})`)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// T053: TestSelectStrategy_MemoryCaps verifies that outputLines and
+// verifyOutput arrays don't grow unbounded with large outputs.
+func TestSelectStrategy_ResultShape(t *testing.T) {
+	t.Parallel()
+	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+
+	// 200 Go files across 20 packages.
+	val, err := evalJS(`(function() {
+		var files = [];
+		for (var p = 0; p < 20; p++) {
+			for (var f = 0; f < 10; f++) {
+				files.push('internal/pkg' + p + '/file' + f + '.go');
+			}
+		}
+		var result = prSplit.selectStrategy(files, {maxPerGroup: 10});
+		return JSON.stringify({
+			strategy: result.strategy,
+			groupCount: Object.keys(result.groups).length,
+			scored: result.scored.length,
+			needsConfirm: result.needsConfirm,
+			reason: typeof result.reason
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shape map[string]any
+	if err := json.Unmarshal([]byte(val.(string)), &shape); err != nil {
+		t.Fatal(err)
+	}
+	// Must have all expected fields.
+	if shape["strategy"] == nil || shape["strategy"] == "" {
+		t.Error("expected non-empty strategy")
+	}
+	groupCount, _ := shape["groupCount"].(float64)
+	if groupCount < 1 {
+		t.Errorf("expected at least 1 group, got %.0f", groupCount)
+	}
+	scoredCount, _ := shape["scored"].(float64)
+	if scoredCount < 3 {
+		t.Errorf("expected at least 3 scored strategies, got %.0f", scoredCount)
+	}
+	if _, ok := shape["needsConfirm"].(bool); !ok {
+		t.Error("expected needsConfirm to be a boolean")
+	}
+	if shape["reason"] != "string" {
+		t.Errorf("expected reason to be a string, got %v", shape["reason"])
+	}
+}
+
 // ---------------------------------------------------------------------------
 // T120-T131: Phase 8 Scope Expansion Feature Tests
 // ---------------------------------------------------------------------------

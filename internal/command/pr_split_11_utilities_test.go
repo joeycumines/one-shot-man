@@ -927,3 +927,132 @@ func TestChunk11_RenderColorizedDiff_UndefinedInput(t *testing.T) {
 		t.Errorf("expected empty string for undefined input, got %q", raw)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T048: Additional utility tests
+// ---------------------------------------------------------------------------
+
+func TestChunk11_GetSplitDiff_HappyPath(t *testing.T) {
+	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+
+	// Mock _gitExec to return a diff for the matching branch diff.
+	_, err := evalJS(`
+		globalThis.prSplit._gitExec = function(dir, args) {
+			// Return success with a diff payload.
+			if (args[0] === 'diff') {
+				return {
+					code: 0,
+					stdout: 'diff --git a/file.go b/file.go\n--- a/file.go\n+++ b/file.go\n@@ -1 +1 @@\n-old\n+new\n',
+					stderr: ''
+				};
+			}
+			return { code: 0, stdout: '', stderr: '' };
+		};
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := evalJS(`
+		JSON.stringify(globalThis.prSplit.getSplitDiff(
+			{
+				baseBranch: 'main',
+				dir: '.',
+				splits: [{ name: 'split/01-fix', files: ['file.go'], message: 'Fix it' }]
+			},
+			0
+		))
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["error"] != nil {
+		t.Errorf("expected no error, got %v", result["error"])
+	}
+	diff, _ := result["diff"].(string)
+	if !strings.Contains(diff, "diff --git") {
+		t.Errorf("expected diff output containing 'diff --git', got %q", diff)
+	}
+	if !strings.Contains(diff, "+new") {
+		t.Errorf("expected diff to contain '+new', got %q", diff)
+	}
+}
+
+func TestChunk11_GetSplitDiff_FallbackOnBranchDiffFailure(t *testing.T) {
+	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+
+	// Mock: first diff (branch...branch) fails, second (base only) succeeds.
+	_, err := evalJS(`
+		var _diffCallCount = 0;
+		globalThis.prSplit._gitExec = function(dir, args) {
+			if (args[0] === 'diff') {
+				_diffCallCount++;
+				if (_diffCallCount === 1) {
+					// First call: branch diff fails (branch doesn't exist yet).
+					return { code: 128, stdout: '', stderr: 'fatal: bad revision' };
+				}
+				// Second call: fallback diff succeeds.
+				return {
+					code: 0,
+					stdout: 'diff --git a/x.go b/x.go\n--- a/x.go\n+++ b/x.go\n@@ -1 +1 @@\n-a\n+b\n',
+					stderr: ''
+				};
+			}
+			return { code: 0, stdout: '', stderr: '' };
+		};
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := evalJS(`
+		JSON.stringify(globalThis.prSplit.getSplitDiff(
+			{
+				baseBranch: 'main',
+				dir: '.',
+				splits: [{ name: 'split/new-branch', files: ['x.go'], message: 'New' }]
+			},
+			0
+		))
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result map[string]any
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["error"] != nil {
+		t.Errorf("expected no error after fallback, got %v", result["error"])
+	}
+	diff, _ := result["diff"].(string)
+	if !strings.Contains(diff, "+b") {
+		t.Errorf("expected fallback diff containing '+b', got %q", diff)
+	}
+}
+
+// TestChunk12_NoMissingExports is in pr_split_12_exports_test.go but
+// we cross-verify here that _missingExports can be accessed via chunk 11+12.
+func TestChunk11_12_MissingExportsIsEmpty(t *testing.T) {
+	evalJS := loadChunkEngine(t, nil,
+		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation",
+		"05_execution", "06_verification", "07_prcreation", "08_conflict",
+		"09_claude", "10_pipeline", "11_utilities", "12_exports",
+	)
+
+	raw, err := evalJS(`JSON.stringify(globalThis.prSplit._missingExports)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var missing []string
+	if err := json.Unmarshal([]byte(raw.(string)), &missing); err != nil {
+		t.Fatalf("failed to parse _missingExports: %v", err)
+	}
+	if len(missing) != 0 {
+		t.Errorf("expected 0 missing exports, got %d: %v", len(missing), missing)
+	}
+}

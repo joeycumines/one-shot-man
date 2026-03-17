@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -17,7 +19,7 @@ var prCreationChunks = []string{
 }
 
 func TestChunk07_CreatePRs_NoSplits(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, prCreationChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, prCreationChunks...)
 
 	result, err := evalJS(`
 		(function() {
@@ -35,7 +37,7 @@ func TestChunk07_CreatePRs_NoSplits(t *testing.T) {
 
 func TestChunk07_CreatePRs_PushOnly(t *testing.T) {
 	// Mock gitExec to simulate successful push.
-	evalJS := loadChunkEngine(t, nil, prCreationChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, prCreationChunks...)
 
 	// Override _gitExec to track calls and return success.
 	result, err := evalJS(`
@@ -99,7 +101,7 @@ func TestChunk07_CreatePRs_PushOnly(t *testing.T) {
 }
 
 func TestChunk07_CreatePRs_PushFailure(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, prCreationChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, prCreationChunks...)
 
 	result, err := evalJS(`
 		(function() {
@@ -143,7 +145,7 @@ func TestChunk07_CreatePRs_PushFailure(t *testing.T) {
 func TestChunk07_CreatePRs_StackingOrder(t *testing.T) {
 	// Mock both gitExec (push) and exec.execv (gh pr create) to verify
 	// stacking: PR 2 bases on branch 1.
-	evalJS := loadChunkEngine(t, nil, prCreationChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, prCreationChunks...)
 
 	result, err := evalJS(`
 		(function() {
@@ -248,7 +250,7 @@ func TestChunk07_CreatePRs_StackingOrder(t *testing.T) {
 
 func TestChunk07_CreatePRs_GhNotFound(t *testing.T) {
 	// Mock exec to make 'gh' command unavailable.
-	evalJS := loadChunkEngine(t, nil, prCreationChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, prCreationChunks...)
 
 	result, err := evalJS(`
 		(function() {
@@ -311,7 +313,7 @@ func TestChunk07_CreatePRs_GhNotFound(t *testing.T) {
 
 func TestChunk07_CreatePRs_RemoteBranchNotFound(t *testing.T) {
 	// gh CLI available but base branch missing from remote.
-	evalJS := loadChunkEngine(t, nil, prCreationChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, prCreationChunks...)
 
 	result, err := evalJS(`
 		(function() {

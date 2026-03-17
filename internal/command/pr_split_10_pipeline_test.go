@@ -240,7 +240,7 @@ func toInt64(v any) int64 {
 // ---------------------------------------------------------------------------
 //
 // These tests exercise the pure functions in the PTY anchor subsystem
-// (pr_split_10_pipeline.js) that are responsible for detecting the Claude
+// (pr_split_10b_pipeline_send.js) that are responsible for detecting the Claude
 // prompt marker and input anchor positions in terminal screenshots.
 //
 // Functions under test (all exported as prSplit._*):

@@ -125,8 +125,8 @@ git-stage-all: ## Stage all changes (git add -A)
 	@git -C $(PROJECT_ROOT) add -A && echo "All changes staged."
 
 .PHONY: git-rm-old-chunks
-git-rm-old-chunks: ## Delete original chunk 16, 10, and 14 (T311/T312/T313 split)
-	@git -C $(PROJECT_ROOT) rm -f internal/command/pr_split_14_tui_commands.js
+git-rm-old-chunks: ## Delete leftover pre-split chunk files
+	@git -C $(PROJECT_ROOT) rm -f internal/command/pr_split_10_pipeline.js 2>/dev/null || true
 	@echo "Old chunk files removed."
 
 .PHONY: git-diff-cached
@@ -140,6 +140,39 @@ git-commit-t312: ## Commit T312 split
 .PHONY: git-commit-t315
 git-commit-t315: ## Commit T315 design document
 	@git -C $(PROJECT_ROOT) commit -m "design(pr-split): T315 test package structure for isolation" -m "Document comprehensive design for PR Split test restructuring." -m "Key design decisions:" -m "- prsplittest helper package at internal/command/prsplittest/" -m "- No import of internal/command (avoids Go import cycle)" -m "- Engine creation via public scripting.NewEngineDetailed()" -m "- Chunk loading via filesystem reads with lexicographic ordering" -m "- Build tags (prsplit_slow) for slow/fast test splitting" -m "- Make targets for isolated test execution" -m "" -m "Design covers 68 test file audit, import cycle analysis, 8-file" -m "package structure with complete export signatures, migration plan" -m "for all 68 files across 4 phases, expected 83% fast-feedback" -m "speedup, and 5 documented blockers/compromises." -m "" -m "Validated against Go build constraints documentation."
+
+.PHONY: git-commit-t316
+git-commit-t316: ## Commit T316 prsplittest package
+	@git -C $(PROJECT_ROOT) commit -m "test(pr-split): extract prsplittest helper package (T316)" \
+		-m "Create internal/command/prsplittest/ (8 files) to provide" \
+		-m "reusable test infrastructure that avoids the import cycle" \
+		-m "between command → prsplittest → command." \
+		-m "" \
+		-m "Package API:" \
+		-m "  - NewEngine / NewChunkEngine: Goja VM with production-parity" \
+		-m "    config via scripting.NewEngineDetailed()" \
+		-m "  - NewTUIEngine / NewTUIEngineWithHelpers: full chunk stack" \
+		-m "    with TUI mocks injected between chunks 12 and 13" \
+		-m "  - Chunk discovery: filesystem glob + lexicographic sort," \
+		-m "    cached via sync.Once" \
+		-m "  - ChunkNamesThrough / ChunkNamesAfter: prefix-based" \
+		-m "    chunk selection (replaces ad-hoc slice constants)" \
+		-m "  - SafeBuffer: thread-safe bytes.Buffer for output capture" \
+		-m "  - InitTestRepo: git repo scaffolding with functional options" \
+		-m "  - GitMockSetupJS / ChunkCompatShim: JS mock constants" \
+		-m "" \
+		-m "Migrations (4 test files):" \
+		-m "  - pr_split_02_grouping_test.go (10 calls)" \
+		-m "  - pr_split_07_prcreation_test.go (6 calls)" \
+		-m "  - pr_split_08_conflict_test.go (13 calls)" \
+		-m "  - pr_split_09_claude_test.go (11 calls)" \
+		-m "" \
+		-m "Cleanup:" \
+		-m "  - Delete leftover pr_split_10_pipeline.js (2097 lines)" \
+		-m "    that was already split into 10a-10d in T312" \
+		-m "  - Fix claudemux/pr_split_test.go chunk list (10 → 10a-10d)" \
+		-m "  - Update ADR-001 chunk table and prompt anchor stability doc" \
+		-m "  - Add .deadcodeignore for prsplittest/*"
 
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 endif

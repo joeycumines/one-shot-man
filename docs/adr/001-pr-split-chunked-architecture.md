@@ -52,15 +52,18 @@ attaches exports to `globalThis.prSplit`.
 | 07 | `pr_split_07_prcreation.js` | `createPRs` — push, `gh pr create`, stacking support |
 | 08 | `pr_split_08_conflict.js` | `AUTO_FIX_STRATEGIES`, `resolveConflicts` |
 | 09 | `pr_split_09_claude.js` | `ClaudeCodeExecutor`, prompt templates |
-| 10 | `pr_split_10_pipeline.js` | `automatedSplit`, `heuristicFallback`, `sendToHandle` |
+| 10a | `pr_split_10a_pipeline_config.js` | `AUTOMATED_DEFAULTS`, `SEND_*` constants, utility functions |
+| 10b | `pr_split_10b_pipeline_send.js` | `captureScreenshot`, prompt detection, anchor stability, `sendToHandle` |
+| 10c | `pr_split_10c_pipeline_resolve.js` | `waitForLogged`, `heuristicFallback`, `resolveConflictsWithClaude` |
+| 10d | `pr_split_10d_pipeline_orchestrator.js` | `automatedSplit` orchestrator |
 | 11 | `pr_split_11_utilities.js` | BT nodes, independence check, telemetry, diff visualization |
 | 12 | `pr_split_12_exports.js` | Bulk `globalThis.prSplit` assignment of final public API |
 | 13 | `pr_split_13_tui.js` | TUI mode guard, `buildCommands`, mode registration |
 
 ### Embedding
 
-All 14 files are `//go:embed`-ed as string constants in `pr_split.go` and
-executed in numeric order. No file-system reads at runtime.
+All chunk files are `//go:embed`-ed as string constants in `pr_split.go` and
+executed in numeric order (see `prSplitChunks` array). No file-system reads at runtime.
 
 ### Dependency Resolution
 

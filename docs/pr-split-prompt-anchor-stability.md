@@ -6,7 +6,7 @@
 
 ## Executive Summary
 
-The reported error occurs in the **PTY-based Claude interaction pipeline** (`pr_split_10_pipeline.js`, line 376), NOT in the BubbleTea TUI overlay system. The error is triggered when `osm pr-split` sends a prompt to a Claude Code PTY session and the terminal screenshot does not stabilize within the configured timeout window.
+The reported error occurs in the **PTY-based Claude interaction pipeline** (`pr_split_10b_pipeline_send.js`), NOT in the BubbleTea TUI overlay system. The error is triggered when `osm pr-split` sends a prompt to a Claude Code PTY session and the terminal screenshot does not stabilize within the configured timeout window.
 
 **Key finding:** The original task description conflates two architecturally separate systems — BubbleZone (TUI mouse tracking) and the PTY anchor pipeline (terminal screenshot analysis). This audit corrects that confusion and provides a focused analysis of the actual error path.
 
@@ -17,7 +17,7 @@ The reported error occurs in the **PTY-based Claude interaction pipeline** (`pr_
 | System | Purpose | Location | Error Source? |
 |--------|---------|----------|:---:|
 | **BubbleTea TUI Overlay** | User types message → keyboard-driven submit | `pr_split_16_tui_core.js:4595-4670` | ❌ |
-| **PTY Anchor Pipeline** | Automated prompt delivery to Claude Code PTY | `pr_split_10_pipeline.js:148-582` | ✅ |
+| **PTY Anchor Pipeline** | Automated prompt delivery to Claude Code PTY | `pr_split_10b_pipeline_send.js` | ✅ |
 
 The BubbleTea overlay (`viewClaudeConvoOverlay`) contains **zero `zone.mark()` calls** and has no Submit button — `Enter` is handled directly via `updateClaudeConvo`. The overlay dimensions are recomputed on every view call via `Math.min((s.width || 80) - 4, 76)` and centered with `lipgloss.place()`. This system is architecturally sound and not implicated in the error.
 

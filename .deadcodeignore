@@ -9,6 +9,8 @@ internal/testutil/*
 internal\testutil\*
 internal/mouseharness/*
 internal\mouseharness\*
+internal/command/prsplittest/*
+internal\command\prsplittest\*
 
 # Cross-package test helpers — exported for use by external test packages.
 # ctxutil: used from ctxutil_test (external package).

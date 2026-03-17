@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -18,7 +20,7 @@ var claudeChunks = []string{
 }
 
 func TestChunk09_ClaudeCodeExecutor_Construct(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, claudeChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, claudeChunks...)
 
 	result, err := evalJS(`
 		(function() {
@@ -74,7 +76,7 @@ func TestChunk09_ClaudeCodeExecutor_Construct(t *testing.T) {
 }
 
 func TestChunk09_ClaudeCodeExecutor_Resolve_ExplicitNotFound(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, claudeChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, claudeChunks...)
 
 	result, err := evalJS(`
 		(function() {
@@ -107,7 +109,7 @@ func TestChunk09_ClaudeCodeExecutor_Resolve_ExplicitNotFound(t *testing.T) {
 }
 
 func TestChunk09_ClaudeCodeExecutor_Resolve_ExplicitFound(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, claudeChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, claudeChunks...)
 
 	result, err := evalJS(`
 		(function() {
@@ -152,7 +154,7 @@ func TestChunk09_ClaudeCodeExecutor_Resolve_ExplicitFound(t *testing.T) {
 }
 
 func TestChunk09_DetectLanguage(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, claudeChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, claudeChunks...)
 
 	result, err := evalJS(`
 		(function() {
@@ -198,7 +200,7 @@ func TestChunk09_DetectLanguage(t *testing.T) {
 }
 
 func TestChunk09_RenderConflictPrompt(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, claudeChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, claudeChunks...)
 
 	result, err := evalJS(`
 		(function() {
@@ -252,7 +254,7 @@ func TestChunk09_RenderConflictPrompt(t *testing.T) {
 // ---- T13: ClaudeCodeExecutor model-not-available scenarios ----------------
 
 func TestChunk09_ClaudeCodeExecutor_ModelNotAvailable(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, claudeChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, claudeChunks...)
 
 	t.Run("CommandNotFound", func(t *testing.T) {
 		result, err := evalJS(`
@@ -449,7 +451,7 @@ func TestChunk09_ClaudeCodeExecutor_ModelNotAvailable(t *testing.T) {
 }
 
 func TestChunk09_RenderPrompt_NoTemplate(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, claudeChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, claudeChunks...)
 
 	// Temporarily nullify template module to test error path.
 	result, err := evalJS(`
@@ -481,7 +483,7 @@ func TestChunk09_RenderPrompt_NoTemplate(t *testing.T) {
 }
 
 func TestChunk09_ClaudeCodeExecutor_Close(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, claudeChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, claudeChunks...)
 
 	result, err := evalJS(`
 		(function() {
@@ -526,7 +528,7 @@ func TestChunk09_ClaudeCodeExecutor_Close(t *testing.T) {
 
 func TestChunk09_ClaudeCodeExecutor_CaptureDiagnostic(t *testing.T) {
 	t.Parallel()
-	evalJS := loadChunkEngine(t, nil, claudeChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, claudeChunks...)
 
 	result, err := evalJS(`
 		(function() {
@@ -587,7 +589,7 @@ func TestChunk09_ClaudeCodeExecutor_CaptureDiagnostic(t *testing.T) {
 
 func TestChunk09_ClaudeCodeExecutor_Restart(t *testing.T) {
 	t.Parallel()
-	evalJS := loadChunkEngine(t, nil, claudeChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, claudeChunks...)
 
 	result, err := evalJS(`
 		(async function() {
@@ -667,7 +669,7 @@ func TestChunk09_ClaudeCodeExecutor_Restart(t *testing.T) {
 
 func TestChunk09_ClaudeCodeExecutor_Restart_ResolveFails(t *testing.T) {
 	t.Parallel()
-	evalJS := loadChunkEngine(t, nil, claudeChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, claudeChunks...)
 
 	result, err := evalJS(`
 		(async function() {

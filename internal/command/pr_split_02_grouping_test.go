@@ -4,17 +4,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ===========================================================================
 //  Chunk 02: Grouping — Tests
 //
 //  Tests for all grouping strategies and auto-selection scorer, loaded via
-//  loadChunkEngine with chunks 00_core + 01_analysis + 02_grouping.
+//  prsplittest.NewChunkEngine with chunks 00_core + 01_analysis + 02_grouping.
 // ===========================================================================
 
 func TestChunk02_GroupByDirectory(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDirectory(
 		['pkg/handler.go', 'pkg/types.go', 'cmd/main.go', 'docs/README.md'], 1
@@ -43,7 +45,7 @@ func TestChunk02_GroupByDirectory(t *testing.T) {
 }
 
 func TestChunk02_GroupByExtension(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByExtension(
 		['main.go', 'handler.go', 'index.js', 'README.md']
@@ -69,7 +71,7 @@ func TestChunk02_GroupByExtension(t *testing.T) {
 }
 
 func TestChunk02_GroupByChunks(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByChunks(
 		['a.go', 'b.go', 'c.go', 'd.go', 'e.go', 'f.go'], 2
@@ -95,7 +97,7 @@ func TestChunk02_GroupByChunks(t *testing.T) {
 }
 
 func TestChunk02_GroupByPattern(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByPattern(
 		['src/main.go', 'test/main_test.go', 'docs/README.md'],
@@ -122,7 +124,7 @@ func TestChunk02_GroupByPattern(t *testing.T) {
 }
 
 func TestChunk02_ParseGoImports(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	tests := []struct {
 		name    string
@@ -178,7 +180,7 @@ func main() {}`,
 }
 
 func TestChunk02_SelectStrategy(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	// Files across 5 directories — should favor directory strategy.
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.selectStrategy([
@@ -216,7 +218,7 @@ func TestChunk02_SelectStrategy(t *testing.T) {
 }
 
 func TestChunk02_ApplyStrategy_Dispatch(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	strategies := []string{"directory", "extension", "chunks"}
 	files := `['pkg/a.go', 'cmd/b.go', 'docs/README.md']`
@@ -240,7 +242,7 @@ func TestChunk02_ApplyStrategy_Dispatch(t *testing.T) {
 }
 
 func TestChunk02_EmptyInputs(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	fns := []string{
 		"groupByDirectory([])",
@@ -271,7 +273,7 @@ func TestChunk02_EmptyInputs(t *testing.T) {
 
 // T102: applyStrategy with unknown strategy name must annotate _fallbackUsed.
 func TestChunk02_ApplyStrategy_UnknownFallback(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	raw, err := evalJS(`
 		(function() {
@@ -310,7 +312,7 @@ func TestChunk02_ApplyStrategy_UnknownFallback(t *testing.T) {
 
 // T102: Valid strategy names must NOT have _fallbackUsed.
 func TestChunk02_ApplyStrategy_ValidNoFallback(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	raw, err := evalJS(`
 		(function() {

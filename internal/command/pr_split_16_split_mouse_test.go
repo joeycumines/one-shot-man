@@ -883,3 +883,67 @@ func TestChunk16_MouseClick_ClaudeStatusBadge(t *testing.T) {
 		t.Errorf("claude status badge: %v", raw)
 	}
 }
+
+// ---------------------------------------------------------------------------
+//  T307: Mouse click handling for EQUIV_CHECK buttons
+// ---------------------------------------------------------------------------
+
+func TestChunk16_MouseClick_EquivCheckZones(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		setupPlanCache();
+
+		// equiv-reverify: starts equivalence check (isProcessing=true, equivalenceResult cleared).
+		var s = initState('EQUIV_CHECK');
+		s.equivalenceResult = {equivalent: false, expected: 'a', actual: 'b'};
+		s.isProcessing = false;
+		var restore = mockZoneHit('equiv-reverify');
+		try {
+			var r = sendClick(s);
+			if (!r[0].isProcessing) return 'FAIL: equiv-reverify did not set isProcessing';
+			if (r[0].equivalenceResult !== null) return 'FAIL: equiv-reverify did not clear equivalenceResult';
+			if (!r[0].equivRunning) return 'FAIL: equiv-reverify did not set equivRunning';
+		} finally { restore(); }
+
+		// equiv-revise: transitions to PLAN_REVIEW.
+		s = initState('EQUIV_CHECK');
+		s.equivalenceResult = {equivalent: false, expected: 'a', actual: 'b'};
+		s.isProcessing = false;
+		restore = mockZoneHit('equiv-revise');
+		try {
+			var r = sendClick(s);
+			if (r[0].wizardState !== 'PLAN_REVIEW') return 'FAIL: equiv-revise state=' + r[0].wizardState;
+			if (r[0].isProcessing) return 'FAIL: equiv-revise should not be processing';
+		} finally { restore(); }
+
+		// nav-next on EQUIV_CHECK with cached result: transitions to FINALIZATION.
+		s = initState('EQUIV_CHECK');
+		s.equivalenceResult = {equivalent: true};
+		s.isProcessing = false;
+		restore = mockZoneHit('nav-next');
+		try {
+			var r = sendClick(s);
+			if (r[0].wizardState !== 'FINALIZATION') return 'FAIL: nav-next state=' + r[0].wizardState;
+		} finally { restore(); }
+
+		// equiv-reverify should be no-op when isProcessing=true (guard).
+		s = initState('EQUIV_CHECK');
+		s.isProcessing = true;
+		restore = mockZoneHit('equiv-reverify');
+		try {
+			var r = sendClick(s);
+			// Should not change state — isProcessing guard prevents click.
+			if (r[0].wizardState !== 'EQUIV_CHECK') return 'FAIL: processing reverify changed state';
+		} finally { restore(); }
+
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("equiv check zones: %v", raw)
+	}
+}

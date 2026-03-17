@@ -1,0 +1,939 @@
+'use strict';
+// pr_split_16f_tui_model.js — TUI: BubbleTea model factory, mouse handling, view, program launch
+// Dependencies: chunks 00-16e must be loaded first.
+// Requires Go-injected globals: tui, ctx, output, log, prSplitConfig, tuiMux.
+
+(function(prSplit) {
+
+    if (typeof tui === 'undefined' || typeof ctx === 'undefined' ||
+        typeof output === 'undefined') { return; }
+
+    // Cross-chunk imports — libraries from chunks 15a/15d.
+    var tea = prSplit._tea;
+    var lipgloss = prSplit._lipgloss;
+    var zone = prSplit._zone;
+    var viewportLib = prSplit._viewportLib;
+    var scrollbarLib = prSplit._scrollbarLib;
+    var COLORS = prSplit._COLORS;
+    var resolveColor = prSplit._resolveColor;
+    var repeatStr = prSplit._repeatStr;
+    var styles = prSplit._wizardStyles;
+
+    // Cross-chunk imports — renderers from chunks 15b/15c/15d.
+    var renderTitleBar = prSplit._renderTitleBar;
+    var renderNavBar = prSplit._renderNavBar;
+    var renderStatusBar = prSplit._renderStatusBar;
+    var renderClaudePane = prSplit._renderClaudePane;
+    var renderOutputPane = prSplit._renderOutputPane;
+    var viewForState = prSplit._viewForState;
+    var viewHelpOverlay = prSplit._viewHelpOverlay;
+    var viewConfirmCancelOverlay = prSplit._viewConfirmCancelOverlay;
+    var viewReportOverlay = prSplit._viewReportOverlay;
+    var syncReportOverlay = prSplit._syncReportOverlay;
+    var viewClaudeConvoOverlay = prSplit._viewClaudeConvoOverlay;
+
+    // Cross-chunk imports — state from chunks 13-14.
+    var st = prSplit._state;
+    var tuiState = prSplit._tuiState;
+    var WizardState = prSplit.WizardState;
+    var buildReport = prSplit._buildReport;
+    var buildCommands = prSplit._buildCommands;
+    var handlePlanReviewState = prSplit._handlePlanReviewState;
+    var handleFinalizationState = prSplit._handleFinalizationState;
+
+    // Cross-chunk imports — from chunk 16a.
+    var syncMainViewport = prSplit._syncMainViewport;
+    var handleBack = prSplit._handleBack;
+    var handleNext = prSplit._handleNext;
+    var handleFocusActivate = prSplit._handleFocusActivate;
+    var handleListNav = prSplit._handleListNav;
+    var enterPlanEditor = prSplit._enterPlanEditor;
+    var handlePauseResume = prSplit._handlePauseResume;
+    var handlePauseQuit = prSplit._handlePauseQuit;
+    var viewEditorDialog = prSplit._viewEditorDialog;
+    var getFocusElements = prSplit._getFocusElements;
+
+    // Cross-chunk imports — from chunks 16b/16c/16d.
+    var startAnalysis = prSplit._startAnalysis;
+    var startAutoAnalysis = prSplit._startAutoAnalysis;
+    var startExecution = prSplit._startExecution;
+    var startEquivCheck = prSplit._startEquivCheck;
+    var startPRCreation = prSplit._startPRCreation;
+    var formatReportForDisplay = prSplit._formatReportForDisplay;
+    var handleErrorResolutionChoice = prSplit._handleErrorResolutionChoice;
+    var openClaudeConvo = prSplit._openClaudeConvo;
+
+    // -----------------------------------------------------------------------
+    //  Mouse Handlers
+    // -----------------------------------------------------------------------
+
+    function handleMouseClick(msg, s) {
+        // Navigation bar clicks.
+        if (zone.inBounds('nav-back', msg)) {
+            return handleBack(s);
+        }
+        if (zone.inBounds('nav-cancel', msg)) {
+            // During active verification, clicking cancel sends SIGINT
+            // (consistent with Ctrl+C) instead of opening the cancel dialog
+            // to prevent session/worktree leaks from unguarded quit.
+            if (s.activeVerifySession) {
+                var now = Date.now();
+                if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < 2000) {
+                    try { s.activeVerifySession.kill(); } catch (e) { /* ignore */ }
+                } else {
+                    try { s.activeVerifySession.interrupt(); } catch (e) { /* ignore */ }
+                }
+                s.lastVerifyInterruptTime = now;
+                return [s, null];
+            }
+            s.showConfirmCancel = true;
+            s.confirmCancelFocus = 0;  // T031: reset focus to 'Yes' on open
+            return [s, null];
+        }
+        if (zone.inBounds('nav-next', msg)) {
+            return handleNext(s);
+        }
+        // Claude status badge — T45: click to re-open split-view if closed.
+        if (zone.inBounds('claude-status', msg)) {
+            if (typeof tuiMux !== 'undefined' && tuiMux &&
+                (typeof tuiMux.hasChild !== 'function' || tuiMux.hasChild())) {
+                // T45: If split-view is not open, open it (re-clears manual dismiss).
+                if (!s.splitViewEnabled) {
+                    s.splitViewEnabled = true;
+                    s.splitViewFocus = 'wizard';
+                    s.splitViewTab = 'claude';
+                    s.claudeManuallyDismissed = false;
+                    syncMainViewport(s); // T120: sync dimensions after toggle.
+                    return [s, tea.tick(100, 'claude-screenshot')];
+                }
+                // Already open — switch to Claude tab.
+                s.splitViewTab = 'claude';
+                s.splitViewFocus = 'claude';
+            }
+            return [s, null];
+        }
+        // T44: Split-view tab bar clicks.
+        if (s.splitViewEnabled) {
+            if (zone.inBounds('split-tab-claude', msg)) {
+                s.splitViewTab = 'claude';
+                return [s, null];
+            }
+            if (zone.inBounds('split-tab-output', msg)) {
+                s.splitViewTab = 'output';
+                return [s, null];
+            }
+        }
+        // T46: Claude question prompt click — activate input.
+        if (s.claudeQuestionDetected && zone.inBounds('claude-question-input', msg)) {
+            s.claudeQuestionInputActive = true;
+            return [s, null];
+        }
+        // Screen-specific zone clicks.
+        return handleScreenMouseClick(msg, s);
+    }
+
+    function handleScreenMouseClick(msg, s) {
+        // Config screen: strategy selection, advanced toggle, Test Connection.
+        if (s.wizardState === 'CONFIG' || s.wizardState === 'IDLE') {
+            // If a config field is being edited and the click is outside that field,
+            // cancel editing (like blur on a form input).
+            if (s.configFieldEditing) {
+                var editZoneId = 'config-' + s.configFieldEditing;
+                if (!zone.inBounds(editZoneId, msg)) {
+                    s.configFieldEditing = null;
+                    s.configFieldValue = '';
+                }
+            }
+            var strategies = ['auto', 'heuristic', 'directory'];
+            for (var si = 0; si < strategies.length; si++) {
+                if (zone.inBounds('strategy-' + strategies[si], msg)) {
+                    prSplit.runtime.mode = strategies[si];
+                    s.userHasSelectedStrategy = true; // T42: manual selection overrides auto-detect
+                    // Trigger Claude check for 'auto'.
+                    if (strategies[si] === 'auto') {
+                        s.claudeCheckStatus = 'checking';
+                        return [s, tea.tick(1, 'check-claude')];
+                    }
+                    // Clear check status when switching away.
+                    s.claudeCheckStatus = null;
+                    s.claudeResolvedInfo = null;
+                    s.claudeCheckError = null;
+                    s.claudeCheckRunning = false;
+                    s.claudeCheckProgressMsg = '';
+                    return [s, null];
+                }
+            }
+            // Test Connection button.
+            if (zone.inBounds('test-claude', msg)) {
+                if (s.claudeCheckStatus === 'checking') return [s, null];
+                s.claudeCheckStatus = 'checking';
+                prSplit.runtime.mode = 'auto';
+                s.userHasSelectedStrategy = true; // T42: manual action overrides auto-detect
+                return [s, tea.tick(1, 'check-claude')];
+            }
+            if (zone.inBounds('toggle-advanced', msg)) {
+                s.showAdvanced = !s.showAdvanced;
+                if (!s.showAdvanced) {
+                    s.configFieldEditing = null;
+                    s.configFieldValue = '';
+                    // Clamp focus index to new (shorter) element list.
+                    var newElems = getFocusElements(s);
+                    if (s.focusIndex >= newElems.length) {
+                        s.focusIndex = Math.max(0, newElems.length - 1);
+                    }
+                }
+                return [s, null];
+            }
+            // Advanced option field clicks — enter inline edit mode.
+            var configFields = ['config-maxFiles', 'config-branchPrefix', 'config-verifyCommand'];
+            for (var cfi = 0; cfi < configFields.length; cfi++) {
+                if (zone.inBounds(configFields[cfi], msg)) {
+                    var fieldName = configFields[cfi].replace('config-', '');
+                    var runtime = prSplit.runtime;
+                    s.configFieldEditing = fieldName;
+                    if (fieldName === 'maxFiles') {
+                        s.configFieldValue = String(runtime.maxFiles || 10);
+                    } else if (fieldName === 'branchPrefix') {
+                        s.configFieldValue = runtime.branchPrefix || 'split/';
+                    } else if (fieldName === 'verifyCommand') {
+                        s.configFieldValue = runtime.verifyCommand || 'true';
+                    }
+                    // Update focus to match the clicked field.
+                    var elems = getFocusElements(s);
+                    for (var ei = 0; ei < elems.length; ei++) {
+                        if (elems[ei].id === configFields[cfi]) {
+                            s.focusIndex = ei;
+                            break;
+                        }
+                    }
+                    return [s, null];
+                }
+            }
+            // Dry run checkbox toggle.
+            if (zone.inBounds('config-dryRun', msg)) {
+                prSplit.runtime.dryRun = !prSplit.runtime.dryRun;
+                // Update focus to match the clicked checkbox.
+                var elems = getFocusElements(s);
+                for (var ei = 0; ei < elems.length; ei++) {
+                    if (elems[ei].id === 'config-dryRun') {
+                        s.focusIndex = ei;
+                        break;
+                    }
+                }
+                return [s, null];
+            }
+        }
+
+        // Execution: expand/collapse verification output + interrupt.
+        if (s.wizardState === 'BRANCH_BUILDING' && st.planCache && st.planCache.splits) {
+            // T059: Pause/Resume active verify session via dedicated buttons.
+            if (s.activeVerifySession && zone.inBounds('verify-pause', msg)) {
+                if (!s.verifyPaused) {
+                    try { s.activeVerifySession.pause(); s.verifyPaused = true; } catch (e) {
+                        log.printf('verify: pause failed: %s', e.message || String(e));
+                    }
+                }
+                return [s, null];
+            }
+            if (s.activeVerifySession && zone.inBounds('verify-resume', msg)) {
+                if (s.verifyPaused) {
+                    try { s.activeVerifySession.resume(); s.verifyPaused = false; } catch (e) {
+                        log.printf('verify: resume failed: %s', e.message || String(e));
+                    }
+                }
+                return [s, null];
+            }
+            // T007: Open interactive shell in the verify worktree.
+            // NOTE: tuiMux.spawnInteractive() is not yet implemented on the Go
+            // side. This handler pauses the active verify session and logs
+            // the intent. Once the Go binding is wired, it will spawn a PTY
+            // shell in activeVerifyWorktree.
+            if (s.activeVerifySession && s.activeVerifyWorktree &&
+                zone.inBounds('verify-open-shell', msg)) {
+                // Pause the verify session while the shell is open.
+                if (!s.verifyPaused) {
+                    try { s.activeVerifySession.pause(); s.verifyPaused = true; } catch (e) { /* ignore */ }
+                }
+                // TODO(T007): Replace this log with tuiMux.spawnInteractive()
+                // when the Go API is available. The shell should:
+                //   1. Open an interactive PTY in s.activeVerifyWorktree
+                //   2. On shell exit, resume the verify session:
+                //        try { s.activeVerifySession.resume(); s.verifyPaused = false; } catch(e){}
+                if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.spawnInteractive === 'function') {
+                    tuiMux.spawnInteractive({
+                        dir: s.activeVerifyWorktree,
+                        onExit: function() {
+                            try { s.activeVerifySession.resume(); s.verifyPaused = false; } catch (e) { /* ignore */ }
+                        }
+                    });
+                } else {
+                    log.printf('verify: open-shell requested for %s (tuiMux.spawnInteractive not yet available)', s.activeVerifyWorktree);
+                }
+                return [s, null];
+            }
+            // Interrupt active verify session via stop button.
+            // Same double-click pattern as Ctrl+C: first click sends
+            // SIGINT, second click within 2s sends SIGKILL.
+            if (s.activeVerifySession && zone.inBounds('verify-interrupt', msg)) {
+                var now = Date.now();
+                if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < 2000) {
+                    try { s.activeVerifySession.kill(); } catch (e) { /* ignore */ }
+                } else {
+                    try { s.activeVerifySession.interrupt(); } catch (e) { /* ignore */ }
+                }
+                s.lastVerifyInterruptTime = now;
+                return [s, null];
+            }
+            for (var vi = 0; vi < st.planCache.splits.length; vi++) {
+                var vbranch = st.planCache.splits[vi].name;
+                if (zone.inBounds('verify-expand-' + vbranch, msg)) {
+                    s.expandedVerifyBranch = vbranch;
+                    return [s, null];
+                }
+                // Only collapse if the clicked branch IS the currently expanded one.
+                if (vbranch === s.expandedVerifyBranch && zone.inBounds('verify-collapse-' + vbranch, msg)) {
+                    s.expandedVerifyBranch = null;
+                    return [s, null];
+                }
+            }
+        }
+
+        // Plan review: split card selection + edit button.
+        if (s.wizardState === 'PLAN_REVIEW') {
+            if (st.planCache && st.planCache.splits) {
+                for (var i = 0; i < st.planCache.splits.length; i++) {
+                    if (zone.inBounds('split-card-' + i, msg)) {
+                        s.selectedSplitIdx = i;
+                        return [s, null];
+                    }
+                }
+            }
+            if (zone.inBounds('plan-edit', msg) && !s.isProcessing) {
+                return enterPlanEditor(s);
+            }
+            if (zone.inBounds('plan-regenerate', msg) && !s.isProcessing) {
+                handlePlanReviewState(s.wizard, 'regenerate');
+                s.wizardState = 'CONFIG';
+                s.wizard.reset();
+                s.wizard.transition('CONFIG');
+                return [s, null];
+            }
+            // Ask Claude: open conversation overlay for plan review feedback.
+            if (zone.inBounds('ask-claude', msg) && !s.isProcessing) {
+                return openClaudeConvo(s, 'plan-review');
+            }
+        }
+
+        // Plan editor: split selection, file selection, action buttons.
+        if (s.wizardState === 'PLAN_EDITOR') {
+            if (st.planCache && st.planCache.splits) {
+                for (var i = 0; i < st.planCache.splits.length; i++) {
+                    if (zone.inBounds('edit-split-' + i, msg)) {
+                        // Cancel inline title edit if changing to a different split.
+                        if (s.editorTitleEditing && i !== s.editorTitleEditingIdx) {
+                            s.editorTitleEditing = false;
+                            s.editorTitleEditingIdx = -1;
+                            s.editorTitleText = '';
+                        }
+                        s.selectedSplitIdx = i;
+                        s.selectedFileIdx = 0;
+                        return [s, null];
+                    }
+                    // File selection within currently selected split.
+                    if (i === (s.selectedSplitIdx || 0) && st.planCache.splits[i].files) {
+                        for (var fi = 0; fi < st.planCache.splits[i].files.length; fi++) {
+                            if (zone.inBounds('edit-file-' + i + '-' + fi, msg)) {
+                                s.selectedFileIdx = fi;
+                                return [s, null];
+                            }
+                        }
+                    }
+                }
+            }
+            // Editor action buttons.
+            if (zone.inBounds('editor-move', msg)) {
+                var splitIdx = s.selectedSplitIdx || 0;
+                var fileIdx = s.selectedFileIdx || 0;
+                if (st.planCache && st.planCache.splits &&
+                    st.planCache.splits[splitIdx] &&
+                    st.planCache.splits[splitIdx].files &&
+                    st.planCache.splits[splitIdx].files[fileIdx] &&
+                    st.planCache.splits.length > 1) {
+                    s.activeEditorDialog = 'move';
+                    s.editorDialogState = { targetIdx: 0 };
+                }
+                return [s, null];
+            }
+            if (zone.inBounds('editor-rename', msg)) {
+                var splitIdx = s.selectedSplitIdx || 0;
+                if (st.planCache && st.planCache.splits &&
+                    st.planCache.splits[splitIdx]) {
+                    s.activeEditorDialog = 'rename';
+                    s.editorDialogState = {
+                        inputText: st.planCache.splits[splitIdx].name || ''
+                    };
+                }
+                return [s, null];
+            }
+            if (zone.inBounds('editor-merge', msg)) {
+                if (st.planCache && st.planCache.splits &&
+                    st.planCache.splits.length > 1) {
+                    s.activeEditorDialog = 'merge';
+                    s.editorDialogState = { selected: {}, cursorIdx: 0 };
+                }
+                return [s, null];
+            }
+        }
+
+        // Error resolution: resolution choice buttons.
+        if (s.wizardState === 'ERROR_RESOLUTION') {
+            // Crash-specific recovery buttons.
+            if (s.claudeCrashDetected) {
+                if (zone.inBounds('resolve-restart-claude', msg)) {
+                    return handleErrorResolutionChoice(s, 'restart-claude');
+                }
+                if (zone.inBounds('resolve-fallback-heuristic', msg)) {
+                    return handleErrorResolutionChoice(s, 'fallback-heuristic');
+                }
+                if (zone.inBounds('resolve-abort', msg)) {
+                    return handleErrorResolutionChoice(s, 'abort');
+                }
+            }
+            // Standard resolution buttons.
+            var resolveChoices = ['auto', 'manual', 'skip', 'retry', 'abort'];
+            for (var ri = 0; ri < resolveChoices.length; ri++) {
+                if (zone.inBounds('resolve-' + resolveChoices[ri], msg)) {
+                    return handleErrorResolutionChoice(s, resolveChoices[ri] === 'auto' ? 'auto-resolve' : resolveChoices[ri]);
+                }
+            }
+            // Ask Claude about error resolution.
+            if (zone.inBounds('error-ask-claude', msg)) {
+                return openClaudeConvo(s, 'error-resolution');
+            }
+        }
+
+        // T061/T079: EQUIV_CHECK — Re-verify and Revise Plan buttons.
+        if (s.wizardState === 'EQUIV_CHECK' && !s.isProcessing) {
+            if (zone.inBounds('equiv-reverify', msg)) {
+                s.isProcessing = true;
+                s.equivalenceResult = null;
+                return startEquivCheck(s);
+            }
+            if (zone.inBounds('equiv-revise', msg)) {
+                try { s.wizard.transition('PLAN_REVIEW'); } catch (te) { /* ignore */ }
+                s.wizardState = s.wizard.current;
+                s.isProcessing = false;
+                // T308: Clean up equiv state on revise (same cleanup as handleBack).
+                s.equivRunning = false;
+                s.equivError = null;
+                s.equivalenceResult = null;
+                return [s, null];
+            }
+            if (zone.inBounds('nav-next', msg)) {
+                try { s.wizard.transition('FINALIZATION'); } catch (te) { /* already there */ }
+                s.wizardState = s.wizard.current;
+                return [s, null];
+            }
+        }
+
+        // Finalization: action buttons.
+        if (s.wizardState === 'FINALIZATION') {
+            if (zone.inBounds('final-report', msg)) {
+                s.reportContent = formatReportForDisplay(buildReport());
+                if (s.reportVp) {
+                    s.reportVp.setContent(s.reportContent);
+                    s.reportVp.gotoTop();
+                }
+                s.showingReport = true;
+                syncReportOverlay(s);
+                return [s, null];
+            }
+            if (zone.inBounds('final-create-prs', msg)) {
+                handleFinalizationState(s.wizard, 'create-prs');
+                return startPRCreation(s);
+            }
+            if (zone.inBounds('final-done', msg)) {
+                handleFinalizationState(s.wizard, 'done');
+                s.wizardState = 'DONE';
+                return [s, tea.quit()];
+            }
+        }
+
+        // T084: PAUSED screen — resume or quit.
+        if (s.wizardState === 'PAUSED') {
+            if (zone.inBounds('pause-resume', msg)) {
+                return handlePauseResume(s);
+            }
+            if (zone.inBounds('pause-quit', msg)) {
+                return handlePauseQuit(s);
+            }
+        }
+
+        return [s, null];
+    }
+
+    // -----------------------------------------------------------------------
+    //  View Function
+    // -----------------------------------------------------------------------
+
+    function wizardViewImpl(s) {
+        var w = s.width || 80;
+        var h = s.height || 24;
+
+        // Title bar.
+        var titleBar = renderTitleBar(s);
+
+        // Divider.
+        var divider = styles.divider().render(repeatStr('\u2500', w));
+
+        // Navigation bar.
+        // T120: _isNavNextFocused is now computed locally inside
+        // renderNavBar — no state mutation in _viewFn.
+        var navBar = renderNavBar(s);
+
+        // Status bar.
+        var statusBar = renderStatusBar(s);
+
+        // Screen content.
+        var screenContent = viewForState(s);
+
+        // Wrap in viewport.
+        if (s.vp) {
+            // T120: Viewport width/height are sized by syncMainViewport()
+            // in the update handler (WindowSize, split-view toggle).
+            // Here we only compute layout dimensions for rendering, call
+            // setContent (per-frame), and sync the scrollbar post-content.
+            var chromeH = lipgloss.height(titleBar) + 2 + lipgloss.height(navBar) + lipgloss.height(statusBar);
+            var vpHeight = Math.max(3, h - chromeH);
+
+            // Determine if split-view is viable at current terminal size
+            // without mutating s.splitViewEnabled (view purity).
+            var splitViewViable = s.splitViewEnabled;
+            var wizardH = 0;
+            var claudeH = 0;
+            if (splitViewViable) {
+                // Split-view: wizard top, Claude bottom.
+                // -1 for the pane divider between them.
+                // Minimum split requires 3 + 1 + 3 = 7 lines.
+                var minPaneH = 3;
+                wizardH = Math.max(minPaneH, Math.floor(vpHeight * s.splitViewRatio));
+                // Clamp wizardH so Claude pane gets at least minPaneH.
+                wizardH = Math.min(wizardH, vpHeight - minPaneH - 1);
+                claudeH = vpHeight - wizardH - 1;
+
+                if (wizardH < minPaneH || claudeH < minPaneH) {
+                    // Terminal too small for split view; render normal
+                    // but don't mutate state — restored on next resize.
+                    splitViewViable = false;
+                }
+            }
+            if (splitViewViable) {
+
+                // Wizard viewport — height already set by syncMainViewport.
+                s.vp.setContent(screenContent);
+
+                if (s.scrollbar) {
+                    s.scrollbar.setViewportHeight(s.vp.height());
+                    s.scrollbar.setContentHeight(s.vp.totalLineCount());
+                    s.scrollbar.setYOffset(s.vp.yOffset());
+                    s.scrollbar.setChars('\u2588', '\u2591');
+                    s.scrollbar.setThumbForeground(resolveColor(
+                        s.splitViewFocus === 'wizard' ? COLORS.primary : COLORS.border));
+                    s.scrollbar.setTrackForeground(resolveColor(COLORS.border));
+                }
+
+                var vpView = s.vp.view();
+                var sbView = s.scrollbar ? s.scrollbar.view() : '';
+                var wizardPane = lipgloss.joinHorizontal(lipgloss.Top, vpView, sbView);
+
+                // Pane divider with tab bar and split-view hint.
+                // T44: Tab bar: [Claude] [Output] with active/inactive styling.
+                var claudeTabLabel = s.splitViewTab === 'claude'
+                    ? styles.primaryButton().render(' Claude ')
+                    : styles.dim().render(' Claude ');
+                var outputTabLabel = s.splitViewTab === 'output'
+                    ? styles.primaryButton().render(' Output ')
+                    : styles.dim().render(' Output ');
+                var outputCount = (s.outputLines && s.outputLines.length > 0)
+                    ? styles.dim().render('(' + s.outputLines.length + ')') : '';
+                var tabBar = zone.mark('split-tab-claude', claudeTabLabel) + ' ' +
+                    zone.mark('split-tab-output', outputTabLabel) +
+                    (outputCount ? ' ' + outputCount : '');
+                var focusLabel = s.splitViewFocus === 'wizard'
+                    ? '\u25b2 Wizard'
+                    : (s.splitViewTab === 'output' ? '\u25bc Output' : '\u25bc Claude');
+                var splitHint = 'Ctrl+Tab: switch  Ctrl+O: tab  Ctrl+L: close';
+                // T44: labelW must include tabBar visual width + all separator decorators.
+                // Template: leftFill + '┤ ' + tabBar + ' · ' + focusLabel + ' · ' + splitHint + ' ├' + rightFill
+                // Decorators: ┤(1)+space(1) + ' · '(3) + ' · '(3) + space(1)+├(1) = 10
+                var tabBarW = lipgloss.width(tabBar);
+                var labelW = tabBarW + focusLabel.length + splitHint.length + 10;
+                var leftFill = repeatStr('\u2500', Math.max(1, Math.floor((w - labelW) / 2)));
+                var rightFill = repeatStr('\u2500', Math.max(1, Math.ceil((w - labelW) / 2)));
+                var paneDivider = styles.dim().render(
+                    leftFill + '\u2524 ' + tabBar + ' \u00b7 ' + focusLabel + ' \u00b7 ' + splitHint + ' \u251c' + rightFill);
+
+                // T44: Bottom pane — switch between Claude and Output tab.
+                var bottomPane;
+                if (s.splitViewTab === 'output') {
+                    bottomPane = renderOutputPane(s, w, claudeH);
+                } else {
+                    bottomPane = renderClaudePane(s, w, claudeH);
+                }
+
+                screenContent = lipgloss.joinVertical(lipgloss.Left,
+                    wizardPane, paneDivider, bottomPane);
+            } else {
+                // Normal (non-split) viewport — height set by syncMainViewport.
+                s.vp.setContent(screenContent);
+
+                if (s.scrollbar) {
+                    s.scrollbar.setViewportHeight(s.vp.height());
+                    s.scrollbar.setContentHeight(s.vp.totalLineCount());
+                    s.scrollbar.setYOffset(s.vp.yOffset());
+                    s.scrollbar.setChars('\u2588', '\u2591');
+                    s.scrollbar.setThumbForeground(resolveColor(COLORS.primary));
+                    s.scrollbar.setTrackForeground(resolveColor(COLORS.border));
+                }
+
+                var vpView = s.vp.view();
+                var sbView = s.scrollbar ? s.scrollbar.view() : '';
+                screenContent = lipgloss.joinHorizontal(lipgloss.Top, vpView, sbView);
+            }
+        }
+
+        // Compose.
+        var fullView = lipgloss.joinVertical(lipgloss.Left,
+            titleBar,
+            divider,
+            screenContent,
+            divider,
+            navBar,
+            statusBar
+        );
+
+        // Overlay: Help.
+        if (s.showHelp) {
+            var helpPanel = viewHelpOverlay(s);
+            fullView = lipgloss.place(w, h,
+                lipgloss.Center, lipgloss.Center,
+                helpPanel,
+                {whitespaceChars: '\u2591', whitespaceForeground: COLORS.border});
+        }
+
+        // Overlay: Confirm Cancel.
+        if (s.showConfirmCancel) {
+            var confirmPanel = viewConfirmCancelOverlay(s);
+            fullView = lipgloss.place(w, h,
+                lipgloss.Center, lipgloss.Center,
+                confirmPanel,
+                {whitespaceChars: '\u2591', whitespaceForeground: COLORS.border});
+        }
+
+        // Overlay: Report.
+        if (s.showingReport) {
+            var reportPanel = viewReportOverlay(s);
+            fullView = lipgloss.place(w, h,
+                lipgloss.Center, lipgloss.Center,
+                reportPanel,
+                {whitespaceChars: '\u2591', whitespaceForeground: COLORS.border});
+        }
+
+        // Overlay: Editor Dialog (move/rename/merge).
+        if (s.activeEditorDialog) {
+            var dialogPanel = viewEditorDialog(s);
+            if (dialogPanel) {
+                fullView = lipgloss.place(w, h,
+                    lipgloss.Center, lipgloss.Center,
+                    dialogPanel,
+                    {whitespaceChars: '\u2591', whitespaceForeground: COLORS.border});
+            }
+        }
+
+        // Overlay: Claude Conversation (T16).
+        if (s.claudeConvo.active) {
+            var convoPanel = viewClaudeConvoOverlay(s);
+            fullView = lipgloss.place(w, h,
+                lipgloss.Center, lipgloss.Center,
+                convoPanel,
+                {whitespaceChars: '\u2591', whitespaceForeground: COLORS.border});
+        }
+
+        return zone.scan(fullView);
+    }
+
+    // -----------------------------------------------------------------------
+    //  BubbleTea Model Factory (slimmed — delegates to chunk imports)
+    // -----------------------------------------------------------------------
+
+    function createWizardModel() {
+        var wizard = new WizardState();
+        prSplit._wizardState = wizard;
+
+        // Track transitions to update the TUI model state.
+        wizard.onTransition(function(from, to, data) {
+            log.printf('wizard: %s \u2192 %s', from, to);
+        });
+
+        var vp = viewportLib.new(80, 24);
+        vp.setMouseWheelEnabled(true);
+        var sb = scrollbarLib.new();
+
+        // Dedicated viewport + scrollbar for the report overlay.
+        var reportVp = viewportLib.new(80, 20);
+        reportVp.setMouseWheelEnabled(true);
+        var reportSb = scrollbarLib.new();
+
+        // Named lifecycle functions — exported for unit testing.
+        var _initFn = function() {
+            return {
+                // Wizard state.
+                wizard: wizard,
+                wizardState: 'IDLE',
+
+                // Dimensions.
+                width: 80,
+                height: 24,
+
+                // Viewport.
+                vp: vp,
+                scrollbar: sb,
+
+                // Time.
+                startTime: Date.now(),
+
+                // UI state.
+                showHelp: false,
+                showConfirmCancel: false,
+                confirmCancelFocus: 0,  // T031: 0=Yes, 1=No
+                showAdvanced: false,
+                showingReport: false,
+                reportContent: '',
+                reportVp: reportVp,
+                reportSb: reportSb,
+                selectedSplitIdx: 0,
+                selectedFileIdx: 0,
+                isProcessing: false,
+
+                // Editor dialog state.
+                activeEditorDialog: null,  // 'move' | 'rename' | 'merge' | null
+                editorDialogState: {},
+
+                // Editor inline state (T17).
+                editorTitleEditing: false,      // true when inline title edit is active
+                editorTitleEditingIdx: -1,      // split index being edited (-1 = none)
+                editorTitleText: '',            // current title text buffer
+
+                // Config field inline editing state.
+                configFieldEditing: null,       // field name being edited (e.g. 'maxFiles') or null
+                configFieldValue: '',           // current text buffer for inline edit
+                editorCheckedFiles: {},         // { 'splitIdx-fileIdx': true } for checked files
+                editorValidationErrors: [],     // validation errors from save attempt
+                editorFileDetailExpanded: false, // show enhanced file detail panel
+
+                // Focus system.
+                focusIndex: 0,
+                _prevWizardState: null,
+
+                // Claude availability (CONFIG screen).
+                claudeCheckStatus: null,   // null | 'checking' | 'available' | 'unavailable'
+                claudeResolvedInfo: null,  // null | { command, type }
+                claudeCheckError: null,    // null | error string
+                claudeCheckRunning: false, // true while async resolveAsync is running
+                claudeCheckProgressMsg: '', // progress message from resolveAsync
+                userHasSelectedStrategy: false, // T42: true when user manually selects a strategy
+
+                // T43: Config validation state.
+                configValidationError: null,   // null | error string (shown inline on CONFIG)
+                availableBranches: [],         // branches from 'git branch --list' on auto-detect failure
+
+                // Analysis progress.
+                analysisSteps: [],
+                analysisProgress: -1,
+
+                // Execution state.
+                executionResults: [],
+                executingIdx: 0,
+                executionRunning: false,
+                executionError: null,
+                executionNextStep: null,
+                executionBranchTotal: 0,
+                executionProgressMsg: '',
+
+                // Equivalence check state.
+                equivRunning: false,
+                equivError: null,
+
+                // Verification state (per-branch, after branch creation).
+                verificationResults: [],   // Array parallel to splits
+                verifyingIdx: -1,          // -1=not started, 0..N=in progress, N=done
+                verifyOutput: {},          // { branchName: [line, ...] }
+                expandedVerifyBranch: null, // branchName for expandable output
+
+                // Live verification session (CaptureSession).
+                activeVerifySession: null,     // CaptureSession JS object (or null)
+                activeVerifyWorktree: null,    // worktree path for cleanup
+                activeVerifyBranch: null,      // branch name being verified
+                activeVerifyDir: null,         // base dir for worktree cleanup
+                activeVerifyStartTime: 0,      // start time for duration tracking
+                verifyElapsedMs: 0,            // T058: elapsed ms updated each poll tick
+                verifyViewportOffset: 0,       // scroll offset (lines from bottom)
+                verifyAutoScroll: true,        // auto-scroll to bottom
+                lastVerifyInterruptTime: 0,    // timestamp of last Ctrl+C interrupt
+                verifyPaused: false,           // T059: true when verify is paused (SIGSTOP)
+
+                // Fallback verification (async, when CaptureSession unavailable).
+                verifyFallbackRunning: false,  // true while async verifySplitAsync is running
+                verifyFallbackError: null,     // error string from fallback verification
+
+                // Split-view (Claude window-in-window).
+                splitViewEnabled: false,       // true when split-view is active
+                splitViewRatio: 0.6,           // wizard gets this fraction of content height
+                splitViewFocus: 'wizard',      // 'wizard' or 'claude' — which pane is focused
+                splitViewTab: 'claude',        // T44: 'claude' | 'output' — active tab in split-view bottom pane
+                claudeScreenshot: '',          // cached plain-text screenshot from tuiMux
+                claudeScreen: '',              // cached ANSI-styled screen from tuiMux (T28)
+                claudeViewOffset: 0,           // scroll offset in Claude pane (lines from bottom)
+
+                // T45: Auto-attach Claude pane state.
+                claudeAutoAttached: false,     // true once auto-attach has fired (prevents re-trigger)
+                claudeManuallyDismissed: false, // true when user explicitly closed split-view via Ctrl+L
+                claudeAutoAttachNotif: '',     // transient notification text (auto-dismissed after 5s)
+                claudeAutoAttachNotifAt: 0,    // Date.now() when notification was set
+
+                // T073: Clipboard flash notification (Report overlay copy).
+                clipboardFlash: '',             // transient flash text after copy attempt
+                clipboardFlashAt: 0,            // Date.now() when flash was set
+
+                // T46: Claude question detection state.
+                claudeQuestionDetected: false,  // true when question pattern detected in Claude output
+                claudeQuestionLine: '',         // the detected question line from Claude's output
+                claudeQuestionInputText: '',    // user's response text buffer
+                claudeQuestionInputActive: false, // user has focused the inline response input
+                claudeConversations: [],        // Q&A history [{question: string, answer: string, ts: number}]
+
+                // T44: Process output capture state.
+                outputLines: [],               // accumulated output buffer (strings, may contain ANSI)
+                outputViewOffset: 0,           // scroll offset in output pane (lines from bottom)
+                outputAutoScroll: true,        // auto-scroll to latest output
+
+                // Claude conversation (T16).
+                claudeConvo: {
+                    active: false,             // conversation overlay is visible
+                    context: null,             // 'plan-review' | 'error-resolution' | null
+                    history: [],               // [{ role: 'user'|'claude', text: string, ts: number }]
+                    inputText: '',             // current text buffer
+                    sending: false,            // async send in flight
+                    waitingForTool: null,       // MCP tool being waited on (or null)
+                    lastError: null,           // last error string
+                    scrollOffset: 0            // scroll offset in history view
+                },
+
+                // Auto-split pipeline state.
+                autoSplitRunning: false,
+                autoSplitResult: null,
+
+                // Claude crash detection.
+                claudeCrashDetected: false,
+                lastClaudeHealthCheckMs: 0,
+
+                // Results.
+                equivalenceResult: null,
+                errorDetails: null,
+
+                // PR creation state (T095+T076).
+                prCreationRunning: false,   // true while async createPRs is in flight
+                prCreationError: null,      // error string from createPRs or null
+                prCreationResults: null,    // array of per-PR results or null
+                prCreationProgressMsg: '',  // real-time progress message from progressFn
+                prCreationDryRun: false,    // T077: true if results are from dry-run
+
+                // First render flag.
+                needsInitClear: true
+            };
+        };
+
+        var _updateFn = function(msg, s) {
+            return prSplit._wizardUpdateImpl(msg, s);
+        };
+
+        var _viewFn = function(s) {
+            return wizardViewImpl(s);
+        };
+
+        var model = tea.newModel({
+            init: _initFn,
+
+            update: _updateFn,
+
+            view: _viewFn
+        });
+
+        // Export lifecycle functions for unit testing.
+        prSplit._wizardInit = _initFn;
+        prSplit._wizardUpdate = _updateFn;
+        prSplit._wizardView = _viewFn;
+        // NOTE: prSplit._getFocusElements is now exported by chunk 16a.
+
+        return model;
+    }
+
+    // -----------------------------------------------------------------------
+    //  Program Launch (T025 + T027)
+    // -----------------------------------------------------------------------
+
+    var _wizardModel = createWizardModel();
+
+    // Export for Go-side launching and test access.
+    prSplit._wizardModel = _wizardModel;
+    prSplit._createWizardModel = createWizardModel;
+
+    // startWizard — called by pr_split.go to launch the BubbleTea wizard.
+    // Blocks the calling goroutine until the user exits the wizard.
+    prSplit.startWizard = function() {
+        return tea.run(_wizardModel, {altScreen: true, mouse: true});
+    };
+
+    // -----------------------------------------------------------------------
+    //  Mode Registration — commands remain for programmatic/test dispatch.
+    //  The BubbleTea wizard above is launched by pr_split.go for interactive
+    //  use. This registration exposes all commands so existing tests and
+    //  the scripting API continue to work.
+    // -----------------------------------------------------------------------
+
+    ctx.run('register-mode', function() {
+        var runtime = prSplit.runtime;
+        tui.registerMode({
+            name: prSplit._MODE_NAME,
+            tui: {
+                title: 'PR Split',
+                prompt: '(pr-split) > '
+            },
+            onEnter: function() {
+                output.print('PR Split Wizard active. Type "help" for commands.');
+                output.print('');
+                output.print('Config: base=' + runtime.baseBranch + ' strategy=' + runtime.strategy +
+                    ' max=' + runtime.maxFiles + (runtime.dryRun ? ' [DRY RUN]' : ''));
+            },
+            commands: function() {
+                return buildCommands(tuiState);
+            }
+        });
+    });
+
+    ctx.run('enter-pr-split', function() {
+        tui.switchMode(prSplit._MODE_NAME);
+    });
+
+    // Cross-chunk exports.
+    prSplit._handleMouseClick = handleMouseClick;
+    prSplit._handleScreenMouseClick = handleScreenMouseClick;
+
+})(globalThis.prSplit);
+
+// ---------------------------------------------------------------------------
+//  CommonJS exports for require() compatibility (test environments).
+// ---------------------------------------------------------------------------
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = globalThis.prSplit;
+}

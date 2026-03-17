@@ -84,7 +84,12 @@ func loadTUIEngineRaw(t testing.TB) *scripting.Engine {
 		{"15b_tui_chrome", prSplitChunk15bTUIChrome},
 		{"15c_tui_screens", prSplitChunk15cTUIScreens},
 		{"15d_tui_dialogs", prSplitChunk15dTUIDialogs},
-		{"16_tui_core", prSplitChunk16TUICore},
+		{"16a_tui_focus", prSplitChunk16aTUIFocus},
+		{"16b_tui_handlers_pipeline", prSplitChunk16bTUIHandlersPipeline},
+		{"16c_tui_handlers_verify", prSplitChunk16cTUIHandlersVerify},
+		{"16d_tui_handlers_claude", prSplitChunk16dTUIHandlersClaude},
+		{"16e_tui_update", prSplitChunk16eTUIUpdate},
+		{"16f_tui_model", prSplitChunk16fTUIModel},
 	}
 	for _, chunk := range tuiChunks {
 		if _, err := evalJS(chunk.source); err != nil {

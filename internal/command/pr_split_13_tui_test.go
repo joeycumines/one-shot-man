@@ -19,7 +19,8 @@ var _ = []string{ // compile-time proof the list is valid
 	"09_claude", "10_pipeline", "11_utilities", "12_exports",
 	"13_tui", "14_tui_commands",
 	"15a_tui_styles", "15b_tui_chrome", "15c_tui_screens", "15d_tui_dialogs",
-	"16_tui_core",
+	"16a_tui_focus", "16b_tui_handlers_pipeline", "16c_tui_handlers_verify",
+	"16d_tui_handlers_claude", "16e_tui_update", "16f_tui_model",
 }
 
 // setupTUIMocks is JS that sets up minimal tui/ctx/output/log mocks
@@ -88,7 +89,12 @@ func loadTUIEngine(t testing.TB) func(string) (any, error) {
 		{"15b_tui_chrome", prSplitChunk15bTUIChrome},
 		{"15c_tui_screens", prSplitChunk15cTUIScreens},
 		{"15d_tui_dialogs", prSplitChunk15dTUIDialogs},
-		{"16_tui_core", prSplitChunk16TUICore},
+		{"16a_tui_focus", prSplitChunk16aTUIFocus},
+		{"16b_tui_handlers_pipeline", prSplitChunk16bTUIHandlersPipeline},
+		{"16c_tui_handlers_verify", prSplitChunk16cTUIHandlersVerify},
+		{"16d_tui_handlers_claude", prSplitChunk16dTUIHandlersClaude},
+		{"16e_tui_update", prSplitChunk16eTUIUpdate},
+		{"16f_tui_model", prSplitChunk16fTUIModel},
 	}
 	for _, chunk := range tuiChunks {
 		if _, err := evalJS(chunk.source); err != nil {
@@ -126,7 +132,12 @@ func TestChunk13_GuardSkipsWithoutTUI(t *testing.T) {
 		{"15b_tui_chrome", prSplitChunk15bTUIChrome},
 		{"15c_tui_screens", prSplitChunk15cTUIScreens},
 		{"15d_tui_dialogs", prSplitChunk15dTUIDialogs},
-		{"16_tui_core", prSplitChunk16TUICore},
+		{"16a_tui_focus", prSplitChunk16aTUIFocus},
+		{"16b_tui_handlers_pipeline", prSplitChunk16bTUIHandlersPipeline},
+		{"16c_tui_handlers_verify", prSplitChunk16cTUIHandlersVerify},
+		{"16d_tui_handlers_claude", prSplitChunk16dTUIHandlersClaude},
+		{"16e_tui_update", prSplitChunk16eTUIUpdate},
+		{"16f_tui_model", prSplitChunk16fTUIModel},
 	}
 	for _, chunk := range tuiChunks {
 		if _, err := evalJS(chunk.source); err != nil {

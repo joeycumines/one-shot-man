@@ -124,6 +124,11 @@ echo "All platforms build successfully."
 git-stage-all: ## Stage all changes (git add -A)
 	@git -C $(PROJECT_ROOT) add -A && echo "All changes staged."
 
+.PHONY: git-rm-old-chunk16
+git-rm-old-chunk16: ## Delete the original pr_split_16_tui_core.js (T311 split)
+	@git -C $(PROJECT_ROOT) rm -f internal/command/pr_split_16_tui_core.js 2>/dev/null || rm -f $(PROJECT_ROOT)/internal/command/pr_split_16_tui_core.js
+	@echo "Old chunk 16 file removed."
+
 .PHONY: git-diff-cached
 git-diff-cached: ## Show staged diff (for review)
 	@git -C $(PROJECT_ROOT) diff --cached --stat

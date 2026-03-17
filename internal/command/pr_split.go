@@ -85,8 +85,23 @@ var prSplitChunk15cTUIScreens string
 //go:embed pr_split_15d_tui_dialogs.js
 var prSplitChunk15dTUIDialogs string
 
-//go:embed pr_split_16_tui_core.js
-var prSplitChunk16TUICore string
+//go:embed pr_split_16a_tui_focus.js
+var prSplitChunk16aTUIFocus string
+
+//go:embed pr_split_16b_tui_handlers_pipeline.js
+var prSplitChunk16bTUIHandlersPipeline string
+
+//go:embed pr_split_16c_tui_handlers_verify.js
+var prSplitChunk16cTUIHandlersVerify string
+
+//go:embed pr_split_16d_tui_handlers_claude.js
+var prSplitChunk16dTUIHandlersClaude string
+
+//go:embed pr_split_16e_tui_update.js
+var prSplitChunk16eTUIUpdate string
+
+//go:embed pr_split_16f_tui_model.js
+var prSplitChunk16fTUIModel string
 
 // prSplitChunks defines the ordered sequence of chunk files for the split
 // architecture. Each entry is (name, source) loaded in order.
@@ -113,7 +128,12 @@ var prSplitChunks = []struct {
 	{"15b_tui_chrome", &prSplitChunk15bTUIChrome},
 	{"15c_tui_screens", &prSplitChunk15cTUIScreens},
 	{"15d_tui_dialogs", &prSplitChunk15dTUIDialogs},
-	{"16_tui_core", &prSplitChunk16TUICore},
+	{"16a_tui_focus", &prSplitChunk16aTUIFocus},
+	{"16b_tui_handlers_pipeline", &prSplitChunk16bTUIHandlersPipeline},
+	{"16c_tui_handlers_verify", &prSplitChunk16cTUIHandlersVerify},
+	{"16d_tui_handlers_claude", &prSplitChunk16dTUIHandlersClaude},
+	{"16e_tui_update", &prSplitChunk16eTUIUpdate},
+	{"16f_tui_model", &prSplitChunk16fTUIModel},
 }
 
 // loadChunkedScript loads all pr-split chunk files in order into the engine.

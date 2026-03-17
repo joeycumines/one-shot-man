@@ -79,8 +79,11 @@ var prSplitChunk12Exports string
 //go:embed pr_split_13_tui.js
 var prSplitChunk13TUI string
 
-//go:embed pr_split_14_tui_commands.js
-var prSplitChunk14TUICommands string
+//go:embed pr_split_14a_tui_commands_core.js
+var prSplitChunk14aTUICommandsCore string
+
+//go:embed pr_split_14b_tui_commands_ext.js
+var prSplitChunk14bTUICommandsExt string
 
 //go:embed pr_split_15a_tui_styles.js
 var prSplitChunk15aTUIStyles string
@@ -135,7 +138,8 @@ var prSplitChunks = []struct {
 	{"11_utilities", &prSplitChunk11Utilities},
 	{"12_exports", &prSplitChunk12Exports},
 	{"13_tui", &prSplitChunk13TUI},
-	{"14_tui_commands", &prSplitChunk14TUICommands},
+	{"14a_tui_commands_core", &prSplitChunk14aTUICommandsCore},
+	{"14b_tui_commands_ext", &prSplitChunk14bTUICommandsExt},
 	{"15a_tui_styles", &prSplitChunk15aTUIStyles},
 	{"15b_tui_chrome", &prSplitChunk15bTUIChrome},
 	{"15c_tui_screens", &prSplitChunk15cTUIScreens},

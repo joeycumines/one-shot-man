@@ -167,7 +167,7 @@ func countSplitBranches(t *testing.T, dir string) int {
 //   - Real git branches exist in the repo
 //   - Tree hash equivalence verified
 //
-// The "run" command (from pr_split_14_tui_commands.js) prints:
+// The "run" command (from pr_split_14a_tui_commands_core.js) prints:
 //   "Running full PR split workflow..."
 //   "✓ Analysis: N changed files"
 //   "✓ Grouped into N groups (strategy)"

@@ -123,3 +123,15 @@ Ready for execution.
   - All tests pass, full build clean
   - Rule of Two: Pass 1 PASS + Pass 2 PASS ✓
 - **Next**: T313 (split pr_split_14_tui_commands.js)
+- **T313**: IN PROGRESS — split pr_split_14_tui_commands.js into 2 files
+  - 14a_tui_commands_core.js: ~630 lines (17 core workflow commands: analyze through run)
+  - 14b_tui_commands_ext.js: 709 lines (15 ext commands + buildCommands orchestrator + HUD overlay + bell handler)
+  - buildCommands split: 14a exports _buildCoreCommands, 14b imports and merges via Object.assign pattern
+  - Original file deleted via git rm
+  - Updated: pr_split.go (embed directives + prSplitChunks), pr_split_13_tui_test.go (3 locations), pr_split_tui_hang_test.go (1 location)
+  - Fixed dead vars in 14a (removed tuiState, WizardState, handleConfigState, handleBaselineFailState — only used in 14b)
+  - Fixed stale comment in pr_split_binary_e2e_test.go (referenced old filename)
+  - Fixed config.mk .PHONY mismatch (was git-rm-old-chunk16, now git-rm-old-chunks)
+  - Build: PASS (zero FAIL)
+  - Rule of Two Pass 1 (first attempt): FAIL — 4 issues found, all fixed
+  - NEXT: Rule of Two Pass 1 (re-attempt on new diff)

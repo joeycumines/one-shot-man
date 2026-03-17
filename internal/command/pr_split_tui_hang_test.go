@@ -79,7 +79,8 @@ func loadTUIEngineRaw(t testing.TB) *scripting.Engine {
 		source string
 	}{
 		{"13_tui", prSplitChunk13TUI},
-		{"14_tui_commands", prSplitChunk14TUICommands},
+		{"14a_tui_commands_core", prSplitChunk14aTUICommandsCore},
+		{"14b_tui_commands_ext", prSplitChunk14bTUICommandsExt},
 		{"15a_tui_styles", prSplitChunk15aTUIStyles},
 		{"15b_tui_chrome", prSplitChunk15bTUIChrome},
 		{"15c_tui_screens", prSplitChunk15cTUIScreens},

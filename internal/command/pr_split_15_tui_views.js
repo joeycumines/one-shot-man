@@ -1346,13 +1346,13 @@
             lines.push(zone.mark('plan-regenerate', regenBtnStyle.render('Regen \ud83d\udd04')));
             lines.push(zone.mark('ask-claude', askClaudeStyle.render('Ask Claude \ud83e\udd16')));
         } else {
-            lines.push(
-                zone.mark('plan-edit', editBtnStyle.render('Edit Plan \u270f')) +
-                '  ' +
-                zone.mark('plan-regenerate', regenBtnStyle.render('Regenerate \ud83d\udd04')) +
-                '  ' +
+            lines.push(lipgloss.joinHorizontal(lipgloss.Center,
+                zone.mark('plan-edit', editBtnStyle.render('Edit Plan \u270f')),
+                '  ',
+                zone.mark('plan-regenerate', regenBtnStyle.render('Regenerate \ud83d\udd04')),
+                '  ',
                 zone.mark('ask-claude', askClaudeStyle.render('Ask Claude \ud83e\udd16'))
-            );
+            ));
         }
 
         return lines.join('\n');
@@ -1890,13 +1890,19 @@
                 var continueStyle = (focusedElemId === 'nav-next')
                     ? styles.focusedButton() : styles.primaryButton();
                 if (zone) {
-                    lines.push('  ' + zone.mark('equiv-reverify', reverifyStyle.render(' Re-verify ')) +
-                        '  ' + zone.mark('equiv-revise', reviseStyle.render(' Revise Plan ')) +
-                        '  ' + zone.mark('nav-next', continueStyle.render(' Continue \u25b6 ')));
+                    lines.push('  ' + lipgloss.joinHorizontal(lipgloss.Center,
+                        zone.mark('equiv-reverify', reverifyStyle.render(' Re-verify ')),
+                        '  ',
+                        zone.mark('equiv-revise', reviseStyle.render(' Revise Plan ')),
+                        '  ',
+                        zone.mark('nav-next', continueStyle.render(' Continue \u25b6 '))));
                 } else {
-                    lines.push('  ' + reverifyStyle.render(' Re-verify ') +
-                        '  ' + reviseStyle.render(' Revise Plan ') +
-                        '  ' + continueStyle.render(' Continue \u25b6 '));
+                    lines.push('  ' + lipgloss.joinHorizontal(lipgloss.Center,
+                        reverifyStyle.render(' Re-verify '),
+                        '  ',
+                        reviseStyle.render(' Revise Plan '),
+                        '  ',
+                        continueStyle.render(' Continue \u25b6 ')));
                 }
             }
         }
@@ -2026,16 +2032,16 @@
             lines.push(zone.mark('final-done',
                 doneStyle.render('Done')));
         } else {
-            lines.push(
+            lines.push(lipgloss.joinHorizontal(lipgloss.Center,
                 zone.mark('final-report',
-                    reportStyle.render('View Report')) +
-                '  ' +
+                    reportStyle.render('View Report')),
+                '  ',
                 zone.mark('final-create-prs',
-                    createStyle.render(createLabel)) +
-                '  ' +
+                    createStyle.render(createLabel)),
+                '  ',
                 zone.mark('final-done',
                     doneStyle.render('Done'))
-            );
+            ));
         }
 
         return lines.join('\n');

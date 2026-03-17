@@ -34,7 +34,7 @@
   "statusSection": {
     "currentState": "Blueprint created. No tasks started.",
     "goalState": "All 6 issues fully resolved: (1) EQUIV_CHECK buttons are visually correct rectangles, focusable via Tab, and clickable via mouse; (2) Back/Cancel buttons have consistent bordered focus styling across all screens; (3) Verify shell integration provides full terminal multiplex — user can open interactive shell in verify worktree, send input to verify process, and use split-view; (4) All button rendering across all screens uses lipgloss.joinHorizontal for multi-line bordered elements; (5) All PR Split JS files are ≤1000 lines (≤800 preferred; files 800-1000 must be justified hub files documented in commit message); (6) PR Split tests are isolated into dedicated test packages with measurable speedup. All checks pass on all platforms.",
-    "replanLog": []
+    "replanLog": [{"date": "2026-03-17", "note": "T303+T304+T305 combined into single commit — identical fix pattern (+ → joinHorizontal) across 3 screens"}]
   },
   "sequentialTasks": [
     {
@@ -63,28 +63,28 @@
       "task": "Verify cross-platform build: Linux, macOS, and Windows",
       "description": "Ensure ALL THREE platforms build successfully. Steps: (1) Run `GOOS=linux GOARCH=amd64 go build ./...` to verify Linux build. (2) Run `GOOS=darwin GOARCH=amd64 go build ./...` to verify macOS build. (3) Run `GOOS=windows GOARCH=amd64 go build ./...` to verify Windows build. (4) Check for any //go:build unix guards on PTY-dependent code. (5) Verify termmux shell features have graceful degradation on Windows (or are properly build-tagged). (6) If `make make-all-in-container` is available, run it for Linux verification. Add a config.mk target `cross-build` that runs all three GOOS builds.",
       "acceptance": "All three platform builds succeed with zero errors. A `make cross-build` target exists in config.mk. Any PTY-dependent features are guarded with //go:build unix. Windows build produces a valid binary (even if some features are disabled). Results documented in WIP.md.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T303",
       "task": "Fix EQUIV_CHECK button layout: replace string concatenation with lipgloss.joinHorizontal",
       "description": "In `internal/command/pr_split_15_tui_views.js`, `viewVerificationScreen()` lines 1883-1886: buttons are joined with `+` string concatenation. When buttons use `secondaryButton()` (3-line bordered output), concatenation produces broken vertical stacking instead of proper horizontal alignment. Replace with `lipgloss.joinHorizontal(lipgloss.Center, btn1, '  ', btn2, '  ', btn3)`. The exact code block to change is the `if (zone)` branch AND the `else` fallback branch. The `lines.push('  ' + ...)` pattern should become `lines.push('  ' + lipgloss.joinHorizontal(lipgloss.Center, ...))`. Check that `lipgloss` is available in scope — it's required at the top of the file via `prSplit._modules`.",
       "acceptance": "On EQUIV_CHECK FAIL screen, Re-verify, Revise Plan, and Continue buttons appear as properly aligned horizontal rectangles with intact rounded borders. Each button's box characters (╭╮╰╯│) form complete rectangles. The three buttons are on the same visual row (centered vertically). Screenshot: three bordered buttons side-by-side, not stacked. Unit test `TestViews_VerificationScreen_ButtonLayout` renders the EQUIV_CHECK fail state and asserts: (a) button labels appear on the same line, (b) border top-row characters (╭, ╮) appear only on line N, (c) button content appears on line N+1, (d) border bottom-row characters (╰, ╯) appear on line N+2.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T304",
       "task": "Fix PlanReview button layout: replace string concatenation with lipgloss.joinHorizontal",
       "description": "In `internal/command/pr_split_15_tui_views.js`, `viewPlanReviewScreen()` lines 1350-1358: the non-compact layout branch concatenates 3 bordered buttons (Edit Plan, Regenerate, Ask Claude) with `+` and `'  '` spacers. All 3 use `secondaryButton()` (bordered). Replace with `lipgloss.joinHorizontal(lipgloss.Center, ...)` for proper multi-line alignment. Additionally check: when any button is focused, `focusedSecondaryButton()` also has a border, so horizontal join is still needed.",
       "acceptance": "On Plan Review screen (non-compact layout), Edit Plan, Regenerate, and Ask Claude buttons render as properly aligned horizontal rectangles. Border characters form complete rectangles for all 3 buttons. Unit test `TestViews_PlanReviewScreen_ButtonLayout` verifies horizontal alignment in non-compact mode. Existing plan review tests pass.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T305",
       "task": "Fix Finalization button layout: replace string concatenation with lipgloss.joinHorizontal",
       "description": "In `internal/command/pr_split_15_tui_views.js`, `viewFinalizationScreen()` lines 2019-2027: the non-compact layout branch concatenates View Report (secondaryButton, bordered), Create PRs (primaryButton, borderless OR disabledButton), and Done (primaryButton, borderless) with `+`. Mixed border/borderless buttons have different heights (3 vs 1 line). Replace with `lipgloss.joinHorizontal(lipgloss.Center, ...)` which properly center-aligns elements of different heights.",
       "acceptance": "On Finalization screen (non-compact layout), all 3 buttons render horizontally aligned. View Report (bordered) is vertically centered with Create PRs and Done (borderless). No broken box characters. Unit test `TestViews_FinalizationScreen_ButtonLayout` verifies alignment in non-compact mode with mixed border styles. Existing finalization tests pass.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T306",

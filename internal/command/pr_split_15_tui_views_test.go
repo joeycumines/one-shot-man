@@ -2070,3 +2070,221 @@ func TestViews_NavBar_FocusStyleConsistency(t *testing.T) {
 		t.Error("T302: Cancel on PLAN_REVIEW should NOT use focusedButton")
 	}
 }
+
+// ---------------------------------------------------------------------------
+//  T303: EQUIV_CHECK button layout — joinHorizontal alignment
+// ---------------------------------------------------------------------------
+
+// TestViews_VerificationScreen_ButtonLayout verifies that the Re-verify,
+// Revise Plan, and Continue buttons on the EQUIV_CHECK fail screen are
+// rendered using lipgloss.joinHorizontal so bordered buttons align properly.
+func TestViews_VerificationScreen_ButtonLayout(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	if _, err := evalJS(viewTestPlanState); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := evalJS(`(function() {
+		return globalThis.prSplit._viewVerificationScreen({
+			wizardState: 'EQUIV_CHECK', width: 120,
+			isProcessing: false, focusIndex: 0,
+			equivalenceResult: {equivalent: false, expected: 'abc123', actual: 'def456'}
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	screen := raw.(string)
+	screenLines := strings.Split(screen, "\n")
+
+	// Find the line(s) containing button labels.
+	var reverifyLine, reviseLine, continueLine int
+	reverifyLine, reviseLine, continueLine = -1, -1, -1
+	for i, line := range screenLines {
+		if strings.Contains(line, "Re-verify") {
+			reverifyLine = i
+		}
+		if strings.Contains(line, "Revise Plan") {
+			reviseLine = i
+		}
+		if strings.Contains(line, "Continue") {
+			continueLine = i
+		}
+	}
+
+	if reverifyLine < 0 || reviseLine < 0 || continueLine < 0 {
+		t.Fatalf("missing button labels in output:\nRe-verify=%d Revise Plan=%d Continue=%d\n%s",
+			reverifyLine, reviseLine, continueLine, screen)
+	}
+
+	// T303: all three button labels must appear on the SAME line (horizontal layout).
+	if reverifyLine != reviseLine || reviseLine != continueLine {
+		t.Errorf("button labels not on same line — Re-verify=%d Revise=%d Continue=%d (want horizontal alignment)",
+			reverifyLine, reviseLine, continueLine)
+	}
+
+	// Verify bordered buttons have proper box characters around the labels.
+	// The Re-verify and Revise Plan buttons use secondaryButton (bordered).
+	// With joinHorizontal, the border top should be on the line BEFORE the labels
+	// and the border bottom on the line AFTER.
+	if reverifyLine > 0 {
+		topLine := screenLines[reverifyLine-1]
+		if !strings.Contains(topLine, "╭") || !strings.Contains(topLine, "╮") {
+			t.Errorf("expected border top characters (╭╮) on line %d above buttons, got:\n%s",
+				reverifyLine-1, topLine)
+		}
+	}
+	if reverifyLine+1 < len(screenLines) {
+		bottomLine := screenLines[reverifyLine+1]
+		if !strings.Contains(bottomLine, "╰") || !strings.Contains(bottomLine, "╯") {
+			t.Errorf("expected border bottom characters (╰╯) on line %d below buttons, got:\n%s",
+				reverifyLine+1, bottomLine)
+		}
+	}
+
+	// Verify that multiple ╭ appear on the top line (one for each bordered button).
+	if reverifyLine > 0 {
+		topLine := screenLines[reverifyLine-1]
+		topCount := strings.Count(topLine, "╭")
+		// Re-verify and Revise Plan are bordered; Continue is primaryButton (borderless).
+		// So at least 2 instances of ╭.
+		if topCount < 2 {
+			t.Errorf("expected at least 2 ╭ on border top line (one per bordered button), got %d:\n%s",
+				topCount, topLine)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  T304: PlanReview button layout — joinHorizontal alignment
+// ---------------------------------------------------------------------------
+
+func TestViews_PlanReviewScreen_ButtonLayout(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	if _, err := evalJS(viewTestPlanState); err != nil {
+		t.Fatal(err)
+	}
+
+	// Render at wide width to trigger non-compact layout.
+	raw, err := evalJS(`(function() {
+		return globalThis.prSplit._viewPlanReviewScreen({
+			wizardState: 'PLAN_REVIEW', width: 120, focusIndex: 0
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	screen := raw.(string)
+	screenLines := strings.Split(screen, "\n")
+
+	var editLine, regenLine, askClaudeLine int
+	editLine, regenLine, askClaudeLine = -1, -1, -1
+	for i, line := range screenLines {
+		if strings.Contains(line, "Edit Plan") {
+			editLine = i
+		}
+		if strings.Contains(line, "Regenerate") {
+			regenLine = i
+		}
+		if strings.Contains(line, "Ask Claude") {
+			askClaudeLine = i
+		}
+	}
+
+	if editLine < 0 || regenLine < 0 || askClaudeLine < 0 {
+		t.Fatalf("missing button labels in PlanReview output:\nEdit=%d Regen=%d AskClaude=%d\n%s",
+			editLine, regenLine, askClaudeLine, screen)
+	}
+
+	// All three must be on the same line (horizontal layout).
+	if editLine != regenLine || regenLine != askClaudeLine {
+		t.Errorf("PlanReview button labels not on same line — Edit=%d Regen=%d AskClaude=%d",
+			editLine, regenLine, askClaudeLine)
+	}
+
+	// Border top should be on the line above.
+	if editLine > 0 {
+		topLine := screenLines[editLine-1]
+		if !strings.Contains(topLine, "╭") || !strings.Contains(topLine, "╮") {
+			t.Errorf("expected border top characters (╭╮) on line %d:\n%s", editLine-1, topLine)
+		}
+		// All 3 buttons are secondaryButton (bordered), so expect 3 ╭.
+		topCount := strings.Count(topLine, "╭")
+		if topCount < 3 {
+			t.Errorf("expected at least 3 ╭ on border top line (one per button), got %d:\n%s",
+				topCount, topLine)
+		}
+	}
+
+	// Border bottom should be on the line below.
+	if editLine+1 < len(screenLines) {
+		bottomLine := screenLines[editLine+1]
+		if !strings.Contains(bottomLine, "╰") || !strings.Contains(bottomLine, "╯") {
+			t.Errorf("expected border bottom characters (╰╯) on line %d:\n%s", editLine+1, bottomLine)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  T305: Finalization button layout — joinHorizontal alignment
+// ---------------------------------------------------------------------------
+
+func TestViews_FinalizationScreen_ButtonLayout(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	if _, err := evalJS(viewTestPlanState); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := evalJS(`(function() {
+		return globalThis.prSplit._viewFinalizationScreen({
+			wizardState: 'FINALIZATION', width: 120, focusIndex: 0,
+			executionResults: [{branchName: 'split/api', status: 'done'}]
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	screen := raw.(string)
+	screenLines := strings.Split(screen, "\n")
+
+	var reportLine, createLine, doneLine int
+	reportLine, createLine, doneLine = -1, -1, -1
+	for i, line := range screenLines {
+		if strings.Contains(line, "View Report") {
+			reportLine = i
+		}
+		if strings.Contains(line, "Create PRs") {
+			createLine = i
+		}
+		// "Done" is short; match carefully to avoid false positives.
+		if strings.Contains(line, "Done") && !strings.Contains(line, "done") {
+			doneLine = i
+		}
+	}
+
+	if reportLine < 0 || createLine < 0 || doneLine < 0 {
+		t.Fatalf("missing button labels in Finalization output:\nReport=%d Create=%d Done=%d\n%s",
+			reportLine, createLine, doneLine, screen)
+	}
+
+	// All three must be on the same line (horizontal layout).
+	if reportLine != createLine || createLine != doneLine {
+		t.Errorf("Finalization button labels not on same line — Report=%d Create=%d Done=%d",
+			reportLine, createLine, doneLine)
+	}
+
+	// View Report uses secondaryButton (bordered). At least 1 bordered button expected.
+	if reportLine > 0 {
+		topLine := screenLines[reportLine-1]
+		if !strings.Contains(topLine, "╭") {
+			t.Errorf("expected border character ╭ on line %d above View Report:\n%s",
+				reportLine-1, topLine)
+		}
+	}
+}

@@ -80,7 +80,10 @@ func loadTUIEngineRaw(t testing.TB) *scripting.Engine {
 	}{
 		{"13_tui", prSplitChunk13TUI},
 		{"14_tui_commands", prSplitChunk14TUICommands},
-		{"15_tui_views", prSplitChunk15TUIViews},
+		{"15a_tui_styles", prSplitChunk15aTUIStyles},
+		{"15b_tui_chrome", prSplitChunk15bTUIChrome},
+		{"15c_tui_screens", prSplitChunk15cTUIScreens},
+		{"15d_tui_dialogs", prSplitChunk15dTUIDialogs},
 		{"16_tui_core", prSplitChunk16TUICore},
 	}
 	for _, chunk := range tuiChunks {

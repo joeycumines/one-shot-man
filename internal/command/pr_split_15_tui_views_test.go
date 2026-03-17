@@ -949,9 +949,11 @@ func TestViews_ClaudePane_WithScreenshot(t *testing.T) {
 	`); err != nil {
 		t.Fatal(err)
 	}
-	// Re-evaluate the views chunk so it picks up tuiMux.
-	if _, err := evalJS(prSplitChunk15TUIViews); err != nil {
-		t.Fatal(err)
+	// Re-evaluate the views chunks so they pick up tuiMux.
+	for _, src := range []string{prSplitChunk15aTUIStyles, prSplitChunk15bTUIChrome, prSplitChunk15cTUIScreens, prSplitChunk15dTUIDialogs} {
+		if _, err := evalJS(src); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	raw, err := evalJS(`globalThis.prSplit._renderClaudePane({

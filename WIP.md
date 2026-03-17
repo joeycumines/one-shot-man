@@ -92,3 +92,11 @@ Ready for execution.
   - Fix 2: Ctrl+] handler logs diagnostics + flashes notification when Claude unavailable (pr_split_16_tui_core.js)
   - 8-scenario test: 4 key handler tests + 4 status bar tests
 - **Next**: T310 (JS file splitting)
+- **T310**: Done ✅ — Split pr_split_15_tui_views.js into 4 files
+  - 15a_tui_styles.js: 274 lines (styles, colors, layout, shared utilities)
+  - 15b_tui_chrome.js: 692 lines (title bar, nav bar, status bar, panes)
+  - 15c_tui_screens.js: 985 lines (6 screen renderers — justified hub file)
+  - 15d_tui_dialogs.js: 688 lines (finalization, dialogs, overlays, viewForState)
+  - Original pr_split_15_tui_views.js deleted
+  - All tests pass, full build clean
+- **Next**: T311 (split pr_split_16_tui_core.js)

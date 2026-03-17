@@ -17,7 +17,9 @@ var _ = []string{ // compile-time proof the list is valid
 	"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation",
 	"05_execution", "06_verification", "07_prcreation", "08_conflict",
 	"09_claude", "10_pipeline", "11_utilities", "12_exports",
-	"13_tui", "14_tui_commands", "15_tui_views", "16_tui_core",
+	"13_tui", "14_tui_commands",
+	"15a_tui_styles", "15b_tui_chrome", "15c_tui_screens", "15d_tui_dialogs",
+	"16_tui_core",
 }
 
 // setupTUIMocks is JS that sets up minimal tui/ctx/output/log mocks
@@ -82,7 +84,10 @@ func loadTUIEngine(t testing.TB) func(string) (any, error) {
 	}{
 		{"13_tui", prSplitChunk13TUI},
 		{"14_tui_commands", prSplitChunk14TUICommands},
-		{"15_tui_views", prSplitChunk15TUIViews},
+		{"15a_tui_styles", prSplitChunk15aTUIStyles},
+		{"15b_tui_chrome", prSplitChunk15bTUIChrome},
+		{"15c_tui_screens", prSplitChunk15cTUIScreens},
+		{"15d_tui_dialogs", prSplitChunk15dTUIDialogs},
 		{"16_tui_core", prSplitChunk16TUICore},
 	}
 	for _, chunk := range tuiChunks {
@@ -117,7 +122,10 @@ func TestChunk13_GuardSkipsWithoutTUI(t *testing.T) {
 	}{
 		{"13_tui", prSplitChunk13TUI},
 		{"14_tui_commands", prSplitChunk14TUICommands},
-		{"15_tui_views", prSplitChunk15TUIViews},
+		{"15a_tui_styles", prSplitChunk15aTUIStyles},
+		{"15b_tui_chrome", prSplitChunk15bTUIChrome},
+		{"15c_tui_screens", prSplitChunk15cTUIScreens},
+		{"15d_tui_dialogs", prSplitChunk15dTUIDialogs},
 		{"16_tui_core", prSplitChunk16TUICore},
 	}
 	for _, chunk := range tuiChunks {

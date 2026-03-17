@@ -2063,6 +2063,10 @@
                 try { s.wizard.transition('PLAN_REVIEW'); } catch (te) { /* ignore */ }
                 s.wizardState = s.wizard.current;
                 s.isProcessing = false;
+                // T308: Clean up equiv state on revise (same cleanup as handleBack).
+                s.equivRunning = false;
+                s.equivError = null;
+                s.equivalenceResult = null;
                 return [s, null];
             }
             if (zone.inBounds('nav-next', msg)) {
@@ -2267,11 +2271,16 @@
                 handlePlanEditorState(s.wizard, 'back', st.planCache);
                 return [s, null];
             // T079: EQUIV_CHECK → PLAN_REVIEW (back-navigation).
+            // T308: Clean up all equivalence state to prevent stale data
+            // and orphaned async polling.
             case 'EQUIV_CHECK':
                 if (!s.isProcessing) {
                     try { s.wizard.transition('PLAN_REVIEW'); } catch (te) { /* ignore */ }
                     s.wizardState = s.wizard.current;
                     s.isProcessing = false;
+                    s.equivRunning = false;
+                    s.equivError = null;
+                    s.equivalenceResult = null;
                 }
                 return [s, null];
             default:
@@ -2721,10 +2730,14 @@
                 return startEquivCheck(s);
             }
             // T079: Revise Plan — go back to PLAN_REVIEW from EQUIV_CHECK.
+            // T308: Clean up equiv state on revise (same cleanup as handleBack).
             if (focused.id === 'equiv-revise') {
                 try { s.wizard.transition('PLAN_REVIEW'); } catch (te) { /* ignore */ }
                 s.wizardState = s.wizard.current;
                 s.isProcessing = false;
+                s.equivRunning = false;
+                s.equivError = null;
+                s.equivalenceResult = null;
                 return [s, null];
             }
             // Finalization buttons.
@@ -3815,7 +3828,8 @@
             var checkFn = prSplit.verifyEquivalenceDetailedAsync || prSplit.verifyEquivalenceAsync;
             equivResult = await checkFn(st.planCache);
         } catch (e) {
-            if (s.wizard.current === 'CANCELLED') return; // wizard already cancelled
+            // T308: If user navigated away from EQUIV_CHECK, don't mutate state.
+            if (s.wizard.current === 'CANCELLED' || s.wizardState !== 'EQUIV_CHECK') return;
             s.isProcessing = false;
             s.errorDetails = 'Equivalence check failed: ' + (e.message || String(e));
             try { s.wizard.transition('ERROR'); } catch (te) { /* terminal state */ }
@@ -3823,7 +3837,8 @@
             return;
         }
 
-        if (!s.isProcessing || s.wizard.current === 'CANCELLED') return; // cancelled
+        // T308: If user navigated away, don't mutate state.
+        if (!s.isProcessing || s.wizard.current === 'CANCELLED' || s.wizardState !== 'EQUIV_CHECK') return;
 
         // Defensive: treat null/undefined result as error.
         if (!equivResult) {

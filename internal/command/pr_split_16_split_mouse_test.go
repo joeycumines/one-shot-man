@@ -910,12 +910,18 @@ func TestChunk16_MouseClick_EquivCheckZones(t *testing.T) {
 		// equiv-revise: transitions to PLAN_REVIEW.
 		s = initState('EQUIV_CHECK');
 		s.equivalenceResult = {equivalent: false, expected: 'a', actual: 'b'};
+		s.equivRunning = true;
+		s.equivError = 'old error';
 		s.isProcessing = false;
 		restore = mockZoneHit('equiv-revise');
 		try {
 			var r = sendClick(s);
 			if (r[0].wizardState !== 'PLAN_REVIEW') return 'FAIL: equiv-revise state=' + r[0].wizardState;
 			if (r[0].isProcessing) return 'FAIL: equiv-revise should not be processing';
+			// T308: verify equiv state cleanup.
+			if (r[0].equivRunning) return 'FAIL: equiv-revise did not clear equivRunning';
+			if (r[0].equivError !== null) return 'FAIL: equiv-revise did not clear equivError';
+			if (r[0].equivalenceResult !== null) return 'FAIL: equiv-revise did not clear equivalenceResult';
 		} finally { restore(); }
 
 		// nav-next on EQUIV_CHECK with cached result: transitions to FINALIZATION.
@@ -945,5 +951,98 @@ func TestChunk16_MouseClick_EquivCheckZones(t *testing.T) {
 	}
 	if raw != "OK" {
 		t.Errorf("equiv check zones: %v", raw)
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  T308: Back navigation state cleanup for EQUIV_CHECK
+// ---------------------------------------------------------------------------
+
+// TestChunk16_EquivCheck_BackNavigation verifies that pressing Back on
+// EQUIV_CHECK cleans up all equivalence state (equivalenceResult, equivRunning,
+// equivError) to prevent stale data and orphaned async polling.
+func TestChunk16_EquivCheck_BackNavigation(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		setupPlanCache();
+
+		// Scenario 1: nav-back mouse click from EQUIV_CHECK with stale state.
+		var s = initState('EQUIV_CHECK');
+		s.equivalenceResult = {equivalent: false, expected: 'aaa', actual: 'bbb'};
+		s.equivRunning = true;
+		s.equivError = 'previous error';
+		s.isProcessing = false;
+		var restore = mockZoneHit('nav-back');
+		try {
+			var r = sendClick(s);
+			s = r[0];
+			if (s.wizardState !== 'PLAN_REVIEW') return 'FAIL: back state=' + s.wizardState;
+			if (s.equivalenceResult !== null) return 'FAIL: equivalenceResult not cleared';
+			if (s.equivRunning) return 'FAIL: equivRunning not cleared';
+			if (s.equivError !== null) return 'FAIL: equivError not cleared';
+			if (s.isProcessing) return 'FAIL: isProcessing not cleared';
+		} finally { restore(); }
+
+		// Scenario 2: keyboard Enter on nav-back (handleFocusActivate → handleBack).
+		s = initState('EQUIV_CHECK');
+		s.equivalenceResult = {equivalent: true};
+		s.equivRunning = true;
+		s.equivError = 'stale keyboard error';
+		s.isProcessing = false;
+		// Focus on nav-back. Find its index.
+		var elems = globalThis.prSplit._getFocusElements(s);
+		var navBackIdx = -1;
+		for (var i = 0; i < elems.length; i++) {
+			if (elems[i].id === 'nav-back') { navBackIdx = i; break; }
+		}
+		if (navBackIdx < 0) return 'FAIL: nav-back not in focus elements';
+		s.focusIndex = navBackIdx;
+		var r = sendKey(s, 'enter');
+		s = r[0];
+		if (s.wizardState !== 'PLAN_REVIEW') return 'FAIL: keyboard back state=' + s.wizardState;
+		if (s.equivalenceResult !== null) return 'FAIL: keyboard back equivalenceResult not cleared';
+		if (s.equivRunning) return 'FAIL: keyboard back equivRunning not cleared';
+		if (s.equivError !== null) return 'FAIL: keyboard back equivError not cleared';
+
+		// Scenario 3: equiv-revise keyboard activation cleans up state.
+		s = initState('EQUIV_CHECK');
+		s.equivalenceResult = {equivalent: false};
+		s.equivRunning = true;
+		s.equivError = 'stale';
+		s.isProcessing = false;
+		elems = globalThis.prSplit._getFocusElements(s);
+		var reviseIdx = -1;
+		for (var i = 0; i < elems.length; i++) {
+			if (elems[i].id === 'equiv-revise') { reviseIdx = i; break; }
+		}
+		if (reviseIdx < 0) return 'FAIL: equiv-revise not in focus elements';
+		s.focusIndex = reviseIdx;
+		r = sendKey(s, 'enter');
+		s = r[0];
+		if (s.wizardState !== 'PLAN_REVIEW') return 'FAIL: revise keyboard state=' + s.wizardState;
+		if (s.equivalenceResult !== null) return 'FAIL: revise keyboard equivalenceResult not cleared';
+		if (s.equivRunning) return 'FAIL: revise keyboard equivRunning not cleared';
+		if (s.equivError !== null) return 'FAIL: revise keyboard equivError not cleared';
+
+		// Scenario 4: Back is no-op when isProcessing=true.
+		s = initState('EQUIV_CHECK');
+		s.isProcessing = true;
+		s.equivRunning = true;
+		restore = mockZoneHit('nav-back');
+		try {
+			r = sendClick(s);
+			if (r[0].wizardState !== 'EQUIV_CHECK') return 'FAIL: processing back should not navigate';
+			if (!r[0].equivRunning) return 'FAIL: processing back should not clear equivRunning';
+		} finally { restore(); }
+
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("equiv check back navigation: %v", raw)
 	}
 }

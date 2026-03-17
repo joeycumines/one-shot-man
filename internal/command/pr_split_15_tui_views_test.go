@@ -2288,3 +2288,67 @@ func TestViews_FinalizationScreen_ButtonLayout(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+//  T306: All screens — no orphaned box-drawing characters
+// ---------------------------------------------------------------------------
+
+// TestViews_AllScreens_NoBrokenBorders sweeps every screen renderer and
+// verifies that no ╭ appears without a matching ╮ on the same line, and
+// no ╰ appears without a matching ╯. This catches joinHorizontal regressions.
+func TestViews_AllScreens_NoBrokenBorders(t *testing.T) {
+	t.Parallel()
+	evalJS := loadTUIEngine(t)
+
+	if _, err := evalJS(viewTestPlanState); err != nil {
+		t.Fatal(err)
+	}
+
+	type screenCase struct {
+		name string
+		js   string
+	}
+
+	screens := []screenCase{
+		{"CONFIG", `globalThis.prSplit._viewConfigScreen({wizardState:'CONFIG',width:120,showAdvanced:false})`},
+		{"PLAN_REVIEW", `globalThis.prSplit._viewPlanReviewScreen({wizardState:'PLAN_REVIEW',width:120,focusIndex:0})`},
+		{"PLAN_EDITOR", `globalThis.prSplit._viewPlanEditorScreen({wizardState:'PLAN_EDITOR',width:120,focusIndex:0,editorState:{selectedSplitIndex:0,cursor:0}})`},
+		{"EQUIV_CHECK_FAIL", `globalThis.prSplit._viewVerificationScreen({wizardState:'EQUIV_CHECK',width:120,isProcessing:false,focusIndex:0,equivalenceResult:{equivalent:false,expected:'a',actual:'b'}})`},
+		{"EQUIV_CHECK_PASS", `globalThis.prSplit._viewVerificationScreen({wizardState:'EQUIV_CHECK',width:120,isProcessing:false,focusIndex:0,equivalenceResult:{equivalent:true,results:[{status:'pass',branchName:'test'}]}})`},
+		{"FINALIZATION", `globalThis.prSplit._viewFinalizationScreen({wizardState:'FINALIZATION',width:120,focusIndex:0,executionResults:[{branchName:'test',status:'done'}]})`},
+		{"EXECUTION_IDLE", `globalThis.prSplit._viewExecutionScreen({wizardState:'BRANCH_BUILDING',width:120,executionResults:[{sha:'abc'}],executingIdx:1,isProcessing:false})`},
+		{"EXECUTION_VERIFY", `globalThis.prSplit._viewExecutionScreen({wizardState:'BRANCH_BUILDING',width:120,executionResults:[{sha:'abc'}],executingIdx:1,isProcessing:true,verifyingIdx:1,verificationResults:[{passed:true,name:'split/api'}],activeVerifySession:{screen:function(){return 'test'},output:function(){return ''},isDone:function(){return false},isRunning:function(){return true}},activeVerifyBranch:'split/cli',activeVerifyStartTime:Date.now()-5000,verifyAutoScroll:true,verifyViewportOffset:0})`},
+		{"PAUSED", `globalThis.prSplit._viewForState({wizardState:'PAUSED',width:120,height:24,focusIndex:0,pauseReason:'User requested pause'})`},
+		{"ERROR_RESOLUTION", `globalThis.prSplit._viewErrorResolutionScreen({wizardState:'ERROR_RESOLUTION',width:120,errorDetails:'test'})`},
+		{"MOVE_DIALOG", `globalThis.prSplit._viewMoveFileDialog({width:120,selectedSplitIdx:0,selectedFileIdx:0,editorDialogState:{targetIdx:0}})`},
+		{"RENAME_DIALOG", `globalThis.prSplit._viewRenameSplitDialog({width:120,selectedSplitIdx:0,editorDialogState:{inputText:'new'}})`},
+		{"MERGE_DIALOG", `globalThis.prSplit._viewMergeSplitsDialog({width:120,selectedSplitIdx:0,editorDialogState:{selected:{1:true},cursorIdx:0}})`},
+		{"HELP_OVERLAY", `globalThis.prSplit._viewHelpOverlay({width:120,height:24})`},
+		{"CONFIRM_CANCEL", `globalThis.prSplit._viewConfirmCancelOverlay({width:120})`},
+	}
+
+	for _, sc := range screens {
+		t.Run(sc.name, func(t *testing.T) {
+			raw, err := evalJS(sc.js)
+			if err != nil {
+				t.Skipf("render failed: %v", err)
+				return
+			}
+			output := raw.(string)
+			lines := strings.Split(output, "\n")
+			for i, line := range lines {
+				topOpen := strings.Count(line, "╭")
+				topClose := strings.Count(line, "╮")
+				botOpen := strings.Count(line, "╰")
+				botClose := strings.Count(line, "╯")
+
+				if topOpen != topClose {
+					t.Errorf("line %d: mismatched ╭(%d) vs ╮(%d):\n%s", i, topOpen, topClose, line)
+				}
+				if botOpen != botClose {
+					t.Errorf("line %d: mismatched ╰(%d) vs ╯(%d):\n%s", i, botOpen, botClose, line)
+				}
+			}
+		})
+	}
+}

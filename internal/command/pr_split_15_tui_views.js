@@ -1482,13 +1482,13 @@
                     lines.push(zone.mark('editor-rename', renameBtnStyle.render('Rename')));
                     lines.push(zone.mark('editor-merge', mergeBtnStyle.render('Merge')));
                 } else {
-                    lines.push(
-                        zone.mark('editor-move', moveBtnStyle.render('Move File')) +
-                        '  ' +
-                        zone.mark('editor-rename', renameBtnStyle.render('Rename Split')) +
-                        '  ' +
+                    lines.push(lipgloss.joinHorizontal(lipgloss.Center,
+                        zone.mark('editor-move', moveBtnStyle.render('Move File')),
+                        '  ',
+                        zone.mark('editor-rename', renameBtnStyle.render('Rename Split')),
+                        '  ',
                         zone.mark('editor-merge', mergeBtnStyle.render('Merge Splits'))
-                    );
+                    ));
                 }
             }
         }
@@ -1723,25 +1723,33 @@
 
                     // Footer with keybinding hints.
                     // T059: Pause/Resume button for verify subprocess.
-                    var pauseResumeBtn = '';
+                    var pauseResumeBtn;
                     if (s.verifyPaused) {
                         pauseResumeBtn = zone.mark('verify-resume',
-                            styles.focusedSecondaryButton().render('\u25b6 Resume')) + '  ';
+                            styles.focusedSecondaryButton().render('\u25b6 Resume'));
                     } else {
                         pauseResumeBtn = zone.mark('verify-pause',
-                            styles.secondaryButton().render('\u23f8 Pause')) + '  ';
+                            styles.secondaryButton().render('\u23f8 Pause'));
                     }
                     // T007: Open Shell in verify worktree.
                     var openShellBtn = '';
                     if (s.activeVerifyWorktree) {
                         openShellBtn = zone.mark('verify-open-shell',
-                            styles.secondaryButton().render('\ue795 Shell')) + '  ';
+                            styles.secondaryButton().render('\ue795 Shell'));
                     }
-                    var footer = styles.dim().render(
-                        '\u2191\u2193: Scroll' + scrollIndicator + '  ') +
-                        pauseResumeBtn + openShellBtn +
-                        zone.mark('verify-interrupt', styles.dim().render(
-                            'Ctrl+C: Stop  2\u00d7Ctrl+C: Force Kill'));
+                    var interruptHint = zone.mark('verify-interrupt', styles.dim().render(
+                        'Ctrl+C: Stop  2\u00d7Ctrl+C: Force Kill'));
+                    var scrollHint = styles.dim().render(
+                        '\u2191\u2193: Scroll' + scrollIndicator);
+                    var footer;
+                    if (openShellBtn) {
+                        footer = lipgloss.joinHorizontal(lipgloss.Center,
+                            scrollHint, '  ', pauseResumeBtn, '  ',
+                            openShellBtn, '  ', interruptHint);
+                    } else {
+                        footer = lipgloss.joinHorizontal(lipgloss.Center,
+                            scrollHint, '  ', pauseResumeBtn, '  ', interruptHint);
+                    }
 
                     // Render bordered viewport using lipgloss.
                     // T059: Use dim border when paused to visually indicate suspended state.
@@ -2387,11 +2395,11 @@
         lines.push('');
         lines.push(styles.dim().render('j/k navigate \u2022 Enter confirm \u2022 Esc cancel'));
         lines.push('');
-        lines.push(
-            zone.mark('move-confirm', styles.primaryButton().render(' Move ')) +
-            '  ' +
+        lines.push(lipgloss.joinHorizontal(lipgloss.Center,
+            zone.mark('move-confirm', styles.primaryButton().render(' Move ')),
+            '  ',
             zone.mark('move-cancel', styles.secondaryButton().render(' Cancel '))
-        );
+        ));
 
         var content = lines.join('\n');
         return styles.activeCard().width(overlayW).render(content);
@@ -2431,11 +2439,11 @@
         lines.push('');
         lines.push(styles.dim().render('Type to edit \u2022 Enter confirm \u2022 Esc cancel'));
         lines.push('');
-        lines.push(
-            zone.mark('rename-confirm', styles.primaryButton().render(' Rename ')) +
-            '  ' +
+        lines.push(lipgloss.joinHorizontal(lipgloss.Center,
+            zone.mark('rename-confirm', styles.primaryButton().render(' Rename ')),
+            '  ',
             zone.mark('rename-cancel', styles.secondaryButton().render(' Cancel '))
-        );
+        ));
 
         var content = lines.join('\n');
         return styles.activeCard().width(overlayW).render(content);
@@ -2483,11 +2491,11 @@
         lines.push(styles.dim().render(
             'j/k navigate \u2022 Space toggle \u2022 Enter merge \u2022 Esc cancel'));
         lines.push('');
-        lines.push(
-            zone.mark('merge-confirm', styles.primaryButton().render(' Merge ')) +
-            '  ' +
+        lines.push(lipgloss.joinHorizontal(lipgloss.Center,
+            zone.mark('merge-confirm', styles.primaryButton().render(' Merge ')),
+            '  ',
             zone.mark('merge-cancel', styles.secondaryButton().render(' Cancel '))
-        );
+        ));
 
         var content = lines.join('\n');
         return styles.activeCard().width(overlayW).render(content);
@@ -2539,7 +2547,9 @@
                 var quitBtn = (focusedElemId === 'pause-quit')
                     ? styles.focusedSecondaryButton().render(' Quit ')
                     : styles.secondaryButton().render(' Quit ');
-                lines.push(zone.mark('pause-resume', resumeBtn) + '  ' + zone.mark('pause-quit', quitBtn));
+                lines.push(lipgloss.joinHorizontal(lipgloss.Center,
+                    zone.mark('pause-resume', resumeBtn), '  ',
+                    zone.mark('pause-quit', quitBtn)));
                 lines.push('');
                 lines.push(styles.dim().render('Press Enter to activate focused button, or Ctrl+C to cancel.'));
                 return lines.join('\n');

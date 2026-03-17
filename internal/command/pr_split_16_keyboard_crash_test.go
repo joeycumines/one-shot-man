@@ -2,6 +2,8 @@ package command
 
 import (
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -10,7 +12,7 @@ import (
 
 func TestChunk16_HelpOverlay_ContainsAllSections(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -73,7 +75,7 @@ func TestChunk16_HelpOverlay_ContainsAllSections(t *testing.T) {
 
 func TestChunk16_JKContextAwareness_SplitNavigation(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -116,7 +118,7 @@ func TestChunk16_JKContextAwareness_SplitNavigation(t *testing.T) {
 
 func TestChunk16_ArrowContextAwareness_VerifySession(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -156,7 +158,7 @@ func TestChunk16_ArrowContextAwareness_VerifySession(t *testing.T) {
 
 func TestChunk16_TabBehaviorInSplitView(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -199,7 +201,7 @@ func TestChunk16_TabBehaviorInSplitView(t *testing.T) {
 
 func TestChunk16_PlanReviewE_EntersEditor(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -231,7 +233,7 @@ func TestChunk16_PlanReviewE_EntersEditor(t *testing.T) {
 
 func TestChunk16_Keyboard_AllBindingsConsistency(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	// Comprehensive test: verify EVERY key binding documented in the help overlay
 	// actually does something (returns a changed state or a command).
@@ -326,7 +328,7 @@ func TestChunk16_Keyboard_AllBindingsConsistency(t *testing.T) {
 // claudeCrashDetected flag set.
 func TestChunk16_CrashDetection_AutoPoll(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Mock ClaudeCodeExecutor with a dead handle.
@@ -386,7 +388,7 @@ func TestChunk16_CrashDetection_AutoPoll(t *testing.T) {
 // process does NOT trigger crash detection.
 func TestChunk16_CrashDetection_AliveSkipsCheck(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Mock ClaudeCodeExecutor with a LIVE handle.
@@ -428,7 +430,7 @@ func TestChunk16_CrashDetection_AliveSkipsCheck(t *testing.T) {
 // check is throttled (only fires every claudeHealthPollMs).
 func TestChunk16_CrashDetection_HealthPollThrottled(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var checkCount = 0;
@@ -463,7 +465,7 @@ func TestChunk16_CrashDetection_HealthPollThrottled(t *testing.T) {
 // clicks dispatch to the correct recovery handlers.
 func TestChunk16_CrashRecovery_ClickZones(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -564,7 +566,7 @@ func TestChunk16_CrashRecovery_ClickZones(t *testing.T) {
 // returns crash-specific buttons when claudeCrashDetected is set.
 func TestChunk16_GetFocusElements_CrashMode(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -616,7 +618,7 @@ func TestChunk16_GetFocusElements_CrashMode(t *testing.T) {
 // dispatches crash-specific buttons correctly via handleFocusActivate.
 func TestChunk16_FocusActivate_CrashButtons(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -685,7 +687,7 @@ func TestChunk16_FocusActivate_CrashButtons(t *testing.T) {
 // initializes crash-related fields to their default values.
 func TestChunk16_CrashDetection_InitState(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = globalThis.prSplit._wizardInit();
@@ -714,7 +716,7 @@ func TestChunk16_CrashDetection_InitState(t *testing.T) {
 // works during PLAN_GENERATION state (not just BRANCH_BUILDING).
 func TestChunk16_CrashDetection_PlanGenerationTransition(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Mock dead Claude handle.
@@ -761,7 +763,7 @@ func TestChunk16_CrashDetection_PlanGenerationTransition(t *testing.T) {
 // pipeline execution (the wizard stays at CONFIG while the async pipeline runs).
 func TestChunk16_CrashDetection_ConfigStateTransition(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Mock dead Claude handle.
@@ -809,7 +811,7 @@ func TestChunk16_CrashDetection_ConfigStateTransition(t *testing.T) {
 // attempt shows an error in the UI.
 func TestChunk16_CrashRecovery_RestartFailure(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Mock executor that fails on restart (returns Promise with error).
@@ -859,7 +861,7 @@ func TestChunk16_CrashRecovery_RestartFailure(t *testing.T) {
 // an executor shows an appropriate error.
 func TestChunk16_CrashRecovery_NoExecutor(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// No executor set.
@@ -893,7 +895,7 @@ func TestChunk16_CrashRecovery_NoExecutor(t *testing.T) {
 // clears screen state and continues polling when tuiMux is undefined.
 func TestChunk16_PollClaudeScreenshot_NoMux(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Remove tuiMux to simulate headless/test context.
@@ -935,7 +937,7 @@ func TestChunk16_PollClaudeScreenshot_NoMux(t *testing.T) {
 // clears screen state when tuiMux exists but hasChild() returns false.
 func TestChunk16_PollClaudeScreenshot_NoChild(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Mock tuiMux with hasChild() returning false.
@@ -977,7 +979,7 @@ func TestChunk16_PollClaudeScreenshot_NoChild(t *testing.T) {
 // captures screen data when tuiMux has an attached child.
 func TestChunk16_PollClaudeScreenshot_WithChild(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -1018,7 +1020,7 @@ func TestChunk16_PollClaudeScreenshot_WithChild(t *testing.T) {
 // pollClaudeScreenshot stops polling when split view is disabled.
 func TestChunk16_PollClaudeScreenshot_SplitViewDisabled(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_REVIEW');
@@ -1042,7 +1044,7 @@ func TestChunk16_PollClaudeScreenshot_SplitViewDisabled(t *testing.T) {
 // when tuiMux.hasChild() returns false (prevents blocking on empty mux).
 func TestChunk16_SwitchTo_NoChild(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var switchCalled = false;
@@ -1075,7 +1077,7 @@ func TestChunk16_SwitchTo_NoChild(t *testing.T) {
 // tuiMux.hasChild() returns true.
 func TestChunk16_SwitchTo_WithChild(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var switchCalled = false;

@@ -2,6 +2,8 @@ package command
 
 import (
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -38,7 +40,7 @@ else delete globalThis.tuiMux;
 
 func TestChunk16_VTerm_KeyToTermBytes_PrintableChars(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var fn = globalThis.prSplit._keyToTermBytes;
@@ -63,7 +65,7 @@ func TestChunk16_VTerm_KeyToTermBytes_PrintableChars(t *testing.T) {
 
 func TestChunk16_VTerm_KeyToTermBytes_SpecialKeys(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var fn = globalThis.prSplit._keyToTermBytes;
@@ -88,7 +90,7 @@ func TestChunk16_VTerm_KeyToTermBytes_SpecialKeys(t *testing.T) {
 
 func TestChunk16_VTerm_KeyToTermBytes_ArrowKeys(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var fn = globalThis.prSplit._keyToTermBytes;
@@ -115,7 +117,7 @@ func TestChunk16_VTerm_KeyToTermBytes_ArrowKeys(t *testing.T) {
 
 func TestChunk16_VTerm_KeyToTermBytes_CtrlChars(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var fn = globalThis.prSplit._keyToTermBytes;
@@ -142,7 +144,7 @@ func TestChunk16_VTerm_KeyToTermBytes_CtrlChars(t *testing.T) {
 
 func TestChunk16_VTerm_KeyToTermBytes_AltKeys(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var fn = globalThis.prSplit._keyToTermBytes;
@@ -164,7 +166,7 @@ func TestChunk16_VTerm_KeyToTermBytes_AltKeys(t *testing.T) {
 
 func TestChunk16_VTerm_KeyToTermBytes_UnknownReturnsNull(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var fn = globalThis.prSplit._keyToTermBytes;
@@ -187,7 +189,7 @@ func TestChunk16_VTerm_KeyToTermBytes_UnknownReturnsNull(t *testing.T) {
 
 func TestChunk16_VTerm_KeyToTermBytes_BracketedPaste(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var fn = globalThis.prSplit._keyToTermBytes;
@@ -209,7 +211,7 @@ func TestChunk16_VTerm_KeyToTermBytes_BracketedPaste(t *testing.T) {
 
 func TestChunk16_VTerm_KeyToTermBytes_FunctionKeys(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var fn = globalThis.prSplit._keyToTermBytes;
@@ -241,7 +243,7 @@ func TestChunk16_VTerm_KeyToTermBytes_FunctionKeys(t *testing.T) {
 
 func TestChunk16_VTerm_ReservedKeys_ExpectedEntries(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var reserved = globalThis.prSplit._CLAUDE_RESERVED_KEYS;
@@ -282,7 +284,7 @@ func TestChunk16_VTerm_ReservedKeys_ExpectedEntries(t *testing.T) {
 
 func TestChunk16_VTerm_KeyForwarding_PrintableCharsSentToMux(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + wtcMuxSetup + `
@@ -322,7 +324,7 @@ func TestChunk16_VTerm_KeyForwarding_PrintableCharsSentToMux(t *testing.T) {
 
 func TestChunk16_VTerm_KeyForwarding_EnterSendsCarriageReturn(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + wtcMuxSetup + `
@@ -357,7 +359,7 @@ func TestChunk16_VTerm_KeyForwarding_EnterSendsCarriageReturn(t *testing.T) {
 
 func TestChunk16_VTerm_KeyForwarding_CtrlCForwardedToChild(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	// ctrl+c is NOT in CLAUDE_RESERVED_KEYS — it should be forwarded as 0x03.
 	raw, err := evalJS(`(function() {
@@ -393,7 +395,7 @@ func TestChunk16_VTerm_KeyForwarding_CtrlCForwardedToChild(t *testing.T) {
 
 func TestChunk16_VTerm_KeyForwarding_CtrlACtrlEForwarded(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + wtcMuxSetup + `
@@ -432,7 +434,7 @@ func TestChunk16_VTerm_KeyForwarding_CtrlACtrlEForwarded(t *testing.T) {
 
 func TestChunk16_VTerm_KeyForwarding_ReservedKeysNotForwarded(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + wtcMuxSetup + `
@@ -471,7 +473,7 @@ func TestChunk16_VTerm_KeyForwarding_ReservedKeysNotForwarded(t *testing.T) {
 
 func TestChunk16_VTerm_KeyForwarding_ScrollKeysChangeOffsetNotForward(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + wtcMuxSetup + `
@@ -509,7 +511,7 @@ func TestChunk16_VTerm_KeyForwarding_ScrollKeysChangeOffsetNotForward(t *testing
 
 func TestChunk16_VTerm_KeyForwarding_AutoScrollOnInput(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + wtcMuxSetup + `
@@ -548,7 +550,7 @@ func TestChunk16_VTerm_KeyForwarding_AutoScrollOnInput(t *testing.T) {
 
 func TestChunk16_VTerm_KeyForwarding_NoMuxSafeNoOp(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Remove tuiMux entirely.
@@ -586,7 +588,7 @@ func TestChunk16_VTerm_KeyForwarding_NoMuxSafeNoOp(t *testing.T) {
 
 func TestChunk16_VTerm_KeyForwarding_WriteToChildThrowsSwallowed(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -628,7 +630,7 @@ func TestChunk16_VTerm_KeyForwarding_WriteToChildThrowsSwallowed(t *testing.T) {
 
 func TestChunk16_VTerm_KeyForwarding_WizardFocusedNotForwarded(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + wtcMuxSetup + `
@@ -662,7 +664,7 @@ func TestChunk16_VTerm_KeyForwarding_WizardFocusedNotForwarded(t *testing.T) {
 
 func TestChunk16_VTerm_KeyForwarding_OutputTabReadOnly(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + wtcMuxSetup + `
@@ -696,7 +698,7 @@ func TestChunk16_VTerm_KeyForwarding_OutputTabReadOnly(t *testing.T) {
 
 func TestChunk16_VTerm_KeyForwarding_CtrlLInterceptedBeforeClaude(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + wtcMuxSetup + `
@@ -733,7 +735,7 @@ func TestChunk16_VTerm_KeyForwarding_CtrlLInterceptedBeforeClaude(t *testing.T) 
 
 func TestChunk16_VTerm_KeyForwarding_CtrlTabInterceptedForFocus(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + wtcMuxSetup + `

@@ -71,6 +71,7 @@ func NewEngine(t testing.TB, overrides map[string]any) *Engine {
 
 	engine.SetGlobal("config", map[string]any{"name": "pr-split"})
 	engine.SetGlobal("prSplitConfig", jsConfig)
+	engine.SetGlobal("args", []string{})
 
 	return &Engine{
 		engine: engine,

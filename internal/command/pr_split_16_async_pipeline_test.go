@@ -3,6 +3,8 @@ package command
 import (
 	"path/filepath"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -13,7 +15,7 @@ import (
 // continues polling when analysis is still running.
 func TestChunk16_AnalysisPoll_StillRunning(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -39,7 +41,7 @@ func TestChunk16_AnalysisPoll_StillRunning(t *testing.T) {
 // stops polling when processing was cancelled.
 func TestChunk16_AnalysisPoll_Cancelled(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -63,7 +65,7 @@ func TestChunk16_AnalysisPoll_Cancelled(t *testing.T) {
 // transitions to ERROR state when the async pipeline rejects.
 func TestChunk16_AnalysisPoll_ErrorFromPromise(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -93,7 +95,7 @@ func TestChunk16_AnalysisPoll_ErrorFromPromise(t *testing.T) {
 // already transitioned by the async function).
 func TestChunk16_AnalysisPoll_CompletedSuccess(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Simulate async pipeline having completed successfully:
@@ -134,7 +136,7 @@ func TestChunk16_AnalysisAsync_HappyPath(t *testing.T) {
 	gitCmd(t, dir, "add", ".")
 	gitCmd(t, dir, "commit", "-m", "feature changes")
 
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(async function() {
 		// Save originals.
@@ -240,7 +242,7 @@ func TestChunk16_AnalysisAsync_AnalyzeDiffError(t *testing.T) {
 	gitCmd(t, dir, "commit", "-m", "initial")
 	gitCmd(t, dir, "checkout", "-b", "feature")
 
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(async function() {
 		var origAnalyzeDiffAsync = globalThis.prSplit.analyzeDiffAsync;
@@ -303,7 +305,7 @@ func TestChunk16_AnalysisAsync_NoChanges(t *testing.T) {
 	gitCmd(t, dir, "commit", "-m", "initial")
 	gitCmd(t, dir, "checkout", "-b", "feature")
 
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(async function() {
 		var origAnalyzeDiffAsync = globalThis.prSplit.analyzeDiffAsync;
@@ -369,7 +371,7 @@ func TestChunk16_AnalysisAsync_ValidationFailure(t *testing.T) {
 	gitCmd(t, dir, "add", ".")
 	gitCmd(t, dir, "commit", "-m", "feature")
 
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(async function() {
 		var origAnalyzeDiffAsync = globalThis.prSplit.analyzeDiffAsync;
@@ -445,7 +447,7 @@ func TestChunk16_AnalysisAsync_ValidationFailure(t *testing.T) {
 // analysis tick IDs are no longer handled by the update function.
 func TestChunk16_AnalysisAsync_NoSyncCallsRemain(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -475,7 +477,7 @@ func TestChunk16_AnalysisAsync_NoSyncCallsRemain(t *testing.T) {
 // continues polling when execution is still running.
 func TestChunk16_ExecutionPoll_StillRunning(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('BRANCH_BUILDING');
@@ -501,7 +503,7 @@ func TestChunk16_ExecutionPoll_StillRunning(t *testing.T) {
 // stops polling when processing was cancelled.
 func TestChunk16_ExecutionPoll_Cancelled(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('BRANCH_BUILDING');
@@ -525,7 +527,7 @@ func TestChunk16_ExecutionPoll_Cancelled(t *testing.T) {
 // transitions to ERROR_RESOLUTION when the async pipeline rejects.
 func TestChunk16_ExecutionPoll_ErrorFromPromise(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('BRANCH_BUILDING');
@@ -556,7 +558,7 @@ func TestChunk16_ExecutionPoll_ErrorFromPromise(t *testing.T) {
 // starts per-branch verification when executionNextStep='verify'.
 func TestChunk16_ExecutionPoll_CompletedToVerify(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('BRANCH_BUILDING');
@@ -584,7 +586,7 @@ func TestChunk16_ExecutionPoll_CompletedToVerify(t *testing.T) {
 // starts equivalence check when executionNextStep='equiv'.
 func TestChunk16_ExecutionPoll_CompletedToEquiv(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('BRANCH_BUILDING');
@@ -614,7 +616,7 @@ func TestChunk16_ExecutionPoll_CompletedToEquiv(t *testing.T) {
 // continues polling when equiv check is still running.
 func TestChunk16_EquivPoll_StillRunning(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('EQUIV_CHECK');
@@ -639,7 +641,7 @@ func TestChunk16_EquivPoll_StillRunning(t *testing.T) {
 // stops polling when processing was cancelled.
 func TestChunk16_EquivPoll_Cancelled(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('EQUIV_CHECK');
@@ -663,7 +665,7 @@ func TestChunk16_EquivPoll_Cancelled(t *testing.T) {
 // transitions to ERROR state when equiv check fails.
 func TestChunk16_EquivPoll_Error(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('EQUIV_CHECK');
@@ -694,7 +696,7 @@ func TestChunk16_EquivPoll_Error(t *testing.T) {
 // accepts the final state when equiv check completed successfully.
 func TestChunk16_EquivPoll_CompletedSuccess(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Simulate async equiv complete: equivRunning=false, equivError=null,
@@ -723,7 +725,7 @@ func TestChunk16_EquivPoll_CompletedSuccess(t *testing.T) {
 // execution tick IDs are no longer handled by the update function.
 func TestChunk16_ExecutionAsync_NoSyncCallsRemain(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('BRANCH_BUILDING');
@@ -751,7 +753,7 @@ func TestChunk16_ExecutionAsync_NoSyncCallsRemain(t *testing.T) {
 func TestChunk16_ExecutionAsync_HappyPath(t *testing.T) {
 	t.Parallel()
 
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(async function() {
 		var origVerifyEquivalenceAsync = globalThis.prSplit.verifyEquivalenceAsync;
@@ -823,7 +825,7 @@ func TestChunk16_ExecutionAsync_HappyPath(t *testing.T) {
 // executeSplitAsync returns an error, wizard transitions to ERROR_RESOLUTION.
 func TestChunk16_ExecutionAsync_ExecutionError(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Simulate execution error via the poll handler.
@@ -857,7 +859,7 @@ func TestChunk16_ExecutionAsync_ExecutionError(t *testing.T) {
 // callback from executeSplitAsync correctly updates state fields.
 func TestChunk16_ExecutionAsync_ProgressUpdate(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(async function() {
 		var origExecuteSplitAsync = globalThis.prSplit.executeSplitAsync;
@@ -950,7 +952,7 @@ func TestChunk16_ExecutionAsync_ProgressUpdate(t *testing.T) {
 // execution sets isProcessing=false and prevents further wizard transitions.
 func TestChunk16_CancelDuringExecution(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('BRANCH_BUILDING');
@@ -992,7 +994,7 @@ func TestChunk16_CancelDuringExecution(t *testing.T) {
 // error path calls wizard.transition('ERROR') keeping wizard.current in sync.
 func TestChunk16_EquivPoll_ErrorWizardStateSync(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('EQUIV_CHECK');
@@ -1028,7 +1030,7 @@ func TestChunk16_EquivPoll_ErrorWizardStateSync(t *testing.T) {
 // returns 'unavailable' when prSplitConfig is deleted (simulates missing config).
 func TestChunk16_ClaudeCheck_NoPrSplitConfig(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Save and delete prSplitConfig to simulate missing config.
@@ -1062,7 +1064,7 @@ func TestChunk16_ClaudeCheck_NoPrSplitConfig(t *testing.T) {
 // returns cached result from st.claudeExecutor without launching async work.
 func TestChunk16_ClaudeCheck_CachedExecutor(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Set up prSplitConfig so we don't hit test mode guard.
@@ -1102,7 +1104,7 @@ func TestChunk16_ClaudeCheck_CachedExecutor(t *testing.T) {
 // launches async resolveAsync and returns a poll tick when prSplitConfig exists.
 func TestChunk16_ClaudeCheck_LaunchesAsync(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Mock prSplitConfig.
@@ -1153,7 +1155,7 @@ func TestChunk16_ClaudeCheck_LaunchesAsync(t *testing.T) {
 // continues polling when check is still running.
 func TestChunk16_ClaudeCheckPoll_StillRunning(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -1177,7 +1179,7 @@ func TestChunk16_ClaudeCheckPoll_StillRunning(t *testing.T) {
 // stops polling when check is complete.
 func TestChunk16_ClaudeCheckPoll_Completed(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -1204,7 +1206,7 @@ func TestChunk16_ClaudeCheckPoll_Completed(t *testing.T) {
 // check-claude → claude-check-poll chain with a mocked resolveAsync.
 func TestChunk16_ClaudeCheck_AsyncHappyPath(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(async function() {
 		globalThis.prSplitConfig = { claudeCommand: '' };
@@ -1276,7 +1278,7 @@ func TestChunk16_ClaudeCheck_AsyncHappyPath(t *testing.T) {
 // resolveAsync returns an error.
 func TestChunk16_ClaudeCheck_AsyncError(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(async function() {
 		globalThis.prSplitConfig = { claudeCommand: '' };
@@ -1333,7 +1335,7 @@ func TestChunk16_ClaudeCheck_AsyncError(t *testing.T) {
 // resolveAsync throws an unexpected exception (not a result.error).
 func TestChunk16_ClaudeCheck_AsyncThrows(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(async function() {
 		globalThis.prSplitConfig = { claudeCommand: '' };
@@ -1387,7 +1389,7 @@ func TestChunk16_ClaudeCheck_AsyncThrows(t *testing.T) {
 // or uses cache).
 func TestChunk16_ClaudeCheck_OldSyncRemoved(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		globalThis.prSplitConfig = { claudeCommand: '' };
@@ -1431,7 +1433,7 @@ func TestChunk16_ClaudeCheck_OldSyncRemoved(t *testing.T) {
 // while already running does NOT launch a second async operation.
 func TestChunk16_ClaudeCheck_ReentryGuard(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		globalThis.prSplitConfig = { claudeCommand: '' };
@@ -1482,7 +1484,7 @@ func TestChunk16_ClaudeCheck_ReentryGuard(t *testing.T) {
 // 'auto' strategy to another clears all async check state fields.
 func TestChunk16_ClaudeCheck_SwitchAwayCleansUp(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		globalThis.prSplitConfig = { claudeCommand: '' };

@@ -2,6 +2,8 @@ package command
 
 import (
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -10,7 +12,7 @@ import (
 
 func TestChunk16_ReportOverlay_Keyboard(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -95,7 +97,7 @@ func TestChunk16_ReportOverlay_Keyboard(t *testing.T) {
 
 func TestChunk16_ReportOverlay_MouseCloseAndWheel(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -136,7 +138,7 @@ func TestChunk16_ReportOverlay_MouseCloseAndWheel(t *testing.T) {
 
 func TestChunk16_EditorDialog_MoveKeyboard(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -184,7 +186,7 @@ func TestChunk16_EditorDialog_MoveKeyboard(t *testing.T) {
 
 func TestChunk16_EditorDialog_MoveMouse(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -229,7 +231,7 @@ func TestChunk16_EditorDialog_MoveMouse(t *testing.T) {
 
 func TestChunk16_EditorDialog_RenameKeyboard(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -263,7 +265,7 @@ func TestChunk16_EditorDialog_RenameKeyboard(t *testing.T) {
 
 func TestChunk16_EditorDialog_RenameMouse(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -301,7 +303,7 @@ func TestChunk16_EditorDialog_RenameMouse(t *testing.T) {
 
 func TestChunk16_EditorDialog_MergeKeyboard(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -342,7 +344,7 @@ func TestChunk16_EditorDialog_MergeKeyboard(t *testing.T) {
 
 func TestChunk16_EditorDialog_MergeMouse(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -387,7 +389,7 @@ func TestChunk16_EditorDialog_MergeMouse(t *testing.T) {
 
 func TestChunk16_EditorDialog_EscClosesAll(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var dialogs = ['move', 'rename', 'merge'];
@@ -415,7 +417,7 @@ func TestChunk16_EditorDialog_EscClosesAll(t *testing.T) {
 
 func TestChunk16_ClaudeConvo_InputAndSend(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_REVIEW');
@@ -459,7 +461,7 @@ func TestChunk16_ClaudeConvo_InputAndSend(t *testing.T) {
 
 func TestChunk16_ClaudeConvo_ScrollAndWheel(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_REVIEW');
@@ -500,7 +502,7 @@ func TestChunk16_ClaudeConvo_ScrollAndWheel(t *testing.T) {
 
 func TestChunk16_ClaudeConvo_SendingBlocksInput(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_REVIEW');
@@ -536,7 +538,7 @@ func TestChunk16_ClaudeConvo_SendingBlocksInput(t *testing.T) {
 
 func TestChunk16_InlineTitleEdit_FullCycle(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -587,7 +589,7 @@ func TestChunk16_InlineTitleEdit_FullCycle(t *testing.T) {
 
 func TestChunk16_InlineTitleEdit_SwallowsUnknownKeys(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -622,7 +624,7 @@ func TestChunk16_InlineTitleEdit_SwallowsUnknownKeys(t *testing.T) {
 
 func TestChunk16_T41_EditNavIsolation_JKDoesNotMoveFile(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -654,7 +656,7 @@ func TestChunk16_T41_EditNavIsolation_JKDoesNotMoveFile(t *testing.T) {
 
 func TestChunk16_T41_EditNavIsolation_ArrowsSwallowed(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -690,7 +692,7 @@ func TestChunk16_T41_EditNavIsolation_ArrowsSwallowed(t *testing.T) {
 
 func TestChunk16_T41_HandleListNavGuard_DirectCall(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -721,7 +723,7 @@ func TestChunk16_T41_HandleListNavGuard_DirectCall(t *testing.T) {
 
 func TestChunk16_T41_EditNavIsolation_SplitIdxStable(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -764,7 +766,7 @@ func TestChunk16_T41_EditNavIsolation_SplitIdxStable(t *testing.T) {
 
 func TestChunk16_T41_EditNavIsolation_FocusCycleBlocked(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();

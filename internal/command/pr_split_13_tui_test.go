@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -25,95 +27,12 @@ var _ = []string{ // compile-time proof the list is valid
 	"16d_tui_handlers_claude", "16e_tui_update", "16f_tui_model",
 }
 
-// setupTUIMocks is JS that sets up minimal tui/ctx/output/log mocks
-// so the TUI chunk's guard allows execution.
-const setupTUIMocks = `
-(function() {
-    globalThis._prints = [];
-    globalThis._registeredModes = [];
-    globalThis._switchedModes = [];
-    globalThis._ctxRuns = {};
-
-    globalThis.tui = {
-        createState: function(name, def) {
-            return { _name: name, _def: def };
-        },
-        registerMode: function(m) {
-            globalThis._registeredModes.push(m);
-        },
-        switchMode: function(name) {
-            globalThis._switchedModes.push(name);
-        }
-    };
-
-    globalThis.ctx = {
-        run: function(name, fn) {
-            globalThis._ctxRuns[name] = fn;
-            fn();
-        }
-    };
-
-    globalThis.output = {
-        print: function(s) { globalThis._prints.push(String(s)); },
-        toClipboard: function(s) { globalThis._clipboardContent = s; }
-    };
-
-    globalThis.log = {
-        error: function() {},
-        info: function() {},
-        debug: function() {},
-        warn: function() {},
-        printf: function() {}
-    };
-})();
-`
-
-// loadTUIEngine loads chunks 00-12, injects TUI mocks, then loads chunks 13-16.
-// Returns evalJS function.
-func loadTUIEngine(t testing.TB) func(string) (any, error) {
-	t.Helper()
-
-	evalJS := loadChunkEngine(t, nil, allChunksThrough12...)
-
-	// Inject TUI mocks.
-	if _, err := evalJS(setupTUIMocks); err != nil {
-		t.Fatalf("failed to inject TUI mocks: %v", err)
-	}
-
-	// Evaluate TUI chunks (13-16) in order.
-	tuiChunks := []struct {
-		name   string
-		source string
-	}{
-		{"13_tui", prSplitChunk13TUI},
-		{"14a_tui_commands_core", prSplitChunk14aTUICommandsCore},
-		{"14b_tui_commands_ext", prSplitChunk14bTUICommandsExt},
-		{"15a_tui_styles", prSplitChunk15aTUIStyles},
-		{"15b_tui_chrome", prSplitChunk15bTUIChrome},
-		{"15c_tui_screens", prSplitChunk15cTUIScreens},
-		{"15d_tui_dialogs", prSplitChunk15dTUIDialogs},
-		{"16a_tui_focus", prSplitChunk16aTUIFocus},
-		{"16b_tui_handlers_pipeline", prSplitChunk16bTUIHandlersPipeline},
-		{"16c_tui_handlers_verify", prSplitChunk16cTUIHandlersVerify},
-		{"16d_tui_handlers_claude", prSplitChunk16dTUIHandlersClaude},
-		{"16e_tui_update", prSplitChunk16eTUIUpdate},
-		{"16f_tui_model", prSplitChunk16fTUIModel},
-	}
-	for _, chunk := range tuiChunks {
-		if _, err := evalJS(chunk.source); err != nil {
-			t.Fatalf("failed to load chunk %s: %v", chunk.name, err)
-		}
-	}
-
-	return evalJS
-}
-
 // TestChunk13_GuardSkipsWithoutTUI verifies that when tui/ctx/output are
 // absent, the IIFE exits cleanly without setting _buildCommands or _buildReport.
 func TestChunk13_GuardSkipsWithoutTUI(t *testing.T) {
 	// Load chunks 00-12 (the scripting engine provides tui/ctx/output by
 	// default — explicitly remove them so the guard fires).
-	evalJS := loadChunkEngine(t, nil, allChunksThrough12...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough12...)
 
 	// Clear TUI globals so the guard bails.
 	if _, err := evalJS(`
@@ -162,7 +81,7 @@ func TestChunk13_GuardSkipsWithoutTUI(t *testing.T) {
 // TestChunk13_BuildCommandsRegistered verifies that _buildCommands and
 // _buildReport are defined when TUI globals are present.
 func TestChunk13_BuildCommandsRegistered(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	checkDefined := func(name string) {
 		t.Helper()
@@ -181,7 +100,7 @@ func TestChunk13_BuildCommandsRegistered(t *testing.T) {
 // TestChunk13_AllCommandNames verifies that buildCommands returns an object
 // with all expected command names (including abort and override).
 func TestChunk13_AllCommandNames(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`JSON.stringify(Object.keys(globalThis.prSplit._buildCommands({})).sort())`)
 	if err != nil {
@@ -214,7 +133,7 @@ func TestChunk13_AllCommandNames(t *testing.T) {
 // TestChunk13_ModeRegistered verifies that the mode was registered via
 // tui.registerMode with the correct name.
 func TestChunk13_ModeRegistered(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`globalThis._registeredModes.length`)
 	if err != nil {
@@ -248,7 +167,7 @@ func TestChunk13_ModeRegistered(t *testing.T) {
 // TestChunk13_BuildReportStructure verifies the report structure when
 // no analysis has been done yet.
 func TestChunk13_BuildReportStructure(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit._buildReport())`)
 	if err != nil {
@@ -279,7 +198,7 @@ func TestChunk13_BuildReportStructure(t *testing.T) {
 
 // TestChunk13_HelpCommand verifies the help handler prints expected content.
 func TestChunk13_HelpCommand(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	_, err := evalJS(`
         globalThis._prints = [];
@@ -325,7 +244,7 @@ func TestChunk13_HelpCommand(t *testing.T) {
 // NOTE: We mock analyzeDiff directly (not _gitExec) because chunk 01
 // captures _gitExec at module load time.
 func TestChunk13_AnalyzeMockAnalyzeDiff(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	// Mock analyzeDiff to return controlled data.
 	_, err := evalJS(`
@@ -377,7 +296,7 @@ func TestChunk13_AnalyzeMockAnalyzeDiff(t *testing.T) {
 
 // TestChunk13_SetCommand verifies the set command updates runtime config.
 func TestChunk13_SetCommand(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	_, err := evalJS(`
         globalThis._prints = [];
@@ -400,7 +319,7 @@ func TestChunk13_SetCommand(t *testing.T) {
 // TestChunk13_ReportCommandOutputsJSON verifies the report command prints
 // valid JSON.
 func TestChunk13_ReportCommandOutputsJSON(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	_, err := evalJS(`
         globalThis._prints = [];
@@ -430,7 +349,7 @@ func TestChunk13_ReportCommandOutputsJSON(t *testing.T) {
 // TestChunk13_CommandHandlersAllCallable verifies that every command handler
 // can be called without crashing (guards should handle missing state).
 func TestChunk13_CommandHandlersAllCallable(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	// Get command names.
 	raw, err := evalJS(`JSON.stringify(Object.keys(globalThis.prSplit._buildCommands({})))`)
@@ -464,7 +383,7 @@ func TestChunk13_CommandHandlersAllCallable(t *testing.T) {
 // TestChunk13_OnEnterPrintsConfig verifies the mode onEnter callback prints
 // configuration info.
 func TestChunk13_OnEnterPrintsConfig(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	_, err := evalJS(`
         globalThis._prints = [];
@@ -498,7 +417,7 @@ func TestChunk13_OnEnterPrintsConfig(t *testing.T) {
 // and NaN < 0 is false, so without an explicit isNaN guard the value
 // would pass through and cause undefined behavior downstream.
 func TestChunk13_ParseIntNaN(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	// Inject a minimal planCache with 2 splits so we get past the
 	// "No plan" guard and actually reach the parseInt code path.
@@ -565,7 +484,7 @@ func TestChunk13_ParseIntNaN(t *testing.T) {
 
 // TestChunk13_WizardState_InitialState verifies a WizardState starts in IDLE.
 func TestChunk13_WizardState_InitialState(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var ws = new globalThis.prSplit.WizardState();
@@ -583,7 +502,7 @@ func TestChunk13_WizardState_InitialState(t *testing.T) {
 
 // TestChunk13_WizardState_HappyPath tests the full happy-path transition sequence.
 func TestChunk13_WizardState_HappyPath(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var ws = new globalThis.prSplit.WizardState();
@@ -608,7 +527,7 @@ func TestChunk13_WizardState_HappyPath(t *testing.T) {
 
 // TestChunk13_WizardState_InvalidTransition verifies that invalid transitions throw.
 func TestChunk13_WizardState_InvalidTransition(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	cases := []struct {
 		name, js string
@@ -631,7 +550,7 @@ func TestChunk13_WizardState_InvalidTransition(t *testing.T) {
 
 // TestChunk13_WizardState_Cancel verifies cancel from various states.
 func TestChunk13_WizardState_Cancel(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var results = [];
@@ -672,7 +591,7 @@ func TestChunk13_WizardState_Cancel(t *testing.T) {
 
 // TestChunk13_WizardState_ForceCancel tests double-cancel escalation.
 func TestChunk13_WizardState_ForceCancel(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var ws = new globalThis.prSplit.WizardState();
@@ -698,7 +617,7 @@ func TestChunk13_WizardState_ForceCancel(t *testing.T) {
 
 // TestChunk13_WizardState_Pause tests pausing from allowed states.
 func TestChunk13_WizardState_Pause(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var results = [];
@@ -739,7 +658,7 @@ func TestChunk13_WizardState_Pause(t *testing.T) {
 
 // TestChunk13_WizardState_PauseResume tests T084: PAUSED → resume back to original state.
 func TestChunk13_WizardState_PauseResume(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var results = [];
@@ -833,7 +752,7 @@ func TestChunk13_WizardState_PauseResume(t *testing.T) {
 
 // TestChunk13_WizardState_ErrorFromAnyActive tests error transition.
 func TestChunk13_WizardState_ErrorFromAnyActive(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var results = [];
@@ -865,7 +784,7 @@ func TestChunk13_WizardState_ErrorFromAnyActive(t *testing.T) {
 
 // TestChunk13_WizardState_DataMerge tests that transition merges data correctly.
 func TestChunk13_WizardState_DataMerge(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var ws = new globalThis.prSplit.WizardState();
@@ -885,7 +804,7 @@ func TestChunk13_WizardState_DataMerge(t *testing.T) {
 
 // TestChunk13_WizardState_OnTransition tests the listener callback.
 func TestChunk13_WizardState_OnTransition(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var ws = new globalThis.prSplit.WizardState();
@@ -908,7 +827,7 @@ func TestChunk13_WizardState_OnTransition(t *testing.T) {
 
 // TestChunk13_WizardState_History tests transition history tracking.
 func TestChunk13_WizardState_History(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var ws = new globalThis.prSplit.WizardState();
@@ -929,7 +848,7 @@ func TestChunk13_WizardState_History(t *testing.T) {
 
 // TestChunk13_WizardState_Reset tests that reset clears all state.
 func TestChunk13_WizardState_Reset(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var ws = new globalThis.prSplit.WizardState();
@@ -949,7 +868,7 @@ func TestChunk13_WizardState_Reset(t *testing.T) {
 
 // TestChunk13_WizardState_Checkpoint tests saveCheckpoint.
 func TestChunk13_WizardState_Checkpoint(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var ws = new globalThis.prSplit.WizardState();
@@ -970,7 +889,7 @@ func TestChunk13_WizardState_Checkpoint(t *testing.T) {
 
 // TestChunk13_WizardState_BaselineFailPath tests the baseline failure flow.
 func TestChunk13_WizardState_BaselineFailPath(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var ws = new globalThis.prSplit.WizardState();
@@ -991,7 +910,7 @@ func TestChunk13_WizardState_BaselineFailPath(t *testing.T) {
 
 // TestChunk13_WizardState_PlanEditorRoundtrip tests the PLAN_REVIEW ↔ PLAN_EDITOR cycle.
 func TestChunk13_WizardState_PlanEditorRoundtrip(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var ws = new globalThis.prSplit.WizardState();
@@ -1017,7 +936,7 @@ func TestChunk13_WizardState_PlanEditorRoundtrip(t *testing.T) {
 
 // TestChunk13_WizardState_ErrorResolutionReSplit tests the re-split path.
 func TestChunk13_WizardState_ErrorResolutionReSplit(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var ws = new globalThis.prSplit.WizardState();
@@ -1046,7 +965,7 @@ func TestChunk13_WizardState_ErrorResolutionReSplit(t *testing.T) {
 
 // TestChunk13_WizardState_ResumeFromBranchBuilding tests CONFIG→BRANCH_BUILDING.
 func TestChunk13_WizardState_ResumeFromBranchBuilding(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var ws = new globalThis.prSplit.WizardState();
@@ -1067,7 +986,7 @@ func TestChunk13_WizardState_ResumeFromBranchBuilding(t *testing.T) {
 // TestChunk13_WizardState_ExportsAvailable tests that WizardState and constants
 // are exported on prSplit for cross-chunk access.
 func TestChunk13_WizardState_ExportsAvailable(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		JSON.stringify({
@@ -1090,7 +1009,7 @@ func TestChunk13_WizardState_ExportsAvailable(t *testing.T) {
 // TestChunk13_WizardState_ListenerErrorSwallowed tests that a throwing listener
 // doesn't break the state machine.
 func TestChunk13_WizardState_ListenerErrorSwallowed(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var ws = new globalThis.prSplit.WizardState();
@@ -1116,7 +1035,7 @@ func TestChunk13_WizardState_ListenerErrorSwallowed(t *testing.T) {
 // produces an error when baseBranch is empty.
 func TestChunk13_HandleConfigState_MissingBaseBranch(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		// Mock gitExec to return a valid feature branch.
@@ -1147,7 +1066,7 @@ func TestChunk13_HandleConfigState_MissingBaseBranch(t *testing.T) {
 // when already on the base branch.
 func TestChunk13_HandleConfigState_OnBaseBranch(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		// Mock gitExec: current branch IS the base branch.
@@ -1174,7 +1093,7 @@ func TestChunk13_HandleConfigState_OnBaseBranch(t *testing.T) {
 // TestChunk13_HandleConfigState_GitFails tests CONFIG when git rev-parse fails.
 func TestChunk13_HandleConfigState_GitFails(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		prSplit._gitExec = function(dir, args) {
@@ -1202,7 +1121,7 @@ func TestChunk13_HandleConfigState_GitFails(t *testing.T) {
 
 func TestChunk13_T43_EmptyRepoDetection(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		prSplit._gitExec = function(dir, args) {
@@ -1239,7 +1158,7 @@ func TestChunk13_T43_EmptyRepoDetection(t *testing.T) {
 
 func TestChunk13_T43_DetachedHEAD(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		prSplit._gitExec = function(dir, args) {
@@ -1275,7 +1194,7 @@ func TestChunk13_T43_DetachedHEAD(t *testing.T) {
 
 func TestChunk13_T43_TargetBranchNotExist(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		prSplit._gitExec = function(dir, args) {
@@ -1309,7 +1228,7 @@ func TestChunk13_T43_TargetBranchNotExist(t *testing.T) {
 
 func TestChunk13_T43_TargetBranchExistsRemote(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		prSplit._gitExec = function(dir, args) {
@@ -1351,7 +1270,7 @@ func TestChunk13_T43_TargetBranchExistsRemote(t *testing.T) {
 // to async pipeline).
 func TestChunk13_HandleConfigState_BaselinePass(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var verifyCalled = false;
@@ -1387,7 +1306,7 @@ func TestChunk13_HandleConfigState_BaselinePass(t *testing.T) {
 // baselineVerifyConfig. T090: verify is deferred, so no print output expected.
 func TestChunk13_HandleConfigState_BaselineTimeoutDefaultAndProgress(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var verifyCalled = false;
@@ -1420,7 +1339,7 @@ func TestChunk13_HandleConfigState_BaselineTimeoutDefaultAndProgress(t *testing.
 // verifyTimeoutMs in config overrides the AUTOMATED_DEFAULTS value.
 func TestChunk13_HandleConfigState_BaselineTimeoutOverride(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		prSplit._gitExec = function(dir, args) {
@@ -1451,7 +1370,7 @@ func TestChunk13_HandleConfigState_BaselineTimeoutOverride(t *testing.T) {
 // baselineVerifyConfig (T090: actual verification is deferred to async).
 func TestChunk13_HandleConfigState_BaselineVerifyDeferred(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var verifyCalled = false;
@@ -1488,7 +1407,7 @@ func TestChunk13_HandleConfigState_BaselineVerifyDeferred(t *testing.T) {
 // a valid checkpoint returns resume=true.
 func TestChunk13_HandleConfigState_ResumeWithCheckpoint(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		prSplit._gitExec = function(dir, args) {
@@ -1517,7 +1436,7 @@ func TestChunk13_HandleConfigState_ResumeWithCheckpoint(t *testing.T) {
 // a valid checkpoint falls through to normal config flow.
 func TestChunk13_HandleConfigState_ResumeNoCheckpoint(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		prSplit._gitExec = function(dir, args) {
@@ -1551,7 +1470,7 @@ func TestChunk13_HandleConfigState_ResumeNoCheckpoint(t *testing.T) {
 // (T090: async path will skip actual verification based on this).
 func TestChunk13_HandleConfigState_SkipsBaselineForTrue(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var verifyCalled = false;
@@ -1588,7 +1507,7 @@ func TestChunk13_HandleConfigState_SkipsBaselineForTrue(t *testing.T) {
 // transitions from BASELINE_FAIL to PLAN_GENERATION.
 func TestChunk13_HandleBaselineFailState_Override(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -1612,7 +1531,7 @@ func TestChunk13_HandleBaselineFailState_Override(t *testing.T) {
 // transitions from BASELINE_FAIL to CANCELLED.
 func TestChunk13_HandleBaselineFailState_Abort(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -1636,7 +1555,7 @@ func TestChunk13_HandleBaselineFailState_Abort(t *testing.T) {
 // (undefined or empty) defaults to abort.
 func TestChunk13_HandleBaselineFailState_DefaultAbort(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -1660,7 +1579,7 @@ func TestChunk13_HandleBaselineFailState_DefaultAbort(t *testing.T) {
 // handleBaselineFailState when wizard is NOT in BASELINE_FAIL returns error.
 func TestChunk13_HandleBaselineFailState_WrongState(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -1684,7 +1603,7 @@ func TestChunk13_HandleBaselineFailState_WrongState(t *testing.T) {
 // wizard.data is preserved through override transition.
 func TestChunk13_HandleBaselineFailState_OverridePreservesData(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -1715,7 +1634,7 @@ func TestChunk13_HandleBaselineFailState_OverridePreservesData(t *testing.T) {
 // TestChunk13_HandlePlanReviewState_Approve tests approve → BRANCH_BUILDING.
 func TestChunk13_HandlePlanReviewState_Approve(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -1739,7 +1658,7 @@ func TestChunk13_HandlePlanReviewState_Approve(t *testing.T) {
 // TestChunk13_HandlePlanReviewState_Edit tests edit → PLAN_EDITOR.
 func TestChunk13_HandlePlanReviewState_Edit(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -1763,7 +1682,7 @@ func TestChunk13_HandlePlanReviewState_Edit(t *testing.T) {
 // TestChunk13_HandlePlanReviewState_Regenerate tests regenerate → PLAN_GENERATION with feedback.
 func TestChunk13_HandlePlanReviewState_Regenerate(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -1792,7 +1711,7 @@ func TestChunk13_HandlePlanReviewState_Regenerate(t *testing.T) {
 // TestChunk13_HandlePlanReviewState_Cancel tests cancel → CANCELLED.
 func TestChunk13_HandlePlanReviewState_Cancel(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -1816,7 +1735,7 @@ func TestChunk13_HandlePlanReviewState_Cancel(t *testing.T) {
 // TestChunk13_HandlePlanReviewState_DefaultCancel tests that no choice defaults to cancel.
 func TestChunk13_HandlePlanReviewState_DefaultCancel(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -1840,7 +1759,7 @@ func TestChunk13_HandlePlanReviewState_DefaultCancel(t *testing.T) {
 // TestChunk13_HandlePlanReviewState_WrongState tests calling from wrong state.
 func TestChunk13_HandlePlanReviewState_WrongState(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -1866,7 +1785,7 @@ func TestChunk13_HandlePlanReviewState_WrongState(t *testing.T) {
 // TestChunk13_HandlePlanEditorState_Done tests done → PLAN_REVIEW.
 func TestChunk13_HandlePlanEditorState_Done(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -1891,7 +1810,7 @@ func TestChunk13_HandlePlanEditorState_Done(t *testing.T) {
 // TestChunk13_HandlePlanEditorState_DoneWithPlan tests done with valid plan → PLAN_REVIEW.
 func TestChunk13_HandlePlanEditorState_DoneWithPlan(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -1931,7 +1850,7 @@ func TestChunk13_HandlePlanEditorState_DoneWithPlan(t *testing.T) {
 // TestChunk13_HandlePlanEditorState_ValidationFailure tests done with invalid plan.
 func TestChunk13_HandlePlanEditorState_ValidationFailure(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -1969,7 +1888,7 @@ func TestChunk13_HandlePlanEditorState_ValidationFailure(t *testing.T) {
 // TestChunk13_HandlePlanEditorState_WrongState tests calling from wrong state.
 func TestChunk13_HandlePlanEditorState_WrongState(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -1993,7 +1912,7 @@ func TestChunk13_HandlePlanEditorState_WrongState(t *testing.T) {
 // TestChunk13_HandlePlanEditorState_EditReviewRoundTrip tests edit→done→review cycle.
 func TestChunk13_HandlePlanEditorState_EditReviewRoundTrip(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -2032,7 +1951,7 @@ func TestChunk13_HandlePlanEditorState_EditReviewRoundTrip(t *testing.T) {
 // TestChunk13_HandleBranchBuildingState_AllPass tests all branches pass → EQUIV_CHECK.
 func TestChunk13_HandleBranchBuildingState_AllPass(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -2086,7 +2005,7 @@ func TestChunk13_HandleBranchBuildingState_AllPass(t *testing.T) {
 // TestChunk13_HandleBranchBuildingState_OneFail tests one branch fails → ERROR_RESOLUTION.
 func TestChunk13_HandleBranchBuildingState_OneFail(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -2139,7 +2058,7 @@ func TestChunk13_HandleBranchBuildingState_OneFail(t *testing.T) {
 // TestChunk13_HandleBranchBuildingState_EmptyPlan tests empty plan → ERROR.
 func TestChunk13_HandleBranchBuildingState_EmptyPlan(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -2164,7 +2083,7 @@ func TestChunk13_HandleBranchBuildingState_EmptyPlan(t *testing.T) {
 // TestChunk13_HandleBranchBuildingState_Cancel tests cancellation mid-build.
 func TestChunk13_HandleBranchBuildingState_Cancel(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -2204,7 +2123,7 @@ func TestChunk13_HandleBranchBuildingState_Cancel(t *testing.T) {
 // TestChunk13_HandleBranchBuildingState_WrongState tests wrong state guard.
 func TestChunk13_HandleBranchBuildingState_WrongState(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -2230,7 +2149,7 @@ func TestChunk13_HandleBranchBuildingState_WrongState(t *testing.T) {
 // TestChunk13_HandleErrorResolutionState_AutoResolve tests auto-resolve → BRANCH_BUILDING.
 func TestChunk13_HandleErrorResolutionState_AutoResolve(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -2256,7 +2175,7 @@ func TestChunk13_HandleErrorResolutionState_AutoResolve(t *testing.T) {
 // TestChunk13_HandleErrorResolutionState_Skip tests skip → EQUIV_CHECK.
 func TestChunk13_HandleErrorResolutionState_Skip(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -2282,7 +2201,7 @@ func TestChunk13_HandleErrorResolutionState_Skip(t *testing.T) {
 // TestChunk13_HandleErrorResolutionState_Retry tests retry → PLAN_GENERATION.
 func TestChunk13_HandleErrorResolutionState_Retry(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -2308,7 +2227,7 @@ func TestChunk13_HandleErrorResolutionState_Retry(t *testing.T) {
 // TestChunk13_HandleErrorResolutionState_Abort tests abort → CANCELLED.
 func TestChunk13_HandleErrorResolutionState_Abort(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -2334,7 +2253,7 @@ func TestChunk13_HandleErrorResolutionState_Abort(t *testing.T) {
 // TestChunk13_HandleErrorResolutionState_WrongState tests wrong state guard.
 func TestChunk13_HandleErrorResolutionState_WrongState(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -2360,7 +2279,7 @@ func TestChunk13_HandleErrorResolutionState_WrongState(t *testing.T) {
 // TestChunk13_HandleEquivCheckState_Pass tests equivalence pass → FINALIZATION.
 func TestChunk13_HandleEquivCheckState_Pass(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -2395,7 +2314,7 @@ func TestChunk13_HandleEquivCheckState_Pass(t *testing.T) {
 // TestChunk13_HandleEquivCheckState_Mismatch tests tree mismatch still → FINALIZATION (warning).
 func TestChunk13_HandleEquivCheckState_Mismatch(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -2430,7 +2349,7 @@ func TestChunk13_HandleEquivCheckState_Mismatch(t *testing.T) {
 // TestChunk13_HandleEquivCheckState_NoPlan tests no plan → ERROR.
 func TestChunk13_HandleEquivCheckState_NoPlan(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -2460,7 +2379,7 @@ func TestChunk13_HandleEquivCheckState_NoPlan(t *testing.T) {
 // TestChunk13_HandleFinalizationState_Done tests done → DONE.
 func TestChunk13_HandleFinalizationState_Done(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -2487,7 +2406,7 @@ func TestChunk13_HandleFinalizationState_Done(t *testing.T) {
 // TestChunk13_HandleFinalizationState_CreatePRs tests create-prs → FINALIZATION (self).
 func TestChunk13_HandleFinalizationState_CreatePRs(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -2519,7 +2438,7 @@ func TestChunk13_HandleFinalizationState_CreatePRs(t *testing.T) {
 // TestChunk13_HandleFinalizationState_Report tests report stays in FINALIZATION.
 func TestChunk13_HandleFinalizationState_Report(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -2546,7 +2465,7 @@ func TestChunk13_HandleFinalizationState_Report(t *testing.T) {
 // TestChunk13_HandleFinalizationState_DefaultDone tests default is done.
 func TestChunk13_HandleFinalizationState_DefaultDone(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -2577,7 +2496,7 @@ func TestChunk13_HandleFinalizationState_DefaultDone(t *testing.T) {
 // TestChunk13_Wizard_HappyPath_E2E tests full CONFIG→...→DONE flow.
 func TestChunk13_Wizard_HappyPath_E2E(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		// --- Setup mocks ---
@@ -2656,7 +2575,7 @@ func TestChunk13_Wizard_HappyPath_E2E(t *testing.T) {
 // TestChunk13_Wizard_PlanRejection_E2E tests reject plan → regenerate → approve flow.
 func TestChunk13_Wizard_PlanRejection_E2E(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var wizard = new prSplit.WizardState();
@@ -2694,7 +2613,7 @@ func TestChunk13_Wizard_PlanRejection_E2E(t *testing.T) {
 // T090: handleConfigState returns baselineVerifyConfig; caller invokes verify.
 func TestChunk13_Wizard_BaselineFailRecovery_E2E(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		prSplit._gitExec = function(dir, args) {
@@ -2747,7 +2666,7 @@ func TestChunk13_Wizard_BaselineFailRecovery_E2E(t *testing.T) {
 // TestChunk13_Wizard_BranchFailRecovery_E2E tests branch fail → auto-resolve → complete.
 func TestChunk13_Wizard_BranchFailRecovery_E2E(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var callCount = 0;
@@ -2821,7 +2740,7 @@ func TestChunk13_Wizard_BranchFailRecovery_E2E(t *testing.T) {
 // TestChunk13_HUD_ExportedFunctions verifies that HUD functions are
 // exported on prSplit after chunk 13 loads.
 func TestChunk13_HUD_ExportedFunctions(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`JSON.stringify({
 		hudEnabled: typeof globalThis.prSplit._hudEnabled,
@@ -2843,7 +2762,7 @@ func TestChunk13_HUD_ExportedFunctions(t *testing.T) {
 // TestChunk13_HUD_ActivityInfoWithoutMux verifies that _getActivityInfo
 // returns 'unknown' when tuiMux is not available.
 func TestChunk13_HUD_ActivityInfoWithoutMux(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit._getActivityInfo())`)
 	if err != nil {
@@ -2867,7 +2786,7 @@ func TestChunk13_HUD_ActivityInfoWithoutMux(t *testing.T) {
 // TestChunk13_HUD_LastOutputLinesWithoutMux verifies that _getLastOutputLines
 // returns an empty array when tuiMux is not available.
 func TestChunk13_HUD_LastOutputLinesWithoutMux(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit._getLastOutputLines(5))`)
 	if err != nil {
@@ -2880,7 +2799,7 @@ func TestChunk13_HUD_LastOutputLinesWithoutMux(t *testing.T) {
 
 // TestChunk13_HUD_ToggleState verifies that _hudEnabled toggles correctly.
 func TestChunk13_HUD_ToggleState(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	// Initially disabled.
 	raw, err := evalJS(`globalThis.prSplit._hudEnabled()`)
@@ -2895,7 +2814,7 @@ func TestChunk13_HUD_ToggleState(t *testing.T) {
 // TestChunk13_HUD_RenderPanel verifies that _renderHudPanel returns a
 // non-empty string containing expected markers.
 func TestChunk13_HUD_RenderPanel(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._renderHudPanel()`)
 	if err != nil {
@@ -2915,7 +2834,7 @@ func TestChunk13_HUD_RenderPanel(t *testing.T) {
 
 // TestChunk13_HUD_StatusLineFormat verifies the compact status line format.
 func TestChunk13_HUD_StatusLineFormat(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._renderHudStatusLine()`)
 	if err != nil {
@@ -2931,7 +2850,7 @@ func TestChunk13_HUD_StatusLineFormat(t *testing.T) {
 // TestChunk13_HUD_CommandRegistered verifies that 'hud' command exists
 // in buildCommands output.
 func TestChunk13_HUD_CommandRegistered(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`
 		var cmds = globalThis.prSplit._buildCommands({});
@@ -2971,7 +2890,7 @@ func TestChunk13_HUD_CommandRegistered(t *testing.T) {
 
 // T030: COLORS and styles constants
 func TestChunk13_WizardColors_AllKeysPresent(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`JSON.stringify(Object.keys(globalThis.prSplit._wizardColors).sort())`)
 	if err != nil {
@@ -2998,7 +2917,7 @@ func TestChunk13_WizardColors_AllKeysPresent(t *testing.T) {
 }
 
 func TestChunk13_WizardColors_ValidHexStrings(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit._wizardColors)`)
 	if err != nil {
@@ -3026,7 +2945,7 @@ func TestChunk13_WizardColors_ValidHexStrings(t *testing.T) {
 }
 
 func TestChunk13_WizardStyles_AllStylesCallable(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	styleNames := []string{
 		"titleBar", "stepIndicator", "activeCard", "inactiveCard",
@@ -3058,7 +2977,7 @@ func TestChunk13_WizardStyles_AllStylesCallable(t *testing.T) {
 }
 
 func TestChunk13_WizardStyles_RenderProducesOutput(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._wizardStyles.primaryButton().render('Test')`)
 	if err != nil {
@@ -3075,7 +2994,7 @@ func TestChunk13_WizardStyles_RenderProducesOutput(t *testing.T) {
 
 // T031: Global chrome renderers
 func TestChunk13_RenderTitleBar_ContainsWizardName(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	// Test at different wizard states.
 	states := map[string]string{
@@ -3105,7 +3024,7 @@ func TestChunk13_RenderTitleBar_ContainsWizardName(t *testing.T) {
 }
 
 func TestChunk13_RenderNavBar_BackButtonPresence(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	// CONFIG should NOT have Back.
 	raw, err := evalJS(`globalThis.prSplit._renderNavBar({
@@ -3131,7 +3050,7 @@ func TestChunk13_RenderNavBar_BackButtonPresence(t *testing.T) {
 }
 
 func TestChunk13_RenderNavBar_NextButtonLabels(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	cases := map[string]string{
 		"CONFIG":       "Start Analysis",
@@ -3153,7 +3072,7 @@ func TestChunk13_RenderNavBar_NextButtonLabels(t *testing.T) {
 }
 
 func TestChunk13_RenderStatusBar_ContainsHints(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._renderStatusBar({width: 80})`)
 	if err != nil {
@@ -3169,7 +3088,7 @@ func TestChunk13_RenderStatusBar_ContainsHints(t *testing.T) {
 }
 
 func TestChunk13_RenderStepDots(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._renderStepDots({wizardState: 'PLAN_REVIEW'})`)
 	if err != nil {
@@ -3184,7 +3103,7 @@ func TestChunk13_RenderStepDots(t *testing.T) {
 
 // T032: Screen view functions
 func TestChunk13_ViewConfigScreen_RendersFields(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._viewConfigScreen({
 		wizardState: 'CONFIG', width: 80, showAdvanced: false
@@ -3201,7 +3120,7 @@ func TestChunk13_ViewConfigScreen_RendersFields(t *testing.T) {
 }
 
 func TestChunk13_ViewConfigScreen_AdvancedToggle(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	// Collapsed: no "Max files".
 	raw, err := evalJS(`globalThis.prSplit._viewConfigScreen({
@@ -3227,7 +3146,7 @@ func TestChunk13_ViewConfigScreen_AdvancedToggle(t *testing.T) {
 }
 
 func TestChunk13_ViewAnalysisScreen_ShowsProgress(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._viewAnalysisScreen({
 		wizardState: 'PLAN_GENERATION', width: 80,
@@ -3250,7 +3169,7 @@ func TestChunk13_ViewAnalysisScreen_ShowsProgress(t *testing.T) {
 }
 
 func TestChunk13_ViewPlanReviewScreen_NoPlan(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	// Clear plan cache.
 	if _, err := evalJS(`globalThis.prSplit._state.planCache = null`); err != nil {
@@ -3269,7 +3188,7 @@ func TestChunk13_ViewPlanReviewScreen_NoPlan(t *testing.T) {
 }
 
 func TestChunk13_ViewExecutionScreen_ShowsProgress(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	// Set up a mock plan.
 	if _, err := evalJS(`
@@ -3303,7 +3222,7 @@ func TestChunk13_ViewExecutionScreen_ShowsProgress(t *testing.T) {
 }
 
 func TestChunk13_ViewVerificationScreen_Pass(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._viewVerificationScreen({
 		wizardState: 'EQUIV_CHECK', width: 80,
@@ -3319,7 +3238,7 @@ func TestChunk13_ViewVerificationScreen_Pass(t *testing.T) {
 }
 
 func TestChunk13_ViewVerificationScreen_Fail(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._viewVerificationScreen({
 		wizardState: 'EQUIV_CHECK', width: 80,
@@ -3336,7 +3255,7 @@ func TestChunk13_ViewVerificationScreen_Fail(t *testing.T) {
 }
 
 func TestChunk13_ViewFinalizationScreen_ShowsSummary(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	if _, err := evalJS(`
 		globalThis.prSplit._state.planCache = {
@@ -3368,7 +3287,7 @@ func TestChunk13_ViewFinalizationScreen_ShowsSummary(t *testing.T) {
 
 // T033: Overlay renderers
 func TestChunk13_ViewHelpOverlay_ContainsShortcuts(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._viewHelpOverlay({width: 80})`)
 	if err != nil {
@@ -3383,7 +3302,7 @@ func TestChunk13_ViewHelpOverlay_ContainsShortcuts(t *testing.T) {
 }
 
 func TestChunk13_ViewConfirmCancelOverlay_ContainsPrompt(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._viewConfirmCancelOverlay({width: 80})`)
 	if err != nil {
@@ -3396,7 +3315,7 @@ func TestChunk13_ViewConfirmCancelOverlay_ContainsPrompt(t *testing.T) {
 }
 
 func TestChunk13_ViewErrorResolutionScreen_ShowsOptions(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._viewErrorResolutionScreen({
 		wizardState: 'ERROR_RESOLUTION', width: 80,
@@ -3415,7 +3334,7 @@ func TestChunk13_ViewErrorResolutionScreen_ShowsOptions(t *testing.T) {
 
 // T034-T035: State machine → screen mapping & exports
 func TestChunk13_WizardExports_StartWizard(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`typeof globalThis.prSplit.startWizard`)
 	if err != nil {
@@ -3427,7 +3346,7 @@ func TestChunk13_WizardExports_StartWizard(t *testing.T) {
 }
 
 func TestChunk13_WizardExports_WizardModel(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`typeof globalThis.prSplit._wizardModel`)
 	if err != nil {
@@ -3439,7 +3358,7 @@ func TestChunk13_WizardExports_WizardModel(t *testing.T) {
 }
 
 func TestChunk13_WizardExports_CreateWizardModel(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`typeof globalThis.prSplit._createWizardModel`)
 	if err != nil {
@@ -3451,7 +3370,7 @@ func TestChunk13_WizardExports_CreateWizardModel(t *testing.T) {
 }
 
 func TestChunk13_WizardExports_ScreenRenderers(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	renderers := []string{
 		"_viewConfigScreen", "_viewAnalysisScreen", "_viewPlanReviewScreen",
@@ -3472,7 +3391,7 @@ func TestChunk13_WizardExports_ScreenRenderers(t *testing.T) {
 }
 
 func TestChunk13_WizardExports_ChromeRenderers(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	renderers := []string{
 		"_renderTitleBar", "_renderNavBar", "_renderStatusBar",
@@ -3491,7 +3410,7 @@ func TestChunk13_WizardExports_ChromeRenderers(t *testing.T) {
 }
 
 func TestChunk13_ProgressBar_Rendering(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	// 0% progress
 	raw, err := evalJS(`globalThis.prSplit._renderProgressBar(0, 40)`)
@@ -3514,7 +3433,7 @@ func TestChunk13_ProgressBar_Rendering(t *testing.T) {
 
 // T036: Responsive layout test (compact behavior)
 func TestChunk13_RenderTitleBar_NarrowWidth(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._renderTitleBar({
 		wizardState: 'CONFIG', startTime: Date.now(), width: 40
@@ -3530,7 +3449,7 @@ func TestChunk13_RenderTitleBar_NarrowWidth(t *testing.T) {
 }
 
 func TestChunk13_RenderNavBar_NarrowWidth(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`globalThis.prSplit._renderNavBar({
 		wizardState: 'CONFIG', width: 40, isProcessing: false
@@ -3545,7 +3464,7 @@ func TestChunk13_RenderNavBar_NarrowWidth(t *testing.T) {
 
 // T037: Integration test — model lifecycle verification
 func TestChunk13_WizardModel_InitialState_IsIDLE(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	// The model's init function should set wizardState to IDLE.
 	// After creating the model, the wizard should be in IDLE with needsInitClear=true.
@@ -3561,7 +3480,7 @@ func TestChunk13_WizardModel_InitialState_IsIDLE(t *testing.T) {
 }
 
 func TestChunk13_WizardModel_ConfigViewComposition(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	// Test the full view composition: titleBar + screenContent + navBar + statusBar.
 	// This simulates what the BubbleTea view() does for the CONFIG state.
@@ -3609,7 +3528,7 @@ func TestChunk13_WizardModel_ConfigViewComposition(t *testing.T) {
 }
 
 func TestChunk13_WizardModel_HelpOverlayComposition(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var s = {
@@ -3657,7 +3576,7 @@ func TestChunk13_WizardModel_HelpOverlayComposition(t *testing.T) {
 // TestChunk13_WizardUpdate_ExportsExist verifies the lifecycle function
 // exports that T003+ tests depend on are present.
 func TestChunk13_WizardUpdate_ExportsExist(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	for _, name := range []string{"_wizardInit", "_wizardUpdate", "_wizardView"} {
 		raw, err := evalJS(`typeof globalThis.prSplit.` + name)
@@ -3672,7 +3591,7 @@ func TestChunk13_WizardUpdate_ExportsExist(t *testing.T) {
 
 // TestChunk13_WizardUpdate_HelpToggle verifies '?' and 'f1' toggle showHelp.
 func TestChunk13_WizardUpdate_HelpToggle(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	// Initialize state, set to CONFIG (simulating post-WindowSize).
 	raw, err := evalJS(`(function() {
@@ -3705,7 +3624,7 @@ func TestChunk13_WizardUpdate_HelpToggle(t *testing.T) {
 
 // TestChunk13_WizardUpdate_CtrlC verifies Ctrl+C shows confirm cancel dialog.
 func TestChunk13_WizardUpdate_CtrlC(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var s = globalThis.prSplit._wizardInit();
@@ -3728,7 +3647,7 @@ func TestChunk13_WizardUpdate_CtrlC(t *testing.T) {
 // TestChunk13_WizardUpdate_ConfirmCancel_Yes verifies 'y' in confirm dialog
 // sets state to CANCELLED.
 func TestChunk13_WizardUpdate_ConfirmCancel_Yes(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var s = globalThis.prSplit._wizardInit();
@@ -3754,7 +3673,7 @@ func TestChunk13_WizardUpdate_ConfirmCancel_Yes(t *testing.T) {
 // TestChunk13_WizardUpdate_ConfirmCancel_No verifies 'n' dismisses the dialog
 // without changing state.
 func TestChunk13_WizardUpdate_ConfirmCancel_No(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var s = globalThis.prSplit._wizardInit();
@@ -3779,7 +3698,7 @@ func TestChunk13_WizardUpdate_ConfirmCancel_No(t *testing.T) {
 // TestChunk13_WizardUpdate_ConfirmCancel_Esc verifies 'esc' dismisses
 // the confirm dialog (same as 'n').
 func TestChunk13_WizardUpdate_ConfirmCancel_Esc(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var s = globalThis.prSplit._wizardInit();
@@ -3804,7 +3723,7 @@ func TestChunk13_WizardUpdate_ConfirmCancel_Esc(t *testing.T) {
 // TestChunk13_WizardUpdate_ConfirmCancel_Enter verifies 'enter' in confirm
 // dialog confirms the cancel (same as 'y').
 func TestChunk13_WizardUpdate_ConfirmCancel_Enter(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var s = globalThis.prSplit._wizardInit();
@@ -3828,7 +3747,7 @@ func TestChunk13_WizardUpdate_ConfirmCancel_Enter(t *testing.T) {
 
 // TestChunk13_ConfirmCancel_TabFocusCycling tests T031: Tab cycles between Yes/No buttons.
 func TestChunk13_ConfirmCancel_TabFocusCycling(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var results = [];
@@ -3887,7 +3806,7 @@ func TestChunk13_ConfirmCancel_TabFocusCycling(t *testing.T) {
 // so we verify the button text and overlay structure rather than literal zone IDs.
 // Mouse clicks via zone.inBounds are not testable outside a real terminal.
 func TestChunk13_ConfirmCancel_ViewButtonText(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var results = [];
@@ -3917,7 +3836,7 @@ func TestChunk13_ConfirmCancel_ViewButtonText(t *testing.T) {
 
 // TestChunk13_ConfirmCancel_ContextualText tests T031: overlay shows verify-specific text.
 func TestChunk13_ConfirmCancel_ContextualText(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var results = [];
@@ -3952,7 +3871,7 @@ func TestChunk13_ConfirmCancel_ContextualText(t *testing.T) {
 
 // TestChunk13_ConfirmCancel_FocusResetOnDismiss tests T031: confirmCancelFocus resets when overlay closes.
 func TestChunk13_ConfirmCancel_FocusResetOnDismiss(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var s = globalThis.prSplit._wizardInit();
@@ -3981,7 +3900,7 @@ func TestChunk13_ConfirmCancel_FocusResetOnDismiss(t *testing.T) {
 // strings may be identical (only the background color differs), so we verify the
 // style infrastructure rather than comparing raw output.
 func TestChunk13_ConfirmCancel_ViewFocusStyling(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var results = [];
@@ -4022,7 +3941,7 @@ func TestChunk13_ConfirmCancel_ViewFocusStyling(t *testing.T) {
 // TestChunk13_WizardUpdate_WindowSize verifies WindowSize msg sets dimensions
 // and transitions to CONFIG on first render.
 func TestChunk13_WizardUpdate_WindowSize(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var s = globalThis.prSplit._wizardInit();
@@ -4055,7 +3974,7 @@ func TestChunk13_WizardUpdate_WindowSize(t *testing.T) {
 // TestChunk13_WizardUpdate_NavigationKeys verifies j/k/up/down/tab/shift+tab
 // in PLAN_REVIEW with splits properly modify selectedSplitIdx.
 func TestChunk13_WizardUpdate_NavigationKeys(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var s = globalThis.prSplit._wizardInit();
@@ -4119,7 +4038,7 @@ func TestChunk13_WizardUpdate_NavigationKeys(t *testing.T) {
 // TestChunk13_WizardUpdate_EscGoesBack verifies Esc in PLAN_REVIEW goes
 // back to CONFIG.
 func TestChunk13_WizardUpdate_EscGoesBack(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var s = globalThis.prSplit._wizardInit();
@@ -4145,7 +4064,7 @@ func TestChunk13_WizardUpdate_EscGoesBack(t *testing.T) {
 // TestChunk13_WizardUpdate_PlanEditorShortcut verifies 'e' in PLAN_REVIEW
 // enters the plan editor.
 func TestChunk13_WizardUpdate_PlanEditorShortcut(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var s = globalThis.prSplit._wizardInit();
@@ -4172,7 +4091,7 @@ func TestChunk13_WizardUpdate_PlanEditorShortcut(t *testing.T) {
 // test for the msg.string bug. It verifies that using msg.string (old broken
 // property) does NOT trigger any handler, while msg.key (correct property) does.
 func TestChunk13_WizardUpdate_MsgStringUndefined(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var s = globalThis.prSplit._wizardInit();
@@ -4205,7 +4124,7 @@ func TestChunk13_WizardUpdate_MsgStringUndefined(t *testing.T) {
 // that every documented key binding produces a state change or returns a
 // non-nil command (i.e., is not a no-op).
 func TestChunk13_WizardUpdate_AllKeyBindingsRespond(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -4270,7 +4189,7 @@ func TestChunk13_WizardUpdate_AllKeyBindingsRespond(t *testing.T) {
 // TestChunk13_WizardUpdate_MouseWheelScroll verifies mouse wheel events
 // work through the update function.
 func TestChunk13_WizardUpdate_MouseWheelScroll(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var s = globalThis.prSplit._wizardInit();
@@ -4322,7 +4241,7 @@ func TestChunk13_WizardUpdate_MouseWheelScroll(t *testing.T) {
 // produces screen-specific content markers in the raw screen output.
 // Uses _viewForState (unclipped) to avoid viewport cropping at small heights.
 func TestChunk13_WizardView_StateScreenMapping(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	// Helper: initialise state, transition wizard, render via _viewForState (no viewport).
 	setupJS := `
@@ -4504,7 +4423,7 @@ func TestChunk13_WizardView_StateScreenMapping(t *testing.T) {
 // TestChunk13_WizardView_HelpOverlayInView verifies that when showHelp=true,
 // the view output contains help overlay content.
 func TestChunk13_WizardView_HelpOverlayInView(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var s = globalThis.prSplit._wizardInit();
@@ -4532,7 +4451,7 @@ func TestChunk13_WizardView_HelpOverlayInView(t *testing.T) {
 // TestChunk13_WizardView_ConfirmCancelOverlayInView verifies that when
 // showConfirmCancel=true, the view output contains the cancel prompt.
 func TestChunk13_WizardView_ConfirmCancelOverlayInView(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var s = globalThis.prSplit._wizardInit();
@@ -4557,7 +4476,7 @@ func TestChunk13_WizardView_ConfirmCancelOverlayInView(t *testing.T) {
 // TestChunk13_WizardView_ContainsChromeElements verifies that a full view
 // includes title bar, navigation bar, and status bar.
 func TestChunk13_WizardView_ContainsChromeElements(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var s = globalThis.prSplit._wizardInit();
@@ -4592,7 +4511,7 @@ func TestChunk13_WizardView_ContainsChromeElements(t *testing.T) {
 // than the chrome (title bar + dividers + nav bar + status bar). The viewport
 // height must never drop below 3 lines.
 func TestChunk13_WizardView_TinyTerminal(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var s = globalThis.prSplit._wizardInit();
@@ -4630,7 +4549,7 @@ func TestChunk13_WizardView_TinyTerminal(t *testing.T) {
 // TestChunk13_WizardView_NormalTerminal verifies that at normal terminal size
 // the viewport height is h minus actual chrome height (not clamped to 3).
 func TestChunk13_WizardView_NormalTerminal(t *testing.T) {
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var s = globalThis.prSplit._wizardInit();
@@ -4667,7 +4586,7 @@ func TestChunk13_WizardView_NormalTerminal(t *testing.T) {
 // ERROR_RESOLUTION transitions from PLAN_GENERATION and EQUIV_CHECK are valid.
 func TestChunk13_WizardState_CrashTransitions(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -4743,7 +4662,7 @@ func TestChunk13_WizardState_CrashTransitions(t *testing.T) {
 // view rendering in the error resolution screen.
 func TestChunk13_ViewErrorResolutionScreen_CrashMode(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngine(t)
+	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var s = {

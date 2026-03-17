@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 func TestAutomatedDefaults_OverrideChain(t *testing.T) {
@@ -14,7 +16,7 @@ func TestAutomatedDefaults_OverrideChain(t *testing.T) {
 
 	t.Run("defaults_when_no_config", func(t *testing.T) {
 		t.Parallel()
-		_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+		evalJS := prsplittest.NewFullEngine(t, nil)
 
 		val, err := evalJS(`JSON.stringify(AUTOMATED_DEFAULTS)`)
 		if err != nil {
@@ -55,7 +57,7 @@ func TestAutomatedDefaults_OverrideChain(t *testing.T) {
 
 	t.Run("config_overrides_classify_only", func(t *testing.T) {
 		t.Parallel()
-		_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+		evalJS := prsplittest.NewFullEngine(t, nil)
 
 		// Simulate what automatedSplit does: build timeouts from config + defaults.
 		val, err := evalJS(`(function() {
@@ -97,7 +99,7 @@ func TestAutomatedDefaults_OverrideChain(t *testing.T) {
 func TestVerifySplits_EmptyPlan(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	t.Run("null_plan", func(t *testing.T) {
 		val, err := evalJS(`JSON.stringify(verifySplits(null, {}))`)
@@ -175,7 +177,7 @@ func TestVerifySplits_EmptyPlan(t *testing.T) {
 func TestSanitizeBranchName_EdgeCases(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	cases := []struct {
 		name   string
@@ -213,7 +215,7 @@ func TestSanitizeBranchName_EdgeCases(t *testing.T) {
 func TestShellQuote_EdgeCases(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	cases := []struct {
 		name   string
@@ -254,7 +256,7 @@ func TestShellQuote_EdgeCases(t *testing.T) {
 func TestClassificationToGroups_EdgeCases(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	t.Run("empty_classification", func(t *testing.T) {
 		val, err := evalJS(`JSON.stringify(classificationToGroups({}))`)
@@ -669,7 +671,7 @@ func TestAutoSplit_BinaryFiles(t *testing.T) {
 func TestGrouping_TenThousandFiles(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Generate 10,000 file paths across 100 top-level directories (100 files each).
 	val, err := evalJS(`(function() {
@@ -726,7 +728,7 @@ func TestGrouping_TenThousandFiles(t *testing.T) {
 func TestGrouping_TenThousandFiles_ClassificationToGroups(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`(function() {
 		var classification = {};
@@ -784,7 +786,7 @@ func TestGrouping_TenThousandFiles_ClassificationToGroups(t *testing.T) {
 func TestAnalyzeDiff_SpecialCharPaths(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Install the shared git mock infrastructure.
 	if _, err := evalJS(gitMockSetupJS()); err != nil {
@@ -1029,7 +1031,7 @@ func TestAutoSplit_OnlyDeletions(t *testing.T) {
 
 func TestTUI_ExtremeTerminalSizes(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	// Set up plan cache so PLAN_REVIEW renders content.
 	if _, err := evalJS(`setupPlanCache()`); err != nil {
@@ -1112,7 +1114,7 @@ func TestTUI_ExtremeTerminalSizes(t *testing.T) {
 func TestValidation_EdgeCases(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	t.Run("split_with_no_files_rejected", func(t *testing.T) {
 		val, err := evalJS(`(function() {
@@ -1236,7 +1238,7 @@ func TestValidation_EdgeCases(t *testing.T) {
 
 func TestTUI_LongNamesRendering(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	// Set up a plan with extremely long names.
 	if _, err := evalJS(`(function() {

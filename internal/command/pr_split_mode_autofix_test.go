@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 func TestPrSplitCommand_SetModeCommand(t *testing.T) {
@@ -221,7 +223,7 @@ func TestPrSplitCommand_Phase4ScriptContent(t *testing.T) {
 func TestPrSplitCommand_DefaultModeIsHeuristic(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Verify runtime.mode defaults to 'heuristic' (NOT 'auto').
 	val, err := evalJS(`(function() {
@@ -246,7 +248,7 @@ func TestPrSplitCommand_DefaultModeIsHeuristic(t *testing.T) {
 func TestPrSplitCommand_AutoFixStrategiesExist(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Verify all 7 strategies are present (2 Phase 3 + 4 Phase 5 + claude-fix).
 	val, err := evalJS(`(function() {
@@ -269,7 +271,7 @@ func TestPrSplitCommand_AutoFixStrategiesExist(t *testing.T) {
 func TestPrSplitCommand_AutoFixStrategyNames(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`JSON.stringify(
 		globalThis.prSplit.AUTO_FIX_STRATEGIES.map(function(s) { return s.name; })
@@ -304,7 +306,7 @@ func TestPrSplitCommand_AutoFixStrategyNames(t *testing.T) {
 func TestPrSplitCommand_StrategyDetectSignatures(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Verify all strategies have detect and fix functions.
 	val, err := evalJS(`(function() {
@@ -327,7 +329,7 @@ func TestPrSplitCommand_StrategyDetectSignatures(t *testing.T) {
 func TestPrSplitCommand_GoMissingImportsDetect(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	tests := []struct {
 		name string
@@ -383,7 +385,7 @@ func TestPrSplitCommand_GoMissingImportsDetect(t *testing.T) {
 func TestPrSplitCommand_NpmInstallDetect(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Without package.json, detect should return false.
 	val, err := evalJS(`globalThis.prSplit.AUTO_FIX_STRATEGIES[3].detect('/nonexistent/dir')`)
@@ -404,7 +406,7 @@ func TestPrSplitCommand_NpmInstallDetectWithPackageJson(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`globalThis.prSplit.AUTO_FIX_STRATEGIES[3].detect('` + filepath.ToSlash(dir) + `')`)
 	if err != nil {
@@ -418,7 +420,7 @@ func TestPrSplitCommand_NpmInstallDetectWithPackageJson(t *testing.T) {
 func TestPrSplitCommand_MakeGenerateDetect(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Without Makefile, detect should return false.
 	val, err := evalJS(`globalThis.prSplit.AUTO_FIX_STRATEGIES[4].detect('/nonexistent/dir')`)
@@ -442,7 +444,7 @@ func TestPrSplitCommand_MakeGenerateDetectWithMakefile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`globalThis.prSplit.AUTO_FIX_STRATEGIES[4].detect('` + filepath.ToSlash(dir) + `')`)
 	if err != nil {
@@ -465,7 +467,7 @@ func TestPrSplitCommand_MakeGenerateDetectWithGoGenerate(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`globalThis.prSplit.AUTO_FIX_STRATEGIES[4].detect('` + filepath.ToSlash(dir) + `')`)
 	if err != nil {
@@ -479,7 +481,7 @@ func TestPrSplitCommand_MakeGenerateDetectWithGoGenerate(t *testing.T) {
 func TestPrSplitCommand_AddMissingFilesDetect(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	tests := []struct {
 		name string
@@ -535,7 +537,7 @@ func TestPrSplitCommand_AddMissingFilesDetect(t *testing.T) {
 func TestPrSplitCommand_ClaudeFixDetect(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Without a spawned Claude executor, detect should return false.
 	val, err := evalJS(`globalThis.prSplit.AUTO_FIX_STRATEGIES[6].detect('.')`)
@@ -550,7 +552,7 @@ func TestPrSplitCommand_ClaudeFixDetect(t *testing.T) {
 func TestPrSplitCommand_ClaudeFixFixWithoutExecutor(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// fix() should return {fixed: false} when no executor is available.
 	// Note: claude-fix strategy's fix() is async, so we need await.

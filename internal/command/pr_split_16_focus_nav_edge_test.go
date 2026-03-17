@@ -2,6 +2,8 @@ package command
 
 import (
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -10,7 +12,7 @@ import (
 
 func TestChunk16_FocusActivate_Strategy(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Focus on strategy-heuristic (index 1 in CONFIG focus elements).
@@ -38,7 +40,7 @@ func TestChunk16_FocusActivate_Strategy(t *testing.T) {
 
 func TestChunk16_FocusActivate_TestClaude(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -60,7 +62,7 @@ func TestChunk16_FocusActivate_TestClaude(t *testing.T) {
 
 func TestChunk16_FocusActivate_PlanReviewButtons(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -95,7 +97,7 @@ func TestChunk16_FocusActivate_PlanReviewButtons(t *testing.T) {
 
 func TestChunk16_FocusActivate_EditorDialogButtons(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -133,7 +135,7 @@ func TestChunk16_FocusActivate_EditorDialogButtons(t *testing.T) {
 
 func TestChunk16_FocusActivate_ErrorButtons(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Verify focus element IDs are correct for ERROR_RESOLUTION.
@@ -180,7 +182,7 @@ func TestChunk16_FocusActivate_ErrorButtons(t *testing.T) {
 
 func TestChunk16_FocusActivate_ErrorAskClaude(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// error-ask-claude only appears when claudeExecutor exists.
@@ -209,7 +211,7 @@ func TestChunk16_FocusActivate_ErrorAskClaude(t *testing.T) {
 
 func TestChunk16_PlanEditor_SpaceToggle(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -243,7 +245,7 @@ func TestChunk16_PlanEditor_SpaceToggle(t *testing.T) {
 
 func TestChunk16_PlanEditor_ShiftReorder(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -289,7 +291,7 @@ func TestChunk16_PlanEditor_ShiftReorder(t *testing.T) {
 
 func TestChunk16_PlanEditor_FileNavigation(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -323,7 +325,7 @@ func TestChunk16_PlanEditor_FileNavigation(t *testing.T) {
 
 func TestChunk16_PlanEditor_InlineEditViaE(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -352,7 +354,7 @@ func TestChunk16_PlanEditor_InlineEditViaE(t *testing.T) {
 
 func TestChunk16_HandleNext_PlanEditorDone(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -383,7 +385,7 @@ func TestChunk16_HandleNext_PlanEditorDone(t *testing.T) {
 
 func TestChunk16_HandleNext_PlanEditorValidationFail(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Set up invalid plan: splits=[] triggers real validation_failed.
@@ -411,7 +413,7 @@ func TestChunk16_HandleNext_PlanEditorValidationFail(t *testing.T) {
 
 func TestChunk16_HandleNext_FinalizationQuits(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// NOTE: _handleFinalizationState is captured as a local var at module
@@ -436,7 +438,7 @@ func TestChunk16_HandleNext_FinalizationQuits(t *testing.T) {
 
 func TestChunk16_HandleBack_PlanEditorToReview(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -471,7 +473,7 @@ func TestChunk16_HandleBack_PlanEditorToReview(t *testing.T) {
 
 func TestChunk16_ViewportScroll_Keys(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -513,7 +515,7 @@ func TestChunk16_ViewportScroll_Keys(t *testing.T) {
 
 func TestChunk16_CtrlBracketTermmux(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var switchedTo = null;
@@ -542,7 +544,7 @@ func TestChunk16_CtrlBracketTermmux(t *testing.T) {
 
 func TestChunk16_TickPassthroughOverlay(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -571,7 +573,7 @@ func TestChunk16_TickPassthroughOverlay(t *testing.T) {
 
 func TestChunk16_FocusResetOnTransition(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -600,7 +602,7 @@ func TestChunk16_FocusResetOnTransition(t *testing.T) {
 
 func TestChunk16_ProcessingGuard(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -635,7 +637,7 @@ func TestChunk16_ProcessingGuard(t *testing.T) {
 
 func TestChunk16_OverlayPriority(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Help overlay has highest priority — swallows all keys.
@@ -686,7 +688,7 @@ func TestChunk16_OverlayPriority(t *testing.T) {
 
 func TestChunk16_GetFocusElements_AllStates(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -739,7 +741,7 @@ func TestChunk16_GetFocusElements_AllStates(t *testing.T) {
 
 func TestChunk16_NavigationFocusSyncSplit(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -786,7 +788,7 @@ func TestChunk16_NavigationFocusSyncSplit(t *testing.T) {
 // split while inline title editing is active cancels the edit.
 func TestChunk16_EditSplitCancelsInlineEdit(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -818,7 +820,7 @@ func TestChunk16_EditSplitCancelsInlineEdit(t *testing.T) {
 // a no-op when isProcessing=true in every wizard state.
 func TestChunk16_HandleNext_ProcessingGuardAllStates(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -848,7 +850,7 @@ func TestChunk16_HandleNext_ProcessingGuardAllStates(t *testing.T) {
 // with whitespace-only text does not save (trim check).
 func TestChunk16_InlineTitleEdit_EnterWithEmptyDoesNotSave(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -879,7 +881,7 @@ func TestChunk16_InlineTitleEdit_EnterWithEmptyDoesNotSave(t *testing.T) {
 
 func TestChunk16_GetFocusElements_EquivCheckIncludesNavBack(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -953,7 +955,7 @@ func TestChunk16_GetFocusElements_EquivCheckIncludesNavBack(t *testing.T) {
 // NOT handleNext (→ FINALIZATION).
 func TestChunk16_FocusActivate_NavBack_EquivCheck(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();

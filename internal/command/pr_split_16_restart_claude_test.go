@@ -2,6 +2,8 @@ package command
 
 import (
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -20,7 +22,7 @@ import (
 // execution (mode-agnostic since plan is already generated).
 func TestChunk16_RestartClaudePoll_WithPlan(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + gitMockSetupJS() + `
@@ -70,7 +72,7 @@ func TestChunk16_RestartClaudePoll_WithPlan(t *testing.T) {
 // triggers auto analysis.
 func TestChunk16_RestartClaudePoll_NoPlan_AutoMode(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + gitMockSetupJS() + `
@@ -125,7 +127,7 @@ func TestChunk16_RestartClaudePoll_NoPlan_AutoMode(t *testing.T) {
 // PLAN_GENERATION and triggers heuristic analysis.
 func TestChunk16_RestartClaudePoll_NoPlan_HeuristicMode(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + gitMockSetupJS() + `
@@ -169,7 +171,7 @@ func TestChunk16_RestartClaudePoll_NoPlan_HeuristicMode(t *testing.T) {
 // still restarting, the handler re-schedules the poll tick.
 func TestChunk16_RestartClaudePoll_StillRestarting(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('ERROR_RESOLUTION');
@@ -199,7 +201,7 @@ func TestChunk16_RestartClaudePoll_StillRestarting(t *testing.T) {
 // crash flags and sets error details.
 func TestChunk16_RestartClaudePoll_Error(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('ERROR_RESOLUTION');

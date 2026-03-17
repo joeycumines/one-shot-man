@@ -125,11 +125,12 @@ function setupPlanCache() {
 }
 `
 
-// NewTUIEngine loads chunks 00–12, injects TUI mocks, then loads chunks
-// 13–16f. Returns an evalJS function ready for TUI-level testing.
+// NewTUIEngineE loads chunks 00–12, injects TUI mocks, then loads chunks
+// 13–16f. Returns the [Engine] wrapper so callers can access the underlying
+// [scripting.Engine] (e.g. for RunOnLoopSync in hang-reproducer tests).
 //
-// This is a drop-in replacement for loadTUIEngine in pr_split_13_tui_test.go.
-func NewTUIEngine(t testing.TB) func(string) (any, error) {
+// Most tests should prefer [NewTUIEngine] or [NewTUIEngineWithHelpers].
+func NewTUIEngineE(t testing.TB) *Engine {
 	t.Helper()
 
 	eng := NewEngine(t, nil)
@@ -138,14 +139,23 @@ func NewTUIEngine(t testing.TB) func(string) (any, error) {
 
 	// Inject TUI mocks between chunk 12 and chunk 13.
 	if _, err := evalJS(SetupTUIMocks); err != nil {
-		t.Fatalf("failed to inject TUI mocks: %v", err)
+		t.Fatalf("prsplittest: TUI mocks failed: %v", err)
 	}
 
 	// Load TUI chunks (13+) via proper script loading (preserves script
 	// names in stack traces for debugging).
 	eng.LoadChunks(t, ChunkNamesAfter("12")...)
 
-	return evalJS
+	return eng
+}
+
+// NewTUIEngine loads chunks 00–12, injects TUI mocks, then loads chunks
+// 13–16f. Returns an evalJS function ready for TUI-level testing.
+//
+// This is a drop-in replacement for loadTUIEngine in pr_split_13_tui_test.go.
+func NewTUIEngine(t testing.TB) func(string) (any, error) {
+	t.Helper()
+	return NewTUIEngineE(t).EvalJS(t)
 }
 
 // NewTUIEngineWithHelpers loads the full TUI engine and injects
@@ -155,9 +165,10 @@ func NewTUIEngine(t testing.TB) func(string) (any, error) {
 // pr_split_16_helpers_test.go.
 func NewTUIEngineWithHelpers(t testing.TB) func(string) (any, error) {
 	t.Helper()
-	evalJS := NewTUIEngine(t)
+	eng := NewTUIEngineE(t)
+	evalJS := eng.EvalJS(t)
 	if _, err := evalJS(Chunk16Helpers); err != nil {
-		t.Fatalf("failed to inject chunk16 helpers: %v", err)
+		t.Fatalf("prsplittest: chunk16 helpers failed: %v", err)
 	}
 	return evalJS
 }

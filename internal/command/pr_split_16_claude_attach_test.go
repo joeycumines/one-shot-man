@@ -2,6 +2,8 @@ package command
 
 import (
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 //  T45: Auto-attach Claude pane when Claude spawns during wizard
@@ -11,7 +13,7 @@ import (
 // fields are initialized correctly.
 func TestChunk16_T45_InitStateHasAutoAttachFields(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -35,7 +37,7 @@ func TestChunk16_T45_InitStateHasAutoAttachFields(t *testing.T) {
 	if m["claudeAutoAttachNotif"] != "" {
 		t.Errorf("claudeAutoAttachNotif = %v, want empty", m["claudeAutoAttachNotif"])
 	}
-	if numVal(m["claudeAutoAttachNotifAt"]) != 0 {
+	if prsplittest.NumVal(m["claudeAutoAttachNotifAt"]) != 0 {
 		t.Errorf("claudeAutoAttachNotifAt = %v, want 0", m["claudeAutoAttachNotifAt"])
 	}
 }
@@ -44,7 +46,7 @@ func TestChunk16_T45_InitStateHasAutoAttachFields(t *testing.T) {
 // auto-enables split-view when tuiMux has a child attached.
 func TestChunk16_T45_AutoAttachOnAutoPoll(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Mock tuiMux with hasChild() returning true (Claude attached).
@@ -99,7 +101,7 @@ func TestChunk16_T45_AutoAttachOnAutoPoll(t *testing.T) {
 // does NOT trigger when terminal height < 12 lines.
 func TestChunk16_T45_AutoAttachSkippedSmallTerminal(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -141,7 +143,7 @@ func TestChunk16_T45_AutoAttachSkippedSmallTerminal(t *testing.T) {
 // sets claudeManuallyDismissed, preventing auto-attach from re-opening.
 func TestChunk16_T45_ManualDismissPreventsAutoReopen(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('BRANCH_BUILDING');
@@ -192,7 +194,7 @@ func TestChunk16_T45_ManualDismissPreventsAutoReopen(t *testing.T) {
 // re-open split-view clears the claudeManuallyDismissed flag.
 func TestChunk16_T45_CtrlLReopenClearsDismiss(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_REVIEW');
@@ -222,7 +224,7 @@ func TestChunk16_T45_CtrlLReopenClearsDismiss(t *testing.T) {
 // auto-split, the split-view is auto-closed with a notification.
 func TestChunk16_T45_CrashCloseSplitView(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Mock dead Claude.
@@ -265,7 +267,7 @@ func TestChunk16_T45_CrashCloseSplitView(t *testing.T) {
 // claude-status zone mark opens split-view when Claude is running.
 func TestChunk16_T45_ClaudeStatusBadgeOpensView(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -311,7 +313,7 @@ func TestChunk16_T45_ClaudeStatusBadgeOpensView(t *testing.T) {
 // the auto-split pipeline is no longer running.
 func TestChunk16_T45_ExitAutoClosesSplitView(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -359,7 +361,7 @@ func TestChunk16_T45_ExitAutoClosesSplitView(t *testing.T) {
 // (child may re-attach after restart).
 func TestChunk16_T45_NoAutoCloseWhenPipelineRunning(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -397,7 +399,7 @@ func TestChunk16_T45_NoAutoCloseWhenPipelineRunning(t *testing.T) {
 // notification banner appears in the status bar output.
 func TestChunk16_T45_NotificationRenderedInStatusBar(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_REVIEW');
@@ -423,7 +425,7 @@ func TestChunk16_T45_NotificationRenderedInStatusBar(t *testing.T) {
 // auto-clears after 5 seconds.
 func TestChunk16_T45_NotificationAutoExpires(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_REVIEW');
@@ -456,7 +458,7 @@ func TestChunk16_T45_NotificationAutoExpires(t *testing.T) {
 // re-trigger after claudeAutoAttached is already true.
 func TestChunk16_T45_AutoAttachFiresOnlyOnce(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -515,7 +517,7 @@ func TestChunk16_T45_AutoAttachFiresOnlyOnce(t *testing.T) {
 // state fields are initialised with correct zero-values.
 func TestChunk16_T46_InitStateHasQuestionFields(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -540,7 +542,7 @@ func TestChunk16_T46_InitStateHasQuestionFields(t *testing.T) {
 // confirmation prompts (y/n, proceed?, [yes/no]) are detected.
 func TestChunk16_T46_DetectClaudeQuestion_ConfirmPatterns(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var detect = globalThis.prSplit._detectClaudeQuestion;
@@ -583,7 +585,7 @@ func TestChunk16_T46_DetectClaudeQuestion_ConfirmPatterns(t *testing.T) {
 // question opener patterns like "Do you", "Should I", etc.
 func TestChunk16_T46_DetectClaudeQuestion_QuestionOpeners(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var detect = globalThis.prSplit._detectClaudeQuestion;
@@ -630,7 +632,7 @@ func TestChunk16_T46_DetectClaudeQuestion_QuestionOpeners(t *testing.T) {
 // with "?" that are 10+ chars.
 func TestChunk16_T46_DetectClaudeQuestion_GeneralQuestion(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var detect = globalThis.prSplit._detectClaudeQuestion;
@@ -668,7 +670,7 @@ func TestChunk16_T46_DetectClaudeQuestion_GeneralQuestion(t *testing.T) {
 // does not trigger when idle time is below the threshold.
 func TestChunk16_T46_DetectClaudeQuestion_IdleGuard(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var detect = globalThis.prSplit._detectClaudeQuestion;
@@ -705,7 +707,7 @@ func TestChunk16_T46_DetectClaudeQuestion_IdleGuard(t *testing.T) {
 // Claude output (non-questions) is NOT flagged.
 func TestChunk16_T46_DetectClaudeQuestion_NegativeCases(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var detect = globalThis.prSplit._detectClaudeQuestion;
@@ -747,7 +749,7 @@ func TestChunk16_T46_DetectClaudeQuestion_NegativeCases(t *testing.T) {
 // the function scans the last 15 lines and finds questions near the bottom.
 func TestChunk16_T46_DetectClaudeQuestion_MultilineBottomScan(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var detect = globalThis.prSplit._detectClaudeQuestion;
@@ -789,7 +791,7 @@ func TestChunk16_T46_DetectClaudeQuestion_MultilineBottomScan(t *testing.T) {
 // blank lines (from VTerm padding) are stripped before scanning.
 func TestChunk16_T46_DetectClaudeQuestion_TrailingBlanks(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var detect = globalThis.prSplit._detectClaudeQuestion;
@@ -814,7 +816,7 @@ func TestChunk16_T46_DetectClaudeQuestion_TrailingBlanks(t *testing.T) {
 // sets claudeQuestionDetected when a question is found.
 func TestChunk16_T46_PollDetectsQuestion(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -854,7 +856,7 @@ func TestChunk16_T46_PollDetectsQuestion(t *testing.T) {
 // to every 2 seconds.
 func TestChunk16_T46_PollThrottlesDetection(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -892,7 +894,7 @@ func TestChunk16_T46_PollThrottlesDetection(t *testing.T) {
 // does not run when isProcessing is false.
 func TestChunk16_T46_PollNonProcessingSkipsDetection(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -930,7 +932,7 @@ func TestChunk16_T46_PollNonProcessingSkipsDetection(t *testing.T) {
 // (only if user isn't typing).
 func TestChunk16_T46_PollAutoDismissesOnResume(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -970,7 +972,7 @@ func TestChunk16_T46_PollAutoDismissesOnResume(t *testing.T) {
 // is NOT auto-dismissed when the user is actively typing a response.
 func TestChunk16_T46_PollDoesNotDismissWhileTyping(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -1012,7 +1014,7 @@ func TestChunk16_T46_PollDoesNotDismissWhileTyping(t *testing.T) {
 // printable character activates the inline question input.
 func TestChunk16_T46_PrintableCharActivatesInput(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_GENERATION');
@@ -1040,7 +1042,7 @@ func TestChunk16_T46_PrintableCharActivatesInput(t *testing.T) {
 // dismisses the question prompt regardless of input state.
 func TestChunk16_T46_EscDismissesQuestion(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Test 1: Esc when input active.
@@ -1079,7 +1081,7 @@ func TestChunk16_T46_EscDismissesQuestion(t *testing.T) {
 // character from the input buffer.
 func TestChunk16_T46_BackspaceInInput(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_GENERATION');
@@ -1111,7 +1113,7 @@ func TestChunk16_T46_BackspaceInInput(t *testing.T) {
 // input buffer.
 func TestChunk16_T46_CtrlUClearsInput(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_GENERATION');
@@ -1136,7 +1138,7 @@ func TestChunk16_T46_CtrlUClearsInput(t *testing.T) {
 // the response to Claude's PTY via writeToChild and records the conversation.
 func TestChunk16_T46_EnterSendsToClaudePTY(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var sentData = [];
@@ -1188,7 +1190,7 @@ func TestChunk16_T46_EnterSendsToClaudePTY(t *testing.T) {
 // empty or whitespace-only input does NOT send anything.
 func TestChunk16_T46_EnterEmptyDoesNotSend(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var sentData = [];
@@ -1225,7 +1227,7 @@ func TestChunk16_T46_EnterEmptyDoesNotSend(t *testing.T) {
 // Q&A exchanges are recorded in claudeConversations.
 func TestChunk16_T46_ConversationHistoryAccumulates(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -1272,7 +1274,7 @@ func TestChunk16_T46_ConversationHistoryAccumulates(t *testing.T) {
 // claude-question-input zone activates the input field.
 func TestChunk16_T46_MouseClickActivatesInput(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_GENERATION');
@@ -1302,7 +1304,7 @@ func TestChunk16_T46_MouseClickActivatesInput(t *testing.T) {
 // non-printable keys like Tab, arrows etc. are consumed (not leaked).
 func TestChunk16_T46_InputInterceptsAllKeys(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_GENERATION');
@@ -1336,7 +1338,7 @@ func TestChunk16_T46_InputInterceptsAllKeys(t *testing.T) {
 // is detected.
 func TestChunk16_T46_ViewAnalysisShowsQuestionPrompt(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_GENERATION');
@@ -1363,7 +1365,7 @@ func TestChunk16_T46_ViewAnalysisShowsQuestionPrompt(t *testing.T) {
 // prompt appears when claudeQuestionDetected is false.
 func TestChunk16_T46_ViewNoQuestionWhenNotDetected(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_GENERATION');
@@ -1389,7 +1391,7 @@ func TestChunk16_T46_ViewNoQuestionWhenNotDetected(t *testing.T) {
 // immediate re-detection of the same question.
 func TestChunk16_T46_EnterResetsThrottleTimestamp(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -1427,7 +1429,7 @@ func TestChunk16_T46_EnterResetsThrottleTimestamp(t *testing.T) {
 // viewExecutionScreen renders the inline question prompt.
 func TestChunk16_T46_ViewExecutionShowsQuestionPrompt(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -1455,7 +1457,7 @@ func TestChunk16_T46_ViewExecutionShowsQuestionPrompt(t *testing.T) {
 // transitioning wizard state clears orphaned T46 question state.
 func TestChunk16_T46_WizardTransitionClearsQuestionState(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_GENERATION');
@@ -1492,7 +1494,7 @@ func TestChunk16_T46_WizardTransitionClearsQuestionState(t *testing.T) {
 // clears T46 inline question state.
 func TestChunk16_T46_CtrlLClearsQuestionState(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_GENERATION');
@@ -1527,7 +1529,7 @@ func TestChunk16_T46_CtrlLClearsQuestionState(t *testing.T) {
 // split-view toggle handler.
 func TestChunk16_T46_CtrlLPassesThroughInputInterceptor(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_GENERATION');
@@ -1556,7 +1558,7 @@ func TestChunk16_T46_CtrlLPassesThroughInputInterceptor(t *testing.T) {
 // is capped at 100 entries (trimmed to 80 on overflow).
 func TestChunk16_T46_ConversationHistoryCap(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;

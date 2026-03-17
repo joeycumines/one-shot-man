@@ -6,11 +6,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 	"github.com/joeycumines/one-shot-man/internal/config"
 )
 
 func BenchmarkGroupByDirectory(b *testing.B) {
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(b, nil)
+	evalJS := prsplittest.NewFullEngine(b, nil)
 
 	setup := `
 		var benchFiles = [];
@@ -32,7 +33,7 @@ func BenchmarkGroupByDirectory(b *testing.B) {
 
 // BenchmarkCreateSplitPlan benchmarks plan creation from grouped files.
 func BenchmarkCreateSplitPlan(b *testing.B) {
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(b, nil)
+	evalJS := prsplittest.NewFullEngine(b, nil)
 
 	setup := `
 		var benchGroups = [];
@@ -61,7 +62,7 @@ func BenchmarkCreateSplitPlan(b *testing.B) {
 
 // BenchmarkAssessIndependence benchmarks independence assessment.
 func BenchmarkAssessIndependence(b *testing.B) {
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(b, nil)
+	evalJS := prsplittest.NewFullEngine(b, nil)
 
 	setup := `
 		var benchPlan = {
@@ -91,7 +92,7 @@ func BenchmarkAssessIndependence(b *testing.B) {
 // T053: BenchmarkSelectStrategy benchmarks the 'auto' grouping strategy
 // with realistic large file sets (200 .go files across 20 packages).
 func BenchmarkSelectStrategy(b *testing.B) {
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(b, nil)
+	evalJS := prsplittest.NewFullEngine(b, nil)
 
 	setup := `
 		var benchSelectFiles = [];
@@ -116,7 +117,7 @@ func BenchmarkSelectStrategy(b *testing.B) {
 // T053: BenchmarkSelectStrategy_LargeRepo simulates 200+ changed Go files
 // across many packages, verifying that event-loop blocking stays bounded.
 func BenchmarkSelectStrategy_LargeRepo(b *testing.B) {
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(b, nil)
+	evalJS := prsplittest.NewFullEngine(b, nil)
 
 	setup := `
 		var benchLargeFiles = [];
@@ -142,7 +143,7 @@ func BenchmarkSelectStrategy_LargeRepo(b *testing.B) {
 // verifyOutput arrays don't grow unbounded with large outputs.
 func TestSelectStrategy_ResultShape(t *testing.T) {
 	t.Parallel()
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// 200 Go files across 20 packages.
 	val, err := evalJS(`(function() {
@@ -194,7 +195,7 @@ func TestSelectStrategy_ResultShape(t *testing.T) {
 
 // TestBuildDependencyGraph verifies dependency graph construction.
 func TestBuildDependencyGraph(t *testing.T) {
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`JSON.stringify(prSplit.buildDependencyGraph({
 		splits: [
@@ -230,7 +231,7 @@ func TestBuildDependencyGraph(t *testing.T) {
 
 // TestRenderAsciiGraph verifies graph rendering.
 func TestRenderAsciiGraph(t *testing.T) {
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`prSplit.renderAsciiGraph({
 		nodes: [{name: 'split-1', index: 0}, {name: 'split-2', index: 1}],
@@ -253,7 +254,7 @@ func TestRenderAsciiGraph(t *testing.T) {
 
 // TestAnalyzeRetrospective verifies retrospective analysis.
 func TestAnalyzeRetrospective(t *testing.T) {
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`JSON.stringify(prSplit.analyzeRetrospective({
 		splits: [
@@ -296,7 +297,7 @@ func TestAnalyzeRetrospective(t *testing.T) {
 
 // TestConversationHistory verifies recording and retrieval.
 func TestConversationHistory(t *testing.T) {
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	_, err := evalJS(`prSplit.recordConversation('test-action', 'test prompt', 'test response')`)
 	if err != nil {
@@ -323,7 +324,7 @@ func TestConversationHistory(t *testing.T) {
 
 // TestTelemetry verifies telemetry recording.
 func TestTelemetry(t *testing.T) {
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	_, err := evalJS(`prSplit.recordTelemetry('filesAnalyzed', 42)`)
 	if err != nil {
@@ -354,7 +355,7 @@ func TestTelemetry(t *testing.T) {
 
 // TestAutoMergeOptions verifies createPRs accepts auto-merge options.
 func TestAutoMergeOptions(t *testing.T) {
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`prSplit.runtime.autoMerge`)
 	if err != nil {
@@ -383,7 +384,7 @@ func TestAutoMergeOptions(t *testing.T) {
 func TestGoHandleExtractionRoundtrip(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// The claudemux module's wrapAgentHandle stores _goHandle. We can
 	// verify the pattern works by checking that the exported result

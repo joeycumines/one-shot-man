@@ -3,6 +3,8 @@ package command
 import (
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -21,7 +23,7 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 
 	t.Run("switch_succeeds_when_child_attached", func(t *testing.T) {
 		t.Parallel()
-		evalJS := loadTUIEngineWithHelpers(t)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 		raw, err := evalJS(`(function() {
 			var switchedTo = null;
@@ -51,7 +53,7 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 
 	t.Run("notification_when_hasChild_false", func(t *testing.T) {
 		t.Parallel()
-		evalJS := loadTUIEngineWithHelpers(t)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 		raw, err := evalJS(`(function() {
 			var switchedTo = null;
@@ -82,7 +84,7 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 
 	t.Run("notification_when_tuiMux_absent", func(t *testing.T) {
 		t.Parallel()
-		evalJS := loadTUIEngineWithHelpers(t)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 		raw, err := evalJS(`(function() {
 			// Ensure tuiMux is explicitly absent.
@@ -106,7 +108,7 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 
 	t.Run("works_on_multiple_wizard_states", func(t *testing.T) {
 		t.Parallel()
-		evalJS := loadTUIEngineWithHelpers(t)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 		raw, err := evalJS(`(function() {
 			var states = ['EQUIV_CHECK', 'CONFIG', 'PLAN_REVIEW', 'BRANCH_BUILDING', 'FINALIZATION'];
@@ -142,7 +144,7 @@ func TestStatusBar_CtrlBracketHint_ConditionalOnMux(t *testing.T) {
 
 	t.Run("shows_hint_when_child_attached", func(t *testing.T) {
 		t.Parallel()
-		evalJS := loadTUIEngine(t)
+		evalJS := prsplittest.NewTUIEngine(t)
 
 		raw, err := evalJS(`(function() {
 			globalThis.tuiMux = {
@@ -168,7 +170,7 @@ func TestStatusBar_CtrlBracketHint_ConditionalOnMux(t *testing.T) {
 
 	t.Run("hides_hint_when_no_child", func(t *testing.T) {
 		t.Parallel()
-		evalJS := loadTUIEngine(t)
+		evalJS := prsplittest.NewTUIEngine(t)
 
 		raw, err := evalJS(`(function() {
 			globalThis.tuiMux = {
@@ -197,7 +199,7 @@ func TestStatusBar_CtrlBracketHint_ConditionalOnMux(t *testing.T) {
 
 	t.Run("hides_hint_when_tuiMux_absent", func(t *testing.T) {
 		t.Parallel()
-		evalJS := loadTUIEngine(t)
+		evalJS := prsplittest.NewTUIEngine(t)
 
 		raw, err := evalJS(`(function() {
 			delete globalThis.tuiMux;
@@ -215,7 +217,7 @@ func TestStatusBar_CtrlBracketHint_ConditionalOnMux(t *testing.T) {
 
 	t.Run("narrow_hides_hint_when_no_child", func(t *testing.T) {
 		t.Parallel()
-		evalJS := loadTUIEngine(t)
+		evalJS := prsplittest.NewTUIEngine(t)
 
 		raw, err := evalJS(`(function() {
 			globalThis.tuiMux = {

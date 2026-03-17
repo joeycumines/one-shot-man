@@ -1,8 +1,6 @@
 package command
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
 	"path/filepath"
 	"sync"
@@ -10,96 +8,8 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
-	"github.com/joeycumines/one-shot-man/internal/config"
-	"github.com/joeycumines/one-shot-man/internal/scripting"
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
-
-// loadTUIEngineRaw creates a fully loaded TUI engine and returns both the
-// engine (for direct RunOnLoopSync access) and an evalJS function.
-func loadTUIEngineRaw(t testing.TB) *scripting.Engine {
-	t.Helper()
-
-	var stdout safeBuffer
-	var stderr bytes.Buffer
-
-	b := scriptCommandBase{
-		config:   config.NewConfig(),
-		store:    "memory",
-		session:  t.Name(),
-		logLevel: "info",
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-
-	engine, cleanup, err := b.PrepareEngine(ctx, &stdout, &stderr)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(cleanup)
-
-	jsConfig := map[string]any{
-		"baseBranch":    "main",
-		"strategy":      "directory",
-		"maxFiles":      10,
-		"branchPrefix":  "split/",
-		"verifyCommand": "true",
-		"dryRun":        false,
-		"jsonOutput":    false,
-	}
-
-	engine.SetGlobal("config", map[string]any{"name": "pr-split"})
-	engine.SetGlobal("prSplitConfig", jsConfig)
-
-	chunkMap := map[string]*string{}
-	for _, c := range prSplitChunks {
-		chunkMap[c.name] = c.source
-	}
-
-	for _, name := range allChunksThrough12 {
-		src, ok := chunkMap[name]
-		if !ok {
-			t.Fatalf("unknown chunk %q", name)
-		}
-		script := engine.LoadScriptFromString("pr-split/"+name, *src)
-		if err := engine.ExecuteScript(script); err != nil {
-			t.Fatalf("chunk %s: %v", name, err)
-		}
-	}
-
-	// Inject TUI mocks.
-	evalJS := makeEvalJS(t, engine, 30*time.Second)
-	if _, err := evalJS(setupTUIMocks); err != nil {
-		t.Fatalf("TUI mocks: %v", err)
-	}
-
-	// Load TUI chunks.
-	tuiChunks := []struct {
-		name   string
-		source string
-	}{
-		{"13_tui", prSplitChunk13TUI},
-		{"14a_tui_commands_core", prSplitChunk14aTUICommandsCore},
-		{"14b_tui_commands_ext", prSplitChunk14bTUICommandsExt},
-		{"15a_tui_styles", prSplitChunk15aTUIStyles},
-		{"15b_tui_chrome", prSplitChunk15bTUIChrome},
-		{"15c_tui_screens", prSplitChunk15cTUIScreens},
-		{"15d_tui_dialogs", prSplitChunk15dTUIDialogs},
-		{"16a_tui_focus", prSplitChunk16aTUIFocus},
-		{"16b_tui_handlers_pipeline", prSplitChunk16bTUIHandlersPipeline},
-		{"16c_tui_handlers_verify", prSplitChunk16cTUIHandlersVerify},
-		{"16d_tui_handlers_claude", prSplitChunk16dTUIHandlersClaude},
-		{"16e_tui_update", prSplitChunk16eTUIUpdate},
-		{"16f_tui_model", prSplitChunk16fTUIModel},
-	}
-	for _, chunk := range tuiChunks {
-		if _, err := evalJS(chunk.source); err != nil {
-			t.Fatalf("chunk %s: %v", chunk.name, err)
-		}
-	}
-
-	return engine
-}
 
 // ---------------------------------------------------------------------------
 // TUI Hang Reproducer Tests
@@ -134,7 +44,7 @@ func TestTUIHang_RealAsyncAnalysis(t *testing.T) {
 	gitCmd(t, dir, "commit", "-m", "feature: add api and pkg")
 
 	// Load the full TUI engine with helpers, pointing at our real git repo.
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	// Configure the runtime to point at the real git repo.
 	_, err := evalJS(`(function() {
@@ -294,8 +204,9 @@ func TestTUIHang_ConcurrentPolling(t *testing.T) {
 	gitCmd(t, dir, "commit", "-m", "feature: add api and pkg")
 
 	// Get access to the underlying engine.
-	engine := loadTUIEngineRaw(t)
-	evalJS := makeEvalJS(t, engine, 30*time.Second)
+	tuiEng := prsplittest.NewTUIEngineE(t)
+	engine := tuiEng.ScriptingEngine()
+	evalJS := prsplittest.MakeEvalJS(t, engine, 30*time.Second)
 
 	// Configure runtime.
 	_, err := evalJS(`(function() {
@@ -312,7 +223,7 @@ func TestTUIHang_ConcurrentPolling(t *testing.T) {
 	}
 
 	// Load helpers.
-	if _, err := evalJS(chunk16Helpers); err != nil {
+	if _, err := evalJS(prsplittest.Chunk16Helpers); err != nil {
 		t.Fatalf("failed to load helpers: %v", err)
 	}
 

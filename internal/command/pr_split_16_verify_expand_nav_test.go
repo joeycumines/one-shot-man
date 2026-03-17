@@ -2,6 +2,8 @@ package command
 
 import (
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -12,7 +14,7 @@ import (
 // launches async verifySplitAsync when CaptureSession fails.
 func TestChunk16_VerifyFallback_LaunchesAsync(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -73,7 +75,7 @@ func TestChunk16_VerifyFallback_LaunchesAsync(t *testing.T) {
 // poll handler continues polling when verification is still running.
 func TestChunk16_VerifyFallback_PollStillRunning(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('EXECUTING');
@@ -96,7 +98,7 @@ func TestChunk16_VerifyFallback_PollStillRunning(t *testing.T) {
 // poll handler advances to next branch when verification completes.
 func TestChunk16_VerifyFallback_PollCompleted(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -121,7 +123,7 @@ func TestChunk16_VerifyFallback_PollCompleted(t *testing.T) {
 // verification chain: verify-branch → verify-fallback-poll → complete.
 func TestChunk16_VerifyFallback_AsyncHappyPath(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(async function() {
 		setupPlanCache();
@@ -189,7 +191,7 @@ func TestChunk16_VerifyFallback_AsyncHappyPath(t *testing.T) {
 // verifySplitAsync returns a failure result.
 func TestChunk16_VerifyFallback_AsyncError(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(async function() {
 		setupPlanCache();
@@ -248,7 +250,7 @@ func TestChunk16_VerifyFallback_AsyncError(t *testing.T) {
 // verifySplitAsync throws an unexpected exception.
 func TestChunk16_VerifyFallback_AsyncThrows(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(async function() {
 		setupPlanCache();
@@ -311,7 +313,7 @@ func TestChunk16_VerifyFallback_AsyncThrows(t *testing.T) {
 // prSplit.verifySplit() is never called from the TUI verify path.
 func TestChunk16_VerifyFallback_NoSyncCalls(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -363,7 +365,7 @@ func TestChunk16_VerifyFallback_NoSyncCalls(t *testing.T) {
 // during async fallback verification is respected.
 func TestChunk16_VerifyFallback_CancelDuringAsync(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(async function() {
 		setupPlanCache();
@@ -434,7 +436,7 @@ func TestChunk16_VerifyFallback_CancelDuringAsync(t *testing.T) {
 // pane is focused (not switching panes).
 func TestChunk16_T38_TabCyclesFocusInSplitViewWizard(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -472,7 +474,7 @@ func TestChunk16_T38_TabCyclesFocusInSplitViewWizard(t *testing.T) {
 // between wizard and Claude panes in split-view.
 func TestChunk16_T38_CtrlTabSwitchesPanes(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -510,7 +512,7 @@ func TestChunk16_T38_CtrlTabSwitchesPanes(t *testing.T) {
 // with Claude pane focused is forwarded to the child PTY (not intercepted).
 func TestChunk16_T38_TabForwardedToClaudePTY(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -541,7 +543,7 @@ func TestChunk16_T38_TabForwardedToClaudePTY(t *testing.T) {
 // via Ctrl+L does not reset focusIndex.
 func TestChunk16_T38_CtrlLPreservesFocusIndex(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -576,7 +578,7 @@ func TestChunk16_T38_CtrlLPreservesFocusIndex(t *testing.T) {
 // Ctrl+Tab for pane switching and the correct split-view section.
 func TestChunk16_T38_HelpOverlayBindings(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -615,7 +617,7 @@ func TestChunk16_T38_HelpOverlayBindings(t *testing.T) {
 // shows the updated keybinding hint with Ctrl+Tab.
 func TestChunk16_T38_PaneDividerHint(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -660,7 +662,7 @@ func TestChunk16_T38_PaneDividerHint(t *testing.T) {
 // when Claude pane is focused does NOT cycle wizard focusable elements.
 func TestChunk16_T38_TabInClaudeFocusDoesNotCycleWizard(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -698,7 +700,7 @@ func TestChunk16_T38_TabInClaudeFocusDoesNotCycleWizard(t *testing.T) {
 // fires when the clicked branch matches expandedVerifyBranch.
 func TestChunk16_T39_VerifyCollapseGuard(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -745,7 +747,7 @@ func TestChunk16_T39_VerifyCollapseGuard(t *testing.T) {
 // TestChunk16_T39_AccordionBehavior verifies accordion (single-expand) behavior.
 func TestChunk16_T39_AccordionBehavior(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -785,7 +787,7 @@ func TestChunk16_T39_AccordionBehavior(t *testing.T) {
 // expanded sections before triggering back-navigation.
 func TestChunk16_T39_EscapeCollapsesBeforeBackNav(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -837,7 +839,7 @@ func TestChunk16_T39_EscapeCollapsesBeforeBackNav(t *testing.T) {
 // works correctly via mouse zone handler.
 func TestChunk16_T39_AdvancedOptionsToggle(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -874,7 +876,7 @@ func TestChunk16_T39_AdvancedOptionsToggle(t *testing.T) {
 // use consistent characters (▶ for collapsed, ▼ for expanded).
 func TestChunk16_T39_ChevronConsistency(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -911,7 +913,7 @@ func TestChunk16_T39_ChevronConsistency(t *testing.T) {
 // is properly reset when starting new execution or verification.
 func TestChunk16_T39_ExpandResetOnExecution(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -947,7 +949,7 @@ func TestChunk16_T39_ExpandResetOnExecution(t *testing.T) {
 
 func TestChunk16_T40_FinalizationFocusElements(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -983,7 +985,7 @@ func TestChunk16_T40_FinalizationFocusElements(t *testing.T) {
 
 func TestChunk16_T40_FinalizationTabCycling(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -1034,7 +1036,7 @@ func TestChunk16_T40_FinalizationTabCycling(t *testing.T) {
 
 func TestChunk16_T40_FinalizationEnterActivatesButtons(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -1072,7 +1074,7 @@ func TestChunk16_T40_FinalizationEnterActivatesButtons(t *testing.T) {
 
 func TestChunk16_T40_FinalizationFocusIndicators(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -1115,7 +1117,7 @@ func TestChunk16_T40_FinalizationFocusIndicators(t *testing.T) {
 
 func TestChunk16_T40_ConfigToggleAdvancedFocus(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -1167,7 +1169,7 @@ func TestChunk16_T40_ConfigToggleAdvancedFocus(t *testing.T) {
 
 func TestChunk16_T40_ConfigToggleAdvancedVisualIndicator(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -1225,7 +1227,7 @@ func TestChunk16_T40_ConfigToggleAdvancedVisualIndicator(t *testing.T) {
 
 func TestChunk16_T40_ErrorResolutionNavNext(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -1277,7 +1279,7 @@ func TestChunk16_T40_ErrorResolutionNavNext(t *testing.T) {
 
 func TestChunk16_T40_BranchBuildingExpandCollapseKeyboard(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -1325,7 +1327,7 @@ func TestChunk16_T40_BranchBuildingExpandCollapseKeyboard(t *testing.T) {
 
 func TestChunk16_T40_HelpOverlayBranchBuildingSection(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];
@@ -1369,7 +1371,7 @@ func TestChunk16_T40_HelpOverlayBranchBuildingSection(t *testing.T) {
 
 func TestChunk16_T40_ElementCountParity(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var errors = [];

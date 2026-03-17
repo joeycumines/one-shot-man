@@ -2,6 +2,8 @@ package command
 
 import (
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -59,7 +61,7 @@ if (__savedExecutor !== undefined) {
 
 func TestChunk16_VTerm_Lifecycle_AutoAttachFires(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + lifecycleMuxSetup + `
@@ -126,7 +128,7 @@ func TestChunk16_VTerm_Lifecycle_AutoAttachFires(t *testing.T) {
 
 func TestChunk16_VTerm_Lifecycle_AutoAttachOneShot(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + lifecycleMuxSetup + `
@@ -168,7 +170,7 @@ func TestChunk16_VTerm_Lifecycle_AutoAttachOneShot(t *testing.T) {
 
 func TestChunk16_VTerm_Lifecycle_DismissPreventsReOpen(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + lifecycleMuxSetup + `
@@ -233,7 +235,7 @@ func TestChunk16_VTerm_Lifecycle_DismissPreventsReOpen(t *testing.T) {
 
 func TestChunk16_VTerm_Lifecycle_SmallTerminalBlocks(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + lifecycleMuxSetup + `
@@ -291,7 +293,7 @@ func TestChunk16_VTerm_Lifecycle_SmallTerminalBlocks(t *testing.T) {
 
 func TestChunk16_VTerm_Lifecycle_NoMuxNoAutoAttach(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Remove tuiMux entirely.
@@ -331,7 +333,7 @@ func TestChunk16_VTerm_Lifecycle_NoMuxNoAutoAttach(t *testing.T) {
 
 func TestChunk16_VTerm_Lifecycle_NoChildNoAutoAttach(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -378,7 +380,7 @@ func TestChunk16_VTerm_Lifecycle_NoChildNoAutoAttach(t *testing.T) {
 
 func TestChunk16_VTerm_Lifecycle_AutoCloseOnChildExit(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -439,7 +441,7 @@ func TestChunk16_VTerm_Lifecycle_AutoCloseOnChildExit(t *testing.T) {
 
 func TestChunk16_VTerm_Lifecycle_AutoCloseBlockedDuringPipeline(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -489,7 +491,7 @@ func TestChunk16_VTerm_Lifecycle_AutoCloseBlockedDuringPipeline(t *testing.T) {
 
 func TestChunk16_VTerm_Lifecycle_ClaudeBadgeLive(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + lifecycleMuxSetup + `
@@ -521,7 +523,7 @@ func TestChunk16_VTerm_Lifecycle_ClaudeBadgeLive(t *testing.T) {
 
 func TestChunk16_VTerm_Lifecycle_ClaudeBadgeIdle(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -560,7 +562,7 @@ func TestChunk16_VTerm_Lifecycle_ClaudeBadgeIdle(t *testing.T) {
 
 func TestChunk16_VTerm_Lifecycle_ClaudeBadgeNA(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -593,7 +595,7 @@ func TestChunk16_VTerm_Lifecycle_ClaudeBadgeNA(t *testing.T) {
 
 func TestChunk16_VTerm_Lifecycle_ClaudeBadgeQuiet(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -632,7 +634,7 @@ func TestChunk16_VTerm_Lifecycle_ClaudeBadgeQuiet(t *testing.T) {
 
 func TestChunk16_VTerm_Lifecycle_ClaudeBadgeHiddenNarrow(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + lifecycleMuxSetup + `
@@ -667,7 +669,7 @@ func TestChunk16_VTerm_Lifecycle_ClaudeBadgeHiddenNarrow(t *testing.T) {
 
 func TestChunk16_VTerm_Lifecycle_NotificationRendered(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + lifecycleMuxSetup + `
@@ -701,7 +703,7 @@ func TestChunk16_VTerm_Lifecycle_NotificationRendered(t *testing.T) {
 
 func TestChunk16_VTerm_Lifecycle_NotificationAutoDismissed(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + lifecycleMuxSetup + `
@@ -748,7 +750,7 @@ func TestChunk16_VTerm_Lifecycle_NotificationAutoDismissed(t *testing.T) {
 
 func TestChunk16_VTerm_Lifecycle_AutoAttachNotificationText(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + lifecycleMuxSetup + `
@@ -793,7 +795,7 @@ func TestChunk16_VTerm_Lifecycle_AutoAttachNotificationText(t *testing.T) {
 
 func TestChunk16_VTerm_Lifecycle_CrashClosesPane(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + lifecycleMuxSetup + `
@@ -864,7 +866,7 @@ func TestChunk16_VTerm_Lifecycle_CrashClosesPane(t *testing.T) {
 
 func TestChunk16_VTerm_Lifecycle_CtrlLReOpenClearsDismissFlag(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_REVIEW');
@@ -898,7 +900,7 @@ func TestChunk16_VTerm_Lifecycle_CtrlLReOpenClearsDismissFlag(t *testing.T) {
 
 func TestChunk16_VTerm_Lifecycle_FullFlow(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + lifecycleMuxSetup + `
@@ -976,7 +978,7 @@ func TestChunk16_VTerm_Lifecycle_FullFlow(t *testing.T) {
 
 func TestChunk16_VTerm_Lifecycle_ManualOpenNotAutoClosed(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -1021,7 +1023,7 @@ func TestChunk16_VTerm_Lifecycle_ManualOpenNotAutoClosed(t *testing.T) {
 
 func TestChunk16_VTerm_Lifecycle_StopPollingWhenNotProcessing(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + lifecycleMuxSetup + `

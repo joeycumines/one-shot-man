@@ -2,6 +2,8 @@ package command
 
 import (
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -17,7 +19,7 @@ import (
 // baseline check indicates source branch also fails.
 func TestChunk16_PollVerifySession_PreExisting_BaselineFailed(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -71,7 +73,7 @@ func TestChunk16_PollVerifySession_PreExisting_BaselineFailed(t *testing.T) {
 // pollVerifySession leaves preExisting:false when baseline check passed.
 func TestChunk16_PollVerifySession_PreExisting_BaselinePassed(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -123,7 +125,7 @@ func TestChunk16_PollVerifySession_PreExisting_BaselinePassed(t *testing.T) {
 // result hasn't been cached yet (Promise still pending).
 func TestChunk16_PollVerifySession_PreExisting_NotYetAvailable(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -171,7 +173,7 @@ func TestChunk16_PollVerifySession_PreExisting_NotYetAvailable(t *testing.T) {
 // pollVerifySession does NOT set preExisting when the branch passes.
 func TestChunk16_PollVerifySession_Passing_NoPreExisting(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -222,7 +224,7 @@ func TestChunk16_PollVerifySession_Passing_NoPreExisting(t *testing.T) {
 // the cached baseline also failed.
 func TestChunk16_FallbackPoll_PreExisting_BaselineFailed(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -263,7 +265,7 @@ func TestChunk16_FallbackPoll_PreExisting_BaselineFailed(t *testing.T) {
 // handleVerifyFallbackPoll leaves preExisting:false when baseline passed.
 func TestChunk16_FallbackPoll_PreExisting_BaselinePassed(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -301,7 +303,7 @@ func TestChunk16_FallbackPoll_PreExisting_BaselinePassed(t *testing.T) {
 // and _preExistingAnnotation helper functions directly.
 func TestChunk16_PreExisting_Helpers(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Access helpers via the closure — they're private to the IIFE
@@ -408,7 +410,7 @@ func TestChunk16_PreExisting_Helpers(t *testing.T) {
 // when sourceBranch is available.
 func TestChunk16_RunVerifyBranch_KicksOffBaseline(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	// We need to mock verifySplitAsync so it doesn't actually try to run git.
 	raw, err := evalJS(`(function() {
@@ -467,7 +469,7 @@ func TestChunk16_RunVerifyBranch_KicksOffBaseline(t *testing.T) {
 // is already true (e.g. on verifyingIdx > 0).
 func TestChunk16_RunVerifyBranch_NoDoubleBaseline(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();

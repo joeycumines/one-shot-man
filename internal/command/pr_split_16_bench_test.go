@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -15,7 +17,7 @@ import (
 //  scenarios. Verifies 60fps-capable rendering (<16ms for standard,
 //  <50ms for large).
 //
-//  Uses loadTUIEngineWithHelpers (accepts testing.TB) so that engine
+//  Uses prsplittest.NewTUIEngineWithHelpers (accepts testing.TB) so that engine
 //  setup runs once per sub-benchmark outside the hot loop.
 // ---------------------------------------------------------------------------
 
@@ -84,7 +86,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	// --- Individual screen renderers ---
 
 	b.Run("ConfigScreen", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -102,7 +104,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	})
 
 	b.Run("AnalysisScreen", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -123,7 +125,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	})
 
 	b.Run("PlanReviewScreen_3Splits", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		if _, err := evalJS(benchSetupPlanCache(3, 3)); err != nil {
 			b.Fatal(err)
 		}
@@ -144,7 +146,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	})
 
 	b.Run("PlanReviewScreen_50Splits", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		if _, err := evalJS(benchSetupPlanCache(50, 8)); err != nil {
 			b.Fatal(err)
 		}
@@ -165,7 +167,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	})
 
 	b.Run("PlanEditorScreen", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		if _, err := evalJS(benchSetupPlanCache(5, 5)); err != nil {
 			b.Fatal(err)
 		}
@@ -188,7 +190,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	})
 
 	b.Run("ExecutionScreen", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		if _, err := evalJS(benchSetupPlanCache(5, 5)); err != nil {
 			b.Fatal(err)
 		}
@@ -212,7 +214,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	})
 
 	b.Run("VerificationScreen", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -232,7 +234,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	})
 
 	b.Run("FinalizationScreen", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		if _, err := evalJS(benchSetupPlanCache(5, 5)); err != nil {
 			b.Fatal(err)
 		}
@@ -255,7 +257,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	})
 
 	b.Run("ErrorResolutionScreen", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -277,7 +279,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	// --- Overlay renderers ---
 
 	b.Run("HelpOverlay", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -295,7 +297,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	})
 
 	b.Run("ConfirmCancelOverlay", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -315,7 +317,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	// --- Full composite view ---
 
 	b.Run("WizardView_Config", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -333,7 +335,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	})
 
 	b.Run("WizardView_PlanReview", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		if _, err := evalJS(benchSetupPlanCache(3, 3)); err != nil {
 			b.Fatal(err)
 		}
@@ -354,7 +356,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	})
 
 	b.Run("WizardView_PlanReview_50Splits", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		if _, err := evalJS(benchSetupPlanCache(50, 8)); err != nil {
 			b.Fatal(err)
 		}
@@ -375,7 +377,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	})
 
 	b.Run("WizardView_Execution", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		if _, err := evalJS(benchSetupPlanCache(5, 5)); err != nil {
 			b.Fatal(err)
 		}
@@ -399,7 +401,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	})
 
 	b.Run("WizardView_Finalization", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		if _, err := evalJS(benchSetupPlanCache(5, 5)); err != nil {
 			b.Fatal(err)
 		}
@@ -424,7 +426,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	// --- Split-view rendering ---
 
 	b.Run("ClaudePane_ANSI", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		// Pre-create a realistic ANSI content buffer.
 		if _, err := evalJS(`
 			var _benchAnsi = '';
@@ -456,7 +458,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	})
 
 	b.Run("ClaudePane_LargeBuffer", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		// 1000-line ANSI buffer — stress test.
 		if _, err := evalJS(`
 			var _benchLargeAnsi = '';
@@ -488,7 +490,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	})
 
 	b.Run("WizardView_SplitView_PlanReview", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		if _, err := evalJS(benchSetupPlanCache(3, 3)); err != nil {
 			b.Fatal(err)
 		}
@@ -528,7 +530,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	// --- Chrome components ---
 
 	b.Run("TitleBar", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -546,7 +548,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	})
 
 	b.Run("NavBar", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -564,7 +566,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	})
 
 	b.Run("StatusBar", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -582,7 +584,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	})
 
 	b.Run("ProgressBar", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
@@ -601,7 +603,7 @@ func BenchmarkViewRendering(b *testing.B) {
 	// --- viewForState dispatch ---
 
 	b.Run("ViewForState_Dispatch", func(b *testing.B) {
-		evalJS := loadTUIEngineWithHelpers(b)
+		evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 		if _, err := evalJS(benchSetupPlanCache(3, 3)); err != nil {
 			b.Fatal(err)
 		}
@@ -672,7 +674,7 @@ const (
 
 func TestViewPerformanceRegression(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	// Setup plan caches.
 	if _, err := evalJS(benchSetupPlanCache(3, 3)); err != nil {

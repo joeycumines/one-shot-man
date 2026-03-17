@@ -11,6 +11,14 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 )
 
+// MakeEvalJS creates an evalJS function from a [scripting.Engine] with a
+// custom timeout. This is the exported version of makeEvalJS for tests that
+// need direct access to the raw engine (e.g., pr_split_tui_hang_test.go).
+func MakeEvalJS(t testing.TB, engine *scripting.Engine, timeout time.Duration) func(string) (any, error) {
+	t.Helper()
+	return makeEvalJS(t, engine, timeout)
+}
+
 // makeEvalJS creates an evalJS function from a [scripting.Engine].
 // This is a direct port of the makeEvalJS helper from pr_split_00_core_test.go.
 //

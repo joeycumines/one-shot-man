@@ -2,6 +2,8 @@ package command
 
 import (
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -10,7 +12,7 @@ import (
 
 func TestChunk16_VerifySession_Interrupt(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var interrupted = false, killed = false;
@@ -51,7 +53,7 @@ func TestChunk16_VerifySession_Interrupt(t *testing.T) {
 
 func TestChunk16_VerifySession_ScrollViewport(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var mockSession = {
@@ -105,7 +107,7 @@ func TestChunk16_VerifySession_ScrollViewport(t *testing.T) {
 
 func TestChunk16_VerifySession_MouseWheel(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var mockSession = {
@@ -145,7 +147,7 @@ func TestChunk16_VerifySession_MouseWheel(t *testing.T) {
 
 func TestChunk16_SplitView_Toggle(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -175,7 +177,7 @@ func TestChunk16_SplitView_Toggle(t *testing.T) {
 
 func TestChunk16_SplitView_TabFocusSwitch(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -209,7 +211,7 @@ func TestChunk16_SplitView_TabFocusSwitch(t *testing.T) {
 
 func TestChunk16_SplitView_RatioAdjust(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -253,7 +255,7 @@ func TestChunk16_SplitView_RatioAdjust(t *testing.T) {
 
 func TestChunk16_SplitView_ClaudePaneNav(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -295,7 +297,7 @@ func TestChunk16_SplitView_ClaudePaneNav(t *testing.T) {
 
 func TestChunk16_SplitView_ClaudeMouseWheel(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -327,7 +329,7 @@ func TestChunk16_SplitView_ClaudeMouseWheel(t *testing.T) {
 
 func TestChunk16_MouseClick_NavBar(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -378,7 +380,7 @@ func TestChunk16_MouseClick_NavBar(t *testing.T) {
 
 func TestChunk16_MouseClick_NavCancelDuringVerify(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var interrupted = false;
@@ -413,7 +415,7 @@ func TestChunk16_MouseClick_NavCancelDuringVerify(t *testing.T) {
 
 func TestChunk16_MouseClick_ConfigZones(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// strategy-heuristic.
@@ -473,7 +475,7 @@ func TestChunk16_MouseClick_ConfigZones(t *testing.T) {
 
 func TestChunk16_MouseClick_PlanReviewZones(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -531,7 +533,7 @@ func TestChunk16_MouseClick_PlanReviewZones(t *testing.T) {
 
 func TestChunk16_MouseClick_PlanEditorZones(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -595,7 +597,7 @@ func TestChunk16_MouseClick_PlanEditorZones(t *testing.T) {
 
 func TestChunk16_MouseClick_ErrorResolutionZones(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// NOTE: _handleErrorResolutionState is captured as a local var at module
@@ -644,7 +646,7 @@ func TestChunk16_MouseClick_ErrorResolutionZones(t *testing.T) {
 
 func TestChunk16_MouseClick_FinalizationZones(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// final-report shows report overlay.
@@ -685,7 +687,7 @@ func TestChunk16_MouseClick_FinalizationZones(t *testing.T) {
 
 func TestChunk16_MouseClick_VerifyInterruptZone(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -727,7 +729,7 @@ func TestChunk16_MouseClick_VerifyInterruptZone(t *testing.T) {
 
 func TestChunk16_MouseClick_VerifyExpandCollapse(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -761,7 +763,7 @@ func TestChunk16_MouseClick_VerifyExpandCollapse(t *testing.T) {
 
 func TestChunk16_MouseClick_ConfirmCancelZones(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// confirm-yes → CANCELLED.
@@ -800,7 +802,7 @@ func TestChunk16_MouseClick_ConfirmCancelZones(t *testing.T) {
 // accidentally confirm cancellation.
 func TestChunk16_ConfirmCancel_WheelDoesNotTriggerZones(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Wheel over confirm-yes should NOT cancel.
@@ -850,7 +852,7 @@ func TestChunk16_ConfirmCancel_WheelDoesNotTriggerZones(t *testing.T) {
 
 func TestChunk16_MouseClick_ClaudeStatusBadge(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// T45: Clicking claude-status badge now opens split-view instead of
@@ -890,7 +892,7 @@ func TestChunk16_MouseClick_ClaudeStatusBadge(t *testing.T) {
 
 func TestChunk16_MouseClick_EquivCheckZones(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -963,7 +965,7 @@ func TestChunk16_MouseClick_EquivCheckZones(t *testing.T) {
 // equivError) to prevent stale data and orphaned async polling.
 func TestChunk16_EquivCheck_BackNavigation(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();

@@ -2,6 +2,8 @@ package command
 
 import (
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -23,7 +25,7 @@ import (
 // freshly created and not yet resolved (resolved === null).
 func TestChunk16_StartAutoAnalysis_DefersWhenUnresolved(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		if (typeof prSplitConfig === 'undefined') {
@@ -76,7 +78,7 @@ func TestChunk16_StartAutoAnalysis_DefersWhenUnresolved(t *testing.T) {
 // startAutoAnalysis does NOT defer when the executor is already resolved.
 func TestChunk16_StartAutoAnalysis_ProceedsWhenResolved(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		if (typeof prSplitConfig === 'undefined') {
@@ -135,7 +137,7 @@ func TestChunk16_StartAutoAnalysis_ProceedsWhenResolved(t *testing.T) {
 // completes successfully and pendingAutoAnalysis is true.
 func TestChunk16_HandleClaudeCheckPoll_ResumesPendingAutoAnalysis(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		if (typeof prSplitConfig === 'undefined') {
@@ -194,7 +196,7 @@ func TestChunk16_HandleClaudeCheckPoll_ResumesPendingAutoAnalysis(t *testing.T) 
 // check completes with Claude unavailable and pendingAutoAnalysis is true.
 func TestChunk16_HandleClaudeCheckPoll_FallsBackWhenUnavailable(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		if (typeof prSplitConfig === 'undefined') {
@@ -249,7 +251,7 @@ func TestChunk16_HandleClaudeCheckPoll_FallsBackWhenUnavailable(t *testing.T) {
 // trigger the trap — deferral should happen first via .resolved check.
 func TestChunk16_StartAutoAnalysis_NoSyncIsAvailableCall(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		if (typeof prSplitConfig === 'undefined') {
@@ -308,7 +310,7 @@ func TestChunk16_StartAutoAnalysis_NoSyncIsAvailableCall(t *testing.T) {
 // auto analysis — normal non-deferred completion path.
 func TestChunk16_HandleClaudeCheckPoll_NoPendingNoAction(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();

@@ -2,6 +2,8 @@ package command
 
 import (
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -37,7 +39,7 @@ else delete globalThis.tuiMux;
 
 func TestChunk16_VTerm_RenderClaudePane_ANSIContent(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + vtermMuxSetup + `
@@ -78,7 +80,7 @@ func TestChunk16_VTerm_RenderClaudePane_ANSIContent(t *testing.T) {
 
 func TestChunk16_VTerm_RenderClaudePane_PlainFallback(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + vtermMuxSetup + `
@@ -115,7 +117,7 @@ func TestChunk16_VTerm_RenderClaudePane_PlainFallback(t *testing.T) {
 
 func TestChunk16_VTerm_RenderClaudePane_Placeholder_NoMux(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Remove tuiMux entirely.
@@ -152,7 +154,7 @@ func TestChunk16_VTerm_RenderClaudePane_Placeholder_NoMux(t *testing.T) {
 
 func TestChunk16_VTerm_RenderClaudePane_Placeholder_EmptyContent(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Mux exists but no content yet.
@@ -194,7 +196,7 @@ func TestChunk16_VTerm_RenderClaudePane_Placeholder_EmptyContent(t *testing.T) {
 
 func TestChunk16_VTerm_RenderClaudePane_FocusIndicator(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + vtermMuxSetup + `
@@ -238,7 +240,7 @@ func TestChunk16_VTerm_RenderClaudePane_FocusIndicator(t *testing.T) {
 
 func TestChunk16_VTerm_RenderClaudePane_LiveIndicator(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + vtermMuxSetup + `
@@ -280,7 +282,7 @@ func TestChunk16_VTerm_RenderClaudePane_LiveIndicator(t *testing.T) {
 
 func TestChunk16_VTerm_RenderClaudePane_TinyTerminal(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	// Set up tuiMux so we exercise the content-rendering code path (not just placeholder).
 	raw, err := evalJS(`(function() {
@@ -312,7 +314,7 @@ func TestChunk16_VTerm_RenderClaudePane_TinyTerminal(t *testing.T) {
 
 func TestChunk16_VTerm_PollScreenshot_CapturesFromMux(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	// pollClaudeScreenshot is internal — test it via update({type:'Tick', id:'claude-screenshot'}).
 	raw, err := evalJS(`(function() {
@@ -360,7 +362,7 @@ func TestChunk16_VTerm_PollScreenshot_CapturesFromMux(t *testing.T) {
 
 func TestChunk16_VTerm_PollScreenshot_NoChild_ClearsState(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -406,7 +408,7 @@ func TestChunk16_VTerm_PollScreenshot_NoChild_ClearsState(t *testing.T) {
 
 func TestChunk16_VTerm_PollScreenshot_SplitViewDisabled_StopsPolling(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	// When splitViewEnabled=false, the claude-screenshot tick should NOT
 	// restart polling (pollClaudeScreenshot returns null cmd).
@@ -442,7 +444,7 @@ func TestChunk16_VTerm_PollScreenshot_SplitViewDisabled_StopsPolling(t *testing.
 
 func TestChunk16_VTerm_PollScreenshot_AutoCloseOnChildExit(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -487,7 +489,7 @@ func TestChunk16_VTerm_PollScreenshot_AutoCloseOnChildExit(t *testing.T) {
 
 func TestChunk16_VTerm_SplitViewToggle_CtrlL(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_REVIEW');
@@ -523,7 +525,7 @@ func TestChunk16_VTerm_SplitViewToggle_CtrlL(t *testing.T) {
 
 func TestChunk16_VTerm_SplitViewFocusSwitch_CtrlTab(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_REVIEW');
@@ -554,7 +556,7 @@ func TestChunk16_VTerm_SplitViewFocusSwitch_CtrlTab(t *testing.T) {
 
 func TestChunk16_VTerm_ClaudeScroll_PgUpPgDn(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_REVIEW');
@@ -596,7 +598,7 @@ func TestChunk16_VTerm_ClaudeScroll_PgUpPgDn(t *testing.T) {
 
 func TestChunk16_VTerm_ClaudeScroll_UpDown(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_REVIEW');
@@ -644,7 +646,7 @@ func TestChunk16_VTerm_ClaudeScroll_UpDown(t *testing.T) {
 
 func TestChunk16_VTerm_ClaudeScroll_HomeEnd(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_REVIEW');
@@ -680,7 +682,7 @@ func TestChunk16_VTerm_ClaudeScroll_HomeEnd(t *testing.T) {
 
 func TestChunk16_VTerm_ClaudeScroll_MouseWheel(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_REVIEW');
@@ -716,7 +718,7 @@ func TestChunk16_VTerm_ClaudeScroll_MouseWheel(t *testing.T) {
 
 func TestChunk16_VTerm_ClaudeScroll_DoesNotWorkWhenWizardFocused(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('PLAN_REVIEW');
@@ -746,7 +748,7 @@ func TestChunk16_VTerm_ClaudeScroll_DoesNotWorkWhenWizardFocused(t *testing.T) {
 
 func TestChunk16_VTerm_SplitViewLayout_InWizardView(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		` + vtermMuxSetup + `
@@ -791,7 +793,7 @@ func TestChunk16_VTerm_SplitViewLayout_InWizardView(t *testing.T) {
 
 func TestChunk16_VTerm_SplitViewLayout_NoSplitView(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	// When splitViewEnabled=false, _wizardView should NOT render Claude pane.
 	raw, err := evalJS(`(function() {
@@ -837,7 +839,7 @@ func TestChunk16_VTerm_SplitViewLayout_NoSplitView(t *testing.T) {
 
 func TestChunk16_VTerm_AutoAttach_SmallTerminalPrevented(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
@@ -894,7 +896,7 @@ func TestChunk16_VTerm_AutoAttach_SmallTerminalPrevented(t *testing.T) {
 
 func TestChunk16_VTerm_FullRenderPipeline_MuxToView(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	// Full pipeline: tuiMux → claude-screenshot tick → poll → state → render.
 	raw, err := evalJS(`(function() {

@@ -2,6 +2,8 @@ package command
 
 import (
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -19,7 +21,7 @@ import (
 // BRANCH_BUILDING → EQUIV_CHECK.
 func TestChunk16_AutoSplitPoll_WithEquivalence(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -85,7 +87,7 @@ func TestChunk16_AutoSplitPoll_WithEquivalence(t *testing.T) {
 // original bug state — but now the safety net in handleNext can rescue).
 func TestChunk16_AutoSplitPoll_WithoutEquivalence(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -137,7 +139,7 @@ func TestChunk16_AutoSplitPoll_WithoutEquivalence(t *testing.T) {
 // safety net: pressing Enter/Next from BRANCH_BUILDING calls startEquivCheck.
 func TestChunk16_HandleNext_BranchBuilding_StartsEquivCheck(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -190,7 +192,7 @@ func TestChunk16_HandleNext_BranchBuilding_StartsEquivCheck(t *testing.T) {
 // Enter from EQUIV_CHECK transitions to FINALIZATION.
 func TestChunk16_HandleNext_EquivCheck_CachedResult_AdvancesToFinalization(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();

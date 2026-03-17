@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -12,7 +14,7 @@ import (
 
 func TestChunk16_T42_AutoDetectClaudeOnStartup(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(async function() {
 		globalThis.prSplitConfig = { claudeCommand: '' };
@@ -74,7 +76,7 @@ func TestChunk16_T42_AutoDetectClaudeOnStartup(t *testing.T) {
 
 func TestChunk16_T42_AutoDetectSkipsWhenUserSelected(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		globalThis.prSplitConfig = { claudeCommand: '' };
@@ -125,7 +127,7 @@ func TestChunk16_T42_AutoDetectSkipsWhenUserSelected(t *testing.T) {
 
 func TestChunk16_T42_ManualSelectSetsFlag(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		globalThis.prSplitConfig = { claudeCommand: '' };
@@ -163,7 +165,7 @@ func TestChunk16_T42_ManualSelectSetsFlag(t *testing.T) {
 
 func TestChunk16_T42_AutoDetectUnavailableFallback(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(async function() {
 		globalThis.prSplitConfig = { claudeCommand: '' };
@@ -214,7 +216,7 @@ func TestChunk16_T42_AutoDetectUnavailableFallback(t *testing.T) {
 
 func TestChunk16_T42_AutoDetectSkipsWhenAlreadyChecking(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -238,7 +240,7 @@ func TestChunk16_T42_AutoDetectSkipsWhenAlreadyChecking(t *testing.T) {
 
 func TestChunk16_T42_ViewShowsAutoStrategyHint(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -274,7 +276,7 @@ func TestChunk16_T42_ViewShowsAutoStrategyHint(t *testing.T) {
 
 func TestChunk16_T42_InitReturnsBatchCommand(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('IDLE');
@@ -314,7 +316,7 @@ func TestChunk16_T42_InitReturnsBatchCommand(t *testing.T) {
 
 func TestChunk16_T43_ConfigErrorStaysOnCONFIG(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Mock gitExec to simulate empty repo (rev-parse HEAD fails).
@@ -365,7 +367,7 @@ func TestChunk16_T43_ConfigErrorStaysOnCONFIG(t *testing.T) {
 
 func TestChunk16_T43_AutoAnalysisConfigErrorStaysOnCONFIG(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		// Mock gitExec to simulate detached HEAD.
@@ -408,7 +410,7 @@ func TestChunk16_T43_AutoAnalysisConfigErrorStaysOnCONFIG(t *testing.T) {
 
 func TestChunk16_T43_RetryCleansPreviousError(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var callCount = 0;
@@ -463,7 +465,7 @@ func TestChunk16_T43_RetryCleansPreviousError(t *testing.T) {
 
 func TestChunk16_T43_ViewShowsInlineValidationError(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -493,7 +495,7 @@ func TestChunk16_T43_ViewShowsInlineValidationError(t *testing.T) {
 
 func TestChunk16_T43_ViewNoBranchesWhenEmpty(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -524,7 +526,7 @@ func TestChunk16_T43_ViewNoBranchesWhenEmpty(t *testing.T) {
 // in the initialized wizard state with correct defaults.
 func TestChunk16_T44_InitStateHasOutputFields(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -550,7 +552,7 @@ func TestChunk16_T44_InitStateHasOutputFields(t *testing.T) {
 	if m["linesEmpty"] != true {
 		t.Errorf("outputLines should be empty initially")
 	}
-	if numVal(m["outputViewOffset"]) != 0 {
+	if prsplittest.NumVal(m["outputViewOffset"]) != 0 {
 		t.Errorf("outputViewOffset should be 0")
 	}
 	if m["outputAutoScroll"] != true {
@@ -562,7 +564,7 @@ func TestChunk16_T44_InitStateHasOutputFields(t *testing.T) {
 // and Output tabs in split-view bottom pane.
 func TestChunk16_T44_CtrlOSwitchesTabs(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -597,7 +599,7 @@ func TestChunk16_T44_CtrlOSwitchesTabs(t *testing.T) {
 // no effect when split-view is not enabled.
 func TestChunk16_T44_CtrlONotActiveWhenSplitViewDisabled(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -620,7 +622,7 @@ func TestChunk16_T44_CtrlONotActiveWhenSplitViewDisabled(t *testing.T) {
 // tab is active in the split-view bottom pane.
 func TestChunk16_T44_OutputTabScrollKeys(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -668,25 +670,25 @@ func TestChunk16_T44_OutputTabScrollKeys(t *testing.T) {
 		t.Fatalf("eval error: %v", err)
 	}
 	m := raw.(map[string]any)
-	if numVal(m["offsetAfterUp"]) != 1 {
+	if prsplittest.NumVal(m["offsetAfterUp"]) != 1 {
 		t.Errorf("up: offset = %v, want 1", m["offsetAfterUp"])
 	}
 	if m["autoAfterUp"] != false {
 		t.Errorf("up: autoScroll should be false")
 	}
-	if numVal(m["offsetAfterEnd"]) != 0 {
+	if prsplittest.NumVal(m["offsetAfterEnd"]) != 0 {
 		t.Errorf("end: offset = %v, want 0", m["offsetAfterEnd"])
 	}
 	if m["autoAfterEnd"] != true {
 		t.Errorf("end: autoScroll should be true")
 	}
-	if numVal(m["offsetAfterHome"]) < 999 {
+	if prsplittest.NumVal(m["offsetAfterHome"]) < 999 {
 		t.Errorf("home: offset = %v, want large value", m["offsetAfterHome"])
 	}
 	if m["autoAfterHome"] != false {
 		t.Errorf("home: autoScroll should be false")
 	}
-	if numVal(m["offsetAfterPgDown"]) != 5 {
+	if prsplittest.NumVal(m["offsetAfterPgDown"]) != 5 {
 		t.Errorf("pgdown from 10: offset = %v, want 5", m["offsetAfterPgDown"])
 	}
 }
@@ -695,7 +697,7 @@ func TestChunk16_T44_OutputTabScrollKeys(t *testing.T) {
 // switch tabs correctly.
 func TestChunk16_T44_TabClickZones(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -736,7 +738,7 @@ func TestChunk16_T44_TabClickZones(t *testing.T) {
 // Output tab when it's the active tab in split-view.
 func TestChunk16_T44_OutputMouseWheelScroll(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -769,13 +771,13 @@ func TestChunk16_T44_OutputMouseWheelScroll(t *testing.T) {
 		t.Fatalf("eval error: %v", err)
 	}
 	m := raw.(map[string]any)
-	if numVal(m["offsetUp"]) != 3 {
+	if prsplittest.NumVal(m["offsetUp"]) != 3 {
 		t.Errorf("wheel up: offset = %v, want 3", m["offsetUp"])
 	}
 	if m["autoUp"] != false {
 		t.Errorf("wheel up: autoScroll should be false")
 	}
-	if numVal(m["offsetDown"]) != 0 {
+	if prsplittest.NumVal(m["offsetDown"]) != 0 {
 		t.Errorf("wheel down from 3: offset = %v, want 0", m["offsetDown"])
 	}
 	if m["autoDown"] != true {
@@ -787,7 +789,7 @@ func TestChunk16_T44_OutputMouseWheelScroll(t *testing.T) {
 // placeholder text when outputLines is empty.
 func TestChunk16_T44_RenderOutputPanePlaceholder(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -815,7 +817,7 @@ func TestChunk16_T44_RenderOutputPanePlaceholder(t *testing.T) {
 // output lines with scroll indicator.
 func TestChunk16_T44_RenderOutputPaneWithContent(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -852,7 +854,7 @@ func TestChunk16_T44_RenderOutputPaneWithContent(t *testing.T) {
 // prSplit._outputCaptureFn pipes output to s.outputLines.
 func TestChunk16_T44_OutputCaptureFnPipesLines(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -888,7 +890,7 @@ func TestChunk16_T44_OutputCaptureFnPipesLines(t *testing.T) {
 		t.Fatalf("eval error: %v", err)
 	}
 	m := raw.(map[string]any)
-	if numVal(m["count"]) != 4 {
+	if prsplittest.NumVal(m["count"]) != 4 {
 		t.Errorf("expected 4 lines, got %v", m["count"])
 	}
 	if !strings.Contains(fmt.Sprint(m["first"]), "git rev-parse") {
@@ -903,7 +905,7 @@ func TestChunk16_T44_OutputCaptureFnPipesLines(t *testing.T) {
 // off resets the tab back to 'claude'.
 func TestChunk16_T44_CtrlLResetsTabOnDisable(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -934,7 +936,7 @@ func TestChunk16_T44_CtrlLResetsTabOnDisable(t *testing.T) {
 // the Ctrl+O keybinding for tab switching.
 func TestChunk16_T44_HelpOverlayShowsCtrlO(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -959,7 +961,7 @@ func TestChunk16_T44_HelpOverlayShowsCtrlO(t *testing.T) {
 // keys set so it's not forwarded to Claude PTY.
 func TestChunk16_T44_CtrlOInReservedKeys(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var keys = globalThis.prSplit._CLAUDE_RESERVED_KEYS;
@@ -979,7 +981,7 @@ func TestChunk16_T44_CtrlOInReservedKeys(t *testing.T) {
 // objects), so this only confirms the view logic doesn't crash.
 func TestChunk16_T44_ViewNoPanicWithOutputTab(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -1005,7 +1007,7 @@ func TestChunk16_T44_ViewNoPanicWithOutputTab(t *testing.T) {
 // capped at 5000 lines and trims to 4000.
 func TestChunk16_T44_OutputBufferCapAtLimit(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var s = initState('CONFIG');
@@ -1039,7 +1041,7 @@ func TestChunk16_T44_OutputBufferCapAtLimit(t *testing.T) {
 		t.Fatalf("eval error: %v", err)
 	}
 	m := raw.(map[string]any)
-	countVal := numVal(m["count"])
+	countVal := prsplittest.NumVal(m["count"])
 	// After 5001 lines, trims to 4000. Then 5002-5010 means 4000 + 9 = 4009.
 	// Actually: push 5001 → trimmed to 4000. push 5002-5010 → 4009.
 	if countVal > 5000 {

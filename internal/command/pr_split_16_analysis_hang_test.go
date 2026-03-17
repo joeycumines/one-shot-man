@@ -2,6 +2,8 @@ package command
 
 import (
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -21,7 +23,7 @@ import (
 // actually reaches Step 2 where the throw occurs.
 func TestChunk16_AnalysisPipeline_GroupingThrow(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(async function() {
 		setupPlanCache();
@@ -106,7 +108,7 @@ func TestChunk16_AnalysisPipeline_GroupingThrow(t *testing.T) {
 // with the descriptive prefix "Plan creation failed:".
 func TestChunk16_AnalysisPipeline_PlanCreationThrow(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(async function() {
 		setupPlanCache();
@@ -186,7 +188,7 @@ func TestChunk16_AnalysisPipeline_PlanCreationThrow(t *testing.T) {
 // poll ticks after cancellation.
 func TestChunk16_ConfirmCancel_ClearsAnalysisRunning(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -245,7 +247,7 @@ func TestChunk16_ConfirmCancel_ClearsAnalysisRunning(t *testing.T) {
 // the handleAnalysisPoll returns [s, null] (stops) immediately.
 func TestChunk16_HandleAnalysisPoll_StopsImmediatelyAfterCancel(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();
@@ -279,7 +281,7 @@ func TestChunk16_HandleAnalysisPoll_StopsImmediatelyAfterCancel(t *testing.T) {
 // clears isProcessing and transitions to ERROR.
 func TestChunk16_HandleAnalysisPoll_ErrorPathSetsProcessingFalse(t *testing.T) {
 	t.Parallel()
-	evalJS := loadTUIEngineWithHelpers(t)
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		setupPlanCache();

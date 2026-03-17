@@ -12,12 +12,13 @@ import (
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/builtin/mcpcallbackmod"
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 func TestAutoSplit_NegativeMaxReSplits(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Test that the clamping logic prevents negative maxReSplits.
 	// This mirrors the code in automatedSplit() after the fix:
@@ -58,7 +59,7 @@ func TestAutoSplit_NegativeMaxReSplits(t *testing.T) {
 func TestAutoSplit_TimeoutDefaults(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Verify the T20 defaults exist in AUTOMATED_DEFAULTS.
 	val, err := evalJS(`JSON.stringify({
@@ -181,7 +182,7 @@ func TestAutoSplit_PipelineTimeout(t *testing.T) {
 func TestPollInterval_MinFloor(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Test that the pollInterval floor prevents spin-loops.
 	// This mirrors the clamping in automatedSplit():
@@ -1483,7 +1484,7 @@ func TestIntegration_PlanPersistence_RoundTrip(t *testing.T) {
 func TestClaudeCodeExecutor_OllamaSpawnPath(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Mock exec to simulate Ollama being available with the requested model.
 	// Verify: resolve detects ollama, spawn uses ollama provider, no
@@ -1855,7 +1856,7 @@ func TestPrSplitConfig_CleanupOnFailure(t *testing.T) {
 	t.Parallel()
 
 	// Verify the cleanup-on-failure flag is accessible in JS config.
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]any{
+	evalJS := prsplittest.NewFullEngine(t, map[string]any{
 		"cleanupOnFailure": true,
 	})
 
@@ -1868,7 +1869,7 @@ func TestPrSplitConfig_CleanupOnFailure(t *testing.T) {
 	}
 
 	// Default: not set → falsy.
-	_, _, evalJS2, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS2 := prsplittest.NewFullEngine(t, nil)
 	val2, err := evalJS2(`prSplitConfig.cleanupOnFailure || false`)
 	if err != nil {
 		t.Fatal(err)
@@ -1881,7 +1882,7 @@ func TestPrSplitConfig_CleanupOnFailure(t *testing.T) {
 	// The source code builds autoConfig objects that include
 	// cleanupOnFailure: prSplitConfig.cleanupOnFailure.
 	// Grep the script source to confirm the propagation is wired up.
-	_, _, evalJS3, _ := loadPrSplitEngineWithEval(t, map[string]any{
+	evalJS3 := prsplittest.NewFullEngine(t, map[string]any{
 		"cleanupOnFailure": true,
 	})
 	// Count occurrences of cleanupOnFailure in autoConfig construction.
@@ -2267,7 +2268,7 @@ func TestAutoSplit_PauseDuringStep(t *testing.T) {
 	repoDir := initIntegrationRepo(t)
 	addIntegrationFeatureFiles(t, repoDir)
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]any{
+	evalJS := prsplittest.NewFullEngine(t, map[string]any{
 		"baseBranch":    "main",
 		"strategy":      "directory",
 		"branchPrefix":  "split/",
@@ -2435,7 +2436,7 @@ func TestAutoSplit_StepTimeout(t *testing.T) {
 func TestWaitForLogged_Success(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`(async function() {
 		// Set up mock mcpCallbackObj.
@@ -2470,7 +2471,7 @@ func TestWaitForLogged_Success(t *testing.T) {
 func TestWaitForLogged_Timeout(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`(async function() {
 		mcpCallbackObj = {
@@ -2505,7 +2506,7 @@ func TestWaitForLogged_Timeout(t *testing.T) {
 func TestWaitForLogged_HeartbeatTimeout(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Mock mcpCallbackObj with:
 	// - waitFor that calls aliveCheck repeatedly before "timing out"
@@ -2557,7 +2558,7 @@ func TestWaitForLogged_HeartbeatTimeout(t *testing.T) {
 func TestWaitForLogged_HeartbeatFresh_NoAbort(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Mock where heartbeat is fresh (just received) — should NOT abort.
 	val, err := evalJS(`(async function() {
@@ -2602,7 +2603,7 @@ func TestWaitForLogged_HeartbeatFresh_NoAbort(t *testing.T) {
 func TestWaitForLogged_HeartbeatNeverReceived_GracePeriod(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Mock where heartbeat was NEVER called (lastCallTime returns 0).
 	// Should NOT abort — grace period until first heartbeat arrives.
@@ -2647,7 +2648,7 @@ func TestWaitForLogged_HeartbeatNeverReceived_GracePeriod(t *testing.T) {
 func TestWaitForLogged_MissingWaitForAsync(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Mock mcpCallbackObj with only sync waitFor — no waitForAsync.
 	// waitForLogged must return a structured error, NOT block.
@@ -2680,7 +2681,7 @@ func TestWaitForLogged_MissingWaitForAsync(t *testing.T) {
 func TestWaitForLogged_NilMcpCallback(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Set mcpCallbackObj to null — no callback at all.
 	val, err := evalJS(`(async function() {
@@ -2710,7 +2711,7 @@ func TestWaitForLogged_NilMcpCallback(t *testing.T) {
 func TestCleanupExecutor_NormalClose(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`(function() {
 		var calls = [];
@@ -2743,7 +2744,7 @@ func TestCleanupExecutor_NormalClose(t *testing.T) {
 func TestCleanupExecutor_ForceCancel(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`(function() {
 		var calls = [];
@@ -2776,7 +2777,7 @@ func TestCleanupExecutor_ForceCancel(t *testing.T) {
 func TestCleanupExecutor_NilExecutor(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// When claudeExecutor is null, cleanupExecutor should be a no-op.
 	_, err := evalJS(`(function() {
@@ -2791,7 +2792,7 @@ func TestCleanupExecutor_NilExecutor(t *testing.T) {
 func TestCleanupExecutor_WithTuiMux_NoSynchronousDetach(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`(function() {
 		var calls = [];

@@ -123,7 +123,7 @@ Ready for execution.
   - All tests pass, full build clean
   - Rule of Two: Pass 1 PASS + Pass 2 PASS ✓
 - **Next**: T313 (split pr_split_14_tui_commands.js)
-- **T313**: IN PROGRESS — split pr_split_14_tui_commands.js into 2 files
+- **T313**: Done ✅ — committed `cf793425` — split pr_split_14_tui_commands.js into 2 files
   - 14a_tui_commands_core.js: ~630 lines (17 core workflow commands: analyze through run)
   - 14b_tui_commands_ext.js: 709 lines (15 ext commands + buildCommands orchestrator + HUD overlay + bell handler)
   - buildCommands split: 14a exports _buildCoreCommands, 14b imports and merges via Object.assign pattern
@@ -145,4 +145,302 @@ Ready for execution.
   - Native module access: verified correct (Go globals never accessed via prSplit namespace)
   - Export completeness: verified (all imports resolve against earlier-chunk exports)
   - Recommended fix: delete each dead `var x = prSplit._xxx;` line — trivial one-liner per var
+- **T314 Cleanup**: Done ✅ — committed `2715a153` — removed 33 dead IIFE-scope vars across 8 files
+  - Files: 10c, 15a, 15b, 15c, 15d, 16a, 16e, 16f
+  - Rule of Two: Pass 1 FAIL→fix→Pass 1v2 FAIL→fix→Pass 1v3 PASS + Pass 2 PASS ✓
 - **Next**: T315 (design PR Split test package structure)
+
+---
+
+## T315 Design: PR Split Test Package Structure
+
+### Current State Audit
+
+**68 test files** in `internal/command/`, all `package command`. Total internal/command test time: ~1011s.
+(Note: `pr_split_test.go` has no Test functions — it's purely a helper/type definitions file, but it is still a `_test.go` file.)
+
+**Engine Creation Patterns** (4 main chains, all rooted in unexported internals):
+
+| Pattern | Defined In | Used By | Depends On |
+|---------|-----------|---------|------------|
+| `loadChunkEngine(t, overrides, chunkNames...)` | 00_core_test.go | ~15 files | `scriptCommandBase.PrepareEngine` (unexported), `prSplitChunks` (unexported) |
+| `loadTUIEngine(t)` | 13_tui_test.go | ~4 files | `loadChunkEngine` + `allChunksThrough12` + `setupTUIMocks` const |
+| `loadTUIEngineWithHelpers(t)` | 16_helpers_test.go | ~20 files | `loadTUIEngine` + `chunk16Helpers` const |
+| `loadPrSplitEngineWithEval(t, overrides)` | pr_split_test.go | ~25 files | `scriptCommandBase.PrepareEngine` + `loadChunkedScript` (unexported) |
+
+**Cross-file Helpers** (shared across multiple test files):
+
+| Helper | Defined In | Used In (count) |
+|--------|-----------|-----------------|
+| `setupTestGitRepo` | pr_split_test.go | 3 files (21× total) |
+| `setupTestPipeline` / `chdirTestPipeline` | pr_split_test.go | ~15 files |
+| `gitMockSetupJS` | pr_split_verification_test.go | 6 files (31× total) |
+| `jsStringLiteral` | pr_split_pipeline_test.go | 2 files |
+| `numVal` | 16_helpers_test.go | 2 files |
+| `buildOSMBinary` | pr_split_pty_unix_test.go | 3 files (unix-only) |
+| `safeBuffer` | pr_split_test.go | 3 files |
+| `TestPipeline` / `TestPipelineOpts` / `TestPipelineFile` | pr_split_test.go | ~15 files |
+
+**Build Tags**: 4 files have `//go:build unix` (all PTY-based E2E tests).
+
+### Fundamental Constraint: Go Import Cycles
+
+The test files are `package command` (internal tests), NOT `package command_test` (external tests). This means **any package imported by these test files cannot itself import `internal/command`** — Go detects import cycles at the package level, regardless of test vs production code boundaries.
+
+**Consequence**: The `prsplittest` helper package **must NOT import `internal/command`**. It must provide engine creation and chunk loading using only public APIs.
+
+### Feasibility Analysis: Public API Engine Creation
+
+`PrepareEngine` (the unexported method used by all engine helpers) calls:
+1. `scripting.NewEngineDetailed(ctx, stdout, stderr, session, store, logFile, bufSize, level, opts...)` — **PUBLIC**
+2. `resolveLogConfig(...)` — unexported, but tests need only defaults (nil logFile, LevelInfo)
+3. `maybeStartCleanupScheduler(...)` — unexported, **not needed** for tests
+4. `engine.SetTestMode(true)` — public, **not needed** for chunk tests
+5. `injectConfigHotSnippets(...)` — unexported, **not needed** for tests
+6. `modulePathOpts(cfg)` — returns nil for default config, **not needed**
+
+**Verdict**: Engine creation is fully replicable using `scripting.NewEngineDetailed()` + defaults. ✅
+
+### Feasibility Analysis: Chunk Loading Without Importing command
+
+The `prSplitChunks` variable (unexported) contains `{name, *source}` pairs. In the helper package, we need the chunk JS content.
+
+**Solution**: Read `pr_split_*.js` files from disk at test time using `os.ReadFile()` + lexicographic filename sort. This works because:
+- Filenames are numerically prefixed: `00_core`, `01_analysis`, ..., `10a_pipeline_config`, `10b_pipeline_send`, ..., `16f_tui_model`
+- Lexicographic sort produces correct load order: `10a` < `10b` < `10c` < `10d` < `11` (because '0' < '1' at position 1)
+- The `internal/command/` directory path is discoverable via `runtime.Caller(0)` or `go list -m -json`
+
+**Tradeoff**: Chunk ordering is implicitly defined by filenames rather than the explicit `prSplitChunks` array. If a chunk is renamed to break sort order, tests will fail — but this is actually a GOOD invariant to enforce.
+
+### Target Package Structure
+
+```
+internal/command/prsplittest/
+├── engine.go       — NewTestEngine, LoadChunks, MakeEvalJS, ChunkNames
+├── eval.go         — EvalJS (convenience), EvalJSTimeout
+├── repo.go         — InitTestRepo, RunGitCmd, GitBranchList, SetupTestGitRepo
+├── pipeline.go     — TestPipeline, TestPipelineOpts, TestPipelineFile, SetupTestPipeline
+├── tui.go          — NewTUIEngine, NewTUIEngineWithHelpers, SetupTUIMocks, Chunk16Helpers
+├── types.go        — SafeBuffer, ChunkEntry
+├── assertions.go   — NumVal, AssertContains, GitMockSetupJS
+└── doc.go          — Package documentation
+```
+
+**Import graph**:
+```
+prsplittest → internal/scripting, internal/config  (NO import of internal/command)
+command test files → prsplittest  (NO cycle)
+```
+
+### Functions to Export from prsplittest
+
+#### Engine Layer (engine.go + types.go)
+
+| Export | Replaces | Signature |
+|--------|----------|-----------|
+| `ChunkEntry` | anonymous struct in prSplitChunks | `type ChunkEntry struct { Name string; Source string }` |
+| `SafeBuffer` | safeBuffer type | `type SafeBuffer struct { ... }` (exported, thread-safe) |
+| `NewTestEngine(t)` | `loadChunkEngine` engine setup | `func(testing.TB, ...EngineOption) *Engine` |
+| `Engine.LoadChunks(names...)` | chunk-by-name loading | method on wrapper |
+| `Engine.EvalJS(code)` | `makeEvalJS` result | method returning `(any, error)` |
+| `Engine.SetGlobal(k, v)` | `engine.SetGlobal` | delegates to underlying scripting.Engine |
+| `ChunkNames()` | `allChunksThrough12`, `allChunksThrough11` | `func() []string` — returns all discovered chunk names |
+| `ChunkNamesThrough(prefix)` | `allChunksThrough12` | `func(string) []string` — returns chunks up to prefix |
+
+#### TUI Layer (tui.go)
+
+| Export | Replaces | Signature |
+|--------|----------|-----------|
+| `SetupTUIMocks` | const in 13_tui_test.go | `const string` (JS source) |
+| `Chunk16Helpers` | const in 16_helpers_test.go | `const string` (JS source) |
+| `NewTUIEngine(t)` | `loadTUIEngine` | `func(testing.TB) *Engine` — loads all chunks through 12, injects mocks, loads 13-16 |
+| `NewTUIEngineWithHelpers(t)` | `loadTUIEngineWithHelpers` | `func(testing.TB) *Engine` — extends NewTUIEngine with Chunk16Helpers |
+
+#### Repo Layer (repo.go)
+
+| Export | Replaces | Signature |
+|--------|----------|-----------|
+| `RunGitCmd(t, dir, args...)` | `runGitCmd` | `func(testing.TB, string, ...string) string` |
+| `InitTestRepo(t)` | `setupTestGitRepo` | `func(testing.TB) string` |
+| `GitBranchList(t, dir)` | `gitBranchList` | `func(testing.TB, string) []string` |
+| `GitMockSetupJS()` | `gitMockSetupJS` | `func() string` |
+
+#### Pipeline Layer (pipeline.go)
+
+| Export | Replaces | Signature |
+|--------|----------|-----------|
+| `TestPipeline` | struct in pr_split_test.go | exported struct |
+| `TestPipelineOpts` | struct in pr_split_test.go | exported struct |
+| `TestPipelineFile` | struct in pr_split_test.go | exported struct |
+| `SetupTestPipeline(t, opts)` | `setupTestPipeline` | `func(testing.TB, TestPipelineOpts) *TestPipeline` |
+
+**Note**: `setupTestPipeline` uses `loadPrSplitEngineWithEval` internally, which accesses `loadChunkedScript` (unexported). The prsplittest version will replicate this using its own engine creation + chunk loading from disk. The behavior is functionally identical since the JS chunks are the same source.
+
+### Migration Plan by Test File
+
+#### Phase 1: Unit Tests (T317) — 14 chunk-level files
+
+| File | Current Helpers Used | Migration |
+|------|---------------------|-----------|
+| pr_split_00_core_test.go | **Defines** loadChunkEngine, makeEvalJS | Keep as thin wrapper calling prsplittest.NewTestEngine |
+| pr_split_01_analysis_test.go | loadChunkEngine, gitInit, gitRun | Use prsplittest.NewTestEngine + prsplittest.RunGitCmd |
+| pr_split_02_grouping_test.go | loadChunkEngine | Use prsplittest.NewTestEngine |
+| pr_split_03_planning_test.go | loadChunkEngine | Use prsplittest.NewTestEngine |
+| pr_split_04_validation_test.go | loadChunkEngine + local evalValidation | Use prsplittest, keep evalValidation local |
+| pr_split_05_execution_test.go | loadChunkEngine + local setupExecRepo | Use prsplittest, keep local setup |
+| pr_split_06_verification_test.go | loadChunkEngine + local setup | Use prsplittest, keep local helpers |
+| pr_split_07_prcreation_test.go | loadChunkEngine | Use prsplittest.NewTestEngine |
+| pr_split_08_conflict_test.go | loadChunkEngine | Use prsplittest.NewTestEngine |
+| pr_split_09_claude_test.go | loadChunkEngine | Use prsplittest.NewTestEngine |
+| pr_split_10_pipeline_test.go | loadChunkEngine | Use prsplittest.NewTestEngine |
+| pr_split_11_utilities_test.go | loadChunkEngine | Use prsplittest, retire allChunksThrough11 |
+| pr_split_12_exports_test.go | loadChunkEngine | Use prsplittest, retire allChunksThrough12 |
+| pr_split_template_unit_test.go | loadPrSplitEngineWithEval | Use prsplittest.NewTestEngine (load all) |
+
+#### Phase 2: TUI Tests (T318) — ~25 files
+
+| File Group | Current | Migration |
+|------------|---------|-----------|
+| pr_split_13_tui_test.go | **Defines** loadTUIEngine, setupTUIMocks | Keep thin: calls prsplittest.NewTUIEngine |
+| pr_split_15_tui_views_test.go | loadTUIEngine | Use prsplittest.NewTUIEngine |
+| pr_split_16_helpers_test.go | **Defines** loadTUIEngineWithHelpers | Keep thin: calls prsplittest.NewTUIEngineWithHelpers |
+| pr_split_16_*_test.go (18 files) | loadTUIEngineWithHelpers, numVal | Use prsplittest directly |
+| pr_split_tui_hang_test.go | loadTUIEngineRaw + manual wiring | Use prsplittest.NewTUIEngine variant |
+| pr_split_tui_subcommands_test.go | chdirTestPipeline | Use prsplittest helpers |
+| pr_split_edge_hardening_test.go | mixed (eval + TUI + pipeline) | Use appropriate prsplittest helpers |
+
+#### Phase 3: Pipeline/Integration/E2E Tests (T317 continued) — ~26 files
+
+| File | Current | Migration |
+|------|---------|-----------|
+| pr_split_verification_test.go | loadPrSplitEngineWithEval + **defines** gitMockSetupJS | Move gitMockSetupJS to prsplittest |
+| pr_split_pipeline_test.go | loadPrSplitEngineWithEval + **defines** jsStringLiteral | Use prsplittest, keep local parsers |
+| pr_split_grouping_test.go | loadPrSplitEngineWithEval | Use prsplittest |
+| pr_split_planning_test.go | loadPrSplitEngineWithEval + gitMockSetupJS | Use prsplittest |
+| pr_split_execution_test.go | loadPrSplitEngineWithEval + gitMockSetupJS | Use prsplittest |
+| pr_split_analysis_test.go | loadPrSplitEngineWithEval + gitMockSetupJS | Use prsplittest |
+| pr_split_mode_autofix_test.go | loadPrSplitEngineWithEval + setupTestGitRepo | Use prsplittest |
+| pr_split_bt_test.go | loadPrSplitEngineWithEval + setupTestPipeline | Use prsplittest |
+| pr_split_autosplit_recovery_test.go | loadPrSplitEngineWithEval + chdirTestPipeline | Use prsplittest |
+| pr_split_benchmark_test.go | loadPrSplitEngineWithEval + setupTestPipeline | Use prsplittest |
+| pr_split_local_integration_test.go | multiple variants | Use appropriate prsplittest helpers |
+| pr_split_corruption_test.go | loadChunkEngine + setupTestPipeline | Use prsplittest |
+| pr_split_createprs_test.go | loadPrSplitEngineWithEval | Use prsplittest |
+| pr_split_pipeline_smoke_test.go | loadChunkEngine (allChunksThrough13) | Use prsplittest.ChunkNamesThrough("13") |
+| pr_split_conflict_retry_test.go | loadPrSplitEngineWithEval + setupTestGitRepo | Use prsplittest |
+| pr_split_prompt_test.go | loadPrSplitEngineWithEval + setupTestPipeline | Use prsplittest |
+| pr_split_heuristic_run_test.go | setupTestGitRepo + **local** setup variants | Use prsplittest.InitTestRepo, keep local variants |
+| pr_split_autofix_strategy_test.go | loadPrSplitEngineWithEval | Use prsplittest |
+| pr_split_claude_config_test.go | runGitCmd + **local** setupDependencyGoRepo | Use prsplittest.RunGitCmd, keep local setup |
+| pr_split_session_cancel_test.go | loadPrSplitEngineWithEval + setupTestPipeline + gitMockSetupJS | Use prsplittest |
+| pr_split_scope_misc_test.go | loadPrSplitEngineWithEval | Use prsplittest |
+| pr_split_wizard_integration_test.go | loadPrSplitEngineWithEval | Use prsplittest |
+| pr_split_integration_test.go | setupTestPipeline + **local** runGit | Use prsplittest, keep local runGit |
+| pr_split_complex_project_test.go | Standalone git repo tests | Minimal change (uses own git setup) |
+| pr_split_cmd_meta_test.go | Standalone — direct NewPrSplitCommand() | No migration needed (no shared helpers used) |
+
+#### Phase 4: E2E/PTY Tests (unix-only, T319 build tag tagging + migration)
+
+| File | Current | Migration |
+|------|---------|-----------|
+| pr_split_pty_unix_test.go | **Defines** buildOSMBinary, osmBinaryOnce/Path/Err | Keep as-is (defines unix-only helpers) |
+| pr_split_binary_e2e_test.go | buildOSMBinary + **local** helpers | Add `//go:build prsplit_slow && unix` tag |
+| pr_split_tui_pty_hang_test.go | buildOSMBinary + **local** helpers | Add `//go:build prsplit_slow && unix` tag |
+| pr_split_termmux_observation_test.go | buildOSMBinary | Add `//go:build prsplit_slow && unix` tag |
+
+#### Helper Source File Fate: `pr_split_test.go`
+
+After migration, `pr_split_test.go` (the helper-only `_test.go` file defining `setupTestGitRepo`, `safeBuffer`, `TestPipeline*`, `loadPrSplitEngine*`, etc.) will be **reduced to thin wrappers**:
+- `safeBuffer`, `TestPipeline`, `TestPipelineOpts`, `TestPipelineFile` → moved to `prsplittest/types.go`
+- `setupTestGitRepo`, `setupTestPipeline`, `chdirTestPipeline` → moved to `prsplittest/repo.go` and `prsplittest/pipeline.go`
+- `loadPrSplitEngine`, `loadPrSplitEngineWithEval` → replaced by `prsplittest.NewTestEngine` variants
+- `runGitCmd`, `gitBranchList`, `filterPrefix` → moved to `prsplittest/repo.go`
+- File will either be **deleted entirely** or reduced to a compatibility shim that delegates to prsplittest (final decision during T317 execution).
+
+### Test Binary Splitting Strategy (T319)
+
+**Approach**: Build tags + Make targets (NOT separate packages).
+
+**Rationale**: Separate test packages require exporting or bridging all internals, adding complexity for marginal gain. Build tags within the same package keep tests in `package command` (full internal access) while allowing selective compilation.
+
+#### Slow Tests (tagged `//go:build prsplit_slow`)
+
+| File | Est. Time | Current Tags |
+|------|-----------|-------------|
+| pr_split_binary_e2e_test.go | ~120s | `//go:build unix` |
+| pr_split_tui_pty_hang_test.go | ~60s | `//go:build unix` |
+| pr_split_termmux_observation_test.go | ~90s | `//go:build unix` |
+| pr_split_autosplit_recovery_test.go | ~120s | none |
+| pr_split_integration_test.go | ~180s | none |
+| pr_split_complex_project_test.go | ~60s | none |
+| pr_split_wizard_integration_test.go | ~60s | none |
+| pr_split_local_integration_test.go | ~120s | none |
+| pr_split_benchmark_test.go | ~30s | none |
+
+**Estimated slow total**: ~840s
+**Estimated fast total**: ~170s (remaining unit + TUI tests)
+
+#### Build Tag Design
+
+```go
+// Slow tests get BOTH their existing tag AND the new one:
+//go:build unix && prsplit_slow    // for PTY tests
+//go:build prsplit_slow            // for integration tests
+
+// Default: tests WITHOUT the tag run in the "fast" pass.
+// No tag changes needed for fast tests — they compile by default.
+```
+
+#### Make Targets (config.mk)
+
+```makefile
+.PHONY: test-prsplit-fast test-prsplit-slow test-prsplit-all test-prsplit-unit test-prsplit-tui test-prsplit-e2e
+
+test-prsplit-fast:
+	go test -timeout=300s -count=1 ./internal/command/... 2>&1 | fold -w 200 | tail -n 40
+
+test-prsplit-slow:
+	go test -timeout=600s -count=1 -tags=prsplit_slow ./internal/command/... 2>&1 | fold -w 200 | tail -n 40
+
+test-prsplit-unit:
+	go test -timeout=300s -count=1 -run 'TestCore|TestAnalysis|TestGrouping|TestPlanning|TestValidation|TestExecution|TestVerification|TestPRCreation|TestConflict|TestClaude|TestPipeline|TestUtilities|TestExports|TestTemplate' ./internal/command/... 2>&1 | fold -w 200 | tail -n 40
+
+test-prsplit-tui:
+	go test -timeout=600s -count=1 -run 'TestTUI|TestViews|TestFocus|TestBench|TestKeyboard|TestMouse|TestOverlay|TestSplitView|TestAsync|TestHang|TestAutoSplit|TestLifecycle|TestConfig|TestClaude|TestPreexisting|TestRestart|TestSync|TestVerify|TestVterm' ./internal/command/... 2>&1 | fold -w 200 | tail -n 40
+
+test-prsplit-e2e:
+	go test -timeout=600s -count=1 -tags=prsplit_slow -run 'TestBinaryE2E|TestTermmux|TestPTY' ./internal/command/... 2>&1 | fold -w 200 | tail -n 40
+
+test-prsplit-all:
+	go test -timeout=900s -count=1 -tags=prsplit_slow ./internal/command/... 2>&1 | fold -w 200 | tail -n 60
+```
+
+### Expected Performance Improvement
+
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| Full suite (`test-prsplit-all`) | ~1011s | ~1011s | 0% (same tests) |
+| Fast feedback (`test-prsplit-fast`) | ~1011s | **~170s** | **83% faster** |
+| Unit only (`test-prsplit-unit`) | ~1011s | **~90s** | **91% faster** |
+| CI parallel (fast ∥ slow) | ~1011s | **~840s** | 17% (limited by slow) |
+
+The primary win is the **fast feedback loop**: `make test-prsplit-fast` for sub-3-minute iteration.
+
+### Blockers and Compromises
+
+1. **Chunk ordering duplication**: `prsplittest` discovers chunk order via filename sorting, while production code uses the explicit `prSplitChunks` array. A rename that breaks sort order will cause test failures — this is acceptable (and desirable as a safety net).
+
+2. **`setupTestPipeline` complexity**: This helper creates git repos, loads engines, sets up pipelines, and provides dispatch functions. Replicating this in `prsplittest` without importing `command` requires duplicating ~150 lines of setup logic. The alternative is to keep `setupTestPipeline` in a test file within `package command` that delegates to `prsplittest` for engine creation but handles pipeline-specific wiring locally.
+
+3. **Build tag maintenance**: Adding `//go:build prsplit_slow` to slow test files is a one-time change. Future tests must be tagged appropriately — this is documented in the package's doc.go.
+
+4. **No separate test binary**: Tests remain in one Go package, compiled to one binary. True binary-level parallelism would require separate packages, which is blocked by the import cycle constraint unless we export test-only functions from `command`. This is a deliberate tradeoff: simplicity over maximum parallelism.
+
+5. **Disk I/O for chunk loading**: `prsplittest` reads `.js` files from disk (~500KB total) on every test engine creation. This adds ~1ms per engine creation — negligible vs the 30s+ test execution time.
+
+### Decision: Start with Phased Implementation
+
+- **T316**: Create `prsplittest` with engine, eval, repo, and TUI helpers. Prove the API with 3 test file migrations.
+- **T317**: Migrate unit tests (14 files).
+- **T318**: Migrate TUI tests (~25 files).
+- **T319**: Add build tags to slow tests + Make targets. Measure timing.

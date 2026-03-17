@@ -5,9 +5,7 @@
 (function(prSplit) {
     // Cross-chunk IIFE-scope imports from 10a and 10b.
     var AUTOMATED_DEFAULTS = prSplit.AUTOMATED_DEFAULTS;
-    var getCancellationError = prSplit._getCancellationError;
     var isTransientError = prSplit._isTransientError;
-    var captureScreenshot = prSplit._captureScreenshot;
     var sendToHandle = prSplit.sendToHandle;
     var resolveNumber = prSplit._resolveNumber;
 

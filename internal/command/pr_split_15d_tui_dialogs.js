@@ -11,12 +11,8 @@
     var layoutMode = prSplit._layoutMode;
     var lipgloss = prSplit._lipgloss;
     var zone = prSplit._zone;
-    var viewportLib = prSplit._viewportLib;
-    var scrollbarLib = prSplit._scrollbarLib;
-    var truncate = prSplit._truncate;
     var padRight = prSplit._padRight;
     var repeatStr = prSplit._repeatStr;
-    var renderProgressBar = prSplit._renderProgressBar;
     var resolveColor = prSplit._resolveColor;
 
     // Screen renderers from 15c (needed by viewForState dispatcher).

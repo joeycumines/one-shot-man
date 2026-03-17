@@ -45,8 +45,6 @@
     var syncMainViewport = prSplit._syncMainViewport;
     var handleBack = prSplit._handleBack;
     var handleNext = prSplit._handleNext;
-    var handleFocusActivate = prSplit._handleFocusActivate;
-    var handleListNav = prSplit._handleListNav;
     var enterPlanEditor = prSplit._enterPlanEditor;
     var handlePauseResume = prSplit._handlePauseResume;
     var handlePauseQuit = prSplit._handlePauseQuit;
@@ -54,9 +52,6 @@
     var getFocusElements = prSplit._getFocusElements;
 
     // Cross-chunk imports — from chunks 16b/16c/16d.
-    var startAnalysis = prSplit._startAnalysis;
-    var startAutoAnalysis = prSplit._startAutoAnalysis;
-    var startExecution = prSplit._startExecution;
     var startEquivCheck = prSplit._startEquivCheck;
     var startPRCreation = prSplit._startPRCreation;
     var formatReportForDisplay = prSplit._formatReportForDisplay;

@@ -5,21 +5,14 @@
 (function(prSplit) {
     if (typeof tui === 'undefined' || typeof ctx === 'undefined' || typeof output === 'undefined') { return; }
 
-    var st = prSplit._state;
     var styles = prSplit._wizardStyles;
     var COLORS = prSplit._wizardColors;
     var layoutMode = prSplit._layoutMode;
     var SPINNER_FRAMES = prSplit._SPINNER_FRAMES;
-    var tea = prSplit._tea;
     var lipgloss = prSplit._lipgloss;
     var zone = prSplit._zone;
-    var viewportLib = prSplit._viewportLib;
-    var scrollbarLib = prSplit._scrollbarLib;
     var truncate = prSplit._truncate;
-    var padRight = prSplit._padRight;
     var repeatStr = prSplit._repeatStr;
-    var resolveColor = prSplit._resolveColor;
-    var renderProgressBar = prSplit._renderProgressBar;
 
     // -----------------------------------------------------------------------
     //  Chrome Renderers (T007)

@@ -10,15 +10,10 @@
 
     // Cross-chunk imports — libraries.
     var tea = prSplit._tea;
-    var lipgloss = prSplit._lipgloss;
     var zone = prSplit._zone;
-    var styles = prSplit._wizardStyles;
 
     // Cross-chunk imports — state and handlers from chunks 13-14.
     var st = prSplit._state;
-    var tuiState = prSplit._tuiState;
-    var WizardState = prSplit.WizardState;
-    var handleConfigState = prSplit._handleConfigState;
     var handlePlanReviewState = prSplit._handlePlanReviewState;
     var handlePlanEditorState = prSplit._handlePlanEditorState;
     var handleFinalizationState = prSplit._handleFinalizationState;

@@ -26,8 +26,6 @@
     var handleBack = prSplit._handleBack;
     var handleNext = prSplit._handleNext;
     var enterPlanEditor = prSplit._enterPlanEditor;
-    var handlePauseResume = prSplit._handlePauseResume;
-    var handlePauseQuit = prSplit._handlePauseQuit;
 
     // Cross-chunk imports — pipeline handlers (from chunk 16b).
     var handleAnalysisPoll = prSplit._handleAnalysisPoll;
@@ -42,9 +40,7 @@
     var pollVerifySession = prSplit._pollVerifySession;
     var handleVerifyFallbackPoll = prSplit._handleVerifyFallbackPoll;
     var updateClaudeConvo = prSplit._updateClaudeConvo;
-    var openClaudeConvo = prSplit._openClaudeConvo;
     var pollClaudeConvo = prSplit._pollClaudeConvo;
-    var handleErrorResolutionChoice = prSplit._handleErrorResolutionChoice;
 
     // Cross-chunk imports — Claude automation handlers (from chunk 16d).
     var handleClaudeCheck = prSplit._handleClaudeCheck;
@@ -53,7 +49,6 @@
     var handleRestartClaudePoll = prSplit._handleRestartClaudePoll;
     var keyToTermBytes = prSplit._keyToTermBytes;
     var CLAUDE_RESERVED_KEYS = prSplit._CLAUDE_RESERVED_KEYS;
-    var detectClaudeQuestion = prSplit._detectClaudeQuestion;
     var pollClaudeScreenshot = prSplit._pollClaudeScreenshot;
 
     // Late-bound shim — handleMouseClick is defined in chunk 16f (loaded after this).

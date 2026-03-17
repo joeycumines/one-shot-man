@@ -9,15 +9,11 @@
     var styles = prSplit._wizardStyles;
     var COLORS = prSplit._wizardColors;
     var layoutMode = prSplit._layoutMode;
-    var SPINNER_FRAMES = prSplit._SPINNER_FRAMES;
     var lipgloss = prSplit._lipgloss;
     var zone = prSplit._zone;
     var truncate = prSplit._truncate;
-    var padRight = prSplit._padRight;
-    var repeatStr = prSplit._repeatStr;
     var renderProgressBar = prSplit._renderProgressBar;
     var renderClaudeQuestionPrompt = prSplit._renderClaudeQuestionPrompt;
-    var resolveColor = prSplit._resolveColor;
 
     // -----------------------------------------------------------------------
     //  Screen Renderers (T009-T017)

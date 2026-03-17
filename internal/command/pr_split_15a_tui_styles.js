@@ -7,8 +7,6 @@
     if (typeof tui === 'undefined' || typeof ctx === 'undefined' ||
         typeof output === 'undefined') { return; }
 
-    var st = prSplit._state;
-
     var tea = require('osm:bubbletea');
     var lipgloss = require('osm:lipgloss');
     var zone = require('osm:bubblezone');

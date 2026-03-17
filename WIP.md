@@ -133,5 +133,16 @@ Ready for execution.
   - Fixed stale comment in pr_split_binary_e2e_test.go (referenced old filename)
   - Fixed config.mk .PHONY mismatch (was git-rm-old-chunk16, now git-rm-old-chunks)
   - Build: PASS (zero FAIL)
-  - Rule of Two Pass 1 (first attempt): FAIL — 4 issues found, all fixed
-  - NEXT: Rule of Two Pass 1 (re-attempt on new diff)
+  - Rule of Two: Pass 1 (first attempt) FAIL → 4 issues fixed → Pass 1 (retry) PASS + Pass 2 PASS ✓
+  - Committed as `cf793425`
+- **T314**: Done ✅ — Chunk cross-reference and closure variable audit
+  - Full report written to `scratch/T314-audit.md`
+  - **BLOCKING issues: 0** — zero runtime errors, zero missing exports, zero circular deps
+  - **NON-BLOCKING: 17 dead variables** across 7 files (IIFE-scope imports never used in file body)
+  - **Clean files: 9 of 16** — zero issues
+  - Loading order: verified correct (strict dependency ordering)
+  - Late-bind patterns: all 7 shim sites verified correct (all reference later-loaded chunks)
+  - Native module access: verified correct (Go globals never accessed via prSplit namespace)
+  - Export completeness: verified (all imports resolve against earlier-chunk exports)
+  - Recommended fix: delete each dead `var x = prSplit._xxx;` line — trivial one-liner per var
+- **Next**: T315 (design PR Split test package structure)

@@ -91,28 +91,28 @@
       "task": "Full visual audit: sweep ALL screen renderers for string-concatenated bordered buttons",
       "description": "Systematically search `pr_split_15_tui_views.js` for ALL instances where zone.mark'd buttons with bordered styles (secondaryButton, focusedSecondaryButton) are concatenated using `+` HORIZONTALLY on the SAME `lines.push()` call instead of `lipgloss.joinHorizontal()`. Check: viewConfigScreen, viewAnalysisScreen, viewPlanReviewScreen, viewPlanEditorScreen, viewExecutionScreen, viewVerificationScreen, viewFinalizationScreen, viewErrorResolutionScreen, viewHelpOverlay, viewConfirmCancelOverlay, viewMoveFileDialog, viewRenameSplitDialog, viewMergeSplitsDialog. IMPORTANT: Screens that render buttons VERTICALLY (one per `lines.push()` call with descriptions) are CORRECT and MUST NOT be changed. The error resolution screen (line 2036) renders crash-recovery buttons as a VERTICAL menu with per-button descriptions — this is intentional. Only fix instances where bordered buttons are joined HORIZONTALLY with `+`. Also check pr_split_16_tui_core.js for any button rendering in the main view function. Document all changes in a sweep list.",
       "acceptance": "Zero instances remain where bordered button elements are joined with `+` string concatenation in any view function. Every horizontal button group in every screen uses `lipgloss.joinHorizontal()`. Regression test `TestViews_AllScreens_NoBrokenBorders` renders every screen in default state and asserts no orphaned box-drawing characters (╭ without matching ╮ on same line, etc.). All existing view tests pass.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T307",
       "task": "Fix mouse click handling for EQUIV_CHECK buttons: verify zone boundaries work with joinHorizontal",
       "description": "After T303 changes viewVerificationScreen to use joinHorizontal, verify that bubblezone click detection still works for the 3 buttons. The zone.mark() wrapping must produce correct zones even when the rendered content is a multi-line bordered string. In `pr_split_16_tui_core.js`, find the mouse handler section (search for `zone.inBounds('equiv-reverify'`) — if it doesn't exist, add explicit mouse handlers for `equiv-reverify`, `equiv-revise`, and `nav-next` (Continue on EQUIV_CHECK screen). The click should trigger the same action as Enter/activate on the focused element: equiv-reverify → startEquivCheck, equiv-revise → transition to PLAN_REVIEW, nav-next → handleNext().",
       "acceptance": "All 3 EQUIV_CHECK buttons (Re-verify, Revise Plan, Continue) respond to mouse clicks with the correct action. Clicking Re-verify starts equivalence check. Clicking Revise Plan transitions to PLAN_REVIEW. Clicking Continue advances the wizard. Binary E2E test or interactive manual verification confirms click targets are aligned with visual button boundaries.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T308",
       "task": "Audit Back button handler: prevent state corruption on EQUIV_CHECK back-navigation",
       "description": "In `pr_split_16_tui_core.js`, the nav-back mouse handler at line 1712 (`zone.inBounds('nav-back', msg)`) handles back-navigation. When triggered from EQUIV_CHECK, it should: (1) cancel any in-progress equivalence check, (2) clear `s.equivalenceResult = null`, (3) reset `s.isProcessing = false`, (4) set `s.equivRunning = false` (used by handleEquivPoll at line ~3858 to control the poll loop — it exits when `!s.isProcessing && !s.equivRunning`), (5) set `s.equivError = null`, (6) transition wizard to previous state cleanly. Note: there is no explicit timer ID to cancel — setting isProcessing and equivRunning to false is sufficient to stop handleEquivPoll from re-scheduling. Check the wizard's VALID_TRANSITIONS to confirm EQUIV_CHECK→BRANCH_BUILDING (or wherever Back goes) is a valid transition. If cleanup is missing, add it. Also check handleNext/handleBack for EQUIV_CHECK in the non-mouse (keyboard Enter on nav-back) path.",
       "acceptance": "Pressing Back on EQUIV_CHECK screen: (a) transitions to the previous screen without error, (b) does not leave stale equivalenceResult, isProcessing, equivRunning, or equivError state, (c) the previous screen renders correctly with its own data, (d) re-entering EQUIV_CHECK starts fresh. Test `TestState_EquivCheckBackNavigation` simulates: enter EQUIV_CHECK → set equivalenceResult (fail) + equivRunning=true → activate nav-back → assert wizardState is previous screen AND equivalenceResult is null AND isProcessing is false AND equivRunning is false AND equivError is null.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T309",
       "task": "Research: diagnose Ctrl+] Claude switching failure",
       "description": "The user reports being unable to interact with Claude directly on the EQUIV_CHECK screen, despite the status bar showing 'Ctrl+] Claude'. Investigate: (1) In `pr_split_16_tui_core.js`, find the `ctrl+]` handler — verify it's reachable during EQUIV_CHECK state (not gated by a state check that excludes EQUIV_CHECK). (2) Check if the EQUIV_CHECK screen has any key handling that swallows Ctrl+] before it reaches the mux toggle handler. (3) Verify the key mapping in `internal/scripting/tui_js_bridge.go` (line 588) correctly translates Ctrl+] from the terminal. (4) Check if `tuiMux.hasChild()` returns false during EQUIV_CHECK — if Claude isn't attached at that point, switchTo would be skipped. (5) Add diagnostic log.printf at the Ctrl+] handler entry point to confirm the key is received. Document findings.",
       "acceptance": "Root cause identified and fixed. Either: (a) Ctrl+] now successfully switches to Claude passthrough from EQUIV_CHECK, or (b) if Claude is not attached during EQUIV_CHECK, the UI displays a clear message ('Claude not available') and the status bar does NOT show 'Ctrl+] Claude'. Diagnostic log entry fires on every Ctrl+] press regardless of outcome. Test `TestKeyHandling_CtrlBracket_EquivCheck` verifies the key reaches the handler and produces the expected behavior.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T310",

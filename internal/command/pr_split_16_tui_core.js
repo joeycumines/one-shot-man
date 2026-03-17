@@ -955,10 +955,19 @@
                 }
                 // termmux toggle — only if Claude child is attached.
                 if (k === 'ctrl+]') {
-                    if (typeof tuiMux !== 'undefined' && tuiMux &&
-                        typeof tuiMux.switchTo === 'function' &&
-                        (typeof tuiMux.hasChild !== 'function' || tuiMux.hasChild())) {
+                    // T309: Diagnostic log on every Ctrl+] press.
+                    var muxAvail = typeof tuiMux !== 'undefined' && !!tuiMux;
+                    var childAttached = muxAvail &&
+                        (typeof tuiMux.hasChild !== 'function' || tuiMux.hasChild());
+                    log.printf('ctrl+]: muxAvail=%s childAttached=%s wizardState=%s',
+                        String(muxAvail), String(childAttached), s.wizardState || '(none)');
+                    if (muxAvail &&
+                        typeof tuiMux.switchTo === 'function' && childAttached) {
                         tuiMux.switchTo('claude');
+                    } else {
+                        // T309: Flash notification when Claude isn't available.
+                        s.claudeAutoAttachNotif = 'Claude not available \u2014 no active Claude session';
+                        s.claudeAutoAttachNotifAt = Date.now();
                     }
                     return [s, null];
                 }

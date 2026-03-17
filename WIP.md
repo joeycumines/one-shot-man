@@ -73,4 +73,22 @@ Ready for execution.
 - **T301**: Done ✅ — committed `274e460d` (nav-back in EQUIV_CHECK focus elements)
 - **T302**: Done ✅ — committed `48ea09ba` (Back/Cancel use focusedSecondaryButton)
 - **T302b**: Done ✅ — cross-build verified: linux/amd64, darwin/amd64, windows/amd64 all OK
-- **Next**: T303 (EQUIV_CHECK button layout: joinHorizontal)
+- **T303+T304+T305**: Done ✅ — committed `b8cc14f1` (joinHorizontal for EQUIV_CHECK, PlanReview, Finalization)
+- **T306**: Done ✅ — committed `1abfae19` (full visual audit: 6 more joinHorizontal fixes + AllScreens_NoBrokenBorders test)
+  - BUG1: viewPlanEditorScreen editor-move/rename/merge
+  - BUG2: viewExecutionScreen verify footer (conditional openShellBtn)
+  - BUG3-5: Move/Rename/Merge dialogs confirm+cancel
+  - BUG6: PAUSED screen resume+quit
+  - Rule of Two: Pass 1 FAIL (test gaps) → fixed → Pass 2 PASS + Pass 3 PASS ✓
+- **T307**: Done ✅ — committed `9d263936` (EQUIV_CHECK mouse click tests)
+- **T308**: Done ✅ — committed `04857394` (equiv state cleanup on back-navigation)
+  - Fixed handleBack, mouse equiv-revise, keyboard equiv-revise
+  - Added async guards in runEquivCheckAsync
+  - 4-scenario test: mouse back, keyboard back, keyboard revise, isProcessing guard
+- **T309**: Done ✅ — Ctrl+] Claude switching fix
+  - Root cause: `tuiMux.hasChild()` returns false when Claude not attached, handler silently no-ops
+  - Status bar unconditionally showed "Ctrl+] Claude" regardless of child attachment
+  - Fix 1: Status bar now conditional on `tuiMux.hasChild()` (pr_split_15_tui_views.js)
+  - Fix 2: Ctrl+] handler logs diagnostics + flashes notification when Claude unavailable (pr_split_16_tui_core.js)
+  - 8-scenario test: 4 key handler tests + 4 status bar tests
+- **Next**: T310 (JS file splitting)

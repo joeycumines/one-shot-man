@@ -120,5 +120,13 @@ for pair in 'linux/amd64' 'darwin/amd64' 'windows/amd64'; do \
 done; \
 echo "All platforms build successfully."
 
+.PHONY: git-stage-all
+git-stage-all: ## Stage all changes (git add -A)
+	@git -C $(PROJECT_ROOT) add -A && echo "All changes staged."
+
+.PHONY: git-diff-cached
+git-diff-cached: ## Show staged diff (for review)
+	@git -C $(PROJECT_ROOT) diff --cached --stat
+
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 endif

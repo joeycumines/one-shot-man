@@ -538,9 +538,18 @@
         var veryNarrow = w < 40;
 
         // Left: termmux toggle hint + split-view hint.
-        var leftParts = veryNarrow ? 'C-]' : 'Ctrl+] Claude';
+        // T309: Only show Ctrl+] Claude when a Claude child is actually attached.
+        var hasMuxChild = typeof tuiMux !== 'undefined' && tuiMux &&
+            (typeof tuiMux.hasChild !== 'function' || tuiMux.hasChild());
+        var leftParts;
+        if (hasMuxChild) {
+            leftParts = veryNarrow ? 'C-]' : 'Ctrl+] Claude';
+        } else {
+            leftParts = '';
+        }
         if (!veryNarrow) {
-            leftParts += '  Ctrl+L Split';
+            if (leftParts) leftParts += '  ';
+            leftParts += 'Ctrl+L Split';
         }
         var left = styles.dim().render(leftParts);
 

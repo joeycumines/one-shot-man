@@ -58,8 +58,17 @@ var prSplitChunk08Conflict string
 //go:embed pr_split_09_claude.js
 var prSplitChunk09Claude string
 
-//go:embed pr_split_10_pipeline.js
-var prSplitChunk10Pipeline string
+//go:embed pr_split_10a_pipeline_config.js
+var prSplitChunk10aPipelineConfig string
+
+//go:embed pr_split_10b_pipeline_send.js
+var prSplitChunk10bPipelineSend string
+
+//go:embed pr_split_10c_pipeline_resolve.js
+var prSplitChunk10cPipelineResolve string
+
+//go:embed pr_split_10d_pipeline_orchestrator.js
+var prSplitChunk10dPipelineOrchestrator string
 
 //go:embed pr_split_11_utilities.js
 var prSplitChunk11Utilities string
@@ -119,7 +128,10 @@ var prSplitChunks = []struct {
 	{"07_prcreation", &prSplitChunk07PRCreation},
 	{"08_conflict", &prSplitChunk08Conflict},
 	{"09_claude", &prSplitChunk09Claude},
-	{"10_pipeline", &prSplitChunk10Pipeline},
+	{"10a_pipeline_config", &prSplitChunk10aPipelineConfig},
+	{"10b_pipeline_send", &prSplitChunk10bPipelineSend},
+	{"10c_pipeline_resolve", &prSplitChunk10cPipelineResolve},
+	{"10d_pipeline_orchestrator", &prSplitChunk10dPipelineOrchestrator},
 	{"11_utilities", &prSplitChunk11Utilities},
 	{"12_exports", &prSplitChunk12Exports},
 	{"13_tui", &prSplitChunk13TUI},

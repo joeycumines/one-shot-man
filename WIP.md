@@ -100,3 +100,26 @@ Ready for execution.
   - Original pr_split_15_tui_views.js deleted
   - All tests pass, full build clean
 - **Next**: T311 (split pr_split_16_tui_core.js)
+- **T311**: Done ✅ — committed `849523ab` — Split pr_split_16_tui_core.js into 6 files
+  - 16a_tui_focus.js: 974 lines (focus, navigation, dialog update, viewport sync)
+  - 16b_tui_handlers_pipeline.js: 825 lines (analysis, execution, equiv, PR creation)
+  - 16c_tui_handlers_verify.js: 879 lines (verify, error resolution, confirm cancel, Claude conversation)
+  - 16d_tui_handlers_claude.js: 839 lines (Claude automation, key bytes, question detection, screenshot)
+  - 16e_tui_update.js: 924 lines (main update dispatch — wizardUpdateImpl extracted from _updateFn)
+  - 16f_tui_model.js: 939 lines (BubbleTea model, mouse, view, launch)
+  - Key refactoring: _updateFn/viewFn extracted from createWizardModel closure as standalone functions
+  - Original pr_split_16_tui_core.js (5126 lines) deleted
+  - All tests pass, full build clean
+  - Rule of Two: Pass 1 PASS + Pass 2 PASS ✓
+- **Next**: T312 (split pr_split_10_pipeline.js)
+- **T312**: Done ✅ — Split pr_split_10_pipeline.js into 4 files
+  - 10a_pipeline_config.js: 246 lines (AUTOMATED_DEFAULTS, SEND_* constants, utility funcs)
+  - 10b_pipeline_send.js: 483 lines (captureScreenshot, prompt detection, anchor stability, sendToHandle)
+  - 10c_pipeline_resolve.js: 400 lines (waitForLogged, heuristicFallback, resolveConflictsWithClaude)
+  - 10d_pipeline_orchestrator.js: 995 lines (automatedSplit — justified hub file >800 lines)
+  - Critical fix: added cross-chunk IIFE-scope imports in 10c (isTransientError, AUTOMATED_DEFAULTS, etc.)
+  - Critical fix: added 9 late-bind entries in 10d for 10a/10b/10c functions
+  - Original pr_split_10_pipeline.js (2097 lines) deleted
+  - All tests pass, full build clean
+  - Rule of Two: Pass 1 PASS + Pass 2 PASS ✓
+- **Next**: T313 (split pr_split_14_tui_commands.js)

@@ -125,13 +125,17 @@ git-stage-all: ## Stage all changes (git add -A)
 	@git -C $(PROJECT_ROOT) add -A && echo "All changes staged."
 
 .PHONY: git-rm-old-chunk16
-git-rm-old-chunk16: ## Delete the original pr_split_16_tui_core.js (T311 split)
-	@git -C $(PROJECT_ROOT) rm -f internal/command/pr_split_16_tui_core.js 2>/dev/null || rm -f $(PROJECT_ROOT)/internal/command/pr_split_16_tui_core.js
-	@echo "Old chunk 16 file removed."
+git-rm-old-chunk16: ## Delete original chunk 16 and chunk 10 (T311/T312 split)
+	@git -C $(PROJECT_ROOT) rm -f internal/command/pr_split_16_tui_core.js internal/command/pr_split_10_pipeline.js 2>/dev/null || true
+	@echo "Old chunk files removed."
 
 .PHONY: git-diff-cached
 git-diff-cached: ## Show staged diff (for review)
 	@git -C $(PROJECT_ROOT) diff --cached --stat
+
+.PHONY: git-commit-t312
+git-commit-t312: ## Commit T312 split
+	@git -C $(PROJECT_ROOT) commit -m "Split pr_split_10_pipeline.js into 4 chunk files$$(printf '\n\nSplit the 2097-line pipeline chunk into 4 files to keep each under\n1000 lines:\n\n  10a_pipeline_config.js (246 lines)\n    Constants (AUTOMATED_DEFAULTS, SEND_*), pure utility functions\n    (resolveNumber, resolveSendConfig, getCancellationError,\n    classificationToGroups, cleanupExecutor, isTransientError).\n\n  10b_pipeline_send.js (483 lines)\n    PTY send pipeline: captureScreenshot, prompt detection,\n    anchor stability, sendToHandle with chunked writes.\n\n  10c_pipeline_resolve.js (400 lines)\n    IPC wait layer (waitForLogged), heuristicFallback, and\n    resolveConflictsWithClaude with exponential backoff.\n\n  10d_pipeline_orchestrator.js (995 lines)\n    Main automatedSplit orchestrator.\n\nCross-chunk wiring:\n- 10b imports resolveSendConfig, getCancellationError from 10a\n- 10c imports AUTOMATED_DEFAULTS, isTransientError, sendToHandle,\n  resolveNumber from 10a/10b\n- 10d late-binds 9 deps from 10a/10b/10c in automatedSplit\n\nUpdated pr_split.go embed directives and prSplitChunks array.\nUpdated 5 test files with new chunk name arrays.\nOriginal pr_split_10_pipeline.js deleted.')"
 
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 endif

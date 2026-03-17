@@ -13,7 +13,9 @@ import (
 var allChunksThrough12 = []string{
 	"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation",
 	"05_execution", "06_verification", "07_prcreation", "08_conflict",
-	"09_claude", "10_pipeline", "11_utilities", "12_exports",
+	"09_claude",
+	"10a_pipeline_config", "10b_pipeline_send", "10c_pipeline_resolve", "10d_pipeline_orchestrator",
+	"11_utilities", "12_exports",
 }
 
 func TestChunk12_VERSION(t *testing.T) {

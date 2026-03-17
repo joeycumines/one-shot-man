@@ -16,7 +16,9 @@ import (
 var _ = []string{ // compile-time proof the list is valid
 	"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation",
 	"05_execution", "06_verification", "07_prcreation", "08_conflict",
-	"09_claude", "10_pipeline", "11_utilities", "12_exports",
+	"09_claude",
+	"10a_pipeline_config", "10b_pipeline_send", "10c_pipeline_resolve", "10d_pipeline_orchestrator",
+	"11_utilities", "12_exports",
 	"13_tui", "14_tui_commands",
 	"15a_tui_styles", "15b_tui_chrome", "15c_tui_screens", "15d_tui_dialogs",
 	"16a_tui_focus", "16b_tui_handlers_pipeline", "16c_tui_handlers_verify",

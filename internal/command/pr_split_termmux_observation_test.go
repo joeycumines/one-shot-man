@@ -1,4 +1,4 @@
-//go:build unix
+//go:build unix && prsplit_slow
 
 package command
 

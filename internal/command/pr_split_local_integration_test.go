@@ -1,3 +1,5 @@
+//go:build prsplit_slow
+
 package command
 
 import (

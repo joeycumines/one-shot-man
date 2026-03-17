@@ -1,3 +1,5 @@
+//go:build prsplit_slow
+
 package command
 
 import (
@@ -2598,14 +2600,6 @@ func main() {
 
 	runGit(t, dir, "add", "-A")
 	runGit(t, dir, "commit", "-m", "feature: auth, config, middleware, docs")
-}
-
-// jsString returns a JavaScript string literal (single-quoted, with escaping)
-// for embedding a Go string into a JS expression.
-func jsString(s string) string {
-	escaped := strings.ReplaceAll(s, `\`, `\\`)
-	escaped = strings.ReplaceAll(escaped, `'`, `\'`)
-	return `'` + escaped + `'`
 }
 
 // mustJSON marshals v to a JSON string, failing the test on error.

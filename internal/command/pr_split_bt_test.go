@@ -1,3 +1,5 @@
+//go:build prsplit_slow
+
 package command
 
 // Tests for visualization, diff display, and report functions from the

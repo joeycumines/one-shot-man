@@ -449,6 +449,37 @@ The primary win is the **fast feedback loop**: `make test-prsplit-fast` for sub-
   - Added .deadcodeignore pattern for prsplittest/*
   - Build: PASS, Rule of Two: Pass 1 PASS + Pass 2 PASS ✓
   - M1 fix: NewTUIEngine uses eng.LoadChunks (not evalJS loop) for TUI chunks — preserves script names in stack traces
-- **T317**: Next — migrate remaining unit test files to use prsplittest helpers
-- **T318**: Migrate TUI tests (~25 files).
-- **T319**: Add build tags to slow tests + Make targets. Measure timing.
+- **T317**: Done ✅ — committed `a6f277a4` — migrate 13 unit test files to prsplittest
+  - Migrated 152 loadChunkEngine + 18 loadPrSplitEngineWithEval calls
+  - Files: 00_core(13), 01_analysis(6), 03_planning(13), 04_validation(26), 05_execution(7), 06_verification(7), 10_pipeline(21), 11_utilities(36), 12_exports(4), corruption(1), pipeline_smoke(2), template_unit(18)
+  - Added NewFullEngine: loads all chunks + ChunkCompatShim for template tests
+  - Added ChunkCompatShim (~160 lines) to assertions.go
+  - Deleted zombie pr_split_15_tui_views.js (2604 lines) + pr_split_16_tui_core.js (5126 lines)
+  - Remaining loadChunkEngine: def in 00_core + 2 calls in 13_tui (T318 scope)
+  - Build: PASS, Rule of Two: Pass 1 PASS + Pass 2 PASS ✓
+- **T318**: Done ✅ — committed `b7b469fe` — migrate TUI tests to prsplittest helpers
+  - 30 files changed, +709/-1097 (net -388 lines)
+  - New prsplittest API: NewTUIEngineE, MakeEvalJS, args global
+  - Groups migrated:
+    - loadTUIEngineWithHelpers → prsplittest.NewTUIEngineWithHelpers: 19 files, 346 call sites
+    - loadTUIEngine → prsplittest.NewTUIEngine: 3 files, 212 call sites
+    - loadPrSplitEngineWithEval → prsplittest.NewFullEngine: 4 files, 55 call sites
+    - tui_hang_test.go: NewTUIEngineE + MakeEvalJS for event-loop concurrent polling
+  - Deleted dead code: loadChunkEngine, makeEvalJS, loadTUIEngine, setupTUIMocks, loadTUIEngineWithHelpers, chunk16Helpers, loadTUIEngineRaw, numVal
+  - Build: PASS (1032s), staticcheck clean
+  - Rule of Two: Pass 1 PASS + Pass 2 PASS ✓
+- **T319**: In progress ⏳ — build tag splitting for parallel execution
+  - 23 test files tagged `//go:build prsplit_slow` (19 non-unix, 4 unix)
+  - project.mk: GO_FLAGS/STATICCHECK_FLAGS = -tags=prsplit_slow (lint sees ALL code)
+  - config.mk: 3 new Make targets (test-prsplit-fast, test-prsplit-all, + updated test-binary-e2e-pty)
+  - Relocated 5 helper functions to pr_split_test.go (initGitRepo, writeFile, gitCmd, escapeJSPath, jsString)
+  - Measurements:
+    - Full suite (`make make-all-with-log`): 1143s total, internal/command: 1103s
+    - Fast target (`make test-prsplit-fast`): 583s total, internal/command: 581s
+    - **Improvement**: 47% reduction (1103s → 581s)
+  - Note: 300s acceptance target not achievable — non-pr-split tests in internal/command
+    (pick_and_place PTY/binary builds, shooter game unix, 180+ JS engine inits from
+    non-tagged files) consume ~400+ seconds. The pr-split-specific speedup is much larger
+    but the package includes all command tests.
+  - Rule of Two: PENDING
+

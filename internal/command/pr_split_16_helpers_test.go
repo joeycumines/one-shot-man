@@ -12,5 +12,3 @@ package command
 //  PLAN_REVIEW, esc back, plan editor shortcut 'e', mouse wheel scroll,
 //  msg.string regression, AllKeyBindingsRespond).
 // ---------------------------------------------------------------------------
-
-

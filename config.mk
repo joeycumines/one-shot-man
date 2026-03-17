@@ -94,7 +94,7 @@ test-binary-e2e-pty: SHELL := /bin/bash
 test-binary-e2e-pty:
 	@echo "Running PTY binary E2E tests..."; \
 set -o pipefail; \
-$(GO) -C $(PROJECT_ROOT) test -v -timeout=300s -run 'TestBinaryE2E_(FullFlowToExecution|VerifyPTYLive|PlanEditorFlow|CancelDuringVerify)' ./internal/command/ 2>&1 | tee $(or $(PROJECT_ROOT),$(error))/test-e2e-pty.log | tail -n 80; \
+$(GO) -C $(PROJECT_ROOT) test -v -timeout=300s -tags=prsplit_slow -run 'TestBinaryE2E_(FullFlowToExecution|VerifyPTYLive|PlanEditorFlow|CancelDuringVerify)' ./internal/command/ 2>&1 | tee $(or $(PROJECT_ROOT),$(error))/test-e2e-pty.log | tail -n 80; \
 exit $${PIPESTATUS[0]}
 
 .PHONY: test-prsplit-views
@@ -105,6 +105,32 @@ test-prsplit-views:
 set -o pipefail; \
 $(GO) -C $(PROJECT_ROOT) test -v -timeout=300s -run 'TestViews_|TestChunk13_View' ./internal/command/ 2>&1 | tee $(or $(PROJECT_ROOT),$(error))/test-views.log | tail -n 80; \
 exit $${PIPESTATUS[0]}
+
+.PHONY: test-prsplit-fast
+test-prsplit-fast: ## Fast PR Split tests — excludes slow integration/E2E (no prsplit_slow tag)
+test-prsplit-fast: SHELL := /bin/bash
+test-prsplit-fast:
+	@echo "Running fast PR Split tests (excluding prsplit_slow)..."; \
+set -o pipefail; \
+start=$$(date +%s); \
+$(GO) -C $(PROJECT_ROOT) test -timeout=600s -count=1 ./internal/command/... 2>&1 | fold -w 200 | tail -n 40; \
+rc=$$?; \
+elapsed=$$(( $$(date +%s) - start )); \
+echo "Fast tests completed in $${elapsed}s (exit $$rc)"; \
+exit $$rc
+
+.PHONY: test-prsplit-all
+test-prsplit-all: ## All PR Split tests — fast + slow (includes prsplit_slow tag)
+test-prsplit-all: SHELL := /bin/bash
+test-prsplit-all:
+	@echo "Running ALL PR Split tests (fast + slow)..."; \
+set -o pipefail; \
+start=$$(date +%s); \
+$(GO) -C $(PROJECT_ROOT) test -timeout=900s -count=1 -tags=prsplit_slow ./internal/command/... 2>&1 | fold -w 200 | tail -n 60; \
+rc=$$?; \
+elapsed=$$(( $$(date +%s) - start )); \
+echo "All tests completed in $${elapsed}s (exit $$rc)"; \
+exit $$rc
 
 .PHONY: cross-build
 cross-build: ## Verify build succeeds on Linux, macOS, and Windows
@@ -205,6 +231,146 @@ git-commit-t317: ## Commit T317 migration
 		-m "Remaining loadChunkEngine callers (T318 scope):" \
 		-m "  - Definition in 00_core_test.go (kept for 13_tui_test.go)" \
 		-m "  - 2 calls in 13_tui_test.go"
+
+.PHONY: git-stage-t318
+git-stage-t318: ## Stage T318 TUI test migration files
+	@git -C $(PROJECT_ROOT) add \
+		internal/command/pr_split_00_core_test.go \
+		internal/command/pr_split_13_tui_test.go \
+		internal/command/pr_split_15_tui_views_test.go \
+		internal/command/pr_split_16_analysis_hang_test.go \
+		internal/command/pr_split_16_async_pipeline_test.go \
+		internal/command/pr_split_16_auto_split_equiv_test.go \
+		internal/command/pr_split_16_bench_test.go \
+		internal/command/pr_split_16_claude_attach_test.go \
+		internal/command/pr_split_16_config_output_test.go \
+		internal/command/pr_split_16_ctrl_bracket_test.go \
+		internal/command/pr_split_16_focus_nav_edge_test.go \
+		internal/command/pr_split_16_helpers_test.go \
+		internal/command/pr_split_16_keyboard_crash_test.go \
+		internal/command/pr_split_16_overlays_test.go \
+		internal/command/pr_split_16_preexisting_test.go \
+		internal/command/pr_split_16_restart_claude_test.go \
+		internal/command/pr_split_16_split_mouse_test.go \
+		internal/command/pr_split_16_sync_avail_test.go \
+		internal/command/pr_split_16_verify_expand_nav_test.go \
+		internal/command/pr_split_16_vterm_claude_pane_test.go \
+		internal/command/pr_split_16_vterm_key_forwarding_test.go \
+		internal/command/pr_split_16_vterm_lifecycle_test.go \
+		internal/command/pr_split_autosplit_recovery_test.go \
+		internal/command/pr_split_edge_hardening_test.go \
+		internal/command/pr_split_mode_autofix_test.go \
+		internal/command/pr_split_scope_misc_test.go \
+		internal/command/pr_split_tui_hang_test.go \
+		internal/command/prsplittest/engine.go \
+		internal/command/prsplittest/eval.go \
+		internal/command/prsplittest/tui.go
+	@echo "T318 files staged."
+
+.PHONY: git-commit-t318
+git-commit-t318: ## Commit T318 TUI test migration
+	@git -C $(PROJECT_ROOT) commit -m "test(pr-split): migrate TUI tests to prsplittest helpers (T318)" \
+		-m "Migrate ~30 TUI and related test files from local loadTUIEngine," \
+		-m "loadTUIEngineWithHelpers, loadChunkEngine, and" \
+		-m "loadPrSplitEngineWithEval helpers to the prsplittest package." \
+		-m "" \
+		-m "New prsplittest exports:" \
+		-m "  - NewTUIEngineE: returns *Engine with full TUI stack loaded," \
+		-m "    allowing access to ScriptingEngine() for event loop/VM" \
+		-m "  - MakeEvalJS: exported wrapper for custom-timeout evalJS" \
+		-m "    creation from a raw scripting.Engine" \
+		-m "" \
+		-m "Refactored existing prsplittest:" \
+		-m "  - NewTUIEngine: now delegates to NewTUIEngineE" \
+		-m "  - NewTUIEngineWithHelpers: now uses NewTUIEngineE + Chunk16Helpers" \
+		-m "  - NewEngine: now sets args global for compatibility" \
+		-m "" \
+		-m "Deleted dead code:" \
+		-m "  - loadChunkEngine + makeEvalJS from 00_core_test.go (~170 lines)" \
+		-m "  - loadTUIEngine + setupTUIMocks from 13_tui_test.go (~80 lines)" \
+		-m "  - loadTUIEngineWithHelpers + chunk16Helpers from 16_helpers_test.go" \
+		-m "    (~100 lines)" \
+		-m "  - loadTUIEngineRaw from tui_hang_test.go (~85 lines)" \
+		-m "  - numVal from 16_helpers_test.go (replaced by prsplittest.NumVal)" \
+		-m "" \
+		-m "Migration scope (30 files, ~600 call-site replacements):" \
+		-m "  Group 1 — loadTUIEngineWithHelpers to NewTUIEngineWithHelpers:" \
+		-m "    19 files, 346 call sites" \
+		-m "  Group 2 — loadTUIEngine to NewTUIEngine:" \
+		-m "    3 files, 212 call sites" \
+		-m "  Group 3 — loadPrSplitEngineWithEval to NewFullEngine:" \
+		-m "    4 files (autosplit_recovery, edge_hardening, scope_misc," \
+		-m "    mode_autofix), 55 call sites" \
+		-m "  Special — tui_hang_test.go:" \
+		-m "    NewTUIEngineE + MakeEvalJS for event-loop concurrent polling" \
+		-m "" \
+		-m "Net: 30 files changed, ~710 insertions(+), ~920 deletions(-)"
+
+.PHONY: git-stage-t319
+git-stage-t319: ## Stage T319 build tag splitting files
+	@git -C $(PROJECT_ROOT) add \
+		internal/command/pr_split_03_planning_test.go \
+		internal/command/pr_split_06_verification_test.go \
+		internal/command/pr_split_autosplit_recovery_test.go \
+		internal/command/pr_split_benchmark_test.go \
+		internal/command/pr_split_binary_e2e_test.go \
+		internal/command/pr_split_bt_test.go \
+		internal/command/pr_split_claude_config_test.go \
+		internal/command/pr_split_complex_project_test.go \
+		internal/command/pr_split_conflict_retry_test.go \
+		internal/command/pr_split_corruption_test.go \
+		internal/command/pr_split_edge_hardening_test.go \
+		internal/command/pr_split_heuristic_run_test.go \
+		internal/command/pr_split_integration_test.go \
+		internal/command/pr_split_local_integration_test.go \
+		internal/command/pr_split_mode_autofix_test.go \
+		internal/command/pr_split_prompt_test.go \
+		internal/command/pr_split_pty_unix_test.go \
+		internal/command/pr_split_session_cancel_test.go \
+		internal/command/pr_split_termmux_observation_test.go \
+		internal/command/pr_split_test.go \
+		internal/command/pr_split_tui_hang_test.go \
+		internal/command/pr_split_tui_pty_hang_test.go \
+		internal/command/pr_split_tui_subcommands_test.go \
+		internal/command/pr_split_wizard_integration_test.go \
+		internal/command/pr_split_16_helpers_test.go \
+		project.mk \
+		config.mk \
+		blueprint.json \
+		WIP.md
+	@echo "T319 files staged."
+
+.PHONY: git-commit-t319
+git-commit-t319: ## Commit T319 build tag splitting
+	@git -C $(PROJECT_ROOT) commit -m "test(pr-split): isolate slow tests with prsplit_slow build tag (T319)" \
+		-m "Add //go:build prsplit_slow tag to 23 slow test files (integration," \
+		-m "E2E, recovery, benchmark, binary builds) to enable fast-feedback" \
+		-m "iteration via make test-prsplit-fast which excludes them." \
+		-m "" \
+		-m "Tagged files (19 non-unix + 4 unix):" \
+		-m "  Non-unix: pr_split_{03_planning,06_verification,autosplit_recovery," \
+		-m "    benchmark,bt,claude_config,complex_project,conflict_retry," \
+		-m "    corruption,edge_hardening,heuristic_run,integration," \
+		-m "    local_integration,mode_autofix,prompt,session_cancel," \
+		-m "    tui_hang,tui_subcommands,wizard_integration}_test.go" \
+		-m "  Unix: pr_split_{binary_e2e,tui_pty_hang,termmux_observation," \
+		-m "    pty_unix}_test.go (unix && prsplit_slow)" \
+		-m "" \
+		-m "Relocated shared helpers to pr_split_test.go (untagged):" \
+		-m "  initGitRepo, writeFile, gitCmd, escapeJSPath, jsString" \
+		-m "  Previously in slow-tagged files, used by fast-path tests." \
+		-m "" \
+		-m "Build system changes:" \
+		-m "  project.mk: GO_FLAGS/STATICCHECK_FLAGS = -tags=prsplit_slow" \
+		-m "    (lint/vet/staticcheck see ALL code including slow files)" \
+		-m "  config.mk: New targets test-prsplit-fast, test-prsplit-all" \
+		-m "    Updated test-binary-e2e-pty with -tags=prsplit_slow" \
+		-m "" \
+		-m "Performance (internal/command package):" \
+		-m "  Full suite: 1103s" \
+		-m "  Fast target: 581s (47% reduction)" \
+		-m "  Note: 300s target not achievable — non-pr-split tests" \
+		-m "  (PTY, 180+ JS engine inits) consume ~400s."
 
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 endif

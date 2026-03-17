@@ -1,9 +1,10 @@
+//go:build prsplit_slow
+
 package command
 
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -562,47 +563,6 @@ func TestChunk03_LoadPlan_DoubleLoadNoDuplication(t *testing.T) {
 // ---------------------------------------------------------------------------
 //  Helpers
 // ---------------------------------------------------------------------------
-
-// initGitRepo creates a temporary git repo and returns its path.
-func initGitRepo(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	// Use init + symbolic-ref instead of init -b for compatibility
-	// with git versions older than 2.28 (e.g. Windows CI).
-	gitCmd(t, dir, "init")
-	gitCmd(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
-	gitCmd(t, dir, "config", "user.email", "test@test.com")
-	gitCmd(t, dir, "config", "user.name", "Test")
-	return dir
-}
-
-// writeFile creates a file with the given content.
-func writeFile(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// gitCmd runs a git command in a directory.
-func gitCmd(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
-	}
-	return string(out)
-}
-
-// escapeJSPath escapes a file path for embedding in a JS string literal.
-func escapeJSPath(p string) string {
-	return strings.ReplaceAll(p, `\`, `\\`)
-}
 
 // toInt converts a goja result to int for comparison.
 func toInt(v any) int {

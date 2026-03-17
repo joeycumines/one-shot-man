@@ -954,3 +954,53 @@ func runGitCmdAllowFail(t *testing.T, dir string, args ...string) string {
 	out, _ := cmd.CombinedOutput()
 	return string(out)
 }
+
+// initGitRepo creates a temporary git repo and returns its path.
+// Shared across chunk-level test files that need real git repos.
+func initGitRepo(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	// Use init + symbolic-ref instead of init -b for compatibility
+	// with git versions older than 2.28 (e.g. Windows CI).
+	gitCmd(t, dir, "init")
+	gitCmd(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
+	gitCmd(t, dir, "config", "user.email", "test@test.com")
+	gitCmd(t, dir, "config", "user.name", "Test")
+	return dir
+}
+
+// writeFile creates a file with the given content, creating parent directories.
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// gitCmd runs a git command in a directory and returns combined output.
+func gitCmd(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+	return string(out)
+}
+
+// escapeJSPath escapes a file path for embedding in a JS string literal.
+func escapeJSPath(p string) string {
+	return strings.ReplaceAll(p, `\`, `\\`)
+}
+
+// jsString returns a JavaScript string literal (single-quoted, with escaping)
+// for embedding a Go string into a JS expression.
+func jsString(s string) string {
+	escaped := strings.ReplaceAll(s, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `'`, `\'`)
+	return `'` + escaped + `'`
+}

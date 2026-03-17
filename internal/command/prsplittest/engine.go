@@ -145,3 +145,18 @@ func NewChunkEngine(t testing.TB, overrides map[string]any, chunkNames ...string
 	eng.LoadChunks(t, chunkNames...)
 	return eng.EvalJS(t)
 }
+
+// NewFullEngine creates an engine loaded with ALL discovered chunks plus the
+// [ChunkCompatShim]. This is a drop-in replacement for the internal
+// loadPrSplitEngineWithEval function when only the evalJS function is needed.
+//
+// The compat shim re-exposes monolith-era globals (e.g., renderPrompt,
+// analyzeChanges) at the top level for backward-compatible test code.
+func NewFullEngine(t testing.TB, overrides map[string]any) func(string) (any, error) {
+	t.Helper()
+	evalJS := NewChunkEngine(t, overrides, AllChunkNames()...)
+	if _, err := evalJS(ChunkCompatShim); err != nil {
+		t.Fatalf("prsplittest: compat shim failed: %v", err)
+	}
+	return evalJS
+}

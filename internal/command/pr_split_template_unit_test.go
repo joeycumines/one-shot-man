@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 func TestPrSplitCommand_ClassificationPromptTemplate(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Verify the template constant is a non-empty string.
 	val, err := evalJS("typeof globalThis.prSplit.CLASSIFICATION_PROMPT_TEMPLATE")
@@ -50,7 +52,7 @@ func TestPrSplitCommand_ClassificationPromptTemplate(t *testing.T) {
 func TestPrSplitCommand_SplitPlanPromptTemplate(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS("typeof globalThis.prSplit.SPLIT_PLAN_PROMPT_TEMPLATE === 'string' && globalThis.prSplit.SPLIT_PLAN_PROMPT_TEMPLATE.indexOf('reportSplitPlan') !== -1")
 	if err != nil {
@@ -64,7 +66,7 @@ func TestPrSplitCommand_SplitPlanPromptTemplate(t *testing.T) {
 func TestPrSplitCommand_ConflictResolutionPromptTemplate(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS("typeof globalThis.prSplit.CONFLICT_RESOLUTION_PROMPT_TEMPLATE === 'string' && globalThis.prSplit.CONFLICT_RESOLUTION_PROMPT_TEMPLATE.indexOf('reportResolution') !== -1")
 	if err != nil {
@@ -82,7 +84,7 @@ func TestPrSplitCommand_ConflictResolutionPromptTemplate(t *testing.T) {
 func TestPrSplitCommand_ClassificationToGroups(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Legacy map format: 3 files in 2 categories.
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.classificationToGroups({
@@ -145,7 +147,7 @@ func TestPrSplitCommand_ClassificationToGroups(t *testing.T) {
 func TestPrSplitCommand_DetectLanguage(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	tests := []struct {
 		name     string
@@ -178,7 +180,7 @@ func TestPrSplitCommand_DetectLanguage(t *testing.T) {
 func TestPrSplitCommand_AssessIndependence_NoOverlap(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Two splits with completely different directories.
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.assessIndependence({
@@ -207,7 +209,7 @@ func TestPrSplitCommand_AssessIndependence_NoOverlap(t *testing.T) {
 func TestPrSplitCommand_AssessIndependence_WithOverlap(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Two splits sharing the same directory — NOT independent.
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.assessIndependence({
@@ -231,7 +233,7 @@ func TestPrSplitCommand_AssessIndependence_WithOverlap(t *testing.T) {
 func TestPrSplitCommand_AssessIndependence_Singles(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Single split — no pairs possible.
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.assessIndependence({
@@ -270,7 +272,7 @@ func TestPrSplitCommand_AssessIndependence_Singles(t *testing.T) {
 func TestPrSplitCommand_ParseGoImports(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	tests := []struct {
 		name    string
@@ -384,7 +386,7 @@ func TestPrSplitCommand_ParseGoImports(t *testing.T) {
 func TestPrSplitCommand_GroupByDependency_NoGoFiles(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Non-Go files should fall back to directory grouping.
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDependency(
@@ -414,7 +416,7 @@ func TestPrSplitCommand_GroupByDependency_NoGoFiles(t *testing.T) {
 func TestPrSplitCommand_GroupByDependency_EmptyInput(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDependency([], {}))`)
 	if err != nil {
@@ -432,7 +434,7 @@ func TestPrSplitCommand_GroupByDependency_EmptyInput(t *testing.T) {
 func TestPrSplitCommand_GroupByDependency_MixedGoAndNonGo(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Mix of Go and non-Go files — non-Go should be placed in matching dir group.
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDependency(
@@ -459,7 +461,7 @@ func TestPrSplitCommand_GroupByDependency_MixedGoAndNonGo(t *testing.T) {
 func TestPrSplitCommand_GroupByDependency_SingleGoFile(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDependency(
 		["main.go"],
@@ -485,7 +487,7 @@ func TestPrSplitCommand_GroupByDependency_SingleGoFile(t *testing.T) {
 func TestPrSplitCommand_RenderClassificationPrompt(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.renderClassificationPrompt(
 		{ files: ["main.go", "util.go"], fileStatuses: {"main.go": "M", "util.go": "A"}, baseBranch: "main" },
@@ -525,7 +527,7 @@ func TestPrSplitCommand_RenderClassificationPrompt(t *testing.T) {
 func TestPrSplitCommand_RenderSplitPlanPrompt(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.renderSplitPlanPrompt(
 		{ "main.go": "core", "docs/readme.md": "docs" },
@@ -560,7 +562,7 @@ func TestPrSplitCommand_RenderSplitPlanPrompt(t *testing.T) {
 func TestPrSplitCommand_RenderConflictPrompt(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`JSON.stringify(globalThis.prSplit.renderConflictPrompt({
 		branchName: "split/01-types",
@@ -607,7 +609,7 @@ func TestPrSplitCommand_RenderConflictPrompt(t *testing.T) {
 func TestRenderPrompt(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	tests := []struct {
 		name      string
@@ -694,7 +696,7 @@ func TestRenderPrompt(t *testing.T) {
 func TestRenderPrompt_TemplateModuleUnavailable(t *testing.T) {
 	t.Parallel()
 
-	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
+	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Temporarily null out the template module and test the guard.
 	val, err := evalJS(`

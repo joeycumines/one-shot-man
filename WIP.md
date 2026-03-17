@@ -440,7 +440,15 @@ The primary win is the **fast feedback loop**: `make test-prsplit-fast` for sub-
 
 ### Decision: Start with Phased Implementation
 
-- **T316**: Create `prsplittest` with engine, eval, repo, and TUI helpers. Prove the API with 3 test file migrations.
-- **T317**: Migrate unit tests (14 files).
+- **T316**: Done ✅ — committed `77e6305f` — prsplittest package + 4 test migrations
+  - Created 8-file package: doc.go, types.go, chunks.go, engine.go, eval.go, assertions.go, repo.go, tui.go
+  - Migrated 4 test files: 02_grouping (10), 07_prcreation (6), 08_conflict (13), 09_claude (11) — 40 calls total
+  - Deleted leftover pr_split_10_pipeline.js (2097 lines)
+  - Fixed claudemux/pr_split_test.go chunk list (10→10a-10d)
+  - Updated ADR-001 + prompt anchor stability doc
+  - Added .deadcodeignore pattern for prsplittest/*
+  - Build: PASS, Rule of Two: Pass 1 PASS + Pass 2 PASS ✓
+  - M1 fix: NewTUIEngine uses eng.LoadChunks (not evalJS loop) for TUI chunks — preserves script names in stack traces
+- **T317**: Next — migrate remaining unit test files to use prsplittest helpers
 - **T318**: Migrate TUI tests (~25 files).
 - **T319**: Add build tags to slow tests + Make targets. Measure timing.

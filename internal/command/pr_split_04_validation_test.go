@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -32,7 +34,7 @@ func evalValidation(t *testing.T, evalJS func(string) (any, error), code string)
 // ---- validateClassification -----------------------------------------------
 
 func TestChunk04_ValidateClassification_Valid(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -47,7 +49,7 @@ func TestChunk04_ValidateClassification_Valid(t *testing.T) {
 }
 
 func TestChunk04_ValidateClassification_EmptyCategories(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -62,7 +64,7 @@ func TestChunk04_ValidateClassification_EmptyCategories(t *testing.T) {
 }
 
 func TestChunk04_ValidateClassification_Null(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -77,7 +79,7 @@ func TestChunk04_ValidateClassification_Null(t *testing.T) {
 }
 
 func TestChunk04_ValidateClassification_MissingName(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -100,7 +102,7 @@ func TestChunk04_ValidateClassification_MissingName(t *testing.T) {
 }
 
 func TestChunk04_ValidateClassification_DuplicateFiles(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -124,7 +126,7 @@ func TestChunk04_ValidateClassification_DuplicateFiles(t *testing.T) {
 }
 
 func TestChunk04_ValidateClassification_EmptyFiles(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -152,7 +154,7 @@ func TestChunk04_ValidateClassification_EmptyFiles(t *testing.T) {
 // ---- validatePlan ---------------------------------------------------------
 
 func TestChunk04_ValidatePlan_Valid(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -169,7 +171,7 @@ func TestChunk04_ValidatePlan_Valid(t *testing.T) {
 }
 
 func TestChunk04_ValidatePlan_NoSplits(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -184,7 +186,7 @@ func TestChunk04_ValidatePlan_NoSplits(t *testing.T) {
 }
 
 func TestChunk04_ValidatePlan_DuplicateFiles(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -210,7 +212,7 @@ func TestChunk04_ValidatePlan_DuplicateFiles(t *testing.T) {
 }
 
 func TestChunk04_ValidatePlan_MissingName(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -236,7 +238,7 @@ func TestChunk04_ValidatePlan_MissingName(t *testing.T) {
 }
 
 func TestChunk04_ValidatePlan_Null(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -253,7 +255,7 @@ func TestChunk04_ValidatePlan_Null(t *testing.T) {
 // ---- validateSplitPlan ----------------------------------------------------
 
 func TestChunk04_ValidateSplitPlan_Valid(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -268,7 +270,7 @@ func TestChunk04_ValidateSplitPlan_Valid(t *testing.T) {
 }
 
 func TestChunk04_ValidateSplitPlan_EmptyStages(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -283,7 +285,7 @@ func TestChunk04_ValidateSplitPlan_EmptyStages(t *testing.T) {
 }
 
 func TestChunk04_ValidateSplitPlan_InvalidBranchName(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -306,7 +308,7 @@ func TestChunk04_ValidateSplitPlan_InvalidBranchName(t *testing.T) {
 }
 
 func TestChunk04_ValidateSplitPlan_DuplicateFiles(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -332,7 +334,7 @@ func TestChunk04_ValidateSplitPlan_DuplicateFiles(t *testing.T) {
 // ---- validateResolution ---------------------------------------------------
 
 func TestChunk04_ValidateResolution_ValidPatches(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -346,7 +348,7 @@ func TestChunk04_ValidateResolution_ValidPatches(t *testing.T) {
 }
 
 func TestChunk04_ValidateResolution_ValidCommands(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -360,7 +362,7 @@ func TestChunk04_ValidateResolution_ValidCommands(t *testing.T) {
 }
 
 func TestChunk04_ValidateResolution_ValidPreExisting(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -376,7 +378,7 @@ func TestChunk04_ValidateResolution_ValidPreExisting(t *testing.T) {
 
 // T097: preExistingFailure without reason must now be rejected.
 func TestChunk04_ValidateResolution_PreExistingNoReason(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -400,7 +402,7 @@ func TestChunk04_ValidateResolution_PreExistingNoReason(t *testing.T) {
 
 // T097: preExistingFailure with empty-string reason must also be rejected.
 func TestChunk04_ValidateResolution_PreExistingEmptyReason(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -415,7 +417,7 @@ func TestChunk04_ValidateResolution_PreExistingEmptyReason(t *testing.T) {
 }
 
 func TestChunk04_ValidateResolution_Null(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -427,7 +429,7 @@ func TestChunk04_ValidateResolution_Null(t *testing.T) {
 }
 
 func TestChunk04_ValidateResolution_EmptyObject(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -448,7 +450,7 @@ func TestChunk04_ValidateResolution_EmptyObject(t *testing.T) {
 }
 
 func TestChunk04_ValidateResolution_BadPatch(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -462,7 +464,7 @@ func TestChunk04_ValidateResolution_BadPatch(t *testing.T) {
 }
 
 func TestChunk04_ValidateResolution_BadCommand(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -478,7 +480,7 @@ func TestChunk04_ValidateResolution_BadCommand(t *testing.T) {
 // TestChunk04_ValidatePlan_EmptyStringName verifies that a split with
 // name="" is rejected (JavaScript's !” is true, so empty string is falsy).
 func TestChunk04_ValidatePlan_EmptyStringName(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `
@@ -503,7 +505,7 @@ func TestChunk04_ValidatePlan_EmptyStringName(t *testing.T) {
 // TestChunk04_ValidatePlan_EmptyFilesInSplit verifies that a split with
 // zero files is rejected.
 func TestChunk04_ValidatePlan_EmptyFilesInSplit(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation")
 
 	vr := evalValidation(t, evalJS, `

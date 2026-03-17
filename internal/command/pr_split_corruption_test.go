@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ─────────────────────────────────────────────────────────────────────
@@ -35,7 +37,7 @@ func TestChunk03_LoadPlan_NoVersionField(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	evalJS := loadChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping", "03_planning")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping", "03_planning")
 
 	result, err := evalJS(`
 		(function() {

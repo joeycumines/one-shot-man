@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -19,7 +21,7 @@ var allPipelineChunks = []string{
 }
 
 func TestPipelineChunk_AUTOMATED_DEFAULTS(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	// Verify the constant is exported and has correct keys.
 	val, err := evalJS(`JSON.stringify(prSplit.AUTOMATED_DEFAULTS)`)
@@ -51,7 +53,7 @@ func TestPipelineChunk_AUTOMATED_DEFAULTS(t *testing.T) {
 }
 
 func TestPipelineChunk_ClassificationToGroups_ArrayFormat(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	val, err := evalJS(`JSON.stringify(prSplit.classificationToGroups([
 		{ name: 'core', description: 'Core changes', files: ['a.go', 'b.go'] },
@@ -79,7 +81,7 @@ func TestPipelineChunk_ClassificationToGroups_ArrayFormat(t *testing.T) {
 }
 
 func TestPipelineChunk_ClassificationToGroups_LegacyMapFormat(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	val, err := evalJS(`JSON.stringify(prSplit.classificationToGroups({
 		'a.go': 'core',
@@ -103,7 +105,7 @@ func TestPipelineChunk_ClassificationToGroups_LegacyMapFormat(t *testing.T) {
 }
 
 func TestPipelineChunk_ClassificationToGroups_EmptyInput(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	// Null input
 	val, err := evalJS(`JSON.stringify(prSplit.classificationToGroups(null))`)
@@ -125,7 +127,7 @@ func TestPipelineChunk_ClassificationToGroups_EmptyInput(t *testing.T) {
 }
 
 func TestPipelineChunk_SendToHandle_NullHandle(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	// sendToHandle(null, text) should return an error.
 	val, err := evalJS(`await prSplit.sendToHandle(null, 'hello')`)
@@ -152,7 +154,7 @@ func TestPipelineChunk_SendToHandle_NullHandle(t *testing.T) {
 }
 
 func TestPipelineChunk_SendToHandle_MockHandle(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	// Set up a mock handle that records send calls.
 	_, err := evalJS(`
@@ -209,7 +211,7 @@ func TestPipelineChunk_SendToHandle_MockHandle(t *testing.T) {
 }
 
 func TestPipelineChunk_SEND_TEXT_NEWLINE_DELAY_MS(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	val, err := evalJS(`prSplit.SEND_TEXT_NEWLINE_DELAY_MS`)
 	if err != nil {
@@ -253,7 +255,7 @@ func toInt64(v any) int64 {
 
 func TestAnchorPipeline_GetTextTailAnchor(t *testing.T) {
 	t.Parallel()
-	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	tests := []struct {
 		name     string
@@ -304,7 +306,7 @@ func TestAnchorPipeline_GetTextTailAnchor(t *testing.T) {
 
 func TestAnchorPipeline_IsPromptMarkerLine(t *testing.T) {
 	t.Parallel()
-	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	tests := []struct {
 		line string
@@ -345,7 +347,7 @@ func TestAnchorPipeline_IsPromptMarkerLine(t *testing.T) {
 
 func TestAnchorPipeline_DetectPromptBlocker(t *testing.T) {
 	t.Parallel()
-	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	t.Run("first-run setup detected", func(t *testing.T) {
 		screen := "Welcome to Claude!\nChoose the text style\nLet's get started\n❯ 1. Dark mode"
@@ -393,7 +395,7 @@ func TestAnchorPipeline_DetectPromptBlocker(t *testing.T) {
 
 func TestAnchorPipeline_FindPromptMarker(t *testing.T) {
 	t.Parallel()
-	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	t.Run("finds last prompt marker", func(t *testing.T) {
 		// Screen with two prompt markers — should find the LAST one.
@@ -453,7 +455,7 @@ func TestAnchorPipeline_FindPromptMarker(t *testing.T) {
 
 func TestAnchorPipeline_CaptureInputAnchors(t *testing.T) {
 	t.Parallel()
-	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	// Install a mock tuiMux that returns controlled screenshots.
 	_, err := evalJS(`
@@ -583,7 +585,7 @@ func TestAnchorPipeline_CaptureInputAnchors(t *testing.T) {
 
 func TestAnchorPipeline_ResolveSendConfig(t *testing.T) {
 	t.Parallel()
-	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	t.Run("defaults", func(t *testing.T) {
 		val, err := evalJS(`JSON.stringify(prSplit._resolveSendConfig())`)
@@ -656,7 +658,7 @@ func TestAnchorPipeline_ResolveSendConfig(t *testing.T) {
 
 func TestAnchorPipeline_SendToHandle_MockedTuiMux_Stable(t *testing.T) {
 	t.Parallel()
-	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	// Set up mock tuiMux and handle. Configure fast timeouts for test speed.
 	_, err := evalJS(`
@@ -721,7 +723,7 @@ func TestAnchorPipeline_SendToHandle_MockedTuiMux_Stable(t *testing.T) {
 
 func TestAnchorPipeline_SendToHandle_Timeout_UnstableAnchors(t *testing.T) {
 	t.Parallel()
-	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	// Set up mock tuiMux that returns constantly changing screenshots.
 	// Use line lengths that change every call to prevent stableKey convergence.
@@ -777,7 +779,7 @@ func TestAnchorPipeline_SendToHandle_Timeout_UnstableAnchors(t *testing.T) {
 
 func TestAnchorPipeline_CaptureScreenshot_NullMux(t *testing.T) {
 	t.Parallel()
-	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	// When tuiMux is undefined, captureScreenshot returns null.
 	_, err := evalJS(`globalThis.tuiMux = undefined; true`)
@@ -796,7 +798,7 @@ func TestAnchorPipeline_CaptureScreenshot_NullMux(t *testing.T) {
 
 func TestAnchorPipeline_CaptureScreenshot_ThrowingMux(t *testing.T) {
 	t.Parallel()
-	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	// When screenshot() throws, captureScreenshot returns null gracefully.
 	_, err := evalJS(`
@@ -820,7 +822,7 @@ func TestAnchorPipeline_CaptureScreenshot_ThrowingMux(t *testing.T) {
 
 func TestAnchorPipeline_CaptureScreenshot_ValidMux(t *testing.T) {
 	t.Parallel()
-	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	_, err := evalJS(`
 		globalThis.tuiMux = {
@@ -852,7 +854,7 @@ func TestAnchorPipeline_CaptureScreenshot_ValidMux(t *testing.T) {
 // to the best observed snapshot rather than failing.
 func TestAnchorPipeline_BestAnchorsStateFallback(t *testing.T) {
 	t.Parallel()
-	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	// Phase 1 (promptReady): stable prompt marker for convergence.
 	// Phase 2 (anchorStable): jitter input line length but keep prompt stable.
@@ -931,7 +933,7 @@ func TestAnchorPipeline_BestAnchorsStateFallback(t *testing.T) {
 // the pipeline falls back to prompt-only mode instead of failing.
 func TestAnchorPipeline_PromptOnlyFallback(t *testing.T) {
 	t.Parallel()
-	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	// Screenshot shows prompt marker but NO trace of the sent text
 	// (simulates a very long paste that scrolled past the viewport).
@@ -994,7 +996,7 @@ func TestAnchorPipeline_PromptOnlyFallback(t *testing.T) {
 // correctly returns an error (not a silent success).
 func TestAnchorPipeline_NoPromptMarker_HardFailure(t *testing.T) {
 	t.Parallel()
-	evalJS := loadChunkEngine(t, nil, allPipelineChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	// Screenshot has no prompt marker at all.
 	_, err := evalJS(`

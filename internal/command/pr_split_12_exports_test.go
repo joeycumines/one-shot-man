@@ -3,6 +3,8 @@ package command
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -19,7 +21,7 @@ var allChunksThrough12 = []string{
 }
 
 func TestChunk12_VERSION(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough12...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough12...)
 
 	raw, err := evalJS(`globalThis.prSplit.VERSION`)
 	if err != nil {
@@ -31,7 +33,7 @@ func TestChunk12_VERSION(t *testing.T) {
 }
 
 func TestChunk12_NoMissingExports(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough12...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough12...)
 
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit._missingExports)`)
 	if err != nil {
@@ -47,7 +49,7 @@ func TestChunk12_NoMissingExports(t *testing.T) {
 }
 
 func TestChunk12_ManifestCoversAllExports(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough12...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough12...)
 
 	// The manifest should have a reasonable number of entries.
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit._EXPECTED_EXPORTS.length)`)
@@ -65,7 +67,7 @@ func TestChunk12_ManifestCoversAllExports(t *testing.T) {
 }
 
 func TestChunk12_AllManifestEntriesAreExported(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough12...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough12...)
 
 	// For each entry in the manifest, verify it exists and is not undefined.
 	raw, err := evalJS(`

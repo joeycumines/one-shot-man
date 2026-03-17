@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -24,7 +26,7 @@ var allChunksThrough11 = []string{
 // ---- extractDirs ----------------------------------------------------------
 
 func TestChunk11_ExtractDirs(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`
 		JSON.stringify(globalThis.prSplit.extractDirs([
@@ -58,7 +60,7 @@ func TestChunk11_ExtractDirs(t *testing.T) {
 }
 
 func TestChunk11_ExtractDirs_Empty(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.extractDirs([]))`)
 	if err != nil {
@@ -74,7 +76,7 @@ func TestChunk11_ExtractDirs_Empty(t *testing.T) {
 }
 
 func TestChunk11_ExtractDirs_Null(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.extractDirs(null))`)
 	if err != nil {
@@ -92,7 +94,7 @@ func TestChunk11_ExtractDirs_Null(t *testing.T) {
 // ---- splitsAreIndependentFromMaps -----------------------------------------
 
 func TestChunk11_SplitsAreIndependentFromMaps_Independent(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`
 		globalThis.prSplit.splitsAreIndependentFromMaps(
@@ -110,7 +112,7 @@ func TestChunk11_SplitsAreIndependentFromMaps_Independent(t *testing.T) {
 }
 
 func TestChunk11_SplitsAreIndependentFromMaps_SharedDir(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`
 		globalThis.prSplit.splitsAreIndependentFromMaps(
@@ -128,7 +130,7 @@ func TestChunk11_SplitsAreIndependentFromMaps_SharedDir(t *testing.T) {
 }
 
 func TestChunk11_SplitsAreIndependentFromMaps_ImportDep(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	// A imports 'mypkg/util', B defines package 'mypkg/util'
 	raw, err := evalJS(`
@@ -149,7 +151,7 @@ func TestChunk11_SplitsAreIndependentFromMaps_ImportDep(t *testing.T) {
 // ---- assessIndependence ---------------------------------------------------
 
 func TestChunk11_AssessIndependence_TooFewSplits(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`
 		JSON.stringify(globalThis.prSplit.assessIndependence(
@@ -170,7 +172,7 @@ func TestChunk11_AssessIndependence_TooFewSplits(t *testing.T) {
 }
 
 func TestChunk11_AssessIndependence_NullPlan(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.assessIndependence(null, {}))`)
 	if err != nil {
@@ -186,7 +188,7 @@ func TestChunk11_AssessIndependence_NullPlan(t *testing.T) {
 }
 
 func TestChunk11_AssessIndependence_IndependentSplits(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	// Two splits touching completely different directories with non-Go files.
 	raw, err := evalJS(`
@@ -213,7 +215,7 @@ func TestChunk11_AssessIndependence_IndependentSplits(t *testing.T) {
 }
 
 func TestChunk11_AssessIndependence_DependentSplits(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	// Two splits touching the same directory — dependent.
 	raw, err := evalJS(`
@@ -239,7 +241,7 @@ func TestChunk11_AssessIndependence_DependentSplits(t *testing.T) {
 // ---- recordConversation / getConversationHistory --------------------------
 
 func TestChunk11_ConversationHistory(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	// Initially empty.
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.getConversationHistory())`)
@@ -284,7 +286,7 @@ func TestChunk11_ConversationHistory(t *testing.T) {
 }
 
 func TestChunk11_ConversationHistory_DefensiveCopy(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	// Mutating the returned array should not affect internal state.
 	if _, err := evalJS(`globalThis.prSplit.recordConversation('a', 'b', 'c')`); err != nil {
@@ -309,7 +311,7 @@ func TestChunk11_ConversationHistory_DefensiveCopy(t *testing.T) {
 // ---- recordTelemetry / getTelemetrySummary --------------------------------
 
 func TestChunk11_Telemetry(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	// Record some counters.
 	if _, err := evalJS(`globalThis.prSplit.recordTelemetry('filesAnalyzed', 42)`); err != nil {
@@ -346,7 +348,7 @@ func TestChunk11_Telemetry(t *testing.T) {
 }
 
 func TestChunk11_Telemetry_IncrementDefault(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	// recordTelemetry with no value on a numeric key should increment by 1.
 	if _, err := evalJS(`globalThis.prSplit.recordTelemetry('claudeInteractions')`); err != nil {
@@ -370,7 +372,7 @@ func TestChunk11_Telemetry_IncrementDefault(t *testing.T) {
 }
 
 func TestChunk11_GetTelemetrySummary_Empty(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	// Before any recordTelemetry, getTelemetrySummary returns default-initialized object.
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.getTelemetrySummary())`)
@@ -393,7 +395,7 @@ func TestChunk11_GetTelemetrySummary_Empty(t *testing.T) {
 // ---- renderColorizedDiff --------------------------------------------------
 
 func TestChunk11_RenderColorizedDiff(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`
 		globalThis.prSplit.renderColorizedDiff(
@@ -434,7 +436,7 @@ func TestChunk11_RenderColorizedDiff(t *testing.T) {
 }
 
 func TestChunk11_RenderColorizedDiff_Empty(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`globalThis.prSplit.renderColorizedDiff('')`)
 	if err != nil {
@@ -448,7 +450,7 @@ func TestChunk11_RenderColorizedDiff_Empty(t *testing.T) {
 // ---- getSplitDiff ---------------------------------------------------------
 
 func TestChunk11_GetSplitDiff_InvalidIndex(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`
 		JSON.stringify(globalThis.prSplit.getSplitDiff(
@@ -470,7 +472,7 @@ func TestChunk11_GetSplitDiff_InvalidIndex(t *testing.T) {
 }
 
 func TestChunk11_GetSplitDiff_NoFiles(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`
 		JSON.stringify(globalThis.prSplit.getSplitDiff(
@@ -492,7 +494,7 @@ func TestChunk11_GetSplitDiff_NoFiles(t *testing.T) {
 }
 
 func TestChunk11_GetSplitDiff_NullPlan(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.getSplitDiff(null, 0))`)
 	if err != nil {
@@ -511,7 +513,7 @@ func TestChunk11_GetSplitDiff_NullPlan(t *testing.T) {
 // ---- buildDependencyGraph --------------------------------------------------
 
 func TestChunk11_BuildDependencyGraph_Independent(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	// Non-Go files in different directories → no edges.
 	raw, err := evalJS(`
@@ -547,7 +549,7 @@ func TestChunk11_BuildDependencyGraph_Independent(t *testing.T) {
 }
 
 func TestChunk11_BuildDependencyGraph_Dependent(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	// Same directory → edge between them.
 	raw, err := evalJS(`
@@ -583,7 +585,7 @@ func TestChunk11_BuildDependencyGraph_Dependent(t *testing.T) {
 }
 
 func TestChunk11_BuildDependencyGraph_Null(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.buildDependencyGraph(null, {}))`)
 	if err != nil {
@@ -605,7 +607,7 @@ func TestChunk11_BuildDependencyGraph_Null(t *testing.T) {
 // ---- renderAsciiGraph -----------------------------------------------------
 
 func TestChunk11_RenderAsciiGraph(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`
 		globalThis.prSplit.renderAsciiGraph({
@@ -639,7 +641,7 @@ func TestChunk11_RenderAsciiGraph(t *testing.T) {
 }
 
 func TestChunk11_RenderAsciiGraph_Empty(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`globalThis.prSplit.renderAsciiGraph({ nodes: [], edges: [] })`)
 	if err != nil {
@@ -653,7 +655,7 @@ func TestChunk11_RenderAsciiGraph_Empty(t *testing.T) {
 // ---- analyzeRetrospective --------------------------------------------------
 
 func TestChunk11_AnalyzeRetrospective_Perfect(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`
 		JSON.stringify(globalThis.prSplit.analyzeRetrospective(
@@ -713,7 +715,7 @@ func TestChunk11_AnalyzeRetrospective_Perfect(t *testing.T) {
 }
 
 func TestChunk11_AnalyzeRetrospective_WithFailures(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`
 		JSON.stringify(globalThis.prSplit.analyzeRetrospective(
@@ -762,7 +764,7 @@ func TestChunk11_AnalyzeRetrospective_WithFailures(t *testing.T) {
 }
 
 func TestChunk11_AnalyzeRetrospective_Null(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.analyzeRetrospective(null, null, null))`)
 	if err != nil {
@@ -780,7 +782,7 @@ func TestChunk11_AnalyzeRetrospective_Null(t *testing.T) {
 }
 
 func TestChunk11_AnalyzeRetrospective_Imbalanced(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	// 1 file vs 100 files → balance < 0.2 → warning.
 	raw, err := evalJS(`
@@ -823,7 +825,7 @@ func TestChunk11_AnalyzeRetrospective_Imbalanced(t *testing.T) {
 // ---- extractGoPkgs --------------------------------------------------------
 
 func TestChunk11_ExtractGoPkgs_WithModulePath(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`
 		JSON.stringify(globalThis.prSplit.extractGoPkgs(
@@ -861,7 +863,7 @@ func TestChunk11_ExtractGoPkgs_WithModulePath(t *testing.T) {
 // ---- renderColorizedDiff: ANSI pre-colored input (T10) --------------------
 
 func TestChunk11_RenderColorizedDiff_PreColoredInput(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	// Input diff that already contains ANSI escape sequences (e.g. from
 	// `git diff --color`). renderColorizedDiff must not crash, must not
@@ -907,7 +909,7 @@ func TestChunk11_RenderColorizedDiff_PreColoredInput(t *testing.T) {
 }
 
 func TestChunk11_RenderColorizedDiff_NullInput(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`globalThis.prSplit.renderColorizedDiff(null)`)
 	if err != nil {
@@ -919,7 +921,7 @@ func TestChunk11_RenderColorizedDiff_NullInput(t *testing.T) {
 }
 
 func TestChunk11_RenderColorizedDiff_UndefinedInput(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	raw, err := evalJS(`globalThis.prSplit.renderColorizedDiff(undefined)`)
 	if err != nil {
@@ -935,7 +937,7 @@ func TestChunk11_RenderColorizedDiff_UndefinedInput(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestChunk11_GetSplitDiff_HappyPath(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	// Mock _gitExec to return a diff for the matching branch diff.
 	_, err := evalJS(`
@@ -985,7 +987,7 @@ func TestChunk11_GetSplitDiff_HappyPath(t *testing.T) {
 }
 
 func TestChunk11_GetSplitDiff_FallbackOnBranchDiffFailure(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, allChunksThrough11...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough11...)
 
 	// Mock: first diff (branch...branch) fails, second (base only) succeeds.
 	_, err := evalJS(`
@@ -1040,7 +1042,7 @@ func TestChunk11_GetSplitDiff_FallbackOnBranchDiffFailure(t *testing.T) {
 // TestChunk12_NoMissingExports is in pr_split_12_exports_test.go but
 // we cross-verify here that _missingExports can be accessed via chunk 11+12.
 func TestChunk11_12_MissingExportsIsEmpty(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation",
 		"05_execution", "06_verification", "07_prcreation", "08_conflict",
 		"09_claude",

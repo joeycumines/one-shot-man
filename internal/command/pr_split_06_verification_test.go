@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -65,7 +67,7 @@ func setupExecRepoAndExecute(t *testing.T, evalJS func(string) (any, error)) str
 }
 
 func TestChunk06_VerifyEquivalence_Equivalent(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, verifyChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 	dir := setupExecRepoAndExecute(t, evalJS)
 
 	result, err := evalJS(`
@@ -104,7 +106,7 @@ func TestChunk06_VerifyEquivalence_Equivalent(t *testing.T) {
 }
 
 func TestChunk06_VerifyEquivalence_Mismatch(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, verifyChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 	dir := initGitRepo(t)
 
 	writeFile(t, filepath.Join(dir, "a.go"), "package a")
@@ -162,7 +164,7 @@ func TestChunk06_VerifyEquivalence_Mismatch(t *testing.T) {
 }
 
 func TestChunk06_VerifyEquivalence_NullPlan(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, verifyChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 
 	result, err := evalJS(`
 		(function() {
@@ -179,7 +181,7 @@ func TestChunk06_VerifyEquivalence_NullPlan(t *testing.T) {
 }
 
 func TestChunk06_VerifyEquivalenceDetailed_IncludesDiffFiles(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, verifyChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 	dir := initGitRepo(t)
 
 	writeFile(t, filepath.Join(dir, "a.go"), "package a")
@@ -246,7 +248,7 @@ func TestChunk06_VerifyEquivalenceDetailed_IncludesDiffFiles(t *testing.T) {
 }
 
 func TestChunk06_CleanupBranches(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, verifyChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 	dir := setupExecRepoAndExecute(t, evalJS)
 
 	result, err := evalJS(`
@@ -291,7 +293,7 @@ func TestChunk06_CleanupBranches(t *testing.T) {
 }
 
 func TestChunk06_CleanupBranches_Idempotent(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, verifyChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 	dir := setupExecRepoAndExecute(t, evalJS)
 
 	// First cleanup.
@@ -338,7 +340,7 @@ func TestChunk06_CleanupBranches_Idempotent(t *testing.T) {
 }
 
 func TestChunk06_CleanupBranches_NullPlan(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, verifyChunks...)
+	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 
 	result, err := evalJS(`
 		(function() {

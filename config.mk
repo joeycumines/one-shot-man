@@ -127,6 +127,8 @@ git-stage-all: ## Stage all changes (git add -A)
 .PHONY: git-rm-old-chunks
 git-rm-old-chunks: ## Delete leftover pre-split chunk files
 	@git -C $(PROJECT_ROOT) rm -f internal/command/pr_split_10_pipeline.js 2>/dev/null || true
+	@git -C $(PROJECT_ROOT) rm -f internal/command/pr_split_15_tui_views.js 2>/dev/null || true
+	@git -C $(PROJECT_ROOT) rm -f internal/command/pr_split_16_tui_core.js 2>/dev/null || true
 	@echo "Old chunk files removed."
 
 .PHONY: git-diff-cached
@@ -173,6 +175,36 @@ git-commit-t316: ## Commit T316 prsplittest package
 		-m "  - Fix claudemux/pr_split_test.go chunk list (10 → 10a-10d)" \
 		-m "  - Update ADR-001 chunk table and prompt anchor stability doc" \
 		-m "  - Add .deadcodeignore for prsplittest/*"
+
+.PHONY: git-commit-t317
+git-commit-t317: ## Commit T317 migration
+	@git -C $(PROJECT_ROOT) commit -m "test(pr-split): migrate unit tests to prsplittest helpers (T317)" \
+		-m "Migrate 13 unit test files (152 loadChunkEngine + 18" \
+		-m "loadPrSplitEngineWithEval call sites) to use the prsplittest" \
+		-m "package created in T316." \
+		-m "" \
+		-m "Migrated files:" \
+		-m "  00_core (13), 01_analysis (6), 03_planning (13)," \
+		-m "  04_validation (26), 05_execution (7), 06_verification (7)," \
+		-m "  10_pipeline (21), 11_utilities (36), 12_exports (4)," \
+		-m "  corruption (1), pipeline_smoke (2)," \
+		-m "  template_unit (18 — uses NewFullEngine)" \
+		-m "" \
+		-m "New prsplittest exports:" \
+		-m "  - NewFullEngine: loads all chunks + ChunkCompatShim" \
+		-m "    (for template tests that reference monolith-era globals)" \
+		-m "  - ChunkCompatShim: ~160-line Object.defineProperty proxy" \
+		-m "    bridging chunk namespace to pre-split global names" \
+		-m "" \
+		-m "Cleanup:" \
+		-m "  - Delete zombie pr_split_15_tui_views.js (2604 lines)" \
+		-m "    and pr_split_16_tui_core.js (5126 lines) that reappeared" \
+		-m "    on disk after T310/T311 splits" \
+		-m "  - Update config.mk git-rm-old-chunks target" \
+		-m "" \
+		-m "Remaining loadChunkEngine callers (T318 scope):" \
+		-m "  - Definition in 00_core_test.go (kept for 13_tui_test.go)" \
+		-m "  - 2 calls in 13_tui_test.go"
 
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 endif

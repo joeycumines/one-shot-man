@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -45,7 +47,7 @@ func setupExecRepo(t *testing.T) (string, map[string]string) {
 func TestChunk05_ExecuteSplit_BasicExecution(t *testing.T) {
 	dir, statuses := setupExecRepo(t)
 
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
 
 	// Build a plan with 2 splits: one with modifications, one with deletion.
@@ -132,7 +134,7 @@ func TestChunk05_ExecuteSplit_BasicExecution(t *testing.T) {
 }
 
 func TestChunk05_ExecuteSplit_InvalidPlan(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
 
 	result, err := evalJS(`
@@ -153,7 +155,7 @@ func TestChunk05_ExecuteSplit_InvalidPlan(t *testing.T) {
 }
 
 func TestChunk05_ExecuteSplit_MissingFileStatuses(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
 
 	result, err := evalJS(`
@@ -178,7 +180,7 @@ func TestChunk05_ExecuteSplit_MissingFileStatuses(t *testing.T) {
 func TestChunk05_ExecuteSplit_ProgressCallback(t *testing.T) {
 	dir, statuses := setupExecRepo(t)
 
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
 
 	statusJSON, _ := json.Marshal(statuses)
@@ -229,7 +231,7 @@ func TestChunk05_ExecuteSplit_ProgressCallback(t *testing.T) {
 func TestChunk05_ExecuteSplit_ReRunDeletesOldBranches(t *testing.T) {
 	dir, statuses := setupExecRepo(t)
 
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
 
 	statusJSON, _ := json.Marshal(statuses)
@@ -305,7 +307,7 @@ func TestChunk05_ExecuteSplit_GitIgnoredFilesSkipped(t *testing.T) {
 	gitCmd(t, dir, "add", "-f", "debug.log") // force-add ignored file
 	gitCmd(t, dir, "commit", "-m", "feature with ignored file")
 
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
 
 	statuses := map[string]string{
@@ -388,7 +390,7 @@ func TestChunk05_ExecuteSplit_NoIgnoredFiles(t *testing.T) {
 	// When no files are ignored, skippedFiles should be empty.
 	dir, statuses := setupExecRepo(t)
 
-	evalJS := loadChunkEngine(t, nil,
+	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
 
 	statusJSON, _ := json.Marshal(statuses)

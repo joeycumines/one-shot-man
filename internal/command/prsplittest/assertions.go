@@ -15,6 +15,162 @@ func NumVal(v any) float64 {
 	}
 }
 
+// ChunkCompatShim is a JavaScript snippet that, when evaluated after loading
+// all chunks (00-16f), re-exports the monolith's formerly-global symbols onto
+// globalThis. This lets satellite test files (written for the monolith's
+// flat namespace) run unchanged against the chunked architecture.
+//
+// For functions: Object.defineProperty with get/set proxies so that
+// executeSplit = function() {...} transparently updates prSplit.executeSplit.
+//
+// For state vars: same get/set proxy pointing at prSplit._state.
+// For modules: Object.defineProperty proxies so that test overrides
+// like exec = newProxy propagate to prSplit._modules.exec.
+const ChunkCompatShim = `
+(function() {
+    var ps = globalThis.prSplit;
+    if (!ps) return;
+    var st = ps._state || {};
+    var mods = ps._modules || {};
+
+    // --- Module proxies (get/set → prSplit._modules.*) ---
+    var modNames = ['bt', 'exec', 'osmod', 'template', 'shared', 'lip'];
+    modNames.forEach(function(m) {
+        if (!mods[m]) return;
+        try {
+            Object.defineProperty(globalThis, m, {
+                get: function() { return mods[m]; },
+                set: function(v) { mods[m] = v; },
+                configurable: true,
+                enumerable: false
+            });
+        } catch(e) {}
+    });
+
+    // --- Function proxies (get/set → prSplit.*) ---
+    var funcNames = [
+        'analyzeDiff', 'analyzeDiffStats',
+        'groupByDirectory', 'groupByExtension', 'groupByPattern',
+        'groupByChunks', 'groupByDependency', 'applyStrategy', 'selectStrategy',
+        'parseGoImports', 'detectGoModulePath',
+        'createSplitPlan', 'savePlan', 'loadPlan',
+        'validateClassification', 'validatePlan', 'validateSplitPlan', 'validateResolution',
+        'executeSplit',
+        'verifySplit', 'verifySplits', 'verifyEquivalence', 'verifyEquivalenceDetailed',
+        'cleanupBranches',
+        'createPRs',
+        'resolveConflicts',
+        'ClaudeCodeExecutor',
+        'renderClassificationPrompt', 'renderSplitPlanPrompt', 'renderConflictPrompt',
+        'renderPrompt',
+        'detectLanguage',
+        'automatedSplit', 'heuristicFallback', 'sendToHandle', 'waitForLogged',
+        'classificationToGroups',
+        'assessIndependence', 'splitsAreIndependent', 'splitsAreIndependentFromMaps',
+        'recordConversation', 'getConversationHistory',
+        'recordTelemetry', 'getTelemetrySummary', 'saveTelemetry',
+        'renderColorizedDiff', 'getSplitDiff',
+        'buildDependencyGraph', 'renderAsciiGraph',
+        'analyzeRetrospective',
+        'cleanupExecutor',
+        'analyzeDiffAsync', 'createSplitPlanAsync', 'executeSplitAsync',
+        'verifySplitAsync', 'verifySplitsAsync', 'verifyEquivalenceAsync',
+        'cleanupBranchesAsync'
+    ];
+
+    funcNames.forEach(function(k) {
+        if (typeof ps[k] === 'undefined') return;
+        try {
+            Object.defineProperty(globalThis, k, {
+                get: function() { return ps[k]; },
+                set: function(v) { ps[k] = v; },
+                configurable: true,
+                enumerable: false
+            });
+        } catch(e) {}
+    });
+
+    // --- Internal helpers with _ prefix (monolith had bare names) ---
+    var internalNames = {
+        'gitExec':           '_gitExec',
+        'shellQuote':        '_shellQuote',
+        'gitAddChangedFiles':'_gitAddChangedFiles',
+        'dirname':           '_dirname',
+        'fileExtension':     '_fileExtension',
+        'sanitizeBranchName':'_sanitizeBranchName',
+        'padIndex':          '_padIndex',
+        'isCancelled':       'isCancelled',
+        'isPaused':          'isPaused',
+        'isForceCancelled':  'isForceCancelled'
+    };
+    Object.keys(internalNames).forEach(function(bare) {
+        var real = internalNames[bare];
+        if (typeof ps[real] === 'undefined') return;
+        try {
+            Object.defineProperty(globalThis, bare, {
+                get: function() { return ps[real]; },
+                set: function(v) { ps[real] = v; },
+                configurable: true,
+                enumerable: false
+            });
+        } catch(e) {}
+    });
+
+    // --- Constants ---
+    if (ps.AUTOMATED_DEFAULTS) globalThis.AUTOMATED_DEFAULTS = ps.AUTOMATED_DEFAULTS;
+    if (ps.AUTO_FIX_STRATEGIES) globalThis.AUTO_FIX_STRATEGIES = ps.AUTO_FIX_STRATEGIES;
+    if (ps.DEFAULT_PLAN_PATH) globalThis.DEFAULT_PLAN_PATH = ps.DEFAULT_PLAN_PATH;
+    if (ps.CLASSIFICATION_PROMPT_TEMPLATE) globalThis.CLASSIFICATION_PROMPT_TEMPLATE = ps.CLASSIFICATION_PROMPT_TEMPLATE;
+    if (ps.SPLIT_PLAN_PROMPT_TEMPLATE) globalThis.SPLIT_PLAN_PROMPT_TEMPLATE = ps.SPLIT_PLAN_PROMPT_TEMPLATE;
+    if (ps.CONFLICT_RESOLUTION_PROMPT_TEMPLATE) globalThis.CONFLICT_RESOLUTION_PROMPT_TEMPLATE = ps.CONFLICT_RESOLUTION_PROMPT_TEMPLATE;
+
+    // --- runtime proxy (bare global → prSplit.runtime) ---
+    try {
+        Object.defineProperty(globalThis, 'runtime', {
+            get: function() { return ps.runtime; },
+            set: function(v) { ps.runtime = v; },
+            configurable: true,
+            enumerable: false
+        });
+    } catch(e) {}
+
+    // --- State variable proxies (get/set → prSplit._state.*) ---
+    var stateNames = [
+        'analysisCache', 'groupsCache', 'planCache',
+        'executionResultCache', 'conversationHistory',
+        'claudeExecutor', 'mcpCallbackObj'
+    ];
+    stateNames.forEach(function(k) {
+        try {
+            Object.defineProperty(globalThis, k, {
+                get: function() { return st[k]; },
+                set: function(v) { st[k] = v; },
+                configurable: true,
+                enumerable: false
+            });
+        } catch(e) {}
+    });
+
+    // --- _mcpCallbackObj bridge ---
+    try {
+        Object.defineProperty(ps, '_mcpCallbackObj', {
+            get: function() { return st.mcpCallbackObj; },
+            set: function(v) { st.mcpCallbackObj = v; },
+            configurable: true
+        });
+    } catch(e) {}
+
+    // --- _extract* aliases ---
+    if (ps.extractDirs) ps._extractDirs = ps.extractDirs;
+    if (ps.extractGoPkgs) ps._extractGoPkgs = ps.extractGoPkgs;
+    if (ps.extractGoImports) ps._extractGoImports = ps.extractGoImports;
+
+    // --- verify helpers ---
+    if (ps.discoverVerifyCommand) globalThis.discoverVerifyCommand = ps.discoverVerifyCommand;
+    if (ps.scopedVerifyCommand) globalThis.scopedVerifyCommand = ps.scopedVerifyCommand;
+})();
+`
+
 // GitMockSetupJS returns JS code that installs a git-focused exec mock.
 // The mock matches git subcommands by stripping 'git' and optional '-C dir'
 // prefixes, then looking up responses by the remaining args joined with space.

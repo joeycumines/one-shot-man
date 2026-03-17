@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 )
@@ -195,7 +196,7 @@ func makeEvalJS(t testing.TB, engine *scripting.Engine, timeout time.Duration) f
 // TestChunk00_Initialization verifies that chunk 00 initializes
 // globalThis.prSplit with the expected structure.
 func TestChunk00_Initialization(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, "00_core")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	// globalThis.prSplit must exist and be an object.
 	val, err := evalJS(`typeof globalThis.prSplit`)
@@ -227,7 +228,7 @@ func TestChunk00_Initialization(t *testing.T) {
 
 // TestChunk00_ShellQuote tests the shellQuote helper with various inputs.
 func TestChunk00_ShellQuote(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, "00_core")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	tests := []struct {
 		input    string
@@ -256,7 +257,7 @@ func TestChunk00_ShellQuote(t *testing.T) {
 
 // TestChunk00_Dirname tests the dirname helper at various depths.
 func TestChunk00_Dirname(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, "00_core")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	tests := []struct {
 		path     string
@@ -285,7 +286,7 @@ func TestChunk00_Dirname(t *testing.T) {
 
 // TestChunk00_FileExtension tests the fileExtension helper.
 func TestChunk00_FileExtension(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, "00_core")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	tests := []struct {
 		path     string
@@ -313,7 +314,7 @@ func TestChunk00_FileExtension(t *testing.T) {
 
 // TestChunk00_SanitizeBranchName tests special character replacement.
 func TestChunk00_SanitizeBranchName(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, "00_core")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	tests := []struct {
 		input    string
@@ -340,7 +341,7 @@ func TestChunk00_SanitizeBranchName(t *testing.T) {
 
 // TestChunk00_PadIndex tests zero-padding behavior.
 func TestChunk00_PadIndex(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, "00_core")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	tests := []struct {
 		input    int
@@ -379,7 +380,7 @@ func TestChunk00_GitExec(t *testing.T) {
 	runGitCmd(t, dir, "config", "user.email", "test@test.com")
 	runGitCmd(t, dir, "config", "user.name", "Test")
 
-	evalJS := loadChunkEngine(t, nil, "00_core")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	// Success case: git rev-parse --git-dir in the temp repo.
 	js := fmt.Sprintf(`(function() {
@@ -449,7 +450,7 @@ func TestChunk00_GitAddChangedFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	evalJS := loadChunkEngine(t, nil, "00_core")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	// Call gitAddChangedFiles.
 	_, err := evalJS(fmt.Sprintf(`globalThis.prSplit._gitAddChangedFiles(%q)`, dir))
@@ -482,7 +483,7 @@ func TestChunk00_RuntimeConfig(t *testing.T) {
 		"dryRun":       true,
 		"retryBudget":  5,
 	}
-	evalJS := loadChunkEngine(t, overrides, "00_core")
+	evalJS := prsplittest.NewChunkEngine(t, overrides, "00_core")
 
 	tests := []struct {
 		field    string
@@ -517,7 +518,7 @@ func TestChunk00_RuntimeConfig(t *testing.T) {
 
 // TestChunk00_IsCancelled verifies the cooperative cancellation functions.
 func TestChunk00_IsCancelled(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, "00_core")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	// Without _cancelSource, all should return false.
 	for _, fn := range []string{"isCancelled", "isPaused", "isForceCancelled"} {
@@ -533,7 +534,7 @@ func TestChunk00_IsCancelled(t *testing.T) {
 
 // TestChunk00_ScopedVerifyCommand tests the scoped verification logic.
 func TestChunk00_ScopedVerifyCommand(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, "00_core")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	// All Go files → scoped go test command.
 	val, err := evalJS(`globalThis.prSplit.scopedVerifyCommand(
@@ -595,7 +596,7 @@ func TestChunk00_ScopedVerifyCommand(t *testing.T) {
 // TestChunk00_StyleDegracesGracefully tests that style helpers work
 // even when lipgloss is not available (returns plain text).
 func TestChunk00_StyleDegracesGracefully(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, "00_core")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	// Style helpers should at minimum return the input string.
 	for _, fn := range []string{"success", "error", "warning", "info", "header", "dim", "bold", "diffAdd", "diffRemove", "diffHunk", "diffMeta", "diffContext"} {
@@ -627,7 +628,7 @@ func TestChunk00_StyleDegracesGracefully(t *testing.T) {
 // TestChunk00_CommandNameFromConfig verifies COMMAND_NAME is derived from
 // the Go-injected config global.
 func TestChunk00_CommandNameFromConfig(t *testing.T) {
-	evalJS := loadChunkEngine(t, nil, "00_core")
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	val, err := evalJS(`globalThis.prSplit._COMMAND_NAME`)
 	if err != nil {

@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // allChunksThrough13 loads all 14 chunks for full pipeline smoke tests.
@@ -94,7 +96,7 @@ func Test_ChunkedPipeline_HeuristicRun(t *testing.T) {
 	dir := setupSmokeTestRepo(t)
 	escaped := escapeJSPath(dir)
 
-	evalJS := loadChunkEngine(t, map[string]any{
+	evalJS := prsplittest.NewChunkEngine(t, map[string]any{
 		"baseBranch":    "main",
 		"strategy":      "directory",
 		"branchPrefix":  "smoke/",
@@ -278,7 +280,7 @@ func Test_ChunkedPipeline_CommandSequence(t *testing.T) {
 	dir := setupSmokeTestRepo(t)
 	escaped := escapeJSPath(dir)
 
-	evalJS := loadChunkEngine(t, map[string]any{
+	evalJS := prsplittest.NewChunkEngine(t, map[string]any{
 		"baseBranch":    "main",
 		"strategy":      "directory",
 		"branchPrefix":  "seq/",

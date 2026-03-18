@@ -297,12 +297,16 @@
             leftParts += 'Ctrl+L Split';
         }
         // T337: Context-sensitive hints for verify/shell tabs.
+        // When the bottom pane is focused on an interactive terminal tab, show
+        // an INPUT indicator instead of the generic Ctrl+O hint — the user is
+        // already interacting with a tab and needs to know where keys go.
         if (!narrow && s.splitViewEnabled) {
-            leftParts += '  Ctrl+O Tab';
             if (s.splitViewFocus === 'claude' && s.splitViewTab === 'shell' && s.shellSession) {
-                leftParts += '  \u2328 INPUT';
+                leftParts += '  INPUT \u25b8 Shell';
             } else if (s.splitViewFocus === 'claude' && s.splitViewTab === 'verify' && s.activeVerifySession) {
-                leftParts += '  \u2328 INPUT';
+                leftParts += '  INPUT \u25b8 Verify';
+            } else {
+                leftParts += '  Ctrl+O Tab';
             }
         }
         var left = styles.dim().render(leftParts);

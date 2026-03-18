@@ -325,13 +325,18 @@
             lines.push('');
         }
 
-        // -- Claude / Split View (always shown) --
-        lines.push(styles.label().render('Claude Integration'));
+        // -- Split View (always shown) --
+        lines.push(styles.label().render('Split View'));
         lines.push(padRight('  Ctrl+L', 22) + 'Toggle split view');
-        lines.push(padRight('  Ctrl+Tab', 22) + 'Switch wizard / Claude pane');
-        lines.push(padRight('  Ctrl+O', 22) + 'Cycle split-view tabs');
+        lines.push(padRight('  Ctrl+Tab', 22) + 'Focus wizard / terminal pane');
+        lines.push(padRight('  Ctrl+O', 22) + 'Cycle tabs (Claude, Output, Verify, Shell)');
         lines.push(padRight('  Ctrl+]', 22) + 'Full Claude passthrough');
         lines.push(padRight('  Ctrl+= / Ctrl+-', 22) + 'Resize split view');
+        // T337: Verify/Shell terminal tab interaction hints.
+        if (ws === 'BRANCH_BUILDING' || ws === 'EQUIV_CHECK') {
+            lines.push(padRight('  (type in pane)', 22) + 'Keys forwarded to focused terminal');
+            lines.push(padRight('  Mouse in pane', 22) + 'Clicks forwarded (SGR mouse)');
+        }
 
         var content = lines.join('\n');
         return styles.activeCard().width(w).render(content);

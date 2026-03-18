@@ -318,9 +318,9 @@
                 lines.push(padRight('  Ctrl+C', 22) + 'Interrupt current verify (2x = force kill)');
                 lines.push(padRight('  p', 22) + 'Mark failed branch as passed (override)');
             }
-            // T007: Open Shell hint — only shown when verify session is active.
+            // T007/T338: Open Shell hint — only shown when verify session is active.
             if (ws === 'BRANCH_BUILDING') {
-                lines.push(padRight('  \ue795 Shell', 22) + 'Click to open interactive shell in worktree');
+                lines.push(padRight('  \ue795 Shell', 22) + 'Open interactive shell in worktree (Unix)');
             }
             lines.push('');
         }
@@ -329,7 +329,7 @@
         lines.push(styles.label().render('Claude Integration'));
         lines.push(padRight('  Ctrl+L', 22) + 'Toggle split view');
         lines.push(padRight('  Ctrl+Tab', 22) + 'Switch wizard / Claude pane');
-        lines.push(padRight('  Ctrl+O', 22) + 'Switch Claude / Output tab');
+        lines.push(padRight('  Ctrl+O', 22) + 'Cycle split-view tabs');
         lines.push(padRight('  Ctrl+]', 22) + 'Full Claude passthrough');
         lines.push(padRight('  Ctrl+= / Ctrl+-', 22) + 'Resize split view');
 

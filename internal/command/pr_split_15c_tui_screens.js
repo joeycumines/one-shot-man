@@ -783,11 +783,17 @@
                         pauseResumeBtn = zone.mark('verify-pause',
                             styles.secondaryButton().render('\u23f8 Pause'));
                     }
-                    // T007: Open Shell in verify worktree.
+                    // T007/T338: Open Shell in verify worktree.
+                    // Disabled on Windows where CaptureSession is unavailable.
                     var openShellBtn = '';
                     if (s.activeVerifyWorktree) {
-                        openShellBtn = zone.mark('verify-open-shell',
-                            styles.secondaryButton().render('\ue795 Shell'));
+                        if (typeof prSplit.canSpawnInteractiveShell === 'function' &&
+                            !prSplit.canSpawnInteractiveShell()) {
+                            openShellBtn = styles.dim().render('\ue795 Shell (Unix only)');
+                        } else {
+                            openShellBtn = zone.mark('verify-open-shell',
+                                styles.secondaryButton().render('\ue795 Shell'));
+                        }
                     }
                     var interruptHint = zone.mark('verify-interrupt', styles.dim().render(
                         'Ctrl+C: Stop  2\u00d7Ctrl+C: Force Kill'));

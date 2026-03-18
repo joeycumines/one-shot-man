@@ -296,6 +296,15 @@
             if (leftParts) leftParts += '  ';
             leftParts += 'Ctrl+L Split';
         }
+        // T337: Context-sensitive hints for verify/shell tabs.
+        if (!narrow && s.splitViewEnabled) {
+            leftParts += '  Ctrl+O Tab';
+            if (s.splitViewFocus === 'claude' && s.splitViewTab === 'shell' && s.shellSession) {
+                leftParts += '  \u2328 INPUT';
+            } else if (s.splitViewFocus === 'claude' && s.splitViewTab === 'verify' && s.activeVerifySession) {
+                leftParts += '  \u2328 INPUT';
+            }
+        }
         var left = styles.dim().render(leftParts);
 
         // Center: help.

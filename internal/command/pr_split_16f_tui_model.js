@@ -25,6 +25,7 @@
     var renderStatusBar = prSplit._renderStatusBar;
     var renderClaudePane = prSplit._renderClaudePane;
     var renderOutputPane = prSplit._renderOutputPane;
+    var renderVerifyPane = prSplit._renderVerifyPane;
     var viewForState = prSplit._viewForState;
     var viewHelpOverlay = prSplit._viewHelpOverlay;
     var viewConfirmCancelOverlay = prSplit._viewConfirmCancelOverlay;
@@ -115,6 +116,10 @@
             }
             if (zone.inBounds('split-tab-output', msg)) {
                 s.splitViewTab = 'output';
+                return [s, null];
+            }
+            if (zone.inBounds('split-tab-verify', msg)) {
+                s.splitViewTab = 'verify';
                 return [s, null];
             }
         }
@@ -551,12 +556,20 @@
                     : styles.dim().render(' Output ');
                 var outputCount = (s.outputLines && s.outputLines.length > 0)
                     ? styles.dim().render('(' + s.outputLines.length + ')') : '';
+                var verifyTabLabel = '';
+                if (s.activeVerifySession) {
+                    verifyTabLabel = s.splitViewTab === 'verify'
+                        ? styles.primaryButton().render(' Verify ')
+                        : styles.dim().render(' Verify ');
+                }
                 var tabBar = zone.mark('split-tab-claude', claudeTabLabel) + ' ' +
                     zone.mark('split-tab-output', outputTabLabel) +
-                    (outputCount ? ' ' + outputCount : '');
+                    (outputCount ? ' ' + outputCount : '') +
+                    (verifyTabLabel ? ' ' + zone.mark('split-tab-verify', verifyTabLabel) : '');
                 var focusLabel = s.splitViewFocus === 'wizard'
                     ? '\u25b2 Wizard'
-                    : (s.splitViewTab === 'output' ? '\u25bc Output' : '\u25bc Claude');
+                    : (s.splitViewTab === 'output' ? '\u25bc Output'
+                       : (s.splitViewTab === 'verify' ? '\u25bc Verify' : '\u25bc Claude'));
                 var splitHint = 'Ctrl+Tab: switch  Ctrl+O: tab  Ctrl+L: close';
                 // T44: labelW must include tabBar visual width + all separator decorators.
                 // Template: leftFill + '┤ ' + tabBar + ' · ' + focusLabel + ' · ' + splitHint + ' ├' + rightFill
@@ -568,10 +581,12 @@
                 var paneDivider = styles.dim().render(
                     leftFill + '\u2524 ' + tabBar + ' \u00b7 ' + focusLabel + ' \u00b7 ' + splitHint + ' \u251c' + rightFill);
 
-                // T44: Bottom pane — switch between Claude and Output tab.
+                // T44: Bottom pane — switch between Claude, Output, and Verify tabs.
                 var bottomPane;
                 if (s.splitViewTab === 'output') {
                     bottomPane = renderOutputPane(s, w, claudeH);
+                } else if (s.splitViewTab === 'verify') {
+                    bottomPane = renderVerifyPane(s, w, claudeH);
                 } else {
                     bottomPane = renderClaudePane(s, w, claudeH);
                 }
@@ -772,6 +787,7 @@
                 activeVerifyDir: null,         // base dir for worktree cleanup
                 activeVerifyStartTime: 0,      // start time for duration tracking
                 verifyElapsedMs: 0,            // T058: elapsed ms updated each poll tick
+                verifyScreen: '',              // T321: ANSI-styled VTerm screen from CaptureSession
                 verifyViewportOffset: 0,       // scroll offset (lines from bottom)
                 verifyAutoScroll: true,        // auto-scroll to bottom
                 lastVerifyInterruptTime: 0,    // timestamp of last Ctrl+C interrupt

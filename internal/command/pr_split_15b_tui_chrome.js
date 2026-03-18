@@ -672,12 +672,110 @@
         return paneStyle.render(contentLines.join('\n'));
     }
 
+    function renderVerifyPane(s, width, height) {
+        var content = s.verifyScreen || '';
+        var hasSession = !!s.activeVerifySession;
+
+        var contentH = Math.max(1, height - 2);
+        var viewH = Math.max(1, contentH - 1);
+        var viewW = Math.max(10, width - 6);
+
+        var isFocused = (s.splitViewFocus === 'claude' && s.splitViewTab === 'verify');
+        // Border color: warning (yellow) when running, success (green) when paused,
+        // default border when no session
+        var borderColor = isFocused ? COLORS.primary
+            : (hasSession ? (s.verifyPaused ? COLORS.success : COLORS.warning) : COLORS.border);
+
+        // Placeholder when no verify session.
+        if (!hasSession && !content) {
+            var placeholder = styles.dim().render('No active verification');
+            var hint = styles.dim().render('Verification output will appear here when running');
+            var phLines = [];
+            var phPadTop = Math.max(0, Math.floor((contentH - 2) / 2));
+            for (var pi = 0; pi < phPadTop; pi++) phLines.push('');
+            phLines.push(placeholder);
+            phLines.push(hint);
+            while (phLines.length < contentH) phLines.push('');
+            var phStyle = lipgloss.newStyle()
+                .border(lipgloss.roundedBorder())
+                .borderForeground(borderColor)
+                .width(width - 2)
+                .height(contentH);
+            return phStyle.render(phLines.join('\n'));
+        }
+
+        // Parse content into lines.
+        var lines = content.split('\n');
+        while (lines.length > 0 && lines[lines.length - 1] === '') {
+            lines.pop();
+        }
+        // Also trim trailing lines that are visually empty (ANSI reset codes only).
+        while (lines.length > 0 && lipgloss.width(lines[lines.length - 1]) === 0) {
+            lines.pop();
+        }
+
+        var totalLines = lines.length;
+
+        // Scroll indicator.
+        var scrollInfo = '';
+        var offset = s.verifyViewportOffset || 0;
+        if (totalLines > viewH) {
+            if (offset <= 0) {
+                scrollInfo = ' [live]';
+            } else {
+                var startForPct = Math.max(0, totalLines - viewH - offset);
+                var pct = Math.round((startForPct / Math.max(1, totalLines - viewH)) * 100);
+                scrollInfo = ' [' + pct + '%]';
+            }
+        }
+
+        // Title: show branch name, elapsed time, pause state, input indicator.
+        var branchLabel = s.activeVerifyBranch || 'verify';
+        var elapsed = ((s.verifyElapsedMs || 0) / 1000).toFixed(1);
+        var pauseTag = s.verifyPaused ? ' \u23f8' : '';
+        var inputTag = isFocused ? ' INPUT' : '';
+        var titleText = styles.bold().render(
+            ' Verify: ' + branchLabel + ' (' + elapsed + 's)' + pauseTag + inputTag + scrollInfo + ' ');
+
+        // Determine visible window.
+        var startLine;
+        if (offset <= 0) {
+            startLine = Math.max(0, totalLines - viewH);
+        } else {
+            startLine = Math.max(0, totalLines - viewH - offset);
+        }
+        var endLine = Math.min(totalLines, startLine + viewH);
+
+        // Build viewport with ANSI-aware truncation.
+        var contentLines = [titleText];
+        for (var ci = startLine; ci < endLine; ci++) {
+            var ln = lines[ci] || '';
+            var visualW = lipgloss.width(ln);
+            if (visualW > viewW) {
+                ln = lipgloss.newStyle().maxWidth(viewW).render(ln);
+            }
+            contentLines.push(ln);
+        }
+        while (contentLines.length < contentH) {
+            contentLines.push('');
+        }
+
+        var paneStyle = lipgloss.newStyle()
+            .border(lipgloss.roundedBorder())
+            .borderForeground(borderColor)
+            .width(width - 2)
+            .height(contentH);
+
+        return paneStyle.render(contentLines.join('\n'));
+    }
+
     // Export chrome for testing.
     prSplit._renderTitleBar = renderTitleBar;
     prSplit._renderNavBar = renderNavBar;
     prSplit._renderStatusBar = renderStatusBar;
     prSplit._renderClaudePane = renderClaudePane;
     prSplit._renderOutputPane = renderOutputPane;
+    prSplit._renderVerifyPane = renderVerifyPane;
     prSplit._renderStepDots = renderStepDots;
     prSplit._viewClaudeConvoOverlay = viewClaudeConvoOverlay;
     prSplit._renderClaudeQuestionPrompt = renderClaudeQuestionPrompt;

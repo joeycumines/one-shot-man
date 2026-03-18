@@ -482,9 +482,12 @@
                     syncMainViewport(s); // T120: sync dimensions after ratio change.
                     return [s, null];
                 }
-                // T44: Ctrl+O switches between Claude and Output tabs in split-view bottom pane.
+                // T44+T322: Ctrl+O cycles through available tabs in split-view bottom pane.
                 if (k === 'ctrl+o') {
-                    s.splitViewTab = (s.splitViewTab === 'claude') ? 'output' : 'claude';
+                    var tabs = ['claude', 'output'];
+                    if (s.activeVerifySession) tabs.push('verify');
+                    var idx = tabs.indexOf(s.splitViewTab);
+                    s.splitViewTab = tabs[(idx + 1) % tabs.length];
                     return [s, null];
                 }
                 // T29: Claude pane keyboard input forwarding.
@@ -524,6 +527,55 @@
                         }
                         // Output tab is read-only — don't forward to PTY, don't scroll Claude.
                         return [s, null];
+                    }
+                    // T324: Verify tab — forward input to verify CaptureSession.
+                    if (s.splitViewTab === 'verify') {
+                        // Scroll keys adjust the verify viewport.
+                        if (k === 'up' || k === 'k') {
+                            s.verifyViewportOffset = (s.verifyViewportOffset || 0) + 1;
+                            s.verifyAutoScroll = false;
+                            return [s, null];
+                        }
+                        if (k === 'down' || k === 'j') {
+                            s.verifyViewportOffset = Math.max(0, (s.verifyViewportOffset || 0) - 1);
+                            if (s.verifyViewportOffset === 0) s.verifyAutoScroll = true;
+                            return [s, null];
+                        }
+                        if (k === 'pgup') {
+                            s.verifyViewportOffset = (s.verifyViewportOffset || 0) + 5;
+                            s.verifyAutoScroll = false;
+                            return [s, null];
+                        }
+                        if (k === 'pgdown') {
+                            s.verifyViewportOffset = Math.max(0, (s.verifyViewportOffset || 0) - 5);
+                            if (s.verifyViewportOffset === 0) s.verifyAutoScroll = true;
+                            return [s, null];
+                        }
+                        if (k === 'home') {
+                            s.verifyViewportOffset = 999999;
+                            s.verifyAutoScroll = false;
+                            return [s, null];
+                        }
+                        if (k === 'end') {
+                            s.verifyViewportOffset = 0;
+                            s.verifyAutoScroll = true;
+                            return [s, null];
+                        }
+                        // Forward non-reserved keys to the verify CaptureSession.
+                        if (!CLAUDE_RESERVED_KEYS[k]) {
+                            var vBytes = keyToTermBytes(k);
+                            if (vBytes !== null && s.activeVerifySession &&
+                                typeof s.activeVerifySession.write === 'function') {
+                                try {
+                                    s.activeVerifySession.write(vBytes);
+                                    s.verifyViewportOffset = 0;
+                                    s.verifyAutoScroll = true;
+                                } catch (e) {
+                                    // Swallow — write may fail if session ended.
+                                }
+                            }
+                            return [s, null];
+                        }
                     }
                     // Viewport scroll keys — scroll the Claude pane output.
                     if (k === 'up' || k === 'k') {

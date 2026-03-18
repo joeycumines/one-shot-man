@@ -31,12 +31,17 @@
             if (s.activeVerifyWorktree && s.activeVerifyDir) {
                 try { prSplit.cleanupVerifyWorktree(s.activeVerifyDir, s.activeVerifyWorktree); } catch (e) { /* best effort */ }
             }
+            // T325: Reset tab before clearing session for atomic state transition.
+            if (s.splitViewTab === 'verify') {
+                s.splitViewTab = 'output';
+            }
             s.activeVerifySession = null;
             s.activeVerifyWorktree = null;
             s.activeVerifyBranch = null;
             s.activeVerifyDir = null;
             s.activeVerifyStartTime = 0;
             s.verifyElapsedMs = 0;
+            s.verifyScreen = '';     // T321
             s.verifyViewportOffset = 0;
             s.verifyAutoScroll = true;
             s.lastVerifyInterruptTime = 0;
@@ -244,8 +249,21 @@
         s.activeVerifyDir = sessionResult.dir;
         s.activeVerifyStartTime = sessionResult.startTime;
         s.verifyElapsedMs = 0;   // T058: reset elapsed for new session
+        s.verifyScreen = '';     // T321: clear screen for new session
         s.verifyViewportOffset = 0;
         s.verifyAutoScroll = true;
+
+        // T325: Auto-open split-view with Verify tab when verification starts.
+        if (!s.splitViewEnabled && s.height >= 12) {
+            s.splitViewEnabled = true;
+            s.splitViewFocus = 'wizard';
+            s.splitViewTab = 'verify';
+            if (typeof prSplit._syncMainViewport === 'function') {
+                prSplit._syncMainViewport(s);
+            }
+        } else if (s.splitViewEnabled) {
+            s.splitViewTab = 'verify';
+        }
 
         // Poll every 100ms for live output updates.
         return [s, tea.tick(100, 'verify-poll')];
@@ -267,6 +285,9 @@
             // Timeout — kill the process.
             try { s.activeVerifySession.kill(); } catch (e) { /* ignore */ }
         }
+
+        // T321: Capture ANSI-styled VTerm screen for the Verify tab.
+        try { s.verifyScreen = s.activeVerifySession.screen(); } catch (e) { /* ignore */ }
 
         if (!s.activeVerifySession.isDone()) {
             // Still running — schedule next poll.
@@ -332,6 +353,11 @@
             preExisting: preExisting
         });
 
+        // T325: Reset tab before clearing session for atomic state transition.
+        if (s.splitViewTab === 'verify') {
+            s.splitViewTab = 'output';
+        }
+
         // Clear active session state.
         s.activeVerifySession = null;
         s.activeVerifyWorktree = null;
@@ -343,6 +369,7 @@
         s.verifyAutoScroll = true;
         s.lastVerifyInterruptTime = 0;
         s.verifyPaused = false;  // T059
+        s.verifyScreen = '';     // T321: clear screen when session ends
 
         s.verifyingIdx++;
         return [s, tea.tick(1, 'verify-branch')];

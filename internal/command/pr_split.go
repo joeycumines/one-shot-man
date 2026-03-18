@@ -49,6 +49,9 @@ var prSplitChunk05Execution string
 //go:embed pr_split_06_verification.js
 var prSplitChunk06Verification string
 
+//go:embed pr_split_06b_verify_shell.js
+var prSplitChunk06bVerifyShell string
+
 //go:embed pr_split_07_prcreation.js
 var prSplitChunk07PRCreation string
 
@@ -128,6 +131,7 @@ var prSplitChunks = []struct {
 	{"04_validation", &prSplitChunk04Validation},
 	{"05_execution", &prSplitChunk05Execution},
 	{"06_verification", &prSplitChunk06Verification},
+	{"06b_verify_shell", &prSplitChunk06bVerifyShell},
 	{"07_prcreation", &prSplitChunk07PRCreation},
 	{"08_conflict", &prSplitChunk08Conflict},
 	{"09_claude", &prSplitChunk09Claude},

@@ -26,6 +26,7 @@
     var renderClaudePane = prSplit._renderClaudePane;
     var renderOutputPane = prSplit._renderOutputPane;
     var renderVerifyPane = prSplit._renderVerifyPane;
+    var renderShellPane = prSplit._renderShellPane;
     var viewForState = prSplit._viewForState;
     var viewHelpOverlay = prSplit._viewHelpOverlay;
     var viewConfirmCancelOverlay = prSplit._viewConfirmCancelOverlay;
@@ -58,6 +59,11 @@
     var formatReportForDisplay = prSplit._formatReportForDisplay;
     var handleErrorResolutionChoice = prSplit._handleErrorResolutionChoice;
     var openClaudeConvo = prSplit._openClaudeConvo;
+
+    // Cross-chunk imports — from chunk 16e (mouse helpers).
+    var mouseToTermBytes = prSplit._mouseToTermBytes;
+    var computeSplitPaneContentOffset = prSplit._computeSplitPaneContentOffset;
+    var writeMouseToPane = prSplit._writeMouseToPane;
 
     // -----------------------------------------------------------------------
     //  Mouse Handlers
@@ -122,11 +128,24 @@
                 s.splitViewTab = 'verify';
                 return [s, null];
             }
+            if (zone.inBounds('split-tab-shell', msg)) {
+                s.splitViewTab = 'shell';
+                return [s, null];
+            }
         }
         // T46: Claude question prompt click — activate input.
         if (s.claudeQuestionDetected && zone.inBounds('claude-question-input', msg)) {
             s.claudeQuestionInputActive = true;
             return [s, null];
+        }
+        // T327/T328: Forward unmatched press to focused child terminal.
+        if (s.splitViewEnabled && s.splitViewFocus === 'claude' &&
+            s.splitViewTab !== 'output') {
+            var ofs = computeSplitPaneContentOffset(s);
+            var mb = mouseToTermBytes(msg, ofs.row, ofs.col);
+            if (mb && writeMouseToPane(mb, s)) {
+                return [s, null];
+            }
         }
         // Screen-specific zone clicks.
         return handleScreenMouseClick(msg, s);
@@ -243,31 +262,46 @@
                 }
                 return [s, null];
             }
-            // T007: Open interactive shell in the verify worktree.
-            // NOTE: tuiMux.spawnInteractive() is not yet implemented on the Go
-            // side. This handler pauses the active verify session and logs
-            // the intent. Once the Go binding is wired, it will spawn a PTY
-            // shell in activeVerifyWorktree.
+            // T333: Open interactive shell in the verify worktree using CaptureSession.
             if (s.activeVerifySession && s.activeVerifyWorktree &&
                 zone.inBounds('verify-open-shell', msg)) {
-                // Pause the verify session while the shell is open.
-                if (!s.verifyPaused) {
-                    try { s.activeVerifySession.pause(); s.verifyPaused = true; } catch (e) { /* ignore */ }
-                }
-                // TODO(T007): Replace this log with tuiMux.spawnInteractive()
-                // when the Go API is available. The shell should:
-                //   1. Open an interactive PTY in s.activeVerifyWorktree
-                //   2. On shell exit, resume the verify session:
-                //        try { s.activeVerifySession.resume(); s.verifyPaused = false; } catch(e){}
-                if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.spawnInteractive === 'function') {
-                    tuiMux.spawnInteractive({
-                        dir: s.activeVerifyWorktree,
-                        onExit: function() {
-                            try { s.activeVerifySession.resume(); s.verifyPaused = false; } catch (e) { /* ignore */ }
+                if (!s.shellSession) {
+                    // Pause verify while shell is open.
+                    if (!s.verifyPaused) {
+                        try { s.activeVerifySession.pause(); s.verifyPaused = true; } catch (e) { /* ignore */ }
+                    }
+                    // Compute shell terminal size from pane dimensions.
+                    var shellH = s.height || 24;
+                    var vpH = Math.max(3, shellH - (prSplit._CHROME_ESTIMATE || 8));
+                    var minP = 3;
+                    var wH = Math.max(minP, Math.floor(vpH * (s.splitViewRatio || 0.6)));
+                    wH = Math.min(wH, vpH - minP - 1);
+                    var cH = vpH - wH - 1;
+                    var shellRows = Math.max(3, cH - 3); // border(2) + title(1)
+                    var shellCols = Math.max(20, (s.width || 80) - 4); // border(2) + safety(2)
+                    try {
+                        s.shellSession = prSplit.spawnShellSession(s.activeVerifyWorktree, {
+                            rows: shellRows,
+                            cols: shellCols
+                        });
+                        s.shellScreen = '';
+                        s.shellViewOffset = 0;
+                        s.shellAutoScroll = true;
+                        // Open split-view with Shell tab.
+                        if (!s.splitViewEnabled) {
+                            s.splitViewEnabled = true;
+                            syncMainViewport(s);
                         }
-                    });
+                        s.splitViewTab = 'shell';
+                        s.splitViewFocus = 'claude';
+                        return [s, tea.tick(100, 'shell-poll')];
+                    } catch (e) {
+                        log.printf('verify: spawn shell failed: %s', e.message || String(e));
+                    }
                 } else {
-                    log.printf('verify: open-shell requested for %s (tuiMux.spawnInteractive not yet available)', s.activeVerifyWorktree);
+                    // Shell already open — just switch to the tab.
+                    s.splitViewTab = 'shell';
+                    s.splitViewFocus = 'claude';
                 }
                 return [s, null];
             }
@@ -562,14 +596,22 @@
                         ? styles.primaryButton().render(' Verify ')
                         : styles.dim().render(' Verify ');
                 }
+                var shellTabLabel = '';
+                if (s.shellSession) {
+                    shellTabLabel = s.splitViewTab === 'shell'
+                        ? styles.primaryButton().render(' Shell ')
+                        : styles.dim().render(' Shell ');
+                }
                 var tabBar = zone.mark('split-tab-claude', claudeTabLabel) + ' ' +
                     zone.mark('split-tab-output', outputTabLabel) +
                     (outputCount ? ' ' + outputCount : '') +
-                    (verifyTabLabel ? ' ' + zone.mark('split-tab-verify', verifyTabLabel) : '');
+                    (verifyTabLabel ? ' ' + zone.mark('split-tab-verify', verifyTabLabel) : '') +
+                    (shellTabLabel ? ' ' + zone.mark('split-tab-shell', shellTabLabel) : '');
                 var focusLabel = s.splitViewFocus === 'wizard'
                     ? '\u25b2 Wizard'
                     : (s.splitViewTab === 'output' ? '\u25bc Output'
-                       : (s.splitViewTab === 'verify' ? '\u25bc Verify' : '\u25bc Claude'));
+                       : (s.splitViewTab === 'verify' ? '\u25bc Verify'
+                          : (s.splitViewTab === 'shell' ? '\u25bc Shell' : '\u25bc Claude')));
                 var splitHint = 'Ctrl+Tab: switch  Ctrl+O: tab  Ctrl+L: close';
                 // T44: labelW must include tabBar visual width + all separator decorators.
                 // Template: leftFill + '┤ ' + tabBar + ' · ' + focusLabel + ' · ' + splitHint + ' ├' + rightFill
@@ -581,12 +623,14 @@
                 var paneDivider = styles.dim().render(
                     leftFill + '\u2524 ' + tabBar + ' \u00b7 ' + focusLabel + ' \u00b7 ' + splitHint + ' \u251c' + rightFill);
 
-                // T44: Bottom pane — switch between Claude, Output, and Verify tabs.
+                // T44: Bottom pane — switch between Claude, Output, Verify, and Shell tabs.
                 var bottomPane;
                 if (s.splitViewTab === 'output') {
                     bottomPane = renderOutputPane(s, w, claudeH);
                 } else if (s.splitViewTab === 'verify') {
                     bottomPane = renderVerifyPane(s, w, claudeH);
+                } else if (s.splitViewTab === 'shell') {
+                    bottomPane = renderShellPane(s, w, claudeH);
                 } else {
                     bottomPane = renderClaudePane(s, w, claudeH);
                 }
@@ -793,6 +837,12 @@
                 lastVerifyInterruptTime: 0,    // timestamp of last Ctrl+C interrupt
                 verifyPaused: false,           // T059: true when verify is paused (SIGSTOP)
 
+                // Interactive shell in verify worktree (CaptureSession).
+                shellSession: null,            // CaptureSession JS object (or null)
+                shellScreen: '',               // ANSI-styled VTerm screen from shell CaptureSession
+                shellViewOffset: 0,            // scroll offset (lines from bottom)
+                shellAutoScroll: true,         // auto-scroll to bottom on output
+
                 // Fallback verification (async, when CaptureSession unavailable).
                 verifyFallbackRunning: false,  // true while async verifySplitAsync is running
                 verifyFallbackError: null,     // error string from fallback verification
@@ -801,7 +851,7 @@
                 splitViewEnabled: false,       // true when split-view is active
                 splitViewRatio: 0.6,           // wizard gets this fraction of content height
                 splitViewFocus: 'wizard',      // 'wizard' or 'claude' — which pane is focused
-                splitViewTab: 'claude',        // T44: 'claude' | 'output' — active tab in split-view bottom pane
+                splitViewTab: 'claude',        // T44: 'claude' | 'output' | 'verify' | 'shell' — active tab
                 claudeScreenshot: '',          // cached plain-text screenshot from tuiMux
                 claudeScreen: '',              // cached ANSI-styled screen from tuiMux (T28)
                 claudeViewOffset: 0,           // scroll offset in Claude pane (lines from bottom)

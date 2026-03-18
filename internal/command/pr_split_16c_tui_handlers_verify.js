@@ -32,8 +32,16 @@
                 try { prSplit.cleanupVerifyWorktree(s.activeVerifyDir, s.activeVerifyWorktree); } catch (e) { /* best effort */ }
             }
             // T325: Reset tab before clearing session for atomic state transition.
-            if (s.splitViewTab === 'verify') {
+            if (s.splitViewTab === 'verify' || s.splitViewTab === 'shell') {
                 s.splitViewTab = 'output';
+            }
+            // Clean up shell session if open (shell depends on verify worktree).
+            if (s.shellSession) {
+                try { s.shellSession.close(); } catch (e) { /* ignore */ }
+                s.shellSession = null;
+                s.shellScreen = '';
+                s.shellViewOffset = 0;
+                s.shellAutoScroll = true;
             }
             s.activeVerifySession = null;
             s.activeVerifyWorktree = null;
@@ -354,8 +362,17 @@
         });
 
         // T325: Reset tab before clearing session for atomic state transition.
-        if (s.splitViewTab === 'verify') {
+        if (s.splitViewTab === 'verify' || s.splitViewTab === 'shell') {
             s.splitViewTab = 'output';
+        }
+
+        // Clean up shell session if open (shell depends on verify worktree).
+        if (s.shellSession) {
+            try { s.shellSession.close(); } catch (e) { /* ignore */ }
+            s.shellSession = null;
+            s.shellScreen = '';
+            s.shellViewOffset = 0;
+            s.shellAutoScroll = true;
         }
 
         // Clear active session state.
@@ -892,10 +909,50 @@
         }
     }
 
+    // T335: Poll shell CaptureSession for screen updates and lifecycle.
+    function pollShellSession(s) {
+        if (!s.shellSession) return [s, null];
+
+        // Capture screen.
+        try {
+            s.shellScreen = s.shellSession.screen();
+        } catch (e) {
+            s.shellScreen = '';
+        }
+
+        // Check if shell has exited.
+        var done = false;
+        try { done = s.shellSession.isDone(); } catch (e) { done = true; }
+
+        if (done) {
+            // Clean up shell session.
+            try { s.shellSession.close(); } catch (e) { /* ignore */ }
+            s.shellSession = null;
+            s.shellScreen = '';
+            s.shellViewOffset = 0;
+            s.shellAutoScroll = true;
+
+            // Resume verify if it was paused for the shell.
+            if (s.verifyPaused && s.activeVerifySession) {
+                try { s.activeVerifySession.resume(); s.verifyPaused = false; } catch (e) { /* ignore */ }
+            }
+
+            // Switch away from shell tab.
+            if (s.splitViewTab === 'shell') {
+                s.splitViewTab = s.activeVerifySession ? 'verify' : 'output';
+            }
+
+            return [s, null];
+        }
+
+        return [s, tea.tick(100, 'shell-poll')];
+    }
+
     // Cross-chunk exports.
     prSplit._updateConfirmCancel = updateConfirmCancel;
     prSplit._runVerifyBranch = runVerifyBranch;
     prSplit._pollVerifySession = pollVerifySession;
+    prSplit._pollShellSession = pollShellSession;
     prSplit._handleVerifyFallbackPoll = handleVerifyFallbackPoll;
     prSplit._openClaudeConvo = openClaudeConvo;
     prSplit._closeClaudeConvo = closeClaudeConvo;

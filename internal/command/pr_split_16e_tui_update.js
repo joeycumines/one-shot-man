@@ -38,6 +38,7 @@
     var updateConfirmCancel = prSplit._updateConfirmCancel;
     var runVerifyBranch = prSplit._runVerifyBranch;
     var pollVerifySession = prSplit._pollVerifySession;
+    var pollShellSession = prSplit._pollShellSession;
     var handleVerifyFallbackPoll = prSplit._handleVerifyFallbackPoll;
     var updateClaudeConvo = prSplit._updateClaudeConvo;
     var pollClaudeConvo = prSplit._pollClaudeConvo;
@@ -48,11 +49,44 @@
     var handleAutoSplitPoll = prSplit._handleAutoSplitPoll;
     var handleRestartClaudePoll = prSplit._handleRestartClaudePoll;
     var keyToTermBytes = prSplit._keyToTermBytes;
+    var mouseToTermBytes = prSplit._mouseToTermBytes;
     var CLAUDE_RESERVED_KEYS = prSplit._CLAUDE_RESERVED_KEYS;
+    var CHROME_ESTIMATE = prSplit._CHROME_ESTIMATE;
     var pollClaudeScreenshot = prSplit._pollClaudeScreenshot;
 
     // Late-bound shim — handleMouseClick is defined in chunk 16f (loaded after this).
     function handleMouseClick(msg, s) { return prSplit._handleMouseClick(msg, s); }
+
+    // T327/T328: Compute screen offset where bottom pane terminal content begins.
+    // Layout: titleBar(1) + divider(1) + wizard(wizardH) + paneDivider(1) + borderTop(1) + titleLine(1).
+    function computeSplitPaneContentOffset(s) {
+        var h = s.height || 24;
+        var vpHeight = Math.max(3, h - CHROME_ESTIMATE);
+        var minPaneH = 3;
+        var wizardH = Math.max(minPaneH, Math.floor(vpHeight * (s.splitViewRatio || 0.6)));
+        wizardH = Math.min(wizardH, vpHeight - minPaneH - 1);
+        return { row: 5 + wizardH, col: 1 };
+    }
+
+    // T327/T328: Write raw bytes to the child terminal of the active tab.
+    function writeMouseToPane(bytes, s) {
+        var tab = s.splitViewTab;
+        if (tab === 'claude') {
+            if (typeof tuiMux !== 'undefined' && tuiMux &&
+                typeof tuiMux.writeToChild === 'function') {
+                try { tuiMux.writeToChild(bytes); return true; } catch (e) { return false; }
+            }
+        } else if (tab === 'verify') {
+            if (s.activeVerifySession && typeof s.activeVerifySession.write === 'function') {
+                try { s.activeVerifySession.write(bytes); return true; } catch (e) { return false; }
+            }
+        } else if (tab === 'shell') {
+            if (s.shellSession && typeof s.shellSession.write === 'function') {
+                try { s.shellSession.write(bytes); return true; } catch (e) { return false; }
+            }
+        }
+        return false;
+    }
 
     // -----------------------------------------------------------------------
     //  wizardUpdateImpl — main BubbleTea update dispatch
@@ -66,6 +100,24 @@
 
             // T120: Sync viewport dimensions from update, not view.
             syncMainViewport(s);
+
+            // T336: Resize verify and shell CaptureSession terminals.
+            if (s.splitViewEnabled) {
+                var h = s.height || 24;
+                var vpH = Math.max(3, h - CHROME_ESTIMATE);
+                var minP = 3;
+                var wH = Math.max(minP, Math.floor(vpH * (s.splitViewRatio || 0.6)));
+                wH = Math.min(wH, vpH - minP - 1);
+                var cH = vpH - wH - 1;
+                var paneRows = Math.max(3, cH - 3);
+                var paneCols = Math.max(20, (s.width || 80) - 4);
+                if (s.activeVerifySession && typeof s.activeVerifySession.resize === 'function') {
+                    try { s.activeVerifySession.resize(paneRows, paneCols); } catch (e) { /* ignore */ }
+                }
+                if (s.shellSession && typeof s.shellSession.resize === 'function') {
+                    try { s.shellSession.resize(paneRows, paneCols); } catch (e) { /* ignore */ }
+                }
+            }
 
             // Sync report overlay dimensions if currently open.
             if (s.showingReport) {
@@ -486,6 +538,7 @@
                 if (k === 'ctrl+o') {
                     var tabs = ['claude', 'output'];
                     if (s.activeVerifySession) tabs.push('verify');
+                    if (s.shellSession) tabs.push('shell');
                     var idx = tabs.indexOf(s.splitViewTab);
                     s.splitViewTab = tabs[(idx + 1) % tabs.length];
                     return [s, null];
@@ -570,6 +623,24 @@
                                     s.activeVerifySession.write(vBytes);
                                     s.verifyViewportOffset = 0;
                                     s.verifyAutoScroll = true;
+                                } catch (e) {
+                                    // Swallow — write may fail if session ended.
+                                }
+                            }
+                            return [s, null];
+                        }
+                    }
+                    // T334: Shell tab — forward ALL non-reserved keys to shell CaptureSession.
+                    // Shell is fully interactive, so no scroll-key interception.
+                    if (s.splitViewTab === 'shell') {
+                        if (!CLAUDE_RESERVED_KEYS[k]) {
+                            var shBytes = keyToTermBytes(k);
+                            if (shBytes !== null && s.shellSession &&
+                                typeof s.shellSession.write === 'function') {
+                                try {
+                                    s.shellSession.write(shBytes);
+                                    s.shellViewOffset = 0;
+                                    s.shellAutoScroll = true;
                                 } catch (e) {
                                     // Swallow — write may fail if session ended.
                                 }
@@ -819,8 +890,34 @@
         // have action:"press" AND isWheel:true, so the press guard
         // would intercept them and send them to handleMouseClick.
 
+        // T327/T328: Forward mouse events to focused child terminal.
+        // Intercepts motion, release, and wheel before wizard-managed handlers.
+        // Press events are NOT intercepted here — they go through
+        // handleMouseClick for zone detection first.
+        if (msg.type === 'Mouse' && s.splitViewEnabled &&
+            s.splitViewFocus === 'claude' && s.splitViewTab !== 'output') {
+            var fwdAction = msg.action;
+            if (fwdAction === 'motion' || (fwdAction === 'release' && !msg.isWheel)) {
+                var ofs = computeSplitPaneContentOffset(s);
+                var mb = mouseToTermBytes(msg, ofs.row, ofs.col);
+                if (mb && writeMouseToPane(mb, s)) {
+                    return [s, null];
+                }
+            }
+            if (msg.isWheel) {
+                var ofs = computeSplitPaneContentOffset(s);
+                var mb = mouseToTermBytes(msg, ofs.row, ofs.col);
+                if (mb && writeMouseToPane(mb, s)) {
+                    return [s, null];
+                }
+                // Fall through to wizard-managed scrolling if child unavailable.
+            }
+        }
+
         // Live verify session mouse wheel → scroll output viewport.
-        if (msg.type === 'Mouse' && msg.isWheel && s.activeVerifySession) {
+        // Only applies when verify output is visible (non-split or verify tab active).
+        if (msg.type === 'Mouse' && msg.isWheel && s.activeVerifySession &&
+            (!s.splitViewEnabled || s.splitViewTab === 'verify')) {
             if (msg.button === 'wheel up') {
                 s.verifyAutoScroll = false;
                 s.verifyViewportOffset = (s.verifyViewportOffset || 0) + 3;
@@ -899,6 +996,9 @@
             if (msg.id === 'verify-poll') {
                 return pollVerifySession(s);
             }
+            if (msg.id === 'shell-poll') {
+                return pollShellSession(s);
+            }
             if (msg.id === 'verify-fallback-poll') {
                 return handleVerifyFallbackPoll(s);
             }
@@ -967,5 +1067,7 @@
 
     // Cross-chunk export.
     prSplit._wizardUpdateImpl = wizardUpdateImpl;
+    prSplit._computeSplitPaneContentOffset = computeSplitPaneContentOffset;
+    prSplit._writeMouseToPane = writeMouseToPane;
 
 })(globalThis.prSplit);

@@ -605,6 +605,51 @@
         return null;
     }
 
+    // Convert a BubbleTea mouse message to SGR mouse escape sequence bytes.
+    // offsetRow/offsetCol adjust coordinates so (0,0) maps to the pane origin.
+    // Returns the escape sequence string, or null if the event can't be mapped.
+    //
+    // SGR format: ESC[<Cb;Cx;CyM (press/motion) or ESC[<Cb;Cx;Cym (release)
+    //   Cb = button code + modifier bits
+    //   Cx = 1-based column, Cy = 1-based row
+    function mouseToTermBytes(msg, offsetRow, offsetCol) {
+        var x = msg.x - (offsetCol || 0);
+        var y = msg.y - (offsetRow || 0);
+        if (x < 0 || y < 0) return null;
+
+        // Map BubbleTea button string to SGR button code base value.
+        var btn;
+        switch (msg.button) {
+            case 'left':        btn = 0; break;
+            case 'middle':      btn = 1; break;
+            case 'right':       btn = 2; break;
+            case 'wheel up':    btn = 64; break;
+            case 'wheel down':  btn = 65; break;
+            case 'wheel left':  btn = 66; break;
+            case 'wheel right': btn = 67; break;
+            case 'backward':    btn = 128; break;
+            case 'forward':     btn = 129; break;
+            case 'none':        btn = 3; break;
+            default:            return null;
+        }
+
+        // Modifier bits.
+        if (msg.shift) btn += 4;
+        if (msg.alt)   btn += 8;
+        if (msg.ctrl)  btn += 16;
+
+        // Motion flag (bit 5).
+        if (msg.action === 'motion') btn += 32;
+
+        // SGR uses 1-based coordinates.
+        var cx = x + 1;
+        var cy = y + 1;
+
+        // Press/motion → 'M', release → 'm'.
+        var suffix = (msg.action === 'release') ? 'm' : 'M';
+        return '\x1b[<' + btn + ';' + cx + ';' + cy + suffix;
+    }
+
     // -----------------------------------------------------------------------
     //  T46: Claude Question Detection
     // -----------------------------------------------------------------------
@@ -831,6 +876,7 @@
     prSplit._handleAutoSplitPoll = handleAutoSplitPoll;
     prSplit._handleRestartClaudePoll = handleRestartClaudePoll;
     prSplit._keyToTermBytes = keyToTermBytes;
+    prSplit._mouseToTermBytes = mouseToTermBytes;
     prSplit._CLAUDE_RESERVED_KEYS = CLAUDE_RESERVED_KEYS;
     prSplit._detectClaudeQuestion = detectClaudeQuestion;
     prSplit.QUESTION_IDLE_THRESHOLD_MS = QUESTION_IDLE_THRESHOLD_MS;

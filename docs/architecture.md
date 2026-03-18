@@ -485,6 +485,35 @@ CLI args → main.go → Registry.Get(cmd)
 
 ---
 
+## Split-view terminal multiplexing
+
+The PR Split TUI uses a split-view layout during branch building with four multiplexed terminal tabs:
+
+```
+┌─────────────────────────────────┐
+│  Wizard (top pane)              │  ← BubbleTea TUI
+├─────────────────────────────────┤
+│  Tab Bar: Claude|Output|Verify|Shell  │
+│  ┌─────────────────────────────┐│
+│  │  Active Tab Content         ││  ← CaptureSession or text
+│  │  (ANSI-rendered terminal)   ││
+│  └─────────────────────────────┘│
+└─────────────────────────────────┘
+```
+
+**Pipeline:** `CaptureSession → VTerm → screen() → renderPane() → split-view`
+
+- **CaptureSession** wraps a PTY process with a VTerm screen buffer
+- `screen()` returns the current ANSI-rendered terminal content
+- `write()` forwards keyboard and mouse input to the process
+- Mouse events are translated to SGR 1006 escape sequences before forwarding
+- The TUI polls at 100ms intervals for screen updates
+- Focus management: `Ctrl+Tab` toggles wizard/pane focus; when pane-focused, input routes to the active tab's process
+
+Source: [internal/builtin/termmux/](../internal/builtin/termmux/)
+
+---
+
 ## Visuals
 
 - [docs/visuals/architecture.md](visuals/architecture.md)

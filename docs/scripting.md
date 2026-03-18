@@ -233,7 +233,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 |--------|-------------|-------------|
 | `osm:claudemux` | Claude Code orchestration building blocks | Parser: `newParser()`, `eventTypeName(type)`, `KEY_*` constants; Guard: `newGuard(config)`, `defaultGuardConfig()`, `guardActionName(action)`, `GUARD_ACTION_*`/`PERMISSION_POLICY_*` constants; MCPGuard: `newMCPGuard(config)`, `defaultMCPGuardConfig()`; Supervisor: `newSupervisor(config)`, `defaultSupervisorConfig()`, error/action/state constants; Pool: `newPool(config)`, `defaultPoolConfig()`; Panel: `newPanel(config)`, `defaultPanelConfig()`; Session: `createSession(id, config?)`, `defaultManagedSessionConfig()`, `managedSessionStateName(state)`, `SESSION_*` constants; Safety: `newSafetyValidator(config)`, `defaultSafetyConfig()`, `newCompositeValidator()`, intent/scope/risk/policy constants; Choice: `newChoiceResolver(config)`, `defaultChoiceConfig()`; Instance: `newInstanceRegistry(baseDir)`; ModelNav: `parseModelMenu(lines)`, `navigateToModel(menu, target)`, `isLauncherMenu(menu)`, `dismissLauncherKeys(menu)` |
 | `osm:mcp` | Promise-based MCP (Model Context Protocol) server | `createServer(name, version?) → server`; Server methods: `.addTool(toolDef, handler)` where toolDef = `{name, description?, inputSchema?}`, `.run(transport?)` (default: "stdio"), `.close()` |
-| `osm:termmux` | Terminal multiplexer — split-pane PTY management with BubbleTea integration | `newMux(config?) → mux`; Config: `{toggleKey?, statusEnabled?, initialStatus?}`; Mux methods: `.attach(handle)` (AgentHandle, StringIO, or ReadWriteCloser), `.detach()`, `.hasChild()`, `.switchTo()` (blocking — enters passthrough, returns on toggle/exit), `.activeSide()`, `.setStatus(text)`, `.setToggleKey(key)`, `.setStatusEnabled(bool)`, `.setResizeFunc(fn)`, `.screenshot()`, `.lastActivityMs()`, `.on(event, fn) → id`, `.off(id) → bool`, `.pollEvents()`, `.fromModel(model, config?)` where config = `{altScreen?, toggleKey?}`; Constants: `EXIT_TOGGLE`, `EXIT_CHILD_EXIT`, `EXIT_CONTEXT`, `EXIT_ERROR`, `SIDE_OSM`, `SIDE_CLAUDE`, `DEFAULT_TOGGLE_KEY`, `EVENT_EXIT`, `EVENT_RESIZE`, `EVENT_FOCUS`, `EVENT_BELL`, `EVENT_OUTPUT` |
+| `osm:termmux` | Terminal multiplexer — split-pane PTY management with BubbleTea integration | `newMux(config?) → mux`; Config: `{toggleKey?, statusEnabled?, initialStatus?}`; Mux methods: `.attach(handle)` (AgentHandle, StringIO, or ReadWriteCloser), `.detach()`, `.hasChild()`, `.switchTo()` (blocking — enters passthrough, returns on toggle/exit), `.activeSide()`, `.setStatus(text)`, `.setToggleKey(key)`, `.setStatusEnabled(bool)`, `.setResizeFunc(fn)`, `.screenshot()`, `.lastActivityMs()`, `.on(event, fn) → id`, `.off(id) → bool`, `.pollEvents()`, `.fromModel(model, config?)` where config = `{altScreen?, toggleKey?}`; `newCaptureSession(cmd, args, opts?) → session` (non-blocking PTY with VTerm buffer); Constants: `EXIT_TOGGLE`, `EXIT_CHILD_EXIT`, `EXIT_CONTEXT`, `EXIT_ERROR`, `SIDE_OSM`, `SIDE_CLAUDE`, `DEFAULT_TOGGLE_KEY`, `EVENT_EXIT`, `EVENT_RESIZE`, `EVENT_FOCUS`, `EVENT_BELL`, `EVENT_OUTPUT` |
 
 ### osm:bt (Behavior Trees)
 
@@ -497,6 +497,41 @@ Building blocks for multi-instance Claude Code management. Used by `osm pr-split
 **Instance** — Session isolation:
 - `cm.newInstanceRegistry(baseDir)` — Create a registry for isolated instance state
 - `registry.create(id)`, `registry.get(id)`, `registry.close(id)`, `registry.closeAll()`, `registry.list()`, `registry.len()`, `registry.baseDir()`
+
+### osm:termmux CaptureSession
+
+`newCaptureSession(command, args, opts?)` creates a non-blocking PTY-backed process with a built-in VTerm screen buffer. Unlike `newMux()` (which takes over the terminal), CaptureSession runs in the background and provides `screen()` for ANSI-rendered output and `write()` for stdin input.
+
+**Methods:**
+
+- `start()` — Start the process
+- `screen()` — Get current ANSI-rendered terminal screen content
+- `write(str)` — Write string to process stdin
+- `isDone()` — Check if process has exited (non-blocking)
+- `exitCode()` — Get exit code (only valid after `isDone()`)
+- `output()` — Get raw process output
+- `resize(rows, cols)` — Resize the PTY
+- `pause()` / `resume()` — Suspend/resume process (SIGSTOP/SIGCONT)
+- `interrupt()` — Send SIGINT
+- `kill()` — Send SIGKILL
+- `sendEOF()` — Send EOF (Ctrl+D)
+
+**Example (interactive shell):**
+
+```js
+var tm = require('osm:termmux');
+var session = tm.newCaptureSession('/bin/bash', ['-i'], {
+    dir: '/path/to/workdir',
+    rows: 24,
+    cols: 80
+});
+session.start();
+session.write('echo hello\n');
+// ... poll session.screen() and session.isDone()
+session.kill(); // cleanup
+```
+
+**Platform:** Unix only (Linux/macOS). Uses real PTY; not available on Windows.
 
 ## Where to look for examples
 

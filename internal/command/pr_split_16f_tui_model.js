@@ -591,7 +591,8 @@
                 var outputCount = (s.outputLines && s.outputLines.length > 0)
                     ? styles.dim().render('(' + s.outputLines.length + ')') : '';
                 var verifyTabLabel = '';
-                if (s.activeVerifySession) {
+                // T352: Show Verify tab during both CaptureSession and fallback paths.
+                if (s.activeVerifySession || s.verifyFallbackRunning || s.verifyScreen) {
                     verifyTabLabel = s.splitViewTab === 'verify'
                         ? styles.primaryButton().render(' Verify ')
                         : styles.dim().render(' Verify ');

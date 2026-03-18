@@ -702,11 +702,13 @@
             // Verification progress bar.
             if (verifyResults.length < splits.length && s.isProcessing) {
                 // ── Live CaptureSession viewport ─────────────────────
-                if (s.activeVerifySession) {
+                // T351: Use s.verifyScreen (snapshot from pollVerifySession)
+                // instead of calling screen() directly. This eliminates
+                // redundant screen() calls and enables the fallback path
+                // (no CaptureSession) to also show output via s.verifyScreen.
+                if (s.activeVerifySession || s.verifyScreen) {
                     lines.push('');
-                    // T005: Use screen() for ANSI-escaped VT100 rendering
-                    // instead of output() which strips all formatting.
-                    var liveOutput = s.activeVerifySession.screen();
+                    var liveOutput = s.verifyScreen || '';
                     var liveLines = liveOutput.split('\n');
                     // Remove trailing empty lines from VTerm screen output.
                     // screen() may include ANSI reset codes on empty lines,
@@ -774,39 +776,47 @@
                     }
 
                     // Footer with keybinding hints.
-                    // T059: Pause/Resume button for verify subprocess.
-                    var pauseResumeBtn;
-                    if (s.verifyPaused) {
-                        pauseResumeBtn = zone.mark('verify-resume',
-                            styles.focusedSecondaryButton().render('\u25b6 Resume'));
-                    } else {
-                        pauseResumeBtn = zone.mark('verify-pause',
-                            styles.secondaryButton().render('\u23f8 Pause'));
-                    }
-                    // T007/T338: Open Shell in verify worktree.
-                    // Disabled on Windows where CaptureSession is unavailable.
-                    var openShellBtn = '';
-                    if (s.activeVerifyWorktree) {
-                        if (typeof prSplit.canSpawnInteractiveShell === 'function' &&
-                            !prSplit.canSpawnInteractiveShell()) {
-                            openShellBtn = styles.dim().render('\ue795 Shell (Unix only)');
-                        } else {
-                            openShellBtn = zone.mark('verify-open-shell',
-                                styles.secondaryButton().render('\ue795 Shell'));
-                        }
-                    }
-                    var interruptHint = zone.mark('verify-interrupt', styles.dim().render(
-                        'Ctrl+C: Stop  2\u00d7Ctrl+C: Force Kill'));
-                    var scrollHint = styles.dim().render(
-                        '\u2191\u2193: Scroll' + scrollIndicator);
+                    // T351: Only show interactive controls when CaptureSession
+                    // is active. Fallback (plain text) shows just scroll hint.
                     var footer;
-                    if (openShellBtn) {
-                        footer = lipgloss.joinHorizontal(lipgloss.Center,
-                            scrollHint, '  ', pauseResumeBtn, '  ',
-                            openShellBtn, '  ', interruptHint);
+                    if (s.activeVerifySession) {
+                        // T059: Pause/Resume button for verify subprocess.
+                        var pauseResumeBtn;
+                        if (s.verifyPaused) {
+                            pauseResumeBtn = zone.mark('verify-resume',
+                                styles.focusedSecondaryButton().render('\u25b6 Resume'));
+                        } else {
+                            pauseResumeBtn = zone.mark('verify-pause',
+                                styles.secondaryButton().render('\u23f8 Pause'));
+                        }
+                        // T007/T338: Open Shell in verify worktree.
+                        // Disabled on Windows where CaptureSession is unavailable.
+                        var openShellBtn = '';
+                        if (s.activeVerifyWorktree) {
+                            if (typeof prSplit.canSpawnInteractiveShell === 'function' &&
+                                !prSplit.canSpawnInteractiveShell()) {
+                                openShellBtn = styles.dim().render('\ue795 Shell (Unix only)');
+                            } else {
+                                openShellBtn = zone.mark('verify-open-shell',
+                                    styles.secondaryButton().render('\ue795 Shell'));
+                            }
+                        }
+                        var interruptHint = zone.mark('verify-interrupt', styles.dim().render(
+                            'Ctrl+C: Stop  2\u00d7Ctrl+C: Force Kill'));
+                        var scrollHint = styles.dim().render(
+                            '\u2191\u2193: Scroll' + scrollIndicator);
+                        if (openShellBtn) {
+                            footer = lipgloss.joinHorizontal(lipgloss.Center,
+                                scrollHint, '  ', pauseResumeBtn, '  ',
+                                openShellBtn, '  ', interruptHint);
+                        } else {
+                            footer = lipgloss.joinHorizontal(lipgloss.Center,
+                                scrollHint, '  ', pauseResumeBtn, '  ', interruptHint);
+                        }
                     } else {
-                        footer = lipgloss.joinHorizontal(lipgloss.Center,
-                            scrollHint, '  ', pauseResumeBtn, '  ', interruptHint);
+                        // Fallback path — no interactive controls, just scroll.
+                        footer = styles.dim().render(
+                            '\u2191\u2193: Scroll' + scrollIndicator + '  (fallback output)');
                     }
 
                     // Render bordered viewport using lipgloss.

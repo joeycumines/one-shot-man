@@ -242,6 +242,29 @@ $ osm pr-split -i --base main --claude-command claude
 - **Retry budget exhausted** — increase with `set retry-budget 5` before `auto-split`,
   or use `fix` on individual splits after execution.
 
+#### Split-view terminal tabs
+
+When the split-view is open during branch building, four tabs are available:
+
+| Tab | Description |
+|-----|-------------|
+| Claude | Claude AI assistant output |
+| Output | Raw pipeline output log |
+| Verify | Live interactive terminal showing verification process |
+| Shell | Interactive shell in the verification worktree |
+
+**Keyboard shortcuts (split-view):**
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+L` | Toggle split-view panel |
+| `Ctrl+Tab` | Switch focus between wizard and bottom pane |
+| `Ctrl+O` | Cycle through tabs (Claude → Output → Verify → Shell) |
+| `Ctrl+]` | Full Claude passthrough mode |
+| `Ctrl+= / Ctrl+-` | Resize split-view ratio |
+
+When focused on the Verify or Shell tab, keyboard input is forwarded to the terminal process. Mouse events (clicks, wheel, motion) are forwarded using SGR 1006 encoding.
+
 ### `osm log`
 
 View and tail log files.

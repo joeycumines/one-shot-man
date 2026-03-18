@@ -235,6 +235,28 @@
             s.verifyFallbackRunning = true;
             s.verifyFallbackError = null;
 
+            // T352: Set verify display state for fallback path so the inline
+            // terminal and Verify tab can show live output even without PTY.
+            s.activeVerifyBranch = branchName;
+            s.activeVerifyStartTime = Date.now();
+            s.verifyElapsedMs = 0;
+            s.verifyScreen = '';
+            s.verifyAutoScroll = true;
+            s.verifyViewportOffset = 0;
+            s.verifyOutput[branchName] = []; // pre-initialize for live outputFn
+
+            // T352: Auto-open split-view with Verify tab in fallback path.
+            if (!s.splitViewEnabled && s.height >= 12) {
+                s.splitViewEnabled = true;
+                s.splitViewFocus = 'wizard';
+                s.splitViewTab = 'verify';
+                if (typeof prSplit._syncMainViewport === 'function') {
+                    prSplit._syncMainViewport(s);
+                }
+            } else if (s.splitViewEnabled) {
+                s.splitViewTab = 'verify';
+            }
+
             var timeoutMs = (typeof prSplitConfig !== 'undefined' && prSplitConfig.timeoutMs) ? prSplitConfig.timeoutMs : 0;
             runVerifyFallbackAsync(s, branchName, dir, scopedCmd, timeoutMs).then(
                 function() {
@@ -296,6 +318,16 @@
 
         // T321: Capture ANSI-styled VTerm screen for the Verify tab.
         try { s.verifyScreen = s.activeVerifySession.screen(); } catch (e) { /* ignore */ }
+
+        // T350: Auto-scroll main viewport to keep inline terminal visible.
+        // The inline verify terminal in viewExecutionScreen() is rendered at
+        // the bottom of the content. Without this, the branch list fills the
+        // visible area and the live terminal is below the fold. We only
+        // auto-scroll when the user hasn't manually scrolled (verifyAutoScroll
+        // is true) — scrolling Up sets it false, scrolling to End resets it.
+        if (s.vp && s.verifyAutoScroll !== false) {
+            try { s.vp.gotoBottom(); } catch (e) { /* ignore */ }
+        }
 
         if (!s.activeVerifySession.isDone()) {
             // Still running — schedule next poll.
@@ -398,13 +430,22 @@
     async function runVerifyFallbackAsync(s, branchName, dir, scopedCmd, timeoutMs) {
         if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
 
-        var outputLines = [];
+        // T352: Use the pre-initialized array on state so the poll handler
+        // can read accumulated output for live display.
+        var outputLines = s.verifyOutput[branchName] || [];
+        if (!s.verifyOutput[branchName]) s.verifyOutput[branchName] = outputLines;
         var branchStart = Date.now();
         var verifyResult = await prSplit.verifySplitAsync(branchName, {
             dir: dir,
             verifyCommand: scopedCmd,
             verifyTimeoutMs: timeoutMs,
-            outputFn: function(line) { outputLines.push(line); }
+            outputFn: function(line) {
+                outputLines.push(line);
+                // T352: Populate verifyScreen with latest fallback output so
+                // the inline terminal and Verify tab show live output.
+                var rows = Math.min(24, outputLines.length);
+                s.verifyScreen = outputLines.slice(-rows).join('\n');
+            }
         });
         var duration = Date.now() - branchStart;
 
@@ -440,9 +481,32 @@
     // handleVerifyFallbackPoll: Called every 100ms during async fallback
     // verification. When complete, continues to the next branch.
     function handleVerifyFallbackPoll(s) {
+        // T352: Update elapsed time for fallback display.
+        if (s.activeVerifyStartTime) {
+            s.verifyElapsedMs = Date.now() - s.activeVerifyStartTime;
+        }
+
+        // T352: Auto-scroll main viewport during fallback verification.
+        if (s.vp && s.verifyAutoScroll !== false) {
+            try { s.vp.gotoBottom(); } catch (e) { /* ignore */ }
+        }
+
         // Still running — keep polling.
         if (s.verifyFallbackRunning) {
+            s.spinnerFrame = (s.spinnerFrame || 0) + 1;
             return [s, tea.tick(100, 'verify-fallback-poll')];
+        }
+
+        // T352: Clear fallback display state on completion.
+        s.activeVerifyBranch = null;
+        s.activeVerifyStartTime = 0;
+        s.verifyElapsedMs = 0;
+        s.verifyScreen = '';
+        s.verifyAutoScroll = true;
+        s.verifyViewportOffset = 0;
+        // Switch tab away from verify since session ended.
+        if (s.splitViewTab === 'verify') {
+            s.splitViewTab = 'output';
         }
 
         // Error in the .then rejection handler — record a failure result.

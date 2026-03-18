@@ -1407,6 +1407,7 @@ func TestViews_ExecutionScreen_VerifyViewport_UsesScreen(t *testing.T) {
 				isDone: function() { return false; },
 				isRunning: function() { return true; }
 			},
+			verifyScreen: 'SCREEN_MARKER: test output from screen()',
 			activeVerifyBranch: 'split/cli',
 			activeVerifyStartTime: Date.now() - 5000,
 			verifyAutoScroll: true,
@@ -1457,6 +1458,7 @@ func TestViews_ExecutionScreen_VerifyViewport_ANSITruncation(t *testing.T) {
 				isDone: function() { return false; },
 				isRunning: function() { return true; }
 			},
+			verifyScreen: ansiLine,
 			activeVerifyBranch: 'split/cli',
 			activeVerifyStartTime: Date.now() - 2000,
 			verifyAutoScroll: true,
@@ -1520,6 +1522,7 @@ func TestViews_ExecutionScreen_VerifyViewport_EmptyScreenLines(t *testing.T) {
 				isDone: function() { return false; },
 				isRunning: function() { return true; }
 			},
+			verifyScreen: screenOutput,
 			activeVerifyBranch: 'split/cli',
 			activeVerifyStartTime: Date.now() - 1000,
 			verifyAutoScroll: true,
@@ -1575,6 +1578,7 @@ func TestViews_ExecutionScreen_VerifyViewport_ZoneMarks(t *testing.T) {
 			isDone: function() { return false; },
 			isRunning: function() { return true; }
 		},
+		verifyScreen: 'test output',
 		activeVerifyBranch: 'split/cli',
 		activeVerifyStartTime: Date.now(),
 		verifyAutoScroll: true,
@@ -2321,7 +2325,7 @@ func TestViews_AllScreens_NoBrokenBorders(t *testing.T) {
 		{"EQUIV_CHECK_PASS", `globalThis.prSplit._viewVerificationScreen({wizardState:'EQUIV_CHECK',width:120,isProcessing:false,focusIndex:0,equivalenceResult:{equivalent:true,results:[{status:'pass',branchName:'test'}]}})`},
 		{"FINALIZATION", `globalThis.prSplit._viewFinalizationScreen({wizardState:'FINALIZATION',width:120,focusIndex:0,executionResults:[{branchName:'test',status:'done'}]})`},
 		{"EXECUTION_IDLE", `globalThis.prSplit._viewExecutionScreen({wizardState:'BRANCH_BUILDING',width:120,executionResults:[{sha:'abc'}],executingIdx:1,isProcessing:false})`},
-		{"EXECUTION_VERIFY", `globalThis.prSplit._viewExecutionScreen({wizardState:'BRANCH_BUILDING',width:120,executionResults:[{sha:'abc'}],executingIdx:1,isProcessing:true,verifyingIdx:1,verificationResults:[{passed:true,name:'split/api'}],activeVerifySession:{screen:function(){return 'test'},output:function(){return ''},isDone:function(){return false},isRunning:function(){return true}},activeVerifyBranch:'split/cli',activeVerifyStartTime:Date.now()-5000,verifyAutoScroll:true,verifyViewportOffset:0})`},
+		{"EXECUTION_VERIFY", `globalThis.prSplit._viewExecutionScreen({wizardState:'BRANCH_BUILDING',width:120,executionResults:[{sha:'abc'}],executingIdx:1,isProcessing:true,verifyingIdx:1,verificationResults:[{passed:true,name:'split/api'}],activeVerifySession:{screen:function(){return 'test'},output:function(){return ''},isDone:function(){return false},isRunning:function(){return true}},verifyScreen:'test',activeVerifyBranch:'split/cli',activeVerifyStartTime:Date.now()-5000,verifyAutoScroll:true,verifyViewportOffset:0})`},
 		{"PAUSED", `globalThis.prSplit._viewForState({wizardState:'PAUSED',width:120,height:24,focusIndex:0,pauseReason:'User requested pause'})`},
 		{"ERROR_RESOLUTION", `globalThis.prSplit._viewErrorResolutionScreen({wizardState:'ERROR_RESOLUTION',width:120,errorDetails:'test'})`},
 		{"MOVE_DIALOG", `globalThis.prSplit._viewMoveFileDialog({width:120,selectedSplitIdx:0,selectedFileIdx:0,editorDialogState:{targetIdx:0}})`},

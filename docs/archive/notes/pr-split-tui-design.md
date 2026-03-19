@@ -14,7 +14,9 @@
 > (4) Pre-existing failure detection via baseline comparison,
 > (5) Verify elapsed time tracking with timeout progress display,
 > (6) Context-aware help overlay (keybindings vary by screen).
-> See the implementation in `pr_split_06_verification.js` and `pr_split_16_tui_core.js`.
+> See the implementation in `pr_split_06_verification.js` and TUI chunks `pr_split_13_tui.js`
+> through `pr_split_16f_tui_model.js` (the former monolithic `pr_split_16_tui_core.js` was
+> split into chunks 13–16f as of 2026-03-20).
 
 ---
 

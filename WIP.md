@@ -2,6 +2,20 @@
 
 ## Session 7 — Continued
 
+### T372 Complete
+- ADR-001 chunk table: expanded 17→30 entries (added 06b, 14a-14b, 15a-15d, 16a-16f)
+- All "14" references updated to "30": numbered files, RunString calls, testing loaders, alternatives
+- Addendum updated: TUI now explicitly described as spanning chunks 13–16f
+- `pr-split-prompt-anchor-stability.md`: fixed stale `pr_split_16_tui_core.js:4595-4670` → `pr_split_15b_tui_chrome.js:502`
+- `docs/archive/notes/pr-split-tui-design.md`: added archival note about 16_tui_core.js → 13–16f split
+- Verified: zero remaining stale references to `pr_split_16_tui_core.js` (except archival mention in context of documenting the split)
+- Verified: zero remaining "14 " count references in ADR-001
+
+### Next Tasks
+- T374: Extract helpers from PrSplitCommand.Execute()
+- T369: Comment normalization
+- T366: automatedSplit extraction (deferred — risky)
+
 ### T367 Complete
 - Added `t.Parallel()` to ~270 tests across 16 test files
 - Reverted pr_split_tui_subcommands_test.go (35 tests) — uses os.Chdir via chdirTestPipeline

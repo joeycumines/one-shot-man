@@ -16,7 +16,7 @@ The reported error occurs in the **PTY-based Claude interaction pipeline** (`pr_
 
 | System | Purpose | Location | Error Source? |
 |--------|---------|----------|:---:|
-| **BubbleTea TUI Overlay** | User types message → keyboard-driven submit | `pr_split_16_tui_core.js:4595-4670` | ❌ |
+| **BubbleTea TUI Overlay** | User types message → keyboard-driven submit | `pr_split_15b_tui_chrome.js:502` (defined), `pr_split_16f_tui_model.js:711` (used) | ❌ |
 | **PTY Anchor Pipeline** | Automated prompt delivery to Claude Code PTY | `pr_split_10b_pipeline_send.js` | ✅ |
 
 The BubbleTea overlay (`viewClaudeConvoOverlay`) contains **zero `zone.mark()` calls** and has no Submit button — `Enter` is handled directly via `updateClaudeConvo`. The overlay dimensions are recomputed on every view call via `Math.min((s.width || 80) - 4, 76)` and centered with `lipgloss.place()`. This system is architecturally sound and not implicated in the error.

@@ -36,7 +36,7 @@
     "PER_TASK_COMMIT_PROTOCOL": "⚠️ MANDATORY — ZERO EXCEPTIONS — FOR EVERY SINGLE TASK: (1) REREAD the strict-review-gate Skill IN FULL — do not skim, do not skip, read every word. (2) PERFORM the Rule of Two PER THE SKILL — spawn subagent reviews, iterate until TWO CONTIGUOUS ISSUE-FREE reviews on the EXACT SAME DIFF. If either review fails, fix, reset counter to 0, restart. (3) READ the git-commit Skill IN FULL before writing any commit message. (4) COMMIT THAT ONE TASK — exactly one task per commit, immediately after passing the Rule of Two. Do not batch tasks. Do not defer commits. ASAP. (5) REREAD DIRECTIVE.txt after every commit — full re-read, not from memory. This 5-step process is NON-NEGOTIABLE. Skipping any step is grounds for termination. Batching multiple tasks into one commit is FORBIDDEN. Committing without two green reviews is FORBIDDEN. Working on the next task before committing the current one is FORBIDDEN."
   },
   "statusSection": {
-    "currentState": "T300-T368, T370-T371, T373 Done. T369 (comment normalization), T372 (ADR-001 update), T374 (Execute refactor), T366 (automatedSplit extraction) remain. Session 7 produced 12 commits.",
+    "currentState": "T300-T368, T370-T373 Done. T369 (comment normalization), T374 (Execute refactor), T366 (automatedSplit extraction) remain. Session 7 produced 12 commits.",
     "goalState": "All verify/shell terminal features delivered AND polished to enterprise grade. Zero silenced errors. No god functions. No magic numbers. Fuzz-tested parsing. Poll-retry E2E tests. Fully parallelized unit tests. Documentation fully synced. All checks pass on all platforms.",
     "replanLog": [
       {
@@ -532,7 +532,8 @@
       "task": "Update ADR-001 chunk table and stale documentation references",
       "description": "The chunk layout table in docs/adr/001-pr-split-chunked-architecture.md lists 17 entries but pr_split.go has 30 chunks. Missing: 06b, 14a-14b, 15a-15d, 16a-16f. Line references to deleted monolith files (pr_split_16_tui_core.js) exist in docs/pr-split-prompt-anchor-stability.md. Update all documentation to reflect the current 30-chunk architecture.",
       "acceptance": "ADR-001 chunk table matches pr_split.go prSplitChunks array (30 entries). All line number references in docs/ point to existing files. No references to deleted monolith files (pr_split_15_tui_views.js, pr_split_16_tui_core.js, pr_split_14_tui_commands.js, pr_split_10_pipeline.js).",
-      "status": "Not Started"
+      "status": "Done",
+      "notes": "ADR-001 chunk table expanded from 17→30 entries. All '14' references updated to '30' (numbered files, RunString calls, testing, alternatives). Addendum updated to describe chunks 13-16f TUI span. pr-split-prompt-anchor-stability.md: stale pr_split_16_tui_core.js:4595-4670 reference updated to pr_split_15b_tui_chrome.js:502. Archived pr-split-tui-design.md: added note about 16_tui_core.js → 13-16f split."
     },
     {
       "id": "T373",

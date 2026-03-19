@@ -23,8 +23,8 @@ The original implementation was a single monolithic JavaScript file
    line-number references. Smaller files are more reliably targeted.
 
 3. **Load-time cost.** Goja parses and evaluates the full source on every
-   invocation. A 3,000-line file has measurably higher startup than 14 files
-   of ~100–400 lines each — but more importantly, chunk-level loading lets
+   invocation. A 3,000-line file has measurably higher startup than 30 files
+   of ~50–500 lines each — but more importantly, chunk-level loading lets
    tests exercise only the subset they need.
 
 4. **Circular dependency risk.** The conflict-resolution stage (chunk 08)
@@ -34,7 +34,7 @@ The original implementation was a single monolithic JavaScript file
 
 ## Decision
 
-Split the monolithic JavaScript into **14 numbered, IIFE-wrapped chunk files**
+Split the monolithic JavaScript into **30 numbered, IIFE-wrapped chunk files**
 loaded sequentially by `pr_split.go` via `loadChunkedScript()`. Each chunk
 attaches exports to `globalThis.prSplit`.
 
@@ -49,6 +49,7 @@ attaches exports to `globalThis.prSplit`.
 | 04 | `pr_split_04_validation.js` | Schema validators (classification, plan, split plan, resolution) |
 | 05 | `pr_split_05_execution.js` | `executeSplit` — branch creation, cherry-pick, apply |
 | 06 | `pr_split_06_verification.js` | `verifySplit`, `verifySplits`, `verifyEquivalence`, cleanup |
+| 06b | `pr_split_06b_verify_shell.js` | Interactive shell in verify worktree via CaptureSession |
 | 07 | `pr_split_07_prcreation.js` | `createPRs` — push, `gh pr create`, stacking support |
 | 08 | `pr_split_08_conflict.js` | `AUTO_FIX_STRATEGIES`, `resolveConflicts` |
 | 09 | `pr_split_09_claude.js` | `ClaudeCodeExecutor`, prompt templates |
@@ -59,6 +60,18 @@ attaches exports to `globalThis.prSplit`.
 | 11 | `pr_split_11_utilities.js` | BT nodes, independence check, telemetry, diff visualization |
 | 12 | `pr_split_12_exports.js` | Bulk `globalThis.prSplit` assignment of final public API |
 | 13 | `pr_split_13_tui.js` | TUI mode guard, `buildCommands`, mode registration |
+| 14a | `pr_split_14a_tui_commands_core.js` | TUI core workflow commands (analyze, plan, execute, verify) |
+| 14b | `pr_split_14b_tui_commands_ext.js` | TUI extended commands, HUD overlay, bell handling |
+| 15a | `pr_split_15a_tui_styles.js` | TUI colors, styles, layout mode, shared utilities |
+| 15b | `pr_split_15b_tui_chrome.js` | TUI chrome renderers (title bar, nav bar, status bar, panes) |
+| 15c | `pr_split_15c_tui_screens.js` | TUI wizard screen renderers (Config through Verification) |
+| 15d | `pr_split_15d_tui_dialogs.js` | TUI finalization, dialogs, overlays, state dispatcher |
+| 16a | `pr_split_16a_tui_focus.js` | TUI focus cycling, navigation, dialog handlers, viewport sync |
+| 16b | `pr_split_16b_tui_handlers_pipeline.js` | TUI async pipeline handlers (analysis, execution, equiv, PR creation) |
+| 16c | `pr_split_16c_tui_handlers_verify.js` | TUI verify handlers, confirm cancel, Claude conversation, error resolution |
+| 16d | `pr_split_16d_tui_handlers_claude.js` | TUI Claude automation, key byte conversion, question detection, screenshot polling |
+| 16e | `pr_split_16e_tui_update.js` | TUI main update dispatch (`wizardUpdateImpl`) |
+| 16f | `pr_split_16f_tui_model.js` | TUI BubbleTea model factory, mouse handling, view, program launch |
 
 ### Embedding
 
@@ -83,7 +96,7 @@ Three test engine loaders support different testing granularities:
 | Loader | Use Case | Auto-Dir |
 |--------|----------|----------|
 | `loadChunkEngine(t, upTo, overrides)` | Single-chunk unit tests. Loads chunks 00 through `upTo`. | Yes (injects `t.TempDir()`) |
-| `loadPrSplitEngine(t)` | Full-engine integration. Loads all 14 chunks. | No (caller manages CWD) |
+| `loadPrSplitEngine(t)` | Full-engine integration. Loads all 30 chunks. | No (caller manages CWD) |
 | `loadPrSplitEngineWithEval(t, js)` | Full-engine + inline JS eval. | No (caller manages CWD) |
 
 The `loadChunkEngine` auto-dir injection (setting `runtime.dir` to
@@ -111,7 +124,7 @@ operate on the host repository during tests.
   fails at runtime, not parse time. Mitigated by: (a) the chunk 12 export
   aggregation that exercises all symbols, and (b) comprehensive test coverage
   that exercises every cross-chunk call path.
-- **Loading overhead.** 14 separate `RunString()` calls vs one. In practice,
+- **Loading overhead.** 30 separate `RunString()` calls vs one. In practice,
   total load time is <50ms, which is negligible against the pipeline's git
   operations.
 - **Cognitive overhead.** New contributors must understand the chunk ordering
@@ -137,7 +150,7 @@ the Goja-idiomatic approach.
 
 ### Single namespace object with lazy getters
 Considered. Would provide explicit dependency declarations via getter functions.
-Rejected as overengineering — the 14-file sequential loading is simpler and
+Rejected as overengineering — the 30-file sequential loading is simpler and
 the late-binding pattern adequately handles cross-chunk references.
 
 ---
@@ -158,6 +171,10 @@ bridging (SetGlobal callbacks, event channels, update cycles).
 
 Replace the Go BubbleTea TUI with a JS-driven wizard state machine
 (`pr_split_13_tui.js`), using the `osm:termmux` module as the display facade.
+The TUI implementation spans chunks 13 through 16f: chunk 13 handles mode
+registration and command building, chunks 14a–14b provide REPL commands,
+chunks 15a–15d handle rendering (styles, chrome, screens, dialogs), and
+chunks 16a–16f implement the BubbleTea model (focus, handlers, update, view).
 
 - **Wizard state machine:** 15 states — entry (IDLE), config (CONFIG,
   BASELINE_FAIL), main flow (PLAN_GENERATION → PLAN_REVIEW → PLAN_EDITOR →

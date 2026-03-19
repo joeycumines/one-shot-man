@@ -636,15 +636,17 @@ func navigateToAnalysis(t *testing.T, ptmx *os.File, buf *threadSafeBuffer) bool
 	}
 	t.Logf("CONFIG screen rendered")
 
-	// Let Claude auto-detect settle
-	time.Sleep(2 * time.Second)
+	// Wait for Claude auto-detect to settle (fires 1ms after WindowSize,
+	// takes a few hundred ms to run `which claude` and fail).
+	waitForScreenChange(t, buf, buf.String(), 5*time.Second)
 
 	// Focus nav-next ("Start Analysis") using Shift+Tab×2, then Enter.
 	// This is robust regardless of CONFIG's element count (which varies
 	// depending on Claude check status).
-	focusNavNext(ptmx)
-	time.Sleep(300 * time.Millisecond)
+	focusNavNext(t, ptmx, buf)
+	snap := buf.String()
 	_, _ = ptmx.Write([]byte{'\r'}) // Enter
+	waitForScreenChange(t, buf, snap, 3*time.Second)
 
 	// Wait for analysis to start
 	if !waitForPTYOutput(t, buf, "Processing", 5*time.Second) {
@@ -666,12 +668,27 @@ func navigateToAnalysis(t *testing.T, ptmx *os.File, buf *threadSafeBuffer) bool
 	return false
 }
 
+// waitForScreenChange polls until the PTY output differs from prevContent.
+func waitForScreenChange(t *testing.T, buf *threadSafeBuffer, prevContent string, timeout time.Duration) bool {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if buf.String() != prevContent {
+			return true
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return false
+}
+
 // cleanExit sends Ctrl+C → 'y' to cleanly exit the TUI.
-func cleanExit(ptmx *os.File) {
+func cleanExit(t *testing.T, ptmx *os.File, buf *threadSafeBuffer) {
+	t.Helper()
 	sendCtrlC(ptmx)
-	time.Sleep(300 * time.Millisecond)
+	waitForPTYOutput(t, buf, "Cancel", 3*time.Second)
 	_, _ = ptmx.Write([]byte("y"))
-	time.Sleep(300 * time.Millisecond)
+	snap := buf.String()
+	waitForScreenChange(t, buf, snap, 3*time.Second)
 }
 
 // focusNavNext moves focus to the nav-next button (e.g. "Execute Plan →")
@@ -681,13 +698,16 @@ func cleanExit(ptmx *os.File) {
 // Strategy: Shift+Tab×2 from index 0 wraps to index (N-2) = nav-next.
 // Since state transitions always reset focusIndex to 0 (pr_split_16_tui_core.js
 // line 298), this works reliably after any screen transition.
-func focusNavNext(ptmx *os.File) {
+func focusNavNext(t *testing.T, ptmx *os.File, buf *threadSafeBuffer) {
+	t.Helper()
 	// Shift+Tab = ESC [ Z in BubbleTea (CSI backtab).
 	shiftTab := []byte{0x1b, '[', 'Z'}
+	snap := buf.String()
 	_, _ = ptmx.Write(shiftTab) // → nav-cancel (last)
-	time.Sleep(200 * time.Millisecond)
+	waitForScreenChange(t, buf, snap, 3*time.Second)
+	snap = buf.String()
 	_, _ = ptmx.Write(shiftTab) // → nav-next (second-to-last)
-	time.Sleep(200 * time.Millisecond)
+	waitForScreenChange(t, buf, snap, 3*time.Second)
 }
 
 // ---------------------------------------------------------------------------
@@ -707,15 +727,15 @@ func TestBinaryE2E_FullFlowToExecution(t *testing.T) {
 
 	// Step 1: Navigate to PLAN_REVIEW
 	if !navigateToAnalysis(t, ptmx, buf) {
-		cleanExit(ptmx)
+		cleanExit(t, ptmx, buf)
 		t.Fatalf("failed to reach PLAN_REVIEW.\nOutput:\n%s", sanitizePTYOutput(buf.String()))
 	}
 
 	// Step 2: Focus nav-next ("Execute Plan") and press Enter.
 	// focusIndex resets to 0 on state transition; nav-next is always
 	// second-to-last. Shift+Tab×2 from 0 wraps to nav-next reliably.
-	time.Sleep(1 * time.Second) // Let render settle
-	focusNavNext(ptmx)
+	waitForPTYOutput(t, buf, "Execute Plan", 5*time.Second)
+	focusNavNext(t, ptmx, buf)
 	_, _ = ptmx.Write([]byte{'\r'}) // Enter on Execute Plan
 
 	// Step 3: Wait for BRANCH_BUILDING (execution screen)
@@ -725,12 +745,12 @@ func TestBinaryE2E_FullFlowToExecution(t *testing.T) {
 		// May have jumped directly to FINALIZATION
 		if !waitForPTYOutput(t, buf, "Finalization", 15*time.Second) &&
 			!waitForPTYOutput(t, buf, "Complete", 10*time.Second) {
-			cleanExit(ptmx)
+			cleanExit(t, ptmx, buf)
 			t.Fatalf("never reached BRANCH_BUILDING or FINALIZATION.\nOutput:\n%s",
 				sanitizePTYTail(buf.String(), 2000))
 		}
 		t.Logf("Jumped directly to FINALIZATION (fast execution)")
-		cleanExit(ptmx)
+		cleanExit(t, ptmx, buf)
 		return
 	}
 	t.Logf("BRANCH_BUILDING screen visible")
@@ -739,15 +759,15 @@ func TestBinaryE2E_FullFlowToExecution(t *testing.T) {
 	if !waitForPTYOutput(t, buf, "Finalization", 60*time.Second) &&
 		!waitForPTYOutput(t, buf, "Complete", 15*time.Second) &&
 		!waitForPTYOutput(t, buf, "Equivalence", 15*time.Second) {
-		cleanExit(ptmx)
+		cleanExit(t, ptmx, buf)
 		t.Fatalf("execution never completed.\nOutput:\n%s",
 			sanitizePTYTail(buf.String(), 2000))
 	}
 	t.Logf("Execution completed — reached FINALIZATION or EQUIV_CHECK")
 
 	// Step 5: Clean exit and verify branches
-	cleanExit(ptmx)
-	time.Sleep(1 * time.Second) // Let binary cleanup
+	cleanExit(t, ptmx, buf)
+	waitForScreenChange(t, buf, buf.String(), 5*time.Second)
 
 	splitCount := countSplitBranches(t, repoDir)
 	if splitCount < 2 {
@@ -775,35 +795,41 @@ func TestBinaryE2E_ConfigScreenNavigation(t *testing.T) {
 
 	// Wait for CONFIG screen
 	if !waitForPTYOutput(t, buf, "Start Analysis", 15*time.Second) {
-		cleanExit(ptmx)
+		cleanExit(t, ptmx, buf)
 		t.Fatalf("CONFIG screen never rendered.\nOutput:\n%s", sanitizePTYOutput(buf.String()))
 	}
 	t.Logf("CONFIG screen rendered")
 
-	// Let Claude auto-detect settle
-	time.Sleep(2 * time.Second)
+	// Wait for Claude auto-detect to settle
+	waitForScreenChange(t, buf, buf.String(), 5*time.Second)
 
 	// Step 1: Tab through strategy options (first 3 focus elements)
 	// Focus order: strategy-auto(0) → strategy-heuristic(1) → strategy-directory(2)
 	// The TUI starts with focusIndex=0 (strategy-auto).
+	snap := buf.String()
 	_, _ = ptmx.Write([]byte{0x09}) // Tab → strategy-heuristic
-	time.Sleep(300 * time.Millisecond)
+	waitForScreenChange(t, buf, snap, 3*time.Second)
+	snap = buf.String()
 	_, _ = ptmx.Write([]byte{0x09}) // Tab → strategy-directory
-	time.Sleep(300 * time.Millisecond)
+	waitForScreenChange(t, buf, snap, 3*time.Second)
 
 	// Press Enter on "directory" to select it
+	snap = buf.String()
 	_, _ = ptmx.Write([]byte{'\r'})
-	time.Sleep(300 * time.Millisecond)
+	waitForScreenChange(t, buf, snap, 3*time.Second)
 	t.Logf("Navigated to directory strategy and pressed Enter")
 
 	// Step 2: Tab to Advanced Options toggle and press Enter
 	// After strategy-directory(2) → test-claude(3) → toggle-advanced(4)
+	snap = buf.String()
 	_, _ = ptmx.Write([]byte{0x09}) // Tab → test-claude
-	time.Sleep(200 * time.Millisecond)
+	waitForScreenChange(t, buf, snap, 3*time.Second)
+	snap = buf.String()
 	_, _ = ptmx.Write([]byte{0x09}) // Tab → toggle-advanced
-	time.Sleep(200 * time.Millisecond)
+	waitForScreenChange(t, buf, snap, 3*time.Second)
+	snap = buf.String()
 	_, _ = ptmx.Write([]byte{'\r'}) // Enter to toggle
-	time.Sleep(500 * time.Millisecond)
+	waitForScreenChange(t, buf, snap, 3*time.Second)
 
 	// Check that advanced fields are now visible
 	output := buf.String()
@@ -819,8 +845,9 @@ func TestBinaryE2E_ConfigScreenNavigation(t *testing.T) {
 
 	// Step 3: Navigate to Cancel and check cancel dialog
 	// Send Ctrl+C to trigger cancel overlay
+	snap = buf.String()
 	sendCtrlC(ptmx)
-	time.Sleep(500 * time.Millisecond)
+	waitForScreenChange(t, buf, snap, 3*time.Second)
 
 	// Check for cancel confirmation dialog
 	if waitForPTYOutput(t, buf, "Cancel", 3*time.Second) ||
@@ -829,8 +856,9 @@ func TestBinaryE2E_ConfigScreenNavigation(t *testing.T) {
 		t.Logf("Cancel confirmation dialog appeared")
 
 		// Dismiss cancel dialog by pressing 'n' or Escape
+		snap = buf.String()
 		_, _ = ptmx.Write([]byte{0x1b}) // Escape to dismiss
-		time.Sleep(500 * time.Millisecond)
+		waitForScreenChange(t, buf, snap, 3*time.Second)
 
 		// Verify we're still on CONFIG
 		if strings.Contains(buf.String(), "Start Analysis") {
@@ -841,10 +869,7 @@ func TestBinaryE2E_ConfigScreenNavigation(t *testing.T) {
 	}
 
 	// Clean exit
-	sendCtrlC(ptmx)
-	time.Sleep(200 * time.Millisecond)
-	_, _ = ptmx.Write([]byte("y"))
-	time.Sleep(300 * time.Millisecond)
+	cleanExit(t, ptmx, buf)
 }
 
 // ---------------------------------------------------------------------------
@@ -865,13 +890,13 @@ func TestBinaryE2E_VerifyPTYLive(t *testing.T) {
 
 	// Navigate to PLAN_REVIEW
 	if !navigateToAnalysis(t, ptmx, buf) {
-		cleanExit(ptmx)
+		cleanExit(t, ptmx, buf)
 		t.Fatalf("failed to reach PLAN_REVIEW.\nOutput:\n%s", sanitizePTYOutput(buf.String()))
 	}
 
 	// Focus nav-next ("Execute Plan") and press Enter.
-	time.Sleep(1 * time.Second)
-	focusNavNext(ptmx)
+	waitForPTYOutput(t, buf, "Execute Plan", 5*time.Second)
+	focusNavNext(t, ptmx, buf)
 	_, _ = ptmx.Write([]byte{'\r'})
 
 	// Wait for execution to start — BRANCH_BUILDING shows branch progress
@@ -883,10 +908,10 @@ func TestBinaryE2E_VerifyPTYLive(t *testing.T) {
 		if waitForPTYOutput(t, buf, "Complete", 10*time.Second) ||
 			waitForPTYOutput(t, buf, "Finalization", 10*time.Second) {
 			t.Logf("Execution completed very quickly (verify=sleep 0.5 was fast)")
-			cleanExit(ptmx)
+			cleanExit(t, ptmx, buf)
 			return
 		}
-		cleanExit(ptmx)
+		cleanExit(t, ptmx, buf)
 		t.Fatalf("never reached BRANCH_BUILDING.\nOutput:\n%s",
 			sanitizePTYTail(buf.String(), 2000))
 	}
@@ -897,13 +922,13 @@ func TestBinaryE2E_VerifyPTYLive(t *testing.T) {
 	if !waitForPTYOutput(t, buf, "Finalization", 60*time.Second) &&
 		!waitForPTYOutput(t, buf, "Complete", 15*time.Second) &&
 		!waitForPTYOutput(t, buf, "Equivalence", 15*time.Second) {
-		cleanExit(ptmx)
+		cleanExit(t, ptmx, buf)
 		t.Fatalf("execution never completed.\nOutput:\n%s",
 			sanitizePTYTail(buf.String(), 2000))
 	}
 	t.Logf("Verification completed for all branches")
 
-	cleanExit(ptmx)
+	cleanExit(t, ptmx, buf)
 
 	// Verify git state
 	splitCount := countSplitBranches(t, repoDir)
@@ -931,13 +956,13 @@ func TestBinaryE2E_CancelDuringVerify(t *testing.T) {
 
 	// Navigate to PLAN_REVIEW
 	if !navigateToAnalysis(t, ptmx, buf) {
-		cleanExit(ptmx)
+		cleanExit(t, ptmx, buf)
 		t.Fatalf("failed to reach PLAN_REVIEW.\nOutput:\n%s", sanitizePTYOutput(buf.String()))
 	}
 
 	// Focus nav-next ("Execute Plan") and press Enter.
-	time.Sleep(1 * time.Second)
-	focusNavNext(ptmx)
+	waitForPTYOutput(t, buf, "Execute Plan", 5*time.Second)
+	focusNavNext(t, ptmx, buf)
 	_, _ = ptmx.Write([]byte{'\r'})
 
 	// Wait for execution to start
@@ -945,18 +970,19 @@ func TestBinaryE2E_CancelDuringVerify(t *testing.T) {
 		!waitForPTYOutput(t, buf, "Verifying", 10*time.Second) &&
 		!waitForPTYOutput(t, buf, "Branch", 10*time.Second) &&
 		!waitForPTYOutput(t, buf, "Executing", 10*time.Second) {
-		cleanExit(ptmx)
+		cleanExit(t, ptmx, buf)
 		t.Fatalf("never reached BRANCH_BUILDING.\nOutput:\n%s",
 			sanitizePTYTail(buf.String(), 2000))
 	}
 	t.Logf("BRANCH_BUILDING visible — verify running (sleep 30)")
 
-	// Let verify run for a moment
+	// Intentional delay: let verify subprocess start before testing cancel flow
 	time.Sleep(2 * time.Second)
 
 	// Step 1: Send Ctrl+C to interrupt
+	snap := buf.String()
 	sendCtrlC(ptmx)
-	time.Sleep(1 * time.Second)
+	waitForScreenChange(t, buf, snap, 5*time.Second)
 
 	// Should see a cancel confirmation or the TUI transitioning
 	output := buf.String()
@@ -968,17 +994,19 @@ func TestBinaryE2E_CancelDuringVerify(t *testing.T) {
 	if cancelTriggered {
 		t.Logf("Cancel triggered after first Ctrl+C")
 		// Confirm cancel
+		snap = buf.String()
 		_, _ = ptmx.Write([]byte("y"))
-		time.Sleep(1 * time.Second)
+		waitForScreenChange(t, buf, snap, 5*time.Second)
 	} else {
 		t.Logf("First Ctrl+C may not have triggered dialog, sending second")
 		// Step 2: Send second Ctrl+C for force-kill
+		snap = buf.String()
 		sendCtrlC(ptmx)
-		time.Sleep(2 * time.Second)
+		waitForScreenChange(t, buf, snap, 5*time.Second)
 	}
 
 	// Wait for binary to exit (the PTY cleanup handles this)
-	time.Sleep(2 * time.Second)
+	waitForScreenChange(t, buf, buf.String(), 5*time.Second)
 
 	// Verify worktrees are cleaned up (no leftover temp directories).
 	// We can't easily check this since temp dirs are ephemeral, but we
@@ -1004,13 +1032,14 @@ func TestBinaryE2E_PlanEditorFlow(t *testing.T) {
 
 	// Navigate to PLAN_REVIEW
 	if !navigateToAnalysis(t, ptmx, buf) {
-		cleanExit(ptmx)
+		cleanExit(t, ptmx, buf)
 		t.Fatalf("failed to reach PLAN_REVIEW.\nOutput:\n%s", sanitizePTYOutput(buf.String()))
 	}
 
 	// Press 'e' to enter Plan Editor
-	time.Sleep(1 * time.Second)
+	snap := buf.String()
 	_, _ = ptmx.Write([]byte("e"))
+	waitForScreenChange(t, buf, snap, 3*time.Second)
 
 	// Wait for editor to appear
 	if !waitForPTYOutput(t, buf, "Editor", 5*time.Second) &&
@@ -1019,7 +1048,7 @@ func TestBinaryE2E_PlanEditorFlow(t *testing.T) {
 		!waitForPTYOutput(t, buf, "Rename", 5*time.Second) {
 		// Editor may not have a separate screen marker; check for split cards
 		if !waitForPTYOutput(t, buf, "split/", 5*time.Second) {
-			cleanExit(ptmx)
+			cleanExit(t, ptmx, buf)
 			t.Fatalf("Plan Editor never appeared.\nOutput:\n%s",
 				sanitizePTYTail(buf.String(), 2000))
 		}
@@ -1028,14 +1057,16 @@ func TestBinaryE2E_PlanEditorFlow(t *testing.T) {
 
 	// Tab through editor elements to explore focus items
 	for i := 0; i < 4; i++ {
+		snap = buf.String()
 		_, _ = ptmx.Write([]byte{0x09}) // Tab
-		time.Sleep(300 * time.Millisecond)
+		waitForScreenChange(t, buf, snap, 3*time.Second)
 	}
 	t.Logf("Tabbed through editor focus elements")
 
 	// Press Escape or 'q' to exit editor back to PLAN_REVIEW
+	snap = buf.String()
 	_, _ = ptmx.Write([]byte{0x1b}) // Escape
-	time.Sleep(500 * time.Millisecond)
+	waitForScreenChange(t, buf, snap, 3*time.Second)
 
 	// Check we're back at PLAN_REVIEW
 	if waitForPTYOutput(t, buf, "Execute Plan", 5*time.Second) ||
@@ -1046,14 +1077,14 @@ func TestBinaryE2E_PlanEditorFlow(t *testing.T) {
 	}
 
 	// Focus nav-next and press Enter to execute the plan.
-	focusNavNext(ptmx)
+	focusNavNext(t, ptmx, buf)
 	_, _ = ptmx.Write([]byte{'\r'})
 
 	// Wait for execution
 	if !waitForPTYOutput(t, buf, "Building", 15*time.Second) &&
 		!waitForPTYOutput(t, buf, "Finalization", 30*time.Second) &&
 		!waitForPTYOutput(t, buf, "Complete", 15*time.Second) {
-		cleanExit(ptmx)
+		cleanExit(t, ptmx, buf)
 		t.Fatalf("execution never started after editor.\nOutput:\n%s",
 			sanitizePTYTail(buf.String(), 2000))
 	}
@@ -1064,7 +1095,7 @@ func TestBinaryE2E_PlanEditorFlow(t *testing.T) {
 		t.Logf("May not have reached finalization within timeout")
 	}
 
-	cleanExit(ptmx)
+	cleanExit(t, ptmx, buf)
 
 	// Verify branches were created
 	splitCount := countSplitBranches(t, repoDir)

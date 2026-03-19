@@ -137,11 +137,10 @@ func TestTUIHang_BinaryPTY_Interactive(t *testing.T) {
 	}
 	t.Logf("CONFIG screen rendered successfully")
 
-	// Let Claude auto-detect complete (fires 1ms after WindowSize, takes
-	// a few hundred ms to run `which claude` and fail). We wait until the
-	// number of focus elements stabilises. The timer in the output already
-	// shows several seconds, so the check is definitely done.
-	time.Sleep(2 * time.Second)
+	// Wait for Claude auto-detect to settle (fires 1ms after WindowSize,
+	// takes a few hundred ms to run `which claude` and fail). We wait until
+	// the screen stabilises.
+	waitForScreenChange(t, &outputBuf, outputBuf.String(), 5*time.Second)
 
 	// DIAGNOSTIC: First verify that keypresses reach BubbleTea at all.
 	// Send '?' which should toggle the help overlay.
@@ -149,8 +148,9 @@ func TestTUIHang_BinaryPTY_Interactive(t *testing.T) {
 	if waitForPTYOutput(t, &outputBuf, "Help", 5*time.Second) {
 		t.Logf("DIAGNOSTIC: '?' keypress reached BubbleTea (help overlay appeared)")
 		// Close help: press '?' or 'esc' again
+		snap := outputBuf.String()
 		_, _ = ptmx.Write([]byte{0x1b}) // Escape
-		time.Sleep(500 * time.Millisecond)
+		waitForScreenChange(t, &outputBuf, snap, 3*time.Second)
 	} else {
 		t.Logf("WARNING: '?' keypress might not have reached BubbleTea")
 	}
@@ -159,10 +159,7 @@ func TestTUIHang_BinaryPTY_Interactive(t *testing.T) {
 	// from index 0 (the screen transition always resets focusIndex to 0),
 	// which wraps backward to nav-next (always second-to-last element).
 	// This is robust regardless of CONFIG's element count.
-	focusNavNext(ptmx)
-
-	// Wait for Tab renders to settle.
-	time.Sleep(500 * time.Millisecond)
+	focusNavNext(t, ptmx, &outputBuf)
 
 	// Snapshot output to check focus state.
 	preEnterOutput := outputBuf.String()
@@ -179,8 +176,9 @@ func TestTUIHang_BinaryPTY_Interactive(t *testing.T) {
 		t.Logf("startAnalysis confirmed: 'Processing...' visible in nav bar")
 	} else {
 		// Tab navigation may have failed. Dump output for diagnosis.
+		snap := outputBuf.String()
 		sendCtrlC(ptmx)
-		time.Sleep(500 * time.Millisecond)
+		waitForScreenChange(t, &outputBuf, snap, 3*time.Second)
 		// Try to find what the nav button text is now
 		out := outputBuf.String()
 		t.Logf("Navigation may have failed. Checking for 'Start Analysis' text still present: %v",
@@ -197,8 +195,9 @@ func TestTUIHang_BinaryPTY_Interactive(t *testing.T) {
 	} else if waitForPTYOutput(t, &outputBuf, "Execute Plan", 10*time.Second) {
 		t.Logf("SUCCESS: TUI reached PLAN_REVIEW (found 'Execute Plan')")
 	} else {
+		snap := outputBuf.String()
 		sendCtrlC(ptmx)
-		time.Sleep(500 * time.Millisecond)
+		waitForScreenChange(t, &outputBuf, snap, 3*time.Second)
 		t.Fatalf("Analysis started but TUI never reached PLAN_REVIEW.\n"+
 			"This IS the async pipeline hang bug.\n"+
 			"Final output:\n%s", sanitizePTYOutput(outputBuf.String()))
@@ -206,9 +205,10 @@ func TestTUIHang_BinaryPTY_Interactive(t *testing.T) {
 
 	// Clean exit: send Ctrl+C then confirm.
 	sendCtrlC(ptmx)
-	time.Sleep(200 * time.Millisecond)
+	waitForPTYOutput(t, &outputBuf, "Cancel", 3*time.Second)
+	snap := outputBuf.String()
 	_, _ = ptmx.Write([]byte("y"))
-	time.Sleep(200 * time.Millisecond)
+	waitForScreenChange(t, &outputBuf, snap, 3*time.Second)
 }
 
 // TestTUIHang_BinaryBatch_ProvesHeuristicWorks confirms that the heuristic

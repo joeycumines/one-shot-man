@@ -473,7 +473,7 @@
       "task": "Replace bare time.Sleep in binary E2E tests with poll-retry loops",
       "description": "In `internal/command/pr_split_binary_e2e_test.go`, there are 29 bare `time.Sleep` calls used for process synchronization. These are the primary source of test flakiness. The test already has `waitForPTYOutput()` which uses poll-retry (line 256). Replace all bare sleeps with equivalent poll-based waits. For sleeps that wait for 'render settle' or 'process startup', use `waitForPTYOutput` with an appropriate expected substring. For sleeps after key sends, use a short poll for screen change. The `pr_split_autosplit_recovery_test.go:3496` pattern (poll with deadline + 50ms retry) is the correct approach. This task covers pr_split_binary_e2e_test.go and pr_split_tui_pty_hang_test.go (8 sleeps).",
       "acceptance": "Zero bare `time.Sleep` calls remain in binary E2E test files (pr_split_binary_e2e_test.go, pr_split_tui_pty_hang_test.go). All waits use poll-retry patterns with explicit deadlines. Tests pass reliably on 3 consecutive runs. Individual test execution time is equal or faster (no unnecessary 2s waits). Total binary E2E suite time reduced by at least 20%.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T365",

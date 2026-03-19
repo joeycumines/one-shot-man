@@ -15,7 +15,7 @@
     var handleConfigState = prSplit._handleConfigState;
     var handleBaselineFailState = prSplit._handleBaselineFailState;
 
-    // ═══════════════════════════════════════════════════════════════════════
+    // --- buildExtCommands ---
     function buildExtCommands(tuiStateArg) {
         var style = prSplit._style;
         var padIndex = prSplit._padIndex;
@@ -524,15 +524,13 @@
 
     prSplit._buildCommands = buildCommands;
 
-    // -----------------------------------------------------------------------
-    //  HUD Overlay — Process state display when Claude pane is backgrounded
+    // --- HUD Overlay — Process state display when Claude pane is backgrounded ---
     //
     //  Shows: (1) activity indicator (live/idle), (2) last N lines of Claude
     //  output from VTerm screenshot, (3) current wizard state.
     //  Rendered with lipgloss for clean terminal styling.
     //  Toggled via the "hud" command. When enabled, the status bar shows a
     //  compact summary and "hud" prints the full panel.
-    // -----------------------------------------------------------------------
 
     var _hudEnabled = false;
     var _hudMaxLines = 5;
@@ -664,14 +662,12 @@
     prSplit._getActivityInfo = _getActivityInfo;
     prSplit._getLastOutputLines = _getLastOutputLines;
 
-    // -----------------------------------------------------------------------
-    //  Bell Event Handling
+    // --- Bell Event Handling ---
     //
     //  When the Claude pane emits a BEL character (e.g., command completion,
     //  error, or explicit notification), flash the status bar and log the
     //  event. This provides feedback when the user is viewing the OSM TUI
     //  and the Claude process needs attention.
-    // -----------------------------------------------------------------------
 
     if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.on === 'function') {
         var _bellCount = 0;

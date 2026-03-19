@@ -14,15 +14,11 @@
     var st = prSplit._state;
     var C = prSplit._TUI_CONSTANTS;
     var handleErrorResolutionState = prSplit._handleErrorResolutionState;
-
     // Late-bound cross-chunk references (defined in later chunks, resolved at call time).
     function startAnalysis(s) { return prSplit._startAnalysis(s); }
     function startEquivCheck(s) { return prSplit._startEquivCheck(s); }
 
-    // -----------------------------------------------------------------------
-    //  Update Handlers — screen-specific input handling
-    // -----------------------------------------------------------------------
-
+    // --- Update Handlers — screen-specific input handling ---
     function updateConfirmCancel(msg, s) {
         // Helper to clean up any active verify session before quitting.
         function cleanupActiveSession() {
@@ -119,7 +115,7 @@
         return [s, null];
     }
 
-    // ── Pre-existing failure detection ───────────────────────────
+    // --- Pre-existing failure detection ---
     function _isPreExistingFailure(s) {
         return !!(s._baselineVerifyResult && s._baselineVerifyResult.failed);
     }
@@ -128,7 +124,7 @@
         return ' (pre-existing on ' + s._baselineVerifyResult.sourceBranch + ')';
     }
 
-    // ── Per-branch verification (tick-based stepping) ────────────
+    // --- Per-branch verification (tick-based stepping) ---
     // Verifies one branch at a time. Uses CaptureSession (PTY + VTerm)
     // for live output when available, falling back to async verifySplitAsync
     // on platforms without PTY support (Windows).
@@ -300,7 +296,7 @@
         return [s, tea.tick(C.TICK_INTERVAL_MS, 'verify-poll')];
     }
 
-    // ── Live verification poll ───────────────────────────────────
+    // --- Live verification poll ---
     // Polls the active CaptureSession for output and completion.
     // On completion, records the result and advances to next branch.
     function pollVerifySession(s) {
@@ -425,7 +421,7 @@
         return [s, tea.tick(1, 'verify-branch')];
     }
 
-    // ── Async verify fallback (when CaptureSession unavailable) ──
+    // --- Async verify fallback (when CaptureSession unavailable) ---
     // Uses verifySplitAsync for non-blocking verification. The result
     // is stored directly on s so the poll handler can consume it.
     async function runVerifyFallbackAsync(s, branchName, dir, scopedCmd, timeoutMs) {
@@ -540,14 +536,8 @@
         return [s, tea.tick(1, 'verify-branch')];
     }
 
-    // -----------------------------------------------------------------------
-    //  Claude Conversation (T16): interactive back-and-forth
-    // -----------------------------------------------------------------------
-
-    /**
-     * openClaudeConvo — opens the conversation overlay.
-     * @param {string} context - 'plan-review' or 'error-resolution'
-     */
+    // --- Claude Conversation (T16) ---
+    // openClaudeConvo opens the conversation overlay.
     function openClaudeConvo(s, context) {
         // Check Claude availability.
         var executor = st.claudeExecutor;
@@ -572,9 +562,7 @@
         return [s, null];
     }
 
-    /**
-     * closeClaudeConvo — dismisses the conversation overlay.
-     */
+    // closeClaudeConvo dismisses the conversation overlay.
     function closeClaudeConvo(s) {
         s.claudeConvo.active = false;
         s.claudeConvo.inputText = '';
@@ -583,9 +571,7 @@
         return [s, null];
     }
 
-    /**
-     * updateClaudeConvo — handles input while conversation overlay is active.
-     */
+    // updateClaudeConvo handles input while conversation overlay is active.
     function updateClaudeConvo(msg, s) {
         var convo = s.claudeConvo;
 
@@ -657,9 +643,7 @@
         return [s, null];
     }
 
-    /**
-     * buildClaudePrompt — constructs the prompt based on conversation context.
-     */
+    // buildClaudePrompt constructs the prompt based on conversation context.
     function buildClaudePrompt(context, userMessage, s) {
         var parts = [];
 
@@ -698,9 +682,7 @@
         return parts.join('\n');
     }
 
-    /**
-     * submitClaudeMessage — launches the async send + wait operation.
-     */
+    // submitClaudeMessage launches the async send + wait operation.
     function submitClaudeMessage(s, text) {
         var convo = s.claudeConvo;
         var executor = st.claudeExecutor;
@@ -801,9 +783,7 @@
         return [s, tea.tick(200, 'claude-convo-poll')];
     }
 
-    /**
-     * formatClaudeResponse — formats structured MCP tool response for display.
-     */
+    // formatClaudeResponse formats structured MCP tool response for display.
     function formatClaudeResponse(toolName, data) {
         // T122: MCP schema uses 'stages'; accept both field names.
         var splits = (toolName === 'reportSplitPlan' && data) ? (data.stages || data.splits) : null;
@@ -822,9 +802,7 @@
         return JSON.stringify(data, null, 2);
     }
 
-    /**
-     * processClaudeConvoResult — applies structured result to wizard state.
-     */
+    // processClaudeConvoResult applies structured result to wizard state.
     function processClaudeConvoResult(convo, toolName, data) {
         // T122: MCP schema uses 'stages'; accept both field names.
         var splits = (toolName === 'reportSplitPlan' && data) ? (data.stages || data.splits) : null;
@@ -843,9 +821,7 @@
         // The user can manually apply the suggestion or use auto-resolve.
     }
 
-    /**
-     * pollClaudeConvo — tick handler to check async send/wait progress.
-     */
+    // pollClaudeConvo checks async send/wait progress.
     function pollClaudeConvo(s) {
         var convo = s.claudeConvo;
 
@@ -864,10 +840,7 @@
         return [s, null];
     }
 
-    // -----------------------------------------------------------------------
-    //  Error Resolution (T16)
-    // -----------------------------------------------------------------------
-
+    // --- Error Resolution (T16) ---
     function handleErrorResolutionChoice(s, choice) {
         // Crash-recovery choices bypass the wizard state machine entirely
         // because handleErrorResolutionState treats unknown choices as
@@ -1012,7 +985,6 @@
 
         return [s, tea.tick(C.TICK_INTERVAL_MS, 'shell-poll')];
     }
-
     // Cross-chunk exports.
     prSplit._updateConfirmCancel = updateConfirmCancel;
     prSplit._runVerifyBranch = runVerifyBranch;

@@ -31,9 +31,7 @@
         return base + '/' + path;
     }
 
-    // -----------------------------------------------------------------------
-    //  createSplitPlan — builds a plan from group objects
-    // -----------------------------------------------------------------------
+    // --- createSplitPlan — builds a plan from group objects ---
     function createSplitPlan(groups, config) {
         if (!groups || typeof groups !== 'object') groups = {};
         config = config || {};
@@ -130,9 +128,7 @@
         };
     }
 
-    // -----------------------------------------------------------------------
-    //  savePlan — persists plan + caches to a JSON file
-    // -----------------------------------------------------------------------
+    // --- savePlan — persists plan + caches to a JSON file ---
     // An optional second argument specifies the lastCompletedStep name for
     // crash recovery.  When provided, the snapshot version is bumped to 2.
     function savePlan(path, lastCompletedStep) {
@@ -183,9 +179,7 @@
         }
     }
 
-    // -----------------------------------------------------------------------
-    //  loadPlan — reads a previously-saved plan snapshot from disk
-    // -----------------------------------------------------------------------
+    // --- loadPlan — reads a previously-saved plan snapshot from disk ---
     function loadPlan(path) {
         path = resolvePlanPath(path);
         if (!osmod) {
@@ -250,9 +244,7 @@
         };
     }
 
-    // -----------------------------------------------------------------------
-    //  Exports
-    // -----------------------------------------------------------------------
+    // --- Exports ---
     prSplit.DEFAULT_PLAN_PATH = DEFAULT_PLAN_PATH;
     prSplit.resolvePlanPath = resolvePlanPath;
     prSplit.createSplitPlan = createSplitPlan;

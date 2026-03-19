@@ -19,9 +19,7 @@
 
 (function(prSplit) {
 
-    // -----------------------------------------------------------------------
-    //  Independence Detection Helpers
-    // -----------------------------------------------------------------------
+    // --- Independence Detection Helpers ---
 
     // extractDirs returns a set (object with true values) of directory paths
     // from a file list.
@@ -159,9 +157,7 @@
         return true;
     }
 
-    // -----------------------------------------------------------------------
-    //  Conversation History
-    // -----------------------------------------------------------------------
+    // --- Conversation History ---
 
     // recordConversation saves a Claude interaction to the history stored on
     // prSplit._state.conversationHistory.
@@ -198,9 +194,7 @@
         return (state.conversationHistory || []).slice();
     }
 
-    // -----------------------------------------------------------------------
-    //  Telemetry
-    // -----------------------------------------------------------------------
+    // --- Telemetry ---
 
     // recordTelemetry updates telemetry counters on prSplit._state.telemetryData.
     // Numeric keys are incremented; non-numeric keys are overwritten.
@@ -265,9 +259,7 @@
         }
     }
 
-    // -----------------------------------------------------------------------
-    //  Diff Visualization
-    // -----------------------------------------------------------------------
+    // --- Diff Visualization ---
 
     // renderColorizedDiff takes raw diff text and returns a styled version.
     // Uses lipgloss styles via prSplit._style for terminal-capability-aware
@@ -328,9 +320,7 @@
         return { error: null, diff: result.stdout };
     }
 
-    // -----------------------------------------------------------------------
-    //  Dependency Graph
-    // -----------------------------------------------------------------------
+    // --- Dependency Graph ---
 
     // buildDependencyGraph creates an adjacency list from plan splits.
     // Each split that shares directory or import dependencies with another
@@ -416,9 +406,7 @@
         return lines.join('\n');
     }
 
-    // -----------------------------------------------------------------------
-    //  Retrospective Analysis
-    // -----------------------------------------------------------------------
+    // --- Retrospective Analysis ---
 
     // analyzeRetrospective examines a completed split for insights.
     function analyzeRetrospective(plan, verifyResults, equivalenceResult) {
@@ -514,9 +502,7 @@
         };
     }
 
-    // -----------------------------------------------------------------------
-    //  Exports
-    // -----------------------------------------------------------------------
+    // --- Exports ---
 
     // Independence detection.
     prSplit.extractDirs = extractDirs;

@@ -15,11 +15,9 @@
     var truncate = prSplit._truncate;
     var repeatStr = prSplit._repeatStr;
 
-    // -----------------------------------------------------------------------
-    //  Chrome Renderers (T007)
+    // --- Chrome Renderers (T007) ---
     //
     //  Title bar, navigation bar, status bar, step dots
-    // -----------------------------------------------------------------------
 
     var STEP_LABELS = [
         'Configure',
@@ -223,9 +221,7 @@
         }
     }
 
-    // -----------------------------------------------------------------------
-    //  T46: Inline Claude Question Prompt
-    // -----------------------------------------------------------------------
+    // --- T46: Inline Claude Question Prompt ---
     // When Claude asks a question during automated analysis/execution, this
     // renders a compact inline prompt at the bottom of the affected screen.
     // The user can type a response and press Enter to send it directly to
@@ -377,9 +373,7 @@
         return styles.statusQuiet().render('\ud83d\udca4 Claude: quiet');
     }
 
-    // -----------------------------------------------------------------------
-    //  Split-View: Claude Pane Renderer (T15)
-    // -----------------------------------------------------------------------
+    // --- Split-View: Claude Pane Renderer (T15) ---
     function renderClaudePane(s, width, height) {
         // T28: Prefer ANSI-styled content (claudeScreen), fall back to plain text.
         var ansiContent = s.claudeScreen || '';
@@ -496,9 +490,7 @@
         return paneStyle.render(contentLines.join('\n'));
     }
 
-    // -----------------------------------------------------------------------
-    //  Claude Conversation Overlay (T16)
-    // -----------------------------------------------------------------------
+    // --- Claude Conversation Overlay (T16) ---
     function viewClaudeConvoOverlay(s) {
         var convo = s.claudeConvo;
         var w = Math.min((s.width || 80) - 4, 76);
@@ -599,9 +591,7 @@
         return overlayStyle.render(lines.join('\n'));
     }
 
-    // -----------------------------------------------------------------------
-    //  Split-View: Output Pane Renderer (T44)
-    // -----------------------------------------------------------------------
+    // --- Split-View: Output Pane Renderer (T44) ---
     function renderOutputPane(s, width, height) {
         var lines = s.outputLines || [];
         var totalLines = lines.length;

@@ -14,14 +14,12 @@
     var scopedVerifyCommand = prSplit.scopedVerifyCommand;
     var exec = prSplit._modules.exec;
 
-    // -----------------------------------------------------------------------
-    //  verifySplit — runs verify command on a single branch
+    // --- verifySplit — runs verify command on a single branch ---
     //
     //  Uses a temporary git worktree so the user's CWD is never modified.
     //  Tries proper branch checkout first (preserves branch name for verify
     //  commands that inspect HEAD), falls back to detached HEAD if the
     //  branch is already checked out elsewhere.
-    // -----------------------------------------------------------------------
     function verifySplit(branchName, config) {
         config = config || {};
         var dir = resolveDir(config.dir || '.');
@@ -111,12 +109,10 @@
         };
     }
 
-    // -----------------------------------------------------------------------
-    //  verifySplits — runs verification for all splits, respects cancellation
+    // --- verifySplits — runs verification for all splits, respects cancellation ---
     //
     //  Each branch is verified in its own temporary worktree (via verifySplit),
     //  so the user's CWD is never modified.
-    // -----------------------------------------------------------------------
     function verifySplits(plan, options) {
         options = options || {};
         if (!plan || !plan.splits) {
@@ -217,8 +213,7 @@
         return { allPassed: allPassed, results: results, error: null };
     }
 
-    // -----------------------------------------------------------------------
-    //  verifyEquivalence — tree-SHA comparison of last split vs source
+    // --- verifyEquivalence — tree-SHA comparison of last split vs source ---
     //
     //  DESIGN NOTE (T094): This check relies on the CUMULATIVE CHAIN model.
     //  executeSplit/executeSplitAsync in pr_split_05_execution.js builds
@@ -231,7 +226,6 @@
     //  If the execution model ever changes to INDEPENDENT branches (each
     //  starting from baseBranch), this check would need redesign — likely
     //  a combined merge or tree-walk approach.
-    // -----------------------------------------------------------------------
     function verifyEquivalence(plan) {
         if (!plan) {
             return { equivalent: false, splitTree: '', sourceTree: '', error: 'invalid plan' };
@@ -274,9 +268,7 @@
         };
     }
 
-    // -----------------------------------------------------------------------
-    //  verifyEquivalenceDetailed — adds per-file diff info on mismatch
-    // -----------------------------------------------------------------------
+    // --- verifyEquivalenceDetailed — adds per-file diff info on mismatch ---
     function verifyEquivalenceDetailed(plan) {
         if (!plan) {
             return { equivalent: false, splitTree: '', sourceTree: '', error: 'invalid plan', diffFiles: [], diffSummary: '' };
@@ -306,9 +298,7 @@
         return base;
     }
 
-    // -----------------------------------------------------------------------
-    //  cleanupBranches — deletes split branches
-    // -----------------------------------------------------------------------
+    // --- cleanupBranches — deletes split branches ---
     function cleanupBranches(plan) {
         if (!plan || !plan.splits) {
             return { deleted: [], errors: ['cleanupBranches: invalid plan — missing splits array'] };
@@ -337,8 +327,7 @@
         return { deleted: deleted, errors: errors };
     }
 
-    // -----------------------------------------------------------------------
-    //  startVerifySession — non-blocking variant using CaptureSession
+    // --- startVerifySession — non-blocking variant using CaptureSession ---
     //
     //  Creates a temporary git worktree and spawns the verify command in a
     //  CaptureSession (PTY + VTerm). Returns immediately so the TUI can
@@ -349,7 +338,6 @@
     //    { session, worktreeDir, dir, branchName, startTime }  on success
     //    { skipped: true }                                     if no verify command
     //    { error: string }                                     on failure
-    // -----------------------------------------------------------------------
     function startVerifySession(branchName, config) {
         config = config || {};
         var dir = resolveDir(config.dir || '.');
@@ -414,8 +402,7 @@
         gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
     }
 
-    // -----------------------------------------------------------------------
-    //  DESIGN NOTE (T003): PTY Verify Pipeline Audit
+    // --- DESIGN NOTE (T003): PTY Verify Pipeline Audit ---
     //
     //  The async verification pipeline (startVerifySession → pollVerifySession
     //  → runVerifyBranch in chunk 16) was audited for correctness:
@@ -441,12 +428,9 @@
     //  5. Async variants (verifySplitAsync, verifySplitsAsync,
     //     verifyEquivalenceAsync) now have unit test coverage via mocked
     //     _gitExecAsync and exec.spawn infrastructure.
-    // -----------------------------------------------------------------------
 
-    // -----------------------------------------------------------------------
-    //  Async versions for pipeline use (T31)
+    // --- Async versions for pipeline use (T31) ---
     //  Uses gitExecAsync (exec.spawn) so the event loop stays responsive.
-    // -----------------------------------------------------------------------
 
     // verifySplitAsync is the non-blocking version of verifySplit.
     // Git worktree setup/teardown uses gitExecAsync. The actual verify
@@ -759,9 +743,7 @@
         return { deleted: deleted, errors: errors };
     }
 
-    // -----------------------------------------------------------------------
-    //  Exports
-    // -----------------------------------------------------------------------
+    // --- Exports ---
     prSplit.verifySplit = verifySplit;
     prSplit.verifySplits = verifySplits;
     prSplit.verifyEquivalence = verifyEquivalence;

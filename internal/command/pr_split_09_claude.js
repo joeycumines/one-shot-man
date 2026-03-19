@@ -10,9 +10,7 @@
 
 (function(prSplit) {
 
-    // -----------------------------------------------------------------------
-    //  ClaudeCodeExecutor
-    // -----------------------------------------------------------------------
+    // --- ClaudeCodeExecutor ---
 
     function ClaudeCodeExecutor(config) {
         this.command = config.claudeCommand || '';
@@ -340,9 +338,7 @@
         return await this.spawn(sessionId, opts);
     };
 
-    // -----------------------------------------------------------------------
-    //  Prompt Templates (Go text/template syntax)
-    // -----------------------------------------------------------------------
+    // --- Prompt Templates (Go text/template syntax) ---
 
     var CLASSIFICATION_PROMPT_TEMPLATE =
         'You are a code reviewer helping split a large pull request into smaller, ' +
@@ -417,8 +413,7 @@
         '- If this failure also exists on the base branch (pre-existing), set ' +
         '`preExistingFailure: true` with `preExistingDetails` explaining the issue\n';
 
-    // -----------------------------------------------------------------------
-    //  Prompt Rendering
+    // --- Prompt Rendering ---
     //
     //  T111 DESIGN NOTE: renderPrompt returns { text: string, error: string|null }.
     //  ALL callers MUST check .error before using .text. When .error is non-null,
@@ -427,7 +422,6 @@
     //  correctly check .error (see automatedSplit step 3, resolveConflictsWithClaude,
     //  claude-fix strategy). This contract is enforced by test coverage:
     //  TestRenderPrompt_TemplateModuleNull, TestRenderPrompt_TemplateExecuteThrows.
-    // -----------------------------------------------------------------------
 
     function renderPrompt(tmplStr, data) {
         var template = prSplit._modules.template;
@@ -478,9 +472,7 @@
         });
     }
 
-    // -----------------------------------------------------------------------
-    //  Language Detection
-    // -----------------------------------------------------------------------
+    // --- Language Detection ---
 
     function detectLanguage(files) {
         var fileExtension = prSplit._fileExtension;
@@ -559,9 +551,7 @@
         return best || 'unknown';
     }
 
-    // -----------------------------------------------------------------------
-    //  Exports
-    // -----------------------------------------------------------------------
+    // --- Exports ---
 
     prSplit.ClaudeCodeExecutor = ClaudeCodeExecutor;
     prSplit.renderPrompt = renderPrompt;

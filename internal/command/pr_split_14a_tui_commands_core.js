@@ -11,7 +11,7 @@
     var st = prSplit._state;
     var buildReport = prSplit._buildReport;
 
-    // ═══════════════════════════════════════════════════════════════════════
+    // --- buildCoreCommands ---
     function buildCoreCommands(tuiStateArg) {
         var style = prSplit._style;
         var padIndex = prSplit._padIndex;

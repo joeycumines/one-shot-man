@@ -15,9 +15,7 @@
     var handleConfigState = prSplit._handleConfigState;
     var handlePlanReviewState = prSplit._handlePlanReviewState;
 
-    // -----------------------------------------------------------------------
-    //  Report Formatting — Human-readable display for the report overlay
-    // -----------------------------------------------------------------------
+    // --- Report Formatting — Human-readable display for the report overlay ---
 
     function formatReportForDisplay(report) {
         if (!report) {
@@ -120,9 +118,7 @@
         return lines.join('\n');
     }
 
-    // -----------------------------------------------------------------------
-    //  Async Pipeline Handlers — drive wizard state machine
-    // -----------------------------------------------------------------------
+    // --- Async Pipeline Handlers — drive wizard state machine ---
 
     function startAnalysis(s) {
         s.isProcessing = true;
@@ -415,9 +411,7 @@
         return [s, null];
     }
 
-    // -----------------------------------------------------------------------
-    //  Resolve Handler
-    // -----------------------------------------------------------------------
+    // --- Resolve Handler ---
 
     function handleResolvePoll(s) {
         if (!s.isProcessing) {
@@ -459,9 +453,7 @@
         return startEquivCheck(s);
     }
 
-    // -----------------------------------------------------------------------
-    //  Execution Handlers
-    // -----------------------------------------------------------------------
+    // --- Execution Handlers ---
 
     function startExecution(s) {
         if (!st.planCache || !st.planCache.splits || st.planCache.splits.length === 0) {
@@ -629,9 +621,7 @@
         return [s, null];
     }
 
-    // -----------------------------------------------------------------------
-    //  Equivalence Handlers
-    // -----------------------------------------------------------------------
+    // --- Equivalence Handlers ---
 
     function startEquivCheck(s) {
         // Guard: only transition if not already in EQUIV_CHECK
@@ -736,9 +726,7 @@
         return [s, null];
     }
 
-    // -----------------------------------------------------------------------
-    //  PR Creation Handlers
-    // -----------------------------------------------------------------------
+    // --- PR Creation Handlers ---
 
     function startPRCreation(s) {
         // Guard: already running or already completed.

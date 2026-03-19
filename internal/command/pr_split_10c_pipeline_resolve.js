@@ -9,9 +9,7 @@
     var sendToHandle = prSplit.sendToHandle;
     var resolveNumber = prSplit._resolveNumber;
 
-    // -----------------------------------------------------------------------
-    //  waitForLogged — logged wrapper around mcpCallbackObj.waitFor
-    // -----------------------------------------------------------------------
+    // --- waitForLogged — logged wrapper around mcpCallbackObj.waitFor ---
 
     // Emits before/after log entries so IPC timeouts can be diagnosed
     // post-mortem.
@@ -98,9 +96,7 @@
         return result;
     }
 
-    // -----------------------------------------------------------------------
-    //  heuristicFallback — standard heuristic split flow
-    // -----------------------------------------------------------------------
+    // --- heuristicFallback — standard heuristic split flow ---
 
     // Runs the standard heuristic split flow when Claude is unavailable.
     async function heuristicFallback(analysis, config, report) {
@@ -160,9 +156,7 @@
         return { error: report.error, report: report };
     }
 
-    // -----------------------------------------------------------------------
-    //  resolveConflictsWithClaude — Claude-based conflict resolution
-    // -----------------------------------------------------------------------
+    // --- resolveConflictsWithClaude — Claude-based conflict resolution ---
 
     // Attempts to fix failing splits using Claude.
     async function resolveConflictsWithClaude(failures, sessionId, timeouts, pollInterval, maxAttemptsPerBranch, report, aliveCheckFn, heartbeatTimeoutMs) {

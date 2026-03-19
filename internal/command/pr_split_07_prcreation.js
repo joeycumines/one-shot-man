@@ -9,9 +9,7 @@
     // involves external calls (push, gh CLI) that must be mockable.
     var padIndex = prSplit._padIndex;
 
-    // -----------------------------------------------------------------------
-    //  createPRs — pushes branches and creates stacked GitHub PRs
-    // -----------------------------------------------------------------------
+    // --- createPRs — pushes branches and creates stacked GitHub PRs ---
     // Options:
     //   draft:       bool   - Create as draft PRs (default: true)
     //   remote:      string - Git remote to push to (default: 'origin')
@@ -172,14 +170,10 @@
         return { error: null, results: results };
     }
 
-    // -----------------------------------------------------------------------
-    //  Exports
-    // -----------------------------------------------------------------------
+    // --- Exports ---
     prSplit.createPRs = createPRs;
 
-    // -----------------------------------------------------------------------
-    //  createPRsAsync — non-blocking variant for TUI use (T076)
-    // -----------------------------------------------------------------------
+    // --- createPRsAsync — non-blocking variant for TUI use (T076) ---
     // Identical logic to createPRs but uses exec.spawn via _gitExecAsync
     // and a local ghExecAsync helper instead of blocking exec.execv.
     // This keeps the Goja event loop free so BubbleTea can continue

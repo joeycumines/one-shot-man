@@ -89,10 +89,8 @@
         return false;
     }
 
-    // -----------------------------------------------------------------------
-    //  wizardUpdateImpl — main BubbleTea update dispatch
+    // --- wizardUpdateImpl — main BubbleTea update dispatch ---
     //  Extracted from createWizardModel._updateFn for file splitting.
-    // -----------------------------------------------------------------------
     function wizardUpdateImpl(msg, s) {
         // WindowSize — always handle.
         if (msg.type === 'WindowSize') {

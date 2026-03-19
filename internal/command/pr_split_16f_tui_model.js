@@ -66,9 +66,7 @@
     var writeMouseToPane = prSplit._writeMouseToPane;
     var C = prSplit._TUI_CONSTANTS;
 
-    // -----------------------------------------------------------------------
-    //  Mouse Handlers
-    // -----------------------------------------------------------------------
+    // --- Mouse Handlers ---
 
     function handleMouseClick(msg, s) {
         // Navigation bar clicks.
@@ -507,9 +505,7 @@
         return [s, null];
     }
 
-    // -----------------------------------------------------------------------
-    //  View Function
-    // -----------------------------------------------------------------------
+    // --- View Function ---
 
     function wizardViewImpl(s) {
         var w = s.width || 80;
@@ -718,9 +714,7 @@
         return zone.scan(fullView);
     }
 
-    // -----------------------------------------------------------------------
-    //  BubbleTea Model Factory (slimmed — delegates to chunk imports)
-    // -----------------------------------------------------------------------
+    // --- BubbleTea Model Factory (slimmed — delegates to chunk imports) ---
 
     function createWizardModel() {
         var wizard = new WizardState();
@@ -941,9 +935,7 @@
         return model;
     }
 
-    // -----------------------------------------------------------------------
-    //  Program Launch (T025 + T027)
-    // -----------------------------------------------------------------------
+    // --- Program Launch (T025 + T027) ---
 
     var _wizardModel = createWizardModel();
 
@@ -957,12 +949,11 @@
         return tea.run(_wizardModel, {altScreen: true, mouse: true});
     };
 
-    // -----------------------------------------------------------------------
-    //  Mode Registration — commands remain for programmatic/test dispatch.
+    // --- Mode Registration ---
+    //  Commands remain for programmatic/test dispatch.
     //  The BubbleTea wizard above is launched by pr_split.go for interactive
     //  use. This registration exposes all commands so existing tests and
     //  the scripting API continue to work.
-    // -----------------------------------------------------------------------
 
     ctx.run('register-mode', function() {
         var runtime = prSplit.runtime;
@@ -994,9 +985,7 @@
 
 })(globalThis.prSplit);
 
-// ---------------------------------------------------------------------------
-//  CommonJS exports for require() compatibility (test environments).
-// ---------------------------------------------------------------------------
+// --- CommonJS exports for require() compatibility (test environments). ---
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = globalThis.prSplit;
 }

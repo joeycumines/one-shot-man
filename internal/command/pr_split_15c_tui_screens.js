@@ -16,13 +16,11 @@
     var renderProgressBar = prSplit._renderProgressBar;
     var renderClaudeQuestionPrompt = prSplit._renderClaudeQuestionPrompt;
 
-    // -----------------------------------------------------------------------
-    //  Screen Renderers (T009-T017)
+    // --- Screen Renderers (T009-T017) ---
     //
     //  Each screen returns a string for the content area.
     //  The update function sets model state; view calls the appropriate
     //  screen renderer based on wizardState.
-    // -----------------------------------------------------------------------
 
     // ----- Screen 1: Configuration (IDLE / CONFIG) -----
 
@@ -619,7 +617,7 @@
             }
         }
 
-        // ── Per-branch verification section ──────────────────────
+        // --- Per-branch verification section ---
         var verifyResults = s.verificationResults || [];
         var verifyIdx = s.verifyingIdx;
         if (verifyIdx >= 0 || verifyResults.length > 0) {
@@ -702,7 +700,7 @@
 
             // Verification progress bar.
             if (verifyResults.length < splits.length && s.isProcessing) {
-                // ── Live CaptureSession viewport ─────────────────────
+                // --- Live CaptureSession viewport ---
                 // T351: Use s.verifyScreen (snapshot from pollVerifySession)
                 // instead of calling screen() directly. This eliminates
                 // redundant screen() calls and enables the fallback path
@@ -987,7 +985,7 @@
         return lines.join('\n');
     }
 
-    // ── Exports ──────────────────────────────────────────────────────────
+    // --- Exports ---
     prSplit._viewConfigScreen = viewConfigScreen;
     prSplit._viewAnalysisScreen = viewAnalysisScreen;
     prSplit._viewPlanReviewScreen = viewPlanReviewScreen;

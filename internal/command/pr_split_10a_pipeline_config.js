@@ -4,9 +4,7 @@
 
 (function(prSplit) {
 
-    // -----------------------------------------------------------------------
-    //  Constants
-    // -----------------------------------------------------------------------
+    // --- Constants ---
 
     // Default polling and timeout configuration for the automated split pipeline.
     //
@@ -82,9 +80,7 @@
     var SEND_PROMPT_READY_POLL_MS = 100;
     var SEND_PROMPT_READY_STABLE_SAMPLES = 2;
 
-    // -----------------------------------------------------------------------
-    //  Utility functions
-    // -----------------------------------------------------------------------
+    // --- Utility functions ---
 
     function resolveNumber(value, fallback, minValue) {
         var n = Number(value);
@@ -123,9 +119,7 @@
         return null;
     }
 
-    // -----------------------------------------------------------------------
-    //  classificationToGroups — pure conversion function
-    // -----------------------------------------------------------------------
+    // --- classificationToGroups — pure conversion function ---
 
     // Converts a classification result to groups map
     // (category→{files: [...], description: "..."}).
@@ -152,9 +146,7 @@
         return groups;
     }
 
-    // -----------------------------------------------------------------------
-    //  cleanupExecutor — resource cleanup
-    // -----------------------------------------------------------------------
+    // --- cleanupExecutor — resource cleanup ---
 
     // Closes the Claude executor and cleans up resources. Detaches from
     // tuiMux so ctrl+] stops trying to forward to a dead child process.
@@ -193,15 +185,10 @@
         log.printf('auto-split cleanupExecutor: done');
     }
 
-    // -----------------------------------------------------------------------
-    //  isTransientError — classify error messages for retry decisions
-    // -----------------------------------------------------------------------
+    // --- isTransientError — classify error messages for retry decisions ---
 
-    /**
-     * Returns true if the error message looks like a transient failure that
-     * is worth retrying (rate limits, timeouts, temporary unavailability).
-     * Returns false for permanent errors (invalid tool call, malformed data).
-     */
+    // isTransientError returns true if the error looks like a transient failure
+    // worth retrying (rate limits, timeouts, temporary unavailability).
     function isTransientError(msg) {
         if (!msg || typeof msg !== 'string') return true; // unknown → assume transient
         var lc = msg.toLowerCase();
@@ -219,9 +206,7 @@
         return true;
     }
 
-    // -------------------------------------------------------------------
-    //  Cross-chunk exports — constants.
-    // -------------------------------------------------------------------
+    // --- Cross-chunk exports — constants ---
     prSplit.AUTOMATED_DEFAULTS = AUTOMATED_DEFAULTS;
     prSplit.SEND_TEXT_NEWLINE_DELAY_MS = SEND_TEXT_NEWLINE_DELAY_MS;
     prSplit.SEND_TEXT_CHUNK_BYTES = SEND_TEXT_CHUNK_BYTES;

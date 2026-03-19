@@ -21,7 +21,7 @@
     function startExecution(s) { return prSplit._startExecution(s); }
     function syncMainViewport(s) { return prSplit._syncMainViewport(s); }
 
-    // ── Claude Check Handlers ──────────────────────────────────────
+    // --- Claude Check Handlers ---
 
     function handleClaudeCheck(s) {
         // Guard: prSplitConfig is injected from Go and may be absent in tests.
@@ -119,7 +119,7 @@
         return [s, null];
     }
 
-    // ── Automated pipeline (Claude) ────────────────────────────────
+    // --- Automated pipeline (Claude) ---
     // The pipeline runs on the JS event loop independently. We poll for
     // completion via ticks so BubbleTea can render progress and the user
 
@@ -451,7 +451,7 @@
         return [s, null];
     }
 
-    // ── Restart Claude Poll ────────────────────────────────────────
+    // --- Restart Claude Poll ---
 
     function handleRestartClaudePoll(s) {
         if (s.claudeRestarting) {
@@ -505,9 +505,7 @@
         return startAnalysis(s);
     }
 
-    // -----------------------------------------------------------------------
-    //  Split-View: Key-to-Terminal-Bytes Conversion (T29)
-    // -----------------------------------------------------------------------
+    // --- Split-View: Key-to-Terminal-Bytes Conversion (T29) ---
 
     // Reserved keys that should NOT be forwarded to Claude when Claude pane
     // is focused. These stay with the wizard for pane management.
@@ -651,31 +649,12 @@
         return '\x1b[<' + btn + ';' + cx + ';' + cy + suffix;
     }
 
-    // -----------------------------------------------------------------------
-    //  T46: Claude Question Detection
-    // -----------------------------------------------------------------------
+    // --- T46: Claude Question Detection ---
 
-    /**
-     * detectClaudeQuestion — analyse the plain-text screenshot of Claude's
-     * terminal to determine whether Claude is asking the user a question.
-     *
-     * Heuristics (ordered by descending confidence):
-     *   1. Explicit prompt markers: lines ending with "? " or matching
-     *      common confirmation patterns (y/n, Y/N, [yes/no], proceed?).
-     *   2. Conversational question words at line start: "Do you", "Would
-     *      you", "Should I", "Can you", "Could you", "Is this", "Are you",
-     *      "Shall I", "Want me to", "May I", "Please confirm", "Please
-     *      clarify".
-     *   3. Plain question mark at end of a non-empty line.
-     *
-     * Detection only fires when Claude has been idle for ≥ idleThresholdMs
-     * (we default to 2 000 ms) — this avoids false positives while Claude
-     * is still streaming output.
-     *
-     * @param {string} plainText - Plain-text screenshot from tuiMux.screenshot()
-     * @param {number} idleMs    - Milliseconds since last PTY activity
-     * @returns {{ detected: boolean, line: string }}
-     */
+    // detectClaudeQuestion analyses the plain-text screenshot of Claude's
+    // terminal to determine whether Claude is asking the user a question.
+    // Heuristics: confirmation patterns, conversational question openers,
+    // plain question marks. Only fires when idle ≥ idleThresholdMs (2s).
     var QUESTION_IDLE_THRESHOLD_MS = 2000;
 
     // Explicit confirmation prompt patterns (case-insensitive).
@@ -777,9 +756,7 @@
         return result;
     }
 
-    // -----------------------------------------------------------------------
-    //  Split-View: Claude Screenshot Polling
-    // -----------------------------------------------------------------------
+    // --- Split-View: Claude Screenshot Polling ---
     function pollClaudeScreenshot(s) {
         // Stop polling if split view was disabled.
         if (!s.splitViewEnabled) {
@@ -870,7 +847,7 @@
         return [s, tea.tick(500, 'claude-screenshot')];
     }
 
-    // ── Cross-chunk exports ────────────────────────────────────────
+    // --- Cross-chunk exports ---
     prSplit._handleClaudeCheck = handleClaudeCheck;
     prSplit._handleClaudeCheckPoll = handleClaudeCheckPoll;
     prSplit._startAutoAnalysis = startAutoAnalysis;

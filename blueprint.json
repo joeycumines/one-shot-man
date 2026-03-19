@@ -36,7 +36,7 @@
     "PER_TASK_COMMIT_PROTOCOL": "⚠️ MANDATORY — ZERO EXCEPTIONS — FOR EVERY SINGLE TASK: (1) REREAD the strict-review-gate Skill IN FULL — do not skim, do not skip, read every word. (2) PERFORM the Rule of Two PER THE SKILL — spawn subagent reviews, iterate until TWO CONTIGUOUS ISSUE-FREE reviews on the EXACT SAME DIFF. If either review fails, fix, reset counter to 0, restart. (3) READ the git-commit Skill IN FULL before writing any commit message. (4) COMMIT THAT ONE TASK — exactly one task per commit, immediately after passing the Rule of Two. Do not batch tasks. Do not defer commits. ASAP. (5) REREAD DIRECTIVE.txt after every commit — full re-read, not from memory. This 5-step process is NON-NEGOTIABLE. Skipping any step is grounds for termination. Batching multiple tasks into one commit is FORBIDDEN. Committing without two green reviews is FORBIDDEN. Working on the next task before committing the current one is FORBIDDEN."
   },
   "statusSection": {
-    "currentState": "T300-T368, T370-T374 Done. T369 (comment normalization), T366 (automatedSplit extraction) remain. Session 7 produced 14 commits.",
+    "currentState": "T300-T368, T369-T374 Done. T366 (automatedSplit extraction) remains. Session 7 produced 15 commits.",
     "goalState": "All verify/shell terminal features delivered AND polished to enterprise grade. Zero silenced errors. No god functions. No magic numbers. Fuzz-tested parsing. Poll-retry E2E tests. Fully parallelized unit tests. Documentation fully synced. All checks pass on all platforms.",
     "replanLog": [
       {
@@ -509,7 +509,8 @@
       "task": "Comment normalization: reduce verbose multi-line JSDoc to concise single-line",
       "description": "Several JS chunks have inconsistent comment styles: some use verbose multi-line `/** ... */` JSDoc with @param blocks, others use concise `// ...` single-line comments. The reverted session 4 changes (pr_split_16c, 16e, 16f) showed the intended direction — condensing verbose comments. Apply this consistently across all 30 JS chunk files. Rules: (1) Single-line functions get single-line comments. (2) Multi-line section headers use `// --- Section Name ---` format (not `// -------...-------`). (3) Parameter documentation uses `// <funcName>(<param descriptions>)` format. (4) Remove redundant blank lines between adjacent function definitions. Do NOT reduce line count by removing meaningful comments. Only reduce visual noise from overly verbose formatting.",
       "acceptance": "All 30 JS chunk files have consistent comment style. No verbose section separator lines (>50 chars of dashes). No multi-line JSDoc for single-responsibility functions. All files still ≤1000 lines. Full test suite passes. No functional changes.",
-      "status": "Not Started"
+      "status": "Done",
+      "notes": "24 files normalized (6 already clean). 29 JSDoc blocks converted to single-line. ~190 separator pairs collapsed to `// --- Section Name ---`. Two pre-existing files >1000 lines (16e=1072, 16c=1000) — 16e was already >1000 before normalization. Cross-build clean. Rule of Two: Pass 1 PASS, Pass 2 PASS."
     },
     {
       "id": "T370",

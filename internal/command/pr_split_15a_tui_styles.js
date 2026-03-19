@@ -13,11 +13,9 @@
     var viewportLib = require('osm:bubbles/viewport');
     var scrollbarLib = require('osm:termui/scrollbar');
 
-    // -----------------------------------------------------------------------
-    //  COLORS & Styles (T006)
+    // --- COLORS & Styles (T006) ---
     //
-    //  Design spec: docs/pr-split-tui-design.md §2
-    // -----------------------------------------------------------------------
+    // Design spec: docs/pr-split-tui-design.md §2
 
     // Adaptive color palette: auto-detects light/dark terminal background.
     // Uses {light, dark} objects resolved by lipgloss.AdaptiveColor.
@@ -204,11 +202,9 @@
     prSplit._wizardStyles = styles;
     prSplit._wizardColors = COLORS;
 
-    // -----------------------------------------------------------------------
-    //  Layout Mode Helper (T07)
+    // --- Layout Mode Helper (T07) ---
     //
-    //  Returns 'compact' (<60), 'standard' (60-100), or 'wide' (>100).
-    // -----------------------------------------------------------------------
+    // Returns 'compact' (<60), 'standard' (60-100), or 'wide' (>100).
 
     function layoutMode(s) {
         var w = s.width || 80;
@@ -220,11 +216,9 @@
     // Export for testing.
     prSplit._layoutMode = layoutMode;
 
-    // -----------------------------------------------------------------------
-    //  Helpers (T008)
+    // --- Helpers (T008) ---
     //
-    //  Progress bar, truncation, padding
-    // -----------------------------------------------------------------------
+    // Progress bar, truncation, padding
 
     function renderProgressBar(percent, width) {
         var barW = Math.max(10, (width || 40) - 10);

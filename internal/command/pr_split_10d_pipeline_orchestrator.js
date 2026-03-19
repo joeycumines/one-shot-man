@@ -6,9 +6,7 @@
     // NOTE: automatedSplit internally late-binds ~34 dependencies from prSplit.*
     // at the START of each invocation, including cross-chunk deps from 10a/10b/10c.
 
-    // -----------------------------------------------------------------------
-    //  automatedSplit — the main orchestrator
-    // -----------------------------------------------------------------------
+    // --- automatedSplit — the main orchestrator ---
 
     // Orchestrates the full automated PR splitting pipeline.
     // Steps: analyze → spawn → classify → receive → validate → plan →

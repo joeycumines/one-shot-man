@@ -13,9 +13,7 @@
 
 (function(prSplit) {
 
-    // -----------------------------------------------------------------------
-    //  TUI Guard
-    // -----------------------------------------------------------------------
+    // --- TUI Guard ---
 
     if (typeof tui === 'undefined' || typeof ctx === 'undefined' ||
         typeof output === 'undefined') {
@@ -25,12 +23,11 @@
     var shared = prSplit._modules.shared;
     if (!shared) return;
 
-    // -----------------------------------------------------------------------
-    //  Shared State — uses prSplit._state for cross-chunk cache coherence.
-    //  The pipeline (chunk 10) writes state.analysisCache, state.planCache,
-    //  etc. during automatedSplit, and TUI commands below read/write the
-    //  same properties so the REPL reflects pipeline results.
-    // -----------------------------------------------------------------------
+    // --- Shared State ---
+    // Uses prSplit._state for cross-chunk cache coherence. The pipeline
+    // (chunk 10) writes state.analysisCache, state.planCache, etc. during
+    // automatedSplit, and TUI commands below read/write the same properties
+    // so the REPL reflects pipeline results.
 
     var st = prSplit._state;
 
@@ -38,15 +35,12 @@
         [shared.contextItems]: {defaultValue: []}
     });
 
-    // -----------------------------------------------------------------------
-    //  WizardState — Guarded state machine for the pr-split wizard.
-    //
-    //  States: IDLE, CONFIG, BASELINE_FAIL, PLAN_GENERATION, PLAN_REVIEW,
-    //          PLAN_EDITOR, BRANCH_BUILDING, ERROR_RESOLUTION, EQUIV_CHECK,
-    //          FINALIZATION, DONE, CANCELLED, FORCE_CANCEL, PAUSED, ERROR
-    //
-    //  See scratch/w01-state-machine.md for full design.
-    // -----------------------------------------------------------------------
+    // --- WizardState ---
+    // Guarded state machine for the pr-split wizard.
+    // States: IDLE, CONFIG, BASELINE_FAIL, PLAN_GENERATION, PLAN_REVIEW,
+    //   PLAN_EDITOR, BRANCH_BUILDING, ERROR_RESOLUTION, EQUIV_CHECK,
+    //   FINALIZATION, DONE, CANCELLED, FORCE_CANCEL, PAUSED, ERROR
+    // See scratch/w01-state-machine.md for full design.
 
     // Valid transitions: { fromState: { toState: true, ... }, ... }
     var VALID_TRANSITIONS = {
@@ -73,11 +67,7 @@
     // States from which pause is allowed.
     var PAUSABLE_STATES = { 'PLAN_GENERATION': true, 'BRANCH_BUILDING': true };
 
-    /**
-     * WizardState — pr-split wizard state machine.
-     *
-     * @constructor
-     */
+    // WizardState is the pr-split wizard state machine.
     function WizardState() {
         this.current = 'IDLE';
         this.data = {};
@@ -86,13 +76,7 @@
         this.listeners = [];
     }
 
-    /**
-     * transition — move to a new state with guard check.
-     *
-     * @param {string} to - Target state name.
-     * @param {Object} [mergeData] - Data to merge into this.data.
-     * @throws {Error} If the transition is not in VALID_TRANSITIONS.
-     */
+    // transition moves to a new state with guard check.
     WizardState.prototype.transition = function(to, mergeData) {
         var from = this.current;
         var allowed = VALID_TRANSITIONS[from];
@@ -113,10 +97,7 @@
         }
     };
 
-    /**
-     * cancel — transition to CANCELLED from any non-terminal active state.
-     * No-op if already terminal (except PAUSED, which allows cancellation).
-     */
+    // cancel transitions to CANCELLED from any non-terminal active state.
     WizardState.prototype.cancel = function() {
         if (this.current === 'PAUSED') {
             delete this.data.pausedFrom;  // T084: clean up before cancel
@@ -127,10 +108,7 @@
         this.transition('CANCELLED');
     };
 
-    /**
-     * forceCancel — transition to FORCE_CANCEL. Allowed from any state
-     * except DONE and FORCE_CANCEL.
-     */
+    // forceCancel transitions to FORCE_CANCEL from any state except DONE and FORCE_CANCEL.
     WizardState.prototype.forceCancel = function() {
         if (this.current === 'DONE' || this.current === 'FORCE_CANCEL') return;
         // Force cancel bypasses normal transition matrix — always allowed
@@ -143,21 +121,14 @@
         }
     };
 
-    /**
-     * pause — transition to PAUSED if current state supports pausing.
-     * Stores the paused-from state for resume.
-     */
+    // pause transitions to PAUSED if current state supports pausing.
     WizardState.prototype.pause = function() {
         if (!PAUSABLE_STATES[this.current]) return;
         this.data.pausedFrom = this.current;  // T084: remember origin for resume
         this.transition('PAUSED');
     };
 
-    /**
-     * resume — transition from PAUSED back to the original state.
-     * Only works when current === 'PAUSED' and pausedFrom is recorded.
-     * @returns {boolean} true if resumed, false if no-op.
-     */
+    // resume transitions from PAUSED back to the original state.
     WizardState.prototype.resume = function() {  // T084
         if (this.current !== 'PAUSED') return false;
         var target = this.data.pausedFrom;
@@ -167,36 +138,24 @@
         return true;
     };
 
-    /**
-     * error — transition to ERROR from any non-terminal state.
-     * NOTE: PAUSED is in TERMINAL_STATES so error() is a no-op from PAUSED.
-     * This is intentional — PAUSED has no running pipeline that could error.
-     * @param {string} [message] - Error description.
-     */
+    // error transitions to ERROR from any non-terminal state.
+    // PAUSED is terminal so error() is a no-op from PAUSED (intentional).
     WizardState.prototype.error = function(message) {
         if (TERMINAL_STATES[this.current]) return;
         this.transition('ERROR', message ? { error: message } : undefined);
     };
 
-    /**
-     * isTerminal — returns true if no further pipeline activity is expected.
-     * @returns {boolean}
-     */
+    // isTerminal returns true if no further pipeline activity is expected.
     WizardState.prototype.isTerminal = function() {
         return !!TERMINAL_STATES[this.current];
     };
 
-    /**
-     * onTransition — register a listener for state changes.
-     * @param {function(string,string,Object)} fn - Called with (from, to, data).
-     */
+    // onTransition registers a listener for state changes.
     WizardState.prototype.onTransition = function(fn) {
         if (typeof fn === 'function') this.listeners.push(fn);
     };
 
-    /**
-     * reset — return to IDLE, clear data and history.
-     */
+    // reset returns to IDLE, clearing data and history.
     WizardState.prototype.reset = function() {
         this.current = 'IDLE';
         this.data = {};
@@ -205,15 +164,8 @@
         this.listeners = [];
     };
 
-    /**
-     * saveCheckpoint — capture current state for resume.
-     *
-     * T085: Also persists plan caches to disk via savePlan() so that a
-     * future resume (loadPlan) can restore analysisCache, groupsCache,
-     * planCache, executionResultCache, and conversationHistory.
-     *
-     * @returns {Object} Checkpoint data.
-     */
+    // saveCheckpoint captures current state for resume. T085: Also persists
+    // plan caches to disk via savePlan() for future resume via loadPlan().
     WizardState.prototype.saveCheckpoint = function() {
         this.checkpoint = {
             state: this.current,
@@ -241,9 +193,7 @@
     prSplit.WIZARD_VALID_TRANSITIONS = VALID_TRANSITIONS;
     prSplit.WIZARD_TERMINAL_STATES = TERMINAL_STATES;
 
-    // -----------------------------------------------------------------------
-    //  buildReport — JSON-serializable status report
-    // -----------------------------------------------------------------------
+    // --- buildReport — JSON-serializable status report ---
 
     function buildReport() {
         var runtime = prSplit.runtime;
@@ -299,21 +249,11 @@
 
     prSplit._buildReport = buildReport;
 
-    // -----------------------------------------------------------------------
-    //  Wizard state handlers — implement per-state logic for the wizard flow
-    // -----------------------------------------------------------------------
+    // --- Wizard state handlers ---
 
-    /**
-     * handleConfigState — validates configuration and prepares baseline verify
-     * config. Called when the wizard enters CONFIG state.
-     *
-     * T090: Actual baseline verification is deferred to the async pipeline
-     * (runAnalysisAsync / automatedSplit pre-step) so the TUI event loop is
-     * never blocked by synchronous exec calls.
-     *
-     * @param {Object} config - Pipeline configuration overrides.
-     * @returns {Object} { error, availableBranches, resume, checkpoint, baselineVerifyConfig }
-     */
+    // handleConfigState validates configuration and prepares baseline verify
+    // config. T090: Actual baseline verification is deferred to the async
+    // pipeline so the TUI event loop is never blocked.
     function handleConfigState(config) {
         var runtime = prSplit.runtime;
         var gitExec = prSplit._gitExec;
@@ -417,14 +357,7 @@
 
     prSplit._handleConfigState = handleConfigState;
 
-    /**
-     * handleBaselineFailState — BASELINE_FAIL state handler.
-     * Called when baseline verification has failed. Offers override or abort.
-     *
-     * @param {WizardState} wizard - Wizard in BASELINE_FAIL state.
-     * @param {string} choice - 'override' to proceed anyway, or 'abort' to cancel.
-     * @returns {Object} { error?, action, state }
-     */
+    // handleBaselineFailState handles BASELINE_FAIL: offers override or abort.
     function handleBaselineFailState(wizard, choice) {
         if (wizard.current !== 'BASELINE_FAIL') {
             return { error: 'wizard is not in BASELINE_FAIL state (current: ' + wizard.current + ')' };
@@ -442,17 +375,8 @@
 
     prSplit._handleBaselineFailState = handleBaselineFailState;
 
-    /**
-     * handlePlanReviewState — PLAN_REVIEW state handler.
-     * Called when a plan is ready for user review. The plan should already be
-     * stored in wizard.data.plan (set during PLAN_GENERATION → PLAN_REVIEW
-     * transition).
-     *
-     * @param {WizardState} wizard - Wizard in PLAN_REVIEW state.
-     * @param {string} choice - 'approve', 'edit', 'regenerate', or 'cancel'.
-     * @param {Object} [opts] - Options for the choice (e.g. feedback for regenerate).
-     * @returns {Object} { error?, action, state }
-     */
+    // handlePlanReviewState handles PLAN_REVIEW: user approves, edits,
+    // regenerates, or cancels the plan.
     function handlePlanReviewState(wizard, choice, opts) {
         if (wizard.current !== 'PLAN_REVIEW') {
             return { error: 'wizard is not in PLAN_REVIEW state (current: ' + wizard.current + ')' };
@@ -482,16 +406,8 @@
 
     prSplit._handlePlanReviewState = handlePlanReviewState;
 
-    /**
-     * handlePlanEditorState — PLAN_EDITOR state handler.
-     * Called when the user chooses to edit the plan. Validates the plan after
-     * edits and transitions back to PLAN_REVIEW.
-     *
-     * @param {WizardState} wizard - Wizard in PLAN_EDITOR state.
-     * @param {string} choice - 'done' to finish editing, or 'cancel' (unused, reserved).
-     * @param {Object} [plan] - The (possibly modified) plan to validate.
-     * @returns {Object} { error?, action, state, validationErrors? }
-     */
+    // handlePlanEditorState handles PLAN_EDITOR: validates edited plan and
+    // transitions back to PLAN_REVIEW.
     function handlePlanEditorState(wizard, choice, plan) {
         if (wizard.current !== 'PLAN_EDITOR') {
             return { error: 'wizard is not in PLAN_EDITOR state (current: ' + wizard.current + ')' };
@@ -523,16 +439,8 @@
 
     prSplit._handlePlanEditorState = handlePlanEditorState;
 
-    /**
-     * handleBranchBuildingState — BRANCH_BUILDING state handler.
-     * Executes plan splits, verifies each branch, and tracks per-branch status.
-     * On completion: transitions to EQUIV_CHECK (all pass) or ERROR_RESOLUTION (any fail).
-     *
-     * @param {WizardState} wizard - Wizard in BRANCH_BUILDING state.
-     * @param {Object} plan - The approved plan to execute.
-     * @param {Object} [opts] - Options (isCancelled: fn returning bool).
-     * @returns {Object} { error?, action, state, results, failedBranches }
-     */
+    // handleBranchBuildingState executes plan splits and verifies each branch.
+    // Transitions to EQUIV_CHECK (all pass) or ERROR_RESOLUTION (any fail).
     function handleBranchBuildingState(wizard, plan, opts) {
         if (wizard.current !== 'BRANCH_BUILDING') {
             return { error: 'wizard is not in BRANCH_BUILDING state (current: ' + wizard.current + ')' };
@@ -629,14 +537,8 @@
 
     prSplit._handleBranchBuildingState = handleBranchBuildingState;
 
-    /**
-     * handleErrorResolutionState — ERROR_RESOLUTION state handler.
-     * Decides how to handle failed branches: auto-resolve, skip, manual, or abort.
-     *
-     * @param {WizardState} wizard - Wizard in ERROR_RESOLUTION state.
-     * @param {string} choice - 'auto-resolve', 'skip', 'retry', 'manual', or 'abort'.
-     * @returns {Object} { error?, action, state }
-     */
+    // handleErrorResolutionState decides how to handle failed branches:
+    // auto-resolve, skip, retry, manual, or abort.
     function handleErrorResolutionState(wizard, choice) {
         if (wizard.current !== 'ERROR_RESOLUTION') {
             return { error: 'wizard is not in ERROR_RESOLUTION state (current: ' + wizard.current + ')' };
@@ -694,14 +596,7 @@
 
     prSplit._handleErrorResolutionState = handleErrorResolutionState;
 
-    /**
-     * handleEquivCheckState — EQUIV_CHECK state handler.
-     * Runs equivalence check and transitions to FINALIZATION.
-     *
-     * @param {WizardState} wizard - Wizard in EQUIV_CHECK state.
-     * @param {Object} plan - The plan to verify equivalence for.
-     * @returns {Object} { error?, action, state, equivalence }
-     */
+    // handleEquivCheckState runs equivalence check and transitions to FINALIZATION.
     function handleEquivCheckState(wizard, plan) {
         if (wizard.current !== 'EQUIV_CHECK') {
             return { error: 'wizard is not in EQUIV_CHECK state (current: ' + wizard.current + ')' };
@@ -737,14 +632,7 @@
 
     prSplit._handleEquivCheckState = handleEquivCheckState;
 
-    /**
-     * handleFinalizationState — FINALIZATION state handler.
-     * User decides: create PRs, view report, or finish.
-     *
-     * @param {WizardState} wizard - Wizard in FINALIZATION state.
-     * @param {string} choice - 'create-prs', 'done', or 'report'.
-     * @returns {Object} { error?, action, state }
-     */
+    // handleFinalizationState lets user create PRs, view report, or finish.
     function handleFinalizationState(wizard, choice) {
         if (wizard.current !== 'FINALIZATION') {
             return { error: 'wizard is not in FINALIZATION state (current: ' + wizard.current + ')' };

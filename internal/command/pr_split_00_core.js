@@ -12,9 +12,7 @@
 // See docs/architecture-pr-split-chunks.md for the full chunk loading contract.
 
 (function() {
-    // -----------------------------------------------------------------------
-    //  Module imports
-    // -----------------------------------------------------------------------
+    // --- Module imports ---
 
     var bt = require('osm:bt');
     var exec = require('osm:exec');
@@ -46,9 +44,7 @@
         lip = null;
     }
 
-    // -----------------------------------------------------------------------
-    //  Styled Output Helpers
-    // -----------------------------------------------------------------------
+    // --- Styled Output Helpers ---
 
     // style creates terminal-styled text using Lipgloss when available.
     // Degrades gracefully to plain text when Lipgloss is not loaded.
@@ -125,18 +121,14 @@
         };
     })();
 
-    // -----------------------------------------------------------------------
-    //  Configuration & Constants
-    // -----------------------------------------------------------------------
+    // --- Configuration & Constants ---
 
     // Read injected configuration with defaults.
     var cfg = (typeof prSplitConfig !== 'undefined') ? prSplitConfig : {};
     var COMMAND_NAME = (typeof config !== 'undefined' && config.name) ? config.name : 'pr-split';
     var MODE_NAME = 'pr-split';
 
-    // -----------------------------------------------------------------------
-    //  Discovery & Scoping
-    // -----------------------------------------------------------------------
+    // --- Discovery & Scoping ---
 
     // discoverVerifyCommand auto-detects the verification command for the
     // working directory. Checks for Makefile, makefile, and GNUmakefile.
@@ -289,9 +281,7 @@
         return cmd || fallbackCommand;
     }
 
-    // -----------------------------------------------------------------------
-    //  Mutable Runtime Config
-    // -----------------------------------------------------------------------
+    // --- Mutable Runtime Config ---
 
     var runtime = {
         baseBranch:    cfg.baseBranch    || 'main',
@@ -309,9 +299,7 @@
         mergeMethod:   cfg.mergeMethod   || 'squash'
     };
 
-    // -----------------------------------------------------------------------
-    //  Internal Helpers
-    // -----------------------------------------------------------------------
+    // --- Internal Helpers ---
 
     // gitExec runs a git command, optionally in the given directory.
     // Returns {stdout: string, stderr: string, code: number}.
@@ -649,9 +637,7 @@
         return s;
     }
 
-    // -----------------------------------------------------------------------
-    //  Cooperative Cancellation (via injectable callback)
-    // -----------------------------------------------------------------------
+    // --- Cooperative Cancellation (via injectable callback) ---
     //
     // The auto-split TUI was removed in T27. Cancellation is
     // now driven by a _cancelSource callback injected before pipeline runs.
@@ -681,9 +667,7 @@
         return typeof src === 'function' && src('forceCancelled');
     }
 
-    // -----------------------------------------------------------------------
-    //  Initialize globalThis.prSplit
-    // -----------------------------------------------------------------------
+    // --- Initialize globalThis.prSplit ---
 
     globalThis.prSplit = globalThis.prSplit || {};
     var prSplit = globalThis.prSplit;

@@ -10,9 +10,7 @@
     // Version of the chunked pr-split implementation.
     prSplit.VERSION = '6.0.0';
 
-    // -----------------------------------------------------------------------
-    //  Export Manifest — every name that chunks 00-11 should have attached.
-    // -----------------------------------------------------------------------
+    // --- Export Manifest — every name that chunks 00-11 should have attached. ---
 
     var EXPECTED_EXPORTS = [
         // Chunk 00: Core
@@ -80,9 +78,7 @@
         'analyzeRetrospective'
     ];
 
-    // -----------------------------------------------------------------------
-    //  Validation — log warnings for missing exports.
-    // -----------------------------------------------------------------------
+    // --- Validation — log warnings for missing exports. ---
 
     var missing = [];
     for (var i = 0; i < EXPECTED_EXPORTS.length; i++) {

@@ -2,6 +2,13 @@
 
 ## Session 7 — Continued
 
+### T369 Complete
+- Normalized comment style across 25 of 30 JS chunk files (5 already clean)
+- ~190 wide separator lines collapsed to `// --- Section Name ---`
+- 29 JSDoc blocks converted to single-line `//` comments
+- Cross-build: PASSED. Lint: PASSED.
+- Rule of Two: Pass 1 FAIL (missed 02_grouping.js:412), fixed, retry Pass 1 PASS, Pass 2 PASS
+
 ### T372 Complete
 - ADR-001 chunk table: expanded 17→30 entries (added 06b, 14a-14b, 15a-15d, 16a-16f)
 - All "14" references updated to "30": numbered files, RunString calls, testing loaders, alternatives

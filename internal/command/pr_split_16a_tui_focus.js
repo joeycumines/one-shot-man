@@ -36,9 +36,7 @@
     function formatReportForDisplay(report) { return prSplit._formatReportForDisplay(report); }
     var C = prSplit._TUI_CONSTANTS;
 
-    // -----------------------------------------------------------------------
-    //  Shared Viewport Helpers
-    // -----------------------------------------------------------------------
+    // --- Shared Viewport Helpers ---
 
     // T120/T123: Sync main viewport and scrollbar dimensions from current
     // terminal size. Hoisted to IIFE scope so all update handlers can call
@@ -65,9 +63,7 @@
         }
     }
 
-    // -----------------------------------------------------------------------
-    //  Editor Dialog Handler — move-file, rename-split, merge-splits
-    // -----------------------------------------------------------------------
+    // --- Editor Dialog Handler — move-file, rename-split, merge-splits ---
 
     function updateEditorDialog(msg, s) {
         var dialog = s.activeEditorDialog;
@@ -367,9 +363,7 @@
         }
     }
 
-    // -----------------------------------------------------------------------
-    //  Navigation Handlers — Back / Next / Up / Down
-    // -----------------------------------------------------------------------
+    // --- Navigation Handlers — Back / Next / Up / Down ---
 
     // Transition into the plan editor, resetting all inline editing state.
     function enterPlanEditor(s) {
@@ -527,9 +521,7 @@
         }
     }
 
-    // -----------------------------------------------------------------------
-    //  Focus System — keyboard-driven focus cycling across interactive elements
-    // -----------------------------------------------------------------------
+    // --- Focus System — keyboard-driven focus cycling across interactive elements ---
 
     // Returns an array of {id, type} describing focusable elements for the
     // current wizard screen.  Both handlers and views reference this so the
@@ -945,9 +937,7 @@
         return null;
     }
 
-    // -----------------------------------------------------------------------
-    //  Cross-chunk exports
-    // -----------------------------------------------------------------------
+    // --- Cross-chunk exports ---
     prSplit._syncMainViewport = syncMainViewport;
     prSplit._CHROME_ESTIMATE = CHROME_ESTIMATE;
     prSplit._updateEditorDialog = updateEditorDialog;

@@ -409,7 +409,7 @@
         };
     }
 
-    // ─── Async variants (T092) ──────────────────────────────────────────
+    // --- Async variants (T092) ---
     //
     // groupByDependencyAsync: Non-blocking version of groupByDependency.
     // Uses exec.spawn (via shellExecAsync) for file reads in the fallback

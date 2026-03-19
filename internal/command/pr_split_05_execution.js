@@ -10,12 +10,10 @@
     var validatePlan = prSplit.validatePlan;
     var worktreeTmpPath = prSplit._worktreeTmpPath;
 
-    // -----------------------------------------------------------------------
-    //  executeSplit — creates branches for each split in a plan
+    // --- executeSplit — creates branches for each split in a plan ---
     //
-    //  All branch operations run in a temporary git worktree so the user's
-    //  working directory remains completely untouched.
-    // -----------------------------------------------------------------------
+    // All branch operations run in a temporary git worktree so the user's
+    // working directory remains completely untouched.
     function executeSplit(plan, options) {
         options = options || {};
         var dir = resolveDir(plan.dir || '.');
@@ -439,9 +437,7 @@
         return { error: null, results: results, overallSkippedFiles: overallSkipped };
     }
 
-    // -----------------------------------------------------------------------
-    //  Exports
-    // -----------------------------------------------------------------------
+    // --- Exports ---
     prSplit.executeSplit = executeSplit;
     prSplit.executeSplitAsync = executeSplitAsync;
 })(globalThis.prSplit);

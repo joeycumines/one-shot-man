@@ -37,7 +37,12 @@
     //   rows/cols default to 24/120.
     //   env is an optional object of additional environment variables.
     function spawnShellSession(worktreeDir, opts) {
-        if (!canSpawnInteractiveShell()) {
+        // T338: Call through prSplit.canSpawnInteractiveShell so tests can
+        // override the platform check without dealing with closure binding.
+        var checkFn = (typeof prSplit.canSpawnInteractiveShell === 'function')
+            ? prSplit.canSpawnInteractiveShell
+            : canSpawnInteractiveShell;
+        if (!checkFn()) {
             throw new Error('Interactive shell requires Unix (Linux/macOS). ' +
                 'CaptureSession-based PTY is not available on this platform.');
         }

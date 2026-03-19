@@ -12,9 +12,15 @@
 - Verified: zero remaining "14 " count references in ADR-001
 
 ### Next Tasks
-- T374: Extract helpers from PrSplitCommand.Execute()
 - T369: Comment normalization
 - T366: automatedSplit extraction (deferred — risky)
+
+### T374 Complete
+- Extracted 3 methods from Execute(): applyConfigDefaults(), validateFlags(), setupEngineGlobals()
+- Execute() reduced from ~232 to ~130 lines
+- Cross-build: PASSED (all 3 platforms)
+- Config/validation tests: PASSED. E2E tests: PASSED.
+- Rule of Two: Pass 1 PASS, Pass 2 PASS
 
 ### T367 Complete
 - Added `t.Parallel()` to ~270 tests across 16 test files

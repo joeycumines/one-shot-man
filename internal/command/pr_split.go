@@ -285,65 +285,10 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	}
 	defer stop()
 
-	// Apply config defaults — flags override config values. Config keys
-	// are namespaced under the "pr-split" command section or global:
-	//   pr-split.base=develop
-	//   pr-split.strategy=extension
-	//   pr-split.max=8
-	//   pr-split.prefix=split/
-	//   pr-split.verify=make    (or empty for auto-detect)
-	//   pr-split.dry-run=true
-	if c.config != nil {
-		applyConfigDefault := func(key string, target *string, flagDefault string) {
-			if v, ok := c.config.GetCommandOption("pr-split", key); ok && (*target == flagDefault || *target == "") {
-				*target = v
-			}
-		}
-		applyConfigDefault("base", &c.baseBranch, "main")
-		applyConfigDefault("strategy", &c.strategy, "directory")
-		if v, ok := c.config.GetCommandOption("pr-split", "max"); ok && (c.maxFiles == 10 || c.maxFiles == 0) {
-			if n, err := strconv.Atoi(v); err == nil && n > 0 {
-				c.maxFiles = n
-			}
-		}
-		applyConfigDefault("prefix", &c.branchPrefix, "split/")
-		applyConfigDefault("verify", &c.verifyCommand, "")
-		if v, ok := c.config.GetCommandOption("pr-split", "dry-run"); ok && !c.dryRun {
-			c.dryRun = v == "true" || v == "1" || v == "yes"
-		}
-		applyConfigDefault("claude-command", &c.claudeCommand, "")
-		if v, ok := c.config.GetCommandOption("pr-split", "claude-arg"); ok && len(c.claudeArgs) == 0 {
-			c.claudeArgs = append(c.claudeArgs, v)
-		}
-		applyConfigDefault("claude-model", &c.claudeModel, "")
-		applyConfigDefault("claude-config-dir", &c.claudeConfigDir, "")
-		applyConfigDefault("claude-env", &c.claudeEnv, "")
-		if v, ok := c.config.GetCommandOption("pr-split", "timeout"); ok && c.timeout == 0 {
-			if d, err := time.ParseDuration(v); err == nil && d > 0 {
-				c.timeout = d
-			}
-		}
-		if v, ok := c.config.GetCommandOption("pr-split", "resume"); ok && !c.resume {
-			c.resume = v == "true" || v == "1" || v == "yes"
-		}
-		if v, ok := c.config.GetCommandOption("pr-split", "cleanup-on-failure"); ok && !c.cleanupOnFailure {
-			c.cleanupOnFailure = v == "true" || v == "1" || v == "yes"
-		}
-	}
-
-	// Validate flags after config defaults are applied.
-	validStrategies := map[string]bool{
-		"directory": true, "directory-deep": true, "extension": true,
-		"chunks": true, "dependency": true, "auto": true,
-	}
-	if !validStrategies[c.strategy] {
-		return fmt.Errorf("invalid --strategy %q: must be one of directory, directory-deep, extension, chunks, dependency, auto", c.strategy)
-	}
-	if c.maxFiles < 1 {
-		return fmt.Errorf("invalid --max %d: must be at least 1", c.maxFiles)
-	}
-	if c.timeout < 0 {
-		return fmt.Errorf("invalid --timeout %s: must be non-negative", c.timeout)
+	// Apply config-file defaults (flags take precedence) and validate.
+	c.applyConfigDefaults()
+	if err := c.validateFlags(); err != nil {
+		return err
 	}
 
 	engine, cleanup, err := c.PrepareEngine(ctx, stdout, stderr)
@@ -352,52 +297,8 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	}
 	defer cleanup()
 
-	// Inject command name for state namespacing
-	const commandName = "pr-split"
-	engine.SetGlobal("config", map[string]any{
-		"name": commandName,
-	})
-
-	// Set up global variables
-	engine.SetGlobal("prSplitTemplate", prSplitTemplate)
-
-	// Expose split configuration to JS
-	claudeArgsList := make([]string, len(c.claudeArgs))
-	copy(claudeArgsList, c.claudeArgs)
-	claudeEnvMap := parseClaudeEnv(c.claudeEnv)
-	engine.SetGlobal("prSplitConfig", map[string]any{
-		"baseBranch":       c.baseBranch,
-		"strategy":         c.strategy,
-		"maxFiles":         c.maxFiles,
-		"branchPrefix":     c.branchPrefix,
-		"verifyCommand":    c.verifyCommand,
-		"dryRun":           c.dryRun,
-		"jsonOutput":       c.jsonOutput,
-		"claudeCommand":    c.claudeCommand,
-		"claudeArgs":       claudeArgsList,
-		"claudeModel":      c.claudeModel,
-		"claudeConfigDir":  c.claudeConfigDir,
-		"claudeEnv":        claudeEnvMap,
-		"timeoutMs":        int64(c.timeout / time.Millisecond),
-		"resumeFromPlan":   c.resume,
-		"cleanupOnFailure": c.cleanupOnFailure,
-	})
-
-	// TUI Mux — terminal multiplexer between osm and child PTY (Claude Code).
-	// Uses os.Stdin directly (not go-prompt's wrapped readers) because
-	// the command-blocking model ensures go-prompt is paused during passthrough.
-	// stdout is injected for testability; in production it's os.Stdout.
-	termFd := int(os.Stdin.Fd())
-	tuiMux := termmux.New(os.Stdin, stdout, termFd)
-
-	// Expose the mux to JS through the standardized osm:termmux interface.
-	// This replaces the previous hand-crafted map[string]any with
-	// the module's WrapMux, ensuring JS sees the same API as
-	// require('osm:termmux').newMux() would produce.
-	engine.SetGlobal("tuiMux", termmuxmod.WrapMux(ctx, engine.Runtime(), tuiMux))
-
-	// Load the chunked script files
-	if err := loadChunkedScript(engine); err != nil {
+	termFd, err := c.setupEngineGlobals(ctx, engine, stdout)
+	if err != nil {
 		return err
 	}
 
@@ -500,6 +401,130 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		}
 	}
 
+	return nil
+}
+
+// setupEngineGlobals injects JS globals (config, prSplitConfig, template,
+// tuiMux) and loads the 30 chunk files into the Goja engine. Returns the
+// terminal file descriptor (needed for interactive-mode terminal state
+// save/restore).
+func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripting.Engine, stdout io.Writer) (termFd int, err error) {
+	// Inject command name for state namespacing.
+	engine.SetGlobal("config", map[string]any{
+		"name": "pr-split",
+	})
+
+	// Prompt template embedded from pr_split_template.md.
+	engine.SetGlobal("prSplitTemplate", prSplitTemplate)
+
+	// Expose split configuration to JS.
+	claudeArgsList := make([]string, len(c.claudeArgs))
+	copy(claudeArgsList, c.claudeArgs)
+	claudeEnvMap := parseClaudeEnv(c.claudeEnv)
+	engine.SetGlobal("prSplitConfig", map[string]any{
+		"baseBranch":       c.baseBranch,
+		"strategy":         c.strategy,
+		"maxFiles":         c.maxFiles,
+		"branchPrefix":     c.branchPrefix,
+		"verifyCommand":    c.verifyCommand,
+		"dryRun":           c.dryRun,
+		"jsonOutput":       c.jsonOutput,
+		"claudeCommand":    c.claudeCommand,
+		"claudeArgs":       claudeArgsList,
+		"claudeModel":      c.claudeModel,
+		"claudeConfigDir":  c.claudeConfigDir,
+		"claudeEnv":        claudeEnvMap,
+		"timeoutMs":        int64(c.timeout / time.Millisecond),
+		"resumeFromPlan":   c.resume,
+		"cleanupOnFailure": c.cleanupOnFailure,
+	})
+
+	// TUI Mux — terminal multiplexer between osm and child PTY (Claude Code).
+	// Uses os.Stdin directly (not go-prompt's wrapped readers) because
+	// the command-blocking model ensures go-prompt is paused during passthrough.
+	// stdout is injected for testability; in production it's os.Stdout.
+	termFd = int(os.Stdin.Fd())
+	tuiMux := termmux.New(os.Stdin, stdout, termFd)
+
+	// Expose the mux to JS through the standardized osm:termmux interface.
+	engine.SetGlobal("tuiMux", termmuxmod.WrapMux(ctx, engine.Runtime(), tuiMux))
+
+	// Load the 30 chunked script files in dependency order.
+	if err := loadChunkedScript(engine); err != nil {
+		return 0, err
+	}
+
+	return termFd, nil
+}
+
+// applyConfigDefaults applies config-file values to command fields where the
+// field still holds its flag default. Flags override config values —
+// config keys are namespaced under the "pr-split" command section:
+//
+//	pr-split.base=develop
+//	pr-split.strategy=extension
+//	pr-split.max=8
+//	pr-split.prefix=split/
+//	pr-split.verify=make
+//	pr-split.dry-run=true
+func (c *PrSplitCommand) applyConfigDefaults() {
+	if c.config == nil {
+		return
+	}
+	applyStr := func(key string, target *string, flagDefault string) {
+		if v, ok := c.config.GetCommandOption("pr-split", key); ok && (*target == flagDefault || *target == "") {
+			*target = v
+		}
+	}
+	applyStr("base", &c.baseBranch, "main")
+	applyStr("strategy", &c.strategy, "directory")
+	if v, ok := c.config.GetCommandOption("pr-split", "max"); ok && (c.maxFiles == 10 || c.maxFiles == 0) {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			c.maxFiles = n
+		}
+	}
+	applyStr("prefix", &c.branchPrefix, "split/")
+	applyStr("verify", &c.verifyCommand, "")
+	if v, ok := c.config.GetCommandOption("pr-split", "dry-run"); ok && !c.dryRun {
+		c.dryRun = v == "true" || v == "1" || v == "yes"
+	}
+	applyStr("claude-command", &c.claudeCommand, "")
+	if v, ok := c.config.GetCommandOption("pr-split", "claude-arg"); ok && len(c.claudeArgs) == 0 {
+		c.claudeArgs = append(c.claudeArgs, v)
+	}
+	applyStr("claude-model", &c.claudeModel, "")
+	applyStr("claude-config-dir", &c.claudeConfigDir, "")
+	applyStr("claude-env", &c.claudeEnv, "")
+	if v, ok := c.config.GetCommandOption("pr-split", "timeout"); ok && c.timeout == 0 {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			c.timeout = d
+		}
+	}
+	if v, ok := c.config.GetCommandOption("pr-split", "resume"); ok && !c.resume {
+		c.resume = v == "true" || v == "1" || v == "yes"
+	}
+	if v, ok := c.config.GetCommandOption("pr-split", "cleanup-on-failure"); ok && !c.cleanupOnFailure {
+		c.cleanupOnFailure = v == "true" || v == "1" || v == "yes"
+	}
+}
+
+// validateFlags checks that command flags hold valid values after config
+// defaults have been applied. Returns a descriptive error on the first
+// invalid value found.
+func (c *PrSplitCommand) validateFlags() error {
+	validStrategies := map[string]bool{
+		"directory": true, "directory-deep": true, "extension": true,
+		"chunks": true, "dependency": true, "auto": true,
+	}
+	if !validStrategies[c.strategy] {
+		return fmt.Errorf("invalid --strategy %q: must be one of directory, directory-deep, extension, chunks, dependency, auto", c.strategy)
+	}
+	if c.maxFiles < 1 {
+		return fmt.Errorf("invalid --max %d: must be at least 1", c.maxFiles)
+	}
+	if c.timeout < 0 {
+		return fmt.Errorf("invalid --timeout %s: must be non-negative", c.timeout)
+	}
 	return nil
 }
 

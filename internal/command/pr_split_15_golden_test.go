@@ -109,3 +109,139 @@ func TestGolden_ShellPane_Active(t *testing.T) {
 	}
 	testGolden(t, "shell-pane-active", raw.(string))
 }
+
+// TestGolden_TabBar_AllTabs renders the pane divider tab bar with all 4 tabs
+// (Claude, Output, Verify, Shell) visible and compares against the golden file.
+func TestGolden_TabBar_AllTabs(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		setupPlanCache();
+		var s = initState('BRANCH_BUILDING');
+		s.splitViewEnabled = true;
+		s.splitViewTab = 'claude';
+		s.splitViewFocus = 'wizard';
+		s.width = 80;
+		s.height = 24;
+		s.isProcessing = true;
+		s.executionResults = [{sha: 'abc'}];
+		s.executingIdx = 1;
+		s.verifyingIdx = 0;
+		s.verificationResults = [];
+		s.outputLines = [];
+
+		// Mock verify session (makes Verify tab visible).
+		s.activeVerifySession = {
+			isDone: function() { return false; },
+			exitCode: function() { return 0; },
+			output: function() { return 'Running...'; },
+			screen: function() { return 'Running...'; },
+			write: function() {},
+			close: function() {},
+			kill: function() {},
+			pause: function() {},
+			resume: function() {}
+		};
+		s.activeVerifyBranch = 'split/01-types';
+		s.activeVerifyStartTime = Date.now();
+		s.verifyElapsedMs = 0;
+		s.verifyScreen = '';
+		s.verifyViewportOffset = 0;
+		s.verifyAutoScroll = true;
+
+		// Mock shell session (makes Shell tab visible).
+		s.shellSession = {
+			isDone: function() { return false; },
+			exitCode: function() { return 0; },
+			output: function() { return '$ '; },
+			screen: function() { return '$ '; },
+			write: function() {},
+			close: function() {},
+			kill: function() {},
+			pause: function() {},
+			resume: function() {}
+		};
+		s.shellScreen = '';
+		s.shellViewOffset = 0;
+		s.shellAutoScroll = true;
+
+		var view = globalThis.prSplit._wizardView(s);
+		var lines = view.split('\n');
+		for (var i = 0; i < lines.length; i++) {
+			if (lines[i].indexOf('\u2524') >= 0) {
+				return lines[i];
+			}
+		}
+		return 'FAIL: pane divider line not found';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := raw.(string)
+	if got == "FAIL: pane divider line not found" {
+		t.Fatal(got)
+	}
+	testGolden(t, "tab-bar-all-tabs", got)
+}
+
+// TestGolden_TabBar_VerifyOnly renders the pane divider tab bar with only
+// Claude, Output, and Verify tabs (no Shell) and compares against the golden file.
+func TestGolden_TabBar_VerifyOnly(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		setupPlanCache();
+		var s = initState('BRANCH_BUILDING');
+		s.splitViewEnabled = true;
+		s.splitViewTab = 'claude';
+		s.splitViewFocus = 'wizard';
+		s.width = 80;
+		s.height = 24;
+		s.isProcessing = true;
+		s.executionResults = [{sha: 'abc'}];
+		s.executingIdx = 1;
+		s.verifyingIdx = 0;
+		s.verificationResults = [];
+		s.outputLines = [];
+
+		// Mock verify session (makes Verify tab visible).
+		s.activeVerifySession = {
+			isDone: function() { return false; },
+			exitCode: function() { return 0; },
+			output: function() { return 'Running...'; },
+			screen: function() { return 'Running...'; },
+			write: function() {},
+			close: function() {},
+			kill: function() {},
+			pause: function() {},
+			resume: function() {}
+		};
+		s.activeVerifyBranch = 'split/01-types';
+		s.activeVerifyStartTime = Date.now();
+		s.verifyElapsedMs = 0;
+		s.verifyScreen = '';
+		s.verifyViewportOffset = 0;
+		s.verifyAutoScroll = true;
+
+		// No shellSession — Shell tab should NOT appear.
+
+		var view = globalThis.prSplit._wizardView(s);
+		var lines = view.split('\n');
+		for (var i = 0; i < lines.length; i++) {
+			if (lines[i].indexOf('\u2524') >= 0) {
+				return lines[i];
+			}
+		}
+		return 'FAIL: pane divider line not found';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := raw.(string)
+	if got == "FAIL: pane divider line not found" {
+		t.Fatal(got)
+	}
+	testGolden(t, "tab-bar-verify-only", got)
+}

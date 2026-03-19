@@ -592,7 +592,7 @@ func TestChunk16_T38_HelpOverlayBindings(t *testing.T) {
 		if (rendered.indexOf('Ctrl+Tab') === -1) {
 			errors.push('help overlay missing Ctrl+Tab');
 		}
-		if (rendered.indexOf('Switch wizard / Claude') === -1) {
+		if (rendered.indexOf('Focus wizard / terminal pane') === -1) {
 			errors.push('help overlay missing pane switch description');
 		}
 		if (rendered.indexOf('Ctrl+L') === -1) {

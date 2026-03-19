@@ -29,9 +29,6 @@ import (
 //   - Wizard state transitions through to DONE
 func TestIntegration_WizardBaselineRetry(t *testing.T) {
 	// NOT parallel — uses chdirTestPipeline (os.Chdir is process-global).
-	if testing.Short() {
-		t.Skip("integration test")
-	}
 
 	// Set up repo where baseline verify FAILS on main (missing .verify-ok)
 	// but PASSES on feature (has .verify-ok). Split branches also verify
@@ -177,9 +174,6 @@ func TestIntegration_WizardBaselineRetry(t *testing.T) {
 // (executeSplit from chunk 05, verifyEquivalence from chunk 06).
 func TestIntegration_WizardHandlerChain_PlanReject(t *testing.T) {
 	// NOT parallel — uses chdirTestPipeline (os.Chdir is process-global).
-	if testing.Short() {
-		t.Skip("integration test")
-	}
 
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: []TestPipelineFile{
@@ -417,9 +411,6 @@ func TestIntegration_WizardHandlerChain_PlanReject(t *testing.T) {
 // Uses a verifyCommand that fails for branches containing a specific file.
 func TestIntegration_WizardHandlerChain_BranchFailSkip(t *testing.T) {
 	// NOT parallel — uses chdirTestPipeline (os.Chdir is process-global).
-	if testing.Short() {
-		t.Skip("integration test")
-	}
 
 	// verify-ok exists only in split/01-pkg. split/02-cmd doesn't have it → fails.
 	// NOTE: executeSplit chains branches (split/02 branches from split/01),
@@ -635,9 +626,6 @@ func assertHistoryLen(t *testing.T, evalJS func(string) (any, error), want int) 
 // All branches pass verification. Equivalence check passes.
 func TestIntegration_WizardHandlerChain_HappyPath(t *testing.T) {
 	// NOT parallel — uses chdirTestPipeline (os.Chdir is process-global).
-	if testing.Short() {
-		t.Skip("integration test")
-	}
 
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: []TestPipelineFile{
@@ -793,9 +781,6 @@ func TestIntegration_WizardHandlerChain_HappyPath(t *testing.T) {
 // branch building.
 func TestIntegration_WizardHandlerChain_PlanEditRoundtrip(t *testing.T) {
 	// NOT parallel — uses chdirTestPipeline (os.Chdir is process-global).
-	if testing.Short() {
-		t.Skip("integration test")
-	}
 
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: []TestPipelineFile{
@@ -983,9 +968,6 @@ func TestIntegration_WizardHandlerChain_PlanEditRoundtrip(t *testing.T) {
 // error-retry, a new plan without the problematic file succeeds.
 func TestIntegration_WizardHandlerChain_ErrorRetry(t *testing.T) {
 	// NOT parallel — uses chdirTestPipeline (os.Chdir is process-global).
-	if testing.Short() {
-		t.Skip("integration test")
-	}
 
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: []TestPipelineFile{
@@ -1159,9 +1141,6 @@ func TestIntegration_WizardHandlerChain_ErrorRetry(t *testing.T) {
 // build but succeed on the second (after the flag is removed).
 func TestIntegration_WizardHandlerChain_ErrorAutoResolve(t *testing.T) {
 	// NOT parallel — uses chdirTestPipeline (os.Chdir is process-global).
-	if testing.Short() {
-		t.Skip("integration test")
-	}
 
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: []TestPipelineFile{
@@ -1296,9 +1275,6 @@ func TestIntegration_WizardHandlerChain_ErrorAutoResolve(t *testing.T) {
 // BRANCH_BUILDING, ERROR_RESOLUTION, EQUIV_CHECK.
 func TestIntegration_WizardCancelFromAllStates(t *testing.T) {
 	// NOT parallel — uses chdirTestPipeline (os.Chdir is process-global).
-	if testing.Short() {
-		t.Skip("integration test")
-	}
 
 	// Create a shared test pipeline for real git operations.
 	tp := chdirTestPipeline(t, TestPipelineOpts{
@@ -1571,9 +1547,6 @@ func TestIntegration_WizardCancelFromAllStates(t *testing.T) {
 // that cannot normally reach CANCELLED through regular transitions.
 func TestIntegration_WizardForceCancel(t *testing.T) {
 	// NOT parallel — uses chdirTestPipeline (os.Chdir is process-global).
-	if testing.Short() {
-		t.Skip("integration test")
-	}
 
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: []TestPipelineFile{
@@ -1727,9 +1700,6 @@ func TestIntegration_WizardForceCancel(t *testing.T) {
 // CONFIG → BASELINE_FAIL → abort → CANCELLED.
 func TestIntegration_WizardHandlerChain_BaselineFailAbort(t *testing.T) {
 	// NOT parallel — uses chdirTestPipeline (os.Chdir is process-global).
-	if testing.Short() {
-		t.Skip("integration test")
-	}
 
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: []TestPipelineFile{
@@ -1792,9 +1762,6 @@ func TestIntegration_WizardHandlerChain_BaselineFailAbort(t *testing.T) {
 // FINALIZATION → report (stays) → create-prs (self-transition) → done → DONE.
 func TestIntegration_WizardHandlerChain_FinalizationReport(t *testing.T) {
 	// NOT parallel — uses chdirTestPipeline (os.Chdir is process-global).
-	if testing.Short() {
-		t.Skip("integration test")
-	}
 
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: []TestPipelineFile{
@@ -1934,9 +1901,6 @@ func TestIntegration_WizardHandlerChain_FinalizationReport(t *testing.T) {
 // ERROR_RESOLUTION (abort) → CANCELLED.
 func TestIntegration_WizardHandlerChain_ErrorAbort(t *testing.T) {
 	// NOT parallel — uses chdirTestPipeline (os.Chdir is process-global).
-	if testing.Short() {
-		t.Skip("integration test")
-	}
 
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: []TestPipelineFile{
@@ -2022,9 +1986,6 @@ func TestIntegration_WizardHandlerChain_ErrorAbort(t *testing.T) {
 // transition listeners fire correctly and receive the expected arguments.
 func TestIntegration_WizardTransitionListener(t *testing.T) {
 	// NOT parallel — uses chdirTestPipeline (os.Chdir is process-global).
-	if testing.Short() {
-		t.Skip("integration test")
-	}
 
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: []TestPipelineFile{
@@ -2088,10 +2049,6 @@ func TestIntegration_WizardTransitionListener(t *testing.T) {
 // TestIntegration_WizardPauseResume verifies the pause() and resume mechanics.
 // pause() only applies from PAUSABLE_STATES (PLAN_GENERATION, BRANCH_BUILDING).
 func TestIntegration_WizardPauseResume(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration test")
-	}
-
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: []TestPipelineFile{
 			{"pkg/types.go", "package pkg\n\ntype Config struct{ Name string }\n"},
@@ -2197,10 +2154,6 @@ func TestIntegration_WizardPauseResume(t *testing.T) {
 // TestIntegration_WizardInvalidTransitions verifies that invalid state
 // transitions throw errors and leave the wizard state unchanged.
 func TestIntegration_WizardInvalidTransitions(t *testing.T) {
-	if testing.Short() {
-		t.Skip("integration test")
-	}
-
 	tp := chdirTestPipeline(t, TestPipelineOpts{
 		InitialFiles: []TestPipelineFile{
 			{"pkg/types.go", "package pkg\n\ntype Config struct{ Name string }\n"},

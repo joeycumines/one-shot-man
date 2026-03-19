@@ -14,11 +14,11 @@
 - 96b686bf: T365 fuzz tests (from session 6)
 - 63fae190: T367 t.Parallel() ~270 tests
 - 5fb3092b: T368 CLI flag E2E test
-- (pending): T371 duplicate test file cleanup
+- 3bd8acfa: T371 duplicate test file cleanup
+- (pending): T370 wizard integration test fix
 
 ### Next Tasks
-- T369: Comment normalization  
-- T370: Wizard test fix
+- T369: Comment normalization
 - T366: automatedSplit extraction (deferred — risky)
 
 ## Session 7 — t.Parallel() Research Report

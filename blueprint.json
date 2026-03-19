@@ -36,8 +36,8 @@
     "PER_TASK_COMMIT_PROTOCOL": "⚠️ MANDATORY — ZERO EXCEPTIONS — FOR EVERY SINGLE TASK: (1) REREAD the strict-review-gate Skill IN FULL — do not skim, do not skip, read every word. (2) PERFORM the Rule of Two PER THE SKILL — spawn subagent reviews, iterate until TWO CONTIGUOUS ISSUE-FREE reviews on the EXACT SAME DIFF. If either review fails, fix, reset counter to 0, restart. (3) READ the git-commit Skill IN FULL before writing any commit message. (4) COMMIT THAT ONE TASK — exactly one task per commit, immediately after passing the Rule of Two. Do not batch tasks. Do not defer commits. ASAP. (5) REREAD DIRECTIVE.txt after every commit — full re-read, not from memory. This 5-step process is NON-NEGOTIABLE. Skipping any step is grounds for termination. Batching multiple tasks into one commit is FORBIDDEN. Committing without two green reviews is FORBIDDEN. Working on the next task before committing the current one is FORBIDDEN."
   },
   "statusSection": {
-    "currentState": "T300-T348, T350-T352 Done. All verify/shell terminal tasks committed: T338 (a83ef51b), T346 (f006079f), T348 (18983733), T339-T345/T347 (prior session). T349 finalization pending.",
-    "goalState": "All verify/shell terminal features delivered via CaptureSession-based split-view tabs. Verify tab: live ANSI VTerm display, keyboard input forwarding, mouse forwarding. Shell tab: interactive shell in verify worktree via CaptureSession. Mouse forwarding to ALL terminals (Claude, Verify, Shell) via SGR escape sequences. Full E2E test coverage proving interactivity works. All checks pass on all platforms.",
+    "currentState": "T300-T352 Done (all verify/shell terminal tasks). T349 finalization passed: full build+lint+test green, cross-build (Linux/macOS/Windows) clean, all JS ≤1000 lines. Commit c8132637. Expansion phase: code quality, test robustness, refactoring.",
+    "goalState": "All verify/shell terminal features delivered AND polished to enterprise grade. Zero silenced errors. No god functions. No magic numbers. Fuzz-tested parsing. Poll-retry E2E tests. Fully parallelized unit tests. Documentation fully synced. All checks pass on all platforms.",
     "replanLog": [
       {
         "date": "2026-03-17",
@@ -46,6 +46,10 @@
       {
         "date": "2026-03-18",
         "note": "FULL REPLAN of T321-T335. Previous approach used raw PTY spawning (spawnPTY + mux.attach + mux.switchTo = blocking passthrough). Correct approach: CaptureSession-based tabs in split-view with screen() for display, write() for input, mouseToTermBytes() for mouse. Reverted all WIP raw-PTY code. Expanded scope to T321-T349 covering verify tab, shell tab, mouse forwarding, resize propagation, E2E tests, golden files, docs, and benchmarks."
+      },
+      {
+        "date": "2026-03-19",
+        "note": "T349 finalization: Fixed test timeout 12m→20m, help overlay test assertion. Expanded scope T360-T371 covering: scratch cleanup, catch block logging, magic number extraction, E2E flakiness (poll-retry), fuzz tests, automatedSplit refactoring, comment normalization, wizard integration test fixes, duplicate test file cleanup."
       }
     ]
   },
@@ -432,6 +436,92 @@
       "task": "Finalization: full test suite, cross-platform build, measure performance",
       "description": "After all tasks T321-T348: (1) Run `make` (full build + lint + test). Must pass clean. (2) Run `make cross-build` for all three platforms. (3) Run `make test-prsplit-all` with timing. (4) Verify zero lint errors, zero dead code. (5) Verify all new features work end-to-end. (6) Check all JS files are \u22641000 lines. (7) Document results in WIP.md.",
       "acceptance": "All checks pass on macOS and Linux. Cross-platform builds succeed. All new features work. Zero lint errors. Zero dead code. JS files within size limits. Performance benchmarks pass.",
+      "status": "Done",
+      "notes": "Fixed test suite timeout 12m→20m (config.mk). Fixed help overlay test assertion to match T337 text change. Full suite passes ~18.6m. Cross-build clean. Commit c8132637."
+    },
+    {
+      "id": "T360",
+      "task": "Clean stale review artifacts from scratch/",
+      "description": "The `scratch/` directory has accumulated 20 stale review artifacts (review-r1b.md through review-t349-r2.md, review-run1.md, review-run2.md, review1.md, t321-t325-diff.patch). These serve no runtime purpose and clutter the repository. Remove all `scratch/review-*.md` files and `scratch/t321-t325-diff.patch`. Keep only files that serve as active documentation or task tracking.",
+      "acceptance": "All stale review artifacts removed from scratch/. `ls scratch/` shows only actively-used files. `git status` shows the deletions. `make build` still passes.",
+      "status": "Done",
+      "notes": "Deleted 20 stale files (review-*.md, review1.md, t321-t325-diff.patch). scratch/ is gitignored so no commit needed."
+    },
+    {
+      "id": "T361",
+      "task": "Sync example.config.mk timeout with config.mk",
+      "description": "The `example.config.mk` still shows the old 12m timeout for `_CUSTOM_MAKE_ALL_TARGET_MAKE_ARGS` but `config.mk` was updated to 20m in T349. Sync the example file to match. Check for any other divergences between the two files.",
+      "acceptance": "example.config.mk timeout matches config.mk (20m). No other stale values in example.config.mk. Diff between example and config shows only legitimate site-local differences.",
+      "status": "Done"
+    },
+    {
+      "id": "T362",
+      "task": "Add log.debug to all silenced catch blocks in JS chunks",
+      "description": "There are 25+ instances of `catch (e) { /* ignore */ }` or `catch (e) { /* best effort */ }` across JS chunks, concentrated in: pr_split_16c_tui_handlers_verify.js (17), pr_split_16f_tui_model.js (7), pr_split_16e_tui_update.js (5), pr_split_10d_pipeline_orchestrator.js (4). These silently swallow errors from session lifecycle operations (.close(), .kill(), .interrupt(), .resize(), .screen(), .gotoBottom()). Replace each `/* ignore */` or `/* best effort */` with `log.debug('cleanup: <operation>: ' + (e.message || e))` to enable debugging without affecting normal operation. Use consistent format: `log.debug('<context>: <operation> failed: ' + (e.message || e))`.",
+      "acceptance": "Zero `/* ignore */` or `/* best effort */` catch blocks remain. Every catch block has a `log.debug(...)` call with a descriptive context string. The debug output is actionable (names the operation and includes the error message). `make build` and full test suite pass. No behavior changes — only debug logging added.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T363",
+      "task": "Consolidate magic numbers into named constants in JS chunks",
+      "description": "Several magic numbers are scattered across TUI code without constants: 5000 (output buffer cap), 2000 (double-click SIGKILL window ms), 120 (truncation length), 120000 (2-min conversation timeout), 100 (tick interval ms), 24 (default terminal rows), 12 (inline view height). Create a `TUI_CONSTANTS` object in pr_split_15a_tui_styles.js (the shared constants/styles chunk) containing: OUTPUT_BUFFER_CAP, SIGKILL_WINDOW_MS, TRUNCATION_WIDTH, CONVO_TIMEOUT_MS, TICK_INTERVAL_MS, DEFAULT_ROWS, INLINE_VIEW_HEIGHT. Update all references across chunks to use `TUI_CONSTANTS.<name>`. Only extract values that appear in 2+ locations or have non-obvious meaning.",
+      "acceptance": "All non-obvious numeric literals in TUI code are replaced with named constants. Each constant has a brief inline comment explaining its purpose. The TUI_CONSTANTS object is accessible via `prSplit._TUI_CONSTANTS` for test access. All tests pass. No behavior changes.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T364",
+      "task": "Replace bare time.Sleep in binary E2E tests with poll-retry loops",
+      "description": "In `internal/command/pr_split_binary_e2e_test.go`, there are 29 bare `time.Sleep` calls used for process synchronization. These are the primary source of test flakiness. The test already has `waitForPTYOutput()` which uses poll-retry (line 256). Replace all bare sleeps with equivalent poll-based waits. For sleeps that wait for 'render settle' or 'process startup', use `waitForPTYOutput` with an appropriate expected substring. For sleeps after key sends, use a short poll for screen change. The `pr_split_autosplit_recovery_test.go:3496` pattern (poll with deadline + 50ms retry) is the correct approach. This task covers pr_split_binary_e2e_test.go and pr_split_tui_pty_hang_test.go (8 sleeps).",
+      "acceptance": "Zero bare `time.Sleep` calls remain in binary E2E test files (pr_split_binary_e2e_test.go, pr_split_tui_pty_hang_test.go). All waits use poll-retry patterns with explicit deadlines. Tests pass reliably on 3 consecutive runs. Individual test execution time is equal or faster (no unnecessary 2s waits). Total binary E2E suite time reduced by at least 20%.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T365",
+      "task": "Add fuzz tests for plan parsing and classification",
+      "description": "The validation and parsing logic in pr_split has no fuzz tests despite handling complex structured input. Add `func Fuzz*` tests for: (1) `FuzzClassificationParsing` — fuzz the classification-to-groups parser (`classificationToGroups` in pr_split_10a_pipeline_config.js) with random input strings. (2) `FuzzPlanValidation` — fuzz the plan validation logic (`validatePlan` in pr_split_04_validation.js) with random JSON plan structures. (3) `FuzzConflictParsing` — fuzz conflict file parsing in pr_split_08_conflict.js. Each fuzz test should: create a JS engine, pass fuzzed input to the target function, verify no panics/crashes/unhandled exceptions. Add a new test file `internal/command/pr_split_fuzz_test.go`.",
+      "acceptance": "3 fuzz test functions exist and run when invoked with `go test -fuzz=FuzzClassification ./internal/command/...` etc. Each fuzz test exercises the target parser for 10+ seconds without crashes. Any crashes found are fixed. Corpus entries are committed to testdata/. The fuzz tests are tagged `prsplit_slow` to avoid running in normal builds.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T366",
+      "task": "Extract automatedSplit pipeline steps into named functions",
+      "description": "The `automatedSplit()` function in `pr_split_10d_pipeline_orchestrator.js` is 960 lines — the largest function in the codebase. It contains 9 pipeline steps (MCP setup, Claude spawn, classification, planning, execution, verification, conflict resolution, re-splitting, cleanup) as inline code blocks within a single function. Extract each step into a named function: `pipelineStepMCPSetup(ctx)`, `pipelineStepClassify(ctx)`, `pipelineStepPlan(ctx)`, `pipelineStepExecute(ctx)`, `pipelineStepVerify(ctx)`, `pipelineStepResolveConflicts(ctx)`, `pipelineStepEquivalence(ctx)`, `pipelineStepFinalize(ctx)`. Each receives a `pipelineContext` object with shared state (executor, plan, branchMap, etc.). The main `automatedSplit()` becomes a ~100-line orchestrator that calls steps sequentially. New file `pr_split_10e_pipeline_steps.js` if 10d exceeds 1000 lines after refactoring.",
+      "acceptance": "automatedSplit() is ≤200 lines. Each step function is independently named and documented. The pipeline context object is well-typed with JSDoc. All pipeline tests pass unchanged. No behavior changes. Commit message documents the extraction.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T367",
+      "task": "Add t.Parallel() to non-dependent unit tests in TUI test files",
+      "description": "Only ~30 of 350+ tests use `t.Parallel()`. Major test files like `pr_split_13_tui_test.go` (70+ tests) and several `pr_split_16_*_test.go` files don't use it. Add `t.Parallel()` to all tests that: (a) don't modify shared state, (b) don't use shared file system paths, (c) only use the JS engine created by `prsplittest.NewTUIEngineWithHelpers(t)` (which creates an isolated engine per call). Exclude tests that modify global state, use shared temp directories, or have documented serial dependencies.",
+      "acceptance": "At least 100 additional tests have `t.Parallel()` added. `go test -race -count=3 ./internal/command/...` passes clean (no race conditions). Test execution time for `test-prsplit-fast` decreases measurably. No flaky test failures.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T368",
+      "task": "E2E test for CLI flag passthrough (-claude-command, -claude-arg)",
+      "description": "Hana-san ran `osm pr-split -claude-command=ollama -claude-arg=launch -claude-arg=claude -claude-arg=--model=minimax-m2.5:cloud -claude-arg=--` and it broke. We need an automated test that exercises the CLI flag passthrough path. Create `TestBinaryE2E_ClaudeCommandFlags` that: (1) Sets up a test repo. (2) Creates a mock script that logs its argv (e.g., `/tmp/test-claude.sh` that writes `$@` to a file). (3) Runs `osm pr-split -claude-command=/tmp/test-claude.sh -claude-arg=--flag1 -claude-arg=--flag2`. (4) Verifies the mock script was invoked with the correct arguments. This tests the flag parsing and command construction WITHOUT requiring a real Claude installation.",
+      "acceptance": "TestBinaryE2E_ClaudeCommandFlags exists and passes. The test verifies: (a) -claude-command overrides the default command, (b) -claude-arg flags are passed through in order, (c) the constructed command matches the expected argv. Tagged prsplit_slow. Runs on Unix only.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T369",
+      "task": "Comment normalization: reduce verbose multi-line JSDoc to concise single-line",
+      "description": "Several JS chunks have inconsistent comment styles: some use verbose multi-line `/** ... */` JSDoc with @param blocks, others use concise `// ...` single-line comments. The reverted session 4 changes (pr_split_16c, 16e, 16f) showed the intended direction — condensing verbose comments. Apply this consistently across all 30 JS chunk files. Rules: (1) Single-line functions get single-line comments. (2) Multi-line section headers use `// --- Section Name ---` format (not `// -------...-------`). (3) Parameter documentation uses `// <funcName>(<param descriptions>)` format. (4) Remove redundant blank lines between adjacent function definitions. Do NOT reduce line count by removing meaningful comments. Only reduce visual noise from overly verbose formatting.",
+      "acceptance": "All 30 JS chunk files have consistent comment style. No verbose section separator lines (>50 chars of dashes). No multi-line JSDoc for single-responsibility functions. All files still ≤1000 lines. Full test suite passes. No functional changes.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T370",
+      "task": "Fix wizard integration tests that always self-skip",
+      "description": "Every test in `internal/command/pr_split_wizard_integration_test.go` includes `t.Skip('integration test')` at the top, making them effectively dead code. There are 15+ integration tests for the wizard flow that NEVER run. Either: (a) Remove the unconditional skip and tag the file with `//go:build prsplit_slow` (so they run with the slow suite), or (b) If the tests are genuinely broken and can't run, delete them and create replacement tests that work. Investigate each test to determine which approach is appropriate.",
+      "acceptance": "Zero unconditional `t.Skip` calls remain in wizard integration tests. Tests either: (a) run successfully with `prsplit_slow` tag and pass, or (b) are replaced with working alternatives, or (c) are deleted with justification documented in the commit message. `make test-prsplit-all` includes these tests. No regressions.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T371",
+      "task": "Clean up duplicate test file naming (legacy + chunk)",
+      "description": "Several test file pairs exist with duplicate naming: `pr_split_analysis_test.go` AND `pr_split_01_analysis_test.go`, `pr_split_pipeline_test.go` AND `pr_split_10_pipeline_test.go`, `pr_split_execution_test.go` AND `pr_split_05_execution_test.go`, `pr_split_grouping_test.go` AND `pr_split_02_grouping_test.go`. This is confusing and suggests an incomplete migration. Investigate each pair: if both contain tests, merge them into the numbered file (e.g., `pr_split_01_analysis_test.go`). If the unnumbered file is empty or duplicates the numbered one, delete it. Standardize on the `pr_split_NN_<name>_test.go` naming convention for chunk-specific tests.",
+      "acceptance": "No duplicate test file pairs remain. All chunk-specific tests use the numbered naming convention. No orphaned or empty test files. All tests pass after consolidation. Test function names are unique across the package.",
       "status": "Not Started"
     }
   ],

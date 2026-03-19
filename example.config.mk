@@ -7,7 +7,7 @@ CUSTOM_TARGETS_DEFINED := 1
 ##@ Custom Targets
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT BELOW THIS LINE, BEFORE THE `endif`
 
-_CUSTOM_MAKE_ALL_TARGET_MAKE_ARGS := all GO_TEST_FLAGS=-timeout=12m
+_CUSTOM_MAKE_ALL_TARGET_MAKE_ARGS := all GO_TEST_FLAGS=-timeout=20m
 
 .PHONY: make-all-with-log
 make-all-with-log: ## Run all targets with logging to build.log

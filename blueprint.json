@@ -36,7 +36,7 @@
     "PER_TASK_COMMIT_PROTOCOL": "⚠️ MANDATORY — ZERO EXCEPTIONS — FOR EVERY SINGLE TASK: (1) REREAD the strict-review-gate Skill IN FULL — do not skim, do not skip, read every word. (2) PERFORM the Rule of Two PER THE SKILL — spawn subagent reviews, iterate until TWO CONTIGUOUS ISSUE-FREE reviews on the EXACT SAME DIFF. If either review fails, fix, reset counter to 0, restart. (3) READ the git-commit Skill IN FULL before writing any commit message. (4) COMMIT THAT ONE TASK — exactly one task per commit, immediately after passing the Rule of Two. Do not batch tasks. Do not defer commits. ASAP. (5) REREAD DIRECTIVE.txt after every commit — full re-read, not from memory. This 5-step process is NON-NEGOTIABLE. Skipping any step is grounds for termination. Batching multiple tasks into one commit is FORBIDDEN. Committing without two green reviews is FORBIDDEN. Working on the next task before committing the current one is FORBIDDEN."
   },
   "statusSection": {
-    "currentState": "T300-T336 Done. CRITICAL PIVOT: Verify pane not visible in production — corrective tasks T350-T352 code complete + T337 code complete. ALL FOUR require per-task commit protocol (strict-review-gate → Rule of Two → git-commit → commit → reread DIRECTIVE.txt) INDIVIDUALLY before advancing. Blueprint refined per Hana-san's direct mandate: per-task commit is NON-NEGOTIABLE.",
+    "currentState": "T300-T348, T350-T352 Done. All verify/shell terminal tasks committed: T338 (a83ef51b), T346 (f006079f), T348 (18983733), T339-T345/T347 (prior session). T349 finalization pending.",
     "goalState": "All verify/shell terminal features delivered via CaptureSession-based split-view tabs. Verify tab: live ANSI VTerm display, keyboard input forwarding, mouse forwarding. Shell tab: interactive shell in verify worktree via CaptureSession. Mouse forwarding to ALL terminals (Claude, Verify, Shell) via SGR escape sequences. Full E2E test coverage proving interactivity works. All checks pass on all platforms.",
     "replanLog": [
       {
@@ -327,105 +327,105 @@
       "task": "CRITICAL: Fix verify pane auto-scroll — main viewport must show live terminal",
       "description": "ROOT CAUSE: In viewExecutionScreen() (pr_split_15c_tui_screens.js), the inline 12-row live terminal viewport sits at the BOTTOM of scrollable content. For 5+ splits, the branch list fills the visible area. pollVerifySession() (pr_split_16c_tui_handlers_verify.js) NEVER calls s.vp.gotoBottom() to auto-scroll the main viewport to show the inline terminal. Fix: In pollVerifySession(), after capturing s.verifyScreen, call s.vp.gotoBottom() if the user has not manually scrolled away. Add a s.verifyManualScroll boolean (set true on user Up/PgUp during BRANCH_BUILDING, reset to false when a new branch starts verifying). Only auto-scroll when s.verifyManualScroll is false. This ensures the inline terminal viewport is ALWAYS visible during verification unless the user explicitly scrolled away.",
       "acceptance": "During verification, the main wizard viewport auto-scrolls to show the inline live terminal output. User can see VTerm ANSI content updating in real-time. If user scrolls up to review branch results, auto-scroll pauses. When a new branch starts verifying, auto-scroll resumes. Unit test TestVerifyPoll_AutoScroll verifies gotoBottom is called during verify ticks. Integration test proves live terminal content is visible in the rendered view output at default scroll position.",
-      "status": "Code Complete — Awaiting Per-Task Commit Protocol"
+      "status": "Done"
     },
     {
       "id": "T351",
       "task": "CRITICAL: Fix inline verify terminal using s.verifyScreen instead of direct screen() call",
       "description": "In viewExecutionScreen() (pr_split_15c_tui_screens.js), the inline 12-row terminal viewport calls s.activeVerifySession.screen() DIRECTLY during render. This is wrong: (a) it creates redundant screen() calls (pollVerifySession already captures to s.verifyScreen), (b) it couples the view function to the CaptureSession object, and (c) in the fallback path (no CaptureSession), the inline viewport disappears entirely. Fix: Replace the direct s.activeVerifySession.screen() call with s.verifyScreen. Also add a fallback: when s.verifyScreen is empty but s.verifyOutput[currentBranch] has content, render the last N lines of verifyOutput as plain text. This ensures the inline viewport works in BOTH the CaptureSession and fallback paths.",
       "acceptance": "The inline terminal in viewExecutionScreen reads from s.verifyScreen (snapshot) instead of calling screen() directly. In the fallback path (no CaptureSession), the inline viewport shows the last 12 lines of verify command output from s.verifyOutput. No redundant screen() calls. Unit test TestExecScreen_InlineTerminal_UsesVerifyScreen verifies the snapshot is used. Unit test TestExecScreen_InlineTerminal_FallbackOutput verifies fallback text output.",
-      "status": "Code Complete — Awaiting Per-Task Commit Protocol"
+      "status": "Done"
     },
     {
       "id": "T352",
       "task": "CRITICAL: Verify tab fallback — populate verifyScreen from non-CaptureSession output",
       "description": "When CaptureSession is unavailable (Windows, or creation fails), the fallback path (runVerifyFallbackAsync in pr_split_16c_tui_handlers_verify.js) collects output into s.verifyOutput[branchName] but NEVER populates s.verifyScreen. This means: (a) the Verify tab in split-view shows 'No active verification' placeholder, (b) the inline terminal in viewExecutionScreen shows nothing. Fix: In the fallback poll handler, build a plain-text screen from the latest s.verifyOutput lines: s.verifyScreen = s.verifyOutput[currentBranch].slice(-rows).join('\\n'). This won't have ANSI colors but will at least show verify command output in real-time. Also ensure the Verify tab label appears even during fallback by checking s.verifyFallbackRunning as an alternative to s.activeVerifySession for tab visibility.",
       "acceptance": "During fallback verification (no CaptureSession), the Verify tab appears in the tab bar. s.verifyScreen is populated with plain-text verify output. The inline terminal in viewExecutionScreen shows the fallback output. The split-view Verify tab shows the fallback output. Unit test TestVerifyFallback_PopulatesVerifyScreen verifies s.verifyScreen is set during fallback. Unit test TestVerifyTab_FallbackVisibility verifies the tab label appears during fallback.",
-      "status": "Code Complete — Awaiting Per-Task Commit Protocol"
+      "status": "Done"
     },
     {
       "id": "T337",
       "task": "Update status bar with verify/shell tab keyboard shortcuts",
       "description": "In pr_split_15b_tui_chrome.js `renderStatusBar()` (line 280), when on BRANCH_BUILDING or EQUIV_CHECK screens with active verify session, update the status bar to show: (1) When verify tab is available: 'Ctrl+Tab: Verify  Ctrl+O: tabs'. (2) When shell is active: show 'Shell: active' indicator. (3) When input is being forwarded (bottom pane focused + verify/shell tab): show 'INPUT \u25b8 Verify' or 'INPUT \u25b8 Shell' to indicate keystrokes go to the terminal. This helps discoverability of the new interactive features. Also update the help overlay (search for `viewHelpOverlay` in pr_split_15d_tui_dialogs.js) to document the new verify/shell keyboard shortcuts.",
       "acceptance": "Status bar shows relevant keyboard shortcuts when verify/shell features are active. INPUT indicator appears when typing goes to a terminal tab. Help overlay (F1) documents all verify/shell keyboard shortcuts. No status bar overflow or truncation at 80 columns. Unit test `TestStatusBar_VerifyShellShortcuts` renders the status bar in various states and verifies correct shortcut display.",
-      "status": "Code Complete — Awaiting Per-Task Commit Protocol"
+      "status": "Done"
     },
     {
       "id": "T338",
       "task": "Graceful degradation: shell features on Windows",
       "description": "CaptureSession uses PTY which is Unix-only. On Windows: (1) The Shell button should be visible but disabled with tooltip 'Shell requires Unix (Linux/macOS)'. In the Shell button rendering (pr_split_15c_tui_screens.js:787), check `typeof termmux.newCaptureSession === 'function'` \u2014 if unavailable, render with `disabledButton()` style instead of `secondaryButton()`. (2) The verify CaptureSession already has a fallback path (`verifyFallbackRunning` state fields at line ~780). Verify tab should show plain-text output when CaptureSession is unavailable. (3) The `spawnShellSession()` function should throw a descriptive error that the click handler catches and displays as a notification. (4) Mouse forwarding is a no-op when no session exists (already guarded by null checks).",
       "acceptance": "On Windows: Shell button renders as disabled with explanation. No crashes or panics. Verify tab degrades to showing plain-text output from fallback verification. spawnShellSession throws a clear error. On Unix: full functionality. All guard conditions tested. Unit test `TestGracefulDegradation_NoShellOnWindows` (build-tagged) verifies disabled behavior.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T339",
       "task": "Unit tests: renderVerifyPane comprehensive test suite",
       "description": "Add tests for `renderVerifyPane()` covering: (1) `TestRenderVerifyPane_LiveOutput` \u2014 render with populated `verifyScreen` containing ANSI, verify escape sequences preserved. (2) `TestRenderVerifyPane_ScrollOffset` \u2014 render with various `verifyViewportOffset` values, verify correct lines visible. (3) `TestRenderVerifyPane_EmptyState` \u2014 render with no active session, verify placeholder shown. (4) `TestRenderVerifyPane_TitleInfo` \u2014 verify branch name and elapsed time in title. (5) `TestRenderVerifyPane_WidthTruncation` \u2014 verify ANSI-aware truncation at narrow widths. (6) `TestRenderVerifyPane_PausedStyle` \u2014 verify dim border when `verifyPaused` is true. All tests use the prsplittest helper package established in T316-T318.",
       "acceptance": "All 6 tests pass. Tests verify ANSI preservation, scroll behavior, empty state, title content, width handling, and paused styling. Tests use prsplittest helpers. No flaky tests (run 3 times clean). Tests complete within 10 seconds total.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T340",
       "task": "Unit tests: mouseToTermBytes comprehensive test suite",
       "description": "Add tests for `mouseToTermBytes()`: (1) `TestMouseToTermBytes_LeftClick` \u2014 left press at various coordinates. (2) `TestMouseToTermBytes_RightClick` \u2014 right press. (3) `TestMouseToTermBytes_MiddleClick` \u2014 middle press. (4) `TestMouseToTermBytes_Release` \u2014 release events for each button. (5) `TestMouseToTermBytes_WheelUp` \u2014 wheel up. (6) `TestMouseToTermBytes_WheelDown` \u2014 wheel down. (7) `TestMouseToTermBytes_Motion` \u2014 motion with button held. (8) `TestMouseToTermBytes_OffsetAdjustment` \u2014 verify pane offset subtraction. (9) `TestMouseToTermBytes_OutOfBounds` \u2014 negative adjusted coordinates return null. (10) `TestMouseToTermBytes_OneBased` \u2014 verify SGR coordinates are 1-based.",
       "acceptance": "All 10 tests pass. Full coverage of all mouse event types. Coordinate offset calculation verified. Boundary conditions tested. SGR format validated against terminal standard. No flaky tests.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T341",
       "task": "Unit tests: spawnShellSession and shell lifecycle",
       "description": "Add tests for shell CaptureSession lifecycle (Unix-only, build-tagged): (1) `TestSpawnShell_HappyPath` \u2014 spawn shell, write `echo hello\\n`, verify 'hello' in screen(), close. (2) `TestSpawnShell_ExitDetection` \u2014 spawn shell, write `exit\\n`, verify isDone() becomes true. (3) `TestSpawnShell_WorktreeDir` \u2014 spawn shell in a temp dir, write `pwd\\n`, verify output contains the temp dir. (4) `TestSpawnShell_Resize` \u2014 spawn, resize(40, 100), verify no errors. (5) `TestSpawnShell_WriteError` \u2014 close session, verify write() returns error. (6) `TestSpawnShell_ShellEnvDetection` \u2014 verify $SHELL is used when set, /bin/sh when not.",
       "acceptance": "All 6 tests pass on macOS and Linux. Tests use real PTY processes (not mocks). Each test completes within 10 seconds. No goroutine leaks. Tests are properly build-tagged for Unix only.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T342",
       "task": "Unit tests: keyboard and mouse forwarding for all terminal tabs",
       "description": "Add tests for the input forwarding logic: (1) `TestVerifyTabInput_KeyToWrite` \u2014 verify `keyToTermBytes` output is written to CaptureSession. (2) `TestShellTabInput_KeyToWrite` \u2014 same for shell tab. (3) `TestClaudeMouseForward_SGR` \u2014 verify mouse event generates correct SGR and is written to tuiMux. (4) `TestVerifyMouseForward_SGR` \u2014 same for verify. (5) `TestInputRouting_FocusSwitch` \u2014 verify Ctrl+Tab switches focus and changes where input goes. (6) `TestInputRouting_TabSwitch` \u2014 verify Ctrl+O cycles through available tabs. (7) `TestInputRouting_ReadOnlyOutput` \u2014 verify Output tab doesn't forward any keys to PTY. Tests should mock the CaptureSession/mux to verify write() calls without needing real PTY processes.",
       "acceptance": "All 7 tests pass. Input routing is verified for all tab/focus combinations. Mock-based tests don't require PTY. Tests complete within 10 seconds. Full branch coverage of the input forwarding code paths.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T343",
       "task": "E2E test: verify tab interactive lifecycle (Unix-only)",
       "description": "Add binary E2E test `TestBinaryE2E_VerifyTabInteractive` (build-tagged prsplit_slow + unix): (1) Create a test repo with a verify command that runs `cat` (waits for stdin). (2) Launch osm pr-split TUI in test mode. (3) Navigate to BRANCH_BUILDING, start verification. (4) Verify split-view auto-opens with Verify tab. (5) Switch focus to Verify tab (Ctrl+Tab). (6) Type 'hello\\n' which should be forwarded to `cat`. (7) Verify 'hello' appears in the Verify pane output. (8) Send Ctrl+D (EOF) to end cat. (9) Verify session completes and verify tab updates. This proves end-to-end that the verify terminal is truly interactive.",
       "acceptance": "Test passes reliably on macOS and Linux. Proves keyboard input reaches the verify process and output is displayed in the Verify tab. Full lifecycle: start \u2192 interact \u2192 complete. No goroutine leaks. Test completes within 60 seconds.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T344",
       "task": "E2E test: shell tab spawn and interact (Unix-only)",
       "description": "Add binary E2E test `TestBinaryE2E_ShellTabInteractive` (build-tagged prsplit_slow + unix): (1) Create test repo with active verify session. (2) Navigate to the Shell button and activate it. (3) Verify shell tab opens in split-view. (4) Type `pwd\\n` in the shell. (5) Verify the worktree directory appears in shell output. (6) Type `exit\\n`. (7) Verify shell tab closes and verify resumes. This proves the full shell lifecycle end-to-end.",
       "acceptance": "Test passes reliably. Shell spawns in correct worktree directory. Commands execute and output appears. Shell exit cleans up properly. Verify resumes after shell exit. Test completes within 60 seconds.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T345",
       "task": "Add config.mk targets for PR Split test groups",
       "description": "Add Make targets to `config.mk`: (1) `test-prsplit-fast`: Runs PR Split tests excluding prsplit_slow tag, 600s timeout. (2) `test-prsplit-all`: Runs ALL PR Split tests including prsplit_slow, 900s timeout. (3) `test-prsplit-e2e`: Runs only E2E tests (prsplit_slow tag), 300s timeout. (4) `cross-build`: Runs `GOOS=linux`, `GOOS=darwin`, `GOOS=windows` builds. (5) `check-session-time`: Shows elapsed/remaining time for 9-hour session. (6) `record-session-start`: Records session start timestamp. Each target includes timing output and pipelines through fold/tail to prevent context explosion. Targets must work with the project's Makefile infrastructure (use $(GO), $(PROJECT_ROOT), etc.).",
       "acceptance": "All 6 targets are defined and functional. `make help` shows all new targets with descriptions. `make test-prsplit-fast` runs in under 10 minutes. `make cross-build` verifies all three platforms build. Targets work on macOS and Linux.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T346",
       "task": "Visual regression golden files for verify and shell tabs",
       "description": "Extend the existing TUI test suite with golden file tests for the new panes: (1) `TestGolden_VerifyPane_Running` \u2014 verify pane with live ANSI output. (2) `TestGolden_VerifyPane_Paused` \u2014 verify pane with paused state. (3) `TestGolden_ShellPane_Active` \u2014 shell pane with command output. (4) `TestGolden_TabBar_AllTabs` \u2014 tab bar with all 4 tabs (Claude, Output, Verify, Shell). (5) `TestGolden_TabBar_VerifyOnly` \u2014 tab bar with only Verify (no Claude, no shell). Store golden files in `internal/command/testdata/golden/`. Use `-update` flag to regenerate. Render at 80x24 and 120x40 dimensions.",
       "acceptance": "Golden files exist for all new visual elements. Tests pass when output matches goldens. Tests FAIL on visual regressions. -update flag regenerates goldens. Golden files committed to repo.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T347",
       "task": "Documentation: update docs with verify/shell interactive terminal features",
       "description": "Update (1) docs/scripting.md: document CaptureSession as the primitive for interactive terminals, describe verify tab and shell tab usage. (2) docs/reference/command.md: add verify/shell keyboard shortcuts to pr-split command reference (Ctrl+Tab, Ctrl+O for tab switching, Ctrl+S for shell). (3) docs/architecture.md: add section on split-view terminal multiplexing architecture. All docs should explain the CaptureSession-based approach (not raw PTY) and how mouse/keyboard forwarding works.",
       "acceptance": "Documentation accurately describes all interactive terminal features. A user reading only the docs could understand the verify tab, shell tab, keyboard shortcuts, and mouse support. Architecture docs explain the CaptureSession \u2192 VTerm \u2192 split-view rendering pipeline.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T348",
       "task": "Benchmark: TUI render performance with new panes",
       "description": "Add benchmarks: (1) `BenchmarkRender_VerifyPane` \u2014 render verify pane with 500 lines of ANSI content. Must be <16ms. (2) `BenchmarkRender_ShellPane` \u2014 render shell pane similarly. (3) `BenchmarkRender_TabBar_AllTabs` \u2014 render tab bar with all 4 tabs. (4) `BenchmarkRender_MouseToTermBytes` \u2014 mouse event conversion. (5) `BenchmarkRender_FullSplitView_VerifyTab` \u2014 full view composition with verify tab active. Ensure no render function exceeds 16ms (60fps budget).",
       "acceptance": "All benchmarks pass performance thresholds. No render exceeds 16ms. Results documented in benchmark output. No regression from baseline performance.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T349",

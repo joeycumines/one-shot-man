@@ -653,3 +653,58 @@ func TestPrSplitCommand_PrepareEngineFailure(t *testing.T) {
 		t.Errorf("expected 'invalid log level' in error, got: %v", err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T368: Claude flag passthrough — verifies all Claude-specific CLI flags
+// are correctly parsed and stored in the PrSplitCommand struct.
+// ---------------------------------------------------------------------------
+
+func TestPrSplitCommand_ClaudeCommandFlagParsing(t *testing.T) {
+	t.Parallel()
+
+	cfg := config.NewConfig()
+	cmd := NewPrSplitCommand(cfg)
+
+	fs := flag.NewFlagSet("test-claude-flags", flag.ContinueOnError)
+	cmd.SetupFlags(fs)
+
+	err := fs.Parse([]string{
+		"--claude-command", "/opt/custom-claude",
+		"--claude-arg", "launch",
+		"--claude-arg", "claude",
+		"--claude-arg", "--model=minimax-m2.5:cloud",
+		"--claude-arg", "--",
+		"--claude-model", "sonnet",
+		"--claude-config-dir", "/tmp/claude-cfg",
+		"--claude-env", "API_KEY=secret,DEBUG=1",
+	})
+	if err != nil {
+		t.Fatalf("flag parsing failed: %v", err)
+	}
+
+	if cmd.claudeCommand != "/opt/custom-claude" {
+		t.Errorf("claudeCommand: got %q, want %q", cmd.claudeCommand, "/opt/custom-claude")
+	}
+
+	// claude-arg is a repeatable flag (stringSliceFlag).
+	wantArgs := []string{"launch", "claude", "--model=minimax-m2.5:cloud", "--"}
+	if len(cmd.claudeArgs) != len(wantArgs) {
+		t.Fatalf("claudeArgs: got %d args %v, want %d args %v",
+			len(cmd.claudeArgs), []string(cmd.claudeArgs), len(wantArgs), wantArgs)
+	}
+	for i, want := range wantArgs {
+		if string(cmd.claudeArgs[i]) != want {
+			t.Errorf("claudeArgs[%d]: got %q, want %q", i, cmd.claudeArgs[i], want)
+		}
+	}
+
+	if cmd.claudeModel != "sonnet" {
+		t.Errorf("claudeModel: got %q, want %q", cmd.claudeModel, "sonnet")
+	}
+	if cmd.claudeConfigDir != "/tmp/claude-cfg" {
+		t.Errorf("claudeConfigDir: got %q, want %q", cmd.claudeConfigDir, "/tmp/claude-cfg")
+	}
+	if cmd.claudeEnv != "API_KEY=secret,DEBUG=1" {
+		t.Errorf("claudeEnv: got %q, want %q", cmd.claudeEnv, "API_KEY=secret,DEBUG=1")
+	}
+}

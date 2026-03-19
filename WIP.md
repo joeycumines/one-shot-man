@@ -15,9 +15,18 @@
 - 63fae190: T367 t.Parallel() ~270 tests
 - 5fb3092b: T368 CLI flag E2E test
 - 3bd8acfa: T371 duplicate test file cleanup
-- (pending): T370 wizard integration test fix
+- b770dde8: T370 wizard integration test fix
+- (pending): T373 log.debug in 17 silent wizard catches
+
+### T373 Complete
+- Added log.debug() to 17 silent wizard.transition() catch blocks across 4 JS files
+- 16b: 13 catches, 16a: 1, 16d: 2, 16f: 1
+- Cross-build: PASSED (all 3 platforms)
+- Rule of Two: Pass 1 PASS, Pass 2 PASS
 
 ### Next Tasks
+- T372: Update ADR-001 chunk table + stale doc references
+- T374: Extract helpers from PrSplitCommand.Execute()
 - T369: Comment normalization
 - T366: automatedSplit extraction (deferred — risky)
 

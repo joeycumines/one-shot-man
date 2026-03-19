@@ -514,7 +514,7 @@
                 // T121: When equivalence results are already cached (automated
                 // path) or the async check completed, allow manual advance.
                 if (s.equivalenceResult && !s.isProcessing) {
-                    try { s.wizard.transition('FINALIZATION'); } catch (te) { /* already there */ }
+                    try { s.wizard.transition('FINALIZATION'); } catch (te) { log.debug('wizard: transition to FINALIZATION failed: ' + (te.message || te)); }
                     s.wizardState = s.wizard.current;
                 }
                 return [s, null];

@@ -465,7 +465,7 @@
                 return [s, null];
             }
             if (zone.inBounds('nav-next', msg)) {
-                try { s.wizard.transition('FINALIZATION'); } catch (te) { /* already there */ }
+                try { s.wizard.transition('FINALIZATION'); } catch (te) { log.debug('wizard: transition to FINALIZATION failed: ' + (te.message || te)); }
                 s.wizardState = s.wizard.current;
                 return [s, null];
             }

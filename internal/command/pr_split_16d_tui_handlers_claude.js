@@ -390,7 +390,7 @@
 
         if (result && result.error) {
             s.errorDetails = result.error;
-            try { s.wizard.transition('ERROR'); } catch (te) { /* state may not allow ERROR — force display anyway */ }  // T116
+            try { s.wizard.transition('ERROR'); } catch (te) { log.debug('wizard: transition to ERROR failed: ' + (te.message || te)); }  // T116
             s.wizardState = 'ERROR';
             return [s, null];
         }
@@ -444,7 +444,7 @@
         } else {
             // Pipeline didn't produce enough data — error.
             s.errorDetails = 'Automated pipeline completed without a plan.';
-            try { s.wizard.transition('ERROR'); } catch (te) { /* state may not allow ERROR — force display anyway */ }  // T116
+            try { s.wizard.transition('ERROR'); } catch (te) { log.debug('wizard: transition to ERROR failed: ' + (te.message || te)); }  // T116
             s.wizardState = 'ERROR';
         }
 

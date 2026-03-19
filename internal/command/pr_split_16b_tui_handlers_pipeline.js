@@ -260,7 +260,7 @@
             if (s.wizard.current === 'CANCELLED') return; // wizard already cancelled
             s.isProcessing = false;
             s.errorDetails = 'Analysis failed: ' + (e.message || String(e));
-            try { s.wizard.transition('ERROR'); } catch (te) { /* terminal state */ }
+            try { s.wizard.transition('ERROR'); } catch (te) { log.debug('wizard: transition to ERROR failed: ' + (te.message || te)); }
             s.wizardState = s.wizard.current;
             return;
         }
@@ -275,7 +275,7 @@
         if (st.analysisCache.error) {
             s.isProcessing = false;
             s.errorDetails = st.analysisCache.error;
-            try { s.wizard.transition('ERROR'); } catch (te) { /* terminal state */ }
+            try { s.wizard.transition('ERROR'); } catch (te) { log.debug('wizard: transition to ERROR failed: ' + (te.message || te)); }
             s.wizardState = s.wizard.current;
             return;
         }
@@ -308,7 +308,7 @@
             if (s.wizard.current === 'CANCELLED') return; // T001: guard
             s.isProcessing = false;
             s.errorDetails = 'Grouping failed: ' + (e.message || String(e));
-            try { s.wizard.transition('ERROR'); } catch (te) { /* terminal state */ }
+            try { s.wizard.transition('ERROR'); } catch (te) { log.debug('wizard: transition to ERROR failed: ' + (te.message || te)); }
             s.wizardState = s.wizard.current;
             return;
         }
@@ -333,7 +333,7 @@
             if (s.wizard.current === 'CANCELLED') return; // T001: guard
             s.isProcessing = false;
             s.errorDetails = 'Plan creation failed: ' + (e.message || String(e));
-            try { s.wizard.transition('ERROR'); } catch (te) { /* terminal state */ }
+            try { s.wizard.transition('ERROR'); } catch (te) { log.debug('wizard: transition to ERROR failed: ' + (te.message || te)); }
             s.wizardState = s.wizard.current;
             return;
         }
@@ -353,7 +353,7 @@
         if (!validation.valid) {
             s.isProcessing = false;
             s.errorDetails = 'Plan validation failed: ' + validation.errors.join('; ');
-            try { s.wizard.transition('ERROR'); } catch (te) { /* terminal state */ }
+            try { s.wizard.transition('ERROR'); } catch (te) { log.debug('wizard: transition to ERROR failed: ' + (te.message || te)); }
             s.wizardState = s.wizard.current;
             return;
         }
@@ -405,7 +405,7 @@
         if (s.analysisError) {
             s.isProcessing = false;
             s.errorDetails = s.analysisError;
-            try { s.wizard.transition('ERROR'); } catch (e) { /* already terminal */ }
+            try { s.wizard.transition('ERROR'); } catch (e) { log.debug('wizard: transition to ERROR failed: ' + (e.message || e)); }
             s.wizardState = s.wizard.current;
             return [s, null];
         }
@@ -558,7 +558,7 @@
             if (s.wizard.current === 'CANCELLED') return; // wizard already cancelled
             s.isProcessing = false;
             s.errorDetails = 'Execution error: ' + (e.message || String(e));
-            try { s.wizard.transition('ERROR_RESOLUTION'); } catch (te) { /* terminal state */ }
+            try { s.wizard.transition('ERROR_RESOLUTION'); } catch (te) { log.debug('wizard: transition to ERROR_RESOLUTION failed: ' + (te.message || te)); }
             s.wizardState = s.wizard.current;
             return;
         }
@@ -570,7 +570,7 @@
             s.errorDetails = result.error;
             s.wizard.data.failedBranches = result.results ?
                 result.results.filter(function(r) { return r.error; }) : [];
-            try { s.wizard.transition('ERROR_RESOLUTION'); } catch (te) { /* terminal state */ }
+            try { s.wizard.transition('ERROR_RESOLUTION'); } catch (te) { log.debug('wizard: transition to ERROR_RESOLUTION failed: ' + (te.message || te)); }
             s.wizardState = s.wizard.current;
             return;
         }
@@ -603,7 +603,7 @@
         if (s.executionError) {
             s.isProcessing = false;
             s.errorDetails = s.executionError;
-            try { s.wizard.transition('ERROR_RESOLUTION'); } catch (te) { /* terminal state */ }
+            try { s.wizard.transition('ERROR_RESOLUTION'); } catch (te) { log.debug('wizard: transition to ERROR_RESOLUTION failed: ' + (te.message || te)); }
             s.wizardState = s.wizard.current;
             return [s, null];
         }
@@ -671,7 +671,7 @@
             if (s.wizard.current === 'CANCELLED' || s.wizardState !== 'EQUIV_CHECK') return;
             s.isProcessing = false;
             s.errorDetails = 'Equivalence check failed: ' + (e.message || String(e));
-            try { s.wizard.transition('ERROR'); } catch (te) { /* terminal state */ }
+            try { s.wizard.transition('ERROR'); } catch (te) { log.debug('wizard: transition to ERROR failed: ' + (te.message || te)); }
             s.wizardState = s.wizard.current;
             return;
         }
@@ -683,7 +683,7 @@
         if (!equivResult) {
             s.isProcessing = false;
             s.errorDetails = 'Equivalence check returned no result.';
-            try { s.wizard.transition('ERROR'); } catch (te) { /* terminal state */ }
+            try { s.wizard.transition('ERROR'); } catch (te) { log.debug('wizard: transition to ERROR failed: ' + (te.message || te)); }
             s.wizardState = s.wizard.current;
             return;
         }
@@ -704,7 +704,7 @@
         // On FAIL/mismatch, stay on EQUIV_CHECK so user can interact
         // with Re-verify/Revise Plan/Continue buttons.
         if (equivResult.equivalent) {
-            try { s.wizard.transition('FINALIZATION', { equivalence: equivResult }); } catch (te) { /* terminal state */ }
+            try { s.wizard.transition('FINALIZATION', { equivalence: equivResult }); } catch (te) { log.debug('wizard: transition to FINALIZATION failed: ' + (te.message || te)); }
             s.wizardState = s.wizard.current;
         }
         // On mismatch: wizardState stays EQUIV_CHECK, view shows results + buttons.
@@ -727,7 +727,7 @@
         if (s.equivError) {
             s.isProcessing = false;
             s.errorDetails = 'Equivalence check failed: ' + s.equivError;
-            try { s.wizard.transition('ERROR'); } catch (e) { /* already terminal */ }
+            try { s.wizard.transition('ERROR'); } catch (e) { log.debug('wizard: transition to ERROR failed: ' + (e.message || e)); }
             s.wizardState = s.wizard.current;
             return [s, null];
         }

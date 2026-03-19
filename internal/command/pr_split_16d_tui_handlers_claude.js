@@ -211,7 +211,7 @@
         prSplit._outputCaptureFn = function(line) {
             s.outputLines.push(line);
             if (s.outputLines.length > C.OUTPUT_BUFFER_CAP) {
-                s.outputLines = s.outputLines.slice(-4000);
+                s.outputLines = s.outputLines.slice(-C.OUTPUT_BUFFER_CAP);
             }
             if (s.outputAutoScroll) {
                 s.outputViewOffset = 0;

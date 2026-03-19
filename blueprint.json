@@ -551,6 +551,35 @@
       "acceptance": "Execute() is <100 lines. Extracted methods have godoc. Cross-build passes. All config/validation/E2E tests pass. No behavioral changes.",
       "status": "Done",
       "notes": "Extracted 3 methods: applyConfigDefaults() (37 lines), validateFlags() (12 lines), setupEngineGlobals() (48 lines). Execute() reduced from ~232 to ~140 lines. Cross-build clean. All config tests pass. E2E tests pass."
+    },
+    {
+      "id": "T375",
+      "task": "Fix OUTPUT_BUFFER_CAP / slice(-4000) mismatch bug",
+      "description": "T363 defined OUTPUT_BUFFER_CAP=5000 but the trim calls in 16b, 16c, 16d still use hardcoded slice(-4000). When the buffer exceeds 5000 lines, 1000 lines are unnecessarily discarded per trim cycle. Fix all 3 callers to use slice(-C.OUTPUT_BUFFER_CAP).",
+      "acceptance": "All outputLines.slice() trims use C.OUTPUT_BUFFER_CAP constant. Zero hardcoded 4000 values remain. Tests pass. No behavioral regression (buffer trim now keeps 5000 not 4000).",
+      "status": "Done",
+      "notes": "3 one-line fixes: 16b:181, 16c:358, 16d:214. slice(-4000) → slice(-C.OUTPUT_BUFFER_CAP). Cross-build clean."
+    },
+    {
+      "id": "T376",
+      "task": "Extract remaining poll/timeout magic numbers to TUI_CONSTANTS",
+      "description": "T363 extracted some constants but ~15 unnamed timeout/poll interval values remain: 180000 (plan revision), 200 (claude-convo-poll), 500 (restart-claude-poll), 50 (claude-check-poll), 300000 (resolve wall-clock), 2000/30000 (backoff). Add entries to TUI_CONSTANTS and pipeline config.",
+      "acceptance": "All poll intervals and timeouts in TUI handler files reference named constants. Zero bare-literal timeouts >10ms in handler code.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T377",
+      "task": "Delete legacy gitMockSetupJS and migrate 30+ callers to prsplittest",
+      "description": "pr_split_06_verification_legacy_test.go:32 has a local gitMockSetupJS() that duplicates prsplittest.GitMockSetupJS(). 30+ call sites across 7 test files use the local copy. Delete it and migrate all callers to the prsplittest package.",
+      "acceptance": "Zero local gitMockSetupJS functions remain. All callers use prsplittest.GitMockSetupJS(). Tests pass.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T378",
+      "task": "Extract sub-functions from viewExecutionScreen (325 lines)",
+      "description": "The viewExecutionScreen function in pr_split_15c_tui_screens.js is 325 lines — the largest function in all 30 chunks. Extract: renderVerifyBranchList (~80 lines), renderInlineVerifyViewport (~120 lines), renderVerificationSummary (~26 lines).",
+      "acceptance": "viewExecutionScreen is ≤100 lines. Sub-functions are tested. File stays ≤1000 lines.",
+      "status": "Not Started"
     }
   ],
   "continuousVerification": {

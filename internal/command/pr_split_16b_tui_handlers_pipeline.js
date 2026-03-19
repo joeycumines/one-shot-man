@@ -178,7 +178,7 @@
             s.outputLines.push(line);
             // Cap output buffer to prevent unbounded memory growth.
             if (s.outputLines.length > C.OUTPUT_BUFFER_CAP) {
-                s.outputLines = s.outputLines.slice(-4000);
+                s.outputLines = s.outputLines.slice(-C.OUTPUT_BUFFER_CAP);
             }
             // Auto-scroll to bottom when new output arrives.
             if (s.outputAutoScroll) {

@@ -18,6 +18,7 @@ import (
 // TestChunk00_Initialization verifies that chunk 00 initializes
 // globalThis.prSplit with the expected structure.
 func TestChunk00_Initialization(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	// globalThis.prSplit must exist and be an object.
@@ -50,6 +51,7 @@ func TestChunk00_Initialization(t *testing.T) {
 
 // TestChunk00_ShellQuote tests the shellQuote helper with various inputs.
 func TestChunk00_ShellQuote(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	tests := []struct {
@@ -79,6 +81,7 @@ func TestChunk00_ShellQuote(t *testing.T) {
 
 // TestChunk00_Dirname tests the dirname helper at various depths.
 func TestChunk00_Dirname(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	tests := []struct {
@@ -108,6 +111,7 @@ func TestChunk00_Dirname(t *testing.T) {
 
 // TestChunk00_FileExtension tests the fileExtension helper.
 func TestChunk00_FileExtension(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	tests := []struct {
@@ -136,6 +140,7 @@ func TestChunk00_FileExtension(t *testing.T) {
 
 // TestChunk00_SanitizeBranchName tests special character replacement.
 func TestChunk00_SanitizeBranchName(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	tests := []struct {
@@ -163,6 +168,7 @@ func TestChunk00_SanitizeBranchName(t *testing.T) {
 
 // TestChunk00_PadIndex tests zero-padding behavior.
 func TestChunk00_PadIndex(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	tests := []struct {
@@ -192,6 +198,7 @@ func TestChunk00_PadIndex(t *testing.T) {
 
 // TestChunk00_GitExec tests gitExec with a real temp git repo.
 func TestChunk00_GitExec(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses Unix paths; skipping on Windows")
 	}
@@ -243,6 +250,7 @@ func TestChunk00_GitExec(t *testing.T) {
 
 // TestChunk00_GitAddChangedFiles tests staging behavior with a real git repo.
 func TestChunk00_GitAddChangedFiles(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses Unix paths; skipping on Windows")
 	}
@@ -297,6 +305,7 @@ func TestChunk00_GitAddChangedFiles(t *testing.T) {
 // TestChunk00_RuntimeConfig verifies the runtime config object picks up
 // injected prSplitConfig values and applies defaults.
 func TestChunk00_RuntimeConfig(t *testing.T) {
+	t.Parallel()
 	overrides := map[string]any{
 		"baseBranch":   "develop",
 		"strategy":     "extension",
@@ -340,6 +349,7 @@ func TestChunk00_RuntimeConfig(t *testing.T) {
 
 // TestChunk00_IsCancelled verifies the cooperative cancellation functions.
 func TestChunk00_IsCancelled(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	// Without _cancelSource, all should return false.
@@ -356,6 +366,7 @@ func TestChunk00_IsCancelled(t *testing.T) {
 
 // TestChunk00_ScopedVerifyCommand tests the scoped verification logic.
 func TestChunk00_ScopedVerifyCommand(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	// All Go files → scoped go test command.
@@ -418,6 +429,7 @@ func TestChunk00_ScopedVerifyCommand(t *testing.T) {
 // TestChunk00_StyleDegracesGracefully tests that style helpers work
 // even when lipgloss is not available (returns plain text).
 func TestChunk00_StyleDegracesGracefully(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	// Style helpers should at minimum return the input string.
@@ -450,6 +462,7 @@ func TestChunk00_StyleDegracesGracefully(t *testing.T) {
 // TestChunk00_CommandNameFromConfig verifies COMMAND_NAME is derived from
 // the Go-injected config global.
 func TestChunk00_CommandNameFromConfig(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
 	val, err := evalJS(`globalThis.prSplit._COMMAND_NAME`)

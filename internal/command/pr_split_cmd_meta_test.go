@@ -13,6 +13,7 @@ import (
 )
 
 func TestPrSplitCommand_NonInteractive(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewPrSplitCommand(cfg)
 
@@ -35,6 +36,7 @@ func TestPrSplitCommand_NonInteractive(t *testing.T) {
 }
 
 func TestPrSplitCommand_Name(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewPrSplitCommand(cfg)
 
@@ -44,6 +46,7 @@ func TestPrSplitCommand_Name(t *testing.T) {
 }
 
 func TestPrSplitCommand_Description(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewPrSplitCommand(cfg)
 
@@ -54,6 +57,7 @@ func TestPrSplitCommand_Description(t *testing.T) {
 }
 
 func TestPrSplitCommand_Usage(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewPrSplitCommand(cfg)
 
@@ -64,6 +68,7 @@ func TestPrSplitCommand_Usage(t *testing.T) {
 }
 
 func TestPrSplitCommand_SetupFlags(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewPrSplitCommand(cfg)
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
@@ -88,6 +93,7 @@ func TestPrSplitCommand_SetupFlags(t *testing.T) {
 }
 
 func TestPrSplitCommand_FlagParsing(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewPrSplitCommand(cfg)
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
@@ -130,6 +136,7 @@ func TestPrSplitCommand_FlagParsing(t *testing.T) {
 }
 
 func TestPrSplitCommand_FlagShortForm(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewPrSplitCommand(cfg)
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
@@ -146,6 +153,7 @@ func TestPrSplitCommand_FlagShortForm(t *testing.T) {
 }
 
 func TestPrSplitCommand_FlagDefaults(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewPrSplitCommand(cfg)
 	fs := flag.NewFlagSet("test", flag.ContinueOnError)
@@ -213,6 +221,7 @@ func TestPrSplitCommand_ResumeFlag(t *testing.T) {
 }
 
 func TestPrSplitCommand_FlagValidation(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		setup   func(cmd *PrSplitCommand)
@@ -306,6 +315,7 @@ func TestPrSplitCommand_FlagValidation(t *testing.T) {
 }
 
 func TestPrSplitCommand_ExecuteWithArgs(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cmd := NewPrSplitCommand(cfg)
 
@@ -329,6 +339,7 @@ func TestPrSplitCommand_ExecuteWithArgs(t *testing.T) {
 }
 
 func TestPrSplitCommand_ConfigColorOverrides(t *testing.T) {
+	t.Parallel()
 	cfg := config.NewConfig()
 	cfg.Global = map[string]string{
 		"prompt.color.input":  "green",
@@ -357,6 +368,7 @@ func TestPrSplitCommand_ConfigColorOverrides(t *testing.T) {
 }
 
 func TestPrSplitCommand_NilConfig(t *testing.T) {
+	t.Parallel()
 	cmd := NewPrSplitCommand(nil)
 
 	var stdout, stderr bytes.Buffer
@@ -378,6 +390,7 @@ func TestPrSplitCommand_NilConfig(t *testing.T) {
 }
 
 func TestPrSplitCommand_EmbeddedContent(t *testing.T) {
+	t.Parallel()
 	if len(prSplitTemplate) == 0 {
 		t.Error("Expected prSplitTemplate to be non-empty")
 	}

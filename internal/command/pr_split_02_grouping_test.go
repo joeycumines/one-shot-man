@@ -16,6 +16,7 @@ import (
 // ===========================================================================
 
 func TestChunk02_GroupByDirectory(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByDirectory(
@@ -45,6 +46,7 @@ func TestChunk02_GroupByDirectory(t *testing.T) {
 }
 
 func TestChunk02_GroupByExtension(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByExtension(
@@ -71,6 +73,7 @@ func TestChunk02_GroupByExtension(t *testing.T) {
 }
 
 func TestChunk02_GroupByChunks(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByChunks(
@@ -97,6 +100,7 @@ func TestChunk02_GroupByChunks(t *testing.T) {
 }
 
 func TestChunk02_GroupByPattern(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit.groupByPattern(
@@ -124,6 +128,7 @@ func TestChunk02_GroupByPattern(t *testing.T) {
 }
 
 func TestChunk02_ParseGoImports(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	tests := []struct {
@@ -180,6 +185,7 @@ func main() {}`,
 }
 
 func TestChunk02_SelectStrategy(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	// Files across 5 directories — should favor directory strategy.
@@ -218,6 +224,7 @@ func TestChunk02_SelectStrategy(t *testing.T) {
 }
 
 func TestChunk02_ApplyStrategy_Dispatch(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	strategies := []string{"directory", "extension", "chunks"}
@@ -242,6 +249,7 @@ func TestChunk02_ApplyStrategy_Dispatch(t *testing.T) {
 }
 
 func TestChunk02_EmptyInputs(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	fns := []string{
@@ -273,6 +281,7 @@ func TestChunk02_EmptyInputs(t *testing.T) {
 
 // T102: applyStrategy with unknown strategy name must annotate _fallbackUsed.
 func TestChunk02_ApplyStrategy_UnknownFallback(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	raw, err := evalJS(`
@@ -312,6 +321,7 @@ func TestChunk02_ApplyStrategy_UnknownFallback(t *testing.T) {
 
 // T102: Valid strategy names must NOT have _fallbackUsed.
 func TestChunk02_ApplyStrategy_ValidNoFallback(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping")
 
 	raw, err := evalJS(`

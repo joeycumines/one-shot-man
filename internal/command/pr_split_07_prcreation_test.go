@@ -19,6 +19,7 @@ var prCreationChunks = []string{
 }
 
 func TestChunk07_CreatePRs_NoSplits(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, prCreationChunks...)
 
 	result, err := evalJS(`
@@ -36,6 +37,7 @@ func TestChunk07_CreatePRs_NoSplits(t *testing.T) {
 }
 
 func TestChunk07_CreatePRs_PushOnly(t *testing.T) {
+	t.Parallel()
 	// Mock gitExec to simulate successful push.
 	evalJS := prsplittest.NewChunkEngine(t, nil, prCreationChunks...)
 
@@ -101,6 +103,7 @@ func TestChunk07_CreatePRs_PushOnly(t *testing.T) {
 }
 
 func TestChunk07_CreatePRs_PushFailure(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, prCreationChunks...)
 
 	result, err := evalJS(`
@@ -143,6 +146,7 @@ func TestChunk07_CreatePRs_PushFailure(t *testing.T) {
 }
 
 func TestChunk07_CreatePRs_StackingOrder(t *testing.T) {
+	t.Parallel()
 	// Mock both gitExec (push) and exec.execv (gh pr create) to verify
 	// stacking: PR 2 bases on branch 1.
 	evalJS := prsplittest.NewChunkEngine(t, nil, prCreationChunks...)
@@ -249,6 +253,7 @@ func TestChunk07_CreatePRs_StackingOrder(t *testing.T) {
 // ---- T11: gh CLI not found ------------------------------------------------
 
 func TestChunk07_CreatePRs_GhNotFound(t *testing.T) {
+	t.Parallel()
 	// Mock exec to make 'gh' command unavailable.
 	evalJS := prsplittest.NewChunkEngine(t, nil, prCreationChunks...)
 
@@ -312,6 +317,7 @@ func TestChunk07_CreatePRs_GhNotFound(t *testing.T) {
 }
 
 func TestChunk07_CreatePRs_RemoteBranchNotFound(t *testing.T) {
+	t.Parallel()
 	// gh CLI available but base branch missing from remote.
 	evalJS := prsplittest.NewChunkEngine(t, nil, prCreationChunks...)
 

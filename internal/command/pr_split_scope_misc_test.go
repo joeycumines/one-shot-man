@@ -195,6 +195,7 @@ func TestSelectStrategy_ResultShape(t *testing.T) {
 
 // TestBuildDependencyGraph verifies dependency graph construction.
 func TestBuildDependencyGraph(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`JSON.stringify(prSplit.buildDependencyGraph({
@@ -231,6 +232,7 @@ func TestBuildDependencyGraph(t *testing.T) {
 
 // TestRenderAsciiGraph verifies graph rendering.
 func TestRenderAsciiGraph(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`prSplit.renderAsciiGraph({
@@ -254,6 +256,7 @@ func TestRenderAsciiGraph(t *testing.T) {
 
 // TestAnalyzeRetrospective verifies retrospective analysis.
 func TestAnalyzeRetrospective(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`JSON.stringify(prSplit.analyzeRetrospective({
@@ -297,6 +300,7 @@ func TestAnalyzeRetrospective(t *testing.T) {
 
 // TestConversationHistory verifies recording and retrieval.
 func TestConversationHistory(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	_, err := evalJS(`prSplit.recordConversation('test-action', 'test prompt', 'test response')`)
@@ -324,6 +328,7 @@ func TestConversationHistory(t *testing.T) {
 
 // TestTelemetry verifies telemetry recording.
 func TestTelemetry(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	_, err := evalJS(`prSplit.recordTelemetry('filesAnalyzed', 42)`)
@@ -355,6 +360,7 @@ func TestTelemetry(t *testing.T) {
 
 // TestAutoMergeOptions verifies createPRs accepts auto-merge options.
 func TestAutoMergeOptions(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	val, err := evalJS(`prSplit.runtime.autoMerge`)

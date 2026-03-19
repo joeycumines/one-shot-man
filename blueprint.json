@@ -36,7 +36,7 @@
     "PER_TASK_COMMIT_PROTOCOL": "⚠️ MANDATORY — ZERO EXCEPTIONS — FOR EVERY SINGLE TASK: (1) REREAD the strict-review-gate Skill IN FULL — do not skim, do not skip, read every word. (2) PERFORM the Rule of Two PER THE SKILL — spawn subagent reviews, iterate until TWO CONTIGUOUS ISSUE-FREE reviews on the EXACT SAME DIFF. If either review fails, fix, reset counter to 0, restart. (3) READ the git-commit Skill IN FULL before writing any commit message. (4) COMMIT THAT ONE TASK — exactly one task per commit, immediately after passing the Rule of Two. Do not batch tasks. Do not defer commits. ASAP. (5) REREAD DIRECTIVE.txt after every commit — full re-read, not from memory. This 5-step process is NON-NEGOTIABLE. Skipping any step is grounds for termination. Batching multiple tasks into one commit is FORBIDDEN. Committing without two green reviews is FORBIDDEN. Working on the next task before committing the current one is FORBIDDEN."
   },
   "statusSection": {
-    "currentState": "T300-T362 Done. T362 adds log.debug to 44 silenced catch blocks across 11 JS files. Pre-existing >1000 line limit violation in 16c (1027), 16e (1073), 16f (1001) — must be addressed in T368/T369. Expansion phase continues.",
+    "currentState": "T300-T367 Done. T367 adds t.Parallel() to ~270 tests across 16 files (race-tested, count=3). One file (pr_split_tui_subcommands_test.go) intentionally excluded — uses os.Chdir via chdirTestPipeline. TestParseClaudeEnv_MalformedInput excluded — mutates slog.Default. Pre-existing >1000 line limit violation in 16c (1027), 16e (1073), 16f (1001) — must be addressed in T369.",
     "goalState": "All verify/shell terminal features delivered AND polished to enterprise grade. Zero silenced errors. No god functions. No magic numbers. Fuzz-tested parsing. Poll-retry E2E tests. Fully parallelized unit tests. Documentation fully synced. All checks pass on all platforms.",
     "replanLog": [
       {
@@ -480,7 +480,7 @@
       "task": "Add fuzz tests for plan parsing and classification",
       "description": "The validation and parsing logic in pr_split has no fuzz tests despite handling complex structured input. Add `func Fuzz*` tests for: (1) `FuzzClassificationParsing` — fuzz the classification-to-groups parser (`classificationToGroups` in pr_split_10a_pipeline_config.js) with random input strings. (2) `FuzzPlanValidation` — fuzz the plan validation logic (`validatePlan` in pr_split_04_validation.js) with random JSON plan structures. (3) `FuzzConflictParsing` — fuzz conflict file parsing in pr_split_08_conflict.js. Each fuzz test should: create a JS engine, pass fuzzed input to the target function, verify no panics/crashes/unhandled exceptions. Add a new test file `internal/command/pr_split_fuzz_test.go`.",
       "acceptance": "3 fuzz test functions exist and run when invoked with `go test -fuzz=FuzzClassification ./internal/command/...` etc. Each fuzz test exercises the target parser for 10+ seconds without crashes. Any crashes found are fixed. Corpus entries are committed to testdata/. The fuzz tests are tagged `prsplit_slow` to avoid running in normal builds.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T366",
@@ -494,7 +494,7 @@
       "task": "Add t.Parallel() to non-dependent unit tests in TUI test files",
       "description": "Only ~30 of 350+ tests use `t.Parallel()`. Major test files like `pr_split_13_tui_test.go` (70+ tests) and several `pr_split_16_*_test.go` files don't use it. Add `t.Parallel()` to all tests that: (a) don't modify shared state, (b) don't use shared file system paths, (c) only use the JS engine created by `prsplittest.NewTUIEngineWithHelpers(t)` (which creates an isolated engine per call). Exclude tests that modify global state, use shared temp directories, or have documented serial dependencies.",
       "acceptance": "At least 100 additional tests have `t.Parallel()` added. `go test -race -count=3 ./internal/command/...` passes clean (no race conditions). Test execution time for `test-prsplit-fast` decreases measurably. No flaky test failures.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T368",

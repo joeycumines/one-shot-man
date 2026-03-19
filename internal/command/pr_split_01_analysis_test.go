@@ -69,6 +69,7 @@ func gitRun(t testing.TB, dir string, args ...string) string {
 }
 
 func TestChunk01_AnalyzeDiff_MultiFileChanges(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("skipping on windows due to git path differences")
 	}
@@ -162,6 +163,7 @@ func TestChunk01_AnalyzeDiff_MultiFileChanges(t *testing.T) {
 }
 
 func TestChunk01_AnalyzeDiff_EmptyDiff(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("skipping on windows due to git path differences")
 	}
@@ -203,6 +205,7 @@ func TestChunk01_AnalyzeDiff_EmptyDiff(t *testing.T) {
 }
 
 func TestChunk01_AnalyzeDiff_BadBaseBranch(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("skipping on windows due to git path differences")
 	}
@@ -245,6 +248,7 @@ func TestChunk01_AnalyzeDiff_BadBaseBranch(t *testing.T) {
 }
 
 func TestChunk01_AnalyzeDiff_Rename(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("skipping on windows due to git path differences")
 	}
@@ -298,6 +302,7 @@ func TestChunk01_AnalyzeDiff_Rename(t *testing.T) {
 }
 
 func TestChunk01_AnalyzeDiffStats_BasicCounts(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("skipping on windows due to git path differences")
 	}
@@ -355,6 +360,7 @@ func TestChunk01_AnalyzeDiffStats_BasicCounts(t *testing.T) {
 }
 
 func TestChunk01_AnalyzeDiffStats_EmptyDiff(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("skipping on windows due to git path differences")
 	}

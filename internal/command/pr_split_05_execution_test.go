@@ -45,6 +45,7 @@ func setupExecRepo(t *testing.T) (string, map[string]string) {
 }
 
 func TestChunk05_ExecuteSplit_BasicExecution(t *testing.T) {
+	t.Parallel()
 	dir, statuses := setupExecRepo(t)
 
 	evalJS := prsplittest.NewChunkEngine(t, nil,
@@ -134,6 +135,7 @@ func TestChunk05_ExecuteSplit_BasicExecution(t *testing.T) {
 }
 
 func TestChunk05_ExecuteSplit_InvalidPlan(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
 
@@ -155,6 +157,7 @@ func TestChunk05_ExecuteSplit_InvalidPlan(t *testing.T) {
 }
 
 func TestChunk05_ExecuteSplit_MissingFileStatuses(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation", "05_execution")
 
@@ -178,6 +181,7 @@ func TestChunk05_ExecuteSplit_MissingFileStatuses(t *testing.T) {
 }
 
 func TestChunk05_ExecuteSplit_ProgressCallback(t *testing.T) {
+	t.Parallel()
 	dir, statuses := setupExecRepo(t)
 
 	evalJS := prsplittest.NewChunkEngine(t, nil,
@@ -229,6 +233,7 @@ func TestChunk05_ExecuteSplit_ProgressCallback(t *testing.T) {
 }
 
 func TestChunk05_ExecuteSplit_ReRunDeletesOldBranches(t *testing.T) {
+	t.Parallel()
 	dir, statuses := setupExecRepo(t)
 
 	evalJS := prsplittest.NewChunkEngine(t, nil,
@@ -291,6 +296,7 @@ func gitCmdAllowFail(t *testing.T, dir string, args ...string) cmdResult {
 }
 
 func TestChunk05_ExecuteSplit_GitIgnoredFilesSkipped(t *testing.T) {
+	t.Parallel()
 	// Setup: create repo with .gitignore that ignores *.log files.
 	dir := initGitRepo(t)
 
@@ -387,6 +393,7 @@ func TestChunk05_ExecuteSplit_GitIgnoredFilesSkipped(t *testing.T) {
 }
 
 func TestChunk05_ExecuteSplit_NoIgnoredFiles(t *testing.T) {
+	t.Parallel()
 	// When no files are ignored, skippedFiles should be empty.
 	dir, statuses := setupExecRepo(t)
 

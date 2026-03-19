@@ -21,6 +21,7 @@ import (
 // produces output containing all input lines in order. Styling depends on
 // terminal capability (lipgloss), so we verify content, not ANSI sequences.
 func TestRenderColorizedDiff_ContentPreserved(t *testing.T) {
+	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`
@@ -86,6 +87,7 @@ func TestRenderColorizedDiff_ContentPreserved(t *testing.T) {
 
 // TestRenderColorizedDiff_EmptyInput verifies empty input returns empty string.
 func TestRenderColorizedDiff_EmptyInput(t *testing.T) {
+	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`prSplit.renderColorizedDiff('')`)
@@ -100,6 +102,7 @@ func TestRenderColorizedDiff_EmptyInput(t *testing.T) {
 // TestGetSplitDiff_InvalidIndex verifies getSplitDiff returns error for
 // out-of-bounds split index.
 func TestGetSplitDiff_InvalidIndex(t *testing.T) {
+	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(prSplit.getSplitDiff({ splits: [{ name: 'a', files: ['f.go'] }] }, 5))`)
@@ -123,6 +126,7 @@ func TestGetSplitDiff_InvalidIndex(t *testing.T) {
 
 // TestGetSplitDiff_EmptyFiles verifies getSplitDiff handles split with no files.
 func TestGetSplitDiff_EmptyFiles(t *testing.T) {
+	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(prSplit.getSplitDiff({ splits: [{ name: 'a', files: [] }] }, 0))`)
@@ -146,6 +150,7 @@ func TestGetSplitDiff_EmptyFiles(t *testing.T) {
 
 // TestGetSplitDiff_NullPlan verifies getSplitDiff handles null/undefined plan.
 func TestGetSplitDiff_NullPlan(t *testing.T) {
+	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(prSplit.getSplitDiff(null, 0))`)
@@ -166,6 +171,7 @@ func TestGetSplitDiff_NullPlan(t *testing.T) {
 
 // TestGetSplitDiff_NegativeIndex verifies getSplitDiff handles negative index.
 func TestGetSplitDiff_NegativeIndex(t *testing.T) {
+	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	val, err := evalJS(`JSON.stringify(prSplit.getSplitDiff({ splits: [{ name: 'a', files: ['f.go'] }] }, -1))`)
@@ -324,6 +330,7 @@ func TestGetSplitDiff_BothDiffsFail(t *testing.T) {
 // TestBuildReport_WithNullCaches verifies the 'report' command outputs valid
 // JSON when no caches are populated (no analyze/group/plan has been run).
 func TestBuildReport_WithNullCaches(t *testing.T) {
+	t.Parallel()
 	tp := setupTestPipeline(t, TestPipelineOpts{
 		FeatureFiles: []TestPipelineFile{
 			{Path: "src/main.go", Content: "package main\n"},
@@ -382,6 +389,7 @@ func TestBuildReport_WithNullCaches(t *testing.T) {
 // TestBuildReport_WithPopulatedCaches verifies the 'report' command produces
 // complete JSON when analyze, group, and plan have been run.
 func TestBuildReport_WithPopulatedCaches(t *testing.T) {
+	t.Parallel()
 	tp := setupTestPipeline(t, TestPipelineOpts{
 		FeatureFiles: []TestPipelineFile{
 			{Path: "cmd/run.go", Content: "package main\n\nfunc run() {}\n"},

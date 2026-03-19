@@ -20,6 +20,7 @@ var conflictChunks = []string{
 }
 
 func TestChunk08_AutoFixStrategies_Structure(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, conflictChunks...)
 
 	result, err := evalJS(`
@@ -78,6 +79,7 @@ func TestChunk08_AutoFixStrategies_Structure(t *testing.T) {
 }
 
 func TestChunk08_ResolveConflicts_InvalidPlan(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, conflictChunks...)
 
 	// resolveConflicts is async — evalJS detects 'await' and handles Promise.
@@ -112,6 +114,7 @@ func TestChunk08_ResolveConflicts_InvalidPlan(t *testing.T) {
 }
 
 func TestChunk08_ResolveConflicts_NoVerifyCommand(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, conflictChunks...)
 
 	result, err := evalJS(`
@@ -147,6 +150,7 @@ func TestChunk08_ResolveConflicts_NoVerifyCommand(t *testing.T) {
 }
 
 func TestChunk08_ResolveConflicts_MockStrategy_AllPass(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, conflictChunks...)
 
 	// Mock: exec.execv returns code 0 for verify command (splits already pass).
@@ -243,6 +247,7 @@ func TestChunk08_ResolveConflicts_MockStrategy_AllPass(t *testing.T) {
 }
 
 func TestChunk08_ResolveConflicts_MockStrategy_FixApplied(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, conflictChunks...)
 
 	// Mock: first verify fails, custom strategy detects + fixes, second verify passes.
@@ -344,6 +349,7 @@ func TestChunk08_ResolveConflicts_MockStrategy_FixApplied(t *testing.T) {
 }
 
 func TestChunk08_ResolveConflicts_RetryBudgetExhausted(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, conflictChunks...)
 
 	result, err := evalJS(`
@@ -448,6 +454,7 @@ func TestChunk08_ResolveConflicts_RetryBudgetExhausted(t *testing.T) {
 }
 
 func TestChunk08_ClaudeFixDetect_NoExecutor(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, conflictChunks...)
 
 	// Verify claude-fix strategy detect returns false when no executor is set.
@@ -487,6 +494,7 @@ func TestChunk08_ClaudeFixDetect_NoExecutor(t *testing.T) {
 // ---- T12: Individual strategy detect tests --------------------------------
 
 func TestChunk08_Strategy_GoModTidy_Detect(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, conflictChunks...)
 
 	result, err := evalJS(`
@@ -538,6 +546,7 @@ func TestChunk08_Strategy_GoModTidy_Detect(t *testing.T) {
 }
 
 func TestChunk08_Strategy_GoGenerateSum_Detect(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, conflictChunks...)
 
 	result, err := evalJS(`
@@ -586,6 +595,7 @@ func TestChunk08_Strategy_GoGenerateSum_Detect(t *testing.T) {
 }
 
 func TestChunk08_Strategy_GoBuildMissingImports_Detect(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, conflictChunks...)
 
 	result, err := evalJS(`
@@ -632,6 +642,7 @@ func TestChunk08_Strategy_GoBuildMissingImports_Detect(t *testing.T) {
 }
 
 func TestChunk08_Strategy_NpmInstall_Detect(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, conflictChunks...)
 
 	result, err := evalJS(`
@@ -680,6 +691,7 @@ func TestChunk08_Strategy_NpmInstall_Detect(t *testing.T) {
 }
 
 func TestChunk08_Strategy_MakeGenerate_Detect(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, conflictChunks...)
 
 	result, err := evalJS(`
@@ -749,6 +761,7 @@ func TestChunk08_Strategy_MakeGenerate_Detect(t *testing.T) {
 }
 
 func TestChunk08_Strategy_AddMissingFiles_Detect(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, conflictChunks...)
 
 	result, err := evalJS(`

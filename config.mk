@@ -100,5 +100,41 @@ cross-build: ## Build for Linux, macOS, and Windows
 	@echo "Building for windows/amd64..."; GOOS=windows GOARCH=amd64 $(GO) build ./... 2>&1 | tail -n 5
 	@echo "Cross-build complete."
 
+.PHONY: git-add-commit
+git-add-commit: ## Stage and commit T367 t.Parallel
+	cd $(or $(PROJECT_ROOT),$(error PROJECT_ROOT required)) && \
+	git add -A && \
+	git commit -m 'test(pr-split): add t.Parallel() to 270 non-dependent unit tests' \
+	  -m 'Add t.Parallel() to 270 tests across 16 test files to improve' \
+	  -m 'test parallelism and enable race condition detection during' \
+	  -m 'concurrent execution.' \
+	  -m '' \
+	  -m 'Tier 1 (9 files, 241 tests):' \
+	  -m '  - pr_split_13_tui_test.go: 94 tests (per-test TUI engine)' \
+	  -m '  - pr_split_11_utilities_test.go: 36 tests (pure functions)' \
+	  -m '  - pr_split_04_validation_test.go: 26 tests (pure validation)' \
+	  -m '  - pr_split_cmd_meta_test.go: 13 tests (flag/metadata tests)' \
+	  -m '  - pr_split_00_core_test.go: 13 tests (core chunk tests)' \
+	  -m '  - pr_split_08_conflict_test.go: 13 tests (conflict resolution)' \
+	  -m '  - pr_split_03_planning_test.go: 13 tests (planning chunk)' \
+	  -m '  - pr_split_02_grouping_test.go: 10 tests (grouping chunk)' \
+	  -m '' \
+	  -m 'Tier 2 (7 files, 29 tests):' \
+	  -m '  - pr_split_09_claude_test.go: 8 tests' \
+	  -m '  - pr_split_bt_test.go: 8 tests' \
+	  -m '  - pr_split_10_pipeline_test.go: 7 tests' \
+	  -m '  - pr_split_06_verification_test.go: 7 tests' \
+	  -m '  - pr_split_01_analysis_test.go: 6 tests' \
+	  -m '  - pr_split_07_prcreation_test.go: 6 tests' \
+	  -m '  - pr_split_scope_misc_test.go: 6 tests' \
+	  -m '  - pr_split_12_exports_test.go: 4 tests' \
+	  -m '' \
+	  -m 'Intentional exclusions:' \
+	  -m '  - pr_split_tui_subcommands_test.go: uses os.Chdir via' \
+	  -m '    chdirTestPipeline (process-global, not parallel-safe)' \
+	  -m '  - TestParseClaudeEnv_MalformedInput: mutates slog.SetDefault' \
+	  -m '' \
+	  -m 'Verified: go test -race -count=3 passes clean (128s, zero races).'
+
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 endif

@@ -21,6 +21,7 @@ var allPipelineChunks = []string{
 }
 
 func TestPipelineChunk_AUTOMATED_DEFAULTS(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	// Verify the constant is exported and has correct keys.
@@ -53,6 +54,7 @@ func TestPipelineChunk_AUTOMATED_DEFAULTS(t *testing.T) {
 }
 
 func TestPipelineChunk_ClassificationToGroups_ArrayFormat(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	val, err := evalJS(`JSON.stringify(prSplit.classificationToGroups([
@@ -81,6 +83,7 @@ func TestPipelineChunk_ClassificationToGroups_ArrayFormat(t *testing.T) {
 }
 
 func TestPipelineChunk_ClassificationToGroups_LegacyMapFormat(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	val, err := evalJS(`JSON.stringify(prSplit.classificationToGroups({
@@ -105,6 +108,7 @@ func TestPipelineChunk_ClassificationToGroups_LegacyMapFormat(t *testing.T) {
 }
 
 func TestPipelineChunk_ClassificationToGroups_EmptyInput(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	// Null input
@@ -127,6 +131,7 @@ func TestPipelineChunk_ClassificationToGroups_EmptyInput(t *testing.T) {
 }
 
 func TestPipelineChunk_SendToHandle_NullHandle(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	// sendToHandle(null, text) should return an error.
@@ -154,6 +159,7 @@ func TestPipelineChunk_SendToHandle_NullHandle(t *testing.T) {
 }
 
 func TestPipelineChunk_SendToHandle_MockHandle(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	// Set up a mock handle that records send calls.
@@ -211,6 +217,7 @@ func TestPipelineChunk_SendToHandle_MockHandle(t *testing.T) {
 }
 
 func TestPipelineChunk_SEND_TEXT_NEWLINE_DELAY_MS(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	val, err := evalJS(`prSplit.SEND_TEXT_NEWLINE_DELAY_MS`)

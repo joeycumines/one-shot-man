@@ -69,6 +69,7 @@ func setupExecRepoAndExecute(t *testing.T, evalJS func(string) (any, error)) str
 }
 
 func TestChunk06_VerifyEquivalence_Equivalent(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 	dir := setupExecRepoAndExecute(t, evalJS)
 
@@ -108,6 +109,7 @@ func TestChunk06_VerifyEquivalence_Equivalent(t *testing.T) {
 }
 
 func TestChunk06_VerifyEquivalence_Mismatch(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 	dir := initGitRepo(t)
 
@@ -166,6 +168,7 @@ func TestChunk06_VerifyEquivalence_Mismatch(t *testing.T) {
 }
 
 func TestChunk06_VerifyEquivalence_NullPlan(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 
 	result, err := evalJS(`
@@ -183,6 +186,7 @@ func TestChunk06_VerifyEquivalence_NullPlan(t *testing.T) {
 }
 
 func TestChunk06_VerifyEquivalenceDetailed_IncludesDiffFiles(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 	dir := initGitRepo(t)
 
@@ -250,6 +254,7 @@ func TestChunk06_VerifyEquivalenceDetailed_IncludesDiffFiles(t *testing.T) {
 }
 
 func TestChunk06_CleanupBranches(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 	dir := setupExecRepoAndExecute(t, evalJS)
 
@@ -295,6 +300,7 @@ func TestChunk06_CleanupBranches(t *testing.T) {
 }
 
 func TestChunk06_CleanupBranches_Idempotent(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 	dir := setupExecRepoAndExecute(t, evalJS)
 
@@ -342,6 +348,7 @@ func TestChunk06_CleanupBranches_Idempotent(t *testing.T) {
 }
 
 func TestChunk06_CleanupBranches_NullPlan(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 
 	result, err := evalJS(`

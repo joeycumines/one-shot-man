@@ -21,6 +21,7 @@ var allChunksThrough12 = []string{
 }
 
 func TestChunk12_VERSION(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough12...)
 
 	raw, err := evalJS(`globalThis.prSplit.VERSION`)
@@ -33,6 +34,7 @@ func TestChunk12_VERSION(t *testing.T) {
 }
 
 func TestChunk12_NoMissingExports(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough12...)
 
 	raw, err := evalJS(`JSON.stringify(globalThis.prSplit._missingExports)`)
@@ -49,6 +51,7 @@ func TestChunk12_NoMissingExports(t *testing.T) {
 }
 
 func TestChunk12_ManifestCoversAllExports(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough12...)
 
 	// The manifest should have a reasonable number of entries.
@@ -67,6 +70,7 @@ func TestChunk12_ManifestCoversAllExports(t *testing.T) {
 }
 
 func TestChunk12_AllManifestEntriesAreExported(t *testing.T) {
+	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, allChunksThrough12...)
 
 	// For each entry in the manifest, verify it exists and is not undefined.

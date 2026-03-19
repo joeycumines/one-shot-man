@@ -81,9 +81,9 @@
             if (s.activeVerifySession) {
                 var now = Date.now();
                 if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < 2000) {
-                    try { s.activeVerifySession.kill(); } catch (e) { /* ignore */ }
+                    try { s.activeVerifySession.kill(); } catch (e) { log.debug('quit: verifySession.kill failed: ' + (e.message || e)); }
                 } else {
-                    try { s.activeVerifySession.interrupt(); } catch (e) { /* ignore */ }
+                    try { s.activeVerifySession.interrupt(); } catch (e) { log.debug('quit: verifySession.interrupt failed: ' + (e.message || e)); }
                 }
                 s.lastVerifyInterruptTime = now;
                 return [s, null];
@@ -268,7 +268,7 @@
                 if (!s.shellSession) {
                     // Pause verify while shell is open.
                     if (!s.verifyPaused) {
-                        try { s.activeVerifySession.pause(); s.verifyPaused = true; } catch (e) { /* ignore */ }
+                        try { s.activeVerifySession.pause(); s.verifyPaused = true; } catch (e) { log.debug('tabSwitch: verifySession.pause failed: ' + (e.message || e)); }
                     }
                     // Compute shell terminal size from pane dimensions.
                     var shellH = s.height || 24;
@@ -311,9 +311,9 @@
             if (s.activeVerifySession && zone.inBounds('verify-interrupt', msg)) {
                 var now = Date.now();
                 if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < 2000) {
-                    try { s.activeVerifySession.kill(); } catch (e) { /* ignore */ }
+                    try { s.activeVerifySession.kill(); } catch (e) { log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e)); }
                 } else {
-                    try { s.activeVerifySession.interrupt(); } catch (e) { /* ignore */ }
+                    try { s.activeVerifySession.interrupt(); } catch (e) { log.debug('cancelVerify: verifySession.interrupt failed: ' + (e.message || e)); }
                 }
                 s.lastVerifyInterruptTime = now;
                 return [s, null];
@@ -454,7 +454,7 @@
                 return startEquivCheck(s);
             }
             if (zone.inBounds('equiv-revise', msg)) {
-                try { s.wizard.transition('PLAN_REVIEW'); } catch (te) { /* ignore */ }
+                try { s.wizard.transition('PLAN_REVIEW'); } catch (te) { log.debug('error: wizard.transition failed: ' + (te.message || te)); }
                 s.wizardState = s.wizard.current;
                 s.isProcessing = false;
                 // T308: Clean up equiv state on revise (same cleanup as handleBack).

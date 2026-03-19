@@ -424,7 +424,7 @@
             // and orphaned async polling.
             case 'EQUIV_CHECK':
                 if (!s.isProcessing) {
-                    try { s.wizard.transition('PLAN_REVIEW'); } catch (te) { /* ignore */ }
+                    try { s.wizard.transition('PLAN_REVIEW'); } catch (te) { log.debug('applyEquiv: wizard.transition failed: ' + (te.message || te)); }
                     s.wizardState = s.wizard.current;
                     s.isProcessing = false;
                     s.equivRunning = false;
@@ -460,7 +460,7 @@
 
     // T084: Quit from PAUSED — cancel the wizard and exit.
     function handlePauseQuit(s) {
-        try { s.wizard.cancel(); } catch (te) { /* ignore */ }
+        try { s.wizard.cancel(); } catch (te) { log.debug('cancelPipeline: wizard.cancel failed: ' + (te.message || te)); }
         s.wizardState = s.wizard.current;
         return [s, tea.quit()];
     }
@@ -745,9 +745,9 @@
             if (s.activeVerifySession) {
                 var now = Date.now();
                 if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < 2000) {
-                    try { s.activeVerifySession.kill(); } catch (e) { /* ignore */ }
+                    try { s.activeVerifySession.kill(); } catch (e) { log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e)); }
                 } else {
-                    try { s.activeVerifySession.interrupt(); } catch (e) { /* ignore */ }
+                    try { s.activeVerifySession.interrupt(); } catch (e) { log.debug('cancelVerify: verifySession.interrupt failed: ' + (e.message || e)); }
                 }
                 s.lastVerifyInterruptTime = now;
                 return [s, null];
@@ -881,7 +881,7 @@
             // T079: Revise Plan — go back to PLAN_REVIEW from EQUIV_CHECK.
             // T308: Clean up equiv state on revise (same cleanup as handleBack).
             if (focused.id === 'equiv-revise') {
-                try { s.wizard.transition('PLAN_REVIEW'); } catch (te) { /* ignore */ }
+                try { s.wizard.transition('PLAN_REVIEW'); } catch (te) { log.debug('revise: wizard.transition failed: ' + (te.message || te)); }
                 s.wizardState = s.wizard.current;
                 s.isProcessing = false;
                 s.equivRunning = false;

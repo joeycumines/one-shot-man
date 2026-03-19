@@ -478,10 +478,10 @@
         s.expandedVerifyBranch = null;
         // Reset live verification session state.
         if (s.activeVerifySession) {
-            try { s.activeVerifySession.close(); } catch (e) { /* best effort */ }
+            try { s.activeVerifySession.close(); } catch (e) { log.debug('pipelineCleanup: verifySession.close failed: ' + (e.message || e)); }
         }
         if (s.activeVerifyWorktree && s.activeVerifyDir) {
-            try { prSplit.cleanupVerifyWorktree(s.activeVerifyDir, s.activeVerifyWorktree); } catch (e) { /* best effort */ }
+            try { prSplit.cleanupVerifyWorktree(s.activeVerifyDir, s.activeVerifyWorktree); } catch (e) { log.debug('pipelineCleanup: verifyWorktree cleanup failed: ' + (e.message || e)); }
         }
         s.activeVerifySession = null;
         s.activeVerifyWorktree = null;

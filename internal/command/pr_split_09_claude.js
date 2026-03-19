@@ -266,9 +266,9 @@
                     try {
                         var chunk = this.handle.receive();
                         if (chunk) { lastOutput = chunk; }
-                    } catch (readErr) { /* EOF expected for dead process */ }
+                    } catch (readErr) { log.debug('drain: read failed (expected for dead process): ' + (readErr.message || readErr)); }
                 }
-                try { this.handle.close(); } catch (closeErr) { /* best effort */ }
+                try { this.handle.close(); } catch (closeErr) { log.debug('drain: handle.close failed: ' + (closeErr.message || closeErr)); }
                 this.handle = null;
 
                 var cmdDesc2 = this.resolved.command;
@@ -306,7 +306,7 @@
 
     ClaudeCodeExecutor.prototype.close = function() {
         if (this.handle && typeof this.handle.close === 'function') {
-            try { this.handle.close(); } catch (e) { /* best effort */ }
+            try { this.handle.close(); } catch (e) { log.debug('close: handle.close failed: ' + (e.message || e)); }
         }
         this.handle = null;
         this.sessionId = null;
@@ -322,7 +322,7 @@
             try {
                 var chunk = this.handle.receive();
                 if (chunk) { output = chunk; }
-            } catch (e) { /* EOF expected for dead process */ }
+            } catch (e) { log.debug('captureDiagnostic: read failed (expected for dead process): ' + (e.message || e)); }
         }
         return output;
     };

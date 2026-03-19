@@ -139,7 +139,7 @@
         this.history.push({ from: this.current, to: 'FORCE_CANCEL', at: Date.now() });
         this.current = 'FORCE_CANCEL';
         for (var j = 0; j < this.listeners.length; j++) {
-            try { this.listeners[j](this.current, 'FORCE_CANCEL', this.data); } catch (e) { /* swallow */ }
+            try { this.listeners[j](this.current, 'FORCE_CANCEL', this.data); } catch (e) { log.debug('wizard: listener[' + j + '] failed: ' + (e.message || e)); }
         }
     };
 

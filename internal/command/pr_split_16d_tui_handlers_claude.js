@@ -477,7 +477,7 @@
         var executor = st.claudeExecutor;
         if (executor && executor.handle && typeof tuiMux !== 'undefined' && tuiMux &&
             typeof tuiMux.attach === 'function') {
-            try { tuiMux.attach(executor.handle); } catch (e) { /* best effort */ }
+            try { tuiMux.attach(executor.handle); } catch (e) { log.debug('claudeSpawn: tuiMux.attach failed: ' + (e.message || e)); }
         }
 
         // T114: Mode-aware restart — if user was in auto mode, resume with

@@ -26,10 +26,10 @@
         // Helper to clean up any active verify session before quitting.
         function cleanupActiveSession() {
             if (s.activeVerifySession) {
-                try { s.activeVerifySession.close(); } catch (e) { /* best effort */ }
+                try { s.activeVerifySession.close(); } catch (e) { log.debug('cleanup: verifySession.close failed: ' + (e.message || e)); }
             }
             if (s.activeVerifyWorktree && s.activeVerifyDir) {
-                try { prSplit.cleanupVerifyWorktree(s.activeVerifyDir, s.activeVerifyWorktree); } catch (e) { /* best effort */ }
+                try { prSplit.cleanupVerifyWorktree(s.activeVerifyDir, s.activeVerifyWorktree); } catch (e) { log.debug('cleanup: verifyWorktree cleanup failed: ' + (e.message || e)); }
             }
             // T325: Reset tab before clearing session for atomic state transition.
             if (s.splitViewTab === 'verify' || s.splitViewTab === 'shell') {
@@ -37,7 +37,7 @@
             }
             // Clean up shell session if open (shell depends on verify worktree).
             if (s.shellSession) {
-                try { s.shellSession.close(); } catch (e) { /* ignore */ }
+                try { s.shellSession.close(); } catch (e) { log.debug('cleanup: shellSession.close failed: ' + (e.message || e)); }
                 s.shellSession = null;
                 s.shellScreen = '';
                 s.shellViewOffset = 0;
@@ -313,11 +313,11 @@
             ? prSplitConfig.timeoutMs : 0;
         if (timeoutMs > 0 && s.verifyElapsedMs >= timeoutMs) {
             // Timeout — kill the process.
-            try { s.activeVerifySession.kill(); } catch (e) { /* ignore */ }
+            try { s.activeVerifySession.kill(); } catch (e) { log.debug('verifyCancel: session.kill failed: ' + (e.message || e)); }
         }
 
         // T321: Capture ANSI-styled VTerm screen for the Verify tab.
-        try { s.verifyScreen = s.activeVerifySession.screen(); } catch (e) { /* ignore */ }
+        try { s.verifyScreen = s.activeVerifySession.screen(); } catch (e) { log.debug('pollVerify: session.screen failed: ' + (e.message || e)); }
 
         // T350: Auto-scroll main viewport to keep inline terminal visible.
         // The inline verify terminal in viewExecutionScreen() is rendered at
@@ -326,7 +326,7 @@
         // auto-scroll when the user hasn't manually scrolled (verifyAutoScroll
         // is true) — scrolling Up sets it false, scrolling to End resets it.
         if (s.vp && s.verifyAutoScroll !== false) {
-            try { s.vp.gotoBottom(); } catch (e) { /* ignore */ }
+            try { s.vp.gotoBottom(); } catch (e) { log.debug('pollVerify: viewport.gotoBottom failed: ' + (e.message || e)); }
         }
 
         if (!s.activeVerifySession.isDone()) {
@@ -342,7 +342,7 @@
         var branchName = s.activeVerifyBranch;
 
         // Close session and clean up worktree.
-        try { s.activeVerifySession.close(); } catch (e) { /* ignore */ }
+        try { s.activeVerifySession.close(); } catch (e) { log.debug('verifyDone: session.close failed: ' + (e.message || e)); }
         if (s.activeVerifyWorktree && s.activeVerifyDir) {
             prSplit.cleanupVerifyWorktree(s.activeVerifyDir, s.activeVerifyWorktree);
         }
@@ -400,7 +400,7 @@
 
         // Clean up shell session if open (shell depends on verify worktree).
         if (s.shellSession) {
-            try { s.shellSession.close(); } catch (e) { /* ignore */ }
+            try { s.shellSession.close(); } catch (e) { log.debug('shellCleanup: shellSession.close failed: ' + (e.message || e)); }
             s.shellSession = null;
             s.shellScreen = '';
             s.shellViewOffset = 0;
@@ -488,7 +488,7 @@
 
         // T352: Auto-scroll main viewport during fallback verification.
         if (s.vp && s.verifyAutoScroll !== false) {
-            try { s.vp.gotoBottom(); } catch (e) { /* ignore */ }
+            try { s.vp.gotoBottom(); } catch (e) { log.debug('fallbackPoll: viewport.gotoBottom failed: ' + (e.message || e)); }
         }
 
         // Still running — keep polling.
@@ -768,7 +768,7 @@
                         var shot = '';
                         if (typeof tuiMux !== 'undefined' && tuiMux &&
                             typeof tuiMux.screenshot === 'function') {
-                            try { shot = String(tuiMux.screenshot() || ''); } catch (e) { /* ignore */ }
+                            try { shot = String(tuiMux.screenshot() || ''); } catch (e) { log.debug('screenCapture: tuiMux.screenshot failed: ' + (e.message || e)); }
                         }
                         if (shot) {
                             convoState.history.push({
@@ -990,7 +990,7 @@
 
         if (done) {
             // Clean up shell session.
-            try { s.shellSession.close(); } catch (e) { /* ignore */ }
+            try { s.shellSession.close(); } catch (e) { log.debug('tabSwitch: shellSession.close failed: ' + (e.message || e)); }
             s.shellSession = null;
             s.shellScreen = '';
             s.shellViewOffset = 0;
@@ -998,7 +998,7 @@
 
             // Resume verify if it was paused for the shell.
             if (s.verifyPaused && s.activeVerifySession) {
-                try { s.activeVerifySession.resume(); s.verifyPaused = false; } catch (e) { /* ignore */ }
+                try { s.activeVerifySession.resume(); s.verifyPaused = false; } catch (e) { log.debug('tabSwitch: verifySession.resume failed: ' + (e.message || e)); }
             }
 
             // Switch away from shell tab.

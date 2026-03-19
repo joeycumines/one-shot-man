@@ -693,7 +693,7 @@
 
                 // Restore status after 3 seconds (debounced).
                 if (_bellFlashTimer) {
-                    try { clearTimeout(_bellFlashTimer); } catch(e) { /* ignore */ }
+                    try { clearTimeout(_bellFlashTimer); } catch(e) { log.debug('bell: clearTimeout failed: ' + (e.message || e)); }
                 }
                 _bellFlashTimer = setTimeout(function() {
                     tuiMux.setStatus(prevStatus);

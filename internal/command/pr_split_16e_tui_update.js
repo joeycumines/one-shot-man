@@ -74,15 +74,15 @@
         if (tab === 'claude') {
             if (typeof tuiMux !== 'undefined' && tuiMux &&
                 typeof tuiMux.writeToChild === 'function') {
-                try { tuiMux.writeToChild(bytes); return true; } catch (e) { return false; }
+                try { tuiMux.writeToChild(bytes); return true; } catch (e) { log.debug('writeInput: tuiMux.writeToChild failed: ' + (e.message || e)); return false; }
             }
         } else if (tab === 'verify') {
             if (s.activeVerifySession && typeof s.activeVerifySession.write === 'function') {
-                try { s.activeVerifySession.write(bytes); return true; } catch (e) { return false; }
+                try { s.activeVerifySession.write(bytes); return true; } catch (e) { log.debug('writeInput: verifySession.write failed: ' + (e.message || e)); return false; }
             }
         } else if (tab === 'shell') {
             if (s.shellSession && typeof s.shellSession.write === 'function') {
-                try { s.shellSession.write(bytes); return true; } catch (e) { return false; }
+                try { s.shellSession.write(bytes); return true; } catch (e) { log.debug('writeInput: shellSession.write failed: ' + (e.message || e)); return false; }
             }
         }
         return false;
@@ -112,10 +112,10 @@
                 var paneRows = Math.max(3, cH - 3);
                 var paneCols = Math.max(20, (s.width || 80) - 4);
                 if (s.activeVerifySession && typeof s.activeVerifySession.resize === 'function') {
-                    try { s.activeVerifySession.resize(paneRows, paneCols); } catch (e) { /* ignore */ }
+                    try { s.activeVerifySession.resize(paneRows, paneCols); } catch (e) { log.debug('resize: verifySession.resize failed: ' + (e.message || e)); }
                 }
                 if (s.shellSession && typeof s.shellSession.resize === 'function') {
-                    try { s.shellSession.resize(paneRows, paneCols); } catch (e) { /* ignore */ }
+                    try { s.shellSession.resize(paneRows, paneCols); } catch (e) { log.debug('resize: shellSession.resize failed: ' + (e.message || e)); }
                 }
             }
 
@@ -451,10 +451,10 @@
                 var now = Date.now();
                 if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < 2000) {
                     // Double Ctrl+C — force kill.
-                    try { s.activeVerifySession.kill(); } catch (e) { /* ignore */ }
+                    try { s.activeVerifySession.kill(); } catch (e) { log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e)); }
                 } else {
                     // First Ctrl+C — graceful interrupt.
-                    try { s.activeVerifySession.interrupt(); } catch (e) { /* ignore */ }
+                    try { s.activeVerifySession.interrupt(); } catch (e) { log.debug('cancelVerify: verifySession.interrupt failed: ' + (e.message || e)); }
                 }
                 s.lastVerifyInterruptTime = now;
                 return [s, null];

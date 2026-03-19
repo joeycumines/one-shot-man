@@ -213,7 +213,7 @@
             // Clean up MCP callback transport.
             var mcpCb = prSplit._mcpCallbackObj;
             if (mcpCb) {
-                try { mcpCb.closeSync(); } catch (e) { /* best effort */ }
+                try { mcpCb.closeSync(); } catch (e) { log.debug('cleanup: mcpCb.closeSync failed: ' + (e.message || e)); }
                 prSplit._mcpCallbackObj = null;
                 state.mcpCallbackObj = null;
             }
@@ -222,7 +222,7 @@
             if (result.error && state.planCache && state.planCache.splits && state.planCache.splits.length > 0) {
                 try {
                     savePlan(resolvedPlanPath, report.lastCompletedStep || 'error');
-                } catch (e) { /* best effort */ }
+                } catch (e) { log.debug('cleanup: savePlan failed: ' + (e.message || e)); }
 
                 emitOutput('\n[auto-split] Pipeline failed: ' + result.error);
                 emitOutput('[auto-split] Plan saved to: ' + resolvedPlanPath);

@@ -14,7 +14,7 @@
         try {
             var termmux = require('osm:termmux');
             if (typeof termmux.newCaptureSession !== 'function') return false;
-        } catch (e) { return false; }
+        } catch (e) { log.debug('canSpawnInteractiveShell: require termmux failed: ' + (e.message || e)); return false; }
 
         try {
             var osmod = require('osm:os');
@@ -24,7 +24,7 @@
                 var shell = osmod.getenv('SHELL') || '';
                 if (comspec && !shell) return false;
             }
-        } catch (e) { /* best-effort — assume capable */ }
+        } catch (e) { log.debug('canSpawnInteractiveShell: os.getenv check failed: ' + (e.message || e)); }
 
         return true;
     }
@@ -59,7 +59,7 @@
             if (osmod && typeof osmod.getenv === 'function') {
                 shell = osmod.getenv('SHELL') || '';
             }
-        } catch (e) { /* ignore */ }
+        } catch (e) { log.debug('spawnShell: getenv SHELL failed: ' + (e.message || e)); }
         if (!shell) {
             shell = 'sh';
         }

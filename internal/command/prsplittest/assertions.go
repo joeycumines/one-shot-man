@@ -258,6 +258,8 @@ func GitMockSetupJS() string {
     };
 
     // Mock exec.spawn to route through the same mock dispatcher as execv.
+    // Returns a ChildHandle-compatible object with ReadableStream stdout/stderr
+    // and an async wait() method. Used by verifySplitAsync (exec.spawn('sh',...)).
     execMod.spawn = function(cmd, args) {
         var fullArgv = [cmd].concat(args || []);
         var r = execMod.execv(fullArgv);
@@ -283,8 +285,30 @@ func GitMockSetupJS() string {
                 }
             },
             wait: function() { return Promise.resolve({code: r.code}); },
-            kill: function() {}
+            kill: function() {},
+            isAlive: function() { return false; },
+            close: function() {}
         };
     };
+
+    // Mock _gitExecAsync to route through the same mock dispatcher as execv.
+    // This ensures async git calls in resolveConflictsWithClaude, strategies,
+    // heuristicFallback, etc. hit the same mock responses.
+    if (globalThis.prSplit) {
+        globalThis.prSplit._gitExecAsync = function(dir, args) {
+            var argv = ['git'];
+            if (dir && dir !== '' && dir !== '.') { argv.push('-C'); argv.push(dir); }
+            for (var i = 0; i < args.length; i++) argv.push(args[i]);
+            return execMod.execv(argv);
+        };
+
+        // Mock _gitAddChangedFilesAsync: delegate to the sync gitAddChangedFiles
+        // which itself calls _gitExec (already mocked via the execv override).
+        if (globalThis.prSplit._gitAddChangedFiles) {
+            globalThis.prSplit._gitAddChangedFilesAsync = function(dir) {
+                return globalThis.prSplit._gitAddChangedFiles(dir);
+            };
+        }
+    }
 })();`
 }

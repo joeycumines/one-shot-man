@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -205,7 +207,7 @@ func TestResolveConflicts(t *testing.T) {
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Install exec mock.
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -666,7 +668,7 @@ func TestClaudeCodeExecutor_Resolve(t *testing.T) {
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Install exec mock.
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -943,7 +945,7 @@ func TestGitAddChangedFiles(t *testing.T) {
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Install exec mock.
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 

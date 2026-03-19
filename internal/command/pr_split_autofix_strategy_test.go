@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -596,7 +598,7 @@ func TestAutoFixStrategy_GoModTidy_Fix(t *testing.T) {
 	if _, err := evalJS(strategiesAccessJS); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -725,7 +727,7 @@ func TestAutoFixStrategy_GoGenerateSum_Fix(t *testing.T) {
 	if _, err := evalJS(strategiesAccessJS); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -781,7 +783,7 @@ func TestAutoFixStrategy_AddMissingFiles_Fix(t *testing.T) {
 	if _, err := evalJS(strategiesAccessJS); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -895,7 +897,7 @@ func TestAutoFixStrategy_GoBuildMissingImports_Fix(t *testing.T) {
 	if _, err := evalJS(strategiesAccessJS); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -996,7 +998,7 @@ func TestAutoFixStrategy_NpmInstall_Fix(t *testing.T) {
 	if _, err := evalJS(strategiesAccessJS); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1086,7 +1088,7 @@ func TestAutoFixStrategy_MakeGenerate_Fix(t *testing.T) {
 	if _, err := evalJS(strategiesAccessJS); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 

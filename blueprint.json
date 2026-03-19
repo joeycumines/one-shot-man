@@ -569,10 +569,11 @@
     },
     {
       "id": "T377",
-      "task": "Delete legacy gitMockSetupJS and migrate 30+ callers to prsplittest",
-      "description": "pr_split_06_verification_legacy_test.go:32 has a local gitMockSetupJS() that duplicates prsplittest.GitMockSetupJS(). 30+ call sites across 7 test files use the local copy. Delete it and migrate all callers to the prsplittest package.",
+      "task": "Delete legacy gitMockSetupJS and migrate 55 callers to prsplittest",
+      "description": "pr_split_06_verification_legacy_test.go:32 had a local gitMockSetupJS() that duplicated prsplittest.GitMockSetupJS(). 55 call sites across 11 test files used the local copy. Upgraded prsplittest version to include _gitExecAsync, _gitAddChangedFilesAsync mocks and full ChildHandle interface, then migrated all callers and deleted the legacy function.",
       "acceptance": "Zero local gitMockSetupJS functions remain. All callers use prsplittest.GitMockSetupJS(). Tests pass.",
-      "status": "Not Started"
+      "status": "Done",
+      "notes": "Legacy function had 2 extra features vs prsplittest: _gitExecAsync/_gitAddChangedFilesAsync mocks and isAlive/close on ChildHandle. Upgraded prsplittest to include all. 55 call sites across 11 files migrated. 9 files needed new import (corrected from lancekrogers→joeycumines module path). 136 lines removed from verification_legacy_test.go."
     },
     {
       "id": "T378",

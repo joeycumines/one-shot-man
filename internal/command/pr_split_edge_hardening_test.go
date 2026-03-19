@@ -791,7 +791,7 @@ func TestAnalyzeDiff_SpecialCharPaths(t *testing.T) {
 	evalJS := prsplittest.NewFullEngine(t, nil)
 
 	// Install the shared git mock infrastructure.
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 

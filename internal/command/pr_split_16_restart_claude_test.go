@@ -25,7 +25,7 @@ func TestChunk16_RestartClaudePoll_WithPlan(t *testing.T) {
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
-		` + gitMockSetupJS() + `
+		` + prsplittest.GitMockSetupJS() + `
 		setupPlanCache(); // populate st.planCache
 
 		var s = initState('ERROR_RESOLUTION');
@@ -75,7 +75,7 @@ func TestChunk16_RestartClaudePoll_NoPlan_AutoMode(t *testing.T) {
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
-		` + gitMockSetupJS() + `
+		` + prsplittest.GitMockSetupJS() + `
 
 		var s = initState('ERROR_RESOLUTION');
 		s.claudeRestarting = false;
@@ -130,7 +130,7 @@ func TestChunk16_RestartClaudePoll_NoPlan_HeuristicMode(t *testing.T) {
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
-		` + gitMockSetupJS() + `
+		` + prsplittest.GitMockSetupJS() + `
 
 		var s = initState('ERROR_RESOLUTION');
 		s.claudeRestarting = false;

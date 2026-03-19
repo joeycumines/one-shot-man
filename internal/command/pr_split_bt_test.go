@@ -11,6 +11,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -199,7 +201,7 @@ func TestGetSplitDiff_SuccessWithDiff(t *testing.T) {
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -239,7 +241,7 @@ func TestGetSplitDiff_FallbackOnThreeDotFailure(t *testing.T) {
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -297,7 +299,7 @@ func TestGetSplitDiff_BothDiffsFail(t *testing.T) {
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 

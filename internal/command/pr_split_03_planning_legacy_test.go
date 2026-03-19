@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -142,7 +144,7 @@ func TestGroupByDependency(t *testing.T) {
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Install exec mock.
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -465,7 +467,7 @@ func TestSelectStrategy(t *testing.T) {
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Install exec mock for groupByDependency's cat/go.mod reads.
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -738,7 +740,7 @@ func TestCreateSplitPlan(t *testing.T) {
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Install exec mock for rev-parse.
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -897,7 +899,7 @@ func TestCreateSplitPlan_EmptyAndNullGroups(t *testing.T) {
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -975,7 +977,7 @@ func TestCreateSplitPlan_DependencyField(t *testing.T) {
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := evalJS(`globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feat');`); err != nil {

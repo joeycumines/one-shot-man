@@ -11,6 +11,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 func TestSessionPersistence_ConversationHistory(t *testing.T) {
@@ -920,7 +922,7 @@ func TestVerifySplits_CancellationMidIteration(t *testing.T) {
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := evalJS(resetGitMockJS); err != nil {

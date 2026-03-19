@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 // ---------------------------------------------------------------------------
@@ -25,7 +27,7 @@ func TestExecuteSplit(t *testing.T) {
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Install exec mock.
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -361,7 +363,7 @@ func TestExecuteSplit_TypeChange(t *testing.T) {
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := evalJS(resetGitMockJS); err != nil {
@@ -460,7 +462,7 @@ func TestVerifySplit(t *testing.T) {
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Install exec mock.
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -603,7 +605,7 @@ func TestVerifyEquivalence(t *testing.T) {
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -752,7 +754,7 @@ func TestVerifyEquivalenceDetailed(t *testing.T) {
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -871,7 +873,7 @@ func TestCleanupBranches(t *testing.T) {
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1040,7 +1042,7 @@ func TestExecuteSplit_RenamedFile(t *testing.T) {
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := evalJS(resetGitMockJS); err != nil {
@@ -1108,7 +1110,7 @@ func TestExecuteSplit_CopiedFile(t *testing.T) {
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := evalJS(resetGitMockJS); err != nil {

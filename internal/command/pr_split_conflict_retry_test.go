@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
 )
 
 func TestPrSplitCommand_ResolveConflictsNoVerifyCommand(t *testing.T) {
@@ -1940,7 +1942,7 @@ func TestPrSplitCommand_ResolveConflictsWithClaude_SuccessfulFix(t *testing.T) {
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Install git mock so gitExec / exec.execStream are captured.
-	if _, err := evalJS(gitMockSetupJS()); err != nil {
+	if _, err := evalJS(prsplittest.GitMockSetupJS()); err != nil {
 		t.Fatal(err)
 	}
 

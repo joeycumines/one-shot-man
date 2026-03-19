@@ -6,6 +6,7 @@
     // Cross-chunk imports from 10a.
     var resolveSendConfig = prSplit._resolveSendConfig;
     var getCancellationError = prSplit._getCancellationError;
+    var TRUNCATION_WIDTH = 120;
 
     function captureScreenshot() {
         if (typeof tuiMux === 'undefined' || !tuiMux || typeof tuiMux.screenshot !== 'function') {
@@ -344,7 +345,7 @@
             return { error: 'Claude process handle is null — process may have exited or failed to spawn. Check Claude CLI availability and MCP configuration.' };
         }
         var config = resolveSendConfig();
-        var truncated = text.length > 120 ? text.substring(0, 120) + '...' : text;
+        var truncated = text.length > TRUNCATION_WIDTH ? text.substring(0, TRUNCATION_WIDTH) + '...' : text;
         log.printf('auto-split sendToHandle: sending %d chars — %s', text.length, truncated);
 
         var EAGAIN_MAX_RETRIES = 3;

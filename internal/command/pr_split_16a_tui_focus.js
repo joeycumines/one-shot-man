@@ -34,6 +34,7 @@
     function openClaudeConvo(s, context) { return prSplit._openClaudeConvo(s, context); }
     function handleErrorResolutionChoice(s, choice) { return prSplit._handleErrorResolutionChoice(s, choice); }
     function formatReportForDisplay(report) { return prSplit._formatReportForDisplay(report); }
+    var C = prSplit._TUI_CONSTANTS;
 
     // -----------------------------------------------------------------------
     //  Shared Viewport Helpers
@@ -46,7 +47,7 @@
     function syncMainViewport(s) {
         if (!s.vp) return;
         var w = s.width || 80;
-        var h = s.height || 24;
+        var h = s.height || C.DEFAULT_ROWS;
         var vpHeight = Math.max(3, h - CHROME_ESTIMATE);
         s.vp.setWidth(w);
 
@@ -744,7 +745,7 @@
         if (focused.id === 'nav-cancel') {
             if (s.activeVerifySession) {
                 var now = Date.now();
-                if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < 2000) {
+                if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < C.SIGKILL_WINDOW_MS) {
                     try { s.activeVerifySession.kill(); } catch (e) { log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e)); }
                 } else {
                     try { s.activeVerifySession.interrupt(); } catch (e) { log.debug('cancelVerify: verifySession.interrupt failed: ' + (e.message || e)); }

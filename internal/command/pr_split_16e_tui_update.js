@@ -53,6 +53,7 @@
     var CLAUDE_RESERVED_KEYS = prSplit._CLAUDE_RESERVED_KEYS;
     var CHROME_ESTIMATE = prSplit._CHROME_ESTIMATE;
     var pollClaudeScreenshot = prSplit._pollClaudeScreenshot;
+    var C = prSplit._TUI_CONSTANTS;
 
     // Late-bound shim — handleMouseClick is defined in chunk 16f (loaded after this).
     function handleMouseClick(msg, s) { return prSplit._handleMouseClick(msg, s); }
@@ -60,7 +61,7 @@
     // T327/T328: Compute screen offset where bottom pane terminal content begins.
     // Layout: titleBar(1) + divider(1) + wizard(wizardH) + paneDivider(1) + borderTop(1) + titleLine(1).
     function computeSplitPaneContentOffset(s) {
-        var h = s.height || 24;
+        var h = s.height || C.DEFAULT_ROWS;
         var vpHeight = Math.max(3, h - CHROME_ESTIMATE);
         var minPaneH = 3;
         var wizardH = Math.max(minPaneH, Math.floor(vpHeight * (s.splitViewRatio || 0.6)));
@@ -103,7 +104,7 @@
 
             // T336: Resize verify and shell CaptureSession terminals.
             if (s.splitViewEnabled) {
-                var h = s.height || 24;
+                var h = s.height || C.DEFAULT_ROWS;
                 var vpH = Math.max(3, h - CHROME_ESTIMATE);
                 var minP = 3;
                 var wH = Math.max(minP, Math.floor(vpH * (s.splitViewRatio || 0.6)));
@@ -449,7 +450,7 @@
             // (handles processes that ignore SIGINT).
             if (k === 'ctrl+c' && s.activeVerifySession) {
                 var now = Date.now();
-                if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < 2000) {
+                if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < C.SIGKILL_WINDOW_MS) {
                     // Double Ctrl+C — force kill.
                     try { s.activeVerifySession.kill(); } catch (e) { log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e)); }
                 } else {
@@ -494,7 +495,7 @@
                     // T45: User re-opened — clear manual dismiss flag.
                     s.claudeManuallyDismissed = false;
                     // Start screenshot polling. Preserve focusIndex.
-                    return [s, tea.tick(100, 'claude-screenshot')];
+                    return [s, tea.tick(C.TICK_INTERVAL_MS, 'claude-screenshot')];
                 } else {
                     // T45: User explicitly closed — set manual dismiss flag
                     // so auto-attach does not re-open the pane.

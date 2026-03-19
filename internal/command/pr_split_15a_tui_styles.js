@@ -254,10 +254,23 @@
         return s;
     }
 
+    // TUI numeric constants — centralizes magic numbers used across chunks.
+    var TUI_CONSTANTS = {
+        OUTPUT_BUFFER_CAP: 5000,    // max output lines before trimming
+        SIGKILL_WINDOW_MS: 2000,    // double-tap Ctrl+C kill window
+        TRUNCATION_WIDTH: 120,      // max chars before truncating text
+        CONVO_TIMEOUT_MS: 120000,   // 2-min conversation/command timeout
+        TICK_INTERVAL_MS: 100,      // polling interval for tea.tick (ms)
+        DEFAULT_ROWS: 24,           // fallback terminal row count
+        INLINE_VIEW_HEIGHT: 12,     // min height for inline terminal view
+        DISMISS_NOTIF_MS: 5000,     // auto-dismiss notification timeout (ms)
+    };
+
     prSplit._renderProgressBar = renderProgressBar;
     prSplit._SPINNER_FRAMES = SPINNER_FRAMES;
     prSplit._truncate = truncate;
     prSplit._padRight = padRight;
+    prSplit._TUI_CONSTANTS = TUI_CONSTANTS;
 
     // Cross-chunk exports — libraries and utilities for subsequent chunks.
     prSplit._tea = tea;

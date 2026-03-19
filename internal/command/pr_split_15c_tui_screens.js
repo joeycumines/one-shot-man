@@ -8,6 +8,7 @@
     var st = prSplit._state;
     var styles = prSplit._wizardStyles;
     var COLORS = prSplit._wizardColors;
+    var C = prSplit._TUI_CONSTANTS;
     var layoutMode = prSplit._layoutMode;
     var lipgloss = prSplit._lipgloss;
     var zone = prSplit._zone;
@@ -718,7 +719,7 @@
                     }
 
                     var viewWidth = Math.max(40, (s.width || 80) - 8);
-                    var viewHeight = 12; // content rows inside the border
+                    var viewHeight = C.INLINE_VIEW_HEIGHT; // content rows inside the border
                     // T058: Show elapsed time with timeout progress in viewport title.
                     var elapsed = ((s.verifyElapsedMs || (Date.now() - s.activeVerifyStartTime)) / 1000).toFixed(1);
                     var vpTimeoutMs = (typeof prSplitConfig !== 'undefined' && prSplitConfig.timeoutMs) ? prSplitConfig.timeoutMs : 0;

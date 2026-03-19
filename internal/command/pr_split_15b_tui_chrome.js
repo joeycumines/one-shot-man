@@ -7,6 +7,7 @@
 
     var styles = prSplit._wizardStyles;
     var COLORS = prSplit._wizardColors;
+    var C = prSplit._TUI_CONSTANTS;
     var layoutMode = prSplit._layoutMode;
     var SPINNER_FRAMES = prSplit._SPINNER_FRAMES;
     var lipgloss = prSplit._lipgloss;
@@ -501,7 +502,7 @@
     function viewClaudeConvoOverlay(s) {
         var convo = s.claudeConvo;
         var w = Math.min((s.width || 80) - 4, 76);
-        var h = Math.min((s.height || 24) - 4, 22);
+        var h = Math.min((s.height || C.DEFAULT_ROWS) - 4, 22);
 
         var lines = [];
 

@@ -10,6 +10,7 @@
 
     // Cross-chunk imports — libraries.
     var tea = prSplit._tea;
+    var C = prSplit._TUI_CONSTANTS;
 
     // Cross-chunk imports — state and handlers from chunks 13-14.
     var st = prSplit._state;
@@ -209,7 +210,7 @@
         // T44: Install global output capture to pipe git command output to Output tab.
         prSplit._outputCaptureFn = function(line) {
             s.outputLines.push(line);
-            if (s.outputLines.length > 5000) {
+            if (s.outputLines.length > C.OUTPUT_BUFFER_CAP) {
                 s.outputLines = s.outputLines.slice(-4000);
             }
             if (s.outputAutoScroll) {
@@ -317,7 +318,7 @@
                         }
                         s.wizard.transition('ERROR_RESOLUTION');
                         s.wizardState = 'ERROR_RESOLUTION';
-                        return [s, tea.tick(5000, 'dismiss-attach-notif')];
+                        return [s, tea.tick(C.DISMISS_NOTIF_MS, 'dismiss-attach-notif')];
                     }
                 }
             }
@@ -326,7 +327,7 @@
             // split-view is not yet enabled, user hasn't manually dismissed, and
             // terminal is tall enough.
             if (!s.claudeAutoAttached && !s.splitViewEnabled && !s.claudeManuallyDismissed &&
-                s.height >= 12 &&
+                s.height >= C.INLINE_VIEW_HEIGHT &&
                 typeof tuiMux !== 'undefined' && tuiMux &&
                 typeof tuiMux.hasChild === 'function' && tuiMux.hasChild()) {
                 s.splitViewEnabled = true;
@@ -340,9 +341,9 @@
                 // Start screenshot polling immediately via batched tick.
                 // T028: Also schedule dismiss tick for the notification.
                 return [s, tea.batch(
-                    tea.tick(100, 'claude-screenshot'),
+                    tea.tick(C.TICK_INTERVAL_MS, 'claude-screenshot'),
                     tea.tick(500, 'auto-poll'),
-                    tea.tick(5000, 'dismiss-attach-notif')
+                    tea.tick(C.DISMISS_NOTIF_MS, 'dismiss-attach-notif')
                 )];
             }
 
@@ -801,7 +802,7 @@
                 s.claudeAutoAttachNotif = 'Claude session ended \u2014 split-view closed';
                 s.claudeAutoAttachNotifAt = Date.now();
                 // T028: Schedule tick to dismiss the notification.
-                return [s, tea.tick(5000, 'dismiss-attach-notif')]; // stop polling
+                return [s, tea.tick(C.DISMISS_NOTIF_MS, 'dismiss-attach-notif')]; // stop polling
             }
             // Continue polling — the child may attach later (e.g., during auto-split).
             return [s, tea.tick(500, 'claude-screenshot')];

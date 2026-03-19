@@ -466,7 +466,7 @@
       "task": "Consolidate magic numbers into named constants in JS chunks",
       "description": "Several magic numbers are scattered across TUI code without constants: 5000 (output buffer cap), 2000 (double-click SIGKILL window ms), 120 (truncation length), 120000 (2-min conversation timeout), 100 (tick interval ms), 24 (default terminal rows), 12 (inline view height). Create a `TUI_CONSTANTS` object in pr_split_15a_tui_styles.js (the shared constants/styles chunk) containing: OUTPUT_BUFFER_CAP, SIGKILL_WINDOW_MS, TRUNCATION_WIDTH, CONVO_TIMEOUT_MS, TICK_INTERVAL_MS, DEFAULT_ROWS, INLINE_VIEW_HEIGHT. Update all references across chunks to use `TUI_CONSTANTS.<name>`. Only extract values that appear in 2+ locations or have non-obvious meaning.",
       "acceptance": "All non-obvious numeric literals in TUI code are replaced with named constants. Each constant has a brief inline comment explaining its purpose. The TUI_CONSTANTS object is accessible via `prSplit._TUI_CONSTANTS` for test access. All tests pass. No behavior changes.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": "T364",

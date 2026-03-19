@@ -8,6 +8,7 @@
     var st = prSplit._state;
     var styles = prSplit._wizardStyles;
     var COLORS = prSplit._wizardColors;
+    var C = prSplit._TUI_CONSTANTS;
     var layoutMode = prSplit._layoutMode;
     var lipgloss = prSplit._lipgloss;
     var zone = prSplit._zone;
@@ -399,7 +400,7 @@
     // No side effects — safe to call from both update and view.
     function computeReportOverlayDims(s) {
         var overlayW = Math.min(72, (s.width || 80) - 6);
-        var overlayH = Math.max(8, (s.height || 24) - 6);
+        var overlayH = Math.max(8, (s.height || C.DEFAULT_ROWS) - 6);
         var vpW = Math.max(10, overlayW - 4); // card padding + scrollbar
         var vpH = Math.max(3, overlayH - 4);  // title + hints + borders
         return { overlayW: overlayW, overlayH: overlayH, vpW: vpW, vpH: vpH };

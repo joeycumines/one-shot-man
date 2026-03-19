@@ -11,6 +11,7 @@
     // Cross-chunk imports.
     var tea = prSplit._tea;
     var st = prSplit._state;
+    var C = prSplit._TUI_CONSTANTS;
     var handleConfigState = prSplit._handleConfigState;
     var handlePlanReviewState = prSplit._handlePlanReviewState;
 
@@ -179,8 +180,8 @@
         // T44: Install global output capture to pipe git command output to Output tab.
         prSplit._outputCaptureFn = function(line) {
             s.outputLines.push(line);
-            // Cap output buffer at 5000 lines to prevent unbounded memory growth.
-            if (s.outputLines.length > 5000) {
+            // Cap output buffer to prevent unbounded memory growth.
+            if (s.outputLines.length > C.OUTPUT_BUFFER_CAP) {
                 s.outputLines = s.outputLines.slice(-4000);
             }
             // Auto-scroll to bottom when new output arrives.
@@ -199,8 +200,8 @@
             }
         );
 
-        // Poll at 100ms for responsive spinner animation.
-        return [s, tea.tick(100, 'analysis-poll')];
+        // Poll at tick interval for responsive spinner animation.
+        return [s, tea.tick(C.TICK_INTERVAL_MS, 'analysis-poll')];
     }
 
     // runAnalysisAsync: Runs all 5 analysis steps as an async function.
@@ -397,7 +398,7 @@
                 }
             }
             s.spinnerFrame = (s.spinnerFrame || 0) + 1;
-            return [s, tea.tick(100, 'analysis-poll')];
+            return [s, tea.tick(C.TICK_INTERVAL_MS, 'analysis-poll')];
         }
 
         // Pipeline completed. Check for error set by .then() rejection.
@@ -524,8 +525,8 @@
             }
         );
 
-        // Poll at 100ms for responsive spinner animation.
-        return [s, tea.tick(100, 'execution-poll')];
+        // Poll at tick interval for responsive spinner animation.
+        return [s, tea.tick(C.TICK_INTERVAL_MS, 'execution-poll')];
     }
 
     // runExecutionAsync: Runs the split execution as an async function.
@@ -595,7 +596,7 @@
         // Still running — poll again for spinner animation.
         if (s.executionRunning) {
             s.spinnerFrame = (s.spinnerFrame || 0) + 1;
-            return [s, tea.tick(100, 'execution-poll')];
+            return [s, tea.tick(C.TICK_INTERVAL_MS, 'execution-poll')];
         }
 
         // Pipeline completed. Check for error set by .then() rejection.
@@ -652,7 +653,7 @@
             }
         );
 
-        return [s, tea.tick(100, 'equiv-poll')];
+        return [s, tea.tick(C.TICK_INTERVAL_MS, 'equiv-poll')];
     }
 
     // runEquivCheckAsync: Runs equivalence check as an async function.
@@ -719,7 +720,7 @@
 
         // Still running — poll again.
         if (s.equivRunning) {
-            return [s, tea.tick(100, 'equiv-poll')];
+            return [s, tea.tick(C.TICK_INTERVAL_MS, 'equiv-poll')];
         }
 
         // Pipeline completed. Check for error.

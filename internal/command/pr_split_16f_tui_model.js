@@ -64,6 +64,7 @@
     var mouseToTermBytes = prSplit._mouseToTermBytes;
     var computeSplitPaneContentOffset = prSplit._computeSplitPaneContentOffset;
     var writeMouseToPane = prSplit._writeMouseToPane;
+    var C = prSplit._TUI_CONSTANTS;
 
     // -----------------------------------------------------------------------
     //  Mouse Handlers
@@ -80,7 +81,7 @@
             // to prevent session/worktree leaks from unguarded quit.
             if (s.activeVerifySession) {
                 var now = Date.now();
-                if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < 2000) {
+                if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < C.SIGKILL_WINDOW_MS) {
                     try { s.activeVerifySession.kill(); } catch (e) { log.debug('quit: verifySession.kill failed: ' + (e.message || e)); }
                 } else {
                     try { s.activeVerifySession.interrupt(); } catch (e) { log.debug('quit: verifySession.interrupt failed: ' + (e.message || e)); }
@@ -106,7 +107,7 @@
                     s.splitViewTab = 'claude';
                     s.claudeManuallyDismissed = false;
                     syncMainViewport(s); // T120: sync dimensions after toggle.
-                    return [s, tea.tick(100, 'claude-screenshot')];
+                    return [s, tea.tick(C.TICK_INTERVAL_MS, 'claude-screenshot')];
                 }
                 // Already open — switch to Claude tab.
                 s.splitViewTab = 'claude';
@@ -271,7 +272,7 @@
                         try { s.activeVerifySession.pause(); s.verifyPaused = true; } catch (e) { log.debug('tabSwitch: verifySession.pause failed: ' + (e.message || e)); }
                     }
                     // Compute shell terminal size from pane dimensions.
-                    var shellH = s.height || 24;
+                    var shellH = s.height || C.DEFAULT_ROWS;
                     var vpH = Math.max(3, shellH - (prSplit._CHROME_ESTIMATE || 8));
                     var minP = 3;
                     var wH = Math.max(minP, Math.floor(vpH * (s.splitViewRatio || 0.6)));
@@ -294,7 +295,7 @@
                         }
                         s.splitViewTab = 'shell';
                         s.splitViewFocus = 'claude';
-                        return [s, tea.tick(100, 'shell-poll')];
+                        return [s, tea.tick(C.TICK_INTERVAL_MS, 'shell-poll')];
                     } catch (e) {
                         log.printf('verify: spawn shell failed: %s', e.message || String(e));
                     }
@@ -310,7 +311,7 @@
             // SIGINT, second click within 2s sends SIGKILL.
             if (s.activeVerifySession && zone.inBounds('verify-interrupt', msg)) {
                 var now = Date.now();
-                if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < 2000) {
+                if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < C.SIGKILL_WINDOW_MS) {
                     try { s.activeVerifySession.kill(); } catch (e) { log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e)); }
                 } else {
                     try { s.activeVerifySession.interrupt(); } catch (e) { log.debug('cancelVerify: verifySession.interrupt failed: ' + (e.message || e)); }
@@ -512,7 +513,7 @@
 
     function wizardViewImpl(s) {
         var w = s.width || 80;
-        var h = s.height || 24;
+        var h = s.height || C.DEFAULT_ROWS;
 
         // Title bar.
         var titleBar = renderTitleBar(s);
@@ -730,7 +731,7 @@
             log.printf('wizard: %s \u2192 %s', from, to);
         });
 
-        var vp = viewportLib.new(80, 24);
+        var vp = viewportLib.new(80, C.DEFAULT_ROWS);
         vp.setMouseWheelEnabled(true);
         var sb = scrollbarLib.new();
 
@@ -748,7 +749,7 @@
 
                 // Dimensions.
                 width: 80,
-                height: 24,
+                height: C.DEFAULT_ROWS,
 
                 // Viewport.
                 vp: vp,

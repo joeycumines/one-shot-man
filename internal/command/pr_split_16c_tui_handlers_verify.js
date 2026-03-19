@@ -12,6 +12,7 @@
     var tea = prSplit._tea;
     var zone = prSplit._zone;
     var st = prSplit._state;
+    var C = prSplit._TUI_CONSTANTS;
     var handleErrorResolutionState = prSplit._handleErrorResolutionState;
 
     // Late-bound cross-chunk references (defined in later chunks, resolved at call time).
@@ -212,7 +213,7 @@
         var sessionResult = prSplit.startVerifySession(branchName, {
             dir: dir,
             verifyCommand: scopedCmd,
-            rows: 24,
+            rows: C.DEFAULT_ROWS,
             cols: Math.max(80, (s.width || 80) - 8)
         });
 
@@ -246,7 +247,7 @@
             s.verifyOutput[branchName] = []; // pre-initialize for live outputFn
 
             // T352: Auto-open split-view with Verify tab in fallback path.
-            if (!s.splitViewEnabled && s.height >= 12) {
+            if (!s.splitViewEnabled && s.height >= C.INLINE_VIEW_HEIGHT) {
                 s.splitViewEnabled = true;
                 s.splitViewFocus = 'wizard';
                 s.splitViewTab = 'verify';
@@ -269,7 +270,7 @@
             );
 
             // Poll at 100ms for completion.
-            return [s, tea.tick(100, 'verify-fallback-poll')];
+            return [s, tea.tick(C.TICK_INTERVAL_MS, 'verify-fallback-poll')];
         }
 
         // CaptureSession started — store state for polling.
@@ -284,7 +285,7 @@
         s.verifyAutoScroll = true;
 
         // T325: Auto-open split-view with Verify tab when verification starts.
-        if (!s.splitViewEnabled && s.height >= 12) {
+        if (!s.splitViewEnabled && s.height >= C.INLINE_VIEW_HEIGHT) {
             s.splitViewEnabled = true;
             s.splitViewFocus = 'wizard';
             s.splitViewTab = 'verify';
@@ -296,7 +297,7 @@
         }
 
         // Poll every 100ms for live output updates.
-        return [s, tea.tick(100, 'verify-poll')];
+        return [s, tea.tick(C.TICK_INTERVAL_MS, 'verify-poll')];
     }
 
     // ── Live verification poll ───────────────────────────────────
@@ -332,7 +333,7 @@
         if (!s.activeVerifySession.isDone()) {
             // Still running — schedule next poll.
             s.spinnerFrame = (s.spinnerFrame || 0) + 1;
-            return [s, tea.tick(100, 'verify-poll')];
+            return [s, tea.tick(C.TICK_INTERVAL_MS, 'verify-poll')];
         }
 
         // Process exited — capture result.
@@ -357,7 +358,7 @@
             for (var voi = 0; voi < outputLines.length; voi++) {
                 s.outputLines.push(outputLines[voi]);
             }
-            if (s.outputLines.length > 5000) {
+            if (s.outputLines.length > C.OUTPUT_BUFFER_CAP) {
                 s.outputLines = s.outputLines.slice(-4000);
             }
             if (s.outputAutoScroll) {
@@ -443,7 +444,7 @@
                 outputLines.push(line);
                 // T352: Populate verifyScreen with latest fallback output so
                 // the inline terminal and Verify tab show live output.
-                var rows = Math.min(24, outputLines.length);
+                var rows = Math.min(C.DEFAULT_ROWS, outputLines.length);
                 s.verifyScreen = outputLines.slice(-rows).join('\n');
             }
         });
@@ -494,7 +495,7 @@
         // Still running — keep polling.
         if (s.verifyFallbackRunning) {
             s.spinnerFrame = (s.spinnerFrame || 0) + 1;
-            return [s, tea.tick(100, 'verify-fallback-poll')];
+            return [s, tea.tick(C.TICK_INTERVAL_MS, 'verify-fallback-poll')];
         }
 
         // T352: Clear fallback display state on completion.
@@ -718,13 +719,13 @@
 
         // Determine MCP tool to wait for based on context.
         var toolToWait = null;
-        var timeoutMs = 120000; // 2 minutes default
+        var timeoutMs = C.CONVO_TIMEOUT_MS; // 2 minutes default
         if (convo.context === 'plan-review') {
             toolToWait = 'reportSplitPlan';
             timeoutMs = 180000; // 3 minutes for plan revision
         } else if (convo.context === 'error-resolution') {
             toolToWait = 'reportResolution';
-            timeoutMs = 120000;
+            timeoutMs = C.CONVO_TIMEOUT_MS;
         }
         convo.waitingForTool = toolToWait;
 
@@ -1009,7 +1010,7 @@
             return [s, null];
         }
 
-        return [s, tea.tick(100, 'shell-poll')];
+        return [s, tea.tick(C.TICK_INTERVAL_MS, 'shell-poll')];
     }
 
     // Cross-chunk exports.

@@ -7,13 +7,6 @@ GO_MODULE_PATHS_EXCLUDE_PATTERNS ?= ./scratch/%
 DEADCODE_IGNORE_PATTERNS_FILE ?= .deadcodeignore
 DEADCODE_ERROR_ON_UNIGNORED ?= true
 
-# Include prsplit_slow tag in all lint/vet/test invocations so that
-# slow-tagged test files are visible to static analysis and the full test
-# suite.  The fast-feedback target (test-prsplit-fast) explicitly omits
-# this tag to skip slow integration/E2E tests.
-GO_FLAGS := -tags=prsplit_slow
-STATICCHECK_FLAGS := -tags=prsplit_slow
-
 ##@ Project Targets
 
 .PHONY: generate-tapes-and-gifs

@@ -1,5 +1,3 @@
-//go:build prsplit_slow
-
 package command
 
 import (
@@ -16,6 +14,7 @@ import (
 )
 
 func TestSessionPersistence_ConversationHistory(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -161,6 +160,7 @@ func TestSessionPersistence_ConversationHistory(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestVerifySplit_TUIOutput(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("verifySplit uses sh -c; skipping on Windows")
@@ -274,6 +274,7 @@ func TestVerifySplit_TUIOutput(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestExecuteSplit_ProgressFeedback(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("executeSplit uses git on filesystem; skipping on Windows for simplicity")
@@ -443,6 +444,7 @@ func TestExecuteSplit_ProgressFeedback(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestResolveConflicts_RestoresBranchOnError(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("resolveConflicts uses sh -c; skipping on Windows")
@@ -530,6 +532,7 @@ func TestResolveConflicts_RestoresBranchOnError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestResolveConflicts_CancellationDuringStrategyLoop(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("resolveConflicts uses sh -c; skipping on Windows")
@@ -636,6 +639,7 @@ func TestResolveConflicts_CancellationDuringStrategyLoop(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestExecuteSplit_CancellationMidFile(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("executeSplit uses git on filesystem; skipping on Windows")
@@ -765,6 +769,7 @@ func TestExecuteSplit_CancellationMidFile(t *testing.T) {
 //     path never spawns a process, so no process cleanup is needed)
 //  3. The pipeline exits with a cancellation-related error
 func TestAutoSplit_CancelDuringExecution_EmitsResumeAndCleansUp(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -918,6 +923,7 @@ func TestAutoSplit_CancelDuringExecution_EmitsResumeAndCleansUp(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestVerifySplits_CancellationMidIteration(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)

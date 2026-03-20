@@ -1,5 +1,3 @@
-//go:build prsplit_slow
-
 package command
 
 import (
@@ -32,6 +30,7 @@ import (
 // real git operations. This is the core reproducer for the "Processing..."
 // hang bug.
 func TestTUIHang_RealAsyncAnalysis(t *testing.T) {
+	skipSlow(t)
 	// Create a real git repo with a feature branch.
 	dir := initGitRepo(t)
 	writeFile(t, filepath.Join(dir, "README.md"), "# Test\n")
@@ -193,6 +192,7 @@ func unmarshalJSON(s string, v any) error {
 // async analysis pipeline runs on the event loop. This catches races where
 // rapid external submissions can starve Promise/microtask resolution.
 func TestTUIHang_ConcurrentPolling(t *testing.T) {
+	skipSlow(t)
 	dir := initGitRepo(t)
 	writeFile(t, filepath.Join(dir, "README.md"), "# Test\n")
 	writeFile(t, filepath.Join(dir, "main.go"), "package main\n\nfunc main() {}\n")

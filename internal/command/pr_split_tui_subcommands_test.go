@@ -1,5 +1,3 @@
-//go:build prsplit_slow
-
 package command
 
 import (
@@ -10,6 +8,7 @@ import (
 )
 
 func TestPrSplitCommand_CopyCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -48,6 +47,7 @@ func TestPrSplitCommand_CopyCommand(t *testing.T) {
 }
 
 func TestPrSplitCommand_ClaudeCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -80,6 +80,7 @@ func TestPrSplitCommand_ClaudeCommand(t *testing.T) {
 }
 
 func TestPrSplitCommand_ClaudeStatusCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -100,6 +101,7 @@ func TestPrSplitCommand_ClaudeStatusCommand(t *testing.T) {
 }
 
 func TestPrSplitCommand_EditPlanCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -135,6 +137,7 @@ func TestPrSplitCommand_EditPlanCommand(t *testing.T) {
 }
 
 func TestPrSplitCommand_DiffCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -193,6 +196,7 @@ func TestPrSplitCommand_DiffCommand(t *testing.T) {
 }
 
 func TestPrSplitCommand_ConversationCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -229,6 +233,7 @@ func TestPrSplitCommand_ConversationCommand(t *testing.T) {
 }
 
 func TestPrSplitCommand_GraphCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -266,6 +271,7 @@ func TestPrSplitCommand_GraphCommand(t *testing.T) {
 }
 
 func TestPrSplitCommand_TelemetryCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -298,6 +304,7 @@ func TestPrSplitCommand_TelemetryCommand(t *testing.T) {
 }
 
 func TestPrSplitCommand_RetroCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -339,6 +346,7 @@ func TestPrSplitCommand_RetroCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_BuildCommandsAllDispatchable(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -377,6 +385,7 @@ func TestPrSplitCommand_BuildCommandsAllDispatchable(t *testing.T) {
 }
 
 func TestPrSplitCommand_UnknownCommandError(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -419,6 +428,7 @@ func extractJSON(s string) string {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_AnalyzeCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -488,6 +498,7 @@ func TestPrSplitCommand_AnalyzeCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_StatsCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -525,6 +536,7 @@ func TestPrSplitCommand_StatsCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_GroupCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -581,6 +593,7 @@ func TestPrSplitCommand_GroupCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_PlanCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -626,6 +639,7 @@ func TestPrSplitCommand_PlanCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_PreviewCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -672,6 +686,7 @@ func TestPrSplitCommand_PreviewCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_MoveCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -792,6 +807,7 @@ func TestPrSplitCommand_MoveCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_RenameCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -862,6 +878,7 @@ func TestPrSplitCommand_RenameCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_MergeCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -937,6 +954,7 @@ func TestPrSplitCommand_MergeCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_ReorderCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -1014,6 +1032,7 @@ func TestPrSplitCommand_ReorderCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_ExecuteCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -1083,6 +1102,7 @@ func TestPrSplitCommand_ExecuteCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_VerifyCommandGuards(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -1147,6 +1167,7 @@ func TestPrSplitCommand_VerifyCommandGuards(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_EquivalenceCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -1196,6 +1217,7 @@ func TestPrSplitCommand_EquivalenceCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_CleanupCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -1269,6 +1291,7 @@ func TestPrSplitCommand_CleanupCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_FixCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -1309,6 +1332,7 @@ func TestPrSplitCommand_FixCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_CreatePRsCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -1342,6 +1366,7 @@ func TestPrSplitCommand_CreatePRsCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_SetCommandEdgeCases(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -1557,6 +1582,7 @@ func TestPrSplitCommand_SetCommandEdgeCases(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_RunCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -1608,6 +1634,7 @@ func TestPrSplitCommand_RunCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_SaveLoadPlanCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -1684,6 +1711,7 @@ func TestPrSplitCommand_SaveLoadPlanCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_ReportCommandEdgeCases(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -1735,6 +1763,7 @@ func TestPrSplitCommand_ReportCommandEdgeCases(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_AutoSplitCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -1760,6 +1789,7 @@ func TestPrSplitCommand_AutoSplitCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_OverrideCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -1814,6 +1844,7 @@ func TestPrSplitCommand_OverrideCommand(t *testing.T) {
 }
 
 func TestPrSplitCommand_AbortCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -1865,6 +1896,7 @@ func TestPrSplitCommand_AbortCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_HudCommand(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -1959,6 +1991,7 @@ func TestPrSplitCommand_HudCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_HelpCommandComprehensive(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}

@@ -1,5 +1,3 @@
-//go:build prsplit_slow
-
 package command
 
 import (
@@ -50,6 +48,7 @@ import (
 // import of NEW functions/types). This allows the directory strategy to
 // produce branches that build.
 func TestIntegration_ComplexGoProject_HeuristicSplit(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	if _, err := exec.LookPath("go"); err != nil {
@@ -289,6 +288,7 @@ func TestIntegration_ComplexGoProject_HeuristicSplit(t *testing.T) {
 //
 //	make integration-test-prsplit
 func TestIntegration_AutoSplitComplexGoProject(t *testing.T) {
+	skipSlow(t)
 	skipIfNoClaude(t)
 	verifyClaudeAuth(t)
 

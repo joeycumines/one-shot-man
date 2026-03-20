@@ -1,5 +1,3 @@
-//go:build prsplit_slow
-
 package command
 
 import (
@@ -17,18 +15,19 @@ import (
 //  are pure and synchronous — they do not mutate prSplit state.
 //
 //  Run individual fuzz tests:
-//    go test -tags=prsplit_slow -fuzz=FuzzClassificationParsing ./internal/command/...
-//    go test -tags=prsplit_slow -fuzz=FuzzPlanValidation         ./internal/command/...
-//    go test -tags=prsplit_slow -fuzz=FuzzValidateClassification ./internal/command/...
-//    go test -tags=prsplit_slow -fuzz=FuzzValidateSplitPlan      ./internal/command/...
-//    go test -tags=prsplit_slow -fuzz=FuzzValidateResolution     ./internal/command/...
-//    go test -tags=prsplit_slow -fuzz=FuzzIsTransientError       ./internal/command/...
+//    go test -fuzz=FuzzClassificationParsing ./internal/command/...
+//    go test -fuzz=FuzzPlanValidation         ./internal/command/...
+//    go test -fuzz=FuzzValidateClassification ./internal/command/...
+//    go test -fuzz=FuzzValidateSplitPlan      ./internal/command/...
+//    go test -fuzz=FuzzValidateResolution     ./internal/command/...
+//    go test -fuzz=FuzzIsTransientError       ./internal/command/...
 // ---------------------------------------------------------------------------
 
 // FuzzClassificationParsing fuzzes classificationToGroups (pr_split_10a)
 // with arbitrary JSON input. The function accepts both array-of-categories
 // and legacy {filePath: categoryName} map formats.
 func FuzzClassificationParsing(f *testing.F) {
+	skipSlow(f)
 	evalJS := prsplittest.NewChunkEngine(f, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning",
 		"04_validation", "05_execution", "06_verification",
@@ -110,6 +109,7 @@ func FuzzClassificationParsing(f *testing.F) {
 
 // FuzzPlanValidation fuzzes validatePlan (pr_split_04) with arbitrary JSON.
 func FuzzPlanValidation(f *testing.F) {
+	skipSlow(f)
 	evalJS := prsplittest.NewChunkEngine(f, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation",
 	)
@@ -162,6 +162,7 @@ func FuzzPlanValidation(f *testing.F) {
 
 // FuzzValidateClassification fuzzes validateClassification (pr_split_04).
 func FuzzValidateClassification(f *testing.F) {
+	skipSlow(f)
 	evalJS := prsplittest.NewChunkEngine(f, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation",
 	)
@@ -208,6 +209,7 @@ func FuzzValidateClassification(f *testing.F) {
 
 // FuzzValidateSplitPlan fuzzes validateSplitPlan (pr_split_04).
 func FuzzValidateSplitPlan(f *testing.F) {
+	skipSlow(f)
 	evalJS := prsplittest.NewChunkEngine(f, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation",
 	)
@@ -250,6 +252,7 @@ func FuzzValidateSplitPlan(f *testing.F) {
 
 // FuzzValidateResolution fuzzes validateResolution (pr_split_04).
 func FuzzValidateResolution(f *testing.F) {
+	skipSlow(f)
 	evalJS := prsplittest.NewChunkEngine(f, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning", "04_validation",
 	)
@@ -300,6 +303,7 @@ func FuzzValidateResolution(f *testing.F) {
 // FuzzIsTransientError fuzzes isTransientError (pr_split_10a) which classifies
 // error messages for retry decisions in the conflict resolution pipeline.
 func FuzzIsTransientError(f *testing.F) {
+	skipSlow(f)
 	evalJS := prsplittest.NewChunkEngine(f, nil,
 		"00_core", "01_analysis", "02_grouping", "03_planning",
 		"04_validation", "05_execution", "06_verification",

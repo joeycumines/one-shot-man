@@ -1,4 +1,4 @@
-//go:build unix && prsplit_slow
+//go:build unix
 
 package command
 
@@ -47,6 +47,7 @@ func (b *threadSafeBuffer) String() string {
 // navigates to "Start Analysis", and verifies the TUI progresses past the
 // CONFIG screen within a reasonable timeout.
 func TestTUIHang_BinaryPTY_Interactive(t *testing.T) {
+	skipSlow(t)
 	if testing.Short() {
 		t.Skip("skipping PTY integration test in short mode")
 	}
@@ -216,6 +217,7 @@ func TestTUIHang_BinaryPTY_Interactive(t *testing.T) {
 // is a correctness gate: if batch mode works, the analysis logic is sound
 // and any remaining TUI issues are isolated to the BubbleTea bridge.
 func TestTUIHang_BinaryBatch_ProvesHeuristicWorks(t *testing.T) {
+	skipSlow(t)
 	osmBin := buildOSMBinary(t)
 	repoDir := setupBinaryTestRepo(t)
 

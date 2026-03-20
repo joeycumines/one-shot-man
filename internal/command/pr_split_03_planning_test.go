@@ -1,5 +1,3 @@
-//go:build prsplit_slow
-
 package command
 
 import (
@@ -20,6 +18,7 @@ import (
 // correct splits from group objects, using sanitized branch names and padded
 // indices.
 func TestChunk03_CreateSplitPlan_BasicGroups(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	dir := initGitRepo(t)
 	evalJS := prsplittest.NewChunkEngine(t, map[string]any{
@@ -106,6 +105,7 @@ func TestChunk03_CreateSplitPlan_BasicGroups(t *testing.T) {
 // TestChunk03_CreateSplitPlan_EmptyGroups verifies that an empty groups
 // object produces zero splits (no panic).
 func TestChunk03_CreateSplitPlan_EmptyGroups(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	_ = initGitRepo(t)
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping", "03_planning")
@@ -126,6 +126,7 @@ func TestChunk03_CreateSplitPlan_EmptyGroups(t *testing.T) {
 
 // TestChunk03_CreateSplitPlan_NilGroups verifies graceful handling of nil input.
 func TestChunk03_CreateSplitPlan_NilGroups(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping", "03_planning")
 
@@ -146,6 +147,7 @@ func TestChunk03_CreateSplitPlan_NilGroups(t *testing.T) {
 // TestChunk03_CreateSplitPlan_BranchNames verifies sanitized branch names
 // with padded indices.
 func TestChunk03_CreateSplitPlan_BranchNames(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, map[string]any{
 		"branchPrefix": "pr/",
@@ -189,6 +191,7 @@ func TestChunk03_CreateSplitPlan_BranchNames(t *testing.T) {
 // TestChunk03_SavePlan_NoPlan verifies savePlan returns error when no
 // plan is cached.
 func TestChunk03_SavePlan_NoPlan(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping", "03_planning")
 
@@ -213,6 +216,7 @@ func TestChunk03_SavePlan_NoPlan(t *testing.T) {
 // TestChunk03_SaveLoadPlan_RoundTrip verifies that saving a plan and
 // loading it back produces the same data.
 func TestChunk03_SaveLoadPlan_RoundTrip(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	dir := initGitRepo(t)
 
@@ -318,6 +322,7 @@ func TestChunk03_SaveLoadPlan_RoundTrip(t *testing.T) {
 // TestChunk03_LoadPlan_CorruptJSON verifies loadPlan returns error for
 // invalid JSON.
 func TestChunk03_LoadPlan_CorruptJSON(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "bad.json")
@@ -348,6 +353,7 @@ func TestChunk03_LoadPlan_CorruptJSON(t *testing.T) {
 // TestChunk03_LoadPlan_MissingFile verifies loadPlan returns error for
 // non-existent file.
 func TestChunk03_LoadPlan_MissingFile(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping", "03_planning")
 
@@ -372,6 +378,7 @@ func TestChunk03_LoadPlan_MissingFile(t *testing.T) {
 // TestChunk03_LoadPlan_MissingSplits verifies loadPlan rejects a file with
 // no splits field.
 func TestChunk03_LoadPlan_MissingSplits(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "nosplits.json")
@@ -402,6 +409,7 @@ func TestChunk03_LoadPlan_MissingSplits(t *testing.T) {
 
 // TestChunk03_LoadPlan_UnsupportedVersion verifies loadPlan rejects version 0.
 func TestChunk03_LoadPlan_UnsupportedVersion(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "badver.json")
@@ -433,6 +441,7 @@ func TestChunk03_LoadPlan_UnsupportedVersion(t *testing.T) {
 // TestChunk03_SavePlan_WithLastCompletedStep verifies snapshot version
 // is bumped to 2 when lastCompletedStep is provided.
 func TestChunk03_SavePlan_WithLastCompletedStep(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	dir := initGitRepo(t)
 	writeFile(t, filepath.Join(dir, "x.go"), "package x")
@@ -484,6 +493,7 @@ func TestChunk03_SavePlan_WithLastCompletedStep(t *testing.T) {
 
 // TestChunk03_DefaultPlanPath verifies the exported constant.
 func TestChunk03_DefaultPlanPath(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping", "03_planning")
 
@@ -499,6 +509,7 @@ func TestChunk03_DefaultPlanPath(t *testing.T) {
 // T101: Calling loadPlan twice on the same snapshot must NOT duplicate
 // conversation history — the replacement must be idempotent.
 func TestChunk03_LoadPlan_DoubleLoadNoDuplication(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	dir := initGitRepo(t)
 	writeFile(t, filepath.Join(dir, "x.go"), "package x")

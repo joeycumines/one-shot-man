@@ -29,8 +29,9 @@
 //   - [NewTUIEngineWithHelpers]: Extends NewTUIEngine with chunk16Helpers
 //     (state initializer, mock helpers, message helpers).
 //
-// # Build Tags
+// # Test Gating
 //
-// Slow integration/E2E tests should use //go:build prsplit_slow to exclude
-// them from the fast feedback loop (make test-prsplit-fast).
+// Slow integration/E2E tests call skipSlow(t) at the top of the function
+// body so that `go test -short` provides a fast feedback loop while
+// `go test` (without -short) runs the full suite.
 package prsplittest

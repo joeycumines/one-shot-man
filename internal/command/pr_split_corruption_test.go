@@ -1,5 +1,3 @@
-//go:build prsplit_slow
-
 package command
 
 import (
@@ -31,6 +29,7 @@ import (
 // file with a missing "version" key (distinct from version 0, which is
 // covered by TestChunk03_LoadPlan_UnsupportedVersion).
 func TestChunk03_LoadPlan_NoVersionField(t *testing.T) {
+	skipSlow(t)
 	dir := t.TempDir()
 	planPath := filepath.Join(dir, "noversion.json")
 	// Valid JSON with splits but no "version" key at all.
@@ -64,6 +63,7 @@ func TestChunk03_LoadPlan_NoVersionField(t *testing.T) {
 // through to a fresh start rather than crash. This is an integration-level
 // test that requires the full pipeline engine (all 14 chunks + WizardState).
 func TestChunk13_Wizard_ResumeCorruptCheckpoint(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}

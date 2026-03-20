@@ -1,5 +1,3 @@
-//go:build prsplit_slow
-
 package command
 
 import (
@@ -14,6 +12,7 @@ import (
 )
 
 func TestIntegration_LargeFeatureBranch(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -134,6 +133,7 @@ func TestIntegration_LargeFeatureBranch(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_RefactoringBranch(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -313,6 +313,7 @@ func TestIntegration_RefactoringBranch(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_BrokenSplitsResolution(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -428,6 +429,7 @@ func TestIntegration_BrokenSplitsResolution(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_IndependentChanges(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -525,6 +527,7 @@ func TestIntegration_IndependentChanges(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_HeuristicFallback(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -573,6 +576,7 @@ func TestIntegration_HeuristicFallback(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_PollFileTimeout(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -615,6 +619,7 @@ func TestIntegration_PollFileTimeout(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_PlanPersistence(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -739,6 +744,7 @@ func TestIntegration_PlanPersistence(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_PRCreationMockGh(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -818,6 +824,7 @@ func TestIntegration_PRCreationMockGh(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_TUICommandSequence(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -950,6 +957,7 @@ func TestIntegration_TUICommandSequence(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_RealClaudeCode(t *testing.T) {
+	skipSlow(t)
 	skipIfNoClaude(t)
 	verifyClaudeAuth(t)
 	if runtime.GOOS == "windows" {
@@ -1009,6 +1017,7 @@ func TestIntegration_RealClaudeCode(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_AutoSplitWithClaude(t *testing.T) {
+	skipSlow(t)
 	skipIfNoClaude(t)
 	verifyClaudeAuth(t)
 	if runtime.GOOS == "windows" {
@@ -1130,6 +1139,7 @@ func TestIntegration_AutoSplitWithClaude(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_AutoSplitComplexEdits(t *testing.T) {
+	skipSlow(t)
 	skipIfNoClaude(t)
 	verifyClaudeAuth(t)
 	if runtime.GOOS == "windows" {
@@ -1247,6 +1257,7 @@ func TestIntegration_AutoSplitComplexEdits(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_RealOllama(t *testing.T) {
+	skipSlow(t)
 	skipIfNoOllama(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -1300,6 +1311,7 @@ func TestIntegration_RealOllama(t *testing.T) {
 // the strongest possible assertion — not just "branches exist" or "tree hashes
 // match", but the individual file bytes are correct.
 func TestIntegration_FileContentsOnSplitBranches(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -1398,6 +1410,7 @@ func TestIntegration_FileContentsOnSplitBranches(t *testing.T) {
 // one changed file is handled correctly — exactly one split branch with that
 // single file.
 func TestIntegration_SingleFileFeature(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -1463,6 +1476,7 @@ func TestIntegration_SingleFileFeature(t *testing.T) {
 // multiple commits (not just one) is handled correctly — the cumulative diff
 // against base is what gets split, not just the last commit.
 func TestIntegration_MultiCommitFeature(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -1639,6 +1653,7 @@ func TestIntegration_MultiCommitFeature(t *testing.T) {
 // file changes (empty diff against base) is handled gracefully — early exit
 // rather than crash or empty plan.
 func TestIntegration_EmptyFeatureBranch(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -1681,6 +1696,7 @@ func TestIntegration_EmptyFeatureBranch(t *testing.T) {
 // operational lifecycle: plan → execute → verify equivalence → cleanup.
 // Each step's postconditions are asserted before moving to the next.
 func TestIntegration_ExecuteEquivalenceCleanupRoundTrip(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")

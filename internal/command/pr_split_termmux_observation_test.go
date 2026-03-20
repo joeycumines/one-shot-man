@@ -1,4 +1,4 @@
-//go:build unix && prsplit_slow
+//go:build unix
 
 package command
 
@@ -59,6 +59,7 @@ func readFileForDiag(path string) string {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_AutoSplitClaude_VTermObservation(t *testing.T) {
+	skipSlow(t)
 	skipIfNoClaude(t)
 	verifyClaudeAuth(t)
 
@@ -274,6 +275,7 @@ func TestIntegration_AutoSplitClaude_VTermObservation(t *testing.T) {
 //  2. Ctrl+] does not report "No Claude process attached".
 //  3. q / q force-cancel returns to (pr-split) prompt.
 func TestIntegration_PrSplit_VTerm_AutoSplitOllamaExactCommand(t *testing.T) {
+	skipSlow(t)
 	skipIfNotIntegration(t)
 
 	if _, err := exec.LookPath("ollama"); err != nil {
@@ -449,6 +451,7 @@ func TestIntegration_PrSplit_VTerm_AutoSplitOllamaExactCommand(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_PrSplit_VTermCleanExit(t *testing.T) {
+	skipSlow(t)
 	skipIfNotIntegration(t)
 
 	osmBin := buildOSMBinary(t)
@@ -554,6 +557,7 @@ func TestIntegration_PrSplit_VTermCleanExit(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_PrSplit_VTermHeuristicRun(t *testing.T) {
+	skipSlow(t)
 	skipIfNotIntegration(t)
 
 	osmBin := buildOSMBinary(t)
@@ -722,6 +726,7 @@ func TestIntegration_PrSplit_VTermHeuristicRun(t *testing.T) {
 //
 // ---------------------------------------------------------------------------
 func TestIntegration_PrSplit_VTermAutoSplitFallback(t *testing.T) {
+	skipSlow(t)
 	skipIfNotIntegration(t)
 
 	osmBin := buildOSMBinary(t)
@@ -879,6 +884,7 @@ func TestIntegration_PrSplit_VTermAutoSplitFallback(t *testing.T) {
 //
 // ---------------------------------------------------------------------------
 func TestIntegration_PrSplit_VTermMultiCommand(t *testing.T) {
+	skipSlow(t)
 	skipIfNotIntegration(t)
 
 	osmBin := buildOSMBinary(t)
@@ -1112,6 +1118,7 @@ func vtermExitCleanly(t *testing.T, ctx context.Context, cp *termtest.Console) {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_PrSplit_VTermAnalyze(t *testing.T) {
+	skipSlow(t)
 	skipIfNotIntegration(t)
 
 	osmBin := buildOSMBinary(t)
@@ -1190,6 +1197,7 @@ func TestIntegration_PrSplit_VTermAnalyze(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_PrSplit_VTermGroupAndPlan(t *testing.T) {
+	skipSlow(t)
 	skipIfNotIntegration(t)
 
 	osmBin := buildOSMBinary(t)
@@ -1279,6 +1287,7 @@ func TestIntegration_PrSplit_VTermGroupAndPlan(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_PrSplit_VTermSetConfig(t *testing.T) {
+	skipSlow(t)
 	skipIfNotIntegration(t)
 
 	osmBin := buildOSMBinary(t)
@@ -1350,6 +1359,7 @@ func TestIntegration_PrSplit_VTermSetConfig(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_PrSplit_VTermExecuteAndVerify(t *testing.T) {
+	skipSlow(t)
 	skipIfNotIntegration(t)
 
 	osmBin := buildOSMBinary(t)
@@ -1437,6 +1447,7 @@ func TestIntegration_PrSplit_VTermExecuteAndVerify(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_PrSplit_VTermPlanManipulation(t *testing.T) {
+	skipSlow(t)
 	skipIfNotIntegration(t)
 
 	osmBin := buildOSMBinary(t)
@@ -1498,6 +1509,7 @@ func TestIntegration_PrSplit_VTermPlanManipulation(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_PrSplit_VTermStatsCommand(t *testing.T) {
+	skipSlow(t)
 	skipIfNotIntegration(t)
 
 	osmBin := buildOSMBinary(t)

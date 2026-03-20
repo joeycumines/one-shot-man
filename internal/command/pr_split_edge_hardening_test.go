@@ -1,5 +1,3 @@
-//go:build prsplit_slow
-
 package command
 
 import (
@@ -14,6 +12,7 @@ import (
 )
 
 func TestAutomatedDefaults_OverrideChain(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	t.Run("defaults_when_no_config", func(t *testing.T) {
@@ -99,6 +98,7 @@ func TestAutomatedDefaults_OverrideChain(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestVerifySplits_EmptyPlan(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -177,6 +177,7 @@ func TestVerifySplits_EmptyPlan(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestSanitizeBranchName_EdgeCases(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -215,6 +216,7 @@ func TestSanitizeBranchName_EdgeCases(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestShellQuote_EdgeCases(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -256,6 +258,7 @@ func TestShellQuote_EdgeCases(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestClassificationToGroups_EdgeCases(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -386,6 +389,7 @@ func parsePipelineResult(t *testing.T, raw any) pipelineResult {
 // TestAutoSplit_EmptyDiff verifies the pipeline gracefully handles a feature
 // branch with no changes relative to main (empty diff).
 func TestAutoSplit_EmptyDiff(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -449,6 +453,7 @@ func TestAutoSplit_EmptyDiff(t *testing.T) {
 
 // TestAutoSplit_SingleFile verifies the pipeline handles a single-file change.
 func TestAutoSplit_SingleFile(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -514,6 +519,7 @@ func TestAutoSplit_SingleFile(t *testing.T) {
 // TestAutoSplit_LargeDiff verifies the pipeline handles a 100+ file change
 // without hanging, panicking, or producing a corrupted plan.
 func TestAutoSplit_LargeDiff(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -589,6 +595,7 @@ func TestAutoSplit_LargeDiff(t *testing.T) {
 // diff without crashing. Binary files show as "-\t-\tfilename" in --numstat
 // and should be grouped and split like any other file.
 func TestAutoSplit_BinaryFiles(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -671,6 +678,7 @@ func TestAutoSplit_BinaryFiles(t *testing.T) {
 // 10,000 files without OOM, hang, or corrupted output — all files must
 // appear in exactly one group.
 func TestGrouping_TenThousandFiles(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -728,6 +736,7 @@ func TestGrouping_TenThousandFiles(t *testing.T) {
 // TestGrouping_TenThousandFiles_ClassificationToGroups verifies
 // classificationToGroups handles 10,000 entries with no file loss.
 func TestGrouping_TenThousandFiles_ClassificationToGroups(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -786,6 +795,7 @@ func TestGrouping_TenThousandFiles_ClassificationToGroups(t *testing.T) {
 // TestAnalyzeDiff_SpecialCharPaths verifies that file paths with spaces,
 // unicode, and special characters survive diff parsing and grouping.
 func TestAnalyzeDiff_SpecialCharPaths(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -864,6 +874,7 @@ func TestAnalyzeDiff_SpecialCharPaths(t *testing.T) {
 // already exist, the pipeline's pre-flight step deletes them and proceeds
 // successfully.
 func TestAutoSplit_BranchCollision(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -962,6 +973,7 @@ func TestAutoSplit_BranchCollision(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAutoSplit_OnlyDeletions(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -1032,6 +1044,7 @@ func TestAutoSplit_OnlyDeletions(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestTUI_ExtremeTerminalSizes(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
@@ -1114,6 +1127,7 @@ func TestTUI_ExtremeTerminalSizes(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestValidation_EdgeCases(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -1239,6 +1253,7 @@ func TestValidation_EdgeCases(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestTUI_LongNamesRendering(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 

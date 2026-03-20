@@ -1,5 +1,3 @@
-//go:build prsplit_slow
-
 package command
 
 import (
@@ -21,6 +19,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestIsCancelled_NoCancelSource(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -36,6 +35,7 @@ func TestIsCancelled_NoCancelSource(t *testing.T) {
 }
 
 func TestIsCancelled_NotCancelled(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -56,6 +56,7 @@ func TestIsCancelled_NotCancelled(t *testing.T) {
 }
 
 func TestIsCancelled_Cancelled(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -76,6 +77,7 @@ func TestIsCancelled_Cancelled(t *testing.T) {
 }
 
 func TestIsCancelled_CancelSourceNotFunction(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -100,6 +102,7 @@ func TestIsCancelled_CancelSourceNotFunction(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRenderClassificationPrompt_BasicGo(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -163,6 +166,7 @@ func TestRenderClassificationPrompt_BasicGo(t *testing.T) {
 }
 
 func TestRenderClassificationPrompt_EmptyFiles(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -197,6 +201,7 @@ func TestRenderClassificationPrompt_EmptyFiles(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRenderSplitPlanPrompt_Basic(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -230,6 +235,7 @@ func TestRenderSplitPlanPrompt_Basic(t *testing.T) {
 }
 
 func TestRenderSplitPlanPrompt_DefaultConfig(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -263,6 +269,7 @@ func TestRenderSplitPlanPrompt_DefaultConfig(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRenderConflictPrompt_Basic(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -304,6 +311,7 @@ func TestRenderConflictPrompt_Basic(t *testing.T) {
 }
 
 func TestRenderConflictPrompt_MinimalInput(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -335,6 +343,7 @@ func TestRenderConflictPrompt_MinimalInput(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHeuristicFallback_DirectoryStrategy(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	// dryRun: true avoids any git operations — heuristicFallback only
@@ -403,6 +412,7 @@ func TestHeuristicFallback_DirectoryStrategy(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHeuristicFallback_TreeHashMismatch(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — OS state (chdir) is shared.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -474,6 +484,7 @@ func TestHeuristicFallback_TreeHashMismatch(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRenderPrompt_TemplateModuleNull(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -512,6 +523,7 @@ func TestRenderPrompt_TemplateModuleNull(t *testing.T) {
 }
 
 func TestRenderPrompt_TemplateModuleNull_AllFunctions(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -568,6 +580,7 @@ func TestRenderPrompt_TemplateModuleNull_AllFunctions(t *testing.T) {
 }
 
 func TestRenderPrompt_TemplateExecuteThrows(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -609,6 +622,7 @@ func TestRenderPrompt_TemplateExecuteThrows(t *testing.T) {
 }
 
 func TestRenderPrompt_RenderPromptDirect(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)

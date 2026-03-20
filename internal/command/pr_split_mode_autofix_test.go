@@ -1,5 +1,3 @@
-//go:build prsplit_slow
-
 package command
 
 import (
@@ -14,6 +12,7 @@ import (
 )
 
 func TestPrSplitCommand_SetModeCommand(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	stdout, dispatch, _, _ := loadPrSplitEngineWithEval(t, nil)
@@ -49,6 +48,7 @@ func TestPrSplitCommand_SetModeCommand(t *testing.T) {
 }
 
 func TestPrSplitCommand_SetShowsMode(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	stdout, dispatch, _, _ := loadPrSplitEngineWithEval(t, nil)
@@ -67,6 +67,7 @@ func TestPrSplitCommand_SetShowsMode(t *testing.T) {
 }
 
 func TestPrSplitCommand_HelpIncludesAutoSplit(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	stdout, dispatch := loadPrSplitEngine(t, nil)
 
@@ -81,6 +82,7 @@ func TestPrSplitCommand_HelpIncludesAutoSplit(t *testing.T) {
 }
 
 func TestPrSplitCommand_AutoSplitFallsBackToHeuristic(t *testing.T) {
+	skipSlow(t)
 	// Auto-split without Claude available should fall back to heuristic.
 	dir := setupTestGitRepo(t)
 
@@ -116,6 +118,7 @@ func TestPrSplitCommand_AutoSplitFallsBackToHeuristic(t *testing.T) {
 }
 
 func TestPrSplitCommand_RunModeAutoFallback(t *testing.T) {
+	skipSlow(t)
 	// run --mode auto without Claude should fall back to heuristic.
 	dir := setupTestGitRepo(t)
 
@@ -154,6 +157,7 @@ func TestPrSplitCommand_RunModeAutoFallback(t *testing.T) {
 }
 
 func TestPrSplitCommand_RunModeHeuristicExplicit(t *testing.T) {
+	skipSlow(t)
 	// run --mode heuristic should always use heuristic mode.
 	dir := setupTestGitRepo(t)
 
@@ -189,6 +193,7 @@ func TestPrSplitCommand_RunModeHeuristicExplicit(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_Phase4ScriptContent(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	// Verify Phase 4 functions and templates exist in the embedded script.
@@ -223,6 +228,7 @@ func TestPrSplitCommand_Phase4ScriptContent(t *testing.T) {
 }
 
 func TestPrSplitCommand_DefaultModeIsHeuristic(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -248,6 +254,7 @@ func TestPrSplitCommand_DefaultModeIsHeuristic(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_AutoFixStrategiesExist(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -271,6 +278,7 @@ func TestPrSplitCommand_AutoFixStrategiesExist(t *testing.T) {
 }
 
 func TestPrSplitCommand_AutoFixStrategyNames(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -306,6 +314,7 @@ func TestPrSplitCommand_AutoFixStrategyNames(t *testing.T) {
 }
 
 func TestPrSplitCommand_StrategyDetectSignatures(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -329,6 +338,7 @@ func TestPrSplitCommand_StrategyDetectSignatures(t *testing.T) {
 }
 
 func TestPrSplitCommand_GoMissingImportsDetect(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -385,6 +395,7 @@ func TestPrSplitCommand_GoMissingImportsDetect(t *testing.T) {
 }
 
 func TestPrSplitCommand_NpmInstallDetect(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -400,6 +411,7 @@ func TestPrSplitCommand_NpmInstallDetect(t *testing.T) {
 }
 
 func TestPrSplitCommand_NpmInstallDetectWithPackageJson(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	// Create a temp dir with a package.json.
@@ -420,6 +432,7 @@ func TestPrSplitCommand_NpmInstallDetectWithPackageJson(t *testing.T) {
 }
 
 func TestPrSplitCommand_MakeGenerateDetect(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -435,6 +448,7 @@ func TestPrSplitCommand_MakeGenerateDetect(t *testing.T) {
 }
 
 func TestPrSplitCommand_MakeGenerateDetectWithMakefile(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("make-generate detect uses sh -c and grep; skipping on Windows")
@@ -458,6 +472,7 @@ func TestPrSplitCommand_MakeGenerateDetectWithMakefile(t *testing.T) {
 }
 
 func TestPrSplitCommand_MakeGenerateDetectWithGoGenerate(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	// Create a temp dir with a Go file that has a //go:generate directive.
@@ -481,6 +496,7 @@ func TestPrSplitCommand_MakeGenerateDetectWithGoGenerate(t *testing.T) {
 }
 
 func TestPrSplitCommand_AddMissingFilesDetect(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -537,6 +553,7 @@ func TestPrSplitCommand_AddMissingFilesDetect(t *testing.T) {
 }
 
 func TestPrSplitCommand_ClaudeFixDetect(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -552,6 +569,7 @@ func TestPrSplitCommand_ClaudeFixDetect(t *testing.T) {
 }
 
 func TestPrSplitCommand_ClaudeFixFixWithoutExecutor(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)

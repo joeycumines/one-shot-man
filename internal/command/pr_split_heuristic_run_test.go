@@ -1,5 +1,3 @@
-//go:build prsplit_slow
-
 package command
 
 import (
@@ -16,6 +14,7 @@ import (
 )
 
 func TestPrSplitCommand_RunHeuristicEndToEnd(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — we chdir.
 	dir := setupTestGitRepo(t)
 
@@ -89,6 +88,7 @@ func TestPrSplitCommand_RunHeuristicEndToEnd(t *testing.T) {
 // TestPrSplitCommand_RunZeroChanges verifies that the run handler exits
 // gracefully when there are no changes between the current and base branch.
 func TestPrSplitCommand_RunZeroChanges(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -139,6 +139,7 @@ func TestPrSplitCommand_RunZeroChanges(t *testing.T) {
 // TestPrSplitCommand_RunDryRun verifies that dry-run mode shows the plan
 // without creating any branches.
 func TestPrSplitCommand_RunDryRun(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — we chdir.
 	dir := setupTestGitRepo(t)
 
@@ -188,6 +189,7 @@ func TestPrSplitCommand_RunDryRun(t *testing.T) {
 // TestPrSplitCommand_HelpCommand verifies that the "help" TUI command
 // dispatches correctly and outputs documentation.
 func TestPrSplitCommand_HelpCommand(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	stdout, dispatch := loadPrSplitEngine(t, nil)
 
@@ -210,6 +212,7 @@ func TestPrSplitCommand_HelpCommand(t *testing.T) {
 }
 
 func TestPrSplitCommand_TemplateContent(t *testing.T) {
+	skipSlow(t)
 	// Verify the template has expected sections
 	if !contains(prSplitTemplate, "baseBranch") {
 		t.Error("Expected template to contain baseBranch variable")
@@ -226,6 +229,7 @@ func TestPrSplitCommand_TemplateContent(t *testing.T) {
 }
 
 func TestPrSplitCommand_ScriptContent(t *testing.T) {
+	skipSlow(t)
 	// Verify the chunked script source has expected functions
 	src := allChunkSources()
 	if !contains(src, "function analyzeDiff") {
@@ -252,6 +256,7 @@ func TestPrSplitCommand_ScriptContent(t *testing.T) {
 }
 
 func TestPrSplitCommand_ConfigInjection(t *testing.T) {
+	skipSlow(t)
 	cfg := config.NewConfig()
 	cmd := NewPrSplitCommand(cfg)
 
@@ -353,6 +358,7 @@ func setupTestGitRepoWithDeletions(t *testing.T) string {
 // TestPrSplitCommand_RunWithDeletedFiles verifies that the run handler
 // correctly handles deleted files (uses git rm instead of checkout).
 func TestPrSplitCommand_RunWithDeletedFiles(t *testing.T) {
+	skipSlow(t)
 	dir := setupTestGitRepoWithDeletions(t)
 
 	oldDir, err := os.Getwd()
@@ -394,6 +400,7 @@ func TestPrSplitCommand_RunWithDeletedFiles(t *testing.T) {
 // TestPrSplitCommand_RunRerun verifies that running pr-split twice on the
 // same branch works (pre-existing split branches are cleaned up).
 func TestPrSplitCommand_RunRerun(t *testing.T) {
+	skipSlow(t)
 	dir := setupTestGitRepo(t)
 
 	oldDir, err := os.Getwd()
@@ -491,6 +498,7 @@ func setupTestGitRepoExtension(t *testing.T) string {
 // TestPrSplitCommand_RunExtensionStrategy tests the extension grouping
 // strategy end-to-end: analyze → group by extension → plan → execute → verify.
 func TestPrSplitCommand_RunExtensionStrategy(t *testing.T) {
+	skipSlow(t)
 	dir := setupTestGitRepoExtension(t)
 
 	oldDir, err := os.Getwd()
@@ -604,6 +612,7 @@ func setupTestGitRepoWithModifications(t *testing.T) string {
 // TestPrSplitCommand_RunWithModifications verifies that modified files
 // (not just additions) are correctly handled through the split workflow.
 func TestPrSplitCommand_RunWithModifications(t *testing.T) {
+	skipSlow(t)
 	dir := setupTestGitRepoWithModifications(t)
 
 	oldDir, err := os.Getwd()
@@ -734,6 +743,7 @@ func setupCompilableGoRepo(t *testing.T) string {
 // 2. Tree hash equivalence holds.
 // 3. The FINAL split branch actually compiles with `go build`.
 func TestPrSplitCommand_RunCompilableGoRepo(t *testing.T) {
+	skipSlow(t)
 	dir := setupCompilableGoRepo(t)
 
 	oldDir, err := os.Getwd()
@@ -794,6 +804,7 @@ func TestPrSplitCommand_RunCompilableGoRepo(t *testing.T) {
 // a proper chain: each branch's parent commit is on the previous branch
 // in the sequence (starting from the base branch).
 func TestPrSplitCommand_RunChainIntegrity(t *testing.T) {
+	skipSlow(t)
 	dir := setupTestGitRepo(t)
 
 	oldDir, err := os.Getwd()
@@ -851,6 +862,7 @@ func TestPrSplitCommand_RunChainIntegrity(t *testing.T) {
 // TestPrSplitCommand_VerifyCommand tests the verify TUI command which runs
 // the verify command on each split branch.
 func TestPrSplitCommand_VerifyCommand(t *testing.T) {
+	skipSlow(t)
 	dir := setupTestGitRepo(t)
 
 	oldDir, err := os.Getwd()
@@ -896,6 +908,7 @@ func TestPrSplitCommand_VerifyCommand(t *testing.T) {
 // TestPrSplitCommand_SetCommand tests the 'set' TUI command for changing
 // runtime configuration.
 func TestPrSplitCommand_SetCommand(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	stdout, dispatch := loadPrSplitEngine(t, nil)
 
@@ -932,6 +945,7 @@ func TestPrSplitCommand_SetCommand(t *testing.T) {
 // TestPrSplitCommand_AnalyzeAndStatsCommands tests the analyze and stats
 // TUI commands individually.
 func TestPrSplitCommand_AnalyzeAndStatsCommands(t *testing.T) {
+	skipSlow(t)
 	dir := setupTestGitRepo(t)
 
 	oldDir, err := os.Getwd()
@@ -973,6 +987,7 @@ func TestPrSplitCommand_AnalyzeAndStatsCommands(t *testing.T) {
 // TestPrSplitCommand_StepByStep exercises each step individually:
 // analyze → group → plan → execute → verify → equivalence → cleanup.
 func TestPrSplitCommand_StepByStep(t *testing.T) {
+	skipSlow(t)
 	dir := setupTestGitRepo(t)
 
 	oldDir, err := os.Getwd()
@@ -1073,6 +1088,7 @@ func TestPrSplitCommand_StepByStep(t *testing.T) {
 // TestPrSplitCommand_ReportCommand tests the report TUI command that outputs
 // current state as JSON.
 func TestPrSplitCommand_ReportCommand(t *testing.T) {
+	skipSlow(t)
 	dir := setupTestGitRepo(t)
 
 	oldDir, err := os.Getwd()
@@ -1133,6 +1149,7 @@ func TestPrSplitCommand_ReportCommand(t *testing.T) {
 // TestPrSplitCommand_ConfigOverrides verifies that config file settings
 // are applied as defaults and flags override them.
 func TestPrSplitCommand_ConfigOverrides(t *testing.T) {
+	skipSlow(t)
 	cfg := config.NewConfig()
 	cfg.Commands["pr-split"] = map[string]string{
 		"base":     "develop",
@@ -1179,6 +1196,7 @@ func TestPrSplitCommand_ConfigOverrides(t *testing.T) {
 // TUI commands. It creates a full plan (dry-run), saves it, then loads
 // it into a fresh engine and verifies the plan state is restored.
 func TestPrSplitCommand_SaveLoadPlan(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — we chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -1270,6 +1288,7 @@ func TestPrSplitCommand_SaveLoadPlan(t *testing.T) {
 // TestPrSplitCommand_CreatePRsGuards verifies that the create-prs command
 // requires a plan and executed splits before attempting PR creation.
 func TestPrSplitCommand_CreatePRsGuards(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	stdout, dispatch := loadPrSplitEngine(t, nil)
@@ -1286,6 +1305,7 @@ func TestPrSplitCommand_CreatePRsGuards(t *testing.T) {
 
 // TestPrSplitCommand_FixGuards verifies that the fix command requires a plan.
 func TestPrSplitCommand_FixGuards(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	stdout, dispatch := loadPrSplitEngine(t, nil)
@@ -1303,6 +1323,7 @@ func TestPrSplitCommand_FixGuards(t *testing.T) {
 // TestPrSplitCommand_PlanEditing exercises the interactive plan editing
 // commands: move, rename, merge, reorder.
 func TestPrSplitCommand_PlanEditing(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — we chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")

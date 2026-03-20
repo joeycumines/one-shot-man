@@ -1,5 +1,3 @@
-//go:build prsplit_slow
-
 package command
 
 import (
@@ -19,6 +17,7 @@ import (
 //
 // Acceptance: completes within 30s. Per-step timings logged.
 func TestBenchmark_AutoSplitLargeRepo(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}

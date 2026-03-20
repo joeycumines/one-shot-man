@@ -1,5 +1,3 @@
-//go:build prsplit_slow
-
 package command
 
 import (
@@ -18,6 +16,7 @@ import (
 )
 
 func TestAutoSplit_NegativeMaxReSplits(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -59,6 +58,7 @@ func TestAutoSplit_NegativeMaxReSplits(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAutoSplit_TimeoutDefaults(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -94,6 +94,7 @@ func TestAutoSplit_TimeoutDefaults(t *testing.T) {
 }
 
 func TestAutoSplit_PipelineTimeout(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -182,6 +183,7 @@ func TestAutoSplit_PipelineTimeout(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPollInterval_MinFloor(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -253,6 +255,7 @@ func TestPollInterval_MinFloor(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAutoSplit_SaveAndResume(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -462,6 +465,7 @@ func TestAutoSplit_SaveAndResume(t *testing.T) {
 // TestAutoSplit_CrashRecovery_AfterExecute verifies that the automatic
 // checkpointing writes lastCompletedStep after Step 6.
 func TestAutoSplit_CrashRecovery_AfterExecute(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -661,6 +665,7 @@ func TestAutoSplit_CrashRecovery_AfterExecute(t *testing.T) {
 //   - The report structure is complete
 //   - Independence pairs are detected for non-overlapping splits
 func TestIntegration_AutoSplitMockMCP(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -1068,6 +1073,7 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAutoSplit_AllStepsReportTiming(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -1194,6 +1200,7 @@ func TestAutoSplit_AllStepsReportTiming(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestHeuristicFallback_Report(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -1333,6 +1340,7 @@ func TestHeuristicFallback_Report(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_PlanPersistence_RoundTrip(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -1484,6 +1492,7 @@ func TestIntegration_PlanPersistence_RoundTrip(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestClaudeCodeExecutor_OllamaSpawnPath(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -1564,6 +1573,7 @@ func TestClaudeCodeExecutor_OllamaSpawnPath(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAutoSplit_CleanupOnFailure(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -1716,6 +1726,7 @@ func TestAutoSplit_CleanupOnFailure(t *testing.T) {
 }
 
 func TestAutoSplit_CleanupOnFailure_Disabled(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -1855,6 +1866,7 @@ func TestAutoSplit_CleanupOnFailure_Disabled(t *testing.T) {
 }
 
 func TestPrSplitConfig_CleanupOnFailure(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	// Verify the cleanup-on-failure flag is accessible in JS config.
@@ -1916,6 +1928,7 @@ func TestPrSplitConfig_CleanupOnFailure(t *testing.T) {
 //
 // This exercises the T21 implementation in finishTUI.
 func TestAutoSplit_ErrorFeedback_ResumeInstructions(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -2056,6 +2069,7 @@ func TestAutoSplit_ErrorFeedback_ResumeInstructions(t *testing.T) {
 //   - continues with verify/equivalence steps (does not abort)
 //   - completes without a fatal error
 func TestAutoSplit_ResumeClaudeResolveFails(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -2262,6 +2276,7 @@ func TestAutoSplit_ResumeClaudeResolveFails(t *testing.T) {
 // true for 'paused', the step() function returns 'paused by user (Ctrl-P)'.
 // On first step (before planCache exists), checkpoint save is skipped.
 func TestAutoSplit_PauseDuringStep(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -2332,6 +2347,7 @@ func TestAutoSplit_PauseDuringStep(t *testing.T) {
 // TestAutoSplit_StepTimeout verifies that when stepTimeoutMs is very short
 // and a step takes longer, the post-step timeout check fires.
 func TestAutoSplit_StepTimeout(t *testing.T) {
+	skipSlow(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
 	}
@@ -2436,6 +2452,7 @@ func TestAutoSplit_StepTimeout(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWaitForLogged_Success(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -2471,6 +2488,7 @@ func TestWaitForLogged_Success(t *testing.T) {
 }
 
 func TestWaitForLogged_Timeout(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -2506,6 +2524,7 @@ func TestWaitForLogged_Timeout(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWaitForLogged_HeartbeatTimeout(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -2558,6 +2577,7 @@ func TestWaitForLogged_HeartbeatTimeout(t *testing.T) {
 }
 
 func TestWaitForLogged_HeartbeatFresh_NoAbort(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -2603,6 +2623,7 @@ func TestWaitForLogged_HeartbeatFresh_NoAbort(t *testing.T) {
 }
 
 func TestWaitForLogged_HeartbeatNeverReceived_GracePeriod(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -2648,6 +2669,7 @@ func TestWaitForLogged_HeartbeatNeverReceived_GracePeriod(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestWaitForLogged_MissingWaitForAsync(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -2681,6 +2703,7 @@ func TestWaitForLogged_MissingWaitForAsync(t *testing.T) {
 }
 
 func TestWaitForLogged_NilMcpCallback(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -2711,6 +2734,7 @@ func TestWaitForLogged_NilMcpCallback(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCleanupExecutor_NormalClose(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -2744,6 +2768,7 @@ func TestCleanupExecutor_NormalClose(t *testing.T) {
 }
 
 func TestCleanupExecutor_ForceCancel(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -2777,6 +2802,7 @@ func TestCleanupExecutor_ForceCancel(t *testing.T) {
 }
 
 func TestCleanupExecutor_NilExecutor(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -2792,6 +2818,7 @@ func TestCleanupExecutor_NilExecutor(t *testing.T) {
 }
 
 func TestCleanupExecutor_WithTuiMux_NoSynchronousDetach(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
@@ -2833,6 +2860,7 @@ func TestCleanupExecutor_WithTuiMux_NoSynchronousDetach(t *testing.T) {
 // failure. The first call runs the full pipeline; the second call
 // runs it again on the same repo. Both must succeed.
 func TestIntegration_AutoSplitMockMCP_DoubleInvocation(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -2995,6 +3023,7 @@ func TestIntegration_AutoSplitMockMCP_DoubleInvocation(t *testing.T) {
 // does not crash. Both branches are created, the overlapping file appears
 // in both, and the report includes all results.
 func TestIntegration_AutoSplitMockMCP_OverlappingFiles(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -3151,6 +3180,7 @@ func TestIntegration_AutoSplitMockMCP_OverlappingFiles(t *testing.T) {
 // verification failure. One branch fails verify, others succeed. The
 // pipeline should report the failure without crashing.
 func TestIntegration_AutoSplitMockMCP_VerifyFailure(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -3285,6 +3315,7 @@ func TestIntegration_AutoSplitMockMCP_VerifyFailure(t *testing.T) {
 // TestIntegration_AutoSplitMockMCP_CancelDuringExecution tests that
 // cancelling mid-pipeline stops execution cleanly.
 func TestIntegration_AutoSplitMockMCP_CancelDuringExecution(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -3406,6 +3437,7 @@ func TestIntegration_AutoSplitMockMCP_CancelDuringExecution(t *testing.T) {
 }
 
 func TestIntegration_AutoSplitMockMCP_ConflictResolution(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -3585,6 +3617,7 @@ func TestIntegration_AutoSplitMockMCP_ConflictResolution(t *testing.T) {
 }
 
 func TestAutoSplit_WatchdogTimeout(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -3655,6 +3688,7 @@ func TestAutoSplit_WatchdogTimeout(t *testing.T) {
 // ── T39: Error recovery integration tests ──────────────────────────
 
 func TestIntegration_AutoSplitMockMCP_ErrorRecovery_ClassificationTimeout(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -3749,6 +3783,7 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_ClassificationTimeout(t *tes
 }
 
 func TestIntegration_AutoSplitMockMCP_ErrorRecovery_PlanFallbackToLocal(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -3881,6 +3916,7 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_PlanFallbackToLocal(t *testi
 }
 
 func TestIntegration_AutoSplitMockMCP_ErrorRecovery_ExecutionFailure(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -4002,6 +4038,7 @@ func TestIntegration_AutoSplitMockMCP_ErrorRecovery_ExecutionFailure(t *testing.
 }
 
 func TestIntegration_AutoSplitMockMCP_ErrorRecovery_AllBranchesFailVerify(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -4253,6 +4290,7 @@ type mockMCPReport struct {
 //   - categories is a string instead of an array
 //   - pipeline should handle gracefully (fallback or error, no crash/hang)
 func TestIntegration_MockMCP_MalformedClassification(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -4326,6 +4364,7 @@ func TestIntegration_MockMCP_MalformedClassification(t *testing.T) {
 // that covers only SOME of the changed files. The pipeline should detect
 // the missing files and add them to an "uncategorized" bucket.
 func TestIntegration_MockMCP_PartialClassification(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -4427,6 +4466,7 @@ func TestIntegration_MockMCP_PartialClassification(t *testing.T) {
 // all categories have empty file arrays. The pipeline should detect this
 // via validateClassification and fall back to local plan generation.
 func TestIntegration_MockMCP_EmptyCategories(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -4505,6 +4545,7 @@ func TestIntegration_MockMCP_EmptyCategories(t *testing.T) {
 // fields). The pipeline should reject the Claude plan and fall back to
 // local plan generation from the classification.
 func TestIntegration_MockMCP_MalformedPlan(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -4595,6 +4636,7 @@ func TestIntegration_MockMCP_MalformedPlan(t *testing.T) {
 // have returned with a timeout error; the late injection must be
 // silently discarded.
 func TestIntegration_MockMCP_LateClassification(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")

@@ -1,5 +1,3 @@
-//go:build prsplit_slow
-
 package command
 
 import (
@@ -69,6 +67,7 @@ func setupExecRepoAndExecute(t *testing.T, evalJS func(string) (any, error)) str
 }
 
 func TestChunk06_VerifyEquivalence_Equivalent(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 	dir := setupExecRepoAndExecute(t, evalJS)
@@ -109,6 +108,7 @@ func TestChunk06_VerifyEquivalence_Equivalent(t *testing.T) {
 }
 
 func TestChunk06_VerifyEquivalence_Mismatch(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 	dir := initGitRepo(t)
@@ -168,6 +168,7 @@ func TestChunk06_VerifyEquivalence_Mismatch(t *testing.T) {
 }
 
 func TestChunk06_VerifyEquivalence_NullPlan(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 
@@ -186,6 +187,7 @@ func TestChunk06_VerifyEquivalence_NullPlan(t *testing.T) {
 }
 
 func TestChunk06_VerifyEquivalenceDetailed_IncludesDiffFiles(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 	dir := initGitRepo(t)
@@ -254,6 +256,7 @@ func TestChunk06_VerifyEquivalenceDetailed_IncludesDiffFiles(t *testing.T) {
 }
 
 func TestChunk06_CleanupBranches(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 	dir := setupExecRepoAndExecute(t, evalJS)
@@ -300,6 +303,7 @@ func TestChunk06_CleanupBranches(t *testing.T) {
 }
 
 func TestChunk06_CleanupBranches_Idempotent(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 	dir := setupExecRepoAndExecute(t, evalJS)
@@ -348,6 +352,7 @@ func TestChunk06_CleanupBranches_Idempotent(t *testing.T) {
 }
 
 func TestChunk06_CleanupBranches_NullPlan(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, verifyChunks...)
 

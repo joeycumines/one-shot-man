@@ -1,5 +1,3 @@
-//go:build prsplit_slow
-
 package command
 
 import (
@@ -82,6 +80,7 @@ func setupDependencyGoRepo(t *testing.T) string {
 // Expected: main → helper → types import chain should merge packages
 // into fewer groups than the directory strategy.
 func TestPrSplitCommand_DependencyStrategy(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — we chdir.
 	dir := setupDependencyGoRepo(t)
 
@@ -136,6 +135,7 @@ func TestPrSplitCommand_DependencyStrategy(t *testing.T) {
 // TestPrSplitCommand_DependencyStrategyNonGo verifies that the dependency
 // strategy gracefully falls back to directory grouping for non-Go projects.
 func TestPrSplitCommand_DependencyStrategyNonGo(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — we chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -209,6 +209,7 @@ func TestPrSplitCommand_DependencyStrategyNonGo(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_ClaudeFlagParsing(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	cfg := config.NewConfig()
@@ -246,6 +247,7 @@ func TestPrSplitCommand_ClaudeFlagParsing(t *testing.T) {
 }
 
 func TestPrSplitCommand_ClaudeFlagDefaults(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	cfg := config.NewConfig()
@@ -272,6 +274,7 @@ func TestPrSplitCommand_ClaudeFlagDefaults(t *testing.T) {
 }
 
 func TestPrSplitCommand_ClaudeConfigOverrides(t *testing.T) {
+	skipSlow(t)
 	cfg := config.NewConfig()
 	cfg.Commands["pr-split"] = map[string]string{
 		"claude-command":    "my-claude",
@@ -312,6 +315,7 @@ func TestPrSplitCommand_ClaudeConfigOverrides(t *testing.T) {
 }
 
 func TestPrSplitCommand_FlagOverridesConfig(t *testing.T) {
+	skipSlow(t)
 	cfg := config.NewConfig()
 	cfg.Commands["pr-split"] = map[string]string{
 		"claude-command": "config-claude",
@@ -344,6 +348,7 @@ func TestPrSplitCommand_FlagOverridesConfig(t *testing.T) {
 }
 
 func TestPrSplitCommand_ClaudeConfigJSExposure(t *testing.T) {
+	skipSlow(t)
 	// Verify prSplitConfig in JS contains the correct claude values.
 	stdout, dispatch := loadPrSplitEngine(t, map[string]any{
 		"claudeCommand":   "test-claude",
@@ -367,6 +372,7 @@ func TestPrSplitCommand_ClaudeConfigJSExposure(t *testing.T) {
 }
 
 func TestPrSplitCommand_ClaudeArgsEmptySplit(t *testing.T) {
+	skipSlow(t)
 	// When claudeArgs is empty, the resulting list should be empty.
 	stdout, _ := loadPrSplitEngine(t, map[string]any{
 		"claudeArgs": []string{},
@@ -376,6 +382,7 @@ func TestPrSplitCommand_ClaudeArgsEmptySplit(t *testing.T) {
 }
 
 func TestPrSplitCommand_ClaudeEnvParsing(t *testing.T) {
+	skipSlow(t)
 	// Test various edge cases in env parsing via the Go side.
 	tests := []struct {
 		name     string

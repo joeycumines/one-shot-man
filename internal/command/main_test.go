@@ -49,6 +49,17 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// skipSlow skips the calling test when -short mode is active. All slow
+// integration and E2E tests call this at the top of the function body so
+// that `go test -short` provides a fast feedback loop while `go test`
+// (without -short) runs the full suite.
+func skipSlow(tb testing.TB) {
+	tb.Helper()
+	if testing.Short() {
+		tb.Skip("slow test skipped in -short mode")
+	}
+}
+
 // skipIfNotIntegration skips the calling test if -integration was not passed.
 func skipIfNotIntegration(t *testing.T) {
 	t.Helper()

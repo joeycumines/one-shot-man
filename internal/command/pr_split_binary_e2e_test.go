@@ -1,4 +1,4 @@
-//go:build unix && prsplit_slow
+//go:build unix
 
 package command
 
@@ -178,6 +178,7 @@ func countSplitBranches(t *testing.T, dir string) int {
 // ---------------------------------------------------------------------------
 
 func TestBinaryE2E_HeuristicBatchRun(t *testing.T) {
+	skipSlow(t)
 	osmBin := buildOSMBinary(t)
 	repoDir := setupBinaryTestRepo(t)
 
@@ -237,6 +238,7 @@ func TestBinaryE2E_HeuristicBatchRun(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBinaryE2E_IndividualCommandsBatch(t *testing.T) {
+	skipSlow(t)
 	osmBin := buildOSMBinary(t)
 	repoDir := setupBinaryTestRepo(t)
 
@@ -291,6 +293,7 @@ func TestBinaryE2E_IndividualCommandsBatch(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBinaryE2E_FullPipelineWithCleanup(t *testing.T) {
+	skipSlow(t)
 	osmBin := buildOSMBinary(t)
 	repoDir := setupBinaryTestRepo(t)
 
@@ -339,6 +342,7 @@ func TestBinaryE2E_FullPipelineWithCleanup(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBinaryE2E_DryRunNoExecution(t *testing.T) {
+	skipSlow(t)
 	osmBin := buildOSMBinary(t)
 	repoDir := setupBinaryTestRepo(t)
 
@@ -382,6 +386,7 @@ func TestBinaryE2E_DryRunNoExecution(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBinaryE2E_EmptyDiff(t *testing.T) {
+	skipSlow(t)
 	osmBin := buildOSMBinary(t)
 
 	dir := t.TempDir()
@@ -454,6 +459,7 @@ func TestBinaryE2E_EmptyDiff(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBinaryE2E_InvalidRepo(t *testing.T) {
+	skipSlow(t)
 	osmBin := buildOSMBinary(t)
 
 	// Run in a temp dir that is NOT a git repo.
@@ -500,6 +506,7 @@ func TestBinaryE2E_InvalidRepo(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBinaryE2E_HelpOutput(t *testing.T) {
+	skipSlow(t)
 	osmBin := buildOSMBinary(t)
 	dir := t.TempDir()
 
@@ -542,6 +549,7 @@ func TestBinaryE2E_HelpOutput(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBinaryE2E_ClaudeCommandFlags(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	osmBin := buildOSMBinary(t)
 	repoDir := setupBinaryTestRepo(t)
@@ -835,6 +843,7 @@ func focusNavNext(t *testing.T, ptmx *os.File, buf *threadSafeBuffer) {
 // ---------------------------------------------------------------------------
 
 func TestBinaryE2E_FullFlowToExecution(t *testing.T) {
+	skipSlow(t)
 	if testing.Short() {
 		t.Skip("skipping PTY E2E test in short mode")
 	}
@@ -903,6 +912,7 @@ func TestBinaryE2E_FullFlowToExecution(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBinaryE2E_ConfigScreenNavigation(t *testing.T) {
+	skipSlow(t)
 	if testing.Short() {
 		t.Skip("skipping PTY E2E test in short mode")
 	}
@@ -998,6 +1008,7 @@ func TestBinaryE2E_ConfigScreenNavigation(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBinaryE2E_VerifyPTYLive(t *testing.T) {
+	skipSlow(t)
 	if testing.Short() {
 		t.Skip("skipping PTY E2E test in short mode")
 	}
@@ -1064,6 +1075,7 @@ func TestBinaryE2E_VerifyPTYLive(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBinaryE2E_CancelDuringVerify(t *testing.T) {
+	skipSlow(t)
 	if testing.Short() {
 		t.Skip("skipping PTY E2E test in short mode")
 	}
@@ -1140,6 +1152,7 @@ func TestBinaryE2E_CancelDuringVerify(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestBinaryE2E_PlanEditorFlow(t *testing.T) {
+	skipSlow(t)
 	if testing.Short() {
 		t.Skip("skipping PTY E2E test in short mode")
 	}

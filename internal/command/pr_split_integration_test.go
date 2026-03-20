@@ -1,5 +1,3 @@
-//go:build prsplit_slow
-
 package command
 
 import (
@@ -33,6 +31,7 @@ import (
 //
 // This test does NOT require AI infrastructure; it runs in every CI build.
 func TestIntegration_HeuristicSplitEndToEnd(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	repoDir := initIntegrationRepo(t)
@@ -293,6 +292,7 @@ func TestIntegration_HeuristicSplitEndToEnd(t *testing.T) {
 // `git checkout -b <splitName> <baseBranch>`, which creates a new branch
 // from the base without checking out the base branch by name.
 func TestIntegration_ExecuteSplit_WorktreeConflict(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -390,6 +390,7 @@ func TestIntegration_ExecuteSplit_WorktreeConflict(t *testing.T) {
 // prSplit._cancelSource to return true for 'cancelled' queries and verifies
 // the pipeline exits with a cancellation error.
 func TestIntegration_AutoSplitCancel(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	repoDir := initIntegrationRepo(t)
@@ -458,6 +459,7 @@ func TestIntegration_AutoSplitCancel(t *testing.T) {
 // Two-write: text first, then Enter (\r) as a separate write so that
 // non-blocking TUI readers interpret it as submission.
 func TestIntegration_SendToHandle_FallbackDirect(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -504,6 +506,7 @@ func TestIntegration_SendToHandle_FallbackDirect(t *testing.T) {
 // returns an error object (not throws) when the first write (text) fails.
 // The second write (Enter) should not be attempted.
 func TestIntegration_SendToHandle_FallbackError(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -547,6 +550,7 @@ func TestIntegration_SendToHandle_FallbackError(t *testing.T) {
 // TestIntegration_SendToHandle_DirectPath verifies the sendToHandle code path
 // using direct handle.send(). Two-write: sends text first, then \r separately.
 func TestIntegration_SendToHandle_DirectPath(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -594,6 +598,7 @@ func TestIntegration_SendToHandle_DirectPath(t *testing.T) {
 // handle.send() throws on the first write (text), the function returns
 // that error without attempting the Enter write.
 func TestIntegration_SendToHandle_FirstSendError(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -642,6 +647,7 @@ func TestIntegration_SendToHandle_FirstSendError(t *testing.T) {
 // sendToHandle retries Enter submission when terminal output does not change
 // after the first Enter, and succeeds once output change is observed.
 func TestIntegration_SendToHandle_ObservedSubmissionRetry(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -727,6 +733,7 @@ func TestIntegration_SendToHandle_ObservedSubmissionRetry(t *testing.T) {
 // sendToHandle fails when Enter retries never produce an observable
 // terminal output change.
 func TestIntegration_SendToHandle_ObservedSubmissionFailure(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -795,6 +802,7 @@ func TestIntegration_SendToHandle_ObservedSubmissionFailure(t *testing.T) {
 // TestIntegration_SendToHandle_PromptReadyTimeout verifies that
 // sendToHandle fails before any write when no Claude prompt marker appears.
 func TestIntegration_SendToHandle_PromptReadyTimeout(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -852,6 +860,7 @@ func TestIntegration_SendToHandle_PromptReadyTimeout(t *testing.T) {
 // TestIntegration_SendToHandle_PromptSetupBlocker verifies that
 // first-run setup screens are detected and reported as actionable errors.
 func TestIntegration_SendToHandle_PromptSetupBlocker(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -913,6 +922,7 @@ func TestIntegration_SendToHandle_PromptSetupBlocker(t *testing.T) {
 // TestIntegration_SendToHandle_PromptReadyDelayed verifies that
 // sendToHandle waits for prompt readiness before writing.
 func TestIntegration_SendToHandle_PromptReadyDelayed(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -996,6 +1006,7 @@ func TestIntegration_SendToHandle_PromptReadyDelayed(t *testing.T) {
 // TestIntegration_SendToHandle_EmptyText verifies that sending an empty
 // string does not crash and still sends the Enter (\r) separately.
 func TestIntegration_SendToHandle_EmptyText(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1035,6 +1046,7 @@ func TestIntegration_SendToHandle_EmptyText(t *testing.T) {
 // handles a large text payload (100KB) gracefully. The chunking logic should
 // split large writes into 4KB chunks.
 func TestIntegration_SendToHandle_LargePayload(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1094,6 +1106,7 @@ func TestIntegration_SendToHandle_LargePayload(t *testing.T) {
 // sendToHandle calls do not cause a data race. This exercises the race
 // detector when run with -race.
 func TestIntegration_SendToHandle_ConcurrentSends(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1155,6 +1168,7 @@ func TestIntegration_SendToHandle_ConcurrentSends(t *testing.T) {
 // a clear error when the handle's send function throws (simulating a detached
 // or closed handle).
 func TestIntegration_SendToHandle_AfterDetach(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1190,6 +1204,7 @@ func TestIntegration_SendToHandle_AfterDetach(t *testing.T) {
 // ClaudeCodeExecutor.spawn prepends --dangerously-skip-permissions for
 // claude-code type providers but NOT for ollama type providers.
 func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1536,6 +1551,7 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestIntegration_SpawnHealthCheck_DeadProcess(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1617,6 +1633,7 @@ func TestIntegration_SpawnHealthCheck_DeadProcess(t *testing.T) {
 }
 
 func TestIntegration_SpawnHealthCheck_AliveProcess(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1705,6 +1722,7 @@ func TestIntegration_SpawnHealthCheck_AliveProcess(t *testing.T) {
 // NOT error — the pipeline continues with the dead handle (toggle just won't
 // work).
 func TestIntegration_IsAliveGuard_AutoSplitAttach(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1767,6 +1785,7 @@ func TestIntegration_IsAliveGuard_AutoSplitAttach(t *testing.T) {
 // TestIntegration_IsAliveGuard_AutoSplitAttach_Alive verifies the happy path
 // where isAlive returns true — the attach branch should be taken instead.
 func TestIntegration_IsAliveGuard_AutoSplitAttach_Alive(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1814,6 +1833,7 @@ func TestIntegration_IsAliveGuard_AutoSplitAttach_Alive(t *testing.T) {
 // the handle object does not have an isAlive method (older handle interface).
 // The guard should skip the check and proceed to the attach path.
 func TestIntegration_IsAliveGuard_MissingIsAlive(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1873,6 +1893,7 @@ func TestIntegration_IsAliveGuard_MissingIsAlive(t *testing.T) {
 // after the pipeline completes, we capture stdout and assert on it — proving
 // that a real user would see correct progress information.
 func TestIntegration_AutoSplitMockMCP_OutputObservation(t *testing.T) {
+	skipSlow(t)
 	// NOT parallel — uses chdir.
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -2030,6 +2051,7 @@ func TestIntegration_AutoSplitMockMCP_OutputObservation(t *testing.T) {
 //
 //	make integration-test-prsplit
 func TestIntegration_AutoSplitWithClaude_Pipeline(t *testing.T) {
+	skipSlow(t)
 	skipIfNoClaude(t)
 	verifyClaudeAuth(t) // T37: pre-flight check — ensures Claude is logged in + functional
 
@@ -2134,6 +2156,7 @@ func TestIntegration_AutoSplitWithClaude_Pipeline(t *testing.T) {
 //	  -claude-command=claude ./internal/command/... \
 //	  -run TestIntegration_ClaudeMCP_Headless
 func TestIntegration_ClaudeMCP_Headless(t *testing.T) {
+	skipSlow(t)
 	skipIfNoClaude(t)
 
 	// Pre-flight: osm binary is required for the stdio-to-socket bridge (mcp-bridge subcommand).
@@ -2382,6 +2405,7 @@ func Version() string {
 import "testing"
 
 func TestVersion(t *testing.T) {
+	skipSlow(t)
 	if v := Version(); v == "" {
 		t.Fatal("version should not be empty")
 	}
@@ -2456,6 +2480,7 @@ func (t Token) Validate() error {
 import "testing"
 
 func TestToken_Validate(t *testing.T) {
+	skipSlow(t)
 	tests := []struct {
 		name    string
 		token   Token
@@ -2498,6 +2523,7 @@ func DefaultConfig() Config {
 import "testing"
 
 func TestDefaultConfig(t *testing.T) {
+	skipSlow(t)
 	cfg := DefaultConfig()
 	if cfg.Port != 8080 {
 		t.Errorf("expected port 8080, got %d", cfg.Port)
@@ -2523,6 +2549,7 @@ func Max(a, b int) int {
 import "testing"
 
 func TestMax(t *testing.T) {
+	skipSlow(t)
 	if Max(1, 2) != 2 {
 		t.Error("Max(1,2) should be 2")
 	}
@@ -2632,6 +2659,7 @@ func runGit(t *testing.T, dir string, args ...string) string {
 // cleanupExecutor implementation closes the Claude executor and does not call
 // tuiMux.detach synchronously.
 func TestIntegration_CleanupExecutor_CloseBeforeDetach(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -2686,6 +2714,7 @@ func TestIntegration_CleanupExecutor_CloseBeforeDetach(t *testing.T) {
 // TestIntegration_CleanupExecutor_ForceCancel verifies the real
 // cleanupExecutor implementation sends SIGKILL before close when force-cancelled.
 func TestIntegration_CleanupExecutor_ForceCancel(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -2738,6 +2767,7 @@ func TestIntegration_CleanupExecutor_ForceCancel(t *testing.T) {
 // TestIntegration_CleanupExecutor_NilExecutor verifies that cleanupExecutor
 // handles a nil claudeExecutor gracefully.
 func TestIntegration_CleanupExecutor_NilExecutor(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -2779,6 +2809,7 @@ func TestIntegration_CleanupExecutor_NilExecutor(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestClaudeCodeExecutor_SpawnHealthCheck_DeadProcess(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -2894,6 +2925,7 @@ func TestClaudeCodeExecutor_SpawnHealthCheck_DeadProcess(t *testing.T) {
 //	  -claude-command=claude ./internal/command/... \
 //	  -run TestIntegration_ClaudeClassificationAccuracy
 func TestIntegration_ClaudeClassificationAccuracy(t *testing.T) {
+	skipSlow(t)
 	skipIfNoClaude(t)
 	verifyClaudeAuth(t)
 	if runtime.GOOS == "windows" {
@@ -3097,6 +3129,7 @@ func TestIntegration_ClaudeClassificationAccuracy(t *testing.T) {
 //	  -claude-command=claude ./internal/command/... \
 //	  -run TestIntegration_ClaudeSplitPlanQuality
 func TestIntegration_ClaudeSplitPlanQuality(t *testing.T) {
+	skipSlow(t)
 	skipIfNoClaude(t)
 	verifyClaudeAuth(t)
 	if runtime.GOOS == "windows" {
@@ -3279,6 +3312,7 @@ func TestIntegration_ClaudeSplitPlanQuality(t *testing.T) {
 //	  -claude-command=claude ./internal/command/... \
 //	  -run TestIntegration_ClaudeMCP_RoundTrip
 func TestIntegration_ClaudeMCP_RoundTrip(t *testing.T) {
+	skipSlow(t)
 	skipIfNoClaude(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -3555,6 +3589,7 @@ You MUST call both tools. Do NOT just describe the classification in text.`
 //	  -claude-command=claude ./internal/command/... \
 //	  -run TestIntegration_ClaudeFallbackToHeuristic
 func TestIntegration_ClaudeFallbackToHeuristic(t *testing.T) {
+	skipSlow(t)
 	skipIfNotIntegration(t)
 	if runtime.GOOS == "windows" {
 		t.Skip("pr-split uses sh -c; skipping on Windows")
@@ -3657,6 +3692,7 @@ func TestIntegration_ClaudeFallbackToHeuristic(t *testing.T) {
 //	  -claude-command=claude ./internal/command/... \
 //	  -run TestIntegration_ClaudeConflictResolution
 func TestIntegration_ClaudeConflictResolution(t *testing.T) {
+	skipSlow(t)
 	skipIfNoClaude(t)
 	verifyClaudeAuth(t)
 	if runtime.GOOS == "windows" {

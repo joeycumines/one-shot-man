@@ -46,7 +46,7 @@ test-prsplit-fast: ## Run fast PR Split unit tests only (no slow/E2E)
 
 .PHONY: test-prsplit-all
 test-prsplit-all: ## Run ALL PR Split tests including slow/benchmark
-	$(GO) -C . test -timeout=900s -tags=prsplit_slow -count=1 ./internal/command/...
+	$(GO) -C . test -timeout=900s -count=1 ./internal/command/...
 
 .PHONY: test-prsplit-e2e
 test-prsplit-e2e: ## Run only E2E lifecycle tests

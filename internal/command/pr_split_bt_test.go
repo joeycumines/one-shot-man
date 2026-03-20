@@ -1,5 +1,3 @@
-//go:build prsplit_slow
-
 package command
 
 // Tests for visualization, diff display, and report functions from the
@@ -23,6 +21,7 @@ import (
 // produces output containing all input lines in order. Styling depends on
 // terminal capability (lipgloss), so we verify content, not ANSI sequences.
 func TestRenderColorizedDiff_ContentPreserved(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
@@ -89,6 +88,7 @@ func TestRenderColorizedDiff_ContentPreserved(t *testing.T) {
 
 // TestRenderColorizedDiff_EmptyInput verifies empty input returns empty string.
 func TestRenderColorizedDiff_EmptyInput(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
@@ -104,6 +104,7 @@ func TestRenderColorizedDiff_EmptyInput(t *testing.T) {
 // TestGetSplitDiff_InvalidIndex verifies getSplitDiff returns error for
 // out-of-bounds split index.
 func TestGetSplitDiff_InvalidIndex(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
@@ -128,6 +129,7 @@ func TestGetSplitDiff_InvalidIndex(t *testing.T) {
 
 // TestGetSplitDiff_EmptyFiles verifies getSplitDiff handles split with no files.
 func TestGetSplitDiff_EmptyFiles(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
@@ -152,6 +154,7 @@ func TestGetSplitDiff_EmptyFiles(t *testing.T) {
 
 // TestGetSplitDiff_NullPlan verifies getSplitDiff handles null/undefined plan.
 func TestGetSplitDiff_NullPlan(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
@@ -173,6 +176,7 @@ func TestGetSplitDiff_NullPlan(t *testing.T) {
 
 // TestGetSplitDiff_NegativeIndex verifies getSplitDiff handles negative index.
 func TestGetSplitDiff_NegativeIndex(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
@@ -198,6 +202,7 @@ func TestGetSplitDiff_NegativeIndex(t *testing.T) {
 // TestGetSplitDiff_SuccessWithDiff verifies getSplitDiff returns diff content
 // when the primary git diff (baseBranch...splitName) succeeds.
 func TestGetSplitDiff_SuccessWithDiff(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
@@ -238,6 +243,7 @@ func TestGetSplitDiff_SuccessWithDiff(t *testing.T) {
 // git diff (baseBranch...splitName) fails, getSplitDiff falls back to
 // git diff baseBranch -- files.
 func TestGetSplitDiff_FallbackOnThreeDotFailure(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
@@ -296,6 +302,7 @@ func TestGetSplitDiff_FallbackOnThreeDotFailure(t *testing.T) {
 // TestGetSplitDiff_BothDiffsFail verifies getSplitDiff returns error when
 // both primary and fallback diffs fail.
 func TestGetSplitDiff_BothDiffsFail(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
@@ -332,6 +339,7 @@ func TestGetSplitDiff_BothDiffsFail(t *testing.T) {
 // TestBuildReport_WithNullCaches verifies the 'report' command outputs valid
 // JSON when no caches are populated (no analyze/group/plan has been run).
 func TestBuildReport_WithNullCaches(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	tp := setupTestPipeline(t, TestPipelineOpts{
 		FeatureFiles: []TestPipelineFile{
@@ -391,6 +399,7 @@ func TestBuildReport_WithNullCaches(t *testing.T) {
 // TestBuildReport_WithPopulatedCaches verifies the 'report' command produces
 // complete JSON when analyze, group, and plan have been run.
 func TestBuildReport_WithPopulatedCaches(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	tp := setupTestPipeline(t, TestPipelineOpts{
 		FeatureFiles: []TestPipelineFile{

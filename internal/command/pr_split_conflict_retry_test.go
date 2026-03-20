@@ -1,5 +1,3 @@
-//go:build prsplit_slow
-
 package command
 
 import (
@@ -13,6 +11,7 @@ import (
 )
 
 func TestPrSplitCommand_ResolveConflictsNoVerifyCommand(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -51,6 +50,7 @@ func TestPrSplitCommand_ResolveConflictsNoVerifyCommand(t *testing.T) {
 }
 
 func TestPrSplitCommand_ResolveConflictsReturnShape(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -85,6 +85,7 @@ func TestPrSplitCommand_ResolveConflictsReturnShape(t *testing.T) {
 }
 
 func TestPrSplitCommand_SetRetryBudget(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	stdout, dispatch := loadPrSplitEngine(t, nil)
@@ -110,6 +111,7 @@ func TestPrSplitCommand_SetRetryBudget(t *testing.T) {
 }
 
 func TestPrSplitCommand_SetRetryBudgetNegative(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	stdout, dispatch := loadPrSplitEngine(t, nil)
@@ -125,6 +127,7 @@ func TestPrSplitCommand_SetRetryBudgetNegative(t *testing.T) {
 }
 
 func TestPrSplitCommand_SetRetryBudgetZero(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	stdout, dispatch := loadPrSplitEngine(t, nil)
@@ -140,6 +143,7 @@ func TestPrSplitCommand_SetRetryBudgetZero(t *testing.T) {
 }
 
 func TestPrSplitCommand_ResolveConflictsZeroBudget(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	if runtime.GOOS == "windows" {
@@ -192,6 +196,7 @@ func TestPrSplitCommand_ResolveConflictsZeroBudget(t *testing.T) {
 }
 
 func TestPrSplitCommand_SetShowsRetryBudget(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	stdout, dispatch := loadPrSplitEngine(t, nil)
@@ -211,6 +216,7 @@ func TestPrSplitCommand_SetShowsRetryBudget(t *testing.T) {
 }
 
 func TestPrSplitCommand_SetRetryBudgetAndVerify(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	stdout, dispatch := loadPrSplitEngine(t, nil)
@@ -232,6 +238,7 @@ func TestPrSplitCommand_SetRetryBudgetAndVerify(t *testing.T) {
 }
 
 func TestPrSplitCommand_Phase5ScriptContent(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	checks := []struct {
@@ -260,6 +267,7 @@ func TestPrSplitCommand_Phase5ScriptContent(t *testing.T) {
 }
 
 func TestPrSplitCommand_ResolveConflictsWithGitRepo(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	if runtime.GOOS == "windows" {
@@ -297,6 +305,7 @@ func TestPrSplitCommand_ResolveConflictsWithGitRepo(t *testing.T) {
 }
 
 func TestPrSplitCommand_ResolveConflictsRetryBudgetExhaustion(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	if runtime.GOOS == "windows" {
@@ -351,6 +360,7 @@ func TestPrSplitCommand_ResolveConflictsRetryBudgetExhaustion(t *testing.T) {
 }
 
 func TestPrSplitCommand_ResolveConflictsPassingBranch(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	if runtime.GOOS == "windows" {
@@ -398,6 +408,7 @@ func TestPrSplitCommand_ResolveConflictsPassingBranch(t *testing.T) {
 }
 
 func TestPrSplitCommand_ResolveConflictsWallClockTimeout(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	if runtime.GOOS == "windows" {
@@ -454,6 +465,7 @@ func TestPrSplitCommand_ResolveConflictsWallClockTimeout(t *testing.T) {
 }
 
 func TestPrSplitCommand_ResolveConflictsWallClockDefault(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -478,6 +490,7 @@ func TestPrSplitCommand_ResolveConflictsWallClockDefault(t *testing.T) {
 }
 
 func TestPrSplitCommand_VerifyTimeoutDefault(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -501,6 +514,7 @@ func TestPrSplitCommand_VerifyTimeoutDefault(t *testing.T) {
 }
 
 func TestPrSplitCommand_ResolveConflictsWithClaudeWallClockTimeout(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -541,6 +555,7 @@ func TestPrSplitCommand_ResolveConflictsWithClaudeWallClockTimeout(t *testing.T)
 }
 
 func TestPrSplitCommand_ResolveConflicts_TimeoutPropagatedToStrategy(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	if runtime.GOOS == "windows" {
@@ -619,6 +634,7 @@ func TestPrSplitCommand_ResolveConflicts_TimeoutPropagatedToStrategy(t *testing.
 }
 
 func TestPrSplitCommand_ResolveConflicts_TimeoutDefaultsWhenNotProvided(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	if runtime.GOOS == "windows" {
@@ -699,6 +715,7 @@ func TestPrSplitCommand_ResolveConflicts_TimeoutDefaultsWhenNotProvided(t *testi
 }
 
 func TestPrSplitCommand_ResolveConflictsWithClaudePreExistingFailure(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -817,6 +834,7 @@ func TestPrSplitCommand_ResolveConflictsWithClaudePreExistingFailure(t *testing.
 }
 
 func TestPrSplitCommand_ResolveConflictsWithClaude_MaxAttemptsPerBranch(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -904,6 +922,7 @@ func TestPrSplitCommand_ResolveConflictsWithClaude_MaxAttemptsPerBranch(t *testi
 }
 
 func TestPrSplitCommand_SendToHandle_TwoWrite(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, _, evalJSAsync := loadPrSplitEngineWithEval(t, nil)
@@ -952,6 +971,7 @@ func TestPrSplitCommand_SendToHandle_TwoWrite(t *testing.T) {
 }
 
 func TestPrSplitCommand_SendToHandle_EAGAINRetry(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -995,6 +1015,7 @@ func TestPrSplitCommand_SendToHandle_EAGAINRetry(t *testing.T) {
 }
 
 func TestPrSplitCommand_SendToHandle_EAGAINExhausted(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1037,6 +1058,7 @@ func TestPrSplitCommand_SendToHandle_EAGAINExhausted(t *testing.T) {
 }
 
 func TestPrSplitCommand_SendToHandle_NonEAGAINError(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1083,6 +1105,7 @@ func TestPrSplitCommand_SendToHandle_NonEAGAINError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_SendToHandle_NullHandle(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1123,6 +1146,7 @@ func TestPrSplitCommand_SendToHandle_NullHandle(t *testing.T) {
 }
 
 func TestPrSplitCommand_SendToHandle_FalsyHandleString(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1166,6 +1190,7 @@ func TestPrSplitCommand_SendToHandle_FalsyHandleString(t *testing.T) {
 }
 
 func TestPrSplitCommand_ResolveConflicts_PerBranchRetryBudget(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	if runtime.GOOS == "windows" {
@@ -1266,6 +1291,7 @@ func TestPrSplitCommand_ResolveConflicts_PerBranchRetryBudget(t *testing.T) {
 }
 
 func TestPrSplitCommand_ResolveConflicts_PerBranchRetryBudget_Exhausted(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	if runtime.GOOS == "windows" {
@@ -1344,6 +1370,7 @@ func TestPrSplitCommand_ResolveConflicts_PerBranchRetryBudget_Exhausted(t *testi
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_ResolveConflicts_AliveCheckFnThreaded(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	if runtime.GOOS == "windows" {
@@ -1434,6 +1461,7 @@ func TestPrSplitCommand_ResolveConflicts_AliveCheckFnThreaded(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_ClaudeAutoDetect_VersionCheckFails(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1488,6 +1516,7 @@ func TestPrSplitCommand_ClaudeAutoDetect_VersionCheckFails(t *testing.T) {
 }
 
 func TestPrSplitCommand_ClaudeAutoDetect_OllamaModelMissing(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1551,6 +1580,7 @@ func TestPrSplitCommand_ClaudeAutoDetect_OllamaModelMissing(t *testing.T) {
 }
 
 func TestPrSplitCommand_DefaultRetryBudget(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1575,6 +1605,7 @@ func TestPrSplitCommand_DefaultRetryBudget(t *testing.T) {
 }
 
 func TestPrSplitCommand_SetRetryBudgetViaAlternateKey(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	stdout, dispatch := loadPrSplitEngine(t, nil)
@@ -1590,6 +1621,7 @@ func TestPrSplitCommand_SetRetryBudgetViaAlternateKey(t *testing.T) {
 }
 
 func TestPrSplitCommand_AddMissingFilesFixNoSourceBranch(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1615,6 +1647,7 @@ func TestPrSplitCommand_AddMissingFilesFixNoSourceBranch(t *testing.T) {
 }
 
 func TestPrSplitCommand_GoMissingImportsFixNoGoimports(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1644,6 +1677,7 @@ func TestPrSplitCommand_GoMissingImportsFixNoGoimports(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_SendToHandle_HandleDiesBetweenWrites(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1694,6 +1728,7 @@ func TestPrSplitCommand_SendToHandle_HandleDiesBetweenWrites(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_SendToHandle_NewlineEAGAINRetry(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1736,6 +1771,7 @@ func TestPrSplitCommand_SendToHandle_NewlineEAGAINRetry(t *testing.T) {
 }
 
 func TestPrSplitCommand_SendToHandle_NewlineEAGAINExhausted(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1785,6 +1821,7 @@ func TestPrSplitCommand_SendToHandle_NewlineEAGAINExhausted(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_SendToHandle_EmptyText(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, _, evalJSAsync := loadPrSplitEngineWithEval(t, nil)
@@ -1829,6 +1866,7 @@ func TestPrSplitCommand_SendToHandle_EmptyText(t *testing.T) {
 }
 
 func TestPrSplitCommand_SendToHandle_CancellationBeforeChunk(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -1874,6 +1912,7 @@ func TestPrSplitCommand_SendToHandle_CancellationBeforeChunk(t *testing.T) {
 }
 
 func TestPrSplitCommand_SendToHandle_ExactChunkBoundary(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, _, evalJSAsync := loadPrSplitEngineWithEval(t, nil)
@@ -1937,6 +1976,7 @@ func TestPrSplitCommand_SendToHandle_ExactChunkBoundary(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_ResolveConflictsWithClaude_SuccessfulFix(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
@@ -2134,6 +2174,7 @@ func TestPrSplitCommand_ResolveConflictsWithClaude_SuccessfulFix(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPrSplitCommand_StrategyDetect_GoModTidy(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
@@ -2170,6 +2211,7 @@ func TestPrSplitCommand_StrategyDetect_GoModTidy(t *testing.T) {
 }
 
 func TestPrSplitCommand_StrategyDetect_GoGenerateSum(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
@@ -2205,6 +2247,7 @@ func TestPrSplitCommand_StrategyDetect_GoGenerateSum(t *testing.T) {
 }
 
 func TestPrSplitCommand_StrategyDetect_GoBuildMissingImports(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
@@ -2251,6 +2294,7 @@ func TestPrSplitCommand_StrategyDetect_GoBuildMissingImports(t *testing.T) {
 }
 
 func TestPrSplitCommand_StrategyDetect_NpmInstall(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
@@ -2286,6 +2330,7 @@ func TestPrSplitCommand_StrategyDetect_NpmInstall(t *testing.T) {
 }
 
 func TestPrSplitCommand_StrategyDetect_AddMissingFiles(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
@@ -2328,6 +2373,7 @@ func TestPrSplitCommand_StrategyDetect_AddMissingFiles(t *testing.T) {
 }
 
 func TestPrSplitCommand_StrategyDetect_ClaudeFix(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
@@ -2371,6 +2417,7 @@ func TestPrSplitCommand_StrategyDetect_ClaudeFix(t *testing.T) {
 }
 
 func TestPrSplitCommand_StrategyCount_Seven(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
@@ -2395,6 +2442,7 @@ func TestPrSplitCommand_StrategyCount_Seven(t *testing.T) {
 // detect/fix fires on each retry until budget exhausted. Confirms the loop
 // correctly invokes custom strategies and tracks retries.
 func TestPrSplitCommand_ResolveConflicts_CustomStrategyRetryLoopFires(t *testing.T) {
+	skipSlow(t)
 	t.Parallel()
 
 	if runtime.GOOS == "windows" {

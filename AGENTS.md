@@ -46,6 +46,7 @@ go test -v ./internal/session/... -run TestSessionLock
 ### Platform-Specific Testing
 
 See `example.config.mk` for additional platform-specific targets:
+
 - `make-all-in-container` - Test Linux behavior from macOS using Docker
 - `make-all-run-windows` - Run all targets on Windows via `hack/run-on-windows.sh`
 
@@ -116,10 +117,10 @@ When modifying **internal code**—meaning any code that isn't depended on by ex
 - **No Shims**: Do NOT retain shims, wrappers, or backwards-compatibility stubs "just in case"
 - **One Implementation**: Do NOT accumulate variants of the same function (e.g., `Foo()` and `FooV2()`). Choose ONE and migrate all call sites
 - **Update Everything**: Update ALL test code and ALL call sites - this includes:
-  - Unit tests
-  - Integration tests
-  - All packages that call the function
-  - Any scripts that depend on the behavior
+    - Unit tests
+    - Integration tests
+    - All packages that call the function
+    - Any scripts that depend on the behavior
 - **Delete Boldly**: Remove deprecated functions entirely. If they're truly needed later, they can be re-added—but accumulated dead code is worse than temporary re-creation
 
 **Lazy is not acceptable**: Keeping old variants "because tests might break" or "because it's easier" creates technical debt. Fix the tests, fix the call sites, delete the old code.
@@ -130,20 +131,21 @@ When modifying **internal code**—meaning any code that isn't depended on by ex
 - Coverage reports available via `make cover`
 - Platform-specific variations must be tested on all platforms
 - Tests must be isolated. Tests **must not mutate host system state** or depend on session/configuration state outside the test. This is a **zero-tolerance rule**. Tests that mutate host state cause flaky runs, order-dependent failures, and "works on my machine" issues in CI.
-  - Forbidden test behaviors include:
-    - Writing to files outside test-specific temporary directories
-    - Modifying environment variables that persist beyond the test
-    - Reading or depending on user-specific config files (`~/.gitconfig`, shell RC files, etc.)
-    - Mutating OS-level session state (ssh-agent, gpg-agent, systemd user sessions)
-    - Creating/modifying state in system directories
-    - Relying on host-specific paths or configuration
-  - Mitigations for these issues include:
-    - Use `t.TempDir()` for all file operations in tests
-    - Use `t.Setenv()` for environment variable isolation
-    - Mock external services and config sources
-    - Never assume a specific home directory or config location
-    - Tests must be **fully self-contained** and portable across machines
-    - Rare exceptions (e.g., `vhs` for recording) MUST use TestMain flags, documented Make targets, and skip gracefully when unavailable. See `generate-tapes-and-gifs` and `-execute-vhs` for the pattern.
+    - Forbidden test behaviors include:
+        - Writing to files outside test-specific temporary directories
+        - Modifying environment variables that persist beyond the test
+        - Reading or depending on user-specific config files (`~/.gitconfig`, shell RC files, etc.)
+        - Mutating OS-level session state (ssh-agent, gpg-agent, systemd user sessions)
+        - Creating/modifying state in system directories
+        - Relying on host-specific paths or configuration
+    - Mitigations for these issues include:
+        - Use `t.TempDir()` for all file operations in tests
+        - Use `t.Setenv()` for environment variable isolation
+        - Mock external services and config sources
+        - Never assume a specific home directory or config location
+        - Tests must be **fully self-contained** and portable across machines
+        - Rare exceptions (e.g., `vhs` for recording) MUST use TestMain flags, documented Make targets, and skip gracefully when unavailable. See `generate-tapes-and-gifs` and `-execute-vhs` for the pattern.
+- NEVER use build tags to segment tests. Prefer supporting "opting out of long tests" via the `go test -short` flag (`testing.Short()`) or use a `TestMain` with custom `flag` package parsing for to support "opt-in" test behavior (ONLY for exceptional cases).
 
 ### No "AI Slop"
 

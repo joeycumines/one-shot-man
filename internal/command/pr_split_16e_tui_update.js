@@ -533,10 +533,10 @@
                     syncMainViewport(s); // T120: sync dimensions after ratio change.
                     return [s, null];
                 }
-                // T44+T322+T380: Ctrl+O cycles through available tabs in split-view bottom pane.
+                // T44+T322+T380+T388: Ctrl+O cycles through available tabs in split-view bottom pane.
                 if (k === 'ctrl+o') {
                     var tabs = ['claude', 'output'];
-                    if (s.activeVerifySession || s.verifyScreen) tabs.push('verify');
+                    if (s.activeVerifySession || s.verifyFallbackRunning || s.verifyScreen) tabs.push('verify');
                     if (s.shellSession) tabs.push('shell');
                     var idx = tabs.indexOf(s.splitViewTab);
                     s.splitViewTab = tabs[(idx + 1) % tabs.length];

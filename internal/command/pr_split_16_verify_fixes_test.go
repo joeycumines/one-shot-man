@@ -409,3 +409,401 @@ func TestVerifyTab_FallbackVisibility(t *testing.T) {
 		t.Errorf("fallback tab visibility (empty): %v", raw2)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// T378: Sub-function extraction tests
+// ---------------------------------------------------------------------------
+
+// TestRenderSplitExecutionList verifies the extracted helper renders
+// branch creation status icons and progress bar correctly.
+func TestRenderSplitExecutionList(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		globalThis.prSplit._setState({planCache:{splits:[
+			{name:'split/api',files:['a.go']},
+			{name:'split/cli',files:['b.go']}
+		]}});
+		var lines = [];
+		globalThis.prSplit._renderSplitExecutionList({
+			width: 80,
+			executionResults: [{sha:'abc1234'}],
+			executingIdx: 1,
+			isProcessing: true,
+			executionProgressMsg: 'creating...',
+			executionBranchTotal: 2
+		}, lines);
+		return JSON.stringify({
+			lineCount: lines.length,
+			hasCompleted: lines.join('\n').indexOf('api') >= 0,
+			hasActive: lines.join('\n').indexOf('cli') >= 0,
+			hasProgress: lines.join('\n').indexOf('\u2588') >= 0 || lines.join('\n').indexOf('\u2591') >= 0
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		LineCount    int  `json:"lineCount"`
+		HasCompleted bool `json:"hasCompleted"`
+		HasActive    bool `json:"hasActive"`
+		HasProgress  bool `json:"hasProgress"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.HasCompleted {
+		t.Error("expected completed branch 'api' in output")
+	}
+	if !result.HasActive {
+		t.Error("expected active branch 'cli' in output")
+	}
+	if result.LineCount < 3 {
+		t.Errorf("expected at least 3 lines (2 branches + progress), got %d", result.LineCount)
+	}
+}
+
+// TestRenderSkippedFilesWarning verifies the gitignore skip warning helper.
+func TestRenderSkippedFilesWarning(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var lines = [];
+		globalThis.prSplit._renderSkippedFilesWarning([
+			{name:'split/api', skippedFiles:['vendor/x.go']},
+			{sha:'abc'}
+		], lines);
+		var noSkipLines = [];
+		globalThis.prSplit._renderSkippedFilesWarning([{sha:'abc'}], noSkipLines);
+		return JSON.stringify({
+			hasWarning: lines.join('\n').indexOf('Skipped') >= 0,
+			hasFile: lines.join('\n').indexOf('vendor/x.go') >= 0,
+			emptyWhenNone: noSkipLines.length === 0
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		HasWarning    bool `json:"hasWarning"`
+		HasFile       bool `json:"hasFile"`
+		EmptyWhenNone bool `json:"emptyWhenNone"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.HasWarning {
+		t.Error("expected 'Skipped' warning header")
+	}
+	if !result.HasFile {
+		t.Error("expected skipped file path in output")
+	}
+	if !result.EmptyWhenNone {
+		t.Error("expected no output when no skipped files")
+	}
+}
+
+// TestRenderVerificationSummary verifies the pass/fail/skip summary helper.
+func TestRenderVerificationSummary(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var lines = [];
+		globalThis.prSplit._renderVerificationSummary({
+			verificationResults: [
+				{passed:true}, {passed:false}, {skipped:true}
+			],
+			activeVerifySession: null
+		}, [{name:'a'},{name:'b'},{name:'c'}], lines);
+		return JSON.stringify({
+			hasPassed: lines.join('\n').indexOf('1 passed') >= 0,
+			hasFailed: lines.join('\n').indexOf('1 failed') >= 0,
+			hasSkipped: lines.join('\n').indexOf('1 skipped') >= 0,
+			hasOverrideHint: lines.join('\n').indexOf('Press p') >= 0
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		HasPassed       bool `json:"hasPassed"`
+		HasFailed       bool `json:"hasFailed"`
+		HasSkipped      bool `json:"hasSkipped"`
+		HasOverrideHint bool `json:"hasOverrideHint"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.HasPassed {
+		t.Error("expected '1 passed' in summary")
+	}
+	if !result.HasFailed {
+		t.Error("expected '1 failed' in summary")
+	}
+	if !result.HasSkipped {
+		t.Error("expected '1 skipped' in summary")
+	}
+	if !result.HasOverrideHint {
+		t.Error("expected manual override hint when failures present")
+	}
+}
+
+// TestRenderVerificationSummary_IncompleteNoop verifies the summary
+// helper produces no output when verification is still in progress.
+func TestRenderVerificationSummary_IncompleteNoop(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var lines = [];
+		globalThis.prSplit._renderVerificationSummary({
+			verificationResults: [{passed:true}]
+		}, [{name:'a'},{name:'b'}], lines);
+		return lines.length;
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != int64(0) {
+		t.Errorf("expected 0 lines when verification incomplete, got %v", raw)
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  T388: Auto-open split-view on Next click
+// ---------------------------------------------------------------------------
+
+// TestAutoOpenSplitView_StartAnalysis_T388 verifies that startAnalysis
+// auto-opens the split-view panel with the Output tab when terminal height
+// is sufficient (>= INLINE_VIEW_HEIGHT).
+func TestAutoOpenSplitView_StartAnalysis_T388(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	// Set up a real git repo so handleConfigState succeeds.
+	dir := initGitRepo(t)
+	writeFile(t, dir+"/README.md", "# Test\n")
+	writeFile(t, dir+"/main.go", "package main\n\nfunc main() {}\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "initial")
+	gitCmd(t, dir, "checkout", "-b", "feature")
+	writeFile(t, dir+"/api.go", "package main\n\nfunc Api() {}\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "add api")
+
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		// Configure runtime to point at the real git repo.
+		globalThis.prSplit.runtime.baseBranch = 'main';
+		globalThis.prSplit.runtime.dir = '` + escapeJSPath(dir) + `';
+		globalThis.prSplit.runtime.strategy = 'directory';
+		globalThis.prSplit.runtime.mode = 'heuristic';
+		globalThis.prSplit.runtime.verifyCommand = 'true';
+		globalThis.prSplit.runtime.branchPrefix = 'split/';
+
+		var s = initState('CONFIG');
+		s.height = 30;
+		s.splitViewEnabled = false;
+		s.splitViewTab = 'claude';
+
+		var r = globalThis.prSplit._startAnalysis(s);
+		s = r[0];
+
+		return JSON.stringify({
+			splitViewEnabled: s.splitViewEnabled,
+			splitViewTab: s.splitViewTab,
+			splitViewFocus: s.splitViewFocus,
+			isProcessing: s.isProcessing,
+			analysisRunning: s.analysisRunning
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result struct {
+		SplitViewEnabled bool   `json:"splitViewEnabled"`
+		SplitViewTab     string `json:"splitViewTab"`
+		SplitViewFocus   string `json:"splitViewFocus"`
+		IsProcessing     bool   `json:"isProcessing"`
+		AnalysisRunning  bool   `json:"analysisRunning"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("JSON parse error: %v (raw=%v)", err, raw)
+	}
+
+	if !result.SplitViewEnabled {
+		t.Error("splitViewEnabled should be true after startAnalysis")
+	}
+	if result.SplitViewTab != "output" {
+		t.Errorf("splitViewTab should be 'output', got %q", result.SplitViewTab)
+	}
+	if result.SplitViewFocus != "wizard" {
+		t.Errorf("splitViewFocus should be 'wizard', got %q", result.SplitViewFocus)
+	}
+	if !result.IsProcessing {
+		t.Error("isProcessing should be true")
+	}
+	if !result.AnalysisRunning {
+		t.Error("analysisRunning should be true")
+	}
+}
+
+// TestAutoOpenSplitView_ShortTerminal_T388 verifies that split-view does NOT
+// auto-open when terminal height is below INLINE_VIEW_HEIGHT.
+func TestAutoOpenSplitView_ShortTerminal_T388(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	dir := initGitRepo(t)
+	writeFile(t, dir+"/README.md", "# Test\n")
+	writeFile(t, dir+"/main.go", "package main\n\nfunc main() {}\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "initial")
+	gitCmd(t, dir, "checkout", "-b", "feature")
+	writeFile(t, dir+"/api.go", "package main\n\nfunc Api() {}\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "add api")
+
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		globalThis.prSplit.runtime.baseBranch = 'main';
+		globalThis.prSplit.runtime.dir = '` + escapeJSPath(dir) + `';
+		globalThis.prSplit.runtime.strategy = 'directory';
+		globalThis.prSplit.runtime.mode = 'heuristic';
+		globalThis.prSplit.runtime.verifyCommand = 'true';
+		globalThis.prSplit.runtime.branchPrefix = 'split/';
+
+		var s = initState('CONFIG');
+		s.height = 8;  // below INLINE_VIEW_HEIGHT (12)
+		s.splitViewEnabled = false;
+
+		var r = globalThis.prSplit._startAnalysis(s);
+		s = r[0];
+
+		return JSON.stringify({
+			splitViewEnabled: s.splitViewEnabled,
+			analysisRunning: s.analysisRunning
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result struct {
+		SplitViewEnabled bool `json:"splitViewEnabled"`
+		AnalysisRunning  bool `json:"analysisRunning"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("JSON parse error: %v (raw=%v)", err, raw)
+	}
+	// Verify analysis actually started (config didn't fail).
+	if !result.AnalysisRunning {
+		t.Fatal("analysisRunning should be true — config validation may have failed")
+	}
+	if result.SplitViewEnabled {
+		t.Error("splitViewEnabled should remain false for short terminals")
+	}
+}
+
+// TestAutoOpenSplitView_StartExecution_T388 verifies that startExecution
+// auto-opens the split-view panel with the Output tab.
+func TestAutoOpenSplitView_StartExecution_T388(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		// Set up a plan so startExecution doesn't bail early.
+		setupPlanCache();
+
+		// Mock executeSplitAsync to prevent real execution.
+		globalThis.prSplit.executeSplitAsync = function(plan, opts) {
+			return new Promise(function() {}); // never resolves — we only check initial state
+		};
+
+		var s = initState('PLAN_REVIEW');
+		s.height = 30;
+		s.splitViewEnabled = false;
+		s.splitViewTab = 'claude';
+
+		// Set nav focus to Next button and press Enter.
+		// Or call startExecution directly:
+		var r = globalThis.prSplit._startExecution(s);
+		s = r[0];
+
+		return JSON.stringify({
+			splitViewEnabled: s.splitViewEnabled,
+			splitViewTab: s.splitViewTab,
+			splitViewFocus: s.splitViewFocus,
+			wizardState: s.wizardState
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result struct {
+		SplitViewEnabled bool   `json:"splitViewEnabled"`
+		SplitViewTab     string `json:"splitViewTab"`
+		SplitViewFocus   string `json:"splitViewFocus"`
+		WizardState      string `json:"wizardState"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("JSON parse error: %v (raw=%v)", err, raw)
+	}
+
+	if !result.SplitViewEnabled {
+		t.Error("splitViewEnabled should be true after startExecution")
+	}
+	if result.SplitViewTab != "output" {
+		t.Errorf("splitViewTab should be 'output', got %q", result.SplitViewTab)
+	}
+	if result.WizardState != "BRANCH_BUILDING" {
+		t.Errorf("wizardState should be 'BRANCH_BUILDING', got %q", result.WizardState)
+	}
+}
+
+// TestCtrlO_IncludesFallbackVerify_T388 verifies that Ctrl+O tab rotation
+// includes the Verify tab when verifyFallbackRunning is true (even without
+// activeVerifySession).
+func TestCtrlO_IncludesFallbackVerify_T388(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('BRANCH_BUILDING');
+		s.height = 30;
+		s.splitViewEnabled = true;
+		s.splitViewTab = 'output';
+		s.splitViewFocus = 'wizard';
+		s.activeVerifySession = null;
+		s.verifyScreen = '';
+		s.verifyFallbackRunning = true;  // fallback path active
+
+		// First Ctrl+O: output → verify (skipping claude since we start at output).
+		// Actually: rotation is ['claude','output','verify']. Starting at 'output' (idx 1),
+		// next is 'verify' (idx 2).
+		var r = sendKey(s, 'ctrl+o');
+		s = r[0];
+
+		return JSON.stringify({ tab: s.splitViewTab });
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result struct {
+		Tab string `json:"tab"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("JSON parse error: %v (raw=%v)", err, raw)
+	}
+	if result.Tab != "verify" {
+		t.Errorf("Ctrl+O from 'output' with verifyFallbackRunning should go to 'verify', got %q", result.Tab)
+	}
+}

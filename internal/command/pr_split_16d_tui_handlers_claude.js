@@ -264,6 +264,15 @@
             }
         );
 
+        // T388: Auto-open split-view with Output tab so user sees pipeline
+        // output immediately after clicking Next, rather than a blank screen.
+        if (!s.splitViewEnabled && s.height >= C.INLINE_VIEW_HEIGHT) {
+            s.splitViewEnabled = true;
+            s.splitViewFocus = 'wizard';
+            s.splitViewTab = 'output';
+            syncMainViewport(s);
+        }
+
         // Poll for completion every 500ms.
         return [s, tea.tick(C.AUTO_SPLIT_POLL_MS, 'auto-poll')];
     }
@@ -322,11 +331,13 @@
                     }
                 }
             }
-            // T45: Auto-attach Claude pane when Claude spawns.
+            // T45+T388: Auto-attach Claude pane when Claude spawns.
             // Trigger once: when tuiMux has a child (Claude attached by pipeline),
-            // split-view is not yet enabled, user hasn't manually dismissed, and
-            // terminal is tall enough.
-            if (!s.claudeAutoAttached && !s.splitViewEnabled && !s.claudeManuallyDismissed &&
+            // user hasn't manually dismissed, and terminal is tall enough.
+            // T388: Removed !s.splitViewEnabled guard — split-view may already be
+            // open on the Output tab (auto-opened by startAutoAnalysis). We still
+            // need to switch to the Claude tab and mark auto-attached.
+            if (!s.claudeAutoAttached && !s.claudeManuallyDismissed &&
                 s.height >= C.INLINE_VIEW_HEIGHT &&
                 typeof tuiMux !== 'undefined' && tuiMux &&
                 typeof tuiMux.hasChild === 'function' && tuiMux.hasChild()) {

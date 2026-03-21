@@ -196,6 +196,17 @@
             }
         );
 
+        // T388: Auto-open split-view with Output tab so user sees pipeline
+        // output immediately after clicking Next, rather than a blank screen.
+        if (!s.splitViewEnabled && s.height >= C.INLINE_VIEW_HEIGHT) {
+            s.splitViewEnabled = true;
+            s.splitViewFocus = 'wizard';
+            s.splitViewTab = 'output';
+            if (typeof prSplit._syncMainViewport === 'function') {
+                prSplit._syncMainViewport(s);
+            }
+        }
+
         // Poll at tick interval for responsive spinner animation.
         return [s, tea.tick(C.TICK_INTERVAL_MS, 'analysis-poll')];
     }
@@ -514,6 +525,16 @@
                 s.executionRunning = false;
             }
         );
+
+        // T388: Auto-open split-view with Output tab for execution progress.
+        if (!s.splitViewEnabled && s.height >= C.INLINE_VIEW_HEIGHT) {
+            s.splitViewEnabled = true;
+            s.splitViewFocus = 'wizard';
+            s.splitViewTab = 'output';
+            if (typeof prSplit._syncMainViewport === 'function') {
+                prSplit._syncMainViewport(s);
+            }
+        }
 
         // Poll at tick interval for responsive spinner animation.
         return [s, tea.tick(C.TICK_INTERVAL_MS, 'execution-poll')];

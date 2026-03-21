@@ -258,6 +258,23 @@
         DEFAULT_ROWS: 24,           // fallback terminal row count
         INLINE_VIEW_HEIGHT: 12,     // min height for inline terminal view
         DISMISS_NOTIF_MS: 5000,     // auto-dismiss notification timeout (ms)
+        ANALYSIS_TIMEOUT_MS: 60000, // slow-analysis warning threshold
+        RESOLVE_POLL_MS: 500,       // conflict-resolution poll interval
+        CLAUDE_CHECK_POLL_MS: 50,   // claude binary resolution fast-poll
+        AUTO_SPLIT_POLL_MS: 500,    // auto-split pipeline poll interval
+        CLAUDE_SCREENSHOT_POLL_MS: 500, // claude terminal screenshot poll
+        QUESTION_IDLE_MS: 2000,     // idle threshold before question detection
+        QUESTION_SCAN_LINES: 15,    // trailing lines scanned for questions
+        CONVO_POLL_MS: 200,         // claude conversation send/wait poll
+        PLAN_REVISION_TIMEOUT_MS: 180000, // 3-min plan revision timeout
+        SCREENSHOT_CAPTURE_CHARS: 500,    // max chars from screenshot capture
+        CONVO_HISTORY_CAP: 100,     // conversation history cap
+        CONVO_HISTORY_TRIM: 80,     // trim target when cap exceeded
+        CLIPBOARD_FLASH_MS: 3000,   // clipboard copy flash duration
+        AUTO_ATTACH_NOTIF_GUARD_MS: 4500, // auto-attach dismiss guard
+        CLIPBOARD_FLASH_GUARD_MS: 2500,   // clipboard flash dismiss guard
+        FAR_SCROLL_SENTINEL: 999999,      // scroll-to-top sentinel value
+        PR_CREATION_POLL_MS: 200,         // PR creation poll interval
     };
 
     prSplit._renderProgressBar = renderProgressBar;

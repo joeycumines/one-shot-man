@@ -185,7 +185,7 @@
                         s.clipboardFlash = 'Copy failed: ' + (e.message || String(e));
                     }
                     s.clipboardFlashAt = Date.now();
-                    return [s, tea.tick(3000, 'dismiss-clipboard-flash')];
+                    return [s, tea.tick(C.CLIPBOARD_FLASH_MS, 'dismiss-clipboard-flash')];
                 }
                 // Scroll navigation — sync scrollbar after each scroll op.
                 if (rk === 'j' || rk === 'down') {
@@ -265,14 +265,14 @@
             if (qk === 'enter') {
                 var responseText = (s.claudeQuestionInputText || '').trim();
                 if (responseText.length > 0) {
-                    // Record in conversation history (cap at 100 entries).
+                    // Record in conversation history.
                     s.claudeConversations.push({
                         question: s.claudeQuestionLine,
                         answer: responseText,
                         ts: Date.now()
                     });
-                    if (s.claudeConversations.length > 100) {
-                        s.claudeConversations = s.claudeConversations.slice(-80);
+                    if (s.claudeConversations.length > C.CONVO_HISTORY_CAP) {
+                        s.claudeConversations = s.claudeConversations.slice(-C.CONVO_HISTORY_TRIM);
                     }
 
                     // Send to Claude PTY via tuiMux.writeToChild.
@@ -475,7 +475,7 @@
                 }
                 if (k === 'home') {
                     s.verifyAutoScroll = false;
-                    s.verifyViewportOffset = 999999; // far back
+                    s.verifyViewportOffset = C.FAR_SCROLL_SENTINEL; // far back
                     return [s, null];
                 }
                 if (k === 'end') {
@@ -568,7 +568,7 @@
                             return [s, null];
                         }
                         if (k === 'home') {
-                            s.outputViewOffset = 999999;
+                            s.outputViewOffset = C.FAR_SCROLL_SENTINEL;
                             s.outputAutoScroll = false;
                             return [s, null];
                         }
@@ -604,7 +604,7 @@
                             return [s, null];
                         }
                         if (k === 'home') {
-                            s.verifyViewportOffset = 999999;
+                            s.verifyViewportOffset = C.FAR_SCROLL_SENTINEL;
                             s.verifyAutoScroll = false;
                             return [s, null];
                         }
@@ -665,7 +665,7 @@
                         return [s, null];
                     }
                     if (k === 'home') {
-                        s.claudeViewOffset = 999999;
+                        s.claudeViewOffset = C.FAR_SCROLL_SENTINEL;
                         return [s, null];
                     }
                     if (k === 'end') {
@@ -1044,7 +1044,7 @@
             // Guard: only dismiss if the current notification is old enough
             // to prevent a stale tick from clearing a newer notification.
             if (msg.id === 'dismiss-attach-notif') {
-                if (s.claudeAutoAttachNotifAt && (Date.now() - s.claudeAutoAttachNotifAt) >= 4500) {
+                if (s.claudeAutoAttachNotifAt && (Date.now() - s.claudeAutoAttachNotifAt) >= C.AUTO_ATTACH_NOTIF_GUARD_MS) {
                     s.claudeAutoAttachNotif = '';
                     s.claudeAutoAttachNotifAt = 0;
                 }
@@ -1052,7 +1052,7 @@
             }
             // T073: Auto-dismiss clipboard flash after 3s.
             if (msg.id === 'dismiss-clipboard-flash') {
-                if (s.clipboardFlashAt && (Date.now() - s.clipboardFlashAt) >= 2500) {
+                if (s.clipboardFlashAt && (Date.now() - s.clipboardFlashAt) >= C.CLIPBOARD_FLASH_GUARD_MS) {
                     s.clipboardFlash = '';
                     s.clipboardFlashAt = 0;
                 }

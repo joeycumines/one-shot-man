@@ -704,7 +704,7 @@
         var timeoutMs = C.CONVO_TIMEOUT_MS; // 2 minutes default
         if (convo.context === 'plan-review') {
             toolToWait = 'reportSplitPlan';
-            timeoutMs = 180000; // 3 minutes for plan revision
+            timeoutMs = C.PLAN_REVISION_TIMEOUT_MS; // 3 minutes for plan revision
         } else if (convo.context === 'error-resolution') {
             toolToWait = 'reportResolution';
             timeoutMs = C.CONVO_TIMEOUT_MS;
@@ -756,7 +756,7 @@
                         if (shot) {
                             convoState.history.push({
                                 role: 'claude',
-                                text: '[screenshot]\n' + shot.substring(shot.length - 500),
+                                text: '[screenshot]\n' + shot.substring(shot.length - C.SCREENSHOT_CAPTURE_CHARS),
                                 ts: Date.now()
                             });
                         }
@@ -780,7 +780,7 @@
         );
 
         // Start tick polling for completion.
-        return [s, tea.tick(200, 'claude-convo-poll')];
+        return [s, tea.tick(C.CONVO_POLL_MS, 'claude-convo-poll')];
     }
 
     // formatClaudeResponse formats structured MCP tool response for display.
@@ -827,7 +827,7 @@
 
         // If still sending, keep polling.
         if (convo.sending) {
-            return [s, tea.tick(200, 'claude-convo-poll')];
+            return [s, tea.tick(C.CONVO_POLL_MS, 'claude-convo-poll')];
         }
 
         // T122: If plan was revised by Claude, reset split selection.
@@ -868,7 +868,7 @@
                 s.claudeRestarting = false;
                 s.restartResult = { error: 'Claude restart error: ' + ((err && err.message) || String(err)) };
             });
-            return [s, tea.tick(500, 'restart-claude-poll')];
+            return [s, tea.tick(C.AUTO_SPLIT_POLL_MS, 'restart-claude-poll')];
         }
 
         if (choice === 'fallback-heuristic') {
@@ -911,7 +911,7 @@
                     s.resolveRunning = false;
                 }
             );
-            return [s, tea.tick(500, 'resolve-poll')];
+            return [s, tea.tick(C.RESOLVE_POLL_MS, 'resolve-poll')];
 
         case 'manual':
             // Switch to Claude pane — user fixes manually. Store context

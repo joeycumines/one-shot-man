@@ -369,8 +369,6 @@
     // handleAnalysisPoll: Called every 100ms to check if the async
     // analysis pipeline has completed. Updates spinner animation,
     // checks for timeout warning, and handles cancellation.
-    var ANALYSIS_TIMEOUT_MS = 60000; // T002: default 60s warning threshold
-
     function handleAnalysisPoll(s) {
         // If cancelled (Ctrl+C), stop polling.
         if (!s.isProcessing && !s.analysisRunning) {
@@ -384,7 +382,7 @@
                 var elapsed = Date.now() - s.analysisStartedAt;
                 var threshold = (typeof prSplitConfig !== 'undefined' && prSplitConfig.analysisTimeoutMs > 0)
                     ? prSplitConfig.analysisTimeoutMs
-                    : ANALYSIS_TIMEOUT_MS;
+                    : C.ANALYSIS_TIMEOUT_MS;
                 if (elapsed >= threshold && !s.analysisSlowWarning) {
                     s.analysisSlowWarning = true;
                     s.analysisElapsedMs = elapsed;
@@ -419,7 +417,7 @@
         }
 
         if (s.resolveRunning) {
-            return [s, tea.tick(500, 'resolve-poll')];
+            return [s, tea.tick(C.RESOLVE_POLL_MS, 'resolve-poll')];
         }
 
         // Resolve completed — process result.
@@ -787,13 +785,13 @@
             s.prCreationRunning = false;
         });
 
-        return [s, tea.tick(200, 'pr-creation-poll')];
+        return [s, tea.tick(C.PR_CREATION_POLL_MS, 'pr-creation-poll')];
     }
 
     function handlePRCreationPoll(s) {
         // Still running — keep polling for spinner animation + progress.
         if (s.prCreationRunning) {
-            return [s, tea.tick(200, 'pr-creation-poll')];
+            return [s, tea.tick(C.PR_CREATION_POLL_MS, 'pr-creation-poll')];
         }
         // Done — no further ticks needed. View will read prCreationResults.
         return [s, null];

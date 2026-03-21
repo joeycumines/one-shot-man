@@ -34,7 +34,7 @@
 
         // Guard: already checking — don't double-launch.
         if (s.claudeCheckRunning) {
-            return [s, tea.tick(50, 'claude-check-poll')];
+            return [s, tea.tick(C.CLAUDE_CHECK_POLL_MS, 'claude-check-poll')];
         }
 
         // Use cached executor if available (avoids redundant re-checks).
@@ -64,7 +64,7 @@
         );
 
         // Poll at 50ms for responsive status updates.
-        return [s, tea.tick(50, 'claude-check-poll')];
+        return [s, tea.tick(C.CLAUDE_CHECK_POLL_MS, 'claude-check-poll')];
     }
 
     // runClaudeCheckAsync: Async function that runs resolveAsync on the
@@ -99,7 +99,7 @@
     function handleClaudeCheckPoll(s) {
         // Still running — keep polling.
         if (s.claudeCheckRunning) {
-            return [s, tea.tick(50, 'claude-check-poll')];
+            return [s, tea.tick(C.CLAUDE_CHECK_POLL_MS, 'claude-check-poll')];
         }
 
         // T113: If startAutoAnalysis deferred to us because the executor
@@ -265,7 +265,7 @@
         );
 
         // Poll for completion every 500ms.
-        return [s, tea.tick(500, 'auto-poll')];
+        return [s, tea.tick(C.AUTO_SPLIT_POLL_MS, 'auto-poll')];
     }
 
     // handleAutoSplitPoll: Called every 500ms to check if the async
@@ -342,7 +342,7 @@
                 // T028: Also schedule dismiss tick for the notification.
                 return [s, tea.batch(
                     tea.tick(C.TICK_INTERVAL_MS, 'claude-screenshot'),
-                    tea.tick(500, 'auto-poll'),
+                    tea.tick(C.AUTO_SPLIT_POLL_MS, 'auto-poll'),
                     tea.tick(C.DISMISS_NOTIF_MS, 'dismiss-attach-notif')
                 )];
             }
@@ -381,7 +381,7 @@
             }
 
             s.spinnerFrame = (s.spinnerFrame || 0) + 1;
-            return [s, tea.tick(500, 'auto-poll')];
+            return [s, tea.tick(C.AUTO_SPLIT_POLL_MS, 'auto-poll')];
         }
 
         // Pipeline completed — process result.
@@ -456,7 +456,7 @@
     function handleRestartClaudePoll(s) {
         if (s.claudeRestarting) {
             // Still restarting — keep polling.
-            return [s, tea.tick(500, 'restart-claude-poll')];
+            return [s, tea.tick(C.AUTO_SPLIT_POLL_MS, 'restart-claude-poll')];
         }
 
         var result = s.restartResult;
@@ -655,7 +655,7 @@
     // terminal to determine whether Claude is asking the user a question.
     // Heuristics: confirmation patterns, conversational question openers,
     // plain question marks. Only fires when idle ≥ idleThresholdMs (2s).
-    var QUESTION_IDLE_THRESHOLD_MS = 2000;
+    var QUESTION_IDLE_THRESHOLD_MS = C.QUESTION_IDLE_MS;
 
     // Explicit confirmation prompt patterns (case-insensitive).
     var CONFIRM_PATTERNS = [
@@ -715,7 +715,7 @@
             return result;
         }
 
-        var scanCount = Math.min(15, allLines.length);
+        var scanCount = Math.min(C.QUESTION_SCAN_LINES, allLines.length);
         var scanLines = allLines.slice(allLines.length - scanCount);
 
         // Scan from bottom to top — the question is most likely at/near the
@@ -782,7 +782,7 @@
                 return [s, tea.tick(C.DISMISS_NOTIF_MS, 'dismiss-attach-notif')]; // stop polling
             }
             // Continue polling — the child may attach later (e.g., during auto-split).
-            return [s, tea.tick(500, 'claude-screenshot')];
+            return [s, tea.tick(C.CLAUDE_SCREENSHOT_POLL_MS, 'claude-screenshot')];
         }
 
         // Capture ANSI screen from tuiMux if available (T28: full color rendering).
@@ -811,7 +811,7 @@
             var now46 = Date.now();
             // Throttle detection to every 2s to avoid churn.
             if (!s.claudeLastQuestionCheckMs ||
-                (now46 - s.claudeLastQuestionCheckMs >= 2000)) {
+                (now46 - s.claudeLastQuestionCheckMs >= C.QUESTION_IDLE_MS)) {
                 s.claudeLastQuestionCheckMs = now46;
 
                 // Compute idle time from tuiMux.
@@ -844,7 +844,7 @@
         }
 
         // Schedule next poll at 500ms.
-        return [s, tea.tick(500, 'claude-screenshot')];
+        return [s, tea.tick(C.CLAUDE_SCREENSHOT_POLL_MS, 'claude-screenshot')];
     }
 
     // --- Cross-chunk exports ---

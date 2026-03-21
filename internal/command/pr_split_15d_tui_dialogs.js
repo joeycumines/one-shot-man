@@ -447,7 +447,7 @@
         var flashLine = '';
         if (s.clipboardFlash && s.clipboardFlashAt) {
             var flashElapsed = Date.now() - s.clipboardFlashAt;
-            if (flashElapsed < 3000) {
+            if (flashElapsed < C.CLIPBOARD_FLASH_MS) {
                 var flashStyle = s.clipboardFlash.indexOf('failed') >= 0
                     ? styles.errorBadge() : styles.successBadge();
                 flashLine = '\n  ' + flashStyle.render(' ' + s.clipboardFlash + ' ');

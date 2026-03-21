@@ -517,8 +517,8 @@
 
             // Split-view keybindings (only when enabled).
             if (s.splitViewEnabled) {
-                // Ctrl+Tab switches focus between wizard and Claude panes.
-                if (k === 'ctrl+tab' && !s.activeVerifySession) {
+                // T380: Ctrl+Tab switches focus between wizard and pane (works during verify).
+                if (k === 'ctrl+tab') {
                     s.splitViewFocus = (s.splitViewFocus === 'wizard') ? 'claude' : 'wizard';
                     return [s, null];
                 }
@@ -533,10 +533,10 @@
                     syncMainViewport(s); // T120: sync dimensions after ratio change.
                     return [s, null];
                 }
-                // T44+T322: Ctrl+O cycles through available tabs in split-view bottom pane.
+                // T44+T322+T380: Ctrl+O cycles through available tabs in split-view bottom pane.
                 if (k === 'ctrl+o') {
                     var tabs = ['claude', 'output'];
-                    if (s.activeVerifySession) tabs.push('verify');
+                    if (s.activeVerifySession || s.verifyScreen) tabs.push('verify');
                     if (s.shellSession) tabs.push('shell');
                     var idx = tabs.indexOf(s.splitViewTab);
                     s.splitViewTab = tabs[(idx + 1) % tabs.length];

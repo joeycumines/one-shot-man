@@ -242,10 +242,10 @@
             s.verifyViewportOffset = 0;
             s.verifyOutput[branchName] = []; // pre-initialize for live outputFn
 
-            // T352: Auto-open split-view with Verify tab in fallback path.
+            // T352+T380: Auto-open split-view with Verify tab in fallback path.
             if (!s.splitViewEnabled && s.height >= C.INLINE_VIEW_HEIGHT) {
                 s.splitViewEnabled = true;
-                s.splitViewFocus = 'wizard';
+                s.splitViewFocus = 'claude';
                 s.splitViewTab = 'verify';
                 if (typeof prSplit._syncMainViewport === 'function') {
                     prSplit._syncMainViewport(s);
@@ -280,10 +280,10 @@
         s.verifyViewportOffset = 0;
         s.verifyAutoScroll = true;
 
-        // T325: Auto-open split-view with Verify tab when verification starts.
+        // T325+T380: Auto-open split-view with Verify tab when verification starts.
         if (!s.splitViewEnabled && s.height >= C.INLINE_VIEW_HEIGHT) {
             s.splitViewEnabled = true;
-            s.splitViewFocus = 'wizard';
+            s.splitViewFocus = 'claude';
             s.splitViewTab = 'verify';
             if (typeof prSplit._syncMainViewport === 'function') {
                 prSplit._syncMainViewport(s);
@@ -390,9 +390,10 @@
             preExisting: preExisting
         });
 
-        // T325: Reset tab before clearing session for atomic state transition.
-        if (s.splitViewTab === 'verify' || s.splitViewTab === 'shell') {
-            s.splitViewTab = 'output';
+        // T380: Keep verify tab visible after session close for post-mortem review.
+        // Only force-switch shell tab (which depends on verify worktree).
+        if (s.splitViewTab === 'shell') {
+            s.splitViewTab = 'verify';
         }
 
         // Clean up shell session if open (shell depends on verify worktree).
@@ -405,17 +406,17 @@
         }
 
         // Clear active session state.
+        // T380: Preserve verifyScreen, activeVerifyBranch, and verifyElapsedMs
+        // for post-mortem viewing in the pane title. Cleared on next verify start.
         s.activeVerifySession = null;
         s.activeVerifyWorktree = null;
-        s.activeVerifyBranch = null;
         s.activeVerifyDir = null;
         s.activeVerifyStartTime = 0;
-        s.verifyElapsedMs = 0;
         s.verifyViewportOffset = 0;
         s.verifyAutoScroll = true;
         s.lastVerifyInterruptTime = 0;
         s.verifyPaused = false;  // T059
-        s.verifyScreen = '';     // T321: clear screen when session ends
+        // T380: Preserve verifyScreen for post-mortem viewing (cleared on next verify start).
 
         s.verifyingIdx++;
         return [s, tea.tick(1, 'verify-branch')];
@@ -494,16 +495,14 @@
             return [s, tea.tick(C.TICK_INTERVAL_MS, 'verify-fallback-poll')];
         }
 
-        // T352: Clear fallback display state on completion.
-        s.activeVerifyBranch = null;
+        // T380: Preserve activeVerifyBranch, verifyElapsedMs, and verifyScreen
+        // for post-mortem viewing in fallback path (consistent with CaptureSession path).
         s.activeVerifyStartTime = 0;
-        s.verifyElapsedMs = 0;
-        s.verifyScreen = '';
         s.verifyAutoScroll = true;
         s.verifyViewportOffset = 0;
-        // Switch tab away from verify since session ended.
-        if (s.splitViewTab === 'verify') {
-            s.splitViewTab = 'output';
+        // T380: Keep verify tab visible for post-mortem review; only switch shell away.
+        if (s.splitViewTab === 'shell') {
+            s.splitViewTab = 'verify';
         }
 
         // Error in the .then rejection handler — record a failure result.

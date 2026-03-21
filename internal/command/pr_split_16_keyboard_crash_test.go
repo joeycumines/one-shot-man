@@ -179,14 +179,14 @@ func TestChunk16_TabBehaviorInSplitView(t *testing.T) {
 		r = sendKey(r[0], 'ctrl+tab');
 		if (r[0].splitViewFocus !== 'wizard') errors.push('split-view ctrl+tab did not switch back to wizard');
 
-		// Split-view + verify session: Ctrl+Tab should pass through (not switch panes).
+		// Split-view + verify session: T380 removed the guard, Ctrl+Tab now switches panes.
 		s = initState('BRANCH_BUILDING');
 		s.splitViewEnabled = true;
 		s.splitViewFocus = 'wizard';
 		s.activeVerifySession = {interrupt: function(){}, kill: function(){}};
 		r = sendKey(s, 'ctrl+tab');
-		// When verify session is active, ctrl+tab should NOT switch panes.
-		if (r[0].splitViewFocus !== 'wizard') errors.push('split-view+verify ctrl+tab should not switch pane');
+		// T380: Ctrl+Tab works during verify — switches to pane.
+		if (r[0].splitViewFocus !== 'claude') errors.push('split-view+verify ctrl+tab should switch to claude');
 
 		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
 		return 'OK';

@@ -93,9 +93,13 @@ func TestE2E_VerifyTabLifecycle(t *testing.T) {
         if (s.verifyingIdx !== 1) {
             errors.push('Phase3: verifyingIdx should advance to 1, got: ' + s.verifyingIdx);
         }
-        // T325: verify tab switches to output on completion.
-        if (s.splitViewTab !== 'output') {
-            errors.push('Phase3: splitViewTab should switch to output, got: ' + s.splitViewTab);
+        // T380: verify tab preserved after completion for post-mortem review.
+        if (s.splitViewTab !== 'verify') {
+            errors.push('Phase3: splitViewTab should stay on verify, got: ' + s.splitViewTab);
+        }
+        // T380: verifyScreen preserved for post-mortem viewing.
+        if (!s.verifyScreen) {
+            errors.push('Phase3: verifyScreen should be preserved after completion');
         }
         // Verify result contents.
         if (s.verificationResults && s.verificationResults.length > 0) {
@@ -115,6 +119,73 @@ func TestE2E_VerifyTabLifecycle(t *testing.T) {
 	}
 	if raw != "OK" {
 		t.Errorf("verify tab lifecycle: %v", raw)
+	}
+}
+
+// TestE2E_VerifyFallbackLifecycle_T380 ensures the fallback (non-CaptureSession)
+// verify path preserves verifyScreen, activeVerifyBranch, and verifyElapsedMs
+// after completion for post-mortem viewing, matching the CaptureSession path.
+func TestE2E_VerifyFallbackLifecycle_T380(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+        var errors = [];
+        setupPlanCache();
+        var s = initState('BRANCH_BUILDING');
+        s.isProcessing = true;
+        s.verifyingIdx = 0;
+        s.verificationResults = [];
+        s.verifyOutput = {'split/01-types': ['line1', 'line2']};
+        s.outputLines = [];
+        s.width = 80;
+        s.height = 24;
+
+        // Simulate fallback verify state (no CaptureSession).
+        s.verifyFallbackRunning = false; // already finished
+        s.verifyFallbackError = null;
+        s.activeVerifyBranch = 'split/01-types';
+        s.activeVerifyStartTime = Date.now() - 5000;
+        s.verifyElapsedMs = 5000;
+        s.verifyScreen = 'All tests passed (fallback)';
+        s.verifyAutoScroll = true;
+        s.verifyViewportOffset = 3;
+        s.splitViewEnabled = true;
+        s.splitViewTab = 'verify';
+        s.splitViewFocus = 'claude';
+
+        // Poll fallback — should complete since verifyFallbackRunning=false.
+        var r = update({type: 'Tick', id: 'verify-fallback-poll'}, s);
+        s = r[0];
+
+        // T380: verifyScreen preserved for post-mortem.
+        if (!s.verifyScreen || s.verifyScreen.indexOf('fallback') < 0) {
+            errors.push('verifyScreen should be preserved, got: ' + JSON.stringify(s.verifyScreen));
+        }
+        // T380: activeVerifyBranch preserved for pane title.
+        if (s.activeVerifyBranch !== 'split/01-types') {
+            errors.push('activeVerifyBranch should be preserved, got: ' + s.activeVerifyBranch);
+        }
+        // T380: verifyElapsedMs preserved for elapsed display.
+        if (s.verifyElapsedMs === 0) {
+            errors.push('verifyElapsedMs should be preserved, got: ' + s.verifyElapsedMs);
+        }
+        // T380: splitViewTab stays on verify (not switched to output).
+        if (s.splitViewTab !== 'verify') {
+            errors.push('splitViewTab should stay on verify, got: ' + s.splitViewTab);
+        }
+        // Viewport offset reset for clean post-mortem view.
+        if (s.verifyViewportOffset !== 0) {
+            errors.push('verifyViewportOffset should be reset, got: ' + s.verifyViewportOffset);
+        }
+
+        return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
+    })()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify fallback lifecycle T380: %v", raw)
 	}
 }
 

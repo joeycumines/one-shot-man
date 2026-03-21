@@ -192,12 +192,12 @@ func TestChunk16_SplitView_TabFocusSwitch(t *testing.T) {
 		r = sendKey(r[0], 'ctrl+tab');
 		if (r[0].splitViewFocus !== 'wizard') return 'FAIL: ctrl+tab did not switch to wizard';
 
-		// Ctrl+Tab during active verify session does NOT switch focus (split-view tab guard).
+		// Ctrl+Tab during active verify session: T380 removed the guard, so it now switches focus.
 		r[0].activeVerifySession = {interrupt:function(){},kill:function(){},close:function(){},isRunning:function(){return true;},output:function(){return '';},screen:function(){return '';}};
 		r[0].splitViewFocus = 'wizard';
 		r = sendKey(r[0], 'ctrl+tab');
-		// During verify session, ctrl+tab should NOT switch panes (it falls through to different handler).
-		if (r[0].splitViewFocus !== 'wizard') return 'FAIL: ctrl+tab during verify should not switch focus';
+		// T380: Ctrl+Tab now works during verify — switches to pane.
+		if (r[0].splitViewFocus !== 'claude') return 'FAIL: ctrl+tab during verify should switch to claude';
 
 		return 'OK';
 	})()`)

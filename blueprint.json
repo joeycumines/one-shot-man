@@ -284,7 +284,8 @@
       "task": "Fix %v to %w in validateGitRepo error wrapping",
       "description": "pr_split.go:557 uses %v instead of %w, breaking error chain for exec.ErrNotFound. Fix to %w.",
       "acceptance": "errors.Is(err, exec.ErrNotFound) works on validateGitRepo return value. Test confirms error wrapping.",
-      "status": "Not Started"
+      "status": "Done",
+      "notes": "Single-character fix %v→%w on pr_split.go:557. Committed f4ea16ef. Rule of Two PASS+PASS."
     },
     {
       "id": "T410",

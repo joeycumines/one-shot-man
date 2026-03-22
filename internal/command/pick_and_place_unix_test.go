@@ -1382,9 +1382,11 @@ func TestPickAndPlace_MousePick_StaticObstacles(t *testing.T) {
 	stateNearWall := h.GetDebugState()
 	t.Logf("Actor near wall at (%.1f, %.1f)", stateNearWall.ActorX, stateNearWall.ActorY)
 
-	// Click near/on the wall position
-	clickX := 20 // Wall at x=20
-	clickY := 11
+	// Click on an actual wall position. The left room wall is at x=20.
+	// The gap at x=20 is y=10,11,12 (ROOM_GAP_Y=11 ±1 skipped by addWall).
+	// x=20, y=8 is a solid wall segment above the gap.
+	clickX := 20
+	clickY := 8
 
 	if err := h.ClickGrid(clickX, clickY); err != nil {
 		t.Fatalf("Failed to send mouse click: %v", err)

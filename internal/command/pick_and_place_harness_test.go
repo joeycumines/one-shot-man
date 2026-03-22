@@ -768,9 +768,19 @@ func (h *PickAndPlaceHarness) Start() error {
 	return fmt.Errorf("simulator did not show expected startup. Buffer:\n%s", h.console.String())
 }
 
-// Close shuts down the harness and cleans up resources
+// Close shuts down the harness and cleans up resources.
+// It attempts a graceful quit ('q') before closing the PTY, so that
+// BubbleTea + PABT ticker goroutines shut down promptly instead of
+// blocking until the 60-second context timeout.
 func (h *PickAndPlaceHarness) Close() {
 	if h.console != nil {
+		// Best-effort graceful shutdown — ignore errors since the process
+		// may already have exited (e.g. after an explicit h.Quit() call).
+		_ = h.SendKey("q")
+		// Brief pause to let BubbleTea process the quit signal before PTY
+		// closure sends SIGHUP. Without this, the SIGHUP may race with
+		// the quit handler and leave the ticker goroutine alive.
+		time.Sleep(200 * time.Millisecond)
 		h.console.Close()
 	}
 	h.cancel()

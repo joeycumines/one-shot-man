@@ -1,8 +1,11 @@
 package command
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"flag"
 	"fmt"
 	"net"
 	"os"
@@ -15,8 +18,93 @@ import (
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/builtin/mcpcallbackmod"
+	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+func newPrSplitEvalFromFlags(t testing.TB, args ...string) (*PrSplitCommand, func(string) (any, error)) {
+	t.Helper()
+
+	cfg := config.NewConfig()
+	cmd := NewPrSplitCommand(cfg)
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cmd.SetupFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+	cmd.applyConfigDefaults()
+	if err := cmd.validateFlags(); err != nil {
+		t.Fatalf("validate flags: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	var stdout safeBuffer
+	var stderr bytes.Buffer
+	engine, cleanup, err := cmd.PrepareEngine(ctx, &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("prepare engine: %v", err)
+	}
+	t.Cleanup(cleanup)
+
+	if _, err := cmd.setupEngineGlobals(ctx, engine, &stdout); err != nil {
+		t.Fatalf("setup engine globals: %v", err)
+	}
+
+	shim := engine.LoadScriptFromString("pr-split/compat-shim", chunkCompatShim)
+	if err := engine.ExecuteScript(shim); err != nil {
+		t.Fatalf("compat shim failed: %v", err)
+	}
+
+	evalJS := func(js string) (any, error) {
+		done := make(chan struct{})
+		var result any
+		var resultErr error
+
+		submitErr := engine.Loop().Submit(func() {
+			vm := engine.Runtime()
+
+			if strings.Contains(js, "await ") {
+				_ = vm.Set("__evalResult", func(val any) {
+					result = val
+					close(done)
+				})
+				_ = vm.Set("__evalError", func(msg string) {
+					resultErr = errors.New(msg)
+					close(done)
+				})
+				wrapped := "(async function() {\n\ttry {\n\t\tvar __res = " + js + ";\n\t\tif (__res && typeof __res.then === 'function') { __res = await __res; }\n\t\t__evalResult(__res);\n\t} catch(e) {\n\t\t__evalError(e.message || String(e));\n\t}\n})();"
+				if _, runErr := vm.RunString(wrapped); runErr != nil {
+					resultErr = runErr
+					close(done)
+				}
+				return
+			}
+
+			val, err := vm.RunString(js)
+			if err != nil {
+				resultErr = err
+				close(done)
+				return
+			}
+			result = val.Export()
+			close(done)
+		})
+		if submitErr != nil {
+			return nil, submitErr
+		}
+
+		select {
+		case <-done:
+			return result, resultErr
+		case <-time.After(30 * time.Second):
+			return nil, fmt.Errorf("eval timeout after 30s")
+		}
+	}
+
+	return cmd, evalJS
+}
 
 // ---------------------------------------------------------------------------
 // Integration Test: Heuristic Split (no AI required, real git)
@@ -1543,6 +1631,200 @@ func TestIntegration_SpawnArgs_DangerouslySkipPermissions(t *testing.T) {
 	if explicitOtherResult.DSPIndex != -1 {
 		t.Errorf("explicit type with non-claude command should NOT contain --dangerously-skip-permissions, but found at index %d; args: %v",
 			explicitOtherResult.DSPIndex, explicitOtherResult.Args)
+	}
+}
+
+func TestIntegration_ClaudeCLIFlags_EndToEndToSpawn(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	commandPath := filepath.Join(t.TempDir(), "claude-launcher")
+	mcpConfigPath := filepath.Join(t.TempDir(), "mcp-config.json")
+
+	cmd, evalJS := newPrSplitEvalFromFlags(t,
+		"--test",
+		"--store=memory",
+		"--session="+t.Name(),
+		"--claude-command", commandPath,
+		"--claude-arg", "launch",
+		"--claude-arg", "claude",
+		"--claude-arg", "--verbose",
+		"--claude-model", "sonnet",
+	)
+
+	if cmd.claudeCommand != commandPath {
+		t.Fatalf("claudeCommand = %q, want %q", cmd.claudeCommand, commandPath)
+	}
+	if got, want := []string(cmd.claudeArgs), []string{"launch", "claude", "--verbose"}; !slices.Equal(got, want) {
+		t.Fatalf("claudeArgs = %v, want %v", got, want)
+	}
+	if cmd.claudeModel != "sonnet" {
+		t.Fatalf("claudeModel = %q, want sonnet", cmd.claudeModel)
+	}
+
+	rawConfig, err := evalJS(`JSON.stringify(prSplitConfig)`)
+	if err != nil {
+		t.Fatalf("read prSplitConfig: %v", err)
+	}
+
+	var cfgOut struct {
+		ClaudeCommand string   `json:"claudeCommand"`
+		ClaudeArgs    []string `json:"claudeArgs"`
+		ClaudeModel   string   `json:"claudeModel"`
+	}
+	if err := json.Unmarshal([]byte(rawConfig.(string)), &cfgOut); err != nil {
+		t.Fatalf("parse prSplitConfig: %v", err)
+	}
+	if cfgOut.ClaudeCommand != commandPath {
+		t.Fatalf("prSplitConfig.claudeCommand = %q, want %q", cfgOut.ClaudeCommand, commandPath)
+	}
+	if !slices.Equal(cfgOut.ClaudeArgs, []string{"launch", "claude", "--verbose"}) {
+		t.Fatalf("prSplitConfig.claudeArgs = %v, want [launch claude --verbose]", cfgOut.ClaudeArgs)
+	}
+	if cfgOut.ClaudeModel != "sonnet" {
+		t.Fatalf("prSplitConfig.claudeModel = %q, want sonnet", cfgOut.ClaudeModel)
+	}
+
+	rawSpawn, err := evalJS(`(async function() {
+		function makeChild(stdoutValue, stderrValue, exitCode) {
+			var stdoutRead = false;
+			var stderrRead = false;
+			return {
+				stdout: {
+					read: function() {
+						if (!stdoutRead && stdoutValue) {
+							stdoutRead = true;
+							return Promise.resolve({ done: false, value: stdoutValue });
+						}
+						stdoutRead = true;
+						return Promise.resolve({ done: true });
+					}
+				},
+				stderr: {
+					read: function() {
+						if (!stderrRead && stderrValue) {
+							stderrRead = true;
+							return Promise.resolve({ done: false, value: stderrValue });
+						}
+						stderrRead = true;
+						return Promise.resolve({ done: true });
+					}
+				},
+				wait: function() {
+					return Promise.resolve({ code: exitCode });
+				}
+			};
+		}
+
+		var resolveSpawnCalls = 0;
+		var captured = null;
+		var providerCommand = '';
+		var executor = new ClaudeCodeExecutor(prSplitConfig);
+		var origExecSpawn = globalThis.prSplit._modules.exec.spawn;
+		globalThis.prSplit._modules.exec.spawn = function(cmd, args) {
+			resolveSpawnCalls++;
+			if (cmd === 'which' && args && args.length === 1 && args[0] === executor.command) {
+				return makeChild(executor.command + '\n', '', 0);
+			}
+			throw new Error('unexpected exec.spawn call during resolveAsync: ' + cmd + ' ' + JSON.stringify(args || []));
+		};
+
+		executor.cm = {
+			claudeCode: function(opts) {
+				providerCommand = opts && opts.command || '';
+				return { name: function() { return 'mock-claude'; }, opts: opts };
+			},
+			ollama: function(opts) {
+				return { name: function() { return 'mock-ollama'; }, opts: opts };
+			},
+			newRegistry: function() {
+				return {
+					register: function() {},
+					spawn: function(name, opts) {
+						captured = {
+							name: name,
+							args: opts.args,
+							model: opts.model
+						};
+						return {
+							send: function() {},
+							isAlive: function() { return true; },
+							receive: function() { return ''; },
+							close: function() {}
+						};
+					}
+				};
+			}
+		};
+
+		var result;
+		try {
+			result = await executor.spawn(null, { mcpConfigPath: ` + jsString(mcpConfigPath) + ` });
+		} finally {
+			globalThis.prSplit._modules.exec.spawn = origExecSpawn;
+		}
+		return JSON.stringify({
+			error: result.error || null,
+			command: executor.command || '',
+			providerCommand: providerCommand,
+			resolvedType: executor.resolved ? executor.resolved.type : '',
+			sessionId: result.sessionId || '',
+			resolveSpawnCalls: resolveSpawnCalls,
+			captured: captured
+		});
+	})()`)
+	if err != nil {
+		t.Fatalf("spawn capture eval failed: %v", err)
+	}
+
+	var spawnOut struct {
+		Error             *string `json:"error"`
+		Command           string  `json:"command"`
+		ProviderCommand   string  `json:"providerCommand"`
+		ResolvedType      string  `json:"resolvedType"`
+		SessionID         string  `json:"sessionId"`
+		ResolveSpawnCalls int     `json:"resolveSpawnCalls"`
+		Captured          struct {
+			Name  string   `json:"name"`
+			Args  []string `json:"args"`
+			Model string   `json:"model"`
+		} `json:"captured"`
+	}
+	if err := json.Unmarshal([]byte(rawSpawn.(string)), &spawnOut); err != nil {
+		t.Fatalf("parse spawn capture: %v", err)
+	}
+	if spawnOut.Error != nil {
+		t.Fatalf("executor.spawn returned error: %s", *spawnOut.Error)
+	}
+	if spawnOut.Command != commandPath {
+		t.Fatalf("executor.command = %q, want %q", spawnOut.Command, commandPath)
+	}
+	if spawnOut.ProviderCommand != commandPath {
+		t.Fatalf("provider command = %q, want %q", spawnOut.ProviderCommand, commandPath)
+	}
+	if spawnOut.ResolvedType != "explicit" {
+		t.Fatalf("executor.resolved.type = %q, want explicit", spawnOut.ResolvedType)
+	}
+	if spawnOut.ResolveSpawnCalls < 1 {
+		t.Fatalf("resolve exec.spawn calls = %d, want at least 1", spawnOut.ResolveSpawnCalls)
+	}
+	if spawnOut.Captured.Name != "mock-claude" {
+		t.Fatalf("registry spawn provider = %q, want mock-claude", spawnOut.Captured.Name)
+	}
+	if spawnOut.Captured.Model != "sonnet" {
+		t.Fatalf("spawn opts.model = %q, want sonnet", spawnOut.Captured.Model)
+	}
+
+	wantArgs := []string{
+		"--dangerously-skip-permissions",
+		"launch",
+		"claude",
+		"--verbose",
+		"--mcp-config",
+		mcpConfigPath,
+	}
+	if !slices.Equal(spawnOut.Captured.Args, wantArgs) {
+		t.Fatalf("spawn opts.args = %v, want %v", spawnOut.Captured.Args, wantArgs)
 	}
 }
 

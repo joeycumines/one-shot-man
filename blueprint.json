@@ -1,0 +1,226 @@
+{
+  "meta": {
+    "fileName": "blueprint.json",
+    "session": "2026-03-17-prsplit-ui-termmux-refactor",
+    "mandate": "Deliver fully interactive verify/shell terminals as CaptureSession-based split-view tabs with keyboard+mouse forwarding. All terminals (Claude, Verify, Shell) must be FULLY INTERACTIVE including mouse. Use termmux CaptureSession (higher-level), not raw PTY.",
+    "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE.",
+    "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST \u2014 ESPECIALLY NOT TIME ESTIMATES. NEVER SPECIFY A PRIORITY OF ANY KIND."
+  },
+  "globalAlerts": [
+    {
+      "warning": "PIPE ALL BUILD OUTPUT: All make/go commands MUST be piped through `| tail -n N` or `| fold -w 200 | tail -n N` to prevent context explosion. Use `make make-all-with-log` for full suite which logs to build.log."
+    },
+    {
+      "warning": "TIMEOUT: Full test suite requires `-timeout=20m`. Use `make test-only` which sets this. Individual package tests: `go test -timeout=300s ./internal/command/...`"
+    },
+    {
+      "warning": "CHUNK LOADING ORDER: JS chunks in pr_split.go are loaded sequentially via prSplitChunks array. When splitting files, new chunks MUST be inserted in correct order and all //go:embed directives + array entries updated."
+    },
+    {
+      "warning": "RULE OF TWO: Every task MUST pass strict-review-gate (2 contiguous subagent reviews on identical diff) BEFORE commit. Each task is committed individually."
+    },
+    {
+      "warning": "NO DEAD CODE: deadcode linter runs in CI. Any new exports/functions MUST be wired. Never add to .deadcodeignore. Wire it or delete it."
+    },
+    {
+      "warning": "CROSS-PLATFORM: Code must work on Linux, macOS, and Windows. PTY-dependent features (shell integration) MUST have //go:build unix guard and graceful degradation on Windows."
+    },
+    {
+      "warning": "⚠️ PER-TASK COMMIT IS MANDATORY: After completing EACH task: (1) Reread strict-review-gate Skill in full, (2) Rule of Two until 2 contiguous green reviews, (3) Read git-commit Skill, (4) Commit THAT SINGLE TASK immediately, (5) Reread DIRECTIVE.txt. NEVER batch tasks. NEVER skip reviews. NEVER defer commits."
+    }
+  ],
+  "mandatoryDirectives": {
+    "contextManagement": "Tasks are grouped into 6 blocks (A-F). Blocks A-B fix production bugs and should be done first. Block D is parallel investigation. Block E splits files before Block C adds new code. Block F restructures tests. Block C (largest) implements shell integration on the now-refactored codebase.",
+    "commitPolicy": "Each task is committed individually after passing the Rule of Two. Use Kubernetes-style commit messages via the git-commit Skill.",
+    "testPolicy": "Every code change MUST include tests in its acceptance criteria. Run `make make-all-with-log` after every commit to verify no regressions.",
+    "PER_TASK_COMMIT_PROTOCOL": "⚠️ MANDATORY — ZERO EXCEPTIONS — FOR EVERY SINGLE TASK: (1) REREAD the strict-review-gate Skill IN FULL — do not skim, do not skip, read every word. (2) PERFORM the Rule of Two PER THE SKILL — spawn subagent reviews, iterate until TWO CONTIGUOUS ISSUE-FREE reviews on the EXACT SAME DIFF. If either review fails, fix, reset counter to 0, restart. (3) READ the git-commit Skill IN FULL before writing any commit message. (4) COMMIT THAT ONE TASK — exactly one task per commit, immediately after passing the Rule of Two. Do not batch tasks. Do not defer commits. ASAP. (5) REREAD DIRECTIVE.txt after every commit — full re-read, not from memory. This 5-step process is NON-NEGOTIABLE. Skipping any step is grounds for termination. Batching multiple tasks into one commit is FORBIDDEN. Committing without two green reviews is FORBIDDEN. Working on the next task before committing the current one is FORBIDDEN."
+  },
+  "statusSection": {
+    "currentState": "T300-T396 complete. Session 9: T383 done, T386 done, T396 committed edba73b9, T393 in progress (5 bugs fixed, 6 new tests added, broader Chunk16+Chunk10 tests pass). T390-T395 remaining.",
+    "goalState": "All verify/shell terminal features delivered AND polished to enterprise grade. Zero silenced errors. No god functions. No magic numbers. Fuzz-tested parsing. Poll-retry E2E tests. Fully parallelized unit tests. Documentation fully synced. All checks pass on all platforms.",
+    "replanLog": [
+      {
+        "date": "2026-03-17",
+        "note": "T303+T304+T305 combined into single commit \u2014 identical fix pattern (+ \u2192 joinHorizontal) across 3 screens"
+      },
+      {
+        "date": "2026-03-18",
+        "note": "FULL REPLAN of T321-T335. Previous approach used raw PTY spawning (spawnPTY + mux.attach + mux.switchTo = blocking passthrough). Correct approach: CaptureSession-based tabs in split-view with screen() for display, write() for input, mouseToTermBytes() for mouse. Reverted all WIP raw-PTY code. Expanded scope to T321-T349 covering verify tab, shell tab, mouse forwarding, resize propagation, E2E tests, golden files, docs, and benchmarks."
+      },
+      {
+        "date": "2026-03-19",
+        "note": "T349 finalization: Fixed test timeout 12m→20m, help overlay test assertion. Expanded scope T360-T371 covering: scratch cleanup, catch block logging, magic number extraction, E2E flakiness (poll-retry), fuzz tests, automatedSplit refactoring, comment normalization, wizard integration test fixes, duplicate test file cleanup."
+      }
+    ]
+  },
+  "sequentialTasks": [
+    {
+      "id": "T379",
+      "task": "DONE: Build tag segmentation removal — committed 87ff0047",
+      "status": "Done"
+    },
+    {
+      "id": "T376",
+      "task": "DONE: Extract poll/timeout magic numbers to TUI_CONSTANTS — committed 5a979640",
+      "status": "Done"
+    },
+    {
+      "id": "T377",
+      "task": "DONE: Delete legacy gitMockSetupJS and migrate 55 callers to prsplittest",
+      "status": "Done"
+    },
+    {
+      "id": "T380",
+      "task": "DONE: Fix verify tab interactivity — committed 7c283906",
+      "description": "Fixed 3 UX bugs: (1) auto-focus 'claude' on verify start, (2) unblock Ctrl+Tab during verify, (3) retain verify tab/screen after session close. Applied to BOTH CaptureSession and fallback paths. Rolled in T381 (Ctrl+O rotation) and T382 (verifyScreen preservation).",
+      "status": "Done"
+    },
+    {
+      "id": "T381",
+      "task": "DONE: Rolled into T380 — Ctrl+O rotation fix included in 7c283906",
+      "status": "Done"
+    },
+    {
+      "id": "T382",
+      "task": "DONE: Rolled into T380 — verifyScreen preservation included in 7c283906",
+      "status": "Done"
+    },
+    {
+      "id": "T388",
+      "task": "DONE: Auto-open split-view panel with Output tab on Next click — committed f43e602f",
+      "status": "Done"
+    },
+    {
+      "id": "T378",
+      "task": "DONE: Extract sub-functions from viewExecutionScreen (322→48 lines) — committed 644e72b7",
+      "status": "Done"
+    },
+    {
+      "id": "T389",
+      "task": "DONE: Route baseline verify output to Verify tab — committed 351f885a",
+      "description": "Fixed critical UX bug: verify output was invisible during baseline verification. Pre-activates Verify tab with verifyFallbackRunning=true, routes outputFn to s.verifyScreen, auto-opens 'verify' tab when real verifyCommand configured.",
+      "status": "Done"
+    },
+    {
+      "id": "T383",
+      "task": "DONE: Document failure modes in scratch/failure.md from real CLI execution",
+      "description": "Exercised 7 failure scenarios via actual osm binary: invalid strategy, missing base branch, not a git repo, invalid max, no diff, bad timeout, bad claude-env. All documented with verdicts. Identified 3 new improvement areas tracked as T390-T392.",
+      "acceptance": "scratch/failure.md exists with documented observations. All identified issues tracked in blueprint.",
+      "status": "Done",
+      "notes": "Local documentation task. scratch/ is gitignored. No commit needed."
+    },
+    {
+      "id": "T384",
+      "task": "Add E2E test validating full CLI flag pipeline (-claude-command, -claude-arg, -claude-model)",
+      "description": "Create automated test that validates the complete flow: flag parsing → JS config → ClaudeCodeExecutor construction → command resolution → spawn with correct args. Must verify args are concatenated correctly with MCP config path.",
+      "acceptance": "E2E test exists in pr_split test files. Test spawns with mock command and verifies arg order. Test passes in CI.",
+      "status": "Done",
+      "notes": "Added TestIntegration_ClaudeCLIFlags_EndToEndToSpawn in pr_split_integration_test.go. It parses real Go flags, validates prSplitConfig bridging, captures ClaudeCodeExecutor spawn opts, and asserts --dangerously-skip-permissions + repeated --claude-arg ordering + --mcp-config path + claude-model propagation. Targeted integration tests and cross-build passed."
+    },
+    {
+      "id": "T385",
+      "task": "Clean up temporary config.mk targets from T376/T379",
+      "description": "Remove git-stage-t376, git-diff-staged, and any other temporary targets added during this session.",
+      "acceptance": "config.mk contains no task-specific temporary targets. make help shows clean target list.",
+      "status": "Done",
+      "notes": "Removed stale git-diff-staged helper. Verified make help custom target list contains only generic git-amend/git-commit-file/git-commit-staged helpers plus project targets."
+    },
+    {
+      "id": "T386",
+      "task": "DONE: Audit verify input forwarding — scratch/t386-verify-input-audit.md",
+      "description": "Found 4 bugs: ESC mapping, dead space code, shell reserved keys, verify scroll keys. Bugs #1/#2/#3 fixed in T396. Bug #4 (verify scroll) intentional by design.",
+      "acceptance": "Audit document in scratch/. All critical keys verified. Any missing mappings added with tests.",
+      "status": "Done"
+    },
+    {
+      "id": "T387",
+      "task": "DONE: Resize propagation already implemented by T336",
+      "description": "WindowSize handler in pr_split_16e already calls activeVerifySession.resize(rows, cols) and shellSession.resize(rows, cols) when splitViewEnabled. Implemented in T336.",
+      "status": "Done"
+    },
+    {
+      "id": "T366",
+      "task": "Extract automatedSplit from god function (deferred — risky)",
+      "description": "Large extraction from automatedSplit function. Deferred due to high risk of regression.",
+      "acceptance": "automatedSplit reduced to orchestration calls. Sub-functions tested independently.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T390",
+      "task": "Add early git-repo detection in validateFlags or setupEngineGlobals",
+      "description": "Currently, missing base branch and not-a-git-repo errors are only caught during JS analysis (wizard already started). Detect these conditions earlier in Go code to fail fast before wizard initialization. Check: (1) git rev-parse --is-inside-work-tree, (2) git rev-parse --verify <base-branch>.",
+      "acceptance": "Running osm pr-split from a non-git directory produces immediate error (no 'PR Split Wizard active' line). Missing base branch produces immediate error before wizard starts. Both cases have E2E tests.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T391",
+      "task": "Add E2E test for resume-without-prior-session failure path",
+      "description": "Test that -resume flag with no existing session data fails gracefully with a clear error message rather than crashing or producing confusing output.",
+      "acceptance": "Binary E2E test exercises -resume with empty session store. Test verifies clean error message and non-zero exit code.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T392",
+      "task": "Customize flag.Usage to suppress full usage dump on parse errors",
+      "description": "Currently, Go's flag package dumps the entire usage text before showing the parse error (e.g., bad -timeout value). Override flag.Usage to show a concise error with hint to use --help for full usage.",
+      "acceptance": "Invalid flag values show clean 1-line error + 'use --help for usage' instead of full flag listing. Tested via E2E.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T393",
+      "task": "Fix 'Ask Claude' conversation overlay and inline question response (HANA DIRECTIVE)",
+      "description": "Root cause: pipeline cleanup (cleanupExecutor+finishTUI) destroys Claude process and MCP callback BEFORE user reaches PLAN_REVIEW. Fix: (1) Skip cleanupExecutor on success path — only clean up on error. (2) finishTUI preserves MCP callback on success. (3) confirmCancel quit handler cleans up Claude+MCP. (4) Question detection gate relaxed: triggers when either isProcessing OR claudeAlive. (5) writeToChild errors surfaced to user. 6 new tests: T393_QuestionDetectedWithLiveHandle, T393_QuestionNotDetectedIfHandleDead, T393_OpenClaudeConvoWithLiveHandle, T393_OpenClaudeConvoWithNullHandle, T393_WriteToChildErrorSurfaced, T393_WriteToChildMissingSurfaced. All pass. Chunk16+Chunk10 broad test suite pass.",
+      "acceptance": "Both 'Ask Claude' paths exercised: conversation overlay sends prompt and receives structured response; inline question detection triggers on idle Claude question and response reaches PTY. 6 T393 tests pass, all Chunk16+Chunk10 tests pass.",
+      "status": "In Progress"
+    },
+    {
+      "id": "T394",
+      "task": "Audit and fix Claude terminal input via termmux (HANA DIRECTIVE)",
+      "description": "Hana mandates confirming proper termmux usage for Claude terminal input. Claude uses termmux.Mux (not CaptureSession) — attached via tuiMux.attach(executor.handle). Input flows via tuiMux.writeToChild() in split-view or tuiMux.switchTo() for Ctrl+] passthrough. Verify the entire chain from BubbleTea KeyMsg → keyToTermBytes → tuiMux.writeToChild → mux.WriteToChild → PTY fd write. Confirm no regressions from wizard refactor.",
+      "acceptance": "Documented audit confirming: (1) tuiMux setup in pr_split.go correct, (2) Claude PTY attachment via tuiMux.attach works, (3) writeToChild delivers bytes to Claude stdin, (4) Ctrl+] passthrough enters/exits cleanly. Add integration test if missing.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T395",
+      "task": "Audit test suite completion time — eliminate timeouts (HANA DIRECTIVE)",
+      "description": "Hana mandates auditing tests to complete in reasonable time. Current `./internal/command/...` timeouts at 600s with -short flag. Identify slow tests, fix root causes (not build tags per CLAUDE.md). Possible causes: TUI engine initialization overhead, excessive polling waits, tests not properly parallelized, or tests waiting on real I/O.",
+      "acceptance": "`go test -timeout=300s -race -short ./internal/command/...` completes successfully. No build tag exclusions. Slow tests profiled and fixed or properly parallelized.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T396",
+      "task": "DONE: Fix key forwarding: ESC mapping, shell reserved keys, modifier+arrow keys — committed edba73b9",
+      "description": "Fixes from T386 audit: (1) Bug #1: keyToTermBytes 'esc' case added to match BubbleTea KeyMsg.String(). (2) Bug #3: Shell tab now uses INTERACTIVE_RESERVED_KEYS (pane-mgmt only). (3) Modifier+arrow/nav key support added. All 10 tests pass. Rule of Two: Pass 1 PASS, Pass 2 PASS.",
+      "acceptance": "Tests updated to use correct BubbleTea key names ('esc' not 'escape', ' ' not 'space'). New tests for modifier+arrow keys and INTERACTIVE_RESERVED_KEYS. All key forwarding tests pass.",
+      "status": "Done"
+    }
+  ],
+  "continuousVerification": {
+    "task": "Run project-defined build and test commands after EVERY significant change",
+    "description": "After each code change: `make make-all-with-log 2>&1 | tail -n 30`. After each PR Split change: `go test -timeout=300s -v ./internal/command/... -run '<relevant_pattern>' 2>&1 | tail -n 40`. After each commit: full `make make-all-with-log`.",
+    "failPolicy": "If ANY test fails, STOP IMMEDIATELY and fix the issue before proceeding. Zero tolerance for test failures, timing issues, non-determinism, or race conditions.",
+    "testCoverage": "All new code must have unit tests. All visual changes must have render tests. Shell integration must have E2E tests. Aim for 100% branch coverage on new functions."
+  },
+  "finalEnforcementProtocol": [
+    {
+      "type": "POST_EXECUTION_WARNING",
+      "alert": "PIPE ALL BUILD OUTPUT through tail/fold to prevent context explosion. Use make make-all-with-log."
+    },
+    {
+      "type": "POST_EXECUTION_WARNING_REPEATED",
+      "alert": "RULE OF TWO: Every task requires 2 contiguous subagent reviews on identical diff before commit. No exceptions."
+    },
+    {
+      "type": "POST_EXECUTION_WARNING_REPEATED",
+      "alert": "TIMEOUT: Use -timeout=20m for full suite. Individual packages: -timeout=300s. Binary E2E: -timeout=120s per test."
+    },
+    {
+      "type": "POST_EXECUTION_WARNING_REPEATED",
+      "alert": "CHUNK LOADING ORDER: After splitting JS files, verify prSplitChunks in pr_split.go loads in correct dependency order."
+    },
+    {
+      "type": "CRITICAL_MANDATORY_PROCESS",
+      "alert": "⚠️⚠️⚠️ PER-TASK COMMIT PROTOCOL — EXECUTE FOR EVERY TASK WITHOUT EXCEPTION: Step 1: REREAD strict-review-gate Skill (FULL TEXT, not from memory). Step 2: PERFORM Rule of Two (2 contiguous green subagent reviews on identical diff — iterate until achieved). Step 3: READ git-commit Skill (FULL TEXT). Step 4: COMMIT that ONE task IMMEDIATELY (never batch). Step 5: REREAD DIRECTIVE.txt (FULL TEXT). VIOLATION = TERMINATION. This is Hana-san's direct order."
+    }
+  ]
+}

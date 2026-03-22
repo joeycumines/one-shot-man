@@ -208,12 +208,16 @@
 
         // finishTUI signals the auto-split TUI is done.
         function finishTUI(result) {
-            // Clean up MCP callback transport.
-            var mcpCb = prSplit._mcpCallbackObj;
-            if (mcpCb) {
-                try { mcpCb.closeSync(); } catch (e) { log.debug('cleanup: mcpCb.closeSync failed: ' + (e.message || e)); }
-                prSplit._mcpCallbackObj = null;
-                state.mcpCallbackObj = null;
+            // T393: Only clean up MCP callback on error — keep alive for "Ask
+            // Claude" conversation overlay on PLAN_REVIEW/ERROR_RESOLUTION.
+            // On success, the wizard's quit handler handles cleanup.
+            if (result.error) {
+                var mcpCb = prSplit._mcpCallbackObj;
+                if (mcpCb) {
+                    try { mcpCb.closeSync(); } catch (e) { log.debug('cleanup: mcpCb.closeSync failed: ' + (e.message || e)); }
+                    prSplit._mcpCallbackObj = null;
+                    state.mcpCallbackObj = null;
+                }
             }
 
             // On error, emit resume instructions if a plan was saved.
@@ -746,6 +750,14 @@
         if (runtime.dryRun) {
             emitOutput('[auto-split] Dry run — skipping verification.');
             cleanupExecutor();
+            // T393: Dry-run has no interactive session after — clean up MCP
+            // callback inline since finishTUI only cleans on error.
+            var mcpCbDry = prSplit._mcpCallbackObj;
+            if (mcpCbDry) {
+                try { mcpCbDry.closeSync(); } catch (e) { log.debug('cleanup: mcpCb.closeSync failed (dry-run): ' + (e.message || e)); }
+                prSplit._mcpCallbackObj = null;
+                state.mcpCallbackObj = null;
+            }
             return finishTUI({ error: null, report: report });
         }
 
@@ -972,7 +984,13 @@
             emitOutput('Mode: heuristic (Claude unavailable)');
         }
 
-        cleanupExecutor();
+        // T393: Keep Claude alive for "Ask Claude" on PLAN_REVIEW.
+        // Only clean up on error — the wizard's quit handler (confirmCancel)
+        // handles cleanup on success/cancel paths, and Go context cancellation
+        // handles cleanup on process exit.
+        if (report.error) {
+            cleanupExecutor();
+        }
 
         // Clean up split branches on pipeline failure if configured.
         if (config.cleanupOnFailure && report.error && plan && plan.splits && plan.splits.length > 0) {

@@ -1615,3 +1615,239 @@ func TestChunk16_T46_ConversationHistoryCap(t *testing.T) {
 		t.Errorf("conversation history cap: %v", raw)
 	}
 }
+
+// ---------------------------------------------------------------------------
+//  T393: Ask Claude — keep Claude alive post-pipeline for conversations
+// ---------------------------------------------------------------------------
+
+// TestChunk16_T393_QuestionDetectedWithLiveHandle verifies that question
+// detection triggers when isProcessing is false but Claude handle is alive,
+// enabling post-pipeline "Ask Claude" interactions.
+func TestChunk16_T393_QuestionDetectedWithLiveHandle(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		globalThis.tuiMux = {
+			hasChild: function() { return true; },
+			screenshot: function() { return 'Do you want to continue? (y/n)'; },
+			childScreen: function() { return 'screen-data'; },
+			lastActivityMs: function() { return 5000; }
+		};
+		// T393: Mock a live Claude handle (pipeline completed but Claude kept alive).
+		globalThis.prSplit._state.claudeExecutor = {
+			handle: { isAlive: function() { return true; } }
+		};
+
+		var s = initState('PLAN_REVIEW');
+		s.splitViewEnabled = true;
+		s.isProcessing = false; // Pipeline finished.
+		s.claudeLastQuestionCheckMs = 0;
+
+		var r = update({type: 'Tick', id: 'claude-screenshot'}, s);
+		s = r[0];
+
+		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
+		else delete globalThis.tuiMux;
+		delete globalThis.prSplit._state.claudeExecutor;
+
+		var errors = [];
+		if (!s.claudeQuestionDetected) errors.push('claudeQuestionDetected should be true');
+		if (s.claudeQuestionLine.indexOf('(y/n)') < 0) errors.push('claudeQuestionLine: ' + JSON.stringify(s.claudeQuestionLine));
+		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T393 question detected with live handle: %v", raw)
+	}
+}
+
+// TestChunk16_T393_QuestionNotDetectedIfHandleDead verifies that question
+// detection does NOT trigger when both isProcessing=false and handle is nil.
+func TestChunk16_T393_QuestionNotDetectedIfHandleDead(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		globalThis.tuiMux = {
+			hasChild: function() { return true; },
+			screenshot: function() { return 'Do you want to continue? (y/n)'; },
+			childScreen: function() { return 'screen-data'; },
+			lastActivityMs: function() { return 5000; }
+		};
+		// No claudeExecutor handle — simulating destroyed executor.
+		if (globalThis.prSplit._state.claudeExecutor) {
+			delete globalThis.prSplit._state.claudeExecutor;
+		}
+
+		var s = initState('PLAN_REVIEW');
+		s.splitViewEnabled = true;
+		s.isProcessing = false;
+		s.claudeLastQuestionCheckMs = 0;
+
+		var r = update({type: 'Tick', id: 'claude-screenshot'}, s);
+		s = r[0];
+
+		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
+		else delete globalThis.tuiMux;
+
+		if (s.claudeQuestionDetected) return 'FAIL: should not detect when handle is null and not processing';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T393 no detection without handle: %v", raw)
+	}
+}
+
+// TestChunk16_T393_OpenClaudeConvoWithLiveHandle verifies that the
+// conversation overlay opens successfully when the executor handle is alive.
+func TestChunk16_T393_OpenClaudeConvoWithLiveHandle(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		// Mock a live Claude handle.
+		globalThis.prSplit._state.claudeExecutor = {
+			handle: { isAlive: function() { return true; } }
+		};
+
+		var s = initState('PLAN_REVIEW');
+		var openConvo = globalThis.prSplit._openClaudeConvo;
+		var r = openConvo(s, 'plan-question');
+		s = r[0];
+
+		delete globalThis.prSplit._state.claudeExecutor;
+
+		var errors = [];
+		if (!s.claudeConvo.active) errors.push('claudeConvo.active should be true');
+		if (s.claudeConvo.context !== 'plan-question') errors.push('context: ' + s.claudeConvo.context);
+		if (s.claudeConvo.lastError !== null) errors.push('lastError should be null: ' + s.claudeConvo.lastError);
+		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T393 open convo with live handle: %v", raw)
+	}
+}
+
+// TestChunk16_T393_OpenClaudeConvoWithNullHandle verifies that the
+// conversation overlay shows an error when the executor handle is null.
+func TestChunk16_T393_OpenClaudeConvoWithNullHandle(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		// Simulate destroyed executor — handle is null.
+		globalThis.prSplit._state.claudeExecutor = { handle: null };
+
+		var s = initState('PLAN_REVIEW');
+		var openConvo = globalThis.prSplit._openClaudeConvo;
+		var r = openConvo(s, 'plan-question');
+		s = r[0];
+
+		delete globalThis.prSplit._state.claudeExecutor;
+
+		var errors = [];
+		if (!s.claudeConvo.active) errors.push('claudeConvo.active should be true (shows error)');
+		if (!s.claudeConvo.lastError) errors.push('lastError should be set');
+		if (s.claudeConvo.lastError && s.claudeConvo.lastError.indexOf('not running') < 0)
+			errors.push('wrong error: ' + s.claudeConvo.lastError);
+		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T393 open convo with null handle: %v", raw)
+	}
+}
+
+// TestChunk16_T393_WriteToChildErrorSurfaced verifies that writeToChild
+// failures are surfaced to the user (Bug #5).
+func TestChunk16_T393_WriteToChildErrorSurfaced(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		globalThis.tuiMux = {
+			writeToChild: function(data) { throw new Error('PTY closed'); },
+			hasChild: function() { return true; }
+		};
+
+		var s = initState('PLAN_GENERATION');
+		s.claudeQuestionDetected = true;
+		s.claudeQuestionInputActive = true;
+		s.claudeQuestionInputText = 'yes';
+		s.claudeQuestionLine = 'Continue? (y/n)';
+
+		// Send Enter to submit.
+		var r = sendKey(s, 'enter');
+		s = r[0];
+
+		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
+		else delete globalThis.tuiMux;
+
+		var errors = [];
+		// T393: Error should be surfaced via claudeQuestionLine, and
+		// claudeQuestionDetected stays true so renderClaudeQuestionPrompt renders it.
+		if (s.claudeQuestionLine.indexOf('Error') < 0) errors.push('error not surfaced: ' + JSON.stringify(s.claudeQuestionLine));
+		if (s.claudeQuestionInputActive) errors.push('inputActive should be false after error');
+		if (!s.claudeQuestionDetected) errors.push('claudeQuestionDetected should stay true to render error');
+		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T393 writeToChild error surfaced: %v", raw)
+	}
+}
+
+// TestChunk16_T393_WriteToChildMissingSurfaced verifies that a missing
+// tuiMux.writeToChild is surfaced as an error (Bug #5).
+func TestChunk16_T393_WriteToChildMissingSurfaced(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		// tuiMux exists but without writeToChild.
+		globalThis.tuiMux = {
+			hasChild: function() { return true; }
+		};
+
+		var s = initState('PLAN_GENERATION');
+		s.claudeQuestionDetected = true;
+		s.claudeQuestionInputActive = true;
+		s.claudeQuestionInputText = 'yes';
+		s.claudeQuestionLine = 'Continue? (y/n)';
+
+		var r = sendKey(s, 'enter');
+		s = r[0];
+
+		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
+		else delete globalThis.tuiMux;
+
+		var errors = [];
+		if (s.claudeQuestionLine.indexOf('not connected') < 0) errors.push('missing error: ' + JSON.stringify(s.claudeQuestionLine));
+		if (s.claudeQuestionInputActive) errors.push('inputActive should be false');
+		if (!s.claudeQuestionDetected) errors.push('claudeQuestionDetected should stay true to render error');
+		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("T393 writeToChild missing surfaced: %v", raw)
+	}
+}

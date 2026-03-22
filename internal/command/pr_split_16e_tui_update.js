@@ -283,8 +283,22 @@
                             tuiMux.writeToChild(responseText + '\r');
                             log.printf('T46: sent response to Claude: %s', responseText);
                         } catch (e) {
+                            // T393: Surface error to user — keep claudeQuestionDetected
+                            // true so renderClaudeQuestionPrompt renders the error line.
                             log.printf('T46: writeToChild failed: %s', String(e));
+                            s.claudeQuestionLine = 'Error sending response: ' + String(e);
+                            s.claudeQuestionInputActive = false;
+                            s.claudeQuestionInputText = '';
+                            return [s, null];
                         }
+                    } else {
+                        // T393: tuiMux not available — keep claudeQuestionDetected
+                        // true so the error is visible to the user.
+                        log.printf('T46: tuiMux.writeToChild not available');
+                        s.claudeQuestionLine = 'Error: Claude terminal not connected';
+                        s.claudeQuestionInputActive = false;
+                        s.claudeQuestionInputText = '';
+                        return [s, null];
                     }
 
                     // Clear question state.

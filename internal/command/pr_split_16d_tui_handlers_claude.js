@@ -887,9 +887,12 @@
         }
 
         // T46: Claude question detection — check if Claude is asking a
-        // question, but only when processing (analysis/execution running)
-        // and the user isn't already composing a response.
-        if (s.isProcessing && !s.claudeQuestionInputActive) {
+        // question. T393: Detect questions whenever Claude PTY is alive (not
+        // just during isProcessing), so post-pipeline "Ask Claude" interactions
+        // can also be answered inline.
+        var claudeAlive = !!(prSplit._state && prSplit._state.claudeExecutor &&
+                             prSplit._state.claudeExecutor.handle);
+        if ((s.isProcessing || claudeAlive) && !s.claudeQuestionInputActive) {
             var now46 = Date.now();
             // Throttle detection to every 2s to avoid churn.
             if (!s.claudeLastQuestionCheckMs ||

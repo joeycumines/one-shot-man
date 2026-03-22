@@ -61,6 +61,16 @@
             s.analysisRunning = false; // T001: stop orphaned analysis poll ticks
             s.autoSplitRunning = false; // T001: same for auto-split pipeline
             cleanupActiveSession();
+            // T393: Clean up Claude executor and MCP callback on wizard exit.
+            if (st && st.claudeExecutor) {
+                try { st.claudeExecutor.close(); } catch (e) { log.debug('cleanup: claudeExec.close failed: ' + (e.message || e)); }
+            }
+            var mcpCb = prSplit._mcpCallbackObj;
+            if (mcpCb) {
+                try { mcpCb.closeSync(); } catch (e) { log.debug('cleanup: mcpCb.closeSync failed: ' + (e.message || e)); }
+                prSplit._mcpCallbackObj = null;
+                if (st) st.mcpCallbackObj = null;
+            }
             s.wizard.cancel();
             s.wizardState = 'CANCELLED';
             return [s, tea.quit()];

@@ -571,6 +571,7 @@
         switch (key) {
             case 'enter':     return '\r';
             case 'tab':       return '\t';
+            case 'shift+tab': return '\x1b[Z'; // T386: reverse tab
             case 'backspace': return '\x7f';
             case 'space':     return ' ';
             case 'escape':    return '\x1b';

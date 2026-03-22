@@ -131,10 +131,9 @@
     },
     {
       "id": "T387",
-      "task": "Add resize propagation to verify CaptureSession on WindowSize events",
-      "description": "When terminal resizes, verify CaptureSession needs session.resize(rows, cols) called. Check if this is already wired in the WindowSize handler.",
-      "acceptance": "WindowSize handler calls session.resize() for activeVerifySession. Test verifies resize propagation.",
-      "status": "Not Started"
+      "task": "DONE: Resize propagation already implemented by T336",
+      "description": "WindowSize handler in pr_split_16e already calls activeVerifySession.resize(rows, cols) and shellSession.resize(rows, cols) when splitViewEnabled. Implemented in T336.",
+      "status": "Done"
     },
     {
       "id": "T366",

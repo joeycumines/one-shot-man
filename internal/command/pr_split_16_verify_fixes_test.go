@@ -1011,3 +1011,206 @@ func TestVerifyTabVisible_DuringBaseline_T389(t *testing.T) {
 		t.Errorf("verify tab during baseline: %v", raw)
 	}
 }
+
+// ---------------------------------------------------------------------------
+//  T387: Verify CaptureSession resize propagation on WindowSize
+// ---------------------------------------------------------------------------
+
+// TestResizePropagation_VerifySession_T387 verifies that a WindowSize message
+// calls activeVerifySession.resize(rows, cols) when split-view is enabled.
+func TestResizePropagation_VerifySession_T387(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('ANALYSIS');
+		s.splitViewEnabled = true;
+		s.splitViewFocus = 'wizard';
+		s.splitViewTab = 'verify';
+		s.width = 100;
+		s.height = 30;
+
+		// Mock activeVerifySession with a resize spy.
+		var resizeCalls = [];
+		s.activeVerifySession = {
+			isAlive: function() { return true; },
+			screen: function() { return ''; },
+			resize: function(rows, cols) {
+				resizeCalls.push({ rows: rows, cols: cols });
+			}
+		};
+
+		// Mock shellSession to verify both are called.
+		var shellResizeCalls = [];
+		s.shellSession = {
+			isAlive: function() { return true; },
+			screen: function() { return ''; },
+			resize: function(rows, cols) {
+				shellResizeCalls.push({ rows: rows, cols: cols });
+			}
+		};
+
+		// Send a WindowSize message.
+		var r = globalThis.prSplit._wizardUpdate(
+			{type: 'WindowSize', width: 120, height: 40}, s);
+		s = r[0];
+
+		var errors = [];
+		if (s.width !== 120) errors.push('width should be 120, got ' + s.width);
+		if (s.height !== 40) errors.push('height should be 40, got ' + s.height);
+		if (resizeCalls.length !== 1) {
+			errors.push('verifySession.resize should be called once, got ' +
+				resizeCalls.length);
+		} else {
+			if (resizeCalls[0].rows < 3) {
+				errors.push('verify rows too small: ' + resizeCalls[0].rows);
+			}
+			if (resizeCalls[0].cols < 20) {
+				errors.push('verify cols too small: ' + resizeCalls[0].cols);
+			}
+		}
+		if (shellResizeCalls.length !== 1) {
+			errors.push('shellSession.resize should be called once, got ' +
+				shellResizeCalls.length);
+		} else {
+			// Both sessions should get the same dimensions.
+			if (shellResizeCalls[0].rows !== resizeCalls[0].rows) {
+				errors.push('shell rows (' + shellResizeCalls[0].rows +
+					') != verify rows (' + resizeCalls[0].rows + ')');
+			}
+		}
+
+		return errors.length > 0 ? errors.join('; ') : 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("resize propagation: %v", raw)
+	}
+}
+
+// TestResizePropagation_NoSession_T387 verifies that WindowSize does NOT crash
+// when activeVerifySession is null (no verify running).
+func TestResizePropagation_NoSession_T387(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('ANALYSIS');
+		s.splitViewEnabled = true;
+		s.splitViewFocus = 'wizard';
+		s.width = 80;
+		s.height = 24;
+		s.activeVerifySession = null;
+		s.shellSession = null;
+
+		// Should not crash.
+		var r = globalThis.prSplit._wizardUpdate(
+			{type: 'WindowSize', width: 100, height: 30}, s);
+		s = r[0];
+
+		if (s.width !== 100) return 'FAIL: width=' + s.width;
+		if (s.height !== 30) return 'FAIL: height=' + s.height;
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("resize no-session: %v", raw)
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  T386: keyToTermBytes audit — comprehensive key mapping correctness
+// ---------------------------------------------------------------------------
+
+// TestKeyToTermBytes_SpecialKeys_T386 validates all named key → escape sequence
+// mappings in keyToTermBytes against standard VT100/xterm terminal sequences.
+func TestKeyToTermBytes_SpecialKeys_T386(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var fn = globalThis.prSplit._keyToTermBytes;
+		var errors = [];
+		function check(name, got, want) {
+			if (got !== want) {
+				var gotHex = '';
+				for (var i = 0; i < (got||'').length; i++) gotHex += got.charCodeAt(i).toString(16).padStart(2, '0');
+				var wantHex = '';
+				for (var j = 0; j < want.length; j++) wantHex += want.charCodeAt(j).toString(16).padStart(2, '0');
+				errors.push(name + ': got 0x' + gotHex + ', want 0x' + wantHex);
+			}
+		}
+
+		// Basic keys.
+		check('enter', fn('enter'), '\r');
+		check('tab', fn('tab'), '\t');
+		check('shift+tab', fn('shift+tab'), '\x1b[Z');
+		check('backspace', fn('backspace'), '\x7f');
+		check('space', fn('space'), ' ');
+		check('escape', fn('escape'), '\x1b');
+		check('delete', fn('delete'), '\x1b[3~');
+
+		// Arrow keys.
+		check('up', fn('up'), '\x1b[A');
+		check('down', fn('down'), '\x1b[B');
+		check('right', fn('right'), '\x1b[C');
+		check('left', fn('left'), '\x1b[D');
+
+		// Navigation.
+		check('home', fn('home'), '\x1b[H');
+		check('end', fn('end'), '\x1b[F');
+		check('pgup', fn('pgup'), '\x1b[5~');
+		check('pgdown', fn('pgdown'), '\x1b[6~');
+		check('insert', fn('insert'), '\x1b[2~');
+
+		// Function keys (VT220/xterm sequences).
+		check('f1', fn('f1'), '\x1bOP');
+		check('f2', fn('f2'), '\x1bOQ');
+		check('f3', fn('f3'), '\x1bOR');
+		check('f4', fn('f4'), '\x1bOS');
+		check('f5', fn('f5'), '\x1b[15~');
+		check('f6', fn('f6'), '\x1b[17~');
+		check('f7', fn('f7'), '\x1b[18~');
+		check('f8', fn('f8'), '\x1b[19~');
+		check('f9', fn('f9'), '\x1b[20~');
+		check('f10', fn('f10'), '\x1b[21~');
+		check('f11', fn('f11'), '\x1b[23~');
+		check('f12', fn('f12'), '\x1b[24~');
+
+		// Ctrl+letter → control characters.
+		check('ctrl+a', fn('ctrl+a'), '\x01');
+		check('ctrl+c', fn('ctrl+c'), '\x03');
+		check('ctrl+d', fn('ctrl+d'), '\x04');
+		check('ctrl+z', fn('ctrl+z'), '\x1a');
+		check('ctrl+A', fn('ctrl+A'), '\x01');
+		check('ctrl+Z', fn('ctrl+Z'), '\x1a');
+
+		// Alt+key → ESC prefix.
+		check('alt+a', fn('alt+a'), '\x1ba');
+		check('alt+enter', fn('alt+enter'), '\x1b\r');
+		check('alt+up', fn('alt+up'), '\x1b\x1b[A');
+
+		// Bracketed paste.
+		check('paste[hello]', fn('[hello]'), 'hello');
+
+		// Single char passthrough.
+		check('char-a', fn('a'), 'a');
+		check('char-Z', fn('Z'), 'Z');
+		check('char-1', fn('1'), '1');
+
+		// Unknown modifier returns null.
+		if (fn('super+a') !== null) errors.push('super+a should return null');
+
+		return errors.length > 0 ? errors.join('; ') : 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("keyToTermBytes audit: %v", raw)
+	}
+}

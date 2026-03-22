@@ -1,5 +1,59 @@
 # WIP — Takumi's Desperate Diary
 
+## Session 8
+
+### T379 Complete — Build Tag Removal (87ff0047)
+- Removed `//go:build prsplit_slow` from 20 files, changed `unix && prsplit_slow` → `unix` in 4 files
+- Added `skipSlow(tb testing.TB)` helper to main_test.go
+- Inserted `skipSlow(t)` / `skipSlow(f)` in ~381 test/fuzz functions across 24 files
+- Removed GO_FLAGS and STATICCHECK_FLAGS from project.mk
+- Updated config.mk: test-prsplit-fast uses -short, removed -tags from test-prsplit-all and test-prsplit-e2e
+- Added git-amend and git-commit-file utility targets to config.mk
+- Verified: build ✅, vet ✅, -short skips ✅, full run ✅. Zero prsplit_slow references remain.
+- Rule of Two: Pass 1 ✅, Pass 2 ✅ (contiguous green)
+- CRITICAL: execution_subagent terminals are SANDBOXED — file changes do NOT persist to disk. Must use workspace edit tools.
+- CRITICAL: pr_split_complex_project_test.go has `func Test` in raw string literals (lines 454-889) — NOT real test functions.
+- Pre-existing: TestPickAndPlaceE2E_StartAndQuit timeout is NOT our issue.
+
+### Next: T376 (magic numbers) or T378 (viewExecutionScreen extraction)
+- Read blueprint.json for current task list
+- Session started: epoch 1748739633 (2025-05-31T14:00:33 PDT)
+
+### T376 Complete — Magic Number Extraction (5a979640)
+- 17 constants added to TUI_CONSTANTS in pr_split_00_core.js
+- Rule of Two: Pass 1 ✅, Pass 2 ✅
+
+### T380 Complete — Verify Tab Interactivity Fix (7c283906)
+- Fixed 3 UX bugs in BOTH CaptureSession and fallback paths:
+  1. Auto-focus 'claude' pane on verify start (was 'wizard')
+  2. Unblock Ctrl+Tab during verify (removed activeVerifySession guard)
+  3. Retain verify tab + screen after session close (verifyScreen, activeVerifyBranch, verifyElapsedMs preserved)
+- Also: Ctrl+O includes verify tab when verifyScreen exists; shell tab redirects to 'verify' not 'output' on close
+- Rolled in T381 (Ctrl+O rotation) and T382 (verifyScreen preservation)
+- Updated 3 test files, added TestE2E_VerifyFallbackLifecycle_T380
+- Rule of Two: Run 1 FAIL (fallback path not updated), fixed, Run 1' ✅, Run 2 ✅
+- Files: pr_split_16c_tui_handlers_verify.js, pr_split_16e_tui_update.js, 3 test files
+
+### T388 Complete — Auto-open Split Panel (f43e602f)
+- Auto-open split-view with Output tab in startAnalysis, startAutoAnalysis, startExecution
+- Relaxed Claude auto-attach guard (works when split-view already open)
+- Ctrl+O includes verifyFallbackRunning
+- 4 tests pass, cross-build green
+- Rule of Two: Pass 1 ✅, Pass 2 ✅
+
+### T378 Complete — viewExecutionScreen Extraction
+- Extracted 5 sub-functions: renderSplitExecutionList, renderSkippedFilesWarning,
+  renderVerificationStatusList, renderLiveVerifyViewport, renderVerificationSummary
+- viewExecutionScreen: 322 → 48 lines
+- Fixed test: _setState → _state.planCache (direct property access)
+- 4 T378 tests pass, 4 T388 tests pass, cross-build green
+- Rule of Two: Pass 1 ✅, Pass 2 ✅
+
+### Next: T383-T387, T366
+- Read blueprint.json for current task list
+
+---
+
 ## Session 7 — Continued
 
 ### T369 Complete

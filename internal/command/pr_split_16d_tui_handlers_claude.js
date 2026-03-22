@@ -224,6 +224,16 @@
             // Baseline verify pre-step.
             var bvc = baselineVerifyConfig;
             if (bvc && bvc.verifyCommand && bvc.verifyCommand !== 'true') {
+                // T389: Activate Verify tab for live baseline verify output.
+                s.verifyFallbackRunning = true;
+                s.activeVerifyBranch = 'baseline';
+                s.activeVerifyStartTime = Date.now();
+                s.verifyElapsedMs = 0;
+                if (!s.verifyScreen) s.verifyScreen = '';
+                if (s.splitViewEnabled && s.splitViewTab !== 'verify') {
+                    s.splitViewTab = 'verify';
+                }
+
                 s.analysisSteps[0].active = true;
                 var baseStart = Date.now();
                 try {
@@ -231,17 +241,24 @@
                         verifyCommand: bvc.verifyCommand,
                         dir: bvc.dir,
                         verifyTimeoutMs: bvc.verifyTimeoutMs,
-                        outputFn: function(line) { log.printf('wizard: %s', line); }
+                        outputFn: function(line) {
+                            log.printf('wizard: %s', line);
+                            // T389: Route verify command output to Verify tab.
+                            s.verifyScreen = (s.verifyScreen || '') + line + '\n';
+                        }
                     });
                     if (!baselineResult.passed) {
+                        s.verifyFallbackRunning = false;
                         s.analysisSteps[0].active = false;
                         throw new Error('Baseline verification failed: ' +
                             (baselineResult.error || 'exit code non-zero'));
                     }
                 } catch (e) {
+                    s.verifyFallbackRunning = false;
                     s.analysisSteps[0].active = false;
                     throw e; // re-throw to outer rejection handler
                 }
+                s.verifyFallbackRunning = false;
                 s.analysisSteps[0].done = true;
                 s.analysisSteps[0].active = false;
                 s.analysisSteps[0].elapsed = Date.now() - baseStart;
@@ -264,12 +281,20 @@
             }
         );
 
-        // T388: Auto-open split-view with Output tab so user sees pipeline
-        // output immediately after clicking Next, rather than a blank screen.
+        // T389: Auto-open split-view. If verify command configured, pre-activate
+        // Verify tab for immediate baseline verify display. Otherwise Output tab.
         if (!s.splitViewEnabled && s.height >= C.INLINE_VIEW_HEIGHT) {
             s.splitViewEnabled = true;
             s.splitViewFocus = 'wizard';
-            s.splitViewTab = 'output';
+            if (baselineVerifyConfig && baselineVerifyConfig.verifyCommand &&
+                baselineVerifyConfig.verifyCommand !== 'true') {
+                s.verifyFallbackRunning = true;
+                s.activeVerifyBranch = 'baseline';
+                s.verifyScreen = '';
+                s.splitViewTab = 'verify';
+            } else {
+                s.splitViewTab = 'output';
+            }
             syncMainViewport(s);
         }
 

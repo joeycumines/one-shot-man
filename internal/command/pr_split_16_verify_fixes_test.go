@@ -577,8 +577,8 @@ func TestRenderVerificationSummary_IncompleteNoop(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestAutoOpenSplitView_StartAnalysis_T388 verifies that startAnalysis
-// auto-opens the split-view panel with the Output tab when terminal height
-// is sufficient (>= INLINE_VIEW_HEIGHT).
+// auto-opens the split-view panel with the Output tab when verifyCommand='true'
+// (no real verify configured) and terminal height is sufficient.
 func TestAutoOpenSplitView_StartAnalysis_T388(t *testing.T) {
 	skipSlow(t)
 	t.Parallel()
@@ -639,8 +639,9 @@ func TestAutoOpenSplitView_StartAnalysis_T388(t *testing.T) {
 	if !result.SplitViewEnabled {
 		t.Error("splitViewEnabled should be true after startAnalysis")
 	}
+	// T389: With verifyCommand='true' (skip), falls back to 'output' tab.
 	if result.SplitViewTab != "output" {
-		t.Errorf("splitViewTab should be 'output', got %q", result.SplitViewTab)
+		t.Errorf("splitViewTab should be 'output' (no verify configured), got %q", result.SplitViewTab)
 	}
 	if result.SplitViewFocus != "wizard" {
 		t.Errorf("splitViewFocus should be 'wizard', got %q", result.SplitViewFocus)
@@ -760,6 +761,7 @@ func TestAutoOpenSplitView_StartExecution_T388(t *testing.T) {
 	if !result.SplitViewEnabled {
 		t.Error("splitViewEnabled should be true after startExecution")
 	}
+	// T389: Execution auto-open uses 'output' tab for branch creation progress.
 	if result.SplitViewTab != "output" {
 		t.Errorf("splitViewTab should be 'output', got %q", result.SplitViewTab)
 	}
@@ -805,5 +807,207 @@ func TestCtrlO_IncludesFallbackVerify_T388(t *testing.T) {
 	}
 	if result.Tab != "verify" {
 		t.Errorf("Ctrl+O from 'output' with verifyFallbackRunning should go to 'verify', got %q", result.Tab)
+	}
+}
+
+// ---------------------------------------------------------------------------
+//  T389: Verify tab pre-activation for baseline verification
+// ---------------------------------------------------------------------------
+
+// TestVerifyTabPreActivation_WithVerifyCommand_T389 verifies that when a real
+// verify command is configured (not 'true'), startAnalysis pre-activates the
+// Verify tab: sets verifyFallbackRunning=true, activeVerifyBranch='baseline',
+// and splitViewTab='verify'.
+func TestVerifyTabPreActivation_WithVerifyCommand_T389(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	dir := initGitRepo(t)
+	writeFile(t, dir+"/README.md", "# Test\n")
+	writeFile(t, dir+"/main.go", "package main\n\nfunc main() {}\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "initial")
+	gitCmd(t, dir, "checkout", "-b", "feature")
+	writeFile(t, dir+"/api.go", "package main\n\nfunc Api() {}\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "add api")
+
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		globalThis.prSplit.runtime.baseBranch = 'main';
+		globalThis.prSplit.runtime.dir = '` + escapeJSPath(dir) + `';
+		globalThis.prSplit.runtime.strategy = 'directory';
+		globalThis.prSplit.runtime.mode = 'heuristic';
+		globalThis.prSplit.runtime.verifyCommand = 'make test';
+		globalThis.prSplit.runtime.branchPrefix = 'split/';
+
+		var s = initState('CONFIG');
+		s.height = 30;
+		s.splitViewEnabled = false;
+		s.splitViewTab = 'claude';
+
+		var r = globalThis.prSplit._startAnalysis(s);
+		s = r[0];
+
+		return JSON.stringify({
+			splitViewEnabled: s.splitViewEnabled,
+			splitViewTab: s.splitViewTab,
+			splitViewFocus: s.splitViewFocus,
+			verifyFallbackRunning: s.verifyFallbackRunning,
+			activeVerifyBranch: s.activeVerifyBranch,
+			verifyScreen: s.verifyScreen,
+			isProcessing: s.isProcessing,
+			analysisRunning: s.analysisRunning
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result struct {
+		SplitViewEnabled      bool   `json:"splitViewEnabled"`
+		SplitViewTab          string `json:"splitViewTab"`
+		SplitViewFocus        string `json:"splitViewFocus"`
+		VerifyFallbackRunning bool   `json:"verifyFallbackRunning"`
+		ActiveVerifyBranch    string `json:"activeVerifyBranch"`
+		VerifyScreen          string `json:"verifyScreen"`
+		IsProcessing          bool   `json:"isProcessing"`
+		AnalysisRunning       bool   `json:"analysisRunning"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("JSON parse error: %v (raw=%v)", err, raw)
+	}
+
+	if !result.SplitViewEnabled {
+		t.Error("splitViewEnabled should be true")
+	}
+	if result.SplitViewTab != "verify" {
+		t.Errorf("splitViewTab should be 'verify' (verify command configured), got %q", result.SplitViewTab)
+	}
+	if !result.VerifyFallbackRunning {
+		t.Error("verifyFallbackRunning should be true (pre-activated for baseline verify)")
+	}
+	if result.ActiveVerifyBranch != "baseline" {
+		t.Errorf("activeVerifyBranch should be 'baseline', got %q", result.ActiveVerifyBranch)
+	}
+	// verifyScreen should be initialized as empty string (not undefined)
+	if result.VerifyScreen != "" {
+		t.Errorf("verifyScreen should be empty initially, got %q", result.VerifyScreen)
+	}
+	if !result.IsProcessing {
+		t.Error("isProcessing should be true")
+	}
+}
+
+// TestVerifyTabPreActivation_NoVerifyCommand_T389 verifies that when
+// verifyCommand='true' (skip), the auto-open falls back to Output tab
+// without activating verifyFallbackRunning.
+func TestVerifyTabPreActivation_NoVerifyCommand_T389(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	dir := initGitRepo(t)
+	writeFile(t, dir+"/README.md", "# Test\n")
+	writeFile(t, dir+"/main.go", "package main\n\nfunc main() {}\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "initial")
+	gitCmd(t, dir, "checkout", "-b", "feature")
+	writeFile(t, dir+"/api.go", "package main\n\nfunc Api() {}\n")
+	gitCmd(t, dir, "add", ".")
+	gitCmd(t, dir, "commit", "-m", "add api")
+
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		globalThis.prSplit.runtime.baseBranch = 'main';
+		globalThis.prSplit.runtime.dir = '` + escapeJSPath(dir) + `';
+		globalThis.prSplit.runtime.strategy = 'directory';
+		globalThis.prSplit.runtime.mode = 'heuristic';
+		globalThis.prSplit.runtime.verifyCommand = 'true';
+		globalThis.prSplit.runtime.branchPrefix = 'split/';
+
+		var s = initState('CONFIG');
+		s.height = 30;
+		s.splitViewEnabled = false;
+
+		var r = globalThis.prSplit._startAnalysis(s);
+		s = r[0];
+
+		return JSON.stringify({
+			splitViewTab: s.splitViewTab,
+			verifyFallbackRunning: s.verifyFallbackRunning || false
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var result struct {
+		SplitViewTab          string `json:"splitViewTab"`
+		VerifyFallbackRunning bool   `json:"verifyFallbackRunning"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("JSON parse error: %v (raw=%v)", err, raw)
+	}
+
+	if result.SplitViewTab != "output" {
+		t.Errorf("splitViewTab should be 'output' (no verify), got %q", result.SplitViewTab)
+	}
+	if result.VerifyFallbackRunning {
+		t.Error("verifyFallbackRunning should NOT be set when verifyCommand='true'")
+	}
+}
+
+// TestVerifyTabVisible_DuringBaseline_T389 verifies that the Verify tab label
+// appears in the rendered view when verifyFallbackRunning=true and
+// activeVerifyBranch='baseline' (as set during baseline verification).
+func TestVerifyTabVisible_DuringBaseline_T389(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		setupPlanCache();
+		var s = initState('ANALYSIS');
+		s.splitViewEnabled = true;
+		s.splitViewFocus = 'wizard';
+		s.splitViewTab = 'verify';
+		s.width = 100;
+		s.height = 30;
+		s.isProcessing = true;
+		s.analysisProgress = 0.05;
+		s.analysisSteps = [
+			{ label: 'Verify baseline', active: true, done: false },
+			{ label: 'Analyze diff', active: false, done: false },
+			{ label: 'Group files', active: false, done: false }
+		];
+		s.outputLines = [];
+
+		// Baseline verify state (T389: pre-activated).
+		s.verifyFallbackRunning = true;
+		s.activeVerifyBranch = 'baseline';
+		s.verifyScreen = 'Running make test...';
+		s.activeVerifyStartTime = Date.now() - 2000;
+		s.verifyElapsedMs = 2000;
+
+		var view = globalThis.prSplit._wizardView(s);
+		var errors = [];
+
+		// The tab bar MUST contain "Verify".
+		if (view.indexOf('Verify') < 0) {
+			errors.push('FAIL: Verify tab not visible in tab bar during baseline verify');
+		}
+		// The verify content MUST be visible.
+		if (view.indexOf('Running make test') < 0) {
+			errors.push('FAIL: baseline verify output not visible in Verify pane');
+		}
+
+		return errors.length > 0 ? errors.join('; ') : 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify tab during baseline: %v", raw)
 	}
 }

@@ -70,6 +70,29 @@ check-session-time:
 test-prsplit-fast: ## Run PR Split tests in fast mode (skips slow/E2E via -short)
 	$(GO) test -timeout=600s -race -short ./internal/command/... 2>&1 | fold -w 200 | tail -n 30
 
+.PHONY: test-t395-acceptance
+test-t395-acceptance: ## T395: Run with 300s timeout and -short (acceptance criteria)
+	$(GO) test -timeout=300s -race -short ./internal/command/... 2>&1 | fold -w 200 | tail -n 10
+
+.PHONY: test-t395-count
+test-t395-count: ## T395: Count passed/skipped/failed tests
+test-t395-count: SHELL := /bin/bash
+test-t395-count:
+	@out=$$($(GO) test -timeout=300s -race -short -v ./internal/command/... 2>&1); \
+	passed=$$(echo "$$out" | grep -c -e 'PASS:' || true); \
+	skipped=$$(echo "$$out" | grep -c -e 'SKIP:' || true); \
+	failed=$$(echo "$$out" | grep -c -e 'FAIL:' || true); \
+	echo "Passed: $$passed | Skipped: $$skipped | Failed: $$failed"
+
+.PHONY: test-t395-profile
+test-t395-profile: ## Profile test timing with JSON output
+test-t395-profile: SHELL := /bin/bash
+test-t395-profile:
+	@$(GO) test -timeout=900s -race -short -json ./internal/command/... 2>&1 | \
+	python3 -c "import sys,json; tests={}; \
+[tests.update({d.get('Test',''):d.get('Elapsed',0)}) for line in sys.stdin if (d:=json.loads(line)).get('Action')=='pass' and d.get('Test')]; \
+[print(f'{v:8.2f}s  {k}') for k,v in sorted(tests.items(), key=lambda x: -x[1])[:50]]"
+
 .PHONY: test-key-forwarding
 test-key-forwarding: ## Run key forwarding and INTERACTIVE_RESERVED_KEYS tests only
 	$(GO) test -timeout=120s -race -run 'TestChunk16_VTerm_KeyToTermBytes|TestKeyToTermBytes_SpecialKeys_T386|TestInteractiveReservedKeys_T386' ./internal/command/... -v 2>&1 | tail -n 50
@@ -259,6 +282,18 @@ commit-t394:
 		blueprint.json && \
 	git add -f scratch/t394-termmux-audit.md WIP.md config.mk && \
 	git commit -m $$'Fix Ctrl+] stdin contention in Claude passthrough\n\nWire toggleKey/onToggle options in tea.run() so BubbleTea wraps the\nwizard model in toggleModel. The Go-level wrapper intercepts Ctrl+]\nand calls ReleaseTerminal() before invoking onToggle (which calls\ntuiMux.switchTo for RunPassthrough), then RestoreTerminal() after.\nThis prevents the previous data corruption where BubbleTea cancelreader\nand RunPassthrough stdin reader goroutines concurrently read os.Stdin.\n\nChanges:\n- Extract _onToggle callback from startWizard for testability\n- Remove manual Ctrl+] handler from JS update function\n- Add ToggleReturn message handler for skip notifications\n- Rewrite 8 tests across 3 files to exercise _onToggle directly\n- Add termmux audit document (scratch/t394-termmux-audit.md)\n\nT394'
+
+.PHONY: commit-t395
+commit-t395: ## Stage and commit T395
+commit-t395: SHELL := /bin/bash
+commit-t395:
+	cd $(PROJECT_ROOT) && git add \
+		internal/command/pick_and_place_harness_test.go \
+		internal/command/shooter_game_unix_test.go \
+		internal/command/prompt_flow_editor_test.go \
+		blueprint.json && \
+	git add -f WIP.md config.mk && \
+	git commit -m $$'Skip slow E2E tests under -short flag\n\nAdd skipSlow(t) to the three harness/binary builder functions that\nall heavy E2E tests funnel through: NewPickAndPlaceHarness,\nbuildTestBinary, and buildPromptFlowTestBinary. These tests build\nthe full osm binary and launch PTY terminal harnesses, taking\n7-28 seconds each across ~45 test functions.\n\nWith -short flag, the test suite drops from 601s (timeout) to 105s.\n3188 tests pass, 427 skip (including these and pre-existing -short\nskips), 0 fail. No build tag exclusions per CLAUDE.md constraint.\n\nT395'
 
 .PHONY: git-stage-t393
 git-stage-t393: ## Stage T393 Ask Claude fix files

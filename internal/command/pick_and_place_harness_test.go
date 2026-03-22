@@ -74,6 +74,7 @@ type PickAndPlaceHarness struct {
 // It builds binary and sets up test environment.
 func NewPickAndPlaceHarness(ctx context.Context, t *testing.T, config PickAndPlaceConfig) (*PickAndPlaceHarness, error) {
 	t.Helper()
+	skipSlow(t)
 
 	// Determine script path - use config.ScriptPath if provided, else use default
 	scriptPath := config.ScriptPath

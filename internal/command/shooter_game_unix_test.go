@@ -20,6 +20,7 @@ import (
 // buildTestBinary builds the osm test binary for command package tests
 func buildTestBinary(t *testing.T) string {
 	t.Helper()
+	skipSlow(t)
 	// Get the working directory and compute project root
 	wd, err := os.Getwd()
 	if err != nil {

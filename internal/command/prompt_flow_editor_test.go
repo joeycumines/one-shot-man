@@ -141,6 +141,7 @@ func TestPromptFlow_UseCommandOpensEditor(t *testing.T) {
 
 func buildPromptFlowTestBinary(t *testing.T) string {
 	t.Helper()
+	skipSlow(t)
 	// Get the working directory and compute project root
 	wd, err := os.Getwd()
 	if err != nil {

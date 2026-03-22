@@ -3,11 +3,13 @@ package command
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
@@ -290,6 +292,11 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	if err := c.validateFlags(); err != nil {
 		return err
 	}
+	// T390: Fail fast on git-related misconfigurations before launching
+	// the expensive scripting engine and full-screen TUI wizard.
+	if err := c.validateGitRepo(); err != nil {
+		return err
+	}
 
 	engine, cleanup, err := c.PrepareEngine(ctx, stdout, stderr)
 	if err != nil {
@@ -525,6 +532,49 @@ func (c *PrSplitCommand) validateFlags() error {
 	if c.timeout < 0 {
 		return fmt.Errorf("invalid --timeout %s: must be non-negative", c.timeout)
 	}
+	return nil
+}
+
+// validateGitRepo performs early detection of common git-related errors
+// before launching the expensive scripting engine and TUI wizard.
+// Returns a clear error if the working directory is not inside a git repo
+// or if the specified base branch does not exist.
+func (c *PrSplitCommand) validateGitRepo() error {
+	// Check if we're inside a git working tree.
+	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if errors.Is(err, exec.ErrNotFound) {
+			return fmt.Errorf("git is not installed or not in PATH")
+		}
+		outStr := strings.TrimSpace(string(out))
+		if strings.Contains(outStr, "not a git repository") {
+			return fmt.Errorf("not a git repository (or any parent up to mount point)")
+		}
+		if outStr != "" {
+			return fmt.Errorf("git check failed: %s", outStr)
+		}
+		return fmt.Errorf("git check failed: %v", err)
+	}
+	// Bare repos report "false" — not a valid working tree for pr-split.
+	if strings.TrimSpace(string(out)) != "true" {
+		return fmt.Errorf("not inside a git working tree (bare repository?)")
+	}
+
+	// Validate the base branch exists (local or remote tracking ref).
+	base := c.baseBranch
+	if base != "" {
+		// Try local branch first, then remote tracking refs.
+		cmd = exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/heads/"+base)
+		if err := cmd.Run(); err != nil {
+			// Not a local branch — try common remote refs.
+			cmd = exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+base)
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("base branch %q not found (checked local and origin remote)", base)
+			}
+		}
+	}
+
 	return nil
 }
 

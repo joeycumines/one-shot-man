@@ -421,10 +421,10 @@ func TestRenderSplitExecutionList(t *testing.T) {
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
-		globalThis.prSplit._setState({planCache:{splits:[
+		globalThis.prSplit._state.planCache = {splits:[
 			{name:'split/api',files:['a.go']},
 			{name:'split/cli',files:['b.go']}
-		]}});
+		]};
 		var lines = [];
 		globalThis.prSplit._renderSplitExecutionList({
 			width: 80,

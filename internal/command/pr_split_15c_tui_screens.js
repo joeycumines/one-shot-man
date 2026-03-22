@@ -549,17 +549,13 @@
 
     // ----- Screen 5: Execution (BRANCH_BUILDING) -----
 
-    function viewExecutionScreen(s) {
-        var lines = [];
+    // T378: Sub-functions extracted from viewExecutionScreen to reduce its
+    // 322-line body to a slim orchestrator. Each helper renders one distinct
+    // section and pushes directly into the supplied `lines` array.
 
-        lines.push(styles.bold().render('Executing Split Plan'));
-        lines.push('');
-
-        if (!st.planCache || !st.planCache.splits) {
-            lines.push('No plan to execute.');
-            return lines.join('\n');
-        }
-
+    // Render per-branch creation status icons (error/success/active/pending)
+    // and overall progress bar for the branch-creation phase.
+    function renderSplitExecutionList(s, lines) {
         var splits = st.planCache.splits;
         var results = s.executionResults || [];
         var currentIdx = s.executingIdx || 0;
@@ -599,8 +595,10 @@
             var progress = results.length / splits.length;
             lines.push('  ' + renderProgressBar(progress, (s.width || 80) - 8));
         }
+    }
 
-        // T107: Show warning when any branches had git-ignored files skipped.
+    // T107: Show warning when any branches had git-ignored files skipped.
+    function renderSkippedFilesWarning(results, lines) {
         var hasSkipped = false;
         for (var ski = 0; ski < results.length; ski++) {
             if (results[ski] && results[ski].skippedFiles && results[ski].skippedFiles.length > 0) {
@@ -616,6 +614,262 @@
                 }
             }
         }
+    }
+
+    // Per-branch verification status list (skipped/passed/failed/active/pending)
+    // with expandable output for failed branches.
+    function renderVerificationStatusList(s, splits, lines) {
+        var verifyResults = s.verificationResults || [];
+        var verifyIdx = s.verifyingIdx;
+
+        for (var vi = 0; vi < splits.length; vi++) {
+            var vr = verifyResults[vi];
+            var vicon, vtext;
+            var branchName = splits[vi].name;
+
+            if (vr && vr.skipped) {
+                vicon = styles.dim().render(' \u2014 ');
+                vtext = styles.dim().render(branchName + ' (skipped)');
+            } else if (vr && vr.passed) {
+                vicon = styles.successBadge().render(' \u2713 ');
+                var durationStr = vr.duration ? ' (' + (vr.duration / 1000).toFixed(1) + 's)' : '';
+                vtext = styles.label().render(branchName) +
+                    styles.dim().render(durationStr);
+                // T006: Show override badge for manually passed branches.
+                if (vr.manualOverride) {
+                    vtext += ' ' + styles.warningBadge().render(' manual \u2713 ');
+                }
+            } else if (vr && !vr.passed) {
+                vicon = styles.errorBadge().render(' \u2718 ');
+                var vdurStr = vr.duration ? ' (' + (vr.duration / 1000).toFixed(1) + 's)' : '';
+                vtext = styles.label().render(branchName) +
+                    styles.dim().render(vdurStr);
+                if (vr.preExisting) {
+                    vtext += ' ' + styles.warningBadge().render(' pre-existing ');
+                }
+                // Error summary.
+                if (vr.error) {
+                    lines.push('  ' + vicon + ' ' + vtext);
+                    lines.push('    ' + styles.dim().render(vr.error));
+                    // Expandable output.
+                    var outputLines = s.verifyOutput && s.verifyOutput[branchName];
+                    if (outputLines && outputLines.length > 0) {
+                        if (s.expandedVerifyBranch === branchName) {
+                            lines.push('    ' + zone.mark('verify-collapse-' + branchName,
+                                styles.dim().render('\u25bc Hide Output')));
+                            var maxLines = Math.min(outputLines.length, 20);
+                            for (var ol = 0; ol < maxLines; ol++) {
+                                lines.push('    ' + styles.dim().render(outputLines[ol]));
+                            }
+                            if (outputLines.length > 20) {
+                                lines.push('    ' + styles.dim().render(
+                                    '... (' + (outputLines.length - 20) + ' more lines)'));
+                            }
+                        } else {
+                            lines.push('    ' + zone.mark('verify-expand-' + branchName,
+                                styles.dim().render('\u25b6 Show Output (' + outputLines.length + ' lines)')));
+                        }
+                    }
+                    continue; // Already pushed icon+text above.
+                }
+            } else if (vi === verifyIdx && s.isProcessing) {
+                vicon = styles.warningBadge().render(' \u25b6 ');
+                // T058: Show elapsed time on the active verify branch.
+                var activeElapsed = '';
+                if (s.verifyElapsedMs > 0) {
+                    var activeSecs = Math.floor(s.verifyElapsedMs / 1000);
+                    var verifyTimeout = (typeof prSplitConfig !== 'undefined' && prSplitConfig.timeoutMs) ? prSplitConfig.timeoutMs : 0;
+                    if (verifyTimeout > 0) {
+                        var totalSecs = Math.floor(verifyTimeout / 1000);
+                        activeElapsed = ' (' + activeSecs + 's / ' + totalSecs + 's)';
+                    } else {
+                        activeElapsed = ' (' + activeSecs + 's)';
+                    }
+                }
+                vtext = styles.statusActive().render(branchName + '...' + activeElapsed);
+            } else {
+                vicon = styles.dim().render(' \u25cb ');
+                vtext = styles.dim().render(branchName);
+            }
+
+            lines.push('  ' + vicon + ' ' + vtext);
+        }
+    }
+
+    // T351: Live CaptureSession viewport with ANSI-aware truncation,
+    // scrollbar, pause/resume/shell/interrupt controls, and bordered frame.
+    function renderLiveVerifyViewport(s, lines) {
+        if (!s.activeVerifySession && !s.verifyScreen) { return; }
+        lines.push('');
+        var liveOutput = s.verifyScreen || '';
+        var liveLines = liveOutput.split('\n');
+        // Remove trailing empty lines from VTerm screen output.
+        // screen() may include ANSI reset codes on empty lines,
+        // so we check visual width rather than string equality.
+        while (liveLines.length > 0 && lipgloss.width(liveLines[liveLines.length - 1]) === 0) {
+            liveLines.pop();
+        }
+
+        var viewWidth = Math.max(40, (s.width || 80) - 8);
+        var viewHeight = C.INLINE_VIEW_HEIGHT; // content rows inside the border
+        // T058: Show elapsed time with timeout progress in viewport title.
+        var elapsed = ((s.verifyElapsedMs || (Date.now() - s.activeVerifyStartTime)) / 1000).toFixed(1);
+        var vpTimeoutMs = (typeof prSplitConfig !== 'undefined' && prSplitConfig.timeoutMs) ? prSplitConfig.timeoutMs : 0;
+        var elapsedSuffix;
+        if (vpTimeoutMs > 0) {
+            var vpTotalSecs = Math.floor(vpTimeoutMs / 1000);
+            elapsedSuffix = elapsed + 's / ' + vpTotalSecs + 's';
+        } else {
+            elapsedSuffix = elapsed + 's';
+        }
+        var titleText = ' Verifying: ' + s.activeVerifyBranch + ' (' + elapsedSuffix + ') ';
+        // T059: Show paused indicator in viewport title.
+        if (s.verifyPaused) {
+            titleText = ' \u23f8 PAUSED: ' + s.activeVerifyBranch + ' (' + elapsedSuffix + ') ';
+        }
+
+        // Determine visible window (auto-scroll or manual offset).
+        var totalLines = liveLines.length;
+        var startLine;
+        if (s.verifyAutoScroll || s.verifyViewportOffset <= 0) {
+            startLine = Math.max(0, totalLines - viewHeight);
+        } else {
+            startLine = Math.max(0, totalLines - viewHeight - s.verifyViewportOffset);
+        }
+        var endLine = Math.min(totalLines, startLine + viewHeight);
+
+        // Build viewport content lines with ANSI-aware truncation.
+        var contentLines = [];
+        for (var vl = startLine; vl < endLine; vl++) {
+            var ln = liveLines[vl] || '';
+            // T005: Use lipgloss.width for ANSI-aware visual width,
+            // and lipgloss maxWidth for ANSI-safe truncation.
+            var visualW = lipgloss.width(ln);
+            if (visualW > viewWidth - 2) {
+                ln = lipgloss.newStyle().maxWidth(viewWidth - 2).render(ln);
+            }
+            contentLines.push(ln);
+        }
+        // Pad to fill viewport height.
+        while (contentLines.length < viewHeight) {
+            contentLines.push('');
+        }
+
+        var vpContent = contentLines.join('\n');
+
+        // Scrollbar indicator.
+        var scrollIndicator = '';
+        if (totalLines > viewHeight) {
+            if (s.verifyAutoScroll) {
+                scrollIndicator = ' [auto-scroll]';
+            } else {
+                var scrollPct = Math.round((startLine / Math.max(1, totalLines - viewHeight)) * 100);
+                scrollIndicator = ' [' + scrollPct + '%]';
+            }
+        }
+
+        // Footer with keybinding hints.
+        // T351: Only show interactive controls when CaptureSession
+        // is active. Fallback (plain text) shows just scroll hint.
+        var footer;
+        if (s.activeVerifySession) {
+            // T059: Pause/Resume button for verify subprocess.
+            var pauseResumeBtn;
+            if (s.verifyPaused) {
+                pauseResumeBtn = zone.mark('verify-resume',
+                    styles.focusedSecondaryButton().render('\u25b6 Resume'));
+            } else {
+                pauseResumeBtn = zone.mark('verify-pause',
+                    styles.secondaryButton().render('\u23f8 Pause'));
+            }
+            // T007/T338: Open Shell in verify worktree.
+            // Disabled on Windows where CaptureSession is unavailable.
+            var openShellBtn = '';
+            if (s.activeVerifyWorktree) {
+                if (typeof prSplit.canSpawnInteractiveShell === 'function' &&
+                    !prSplit.canSpawnInteractiveShell()) {
+                    openShellBtn = styles.dim().render('\ue795 Shell (Unix only)');
+                } else {
+                    openShellBtn = zone.mark('verify-open-shell',
+                        styles.secondaryButton().render('\ue795 Shell'));
+                }
+            }
+            var interruptHint = zone.mark('verify-interrupt', styles.dim().render(
+                'Ctrl+C: Stop  2\u00d7Ctrl+C: Force Kill'));
+            var scrollHint = styles.dim().render(
+                '\u2191\u2193: Scroll' + scrollIndicator);
+            if (openShellBtn) {
+                footer = lipgloss.joinHorizontal(lipgloss.Center,
+                    scrollHint, '  ', pauseResumeBtn, '  ',
+                    openShellBtn, '  ', interruptHint);
+            } else {
+                footer = lipgloss.joinHorizontal(lipgloss.Center,
+                    scrollHint, '  ', pauseResumeBtn, '  ', interruptHint);
+            }
+        } else {
+            // Fallback path — no interactive controls, just scroll.
+            footer = styles.dim().render(
+                '\u2191\u2193: Scroll' + scrollIndicator + '  (fallback output)');
+        }
+
+        // Render bordered viewport using lipgloss.
+        // T059: Use dim border when paused to visually indicate suspended state.
+        var vpBorderColor = s.verifyPaused ? COLORS.muted : COLORS.warning;
+        var vpStyle = lipgloss.newStyle()
+            .border(lipgloss.roundedBorder())
+            .borderForeground(vpBorderColor)
+            .width(viewWidth)
+            .padding(0, 1);
+
+        lines.push('  ' + styles.warningBadge().render(titleText));
+        lines.push(vpStyle.render(vpContent));
+        lines.push('  ' + footer);
+    }
+
+    // Verification summary with pass/fail/skip counts and manual override hint.
+    function renderVerificationSummary(s, splits, lines) {
+        var verifyResults = s.verificationResults || [];
+        if (verifyResults.length !== splits.length) { return; }
+        var passCount = 0;
+        var failCount = 0;
+        var skipCount = 0;
+        for (var vs = 0; vs < verifyResults.length; vs++) {
+            if (verifyResults[vs].skipped) skipCount++;
+            else if (verifyResults[vs].passed) passCount++;
+            else failCount++;
+        }
+        lines.push('');
+        var summaryLine = '  ' + styles.successBadge().render(' ' + passCount + ' passed ');
+        if (failCount > 0) {
+            summaryLine += ' ' + styles.errorBadge().render(' ' + failCount + ' failed ');
+        }
+        if (skipCount > 0) {
+            summaryLine += ' ' + styles.dim().render(' ' + skipCount + ' skipped');
+        }
+        lines.push(summaryLine);
+        // T006: Hint for manual override when there are failures.
+        if (failCount > 0 && !s.activeVerifySession) {
+            lines.push('  ' + styles.dim().render('Press p to mark a failed branch as passed'));
+        }
+    }
+
+    // Orchestrator — delegates to the sub-functions above.
+    function viewExecutionScreen(s) {
+        var lines = [];
+
+        lines.push(styles.bold().render('Executing Split Plan'));
+        lines.push('');
+
+        if (!st.planCache || !st.planCache.splits) {
+            lines.push('No plan to execute.');
+            return lines.join('\n');
+        }
+
+        var splits = st.planCache.splits;
+        var results = s.executionResults || [];
+
+        renderSplitExecutionList(s, lines);
+        renderSkippedFilesWarning(results, lines);
 
         // --- Per-branch verification section ---
         var verifyResults = s.verificationResults || [];
@@ -625,242 +879,17 @@
             lines.push(styles.bold().render('Verifying Branches'));
             lines.push('');
 
-            for (var vi = 0; vi < splits.length; vi++) {
-                var vr = verifyResults[vi];
-                var vicon, vtext;
-                var branchName = splits[vi].name;
+            renderVerificationStatusList(s, splits, lines);
 
-                if (vr && vr.skipped) {
-                    vicon = styles.dim().render(' \u2014 ');
-                    vtext = styles.dim().render(branchName + ' (skipped)');
-                } else if (vr && vr.passed) {
-                    vicon = styles.successBadge().render(' \u2713 ');
-                    var durationStr = vr.duration ? ' (' + (vr.duration / 1000).toFixed(1) + 's)' : '';
-                    vtext = styles.label().render(branchName) +
-                        styles.dim().render(durationStr);
-                    // T006: Show override badge for manually passed branches.
-                    if (vr.manualOverride) {
-                        vtext += ' ' + styles.warningBadge().render(' manual \u2713 ');
-                    }
-                } else if (vr && !vr.passed) {
-                    vicon = styles.errorBadge().render(' \u2718 ');
-                    var vdurStr = vr.duration ? ' (' + (vr.duration / 1000).toFixed(1) + 's)' : '';
-                    vtext = styles.label().render(branchName) +
-                        styles.dim().render(vdurStr);
-                    if (vr.preExisting) {
-                        vtext += ' ' + styles.warningBadge().render(' pre-existing ');
-                    }
-                    // Error summary.
-                    if (vr.error) {
-                        lines.push('  ' + vicon + ' ' + vtext);
-                        lines.push('    ' + styles.dim().render(vr.error));
-                        // Expandable output.
-                        var outputLines = s.verifyOutput && s.verifyOutput[branchName];
-                        if (outputLines && outputLines.length > 0) {
-                            if (s.expandedVerifyBranch === branchName) {
-                                lines.push('    ' + zone.mark('verify-collapse-' + branchName,
-                                    styles.dim().render('\u25bc Hide Output')));
-                                var maxLines = Math.min(outputLines.length, 20);
-                                for (var ol = 0; ol < maxLines; ol++) {
-                                    lines.push('    ' + styles.dim().render(outputLines[ol]));
-                                }
-                                if (outputLines.length > 20) {
-                                    lines.push('    ' + styles.dim().render(
-                                        '... (' + (outputLines.length - 20) + ' more lines)'));
-                                }
-                            } else {
-                                lines.push('    ' + zone.mark('verify-expand-' + branchName,
-                                    styles.dim().render('\u25b6 Show Output (' + outputLines.length + ' lines)')));
-                            }
-                        }
-                        continue; // Already pushed icon+text above.
-                    }
-                } else if (vi === verifyIdx && s.isProcessing) {
-                    vicon = styles.warningBadge().render(' \u25b6 ');
-                    // T058: Show elapsed time on the active verify branch.
-                    var activeElapsed = '';
-                    if (s.verifyElapsedMs > 0) {
-                        var activeSecs = Math.floor(s.verifyElapsedMs / 1000);
-                        var verifyTimeout = (typeof prSplitConfig !== 'undefined' && prSplitConfig.timeoutMs) ? prSplitConfig.timeoutMs : 0;
-                        if (verifyTimeout > 0) {
-                            var totalSecs = Math.floor(verifyTimeout / 1000);
-                            activeElapsed = ' (' + activeSecs + 's / ' + totalSecs + 's)';
-                        } else {
-                            activeElapsed = ' (' + activeSecs + 's)';
-                        }
-                    }
-                    vtext = styles.statusActive().render(branchName + '...' + activeElapsed);
-                } else {
-                    vicon = styles.dim().render(' \u25cb ');
-                    vtext = styles.dim().render(branchName);
-                }
-
-                lines.push('  ' + vicon + ' ' + vtext);
-            }
-
-            // Verification progress bar.
+            // Verification progress bar + live viewport.
             if (verifyResults.length < splits.length && s.isProcessing) {
-                // --- Live CaptureSession viewport ---
-                // T351: Use s.verifyScreen (snapshot from pollVerifySession)
-                // instead of calling screen() directly. This eliminates
-                // redundant screen() calls and enables the fallback path
-                // (no CaptureSession) to also show output via s.verifyScreen.
-                if (s.activeVerifySession || s.verifyScreen) {
-                    lines.push('');
-                    var liveOutput = s.verifyScreen || '';
-                    var liveLines = liveOutput.split('\n');
-                    // Remove trailing empty lines from VTerm screen output.
-                    // screen() may include ANSI reset codes on empty lines,
-                    // so we check visual width rather than string equality.
-                    while (liveLines.length > 0 && lipgloss.width(liveLines[liveLines.length - 1]) === 0) {
-                        liveLines.pop();
-                    }
-
-                    var viewWidth = Math.max(40, (s.width || 80) - 8);
-                    var viewHeight = C.INLINE_VIEW_HEIGHT; // content rows inside the border
-                    // T058: Show elapsed time with timeout progress in viewport title.
-                    var elapsed = ((s.verifyElapsedMs || (Date.now() - s.activeVerifyStartTime)) / 1000).toFixed(1);
-                    var vpTimeoutMs = (typeof prSplitConfig !== 'undefined' && prSplitConfig.timeoutMs) ? prSplitConfig.timeoutMs : 0;
-                    var elapsedSuffix;
-                    if (vpTimeoutMs > 0) {
-                        var vpTotalSecs = Math.floor(vpTimeoutMs / 1000);
-                        elapsedSuffix = elapsed + 's / ' + vpTotalSecs + 's';
-                    } else {
-                        elapsedSuffix = elapsed + 's';
-                    }
-                    var titleText = ' Verifying: ' + s.activeVerifyBranch + ' (' + elapsedSuffix + ') ';
-                    // T059: Show paused indicator in viewport title.
-                    if (s.verifyPaused) {
-                        titleText = ' \u23f8 PAUSED: ' + s.activeVerifyBranch + ' (' + elapsedSuffix + ') ';
-                    }
-
-                    // Determine visible window (auto-scroll or manual offset).
-                    var totalLines = liveLines.length;
-                    var startLine;
-                    if (s.verifyAutoScroll || s.verifyViewportOffset <= 0) {
-                        startLine = Math.max(0, totalLines - viewHeight);
-                    } else {
-                        startLine = Math.max(0, totalLines - viewHeight - s.verifyViewportOffset);
-                    }
-                    var endLine = Math.min(totalLines, startLine + viewHeight);
-
-                    // Build viewport content lines with ANSI-aware truncation.
-                    var contentLines = [];
-                    for (var vl = startLine; vl < endLine; vl++) {
-                        var ln = liveLines[vl] || '';
-                        // T005: Use lipgloss.width for ANSI-aware visual width,
-                        // and lipgloss maxWidth for ANSI-safe truncation.
-                        var visualW = lipgloss.width(ln);
-                        if (visualW > viewWidth - 2) {
-                            ln = lipgloss.newStyle().maxWidth(viewWidth - 2).render(ln);
-                        }
-                        contentLines.push(ln);
-                    }
-                    // Pad to fill viewport height.
-                    while (contentLines.length < viewHeight) {
-                        contentLines.push('');
-                    }
-
-                    var vpContent = contentLines.join('\n');
-
-                    // Scrollbar indicator.
-                    var scrollIndicator = '';
-                    if (totalLines > viewHeight) {
-                        if (s.verifyAutoScroll) {
-                            scrollIndicator = ' [auto-scroll]';
-                        } else {
-                            var scrollPct = Math.round((startLine / Math.max(1, totalLines - viewHeight)) * 100);
-                            scrollIndicator = ' [' + scrollPct + '%]';
-                        }
-                    }
-
-                    // Footer with keybinding hints.
-                    // T351: Only show interactive controls when CaptureSession
-                    // is active. Fallback (plain text) shows just scroll hint.
-                    var footer;
-                    if (s.activeVerifySession) {
-                        // T059: Pause/Resume button for verify subprocess.
-                        var pauseResumeBtn;
-                        if (s.verifyPaused) {
-                            pauseResumeBtn = zone.mark('verify-resume',
-                                styles.focusedSecondaryButton().render('\u25b6 Resume'));
-                        } else {
-                            pauseResumeBtn = zone.mark('verify-pause',
-                                styles.secondaryButton().render('\u23f8 Pause'));
-                        }
-                        // T007/T338: Open Shell in verify worktree.
-                        // Disabled on Windows where CaptureSession is unavailable.
-                        var openShellBtn = '';
-                        if (s.activeVerifyWorktree) {
-                            if (typeof prSplit.canSpawnInteractiveShell === 'function' &&
-                                !prSplit.canSpawnInteractiveShell()) {
-                                openShellBtn = styles.dim().render('\ue795 Shell (Unix only)');
-                            } else {
-                                openShellBtn = zone.mark('verify-open-shell',
-                                    styles.secondaryButton().render('\ue795 Shell'));
-                            }
-                        }
-                        var interruptHint = zone.mark('verify-interrupt', styles.dim().render(
-                            'Ctrl+C: Stop  2\u00d7Ctrl+C: Force Kill'));
-                        var scrollHint = styles.dim().render(
-                            '\u2191\u2193: Scroll' + scrollIndicator);
-                        if (openShellBtn) {
-                            footer = lipgloss.joinHorizontal(lipgloss.Center,
-                                scrollHint, '  ', pauseResumeBtn, '  ',
-                                openShellBtn, '  ', interruptHint);
-                        } else {
-                            footer = lipgloss.joinHorizontal(lipgloss.Center,
-                                scrollHint, '  ', pauseResumeBtn, '  ', interruptHint);
-                        }
-                    } else {
-                        // Fallback path — no interactive controls, just scroll.
-                        footer = styles.dim().render(
-                            '\u2191\u2193: Scroll' + scrollIndicator + '  (fallback output)');
-                    }
-
-                    // Render bordered viewport using lipgloss.
-                    // T059: Use dim border when paused to visually indicate suspended state.
-                    var vpBorderColor = s.verifyPaused ? COLORS.muted : COLORS.warning;
-                    var vpStyle = lipgloss.newStyle()
-                        .border(lipgloss.roundedBorder())
-                        .borderForeground(vpBorderColor)
-                        .width(viewWidth)
-                        .padding(0, 1);
-
-                    lines.push('  ' + styles.warningBadge().render(titleText));
-                    lines.push(vpStyle.render(vpContent));
-                    lines.push('  ' + footer);
-                }
-
+                renderLiveVerifyViewport(s, lines);
                 lines.push('');
                 var vProgress = verifyResults.length / splits.length;
                 lines.push('  ' + renderProgressBar(vProgress, (s.width || 80) - 8));
             }
 
-            // Verification summary (after all complete).
-            if (verifyResults.length === splits.length) {
-                var passCount = 0;
-                var failCount = 0;
-                var skipCount = 0;
-                for (var vs = 0; vs < verifyResults.length; vs++) {
-                    if (verifyResults[vs].skipped) skipCount++;
-                    else if (verifyResults[vs].passed) passCount++;
-                    else failCount++;
-                }
-                lines.push('');
-                var summaryLine = '  ' + styles.successBadge().render(' ' + passCount + ' passed ');
-                if (failCount > 0) {
-                    summaryLine += ' ' + styles.errorBadge().render(' ' + failCount + ' failed ');
-                }
-                if (skipCount > 0) {
-                    summaryLine += ' ' + styles.dim().render(' ' + skipCount + ' skipped');
-                }
-                lines.push(summaryLine);
-                // T006: Hint for manual override when there are failures.
-                if (failCount > 0 && !s.activeVerifySession) {
-                    lines.push('  ' + styles.dim().render('Press p to mark a failed branch as passed'));
-                }
-            }
+            renderVerificationSummary(s, splits, lines);
         }
 
         // T46: Inline Claude question prompt (during active execution).
@@ -992,5 +1021,11 @@
     prSplit._viewPlanEditorScreen = viewPlanEditorScreen;
     prSplit._viewExecutionScreen = viewExecutionScreen;
     prSplit._viewVerificationScreen = viewVerificationScreen;
+    // T378: Exported sub-functions for unit testing.
+    prSplit._renderSplitExecutionList = renderSplitExecutionList;
+    prSplit._renderSkippedFilesWarning = renderSkippedFilesWarning;
+    prSplit._renderVerificationStatusList = renderVerificationStatusList;
+    prSplit._renderLiveVerifyViewport = renderLiveVerifyViewport;
+    prSplit._renderVerificationSummary = renderVerificationSummary;
 
 })(globalThis.prSplit);

@@ -163,6 +163,25 @@ These are the builtin commands to generate prompts from your codebase.
 
 **Why use it:** To improve quality and reliability. By aggregating multiple AI outputs and forcing them through a consistency template, you produce a higher-fidelity result than any single shot could achieve.
 
+### PR Splitting
+
+**`osm pr-split`**: **Interactive & Automated Modes**
+
+**Summary:** Splits a large feature branch into a sequence of small, reviewable PRs.
+
+**The Workflow:** Point it at a branch and a base. The tool analyzes the diff, groups files by directory/extension/dependency, generates a split plan, and can execute the plan — creating branches, cherry-picking changes, running verification, and optionally invoking Claude Code to resolve conflicts.
+
+**Modes:**
+
+- **Interactive TUI (`-interactive=true`, default):** Full-screen wizard with config, plan review, execution monitoring, verification panes, and Claude conversation support. Navigate with keyboard or mouse.
+- **Automated (`-interactive=false`):** Headless pipeline that analyzes, plans, executes, and verifies without user interaction. Suitable for CI or scripted workflows.
+
+**Strategies:** `directory` (group by top-level directory), `directory-deep` (group by full directory path), `extension` (group by file type), `chunks` (fixed-size file chunks), `dependency` (Go import graph), `auto` (AI-assisted classification via Claude).
+
+**Key flags:** `-base` (target branch), `-strategy`, `-max` (max files per PR), `-claude-command` (path to Claude CLI), `-verify` (run verification after each split), `-resume` (continue from a saved plan).
+
+See [docs/architecture-pr-split-chunks.md](docs/architecture-pr-split-chunks.md) for the internal chunk architecture.
+
 ### Session Persistence
 
 State persists locally to your terminal session.

@@ -277,7 +277,8 @@
       "task": "Fix dead documentation links in docs/README.md",
       "description": "3 broken links: architecture-pr-split-chunks.md, pr-split-testing.md, adr/001-pr-split-chunked-architecture.md. Either create the documents or remove the dead links with a TODO comment. Creating real content is preferred.",
       "acceptance": "All links in docs/README.md resolve to existing files. No dead links.",
-      "status": "Not Started"
+      "status": "Done",
+      "notes": "Created 3 docs: architecture-pr-split-chunks.md (chunk inventory, loading, namespace), pr-split-testing.md (3-tier test taxonomy, loaders, fixtures), adr/001-pr-split-chunked-architecture.md (ADR). Committed 7d34aa9a. Rule of Two PASS+PASS."
     },
     {
       "id": "T409",

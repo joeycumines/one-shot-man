@@ -49,6 +49,15 @@
 - 4 T378 tests pass, 4 T388 tests pass, cross-build green
 - Rule of Two: Pass 1 ✅, Pass 2 ✅
 
+### T378 Committed (644e72b7)
+### T389 Committed (351f885a)
+- Fixed CRITICAL UX bug: Verify tab now activates during baseline verify
+- Routes verify output to s.verifyScreen (was only log.printf)
+- Pre-activates verifyFallbackRunning=true when real verifyCommand configured
+- Auto-open: 'verify' tab with real command, 'output' otherwise
+- 3 new T389 tests, all T388 tests updated and green
+- Rule of Two: Pass 1 ✅, Pass 2 ✅ (combined T378+T389)
+
 ### Next: T383-T387, T366
 - Read blueprint.json for current task list
 

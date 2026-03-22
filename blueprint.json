@@ -36,7 +36,7 @@
     "PER_TASK_COMMIT_PROTOCOL": "⚠️ MANDATORY — ZERO EXCEPTIONS — FOR EVERY SINGLE TASK: (1) REREAD the strict-review-gate Skill IN FULL — do not skim, do not skip, read every word. (2) PERFORM the Rule of Two PER THE SKILL — spawn subagent reviews, iterate until TWO CONTIGUOUS ISSUE-FREE reviews on the EXACT SAME DIFF. If either review fails, fix, reset counter to 0, restart. (3) READ the git-commit Skill IN FULL before writing any commit message. (4) COMMIT THAT ONE TASK — exactly one task per commit, immediately after passing the Rule of Two. Do not batch tasks. Do not defer commits. ASAP. (5) REREAD DIRECTIVE.txt after every commit — full re-read, not from memory. This 5-step process is NON-NEGOTIABLE. Skipping any step is grounds for termination. Batching multiple tasks into one commit is FORBIDDEN. Committing without two green reviews is FORBIDDEN. Working on the next task before committing the current one is FORBIDDEN."
   },
   "statusSection": {
-    "currentState": "T300-T382 Done. T388 Done (f43e602f). T378 Done. T383-T387+T366 queued. Session 8: T376 (5a979640), T379 (87ff0047), T380 (7c283906), T388 (f43e602f), T378 committed.",
+    "currentState": "T300-T382 Done. T388 Done (f43e602f). T378 Done (644e72b7). T389 Done (351f885a). T383-T387+T366 queued. Session 8: T376 (5a979640), T379 (87ff0047), T380 (7c283906), T388 (f43e602f), T378 (644e72b7), T389 (351f885a).",
     "goalState": "All verify/shell terminal features delivered AND polished to enterprise grade. Zero silenced errors. No god functions. No magic numbers. Fuzz-tested parsing. Poll-retry E2E tests. Fully parallelized unit tests. Documentation fully synced. All checks pass on all platforms.",
     "replanLog": [
       {
@@ -92,8 +92,13 @@
     },
     {
       "id": "T378",
-      "task": "DONE: Extract sub-functions from viewExecutionScreen (322→48 lines)",
-      "description": "Extracted 5 sub-functions: renderSplitExecutionList, renderSkippedFilesWarning, renderVerificationStatusList, renderLiveVerifyViewport, renderVerificationSummary. Fixed test _setState → _state.planCache.",
+      "task": "DONE: Extract sub-functions from viewExecutionScreen (322→48 lines) — committed 644e72b7",
+      "status": "Done"
+    },
+    {
+      "id": "T389",
+      "task": "DONE: Route baseline verify output to Verify tab — committed 351f885a",
+      "description": "Fixed critical UX bug: verify output was invisible during baseline verification. Pre-activates Verify tab with verifyFallbackRunning=true, routes outputFn to s.verifyScreen, auto-opens 'verify' tab when real verifyCommand configured.",
       "status": "Done"
     },
     {

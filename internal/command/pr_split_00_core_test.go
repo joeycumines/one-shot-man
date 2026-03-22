@@ -424,6 +424,34 @@ func TestChunk00_ScopedVerifyCommand(t *testing.T) {
 	if val != "make" {
 		t.Errorf("expected fallback for empty files, got: %v", val)
 	}
+
+	// T398: gmake (macOS GNU Make) → scopable just like 'make'.
+	val, err = evalJS(`globalThis.prSplit.scopedVerifyCommand(
+		['internal/cmd/foo.go'],
+		'gmake'
+	)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, ok = val.(string)
+	if !ok {
+		t.Fatalf("gmake: expected string, got %T: %v", val, val)
+	}
+	if !strings.HasPrefix(s, "go test -race") {
+		t.Errorf("gmake: expected scoped 'go test -race ...', got: %s", s)
+	}
+
+	// T398: gmake with mixed files → fallback to gmake.
+	val, err = evalJS(`globalThis.prSplit.scopedVerifyCommand(
+		['internal/cmd/foo.go', 'README.md'],
+		'gmake'
+	)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != "gmake" {
+		t.Errorf("gmake mixed: expected fallback 'gmake', got: %v", val)
+	}
 }
 
 // TestChunk00_StyleDegracesGracefully tests that style helpers work

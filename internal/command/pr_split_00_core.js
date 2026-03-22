@@ -242,6 +242,7 @@
         // Only scope when the fallback is a known build/test runner.
         // Custom verify commands (e.g. 'true', 'echo ok') must not be replaced.
         var scopable = (fallbackCommand === 'make' ||
+                        fallbackCommand === 'gmake' ||
                         (typeof fallbackCommand === 'string' && (
                             fallbackCommand.indexOf('go test') >= 0 ||
                             fallbackCommand.indexOf('jest') >= 0 ||

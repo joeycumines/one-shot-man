@@ -2,42 +2,66 @@
 
 ## Session 9
 
-### T396 DONE — Key Forwarding Fixes (committed edba73b9)
-Files: pr_split_16d (ESC/INTERACTIVE_RESERVED_KEYS/modifier keys), pr_split_16e (shell uses INTERACTIVE_RESERVED_KEYS), tests updated.
+### T406 DONE — Fix hanging PickAndPlace mouse tests (committed 5ccf4a3b)
+Root cause: 19 Mouse* tests never called h.Quit() before h.Close(). BubbleTea ticker
+goroutine kept child process alive, blocking Close() for up to 60s context timeout.
+Fix: (1) Close() sends best-effort 'q' + 200ms grace before console.Close().
+(2) StaticObstacles click moved from (20,11) gap to (20,8) actual wall.
+19/19 mouse tests verified passing in 193.9s total. Rule of Two PASS+PASS.
+
+### T401 DONE — Pipeline Orchestrator Unit Tests (committed 8a60f5cc)
+9 tests covering automatedSplit() + step() wrapper: cancellation, force-cancel, pipeline timeout,
+step timeout, watchdog idle, pause, null return, exception propagation, empty diff.
+Uses loadPrSplitEngineWithEval + Date.now overrides. Rule of Two PASS+PASS.
+
+### NEXT: T404 (CHANGELOG), then T405 (cross-platform builds), then expand scope.
+
+### T404 DONE — CHANGELOG entries (committed 86f6b71c)
+9 entries for T390-T400 in [Unreleased] Fixed section. Rule of Two PASS+PASS (4 iterations).
+
+### T405 DONE — Cross-platform builds verified
+All 4 builds + 2 vets pass (linux/amd64, darwin/amd64, darwin/arm64, windows/amd64). No code changes.
+
+### NEXT: Expand scope — identify new tasks.
+
+### T392 DONE — Flag Usage Suppression (committed c79589c2)
+Set fs.Usage to no-op during parse. Clean 1-line error + hint on parse errors, fullUsage() on --help.
+7 new tests: 4 error-output + 3 help-regression. All 21 cmd/osm tests pass.
+Rule of Two: PASS+PASS.
+
+### T391 DONE — Resume E2E Test (committed bdc1a733)
+5 tests: pipeline integration (no-plan + corrupt-plan), loadPlan direct, config bridging, Go Execute.
+All pass. Rule of Two PASS+PASS. Pre-existing loadPlan bug noted (result.error is boolean).
+
+### T390 DONE — Early Git-Repo Detection (committed b3c9f6f3)
+**What:** Added `validateGitRepo()` to pr_split.go between `validateFlags()` and `PrepareEngine()`.
+**Files modified:**
+- `internal/command/pr_split.go`: Added `os/exec` import, `validateGitRepo()` method, call in Execute()
+- `internal/command/pr_split_git_detect_test.go`: 6 tests (4 unit + 2 integration)
+- `config.mk`: Added test-t390 target
+- `blueprint.json`: Updated T390 status
+
+**Test results:** All 6 T390 tests pass. Broader suite 116s with -short (pre-existing bench flake in TestViewPerformanceRegression/WizardView_50Splits — not related to T390).
+
+**Status:** Awaiting Rule of Two.
+
+### T395 DONE — Skip Slow E2E Tests (committed 6be39cf7)
+Added skipSlow(t) to 3 harness/builder functions. 601s→105s. 3188 pass, 427 skip, 0 fail.
+
+### T394 DONE — Termmux Ctrl+] Stdin Fix (committed fefa49a7)
+Wire toggleModel via tea.run() options. 8 tests rewritten.
 
 ### T393 DONE — Fix Ask Claude (committed 1edd3680)
 Fixed 5 bugs: pipeline cleanup destroying Claude+MCP, question detection gate, writeToChild error surfacing. 6 new tests.
 
-### T394 In Progress — Termmux Audit + Ctrl+] Stdin Fix
-**CRITICAL BUG found:** Ctrl+] passthrough had stdin contention — BubbleTea's cancelreader goroutine and RunPassthrough both reading os.Stdin simultaneously. Keystrokes non-deterministically split between the two readers.
+### T396 DONE — Key Forwarding Fixes (committed edba73b9)
+Files: pr_split_16d (ESC/INTERACTIVE_RESERVED_KEYS/modifier keys), pr_split_16e (shell uses INTERACTIVE_RESERVED_KEYS), tests updated.
 
-**Fix:** Wire `toggleKey: 0x1D` + `onToggle: prSplit._onToggle` in `tea.run()` options. The Go-level `toggleModel` wrapper intercepts Ctrl+] and:
-1. Calls `p.ReleaseTerminal()` — stops BubbleTea's cancelreader
-2. Calls onToggle (which calls tuiMux.switchTo()) — blocks in RunPassthrough with exclusive stdin
-3. Calls `p.RestoreTerminal()` — restarts BubbleTea
-
-**Files modified:**
-- `pr_split_16f_tui_model.js`: Wire toggleKey/onToggle, extract _onToggle callback
-- `pr_split_16e_tui_update.js`: Remove manual Ctrl+] handler, add ToggleReturn handler
-- `pr_split_16_ctrl_bracket_test.go`: Rewrite 5 tests for _onToggle + ToggleReturn
-- `pr_split_16_keyboard_crash_test.go`: Update SwitchTo_WithChild/NoChild (2 tests)
-- `pr_split_16_focus_nav_edge_test.go`: Update CtrlBracketTermmux (1 test)
-- `scratch/t394-termmux-audit.md`: Full audit document
-
-**Status: All tests PASS (11 T394 tests, all Chunk16+Chunk10 broad). Ready for Rule of Two.**
-
-### NEXT: Rule of Two for T393, then commit
-
-### After T393
-1. T394 (Audit termmux)
-2. T395 (Audit test suite timing) 
-3. T390-T392 (earlier blueprint tasks)
-4. T366 (deferred extraction)
-
-## Session 8
-
-### T379 Complete — Build Tag Removal (87ff0047)
-- Removed `//go:build prsplit_slow` from 20 files, changed `unix && prsplit_slow` → `unix` in 4 files
+### After T390
+1. T391 (Resume E2E test)
+2. T392 (flag.Usage customization)
+3. T366 (deferred extraction)
+4. Expand scope with new tasks
 - Added `skipSlow(tb testing.TB)` helper to main_test.go
 - Inserted `skipSlow(t)` / `skipSlow(f)` in ~381 test/fuzz functions across 24 files
 - Removed GO_FLAGS and STATICCHECK_FLAGS from project.mk

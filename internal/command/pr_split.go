@@ -554,7 +554,7 @@ func (c *PrSplitCommand) validateGitRepo() error {
 		if outStr != "" {
 			return fmt.Errorf("git check failed: %s", outStr)
 		}
-		return fmt.Errorf("git check failed: %v", err)
+		return fmt.Errorf("git check failed: %w", err)
 	}
 	// Bare repos report "false" — not a valid working tree for pr-split.
 	if strings.TrimSpace(string(out)) != "true" {

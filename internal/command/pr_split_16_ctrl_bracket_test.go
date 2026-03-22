@@ -8,36 +8,41 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-//  T309: Ctrl+] Claude switching — diagnostic logging & conditional status bar
+//  T309/T394: Ctrl+] Claude switching — toggleModel + ToggleReturn handler
+//
+//  T394 moved Ctrl+] handling from the JS update function to the Go-level
+//  toggleModel wrapper (BubbleTea ReleaseTerminal/RestoreTerminal lifecycle).
+//  The onToggle callback (prSplit._onToggle) handles the guard check and
+//  calls tuiMux.switchTo(). The ToggleReturn message is handled in the JS
+//  update function for notifications.
 //
 //  Tests that:
-//  1. Ctrl+] calls tuiMux.switchTo('claude') when a child IS attached.
-//  2. Ctrl+] sets a notification when Claude is NOT attached (hasChild false).
-//  3. Ctrl+] sets a notification when tuiMux is completely absent.
-//  4. Status bar shows "Ctrl+] Claude" only when tuiMux.hasChild() is true.
-//  5. All scenarios work specifically on the EQUIV_CHECK screen.
+//  1. _onToggle calls tuiMux.switchTo() when a child IS attached.
+//  2. _onToggle returns {skipped: true} when Claude is NOT attached.
+//  3. _onToggle returns {skipped: true} when tuiMux is completely absent.
+//  4. ToggleReturn with skipped=true sets the notification.
+//  5. ToggleReturn without skipped does NOT set notification.
+//  6. Status bar shows "Ctrl+] Claude" only when tuiMux.hasChild() is true.
 // ---------------------------------------------------------------------------
 
 func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 	t.Parallel()
 
-	t.Run("switch_succeeds_when_child_attached", func(t *testing.T) {
+	t.Run("onToggle_calls_switchTo_when_child_attached", func(t *testing.T) {
 		t.Parallel()
 		evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 		raw, err := evalJS(`(function() {
-			var switchedTo = null;
+			var switchCalled = false;
 			globalThis.tuiMux = {
 				hasChild: function() { return true; },
-				switchTo: function(name) { switchedTo = name; }
+				switchTo: function() { switchCalled = true; return {reason: 'toggle'}; }
 			};
 			try {
-				var s = initState('EQUIV_CHECK');
-				var r = sendKey(s, 'ctrl+]');
-				if (switchedTo !== 'claude') return 'FAIL: ctrl+] did not switch to claude, got ' + switchedTo;
-				// Should NOT set the notification since switch succeeded.
-				if (r[0].claudeAutoAttachNotif && r[0].claudeAutoAttachNotif.indexOf('not available') >= 0)
-					return 'FAIL: should not set not-available notification on success';
+				var result = globalThis.prSplit._onToggle();
+				if (!switchCalled) return 'FAIL: switchTo was not called';
+				if (result.skipped) return 'FAIL: should not be skipped';
+				if (result.reason !== 'toggle') return 'FAIL: unexpected result: ' + JSON.stringify(result);
 				return 'OK';
 			} finally {
 				delete globalThis.tuiMux;
@@ -47,28 +52,25 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 			t.Fatal(err)
 		}
 		if raw != "OK" {
-			t.Errorf("ctrl+] with child attached: %v", raw)
+			t.Errorf("onToggle with child attached: %v", raw)
 		}
 	})
 
-	t.Run("notification_when_hasChild_false", func(t *testing.T) {
+	t.Run("onToggle_skipped_when_hasChild_false", func(t *testing.T) {
 		t.Parallel()
 		evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 		raw, err := evalJS(`(function() {
-			var switchedTo = null;
+			var switchCalled = false;
 			globalThis.tuiMux = {
 				hasChild: function() { return false; },
-				switchTo: function(name) { switchedTo = name; }
+				switchTo: function() { switchCalled = true; }
 			};
 			try {
-				var s = initState('EQUIV_CHECK');
-				var r = sendKey(s, 'ctrl+]');
-				if (switchedTo !== null) return 'FAIL: switchTo should not be called when hasChild is false';
-				if (!r[0].claudeAutoAttachNotif) return 'FAIL: expected notification, got empty';
-				if (r[0].claudeAutoAttachNotif.indexOf('not available') < 0)
-					return 'FAIL: expected "not available" in notification, got: ' + r[0].claudeAutoAttachNotif;
-				if (!r[0].claudeAutoAttachNotifAt) return 'FAIL: notifAt timestamp not set';
+				var result = globalThis.prSplit._onToggle();
+				if (switchCalled) return 'FAIL: switchTo should not be called when hasChild is false';
+				if (!result.skipped) return 'FAIL: should be skipped';
+				if (result.reason !== 'no_child') return 'FAIL: wrong reason: ' + result.reason;
 				return 'OK';
 			} finally {
 				delete globalThis.tuiMux;
@@ -78,63 +80,75 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 			t.Fatal(err)
 		}
 		if raw != "OK" {
-			t.Errorf("ctrl+] with hasChild false: %v", raw)
+			t.Errorf("onToggle with hasChild false: %v", raw)
 		}
 	})
 
-	t.Run("notification_when_tuiMux_absent", func(t *testing.T) {
+	t.Run("onToggle_skipped_when_tuiMux_absent", func(t *testing.T) {
 		t.Parallel()
 		evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 		raw, err := evalJS(`(function() {
 			// Ensure tuiMux is explicitly absent.
+			var saved = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 			delete globalThis.tuiMux;
+			try {
+				var result = globalThis.prSplit._onToggle();
+				if (!result.skipped) return 'FAIL: should be skipped when tuiMux absent';
+				if (result.reason !== 'no_child') return 'FAIL: wrong reason: ' + result.reason;
+				return 'OK';
+			} finally {
+				if (saved !== undefined) globalThis.tuiMux = saved;
+			}
+		})()`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "OK" {
+			t.Errorf("onToggle with tuiMux absent: %v", raw)
+		}
+	})
 
+	t.Run("ToggleReturn_skipped_sets_notification", func(t *testing.T) {
+		t.Parallel()
+		evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+		raw, err := evalJS(`(function() {
 			var s = initState('EQUIV_CHECK');
-			var r = sendKey(s, 'ctrl+]');
-			if (!r[0].claudeAutoAttachNotif) return 'FAIL: expected notification, got empty';
-			if (r[0].claudeAutoAttachNotif.indexOf('not available') < 0)
-				return 'FAIL: expected "not available" in notification, got: ' + r[0].claudeAutoAttachNotif;
-			if (!r[0].claudeAutoAttachNotifAt) return 'FAIL: notifAt timestamp not set';
+			var r = update({type: 'ToggleReturn', skipped: true, reason: 'no_child'}, s);
+			s = r[0];
+			var errors = [];
+			if (!s.claudeAutoAttachNotif) errors.push('expected notification, got empty');
+			if (s.claudeAutoAttachNotif && s.claudeAutoAttachNotif.indexOf('not available') < 0)
+				errors.push('expected "not available" in notification, got: ' + s.claudeAutoAttachNotif);
+			if (!s.claudeAutoAttachNotifAt) errors.push('notifAt timestamp not set');
+			return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
+		})()`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "OK" {
+			t.Errorf("ToggleReturn skipped notification: %v", raw)
+		}
+	})
+
+	t.Run("ToggleReturn_success_no_notification", func(t *testing.T) {
+		t.Parallel()
+		evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+		raw, err := evalJS(`(function() {
+			var s = initState('PLAN_REVIEW');
+			var r = update({type: 'ToggleReturn', reason: 'toggle'}, s);
+			s = r[0];
+			if (s.claudeAutoAttachNotif && s.claudeAutoAttachNotif.indexOf('not available') >= 0)
+				return 'FAIL: should not set "not available" notification on success';
 			return 'OK';
 		})()`)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if raw != "OK" {
-			t.Errorf("ctrl+] with tuiMux absent: %v", raw)
-		}
-	})
-
-	t.Run("works_on_multiple_wizard_states", func(t *testing.T) {
-		t.Parallel()
-		evalJS := prsplittest.NewTUIEngineWithHelpers(t)
-
-		raw, err := evalJS(`(function() {
-			var states = ['EQUIV_CHECK', 'CONFIG', 'PLAN_REVIEW', 'BRANCH_BUILDING', 'FINALIZATION'];
-			var errors = [];
-			for (var i = 0; i < states.length; i++) {
-				var st = states[i];
-				var switchedTo = null;
-				globalThis.tuiMux = {
-					hasChild: function() { return true; },
-					switchTo: function(name) { switchedTo = name; }
-				};
-				try {
-					var s = initState(st);
-					sendKey(s, 'ctrl+]');
-					if (switchedTo !== 'claude') errors.push(st + ': did not switch');
-				} finally {
-					delete globalThis.tuiMux;
-				}
-			}
-			return errors.length ? 'FAIL: ' + errors.join('; ') : 'OK';
-		})()`)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if raw != "OK" {
-			t.Errorf("ctrl+] across wizard states: %v", raw)
+			t.Errorf("ToggleReturn success: %v", raw)
 		}
 	})
 }

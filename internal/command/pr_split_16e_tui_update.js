@@ -880,24 +880,21 @@
                 }
                 return [s, null];
             }
-            // termmux toggle — only if Claude child is attached.
-            if (k === 'ctrl+]') {
-                // T309: Diagnostic log on every Ctrl+] press.
-                var muxAvail = typeof tuiMux !== 'undefined' && !!tuiMux;
-                var childAttached = muxAvail &&
-                    (typeof tuiMux.hasChild !== 'function' || tuiMux.hasChild());
-                log.printf('ctrl+]: muxAvail=%s childAttached=%s wizardState=%s',
-                    String(muxAvail), String(childAttached), s.wizardState || '(none)');
-                if (muxAvail &&
-                    typeof tuiMux.switchTo === 'function' && childAttached) {
-                    tuiMux.switchTo('claude');
-                } else {
-                    // T309: Flash notification when Claude isn't available.
-                    s.claudeAutoAttachNotif = 'Claude not available \u2014 no active Claude session';
-                    s.claudeAutoAttachNotifAt = Date.now();
-                }
-                return [s, null];
+            // T394: Ctrl+] passthrough is now handled by toggleModel wrapper
+            // in BubbleTea (see startWizard). The wrapper properly calls
+            // ReleaseTerminal before RunPassthrough, preventing stdin
+            // contention. ToggleReturn message handled below.
+        }
+
+        // T394: Handle ToggleReturn from toggleModel after passthrough exits
+        // (or skipped because no child was attached).
+        if (msg.type === 'ToggleReturn') {
+            if (msg.skipped) {
+                // No Claude child — show notification.
+                s.claudeAutoAttachNotif = 'Claude not available \u2014 no active Claude session';
+                s.claudeAutoAttachNotifAt = Date.now();
             }
+            return [s, null];
         }
 
         // Mouse handling.

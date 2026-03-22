@@ -943,10 +943,36 @@
     prSplit._wizardModel = _wizardModel;
     prSplit._createWizardModel = createWizardModel;
 
+    // T394: onToggle callback for Ctrl+] passthrough. Extracted as a named
+    // function so tests can exercise the guard logic independently.
+    prSplit._onToggle = function() {
+        var muxAvail = typeof tuiMux !== 'undefined' && !!tuiMux;
+        var childAttached = muxAvail &&
+            (typeof tuiMux.hasChild !== 'function' || tuiMux.hasChild());
+        log.printf('ctrl+] toggle: muxAvail=%s childAttached=%s',
+            String(muxAvail), String(childAttached));
+        if (muxAvail &&
+            typeof tuiMux.switchTo === 'function' && childAttached) {
+            return tuiMux.switchTo();
+        }
+        // No child — return indicator for ToggleReturn handler.
+        return {skipped: true, reason: 'no_child'};
+    };
+
     // startWizard — called by pr_split.go to launch the BubbleTea wizard.
     // Blocks the calling goroutine until the user exits the wizard.
+    //
+    // T394: Pass toggleKey + onToggle so BubbleTea wraps the model in a
+    // toggleModel. This ensures Ctrl+] passthrough properly releases
+    // BubbleTea's cancelreader before RunPassthrough reads stdin, avoiding
+    // data corruption from concurrent stdin readers.
     prSplit.startWizard = function() {
-        return tea.run(_wizardModel, {altScreen: true, mouse: true});
+        return tea.run(_wizardModel, {
+            altScreen: true,
+            mouse: true,
+            toggleKey: 0x1D, // Ctrl+]
+            onToggle: prSplit._onToggle
+        });
     };
 
     // --- Mode Registration ---

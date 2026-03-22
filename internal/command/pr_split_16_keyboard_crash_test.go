@@ -1040,8 +1040,9 @@ func TestChunk16_PollClaudeScreenshot_SplitViewDisabled(t *testing.T) {
 	}
 }
 
-// TestChunk16_SwitchTo_NoChild verifies Ctrl+] does NOT call switchTo
-// when tuiMux.hasChild() returns false (prevents blocking on empty mux).
+// TestChunk16_SwitchTo_NoChild verifies _onToggle does NOT call switchTo
+// when tuiMux.hasChild() returns false. T394 moved Ctrl+] handling from
+// JS update to Go toggleModel — this test exercises the callback directly.
 func TestChunk16_SwitchTo_NoChild(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
@@ -1056,13 +1057,14 @@ func TestChunk16_SwitchTo_NoChild(t *testing.T) {
 			childScreen: function() { return ''; }
 		};
 
-		var s = initState('PLAN_REVIEW');
-		sendKey(s, 'ctrl+]');
+		// T394: Call _onToggle directly.
+		var result = globalThis.prSplit._onToggle();
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
 
 		if (switchCalled) return 'FAIL: switchTo called despite no child';
+		if (!result.skipped) return 'FAIL: should be skipped when no child';
 		return 'OK';
 	})()`)
 	if err != nil {
@@ -1073,8 +1075,9 @@ func TestChunk16_SwitchTo_NoChild(t *testing.T) {
 	}
 }
 
-// TestChunk16_SwitchTo_WithChild verifies Ctrl+] calls switchTo when
-// tuiMux.hasChild() returns true.
+// TestChunk16_SwitchTo_WithChild verifies the _onToggle callback calls
+// switchTo when tuiMux.hasChild() returns true. T394 moved Ctrl+] handling
+// from JS update to Go toggleModel — this test exercises the callback directly.
 func TestChunk16_SwitchTo_WithChild(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
@@ -1084,18 +1087,19 @@ func TestChunk16_SwitchTo_WithChild(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
-			switchTo: function() { switchCalled = true; },
+			switchTo: function() { switchCalled = true; return {reason: 'toggle'}; },
 			screenshot: function() { return ''; },
 			childScreen: function() { return ''; }
 		};
 
-		var s = initState('PLAN_REVIEW');
-		sendKey(s, 'ctrl+]');
+		// T394: Call _onToggle directly (Ctrl+] is intercepted by Go toggleModel).
+		var result = globalThis.prSplit._onToggle();
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
 
 		if (!switchCalled) return 'FAIL: switchTo not called despite child attached';
+		if (result.skipped) return 'FAIL: should not be skipped';
 		return 'OK';
 	})()`)
 	if err != nil {

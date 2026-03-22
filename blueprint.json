@@ -36,7 +36,7 @@
     "PER_TASK_COMMIT_PROTOCOL": "⚠️ MANDATORY — ZERO EXCEPTIONS — FOR EVERY SINGLE TASK: (1) REREAD the strict-review-gate Skill IN FULL — do not skim, do not skip, read every word. (2) PERFORM the Rule of Two PER THE SKILL — spawn subagent reviews, iterate until TWO CONTIGUOUS ISSUE-FREE reviews on the EXACT SAME DIFF. If either review fails, fix, reset counter to 0, restart. (3) READ the git-commit Skill IN FULL before writing any commit message. (4) COMMIT THAT ONE TASK — exactly one task per commit, immediately after passing the Rule of Two. Do not batch tasks. Do not defer commits. ASAP. (5) REREAD DIRECTIVE.txt after every commit — full re-read, not from memory. This 5-step process is NON-NEGOTIABLE. Skipping any step is grounds for termination. Batching multiple tasks into one commit is FORBIDDEN. Committing without two green reviews is FORBIDDEN. Working on the next task before committing the current one is FORBIDDEN."
   },
   "statusSection": {
-    "currentState": "T300-T396 complete. Session 9: T383 done, T386 done, T396 committed edba73b9, T393 in progress (5 bugs fixed, 6 new tests added, broader Chunk16+Chunk10 tests pass). T390-T395 remaining.",
+    "currentState": "T300-T396 complete. Session 9: T383 done, T386 done, T396 committed edba73b9, T393 committed 1edd3680, T394 in progress (critical stdin contention bug fixed, 8 tests updated). T390-T395 remaining.",
     "goalState": "All verify/shell terminal features delivered AND polished to enterprise grade. Zero silenced errors. No god functions. No magic numbers. Fuzz-tested parsing. Poll-retry E2E tests. Fully parallelized unit tests. Documentation fully synced. All checks pass on all platforms.",
     "replanLog": [
       {
@@ -171,14 +171,16 @@
       "task": "Fix 'Ask Claude' conversation overlay and inline question response (HANA DIRECTIVE)",
       "description": "Root cause: pipeline cleanup (cleanupExecutor+finishTUI) destroys Claude process and MCP callback BEFORE user reaches PLAN_REVIEW. Fix: (1) Skip cleanupExecutor on success path — only clean up on error. (2) finishTUI preserves MCP callback on success. (3) confirmCancel quit handler cleans up Claude+MCP. (4) Question detection gate relaxed: triggers when either isProcessing OR claudeAlive. (5) writeToChild errors surfaced to user. 6 new tests: T393_QuestionDetectedWithLiveHandle, T393_QuestionNotDetectedIfHandleDead, T393_OpenClaudeConvoWithLiveHandle, T393_OpenClaudeConvoWithNullHandle, T393_WriteToChildErrorSurfaced, T393_WriteToChildMissingSurfaced. All pass. Chunk16+Chunk10 broad test suite pass.",
       "acceptance": "Both 'Ask Claude' paths exercised: conversation overlay sends prompt and receives structured response; inline question detection triggers on idle Claude question and response reaches PTY. 6 T393 tests pass, all Chunk16+Chunk10 tests pass.",
-      "status": "In Progress"
+      "status": "Done",
+      "notes": "Committed 1edd3680"
     },
     {
       "id": "T394",
       "task": "Audit and fix Claude terminal input via termmux (HANA DIRECTIVE)",
-      "description": "Hana mandates confirming proper termmux usage for Claude terminal input. Claude uses termmux.Mux (not CaptureSession) — attached via tuiMux.attach(executor.handle). Input flows via tuiMux.writeToChild() in split-view or tuiMux.switchTo() for Ctrl+] passthrough. Verify the entire chain from BubbleTea KeyMsg → keyToTermBytes → tuiMux.writeToChild → mux.WriteToChild → PTY fd write. Confirm no regressions from wizard refactor.",
-      "acceptance": "Documented audit confirming: (1) tuiMux setup in pr_split.go correct, (2) Claude PTY attachment via tuiMux.attach works, (3) writeToChild delivers bytes to Claude stdin, (4) Ctrl+] passthrough enters/exits cleanly. Add integration test if missing.",
-      "status": "Not Started"
+      "description": "Full audit of termmux pipeline. Found CRITICAL bug: Ctrl+] passthrough had stdin contention — BubbleTea cancelreader and RunPassthrough both reading stdin simultaneously. Fix: Wire toggleKey/onToggle in tea.run() so Go-level toggleModel calls ReleaseTerminal before RunPassthrough. Removed manual Ctrl+] handler from JS, added ToggleReturn message handler. Extracted _onToggle callback for testability. Updated 8 tests across 3 test files. Audit document in scratch/t394-termmux-audit.md.",
+      "acceptance": "Documented audit confirming: (1) tuiMux setup in pr_split.go correct, (2) Claude PTY attachment via tuiMux.attach works, (3) writeToChild delivers bytes to Claude stdin, (4) Ctrl+] passthrough enters/exits cleanly via toggleModel. All Ctrl+] tests pass, all Chunk16+Chunk10 tests pass.",
+      "status": "Done",
+      "notes": "Committed (this commit)"
     },
     {
       "id": "T395",

@@ -513,19 +513,22 @@ func TestChunk16_ViewportScroll_Keys(t *testing.T) {
 	}
 }
 
+// TestChunk16_CtrlBracketTermmux verifies that the _onToggle callback
+// (used by the toggleModel wrapper) calls tuiMux.switchTo() when a child
+// is attached. T394 moved Ctrl+] handling from JS update to Go toggleModel.
 func TestChunk16_CtrlBracketTermmux(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
-		var switchedTo = null;
+		var switchCalled = false;
 		globalThis.tuiMux = {
-			switchTo: function(name) { switchedTo = name; }
+			switchTo: function() { switchCalled = true; return {reason: 'toggle'}; }
 		};
 
-		var s = initState('CONFIG');
-		sendKey(s, 'ctrl+]');
-		if (switchedTo !== 'claude') return 'FAIL: ctrl+] did not switch to claude';
+		var result = globalThis.prSplit._onToggle();
+		if (!switchCalled) return 'FAIL: _onToggle did not call switchTo';
+		if (result.skipped) return 'FAIL: should not be skipped';
 
 		delete globalThis.tuiMux;
 		return 'OK';

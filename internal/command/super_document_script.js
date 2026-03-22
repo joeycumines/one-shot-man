@@ -1257,7 +1257,7 @@ function handleKeys(msg, s) {
             } else if (s.inputOperation === INPUT_LOAD) {
                 const res = os.readFile(s.labelBuffer.trim());
                 if (res.error) {
-                    s.statusMsg = 'Error: ' + res.error;
+                    s.statusMsg = 'Error: ' + res.message;
                     s.hasError = true;
                     return [s, null];
                 }
@@ -2348,7 +2348,7 @@ function buildCommands() {
                     const path = args[1];
                     const res = os.readFile(path);
                     if (res.error) {
-                        output.print("Error: " + res.error);
+                        output.print("Error: " + res.message);
                         return;
                     }
                     const doc = addDocument(path, res.content);

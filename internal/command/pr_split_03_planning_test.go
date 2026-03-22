@@ -373,6 +373,14 @@ func TestChunk03_LoadPlan_MissingFile(t *testing.T) {
 	if !strings.Contains(errStr, "failed to read") {
 		t.Errorf("error = %q, want 'failed to read'", errStr)
 	}
+	// T397: Verify the error contains the actual OS error message, not just
+	// the boolean "true" from result.error.
+	if strings.HasSuffix(errStr, ": true") {
+		t.Errorf("error = %q, ends with bool literal — result.error used instead of result.message", errStr)
+	}
+	if !strings.Contains(errStr, "/nonexistent/path/plan.json") {
+		t.Errorf("error = %q, want it to contain file path", errStr)
+	}
 }
 
 // TestChunk03_LoadPlan_MissingSplits verifies loadPlan rejects a file with

@@ -23,13 +23,13 @@ func TestIntegration_ResumeWithNoPlan_FailsGracefully(t *testing.T) {
 	t.Parallel()
 
 	buf, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]any{
-		"baseBranch":      "main",
-		"strategy":        "directory",
-		"maxFiles":        10,
-		"branchPrefix":    "split/",
-		"verifyCommand":   "true",
-		"resumeFromPlan":  true,
-		"disableTUI":      true,
+		"baseBranch":     "main",
+		"strategy":       "directory",
+		"maxFiles":       10,
+		"branchPrefix":   "split/",
+		"verifyCommand":  "true",
+		"resumeFromPlan": true,
+		"disableTUI":     true,
 	})
 
 	// Override loadPlan to simulate "no plan file" — this is what the real
@@ -118,6 +118,10 @@ func TestChunk03_LoadPlan_MissingFile_ViaPipeline(t *testing.T) {
 	if !strings.Contains(*result.Error, "failed to read plan") {
 		t.Errorf("expected 'failed to read plan', got: %s", *result.Error)
 	}
+	// After T397 fix: error should contain actual OS error, not boolean "true".
+	if strings.HasSuffix(*result.Error, ": true") {
+		t.Errorf("error ends with bool literal — result.error used instead of result.message: %s", *result.Error)
+	}
 }
 
 // TestIntegration_ResumeConfigBridging verifies that the Go-level
@@ -196,13 +200,13 @@ func TestIntegration_ResumeCorruptPlan_FailsGracefully(t *testing.T) {
 	t.Parallel()
 
 	buf, _, evalJS, _ := loadPrSplitEngineWithEval(t, map[string]any{
-		"baseBranch":      "main",
-		"strategy":        "directory",
-		"maxFiles":        10,
-		"branchPrefix":    "split/",
-		"verifyCommand":   "true",
-		"resumeFromPlan":  true,
-		"disableTUI":      true,
+		"baseBranch":     "main",
+		"strategy":       "directory",
+		"maxFiles":       10,
+		"branchPrefix":   "split/",
+		"verifyCommand":  "true",
+		"resumeFromPlan": true,
+		"disableTUI":     true,
 	})
 
 	// Override loadPlan to simulate corrupt JSON.

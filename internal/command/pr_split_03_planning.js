@@ -188,7 +188,7 @@
 
         var result = osmod.readFile(path);
         if (result.error) {
-            return { error: 'failed to read plan: ' + result.error };
+            return { error: 'failed to read plan: ' + result.message };
         }
 
         var snapshot;

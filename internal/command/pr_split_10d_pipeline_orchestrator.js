@@ -189,6 +189,10 @@
             } catch (e) {
                 result = { error: e.message || String(e) };
             }
+            // Normalize null/undefined returns from step callbacks.
+            if (result == null) {
+                result = {};
+            }
             var elapsed = Date.now() - t0;
 
             // Per-step timeout check (for long-running synchronous steps).

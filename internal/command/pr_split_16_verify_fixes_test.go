@@ -1150,8 +1150,8 @@ func TestKeyToTermBytes_SpecialKeys_T386(t *testing.T) {
 		check('tab', fn('tab'), '\t');
 		check('shift+tab', fn('shift+tab'), '\x1b[Z');
 		check('backspace', fn('backspace'), '\x7f');
-		check('space', fn('space'), ' ');
-		check('escape', fn('escape'), '\x1b');
+		check('space (literal)', fn(' '), ' ');
+		check('esc', fn('esc'), '\x1b');
 		check('delete', fn('delete'), '\x1b[3~');
 
 		// Arrow keys.
@@ -1205,6 +1205,33 @@ func TestKeyToTermBytes_SpecialKeys_T386(t *testing.T) {
 		// Unknown modifier returns null.
 		if (fn('super+a') !== null) errors.push('super+a should return null');
 
+		// T386: Modifier+arrow keys (xterm CSI {modifier} sequences).
+		// Shift+arrows (modifier 2).
+		check('shift+up', fn('shift+up'), '\x1b[1;2A');
+		check('shift+down', fn('shift+down'), '\x1b[1;2B');
+		check('shift+left', fn('shift+left'), '\x1b[1;2D');
+		check('shift+right', fn('shift+right'), '\x1b[1;2C');
+		check('shift+home', fn('shift+home'), '\x1b[1;2H');
+		check('shift+end', fn('shift+end'), '\x1b[1;2F');
+
+		// Ctrl+arrows (modifier 5).
+		check('ctrl+up', fn('ctrl+up'), '\x1b[1;5A');
+		check('ctrl+down', fn('ctrl+down'), '\x1b[1;5B');
+		check('ctrl+left', fn('ctrl+left'), '\x1b[1;5D');
+		check('ctrl+right', fn('ctrl+right'), '\x1b[1;5C');
+
+		// Ctrl+Shift+arrows (modifier 6).
+		check('ctrl+shift+up', fn('ctrl+shift+up'), '\x1b[1;6A');
+		check('ctrl+shift+down', fn('ctrl+shift+down'), '\x1b[1;6B');
+		check('ctrl+shift+left', fn('ctrl+shift+left'), '\x1b[1;6D');
+		check('ctrl+shift+right', fn('ctrl+shift+right'), '\x1b[1;6C');
+
+		// Modifier+tilde keys.
+		check('shift+pgup', fn('shift+pgup'), '\x1b[5;2~');
+		check('shift+pgdown', fn('shift+pgdown'), '\x1b[6;2~');
+		check('ctrl+delete', fn('ctrl+delete'), '\x1b[3;5~');
+		check('shift+insert', fn('shift+insert'), '\x1b[2;2~');
+
 		return errors.length > 0 ? errors.join('; ') : 'OK';
 	})()`)
 	if err != nil {
@@ -1212,5 +1239,42 @@ func TestKeyToTermBytes_SpecialKeys_T386(t *testing.T) {
 	}
 	if raw != "OK" {
 		t.Errorf("keyToTermBytes audit: %v", raw)
+	}
+}
+
+// TestInteractiveReservedKeys_T386 verifies that the shell tab's reserved key
+// set correctly allows navigation keys through while blocking pane-management keys.
+func TestInteractiveReservedKeys_T386(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+		var reservedKeys = globalThis.prSplit._INTERACTIVE_RESERVED_KEYS;
+		if (!reservedKeys) return 'FAIL: INTERACTIVE_RESERVED_KEYS not exported';
+
+		// These pane-management keys MUST be reserved.
+		var mustReserve = ['ctrl+tab', 'ctrl+l', 'ctrl+o', 'ctrl+]', 'ctrl++', 'ctrl+=', 'ctrl+-', 'f1'];
+		for (var i = 0; i < mustReserve.length; i++) {
+			if (!reservedKeys[mustReserve[i]]) {
+				errors.push(mustReserve[i] + ' should be reserved in INTERACTIVE_RESERVED_KEYS');
+			}
+		}
+
+		// These navigation keys MUST NOT be reserved (shell needs them).
+		var mustForward = ['up', 'down', 'left', 'right', 'j', 'k', 'pgup', 'pgdown', 'home', 'end'];
+		for (var j = 0; j < mustForward.length; j++) {
+			if (reservedKeys[mustForward[j]]) {
+				errors.push(mustForward[j] + ' should NOT be reserved in INTERACTIVE_RESERVED_KEYS');
+			}
+		}
+
+		return errors.length > 0 ? errors.join('; ') : 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("INTERACTIVE_RESERVED_KEYS: %v", raw)
 	}
 }

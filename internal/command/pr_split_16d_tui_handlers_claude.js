@@ -564,8 +564,24 @@
         'f1': true          // help
     };
 
+    // T386: Minimal reserved keys for fully-interactive tabs (Shell).
+    // Only pane-management keys are reserved; navigation keys (arrows, j/k,
+    // pgup/pgdown, home/end) are forwarded to the child process.
+    var INTERACTIVE_RESERVED_KEYS = {
+        'ctrl+tab': true,   // switch focus between panes
+        'ctrl+l': true,     // close split-view
+        'ctrl+o': true,     // cycle tabs
+        'ctrl+]': true,     // full Claude passthrough
+        'ctrl++': true,     // adjust split ratio
+        'ctrl+=': true,     // adjust split ratio
+        'ctrl+-': true,     // adjust split ratio
+        'f1': true          // help
+    };
+
     // Convert BubbleTea key string to terminal byte sequence for PTY forwarding.
     // Returns the bytes as a string, or null if the key can't be converted.
+    //
+    // Key names match BubbleTea's KeyMsg.String() output (keys_gen.go).
     function keyToTermBytes(key) {
         // Named special keys → terminal escape sequences.
         switch (key) {
@@ -573,8 +589,9 @@
             case 'tab':       return '\t';
             case 'shift+tab': return '\x1b[Z'; // T386: reverse tab
             case 'backspace': return '\x7f';
-            case 'space':     return ' ';
-            case 'escape':    return '\x1b';
+            // Note: BubbleTea sends ' ' (literal space) for space key,
+            // which is handled by the single-char fallback below.
+            case 'esc':       return '\x1b'; // T386: fixed — was 'escape'
             case 'delete':    return '\x1b[3~';
             case 'up':        return '\x1b[A';
             case 'down':      return '\x1b[B';
@@ -611,6 +628,34 @@
                 // A-Z → 0x01-0x1A
                 if (code >= 65 && code <= 90) {
                     return String.fromCharCode(code - 64);
+                }
+            }
+        }
+
+        // T386: Modifier+navigation keys → xterm CSI {modifier} sequences.
+        // Format: ESC[1;{mod}{letter} where mod: 2=Shift, 5=Ctrl, 6=Ctrl+Shift.
+        // For tilde-style keys: ESC[{num};{mod}~ (pgup, pgdown, delete, insert).
+        var modNavMap = {
+            'up': 'A', 'down': 'B', 'right': 'C', 'left': 'D',
+            'home': 'H', 'end': 'F'
+        };
+        var modTildeMap = {
+            'pgup': '5', 'pgdown': '6', 'delete': '3', 'insert': '2'
+        };
+        var modPrefixes = [
+            {prefix: 'ctrl+shift+', mod: '6'},
+            {prefix: 'shift+', mod: '2'},
+            {prefix: 'ctrl+', mod: '5'}
+        ];
+        for (var mi = 0; mi < modPrefixes.length; mi++) {
+            var mp = modPrefixes[mi];
+            if (key.length > mp.prefix.length && key.substring(0, mp.prefix.length) === mp.prefix) {
+                var navKey = key.substring(mp.prefix.length);
+                if (modNavMap[navKey]) {
+                    return '\x1b[1;' + mp.mod + modNavMap[navKey];
+                }
+                if (modTildeMap[navKey]) {
+                    return '\x1b[' + modTildeMap[navKey] + ';' + mp.mod + '~';
                 }
             }
         }
@@ -893,6 +938,7 @@
     prSplit._keyToTermBytes = keyToTermBytes;
     prSplit._mouseToTermBytes = mouseToTermBytes;
     prSplit._CLAUDE_RESERVED_KEYS = CLAUDE_RESERVED_KEYS;
+    prSplit._INTERACTIVE_RESERVED_KEYS = INTERACTIVE_RESERVED_KEYS;
     prSplit._detectClaudeQuestion = detectClaudeQuestion;
     prSplit.QUESTION_IDLE_THRESHOLD_MS = QUESTION_IDLE_THRESHOLD_MS;
     prSplit._pollClaudeScreenshot = pollClaudeScreenshot;

@@ -74,8 +74,8 @@ func TestChunk16_VTerm_KeyToTermBytes_SpecialKeys(t *testing.T) {
 		if (fn('enter') !== '\r') errors.push('enter should be \\r');
 		if (fn('tab') !== '\t') errors.push('tab should be \\t');
 		if (fn('backspace') !== '\x7f') errors.push('backspace should be 0x7f');
-		if (fn('space') !== ' ') errors.push('space should be space');
-		if (fn('escape') !== '\x1b') errors.push('escape should be 0x1b');
+		if (fn(' ') !== ' ') errors.push('space (literal) should be space');
+		if (fn('esc') !== '\x1b') errors.push('esc should be 0x1b');
 		if (fn('delete') !== '\x1b[3~') errors.push('delete should be ESC[3~');
 
 		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';

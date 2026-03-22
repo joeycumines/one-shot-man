@@ -51,6 +51,7 @@
     var keyToTermBytes = prSplit._keyToTermBytes;
     var mouseToTermBytes = prSplit._mouseToTermBytes;
     var CLAUDE_RESERVED_KEYS = prSplit._CLAUDE_RESERVED_KEYS;
+    var INTERACTIVE_RESERVED_KEYS = prSplit._INTERACTIVE_RESERVED_KEYS;
     var CHROME_ESTIMATE = prSplit._CHROME_ESTIMATE;
     var pollClaudeScreenshot = prSplit._pollClaudeScreenshot;
     var C = prSplit._TUI_CONSTANTS;
@@ -630,9 +631,10 @@
                         }
                     }
                     // T334: Shell tab — forward ALL non-reserved keys to shell CaptureSession.
-                    // Shell is fully interactive, so no scroll-key interception.
+                    // T386: Shell is fully interactive — use minimal reserved set so
+                    // arrow keys, j/k, pgup/pgdown, home/end reach the child process.
                     if (s.splitViewTab === 'shell') {
-                        if (!CLAUDE_RESERVED_KEYS[k]) {
+                        if (!INTERACTIVE_RESERVED_KEYS[k]) {
                             var shBytes = keyToTermBytes(k);
                             if (shBytes !== null && s.shellSession &&
                                 typeof s.shellSession.write === 'function') {

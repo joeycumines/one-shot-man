@@ -110,17 +110,24 @@ func run() error {
 	// consistent for scripting and tests.
 	fs := flag.NewFlagSet(cmd.Name(), flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	fs.Usage = func() {
+
+	// fullUsage prints the complete command help (Usage, Description,
+	// flag defaults). Used only for explicit --help requests.
+	fullUsage := func() {
 		_, _ = fmt.Fprintf(os.Stderr, "Usage: %s\n", cmd.Usage())
 		_, _ = fmt.Fprintf(os.Stderr, "\n%s\n\n", cmd.Description())
 		_, _ = fmt.Fprintln(os.Stderr, "Options:")
-		// PrintDefaults writes to the FlagSet output. When parsing we set the
-		// output to io.Discard to suppress library output; temporarily route
-		// defaults to stderr so users see the available flags.
 		fs.SetOutput(os.Stderr)
 		fs.PrintDefaults()
 		fs.SetOutput(io.Discard)
 	}
+
+	// T392: Suppress the automatic full-usage dump on parse errors.
+	// Go's flag package calls fs.Usage() from failf() before returning
+	// errors. Setting it to a no-op during parsing prevents the wall of
+	// text that obscures the actual error message. We restore it only
+	// for explicit --help requests.
+	fs.Usage = func() {} // no-op during parse
 
 	// Let the command setup its flags
 	cmd.SetupFlags(fs)
@@ -137,9 +144,14 @@ func run() error {
 		if errors.Is(err, flag.ErrHelp) {
 			// flag.ErrHelp indicates usage/help was requested; treat as
 			// non-error so the program can exit successfully and uniformly.
+			fullUsage()
 			return nil
 		}
-		return err
+		// Parse error: show a concise 1-line error + hint instead of the
+		// full flag listing that Go's flag package would normally dump.
+		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Use 'osm %s --help' for usage.\n", cmd.Name())
+		return &command.SilentError{Err: err}
 	}
 
 	// Execute the command with the arguments remaining after parsing

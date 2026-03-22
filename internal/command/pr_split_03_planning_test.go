@@ -592,6 +592,84 @@ func TestChunk03_LoadPlan_DoubleLoadNoDuplication(t *testing.T) {
 	}
 }
 
+// T399: Verify that loadPlan preserves falsy runtime values from the saved
+// snapshot (empty string, zero) instead of silently discarding them via ||.
+func TestChunk03_LoadPlan_PreservesFalsyRuntimeValues(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core", "01_analysis", "02_grouping", "03_planning")
+
+	// Write a plan file with intentionally-falsy runtime values.
+	planPath := filepath.Join(t.TempDir(), "falsy-plan.json")
+	plan := map[string]any{
+		"version": 1,
+		"runtime": map[string]any{
+			"baseBranch":    "saved-branch",
+			"strategy":      "directory",
+			"maxFiles":      0,
+			"branchPrefix":  "",
+			"verifyCommand": "",
+		},
+		"plan": map[string]any{
+			"splits": []map[string]any{
+				{"name": "split/01-test", "files": []string{"a.go"}},
+			},
+		},
+	}
+	data, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(planPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Set runtime to non-falsy defaults, then load plan with falsy values.
+	result, err := evalJS(`
+		(function() {
+			var ps = globalThis.prSplit;
+			ps.runtime.verifyCommand = 'make';
+			ps.runtime.maxFiles = 10;
+			ps.runtime.branchPrefix = 'split/';
+			var r = ps.loadPlan('` + escapeJSPath(planPath) + `');
+			if (r.error) return 'error: ' + r.error;
+			return JSON.stringify({
+				verifyCommand: ps.runtime.verifyCommand,
+				maxFiles:      ps.runtime.maxFiles,
+				branchPrefix:  ps.runtime.branchPrefix
+			});
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, ok := result.(string)
+	if !ok || strings.HasPrefix(s, "error:") {
+		t.Fatalf("unexpected result: %v", result)
+	}
+
+	var restored struct {
+		VerifyCommand string `json:"verifyCommand"`
+		MaxFiles      int    `json:"maxFiles"`
+		BranchPrefix  string `json:"branchPrefix"`
+	}
+	if err := json.Unmarshal([]byte(s), &restored); err != nil {
+		t.Fatal(err)
+	}
+
+	// All three were saved as falsy — they must survive the restore.
+	if restored.VerifyCommand != "" {
+		t.Errorf("verifyCommand = %q, want empty string (falsy value from saved plan)", restored.VerifyCommand)
+	}
+	if restored.MaxFiles != 0 {
+		t.Errorf("maxFiles = %d, want 0 (falsy value from saved plan)", restored.MaxFiles)
+	}
+	if restored.BranchPrefix != "" {
+		t.Errorf("branchPrefix = %q, want empty string (falsy value from saved plan)", restored.BranchPrefix)
+	}
+}
+
 // ---------------------------------------------------------------------------
 //  Helpers
 // ---------------------------------------------------------------------------

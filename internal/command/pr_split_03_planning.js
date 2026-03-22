@@ -207,11 +207,11 @@
 
         // Restore runtime config.
         if (snapshot.runtime) {
-            runtime.baseBranch    = snapshot.runtime.baseBranch    || runtime.baseBranch;
-            runtime.strategy      = snapshot.runtime.strategy      || runtime.strategy;
-            runtime.maxFiles      = snapshot.runtime.maxFiles      || runtime.maxFiles;
-            runtime.branchPrefix  = snapshot.runtime.branchPrefix  || runtime.branchPrefix;
-            runtime.verifyCommand = snapshot.runtime.verifyCommand || runtime.verifyCommand;
+            runtime.baseBranch    = snapshot.runtime.baseBranch    != null ? snapshot.runtime.baseBranch    : runtime.baseBranch;
+            runtime.strategy      = snapshot.runtime.strategy      != null ? snapshot.runtime.strategy      : runtime.strategy;
+            runtime.maxFiles      = snapshot.runtime.maxFiles      != null ? snapshot.runtime.maxFiles      : runtime.maxFiles;
+            runtime.branchPrefix  = snapshot.runtime.branchPrefix  != null ? snapshot.runtime.branchPrefix  : runtime.branchPrefix;
+            runtime.verifyCommand = snapshot.runtime.verifyCommand != null ? snapshot.runtime.verifyCommand : runtime.verifyCommand;
             if (snapshot.runtime.dryRun !== undefined) {
                 runtime.dryRun = snapshot.runtime.dryRun;
             }

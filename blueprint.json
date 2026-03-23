@@ -36,7 +36,7 @@
     "PER_TASK_COMMIT_PROTOCOL": "⚠️ MANDATORY — ZERO EXCEPTIONS — FOR EVERY SINGLE TASK: (1) REREAD the strict-review-gate Skill IN FULL — do not skim, do not skip, read every word. (2) PERFORM the Rule of Two PER THE SKILL — spawn subagent reviews, iterate until TWO CONTIGUOUS ISSUE-FREE reviews on the EXACT SAME DIFF. If either review fails, fix, reset counter to 0, restart. (3) READ the git-commit Skill IN FULL before writing any commit message. (4) COMMIT THAT ONE TASK — exactly one task per commit, immediately after passing the Rule of Two. Do not batch tasks. Do not defer commits. ASAP. (5) REREAD DIRECTIVE.txt after every commit — full re-read, not from memory. This 5-step process is NON-NEGOTIABLE. Skipping any step is grounds for termination. Batching multiple tasks into one commit is FORBIDDEN. Committing without two green reviews is FORBIDDEN. Working on the next task before committing the current one is FORBIDDEN."
   },
   "statusSection": {
-    "currentState": "T300-T396 complete. Session 9: T383 done, T386 done, T396 committed edba73b9, T393 committed 1edd3680, T394 in progress (critical stdin contention bug fixed, 8 tests updated). T390-T395 remaining.",
+    "currentState": "T300-T416 complete. Session 9: T413 committed 57a62fe9, T414 committed 25c37425, T416 next. Scope expanded: T417-T422 created for continued refinement.",
     "goalState": "All verify/shell terminal features delivered AND polished to enterprise grade. Zero silenced errors. No god functions. No magic numbers. Fuzz-tested parsing. Poll-retry E2E tests. Fully parallelized unit tests. Documentation fully synced. All checks pass on all platforms.",
     "replanLog": [
       {
@@ -335,6 +335,56 @@
       "acceptance": "README.md has a PR Splitting section with summary, modes, strategies, and key flags.",
       "status": "Done",
       "notes": "Added ### PR Splitting section with 6 strategies, 6 key flags, interactive/automated modes. Committed d1d6124f. Rule of Two PASS+PASS."
+    },
+    {
+      "id": "T416",
+      "task": "Add unit tests for chunk 15a pure utility functions",
+      "description": "Chunk 15a exports 7 pure/data exports with zero test coverage: layoutMode(s), truncate(str,maxLen), padRight(str,width), repeatStr(ch,n), COLORS, TUI_CONSTANTS, SPINNER_FRAMES. All are pure functions or static data requiring no mocks beyond TUI engine bootstrap.",
+      "acceptance": "New test file pr_split_15a_unit_test.go with tests for all 7 pure exports. Tests cover edge cases (empty strings, zero widths, boundary layout widths). All pass with -race.",
+      "status": "Done",
+      "notes": "12 test functions in pr_split_15a_unit_test.go: LayoutModeCompact (3 widths), LayoutModeStandard (3 widths), LayoutModeWide (3 widths), LayoutModeDefaultWidth, Truncate (7 cases), PadRight (5 cases), RepeatStr (4 cases), ColorsStructure (11 keys + light/dark + count), TUIConstantsStructure (25 keys + all-positive + count), SpinnerFrames (count + Braille), ResolveColor (3 cases), RenderProgressBar (4 cases). All pass with -race. Rule of Two v2 PASS+PASS. Committed."
+    },
+    {
+      "id": "T417",
+      "task": "Add unit tests for chunk 15d pure helpers and chunk 16a constants",
+      "description": "Chunk 15d exports computeReportOverlayDims (pure arithmetic), syncReportScrollbar (simple mock). Chunk 16a exports CHROME_ESTIMATE constant. Test these easily verifiable exports.",
+      "acceptance": "New test file pr_split_15d16a_unit_test.go with tests for computeReportOverlayDims (multiple screen sizes), syncReportScrollbar (mock viewport/scrollbar), CHROME_ESTIMATE value. All pass with -race.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T418",
+      "task": "Add unit tests for chunk 16a focus navigation functions",
+      "description": "Chunk 16a exports getFocusElements, syncSplitSelection, handleNavDown, handleNavUp, handleListNav — all quasi-pure functions operating on state objects. Test focus element generation per wizard state, navigation wrapping, and list cursor clamping.",
+      "acceptance": "New test file pr_split_16a_focus_unit_test.go with tests covering getFocusElements for at least 3 wizard states, nav wrapping at boundaries, list nav delta clamping. All pass with -race.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T419",
+      "task": "Scan remaining JS chunks for falsy-value || pattern bugs",
+      "description": "T399 found || patterns that lose intentionally-falsy values (empty string, zero). Audit all chunks 09-16f for remaining instances of the same anti-pattern: 'x = saved.x || default' where x could be '' or 0.",
+      "acceptance": "Documented audit with findings. Any discovered bugs fixed with tests. If none found, audit document confirms clean.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T420",
+      "task": "Add CHANGELOG entries for T409-T414 committed work",
+      "description": "T409 (error wrapping fix), T410 (orchestrator magic numbers), T411 (remaining magic numbers), T413 (pipeline unit tests), T414 (TUI unit tests) all need CHANGELOG entries. T413/T414 are test-only improvements worth documenting.",
+      "acceptance": "CHANGELOG.md [Unreleased] includes accurate entries for T409-T414. No code changes.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T421",
+      "task": "Update architecture-pr-split-chunks.md with TUI function inventory",
+      "description": "Document created in T408 lacks detailed function inventory for chunks 13-16f. Add per-chunk export tables showing function name, type (pure/quasi-pure/lipgloss), and what it does.",
+      "acceptance": "architecture-pr-split-chunks.md has complete export tables for chunks 13, 14a, 14b, 15a-15d, 16a-16f. Each export listed with testability classification.",
+      "status": "Not Started"
+    },
+    {
+      "id": "T422",
+      "task": "Add unit tests for chunk 16a dialog update handlers (keyboard paths)",
+      "description": "updateRenameDialog, updateMoveDialog, and updateMergeDialog have keyboard-path logic that is quasi-pure: branch name validation against INVALID_BRANCH_CHARS, split index manipulation via splice, merge selection toggling. Test keyboard-driven paths that don't require zone.inBounds.",
+      "acceptance": "Tests for rename validation (valid name, invalid chars, '..' sequence, '.lock' suffix), move file between splits, merge selection toggle. All pass with -race.",
+      "status": "Not Started"
     }
   ],
   "continuousVerification": {

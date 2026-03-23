@@ -1,33 +1,28 @@
 # WIP — Takumi's Desperate Diary
 
-## Session 9
+## Session 9 (continued)
 
-### T406 DONE — Fix hanging PickAndPlace mouse tests (committed 5ccf4a3b)
-Root cause: 19 Mouse* tests never called h.Quit() before h.Close(). BubbleTea ticker
-goroutine kept child process alive, blocking Close() for up to 60s context timeout.
-Fix: (1) Close() sends best-effort 'q' + 200ms grace before console.Close().
-(2) StaticObstacles click moved from (20,11) gap to (20,8) actual wall.
-19/19 mouse tests verified passing in 193.9s total. Rule of Two PASS+PASS.
+### T414 DONE — Unit tests for TUI command chunks 14a, 14b (committed 25c37425)
+8 test functions: BuildCoreCommandsKeys (17 keys + count), CoreCommandsHaveHandlerAndDescription,
+BuildCommandsMergesAll (15 ext), HudEnabledDefaultsFalse, GetActivityInfo (7 branches),
+GetLastOutputLines (5 cases), RenderHudStatusLine, RenderHudStatusLine_Truncation. Rule of Two PASS+PASS.
 
-### T401 DONE — Pipeline Orchestrator Unit Tests (committed 8a60f5cc)
-9 tests covering automatedSplit() + step() wrapper: cancellation, force-cancel, pipeline timeout,
-step timeout, watchdog idle, pause, null return, exception propagation, empty diff.
-Uses loadPrSplitEngineWithEval + Date.now overrides. Rule of Two PASS+PASS.
+### Scope Expansion: T416-T422 created
+- T416: Unit tests for 15a pure functions (layoutMode, truncate, padRight, repeatStr, etc.)
+- T417: Unit tests for 15d/16a pure helpers (computeReportOverlayDims, CHROME_ESTIMATE)
+- T418: Unit tests for 16a focus navigation (getFocusElements, nav wrapping)
+- T419: Audit remaining || falsy-value patterns
+- T420: CHANGELOG entries for T409-T414
+- T421: Update architecture-pr-split-chunks.md TUI function inventory
+- T422: Unit tests for 16a dialog handlers (keyboard paths)
 
-### NEXT: T404 (CHANGELOG), then T405 (cross-platform builds), then expand scope.
+### ACTIVE: T416 — Unit tests for chunk 15a pure utility functions
+**DONE.** 12 test functions: LayoutModeCompact/Standard/Wide/Default, Truncate (7 cases),
+PadRight (5 cases), RepeatStr (4 cases), ColorsStructure (11 keys + light/dark + count),
+TUIConstantsStructure (25 keys + positive + count), SpinnerFrames (10 + Braille check),
+ResolveColor (3 cases), RenderProgressBar (4 cases). Rule of Two v2 PASS+PASS.
 
-### T404 DONE — CHANGELOG entries (committed 86f6b71c)
-9 entries for T390-T400 in [Unreleased] Fixed section. Rule of Two PASS+PASS (4 iterations).
-
-### T405 DONE — Cross-platform builds verified
-All 4 builds + 2 vets pass (linux/amd64, darwin/amd64, darwin/arm64, windows/amd64). No code changes.
-
-### NEXT: Expand scope — identify new tasks.
-
-### T392 DONE — Flag Usage Suppression (committed c79589c2)
-Set fs.Usage to no-op during parse. Clean 1-line error + hint on parse errors, fullUsage() on --help.
-7 new tests: 4 error-output + 3 help-regression. All 21 cmd/osm tests pass.
-Rule of Two: PASS+PASS.
+### Next: T417 — Unit tests for chunk 15d pure helpers and 16a constants
 
 ### T391 DONE — Resume E2E Test (committed bdc1a733)
 5 tests: pipeline integration (no-plan + corrupt-plan), loadPlan direct, config bridging, Go Execute.

@@ -314,7 +314,7 @@
         // Still running — update progress from pipeline state and poll again.
         if (s.autoSplitRunning) {
             // Claude health check: poll isAlive() every 5 seconds.
-            var healthPollMs = prSplit.AUTOMATED_DEFAULTS.claudeHealthPollMs || 5000;
+            var healthPollMs = typeof prSplit.AUTOMATED_DEFAULTS.claudeHealthPollMs === 'number' ? prSplit.AUTOMATED_DEFAULTS.claudeHealthPollMs : 5000;
             var now = Date.now();
             if (!s.lastClaudeHealthCheckMs || (now - s.lastClaudeHealthCheckMs >= healthPollMs)) {
                 s.lastClaudeHealthCheckMs = now;

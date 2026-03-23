@@ -257,7 +257,7 @@
         // Post-spawn health check: verify process is still alive.
         if (this.handle && typeof this.handle.isAlive === 'function') {
             // Non-blocking delay — yields event loop for BubbleTea rendering.
-            var healthCheckDelayMs = (prSplit.AUTOMATED_DEFAULTS && prSplit.AUTOMATED_DEFAULTS.spawnHealthCheckDelayMs) || 300;
+            var healthCheckDelayMs = (prSplit.AUTOMATED_DEFAULTS && typeof prSplit.AUTOMATED_DEFAULTS.spawnHealthCheckDelayMs === 'number') ? prSplit.AUTOMATED_DEFAULTS.spawnHealthCheckDelayMs : 300;
             await new Promise(function(resolve) { setTimeout(resolve, healthCheckDelayMs); });
             if (!this.handle.isAlive()) {
                 var lastOutput = '';
@@ -458,7 +458,7 @@
         return renderPrompt(SPLIT_PLAN_PROMPT_TEMPLATE, {
             Classification: classification,
             BranchPrefix: config.branchPrefix || runtime.branchPrefix || 'split/',
-            MaxFilesPerSplit: config.maxFilesPerSplit || runtime.maxFiles || 0,
+            MaxFilesPerSplit: typeof config.maxFilesPerSplit === 'number' ? config.maxFilesPerSplit : (typeof runtime.maxFiles === 'number' ? runtime.maxFiles : 0),
             PreferIndependent: config.preferIndependent || false
         });
     }
@@ -467,7 +467,7 @@
         return renderPrompt(CONFLICT_RESOLUTION_PROMPT_TEMPLATE, {
             BranchName: conflict.branchName || '',
             Files: conflict.files || [],
-            ExitCode: conflict.exitCode || 1,
+            ExitCode: typeof conflict.exitCode === 'number' ? conflict.exitCode : 1,
             ErrorOutput: conflict.errorOutput || '',
             GoModContent: conflict.goModContent || ''
         });

@@ -163,7 +163,7 @@
     // prSplit._state.conversationHistory.
     // T087: Maximum number of conversation entries to retain in memory.
     // Configurable via prSplitConfig.maxConversationHistory; defaults to 100.
-    var MAX_CONVERSATION_HISTORY = (prSplit.runtime && prSplit.runtime.maxConversationHistory) || 100;
+    var MAX_CONVERSATION_HISTORY = (prSplit.runtime && typeof prSplit.runtime.maxConversationHistory === 'number') ? prSplit.runtime.maxConversationHistory : 100;
     var _conversationCapWarned = false;
 
     function recordConversation(action, prompt, response) {

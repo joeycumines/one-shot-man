@@ -123,7 +123,7 @@
 
             // Render each advanced field with zone mark, focus indicator, and edit mode.
             var fieldDefs = [
-                { id: 'config-maxFiles',       label: 'Max files per chunk', field: 'maxFiles',       value: String(runtime.maxFiles || 10) },
+                { id: 'config-maxFiles',       label: 'Max files per chunk', field: 'maxFiles',       value: String(typeof runtime.maxFiles === 'number' ? runtime.maxFiles : 10) },
                 { id: 'config-branchPrefix',   label: 'Branch prefix',       field: 'branchPrefix',   value: runtime.branchPrefix || 'split/' },
                 { id: 'config-verifyCommand',  label: 'Verify command',      field: 'verifyCommand',  value: runtime.verifyCommand || 'true' }
             ];

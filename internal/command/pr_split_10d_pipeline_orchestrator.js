@@ -87,12 +87,12 @@
         prSplit._mcpCallbackObj = null;
 
         var timeouts = {
-            classify: config.classifyTimeoutMs || AUTOMATED_DEFAULTS.classifyTimeoutMs,
-            plan: config.planTimeoutMs || AUTOMATED_DEFAULTS.planTimeoutMs,
-            resolve: config.resolveTimeoutMs || AUTOMATED_DEFAULTS.resolveTimeoutMs,
-            commandMs: config.resolveCommandTimeoutMs || AUTOMATED_DEFAULTS.resolveCommandTimeoutMs
+            classify: typeof config.classifyTimeoutMs === 'number' ? config.classifyTimeoutMs : AUTOMATED_DEFAULTS.classifyTimeoutMs,
+            plan: typeof config.planTimeoutMs === 'number' ? config.planTimeoutMs : AUTOMATED_DEFAULTS.planTimeoutMs,
+            resolve: typeof config.resolveTimeoutMs === 'number' ? config.resolveTimeoutMs : AUTOMATED_DEFAULTS.resolveTimeoutMs,
+            commandMs: typeof config.resolveCommandTimeoutMs === 'number' ? config.resolveCommandTimeoutMs : AUTOMATED_DEFAULTS.resolveCommandTimeoutMs
         };
-        var pollInterval = config.pollIntervalMs || AUTOMATED_DEFAULTS.pollIntervalMs;
+        var pollInterval = typeof config.pollIntervalMs === 'number' ? config.pollIntervalMs : AUTOMATED_DEFAULTS.pollIntervalMs;
         // Use typeof check: 0 is a valid value for retry/re-split counts (meaning "none").
         var maxAttemptsPerBranch = typeof config.maxResolveRetries === 'number' ? config.maxResolveRetries : AUTOMATED_DEFAULTS.maxResolveRetries;
         var maxReSplits = typeof config.maxReSplits === 'number' ? config.maxReSplits : AUTOMATED_DEFAULTS.maxReSplits;
@@ -103,9 +103,9 @@
         if (maxAttemptsPerBranch < 0) { maxAttemptsPerBranch = 0; }
 
         // Pipeline-level timeout and watchdog.
-        var pipelineTimeoutMs = config.pipelineTimeoutMs || AUTOMATED_DEFAULTS.pipelineTimeoutMs;
-        var stepTimeoutMs = config.stepTimeoutMs || AUTOMATED_DEFAULTS.stepTimeoutMs;
-        var watchdogIdleMs = config.watchdogIdleMs || AUTOMATED_DEFAULTS.watchdogIdleMs;
+        var pipelineTimeoutMs = typeof config.pipelineTimeoutMs === 'number' ? config.pipelineTimeoutMs : AUTOMATED_DEFAULTS.pipelineTimeoutMs;
+        var stepTimeoutMs = typeof config.stepTimeoutMs === 'number' ? config.stepTimeoutMs : AUTOMATED_DEFAULTS.stepTimeoutMs;
+        var watchdogIdleMs = typeof config.watchdogIdleMs === 'number' ? config.watchdogIdleMs : AUTOMATED_DEFAULTS.watchdogIdleMs;
         var pipelineStartTime = Date.now();
         var lastProgressTime = Date.now();
 
@@ -352,7 +352,7 @@
             // Heartbeat timeout: if Claude has sent at least one heartbeat but
             // then goes silent for longer than this, waitForLogged aborts.
             // Default: claudeHeartbeatTimeoutMs from AUTOMATED_DEFAULTS (60s).
-            var heartbeatTimeoutMs = config.heartbeatTimeoutMs || AUTOMATED_DEFAULTS.claudeHeartbeatTimeoutMs;
+            var heartbeatTimeoutMs = typeof config.heartbeatTimeoutMs === 'number' ? config.heartbeatTimeoutMs : AUTOMATED_DEFAULTS.claudeHeartbeatTimeoutMs;
             mcpCallbackObj.addTool('heartbeat',
                 'Send a heartbeat to indicate Claude is still actively working. Call this periodically during long-running analysis.',
                 {
@@ -813,7 +813,7 @@
         var verifyResult = await step('Verify splits', async function() {
             updateDetail('Verify splits', 'Running verification command on each branch...');
             var verifyObj = await verifySplits(plan, {
-                verifyTimeoutMs: config.verifyTimeoutMs || AUTOMATED_DEFAULTS.verifyTimeoutMs,
+                verifyTimeoutMs: typeof config.verifyTimeoutMs === 'number' ? config.verifyTimeoutMs : AUTOMATED_DEFAULTS.verifyTimeoutMs,
                 outputFn: emitOutput,
                 onBranchStart: null,
                 onBranchDone: null,
@@ -932,7 +932,7 @@
                             // T104: Actually check whether re-verified branches pass.
                             // Previously this always returned { error: null }.
                             var rv = await verifySplits(plan, {
-                                verifyTimeoutMs: config.verifyTimeoutMs || AUTOMATED_DEFAULTS.verifyTimeoutMs,
+                                verifyTimeoutMs: typeof config.verifyTimeoutMs === 'number' ? config.verifyTimeoutMs : AUTOMATED_DEFAULTS.verifyTimeoutMs,
                                 outputFn: emitOutput
                             });
                             if (rv.error) return { error: rv.error };

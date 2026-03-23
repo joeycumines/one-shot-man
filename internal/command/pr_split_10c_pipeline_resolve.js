@@ -184,7 +184,7 @@
         // Wall-clock timeout: cap total elapsed time.
         var wallClockMs = (timeouts && typeof timeouts.wallClockMs === 'number')
             ? timeouts.wallClockMs
-            : Math.min(((timeouts && timeouts.resolve) || AUTOMATED_DEFAULTS.resolveTimeoutMs) * (maxAttemptsPerBranch || 3) + AUTOMATED_DEFAULTS.resolveWallClockGraceMs,
+            : Math.min(((timeouts && typeof timeouts.resolve === 'number') ? timeouts.resolve : AUTOMATED_DEFAULTS.resolveTimeoutMs) * (typeof maxAttemptsPerBranch === 'number' && maxAttemptsPerBranch > 0 ? maxAttemptsPerBranch : 3) + AUTOMATED_DEFAULTS.resolveWallClockGraceMs,
                        AUTOMATED_DEFAULTS.resolveWallClockTimeoutMs);
         var deadlineStart = Date.now();
         var deadline = deadlineStart + wallClockMs;
@@ -238,7 +238,7 @@
                 var promptResult = renderConflictPrompt({
                     branchName: fail.branch || fail.name,
                     files: fail.files || [],
-                    exitCode: fail.exitCode || 1,
+                    exitCode: typeof fail.exitCode === 'number' ? fail.exitCode : 1,
                     errorOutput: fail.error || fail.output || '',
                     goModContent: ''
                 });

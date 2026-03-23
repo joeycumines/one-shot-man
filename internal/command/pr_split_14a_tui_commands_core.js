@@ -484,7 +484,7 @@
                     switch (key) {
                         case 'base': runtime.baseBranch = value; break;
                         case 'strategy': runtime.strategy = value; break;
-                        case 'max': runtime.maxFiles = parseInt(value, 10) || 10; break;
+                        case 'max': { var n = parseInt(value, 10); runtime.maxFiles = isNaN(n) ? 10 : n; break; }
                         case 'prefix': runtime.branchPrefix = value; break;
                         case 'verify': runtime.verifyCommand = value; break;
                         case 'dry-run': runtime.dryRun = (value === 'true' || value === '1'); break;

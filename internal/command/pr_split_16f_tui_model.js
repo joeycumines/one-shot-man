@@ -210,7 +210,7 @@
                     var runtime = prSplit.runtime;
                     s.configFieldEditing = fieldName;
                     if (fieldName === 'maxFiles') {
-                        s.configFieldValue = String(runtime.maxFiles || 10);
+                        s.configFieldValue = String(typeof runtime.maxFiles === 'number' ? runtime.maxFiles : 10);
                     } else if (fieldName === 'branchPrefix') {
                         s.configFieldValue = runtime.branchPrefix || 'split/';
                     } else if (fieldName === 'verifyCommand') {

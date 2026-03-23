@@ -256,8 +256,9 @@
 
         // Post-spawn health check: verify process is still alive.
         if (this.handle && typeof this.handle.isAlive === 'function') {
-            // Non-blocking 300ms delay — yields event loop for BubbleTea rendering.
-            await new Promise(function(resolve) { setTimeout(resolve, 300); });
+            // Non-blocking delay — yields event loop for BubbleTea rendering.
+            var healthCheckDelayMs = (prSplit.AUTOMATED_DEFAULTS && prSplit.AUTOMATED_DEFAULTS.spawnHealthCheckDelayMs) || 300;
+            await new Promise(function(resolve) { setTimeout(resolve, healthCheckDelayMs); });
             if (!this.handle.isAlive()) {
                 var lastOutput = '';
                 if (typeof this.handle.receive === 'function') {

@@ -13,6 +13,13 @@
     var lipgloss = prSplit._lipgloss;
     var zone = prSplit._zone;
     var truncate = prSplit._truncate;
+
+    // Display thresholds for status bar and TUI chrome.
+    var TUI_THRESHOLDS = {
+        notifAutoDismissMs: 5000,       // Transient notification auto-dismiss (ms)
+        claudeStatusLiveMs: 2000,       // PTY output within this = "LIVE"
+        claudeStatusIdleMs: 15000       // PTY output within this = "idle"; beyond = "quiet"
+    };
     var repeatStr = prSplit._repeatStr;
 
     // --- Chrome Renderers (T007) ---
@@ -348,7 +355,7 @@
         var notifLine = '';
         if (s.claudeAutoAttachNotif && s.claudeAutoAttachNotifAt) {
             var elapsed = Date.now() - s.claudeAutoAttachNotifAt;
-            if (elapsed < 5000) {
+            if (elapsed < TUI_THRESHOLDS.notifAutoDismissMs) {
                 notifLine = styles.primaryButton().render(
                     ' \u2139 ' + s.claudeAutoAttachNotif + ' '
                 ) + '\n';
@@ -368,8 +375,8 @@
         }
         var ms = tuiMux.lastActivityMs();
         if (ms < 0) return styles.statusIdle().render('\u23f8\ufe0f Claude: no output');
-        if (ms < 2000) return styles.statusActive().render('\ud83d\udd04 Claude: LIVE');
-        if (ms < 15000) return styles.statusIdle().render('\u23f3 Claude: idle (' + Math.round(ms / 1000) + 's)');
+        if (ms < TUI_THRESHOLDS.claudeStatusLiveMs) return styles.statusActive().render('\ud83d\udd04 Claude: LIVE');
+        if (ms < TUI_THRESHOLDS.claudeStatusIdleMs) return styles.statusIdle().render('\u23f3 Claude: idle (' + Math.round(ms / 1000) + 's)');
         return styles.statusQuiet().render('\ud83d\udca4 Claude: quiet');
     }
 

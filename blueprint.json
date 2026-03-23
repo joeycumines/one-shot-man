@@ -293,7 +293,8 @@
       "task": "Extract orchestrator magic numbers to AUTOMATED_DEFAULTS",
       "description": "7+ hardcoded numeric literals in pr_split_10d_pipeline_orchestrator.js (LAUNCHER_POLL_MS, LAUNCHER_TIMEOUT_MS, retry delays, plan polling). Move to AUTOMATED_DEFAULTS in chunk 10a for centralized configuration.",
       "acceptance": "All numeric timing/polling constants in 10d sourced from AUTOMATED_DEFAULTS. No hardcoded ms values in orchestrator function body.",
-      "status": "Not Started"
+      "status": "Done",
+      "notes": "Moved 7 constants (minPollIntervalMs, launcherPollMs/TimeoutMs/StableNeed/PostDismissMs, planPollTimeoutMs/CheckIntervalMs) from 10d to AUTOMATED_DEFAULTS in 10a. Rule of Two PASS+PASS. Committed 606a156b."
     },
     {
       "id": "T411",

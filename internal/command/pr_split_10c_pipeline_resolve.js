@@ -184,7 +184,7 @@
         // Wall-clock timeout: cap total elapsed time.
         var wallClockMs = (timeouts && typeof timeouts.wallClockMs === 'number')
             ? timeouts.wallClockMs
-            : Math.min(((timeouts && timeouts.resolve) || AUTOMATED_DEFAULTS.resolveTimeoutMs) * (maxAttemptsPerBranch || 3) + 60000,
+            : Math.min(((timeouts && timeouts.resolve) || AUTOMATED_DEFAULTS.resolveTimeoutMs) * (maxAttemptsPerBranch || 3) + AUTOMATED_DEFAULTS.resolveWallClockGraceMs,
                        AUTOMATED_DEFAULTS.resolveWallClockTimeoutMs);
         var deadlineStart = Date.now();
         var deadline = deadlineStart + wallClockMs;
@@ -215,8 +215,8 @@
 
                 // Exponential backoff between retry attempts (skip delay on first attempt).
                 if (attempt > 0) {
-                    var backoffBaseMs = resolveNumber(prSplit._RESOLVE_BACKOFF_BASE_MS, 2000, 0);
-                    var backoffMs = Math.min(backoffBaseMs * Math.pow(2, attempt - 1), 30000);
+                    var backoffBaseMs = resolveNumber(prSplit._RESOLVE_BACKOFF_BASE_MS, AUTOMATED_DEFAULTS.resolveBackoffBaseMs, 0);
+                    var backoffMs = Math.min(backoffBaseMs * Math.pow(2, attempt - 1), AUTOMATED_DEFAULTS.resolveBackoffCapMs);
                     log.printf('auto-split: retrying %s after %dms backoff (attempt %d/%d)',
                         fail.branch || fail.name, backoffMs, attempt + 1, maxAttemptsPerBranch);
                     await new Promise(function(resolve) { setTimeout(resolve, backoffMs); });

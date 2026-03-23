@@ -49,6 +49,10 @@
         claudeHealthPollMs: 5000,   // TUI polls isAlive() every 5 seconds
         claudeHeartbeatTimeoutMs: 60000, // 60 seconds heartbeat timeout
         resolveCommandTimeoutMs: 120000, // 2 minutes per resolution command
+        resolveWallClockGraceMs: 60000, // Grace period added to computed wall-clock timeout
+        resolveBackoffBaseMs: 2000,     // Exponential backoff base interval between retries
+        resolveBackoffCapMs: 30000,     // Maximum backoff cap (30 seconds)
+        spawnHealthCheckDelayMs: 300,   // Post-spawn delay before isAlive() check
         launcherPollMs: 200,        // Ollama launcher menu poll interval
         launcherTimeoutMs: 10000,   // Max wait for launcher menu detection
         launcherStableNeed: 3,      // Stable polls before assuming no menu

@@ -325,7 +325,8 @@
       "task": "Add unit tests for TUI command chunks 14a, 14b",
       "description": "TUI command registration and extension chunks lack dedicated test coverage. Add tests for command building, overlay handling, and bell notification logic.",
       "acceptance": "New test functions covering key exports from each chunk. All pass with -race.",
-      "status": "Not Started"
+      "status": "Done",
+      "notes": "8 test functions in pr_split_14ab_unit_test.go: BuildCoreCommandsKeys (17 keys + count), CoreCommandsHaveHandlerAndDescription, BuildCommandsMergesAll (15 ext keys), HudEnabledDefaultsFalse, GetActivityInfo (7 branches), GetLastOutputLines (5 cases), RenderHudStatusLine, RenderHudStatusLine_Truncation. All pass with -race. Rule of Two PASS+PASS (v2 after fix key fix)."
     },
     {
       "id": "T415",

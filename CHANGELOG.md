@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `osm script paths` subcommand: displays all resolved script discovery paths with the same annotated format
 - `AnnotatedPath` type in discovery subsystem with `Path`, `Source`, and `Exists` fields
 - Shell completion for `paths` subcommand in `osm goal` and `osm script` (bash, zsh, fish, powershell)
+- `osm pr-split` PR Splitting section in README.md: feature overview with 6 strategies, 6 key flags, interactive/automated mode descriptions, and code snippets
 - Shell completion for `help` subcommand: `osm help <TAB>` now suggests available command names in bash, zsh, fish, and PowerShell
 - Built-in goal `pii-scrubber` (category: data-privacy): redacts personally identifiable information from code, logs, and data with three redaction levels (strict/moderate/minimal) and deterministic placeholder mapping
 - Built-in goal `prose-polisher` (category: writing): 7-step copyediting pipeline (structural review, clarity, consistency, concision, correctness, tone alignment, final polish) with four target styles (technical/casual/academic/marketing) and `hot-expand-section` snippet
@@ -65,6 +66,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/security.md` documenting JavaScript sandbox boundaries and threat model
 - Performance benchmarks across engine creation, filesystem, PA-BT planning, bubbletea, MCP tool latency/prompt building/backtick fencing, sanitizeFilename, computePathLCA, sanitizePayload, and 8 additional categories (90+ benchmark scenarios total)
 - Test coverage expanded across 25+ packages with notable gains: bubblezone 0→98.7%, lipgloss 58→99%, tview 68.5→96.4%, bubbletea 75.8→91.2%, viewport 73.3→97.3%, overall cmd/osm 91.4→94.8%
+- `osm pr-split` pipeline unit tests: 8 test functions covering `AUTOMATED_DEFAULTS` constants, PTY send config, conflict resolution heuristics, cancellation error paths, transient error classification, `waitForLogged` guards, and backoff behaviour; all pass with `-race`
+- `osm pr-split` TUI command unit tests: 8 test functions covering core/extension command building, HUD enablement, activity info branching, last-output-lines extraction, and HUD status line rendering with truncation; all pass with `-race`
+- `osm pr-split` TUI rendering unit tests: 12 test functions for layout mode selection, string truncation/padding/repeat, color/constant structure validation, spinner frames, progress bar rendering, overlay dimension computation, scrollbar sync, and state dispatcher; all pass with `-race`
+- `osm pr-split` focus navigation unit tests: 15 test functions with 13 subtests covering `getFocusElements` across all 7+ wizard states (CONFIG, PLAN_REVIEW, PLAN_EDITOR, FINALIZATION, PAUSED, EQUIV_CHECK, ERROR_RESOLUTION, IDLE, BASELINE_FAIL), `syncSplitSelection` card-index extraction, `handleNavDown`/`handleNavUp` wrap-around, and `handleListNav` clamping with editor guards; all pass with `-race`
 - `tui_commands.go` `registerBuiltinCommands` coverage 88.9%→97.2%: added `mode` success path and `reset` stateManager-nil error path tests; remaining 2.8% is an unreachable defensive `else` branch
 - `osm:exec` streaming subprocess API: `exec.spawn(cmd, args, opts)` starts a subprocess and returns a `ChildProcess` handle with `pid`, `kill()`, and `wait()` method; pull-based stdout/stderr via `ReadableStream.read()` returning `{value, done}` Promises; pump goroutines per pipe with bounded channels; cross-platform (Unix `Setpgid`+process group kill, Windows `os.Process.Kill`); configurable write timeout; 17 Go-level unit tests with `-race`
 - `osm:exec` `execStream(cmd, args, opts)` synchronous streaming helper: line-by-line stdout/stderr callbacks (`onStdout(line)`, `onStderr(line)`) with exit code capture; used by `verifySplits` for real-time build output in TUI
@@ -99,6 +104,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Moved `CONFIG_HOT_SNIPPETS` auto-detection into `contextManager.js` reducing per-script boilerplate
 - Unexported 14 internal symbols across scripting, command, storage, and builtin packages
 - Refactored txtar collision handling to use full relative paths instead of filename-only deduplication
+- `osm pr-split` orchestrator magic numbers: 7 hardcoded timing literals (launcher poll, timeout, stable-need, post-dismiss, plan-poll timeout, check-interval, min-poll-interval) moved from `pr_split_10d_pipeline_orchestrator.js` to centralized `AUTOMATED_DEFAULTS` in chunk 10a
+- `osm pr-split` remaining magic numbers: 7 additional timing constants moved to shared defaults — spawn delay (09→AUTOMATED_DEFAULTS), resolve grace period and backoff base/cap (10c→AUTOMATED_DEFAULTS), TUI elapsed thresholds (15b→local `TUI_THRESHOLDS` object)
 
 ### Deprecated
 - `osm:nextIntegerId` module name: use `osm:nextIntegerID` instead (old name still works as an alias)
@@ -165,6 +172,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `osm pr-split` layout shift on button focus: introduced `focusedSecondaryButton()` style matching `secondaryButton()` dimensions — all button pairs now maintain consistent width whether focused or unfocused
 - `osm pr-split` pipeline re-verify fix: the re-verify step after conflict resolution now actually checks branch pass/fail status instead of always returning success
 - `osm pr-split` headless crash detection guard: `claudeCrashDetected` flag in `aliveCheckFn` only checked when `tuiMux` is present, preventing false positives in headless/test mode
+- `osm pr-split` 22 falsy-value `||` anti-pattern bugs: audit of chunks 09-16f found 22 instances where `x || default` silently discarded intentionally falsy values (0, empty string) — `exitCode=0` treated as error (2 sites), timeout/poll values of 0 silently ignored (11 sites), `maxFiles=0` lost across 5 TUI paths, `maxConversationHistory=0` and `claudeHealthPollMs=0` overridden (4 sites); all fixed with `typeof`-guarded ternaries that preserve zero values while falling back for `undefined`/`null`; 8 regression tests added
 - 2 flaky behavior tree tests via atomic `GetLifecycleSnapshot()` replacing separate state queries
 - Nil-dereference in ctxutil `Require` when `exportsVal` is Go nil
 - 3 nil/undefined guard bugs in bubbletea module

@@ -2,6 +2,7 @@ package prsplittest
 
 // NumVal safely extracts a numeric value from Goja results which may return
 // int64 or float64 depending on the JS value. Returns float64 for comparison.
+// Returns 0 for unrecognized types (nil, string, bool, etc.).
 func NumVal(v any) float64 {
 	switch n := v.(type) {
 	case float64:

@@ -4,8 +4,20 @@ import (
 	"testing"
 )
 
-// SetupTUIMocks is JS that sets up minimal tui/ctx/output/log mocks
-// so the TUI chunk's guard allows execution.
+// SetupTUIMocks is JS that installs minimal tui/ctx/output/log mocks so that
+// TUI chunks (13–16f) can load without errors. Evaluated between chunks 00–12
+// and chunks 13+ by [NewTUIEngineE].
+//
+// Injected globals:
+//
+//   - _prints ([]string): captures output.print calls
+//   - _registeredModes ([]object): captures tui.registerMode calls
+//   - _switchedModes ([]string): captures tui.switchMode calls
+//   - _ctxRuns (map[string]func): captures ctx.run registrations
+//   - tui: mock with createState, registerMode, switchMode
+//   - ctx: mock with run (registers and immediately invokes)
+//   - output: mock with print (→ _prints) and toClipboard
+//   - log: silent mock with error, info, debug, warn, printf
 const SetupTUIMocks = `
 (function() {
     globalThis._prints = [];
@@ -48,8 +60,21 @@ const SetupTUIMocks = `
 `
 
 // Chunk16Helpers is injected once after [NewTUIEngine] to provide shared test
-// utilities (state initializer, mock helpers, message helpers) for chunk 16
-// tests.
+// utilities for chunk 16+ tests. Used by [NewTUIEngineWithHelpers].
+//
+// Injected JS functions:
+//
+//   - initState(targetState, opts): creates a _wizardInit() state transitioned
+//     to targetState via the wizard FSM. Supports CONFIG, PLAN_REVIEW,
+//     PLAN_EDITOR, BRANCH_BUILDING, EQUIV_CHECK, ERROR_RESOLUTION, FINALIZATION.
+//   - update(msg, s): wrapper for prSplit._wizardUpdate(msg, s)
+//   - sendKey(s, key): sends a Key message via update
+//   - sendClick(s): sends a left mouse click at (10,10) via update
+//   - sendWheel(s, direction): sends a mouse wheel event via update
+//   - mockZoneHit(zoneId): mocks zone.inBounds to match only zoneId;
+//     returns a restore function (MUST use in try/finally)
+//   - setupPlanCache(): installs a 3-split test plan (split/api, split/cli,
+//     split/docs) into prSplit._state.planCache
 const Chunk16Helpers = `
 // initState: creates a _wizardInit() state properly transitioned to targetState.
 function initState(targetState, opts) {

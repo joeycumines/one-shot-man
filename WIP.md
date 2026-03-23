@@ -23,6 +23,11 @@ TUIConstantsStructure (25 keys + positive + count), SpinnerFrames (10 + Braille 
 ResolveColor (3 cases), RenderProgressBar (4 cases). Rule of Two v2 PASS+PASS.
 
 ### Next: T417 — Unit tests for chunk 15d pure helpers and 16a constants
+**DONE.** 8 test functions: 4 computeReportOverlayDims (default/narrow/wide/tiny terminal),
+2 syncReportScrollbar (mock + 3 noop variants), CHROME_ESTIMATE=8,
+viewForState (15 states + unknown = 16 subtests). Rule of Two v2 PASS+PASS.
+
+### Next: T418 — Unit tests for 16a focus navigation functions
 
 ### T391 DONE — Resume E2E Test (committed bdc1a733)
 5 tests: pipeline integration (no-plan + corrupt-plan), loadPlan direct, config bridging, Go Execute.

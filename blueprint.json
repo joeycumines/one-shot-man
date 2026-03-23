@@ -36,7 +36,7 @@
     "PER_TASK_COMMIT_PROTOCOL": "⚠️ MANDATORY — ZERO EXCEPTIONS — FOR EVERY SINGLE TASK: (1) REREAD the strict-review-gate Skill IN FULL — do not skim, do not skip, read every word. (2) PERFORM the Rule of Two PER THE SKILL — spawn subagent reviews, iterate until TWO CONTIGUOUS ISSUE-FREE reviews on the EXACT SAME DIFF. If either review fails, fix, reset counter to 0, restart. (3) READ the git-commit Skill IN FULL before writing any commit message. (4) COMMIT THAT ONE TASK — exactly one task per commit, immediately after passing the Rule of Two. Do not batch tasks. Do not defer commits. ASAP. (5) REREAD DIRECTIVE.txt after every commit — full re-read, not from memory. This 5-step process is NON-NEGOTIABLE. Skipping any step is grounds for termination. Batching multiple tasks into one commit is FORBIDDEN. Committing without two green reviews is FORBIDDEN. Working on the next task before committing the current one is FORBIDDEN."
   },
   "statusSection": {
-    "currentState": "T300-T416 complete. Session 9: T413 committed 57a62fe9, T414 committed 25c37425, T416 next. Scope expanded: T417-T422 created for continued refinement.",
+    "currentState": "T300-T417 complete. Session 9: T416 committed 0948d7e5, T417 next. Tasks T418-T422 remain.",
     "goalState": "All verify/shell terminal features delivered AND polished to enterprise grade. Zero silenced errors. No god functions. No magic numbers. Fuzz-tested parsing. Poll-retry E2E tests. Fully parallelized unit tests. Documentation fully synced. All checks pass on all platforms.",
     "replanLog": [
       {
@@ -349,7 +349,8 @@
       "task": "Add unit tests for chunk 15d pure helpers and chunk 16a constants",
       "description": "Chunk 15d exports computeReportOverlayDims (pure arithmetic), syncReportScrollbar (simple mock). Chunk 16a exports CHROME_ESTIMATE constant. Test these easily verifiable exports.",
       "acceptance": "New test file pr_split_15d16a_unit_test.go with tests for computeReportOverlayDims (multiple screen sizes), syncReportScrollbar (mock viewport/scrollbar), CHROME_ESTIMATE value. All pass with -race.",
-      "status": "Not Started"
+      "status": "Done",
+      "notes": "8 test functions: 4 computeReportOverlayDims (default/narrow/wide/tiny), 2 syncReportScrollbar (mocks + 3 noop variants), CHROME_ESTIMATE=8, viewForState (15 states + unknown = 16 subtests including BASELINE_FAIL). All pass with -race. Rule of Two v2 PASS+PASS. Committed."
     },
     {
       "id": "T418",

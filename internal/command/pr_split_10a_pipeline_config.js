@@ -38,6 +38,7 @@
         planTimeoutMs: 300000,      // 5 minutes for plan generation
         resolveTimeoutMs: 1800000,  // 30 minutes for conflict resolution
         pollIntervalMs: 500,        // Poll every 500ms for fast cancellation
+        minPollIntervalMs: 50,      // Floor clamp to prevent spin-loops
         maxResolveRetries: 3,       // Retries per branch
         maxReSplits: 1,             // Maximum re-classification cycles
         resolveWallClockTimeoutMs: 7200000, // 120 minutes wall-clock cap
@@ -47,7 +48,13 @@
         watchdogIdleMs: 900000,     // 15 minutes no-progress watchdog
         claudeHealthPollMs: 5000,   // TUI polls isAlive() every 5 seconds
         claudeHeartbeatTimeoutMs: 60000, // 60 seconds heartbeat timeout
-        resolveCommandTimeoutMs: 120000 // 2 minutes per resolution command
+        resolveCommandTimeoutMs: 120000, // 2 minutes per resolution command
+        launcherPollMs: 200,        // Ollama launcher menu poll interval
+        launcherTimeoutMs: 10000,   // Max wait for launcher menu detection
+        launcherStableNeed: 3,      // Stable polls before assuming no menu
+        launcherPostDismissMs: 500, // Wait after sending dismiss/navigate keys
+        planPollTimeoutMs: 5000,    // Short poll for Claude-generated plan
+        planPollCheckIntervalMs: 1000 // Check interval for plan poll
     };
 
     // Delay between text and newline writes to defeat PTY coalescing.

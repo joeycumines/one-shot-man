@@ -98,7 +98,7 @@
         var maxReSplits = typeof config.maxReSplits === 'number' ? config.maxReSplits : AUTOMATED_DEFAULTS.maxReSplits;
 
         // Clamp: negative values must not cause spin-loops or nonsensical retries.
-        if (pollInterval < 50) { pollInterval = 50; }
+        if (pollInterval < AUTOMATED_DEFAULTS.minPollIntervalMs) { pollInterval = AUTOMATED_DEFAULTS.minPollIntervalMs; }
         if (maxReSplits < 0) { maxReSplits = 0; }
         if (maxAttemptsPerBranch < 0) { maxAttemptsPerBranch = 0; }
 
@@ -464,9 +464,9 @@
             claudeExecutor.resolved.type === 'ollama' &&
             claudeExecutor.handle && claudeExecutor.cm) {
             var launcherResult = await step('Dismiss launcher', async function() {
-                var LAUNCHER_POLL_MS     = 200;
-                var LAUNCHER_TIMEOUT_MS  = 10000;
-                var LAUNCHER_STABLE_NEED = 3;
+                var LAUNCHER_POLL_MS     = AUTOMATED_DEFAULTS.launcherPollMs;
+                var LAUNCHER_TIMEOUT_MS  = AUTOMATED_DEFAULTS.launcherTimeoutMs;
+                var LAUNCHER_STABLE_NEED = AUTOMATED_DEFAULTS.launcherStableNeed;
                 var cm = claudeExecutor.cm;
                 var handle = claudeExecutor.handle;
                 var startMs = Date.now();
@@ -518,7 +518,7 @@
                                 return { error: 'failed to dismiss launcher: ' + (e.message || String(e)) };
                             }
                             // Wait briefly for screen to update after dismissal.
-                            await new Promise(function(r) { setTimeout(r, 500); });
+                            await new Promise(function(r) { setTimeout(r, AUTOMATED_DEFAULTS.launcherPostDismissMs); });
                             dismissed = true;
                             continue;  // Re-poll to check for model selection menu.
                         }
@@ -532,7 +532,7 @@
                             if (navKeys) {
                                 log.printf('auto-split launcher: navigating to model %s', claudeExecutor.model);
                                 handle.send(navKeys);
-                                await new Promise(function(r) { setTimeout(r, 500); });
+                                await new Promise(function(r) { setTimeout(r, AUTOMATED_DEFAULTS.launcherPostDismissMs); });
                             }
                         } catch (e) {
                             log.printf('auto-split launcher: model navigation error: %s — proceeding with selected model',
@@ -657,11 +657,11 @@
         // Step 5: Generate plan (from Claude or locally).
         var planResult = await step('Generate split plan', async function() {
             updateDetail('Generate split plan', 'Checking for Claude-generated plan...');
-            var planPoll = await waitForLogged('reportSplitPlan', 5000, {
+            var planPoll = await waitForLogged('reportSplitPlan', AUTOMATED_DEFAULTS.planPollTimeoutMs, {
                 aliveCheck: aliveCheckFn,
                 heartbeatTool: 'heartbeat',
                 heartbeatTimeoutMs: heartbeatTimeoutMs,
-                checkIntervalMs: 1000
+                checkIntervalMs: AUTOMATED_DEFAULTS.planPollCheckIntervalMs
             });
             // Extract stages from full tool arguments.
             if (!planPoll.error && planPoll.data) {

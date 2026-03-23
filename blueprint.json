@@ -307,7 +307,8 @@
       "task": "CHANGELOG entry for T406 hanging test fix",
       "description": "T406 fixed a user-impacting issue (full test suite timeout). While test-only, the Close() fix in the harness is a systemic improvement that should be documented.",
       "acceptance": "CHANGELOG.md [Unreleased] Fixed section includes T406 entry. No code changes.",
-      "status": "Not Started"
+      "status": "Done",
+      "notes": "Added 2 Fixed entries (T406 PickAndPlace harness, T409 validateGitRepo wrapping). Rule of Two PASS+PASS. Committed 2bbaaf2e."
     },
     {
       "id": "T413",

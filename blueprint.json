@@ -301,7 +301,8 @@
       "task": "Extract remaining magic numbers from chunks 09, 10c, 15b",
       "description": "Backoff base/cap in 10c, post-spawn wait in 09, TUI elapsed thresholds in 15b. Move to shared constant objects.",
       "acceptance": "All timing constants in chunks 09, 10c, 15b reference shared defaults. No bare numeric literals for ms/timeout values.",
-      "status": "Not Started"
+      "status": "Done",
+      "notes": "Moved 7 constants: 09 spawn delay to AUTOMATED_DEFAULTS, 10c resolve grace/backoff to AUTOMATED_DEFAULTS, 15b thresholds to local TUI_THRESHOLDS. Rule of Two PASS+PASS. Committed c36a976e."
     },
     {
       "id": "T412",
@@ -316,7 +317,8 @@
       "task": "Add unit tests for pipeline chunks 10a, 10b, 10c",
       "description": "These pipeline chunks lack dedicated test coverage. Add tests for AUTOMATED_DEFAULTS constants, PTY send config resolution, and conflict resolution heuristics.",
       "acceptance": "New test functions covering key exports from each chunk. All pass with -race.",
-      "status": "Not Started"
+      "status": "Done",
+      "notes": "8 test functions in pr_split_10abc_unit_test.go: ResolveNumber (17 cases), GetCancellationError (4 paths), IsTransientError (20 cases), AUTOMATED_DEFAULTS_NewKeys (11 keys), SendToHandle_MultiChunkText (4-chunk split), ExportsAreFunctions (3 exports), WaitForLogged_MissingMCPCallback, BackoffUsesAutomatedDefaults. All pass with -race. Rule of Two PASS+PASS."
     },
     {
       "id": "T414",

@@ -526,7 +526,7 @@ func TestAutoSplit_LargeDiff(t *testing.T) {
 
 	// Generate 120 feature files across multiple directories.
 	var featureFiles []TestPipelineFile
-	for i := 0; i < 120; i++ {
+	for i := range 120 {
 		dir := fmt.Sprintf("pkg%d", i/10)
 		name := fmt.Sprintf("%s/f%02d.go", dir, i%10)
 		content := fmt.Sprintf("package %s\n\nfunc F%d() {}\n", dir, i)

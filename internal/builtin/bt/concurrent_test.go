@@ -1,7 +1,6 @@
 package bt
 
 import (
-	"context"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -112,8 +111,7 @@ func TestConcurrent_BTTickerAndRunJSSync(t *testing.T) {
 	}
 
 	// Create tickers (like 3 enemies) - test spawning outside event loop first
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	// First, just test that a single ticker works
 	t.Log("Creating single ticker outside event loop...")
@@ -138,7 +136,7 @@ func TestConcurrent_BTTickerAndRunJSSync(t *testing.T) {
 
 	var tickers []bt.Ticker
 	err = bridge.RunOnLoopSync(func(vm *goja.Runtime) error {
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			ticker := bt.NewTicker(ctx, 50*time.Millisecond, wrappedNode)
 			tickers = append(tickers, ticker)
 		}
@@ -149,10 +147,8 @@ func TestConcurrent_BTTickerAndRunJSSync(t *testing.T) {
 	// Simulate BubbleTea's Update calls
 	var updateCount atomic.Int32
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 50; i++ {
+	wg.Go(func() {
+		for range 50 {
 			err := bridge.RunJSSync(func(vm *goja.Runtime) error {
 				// Simulate Update - quick JS operation
 				_, err := vm.RunString(`1 + 1`)
@@ -165,7 +161,7 @@ func TestConcurrent_BTTickerAndRunJSSync(t *testing.T) {
 			updateCount.Add(1)
 			time.Sleep(16 * time.Millisecond) // ~60fps
 		}
-	}()
+	})
 
 	// Wait for Updates to complete
 	done := make(chan struct{})

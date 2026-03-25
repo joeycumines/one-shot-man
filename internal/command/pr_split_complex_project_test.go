@@ -1002,7 +1002,7 @@ func filterEnv(environ []string, key string) []string {
 // splitBranchNames parses `git branch --list` output into cleaned branch names.
 func splitBranchNames(output string) []string {
 	var names []string
-	for _, line := range strings.Split(output, "\n") {
+	for line := range strings.SplitSeq(output, "\n") {
 		name := strings.TrimSpace(line)
 		name = strings.TrimPrefix(name, "* ")
 		if name != "" {

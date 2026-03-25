@@ -62,10 +62,7 @@ func calculateBacktickFence(contents []string) string {
 		}
 	}
 
-	fenceLen := maxLength + 1
-	if fenceLen < 5 {
-		fenceLen = 5
-	}
+	fenceLen := max(maxLength+1, 5)
 	return strings.Repeat("`", fenceLen)
 }
 
@@ -122,7 +119,7 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 			if obj != nil && obj.ClassName() == "Array" {
 				l := int(obj.Get("length").ToInteger())
 				items = make([]goja.Value, 0, l)
-				for i := 0; i < l; i++ {
+				for i := range l {
 					items = append(items, obj.Get(fmt.Sprintf("%d", i)))
 				}
 			} else {
@@ -227,7 +224,7 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 					} else if arr != nil {
 						length := int(arr.Get("length").ToInteger())
 						tmp := make([]string, 0, length)
-						for i := 0; i < length; i++ {
+						for i := range length {
 							itemVal := valueOrUndefined(arr.Get(fmt.Sprintf("%d", i)))
 							if goja.IsUndefined(itemVal) || goja.IsNull(itemVal) {
 								hadErr = true
@@ -383,7 +380,7 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 				var metaLines []string
 				var bodyLines []string
 				inMeta := true
-				for _, line := range strings.Split(txtarContent, "\n") {
+				for line := range strings.SplitSeq(txtarContent, "\n") {
 					if inMeta {
 						trimmed := strings.TrimSpace(line)
 						if strings.HasPrefix(trimmed, "context root:") ||
@@ -403,9 +400,9 @@ func Require(baseCtx context.Context) func(runtime *goja.Runtime, module *goja.O
 
 				// Render metadata above the fence, with paths in backticks.
 				for _, ml := range metaLines {
-					if idx := strings.Index(ml, ": "); idx >= 0 {
-						key := strings.TrimSpace(ml[:idx])
-						val := strings.TrimSpace(ml[idx+2:])
+					if before, after, ok := strings.Cut(ml, ": "); ok {
+						key := strings.TrimSpace(before)
+						val := strings.TrimSpace(after)
 						buf.WriteString(key)
 						buf.WriteString(": `")
 						buf.WriteString(val)

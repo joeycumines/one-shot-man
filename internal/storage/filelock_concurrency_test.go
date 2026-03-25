@@ -32,7 +32,7 @@ func TestFileLock_ConcurrentAcquisition(t *testing.T) {
 	results := make(chan result, numGoroutines)
 
 	wg.Add(numGoroutines)
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		go func() {
 			defer wg.Done()
 			<-gate // wait for start signal
@@ -78,7 +78,7 @@ func TestFileLock_RapidCycling(t *testing.T) {
 	lockPath := filepath.Join(t.TempDir(), "cycle.lock")
 
 	const iterations = 100
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		f, err := acquireFileLock(lockPath)
 		if err != nil {
 			t.Fatalf("iteration %d: acquireFileLock failed: %v", i, err)
@@ -158,11 +158,11 @@ func TestFileLock_ConcurrentAcquireRelease(t *testing.T) {
 	)
 
 	wg.Add(numGoroutines)
-	for g := 0; g < numGoroutines; g++ {
+	for range numGoroutines {
 		go func() {
 			defer wg.Done()
 			<-gate
-			for i := 0; i < iterations; i++ {
+			for range iterations {
 				f, err := acquireFileLock(lockPath)
 				if err != nil {
 					// Lock held by another goroutine — expected.
@@ -211,7 +211,7 @@ func TestAcquireLockHandle_ConcurrentAccess(t *testing.T) {
 	results := make(chan result, numGoroutines)
 
 	wg.Add(numGoroutines)
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		go func() {
 			defer wg.Done()
 			<-gate
@@ -304,7 +304,7 @@ func TestFSBackend_ConcurrentOpen(t *testing.T) {
 	results := make(chan result, numGoroutines)
 
 	wg.Add(numGoroutines)
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		go func() {
 			defer wg.Done()
 			<-gate

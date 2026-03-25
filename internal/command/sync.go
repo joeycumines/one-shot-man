@@ -536,11 +536,11 @@ func stripFrontmatter(content string) string {
 	}
 	// Find closing "---\n".
 	rest := content[4:]
-	idx := strings.Index(rest, "---\n")
-	if idx < 0 {
+	_, after, ok := strings.Cut(rest, "---\n")
+	if !ok {
 		return content // no closing delimiter, return as-is
 	}
-	body := rest[idx+4:]
+	body := after
 	// Trim leading blank lines.
 	body = strings.TrimLeft(body, "\n")
 	return body

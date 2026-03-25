@@ -787,7 +787,7 @@ func TestFindPromptFiles_RecursiveDepthLimit(t *testing.T) {
 
 	// Create a directory tree deeper than maxPromptRecursionDepth (10).
 	current := dir
-	for i := 0; i < maxPromptRecursionDepth+3; i++ {
+	for range maxPromptRecursionDepth + 3 {
 		current = filepath.Join(current, "level")
 		if err := os.MkdirAll(current, 0o755); err != nil {
 			t.Fatal(err)
@@ -801,7 +801,7 @@ func TestFindPromptFiles_RecursiveDepthLimit(t *testing.T) {
 
 	// Also place one within the limit.
 	withinLimit := dir
-	for i := 0; i < maxPromptRecursionDepth-1; i++ {
+	for range maxPromptRecursionDepth - 1 {
 		withinLimit = filepath.Join(withinLimit, "level")
 	}
 	shallowFile := filepath.Join(withinLimit, "shallow.prompt.md")
@@ -887,7 +887,7 @@ func TestExpandPromptFileReferences_MaxExpansions(t *testing.T) {
 
 	// Create more referenced files than the expansion limit.
 	totalFiles := maxPromptFileExpansions + 10
-	for i := 0; i < totalFiles; i++ {
+	for i := range totalFiles {
 		fname := filepath.Join(dir, fmt.Sprintf("ref-%04d.txt", i))
 		if err := os.WriteFile(fname, []byte("content"), 0o644); err != nil {
 			t.Fatal(err)
@@ -896,7 +896,7 @@ func TestExpandPromptFileReferences_MaxExpansions(t *testing.T) {
 
 	// Build a body with more references than the limit.
 	var body strings.Builder
-	for i := 0; i < totalFiles; i++ {
+	for i := range totalFiles {
 		fmt.Fprintf(&body, "[ref](ref-%04d.txt)\n", i)
 	}
 

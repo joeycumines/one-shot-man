@@ -249,7 +249,7 @@ func TestLoadConfig_LongValue10KB(t *testing.T) {
 	t.Parallel()
 	// Build a ~10KB path list value
 	var paths []string
-	for i := 0; i < 500; i++ {
+	for i := range 500 {
 		paths = append(paths, "/very/long/path/segment/number/"+strconv.Itoa(i))
 	}
 	longValue := strings.Join(paths, ":")

@@ -447,16 +447,16 @@ func TestTextareaLargeDocument(t *testing.T) {
 	ta := result.ToObject(runtime)
 
 	// Build a large document with 150 lines
-	var content string
-	for i := 0; i < 150; i++ {
+	var content strings.Builder
+	for i := range 150 {
 		if i > 0 {
-			content += "\n"
+			content.WriteString("\n")
 		}
-		content += "Line " + string(rune('A'+i%26)) + " number " + string(rune('0'+i/100)) + string(rune('0'+(i/10)%10)) + string(rune('0'+i%10))
+		content.WriteString("Line " + string(rune('A'+i%26)) + " number " + string(rune('0'+i/100)) + string(rune('0'+(i/10)%10)) + string(rune('0'+i%10)))
 	}
 
 	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
-	_, _ = setValueFn(ta, runtime.ToValue(content))
+	_, _ = setValueFn(ta, runtime.ToValue(content.String()))
 
 	// Verify line count
 	lineCountFn, _ := goja.AssertFunction(ta.Get("lineCount"))
@@ -515,16 +515,16 @@ func TestTextareaHandleClickWithScrollOffset(t *testing.T) {
 	ta := result.ToObject(runtime)
 
 	// Build a document with 50 lines
-	var content string
-	for i := 0; i < 50; i++ {
+	var content strings.Builder
+	for i := range 50 {
 		if i > 0 {
-			content += "\n"
+			content.WriteString("\n")
 		}
-		content += "Line content here"
+		content.WriteString("Line content here")
 	}
 
 	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
-	_, _ = setValueFn(ta, runtime.ToValue(content))
+	_, _ = setValueFn(ta, runtime.ToValue(content.String()))
 
 	handleClickFn, _ := goja.AssertFunction(ta.Get("handleClick"))
 	lineFn, _ := goja.AssertFunction(ta.Get("line"))
@@ -2104,7 +2104,7 @@ func TestHandleClickAtScreenCoords_StaleViewportContext(t *testing.T) {
 
 	// Content: many lines so we can place cursor far from initial offset
 	var sb strings.Builder
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		_, _ = fmt.Fprintf(&sb, "line%03d\n", i)
 	}
 	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))

@@ -154,7 +154,7 @@ func TestCSI_EL_DefaultMode(t *testing.T) {
 
 func TestCSI_IL_InsertLines(t *testing.T) {
 	scr := NewScreen(5, 3)
-	for r := 0; r < 5; r++ {
+	for r := range 5 {
 		scr.Cells[r][0].Ch = rune('A' + r)
 	}
 	scr.CurRow = 2
@@ -173,7 +173,7 @@ func TestCSI_IL_InsertLines(t *testing.T) {
 
 func TestCSI_DL_DeleteLines(t *testing.T) {
 	scr := NewScreen(5, 3)
-	for r := 0; r < 5; r++ {
+	for r := range 5 {
 		scr.Cells[r][0].Ch = rune('A' + r)
 	}
 	scr.CurRow = 1
@@ -192,7 +192,7 @@ func TestCSI_DL_DeleteLines(t *testing.T) {
 
 func TestCSI_SU_ScrollUp(t *testing.T) {
 	scr := NewScreen(5, 3)
-	for r := 0; r < 5; r++ {
+	for r := range 5 {
 		scr.Cells[r][0].Ch = rune('A' + r)
 	}
 	h := &CSIHandler{}
@@ -210,7 +210,7 @@ func TestCSI_SU_ScrollUp(t *testing.T) {
 
 func TestCSI_SD_ScrollDown(t *testing.T) {
 	scr := NewScreen(5, 3)
-	for r := 0; r < 5; r++ {
+	for r := range 5 {
 		scr.Cells[r][0].Ch = rune('A' + r)
 	}
 	h := &CSIHandler{}
@@ -364,7 +364,7 @@ func TestScreen_EraseDisplay_Mode1_StartToCursor(t *testing.T) {
 	s.CurCol = 2
 	s.EraseDisplay(1)
 	// Row 0 should be fully erased
-	for c := 0; c < 5; c++ {
+	for c := range 5 {
 		if s.Cells[0][c].Ch != ' ' {
 			t.Fatalf("ED mode 1: row 0 cell %d = %c, want space", c, s.Cells[0][c].Ch)
 		}
@@ -393,8 +393,8 @@ func TestScreen_EraseDisplay_Mode2_EntireDisplay(t *testing.T) {
 		}
 	}
 	s.EraseDisplay(2)
-	for r := 0; r < 3; r++ {
-		for c := 0; c < 5; c++ {
+	for r := range 3 {
+		for c := range 5 {
 			if s.Cells[r][c].Ch != ' ' {
 				t.Fatalf("ED mode 2: cell[%d][%d] = %c, want space", r, c, s.Cells[r][c].Ch)
 			}
@@ -410,8 +410,8 @@ func TestScreen_EraseDisplay_Mode3_Scrollback(t *testing.T) {
 		}
 	}
 	s.EraseDisplay(3) // mode 3 treated same as mode 2
-	for r := 0; r < 3; r++ {
-		for c := 0; c < 5; c++ {
+	for r := range 3 {
+		for c := range 5 {
 			if s.Cells[r][c].Ch != ' ' {
 				t.Fatalf("ED mode 3: cell[%d][%d] = %c, want space", r, c, s.Cells[r][c].Ch)
 			}

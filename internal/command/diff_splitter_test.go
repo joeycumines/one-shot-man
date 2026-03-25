@@ -19,9 +19,9 @@ func makeFileDiff(name string, numHunks, linesPerHunk int) string {
 	fmt.Fprintf(&b, "index 1234567..abcdefg 100644\n")
 	fmt.Fprintf(&b, "--- a/%s\n", name)
 	fmt.Fprintf(&b, "+++ b/%s\n", name)
-	for h := 0; h < numHunks; h++ {
+	for h := range numHunks {
 		fmt.Fprintf(&b, "@@ -%d,%d +%d,%d @@\n", h*10+1, linesPerHunk, h*10+1, linesPerHunk)
-		for l := 0; l < linesPerHunk; l++ {
+		for l := range linesPerHunk {
 			fmt.Fprintf(&b, "+added line %d in hunk %d of %s\n", l, h, name)
 		}
 	}
@@ -274,7 +274,7 @@ func TestSplitDiffReassembly(t *testing.T) {
 
 func collectAdded(s string) []string {
 	var out []string
-	for _, line := range strings.Split(s, "\n") {
+	for line := range strings.SplitSeq(s, "\n") {
 		if strings.HasPrefix(line, "+added ") {
 			out = append(out, line)
 		}

@@ -2028,10 +2028,10 @@ func TestPrSplitCommand_HelpCommandComprehensive(t *testing.T) {
 			t.Fatalf("help: %v", err)
 		}
 		out := tp.Stdout.String()
-		lines := strings.Split(out, "\n")
+		lines := strings.SplitSeq(out, "\n")
 		// Each non-empty, non-header line should have at least 2 words
 		// (command + description).
-		for _, line := range lines {
+		for line := range lines {
 			trimmed := strings.TrimSpace(line)
 			if trimmed == "" || trimmed == "PR Split Commands:" {
 				continue

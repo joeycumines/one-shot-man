@@ -71,10 +71,7 @@ func runeWidth(r rune) int {
 // empty, visualX is clamped to [0, len(line)] and returned directly.
 func hitTestColumn(line []rune, width int, targetSegment int, visualX int) int {
 	if width <= 0 || len(line) == 0 {
-		col := visualX
-		if col < 0 {
-			col = 0
-		}
+		col := max(visualX, 0)
 		if col > len(line) {
 			col = len(line)
 		}
@@ -1098,10 +1095,7 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 		}
 
 		// Step 6: Convert screen X to textarea-relative X
-		visualX := screenX - vpCtx.textareaContentLeft
-		if visualX < 0 {
-			visualX = 0
-		}
+		visualX := max(screenX-vpCtx.textareaContentLeft, 0)
 
 		// Step 7: Perform hit test (find logical row/col from visual coords)
 		// This is the same logic as performHitTest but inline for efficiency

@@ -202,7 +202,7 @@ func TestInstanceRegistry_CloseAll(t *testing.T) {
 		t.Fatalf("NewInstanceRegistry: %v", err)
 	}
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		_, err := r.Create(filepath.Join("agent", string(rune('a'+i))))
 		if err != nil {
 			t.Fatalf("Create %d: %v", i, err)
@@ -319,7 +319,7 @@ func TestInstanceRegistry_ConcurrentCreate(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make([]error, n)
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -355,17 +355,15 @@ func TestInstanceRegistry_ConcurrentDuplicate(t *testing.T) {
 	successes := 0
 	var mu sync.Mutex
 
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range n {
+		wg.Go(func() {
 			_, err := r.Create("same-id")
 			if err == nil {
 				mu.Lock()
 				successes++
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 

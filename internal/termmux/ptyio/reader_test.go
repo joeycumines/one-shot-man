@@ -12,8 +12,7 @@ func TestBufferedReader_ReadsChunks(t *testing.T) {
 	t.Parallel()
 	pr, pw := io.Pipe()
 	br := NewBufferedReader(pr, 8)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	go br.ReadLoop(ctx)
 
 	pw.Write([]byte("Hello"))

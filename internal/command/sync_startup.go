@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/gitops"
@@ -92,10 +93,8 @@ func appendConfigPath(cfg *config.Config, key, path string) {
 		cfg.SetGlobalOption(key, path)
 	} else {
 		// Check if path is already present.
-		for _, p := range filepath.SplitList(existing) {
-			if p == path {
-				return
-			}
+		if slices.Contains(filepath.SplitList(existing), path) {
+			return
 		}
 		cfg.SetGlobalOption(key, existing+string(os.PathListSeparator)+path)
 	}

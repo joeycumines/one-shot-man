@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -77,11 +78,8 @@ func TestScriptDiscovery_LegacyPaths(t *testing.T) {
 	cwd, _ := os.Getwd()
 	expectedPath := filepath.Join(cwd, "scripts")
 
-	for _, path := range paths {
-		if path == expectedPath {
-			found = true
-			break
-		}
+	if slices.Contains(paths, expectedPath) {
+		found = true
 	}
 
 	// Accept other legitimate 'scripts' locations when running via `go test` (temp build dirs etc.)
@@ -114,13 +112,7 @@ func TestScriptDiscovery_LegacyPathsRespectsConfigEnv(t *testing.T) {
 	paths := discovery.getLegacyPaths()
 	expected := filepath.Join(filepath.Dir(configPath), "scripts")
 
-	found := false
-	for _, path := range paths {
-		if path == expected {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(paths, expected)
 
 	if !found {
 		t.Errorf("Expected legacy paths to include %s when OSM_CONFIG is set, got %v", expected, paths)
@@ -488,11 +480,8 @@ func TestScriptDiscovery_AutodiscoveryIntegration(t *testing.T) {
 	scriptCommands := registry.listScript()
 	found := false
 	expectedName := filepath.Base(testScript)
-	for _, script := range scriptCommands {
-		if script == expectedName {
-			found = true
-			break
-		}
+	if slices.Contains(scriptCommands, expectedName) {
+		found = true
 	}
 
 	if !found {
@@ -791,7 +780,7 @@ func TestScriptDiscovery_TraversalReachesRoot(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	deepPath := tmpDir
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		deepPath = filepath.Join(deepPath, "d")
 	}
 	if err := os.MkdirAll(deepPath, 0o755); err != nil {

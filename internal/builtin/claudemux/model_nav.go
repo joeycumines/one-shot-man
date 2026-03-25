@@ -153,10 +153,9 @@ func NavigateToModel(menu *ModelMenu, target string) (string, error) {
 	}
 
 	// Calculate navigation from current position.
-	currentIdx := menu.SelectedIndex
-	if currentIdx < 0 {
-		currentIdx = 0 // Assume first item is selected if none marked.
-	}
+	currentIdx := max(menu.SelectedIndex,
+		// Assume first item is selected if none marked.
+		0)
 
 	diff := targetIdx - currentIdx
 	absDiff := diff
@@ -169,7 +168,7 @@ func NavigateToModel(menu *ModelMenu, target string) (string, error) {
 
 	var keystrokes strings.Builder
 	if diff > 0 {
-		for i := 0; i < diff; i++ {
+		for range diff {
 			keystrokes.WriteString(KeyArrowDown)
 		}
 	} else if diff < 0 {
@@ -222,15 +221,12 @@ func DismissLauncherKeys(menu *ModelMenu) string {
 		return KeyEnter
 	}
 
-	currentIdx := menu.SelectedIndex
-	if currentIdx < 0 {
-		currentIdx = 0
-	}
+	currentIdx := max(menu.SelectedIndex, 0)
 
 	diff := targetIdx - currentIdx
 	var keys strings.Builder
 	if diff > 0 {
-		for i := 0; i < diff; i++ {
+		for range diff {
 			keys.WriteString(KeyArrowDown)
 		}
 	} else if diff < 0 {

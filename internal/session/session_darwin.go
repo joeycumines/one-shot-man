@@ -151,7 +151,7 @@ func findStableAnchorDarwin(startPID int) (int, uint64, error) {
 	lastValidStart := startTimeToTicks(info.StartSec, info.StartUsec)
 
 	currPID := startPID
-	for i := 0; i < maxDepth; i++ {
+	for range maxDepth {
 		stat, err := getDarwinProcInfo(currPID)
 		if err != nil {
 			return lastValidPID, lastValidStart, nil

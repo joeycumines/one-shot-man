@@ -47,7 +47,7 @@ func parseGoroutineIDFromStack(stack []byte) int64 {
 	prefix := [10]byte{'g', 'o', 'r', 'o', 'u', 't', 'i', 'n', 'e', ' '}
 	for i := 0; i <= len(stack)-10; i++ {
 		found := true
-		for j := 0; j < 10; j++ {
+		for j := range 10 {
 			if stack[i+j] != prefix[j] {
 				found = false
 				break

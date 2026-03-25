@@ -369,8 +369,8 @@ func TestViews_NavBar_FocusCancelDoesNotHighlightNext(t *testing.T) {
 		t.Fatalf("focusedSecondaryButton marker not found — Cancel not focused when focusIndex=%d:\n%s", cancelIdx, s)
 	}
 	afterFSB := s[fsbIdx+len(secondaryMarker):]
-	cancelPos := strings.Index(afterFSB, "Cancel")
-	if cancelPos < 0 {
+	found := strings.Contains(afterFSB, "Cancel")
+	if !found {
 		t.Fatalf("'Cancel' not found after focusedSecondaryButton marker:\n%s", afterFSB)
 	}
 
@@ -579,7 +579,7 @@ func TestViews_PlanEditorScreen_SplitZoneMarks(t *testing.T) {
 	}
 
 	var zoneIDs []string
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		zoneIDs = append(zoneIDs, fmt.Sprintf("edit-split-%d", i))
 	}
 	assertZoneMarks(t, evalJS, `globalThis.prSplit._viewPlanEditorScreen({
@@ -1890,10 +1890,7 @@ func TestViews_VerificationScreen_FocusStyling(t *testing.T) {
 	afterFSB := out0[fsbIdx:]
 	// The marker precedes the bordered button: [[FSB]]╭...╮\n│ Re-verify │\n╰...╯
 	// Check within a larger window to account for the multi-line border.
-	checkLen := len(afterFSB)
-	if checkLen > 200 {
-		checkLen = 200
-	}
+	checkLen := min(len(afterFSB), 200)
 	if !strings.Contains(afterFSB[:checkLen], "Re-verify") {
 		t.Errorf("focus 0: FSB marker should be near 'Re-verify', got:\n%s", afterFSB[:checkLen])
 	}
@@ -1909,10 +1906,7 @@ func TestViews_VerificationScreen_FocusStyling(t *testing.T) {
 		t.Fatal("focus 1: focusedSecondaryButton marker not found — Revise Plan not receiving focus style")
 	}
 	afterFSB = out1[fsbIdx:]
-	checkLen = len(afterFSB)
-	if checkLen > 200 {
-		checkLen = 200
-	}
+	checkLen = min(len(afterFSB), 200)
 	if !strings.Contains(afterFSB[:checkLen], "Revise Plan") {
 		t.Errorf("focus 1: FSB marker should be near 'Revise Plan', got:\n%s", afterFSB[:checkLen])
 	}
@@ -1931,10 +1925,7 @@ func TestViews_VerificationScreen_FocusStyling(t *testing.T) {
 		t.Fatal("focus 3: focusedButton marker not found — Continue not receiving focus style")
 	}
 	afterFB := out3[fbIdx:]
-	checkLen = len(afterFB)
-	if checkLen > 100 {
-		checkLen = 100
-	}
+	checkLen = min(len(afterFB), 100)
 	if !strings.Contains(afterFB[:checkLen], "Continue") {
 		t.Errorf("focus 3: FB marker should be near 'Continue', got:\n%s", afterFB[:checkLen])
 	}

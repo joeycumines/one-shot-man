@@ -3,6 +3,7 @@ package claudemux
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sync"
 	"time"
 )
@@ -339,9 +340,7 @@ func (s *ManagedSession) State() ManagedSessionState {
 func (s *ManagedSession) Snapshot() ManagedSessionSnapshot {
 	s.mu.Lock()
 	counts := make(map[string]int64, len(s.eventCounts))
-	for k, v := range s.eventCounts {
-		counts[k] = v
-	}
+	maps.Copy(counts, s.eventCounts)
 	var lastEvCopy *OutputEvent
 	if s.lastEvent != nil {
 		cp := *s.lastEvent

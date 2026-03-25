@@ -28,8 +28,8 @@ func TestPickAndPlaceMouseInteraction(t *testing.T) {
 		if t.Failed() {
 			content, _ := os.ReadFile(logPath)
 			t.Logf("=== Filtered Log (MOUSE|fs module|blueprint) ===")
-			lines := strings.Split(string(content), "\n")
-			for _, line := range lines {
+			lines := strings.SplitSeq(string(content), "\n")
+			for line := range lines {
 				if strings.Contains(line, "MOUSE") || strings.Contains(line, "fs module") || strings.Contains(line, "blueprint") {
 					t.Log(line)
 				}

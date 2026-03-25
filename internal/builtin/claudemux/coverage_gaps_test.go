@@ -193,7 +193,7 @@ func TestManagedSession_ProcessToolCall_FrequencyExceeded(t *testing.T) {
 
 	now := time.Now()
 	var lastResult ToolCallResult
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		lastResult = s.ProcessToolCall(MCPToolCall{
 			ToolName:  "test-tool",
 			Arguments: fmt.Sprintf(`{"i":%d}`, i),
@@ -223,7 +223,7 @@ func TestManagedSession_ProcessToolCall_RepeatDetection(t *testing.T) {
 	now := time.Now()
 	var lastResult ToolCallResult
 	// Send 5 identical calls — should trigger after MaxRepeats.
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		lastResult = s.ProcessToolCall(MCPToolCall{
 			ToolName:  "same-tool",
 			Arguments: `{"key":"same"}`,
@@ -305,7 +305,7 @@ func TestSupervisor_MaxRetriesEscalation(t *testing.T) {
 	// Send enough errors to exceed MaxRetries.
 	// After escalation, state becomes Stopped. Subsequent errors return Abort.
 	sawEscalate := false
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		d := s.HandleError(fmt.Sprintf("error %d", i), ErrorClassMCPMalformed)
 		if d.Action == RecoveryEscalate {
 			sawEscalate = true
@@ -330,7 +330,7 @@ func TestSupervisor_ForceKillChain(t *testing.T) {
 	// Track all unique actions seen.
 	sawForceKill := false
 	sawEscalateOrAbort := false
-	for i := 0; i < 15; i++ {
+	for i := range 15 {
 		d := s.HandleError(fmt.Sprintf("crash %d", i), ErrorClassPTYCrash)
 		if d.Action == RecoveryForceKill {
 			sawForceKill = true
@@ -366,7 +366,7 @@ func TestGuard_ComputeBackoff_Overflow(t *testing.T) {
 
 	// Simulate a huge rate limit count that would overflow float64.
 	now := time.Now()
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		g.ProcessEvent(OutputEvent{
 			Type: EventRateLimit,
 			Line: "rate limit",
@@ -403,7 +403,7 @@ func TestPanel_ScrollbackTrimming(t *testing.T) {
 	}
 
 	// Append more lines than ScrollbackSize (100).
-	for i := 0; i < 150; i++ {
+	for i := range 150 {
 		if err := panel.AppendOutput("test", fmt.Sprintf("line %d", i)); err != nil {
 			t.Fatalf("AppendOutput %d: %v", i, err)
 		}

@@ -749,7 +749,7 @@ func TestSessionDataIsolation_ConcurrentAccess(t *testing.T) {
 	numSessions := 10
 	done := make(chan bool, numSessions)
 
-	for i := 0; i < numSessions; i++ {
+	for i := range numSessions {
 		go func(idx int) {
 			defer func() { done <- true }()
 
@@ -773,7 +773,7 @@ func TestSessionDataIsolation_ConcurrentAccess(t *testing.T) {
 		}(i)
 	}
 
-	for i := 0; i < numSessions; i++ {
+	for range numSessions {
 		<-done
 	}
 
@@ -923,7 +923,7 @@ func TestResourceLimits_ManyConfigOptions(t *testing.T) {
 	cfg := config.NewConfig()
 
 	numOptions := 100
-	for i := 0; i < numOptions; i++ {
+	for i := range numOptions {
 		key := "key" + string(rune(i%256))
 		value := "value" + string(rune(i%256))
 		cfg.SetGlobalOption(key, value)

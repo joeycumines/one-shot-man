@@ -133,14 +133,14 @@ func parseSimpleYAML(raw string, pf *PromptFile) error {
 		}
 
 		// Key: value pair.
-		colonIdx := strings.Index(line, ":")
-		if colonIdx < 0 {
+		before, after, ok := strings.Cut(line, ":")
+		if !ok {
 			currentListKey = ""
 			continue
 		}
 
-		key := strings.TrimSpace(line[:colonIdx])
-		value := strings.TrimSpace(line[colonIdx+1:])
+		key := strings.TrimSpace(before)
+		value := strings.TrimSpace(after)
 
 		// Reset list state for each new key.
 		currentListKey = ""

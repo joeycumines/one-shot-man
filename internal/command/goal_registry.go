@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"log"
+	"maps"
 	"slices"
 )
 
@@ -149,9 +150,7 @@ func (r *DynamicGoalRegistry) Reload() error {
 	}
 
 	// Override with discovered goals (user goals win)
-	for name, goal := range r.discoveredGoals {
-		r.mergedGoals[name] = goal
-	}
+	maps.Copy(r.mergedGoals, r.discoveredGoals)
 
 	// Create sorted list of goal names
 	r.orderedGoalNames = make([]string, 0, len(r.mergedGoals))

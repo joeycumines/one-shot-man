@@ -65,14 +65,14 @@ func TestGet_Parallel(t *testing.T) {
 	t.Parallel()
 	// Verify Get returns unique IDs from different goroutines
 	ids := make(chan int64, 10)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		go func() {
 			ids <- Get()
 		}()
 	}
 
 	seen := make(map[int64]bool)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		id := <-ids
 		require.Greater(t, id, int64(0), "goroutine ID must be positive")
 		if seen[id] {

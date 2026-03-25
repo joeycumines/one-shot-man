@@ -92,7 +92,7 @@ func TestOllamaProvider_SpawnEcho_LaunchClaude(t *testing.T) {
 	defer handle.Close()
 
 	var output strings.Builder
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		data, err := handle.Receive()
 		if data != "" {
 			output.WriteString(data)
@@ -132,7 +132,7 @@ func TestOllamaProvider_SpawnWithModel(t *testing.T) {
 	defer handle.Close()
 
 	var output strings.Builder
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		data, err := handle.Receive()
 		if data != "" {
 			output.WriteString(data)
@@ -173,7 +173,7 @@ func TestOllamaProvider_SpawnWithExtraArgs(t *testing.T) {
 	defer handle.Close()
 
 	var output strings.Builder
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		data, err := handle.Receive()
 		if data != "" {
 			output.WriteString(data)
@@ -219,7 +219,7 @@ func TestOllamaProvider_SpawnCat(t *testing.T) {
 	}
 
 	var output strings.Builder
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		data, err := handle.Receive()
 		if data != "" {
 			output.WriteString(data)
@@ -252,7 +252,7 @@ func TestOllamaProvider_SpawnNoModel(t *testing.T) {
 	defer handle.Close()
 
 	var output strings.Builder
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		data, err := handle.Receive()
 		if data != "" {
 			output.WriteString(data)

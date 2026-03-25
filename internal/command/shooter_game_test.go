@@ -5300,7 +5300,7 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 		}
 
 		// Execute 3 ticks
-		for tickNum := 0; tickNum < 3; tickNum++ {
+		for tickNum := range 3 {
 			tickScript := engine.LoadScriptFromString(fmt.Sprintf("ai-tick-%d", tickNum), fmt.Sprintf(`
 				(() => {
 					const now = Date.now();

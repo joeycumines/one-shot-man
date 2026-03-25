@@ -219,11 +219,11 @@ func TestExprCondition_ConcurrentJSIntegration(t *testing.T) {
 	errors := make(chan error, 100)
 
 	// Hammer it from multiple goroutines
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			for j := 0; j < 100; j++ {
+			for j := range 100 {
 				result := cond.Match(j)
 				expectedResult := j > 0
 				if result != expectedResult {
@@ -251,7 +251,7 @@ func TestExprCondition_ZeroGojaCallsGuarantee(t *testing.T) {
 	cond := NewExprCondition("pureGo", "value == 42")
 
 	// Call Match many times - none should touch Goja
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		_ = cond.Match(42)
 		_ = cond.Match(i)
 	}

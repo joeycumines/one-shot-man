@@ -490,7 +490,7 @@ func TestPRSplit_ExecuteSplit(t *testing.T) {
 	assert.Equal(t, int64(3), splitCount.ToInteger()) // cmd, docs, pkg
 
 	// Verify each result has a non-empty SHA.
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		shaVal := runJS(fmt.Sprintf(`result.results[%d].sha`, i))
 		assert.NotEmpty(t, shaVal.String(), "split %d should have a SHA", i)
 	}
@@ -843,7 +843,7 @@ func TestPRSplit_EndToEnd_WithCompilation(t *testing.T) {
 
 	assert.Equal(t, int64(3), runJS(`plan.splits.length`).ToInteger())
 	t.Logf("Split plan: %d splits", 3)
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		name := runJS(fmt.Sprintf(`plan.splits[%d].name`, i)).String()
 		filesLen := runJS(fmt.Sprintf(`plan.splits[%d].files.length`, i)).ToInteger()
 		t.Logf("  %s (%d files)", name, filesLen)
@@ -857,7 +857,7 @@ func TestPRSplit_EndToEnd_WithCompilation(t *testing.T) {
 
 	splitCount := runJS(`execResult.results.length`).ToInteger()
 	assert.Equal(t, int64(3), splitCount)
-	for i := int64(0); i < splitCount; i++ {
+	for i := range splitCount {
 		sha := runJS(fmt.Sprintf(`execResult.results[%d].sha`, i)).String()
 		name := runJS(fmt.Sprintf(`execResult.results[%d].name`, i)).String()
 		assert.NotEmpty(t, sha, "split %s should have a SHA", name)
@@ -875,7 +875,7 @@ func TestPRSplit_EndToEnd_WithCompilation(t *testing.T) {
 	allPassed := runJS(`verify.allPassed`).ToBoolean()
 
 	verifyLen := runJS(`verify.results.length`).ToInteger()
-	for i := int64(0); i < verifyLen; i++ {
+	for i := range verifyLen {
 		name := runJS(fmt.Sprintf(`verify.results[%d].name`, i)).String()
 		passed := runJS(fmt.Sprintf(`verify.results[%d].passed`, i)).ToBoolean()
 		t.Logf("  Verify: %s compiled=%v", name, passed)

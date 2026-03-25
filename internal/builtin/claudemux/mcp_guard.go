@@ -192,7 +192,7 @@ func (g *MCPGuard) CheckNoCallTimeout(now time.Time) *GuardEvent {
 // MCPGuardState holds observable MCP guard state for debugging and metrics.
 type MCPGuardState struct {
 	TotalCalls         int       `json:"totalCalls"`
-	LastCallTime       time.Time `json:"lastCallTime,omitempty"`
+	LastCallTime       time.Time `json:"lastCallTime"`
 	RecentCount        int       `json:"recentCount"`
 	Started            bool      `json:"started"`
 	NoCallTimeoutFired bool      `json:"noCallTimeoutFired"`
@@ -290,10 +290,7 @@ func (g *MCPGuard) checkRepetition() *GuardEvent {
 	latest := g.recentCalls[n-1]
 	repeats := 1
 
-	windowStart := n - cfg.WindowSize
-	if windowStart < 0 {
-		windowStart = 0
-	}
+	windowStart := max(n-cfg.WindowSize, 0)
 
 	for i := n - 2; i >= windowStart; i-- {
 		prev := g.recentCalls[i]

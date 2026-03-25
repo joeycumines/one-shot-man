@@ -1174,7 +1174,7 @@ func TestBridge_ConcurrentStopAndSchedule(t *testing.T) {
 	completeCalled := make(chan struct{})
 
 	// Start N goroutines each calling RunOnLoop in a loop
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		go func(goroutineID int) {
 			defer func() {
 				// Recover from any panics - should never happen
@@ -1183,7 +1183,7 @@ func TestBridge_ConcurrentStopAndSchedule(t *testing.T) {
 				}
 			}()
 
-			for j := 0; j < operationsPerGL; j++ {
+			for j := range operationsPerGL {
 				totalScheduled.Add(1)
 
 				// Track whether this call is before or after stop
@@ -1296,7 +1296,7 @@ func TestBridge_C3_LifecycleInvariant_StrictVerification(t *testing.T) {
 	// Run multiple iterations to catch timing issues
 	const iterations = 20
 
-	for iter := 0; iter < iterations; iter++ {
+	for iter := range iterations {
 		t.Run(fmt.Sprintf("iteration_%d", iter), func(t *testing.T) {
 			bridge, stopLoop := testBridgeWithManualShutdown(t)
 
@@ -1308,7 +1308,7 @@ func TestBridge_C3_LifecycleInvariant_StrictVerification(t *testing.T) {
 			const numObservers = 50
 			violations := atomic.Int32{}
 
-			for i := 0; i < numObservers; i++ {
+			for i := range numObservers {
 				wg.Add(1)
 				go func(observerID int) {
 					defer wg.Done()
@@ -1447,7 +1447,7 @@ func TestBridge_C3_NoRaceUnderLoad(t *testing.T) {
 	// Workers that constantly call IsRunning() and check Done()
 	violations := atomic.Int32{}
 
-	for i := 0; i < numWorkers; i++ {
+	for i := range numWorkers {
 		wg.Add(1)
 		go func(workerID int) {
 			defer wg.Done()
@@ -1498,7 +1498,7 @@ func TestBridge_C3_ConcurrentStopCalls(t *testing.T) {
 	const numStops = 10
 	var wg sync.WaitGroup
 
-	for i := 0; i < numStops; i++ {
+	for i := range numStops {
 		wg.Add(1)
 		go func(stopID int) {
 			defer wg.Done()

@@ -209,8 +209,6 @@ func TestCompletionCommandIncludesScriptCommands(t *testing.T) {
 	}
 
 	for shell, marker := range shells {
-		shell := shell
-		marker := marker
 		t.Run(shell, func(t *testing.T) {
 			t.Parallel()
 			goalRegistry := newTestGoalRegistry()

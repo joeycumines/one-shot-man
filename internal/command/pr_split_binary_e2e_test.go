@@ -134,7 +134,7 @@ func gitBranches(t *testing.T, dir string) []string {
 		t.Fatalf("git branch failed: %v\n%s", err, out)
 	}
 	var branches []string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
 			branches = append(branches, line)
@@ -1187,7 +1187,7 @@ func TestBinaryE2E_PlanEditorFlow(t *testing.T) {
 	t.Logf("Plan Editor visible")
 
 	// Tab through editor elements to explore focus items
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		snap = buf.String()
 		_, _ = ptmx.Write([]byte{0x09}) // Tab
 		waitForScreenChange(t, buf, snap, 3*time.Second)

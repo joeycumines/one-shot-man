@@ -99,7 +99,7 @@ func TestParseSGR_flag_clear(t *testing.T) {
 }
 
 func TestParseSGR_fg_8color(t *testing.T) {
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		got := ParseSGR([]int{30 + i}, Attr{})
 		if got.FG.kind != kind8 || got.FG.value != uint32(i) {
 			t.Errorf("ParseSGR([%d]) FG = %+v, want kind8 value=%d", 30+i, got.FG, i)
@@ -108,7 +108,7 @@ func TestParseSGR_fg_8color(t *testing.T) {
 }
 
 func TestParseSGR_bg_8color(t *testing.T) {
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		got := ParseSGR([]int{40 + i}, Attr{})
 		if got.BG.kind != kind8 || got.BG.value != uint32(i) {
 			t.Errorf("ParseSGR([%d]) BG = %+v, want kind8 value=%d", 40+i, got.BG, i)
@@ -117,7 +117,7 @@ func TestParseSGR_bg_8color(t *testing.T) {
 }
 
 func TestParseSGR_bright_fg(t *testing.T) {
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		got := ParseSGR([]int{90 + i}, Attr{})
 		if got.FG.kind != kind8 || got.FG.value != uint32(i+8) {
 			t.Errorf("ParseSGR([%d]) FG = %+v, want kind8 value=%d", 90+i, got.FG, i+8)
@@ -126,7 +126,7 @@ func TestParseSGR_bright_fg(t *testing.T) {
 }
 
 func TestParseSGR_bright_bg(t *testing.T) {
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		got := ParseSGR([]int{100 + i}, Attr{})
 		if got.BG.kind != kind8 || got.BG.value != uint32(i+8) {
 			t.Errorf("ParseSGR([%d]) BG = %+v, want kind8 value=%d", 100+i, got.BG, i+8)

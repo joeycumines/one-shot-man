@@ -459,10 +459,7 @@ func (s *Supervisor) decideRetryOrRestart(class ErrorClass, errMsg string) Recov
 
 	// First half of retries: retry the operation.
 	// Second half: restart the agent.
-	retryThreshold := maxRetries / 2
-	if retryThreshold < 1 {
-		retryThreshold = 1
-	}
+	retryThreshold := max(maxRetries/2, 1)
 
 	if s.retryCount <= retryThreshold {
 		return RecoveryDecision{

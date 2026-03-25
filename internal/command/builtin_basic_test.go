@@ -574,10 +574,7 @@ func (w *limitedWriter) Write(p []byte) (int, error) {
 	if w.remaining <= 0 {
 		return 0, errors.New("write limit exceeded")
 	}
-	n := len(p)
-	if n > w.remaining {
-		n = w.remaining
-	}
+	n := min(len(p), w.remaining)
 	w.remaining -= n
 	return n, nil
 }

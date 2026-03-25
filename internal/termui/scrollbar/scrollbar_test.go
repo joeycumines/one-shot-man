@@ -184,7 +184,7 @@ func TestScrollbarOutput(t *testing.T) {
 	lines := strings.Split(view, "\n")
 
 	// Verify Top 5 lines are thumb (Red background)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		if !strings.Contains(lines[i], "\x1b[48;2;255;0;0m") {
 			t.Errorf("Row %d should be thumb style (Red): %q", i, lines[i])
 		}

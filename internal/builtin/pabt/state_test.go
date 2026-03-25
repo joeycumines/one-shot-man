@@ -231,17 +231,15 @@ func TestState_ConcurrentAccess(t *testing.T) {
 
 	// Concurrent reads
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 100; j++ {
+	for range 10 {
+		wg.Go(func() {
+			for range 100 {
 				_, err := state.Variable("counter")
 				if err != nil {
 					t.Errorf("unexpected error: %v", err)
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }
@@ -533,21 +531,19 @@ func TestActionGeneratorErrorMode_M2(t *testing.T) {
 		var wg sync.WaitGroup
 
 		// Concurrent readers and writers
-		for i := 0; i < 10; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for j := 0; j < 100; j++ {
+		for range 10 {
+			wg.Go(func() {
+				for range 100 {
 					state.GetActionGeneratorErrorMode()
 				}
-			}()
+			})
 		}
 
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			wg.Add(1)
 			go func(n int) {
 				defer wg.Done()
-				for j := 0; j < 100; j++ {
+				for range 100 {
 					if n%2 == 0 {
 						state.SetActionGeneratorErrorMode(ActionGeneratorErrorFallback)
 					} else {

@@ -377,7 +377,7 @@ type WorkerStats struct {
 	StateName  string      `json:"stateName"`
 	TaskCount  int64       `json:"taskCount"`
 	ErrorCount int64       `json:"errorCount"`
-	LastTaskAt time.Time   `json:"lastTaskAt,omitempty"`
+	LastTaskAt time.Time   `json:"lastTaskAt"`
 }
 
 // Stats returns current pool statistics.

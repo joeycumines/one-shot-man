@@ -247,9 +247,9 @@ func (g *Guard) ResetCrashCount() {
 type GuardState struct {
 	RateLimitCount    int           `json:"rateLimitCount"`
 	CurrentDelay      time.Duration `json:"currentDelay"`
-	LastRateLimitTime time.Time     `json:"lastRateLimitTime,omitempty"`
+	LastRateLimitTime time.Time     `json:"lastRateLimitTime"`
 	CrashCount        int           `json:"crashCount"`
-	LastEventTime     time.Time     `json:"lastEventTime,omitempty"`
+	LastEventTime     time.Time     `json:"lastEventTime"`
 	Started           bool          `json:"started"`
 	TimeoutFired      bool          `json:"timeoutFired"`
 }

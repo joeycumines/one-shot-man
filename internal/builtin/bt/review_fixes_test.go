@@ -33,9 +33,9 @@ func TestReviewFix_ThreadSafety(t *testing.T) {
 	const ticksPerGoroutine = 100
 	done := make(chan bool, goroutines)
 
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
-			for j := 0; j < ticksPerGoroutine; j++ {
+			for range ticksPerGoroutine {
 				nodeTick, children := leaf()
 				status, err := nodeTick(children)
 				if err != nil {
@@ -50,7 +50,7 @@ func TestReviewFix_ThreadSafety(t *testing.T) {
 		}()
 	}
 
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		<-done
 	}
 	t.Logf("Thread safety test passed: %d goroutines × %d ticks", goroutines, ticksPerGoroutine)

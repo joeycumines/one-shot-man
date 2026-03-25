@@ -296,11 +296,8 @@ func generateKeysOutput(keyNames map[string]string, aliases map[string]string) (
 		// Pick canonical name: use preferredNames if available, otherwise first alphabetically
 		if prefs, ok := preferredNames[stringVal]; ok {
 			for _, pref := range prefs {
-				for _, name := range entry.allNames {
-					if name == pref {
-						entry.canonicalName = pref
-						break
-					}
+				if slices.Contains(entry.allNames, pref) {
+					entry.canonicalName = pref
 				}
 				if entry.canonicalName != "" {
 					break

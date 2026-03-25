@@ -57,11 +57,11 @@ func TestPTYSpawn_ForceKill_OrphanSurvival(t *testing.T) {
 
 	// Parse child PID from output
 	raw := output.String()
-	idx := strings.Index(raw, "CHILD_PID=")
-	if idx < 0 {
+	_, after, ok := strings.Cut(raw, "CHILD_PID=")
+	if !ok {
 		t.Fatalf("CHILD_PID not found in output: %q", raw)
 	}
-	pidStr := strings.TrimSpace(strings.SplitN(raw[idx+len("CHILD_PID="):], "\n", 2)[0])
+	pidStr := strings.TrimSpace(strings.SplitN(after, "\n", 2)[0])
 	// Strip ANSI/control sequences that PTY might include
 	pidStr = strings.TrimFunc(pidStr, func(r rune) bool {
 		return !('0' <= r && r <= '9')

@@ -220,7 +220,6 @@ func TestConfigSet_SchemaValidation_BoolAcceptedValues(t *testing.T) {
 	// parseBool in config accepts: true/false/yes/no/1/0/on/off
 	accepted := []string{"true", "false", "yes", "no", "1", "0", "on", "off"}
 	for _, val := range accepted {
-		val := val
 		t.Run(val, func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
@@ -506,7 +505,6 @@ func TestValidateOptionValue_AllTypes(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			err := config.ValidateOptionValue(tt.optType, tt.value)
@@ -578,7 +576,7 @@ func TestConfigList_ShowsDefaultSource(t *testing.T) {
 
 	out := stdout.String()
 	// With no customizations and no env vars, everything should be "default"
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		if line == "" || strings.HasPrefix(line, "KEY") {
 			continue
 		}
@@ -602,7 +600,7 @@ func TestConfigList_ShowsConfigSource(t *testing.T) {
 	out := stdout.String()
 	// Find the line with "color" — it should say "config"
 	found := false
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "color") {
 			found = true
 			if !strings.Contains(line, "config") {
@@ -631,7 +629,7 @@ func TestConfigList_ShowsEnvSource(t *testing.T) {
 
 	out := stdout.String()
 	found := false
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "session.id") {
 			found = true
 			if !strings.Contains(line, "env") {

@@ -45,10 +45,8 @@ func (r *Registry) Register(cmd Command) {
 // Duplicates are ignored.
 func (r *Registry) AddScriptPath(path string) {
 	// Check if path already exists
-	for _, existing := range r.scriptPaths {
-		if existing == path {
-			return
-		}
+	if slices.Contains(r.scriptPaths, path) {
+		return
 	}
 	r.scriptPaths = append(r.scriptPaths, path)
 }

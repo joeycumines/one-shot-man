@@ -51,10 +51,7 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		}
 		scr.CurCol = 0
 	case 'G': // CHA — cursor horizontal absolute (1-indexed)
-		col := paramDefault(params, 0, 1) - 1
-		if col < 0 {
-			col = 0
-		}
+		col := max(paramDefault(params, 0, 1)-1, 0)
 		if col >= scr.Cols {
 			col = scr.Cols - 1
 		}
@@ -104,10 +101,7 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 		n := paramDefault(params, 0, 1)
 		scr.ScrollDown(n)
 	case 'd': // VPA — vertical position absolute (1-indexed)
-		row := paramDefault(params, 0, 1) - 1
-		if row < 0 {
-			row = 0
-		}
+		row := max(paramDefault(params, 0, 1)-1, 0)
 		if row >= scr.Rows {
 			row = scr.Rows - 1
 		}

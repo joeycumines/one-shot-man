@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -823,13 +824,7 @@ func TestGoalDiscovery_DiscoverPromptFilePaths_Custom(t *testing.T) {
 	gd := NewGoalDiscovery(cfg)
 	paths := gd.DiscoverPromptFilePaths()
 
-	found := false
-	for _, p := range paths {
-		if p == resolvedPromptDir {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(paths, resolvedPromptDir)
 	if !found {
 		t.Fatalf("expected custom prompt dir %s in paths, got: %v", resolvedPromptDir, paths)
 	}
@@ -972,13 +967,7 @@ func TestScriptDiscovery_TraverseForGitRepos(t *testing.T) {
 	// Traverse from the scripts dir (child of repo) upward
 	paths := sd.traverseForGitRepos(scriptsDir)
 
-	found := false
-	for _, p := range paths {
-		if p == scriptsDir {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(paths, scriptsDir)
 	if !found {
 		t.Fatalf("expected scripts dir via git repo traversal, got: %v", paths)
 	}

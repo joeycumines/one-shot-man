@@ -261,7 +261,7 @@ func TestPanel_RouteInput_PgUp(t *testing.T) {
 	_, _ = p.AddPane("a", "A")
 
 	// Fill some scrollback.
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		_ = p.AppendOutput("a", fmt.Sprintf("line %d", i))
 	}
 
@@ -285,7 +285,7 @@ func TestPanel_RouteInput_PgDown(t *testing.T) {
 	_ = p.Start()
 	_, _ = p.AddPane("a", "A")
 
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		_ = p.AppendOutput("a", fmt.Sprintf("line %d", i))
 	}
 
@@ -363,7 +363,7 @@ func TestPanel_AppendOutput(t *testing.T) {
 	_ = p.Start()
 	_, _ = p.AddPane("a", "A")
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		if err := p.AppendOutput("a", fmt.Sprintf("line %d", i)); err != nil {
 			t.Fatalf("AppendOutput %d: %v", i, err)
 		}
@@ -382,7 +382,7 @@ func TestPanel_AppendOutput_Trim(t *testing.T) {
 	_, _ = p.AddPane("a", "A")
 
 	// Fill beyond max.
-	for i := 0; i < 120; i++ {
+	for i := range 120 {
 		_ = p.AppendOutput("a", fmt.Sprintf("line %d", i))
 	}
 
@@ -507,7 +507,7 @@ func TestPanel_GetVisibleLines(t *testing.T) {
 	_ = p.Start()
 	_, _ = p.AddPane("a", "A")
 
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		_ = p.AppendOutput("a", fmt.Sprintf("line %d", i))
 	}
 
@@ -533,7 +533,7 @@ func TestPanel_GetVisibleLines_Scrolled(t *testing.T) {
 	_ = p.Start()
 	_, _ = p.AddPane("a", "A")
 
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		_ = p.AppendOutput("a", fmt.Sprintf("line %d", i))
 	}
 
@@ -652,7 +652,7 @@ func TestPanel_ConcurrentAppendOutput(t *testing.T) {
 
 	const n = 100
 	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
+	for i := range n {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -671,12 +671,12 @@ func TestPanel_ConcurrentRouteInput(t *testing.T) {
 	t.Parallel()
 	p := NewPanel(DefaultPanelConfig())
 	_ = p.Start()
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		_, _ = p.AddPane(fmt.Sprintf("p%d", i), fmt.Sprintf("P%d", i))
 	}
 
 	var wg sync.WaitGroup
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -700,7 +700,7 @@ func TestPanel_ConcurrentSnapshot(t *testing.T) {
 	_, _ = p.AddPane("a", "A")
 
 	var wg sync.WaitGroup
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		wg.Add(2)
 		go func(idx int) {
 			defer wg.Done()

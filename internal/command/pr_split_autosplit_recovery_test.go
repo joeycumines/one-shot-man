@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -900,13 +901,7 @@ func TestIntegration_AutoSplitMockMCP(t *testing.T) {
 		stepNames[i] = s.Name
 	}
 	for _, expected := range expectedSteps {
-		found := false
-		for _, name := range stepNames {
-			if name == expected {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(stepNames, expected)
 		if !found {
 			t.Errorf("expected step %q in report, got steps: %v", expected, stepNames)
 		}

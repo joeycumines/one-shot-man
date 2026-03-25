@@ -92,7 +92,7 @@ func TestScreen_Resize_resetsScrollRegion(t *testing.T) {
 
 func TestScreen_ScrollUp(t *testing.T) {
 	s := NewScreen(5, 3)
-	for r := 0; r < 5; r++ {
+	for r := range 5 {
 		s.Cells[r][0].Ch = rune('A' + r)
 	}
 	s.ScrollUp(1)
@@ -109,7 +109,7 @@ func TestScreen_ScrollUp(t *testing.T) {
 
 func TestScreen_ScrollDown(t *testing.T) {
 	s := NewScreen(5, 3)
-	for r := 0; r < 5; r++ {
+	for r := range 5 {
 		s.Cells[r][0].Ch = rune('A' + r)
 	}
 	s.ScrollDown(1)
@@ -174,7 +174,7 @@ func TestScreen_EraseLine_mode2(t *testing.T) {
 
 func TestScreen_InsertLines(t *testing.T) {
 	s := NewScreen(5, 3)
-	for r := 0; r < 5; r++ {
+	for r := range 5 {
 		s.Cells[r][0].Ch = rune('A' + r)
 	}
 	s.CurRow = 1
@@ -189,7 +189,7 @@ func TestScreen_InsertLines(t *testing.T) {
 
 func TestScreen_DeleteLines(t *testing.T) {
 	s := NewScreen(5, 3)
-	for r := 0; r < 5; r++ {
+	for r := range 5 {
 		s.Cells[r][0].Ch = rune('A' + r)
 	}
 	s.CurRow = 1
@@ -229,7 +229,7 @@ func TestScreen_PutChar_wide(t *testing.T) {
 
 func TestScreen_PutChar_pendingWrap(t *testing.T) {
 	s := NewScreen(3, 5)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		s.PutChar(rune('A' + i))
 	}
 	if !s.PendingWrap {
@@ -275,12 +275,12 @@ func TestScreen_ScrollUp_Zero(t *testing.T) {
 
 func TestScreen_ScrollUp_HugeN(t *testing.T) {
 	s := NewScreen(5, 3)
-	for r := 0; r < 5; r++ {
+	for r := range 5 {
 		s.Cells[r][0].Ch = rune('A' + r)
 	}
 	s.ScrollUp(999)
 	// All rows should be blank
-	for r := 0; r < 5; r++ {
+	for r := range 5 {
 		if s.Cells[r][0].Ch != ' ' {
 			t.Errorf("row %d = %c, want space after huge ScrollUp", r, s.Cells[r][0].Ch)
 		}
@@ -301,7 +301,7 @@ func TestScreen_ScrollUp_OneRowRegion(t *testing.T) {
 
 func TestScreen_ScrollUp_NonDefaultRegion(t *testing.T) {
 	s := NewScreen(5, 3)
-	for r := 0; r < 5; r++ {
+	for r := range 5 {
 		s.Cells[r][0].Ch = rune('A' + r)
 	}
 	s.ScrollTop = 2 // 1-indexed rows 2..4
@@ -327,7 +327,7 @@ func TestScreen_ScrollUp_NonDefaultRegion(t *testing.T) {
 
 func TestScreen_ScrollUp_WithCurrentAttr(t *testing.T) {
 	s := NewScreen(3, 3)
-	for r := 0; r < 3; r++ {
+	for r := range 3 {
 		s.Cells[r][0].Ch = rune('A' + r)
 	}
 	s.CurAttr = Attr{Bold: true}
@@ -345,7 +345,7 @@ func TestScreen_ScrollUp_WithCurrentAttr(t *testing.T) {
 
 func TestScreen_EraseChars_Huge(t *testing.T) {
 	s := NewScreen(3, 5)
-	for c := 0; c < 5; c++ {
+	for c := range 5 {
 		s.Cells[0][c].Ch = 'X'
 	}
 	s.CurRow = 0
@@ -364,7 +364,7 @@ func TestScreen_EraseChars_Huge(t *testing.T) {
 
 func TestScreen_ReverseIndex_AtTopOfRegion(t *testing.T) {
 	s := NewScreen(5, 3)
-	for r := 0; r < 5; r++ {
+	for r := range 5 {
 		s.Cells[r][0].Ch = rune('A' + r)
 	}
 	s.ScrollTop = 2 // 1-indexed rows 2..4

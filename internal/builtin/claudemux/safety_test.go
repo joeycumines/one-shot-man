@@ -759,7 +759,7 @@ func TestSafetyValidator_ConcurrentValidate(t *testing.T) {
 	var wg sync.WaitGroup
 	const n = 50
 	wg.Add(n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		go func(i int) {
 			defer wg.Done()
 			sv.Validate(SafetyAction{
@@ -782,13 +782,13 @@ func TestSafetyValidator_ConcurrentStats(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(30)
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		go func() {
 			defer wg.Done()
 			sv.Validate(SafetyAction{Type: "file_read", Name: "readFile"})
 		}()
 	}
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		go func() {
 			defer wg.Done()
 			_ = sv.Stats()

@@ -500,7 +500,7 @@ func BenchmarkInputLatency_TickContention(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		// Process 60 tick messages (simulating 1 second of ticks)
-		for t := 0; t < ticksPerKey; t++ {
+		for range ticksPerKey {
 			bridge.RunJSSync(func(vm *goja.Runtime) error {
 				msg := vm.NewObject()
 				msg.Set("type", "Tick")
@@ -639,7 +639,7 @@ func BenchmarkInputLatency_AIContention(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		// AI tickers execute first (they were scheduled before input)
-		for e := 0; e < numEnemies*aiTicksPerFrame; e++ {
+		for range numEnemies * aiTicksPerFrame {
 			bridge.RunJSSync(func(vm *goja.Runtime) error {
 				_, err := aiTickFn(goja.Undefined())
 				return err
@@ -877,7 +877,7 @@ func TestRunJSSync_SimulatedGameLoop(t *testing.T) {
 	const targetFPS = 60
 	frameTimes := make([]time.Duration, 0, targetFrames)
 
-	for i := 0; i < targetFrames; i++ {
+	for i := range targetFrames {
 		frameStart := time.Now()
 
 		// Simulate tick message processing
@@ -901,7 +901,7 @@ func TestRunJSSync_SimulatedGameLoop(t *testing.T) {
 		})
 
 		// Simulate 3 AI tickers (enemy updates)
-		for j := 0; j < 3; j++ {
+		for range 3 {
 			bridge.RunJSSync(func(vm *goja.Runtime) error {
 				return nil
 			})
@@ -965,10 +965,10 @@ func TestEventLoopContention(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(numCallers)
 
-	for caller := 0; caller < numCallers; caller++ {
+	for caller := range numCallers {
 		go func(callerID int) {
 			defer wg.Done()
-			for op := 0; op < opsPerCaller; op++ {
+			for range opsPerCaller {
 				start := time.Now()
 				err := bridge.RunJSSync(func(vm *goja.Runtime) error {
 					// Simulate some work
@@ -987,7 +987,7 @@ func TestEventLoopContention(t *testing.T) {
 	wg.Wait()
 
 	// Analyze latencies per caller
-	for caller := 0; caller < numCallers; caller++ {
+	for caller := range numCallers {
 		var total time.Duration
 		var max time.Duration
 		for _, lat := range latencies[caller] {

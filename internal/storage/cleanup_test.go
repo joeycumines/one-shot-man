@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -119,13 +120,7 @@ func TestCleaner_RemovesOrphanLock(t *testing.T) {
 		t.Fatalf("expected lock file to be removed for orphan session")
 	}
 
-	found := false
-	for _, id := range report.Removed {
-		if id == sessionID {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(report.Removed, sessionID)
 	if !found {
 		t.Fatalf("expected orphan session id in report.Removed")
 	}
@@ -163,13 +158,7 @@ func TestCleaner_SkipsYoungOrphanLock(t *testing.T) {
 	}
 
 	// Should be reported as skipped
-	found := false
-	for _, id := range report.Skipped {
-		if id == sessionID {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(report.Skipped, sessionID)
 	if !found {
 		t.Fatalf("expected young orphan session id in report.Skipped")
 	}
@@ -205,13 +194,7 @@ func TestCleaner_CustomMinOrphanAge_RemovesWhenSmaller(t *testing.T) {
 	if _, err := os.Stat(lockPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("expected lock file to be removed for custom-age-remove")
 	}
-	found := false
-	for _, id := range report.Removed {
-		if id == sessionID {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(report.Removed, sessionID)
 	if !found {
 		t.Fatalf("expected custom-age-remove id in report.Removed")
 	}
@@ -249,13 +232,7 @@ func TestCleaner_CustomMinOrphanAge_SkipsWhenLarger(t *testing.T) {
 		t.Fatalf("expected lock file to remain for custom-age-skip")
 	}
 
-	found := false
-	for _, id := range report.Skipped {
-		if id == sessionID {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(report.Skipped, sessionID)
 	if !found {
 		t.Fatalf("expected custom-age-skip id in report.Skipped")
 	}
@@ -546,13 +523,7 @@ func TestCleaner_DryRunReportsButDoesNotDelete(t *testing.T) {
 	// No lock file was created for this session so nothing else to verify.
 
 	// But report should contain the id(s) the cleaner would remove.
-	found := false
-	for _, id := range report.Removed {
-		if id == sessionID {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(report.Removed, sessionID)
 	if !found {
 		t.Fatalf("expected dry-run report to include %s, got %v", sessionID, report.Removed)
 	}
@@ -617,13 +588,7 @@ func TestCleaner_PreservesLockWhenRemoveFails(t *testing.T) {
 	// Note: We replaced the session file with a directory to simulate
 	// removal failure, so the cleaner will attempt to remove the directory.
 	// The key is that it should be listed in report.Skipped, not Removed.
-	found := false
-	for _, id := range report.Skipped {
-		if id == "delete-fails" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(report.Skipped, "delete-fails")
 	if !found {
 		t.Fatalf("expected session id in report.Skipped when remove (simulation) fails")
 	}
@@ -744,13 +709,7 @@ func TestCleaner_DryRunOrphanLock(t *testing.T) {
 	}
 
 	// Report should list the orphan as removed (would-be-removed).
-	found := false
-	for _, id := range report.Removed {
-		if id == sessionID {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(report.Removed, sessionID)
 	if !found {
 		t.Fatalf("expected orphan lock in dry-run Removed, got: %v", report.Removed)
 	}

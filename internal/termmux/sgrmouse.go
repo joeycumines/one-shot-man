@@ -7,6 +7,8 @@ package termmux
 //
 // Reference: https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
 
+import "slices"
+
 // SGRMouseEvent holds a parsed SGR mouse escape sequence.
 type SGRMouseEvent struct {
 	Button  int  // Button parameter (includes modifiers).
@@ -150,13 +152,7 @@ func filterMouseForStatusBar(buf []byte, termRows, statusBarLines int) (out []by
 	statusBarTop := termRows - statusBarLines + 1
 
 	// Fast path: no ESC in buffer means no mouse sequences to filter.
-	hasEsc := false
-	for _, b := range buf {
-		if b == 0x1b {
-			hasEsc = true
-			break
-		}
-	}
+	hasEsc := slices.Contains(buf, 0x1b)
 	if !hasEsc {
 		return buf, false
 	}

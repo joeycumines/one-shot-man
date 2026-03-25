@@ -27,8 +27,7 @@ func TestPromptFlow_GoalCommandOpensEditor(t *testing.T) {
 	// Create fake editor script that writes a known goal
 	editorScript := createGoalEditorScript(t, workspace)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	cp, err := termtest.NewConsole(ctx,
 		termtest.WithCommand(binaryPath, "prompt-flow", "-i"),
@@ -80,8 +79,7 @@ func TestPromptFlow_UseCommandOpensEditor(t *testing.T) {
 	// Create fake editor script that writes a known task prompt
 	editorScript := createUseEditorScript(t, workspace)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	cp, err := termtest.NewConsole(ctx,
 		termtest.WithCommand(binaryPath, "prompt-flow", "-i"),

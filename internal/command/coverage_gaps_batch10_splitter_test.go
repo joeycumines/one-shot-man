@@ -172,7 +172,7 @@ func TestSplitFileAtHunks_OversizedSingleHunk(t *testing.T) {
 		"+++ b/big.go",
 		"@@ -1,50 +1,50 @@",
 	}
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		lines = append(lines, "+line")
 	}
 	fd := fileDiff{name: "big.go", content: strings.Join(lines, "\n")}

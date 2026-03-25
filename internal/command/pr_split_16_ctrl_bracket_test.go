@@ -450,7 +450,7 @@ func TestStatusBar_VerifyShellShortcuts(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		result := raw.(map[string]interface{})
+		result := raw.(map[string]any)
 		width := int(result["width"].(int64))
 		if width > 80 {
 			t.Errorf("status bar exceeds 80 columns: visual width is %d\n%s", width, result["rendered"])

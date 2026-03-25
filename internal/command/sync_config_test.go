@@ -550,7 +550,6 @@ func TestSyncCommand_ConfigPullBadVersionHeader(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			dir := t.TempDir()
@@ -781,7 +780,6 @@ func TestIsSensitiveKey(t *testing.T) {
 		{"log.max-size-mb", false},
 	}
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.key, func(t *testing.T) {
 			t.Parallel()
 			got := isSensitiveKey(tc.key)
@@ -823,7 +821,6 @@ func TestParseVersionHeader(t *testing.T) {
 		{"# osm-shared-config-version -1", 0, "invalid version number -1"},
 	}
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.line, func(t *testing.T) {
 			t.Parallel()
 			got, err := parseVersionHeader(tc.line)
@@ -1072,7 +1069,7 @@ func TestSyncCommand_StaleLockRecovery_DeadPID(t *testing.T) {
 		t.Fatalf("creating lock dir: %v", err)
 	}
 	oldTime := time.Now().Add(-11 * time.Minute).UTC().Format(time.RFC3339)
-	if err := os.WriteFile(lockPath, []byte(fmt.Sprintf("pid=999999999\ntime=%s\n", oldTime)), 0644); err != nil {
+	if err := os.WriteFile(lockPath, fmt.Appendf(nil, "pid=999999999\ntime=%s\n", oldTime), 0644); err != nil {
 		t.Fatalf("writing stale lock: %v", err)
 	}
 
@@ -1094,7 +1091,7 @@ func TestSyncCommand_StaleLockRecovery_AgedOut(t *testing.T) {
 		t.Fatalf("creating lock dir: %v", err)
 	}
 	oldTime := time.Now().Add(-11 * time.Minute).UTC().Format(time.RFC3339)
-	if err := os.WriteFile(lockPath, []byte(fmt.Sprintf("pid=%d\ntime=%s\n", os.Getpid(), oldTime)), 0644); err != nil {
+	if err := os.WriteFile(lockPath, fmt.Appendf(nil, "pid=%d\ntime=%s\n", os.Getpid(), oldTime), 0644); err != nil {
 		t.Fatalf("writing aged lock: %v", err)
 	}
 
@@ -1116,7 +1113,7 @@ func TestSyncCommand_ActiveLockNotStale(t *testing.T) {
 		t.Fatalf("creating lock dir: %v", err)
 	}
 	freshTime := time.Now().UTC().Format(time.RFC3339)
-	if err := os.WriteFile(lockPath, []byte(fmt.Sprintf("pid=%d\ntime=%s\n", os.Getpid(), freshTime)), 0644); err != nil {
+	if err := os.WriteFile(lockPath, fmt.Appendf(nil, "pid=%d\ntime=%s\n", os.Getpid(), freshTime), 0644); err != nil {
 		t.Fatalf("writing active lock: %v", err)
 	}
 

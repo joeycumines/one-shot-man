@@ -57,10 +57,7 @@ func (m Model) View() string {
 
 	// Normalise / clamp inputs.
 	viewportHeight := m.ViewportHeight
-	contentHeight := m.ContentHeight
-	if contentHeight < 0 {
-		contentHeight = 0
-	}
+	contentHeight := max(m.ContentHeight, 0)
 
 	// When there is no scrollable range (content fits in the viewport), render
 	// a full-height thumb (a standard convention indicating "no scrolling").
@@ -69,10 +66,7 @@ func (m Model) View() string {
 	}
 
 	maxOffset := contentHeight - viewportHeight
-	yOffset := m.YOffset
-	if yOffset < 0 {
-		yOffset = 0
-	}
+	yOffset := max(m.YOffset, 0)
 	if yOffset > maxOffset {
 		yOffset = maxOffset
 	}
@@ -82,10 +76,7 @@ func (m Model) View() string {
 	windowHeightF := float64(viewportHeight)
 	contentHeightF := float64(contentHeight)
 	thumbHeightRaw := windowHeightF * (windowHeightF / contentHeightF)
-	thumbHeight := int(clamp(windowHeightF, 1, thumbHeightRaw))
-	if thumbHeight > viewportHeight {
-		thumbHeight = viewportHeight
-	}
+	thumbHeight := min(int(clamp(windowHeightF, 1, thumbHeightRaw)), viewportHeight)
 	if thumbHeight < 1 {
 		thumbHeight = 1
 	}
@@ -126,7 +117,7 @@ func render(viewportHeight, thumbTop, thumbHeight int, m Model) string {
 		renderTrackChar = "\u00A0"
 	}
 
-	for i := 0; i < viewportHeight; i++ {
+	for i := range viewportHeight {
 		isThumb := thumbTop <= i && i < thumbTop+thumbHeight
 
 		if isThumb {

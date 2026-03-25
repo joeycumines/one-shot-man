@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -946,13 +947,7 @@ func TestGoalBuiltin_WhichOneIsBetter_StateVars(t *testing.T) {
 	}
 
 	// NotableVariables must include comparisonType
-	found := false
-	for _, nv := range wib.NotableVariables {
-		if nv == "comparisonType" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(wib.NotableVariables, "comparisonType")
 	if !found {
 		t.Errorf("expected NotableVariables to contain 'comparisonType', got %v", wib.NotableVariables)
 	}

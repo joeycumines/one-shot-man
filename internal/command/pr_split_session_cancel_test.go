@@ -323,7 +323,7 @@ func TestExecuteSplit_ProgressFeedback(t *testing.T) {
 	for fi := 1; fi <= 8; fi++ {
 		name := fmt.Sprintf("file%d.go", fi)
 		allFiles = append(allFiles, name)
-		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte(fmt.Sprintf("package f%d\n", fi)), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(tmpDir, name), fmt.Appendf(nil, "package f%d\n", fi), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -680,7 +680,7 @@ func TestExecuteSplit_CancellationMidFile(t *testing.T) {
 	for fi := 1; fi <= 10; fi++ {
 		name := fmt.Sprintf("f%d.go", fi)
 		files = append(files, name)
-		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte(fmt.Sprintf("package f%d\n", fi)), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(tmpDir, name), fmt.Appendf(nil, "package f%d\n", fi), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}

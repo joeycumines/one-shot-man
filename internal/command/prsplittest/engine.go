@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"maps"
 	"testing"
 	"time"
 
@@ -60,9 +61,7 @@ func NewEngine(t testing.TB, overrides map[string]any) *Engine {
 		"dryRun":        false,
 		"jsonOutput":    false,
 	}
-	for k, v := range overrides {
-		jsConfig[k] = v
-	}
+	maps.Copy(jsConfig, overrides)
 	// B00-safety: ensure a dir is always set so resolveDir never falls back
 	// to process CWD which would target the real repository.
 	if _, ok := jsConfig["dir"]; !ok {

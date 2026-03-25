@@ -123,10 +123,7 @@ func resolveIndent(v goja.Value) string {
 		}
 		return strings.Repeat(" ", int(n))
 	case float64:
-		count := int(n)
-		if count < 0 {
-			count = 0
-		}
+		count := max(int(n), 0)
 		return strings.Repeat(" ", count)
 	default:
 		return v.String()
@@ -423,10 +420,7 @@ func diffMaps(a, b map[string]any, path string) []any {
 }
 
 func diffArrays(a, b []any, path string) []any {
-	maxLen := len(a)
-	if len(b) > maxLen {
-		maxLen = len(b)
-	}
+	maxLen := max(len(b), len(a))
 
 	var ops []any
 	for i := 0; i < maxLen; i++ {

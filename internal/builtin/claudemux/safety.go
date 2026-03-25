@@ -2,6 +2,7 @@ package claudemux
 
 import (
 	"fmt"
+	"maps"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -411,13 +412,9 @@ func (sv *SafetyValidator) Stats() SafetyStats {
 	defer sv.mu.RUnlock()
 
 	intentCounts := make(map[string]int64, len(sv.stats.IntentCounts))
-	for k, v := range sv.stats.IntentCounts {
-		intentCounts[k] = v
-	}
+	maps.Copy(intentCounts, sv.stats.IntentCounts)
 	scopeCounts := make(map[string]int64, len(sv.stats.ScopeCounts))
-	for k, v := range sv.stats.ScopeCounts {
-		scopeCounts[k] = v
-	}
+	maps.Copy(scopeCounts, sv.stats.ScopeCounts)
 
 	return SafetyStats{
 		TotalChecks:  sv.stats.TotalChecks,

@@ -629,7 +629,7 @@ func TestGenerateUUID(t *testing.T) {
 // TestGenerateUUID_UniqueAcrossMultipleCalls verifies UUID uniqueness.
 func TestGenerateUUID_UniqueAcrossMultipleCalls(t *testing.T) {
 	seen := make(map[string]bool)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		uuid, err := generateUUID()
 		if err != nil {
 			t.Fatalf("unexpected error on iteration %d: %v", i, err)

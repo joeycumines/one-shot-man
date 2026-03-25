@@ -353,10 +353,7 @@ func (m *Mux) handleResize(rows, cols int) {
 		m.statusBar.SetScrollRegion()
 	}
 
-	childRows := rows - statusBarLines
-	if childRows < 1 {
-		childRows = 1
-	}
+	childRows := max(rows-statusBarLines, 1)
 
 	if m.vterm != nil {
 		m.vterm.Resize(childRows, cols)
@@ -502,10 +499,7 @@ func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 		// dimensions (accounting for status bar).
 		if resizeFn != nil && m.termFd >= 0 {
 			if w, h, err := m.termState.GetSize(m.termFd); err == nil {
-				childH := h - statusBarLines
-				if childH < 1 {
-					childH = 1
-				}
+				childH := max(h-statusBarLines, 1)
 				_ = resizeFn(uint16(childH), uint16(w))
 			}
 		}
@@ -537,10 +531,7 @@ func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 		// the child PTY retains stale row/col values.
 		if resizeFn != nil && m.termFd >= 0 {
 			if w, h, err := m.termState.GetSize(m.termFd); err == nil {
-				childH := h - statusBarLines
-				if childH < 1 {
-					childH = 1
-				}
+				childH := max(h-statusBarLines, 1)
 				_ = resizeFn(uint16(childH), uint16(w))
 			}
 		}

@@ -248,7 +248,7 @@ func TestClaudeCodeProvider_SpawnEcho(t *testing.T) {
 
 	// Read the echo output
 	var output strings.Builder
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		data, err := handle.Receive()
 		if data != "" {
 			output.WriteString(data)
@@ -294,7 +294,7 @@ func TestClaudeCodeProvider_SpawnCat(t *testing.T) {
 
 	// Read output (may need multiple reads due to PTY buffering)
 	var output strings.Builder
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		data, err := handle.Receive()
 		if data != "" {
 			output.WriteString(data)
@@ -329,7 +329,7 @@ func TestClaudeCodeProvider_SpawnWithModel(t *testing.T) {
 	defer handle.Close()
 
 	var output strings.Builder
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		data, err := handle.Receive()
 		if data != "" {
 			output.WriteString(data)

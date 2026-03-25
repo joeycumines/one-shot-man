@@ -3,6 +3,7 @@ package command
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/config"
@@ -33,13 +34,7 @@ func TestDynamicGoalRegistry_List(t *testing.T) {
 		t.Fatal("Expected at least one goal, got none")
 	}
 
-	found := false
-	for _, name := range goals {
-		if name == "builtin-goal" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(goals, "builtin-goal")
 
 	if !found {
 		t.Error("Expected to find 'builtin-goal' in list")

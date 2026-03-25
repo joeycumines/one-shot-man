@@ -691,8 +691,7 @@ func TestBridge_InitFailure_IsRunningFalse(t *testing.T) {
 		loop.Shutdown(context.Background())
 	}()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	// Create bridge - this should succeed
 	bridge := NewBridgeWithEventLoop(ctx, loop, vm, nil)
@@ -716,7 +715,7 @@ func TestBridge_InitFailure_IsRunningFalse(t *testing.T) {
 	require.False(t, bridge.IsRunning(), "IsRunning() must return false after Stop()")
 
 	// Double-check: call IsRunning() multiple times to catch timing issues
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		require.False(t, bridge.IsRunning(), "IsRunning() must consistently return false after Stop()")
 	}
 }
@@ -738,8 +737,7 @@ func TestBridge_LifecycleInvariant_DoneClosedImpliesNotRunning(t *testing.T) {
 		loop.Shutdown(context.Background())
 	}()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	bridge := NewBridgeWithEventLoop(ctx, loop, vm, nil)
 
@@ -747,10 +745,10 @@ func TestBridge_LifecycleInvariant_DoneClosedImpliesNotRunning(t *testing.T) {
 	const numGoroutines = 20
 	doneCh := make(chan bool, numGoroutines)
 
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		go func() {
 			// Repeatedly check both IsRunning() and Done() channel state
-			for j := 0; j < 100; j++ {
+			for range 100 {
 				// Use atomic snapshot to avoid TOCTOU race between
 				// checking IsRunning() and Done() separately
 				doneClosed, isRunning := bridge.GetLifecycleSnapshot()
@@ -773,7 +771,7 @@ func TestBridge_LifecycleInvariant_DoneClosedImpliesNotRunning(t *testing.T) {
 
 	// Collect results
 	allPassed := true
-	for i := 0; i < numGoroutines; i++ {
+	for range numGoroutines {
 		result := <-doneCh
 		if !result {
 			allPassed = false

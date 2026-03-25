@@ -35,7 +35,7 @@ type PaneHealth struct {
 	State      string    `json:"state"` // "running", "error", "idle", "stopped"
 	ErrorCount int64     `json:"errorCount"`
 	TaskCount  int64     `json:"taskCount"`
-	LastUpdate time.Time `json:"lastUpdate,omitempty"`
+	LastUpdate time.Time `json:"lastUpdate"`
 }
 
 // Pane represents a single instance's view state within the panel.
@@ -428,17 +428,11 @@ func (p *Panel) GetVisibleLines(paneID string, height int) ([]string, error) {
 	}
 
 	// Calculate the window based on scroll position.
-	end := total - pane.ScrollPos
-	if end < 0 {
-		end = 0
-	}
+	end := max(total-pane.ScrollPos, 0)
 	if end > total {
 		end = total
 	}
-	start := end - height
-	if start < 0 {
-		start = 0
-	}
+	start := max(end-height, 0)
 
 	result := make([]string, end-start)
 	copy(result, pane.Scrollback[start:end])

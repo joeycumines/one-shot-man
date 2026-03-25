@@ -281,15 +281,15 @@ func parseSharedConfig(content string) (int, []configKeyValue, error) {
 
 		// Parse "key value" format (dnsmasq-style: first token is key,
 		// remainder is value).
-		idx := strings.IndexByte(line, ' ')
-		if idx < 0 {
+		before, after, ok := strings.Cut(line, " ")
+		if !ok {
 			// Key with no value — treat as key with empty value.
 			keys = append(keys, configKeyValue{key: line, value: ""})
 			continue
 		}
 
-		key := line[:idx]
-		value := line[idx+1:]
+		key := before
+		value := after
 		keys = append(keys, configKeyValue{key: key, value: value})
 	}
 

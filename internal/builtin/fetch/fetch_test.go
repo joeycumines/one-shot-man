@@ -1162,7 +1162,7 @@ func TestFetch_MaxResponseSize_Exceeded(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Return a body of 200 bytes.
 		w.WriteHeader(200)
-		for i := 0; i < 200; i++ {
+		for range 200 {
 			_, _ = w.Write([]byte("x"))
 		}
 	}))

@@ -27,7 +27,7 @@ func GitBranchList(t testing.TB, dir string) []string {
 	t.Helper()
 	raw := RunGitCmd(t, dir, "branch", "--list", "--format=%(refname:short)")
 	var branches []string
-	for _, line := range strings.Split(strings.TrimSpace(raw), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(raw), "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
 			branches = append(branches, line)

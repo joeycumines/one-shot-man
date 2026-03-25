@@ -62,8 +62,8 @@ func TestGenerateKeysOutput_MultipleAliases(t *testing.T) {
 	if !strings.Contains(s, `"KeyCtrlM"`) {
 		t.Error("missing KeyCtrlM in output")
 	}
-	lines := strings.Split(s, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(s, "\n")
+	for line := range lines {
 		if strings.Contains(line, `"enter":`) && strings.Contains(line, "KeyDef") {
 			if !strings.Contains(line, `Name: "KeyEnter"`) {
 				t.Errorf("enter should use canonical KeyEnter, got: %s", line)

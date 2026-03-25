@@ -41,7 +41,7 @@ func loadModuleClosed(t *testing.T) *goja.Runtime {
 // scheduler until the bounded retry limit.
 func waitForZone(t *testing.T, mgr *Manager, id string) {
 	t.Helper()
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		mgr.mu.RLock()
 		z := mgr.zone
 		mgr.mu.RUnlock()
@@ -472,7 +472,7 @@ func TestIntegration_RescanUpdatesZones(t *testing.T) {
 	require.NoError(t, err)
 
 	// Wait for zone info to actually change (not just exist)
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		if info := mgr.zone.Get("rz"); info != nil && info.EndX != endX1 {
 			return // zone updated — pass
 		}

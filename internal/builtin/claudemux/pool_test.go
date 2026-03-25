@@ -282,7 +282,7 @@ func TestPool_Acquire_RoundRobin(t *testing.T) {
 
 	// Acquire and release in sequence, verify round-robin.
 	ids := make([]string, 0, 6)
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		w, err := p.Acquire()
 		if err != nil {
 			t.Fatalf("Acquire %d: %v", i, err)
@@ -596,7 +596,7 @@ func TestPool_ConcurrentAcquireRelease(t *testing.T) {
 	t.Parallel()
 	p := NewPool(PoolConfig{MaxSize: 4})
 	_ = p.Start()
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		_, _ = p.AddWorker(fmt.Sprintf("w%d", i), nil)
 	}
 
@@ -604,17 +604,15 @@ func TestPool_ConcurrentAcquireRelease(t *testing.T) {
 
 	const n = 50
 	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range n {
+		wg.Go(func() {
 			w, err := p.Acquire()
 			if err != nil {
 				return
 			}
 			// Simulate brief work.
 			p.Release(w, nil, now)
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -646,7 +644,7 @@ func TestPool_ConcurrentDrainWhileAcquiring(t *testing.T) {
 	var wg sync.WaitGroup
 	errors := make([]error, n)
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -682,7 +680,7 @@ func TestPool_ConcurrentAddRemove(t *testing.T) {
 	_ = p.Start()
 
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -698,7 +696,7 @@ func TestPool_ConcurrentAddRemove(t *testing.T) {
 	}
 
 	// Remove them all concurrently.
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -730,7 +728,7 @@ func TestPool_RoundRobin_AfterRemove(t *testing.T) {
 	_, _ = p.RemoveWorker("w1")
 
 	ids := make([]string, 0, 4)
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		w, err := p.Acquire()
 		if err != nil {
 			t.Fatalf("Acquire %d: %v", i, err)

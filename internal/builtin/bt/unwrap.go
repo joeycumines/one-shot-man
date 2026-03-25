@@ -93,7 +93,7 @@ func nodeUnwrap(bridge *Bridge, vm *goja.Runtime, val goja.Value) (bt.Node, erro
 					if length != nil && !goja.IsUndefined(length) {
 						n := int(length.ToInteger())
 						children = make([]bt.Node, 0, n)
-						for i := 0; i < n; i++ {
+						for i := range n {
 							childVal := childrenObj.Get(fmt.Sprintf("%d", i))
 							child, err := nodeUnwrap(bridge, loopVm, childVal) // LOW #11 FIX: Use loopVm
 							if err != nil {

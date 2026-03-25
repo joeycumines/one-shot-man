@@ -4,7 +4,6 @@ package command
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"os"
 	"os/exec"
@@ -77,8 +76,7 @@ func TestShooterGame_E2E(t *testing.T) {
 	env := newTestProcessEnv(t)
 	defaultTimeout := 30 * time.Second
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	cp, err := termtest.NewConsole(ctx,
 		termtest.WithCommand(binaryPath, "script", "-i", scriptPath),
@@ -332,8 +330,8 @@ func TestShooterE2E_PlayerShoots(t *testing.T) {
 	if strings.Contains(spawnBuffer, "spawnWave") {
 		t.Log("Found spawnWave log messages in buffer")
 		// Find lines containing spawnWave
-		lines := strings.Split(spawnBuffer, "\n")
-		for _, line := range lines {
+		lines := strings.SplitSeq(spawnBuffer, "\n")
+		for line := range lines {
 			if strings.Contains(line, "spawnWave") || strings.Contains(line, "Creating enemy") || strings.Contains(line, "Error spawning") {
 				t.Logf("SPAWN LOG: %s", strings.TrimSpace(line))
 			}
@@ -453,8 +451,8 @@ func TestShooterE2E_EnemyMovement(t *testing.T) {
 
 	// DIAGNOSTIC: Dump buffer to look for DIAG logs
 	buf := h.GetScreenBuffer()
-	lines := strings.Split(buf, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(buf, "\n")
+	for line := range lines {
 		if strings.Contains(line, "DIAG") || strings.Contains(line, "spawn") || strings.Contains(line, "Creating") || strings.Contains(line, "MoveToward") || strings.Contains(line, "CheckAlive") {
 			t.Logf("LOG: %s", strings.TrimSpace(line))
 		}
@@ -605,7 +603,7 @@ func TestShooterE2E_PlayerMovesImmediately(t *testing.T) {
 	moved := false
 	var finalState *ShooterDebugState
 
-	for i := 0; i < maxWaitFrames; i++ {
+	for range maxWaitFrames {
 		time.Sleep(pollInterval)
 		state, err := h.GetDebugState()
 		if err != nil {
@@ -697,7 +695,7 @@ func TestShooterE2E_PlayerVelocityMatchesExpected(t *testing.T) {
 
 	// Send movement key and hold by sending multiple times
 	// Simulate holding 'd' for movement
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		if err := h.SendKey("d"); err != nil {
 			t.Fatalf("Failed to send movement key: %v", err)
 		}

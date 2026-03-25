@@ -131,8 +131,8 @@ func TestCSI_DECSET_NilCallback(t *testing.T) {
 
 func TestCSI_ED_EraseDisplay(t *testing.T) {
 	scr := NewScreen(4, 4)
-	for r := 0; r < 4; r++ {
-		for c := 0; c < 4; c++ {
+	for r := range 4 {
+		for c := range 4 {
 			scr.Cells[r][c].Ch = 'X'
 		}
 	}

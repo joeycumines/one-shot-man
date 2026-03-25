@@ -1373,8 +1373,8 @@ func TestIntegration_FileContentsOnSplitBranches(t *testing.T) {
 	for _, branch := range splitBranches {
 		// List files that differ from base (main) on this split branch.
 		diffOutput := runGitCmd(t, tp.Dir, "diff", "--name-only", "main..."+branch)
-		files := strings.Split(strings.TrimSpace(diffOutput), "\n")
-		for _, f := range files {
+		files := strings.SplitSeq(strings.TrimSpace(diffOutput), "\n")
+		for f := range files {
 			f = strings.TrimSpace(f)
 			if f == "" {
 				continue

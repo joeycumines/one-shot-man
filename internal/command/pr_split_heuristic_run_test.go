@@ -651,7 +651,7 @@ func TestPrSplitCommand_RunWithModifications(t *testing.T) {
 	// Find the last split branch.
 	branchesRaw := runGitCmd(t, dir, "branch")
 	var lastSplit string
-	for _, line := range strings.Split(branchesRaw, "\n") {
+	for line := range strings.SplitSeq(branchesRaw, "\n") {
 		line = strings.TrimSpace(line)
 		line = strings.TrimPrefix(line, "* ")
 		if strings.HasPrefix(line, "split/") {
@@ -777,7 +777,7 @@ func TestPrSplitCommand_RunCompilableGoRepo(t *testing.T) {
 	// Verify that the LAST split branch compiles.
 	branchesRaw := runGitCmd(t, dir, "branch")
 	var lastSplit string
-	for _, line := range strings.Split(branchesRaw, "\n") {
+	for line := range strings.SplitSeq(branchesRaw, "\n") {
 		line = strings.TrimSpace(line)
 		line = strings.TrimPrefix(line, "* ")
 		if strings.HasPrefix(line, "split/") {
@@ -830,7 +830,7 @@ func TestPrSplitCommand_RunChainIntegrity(t *testing.T) {
 	// Collect split branches in order.
 	branchesRaw := runGitCmd(t, dir, "branch")
 	var splitBranches []string
-	for _, line := range strings.Split(branchesRaw, "\n") {
+	for line := range strings.SplitSeq(branchesRaw, "\n") {
 		line = strings.TrimSpace(line)
 		line = strings.TrimPrefix(line, "* ")
 		if strings.HasPrefix(line, "split/") {

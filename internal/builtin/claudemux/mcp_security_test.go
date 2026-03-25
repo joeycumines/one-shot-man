@@ -181,7 +181,7 @@ func TestMCPSecurity_RapidFireCalls(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	rejected := false
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		ge := guard.ProcessToolCall(MCPToolCall{
 			ToolName:  "readFile",
 			Arguments: `{"path":"/tmp/test"}`,
@@ -219,7 +219,7 @@ func TestMCPSecurity_RepeatedIdenticalCalls(t *testing.T) {
 	}
 
 	escalated := false
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		call.Timestamp = now.Add(time.Duration(i) * time.Millisecond)
 		ge := guard.ProcessToolCall(call)
 		if ge != nil && ge.Action == GuardActionEscalate {
@@ -639,7 +639,7 @@ func TestMCPSecurity_ConcurrentSessionProcessing(t *testing.T) {
 	errCh := make(chan string, 100)
 
 	// 20 goroutines doing ProcessLine
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -648,7 +648,7 @@ func TestMCPSecurity_ConcurrentSessionProcessing(t *testing.T) {
 					errCh <- "ProcessLine panic"
 				}
 			}()
-			for j := 0; j < 50; j++ {
+			for j := range 50 {
 				t := now.Add(time.Duration(idx*50+j) * time.Millisecond)
 				_ = session.ProcessLine("concurrent line", t)
 			}
@@ -656,7 +656,7 @@ func TestMCPSecurity_ConcurrentSessionProcessing(t *testing.T) {
 	}
 
 	// 10 goroutines doing ProcessToolCall
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -665,7 +665,7 @@ func TestMCPSecurity_ConcurrentSessionProcessing(t *testing.T) {
 					errCh <- "ProcessToolCall panic"
 				}
 			}()
-			for j := 0; j < 50; j++ {
+			for j := range 50 {
 				t := now.Add(time.Duration(idx*50+j) * time.Millisecond)
 				_ = session.ProcessToolCall(MCPToolCall{
 					ToolName:  "readFile",
@@ -677,23 +677,21 @@ func TestMCPSecurity_ConcurrentSessionProcessing(t *testing.T) {
 	}
 
 	// 5 goroutines doing Snapshot
-	for i := 0; i < 5; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 5 {
+		wg.Go(func() {
 			defer func() {
 				if r := recover(); r != nil {
 					errCh <- "Snapshot panic"
 				}
 			}()
-			for j := 0; j < 50; j++ {
+			for range 50 {
 				_ = session.Snapshot()
 			}
-		}()
+		})
 	}
 
 	// 5 goroutines doing CheckTimeout
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -702,7 +700,7 @@ func TestMCPSecurity_ConcurrentSessionProcessing(t *testing.T) {
 					errCh <- "CheckTimeout panic"
 				}
 			}()
-			for j := 0; j < 50; j++ {
+			for j := range 50 {
 				t := now.Add(time.Duration(idx*50+j) * time.Millisecond)
 				session.CheckTimeout(t)
 			}
@@ -732,7 +730,7 @@ func TestMCPSecurity_ConcurrentInstanceRegistryOps(t *testing.T) {
 	errCh := make(chan string, 100)
 
 	// 20 goroutines creating instances
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -747,10 +745,8 @@ func TestMCPSecurity_ConcurrentInstanceRegistryOps(t *testing.T) {
 	}
 
 	// 10 goroutines listing
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 10 {
+		wg.Go(func() {
 			defer func() {
 				if r := recover(); r != nil {
 					errCh <- "List panic"
@@ -758,7 +754,7 @@ func TestMCPSecurity_ConcurrentInstanceRegistryOps(t *testing.T) {
 			}()
 			_ = reg.List()
 			_ = reg.Len()
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -812,7 +808,7 @@ func TestMCPSecurity_MCPGuardStateAfterAbuse(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// Feed 1000 calls with various malicious patterns
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		call := MCPToolCall{
 			ToolName:  strings.Repeat("x", i%100),
 			Arguments: strings.Repeat("{", i%50),

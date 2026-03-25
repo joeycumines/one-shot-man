@@ -153,11 +153,11 @@ func TestJSRunner_HighContention(t *testing.T) {
 	var errorCount int64
 
 	// Launch many goroutines that all call RunJSSync concurrently
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			for j := 0; j < iterationsPerGoroutine; j++ {
+			for range iterationsPerGoroutine {
 				err := jsRunner.RunJSSync(func(vm *goja.Runtime) error {
 					// Access shared state safely (via event loop serialization)
 					atomic.AddInt64(&counter, 1)
@@ -208,11 +208,9 @@ func TestJSRunner_ConcurrentWithDifferentOperations(t *testing.T) {
 	var readCount int64
 
 	// Writers increment the counter
-	for i := 0; i < numWriters; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < operationsPerGoroutine; j++ {
+	for range numWriters {
+		wg.Go(func() {
+			for range operationsPerGoroutine {
 				err := jsRunner.RunJSSync(func(vm *goja.Runtime) error {
 					_, err := vm.RunString("globalThis.sharedCounter++;")
 					if err != nil {
@@ -225,15 +223,13 @@ func TestJSRunner_ConcurrentWithDifferentOperations(t *testing.T) {
 					t.Errorf("Write failed: %v", err)
 				}
 			}
-		}()
+		})
 	}
 
 	// Readers read the counter
-	for i := 0; i < numReaders; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < operationsPerGoroutine; j++ {
+	for range numReaders {
+		wg.Go(func() {
+			for range operationsPerGoroutine {
 				err := jsRunner.RunJSSync(func(vm *goja.Runtime) error {
 					val, err := vm.RunString("globalThis.sharedCounter")
 					if err != nil {
@@ -250,7 +246,7 @@ func TestJSRunner_ConcurrentWithDifferentOperations(t *testing.T) {
 					t.Errorf("Read failed: %v", err)
 				}
 			}
-		}()
+		})
 	}
 
 	wg.Wait()

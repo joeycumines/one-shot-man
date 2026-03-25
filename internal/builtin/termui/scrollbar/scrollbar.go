@@ -37,10 +37,7 @@ func createScrollbarObject(runtime *goja.Runtime, m *termuisb.Model) goja.Value 
 		if len(call.Arguments) < 1 {
 			return goja.Undefined()
 		}
-		h := int(call.Argument(0).ToInteger())
-		if h < 0 {
-			h = 0
-		}
+		h := max(int(call.Argument(0).ToInteger()), 0)
 		m.ViewportHeight = h
 		return obj
 	})
@@ -49,10 +46,7 @@ func createScrollbarObject(runtime *goja.Runtime, m *termuisb.Model) goja.Value 
 		if len(call.Arguments) < 1 {
 			return goja.Undefined()
 		}
-		h := int(call.Argument(0).ToInteger())
-		if h < 0 {
-			h = 0
-		}
+		h := max(int(call.Argument(0).ToInteger()), 0)
 		m.ContentHeight = h
 		return obj
 	})

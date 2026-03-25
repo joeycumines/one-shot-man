@@ -371,7 +371,7 @@ func TestParserRecovery_OSCWithoutTerminator(t *testing.T) {
 	// Start OSC without terminating it
 	p.Feed(0x1B)
 	p.Feed(']')
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		p.Feed('x')
 	}
 	// Parser should still be in OSC state
@@ -395,7 +395,7 @@ func TestParserHugeParams(t *testing.T) {
 	p.Feed(0x1B)
 	p.Feed('[')
 	// Feed 1000 semicolons
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		p.Feed(';')
 	}
 	// Should still accept a final byte

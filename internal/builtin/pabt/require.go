@@ -197,7 +197,7 @@ func Require(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoader {
 						}
 
 						length := int(resultObj.Get("length").ToInteger())
-						for i := 0; i < length; i++ {
+						for i := range length {
 							actionVal := resultObj.Get(fmt.Sprintf("%d", i))
 							if goja.IsUndefined(actionVal) || goja.IsNull(actionVal) {
 								continue
@@ -263,7 +263,7 @@ func Require(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoader {
 			length := int(goalsArray.Get("length").ToInteger())
 			goals := make([]pabtpkg.IConditions, 0, length)
 
-			for i := 0; i < length; i++ {
+			for i := range length {
 				goalVal := goalsArray.Get(fmt.Sprintf("%d", i))
 				if goja.IsUndefined(goalVal) || goja.IsNull(goalVal) {
 					continue
@@ -350,7 +350,7 @@ func Require(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoader {
 				length := int(conditionsArray.Get("length").ToInteger())
 				var conditionSlice []pabtpkg.Condition
 
-				for i := 0; i < length; i++ {
+				for i := range length {
 					condVal := conditionsArray.Get(fmt.Sprintf("%d", i))
 					if goja.IsUndefined(condVal) || goja.IsNull(condVal) {
 						continue
@@ -424,7 +424,7 @@ func Require(ctx context.Context, bridge *btmod.Bridge) require.ModuleLoader {
 
 				slog.Debug("[PA-BT EFFECT PARSE] Starting effect parsing", "action", name, "effectCount", length)
 
-				for i := 0; i < length; i++ {
+				for i := range length {
 					effectVal := effectsArray.Get(fmt.Sprintf("%d", i))
 					if goja.IsUndefined(effectVal) || goja.IsNull(effectVal) {
 						slog.Debug("[PA-BT EFFECT PARSE] Effect undefined/null", "action", name, "index", i)

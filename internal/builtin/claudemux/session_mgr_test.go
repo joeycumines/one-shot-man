@@ -569,7 +569,7 @@ func TestManagedSession_ConcurrentProcessLine(t *testing.T) {
 	var wg sync.WaitGroup
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -594,7 +594,7 @@ func TestManagedSession_ConcurrentMixed(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// Mix process lines, tool calls, snapshots, and timeout checks.
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -602,7 +602,7 @@ func TestManagedSession_ConcurrentMixed(t *testing.T) {
 		}(i)
 	}
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -613,7 +613,7 @@ func TestManagedSession_ConcurrentMixed(t *testing.T) {
 		}(i)
 	}
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()

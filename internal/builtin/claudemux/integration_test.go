@@ -319,7 +319,7 @@ func TestIntegration_MenuNavigation(t *testing.T) {
 		const maxScrollAttempts = 30
 		found := false
 
-		for attempt := 0; attempt < maxScrollAttempts; attempt++ {
+		for attempt := range maxScrollAttempts {
 			// Send arrow down to scroll through the model list.
 			if sendErr := handle.Send(KeyArrowDown); sendErr != nil {
 				t.Fatalf("Send scroll keystrokes: %v", sendErr)
@@ -790,7 +790,7 @@ func TestSimulated_ConcurrentMultiSessionPipeline(t *testing.T) {
 	const eventsPerWorker = 50
 
 	sessions := make([]*ManagedSession, numWorkers)
-	for i := 0; i < numWorkers; i++ {
+	for i := range numWorkers {
 		id := fmt.Sprintf("worker-%d", i)
 		inst, err := registry.Create(id)
 		if err != nil {
@@ -814,14 +814,14 @@ func TestSimulated_ConcurrentMultiSessionPipeline(t *testing.T) {
 	var wg sync.WaitGroup
 	errors := make([]error, numWorkers)
 
-	for i := 0; i < numWorkers; i++ {
+	for i := range numWorkers {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
 			id := fmt.Sprintf("worker-%d", idx)
 			now := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
 
-			for j := 0; j < eventsPerWorker; j++ {
+			for j := range eventsPerWorker {
 				now = now.Add(100 * time.Millisecond)
 				line := fmt.Sprintf("[%s] Processing step %d/%d", id, j+1, eventsPerWorker)
 
@@ -866,7 +866,7 @@ func TestSimulated_ConcurrentMultiSessionPipeline(t *testing.T) {
 	}
 
 	// Graceful shutdown.
-	for i := 0; i < numWorkers; i++ {
+	for i := range numWorkers {
 		sessions[i].Shutdown()
 		sessions[i].Close()
 	}

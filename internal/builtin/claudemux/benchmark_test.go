@@ -221,7 +221,7 @@ func BenchmarkChoiceResolverAnalyze(b *testing.B) {
 		{"3_candidates", candidates},
 		{"10_candidates", func() []Candidate {
 			var cs []Candidate
-			for i := 0; i < 10; i++ {
+			for i := range 10 {
 				cs = append(cs, Candidate{
 					ID:         string(rune('a' + i)),
 					Name:       string(rune('A' + i)),

@@ -169,14 +169,14 @@ func TestFindGoalFiles_LargeDirectory(t *testing.T) {
 	// Create more files than the soft warning threshold but don't actually
 	// hit maxDirEntries (10000) since that would be slow. Instead, just
 	// verify the function handles directories with many files gracefully.
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		name := fmt.Sprintf("goal-%03d.json", i)
 		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte("{}"), 0o644); err != nil {
 			t.Fatalf("Failed to create file: %v", err)
 		}
 	}
 	// Add some non-json files
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		name := fmt.Sprintf("readme-%03d.txt", i)
 		if err := os.WriteFile(filepath.Join(tmpDir, name), []byte("text"), 0o644); err != nil {
 			t.Fatalf("Failed to create file: %v", err)

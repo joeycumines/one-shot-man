@@ -843,7 +843,7 @@ func TestAppendFile_MultipleAppendsAccumulate(t *testing.T) {
 	appendFile := requireCallable(t, exports, "appendFile")
 
 	path := filepath.Join(t.TempDir(), "multi.txt")
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		_, err := appendFile(goja.Undefined(), runtime.ToValue(path), runtime.ToValue(fmt.Sprintf("line%d\n", i)))
 		if err != nil {
 			t.Fatalf("appendFile iteration %d failed: %v", i, err)

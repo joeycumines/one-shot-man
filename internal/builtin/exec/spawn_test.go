@@ -370,7 +370,7 @@ func TestSpawnChild_ConcurrentSpawns(t *testing.T) {
 	}
 	results := make(chan result, n)
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		go func(idx int) {
 			child, err := SpawnChild(context.Background(), SpawnConfig{
 				Command: "sh",
@@ -400,7 +400,7 @@ func TestSpawnChild_ConcurrentSpawns(t *testing.T) {
 	}
 
 	seen := make(map[string]bool)
-	for i := 0; i < n; i++ {
+	for range n {
 		r := <-results
 		if r.err != nil {
 			t.Fatal(r.err)
@@ -408,7 +408,7 @@ func TestSpawnChild_ConcurrentSpawns(t *testing.T) {
 		seen[r.output] = true
 	}
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		expected := fmt.Sprintf("child-%d", i)
 		if !seen[expected] {
 			t.Errorf("missing output from %s", expected)
@@ -532,7 +532,7 @@ func TestSpawnChild_BinaryData(t *testing.T) {
 	if len(got) != 256 {
 		t.Fatalf("output length = %d, want 256", len(got))
 	}
-	for i := 0; i < 256; i++ {
+	for i := range 256 {
 		if got[i] != byte(i) {
 			t.Errorf("byte[%d] = %d, want %d", i, got[i], i)
 			break

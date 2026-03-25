@@ -1,6 +1,7 @@
 package vt
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -220,12 +221,7 @@ func (p *Parser) Params() []int {
 
 // HasIntermediate reports whether b appears in the intermediate buffer.
 func (p *Parser) HasIntermediate(b byte) bool {
-	for _, v := range p.intermBuf {
-		if v == b {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(p.intermBuf, b)
 }
 
 // Reset returns the parser to ground state and clears all buffers.

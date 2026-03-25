@@ -337,7 +337,7 @@ func TestMuxEvents_QueueFull_Drops(t *testing.T) {
 	e := newMuxEvents()
 
 	// Fill the channel (capacity 64).
-	for i := 0; i < 64; i++ {
+	for i := range 64 {
 		e.queue("resize", map[string]any{"i": i})
 	}
 
@@ -900,14 +900,14 @@ func TestMuxEvents_ConcurrentOnOff(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			id := events.on("resize", fn)
 			events.off(id)
 		}
 	}()
 
 	// Concurrently add/remove from main goroutine
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		id := events.on("resize", fn)
 		events.off(id)
 	}
@@ -921,11 +921,11 @@ func TestMuxEvents_ConcurrentQueue(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for i := 0; i < 50; i++ {
+		for i := range 50 {
 			events.queue("resize", map[string]any{"rows": i})
 		}
 	}()
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		events.queue("focus", map[string]any{"side": "osm"})
 	}
 	<-done

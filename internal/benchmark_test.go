@@ -180,7 +180,7 @@ func BenchmarkSessionOperations(b *testing.B) {
 			ScriptState: make(map[string]map[string]any),
 			SharedState: make(map[string]any),
 		}
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			sess.History[i] = storage.HistoryEntry{
 				EntryID:    "entry",
 				ModeID:     "test-mode",
@@ -209,7 +209,7 @@ func BenchmarkSessionOperations(b *testing.B) {
 			ScriptState: make(map[string]map[string]any),
 			SharedState: make(map[string]any),
 		}
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			sess.History[i] = storage.HistoryEntry{
 				EntryID:    "entry",
 				ModeID:     "test-mode",
@@ -619,7 +619,7 @@ func TestPerformanceRegression(t *testing.T) {
 
 		start := time.Now()
 		const iterations = 100
-		for i := 0; i < iterations; i++ {
+		for range iterations {
 			_, _, err := session.GetSessionID("")
 			if err != nil {
 				t.Fatalf("failed to generate session ID: %v", err)
@@ -652,7 +652,7 @@ func TestPerformanceRegression(t *testing.T) {
 			ScriptState: make(map[string]map[string]any),
 			SharedState: make(map[string]any),
 		}
-		for i := 0; i < writeIter; i++ {
+		for range writeIter {
 			backend, _ := storage.NewInMemoryBackend(sess.ID)
 			_ = backend.SaveSession(sess)
 			_ = backend.Close()
@@ -667,7 +667,7 @@ func TestPerformanceRegression(t *testing.T) {
 		// Read benchmark
 		readStart := time.Now()
 		const readIter = 50
-		for i := 0; i < readIter; i++ {
+		for range readIter {
 			backend, _ := storage.NewInMemoryBackend(sess.ID)
 			loaded, _ := backend.LoadSession(sess.ID)
 			if loaded == nil {
@@ -693,7 +693,7 @@ func TestPerformanceRegression(t *testing.T) {
 		ctx := context.Background()
 		start := time.Now()
 		const iterations = 10
-		for i := 0; i < iterations; i++ {
+		for range iterations {
 			rt, err := scripting.NewRuntime(ctx)
 			if err != nil {
 				t.Fatalf("failed to create runtime: %v", err)
@@ -725,7 +725,7 @@ func TestPerformanceRegression(t *testing.T) {
 		script := `var x = 42; var y = 58; var z = x + y;`
 		start := time.Now()
 		const iterations = 50
-		for i := 0; i < iterations; i++ {
+		for range iterations {
 			if err := rt.LoadScript("test.js", script); err != nil {
 				t.Fatalf("failed to load script: %v", err)
 			}
@@ -763,11 +763,9 @@ func TestPerformanceRegression(t *testing.T) {
 		var wg sync.WaitGroup
 		start := time.Now()
 
-		for g := 0; g < numGoroutines; g++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for i := 0; i < iterPerGoroutine; i++ {
+		for range numGoroutines {
+			wg.Go(func() {
+				for range iterPerGoroutine {
 					backend, err := storage.NewInMemoryBackend(sess.ID)
 					if err != nil {
 						t.Errorf("failed to create backend: %v", err)
@@ -786,7 +784,7 @@ func TestPerformanceRegression(t *testing.T) {
 					}
 					_ = backend.Close()
 				}
-			}()
+			})
 		}
 		wg.Wait()
 		elapsed := time.Since(start)
@@ -814,7 +812,7 @@ func TestMemoryUsageRegression(t *testing.T) {
 		runtime.ReadMemStats(&m1)
 
 		const iterations = 100
-		for i := 0; i < iterations; i++ {
+		for range iterations {
 			rt, err := scripting.NewRuntime(ctx)
 			if err != nil {
 				t.Fatalf("failed to create runtime: %v", err)
@@ -845,7 +843,7 @@ func TestMemoryUsageRegression(t *testing.T) {
 		runtime.ReadMemStats(&m1)
 
 		const iterations = 100
-		for i := 0; i < iterations; i++ {
+		for range iterations {
 			sess := &storage.Session{
 				ID:          "test-session",
 				Version:     storage.CurrentSchemaVersion,

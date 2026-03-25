@@ -151,7 +151,7 @@ func FuzzMCPPayload(f *testing.F) {
 		now := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 
 		// Process the same call multiple times (test repeat detection too).
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			call := MCPToolCall{
 				ToolName:  toolName,
 				Arguments: args,

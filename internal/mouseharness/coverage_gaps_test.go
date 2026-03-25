@@ -345,7 +345,7 @@ func TestGetVisibleTop_ContentScrolled(t *testing.T) {
 	t.Parallel()
 	// When content has more lines than height
 	var lines []string
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		lines = append(lines, "Content line")
 	}
 	buffer := strings.Join(lines, "\n")
@@ -382,10 +382,7 @@ func TestBufferRowToViewportRow_AllClampPaths(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			viewportY := tc.bufferRow - (visibleTop - 1)
-			if viewportY < 1 {
-				viewportY = 1
-			}
+			viewportY := max(tc.bufferRow-(visibleTop-1), 1)
 			if viewportY > height {
 				viewportY = height
 			}

@@ -37,9 +37,9 @@ func parseTerminalBuffer(buffer string) []string {
 				// CSI sequence
 				i++
 				// Parse parameters
-				params := ""
+				var params strings.Builder
 				for i < len(buffer) && (buffer[i] >= '0' && buffer[i] <= '9' || buffer[i] == ';' || buffer[i] == '?') {
-					params += string(buffer[i])
+					params.WriteString(string(buffer[i]))
 					i++
 				}
 				if i < len(buffer) {
@@ -48,8 +48,8 @@ func parseTerminalBuffer(buffer string) []string {
 					switch cmd {
 					case 'H', 'f': // Cursor position
 						row, col := 1, 1
-						if params != "" {
-							parts := strings.SplitN(params, ";", 3)
+						if params.String() != "" {
+							parts := strings.SplitN(params.String(), ";", 3)
 							if len(parts) >= 1 && parts[0] != "" {
 								if n, err := strconv.Atoi(parts[0]); err == nil {
 									row = n
@@ -65,8 +65,8 @@ func parseTerminalBuffer(buffer string) []string {
 						cursorCol = col - 1
 					case 'J': // Erase in Display
 						n := 0
-						if params != "" {
-							if v, err := strconv.Atoi(params); err == nil {
+						if params.String() != "" {
+							if v, err := strconv.Atoi(params.String()); err == nil {
 								n = v
 							}
 						}
@@ -108,8 +108,8 @@ func parseTerminalBuffer(buffer string) []string {
 						}
 					case 'A': // Cursor Up
 						n := 1
-						if params != "" {
-							if v, err := strconv.Atoi(params); err == nil {
+						if params.String() != "" {
+							if v, err := strconv.Atoi(params.String()); err == nil {
 								n = v
 							}
 						}
@@ -119,24 +119,24 @@ func parseTerminalBuffer(buffer string) []string {
 						}
 					case 'B': // Cursor Down
 						n := 1
-						if params != "" {
-							if v, err := strconv.Atoi(params); err == nil {
+						if params.String() != "" {
+							if v, err := strconv.Atoi(params.String()); err == nil {
 								n = v
 							}
 						}
 						cursorRow += n
 					case 'C': // Cursor Forward
 						n := 1
-						if params != "" {
-							if v, err := strconv.Atoi(params); err == nil {
+						if params.String() != "" {
+							if v, err := strconv.Atoi(params.String()); err == nil {
 								n = v
 							}
 						}
 						cursorCol += n
 					case 'D': // Cursor Back
 						n := 1
-						if params != "" {
-							if v, err := strconv.Atoi(params); err == nil {
+						if params.String() != "" {
+							if v, err := strconv.Atoi(params.String()); err == nil {
 								n = v
 							}
 						}
@@ -147,7 +147,7 @@ func parseTerminalBuffer(buffer string) []string {
 					case 'm': // SGR (colors, styles) - ignore
 					case 'h': // Set mode
 						// Handle alt screen switch: ?1049h or ?47h
-						if strings.Contains(params, "1049") || strings.Contains(params, "47") {
+						if strings.Contains(params.String(), "1049") || strings.Contains(params.String(), "47") {
 							// Alt screen: clear the buffer and reset cursor
 							for r := range screen {
 								for c := range screen[r] {
@@ -342,12 +342,9 @@ func (c *Console) getVisibleTop() int {
 // coordinates, not absolute buffer positions.
 func (c *Console) bufferRowToViewportRow(bufferRow int) int {
 	visibleTop := c.getVisibleTop()
-	viewportY := bufferRow - (visibleTop - 1)
-
-	// Clamp to valid viewport range
-	if viewportY < 1 {
-		viewportY = 1
-	}
+	viewportY := max(
+		// Clamp to valid viewport range
+		bufferRow-(visibleTop-1), 1)
 	if viewportY > c.height {
 		viewportY = c.height
 	}

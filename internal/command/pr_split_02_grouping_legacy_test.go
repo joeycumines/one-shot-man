@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -1102,16 +1103,17 @@ func noop() {}
 	_, _, evalJS, _ := loadPrSplitEngineWithEval(t, nil)
 
 	// Build JS array of absolute paths.
-	jsFiles := "["
+	var jsFiles strings.Builder
+	jsFiles.WriteString("[")
 	for i, f := range filePaths {
 		if i > 0 {
-			jsFiles += ","
+			jsFiles.WriteString(",")
 		}
-		jsFiles += jsString(f)
+		jsFiles.WriteString(jsString(f))
 	}
-	jsFiles += "]"
+	jsFiles.WriteString("]")
 
-	val, err := evalJS(`JSON.stringify(globalThis.prSplit._extractGoImports(` + jsFiles + `))`)
+	val, err := evalJS(`JSON.stringify(globalThis.prSplit._extractGoImports(` + jsFiles.String() + `))`)
 	if err != nil {
 		t.Fatal(err)
 	}

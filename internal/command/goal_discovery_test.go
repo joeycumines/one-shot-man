@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -174,7 +175,7 @@ func TestGoalDiscovery_DiscoverGoalPaths(t *testing.T) {
 		// Create a deep directory structure
 		tmpDir := t.TempDir()
 		deepPath := tmpDir
-		for i := 0; i < 15; i++ {
+		for range 15 {
 			deepPath = filepath.Join(deepPath, "level")
 		}
 		if err := os.MkdirAll(deepPath, 0o755); err != nil {
@@ -205,13 +206,7 @@ func TestGoalDiscovery_DiscoverGoalPaths(t *testing.T) {
 		discovery := NewGoalDiscovery(cfg)
 		paths := discovery.DiscoverGoalPaths()
 
-		found := false
-		for _, path := range paths {
-			if path == goalDir {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(paths, goalDir)
 		// Should NOT find it because it's beyond the traversal depth
 		if found {
 			t.Errorf("Should not have discovered goal directory %s beyond max traversal depth", goalDir)
@@ -675,13 +670,7 @@ func TestGoalDiscovery_StandardPaths(t *testing.T) {
 		configDir := filepath.Dir(configPath)
 		expectedPath := filepath.Join(configDir, "goals")
 
-		found := false
-		for _, path := range standardPaths {
-			if path == expectedPath {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(standardPaths, expectedPath)
 		if !found {
 			t.Errorf("Expected standard paths to include config goals path: %s", expectedPath)
 		}
@@ -1130,7 +1119,7 @@ func TestGoalDiscovery_TraversalReachesRoot(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	deepPath := tmpDir
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		deepPath = filepath.Join(deepPath, "d")
 	}
 	if err := os.MkdirAll(deepPath, 0o755); err != nil {

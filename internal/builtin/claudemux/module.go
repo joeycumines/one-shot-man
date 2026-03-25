@@ -418,7 +418,7 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 			arr := call.Argument(0).ToObject(runtime)
 			length := int(arr.Get("length").ToInteger())
 			validators := make([]Validator, 0, length)
-			for i := 0; i < length; i++ {
+			for i := range length {
 				item := arr.Get(fmt.Sprintf("%d", i)).ToObject(runtime)
 				v := item.Get("__goValidator")
 				if v == nil || goja.IsUndefined(v) {
@@ -598,7 +598,7 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 				stagesArr := v.ToObject(runtime)
 				length := int(stagesArr.Get("length").ToInteger())
 				p.Stages = make([]SplitPlanStage, length)
-				for i := 0; i < length; i++ {
+				for i := range length {
 					so := stagesArr.Get(fmt.Sprintf("%d", i)).ToObject(runtime)
 					s := SplitPlanStage{}
 					if nv := so.Get("name"); nv != nil && !goja.IsUndefined(nv) {
@@ -685,7 +685,7 @@ func Require(ctx context.Context) func(runtime *goja.Runtime, module *goja.Objec
 				patchArr := v.ToObject(runtime)
 				length := int(patchArr.Get("length").ToInteger())
 				r.Patches = make([]FilePatch, length)
-				for i := 0; i < length; i++ {
+				for i := range length {
 					po := patchArr.Get(fmt.Sprintf("%d", i)).ToObject(runtime)
 					r.Patches[i] = FilePatch{
 						File:    po.Get("file").String(),
@@ -2789,7 +2789,7 @@ func jsToChoiceConfig(runtime *goja.Runtime, val goja.Value) ChoiceConfig {
 		arr := v.ToObject(runtime)
 		length := int(arr.Get("length").ToInteger())
 		criteria := make([]Criterion, 0, length)
-		for i := 0; i < length; i++ {
+		for i := range length {
 			item := arr.Get(fmt.Sprintf("%d", i)).ToObject(runtime)
 			crit := Criterion{}
 			if n := item.Get("name"); n != nil && !goja.IsUndefined(n) {
@@ -2852,7 +2852,7 @@ func jsToCandidates(runtime *goja.Runtime, val goja.Value) []Candidate {
 	arr := val.ToObject(runtime)
 	length := int(arr.Get("length").ToInteger())
 	candidates := make([]Candidate, 0, length)
-	for i := 0; i < length; i++ {
+	for i := range length {
 		item := arr.Get(fmt.Sprintf("%d", i)).ToObject(runtime)
 		c := Candidate{}
 		if v := item.Get("id"); v != nil && !goja.IsUndefined(v) {
@@ -2880,7 +2880,7 @@ func jsToCriteria(runtime *goja.Runtime, val goja.Value) []Criterion {
 	arr := val.ToObject(runtime)
 	length := int(arr.Get("length").ToInteger())
 	criteria := make([]Criterion, 0, length)
-	for i := 0; i < length; i++ {
+	for i := range length {
 		item := arr.Get(fmt.Sprintf("%d", i)).ToObject(runtime)
 		c := Criterion{}
 		if v := item.Get("name"); v != nil && !goja.IsUndefined(v) {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -53,13 +54,7 @@ func TestRegistry(t *testing.T) {
 
 	// Test listing commands
 	commands := registry.listBuiltin()
-	found := false
-	for _, name := range commands {
-		if name == "test" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(commands, "test")
 	if !found {
 		t.Error("Expected 'test' command in builtin list")
 	}

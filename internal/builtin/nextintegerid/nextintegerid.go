@@ -31,7 +31,7 @@ func Require(runtime *goja.Runtime, module *goja.Object) {
 		length := lengthVal.ToInteger()
 
 		var maxVal int64 = 0
-		for i := int64(0); i < length; i++ {
+		for i := range length {
 			itemVal := listObj.Get(fmt.Sprintf("%d", i))
 			if itemVal == nil || goja.IsUndefined(itemVal) || goja.IsNull(itemVal) {
 				continue

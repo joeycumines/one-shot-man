@@ -113,10 +113,7 @@ found:
 		if totalRows > c.height {
 			visibleTop = totalRows - c.height + 1
 		}
-		viewportY := loc.Row - (visibleTop - 1)
-		if viewportY < 1 {
-			viewportY = 1
-		}
+		viewportY := max(loc.Row-(visibleTop-1), 1)
 		if viewportY > c.height {
 			viewportY = c.height
 		}

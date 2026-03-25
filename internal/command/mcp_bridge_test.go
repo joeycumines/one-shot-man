@@ -283,9 +283,7 @@ func TestCloseWrite(t *testing.T) {
 	defer ln.Close()
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		conn, _ := ln.Accept()
 		if conn != nil {
 			defer conn.Close()
@@ -293,7 +291,7 @@ func TestCloseWrite(t *testing.T) {
 			buf := make([]byte, 1024)
 			_, _ = conn.Read(buf)
 		}
-	}()
+	})
 
 	conn, err := net.Dial("tcp", ln.Addr().String())
 	if err != nil {

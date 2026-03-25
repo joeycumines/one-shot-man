@@ -43,7 +43,7 @@ func TestBlackboard_ConcurrentJSLeaves(t *testing.T) {
 	wg.Add(N)
 
 	// Start N adapters concurrently; each increments counter once
-	for i := 0; i < N; i++ {
+	for range N {
 		go func() {
 			defer wg.Done()
 			node := NewJSLeafAdapter(context.TODO(), bridge, fn, nil)
@@ -99,7 +99,7 @@ func TestBlackboard_LargeDataset(t *testing.T) {
 	const size = 20000
 
 	// Insert many keys
-	for i := 0; i < size; i++ {
+	for i := range size {
 		bb.Set(fmt.Sprintf("k-%d", i), i)
 	}
 

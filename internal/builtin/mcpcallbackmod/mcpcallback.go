@@ -805,10 +805,7 @@ func (cb *mcpCallback) jsWaitFor() func(call goja.FunctionCall) goja.Value {
 				progressFn, _ = goja.AssertFunction(v)
 			}
 			if v := opts.Get("checkIntervalMs"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
-				checkIntervalMs = v.ToInteger()
-				if checkIntervalMs < 100 {
-					checkIntervalMs = 100
-				}
+				checkIntervalMs = max(v.ToInteger(), 100)
 			}
 		}
 
@@ -925,10 +922,7 @@ func (cb *mcpCallback) jsWaitForAsync() func(call goja.FunctionCall) goja.Value 
 				progressFn, _ = goja.AssertFunction(v)
 			}
 			if v := opts.Get("checkIntervalMs"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
-				checkIntervalMs = v.ToInteger()
-				if checkIntervalMs < 100 {
-					checkIntervalMs = 100
-				}
+				checkIntervalMs = max(v.ToInteger(), 100)
 			}
 		}
 

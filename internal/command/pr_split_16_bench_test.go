@@ -26,12 +26,12 @@ import (
 func benchSetupPlanCache(n, filesPerSplit int) string {
 	var sb strings.Builder
 	sb.WriteString("globalThis.prSplit._state.planCache = { baseBranch: 'main', sourceBranch: 'feature', splits: [")
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if i > 0 {
 			sb.WriteString(",")
 		}
 		sb.WriteString(fmt.Sprintf("{name:'split/%d',files:[", i))
-		for j := 0; j < filesPerSplit; j++ {
+		for j := range filesPerSplit {
 			if j > 0 {
 				sb.WriteString(",")
 			}
@@ -47,7 +47,7 @@ func benchSetupPlanCache(n, filesPerSplit int) string {
 func benchSetupAnalysisSteps(n int) string {
 	var sb strings.Builder
 	sb.WriteString("s.analysisSteps = [")
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if i > 0 {
 			sb.WriteString(",")
 		}
@@ -67,7 +67,7 @@ func benchSetupAnalysisSteps(n int) string {
 func benchSetupExecutionResults(n int) string {
 	var sb strings.Builder
 	sb.WriteString("s.executionResults = [")
-	for i := 0; i < n; i++ {
+	for i := range n {
 		if i > 0 {
 			sb.WriteString(",")
 		}
@@ -742,7 +742,7 @@ func TestViewPerformanceRegression(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Warm up.
-			for i := 0; i < warmUpIterations; i++ {
+			for range warmUpIterations {
 				if tc.setup != "" {
 					if _, err := evalJS(tc.setup); err != nil {
 						t.Fatal(err)
@@ -755,7 +755,7 @@ func TestViewPerformanceRegression(t *testing.T) {
 
 			// Measure.
 			var totalUs int64
-			for i := 0; i < measureIterations; i++ {
+			for range measureIterations {
 				if tc.setup != "" {
 					if _, err := evalJS(tc.setup); err != nil {
 						t.Fatal(err)
@@ -790,7 +790,7 @@ func TestViewPerformanceRegression(t *testing.T) {
 		js := `globalThis.prSplit._viewPlanReviewScreen(initState('PLAN_REVIEW'))`
 
 		// Warm up.
-		for i := 0; i < warmUpIterations; i++ {
+		for range warmUpIterations {
 			if _, err := evalJS(js); err != nil {
 				t.Fatalf("warm-up failed: %v", err)
 			}
@@ -798,7 +798,7 @@ func TestViewPerformanceRegression(t *testing.T) {
 
 		// Measure.
 		var totalUs int64
-		for i := 0; i < measureIterations; i++ {
+		for range measureIterations {
 			start := time.Now()
 			raw, err := evalJS(js)
 			elapsed := time.Since(start)
@@ -822,7 +822,7 @@ func TestViewPerformanceRegression(t *testing.T) {
 		js := `globalThis.prSplit._wizardView(initState('PLAN_REVIEW'))`
 
 		// Warm up.
-		for i := 0; i < warmUpIterations; i++ {
+		for range warmUpIterations {
 			if _, err := evalJS(js); err != nil {
 				t.Fatalf("warm-up failed: %v", err)
 			}
@@ -830,7 +830,7 @@ func TestViewPerformanceRegression(t *testing.T) {
 
 		// Measure.
 		var totalUs int64
-		for i := 0; i < measureIterations; i++ {
+		for range measureIterations {
 			start := time.Now()
 			raw, err := evalJS(js)
 			elapsed := time.Since(start)
@@ -871,7 +871,7 @@ func TestViewPerformanceRegression(t *testing.T) {
 		})()`
 
 		// Warm up.
-		for i := 0; i < warmUpIterations; i++ {
+		for range warmUpIterations {
 			if _, err := evalJS(js); err != nil {
 				t.Fatalf("warm-up failed: %v", err)
 			}
@@ -879,7 +879,7 @@ func TestViewPerformanceRegression(t *testing.T) {
 
 		// Measure.
 		var totalUs int64
-		for i := 0; i < measureIterations; i++ {
+		for range measureIterations {
 			start := time.Now()
 			raw, err := evalJS(js)
 			elapsed := time.Since(start)
@@ -926,7 +926,7 @@ func TestViewPerformanceRegression(t *testing.T) {
 		})()`
 
 		// Warm up.
-		for i := 0; i < warmUpIterations; i++ {
+		for range warmUpIterations {
 			if _, err := evalJS(js); err != nil {
 				t.Fatalf("warm-up failed: %v", err)
 			}
@@ -934,7 +934,7 @@ func TestViewPerformanceRegression(t *testing.T) {
 
 		// Measure.
 		var totalUs int64
-		for i := 0; i < measureIterations; i++ {
+		for range measureIterations {
 			start := time.Now()
 			raw, err := evalJS(js)
 			elapsed := time.Since(start)

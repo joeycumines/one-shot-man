@@ -3,6 +3,7 @@ package command
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -286,11 +287,8 @@ func TestCreatePRs_PushOnlyMode(t *testing.T) {
 	if err := json.Unmarshal([]byte(callsVal.(string)), &cmds); err != nil {
 		t.Fatal(err)
 	}
-	for _, cmd := range cmds {
-		if cmd == "gh" {
-			t.Error("expected no gh calls in push-only mode")
-			break
-		}
+	if slices.Contains(cmds, "gh") {
+		t.Error("expected no gh calls in push-only mode")
 	}
 }
 
@@ -992,12 +990,7 @@ func findArgValue(argv []string, flag string) string {
 
 // containsArg returns true if argv contains the given argument.
 func containsArg(argv []string, target string) bool {
-	for _, arg := range argv {
-		if arg == target {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(argv, target)
 }
 
 // ---------------------------------------------------------------------------

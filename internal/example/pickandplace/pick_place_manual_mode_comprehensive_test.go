@@ -1050,7 +1050,7 @@ func TestManualMode_WASD_Movement_T13(t *testing.T) {
 		_ = actor.Set("y", 12)
 
 		// Press 'D' key 5 times (discrete movement) with tick after each
-		for i := 0; i < 5; i++ {
+		for i := range 5 {
 			msgKey := map[string]any{"type": "Key", "key": "d"}
 			err := sendInputAndTick(t, vm, state, updateFn, msgKey)
 			assert.NoError(t, err, "Key press %d should succeed", i)

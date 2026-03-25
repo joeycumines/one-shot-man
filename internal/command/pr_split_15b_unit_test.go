@@ -30,11 +30,11 @@ func TestChunk15b_ClaudeQuestionPrompt_Falsy(t *testing.T) {
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	for _, variant := range []string{
-		`{}`,                                   // undefined field
-		`{claudeQuestionDetected: false}`,      // explicit false
-		`{claudeQuestionDetected: 0}`,          // zero
-		`{claudeQuestionDetected: null}`,       // null
-		`{claudeQuestionDetected: undefined}`,  // explicit undefined
+		`{}`,                                  // undefined field
+		`{claudeQuestionDetected: false}`,     // explicit false
+		`{claudeQuestionDetected: 0}`,         // zero
+		`{claudeQuestionDetected: null}`,      // null
+		`{claudeQuestionDetected: undefined}`, // explicit undefined
 	} {
 		t.Run(variant, func(t *testing.T) {
 			val, err := evalJS(`prSplit._renderClaudeQuestionPrompt(` + variant + `)`)

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"strconv"
 )
 
@@ -24,9 +25,7 @@ func CheckSchemaVersion(c *Config) []string {
 	probe := &Config{
 		Global: make(map[string]string, len(c.Global)),
 	}
-	for k, v := range c.Global {
-		probe.Global[k] = v
-	}
+	maps.Copy(probe.Global, c.Global)
 
 	result, err := MigrateConfig(probe)
 	if err != nil {

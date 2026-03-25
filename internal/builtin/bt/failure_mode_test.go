@@ -35,7 +35,7 @@ func TestFailureMode_ConcurrentTickerAccess(t *testing.T) {
 	// Create multiple concurrent tickers sharing the same bridge
 	numTickers := 5
 	tickers := make([]bt.Ticker, numTickers)
-	for i := 0; i < numTickers; i++ {
+	for i := range numTickers {
 		tickers[i] = bt.NewTicker(
 			context.TODO(),
 			time.Duration(5+i)*time.Millisecond,
@@ -50,7 +50,7 @@ func TestFailureMode_ConcurrentTickerAccess(t *testing.T) {
 	// Use a channel to wait for at least one tick to complete
 	doneCh := make(chan struct{}, 1)
 	go func() {
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			status, err := node.Tick()
 			if err == nil && status == bt.Success {
 				// Successfully got at least one tick
@@ -101,7 +101,7 @@ func TestFailureMode_RapidSequentialTicks(t *testing.T) {
 	node := blockingJSLeaveNoVM(context.TODO(), bridge, countFn, nil)
 
 	// Tick rapidly without yielding - should not crash or error
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		status, err := node.Tick()
 		require.NoError(t, err, "Tick %d should not error", i)
 		assert.Equal(t, bt.Success, status)

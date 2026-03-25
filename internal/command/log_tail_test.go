@@ -45,7 +45,7 @@ func TestLogCommand_TailLines(t *testing.T) {
 
 	// Create a log file with 20 lines.
 	lines := make([]string, 20)
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		lines[i] = `{"level":"info","msg":"line-` + intStr(i+1) + `"}`
 	}
 	if err := os.WriteFile(logPath, []byte(strings.Join(lines, "\n")+"\n"), 0644); err != nil {

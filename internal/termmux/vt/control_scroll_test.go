@@ -151,8 +151,8 @@ func TestHandleControl_UnrecognizedByte_Ignored(t *testing.T) {
 func TestScrollRegionUp_Normal(t *testing.T) {
 	s := NewScreen(5, 3) // 5 rows × 3 cols
 	// Fill rows with identifiable content.
-	for r := 0; r < 5; r++ {
-		for c := 0; c < 3; c++ {
+	for r := range 5 {
+		for c := range 3 {
 			s.Cells[r][c].Ch = rune('A' + r)
 		}
 	}
@@ -182,8 +182,8 @@ func TestScrollRegionUp_Normal(t *testing.T) {
 
 func TestScrollRegionUp_NGreaterThanRange(t *testing.T) {
 	s := NewScreen(4, 3)
-	for r := 0; r < 4; r++ {
-		for c := 0; c < 3; c++ {
+	for r := range 4 {
+		for c := range 3 {
 			s.Cells[r][c].Ch = rune('A' + r)
 		}
 	}
@@ -207,11 +207,11 @@ func TestScrollRegionUp_NGreaterThanRange(t *testing.T) {
 
 func TestScrollRegionUp_ZeroN_NoOp(t *testing.T) {
 	s := NewScreen(3, 3)
-	for r := 0; r < 3; r++ {
+	for r := range 3 {
 		s.Cells[r][0].Ch = rune('A' + r)
 	}
 	s.scrollRegionUp(0, 3, 0)
-	for r := 0; r < 3; r++ {
+	for r := range 3 {
 		want := rune('A' + r)
 		if s.Cells[r][0].Ch != want {
 			t.Errorf("row %d: got %c, want %c", r, s.Cells[r][0].Ch, want)
@@ -221,8 +221,8 @@ func TestScrollRegionUp_ZeroN_NoOp(t *testing.T) {
 
 func TestScrollRegionDown_Normal(t *testing.T) {
 	s := NewScreen(5, 3)
-	for r := 0; r < 5; r++ {
-		for c := 0; c < 3; c++ {
+	for r := range 5 {
+		for c := range 3 {
 			s.Cells[r][c].Ch = rune('A' + r)
 		}
 	}
@@ -252,8 +252,8 @@ func TestScrollRegionDown_Normal(t *testing.T) {
 
 func TestScrollRegionDown_NGreaterThanRange(t *testing.T) {
 	s := NewScreen(4, 3)
-	for r := 0; r < 4; r++ {
-		for c := 0; c < 3; c++ {
+	for r := range 4 {
+		for c := range 3 {
 			s.Cells[r][c].Ch = rune('A' + r)
 		}
 	}
@@ -277,11 +277,11 @@ func TestScrollRegionDown_NGreaterThanRange(t *testing.T) {
 
 func TestScrollRegionDown_ZeroN_NoOp(t *testing.T) {
 	s := NewScreen(3, 3)
-	for r := 0; r < 3; r++ {
+	for r := range 3 {
 		s.Cells[r][0].Ch = rune('A' + r)
 	}
 	s.scrollRegionDown(0, 3, 0)
-	for r := 0; r < 3; r++ {
+	for r := range 3 {
 		want := rune('A' + r)
 		if s.Cells[r][0].Ch != want {
 			t.Errorf("row %d: got %c, want %c", r, s.Cells[r][0].Ch, want)
@@ -291,11 +291,11 @@ func TestScrollRegionDown_ZeroN_NoOp(t *testing.T) {
 
 func TestScrollRegionUp_TopGeBot_NoOp(t *testing.T) {
 	s := NewScreen(3, 3)
-	for r := 0; r < 3; r++ {
+	for r := range 3 {
 		s.Cells[r][0].Ch = rune('A' + r)
 	}
 	s.scrollRegionUp(2, 2, 1) // top == bot
-	for r := 0; r < 3; r++ {
+	for r := range 3 {
 		want := rune('A' + r)
 		if s.Cells[r][0].Ch != want {
 			t.Errorf("row %d: got %c, want %c", r, s.Cells[r][0].Ch, want)
@@ -305,11 +305,11 @@ func TestScrollRegionUp_TopGeBot_NoOp(t *testing.T) {
 
 func TestScrollRegionDown_TopGeBot_NoOp(t *testing.T) {
 	s := NewScreen(3, 3)
-	for r := 0; r < 3; r++ {
+	for r := range 3 {
 		s.Cells[r][0].Ch = rune('A' + r)
 	}
 	s.scrollRegionDown(2, 2, 1) // top == bot
-	for r := 0; r < 3; r++ {
+	for r := range 3 {
 		want := rune('A' + r)
 		if s.Cells[r][0].Ch != want {
 			t.Errorf("row %d: got %c, want %c", r, s.Cells[r][0].Ch, want)
@@ -324,7 +324,7 @@ func TestMakeDefaultTabStops_Normal80(t *testing.T) {
 	if len(ts) != 80 {
 		t.Fatalf("len: got %d, want 80", len(ts))
 	}
-	for i := 0; i < 80; i++ {
+	for i := range 80 {
 		want := (i % 8) == 0
 		if ts[i] != want {
 			t.Errorf("ts[%d] = %v, want %v", i, ts[i], want)

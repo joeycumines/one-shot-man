@@ -1,6 +1,7 @@
 package command
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -216,13 +217,7 @@ func TestBuiltInGoal_CodeExplainerDepthState(t *testing.T) {
 	}
 
 	// Must have NotableVariables containing "depth"
-	foundNotable := false
-	for _, v := range found.NotableVariables {
-		if v == "depth" {
-			foundNotable = true
-			break
-		}
-	}
+	foundNotable := slices.Contains(found.NotableVariables, "depth")
 	if !foundNotable {
 		t.Fatalf("expected NotableVariables to contain 'depth', got: %v", found.NotableVariables)
 	}
@@ -342,13 +337,7 @@ func TestBuiltInGoal_PIIScrubberLevelState(t *testing.T) {
 	}
 
 	// Must have NotableVariables containing "level"
-	foundNotable := false
-	for _, nv := range found.NotableVariables {
-		if nv == "level" {
-			foundNotable = true
-			break
-		}
-	}
+	foundNotable := slices.Contains(found.NotableVariables, "level")
 	if !foundNotable {
 		t.Fatalf("expected NotableVariables to contain 'level', got: %v", found.NotableVariables)
 	}
@@ -414,13 +403,7 @@ func TestBuiltInGoal_ProsePolisherStyleState(t *testing.T) {
 	}
 
 	// Must have NotableVariables containing "style"
-	foundNotable := false
-	for _, nv := range found.NotableVariables {
-		if nv == "style" {
-			foundNotable = true
-			break
-		}
-	}
+	foundNotable := slices.Contains(found.NotableVariables, "style")
 	if !foundNotable {
 		t.Fatalf("expected NotableVariables to contain 'style', got: %v", found.NotableVariables)
 	}
@@ -522,13 +505,7 @@ func TestBuiltInGoal_DataToJsonModeState(t *testing.T) {
 	}
 
 	// Must have NotableVariables containing "mode"
-	foundNotable := false
-	for _, nv := range found.NotableVariables {
-		if nv == "mode" {
-			foundNotable = true
-			break
-		}
-	}
+	foundNotable := slices.Contains(found.NotableVariables, "mode")
 	if !foundNotable {
 		t.Fatalf("expected NotableVariables to contain 'mode', got: %v", found.NotableVariables)
 	}
@@ -594,13 +571,7 @@ func TestBuiltInGoal_CiteSourcesFormatState(t *testing.T) {
 	}
 
 	// Must have NotableVariables containing "format"
-	foundNotable := false
-	for _, nv := range found.NotableVariables {
-		if nv == "format" {
-			foundNotable = true
-			break
-		}
-	}
+	foundNotable := slices.Contains(found.NotableVariables, "format")
 	if !foundNotable {
 		t.Fatalf("expected NotableVariables to contain 'format', got: %v", found.NotableVariables)
 	}
@@ -702,13 +673,7 @@ func TestBuiltInGoal_SQLGeneratorDialectState(t *testing.T) {
 	}
 
 	// Must have NotableVariables containing "dialect"
-	foundNotable := false
-	for _, nv := range found.NotableVariables {
-		if nv == "dialect" {
-			foundNotable = true
-			break
-		}
-	}
+	foundNotable := slices.Contains(found.NotableVariables, "dialect")
 	if !foundNotable {
 		t.Fatalf("expected NotableVariables to contain 'dialect', got: %v", found.NotableVariables)
 	}
@@ -774,13 +739,7 @@ func TestBuiltInGoal_ReportAnalyzerFocusState(t *testing.T) {
 	}
 
 	// Must have NotableVariables containing "focus"
-	foundNotable := false
-	for _, nv := range found.NotableVariables {
-		if nv == "focus" {
-			foundNotable = true
-			break
-		}
-	}
+	foundNotable := slices.Contains(found.NotableVariables, "focus")
 	if !foundNotable {
 		t.Fatalf("expected NotableVariables to contain 'focus', got: %v", found.NotableVariables)
 	}
@@ -846,13 +805,7 @@ func TestBuiltInGoal_ReviewClassifierOutputFormatState(t *testing.T) {
 	}
 
 	// Must have NotableVariables containing "outputFormat"
-	foundNotable := false
-	for _, nv := range found.NotableVariables {
-		if nv == "outputFormat" {
-			foundNotable = true
-			break
-		}
-	}
+	foundNotable := slices.Contains(found.NotableVariables, "outputFormat")
 	if !foundNotable {
 		t.Fatalf("expected NotableVariables to contain 'outputFormat', got: %v", found.NotableVariables)
 	}
@@ -940,13 +893,7 @@ func TestBuiltInGoal_AdaptiveEditorInstructState(t *testing.T) {
 	}
 
 	// Must have NotableVariables containing "instruction"
-	foundNotable := false
-	for _, nv := range found.NotableVariables {
-		if nv == "instruction" {
-			foundNotable = true
-			break
-		}
-	}
+	foundNotable := slices.Contains(found.NotableVariables, "instruction")
 	if !foundNotable {
 		t.Fatalf("expected NotableVariables to contain 'instruction', got: %v", found.NotableVariables)
 	}

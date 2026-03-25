@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -71,7 +72,7 @@ func gitBranchList(t *testing.T, dir string) []string {
 	t.Helper()
 	raw := runGitCmd(t, dir, "branch", "--list", "--format=%(refname:short)")
 	var branches []string
-	for _, line := range strings.Split(strings.TrimSpace(raw), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(raw), "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" {
 			branches = append(branches, line)
@@ -417,9 +418,7 @@ func setupTestPipeline(t *testing.T, opts TestPipelineOpts) *TestPipeline {
 		"baseBranch": "main",
 		"dir":        dir,
 	}
-	for k, v := range opts.ConfigOverrides {
-		overrides[k] = v
-	}
+	maps.Copy(overrides, opts.ConfigOverrides)
 
 	stdout, dispatch, evalJS, evalJSAsync := loadPrSplitEngineWithEval(t, overrides)
 
@@ -603,9 +602,7 @@ func loadPrSplitEngine(t testing.TB, overrides map[string]any) (*bytes.Buffer, f
 		"dryRun":        false,
 		"jsonOutput":    false,
 	}
-	for k, v := range overrides {
-		jsConfig[k] = v
-	}
+	maps.Copy(jsConfig, overrides)
 
 	engine.SetGlobal("config", map[string]any{"name": "pr-split"})
 	engine.SetGlobal("prSplitConfig", jsConfig)
@@ -677,9 +674,7 @@ func loadPrSplitEngineWithEval(t testing.TB, overrides map[string]any) (*safeBuf
 		"dryRun":        false,
 		"jsonOutput":    false,
 	}
-	for k, v := range overrides {
-		jsConfig[k] = v
-	}
+	maps.Copy(jsConfig, overrides)
 
 	engine.SetGlobal("config", map[string]any{"name": "pr-split"})
 	engine.SetGlobal("prSplitConfig", jsConfig)

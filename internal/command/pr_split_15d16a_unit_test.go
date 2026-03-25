@@ -191,17 +191,17 @@ func TestChunk15d_ViewForState_AllStates(t *testing.T) {
 		state    string
 		contains string // substring we expect in the output
 	}{
-		{"IDLE", ""},              // CONFIG screen, empty plan is fine
-		{"CONFIG", ""},            // CONFIG screen
-		{"BASELINE_FAIL", ""},     // CONFIG screen (fallthrough with IDLE/CONFIG)
-		{"PLAN_GENERATION", ""},   // analysis screen
-		{"PLAN_REVIEW", ""},       // plan review screen
-		{"PLAN_EDITOR", ""},       // plan editor screen
-		{"BRANCH_BUILDING", ""},   // execution screen
-		{"ERROR_RESOLUTION", ""},  // error resolution
-		{"EQUIV_CHECK", ""},       // verification screen
-		{"FINALIZATION", ""},      // finalization screen
-		{"DONE", ""},              // same as finalization
+		{"IDLE", ""},             // CONFIG screen, empty plan is fine
+		{"CONFIG", ""},           // CONFIG screen
+		{"BASELINE_FAIL", ""},    // CONFIG screen (fallthrough with IDLE/CONFIG)
+		{"PLAN_GENERATION", ""},  // analysis screen
+		{"PLAN_REVIEW", ""},      // plan review screen
+		{"PLAN_EDITOR", ""},      // plan editor screen
+		{"BRANCH_BUILDING", ""},  // execution screen
+		{"ERROR_RESOLUTION", ""}, // error resolution
+		{"EQUIV_CHECK", ""},      // verification screen
+		{"FINALIZATION", ""},     // finalization screen
+		{"DONE", ""},             // same as finalization
 		{"CANCELLED", "Cancelled"},
 		{"FORCE_CANCEL", "Cancelled"},
 		{"ERROR", "Error"},

@@ -33,11 +33,11 @@ func TestConcurrentSessionAccess_MultipleGoroutines(t *testing.T) {
 	var wg sync.WaitGroup
 	errors := make(chan error, numGoroutines)
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(goroutineID int) {
 			defer wg.Done()
-			for j := 0; j < 20; j++ {
+			for range 20 {
 				id, source, err := GetSessionID("")
 				if err != nil {
 					errors <- fmt.Errorf("goroutine %d: error getting session ID: %w", goroutineID, err)
@@ -72,11 +72,11 @@ func TestConcurrentSessionAccess_ReadWriteWithExplicitOverride(t *testing.T) {
 	var wg sync.WaitGroup
 	errors := make(chan error, numGoroutines*numOpsPerGoroutine)
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := range numGoroutines {
 		wg.Add(1)
 		go func(goroutineID int) {
 			defer wg.Done()
-			for j := 0; j < numOpsPerGoroutine; j++ {
+			for j := range numOpsPerGoroutine {
 				// Alternate between empty and explicit override
 				explicit := ""
 				if j%2 == 0 {
@@ -116,7 +116,7 @@ func TestConcurrentSessionAccess_RapidSessionIDCalls(t *testing.T) {
 	os.Setenv("SSH_CONNECTION", "192.168.1.100 12345 192.168.1.1 22")
 
 	// Rapid sequential calls
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		id, source, err := GetSessionID("")
 		if err != nil {
 			t.Fatalf("iteration %d: unexpected error: %v", i, err)
@@ -215,7 +215,7 @@ func TestSessionIDGenerationEdgeCases_IDUniqueness(t *testing.T) {
 	seen := make(map[string]bool)
 	const numIDs = 1000
 
-	for i := 0; i < numIDs; i++ {
+	for i := range numIDs {
 		// Vary environment slightly each time to generate different IDs
 		os.Setenv("SSH_CONNECTION", fmt.Sprintf("192.168.1.%d %d 192.168.1.1 22", i%256, 10000+i))
 
@@ -594,7 +594,7 @@ func TestHashFunctionEdgeCases_CollisionResistance(t *testing.T) {
 	base := "session-data"
 	seen := make(map[string]bool)
 
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		input := base + fmt.Sprintf("%d", i)
 		hash := hashString(input)
 

@@ -35,7 +35,7 @@ func TestBenchmark_AutoSplitLargeRepo(t *testing.T) {
 
 	// Build InitialFiles: one base file per directory.
 	initialFiles := make([]TestPipelineFile, 0, numDirs)
-	for d := 0; d < numDirs; d++ {
+	for d := range numDirs {
 		dir := fmt.Sprintf("pkg/mod%02d", d)
 		initialFiles = append(initialFiles, TestPipelineFile{
 			Path:    fmt.Sprintf("%s/base.go", dir),
@@ -50,12 +50,12 @@ func TestBenchmark_AutoSplitLargeRepo(t *testing.T) {
 
 	// Build FeatureFiles: filesPerDir new files in each directory.
 	featureFiles := make([]TestPipelineFile, 0, numDirs*filesPerDir)
-	for d := 0; d < numDirs; d++ {
+	for d := range numDirs {
 		dir := fmt.Sprintf("pkg/mod%02d", d)
-		for f := 0; f < filesPerDir; f++ {
+		for f := range filesPerDir {
 			var sb strings.Builder
 			sb.WriteString(fmt.Sprintf("package mod%02d\n\n", d))
-			for l := 0; l < linesPerFile-2; l++ {
+			for l := range linesPerFile - 2 {
 				sb.WriteString(fmt.Sprintf("func Fn%d_%d_%d() {} // line %d\n", d, f, l, l))
 			}
 			featureFiles = append(featureFiles, TestPipelineFile{
@@ -72,9 +72,9 @@ func TestBenchmark_AutoSplitLargeRepo(t *testing.T) {
 		Files       []string `json:"files"`
 	}
 	classification := make([]classEntry, numDirs)
-	for d := 0; d < numDirs; d++ {
+	for d := range numDirs {
 		files := make([]string, filesPerDir)
-		for f := 0; f < filesPerDir; f++ {
+		for f := range filesPerDir {
 			files[f] = fmt.Sprintf("pkg/mod%02d/feat%02d.go", d, f)
 		}
 		classification[d] = classEntry{
@@ -95,9 +95,9 @@ func TestBenchmark_AutoSplitLargeRepo(t *testing.T) {
 		Message string   `json:"message"`
 	}
 	splitPlan := make([]splitEntry, numDirs)
-	for d := 0; d < numDirs; d++ {
+	for d := range numDirs {
 		files := make([]string, filesPerDir)
-		for f := 0; f < filesPerDir; f++ {
+		for f := range filesPerDir {
 			files[f] = fmt.Sprintf("pkg/mod%02d/feat%02d.go", d, f)
 		}
 		splitPlan[d] = splitEntry{

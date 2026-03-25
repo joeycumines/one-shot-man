@@ -319,9 +319,7 @@ func TestReadableStream_ConcurrentReads(t *testing.T) {
 	var total int
 
 	// Read in a goroutine to simulate async consumer.
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for {
 			chunk, done, readErr := reader.Read()
 			if readErr != nil {
@@ -335,7 +333,7 @@ func TestReadableStream_ConcurrentReads(t *testing.T) {
 			total += len(chunk)
 			mu.Unlock()
 		}
-	}()
+	})
 	wg.Wait()
 
 	if total != len(data) {

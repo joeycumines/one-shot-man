@@ -290,7 +290,7 @@ func TestStatusBar_ConcurrentAccess(t *testing.T) {
 	// Concurrent SetStatus writers.
 	go func() {
 		defer wg.Done()
-		for i := 0; i < iterations; i++ {
+		for i := range iterations {
 			sb.SetStatus(fmt.Sprintf("status-%d", i))
 		}
 	}()
@@ -298,7 +298,7 @@ func TestStatusBar_ConcurrentAccess(t *testing.T) {
 	// Concurrent SetHeight writers.
 	go func() {
 		defer wg.Done()
-		for i := 0; i < iterations; i++ {
+		for i := range iterations {
 			sb.SetHeight(20 + (i % 20))
 		}
 	}()
@@ -306,16 +306,16 @@ func TestStatusBar_ConcurrentAccess(t *testing.T) {
 	// Concurrent SetToggleKey writers.
 	go func() {
 		defer wg.Done()
-		for i := 0; i < iterations; i++ {
+		for i := range iterations {
 			sb.SetToggleKey(byte(1 + (i % 26))) // Ctrl+A through Ctrl+Z
 		}
 	}()
 
 	// Concurrent Render calls.
-	for g := 0; g < goroutines-3; g++ {
+	for range goroutines - 3 {
 		go func() {
 			defer wg.Done()
-			for i := 0; i < iterations; i++ {
+			for range iterations {
 				sb.Render()
 			}
 		}()

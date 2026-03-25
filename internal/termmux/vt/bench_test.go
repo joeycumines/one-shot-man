@@ -14,7 +14,7 @@ var benchInputUTF8 []byte
 func init() {
 	// ~4KB realistic terminal output with ANSI sequences.
 	var sb strings.Builder
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		sb.WriteString("\x1b[1;32m$ \x1b[0mecho 'Hello, World!'\r\n")
 		sb.WriteString("Hello, World!\r\n")
 	}

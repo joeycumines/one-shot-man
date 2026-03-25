@@ -97,7 +97,7 @@ func TestActionRegistryThreadSafety(t *testing.T) {
 
 	// Concurrent registration
 	done := make(chan bool)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		go func() {
 			reg.Register("test", action)
 			done <- true
@@ -105,7 +105,7 @@ func TestActionRegistryThreadSafety(t *testing.T) {
 	}
 
 	// Wait for all goroutines
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		<-done
 	}
 

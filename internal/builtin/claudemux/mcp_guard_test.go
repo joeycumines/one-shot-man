@@ -179,7 +179,7 @@ func TestMCPGuard_Frequency_Exceeded(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// 3 calls within 5s: fine.
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		ge := g.ProcessToolCall(MCPToolCall{
 			ToolName:  "addFile",
 			Timestamp: now.Add(time.Duration(i) * time.Second),
@@ -218,7 +218,7 @@ func TestMCPGuard_Frequency_WindowSlides(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// 3 calls at t=0, t=1, t=2.
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		g.ProcessToolCall(MCPToolCall{
 			ToolName:  "addFile",
 			Timestamp: now.Add(time.Duration(i) * time.Second),
@@ -242,7 +242,7 @@ func TestMCPGuard_Frequency_Disabled(t *testing.T) {
 	})
 
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		ge := g.ProcessToolCall(MCPToolCall{
 			ToolName:  "addFile",
 			Timestamp: now,
@@ -276,7 +276,7 @@ func TestMCPGuard_Repeat_Detected(t *testing.T) {
 	}
 
 	// First 3 identical calls: fine (repeats=1,2,3 which is <=3).
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		call.Timestamp = now.Add(time.Duration(i) * time.Second)
 		ge := g.ProcessToolCall(call)
 		if ge != nil {
@@ -386,7 +386,7 @@ func TestMCPGuard_Repeat_Disabled(t *testing.T) {
 	})
 
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		ge := g.ProcessToolCall(MCPToolCall{
 			ToolName:  "addFile",
 			Arguments: `{"same": true}`,
@@ -553,7 +553,7 @@ func TestMCPGuard_AllDisabled(t *testing.T) {
 	g := NewMCPGuard(MCPGuardConfig{})
 
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	for i := 0; i < 200; i++ {
+	for i := range 200 {
 		ge := g.ProcessToolCall(MCPToolCall{
 			ToolName:  "addFile",
 			Arguments: `{"same": true}`,
@@ -586,7 +586,7 @@ func TestMCPGuard_HistoryTrimming(t *testing.T) {
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 
 	// Add 300 unique calls — history should be trimmed.
-	for i := 0; i < 300; i++ {
+	for i := range 300 {
 		g.ProcessToolCall(MCPToolCall{
 			ToolName:  "tool" + time.Duration(i).String(),
 			Timestamp: now.Add(time.Duration(i) * time.Millisecond),

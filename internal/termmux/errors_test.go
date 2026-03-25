@@ -28,7 +28,7 @@ func TestSentinelErrors_messages(t *testing.T) {
 
 func TestSentinelErrors_distinct(t *testing.T) {
 	errs := []error{ErrNoChild, ErrAlreadyAttached, ErrPassthroughActive, ErrDetached, ErrDetachTimeout}
-	for i := 0; i < len(errs); i++ {
+	for i := range errs {
 		for j := i + 1; j < len(errs); j++ {
 			if errors.Is(errs[i], errs[j]) {
 				t.Errorf("errors.Is(%v, %v) = true, want false", errs[i], errs[j])

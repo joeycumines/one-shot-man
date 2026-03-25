@@ -429,7 +429,7 @@ func TestSupervisor_Reset(t *testing.T) {
 	_ = s.Start()
 
 	// Drive to stopped.
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		s.HandleError("error", ErrorClassPTYEOF)
 	}
 	s.ConfirmStopped()
@@ -531,7 +531,7 @@ func TestSupervisor_ConcurrentShutdown(t *testing.T) {
 	var wg sync.WaitGroup
 	decisions := make([]RecoveryDecision, n)
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -575,12 +575,10 @@ func TestSupervisor_ConcurrentErrors(t *testing.T) {
 
 	const n = 50
 	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range n {
+		wg.Go(func() {
 			s.HandleError("concurrent error", ErrorClassPTYError)
-		}()
+		})
 	}
 	wg.Wait()
 

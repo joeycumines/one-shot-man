@@ -349,7 +349,7 @@ func TestParser_OSC_MaxLength(t *testing.T) {
 	p.Feed(0x1B)
 	p.Feed(']')
 	// Feed more than maxOSCLen (4096) bytes
-	for i := 0; i < 5000; i++ {
+	for range 5000 {
 		p.Feed('x')
 	}
 	// Should not panic and should still be in OSC

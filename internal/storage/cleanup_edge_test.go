@@ -107,7 +107,7 @@ func TestCleaner_ConcurrentCleaners(t *testing.T) {
 
 	// Create 5 sessions old enough to be removed by age.
 	now := time.Now()
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		id := fmt.Sprintf("conc-%d", i)
 		p, _ := sessionFilePath(id)
 		if err := os.WriteFile(p, []byte("{}"), 0644); err != nil {
@@ -129,7 +129,7 @@ func TestCleaner_ConcurrentCleaners(t *testing.T) {
 	wg.Add(2)
 	results := make([]result, 2)
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		i := i
 		go func() {
 			defer wg.Done()
@@ -180,7 +180,7 @@ func TestCleaner_LargeSessionSet(t *testing.T) {
 
 	now := time.Now()
 	const total = 200
-	for i := 0; i < total; i++ {
+	for i := range total {
 		id := fmt.Sprintf("large-%03d", i)
 		p, _ := sessionFilePath(id)
 		if err := os.WriteFile(p, []byte("{}"), 0644); err != nil {
@@ -226,7 +226,7 @@ func TestCleaner_CombinedPolicies(t *testing.T) {
 	now := time.Now()
 
 	// 5 old sessions (>30 days)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		id := fmt.Sprintf("old-%d", i)
 		p, _ := sessionFilePath(id)
 		if err := os.WriteFile(p, []byte("{}"), 0644); err != nil {
@@ -239,7 +239,7 @@ func TestCleaner_CombinedPolicies(t *testing.T) {
 	}
 
 	// 5 recent sessions (staggered over last few hours)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		id := fmt.Sprintf("recent-%d", i)
 		p, _ := sessionFilePath(id)
 		if err := os.WriteFile(p, []byte("{}"), 0644); err != nil {
@@ -401,7 +401,7 @@ func TestCleaner_ManyOrphanLocks(t *testing.T) {
 	const count = 20
 	expectedIDs := make([]string, count)
 
-	for i := 0; i < count; i++ {
+	for i := range count {
 		id := fmt.Sprintf("orphan-%02d", i)
 		expectedIDs[i] = id
 		lockPath, _ := sessionLockFilePath(id)

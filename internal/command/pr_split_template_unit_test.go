@@ -3,6 +3,7 @@ package command
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -368,13 +369,7 @@ func TestPrSplitCommand_ParseGoImports(t *testing.T) {
 				t.Errorf("expected %d imports, got %d: %v", tt.want, len(imports), imports)
 			}
 			if tt.check != "" {
-				found := false
-				for _, imp := range imports {
-					if imp == tt.check {
-						found = true
-						break
-					}
-				}
+				found := slices.Contains(imports, tt.check)
 				if !found {
 					t.Errorf("expected to find import %q in %v", tt.check, imports)
 				}

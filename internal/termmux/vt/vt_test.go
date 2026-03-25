@@ -85,8 +85,8 @@ func TestVTerm_WriteCSI(t *testing.T) {
 	v := NewVTerm(4, 4)
 	// Fill screen with 'X'.
 	v.mu.Lock()
-	for r := 0; r < 4; r++ {
-		for c := 0; c < 4; c++ {
+	for r := range 4 {
+		for c := range 4 {
 			v.active.Cells[r][c].Ch = 'X'
 		}
 	}
@@ -95,8 +95,8 @@ func TestVTerm_WriteCSI(t *testing.T) {
 	v.Write([]byte("\x1b[2J"))
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	for r := 0; r < 4; r++ {
-		for c := 0; c < 4; c++ {
+	for r := range 4 {
+		for c := range 4 {
 			if v.active.Cells[r][c].Ch != ' ' {
 				t.Fatalf("cell[%d][%d] = %q after ED 2; want ' '", r, c, v.active.Cells[r][c].Ch)
 			}
@@ -191,7 +191,7 @@ func TestVTerm_Reset(t *testing.T) {
 		t.Fatalf("cursor after reset: (%d,%d); want (0,0)", v.active.CurRow, v.active.CurCol)
 	}
 	// Screen should be blank.
-	for c := 0; c < 5; c++ {
+	for c := range 5 {
 		if v.active.Cells[0][c].Ch != ' ' {
 			t.Fatalf("cell[0][%d] = %q after reset; want ' '", c, v.active.Cells[0][c].Ch)
 		}
@@ -205,13 +205,13 @@ func TestVTerm_ConcurrentWriteResize(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 500; i++ {
+		for range 500 {
 			v.Write([]byte("ABCDEFGHIJ\n"))
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 500; i++ {
+		for i := range 500 {
 			rows := 20 + (i % 10)
 			cols := 60 + (i % 40)
 			v.Resize(rows, cols)
@@ -247,13 +247,13 @@ func TestVTerm_RenderConcurrent(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 500; i++ {
+		for range 500 {
 			v.Write([]byte("test\n"))
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 500; i++ {
+		for range 500 {
 			_ = v.RenderFullScreen()
 		}
 	}()
@@ -390,7 +390,7 @@ func TestVTerm_DECSTBM_CUPStillAddressesFullScreen(t *testing.T) {
 func TestVTerm_DECSTBM_LineFeedScrollsOnlyWithinRegion(t *testing.T) {
 	v := NewVTerm(5, 10)
 	// Label rows
-	for r := 0; r < 5; r++ {
+	for r := range 5 {
 		v.Write([]byte{byte('A' + r)})
 		if r < 4 {
 			v.Write([]byte("\x1b[" + string(rune('0'+r+2)) + ";1H"))
@@ -478,10 +478,10 @@ func TestVTerm_ConcurrentWrite(t *testing.T) {
 	const iters = 100
 
 	wg.Add(workers)
-	for w := 0; w < workers; w++ {
+	for range workers {
 		go func() {
 			defer wg.Done()
-			for i := 0; i < iters; i++ {
+			for range iters {
 				v.Write([]byte("HELLO \x1b[1;31mWORLD\x1b[0m\n"))
 			}
 		}()
@@ -762,13 +762,13 @@ func TestVTerm_String_Concurrent(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			v.Write([]byte("abc"))
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			_ = v.String()
 		}
 	}()

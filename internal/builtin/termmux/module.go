@@ -566,7 +566,7 @@ func newCaptureSession(ctx context.Context, runtime *goja.Runtime, call goja.Fun
 		argsObj := call.Argument(1).ToObject(runtime)
 		if lenVal := argsObj.Get("length"); lenVal != nil && !goja.IsUndefined(lenVal) {
 			arrLen := lenVal.ToInteger()
-			for i := int64(0); i < arrLen; i++ {
+			for i := range arrLen {
 				v := argsObj.Get(fmt.Sprintf("%d", i))
 				if v != nil && !goja.IsUndefined(v) {
 					cfg.Args = append(cfg.Args, v.String())

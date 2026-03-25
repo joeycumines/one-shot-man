@@ -73,12 +73,12 @@ func TestSplitDiff_Integration(t *testing.T) {
 	t.Run("LargeDiff", func(t *testing.T) {
 		// Build a diff with many files that exceeds DefaultMaxDiffLines.
 		var b strings.Builder
-		for i := 0; i < 20; i++ {
+		for i := range 20 {
 			b.WriteString("diff --git a/file" + itoa(i) + ".go b/file" + itoa(i) + ".go\n")
 			b.WriteString("--- a/file" + itoa(i) + ".go\n")
 			b.WriteString("+++ b/file" + itoa(i) + ".go\n")
 			b.WriteString("@@ -1,50 +1,50 @@\n")
-			for j := 0; j < 50; j++ {
+			for j := range 50 {
 				b.WriteString("-old line " + itoa(j) + "\n")
 				b.WriteString("+new line " + itoa(j) + "\n")
 			}

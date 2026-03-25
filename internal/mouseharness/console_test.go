@@ -226,10 +226,7 @@ func TestBufferRowToViewportRow(t *testing.T) {
 				visibleTop = actualLineCount - tt.terminalHeight + 1
 			}
 
-			viewportY := tt.bufferRow - (visibleTop - 1)
-			if viewportY < 1 {
-				viewportY = 1
-			}
+			viewportY := max(tt.bufferRow-(visibleTop-1), 1)
 			if viewportY > tt.terminalHeight {
 				viewportY = tt.terminalHeight
 			}
@@ -242,7 +239,7 @@ func TestBufferRowToViewportRow(t *testing.T) {
 func TestClickElement_AccountsForViewportOffset(t *testing.T) {
 	// Pure unit test verifying coordinate conversion logic
 	var lines []string
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		if i == 34 { // Row 35 (1-indexed)
 			lines = append(lines, "  [Target Button]  ")
 		} else {

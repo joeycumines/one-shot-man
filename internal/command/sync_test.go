@@ -718,7 +718,6 @@ func TestSlugify(t *testing.T) {
 		{"café résumé", "caf-rsum"},
 	}
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.input, func(t *testing.T) {
 			t.Parallel()
 			got := slugify(tc.input)
@@ -742,7 +741,6 @@ func TestParseTags(t *testing.T) {
 		{"", nil},
 	}
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.input, func(t *testing.T) {
 			t.Parallel()
 			got := parseTags(tc.input)
@@ -1045,7 +1043,6 @@ func TestStripFrontmatter(t *testing.T) {
 		},
 	}
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := stripFrontmatter(tc.input)
@@ -1123,7 +1120,6 @@ func TestMatchEntry(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := matchEntry(entries, tc.query)

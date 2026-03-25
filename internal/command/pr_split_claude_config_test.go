@@ -404,7 +404,7 @@ func TestPrSplitCommand_ClaudeEnvParsing(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := map[string]string{}
 			if tt.envStr != "" {
-				for _, pair := range strings.Split(tt.envStr, ",") {
+				for pair := range strings.SplitSeq(tt.envStr, ",") {
 					pair = strings.TrimSpace(pair)
 					if k, v, ok := strings.Cut(pair, "="); ok && k != "" {
 						result[k] = v

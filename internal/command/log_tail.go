@@ -125,10 +125,7 @@ func readLastNLines(r io.Reader, n int) []string {
 	}
 
 	// Extract lines in order from the ring buffer.
-	total := count
-	if total > n {
-		total = n
-	}
+	total := min(count, n)
 	result := make([]string, total)
 	start := idx - total
 	for i := 0; i < total; i++ {

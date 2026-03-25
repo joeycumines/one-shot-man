@@ -288,7 +288,7 @@ func TestSimulationConsistency_Physics_T6(t *testing.T) {
 		_ = manualActor.Set("y", 10)
 
 		// Move 5 ticks right
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			msgKey := createKeyMsg("d")
 			_, _ = updateFn(goja.Undefined(), manualState, vmManual.ToValue(msgKey))
 			msgTick := createTickMsg()

@@ -27,7 +27,85 @@ ResolveColor (3 cases), RenderProgressBar (4 cases). Rule of Two v2 PASS+PASS.
 2 syncReportScrollbar (mock + 3 noop variants), CHROME_ESTIMATE=8,
 viewForState (15 states + unknown = 16 subtests). Rule of Two v2 PASS+PASS.
 
-### Next: T418 — Unit tests for 16a focus navigation functions
+### T418 DONE — Unit tests for 16a focus navigation functions (committed 94579ccd)
+15 top-level test functions with 13 subtests (28 total). Covers getFocusElements for CONFIG
+(base/advanced), PLAN_REVIEW, FINALIZATION, PAUSED, EQUIV_CHECK (processing/non-equiv/equiv/null-result),
+ERROR_RESOLUTION (standard/crash + counts), IDLE, BASELINE_FAIL. syncSplitSelection card-index
+extraction. handleNavDown/Up wrapping. handleListNav clamping with editor guards and CONFIG delegation.
+Pass 1 had one wrong assumption (EQUIV_CHECK null result = 0 not 3 — fixed). Rule of Two PASS+PASS.
+
+### T419 DONE — Falsy || audit and fixes (committed 35a6ae88)
+Audited ~600 || usages across 20 JS chunks (09-16f). Found 22 bugs in 9 files.
+Fixed all with typeof-guarded ternaries. 8 tests + audit doc.
+Rule of Two PASS+PASS.
+
+### T420 DONE — CHANGELOG entries (committed b0aa4e34)
+8 entries for T410-T419 added to CHANGELOG.md [Unreleased].
+Rule of Two PASS+PASS.
+
+### T421 DONE — Architecture docs (committed 20ed710f)
+133 TUI exports documented across 13 per-chunk tables.
+Rule of Two PASS+PASS.
+
+### T422 DONE — Dialog handler unit tests (committed 06c96537)
+14 tests: 6 rename (valid name, 7 invalid chars, double-dot, dot-lock, empty-close, typing+backspace),
+3 move (nav clamping, confirm file splice, single-split auto-close),
+3 merge (toggle+confirm with descending splice, no-selection no-op, cursor clamping),
+2 dispatcher (esc-close, unknown no-op). 2 test expectation fixes (descending merge order,
+JSON-escaped quotes in error string). Rule of Two PASS+PASS.
+
+### T423 DONE — 16e pure function tests (committed 1dfab019)
+11 tests: processKeyMsg (8 cases), isSpecialKey (regex match), isSelectedMode (3 modes), getTabForFocus.
+
+### T424 DONE — 16b formatReportForDisplay tests (committed 08ef254d)
+10 tests: empty/single-split/multi-split/equivalence/warnings/long-wrap/timing/error-summary/mixed-status/truncation.
+
+### T425 DONE — 15b chrome pane renderer tests (committed ba349963)
+13 tests (18 subtests): ClaudeQuestionPrompt (5), ShellPane (5), OutputPane (3).
+Focus indicator uses structural validation due to lipgloss DefaultRenderer stripping colors in non-TTY.
+
+### T426 DONE — 15c sub-renderer tests (committed 9736e19b)
+13 tests: renderVerificationStatusList (8: skipped/passed+manual/failed-collapsed/expanded/overflow/active/pending/pre-existing),
+renderLiveVerifyViewport (5: early-return/content+autoscroll/manual-scroll/paused/fallback).
+Rule of Two: initial Pass 2 FAIL (vacuous assertion, fragile substring, wrong comment count). Fixed. Post-fix Pass 1+2 PASS.
+
+### Next: T427 — 16c confirm-cancel and Claude conversation handler tests
+
+### T427 DONE — 16c confirm-cancel and Claude convo handler tests (committed 9bdf61c6)
+21 tests: updateConfirmCancel (9), closeClaudeConvo (1), updateClaudeConvo (5: typing/bs/ctrl+u/esc,
+scroll keys with clamp+wheel, submit, sending blocks all, mouse click), pollClaudeConvo (3),
+openClaudeConvo (3). Initial Rule of Two Pass 1 FAIL (8 issues: missing typing/esc tests, backspace/ctrl+u
+only tested as blocked, header inaccuracy, missing enter-blocked/wheel/pgdown cases). All fixed.
+Post-fix Pass 1+2 PASS.
+
+### Next: T428 — CHANGELOG entries for T415-T422
+
+### T428 DONE — CHANGELOG entries for T417-T427 (committed 26b26f45)
+Split merged T416/T417 entry. Added 9 new entries (T417, T421-T427).
+T421 architecture doc in Added, T419 in Fixed. All test counts verified.
+Rule of Two PASS+PASS.
+
+### Next: T429 — Unit tests for 16d mouseToTermBytes
+
+### T429 DONE — 16d mouseToTermBytes exotic buttons + pollClaudeScreenshot (committed 6737224d)
+8 tests: 5 exotic buttons (wheel left/right, backward/forward, none+release, unknown→null),
+1 combined all-modifiers+motion, 2 pollClaudeScreenshot edge paths. Rule of Two PASS+PASS.
+
+### Next: T430 — Unit tests for 16f mouse click handlers
+
+### T430 DONE — 16f mouse click handler tests (committed 45f5d919)
+10 tests: CONFIG inline-edit fields (3), dryRun toggle, field blur, split-tab-verify/shell,
+verify pause/resume, PAUSED buttons, PLAN_EDITOR title edit cancel, unrecognized zone.
+Extends 22 existing tests. Rule of Two PASS+PASS.
+
+### Next: T431 — Document prsplittest package API
+
+### T431 DONE — prsplittest godoc documentation (committed 5656836b)
+All 27 exports already had godoc. Enriched SetupTUIMocks (8 injected globals),
+Chunk16Helpers (7 JS functions with signatures), NumVal (zero fallback clause).
+Rule of Two PASS+PASS.
+
+### Next: T432 — Script example smoke tests
 
 ### T391 DONE — Resume E2E Test (committed bdc1a733)
 5 tests: pipeline integration (no-plan + corrupt-plan), loadPlan direct, config bridging, Go Execute.

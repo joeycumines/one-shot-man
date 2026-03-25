@@ -288,9 +288,7 @@ func TestTUIHang_ConcurrentPolling(t *testing.T) {
 	}
 
 	var pollWg sync.WaitGroup
-	pollWg.Add(1)
-	go func() {
-		defer pollWg.Done()
+	pollWg.Go(func() {
 		ticker := time.NewTicker(100 * time.Millisecond)
 		defer ticker.Stop()
 		deadline := time.After(30 * time.Second)
@@ -348,7 +346,7 @@ func TestTUIHang_ConcurrentPolling(t *testing.T) {
 					attempts, pr.WizardState, pr.AnalysisRunning, pr.Progress)
 			}
 		}
-	}()
+	})
 
 	select {
 	case pr := <-resultCh:

@@ -896,9 +896,7 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]any {
 		m := map[string]any{
 			"type": "ToggleReturn",
 		}
-		for k, v := range msg.Result {
-			m[k] = v
-		}
+		maps.Copy(m, msg.Result)
 		return m
 
 	default:
@@ -1028,7 +1026,7 @@ func (m *jsModel) extractBatchCmd(obj *goja.Object) tea.Cmd {
 	cmdsObj := cmdsVal.ToObject(m.runtime)
 	length := int(cmdsObj.Get("length").ToInteger())
 	var cmds []tea.Cmd
-	for i := 0; i < length; i++ {
+	for i := range length {
 		cmdVal := cmdsObj.Get(fmt.Sprintf("%d", i))
 		if cmd := m.valueToCmd(cmdVal); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -1046,7 +1044,7 @@ func (m *jsModel) extractSequenceCmd(obj *goja.Object) tea.Cmd {
 	cmdsObj := cmdsVal.ToObject(m.runtime)
 	length := int(cmdsObj.Get("length").ToInteger())
 	var cmds []tea.Cmd
-	for i := 0; i < length; i++ {
+	for i := range length {
 		cmdVal := cmdsObj.Get(fmt.Sprintf("%d", i))
 		if cmd := m.valueToCmd(cmdVal); cmd != nil {
 			cmds = append(cmds, cmd)
@@ -1274,9 +1272,7 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 				"_cmdType": cmdType,
 				"_cmdID":   cmdID,
 			}
-			for k, v := range props {
-				result[k] = v
-			}
+			maps.Copy(result, props)
 			return runtime.ToValue(result)
 		}
 
@@ -1475,10 +1471,7 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 					// Parse minIntervalMs (default: 16ms ~= 60fps)
 					model.throttleIntervalMs = 16
 					if intervalVal := throttleObj.Get("minIntervalMs"); intervalVal != nil && !goja.IsUndefined(intervalVal) {
-						model.throttleIntervalMs = intervalVal.ToInteger()
-						if model.throttleIntervalMs < 1 {
-							model.throttleIntervalMs = 1
-						}
+						model.throttleIntervalMs = max(intervalVal.ToInteger(), 1)
 					}
 					// Parse alwaysRenderMsgTypes (message types that bypass throttling)
 					model.alwaysRenderTypes = make(map[string]bool)
@@ -1940,9 +1933,7 @@ func (m *Manager) runProgram(model tea.Model, opts ...tea.ProgramOption) (err er
 	programFinished := make(chan struct{})
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		select {
 		case <-programFinished:
 			// Program finished naturally, no need to call Quit
@@ -1953,7 +1944,7 @@ func (m *Manager) runProgram(model tea.Model, opts ...tea.ProgramOption) (err er
 			// OS Signal received
 		}
 		p.Quit()
-	}()
+	})
 
 	_, runErr := p.Run()
 	close(programFinished) // Signal that Run() returned

@@ -153,7 +153,7 @@ func (b *Bridge) ModuleLoader(ctx context.Context) require.ModuleLoader {
 				if childrenArray != nil {
 					length := int(childrenArray.Get("length").ToInteger())
 					children = make([]bt.Node, length)
-					for i := 0; i < length; i++ {
+					for i := range length {
 						childVal := childrenArray.Get(strconv.Itoa(i))
 						node, err := nodeUnwrap(b, runtime, childVal)
 						if err != nil {
@@ -191,7 +191,7 @@ func (b *Bridge) ModuleLoader(ctx context.Context) require.ModuleLoader {
 				if childrenArray != nil {
 					length := int(childrenArray.Get("length").ToInteger())
 					children = make([]bt.Node, length)
-					for i := 0; i < length; i++ {
+					for i := range length {
 						childVal := childrenArray.Get(strconv.Itoa(i))
 						node, err := nodeUnwrap(b, runtime, childVal)
 						if err != nil {
@@ -222,7 +222,7 @@ func (b *Bridge) ModuleLoader(ctx context.Context) require.ModuleLoader {
 				if childrenArray != nil {
 					length := int(childrenArray.Get("length").ToInteger())
 					children = make([]bt.Node, length)
-					for i := 0; i < length; i++ {
+					for i := range length {
 						childVal := childrenArray.Get(strconv.Itoa(i))
 						node, err := nodeUnwrap(b, runtime, childVal)
 						if err != nil {

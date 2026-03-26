@@ -275,6 +275,15 @@ func TestPrSplitCommand_ClaudeFlagDefaults(t *testing.T) {
 
 func TestPrSplitCommand_ClaudeConfigOverrides(t *testing.T) {
 	skipSlow(t)
+	dir := t.TempDir()
+	// Initialize minimal git repo in temp dir.
+	runGitCmd(t, dir, "init")
+	runGitCmd(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
+	runGitCmd(t, dir, "config", "user.email", "test@test.com")
+	runGitCmd(t, dir, "config", "user.name", "Test User")
+	// Create a commit to ensure HEAD exists.
+	runGitCmd(t, dir, "commit", "--allow-empty", "-m", "initial")
+
 	cfg := config.NewConfig()
 	cfg.Commands["pr-split"] = map[string]string{
 		"claude-command":    "my-claude",
@@ -284,6 +293,8 @@ func TestPrSplitCommand_ClaudeConfigOverrides(t *testing.T) {
 		"claude-env":        "A=1,B=2",
 	}
 	cmd := NewPrSplitCommand(cfg)
+	cmd.testWorkingDir = dir
+	cmd.baseBranch = "main"
 
 	var stdout, stderr bytes.Buffer
 	cmd.testMode = true
@@ -316,12 +327,23 @@ func TestPrSplitCommand_ClaudeConfigOverrides(t *testing.T) {
 
 func TestPrSplitCommand_FlagOverridesConfig(t *testing.T) {
 	skipSlow(t)
+	dir := t.TempDir()
+	// Initialize minimal git repo in temp dir.
+	runGitCmd(t, dir, "init")
+	runGitCmd(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
+	runGitCmd(t, dir, "config", "user.email", "test@test.com")
+	runGitCmd(t, dir, "config", "user.name", "Test User")
+	// Create a commit to ensure HEAD exists.
+	runGitCmd(t, dir, "commit", "--allow-empty", "-m", "initial")
+
 	cfg := config.NewConfig()
 	cfg.Commands["pr-split"] = map[string]string{
 		"claude-command": "config-claude",
 		"claude-model":   "config-model",
 	}
 	cmd := NewPrSplitCommand(cfg)
+	cmd.testWorkingDir = dir
+	cmd.baseBranch = "main"
 
 	// Set flags directly — simulates --claude-command on CLI.
 	cmd.claudeCommand = "flag-claude"

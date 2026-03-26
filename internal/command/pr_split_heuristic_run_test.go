@@ -257,6 +257,18 @@ func TestPrSplitCommand_ScriptContent(t *testing.T) {
 
 func TestPrSplitCommand_ConfigInjection(t *testing.T) {
 	skipSlow(t)
+	// Create a test git repo with a "develop" branch so validateGitRepo() passes.
+	dir := setupMinimalGitRepo(t)
+	runGitCmd(t, dir, "checkout", "-b", "develop")
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
 	cfg := config.NewConfig()
 	cmd := NewPrSplitCommand(cfg)
 
@@ -272,7 +284,7 @@ func TestPrSplitCommand_ConfigInjection(t *testing.T) {
 	cmd.maxFiles = 3
 	cmd.dryRun = true
 
-	err := cmd.Execute([]string{}, &stdout, &stderr)
+	err = cmd.Execute([]string{}, &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("Expected no error with custom config, got: %v", err)
 	}
@@ -1150,6 +1162,18 @@ func TestPrSplitCommand_ReportCommand(t *testing.T) {
 // are applied as defaults and flags override them.
 func TestPrSplitCommand_ConfigOverrides(t *testing.T) {
 	skipSlow(t)
+	// Create a test git repo with a "develop" branch so validateGitRepo() passes.
+	dir := setupMinimalGitRepo(t)
+	runGitCmd(t, dir, "checkout", "-b", "develop")
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+
 	cfg := config.NewConfig()
 	cfg.Commands["pr-split"] = map[string]string{
 		"base":     "develop",
@@ -1170,7 +1194,7 @@ func TestPrSplitCommand_ConfigOverrides(t *testing.T) {
 	cmd.store = "memory"
 	cmd.session = t.Name()
 
-	err := cmd.Execute([]string{}, &stdout, &stderr)
+	err = cmd.Execute([]string{}, &stdout, &stderr)
 	if err != nil {
 		t.Fatalf("Expected no error, got: %v", err)
 	}

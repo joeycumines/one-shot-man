@@ -332,43 +332,61 @@ func TestChunk16_MouseClick_NavBar(t *testing.T) {
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
-		setupPlanCache();
-
-		// nav-back: PLAN_REVIEW -> CONFIG.
-		var s = initState('PLAN_REVIEW');
-		var restore = mockZoneHit('nav-back');
-		try {
-			var r = sendClick(s);
-			if (r[0].wizardState !== 'CONFIG') return 'FAIL: nav-back: state=' + r[0].wizardState;
-		} finally { restore(); }
-
-		// nav-cancel: shows confirm dialog.
-		s = initState('CONFIG');
-		restore = mockZoneHit('nav-cancel');
-		try {
-			var r = sendClick(s);
-			if (!r[0].showConfirmCancel) return 'FAIL: nav-cancel did not show confirm';
-		} finally { restore(); }
-
-		// nav-next: CONFIG -> handleNext -> startAnalysis.
-		// startAnalysis calls captured handleConfigState which may fail due to
-		// limited runtime setup, but the click IS handled (state changes from CONFIG).
-		s = initState('CONFIG');
-		globalThis.prSplit.runtime.baseBranch = 'main';
-		globalThis.prSplit.runtime.dir = '.';
-		globalThis.prSplit.runtime.strategy = 'heuristic';
-		restore = mockZoneHit('nav-next');
-		try {
-			var r = sendClick(s);
-			// Accept any state change from CONFIG (isProcessing=true, ERROR, etc.).
-			if (r[0].wizardState === 'CONFIG' && !r[0].isProcessing && !r[0].errorDetails) {
-				return 'FAIL: nav-next did not start processing or transition, state=' + r[0].wizardState;
+		// Mock gitExec to avoid depending on git availability.
+		// TUI tests should be isolated and not require git commands.
+		var origGitExec = globalThis.prSplit._gitExec;
+		globalThis.prSplit._gitExec = function(dir, args) {
+			// Return success for common git commands used by handleConfigState
+			if (args[0] === 'rev-parse' && args[1] === '--abbrev-ref' && args[2] === 'HEAD') {
+				return {stdout: 'feature', stderr: '', code: 0};
 			}
-		} finally {
-			restore();
-		}
+			if (args[0] === 'rev-parse' && args[2] === 'refs/heads/main') {
+				return {stdout: 'abc123', stderr: '', code: 0};
+			}
+			// Default success response
+			return {stdout: '', stderr: '', code: 0};
+		};
+		try {
+			setupPlanCache();
 
-		return 'OK';
+			// nav-back: PLAN_REVIEW -> CONFIG.
+			var s = initState('PLAN_REVIEW');
+			var restore = mockZoneHit('nav-back');
+			try {
+				var r = sendClick(s);
+				if (r[0].wizardState !== 'CONFIG') return 'FAIL: nav-back: state=' + r[0].wizardState;
+			} finally { restore(); }
+
+			// nav-cancel: shows confirm dialog.
+			s = initState('CONFIG');
+			restore = mockZoneHit('nav-cancel');
+			try {
+				var r = sendClick(s);
+				if (!r[0].showConfirmCancel) return 'FAIL: nav-cancel did not show confirm';
+			} finally { restore(); }
+
+			// nav-next: CONFIG -> handleNext -> startAnalysis.
+			// startAnalysis calls captured handleConfigState which may fail due to
+			// limited runtime setup, but the click IS handled (state changes from CONFIG).
+			s = initState('CONFIG');
+			globalThis.prSplit.runtime.baseBranch = 'main';
+			globalThis.prSplit.runtime.dir = '.';
+			globalThis.prSplit.runtime.strategy = 'heuristic';
+			restore = mockZoneHit('nav-next');
+			try {
+				var r = sendClick(s);
+				// Accept any state change from CONFIG (isProcessing=true, ERROR, etc.).
+				if (r[0].wizardState === 'CONFIG' && !r[0].isProcessing && !r[0].errorDetails) {
+					return 'FAIL: nav-next did not start processing or transition, state=' + r[0].wizardState;
+				}
+			} finally {
+				restore();
+			}
+
+			return 'OK';
+		} finally {
+			globalThis.prSplit._gitExec = origGitExec;
+		}
 	})()`)
 	if err != nil {
 		t.Fatal(err)

@@ -26,8 +26,11 @@ func TestChunk16_AnalysisPipeline_GroupingThrow(t *testing.T) {
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(async function() {
-		setupPlanCache();
-		var s = initState('CONFIG');
+		// Mock gitExec - startAnalysis calls handleConfigState which runs git.
+		var restoreGit = setupGitMock();
+		try {
+			setupPlanCache();
+			var s = initState('CONFIG');
 		s.outputLines = [];
 		s.outputAutoScroll = true;
 
@@ -94,6 +97,9 @@ func TestChunk16_AnalysisPipeline_GroupingThrow(t *testing.T) {
 		}
 
 		return 'OK';
+		} finally {
+			restoreGit();
+		}
 	})()`)
 	if err != nil {
 		t.Fatal(err)
@@ -111,8 +117,11 @@ func TestChunk16_AnalysisPipeline_PlanCreationThrow(t *testing.T) {
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(async function() {
-		setupPlanCache();
-		var s = initState('CONFIG');
+		// Mock gitExec - startAnalysis calls handleConfigState which runs git.
+		var restoreGit = setupGitMock();
+		try {
+			setupPlanCache();
+			var s = initState('CONFIG');
 		s.outputLines = [];
 		s.outputAutoScroll = true;
 
@@ -173,8 +182,9 @@ func TestChunk16_AnalysisPipeline_PlanCreationThrow(t *testing.T) {
 			return 'FAIL: expected ERROR wizardState, got: ' + s.wizardState;
 		}
 
-		return 'OK';
-	})()`)
+		return 'OK';		} finally {
+			restoreGit();
+		}	})()`)
 	if err != nil {
 		t.Fatal(err)
 	}

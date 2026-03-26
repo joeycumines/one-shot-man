@@ -378,8 +378,10 @@ func TestChunk03_LoadPlan_MissingFile(t *testing.T) {
 	if strings.HasSuffix(errStr, ": true") {
 		t.Errorf("error = %q, ends with bool literal — result.error used instead of result.message", errStr)
 	}
-	if !strings.Contains(errStr, "/nonexistent/path/plan.json") {
-		t.Errorf("error = %q, want it to contain file path", errStr)
+	// Cross-platform: accept both Unix (/) and Windows (\) path separators
+	pathPattern := "nonexistent" + string(filepath.Separator) + "path" + string(filepath.Separator) + "plan.json"
+	if !strings.Contains(errStr, pathPattern) {
+		t.Errorf("error = %q, want it to contain file path with %q", errStr, pathPattern)
 	}
 }
 

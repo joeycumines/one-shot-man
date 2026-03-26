@@ -190,6 +190,10 @@ type PrSplitCommand struct {
 	// JSON output flag
 	jsonOutput bool
 
+	// testWorkingDir is set by tests to specify a temporary git repo directory.
+	// When set, validateGitRepo() will validate that directory explicitly.
+	testWorkingDir string
+
 	// Claude Code execution configuration
 	claudeCommand   string          // explicit path/name of Claude binary (empty = auto-detect)
 	claudeArgs      stringSliceFlag // additional CLI arguments for Claude (repeatable --claude-arg flags)
@@ -542,6 +546,9 @@ func (c *PrSplitCommand) validateFlags() error {
 func (c *PrSplitCommand) validateGitRepo() error {
 	// Check if we're inside a git working tree.
 	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
+	if c.testWorkingDir != "" {
+		cmd.Dir = c.testWorkingDir
+	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
@@ -566,9 +573,15 @@ func (c *PrSplitCommand) validateGitRepo() error {
 	if base != "" {
 		// Try local branch first, then remote tracking refs.
 		cmd = exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/heads/"+base)
+		if c.testWorkingDir != "" {
+			cmd.Dir = c.testWorkingDir
+		}
 		if err := cmd.Run(); err != nil {
 			// Not a local branch — try common remote refs.
 			cmd = exec.Command("git", "rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+base)
+			if c.testWorkingDir != "" {
+				cmd.Dir = c.testWorkingDir
+			}
 			if err := cmd.Run(); err != nil {
 				return fmt.Errorf("base branch %q not found (checked local and origin remote)", base)
 			}

@@ -42,29 +42,35 @@ func TestChunk16_StartAutoAnalysis_DefersWhenUnresolved(t *testing.T) {
 		prSplit.runtime.verifyCommand = '';
 		prSplit.runtime.mode = 'auto';
 
-		setupPlanCache();
-		var s = initState('CONFIG');
-		s.configValidationError = null;
-		s.availableBranches = [];
-		s.outputLines = [];
-		s.outputAutoScroll = true;
-		s.focusIndex = -1;
-		s.configFieldEditing = null;
+		// Mock gitExec to avoid depending on git.
+		var restoreGit = setupGitMock();
+		try {
+			setupPlanCache();
+			var s = initState('CONFIG');
+			s.configValidationError = null;
+			s.availableBranches = [];
+			s.outputLines = [];
+			s.outputAutoScroll = true;
+			s.focusIndex = -1;
+			s.configFieldEditing = null;
 
-		// Create an executor that is NOT resolved.
-		globalThis.prSplit._state.claudeExecutor = { resolved: null };
+			// Create an executor that is NOT resolved.
+			globalThis.prSplit._state.claudeExecutor = { resolved: null };
 
-		// Trigger via Enter key on CONFIG → handleNext → startAutoAnalysis.
-		var r = sendKey(s, 'enter');
-		var state = r[0];
-		var cmd = r[1];
+			// Trigger via Enter key on CONFIG → handleNext → startAutoAnalysis.
+			var r = sendKey(s, 'enter');
+			var state = r[0];
+			var cmd = r[1];
 
-		if (!state.pendingAutoAnalysis) {
-			return 'FAIL: expected pendingAutoAnalysis=true, got ' + state.pendingAutoAnalysis;
+			if (!state.pendingAutoAnalysis) {
+				return 'FAIL: expected pendingAutoAnalysis=true, got ' + state.pendingAutoAnalysis;
+			}
+			if (!cmd) return 'FAIL: expected tick command, got null';
+
+			return 'OK';
+		} finally {
+			restoreGit();
 		}
-		if (!cmd) return 'FAIL: expected tick command, got null';
-
-		return 'OK';
 	})()`)
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +101,10 @@ func TestChunk16_StartAutoAnalysis_ProceedsWhenResolved(t *testing.T) {
 		prSplit.runtime.verifyCommand = '';
 		prSplit.runtime.mode = 'auto';
 
-		setupPlanCache();
+		// Mock gitExec to avoid depending on git.
+		var restoreGit = setupGitMock();
+		try {
+			setupPlanCache();
 		var s = initState('CONFIG');
 		s.configValidationError = null;
 		s.availableBranches = [];
@@ -123,6 +132,9 @@ func TestChunk16_StartAutoAnalysis_ProceedsWhenResolved(t *testing.T) {
 		}
 
 		return 'OK';
+		} finally {
+			restoreGit();
+		}
 	})()`)
 	if err != nil {
 		t.Fatal(err)
@@ -154,34 +166,40 @@ func TestChunk16_HandleClaudeCheckPoll_ResumesPendingAutoAnalysis(t *testing.T) 
 		prSplit.runtime.verifyCommand = '';
 		prSplit.runtime.mode = 'auto';
 
-		setupPlanCache();
-		var s = initState('CONFIG');
-		s.configValidationError = null;
-		s.availableBranches = [];
-		s.outputLines = [];
-		s.outputAutoScroll = true;
-		s.autoSplitRunning = false;
-		s.autoSplitResult = null;
+		// Mock gitExec - handleClaudeCheckPoll calls startAutoAnalysis which calls handleConfigState.
+		var restoreGit = setupGitMock();
+		try {
+			setupPlanCache();
+			var s = initState('CONFIG');
+			s.configValidationError = null;
+			s.availableBranches = [];
+			s.outputLines = [];
+			s.outputAutoScroll = true;
+			s.autoSplitRunning = false;
+			s.autoSplitResult = null;
 
-		s.claudeCheckRunning = false;
-		s.claudeCheckStatus = 'available';
-		s.pendingAutoAnalysis = true;
-		globalThis.prSplit._state.claudeExecutor = {
-			resolved: { command: 'claude', type: 'claude-code' },
-			isAvailable: function() { return true; }
-		};
+			s.claudeCheckRunning = false;
+			s.claudeCheckStatus = 'available';
+			s.pendingAutoAnalysis = true;
+			globalThis.prSplit._state.claudeExecutor = {
+				resolved: { command: 'claude', type: 'claude-code' },
+				isAvailable: function() { return true; }
+			};
 
-		var r = update({type: 'Tick', id: 'claude-check-poll'}, s);
-		var state = r[0];
+			var r = update({type: 'Tick', id: 'claude-check-poll'}, s);
+			var state = r[0];
 
-		if (state.pendingAutoAnalysis) {
-			return 'FAIL: pendingAutoAnalysis should be cleared';
+			if (state.pendingAutoAnalysis) {
+				return 'FAIL: pendingAutoAnalysis should be cleared';
+			}
+			if (!state.autoSplitRunning) {
+				return 'FAIL: expected autoSplitRunning=true after resume';
+			}
+
+			return 'OK';
+		} finally {
+			restoreGit();
 		}
-		if (!state.autoSplitRunning) {
-			return 'FAIL: expected autoSplitRunning=true after resume';
-		}
-
-		return 'OK';
 	})()`)
 	if err != nil {
 		t.Fatal(err)
@@ -213,29 +231,35 @@ func TestChunk16_HandleClaudeCheckPoll_FallsBackWhenUnavailable(t *testing.T) {
 		prSplit.runtime.verifyCommand = '';
 		prSplit.runtime.mode = 'auto';
 
-		setupPlanCache();
-		var s = initState('CONFIG');
-		s.configValidationError = null;
-		s.availableBranches = [];
-		s.outputLines = [];
-		s.outputAutoScroll = true;
+		// Mock gitExec - handleClaudeCheckPoll calls startAnalysis which calls handleConfigState.
+		var restoreGit = setupGitMock();
+		try {
+			setupPlanCache();
+			var s = initState('CONFIG');
+			s.configValidationError = null;
+			s.availableBranches = [];
+			s.outputLines = [];
+			s.outputAutoScroll = true;
 
-		s.claudeCheckRunning = false;
-		s.claudeCheckStatus = 'unavailable';
-		s.pendingAutoAnalysis = true;
-		globalThis.prSplit._state.claudeExecutor = { resolved: null };
+			s.claudeCheckRunning = false;
+			s.claudeCheckStatus = 'unavailable';
+			s.pendingAutoAnalysis = true;
+			globalThis.prSplit._state.claudeExecutor = { resolved: null };
 
-		var r = update({type: 'Tick', id: 'claude-check-poll'}, s);
-		var state = r[0];
+			var r = update({type: 'Tick', id: 'claude-check-poll'}, s);
+			var state = r[0];
 
-		if (state.pendingAutoAnalysis) {
-			return 'FAIL: pendingAutoAnalysis should be cleared';
+			if (state.pendingAutoAnalysis) {
+				return 'FAIL: pendingAutoAnalysis should be cleared';
+			}
+			if (!state.isProcessing) {
+				return 'FAIL: expected isProcessing=true (heuristic fallback)';
+			}
+
+			return 'OK';
+		} finally {
+			restoreGit();
 		}
-		if (!state.isProcessing) {
-			return 'FAIL: expected isProcessing=true (heuristic fallback)';
-		}
-
-		return 'OK';
 	})()`)
 	if err != nil {
 		t.Fatal(err)
@@ -268,33 +292,39 @@ func TestChunk16_StartAutoAnalysis_NoSyncIsAvailableCall(t *testing.T) {
 		prSplit.runtime.verifyCommand = '';
 		prSplit.runtime.mode = 'auto';
 
-		setupPlanCache();
-		var s = initState('CONFIG');
-		s.configValidationError = null;
-		s.availableBranches = [];
-		s.outputLines = [];
-		s.outputAutoScroll = true;
-		s.focusIndex = -1;
-		s.configFieldEditing = null;
-
-		// Create an unresolved executor with a TRAP on isAvailable.
-		globalThis.prSplit._state.claudeExecutor = {
-			resolved: null,
-			isAvailable: function() {
-				throw new Error('TRAP: sync isAvailable was called');
-			}
-		};
-
-		// Should NOT throw — deferral via .resolved check happens first.
+		// Mock gitExec - startAutoAnalysis calls handleConfigState which runs git.
+		var restoreGit = setupGitMock();
 		try {
-			var r = sendKey(s, 'enter');
-			var state = r[0];
-			if (!state.pendingAutoAnalysis) {
-				return 'FAIL: expected deferral (pendingAutoAnalysis), got ' + state.pendingAutoAnalysis;
+			setupPlanCache();
+			var s = initState('CONFIG');
+			s.configValidationError = null;
+			s.availableBranches = [];
+			s.outputLines = [];
+			s.outputAutoScroll = true;
+			s.focusIndex = -1;
+			s.configFieldEditing = null;
+
+			// Create an unresolved executor with a TRAP on isAvailable.
+			globalThis.prSplit._state.claudeExecutor = {
+				resolved: null,
+				isAvailable: function() {
+					throw new Error('TRAP: sync isAvailable was called');
+				}
+			};
+
+			// Should NOT throw — deferral via .resolved check happens first.
+			try {
+				var r = sendKey(s, 'enter');
+				var state = r[0];
+				if (!state.pendingAutoAnalysis) {
+					return 'FAIL: expected deferral (pendingAutoAnalysis), got ' + state.pendingAutoAnalysis;
+				}
+				return 'OK';
+			} catch (e) {
+				return 'FAIL: isAvailable trap triggered: ' + e.message;
 			}
-			return 'OK';
-		} catch (e) {
-			return 'FAIL: isAvailable trap triggered: ' + e.message;
+		} finally {
+			restoreGit();
 		}
 	})()`)
 	if err != nil {

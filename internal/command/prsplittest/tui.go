@@ -75,7 +75,37 @@ const SetupTUIMocks = `
 //     returns a restore function (MUST use in try/finally)
 //   - setupPlanCache(): installs a 3-split test plan (split/api, split/cli,
 //     split/docs) into prSplit._state.planCache
+//   - setupGitMock(): mocks prSplit._gitExec to return success for common
+//     git commands, avoiding dependency on git availability (isolated tests)
 const Chunk16Helpers = `
+// setupGitMock: mocks prSplit._gitExec to avoid depending on git availability.
+// TUI tests should be isolated and not require git in PATH.
+// Returns restore function (MUST use in try/finally blocks).
+function setupGitMock() {
+    var origGitExec = globalThis.prSplit._gitExec;
+    globalThis.prSplit._gitExec = function(dir, args) {
+        // Return success for common git commands used by handleConfigState
+        if (args[0] === 'rev-parse' && args[1] === '--abbrev-ref' && args[2] === 'HEAD') {
+            return {stdout: 'feature', stderr: '', code: 0};
+        }
+        if (args[0] === 'rev-parse' && args[2] === 'refs/heads/main') {
+            return {stdout: 'abc123', stderr: '', code: 0};
+        }
+        if (args[0] === 'merge-base' && args[1] === 'HEAD') {
+            return {stdout: 'def456', stderr: '', code: 0};
+        }
+        if (args[0] === 'diff' && args[1] === '--name-only') {
+            return {stdout: 'file1.go\nfile2.go\n', stderr: '', code: 0};
+        }
+        if (args[0] === 'config' && args[1] === '--get') {
+            return {stdout: 'true', stderr: '', code: 0};
+        }
+        // Default success response
+        return {stdout: '', stderr: '', code: 0};
+    };
+    return function() { globalThis.prSplit._gitExec = origGitExec; };
+}
+
 // initState: creates a _wizardInit() state properly transitioned to targetState.
 function initState(targetState, opts) {
     opts = opts || {};

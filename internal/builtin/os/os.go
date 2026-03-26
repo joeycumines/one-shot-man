@@ -8,7 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
+	goruntime "runtime"
 	"strings"
 	"time"
 
@@ -21,8 +21,8 @@ const (
 
 // Require returns a module loader for `osm:os` that uses the provided base context
 // and a TUI sink for fallback messaging (may be nil).
-func Require(ctx context.Context, tuiSink func(string)) func(runtime *goja.Runtime, module *goja.Object) {
-	return func(runtime *goja.Runtime, module *goja.Object) {
+func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, module *goja.Object) {
+	return func(vm *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 
 		// readFile(path: string): { content: string, error: bool, message: string }
@@ -32,13 +32,13 @@ func Require(ctx context.Context, tuiSink func(string)) func(runtime *goja.Runti
 				path = call.Argument(0).String()
 			}
 			if path == "" {
-				return runtime.ToValue(map[string]any{"error": true, "message": "empty path", "content": ""})
+				return vm.ToValue(map[string]any{"error": true, "message": "empty path", "content": ""})
 			}
 			data, err := os.ReadFile(path)
 			if err != nil {
-				return runtime.ToValue(map[string]any{"error": true, "message": err.Error(), "content": ""})
+				return vm.ToValue(map[string]any{"error": true, "message": err.Error(), "content": ""})
 			}
-			return runtime.ToValue(map[string]any{"error": false, "message": "", "content": string(data)})
+			return vm.ToValue(map[string]any{"error": false, "message": "", "content": string(data)})
 		})
 
 		// fileExists(path: string): boolean
@@ -48,10 +48,38 @@ func Require(ctx context.Context, tuiSink func(string)) func(runtime *goja.Runti
 				path = call.Argument(0).String()
 			}
 			if path == "" {
-				return runtime.ToValue(false)
+				return vm.ToValue(false)
 			}
 			_, err := os.Stat(path)
-			return runtime.ToValue(err == nil)
+			return vm.ToValue(err == nil)
+		})
+
+		// isAbsolute(path: string): boolean
+		_ = exports.Set("isAbsolute", func(call goja.FunctionCall) goja.Value {
+			var path string
+			if len(call.Arguments) > 0 {
+				path = call.Argument(0).String()
+			}
+			if path == "" {
+				return vm.ToValue(false)
+			}
+			return vm.ToValue(filepath.IsAbs(path))
+		})
+
+		// join(...paths: string[]): string
+		_ = exports.Set("join", func(call goja.FunctionCall) goja.Value {
+			paths := make([]string, len(call.Arguments))
+			for i, arg := range call.Arguments {
+				if !goja.IsUndefined(arg) && !goja.IsNull(arg) {
+					paths[i] = arg.String()
+				}
+			}
+			return vm.ToValue(filepath.Join(paths...))
+		})
+
+		// platform(): string - returns the operating system (darwin, linux, windows, etc.)
+		_ = exports.Set("platform", func(call goja.FunctionCall) goja.Value {
+			return vm.ToValue(goruntime.GOOS)
 		})
 
 		// openEditor(title, initialContent)
@@ -65,7 +93,7 @@ func Require(ctx context.Context, tuiSink func(string)) func(runtime *goja.Runti
 			}
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
-			return runtime.ToValue(openEditor(ctx, nameHint, initialContent))
+			return vm.ToValue(openEditor(ctx, nameHint, initialContent))
 		})
 
 		// clipboardCopy(text)
@@ -77,7 +105,7 @@ func Require(ctx context.Context, tuiSink func(string)) func(runtime *goja.Runti
 			ctx, cancel := context.WithTimeout(ctx, clipboardTimeout)
 			defer cancel()
 			if err := ClipboardCopy(ctx, tuiSink, text); err != nil {
-				panic(runtime.NewGoError(err))
+				panic(vm.NewGoError(err))
 			}
 			return goja.Undefined()
 		})
@@ -85,26 +113,26 @@ func Require(ctx context.Context, tuiSink func(string)) func(runtime *goja.Runti
 		// getenv(key: string): string
 		_ = exports.Set("getenv", func(call goja.FunctionCall) goja.Value {
 			if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
-				return runtime.ToValue("")
+				return vm.ToValue("")
 			}
-			return runtime.ToValue(os.Getenv(call.Argument(0).String()))
+			return vm.ToValue(os.Getenv(call.Argument(0).String()))
 		})
 
 		// writeFile(path, content, options?): undefined
 		// options: { mode?: number (default 0644), createDirs?: boolean (default false) }
 		_ = exports.Set("writeFile", func(call goja.FunctionCall) goja.Value {
-			path, content, mode, createDirs := parseWriteArgs(runtime, call)
+			path, content, mode, createDirs := parseWriteArgs(vm, call)
 			if path == "" {
-				panic(runtime.NewGoError(fmt.Errorf("writeFile: path is required")))
+				panic(vm.NewGoError(fmt.Errorf("writeFile: path is required")))
 			}
 			path = resolvePath(path)
 			if createDirs {
 				if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-					panic(runtime.NewGoError(fmt.Errorf("writeFile: %w", err)))
+					panic(vm.NewGoError(fmt.Errorf("writeFile: %w", err)))
 				}
 			}
 			if err := os.WriteFile(path, []byte(content), mode); err != nil {
-				panic(runtime.NewGoError(fmt.Errorf("writeFile: %w", err)))
+				panic(vm.NewGoError(fmt.Errorf("writeFile: %w", err)))
 			}
 			return goja.Undefined()
 		})
@@ -112,23 +140,23 @@ func Require(ctx context.Context, tuiSink func(string)) func(runtime *goja.Runti
 		// appendFile(path, content, options?): undefined
 		// options: { mode?: number (default 0644), createDirs?: boolean (default false) }
 		_ = exports.Set("appendFile", func(call goja.FunctionCall) goja.Value {
-			path, content, mode, createDirs := parseWriteArgs(runtime, call)
+			path, content, mode, createDirs := parseWriteArgs(vm, call)
 			if path == "" {
-				panic(runtime.NewGoError(fmt.Errorf("appendFile: path is required")))
+				panic(vm.NewGoError(fmt.Errorf("appendFile: path is required")))
 			}
 			path = resolvePath(path)
 			if createDirs {
 				if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-					panic(runtime.NewGoError(fmt.Errorf("appendFile: %w", err)))
+					panic(vm.NewGoError(fmt.Errorf("appendFile: %w", err)))
 				}
 			}
 			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, mode)
 			if err != nil {
-				panic(runtime.NewGoError(fmt.Errorf("appendFile: %w", err)))
+				panic(vm.NewGoError(fmt.Errorf("appendFile: %w", err)))
 			}
 			defer f.Close()
 			if _, err := f.WriteString(content); err != nil {
-				panic(runtime.NewGoError(fmt.Errorf("appendFile: %w", err)))
+				panic(vm.NewGoError(fmt.Errorf("appendFile: %w", err)))
 			}
 			return goja.Undefined()
 		})
@@ -136,7 +164,7 @@ func Require(ctx context.Context, tuiSink func(string)) func(runtime *goja.Runti
 }
 
 // parseWriteArgs extracts (path, content, mode, createDirs) from writeFile/appendFile calls.
-func parseWriteArgs(runtime *goja.Runtime, call goja.FunctionCall) (string, string, os.FileMode, bool) {
+func parseWriteArgs(vm *goja.Runtime, call goja.FunctionCall) (string, string, os.FileMode, bool) {
 	var path, content string
 	mode := os.FileMode(0644)
 	createDirs := false
@@ -148,7 +176,7 @@ func parseWriteArgs(runtime *goja.Runtime, call goja.FunctionCall) (string, stri
 		content = call.Argument(1).String()
 	}
 	if len(call.Arguments) > 2 && !goja.IsUndefined(call.Argument(2)) && !goja.IsNull(call.Argument(2)) {
-		opts := call.Argument(2).ToObject(runtime)
+		opts := call.Argument(2).ToObject(vm)
 		if modeVal := opts.Get("mode"); modeVal != nil && !goja.IsUndefined(modeVal) && !goja.IsNull(modeVal) {
 			mode = os.FileMode(modeVal.ToInteger())
 		}
@@ -194,7 +222,7 @@ func openEditor(ctx context.Context, nameHint string, initialContent string) str
 		editor = os.Getenv("EDITOR")
 	}
 	var cmd *exec.Cmd
-	switch runtime.GOOS {
+	switch goruntime.GOOS {
 	case "windows":
 		if editor != "" {
 			cmd = exec.CommandContext(ctx, editor, path)
@@ -241,7 +269,7 @@ func ClipboardCopy(ctx context.Context, tuiSink func(string), text string) error
 	// override via OSM_CLIPBOARD
 	if cmdStr := os.Getenv("OSM_CLIPBOARD"); cmdStr != "" {
 		var c *exec.Cmd
-		if runtime.GOOS == "windows" {
+		if goruntime.GOOS == "windows" {
 			c = exec.CommandContext(ctx, "cmd", "/c", cmdStr)
 		} else {
 			c = exec.CommandContext(ctx, "/bin/sh", "-c", cmdStr)
@@ -255,7 +283,7 @@ func ClipboardCopy(ctx context.Context, tuiSink func(string), text string) error
 	// platform specific utilities
 	var cmd *exec.Cmd
 
-	switch runtime.GOOS {
+	switch goruntime.GOOS {
 	case "darwin":
 		if _, err := exec.LookPath("pbcopy"); err == nil {
 			cmd = exec.CommandContext(ctx, "pbcopy")

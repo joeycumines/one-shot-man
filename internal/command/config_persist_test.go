@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -1128,6 +1129,14 @@ func TestConfigSchema_JSON_ExtraArgs(t *testing.T) {
 func TestConfigReset_SingleKey_DiskWriteError(t *testing.T) {
 	t.Parallel()
 
+	// Skip on Windows: ENOTDIR path trick for disk write error simulation
+	// behaves differently. Windows returns ENOENT for this case, which is
+	// caught by the early "file doesn't exist" check, preventing the error
+	// path from being tested. The test still provides value on Unix platforms.
+	if runtime.GOOS == "windows" {
+		t.Skip("ENOTDIR path trick for disk write error simulation behaves differently on Windows")
+	}
+
 	// Create a config path that triggers a non-IsNotExist error in
 	// DeleteKeyInFile. Using a regular file as a directory component
 	// causes ENOTDIR on all platforms.
@@ -1163,6 +1172,14 @@ func TestConfigReset_SingleKey_DiskWriteError(t *testing.T) {
 
 func TestConfigReset_AllKeys_DiskWriteError(t *testing.T) {
 	t.Parallel()
+
+	// Skip on Windows: ENOTDIR path trick for disk write error simulation
+	// behaves differently. Windows returns ENOENT for this case, which is
+	// caught by the early "file doesn't exist" check, preventing the error
+	// path from being tested. The test still provides value on Unix platforms.
+	if runtime.GOOS == "windows" {
+		t.Skip("ENOTDIR path trick for disk write error simulation behaves differently on Windows")
+	}
 
 	// Same strategy: use a file as a directory component.
 	dir := t.TempDir()

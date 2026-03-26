@@ -263,6 +263,15 @@ func GitMockSetupJS() string {
     // and an async wait() method. Used by verifySplitAsync (exec.spawn('sh',...)).
     execMod.spawn = function(cmd, args) {
         var fullArgv = [cmd].concat(args || []);
+        
+        // For cross-platform compatibility, when cmd.exe is used, map it to !sh responses.
+        // This allows tests that set !sh responses to work on Windows.
+        var useShRoute = (cmd === 'cmd.exe' && globalThis._gitResponses['!sh'] !== undefined);
+        if (useShRoute) {
+            // Temporarily remap so execv sees 'sh' instead of 'cmd.exe'
+            fullArgv = ['sh'].concat(args || []);
+        }
+        
         var r = execMod.execv(fullArgv);
         var stdoutRead = false;
         var stderrRead = false;

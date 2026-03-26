@@ -1220,7 +1220,7 @@ func TestLoadPlan(t *testing.T) {
 			setup: `
 				if (osmod) {
 					osmod.readFile = function(path) {
-						return { error: 'file not found: ' + path };
+						return { error: true, message: 'file not found: ' + path, content: '' };
 					};
 				}
 			`,

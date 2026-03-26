@@ -420,7 +420,24 @@
             outputFn('\u276f ' + command);
         }
 
-        var child = exec.spawn('sh', ['-c', command]);
+        // Detect platform for cross-platform shell execution
+        var isWindows = false;
+        try {
+            if (osmod && typeof osmod.platform === 'function') {
+                isWindows = osmod.platform() === 'windows';
+            }
+        } catch (e) {
+            // Fallback: assume Unix if osmod unavailable
+            isWindows = false;
+        }
+
+        // Use appropriate shell for platform
+        var child;
+        if (isWindows) {
+            child = exec.spawn('cmd.exe', ['/C', command]);
+        } else {
+            child = exec.spawn('sh', ['-c', command]);
+        }
 
         // Collect stdout and stderr in parallel (same readAll pattern as gitExecAsync).
         async function readAll(stream, streamOutputFn) {

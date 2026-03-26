@@ -14,8 +14,19 @@ import (
 
 func TestPrSplitCommand_NonInteractive(t *testing.T) {
 	t.Parallel()
+	dir := t.TempDir()
+	// Initialize minimal git repo in temp dir.
+	runGitCmd(t, dir, "init")
+	runGitCmd(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
+	runGitCmd(t, dir, "config", "user.email", "test@test.com")
+	runGitCmd(t, dir, "config", "user.name", "Test User")
+	// Create a commit to ensure HEAD exists.
+	runGitCmd(t, dir, "commit", "--allow-empty", "-m", "initial")
+
 	cfg := config.NewConfig()
 	cmd := NewPrSplitCommand(cfg)
+	cmd.testWorkingDir = dir
+	cmd.baseBranch = "main"
 
 	var stdout, stderr bytes.Buffer
 
@@ -285,6 +296,14 @@ func TestPrSplitCommand_FlagValidation(t *testing.T) {
 		},
 	}
 
+	// Setup once for all sub-tests: create temp dir and git repo
+	dir := t.TempDir()
+	runGitCmd(t, dir, "init")
+	runGitCmd(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
+	runGitCmd(t, dir, "config", "user.email", "test@test.com")
+	runGitCmd(t, dir, "config", "user.name", "Test User")
+	runGitCmd(t, dir, "commit", "--allow-empty", "-m", "initial")
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := config.NewConfig()
@@ -293,6 +312,8 @@ func TestPrSplitCommand_FlagValidation(t *testing.T) {
 			cmd.interactive = false
 			cmd.store = "memory"
 			cmd.session = t.Name()
+			cmd.testWorkingDir = dir
+			cmd.baseBranch = "main"
 			tt.setup(cmd)
 
 			var stdout, stderr bytes.Buffer
@@ -316,8 +337,18 @@ func TestPrSplitCommand_FlagValidation(t *testing.T) {
 
 func TestPrSplitCommand_ExecuteWithArgs(t *testing.T) {
 	t.Parallel()
+	dir := t.TempDir()
+	// Initialize minimal git repo in temp dir.
+	runGitCmd(t, dir, "init")
+	runGitCmd(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
+	runGitCmd(t, dir, "config", "user.email", "test@test.com")
+	runGitCmd(t, dir, "config", "user.name", "Test User")
+	runGitCmd(t, dir, "commit", "--allow-empty", "-m", "initial")
+
 	cfg := config.NewConfig()
 	cmd := NewPrSplitCommand(cfg)
+	cmd.testWorkingDir = dir
+	cmd.baseBranch = "main"
 
 	var stdout, stderr bytes.Buffer
 
@@ -340,6 +371,14 @@ func TestPrSplitCommand_ExecuteWithArgs(t *testing.T) {
 
 func TestPrSplitCommand_ConfigColorOverrides(t *testing.T) {
 	t.Parallel()
+	dir := t.TempDir()
+	// Initialize minimal git repo in temp dir.
+	runGitCmd(t, dir, "init")
+	runGitCmd(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
+	runGitCmd(t, dir, "config", "user.email", "test@test.com")
+	runGitCmd(t, dir, "config", "user.name", "Test User")
+	runGitCmd(t, dir, "commit", "--allow-empty", "-m", "initial")
+
 	cfg := config.NewConfig()
 	cfg.Global = map[string]string{
 		"prompt.color.input":  "green",
@@ -348,6 +387,8 @@ func TestPrSplitCommand_ConfigColorOverrides(t *testing.T) {
 	}
 
 	cmd := NewPrSplitCommand(cfg)
+	cmd.testWorkingDir = dir
+	cmd.baseBranch = "main"
 
 	var stdout, stderr bytes.Buffer
 
@@ -369,7 +410,17 @@ func TestPrSplitCommand_ConfigColorOverrides(t *testing.T) {
 
 func TestPrSplitCommand_NilConfig(t *testing.T) {
 	t.Parallel()
+	dir := t.TempDir()
+	// Initialize minimal git repo in temp dir.
+	runGitCmd(t, dir, "init")
+	runGitCmd(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
+	runGitCmd(t, dir, "config", "user.email", "test@test.com")
+	runGitCmd(t, dir, "config", "user.name", "Test User")
+	runGitCmd(t, dir, "commit", "--allow-empty", "-m", "initial")
+
 	cmd := NewPrSplitCommand(nil)
+	cmd.testWorkingDir = dir
+	cmd.baseBranch = "main"
 
 	var stdout, stderr bytes.Buffer
 
@@ -631,17 +682,28 @@ func TestPrSplitCommand_MaxConfigParsing(t *testing.T) {
 func TestPrSplitCommand_PrepareEngineFailure(t *testing.T) {
 	t.Parallel()
 
+	dir := t.TempDir()
+	// Initialize minimal git repo in temp dir.
+	runGitCmd(t, dir, "init")
+	runGitCmd(t, dir, "symbolic-ref", "HEAD", "refs/heads/main")
+	runGitCmd(t, dir, "config", "user.email", "test@test.com")
+	runGitCmd(t, dir, "config", "user.name", "Test User")
+	runGitCmd(t, dir, "commit", "--allow-empty", "-m", "initial")
+
 	// Trigger PrepareEngine failure by providing an invalid log level.
 	// resolveLogConfig returns error for unknown levels.
 	cmd := &PrSplitCommand{
 		scriptCommandBase: scriptCommandBase{
 			logLevel: "INVALID_LEVEL_XYZ",
+			testMode: true,
 			config:   config.NewConfig(),
 			store:    "memory",
 			session:  t.Name(),
 		},
-		strategy: "directory",
-		maxFiles: 10,
+		testWorkingDir: dir,
+		baseBranch:     "main",
+		strategy:       "directory",
+		maxFiles:       10,
 	}
 
 	var stdout, stderr bytes.Buffer

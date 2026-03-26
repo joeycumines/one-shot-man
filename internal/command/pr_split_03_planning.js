@@ -24,11 +24,11 @@
     // the plan file should live inside that directory.
     function resolvePlanPath(path, dir) {
         path = path || DEFAULT_PLAN_PATH;
-        // If path is already absolute, use as-is.
-        if (path.charAt(0) === '/') return path;
+        // If path is already absolute (Unix or Windows), use as-is.
+        if (osmod && osmod.isAbsolute && osmod.isAbsolute(path)) return path;
         var base = resolveDir(dir || '.');
         if (base === '.' || base === '') return path;
-        return base + '/' + path;
+        return osmod.join ? osmod.join(base, path) : base + '/' + path;
     }
 
     // --- createSplitPlan — builds a plan from group objects ---

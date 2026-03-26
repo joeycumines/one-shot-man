@@ -22,6 +22,12 @@ function getStrategy(name) {
 	}
 	return null;
 }
+
+// Helper: check if a call uses the appropriate shell for current platform.
+function isShellCall(call) {
+	var cmd = call.argv[0];
+	return cmd === 'sh' || cmd === 'cmd.exe' || cmd === 'which';
+}
 `
 
 func TestAutoFixStrategy_GoModTidy_Detect(t *testing.T) {
@@ -626,12 +632,12 @@ func TestAutoFixStrategy_GoModTidy_Fix(t *testing.T) {
 		}
 
 		// Verify shell command was called.
-		val, err = evalJS(`JSON.stringify(_gitCalls.filter(function(c) { return c.argv[0] === 'sh'; }))`)
+		val, err = evalJS(`JSON.stringify(_gitCalls.filter(isShellCall))`)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(val.(string), "go mod tidy") {
-			t.Errorf("expected 'go mod tidy' in sh calls, got: %s", val)
+			t.Errorf("expected 'go mod tidy' in shell calls, got: %s", val)
 		}
 
 		// Verify commit was called.
@@ -925,12 +931,12 @@ func TestAutoFixStrategy_GoBuildMissingImports_Fix(t *testing.T) {
 		}
 
 		// Verify goimports was invoked via sh.
-		val, err = evalJS(`JSON.stringify(_gitCalls.filter(function(c) { return c.argv[0] === 'sh'; }))`)
+		val, err = evalJS(`JSON.stringify(_gitCalls.filter(function(c) { return isShellCall(c); }))`)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(val.(string), "goimports") {
-			t.Errorf("expected 'goimports' in sh calls, got: %s", val)
+			t.Errorf("expected 'goimports' in shell calls, got: %s", val)
 		}
 	})
 
@@ -1023,13 +1029,13 @@ func TestAutoFixStrategy_NpmInstall_Fix(t *testing.T) {
 			t.Errorf("expected fixed=true, got false; error=%q", r.Error)
 		}
 
-		// Verify npm install was in sh calls.
-		val, err = evalJS(`JSON.stringify(_gitCalls.filter(function(c) { return c.argv[0] === 'sh'; }))`)
+		// Verify npm install was in shell calls.
+		val, err = evalJS(`JSON.stringify(_gitCalls.filter(function(c) { return isShellCall(c); }))`)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(val.(string), "npm install") {
-			t.Errorf("expected 'npm install' in sh calls, got: %s", val)
+			t.Errorf("expected 'npm install' in shell calls, got: %s", val)
 		}
 	})
 

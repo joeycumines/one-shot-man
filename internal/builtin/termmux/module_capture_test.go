@@ -13,7 +13,7 @@ import (
 // ---------------------------------------------------------------------------
 // T004: CaptureSession JS binding completeness tests
 //
-// Validates that all 14 methods exposed by WrapCaptureSession are callable
+// Validates that all 19 methods exposed by WrapCaptureSession are callable
 // from JS and return the expected types. Uses real PTY (requires unix).
 //
 // The six methods called by runVerifyBranch/pollVerifySession:
@@ -45,11 +45,12 @@ func TestCaptureSession_JSBinding_AllMethods(t *testing.T) {
 		var tm = require('osm:termmux');
 		var cs = tm.newCaptureSession('echo', ['hello T004']);
 
-		// Verify all 17 methods exist and are functions.
+		// Verify all 19 methods exist and are functions.
 		var methods = [
 			'start', 'isRunning', 'output', 'screen', 'interrupt', 'kill',
 			'pause', 'resume', 'isPaused',
-			'resize', 'wait', 'write', 'sendEOF', 'close', 'pid', 'exitCode', 'isDone'
+			'resize', 'wait', 'write', 'sendEOF', 'close', 'pid', 'exitCode', 'isDone',
+			'target', 'setTarget'
 		];
 		var missing = [];
 		for (var i = 0; i < methods.length; i++) {
@@ -149,6 +150,28 @@ func TestCaptureSession_JSBinding_AllMethods(t *testing.T) {
 	}
 	if v.String() != "string" {
 		t.Errorf("screen() should return string, got %q", v.String())
+	}
+
+	// target() should return metadata with at least kind information.
+	v, err = rt.RunString(`JSON.stringify(cs.target())`)
+	if err != nil {
+		t.Fatalf("target() failed: %v", err)
+	}
+	if !strings.Contains(v.String(), `"kind":"capture"`) {
+		t.Errorf("target() should default to capture kind, got %q", v.String())
+	}
+
+	// setTarget() should accept a metadata object and round-trip it via target().
+	_, err = rt.RunString(`cs.setTarget({ id: 'shell-1', name: 'shell', kind: 'pty' })`)
+	if err != nil {
+		t.Fatalf("setTarget() failed: %v", err)
+	}
+	v, err = rt.RunString(`JSON.stringify(cs.target())`)
+	if err != nil {
+		t.Fatalf("target() after setTarget() failed: %v", err)
+	}
+	if !strings.Contains(v.String(), `"shell"`) || !strings.Contains(v.String(), `"pty"`) {
+		t.Errorf("target() after setTarget() = %q, want shell/pty metadata", v.String())
 	}
 
 	// close() should not error on completed session (idempotent).

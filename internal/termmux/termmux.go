@@ -16,8 +16,8 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
 )
 
-// Mux is a terminal multiplexer for toggling between an osm TUI and a
-// Claude child process, with VTerm-based screen capture and restoration.
+// Mux is a terminal multiplexer for toggling between osm and a PTY-backed
+// interactive session, with VTerm-based screen capture and restoration.
 type Mux struct {
 	mu sync.Mutex
 
@@ -26,9 +26,11 @@ type Mux struct {
 	stdout io.Writer
 	termFd int
 
-	// Child process state.
-	child             io.ReadWriteCloser
+	// Attached session state.
+	session           io.ReadWriteCloser
 	active            Side
+	activeTarget      SessionTarget
+	passthroughTarget SessionTarget
 	passthroughActive bool
 	swappedOnce       bool
 
@@ -94,14 +96,18 @@ func New(stdin io.Reader, stdout io.Writer, termFd int, opts ...Option) *Mux {
 	return m
 }
 
-// Attach connects a child process to the mux for output capture and passthrough.
-func (m *Mux) Attach(child io.ReadWriteCloser) error {
+// Attach connects a PTY-backed session to the mux for output capture and
+// passthrough.
+func (m *Mux) Attach(session io.ReadWriteCloser) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.child != nil {
+	if m.session != nil {
 		return ErrAlreadyAttached
 	}
-	m.child = child
+	m.session = session
+	if m.activeTarget.IsZero() {
+		m.activeTarget = SessionTarget{Kind: SessionKindPTY}
+	}
 	m.vterm = vt.NewVTerm(m.termRows, m.termCols)
 	m.childEOF = make(chan struct{})
 	m.teeDone = make(chan struct{})
@@ -131,7 +137,7 @@ func (m *Mux) Attach(child io.ReadWriteCloser) error {
 
 	// Start buffered reader with a cancellable context so Detach()
 	// can signal the ReadLoop to stop after its next successful read.
-	m.reader = ptyio.NewBufferedReader(child, 16)
+	m.reader = ptyio.NewBufferedReader(session, 16)
 	readerCtx, readerCancel := context.WithCancel(context.Background())
 	m.readerCancel = readerCancel
 	go m.reader.ReadLoop(readerCtx)
@@ -152,7 +158,35 @@ func (m *Mux) Attach(child io.ReadWriteCloser) error {
 func (m *Mux) HasChild() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.child != nil
+	return m.session != nil
+}
+
+// ActiveTarget returns the current session metadata for the attached session.
+func (m *Mux) ActiveTarget() SessionTarget {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.activeTarget
+}
+
+// SetActiveTarget updates the metadata for the attached session.
+func (m *Mux) SetActiveTarget(target SessionTarget) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.activeTarget = target
+}
+
+// PassthroughTarget returns the current passthrough target metadata.
+func (m *Mux) PassthroughTarget() SessionTarget {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.passthroughTarget
+}
+
+// SetPassthroughTarget updates the passthrough target metadata.
+func (m *Mux) SetPassthroughTarget(target SessionTarget) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.passthroughTarget = target
 }
 
 func (m *Mux) teeLoop(reader *ptyio.BufferedReader, teeDone, childEOF chan struct{}) {
@@ -189,7 +223,7 @@ func (m *Mux) teeLoop(reader *ptyio.BufferedReader, teeDone, childEOF chan struc
 		}
 	}
 
-	// Reader output channel closed → child EOF.
+	// Reader output channel closed → session EOF.
 	select {
 	case <-childEOF:
 	default:
@@ -212,7 +246,9 @@ func (m *Mux) Detach() error {
 	}
 	teeDone := m.teeDone
 	readerCancel := m.readerCancel
-	m.child = nil
+	m.session = nil
+	m.activeTarget = SessionTarget{}
+	m.passthroughTarget = SessionTarget{}
 	m.vterm = nil
 	m.reader = nil
 	m.readerCancel = nil
@@ -252,7 +288,7 @@ func (m *Mux) SetToggleKey(key byte) {
 	m.statusBar.SetToggleKey(key)
 }
 
-// SetResizeFunc sets the callback for propagating resize to child PTY.
+// SetResizeFunc sets the callback for propagating resize to the attached session.
 func (m *Mux) SetResizeFunc(fn func(rows, cols uint16) error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -273,7 +309,7 @@ func (m *Mux) SetClaudeStatus(status string) {
 	m.statusBar.SetStatus(status)
 }
 
-// SetBellFunc installs a callback invoked whenever the child PTY emits
+// SetBellFunc installs a callback invoked whenever the attached session emits
 // a BEL character (0x07). The callback runs on the tee goroutine —
 // it MUST NOT block or perform JS-unsafe operations. Use the event
 // queue (thread-safe channel send) for JS notification.
@@ -283,7 +319,7 @@ func (m *Mux) SetBellFunc(fn func()) {
 	m.bellFn = fn
 }
 
-// SetOutputFunc installs a callback invoked whenever the child PTY emits
+// SetOutputFunc installs a callback invoked whenever the attached session emits
 // output bytes. The callback runs on the tee goroutine and must be fast and
 // non-blocking. Use it for event queue insertion or light bookkeeping only.
 func (m *Mux) SetOutputFunc(fn func([]byte)) {
@@ -292,7 +328,7 @@ func (m *Mux) SetOutputFunc(fn func([]byte)) {
 	m.outputFn = fn
 }
 
-// LastWriteTime returns the time of the most recent child process
+// LastWriteTime returns the time of the most recent session
 // output (teeLoop write). Returns the zero Time if no output has
 // been received yet. Safe to call from any goroutine.
 func (m *Mux) LastWriteTime() time.Time {
@@ -322,7 +358,7 @@ func (m *Mux) ChildExitOutput() string {
 // embedding in a TUI pane (e.g., inside a lipgloss border). This preserves
 // SGR colors, bold, underline, etc. but omits cursor-positioning and erase
 // sequences that would conflict with BubbleTea rendering.
-// Returns an empty string if no VTerm is allocated or no child is attached.
+// Returns an empty string if no VTerm is allocated or no session is attached.
 func (m *Mux) ChildScreen() string {
 	m.mu.Lock()
 	vtm := m.vterm
@@ -333,21 +369,21 @@ func (m *Mux) ChildScreen() string {
 	return vtm.ContentANSI()
 }
 
-// WriteToChild sends raw bytes to the attached child process's stdin.
-// Returns ErrNoChild if no child is attached. Thread-safe.
+// WriteToChild sends raw bytes to the attached session's stdin.
+// Returns ErrNoChild if no session is attached. Thread-safe.
 func (m *Mux) WriteToChild(p []byte) (int, error) {
 	m.mu.Lock()
-	child := m.child
+	session := m.session
 	m.mu.Unlock()
-	if child == nil {
+	if session == nil {
 		return 0, ErrNoChild
 	}
-	return child.Write(p)
+	return session.Write(p)
 }
 
 // handleResize is called when the terminal is resized (SIGWINCH).
 // It updates the internal dimensions, resizes the VTerm (accounting for
-// the status bar), calls the resize callback to propagate to the child
+// the status bar), calls the resize callback to propagate to the attached session
 // PTY, and re-renders the status bar.
 func (m *Mux) handleResize(rows, cols int) {
 	// Defensive: clamp to valid range. Platform-specific resize
@@ -387,10 +423,10 @@ func (m *Mux) handleResize(rows, cols int) {
 	}
 }
 
-// RunPassthrough enters Claude mode: raw byte forwarding between
-// stdin/stdout and the child PTY. This method blocks until:
+// RunPassthrough enters raw passthrough mode: byte forwarding between
+// stdin/stdout and the attached session. This method blocks until:
 //   - The user presses the toggle key (ExitToggle)
-//   - The child process exits/EOF (ExitChildExit)
+//   - The session exits/EOF (ExitChildExit)
 //   - The context is cancelled (ExitContext)
 //   - An I/O error occurs (ExitError)
 //
@@ -402,7 +438,7 @@ func (m *Mux) handleResize(rows, cols int) {
 func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 	// ── T050: Precondition checks ──────────────────────────────────
 	m.mu.Lock()
-	if m.child == nil {
+	if m.session == nil {
 		m.mu.Unlock()
 		return ExitError, ErrNoChild
 	}
@@ -410,9 +446,12 @@ func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 		m.mu.Unlock()
 		return ExitError, ErrPassthroughActive
 	}
-	child := m.child
+	session := m.session
 	toggleKey := m.cfg.ToggleKey
 	statusEnabled := m.cfg.StatusEnabled
+	if m.passthroughTarget.IsZero() {
+		m.passthroughTarget = m.activeTarget
+	}
 	m.passthroughActive = true
 	m.active = SideClaude
 	m.mu.Unlock()
@@ -421,6 +460,7 @@ func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 		m.mu.Lock()
 		m.passthroughActive = false
 		m.active = SideOsm
+		m.passthroughTarget = SessionTarget{}
 		m.mu.Unlock()
 	}()
 
@@ -514,7 +554,7 @@ func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 		m.mu.Lock()
 		writeOrLog(m.stdout, []byte("\x1b[2J\x1b[H"), "first-swap-clear")
 		m.mu.Unlock()
-		// Nudge the child with a resize so it redraws at the correct
+		// Nudge the session with a resize so it redraws at the correct
 		// dimensions (accounting for status bar).
 		if resizeFn != nil && m.termFd >= 0 {
 			if w, h, err := m.termState.GetSize(m.termFd); err == nil {
@@ -544,7 +584,7 @@ func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 			m.statusBar.Render()
 			m.mu.Unlock()
 		}
-		// Nudge the child with a resize so it redraws at the correct
+		// Nudge the session with a resize so it redraws at the correct
 		// dimensions. The terminal may have been resized while the
 		// OSM TUI was active (passthrough hidden). Without this call
 		// the child PTY retains stale row/col values.
@@ -558,7 +598,7 @@ func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 
 	// ── T119: SIGWINCH resize watcher ──────────────────────────────
 	// Start a goroutine that listens for terminal resize signals and
-	// propagates them to the VTerm, child PTY, and status bar.
+	// propagates them to the VTerm, attached session, and status bar.
 	resizeCtx, resizeCancel := context.WithCancel(ctx)
 	defer resizeCancel()
 	if m.termFd >= 0 {
@@ -567,7 +607,7 @@ func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 		})
 	}
 
-	// ── T054: stdin→child forwarding with toggle key detection ─────
+	// ── T054: stdin→session forwarding with toggle key detection ─────
 	m.mu.Lock()
 	childEOF := m.childEOF
 	m.mu.Unlock()
@@ -581,8 +621,8 @@ func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 	}
 	resultCh := make(chan fwdResult, 1)
 
-	// Goroutine: stdin → child PTY with toggle key interception.
-	// The tee goroutine (started by Attach) handles child → stdout.
+	// Goroutine: stdin → session with toggle key interception.
+	// The tee goroutine (started by Attach) handles session → stdout.
 	go func() {
 		buf := make([]byte, 4096)
 		for {
@@ -613,7 +653,7 @@ func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 			// When the status bar is visible, intercept left clicks on
 			// the status bar row. The filtered output has the click
 			// sequence removed; remaining bytes (other mouse events,
-			// keystrokes) pass through to the child. We read termRows
+			// keystrokes) pass through to the session. We read termRows
 			// under lock because handleResize updates it concurrently.
 			if statusBarLines > 0 {
 				m.mu.Lock()
@@ -625,7 +665,7 @@ func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 					// Forward any remaining bytes that preceded or
 					// followed the click, then toggle back to OSM.
 					if len(filtered) > 0 {
-						writeOrLog(child, filtered, "child-pre-toggle-click")
+						writeOrLog(session, filtered, "session-pre-toggle-click")
 					}
 					resultCh <- fwdResult{ExitToggle, nil}
 					return
@@ -638,14 +678,14 @@ func (m *Mux) RunPassthrough(ctx context.Context) (ExitReason, error) {
 				if data[i] == toggleKey {
 					// Forward bytes before the toggle key, then exit.
 					if i > 0 {
-						writeOrLog(child, data[:i], "child-pre-toggle-key")
+						writeOrLog(session, data[:i], "session-pre-toggle-key")
 					}
 					resultCh <- fwdResult{ExitToggle, nil}
 					return
 				}
 			}
-			// Forward all bytes to child.
-			if _, err := child.Write(data); err != nil {
+			// Forward all bytes to the attached session.
+			if _, err := session.Write(data); err != nil {
 				if fwdCtx.Err() != nil {
 					return
 				}

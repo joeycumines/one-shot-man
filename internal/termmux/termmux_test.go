@@ -439,6 +439,49 @@ func TestRunPassthrough_SideIsClaude(t *testing.T) {
 	<-m.teeDone
 }
 
+func TestRunPassthrough_TracksPassthroughTarget(t *testing.T) {
+	ts := newMockTermState(80, 24)
+	bg := &mockBlockingGuard{}
+	m, _, stdinW, child := newTestMux(t, ts, bg)
+
+	want := SessionTarget{Name: "claude", Kind: SessionKindPTY}
+	m.SetActiveTarget(want)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		reason, err := m.RunPassthrough(context.Background())
+		if reason != ExitToggle || err != nil {
+			t.Errorf("RunPassthrough = (%v, %v); want (ExitToggle, nil)", reason, err)
+		}
+	}()
+
+	deadline := time.After(2 * time.Second)
+	for {
+		if got := m.PassthroughTarget(); got == want {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for passthrough target to be recorded")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	if _, err := stdinW.Write([]byte{DefaultToggleKey}); err != nil {
+		t.Fatalf("Write toggle key: %v", err)
+	}
+	<-done
+
+	if got := m.PassthroughTarget(); !got.IsZero() {
+		t.Fatalf("PassthroughTarget() after RunPassthrough = %#v; want zero", got)
+	}
+
+	child.Close()
+	<-m.teeDone
+}
+
 // ── T051 Tests: Status bar setup ───────────────────────────────────
 
 func TestRunPassthrough_StatusBarSetup(t *testing.T) {

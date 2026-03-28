@@ -59,13 +59,13 @@
       "task": "Define the new interactive-session domain model in internal/termmux before changing pr-split behavior.",
       "description": "Design a reusable Go session abstraction in /Users/joeyc/dev/one-shot-man/internal/termmux that can represent Claude, the verification shell, and any other PTY-backed interactive child without baking product-specific knowledge into Mux. This task must read and reshape /Users/joeyc/dev/one-shot-man/internal/termmux/termmux.go, /Users/joeyc/dev/one-shot-man/internal/termmux/capture.go, /Users/joeyc/dev/one-shot-man/internal/termmux/side.go, and /Users/joeyc/dev/one-shot-man/internal/termmux/errors.go so the mux can target a selected interactive session instead of only one anonymous child.",
       "acceptance": "The codebase has a clear session model that can name or otherwise identify the active interactive endpoint, and the mux core can reason about 'current passthrough target' independently from the old single child slot. After this task, a later task can make fullscreen passthrough work for Claude or a verify shell without inventing special cases in JavaScript.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Refactor the core mux so passthrough, capture, resize, and activity are session-aware instead of child-slot-aware.",
       "description": "Modify /Users/joeyc/dev/one-shot-man/internal/termmux/termmux.go so RunPassthrough, WriteToChild, ChildScreen, ChildExitOutput, LastWriteTime, bell propagation, tee handling, attach/detach semantics, and resize propagation all operate against the selected interactive session abstraction introduced in the previous task. Preserve the working status bar, VTerm restore, raw-mode handling, and SIGWINCH behavior while removing the assumption that the only possible target is the originally attached Claude child.",
       "acceptance": "The mux can render and passthrough whichever interactive session pr-split selects, and switching fullscreen ownership between interactive panes no longer requires separate code paths outside the mux. Existing Claude behavior still works, but it now works because Claude is a session target, not because the mux is hard-coded around a lone child.",
-      "status": "Not Started"
+      "status": "In Progress"
     },
     {
       "task": "Unify CaptureSession with the new mux session model instead of leaving it as a parallel island.",

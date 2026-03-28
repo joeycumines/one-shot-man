@@ -13,6 +13,10 @@ import (
 
 // CaptureConfig configures a CaptureSession.
 type CaptureConfig struct {
+	// Name is an optional human-readable label for the session.
+	Name string
+	// Kind classifies the session. Defaults to SessionKindCapture.
+	Kind SessionKind
 	// Command is the executable path or name.
 	Command string
 	// Args are the command arguments.
@@ -46,10 +50,11 @@ type CaptureConfig struct {
 //
 // All methods are safe for concurrent use.
 type CaptureSession struct {
-	mu   sync.Mutex
-	cfg  CaptureConfig
-	proc *pty.Process
-	term *vt.VTerm
+	mu     sync.Mutex
+	cfg    CaptureConfig
+	proc   *pty.Process
+	term   *vt.VTerm
+	target SessionTarget
 
 	// Lifecycle state.
 	started  bool
@@ -76,13 +81,38 @@ func NewCaptureSession(cfg CaptureConfig) *CaptureSession {
 	if cols <= 0 {
 		cols = 80
 	}
-	return &CaptureSession{
-		cfg:  cfg,
-		term: vt.NewVTerm(rows, cols),
-		done: make(chan struct{}),
-		rows: rows,
-		cols: cols,
+	kind := cfg.Kind
+	if kind == SessionKindUnknown {
+		kind = SessionKindCapture
 	}
+	return &CaptureSession{
+		cfg:    cfg,
+		term:   vt.NewVTerm(rows, cols),
+		done:   make(chan struct{}),
+		rows:   rows,
+		cols:   cols,
+		target: SessionTarget{Name: cfg.Name, Kind: kind},
+	}
+}
+
+// Target returns the session identity metadata.
+func (cs *CaptureSession) Target() SessionTarget {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	if cs.target.Kind == SessionKindUnknown {
+		return SessionTarget{Name: cs.cfg.Name, Kind: SessionKindCapture}
+	}
+	return cs.target
+}
+
+// SetTarget updates the session identity metadata.
+func (cs *CaptureSession) SetTarget(target SessionTarget) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	if target.Kind == SessionKindUnknown {
+		target.Kind = SessionKindCapture
+	}
+	cs.target = target
 }
 
 // Start spawns the command in a PTY and begins capturing output. The context

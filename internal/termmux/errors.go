@@ -3,12 +3,12 @@ package termmux
 import "errors"
 
 var (
-	// ErrNoChild is returned when an operation requires an attached child
-	// process but none is present.
+	// ErrNoChild is returned when an operation requires an attached session
+	// but none is present.
 	ErrNoChild = errors.New("termmux: no child process attached")
 
-	// ErrAlreadyAttached is returned when Attach is called but a child
-	// process is already attached.
+	// ErrAlreadyAttached is returned when Attach is called but a session
+	// is already attached.
 	ErrAlreadyAttached = errors.New("termmux: child already attached")
 
 	// ErrPassthroughActive is returned when an operation conflicts with

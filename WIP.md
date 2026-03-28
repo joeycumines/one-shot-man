@@ -193,6 +193,23 @@ ResolveColor (3 cases), RenderProgressBar (4 cases). Rule of Two v2 PASS+PASS.
 - Immediate next step:
   - Freeze the diff and run the first strict review subagent against `diff vs HEAD`.
 
+### ACTIVE — task 3: define session targets in termmux
+- Current implementation choice:
+  - Introduce a generic session target type in `internal/termmux` rather than hard-coding Claude/verify/shell into the mux.
+  - Add target metadata to both `Mux` and `CaptureSession` so later tasks can select and label the active interactive endpoint without changing the external JS behavior yet.
+- Goal of this slice:
+  - Make `internal/termmux` speak in terms of named/typed interactive sessions while preserving the current single-child behavior until task 4 refactors the mux logic around it.
+- Correctness note:
+  - A reviewer caught stale target metadata surviving `Detach()` / re-`Attach()` cycles.
+  - Fixed by clearing both `activeTarget` and `passthroughTarget` on detach and adding a regression test that proves the session identity resets with the attached child.
+
+### TRANSITION — task 3 complete, task 4 started
+- Task 3 now has explicit session targets in `internal/termmux`, with attach/detach reset behavior proven by tests and integration checks.
+- Next implementation slice is task 4: make the mux behavior itself session-aware instead of merely storing target metadata alongside the old child-slot logic.
+- Validation completed on the new model slice:
+  - `go test ./internal/termmux -run 'TestSessionTarget_String|TestCaptureSession_Target|TestMuxSessionTargets_AreIndependent|TestRunPassthrough_NoChild|TestRunPassthrough_StdinForwarding|TestSetOutputFunc_CalledOnOutput|TestLastWriteTime_TracksTeeLoopOutput' -count=1` ✅
+  - `make integration-test-termmux` ✅
+
 ### Next: T417 — Unit tests for chunk 15d pure helpers and 16a constants
 **DONE.** 8 test functions: 4 computeReportOverlayDims (default/narrow/wide/tiny terminal),
 2 syncReportScrollbar (mock + 3 noop variants), CHROME_ESTIMATE=8,

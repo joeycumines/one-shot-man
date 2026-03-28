@@ -592,6 +592,12 @@ func newCaptureSession(ctx context.Context, runtime *goja.Runtime, call goja.Fun
 		if v := optObj.Get("dir"); v != nil && !goja.IsUndefined(v) {
 			cfg.Dir = v.String()
 		}
+		if v := optObj.Get("name"); v != nil && !goja.IsUndefined(v) {
+			cfg.Name = v.String()
+		}
+		if v := optObj.Get("kind"); v != nil && !goja.IsUndefined(v) {
+			cfg.Kind = parent.SessionKind(v.String())
+		}
 		if v := optObj.Get("rows"); v != nil && !goja.IsUndefined(v) {
 			cfg.Rows = int(v.ToInteger())
 		}
@@ -618,10 +624,11 @@ func newCaptureSession(ctx context.Context, runtime *goja.Runtime, call goja.Fun
 // JavaScript-callable methods. Exported so callers (e.g., pr_split.go) can
 // create a Go-side CaptureSession and expose it through the same interface.
 //
-// AUDIT (T004/T059): All 17 methods verified present and type-correct:
+// AUDIT (T004/T059): All 19 methods verified present and type-correct:
 //
 //	start, isRunning, output, screen, interrupt, kill, pause, resume,
-//	isPaused, resize, wait, write, sendEOF, close, pid, exitCode, isDone.
+//	isPaused, resize, wait, write, sendEOF, close, pid, exitCode, isDone,
+//	target, setTarget.
 //
 // The 6 methods called by runVerifyBranch/pollVerifySession (isDone,
 // exitCode, output, close, interrupt, kill) are confirmed bound with
@@ -647,10 +654,30 @@ func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.C
 		return cs.Output()
 	})
 
+	// ── target() → { id, name, kind } ───────────────────
+	// Returns the session identity metadata.
+	_ = obj.Set("target", func() map[string]any {
+		target := cs.Target()
+		return map[string]any{
+			"id":   target.ID,
+			"name": target.Name,
+			"kind": target.Kind.String(),
+		}
+	})
+
 	// ── screen() → string ────────────────────────────────
 	// Returns ANSI-escaped screen content for terminal rendering.
 	_ = obj.Set("screen", func() string {
 		return cs.Screen()
+	})
+
+	// ── setTarget(target) ────────────────────────────────
+	// Updates the session identity metadata using a simple object shape.
+	_ = obj.Set("setTarget", func(target map[string]any) {
+		if target == nil {
+			panic(runtime.NewTypeError("setTarget: target object is required"))
+		}
+		cs.SetTarget(captureTargetFromJS(target))
 	})
 
 	// ── interrupt() ──────────────────────────────────────
@@ -750,4 +777,21 @@ func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.C
 	})
 
 	return obj
+}
+
+func captureTargetFromJS(raw map[string]any) parent.SessionTarget {
+	target := parent.SessionTarget{}
+	if v, ok := raw["id"]; ok && v != nil {
+		target.ID = fmt.Sprint(v)
+	}
+	if v, ok := raw["name"]; ok && v != nil {
+		target.Name = fmt.Sprint(v)
+	}
+	if v, ok := raw["kind"]; ok && v != nil {
+		target.Kind = parent.SessionKind(fmt.Sprint(v))
+	}
+	if target.Kind == parent.SessionKindUnknown {
+		target.Kind = parent.SessionKindCapture
+	}
+	return target
 }

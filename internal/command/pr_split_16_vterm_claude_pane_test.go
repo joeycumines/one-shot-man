@@ -310,6 +310,45 @@ func TestChunk16_VTerm_RenderClaudePane_TinyTerminal(t *testing.T) {
 	}
 }
 
+func TestChunk16_VTerm_PollClaudeScreenshot_DrainsMuxEvents(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var pollCalls = 0;
+		globalThis.tuiMux = {
+			hasChild: function() { return true; },
+			pollEvents: function() { pollCalls++; return 1; },
+			childScreen: function() { return 'ANSI screen'; },
+			screenshot: function() { return 'plain screen'; },
+			lastActivityMs: function() { return 42; }
+		};
+		try {
+			var s = initState('PLAN_REVIEW');
+			s.splitViewEnabled = true;
+			s.claudeScreen = '';
+			s.claudeScreenshot = '';
+			globalThis.prSplit._pollClaudeScreenshot(s);
+			return JSON.stringify({
+				pollCalls: pollCalls,
+				screen: s.claudeScreen,
+				shot: s.claudeScreenshot
+			});
+		} finally {
+			if (savedMux !== undefined) globalThis.tuiMux = savedMux;
+			else delete globalThis.tuiMux;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"pollCalls":1,"screen":"ANSI screen","shot":"plain screen"}`
+	if raw != want {
+		t.Errorf("pollClaudeScreenshot drain = %v, want %v", raw, want)
+	}
+}
+
 // -- pollClaudeScreenshot tests (via Tick message — not directly exported) --
 
 func TestChunk16_VTerm_PollScreenshot_CapturesFromMux(t *testing.T) {

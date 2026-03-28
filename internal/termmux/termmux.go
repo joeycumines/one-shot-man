@@ -58,6 +58,11 @@ type Mux struct {
 	// bells and is safe for non-blocking work such as event queue insertion.
 	bellFn func()
 
+	// outputFn is called (from the tee goroutine) whenever the child process
+	// produces output. It runs after the VTerm has been updated so listeners
+	// can safely snapshot the latest screen state.
+	outputFn func([]byte)
+
 	// lastWriteAt stores the Unix millisecond timestamp of the most recent
 	// teeLoop write (child process output). Updated atomically — safe to
 	// read from any goroutine without holding mu.
@@ -156,6 +161,7 @@ func (m *Mux) teeLoop(reader *ptyio.BufferedReader, teeDone, childEOF chan struc
 		m.mu.Lock()
 		vtm := m.vterm
 		passthrough := m.passthroughActive
+		outputFn := m.outputFn
 		m.mu.Unlock()
 
 		if vtm == nil {
@@ -168,6 +174,10 @@ func (m *Mux) teeLoop(reader *ptyio.BufferedReader, teeDone, childEOF chan struc
 
 		// Record activity timestamp for HUD polling.
 		m.lastWriteAt.Store(time.Now().UnixMilli())
+
+		if outputFn != nil {
+			outputFn(chunk)
+		}
 
 		// Forward to stdout only during passthrough.
 		if passthrough {
@@ -271,6 +281,15 @@ func (m *Mux) SetBellFunc(fn func()) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.bellFn = fn
+}
+
+// SetOutputFunc installs a callback invoked whenever the child PTY emits
+// output bytes. The callback runs on the tee goroutine and must be fast and
+// non-blocking. Use it for event queue insertion or light bookkeeping only.
+func (m *Mux) SetOutputFunc(fn func([]byte)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.outputFn = fn
 }
 
 // LastWriteTime returns the time of the most recent child process

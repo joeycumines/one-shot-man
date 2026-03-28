@@ -734,8 +734,8 @@
         reportVp.setMouseWheelEnabled(true);
         var reportSb = scrollbarLib.new();
 
-        // Named lifecycle functions — exported for unit testing.
-        var _initFn = function() {
+        // Named lifecycle functions — exported for unit testing and model startup.
+        var _initStateFn = function() {
             return {
                 // Wizard state.
                 wizard: wizard,
@@ -910,6 +910,18 @@
             };
         };
 
+        // Model init returns a startup heartbeat command so the update loop
+        // can keep draining mux events even when the TUI is otherwise idle.
+        var _initModelFn = function() {
+            return [ _initStateFn(), tea.tick(C.TICK_INTERVAL_MS, 'mux-poll') ];
+        };
+
+        // Unit tests still expect the exported wizard init helper to be
+        // state-only, so keep a thin wrapper for that contract.
+        var _initFn = function() {
+            return _initStateFn();
+        };
+
         var _updateFn = function(msg, s) {
             return prSplit._wizardUpdateImpl(msg, s);
         };
@@ -919,7 +931,7 @@
         };
 
         var model = tea.newModel({
-            init: _initFn,
+            init: _initModelFn,
 
             update: _updateFn,
 

@@ -867,6 +867,17 @@
             return [s, tea.tick(C.CLAUDE_SCREENSHOT_POLL_MS, 'claude-screenshot')];
         }
 
+        // Drain mux events before snapshotting so real output/bell activity
+        // can update JS state through the binding's event listeners.
+        if (typeof tuiMux.pollEvents === 'function') {
+            try {
+                tuiMux.pollEvents();
+            } catch (e) {
+                // Swallow — event draining is best-effort and should not
+                // prevent the pane snapshot from updating.
+            }
+        }
+
         // Capture ANSI screen from tuiMux if available (T28: full color rendering).
         try {
             if (typeof tuiMux.childScreen === 'function') {

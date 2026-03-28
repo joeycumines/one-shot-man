@@ -1518,6 +1518,37 @@ func TestSetBellFunc_NilSafe(t *testing.T) {
 	<-m.teeDone
 }
 
+func TestSetOutputFunc_CalledOnOutput(t *testing.T) {
+	childR, childW := io.Pipe()
+	mc := &pipeMockChild{r: childR, w: io.Discard}
+
+	var stdout bytes.Buffer
+	m := New(bytes.NewReader(nil), &stdout, -1)
+
+	outputCh := make(chan string, 1)
+	m.SetOutputFunc(func(data []byte) {
+		outputCh <- string(data)
+	})
+
+	if err := m.Attach(mc); err != nil {
+		t.Fatalf("Attach error: %v", err)
+	}
+
+	childW.Write([]byte("streamed output"))
+
+	select {
+	case got := <-outputCh:
+		if got != "streamed output" {
+			t.Fatalf("SetOutputFunc called with %q; want %q", got, "streamed output")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for SetOutputFunc callback")
+	}
+
+	childW.Close()
+	<-m.teeDone
+}
+
 func TestSetBellFunc_FiresDuringPassthrough(t *testing.T) {
 	// SetBellFunc should fire even when passthrough is active
 	// (bell callback is unconditional, stdout propagation is conditional).

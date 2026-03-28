@@ -933,7 +933,7 @@
             if (typeof tuiMux !== 'undefined' && tuiMux &&
                 typeof tuiMux.switchTo === 'function' &&
                 (typeof tuiMux.hasChild !== 'function' || tuiMux.hasChild())) {
-                tuiMux.switchTo('claude');
+                tuiMux.switchTo();
             }
             return [s, null];
 

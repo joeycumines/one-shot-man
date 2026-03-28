@@ -329,6 +329,17 @@ func WrapMux(ctx context.Context, runtime *goja.Runtime, mux *parent.Mux) goja.V
 		})
 	})
 
+	// ── output event wiring ─────────────────────────────
+	// Queue an output event whenever the child PTY produces bytes. The JS
+	// side can use this to refresh panes from the latest mux snapshot without
+	// depending on a separate ad hoc polling contract.
+	mux.SetOutputFunc(func(data []byte) {
+		events.queue(EventOutput, map[string]any{
+			"pane":  "claude",
+			"chunk": string(data),
+		})
+	})
+
 	// ── screenshot() → string ────────────────────────────
 	// Returns plain-text VTerm buffer content for diagnostics/test assertions.
 	_ = obj.Set("screenshot", func() string {

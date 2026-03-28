@@ -1364,6 +1364,72 @@ func TestModule_BellEvent_QueuedThroughMux(t *testing.T) {
 	}
 }
 
+func TestModule_OutputEvent_QueuedThroughMux(t *testing.T) {
+	// Full chain: child writes output → VTerm → Mux.OutputFn → events.queue → pollEvents → JS callback
+	runtime, _ := testRequire(t)
+
+	childR, childW := io.Pipe()
+	mc := &pipeMockChild{r: childR, w: io.Discard}
+
+	mux := parent.New(nil, io.Discard, -1)
+	muxObj := WrapMux(context.Background(), runtime, mux)
+	_ = runtime.Set("__mux", muxObj)
+
+	_, err := runtime.RunString(`
+		var m = __mux;
+		var outputEvents = [];
+		m.on('output', function(data) {
+			outputEvents.push({
+				pane: data && data.pane || 'unknown',
+				chunk: data && data.chunk || ''
+			});
+		});
+	`)
+	if err != nil {
+		t.Fatalf("RunString setup: %v", err)
+	}
+
+	if err := mux.Attach(mc); err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+
+	childW.Write([]byte("Hello output"))
+	childW.Close()
+
+	deadline := time.After(5 * time.Second)
+	for {
+		_, err := runtime.RunString(`m.pollEvents()`)
+		if err != nil {
+			t.Fatalf("pollEvents: %v", err)
+		}
+		v, err := runtime.RunString(`outputEvents.length`)
+		if err != nil {
+			t.Fatalf("outputEvents.length: %v", err)
+		}
+		if v.ToInteger() >= 1 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timeout waiting for output event; got %d", v.ToInteger())
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	v, err := runtime.RunString(`JSON.stringify(outputEvents)`)
+	if err != nil {
+		t.Fatalf("RunString verify: %v", err)
+	}
+	got := v.String()
+	if !strings.Contains(got, `"pane":"claude"`) {
+		t.Errorf("outputEvents = %s, want pane claude", got)
+	}
+	if !strings.Contains(got, `"chunk":"Hello output"`) {
+		t.Errorf("outputEvents = %s, want chunk Hello output", got)
+	}
+}
+
 func TestMuxEvents_BellQueueDrain(t *testing.T) {
 	// Unit test: bell events can be queued and drained through the event system.
 	e := newMuxEvents()

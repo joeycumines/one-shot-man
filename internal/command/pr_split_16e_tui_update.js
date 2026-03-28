@@ -93,6 +93,15 @@
     // --- wizardUpdateImpl — main BubbleTea update dispatch ---
     //  Extracted from createWizardModel._updateFn for file splitting.
     function wizardUpdateImpl(msg, s) {
+        if (typeof tuiMux !== 'undefined' && tuiMux &&
+            typeof tuiMux.pollEvents === 'function') {
+            try {
+                tuiMux.pollEvents();
+            } catch (e) {
+                log.debug('wizardUpdateImpl: tuiMux.pollEvents failed: ' + (e.message || e));
+            }
+        }
+
         // WindowSize — always handle.
         if (msg.type === 'WindowSize') {
             s.width = msg.width;
@@ -990,6 +999,9 @@
 
         // Tick-based polling and execution steps.
         if (msg.type === 'Tick') {
+            if (msg.id === 'mux-poll') {
+                return [s, tea.tick(C.TICK_INTERVAL_MS, 'mux-poll')];
+            }
             // Heuristic analysis polling (async Promise+poll pattern).
             if (msg.id === 'analysis-poll') {
                 return handleAnalysisPoll(s);

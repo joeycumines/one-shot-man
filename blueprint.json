@@ -22,7 +22,7 @@
     "reviewGate": "Before calling the redesign complete, the implementation must have unit coverage, PTY/integration coverage, and cross-platform verification coverage for the new interactive session model, not just happy-path local tests."
   },
   "statusSection": {
-    "currentState": "The current code has been audited. The implementation gap is understood: termmux is single-child passthrough, pr-split mixes that with separate CaptureSession islands, verification is still a one-shot command plus override, and Windows lacks the PTY backend needed for the required interactive workflow.",
+      "currentState": "The current code has been audited. Two concrete implementation slices are complete: the termmux core now emits real output callbacks, the Goja binding queues output events, the Claude screenshot poll drains pending mux events before taking a snapshot, and the manual verification path now uses the real zero-argument `switchTo()` contract. The foundational interactive-session refactor tasks remain not started: pr-split still mixes the single-child mux with separate CaptureSession islands, verification is still a one-shot command plus override, and Windows lacks the PTY backend needed for the required interactive workflow.",
     "goalState": "Claude, verification, and shell interactions in osm pr-split all run through a coherent interactive-session model. The inline Claude pane renders correctly as a first-class interactive pane, fullscreen passthrough can target the active interactive session, verification is a persistent shell-backed workflow with explicit pass/fail/continue controls, the JS binding matches the Go API exactly, and the feature is verified on macOS, Linux, and Windows.",
     "replanLog": [
       {
@@ -83,13 +83,13 @@
       "task": "Emit real output and activity events from the termmux binding so pane updates are not driven primarily by polling.",
       "description": "Implement the currently missing output event path in /Users/joeyc/dev/one-shot-man/internal/builtin/termmux/module.go and the underlying termmux core so the JavaScript side can subscribe to session output/activity changes instead of repeatedly scraping childScreen and screenshot as the primary update mechanism. Keep polling-based diagnostics only where they are still necessary for tests or fallback safety.",
       "acceptance": "The binding's advertised output-related events are real. pr-split can respond to session output and activity using event delivery rather than only periodic screen polling, and the inline interactive panes update because the session produced output, not because the UI guessed it should repaint.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Replace the bogus switchTo('claude') contract and align every pr-split caller with the real termmux API.",
       "description": "Audit and fix every termmux call site in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_10d_pipeline_orchestrator.js, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16c_tui_handlers_verify.js, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16d_tui_handlers_claude.js, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16e_tui_update.js, and /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16f_tui_model.js so the JavaScript either uses the actual API surface or the actual API surface is expanded to support the needed target-selection semantics.",
       "acceptance": "No pr-split JavaScript file calls a termmux method with an invented signature. Every fullscreen-toggle, pane-focus, passthrough, and write path compiles against an intentionally supported API and has matching unit coverage in the Go binding tests and the JS-side TUI tests.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Refactor pr_split.go bootstrap so pr-split creates and owns a session-aware termmux lifecycle.",

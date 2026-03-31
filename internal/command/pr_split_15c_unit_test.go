@@ -348,6 +348,47 @@ func TestChunk15c_LiveViewport_WithContent(t *testing.T) {
 	}
 }
 
+func TestChunk15c_LiveViewport_WithSessionHelper(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	val, err := evalJS(`(function() {
+		globalThis.tuiMux = {
+			session: function() {
+				return {
+					screen: function() { return 'helper session output'; },
+					write: function() {},
+					target: function() { return {name: 'claude', kind: 'pty'}; }
+				};
+			}
+		};
+		var s = {
+			splitViewTab: 'verify',
+			activeVerifySession: {
+				screen: function() { return 'helper verify output'; }
+			},
+			verifyScreen: 'helper verify output',
+			activeVerifyBranch: 'split/helper',
+			verifyElapsedMs: 1500,
+			width: 80
+		};
+		var lines = [];
+		prSplit._renderLiveVerifyViewport(s, lines);
+		delete globalThis.tuiMux;
+		return lines.join('\n');
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	if !strings.Contains(s, "split/helper") {
+		t.Error("viewport should still render with shared session accessor path")
+	}
+	if !strings.Contains(s, "Pause") {
+		t.Error("shared session accessor path should preserve interactive controls")
+	}
+}
+
 // TestChunk15c_LiveViewport_ManualScroll verifies that with a positive
 // verifyViewportOffset and auto-scroll off, a scroll percentage is shown.
 func TestChunk15c_LiveViewport_ManualScroll(t *testing.T) {

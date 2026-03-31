@@ -15,6 +15,7 @@
     var truncate = prSplit._truncate;
     var renderProgressBar = prSplit._renderProgressBar;
     var renderClaudeQuestionPrompt = prSplit._renderClaudeQuestionPrompt;
+    var getInteractivePaneSession = prSplit._getInteractivePaneSession;
 
     // --- Screen Renderers (T009-T017) ---
     //
@@ -34,17 +35,19 @@
         lines.push('');
 
         // Config form (non-editable display for now, wizard sets these).
-        lines.push(styles.bold().render('Source Branch'));
         var srcBranch = (st.analysisCache && st.analysisCache.currentBranch) || '(auto-detect)';
-        lines.push('  ' + styles.activeCard().width(Math.max(20, (s.width || 80) - 12)).render(
-            styles.fieldValue().render(srcBranch)
-        ));
+        var srcLabel = styles.bold().render('Source Branch');
+        var srcField = styles.activeCard().width(
+            Math.max(20, (s.width || 80) - lipgloss.width(srcLabel) - 8)
+        ).render(styles.fieldValue().render(srcBranch));
+        lines.push('  ' + lipgloss.joinHorizontal(lipgloss.Left, srcLabel, '  ', srcField));
         lines.push('');
 
-        lines.push(styles.bold().render('Target Branch'));
-        lines.push('  ' + styles.activeCard().width(Math.max(20, (s.width || 80) - 12)).render(
-            styles.fieldValue().render(runtime.baseBranch || 'main')
-        ));
+        var targetLabel = styles.bold().render('Target Branch');
+        var targetField = styles.activeCard().width(
+            Math.max(20, (s.width || 80) - lipgloss.width(targetLabel) - 8)
+        ).render(styles.fieldValue().render(runtime.baseBranch || 'main'));
+        lines.push('  ' + lipgloss.joinHorizontal(lipgloss.Left, targetLabel, '  ', targetField));
         lines.push('');
 
         // Strategy selection.
@@ -699,7 +702,8 @@
     // T351: Live CaptureSession viewport with ANSI-aware truncation,
     // scrollbar, pause/resume/shell/interrupt controls, and bordered frame.
     function renderLiveVerifyViewport(s, lines) {
-        if (!s.activeVerifySession && !s.verifyScreen) { return; }
+        var verifySession = getInteractivePaneSession(s, 'verify');
+        if (!verifySession && !s.verifyScreen) { return; }
         lines.push('');
         var liveOutput = s.verifyScreen || '';
         var liveLines = liveOutput.split('\n');
@@ -772,7 +776,7 @@
         // T351: Only show interactive controls when CaptureSession
         // is active. Fallback (plain text) shows just scroll hint.
         var footer;
-        if (s.activeVerifySession) {
+        if (verifySession) {
             // T059: Pause/Resume button for verify subprocess.
             var pauseResumeBtn;
             if (s.verifyPaused) {
@@ -848,7 +852,7 @@
         }
         lines.push(summaryLine);
         // T006: Hint for manual override when there are failures.
-        if (failCount > 0 && !s.activeVerifySession) {
+        if (failCount > 0 && !getInteractivePaneSession(s, 'verify')) {
             lines.push('  ' + styles.dim().render('Press p to mark a failed branch as passed'));
         }
     }

@@ -22,7 +22,7 @@
     "reviewGate": "Before calling the redesign complete, the implementation must have unit coverage, PTY/integration coverage, and cross-platform verification coverage for the new interactive session model, not just happy-path local tests."
   },
   "statusSection": {
-      "currentState": "The current code has been audited. Two concrete implementation slices are complete: the termmux core now emits real output callbacks, the Goja binding queues output events, the Claude screenshot poll drains pending mux events before taking a snapshot, and the manual verification path now uses the real zero-argument `switchTo()` contract. The foundational interactive-session refactor tasks remain not started: pr-split still mixes the single-child mux with separate CaptureSession islands, verification is still a one-shot command plus override, and Windows lacks the PTY backend needed for the required interactive workflow. NEW: A detailed error analysis from scratch/numerous-errors.md has identified critical TUI bugs (border misalignment, focus system broken, Back button non-functional on error page, Claude pane input capture broken) and a PR creation failure (empty commits from --allow-empty fallback causing 'No commits between' errors). Tasks have been added to address all reported issues.",
+    "currentState": "The current code has been audited. Two concrete implementation slices are complete: the termmux core now emits real output callbacks, the Goja binding queues output events, the Claude screenshot poll drains pending mux events before taking a snapshot, and the manual verification path now uses the real zero-argument `switchTo()` contract. The foundational interactive-session refactor tasks remain not started: pr-split still mixes the single-child mux with separate CaptureSession islands, verification is still a one-shot command plus override, and Windows lacks the PTY backend needed for the required interactive workflow. NEW: The pr-split UI error cluster has been repaired and validated on the real state machine: Source/Target Branch rows are inline again, the Output pane title no longer shows a line count, ERROR pages track their origin and hide duplicate split-view output, Back navigation returns from ERROR, the recoverable ERROR transitions and focus behavior are covered by tests, and the wizard state machine is now documented in docs/pr-split-state-machine.md. The PR-creation empty-commit path is now rejected loudly instead of synthesizing empty commits, and the full `make test-prsplit-all` verification target passes with a widened timeout.",
     "goalState": "Claude, verification, and shell interactions in osm pr-split all run through a coherent interactive-session model. The inline Claude pane renders correctly as a first-class interactive pane, fullscreen passthrough can target the active interactive session, verification is a persistent shell-backed workflow with explicit pass/fail/continue controls, the JS binding matches the Go API exactly, and the feature is verified on macOS, Linux, and Windows. Additionally: all TUI rendering issues are fixed (borders align, no duplicate output, focus works), error states are navigable, and PR creation succeeds for branches with actual changes.",
     "replanLog": [
       {
@@ -70,13 +70,13 @@
       "task": "Refactor the core mux so passthrough, capture, resize, and activity are session-aware instead of child-slot-aware.",
       "description": "Modify /Users/joeyc/dev/one-shot-man/internal/termmux/termmux.go so RunPassthrough, WriteToChild, ChildScreen, ChildExitOutput, LastWriteTime, bell propagation, tee handling, attach/detach semantics, and resize propagation all operate against the selected interactive session abstraction introduced in the previous task. Preserve the working status bar, VTerm restore, raw-mode handling, and SIGWINCH behavior while removing the assumption that the only possible target is the originally attached Claude child.",
       "acceptance": "The mux can render and passthrough whichever interactive session pr-split selects, and switching fullscreen ownership between interactive panes no longer requires separate code paths outside the mux. Existing Claude behavior still works, but it now works because Claude is a session target, not because the mux is hard-coded around a lone child.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "Unify CaptureSession with the new mux session model instead of leaving it as a parallel island.",
       "description": "Reshape /Users/joeyc/dev/one-shot-man/internal/termmux/capture.go and any supporting files under /Users/joeyc/dev/one-shot-man/internal/termmux/pty so a CaptureSession can plug into the same interaction model that the mux uses. Keep write, pause, resume, kill, resize, screen capture, and completion semantics, but remove the architectural separation that currently forces pr-split to treat verify and shell as second-class terminal tabs.",
       "acceptance": "A PTY-backed verification shell can be represented as a first-class interactive session that supports both inline rendering and fullscreen passthrough through the same machinery that Claude uses. The code no longer requires three separate input/output routing stacks for Claude, verify, and shell.",
-      "status": "Not Started"
+      "status": "In Progress"
     },
     {
       "task": "Make the builtin termmux JavaScript API match the redesigned Go session model exactly.",
@@ -214,55 +214,55 @@
       "task": "Fix TUI input field border misalignment on CONFIG screen Source/Target Branch fields.",
       "description": "The box drawing characters under 'Source Branch' and 'Target Branch' are offset/not forming proper rectangles. This occurs in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_15c_tui_screens.js lines 37-47 where a newline separates the label from the bordered input field. The lipgloss roundedBorder() adds 2 horizontal and 2 vertical characters, but the newline causes misalignment. The fix requires either: (a) rendering the label inline with the bordered box without a newline, (b) using lipgloss.joinHorizontal to compose label+box as a single unit, or (c) restructuring the field renderer to avoid the newline separation.",
       "acceptance": "The CONFIG screen Source Branch and Target Branch input fields render as proper rectangular bordered boxes with no character offset. The border characters (╭─╮│╰─╯) form a complete rectangle around the field value. Visual inspection confirms alignment matches other bordered elements in the UI.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Remove useless line count indicator from Output tab title bar.",
       "description": "The Output tab shows '(8)' or similar line counts in the header bar (visible in error screenshot). This is in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_15b_tui_chrome.js lines 649-650 where the title includes ' \u2014 ' + totalLines + ' line' + (totalLines !== 1 ? 's' : ''). The line count adds noise without value since users can see output length by scrolling. Additionally, the line count is only shown for Output but not for Claude or Verify tabs, creating inconsistency. Remove the line count display from the Output pane title.",
       "acceptance": "The Output tab title shows only 'Output' with optional scroll indicator ([live] or [XX%]). No line count appears in the title bar. The Output, Claude, and Verify tab titles follow a consistent format without numeric counts.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Fix Claude pane focus and input capture via Ctrl+Tab and mouse click.",
       "description": "The documented intent is that Ctrl+Tab or clicking on the Claude pane should focus it for direct keyboard input to the Claude PTY. The error report states this functionality DOES NOT WORK. Investigation needed in: /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16e_tui_update.js (ctrl+tab handler lines 544-548), /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16f_tui_model.js (mouse click handlers), and the termmux integration. Determine if splitViewFocus state is being set correctly but input forwarding is broken, if focus is not being set at all, or if the Claude pane click zone is not properly marked. The Claude input forwarding logic (T29 in pr_split_16e_tui_update.js) only activates when splitViewFocus === 'claude' and splitViewTab === 'claude', so both must be correctly set.",
       "acceptance": "Pressing Ctrl+Tab when the split-view is open toggles focus between the wizard and the Claude pane. When the Claude pane is focused, keyboard input is forwarded directly to the Claude PTY (tuiMux.writeToChild). Clicking on the Claude pane with the mouse also focuses it for input. Focus is visually indicated by the INPUT tag in the pane title. Users can type commands directly to Claude without additional keystrokes.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Fix error page duplicate output display - hide pane, scroll to bottom in main view.",
       "description": "When the wizard reaches ERROR state (Step 7/7: Error), the same error output appears twice - once in the main content area and again in the Output pane below. The error screenshot in scratch/numerous-errors.md shows this duplication. The ERROR state view is in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_15d_tui_dialogs.js lines 668-670. When ERROR state is reached, the split-view should be disabled (s.splitViewEnabled = false) and the main content should show the error with output scrolled to bottom. Alternatively, keep the split-view but auto-scroll the Output pane to bottom and hide the main content duplication.",
       "acceptance": "When the wizard transitions to ERROR state, the error output appears only once in the UI. Either: (a) split-view closes and the error shows in main content with full output visible, or (b) split-view remains but the Output pane auto-scrolls to bottom and the main content shows only a summary without duplicating the error output. No visual duplication occurs.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Fix Back button non-functional on ERROR state page.",
       "description": "On the ERROR state screen (Step 7/7: Error), clicking the Back button does nothing. The mouse handler for nav-back is in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16f_tui_model.js line 73, which calls handleBack(). However, handleBack in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16a_tui_focus.js lines 381-433 does not have a case for 'ERROR' state. Add ERROR state handling to handleBack() to allow navigation back to the previous state (likely FINALIZATION or EQUIV_CHECK depending on where the error originated). The ERROR state needs to track what state it came from so Back knows where to return.",
       "acceptance": "When on the ERROR state screen, clicking the Back button or pressing the keyboard shortcut for back returns the user to the state before the error (e.g., FINALIZATION if PR creation failed, EQUIV_CHECK if verification failed). The user can retry the operation or modify their plan. The Back button is consistently functional across all error states.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Fix tab-based focus system on ERROR and other non-standard states.",
       "description": "Tab-based focus is 'completely broken' according to the error report - nothing gets highlighted, Enter does nothing. The focus system relies on getFocusElements() returning an array of focusable elements for each state in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16a_tui_focus.js. The ERROR state case (line 668-670 in pr_split_15d_tui_dialogs.js) does not define focusable elements, so getFocusElements() returns an empty array for ERROR state. This means Tab/Shift+Tab have nothing to cycle through and Enter cannot activate anything. Add ERROR state to getFocusElements() with appropriate focusable elements (at minimum: nav-cancel if not nav-back, possibly error-retry buttons). Also audit other states that may be missing from getFocusElements().",
       "acceptance": "On the ERROR state screen, pressing Tab cycles focus through available interactive elements. Visual focus indicators (arrows, highlighting) show which element is focused. Pressing Enter activates the focused element. The focus system works consistently across all wizard states including ERROR, PAUSED, CANCELLED, and DONE states.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Fix PR creation failures due to empty commits from --allow-empty fallback.",
       "description": "All 22 PRs failed with 'No commits between base and head' errors. The root cause is in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_05_execution.js lines 196-206: when git commit fails, it falls back to 'git commit --allow-empty', which creates commits with no actual changes. This makes each branch identical to its parent, causing 'No commits between' errors during PR creation. The fallback to --allow-empty was intended to handle edge cases but is being overused. The fix requires: (1) Investigate why normal commits are failing in the user's workflow, (2) Either remove the --allow-empty fallback entirely, or (3) Track which splits used --allow-empty and skip PR creation for those branches (already partially done in pr_split_07_prcreation.js lines 135-142), or (4) Fail the entire execution if any commit requires --allow-empty rather than silently creating empty branches.",
       "acceptance": "Branch creation fails loudly if git commit cannot create a real commit. No --allow-empty fallback occurs, or if it does, those branches are clearly marked and excluded from PR creation with a user-visible warning. PRs are only created for branches that have actual diffs from their parents. The 'No commits between' error no longer occurs during PR creation.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Improve error state context tracking to enable proper Back navigation.",
       "description": "The ERROR state needs to know where it came from to enable proper Back navigation. Currently ERROR is a terminal state with no memory of its origin. Add s.errorFromState or similar field that gets set when transitioning to ERROR, recording which state the wizard was in before the error. Modify all error transition points in the pipeline handlers (pr_split_16b_tui_handlers_pipeline.js, pr_split_16d_tui_handlers_claude.js, pr_split_16c_tui_handlers_verify.js) to set this context. Then update handleBack() to use s.errorFromState to determine where to navigate back to. This also enables better error recovery - e.g., if error occurred during PR creation, Back could return to FINALIZATION to retry PR creation with different options.",
       "acceptance": "When an error occurs, s.errorFromState records the previous wizard state. The Back button on the ERROR screen returns to that state, allowing the user to retry or adjust their approach. Error states are no longer dead-ends; users can navigate back and try alternative actions.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Add comprehensive tests for TUI focus system across all wizard states.",
       "description": "The tab focus bug on ERROR state suggests a broader testing gap - no tests verify that getFocusElements() returns appropriate elements for each state, or that Tab/Enter navigation works. Add tests in /Users/joeyc/dev/one-shot-man/internal/command that: (1) Mock each wizard state and verify getFocusElements() returns non-empty arrays with correct element IDs, (2) Simulate Tab/Shift+Tab key presses and verify focusIndex cycles correctly, (3) Simulate Enter key and verify the correct action is triggered based on focused element, (4) Test edge cases like ERROR, PAUSED, CANCELLED, DONE states which are often overlooked. Use the existing test patterns in pr_split_16_*_test.go files.",
       "acceptance": "New tests cover focus system behavior for all wizard states. Tests catch regressions like empty focus element arrays that would break Tab navigation. The test suite exercises the complete focus cycle: Tab moves focus forward, Shift+Tab moves backward, Enter activates focused element, and visual feedback matches the focused element.",
-      "status": "Not Started"
+      "status": "In Progress"
     },
     {
       "task": "Document and validate all wizard state transitions including error paths.",

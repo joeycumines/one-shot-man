@@ -82,3 +82,19 @@ func (t SessionTarget) WithKind(kind SessionKind) SessionTarget {
 	t.Kind = kind
 	return t
 }
+
+// InteractiveSession is the shared contract for terminal endpoints that can
+// render inline in the TUI and accept direct operator input.
+//
+// The contract is intentionally narrow: it captures the common behavior needed
+// by both mux-backed PTY sessions and standalone CaptureSession instances,
+// without forcing callers to know which implementation they received.
+type InteractiveSession interface {
+	Target() SessionTarget
+	SetTarget(SessionTarget)
+	Output() string
+	Screen() string
+	Resize(rows, cols int) error
+	Write([]byte) (int, error)
+	Close() error
+}

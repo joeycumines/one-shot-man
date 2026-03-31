@@ -13,6 +13,7 @@
     var lipgloss = prSplit._lipgloss;
     var zone = prSplit._zone;
     var truncate = prSplit._truncate;
+    var getInteractivePaneSession = prSplit._getInteractivePaneSession;
 
     // Display thresholds for status bar and TUI chrome.
     var TUI_THRESHOLDS = {
@@ -305,9 +306,11 @@
         // an INPUT indicator instead of the generic Ctrl+O hint — the user is
         // already interacting with a tab and needs to know where keys go.
         if (!narrow && s.splitViewEnabled) {
-            if (s.splitViewFocus === 'claude' && s.splitViewTab === 'shell' && s.shellSession) {
+            if (s.splitViewFocus === 'claude' && s.splitViewTab === 'shell' &&
+                getInteractivePaneSession(s, 'shell')) {
                 leftParts += '  INPUT \u25b8 Shell';
-            } else if (s.splitViewFocus === 'claude' && s.splitViewTab === 'verify' && s.activeVerifySession) {
+            } else if (s.splitViewFocus === 'claude' && s.splitViewTab === 'verify' &&
+                getInteractivePaneSession(s, 'verify')) {
                 leftParts += '  INPUT \u25b8 Verify';
             } else {
                 leftParts += '  Ctrl+O Tab';
@@ -646,8 +649,7 @@
         }
 
         // Title line.
-        var titleText = styles.bold().render(' Output' + scrollInfo +
-            ' \u2014 ' + totalLines + ' line' + (totalLines !== 1 ? 's' : '') + ' ');
+        var titleText = styles.bold().render(' Output' + scrollInfo + ' ');
 
         // Determine visible window based on scroll offset.
         var startLine;
@@ -685,7 +687,7 @@
 
     function renderVerifyPane(s, width, height) {
         var content = s.verifyScreen || '';
-        var hasSession = !!s.activeVerifySession;
+        var hasSession = !!getInteractivePaneSession(s, 'verify');
 
         var contentH = Math.max(1, height - 2);
         var viewH = Math.max(1, contentH - 1);
@@ -783,7 +785,7 @@
     // T332: renderShellPane — interactive shell terminal in split-view bottom pane.
     // Follows same pattern as renderVerifyPane.
     function renderShellPane(s, width, height) {
-        var hasSession = !!s.shellSession;
+        var hasSession = !!getInteractivePaneSession(s, 'shell');
         var isFocused = (s.splitViewFocus === 'claude' && s.splitViewTab === 'shell');
         var borderColor = isFocused ? COLORS.primary
             : (hasSession ? COLORS.success : COLORS.border);

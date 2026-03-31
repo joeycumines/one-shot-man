@@ -13,6 +13,9 @@
     var zone = prSplit._zone;
     var st = prSplit._state;
     var C = prSplit._TUI_CONSTANTS;
+    var getInteractivePaneSession = prSplit._getInteractivePaneSession;
+    var cleanupShellPaneSession = prSplit._cleanupShellPaneSession;
+    var clearVerifyPaneSession = prSplit._clearVerifyPaneSession;
     var handleErrorResolutionState = prSplit._handleErrorResolutionState;
     // Late-bound cross-chunk references (defined in later chunks, resolved at call time).
     function startAnalysis(s) { return prSplit._startAnalysis(s); }
@@ -22,35 +25,11 @@
     function updateConfirmCancel(msg, s) {
         // Helper to clean up any active verify session before quitting.
         function cleanupActiveSession() {
-            if (s.activeVerifySession) {
-                try { s.activeVerifySession.close(); } catch (e) { log.debug('cleanup: verifySession.close failed: ' + (e.message || e)); }
-            }
-            if (s.activeVerifyWorktree && s.activeVerifyDir) {
-                try { prSplit.cleanupVerifyWorktree(s.activeVerifyDir, s.activeVerifyWorktree); } catch (e) { log.debug('cleanup: verifyWorktree cleanup failed: ' + (e.message || e)); }
-            }
             // T325: Reset tab before clearing session for atomic state transition.
             if (s.splitViewTab === 'verify' || s.splitViewTab === 'shell') {
                 s.splitViewTab = 'output';
             }
-            // Clean up shell session if open (shell depends on verify worktree).
-            if (s.shellSession) {
-                try { s.shellSession.close(); } catch (e) { log.debug('cleanup: shellSession.close failed: ' + (e.message || e)); }
-                s.shellSession = null;
-                s.shellScreen = '';
-                s.shellViewOffset = 0;
-                s.shellAutoScroll = true;
-            }
-            s.activeVerifySession = null;
-            s.activeVerifyWorktree = null;
-            s.activeVerifyBranch = null;
-            s.activeVerifyDir = null;
-            s.activeVerifyStartTime = 0;
-            s.verifyElapsedMs = 0;
-            s.verifyScreen = '';     // T321
-            s.verifyViewportOffset = 0;
-            s.verifyAutoScroll = true;
-            s.lastVerifyInterruptTime = 0;
-            s.verifyPaused = false;  // T059
+            clearVerifyPaneSession(s, { debugPrefix: 'cleanup', keepDisplay: false });
         }
 
         // T031: Helper to confirm cancel and quit.
@@ -310,7 +289,8 @@
     // Polls the active CaptureSession for output and completion.
     // On completion, records the result and advances to next branch.
     function pollVerifySession(s) {
-        if (!s.activeVerifySession) return [s, null];
+        var activeVerifySession = getInteractivePaneSession(s, 'verify');
+        if (!activeVerifySession) return [s, null];
 
         // T058: Update elapsed time on each tick for live display.
         s.verifyElapsedMs = Date.now() - s.activeVerifyStartTime;
@@ -320,11 +300,11 @@
             ? prSplitConfig.timeoutMs : 0;
         if (timeoutMs > 0 && s.verifyElapsedMs >= timeoutMs) {
             // Timeout — kill the process.
-            try { s.activeVerifySession.kill(); } catch (e) { log.debug('verifyCancel: session.kill failed: ' + (e.message || e)); }
+            try { activeVerifySession.kill(); } catch (e) { log.debug('verifyCancel: session.kill failed: ' + (e.message || e)); }
         }
 
         // T321: Capture ANSI-styled VTerm screen for the Verify tab.
-        try { s.verifyScreen = s.activeVerifySession.screen(); } catch (e) { log.debug('pollVerify: session.screen failed: ' + (e.message || e)); }
+        try { s.verifyScreen = activeVerifySession.screen(); } catch (e) { log.debug('pollVerify: session.screen failed: ' + (e.message || e)); }
 
         // T350: Auto-scroll main viewport to keep inline terminal visible.
         // The inline verify terminal in viewExecutionScreen() is rendered at
@@ -336,23 +316,17 @@
             try { s.vp.gotoBottom(); } catch (e) { log.debug('pollVerify: viewport.gotoBottom failed: ' + (e.message || e)); }
         }
 
-        if (!s.activeVerifySession.isDone()) {
+        if (!activeVerifySession.isDone()) {
             // Still running — schedule next poll.
             s.spinnerFrame = (s.spinnerFrame || 0) + 1;
             return [s, tea.tick(C.TICK_INTERVAL_MS, 'verify-poll')];
         }
 
         // Process exited — capture result.
-        var exitCode = s.activeVerifySession.exitCode();
-        var output = s.activeVerifySession.output();
+        var exitCode = activeVerifySession.exitCode();
+        var output = activeVerifySession.output();
         var duration = Date.now() - s.activeVerifyStartTime;
         var branchName = s.activeVerifyBranch;
-
-        // Close session and clean up worktree.
-        try { s.activeVerifySession.close(); } catch (e) { log.debug('verifyDone: session.close failed: ' + (e.message || e)); }
-        if (s.activeVerifyWorktree && s.activeVerifyDir) {
-            prSplit.cleanupVerifyWorktree(s.activeVerifyDir, s.activeVerifyWorktree);
-        }
 
         // Store output lines for expandable display.
         var outputLines = output.split('\n').filter(function(line) { return line.length > 0; });
@@ -400,33 +374,9 @@
             preExisting: preExisting
         });
 
-        // T380: Keep verify tab visible after session close for post-mortem review.
-        // Only force-switch shell tab (which depends on verify worktree).
-        if (s.splitViewTab === 'shell') {
-            s.splitViewTab = 'verify';
-        }
-
-        // Clean up shell session if open (shell depends on verify worktree).
-        if (s.shellSession) {
-            try { s.shellSession.close(); } catch (e) { log.debug('shellCleanup: shellSession.close failed: ' + (e.message || e)); }
-            s.shellSession = null;
-            s.shellScreen = '';
-            s.shellViewOffset = 0;
-            s.shellAutoScroll = true;
-        }
-
-        // Clear active session state.
         // T380: Preserve verifyScreen, activeVerifyBranch, and verifyElapsedMs
         // for post-mortem viewing in the pane title. Cleared on next verify start.
-        s.activeVerifySession = null;
-        s.activeVerifyWorktree = null;
-        s.activeVerifyDir = null;
-        s.activeVerifyStartTime = 0;
-        s.verifyViewportOffset = 0;
-        s.verifyAutoScroll = true;
-        s.lastVerifyInterruptTime = 0;
-        s.verifyPaused = false;  // T059
-        // T380: Preserve verifyScreen for post-mortem viewing (cleared on next verify start).
+        clearVerifyPaneSession(s, { debugPrefix: 'verifyDone', keepDisplay: true });
 
         s.verifyingIdx++;
         return [s, tea.tick(1, 'verify-branch')];
@@ -958,35 +908,32 @@
 
     // T335: Poll shell CaptureSession for screen updates and lifecycle.
     function pollShellSession(s) {
-        if (!s.shellSession) return [s, null];
+        var shellSession = getInteractivePaneSession(s, 'shell');
+        if (!shellSession) return [s, null];
 
         // Capture screen.
         try {
-            s.shellScreen = s.shellSession.screen();
+            s.shellScreen = shellSession.screen();
         } catch (e) {
             s.shellScreen = '';
         }
 
         // Check if shell has exited.
         var done = false;
-        try { done = s.shellSession.isDone(); } catch (e) { done = true; }
+        try { done = shellSession.isDone(); } catch (e) { done = true; }
 
         if (done) {
-            // Clean up shell session.
-            try { s.shellSession.close(); } catch (e) { log.debug('tabSwitch: shellSession.close failed: ' + (e.message || e)); }
-            s.shellSession = null;
-            s.shellScreen = '';
-            s.shellViewOffset = 0;
-            s.shellAutoScroll = true;
+            cleanupShellPaneSession(s, 'tabSwitch');
 
             // Resume verify if it was paused for the shell.
-            if (s.verifyPaused && s.activeVerifySession) {
-                try { s.activeVerifySession.resume(); s.verifyPaused = false; } catch (e) { log.debug('tabSwitch: verifySession.resume failed: ' + (e.message || e)); }
+            var activeVerifySession = getInteractivePaneSession(s, 'verify');
+            if (s.verifyPaused && activeVerifySession) {
+                try { activeVerifySession.resume(); s.verifyPaused = false; } catch (e) { log.debug('tabSwitch: verifySession.resume failed: ' + (e.message || e)); }
             }
 
             // Switch away from shell tab.
             if (s.splitViewTab === 'shell') {
-                s.splitViewTab = s.activeVerifySession ? 'verify' : 'output';
+                s.splitViewTab = activeVerifySession ? 'verify' : 'output';
             }
 
             return [s, null];

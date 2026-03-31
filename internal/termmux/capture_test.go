@@ -406,7 +406,7 @@ func TestCaptureSession_Write(t *testing.T) {
 	defer cs.Close()
 
 	// Write to stdin; cat echoes it back.
-	if err := cs.Write("hello from stdin\n"); err != nil {
+	if err := cs.WriteString("hello from stdin\n"); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
@@ -605,7 +605,7 @@ func TestCaptureSession_NotStarted_Methods(t *testing.T) {
 	if err := cs.Kill(); err == nil {
 		t.Fatal("expected error from Kill before Start")
 	}
-	if err := cs.Write("hello"); err == nil {
+	if err := cs.WriteString("hello"); err == nil {
 		t.Fatal("expected error from Write before Start")
 	}
 	if _, err := cs.Wait(); err == nil {

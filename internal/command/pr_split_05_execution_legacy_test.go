@@ -199,7 +199,7 @@ func TestExecuteSplit(t *testing.T) {
 			},
 		},
 		{
-			name: "commit failure falls back to allow-empty",
+			name: "commit failure returns error without allow-empty fallback",
 			setup: `
 				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature');
 				globalThis._gitResponses['rev-parse --verify refs/heads/split/01-empty'] = _gitFail('not');
@@ -207,8 +207,6 @@ func TestExecuteSplit(t *testing.T) {
 				globalThis._gitResponses['checkout feature -- no-change.go'] = _gitOk('');
 				globalThis._gitResponses['add --'] = _gitOk('');
 				globalThis._gitResponses['commit -m empty'] = _gitFail('nothing to commit');
-				globalThis._gitResponses['commit --allow-empty -m empty'] = _gitOk('');
-				globalThis._gitResponses['rev-parse HEAD'] = _gitOk('ghi789');
 				globalThis._gitResponses['checkout feature'] = _gitOk('');
 			`,
 			invoke: `JSON.stringify(globalThis.prSplit.executeSplit({
@@ -220,14 +218,29 @@ func TestExecuteSplit(t *testing.T) {
 				]
 			}))`,
 			check: func(t *testing.T, r executeSplitResult) {
-				if r.Error != nil {
-					t.Fatalf("unexpected error: %s", *r.Error)
+				if r.Error == nil {
+					t.Fatal("expected commit failure error")
+				}
+				if !strings.Contains(*r.Error, "git commit failed") {
+					t.Errorf("error = %q, expected git commit failure", *r.Error)
+				}
+				if !strings.Contains(*r.Error, "nothing to commit") {
+					t.Errorf("error = %q, expected original commit stderr", *r.Error)
 				}
 				if len(r.Results) != 1 {
 					t.Fatalf("expected 1 result, got %d", len(r.Results))
 				}
-				if r.Results[0].SHA != "ghi789" {
-					t.Errorf("sha = %q, want 'ghi789'", r.Results[0].SHA)
+				if r.Results[0].Error == nil {
+					t.Fatal("expected split result error")
+				}
+				raw, err := evalJS(`JSON.stringify(globalThis._gitCalls.some(function(c) {
+					return c.argv.join(' ').indexOf('commit --allow-empty') !== -1;
+				}))`)
+				if err != nil {
+					t.Fatalf("git call check: %v", err)
+				}
+				if usedAllowEmpty := strings.TrimSpace(raw.(string)); usedAllowEmpty != "false" {
+					t.Fatalf("unexpected allow-empty fallback call recorded: %s", usedAllowEmpty)
 				}
 			},
 		},
@@ -298,9 +311,9 @@ func TestExecuteSplit(t *testing.T) {
 				}
 			},
 		},
-		// ---- T66: double commit failure (both normal and --allow-empty) ----
+		// ---- T66: commit failure should not fall back to allow-empty ----
 		{
-			name: "both commit and allow-empty commit fail returns error",
+			name: "commit failure ignores allow-empty fallback even when available",
 			setup: `
 				globalThis._gitResponses['rev-parse --abbrev-ref HEAD'] = _gitOk('feature');
 				globalThis._gitResponses['rev-parse --verify refs/heads/split/01-broken'] = _gitFail('not');
@@ -308,7 +321,8 @@ func TestExecuteSplit(t *testing.T) {
 				globalThis._gitResponses['checkout feature -- broken.go'] = _gitOk('');
 				globalThis._gitResponses['add --'] = _gitOk('');
 				globalThis._gitResponses['commit -m broken'] = _gitFail('nothing to commit');
-				globalThis._gitResponses['commit --allow-empty -m broken'] = _gitFail('lock error');
+				globalThis._gitResponses['commit --allow-empty -m broken'] = _gitOk('');
+				globalThis._gitResponses['rev-parse HEAD'] = _gitOk('ghi789');
 				globalThis._gitResponses['checkout feature'] = _gitOk('');
 			`,
 			invoke: `JSON.stringify(globalThis.prSplit.executeSplit({
@@ -321,16 +335,25 @@ func TestExecuteSplit(t *testing.T) {
 			}))`,
 			check: func(t *testing.T, r executeSplitResult) {
 				if r.Error == nil {
-					t.Fatal("expected error for double commit failure")
+					t.Fatal("expected commit failure error")
 				}
 				if !strings.Contains(*r.Error, "git commit failed") {
 					t.Errorf("expected 'git commit failed', got: %s", *r.Error)
 				}
-				if !strings.Contains(*r.Error, "lock error") {
-					t.Errorf("expected allow-empty stderr in error, got: %s", *r.Error)
+				if !strings.Contains(*r.Error, "nothing to commit") {
+					t.Errorf("expected original commit stderr in error, got: %s", *r.Error)
 				}
 				if len(r.Results) != 1 {
 					t.Fatalf("expected 1 partial result, got %d", len(r.Results))
+				}
+				raw, err := evalJS(`JSON.stringify(globalThis._gitCalls.some(function(c) {
+					return c.argv.join(' ').indexOf('commit --allow-empty') !== -1;
+				}))`)
+				if err != nil {
+					t.Fatalf("git call check: %v", err)
+				}
+				if usedAllowEmpty := strings.TrimSpace(raw.(string)); usedAllowEmpty != "false" {
+					t.Fatalf("unexpected allow-empty fallback call recorded: %s", usedAllowEmpty)
 				}
 			},
 		},

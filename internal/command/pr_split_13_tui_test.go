@@ -97,6 +97,112 @@ func TestChunk13_BuildCommandsRegistered(t *testing.T) {
 	}
 	checkDefined("_buildCommands")
 	checkDefined("_buildReport")
+	checkDefined("_clearVerifyPaneSession")
+	checkDefined("_cleanupShellPaneSession")
+	checkDefined("_openVerifyWorktreeShell")
+}
+
+func TestChunk13_ClearVerifyPaneSession_CleansDependentShell(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var verifyClosed = 0;
+		var shellClosed = 0;
+		var cleanupArgs = [];
+		globalThis.prSplit.cleanupVerifyWorktree = function(dir, wt) { cleanupArgs.push([dir, wt]); };
+
+		var s = {
+			activeVerifySession: {
+				close: function() { verifyClosed++; }
+			},
+			activeVerifyWorktree: '/tmp/wt',
+			activeVerifyDir: '/tmp/repo',
+			activeVerifyBranch: 'split/01-types',
+			activeVerifyStartTime: 123,
+			verifyElapsedMs: 456,
+			verifyScreen: 'still here',
+			verifyViewportOffset: 7,
+			verifyAutoScroll: false,
+			verifyPaused: true,
+			lastVerifyInterruptTime: 42,
+			shellSession: {
+				close: function() { shellClosed++; }
+			},
+			shellScreen: 'shell',
+			shellViewOffset: 3,
+			shellAutoScroll: false,
+			splitViewTab: 'shell'
+		};
+
+		globalThis.prSplit._clearVerifyPaneSession(s, { keepDisplay: true, debugPrefix: 'test' });
+
+		if (verifyClosed !== 1) return 'FAIL: verify close count=' + verifyClosed;
+		if (shellClosed !== 1) return 'FAIL: shell close count=' + shellClosed;
+		if (cleanupArgs.length !== 1) return 'FAIL: cleanup calls=' + cleanupArgs.length;
+		if (s.activeVerifySession !== null) return 'FAIL: verify session not cleared';
+		if (s.shellSession !== null) return 'FAIL: shell session not cleared';
+		if (s.splitViewTab !== 'verify') return 'FAIL: splitViewTab=' + s.splitViewTab;
+		if (s.verifyScreen !== 'still here') return 'FAIL: verifyScreen changed';
+		if (s.activeVerifyBranch !== 'split/01-types') return 'FAIL: branch changed';
+		if (s.verifyElapsedMs !== 456) return 'FAIL: elapsed changed';
+		if (s.verifyPaused) return 'FAIL: verifyPaused should be false';
+		if (s.shellScreen !== '') return 'FAIL: shellScreen=' + JSON.stringify(s.shellScreen);
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("clear verify pane session: %v", raw)
+	}
+}
+
+func TestChunk13_OpenVerifyWorktreeShell_UsesSharedLifecycle(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var pauseCalled = 0;
+		var spawnArgs = null;
+		globalThis.prSplit._TUI_CONSTANTS = { DEFAULT_ROWS: 24 };
+		globalThis.prSplit._syncMainViewport = function(s) { s._synced = true; };
+		globalThis.prSplit.spawnShellSession = function(worktree, opts) {
+			spawnArgs = { worktree: worktree, rows: opts.rows, cols: opts.cols };
+			return { close: function(){}, screen: function(){ return ''; }, isDone: function(){ return false; } };
+		};
+
+		var s = {
+			activeVerifySession: {
+				pause: function() { pauseCalled++; }
+			},
+			activeVerifyWorktree: '/tmp/wt',
+			verifyPaused: false,
+			height: 24,
+			width: 100,
+			splitViewEnabled: false,
+			splitViewRatio: 0.5
+		};
+
+		var result = globalThis.prSplit._openVerifyWorktreeShell(s);
+		if (!result || !result.opened) return 'FAIL: result=' + JSON.stringify(result);
+		if (pauseCalled !== 1) return 'FAIL: pauseCalled=' + pauseCalled;
+		if (!spawnArgs || spawnArgs.worktree !== '/tmp/wt') return 'FAIL: spawn args missing';
+		if (spawnArgs.rows < 3 || spawnArgs.cols < 20) return 'FAIL: invalid shell dims';
+		if (s.shellSession === null) return 'FAIL: shellSession missing';
+		if (!s.splitViewEnabled) return 'FAIL: splitViewEnabled should be true';
+		if (s.splitViewTab !== 'shell') return 'FAIL: splitViewTab=' + s.splitViewTab;
+		if (s.splitViewFocus !== 'claude') return 'FAIL: splitViewFocus=' + s.splitViewFocus;
+		if (!s.verifyPaused) return 'FAIL: verifyPaused should be true';
+		if (!s._synced) return 'FAIL: sync not called';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("open verify worktree shell: %v", raw)
+	}
 }
 
 // TestChunk13_AllCommandNames verifies that buildCommands returns an object
@@ -560,6 +666,63 @@ func TestChunk13_WizardState_InvalidTransition(t *testing.T) {
 				t.Errorf("expected error for invalid transition %s", tc.name)
 			}
 		})
+	}
+}
+
+// TestChunk13_WizardState_ErrorTransitionsFromActiveStates verifies the
+// wizard permits entering ERROR from every non-terminal active state that can
+// fail during pipeline execution.
+func TestChunk13_WizardState_ErrorTransitionsFromActiveStates(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`
+		(function() {
+			var states = ['CONFIG', 'PLAN_GENERATION', 'BRANCH_BUILDING', 'EQUIV_CHECK'];
+			var errors = [];
+			for (var i = 0; i < states.length; i++) {
+				var ws = new globalThis.prSplit.WizardState();
+				var from = states[i];
+				switch (from) {
+					case 'CONFIG':
+						ws.transition('CONFIG');
+						break;
+					case 'PLAN_GENERATION':
+						ws.transition('CONFIG');
+						ws.transition('PLAN_GENERATION');
+						break;
+					case 'BRANCH_BUILDING':
+						ws.transition('CONFIG');
+						ws.transition('PLAN_GENERATION');
+						ws.transition('PLAN_REVIEW');
+						ws.transition('BRANCH_BUILDING');
+						break;
+					case 'EQUIV_CHECK':
+						ws.transition('CONFIG');
+						ws.transition('PLAN_GENERATION');
+						ws.transition('PLAN_REVIEW');
+						ws.transition('BRANCH_BUILDING');
+						ws.transition('EQUIV_CHECK');
+						break;
+				}
+				try {
+					ws.transition('ERROR');
+				} catch (e) {
+					errors.push(from + ': ' + e.message);
+				}
+				if (ws.current !== 'ERROR') {
+					errors.push(from + ': current=' + ws.current);
+				}
+			}
+			return JSON.stringify(errors);
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+	got := raw.(string)
+	if got != "[]" {
+		t.Errorf("unexpected ERROR transition failures: %s", got)
 	}
 }
 
@@ -3167,6 +3330,42 @@ func TestChunk13_ViewConfigScreen_RendersFields(t *testing.T) {
 	}
 }
 
+func TestChunk13_ViewConfigScreen_BranchRowsStayInline(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		globalThis.prSplit._state.analysisCache = {currentBranch: 'feature/source'};
+		globalThis.prSplit.runtime.baseBranch = 'main';
+		return globalThis.prSplit._viewConfigScreen({
+			wizardState: 'CONFIG', width: 80, showAdvanced: false
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := raw.(string)
+	lines := strings.Split(s, "\n")
+
+	var sourceInline bool
+	var targetInline bool
+	for _, line := range lines {
+		if strings.Contains(line, "Source Branch") && strings.ContainsAny(line, "╭│╮╯╰") {
+			sourceInline = true
+		}
+		if strings.Contains(line, "Target Branch") && strings.ContainsAny(line, "╭│╮╯╰") {
+			targetInline = true
+		}
+	}
+
+	if !sourceInline {
+		t.Fatalf("source branch row should be inline with the bordered field, output:\n%s", s)
+	}
+	if !targetInline {
+		t.Fatalf("target branch row should be inline with the bordered field, output:\n%s", s)
+	}
+}
+
 func TestChunk13_ViewConfigScreen_AdvancedToggle(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
@@ -4591,6 +4790,52 @@ func TestChunk13_WizardView_ContainsChromeElements(t *testing.T) {
 	// Status bar should mention Help or shortcuts.
 	if !strings.Contains(s, "Help") {
 		t.Errorf("view should contain 'Help' in status bar")
+	}
+}
+
+func TestChunk13_WizardView_ErrorStateSuppressesSplitPane(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = globalThis.prSplit._wizardInit();
+		s.needsInitClear = false;
+		s.wizard.reset();
+		s.wizard.transition('CONFIG');
+		s.wizard.transition('PLAN_GENERATION');
+		s.wizard.transition('ERROR');
+		s.wizardState = 'ERROR';
+		s.errorDetails = 'unexpected failure';
+		s.errorFromState = 'CONFIG';
+		s.splitViewEnabled = true;
+		s.splitViewFocus = 'claude';
+		s.splitViewTab = 'verify';
+		s.activeVerifySession = {
+			screen: function() { return 'DUPLICATE_MARKER'; },
+			output: function() { return ''; },
+			isDone: function() { return false; },
+			isRunning: function() { return true; }
+		};
+		s.verifyScreen = 'DUPLICATE_MARKER';
+		s.width = 100;
+		s.height = 30;
+		return globalThis.prSplit._wizardView(s);
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := raw.(string)
+	if !strings.Contains(s, "unexpected failure") {
+		t.Fatalf("error view should include the error details, got:\n%s", s)
+	}
+	if !strings.Contains(s, "Previous state:") || !strings.Contains(s, "CONFIG") {
+		t.Fatalf("error view should show the previous state, got:\n%s", s)
+	}
+	if strings.Contains(s, "DUPLICATE_MARKER") {
+		t.Fatalf("error state should not render the split-view pane, got:\n%s", s)
+	}
+	if strings.Contains(s, "Ctrl+Tab: switch") || strings.Contains(s, "Ctrl+O: tab") {
+		t.Fatalf("error state should not render split-view chrome, got:\n%s", s)
 	}
 }
 

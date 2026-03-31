@@ -71,7 +71,7 @@ func TestModule_NewMux_ReturnsObject(t *testing.T) {
 		var m = require('osm:termmux').newMux();
 		var methods = ['attach', 'detach', 'hasChild', 'switchTo', 'activeSide',
 			'setStatus', 'setToggleKey', 'setStatusEnabled', 'setResizeFunc', 'screenshot',
-			'childScreen', 'writeToChild',
+			'childScreen', 'writeToChild', 'session',
 			'on', 'off', 'pollEvents', 'fromModel'];
 		var missing = [];
 		for (var i = 0; i < methods.length; i++) {
@@ -195,6 +195,50 @@ func TestResolveChild_InvalidTypeError(t *testing.T) {
 	_, err := resolveChild("not a handle")
 	if err == nil {
 		t.Error("resolveChild(string) should return error")
+	}
+}
+
+type testStringIO struct {
+	sent []string
+}
+
+func (s *testStringIO) Send(input string) error {
+	s.sent = append(s.sent, input)
+	return nil
+}
+
+func (s *testStringIO) Receive() (string, error) {
+	return "", io.EOF
+}
+
+func (s *testStringIO) Close() error {
+	return nil
+}
+
+func TestModule_MuxSessionWrapper(t *testing.T) {
+	runtime, _ := testRequire(t)
+
+	handle := parent.WrapStringIO(&testStringIO{})
+	if err := runtime.Set("__muxHandle", handle); err != nil {
+		t.Fatalf("Set __muxHandle: %v", err)
+	}
+
+	v, err := runtime.RunString(`
+		var tm = require('osm:termmux');
+		var mux = tm.newMux();
+		mux.attach(__muxHandle);
+		var session = mux.session();
+		session.setTarget({name: 'claude', id: 'claude-1'});
+		session.write('ping');
+		JSON.stringify(session.target());
+	`)
+	if err != nil {
+		t.Fatalf("mux session wrapper: %v", err)
+	}
+
+	got := v.String()
+	if !strings.Contains(got, `"name":"claude"`) || !strings.Contains(got, `"kind":"pty"`) {
+		t.Fatalf("session.target() = %q; want claude PTY metadata", got)
 	}
 }
 

@@ -58,7 +58,9 @@
         'CANCELLED':        { 'DONE': true },
         'FORCE_CANCEL':     { 'DONE': true },
         'PAUSED':           { 'DONE': true, 'PLAN_GENERATION': true, 'BRANCH_BUILDING': true, 'CANCELLED': true },  // T084: resume paths
-        'ERROR':            { 'DONE': true }
+        // ERROR is recoverable via Back navigation, so the state machine
+        // permits returning to the last active wizard state.
+        'ERROR':            { 'DONE': true, 'CONFIG': true, 'BASELINE_FAIL': true, 'PLAN_GENERATION': true, 'PLAN_REVIEW': true, 'PLAN_EDITOR': true, 'BRANCH_BUILDING': true, 'ERROR_RESOLUTION': true, 'EQUIV_CHECK': true, 'FINALIZATION': true }
     };
 
     // Terminal states — no pipeline activity, waiting for reset or dismiss.
@@ -248,6 +250,177 @@
     }
 
     prSplit._buildReport = buildReport;
+
+    function getClaudePaneSession() {
+        if (typeof tuiMux === 'undefined' || !tuiMux) return null;
+        if (typeof tuiMux.session === 'function') {
+            try { return tuiMux.session(); } catch (e) { log.debug('getClaudePaneSession: tuiMux.session failed: ' + (e.message || e)); }
+        }
+        if (typeof tuiMux.writeToChild !== 'function' &&
+            typeof tuiMux.childScreen !== 'function' &&
+            typeof tuiMux.screenshot !== 'function') {
+            return null;
+        }
+        return {
+            write: function(data) {
+                if (typeof tuiMux.writeToChild !== 'function') throw new Error('Claude session is not writable');
+                return tuiMux.writeToChild(data);
+            },
+            screen: function() {
+                if (typeof tuiMux.childScreen === 'function') return tuiMux.childScreen();
+                return '';
+            },
+            output: function() {
+                if (typeof tuiMux.screenshot === 'function') return tuiMux.screenshot();
+                return '';
+            },
+            resize: function() { return null; },
+            target: function() { return { name: 'claude', kind: 'pty' }; }
+        };
+    }
+
+    function getInteractivePaneSession(s, tab) {
+        var pane = tab || s.splitViewTab || 'claude';
+        if (pane === 'claude') return getClaudePaneSession();
+        if (pane === 'verify') return s.activeVerifySession || null;
+        if (pane === 'shell') return s.shellSession || null;
+        return null;
+    }
+
+    function resetShellPaneState(s) {
+        s.shellSession = null;
+        s.shellScreen = '';
+        s.shellViewOffset = 0;
+        s.shellAutoScroll = true;
+    }
+
+    function closeInteractivePaneSession(s, tab, debugPrefix) {
+        var session = getInteractivePaneSession(s, tab);
+        if (!session || typeof session.close !== 'function') return false;
+        try {
+            session.close();
+            return true;
+        } catch (e) {
+            log.debug((debugPrefix || 'interactivePane') + ': ' + tab + 'Session.close failed: ' + (e.message || e));
+            return false;
+        }
+    }
+
+    function cleanupShellPaneSession(s, debugPrefix) {
+        closeInteractivePaneSession(s, 'shell', debugPrefix || 'shellCleanup');
+        resetShellPaneState(s);
+    }
+
+    function clearVerifyPaneSession(s, opts) {
+        var options = opts || {};
+        var keepDisplay = options.keepDisplay === true;
+        var cleanupWorktree = options.cleanupWorktree !== false;
+
+        closeInteractivePaneSession(s, 'verify', options.debugPrefix || 'verifyCleanup');
+
+        if (cleanupWorktree && s.activeVerifyWorktree && s.activeVerifyDir) {
+            try {
+                prSplit.cleanupVerifyWorktree(s.activeVerifyDir, s.activeVerifyWorktree);
+            } catch (e) {
+                log.debug((options.debugPrefix || 'verifyCleanup') + ': verifyWorktree cleanup failed: ' + (e.message || e));
+            }
+        }
+
+        cleanupShellPaneSession(s, options.debugPrefix || 'verifyCleanup');
+
+        if (s.splitViewTab === 'shell') {
+            s.splitViewTab = keepDisplay ? 'verify' : 'output';
+        }
+
+        s.activeVerifySession = null;
+        s.activeVerifyWorktree = null;
+        s.activeVerifyDir = null;
+        s.activeVerifyStartTime = 0;
+        s.verifyViewportOffset = 0;
+        s.verifyAutoScroll = true;
+        s.lastVerifyInterruptTime = 0;
+        s.verifyPaused = false;
+
+        if (!keepDisplay) {
+            s.activeVerifyBranch = null;
+            s.verifyElapsedMs = 0;
+            s.verifyScreen = '';
+        }
+    }
+
+    function openVerifyWorktreeShell(s) {
+        var constants = prSplit._TUI_CONSTANTS || {};
+        var verifySession = getInteractivePaneSession(s, 'verify');
+        if (!verifySession || !s.activeVerifyWorktree) {
+            return { opened: false, reason: 'verify session unavailable' };
+        }
+
+        var existingShell = getInteractivePaneSession(s, 'shell');
+        if (existingShell) {
+            s.splitViewTab = 'shell';
+            s.splitViewFocus = 'claude';
+            return { opened: false, existing: true };
+        }
+
+        if (!s.verifyPaused && typeof verifySession.pause === 'function') {
+            try {
+                verifySession.pause();
+                s.verifyPaused = true;
+            } catch (e) {
+                log.debug('tabSwitch: verifySession.pause failed: ' + (e.message || e));
+            }
+        }
+
+        var shellH = s.height || constants.DEFAULT_ROWS || 24;
+        var vpH = Math.max(3, shellH - (prSplit._CHROME_ESTIMATE || 8));
+        var minP = 3;
+        var wH = Math.max(minP, Math.floor(vpH * (s.splitViewRatio || 0.6)));
+        wH = Math.min(wH, vpH - minP - 1);
+        var cH = vpH - wH - 1;
+        var shellRows = Math.max(3, cH - 3);
+        var shellCols = Math.max(20, (s.width || 80) - 4);
+
+        try {
+            s.shellSession = prSplit.spawnShellSession(s.activeVerifyWorktree, {
+                rows: shellRows,
+                cols: shellCols
+            });
+            s.shellScreen = '';
+            s.shellViewOffset = 0;
+            s.shellAutoScroll = true;
+            if (!s.splitViewEnabled) {
+                s.splitViewEnabled = true;
+                if (typeof prSplit._syncMainViewport === 'function') {
+                    prSplit._syncMainViewport(s);
+                }
+            }
+            s.splitViewTab = 'shell';
+            s.splitViewFocus = 'claude';
+            return { opened: true };
+        } catch (e) {
+            return { opened: false, error: e };
+        }
+    }
+
+    function hasInteractivePaneSession(s, tab) {
+        return !!getInteractivePaneSession(s, tab);
+    }
+
+    function listSplitViewTabs(s) {
+        var tabs = ['claude', 'output'];
+        if (hasInteractivePaneSession(s, 'verify') || s.verifyFallbackRunning || s.verifyScreen) tabs.push('verify');
+        if (hasInteractivePaneSession(s, 'shell')) tabs.push('shell');
+        return tabs;
+    }
+
+    prSplit._getClaudePaneSession = getClaudePaneSession;
+    prSplit._getInteractivePaneSession = getInteractivePaneSession;
+    prSplit._closeInteractivePaneSession = closeInteractivePaneSession;
+    prSplit._cleanupShellPaneSession = cleanupShellPaneSession;
+    prSplit._clearVerifyPaneSession = clearVerifyPaneSession;
+    prSplit._openVerifyWorktreeShell = openVerifyWorktreeShell;
+    prSplit._hasInteractivePaneSession = hasInteractivePaneSession;
+    prSplit._listSplitViewTabs = listSplitViewTabs;
 
     // --- Wizard state handlers ---
 

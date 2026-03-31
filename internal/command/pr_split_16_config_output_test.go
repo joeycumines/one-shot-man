@@ -845,8 +845,8 @@ func TestChunk16_T44_RenderOutputPaneWithContent(t *testing.T) {
 	if !strings.Contains(view, "[live]") {
 		t.Errorf("expected '[live]' scroll indicator at bottom")
 	}
-	if !strings.Contains(view, "30 lines") {
-		t.Errorf("expected '30 lines' count in title")
+	if strings.Contains(view, "30 lines") {
+		t.Errorf("did not expect line-count badge in output title: %s", view)
 	}
 }
 

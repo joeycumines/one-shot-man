@@ -402,21 +402,32 @@ func (cs *CaptureSession) Pid() int {
 	return proc.Pid()
 }
 
-// Write sends data to the child process's stdin via the PTY.
-func (cs *CaptureSession) Write(data string) error {
+// Write sends raw bytes to the child process's stdin via the PTY.
+func (cs *CaptureSession) Write(data []byte) (int, error) {
 	cs.mu.Lock()
 	proc := cs.proc
 	cs.mu.Unlock()
 	if proc == nil {
-		return errors.New("capture: not started")
+		return 0, errors.New("capture: not started")
 	}
-	return proc.Write(data)
+	err := proc.Write(string(data))
+	if err != nil {
+		return 0, err
+	}
+	return len(data), nil
+}
+
+// WriteString sends string data to the child process's stdin via the PTY.
+func (cs *CaptureSession) WriteString(data string) error {
+	_, err := cs.Write([]byte(data))
+	return err
 }
 
 // SendEOF sends EOF (Ctrl-D) to the child process via the PTY.
 func (cs *CaptureSession) SendEOF() error {
-	return cs.Write("\x04")
+	return cs.WriteString("\x04")
 }
 
 // ensure CaptureSession implements io.Closer at compile time.
 var _ io.Closer = (*CaptureSession)(nil)
+var _ InteractiveSession = (*CaptureSession)(nil)

@@ -35,6 +35,7 @@
     function handleErrorResolutionChoice(s, choice) { return prSplit._handleErrorResolutionChoice(s, choice); }
     function formatReportForDisplay(report) { return prSplit._formatReportForDisplay(report); }
     var C = prSplit._TUI_CONSTANTS;
+    var getInteractivePaneSession = prSplit._getInteractivePaneSession;
 
     // --- Shared Viewport Helpers ---
 
@@ -61,6 +62,36 @@
         } else {
             s.vp.setHeight(vpHeight);
         }
+    }
+
+    function enterErrorState(s, details) {
+        if (!s) return [s, null];
+
+        if (!s.errorFromState) {
+            s.errorFromState = (s.wizard && s.wizard.current && s.wizard.current !== 'ERROR')
+                ? s.wizard.current
+                : (s.wizardState || '');
+        }
+
+        if (!s.errorSplitViewState) {
+            s.errorSplitViewState = {
+                enabled: !!s.splitViewEnabled,
+                focus: s.splitViewFocus || 'wizard',
+                tab: s.splitViewTab || 'claude'
+            };
+        }
+
+        s.splitViewEnabled = false;
+        s.splitViewFocus = 'wizard';
+        s.errorDetails = details || s.errorDetails || 'An unexpected error occurred.';
+
+        if (typeof s.isProcessing === 'boolean') s.isProcessing = false;
+        if (typeof s.analysisRunning === 'boolean') s.analysisRunning = false;
+        if (typeof s.autoSplitRunning === 'boolean') s.autoSplitRunning = false;
+
+        try { s.wizard.transition('ERROR'); } catch (te) { log.debug('wizard: transition to ERROR failed: ' + (te.message || te)); }
+        s.wizardState = s.wizard.current;
+        return [s, null];
     }
 
     // --- Editor Dialog Handler — move-file, rename-split, merge-splits ---
@@ -427,6 +458,21 @@
                     s.equivalenceResult = null;
                 }
                 return [s, null];
+            case 'ERROR': {
+                var targetState = s.errorFromState || 'CONFIG';
+                var restore = s.errorSplitViewState;
+                if (restore) {
+                    s.splitViewEnabled = !!restore.enabled;
+                    s.splitViewFocus = restore.focus || 'wizard';
+                    s.splitViewTab = restore.tab || 'claude';
+                    s.errorSplitViewState = null;
+                }
+                s.errorFromState = '';
+                if (targetState === 'ERROR') targetState = 'CONFIG';
+                try { s.wizard.transition(targetState); } catch (te) { log.debug('errorBack: wizard.transition failed: ' + (te.message || te)); }
+                s.wizardState = s.wizard.current;
+                return [s, null];
+            }
             default:
                 return [s, null];
         }
@@ -604,6 +650,11 @@
                 elems.push({id: 'nav-cancel', type: 'nav'});  // T012
                 return elems;
             }
+            case 'ERROR':
+                return [
+                    {id: 'nav-back', type: 'nav'},
+                    {id: 'nav-cancel', type: 'nav'}
+                ];
             case 'FINALIZATION': {
                 var elems = [
                     {id: 'final-report',     type: 'button'},
@@ -735,12 +786,13 @@
         // During active verification, send interrupt instead of opening the
         // cancel dialog (same behavior as the mouse click on nav-cancel zone).
         if (focused.id === 'nav-cancel') {
-            if (s.activeVerifySession) {
+            var activeVerifySession = getInteractivePaneSession(s, 'verify');
+            if (activeVerifySession) {
                 var now = Date.now();
                 if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < C.SIGKILL_WINDOW_MS) {
-                    try { s.activeVerifySession.kill(); } catch (e) { log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e)); }
+                    try { activeVerifySession.kill(); } catch (e) { log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e)); }
                 } else {
-                    try { s.activeVerifySession.interrupt(); } catch (e) { log.debug('cancelVerify: verifySession.interrupt failed: ' + (e.message || e)); }
+                    try { activeVerifySession.interrupt(); } catch (e) { log.debug('cancelVerify: verifySession.interrupt failed: ' + (e.message || e)); }
                 }
                 s.lastVerifyInterruptTime = now;
                 return [s, null];
@@ -947,6 +999,7 @@
     prSplit._viewEditorDialog = viewEditorDialog;
     prSplit._enterPlanEditor = enterPlanEditor;
     prSplit._handleBack = handleBack;
+    prSplit._enterErrorState = enterErrorState;
     prSplit._handlePauseResume = handlePauseResume;
     prSplit._handlePauseQuit = handlePauseQuit;
     prSplit._handleNext = handleNext;

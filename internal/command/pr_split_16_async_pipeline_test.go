@@ -76,6 +76,8 @@ func TestChunk16_AnalysisPoll_ErrorFromPromise(t *testing.T) {
 		var r = update({type: 'Tick', id: 'analysis-poll'}, s);
 		if (r[0].wizardState !== 'ERROR') return 'FAIL: wizardState should be ERROR, got: ' + r[0].wizardState;
 		if (r[0].isProcessing) return 'FAIL: isProcessing should be false';
+		if (r[0].splitViewEnabled) return 'FAIL: splitViewEnabled should be false in ERROR state';
+		if (r[0].errorFromState !== 'CONFIG') return 'FAIL: errorFromState should track CONFIG, got: ' + r[0].errorFromState;
 		if (!r[0].errorDetails || r[0].errorDetails.indexOf('permission denied') < 0) {
 			return 'FAIL: errorDetails should contain error, got: ' + r[0].errorDetails;
 		}

@@ -196,13 +196,10 @@
             var msg = split.message || 'split: ' + split.name;
             var commit = gitExec(worktreePath, ['commit', '-m', msg]);
             if (commit.code !== 0) {
-                var commitAllow = gitExec(worktreePath, ['commit', '--allow-empty', '-m', msg]);
-                if (commitAllow.code !== 0) {
-                    splitResult.error = 'git commit failed: ' + commitAllow.stderr.trim();
-                    results.push(splitResult);
-                    cleanupWorktree();
-                    return { error: splitResult.error, results: results };
-                }
+                splitResult.error = 'git commit failed: ' + commit.stderr.trim();
+                results.push(splitResult);
+                cleanupWorktree();
+                return { error: splitResult.error, results: results };
             }
 
             var sha = gitExec(worktreePath, ['rev-parse', 'HEAD']);
@@ -404,13 +401,10 @@
             var msg = split.message || 'split: ' + split.name;
             var commit = await gitExecAsync(worktreePath, ['commit', '-m', msg]);
             if (commit.code !== 0) {
-                var commitAllow = await gitExecAsync(worktreePath, ['commit', '--allow-empty', '-m', msg]);
-                if (commitAllow.code !== 0) {
-                    splitResult.error = 'git commit failed: ' + commitAllow.stderr.trim();
-                    results.push(splitResult);
-                    await cleanupWorktreeAsync();
-                    return { error: splitResult.error, results: results };
-                }
+                splitResult.error = 'git commit failed: ' + commit.stderr.trim();
+                results.push(splitResult);
+                await cleanupWorktreeAsync();
+                return { error: splitResult.error, results: results };
             }
 
             var sha = await gitExecAsync(worktreePath, ['rev-parse', 'HEAD']);

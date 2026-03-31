@@ -180,6 +180,45 @@ func TestChunk16_FocusActivate_ErrorButtons(t *testing.T) {
 	}
 }
 
+func TestChunk16_FocusActivate_ErrorBackRestoresSplitView(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('CONFIG');
+		s.wizard.transition('PLAN_GENERATION');
+		s.wizard.transition('ERROR');
+		s.wizardState = 'ERROR';
+		s.errorFromState = 'CONFIG';
+		s.errorSplitViewState = {enabled: true, focus: 'claude', tab: 'verify'};
+		s.splitViewEnabled = false;
+		s.splitViewFocus = 'wizard';
+		s.splitViewTab = 'output';
+
+		var elems = globalThis.prSplit._getFocusElements(s);
+		if (elems.length !== 2 || elems[0].id !== 'nav-back' || elems[1].id !== 'nav-cancel') {
+			return 'FAIL: ERROR focus elements should be nav-back + nav-cancel, got: ' + JSON.stringify(elems);
+		}
+
+		s.focusIndex = 0; // nav-back
+		var r = sendKey(s, 'enter');
+		if (r[0].wizardState !== 'CONFIG') return 'FAIL: back should restore CONFIG, got: ' + r[0].wizardState;
+		if (!r[0].splitViewEnabled) return 'FAIL: splitViewEnabled should be restored';
+		if (r[0].splitViewFocus !== 'claude') return 'FAIL: splitViewFocus should be restored, got: ' + r[0].splitViewFocus;
+		if (r[0].splitViewTab !== 'verify') return 'FAIL: splitViewTab should be restored, got: ' + r[0].splitViewTab;
+		if (r[0].errorFromState) return 'FAIL: errorFromState should be cleared, got: ' + r[0].errorFromState;
+		if (r[0].errorSplitViewState !== null) return 'FAIL: errorSplitViewState should be cleared';
+
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("focus activate error back: %v", raw)
+	}
+}
+
 func TestChunk16_FocusActivate_ErrorAskClaude(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)

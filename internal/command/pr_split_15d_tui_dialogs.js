@@ -15,6 +15,7 @@
     var padRight = prSplit._padRight;
     var repeatStr = prSplit._repeatStr;
     var resolveColor = prSplit._resolveColor;
+    var getInteractivePaneSession = prSplit._getInteractivePaneSession;
 
     // Screen renderers from 15c (needed by viewForState dispatcher).
     var viewConfigScreen = prSplit._viewConfigScreen;
@@ -354,7 +355,7 @@
         // T031: contextual text — defensive: if a verify session is still
         // referenced when the overlay opens (e.g. race between SIGINT cleanup
         // and user interaction), show a verification-specific warning.
-        if (s.activeVerifySession) {
+        if (getInteractivePaneSession(s, 'verify')) {
             lines.push('A verification is in progress.');
             lines.push('Cancelling will abort it and clean up the worktree.');
         } else {
@@ -666,8 +667,15 @@
                 return lines.join('\n');
             }
             case 'ERROR':
-                return styles.errorBadge().render(' Error ') +
-                    '\n\n' + (s.errorDetails || 'An unexpected error occurred.');
+                var lines = [];
+                lines.push(styles.errorBadge().render(' Error '));
+                lines.push('');
+                if (s.errorFromState) {
+                    lines.push('Previous state: ' + styles.fieldValue().render(s.errorFromState));
+                    lines.push('');
+                }
+                lines.push(s.errorDetails || 'An unexpected error occurred.');
+                return lines.join('\n');
             default:
                 return 'Unknown state: ' + s.wizardState;
         }

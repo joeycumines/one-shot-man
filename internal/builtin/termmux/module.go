@@ -369,6 +369,13 @@ func WrapMux(ctx context.Context, runtime *goja.Runtime, mux *parent.Mux) goja.V
 		return runtime.ToValue(n)
 	})
 
+	// ── session() → InteractiveSession wrapper ──────────
+	// Returns an object exposing the attached PTY through the same session
+	// interface used by CaptureSession bindings.
+	_ = obj.Set("session", func() goja.Value {
+		return wrapInteractiveSession(runtime, mux.Session(), parent.SessionKindPTY)
+	})
+
 	// ── lastActivityMs() → int64 ─────────────────────────
 	// Returns milliseconds since the last child process output, or -1 if
 	// no output has been received yet. Used by the HUD overlay to show an
@@ -634,7 +641,7 @@ func newCaptureSession(ctx context.Context, runtime *goja.Runtime, call goja.Fun
 // exitCode, output, close, interrupt, kill) are confirmed bound with
 // correct signatures via module_capture_test.go.
 func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.CaptureSession) goja.Value {
-	obj := runtime.NewObject()
+	obj := wrapInteractiveSession(runtime, cs, parent.SessionKindCapture).ToObject(runtime)
 
 	// ── start() ──────────────────────────────────────────
 	_ = obj.Set("start", func() {
@@ -646,38 +653,6 @@ func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.C
 	// ── isRunning() → boolean ────────────────────────────
 	_ = obj.Set("isRunning", func() bool {
 		return cs.IsRunning()
-	})
-
-	// ── output() → string ────────────────────────────────
-	// Returns plain text snapshot of the virtual terminal screen.
-	_ = obj.Set("output", func() string {
-		return cs.Output()
-	})
-
-	// ── target() → { id, name, kind } ───────────────────
-	// Returns the session identity metadata.
-	_ = obj.Set("target", func() map[string]any {
-		target := cs.Target()
-		return map[string]any{
-			"id":   target.ID,
-			"name": target.Name,
-			"kind": target.Kind.String(),
-		}
-	})
-
-	// ── screen() → string ────────────────────────────────
-	// Returns ANSI-escaped screen content for terminal rendering.
-	_ = obj.Set("screen", func() string {
-		return cs.Screen()
-	})
-
-	// ── setTarget(target) ────────────────────────────────
-	// Updates the session identity metadata using a simple object shape.
-	_ = obj.Set("setTarget", func(target map[string]any) {
-		if target == nil {
-			panic(runtime.NewTypeError("setTarget: target object is required"))
-		}
-		cs.SetTarget(captureTargetFromJS(target))
 	})
 
 	// ── interrupt() ──────────────────────────────────────
@@ -734,13 +709,6 @@ func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.C
 		return result
 	})
 
-	// ── write(data) ──────────────────────────────────────
-	_ = obj.Set("write", func(data string) {
-		if err := cs.Write(data); err != nil {
-			panic(runtime.NewGoError(err))
-		}
-	})
-
 	// ── sendEOF() ────────────────────────────────────────
 	_ = obj.Set("sendEOF", func() {
 		if err := cs.SendEOF(); err != nil {
@@ -779,7 +747,55 @@ func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.C
 	return obj
 }
 
-func captureTargetFromJS(raw map[string]any) parent.SessionTarget {
+func wrapInteractiveSession(runtime *goja.Runtime, session parent.InteractiveSession, defaultKind parent.SessionKind) goja.Value {
+	obj := runtime.NewObject()
+
+	_ = obj.Set("output", func() string {
+		return session.Output()
+	})
+
+	_ = obj.Set("target", func() map[string]any {
+		target := session.Target()
+		return map[string]any{
+			"id":   target.ID,
+			"name": target.Name,
+			"kind": target.Kind.String(),
+		}
+	})
+
+	_ = obj.Set("screen", func() string {
+		return session.Screen()
+	})
+
+	_ = obj.Set("setTarget", func(target map[string]any) {
+		if target == nil {
+			panic(runtime.NewTypeError("setTarget: target object is required"))
+		}
+		session.SetTarget(targetFromJS(target, defaultKind))
+	})
+
+	_ = obj.Set("resize", func(rows, cols int) {
+		if err := session.Resize(rows, cols); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+	})
+
+	_ = obj.Set("write", func(data string) {
+		if _, err := session.Write([]byte(data)); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+	})
+
+	_ = obj.Set("close", func() {
+		if err := session.Close(); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+	})
+
+	return obj
+}
+
+func targetFromJS(raw map[string]any, defaultKind parent.SessionKind) parent.SessionTarget {
 	target := parent.SessionTarget{}
 	if v, ok := raw["id"]; ok && v != nil {
 		target.ID = fmt.Sprint(v)
@@ -791,7 +807,7 @@ func captureTargetFromJS(raw map[string]any) parent.SessionTarget {
 		target.Kind = parent.SessionKind(fmt.Sprint(v))
 	}
 	if target.Kind == parent.SessionKindUnknown {
-		target.Kind = parent.SessionKindCapture
+		target.Kind = defaultKind
 	}
 	return target
 }

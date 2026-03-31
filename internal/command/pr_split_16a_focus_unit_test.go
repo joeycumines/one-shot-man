@@ -211,6 +211,76 @@ func TestChunk16a_GetFocusElements_PAUSED(t *testing.T) {
 	}
 }
 
+func TestChunk16a_GetFocusElements_ERROR(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	val, err := evalJS(`
+		(function() {
+			var s = { wizardState: 'ERROR', focusIndex: 0 };
+			var elems = prSplit._getFocusElements(s);
+			return JSON.stringify(elems.map(function(e) { return e.id; }));
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := val.(string)
+	if got != `["nav-back","nav-cancel"]` {
+		t.Errorf("ERROR elements = %s, want [nav-back, nav-cancel]", got)
+	}
+
+	cnt, err := evalJS(`prSplit._getFocusElements({wizardState:'ERROR'}).length`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, ok := cnt.(int64); !ok || n != 2 {
+		t.Errorf("ERROR element count = %v, want 2", cnt)
+	}
+}
+
+func TestChunk16a_GetFocusElements_TerminalStatesEmpty(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	for _, state := range []string{"DONE", "CANCELLED", "FORCE_CANCEL"} {
+		t.Run(state, func(t *testing.T) {
+			val, err := evalJS(`prSplit._getFocusElements({wizardState:'` + state + `'}).length`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if n, ok := val.(int64); !ok || n != 0 {
+				t.Errorf("%s focus count = %v, want 0", state, val)
+			}
+		})
+	}
+}
+
+func TestChunk16a_GetFocusElements_DoesNotExposeNavOnCrashedErrorView(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	val, err := evalJS(`
+		(function() {
+			var s = {
+				wizardState: 'ERROR',
+				errorFromState: 'BRANCH_BUILDING',
+				errorSplitViewState: {enabled: true, focus: 'claude', tab: 'verify'},
+				splitViewEnabled: false,
+				splitViewFocus: 'wizard',
+				splitViewTab: 'claude'
+			};
+			return JSON.stringify(prSplit._getFocusElements(s).map(function(e) { return e.id; }));
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := val.(string); got != `["nav-back","nav-cancel"]` {
+		t.Errorf("ERROR focus should stay on back/cancel, got %s", got)
+	}
+}
+
 func TestChunk16a_GetFocusElements_EmptyDefault(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)

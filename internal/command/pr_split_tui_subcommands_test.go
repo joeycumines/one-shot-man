@@ -1771,6 +1771,19 @@ func TestPrSplitCommand_AutoSplitCommand(t *testing.T) {
 	t.Run("heuristic_fallback", func(t *testing.T) {
 		// auto-split without Claude should run the heuristic path.
 		tp := chdirTestPipeline(t, TestPipelineOpts{})
+		_, err := tp.EvalJS(`
+			prSplit._originalClaudeResolveAsync = prSplit.ClaudeCodeExecutor.prototype.resolveAsync;
+			prSplit.ClaudeCodeExecutor.prototype.resolveAsync = async function() {
+				return { error: "mocked: Claude unavailable in test" };
+			};
+		`)
+		if err != nil {
+			t.Fatalf("mock Claude resolveAsync: %v", err)
+		}
+		t.Cleanup(func() {
+			_, _ = tp.EvalJS(`prSplit.ClaudeCodeExecutor.prototype.resolveAsync = prSplit._originalClaudeResolveAsync`)
+		})
+
 		if err := tp.Dispatch("auto-split", nil); err != nil {
 			// auto-split may error if Claude is not available and
 			// baseline verification fails. Accept non-nil errors.

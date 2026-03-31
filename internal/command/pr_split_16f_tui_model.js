@@ -52,6 +52,8 @@
     var handlePauseQuit = prSplit._handlePauseQuit;
     var viewEditorDialog = prSplit._viewEditorDialog;
     var getFocusElements = prSplit._getFocusElements;
+    var getInteractivePaneSession = prSplit._getInteractivePaneSession;
+    var openVerifyWorktreeShell = prSplit._openVerifyWorktreeShell;
 
     // Cross-chunk imports — from chunks 16b/16c/16d.
     var startEquivCheck = prSplit._startEquivCheck;
@@ -77,12 +79,13 @@
             // During active verification, clicking cancel sends SIGINT
             // (consistent with Ctrl+C) instead of opening the cancel dialog
             // to prevent session/worktree leaks from unguarded quit.
-            if (s.activeVerifySession) {
+            var activeVerifySession = getInteractivePaneSession(s, 'verify');
+            if (activeVerifySession) {
                 var now = Date.now();
                 if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < C.SIGKILL_WINDOW_MS) {
-                    try { s.activeVerifySession.kill(); } catch (e) { log.debug('quit: verifySession.kill failed: ' + (e.message || e)); }
+                    try { activeVerifySession.kill(); } catch (e) { log.debug('quit: verifySession.kill failed: ' + (e.message || e)); }
                 } else {
-                    try { s.activeVerifySession.interrupt(); } catch (e) { log.debug('quit: verifySession.interrupt failed: ' + (e.message || e)); }
+                    try { activeVerifySession.interrupt(); } catch (e) { log.debug('quit: verifySession.interrupt failed: ' + (e.message || e)); }
                 }
                 s.lastVerifyInterruptTime = now;
                 return [s, null];
@@ -244,75 +247,45 @@
 
         // Execution: expand/collapse verification output + interrupt.
         if (s.wizardState === 'BRANCH_BUILDING' && st.planCache && st.planCache.splits) {
+            var activeVerifySession = getInteractivePaneSession(s, 'verify');
             // T059: Pause/Resume active verify session via dedicated buttons.
-            if (s.activeVerifySession && zone.inBounds('verify-pause', msg)) {
+            if (activeVerifySession && zone.inBounds('verify-pause', msg)) {
                 if (!s.verifyPaused) {
-                    try { s.activeVerifySession.pause(); s.verifyPaused = true; } catch (e) {
+                    try { activeVerifySession.pause(); s.verifyPaused = true; } catch (e) {
                         log.printf('verify: pause failed: %s', e.message || String(e));
                     }
                 }
                 return [s, null];
             }
-            if (s.activeVerifySession && zone.inBounds('verify-resume', msg)) {
+            if (activeVerifySession && zone.inBounds('verify-resume', msg)) {
                 if (s.verifyPaused) {
-                    try { s.activeVerifySession.resume(); s.verifyPaused = false; } catch (e) {
+                    try { activeVerifySession.resume(); s.verifyPaused = false; } catch (e) {
                         log.printf('verify: resume failed: %s', e.message || String(e));
                     }
                 }
                 return [s, null];
             }
             // T333: Open interactive shell in the verify worktree using CaptureSession.
-            if (s.activeVerifySession && s.activeVerifyWorktree &&
+            if (activeVerifySession && s.activeVerifyWorktree &&
                 zone.inBounds('verify-open-shell', msg)) {
-                if (!s.shellSession) {
-                    // Pause verify while shell is open.
-                    if (!s.verifyPaused) {
-                        try { s.activeVerifySession.pause(); s.verifyPaused = true; } catch (e) { log.debug('tabSwitch: verifySession.pause failed: ' + (e.message || e)); }
-                    }
-                    // Compute shell terminal size from pane dimensions.
-                    var shellH = s.height || C.DEFAULT_ROWS;
-                    var vpH = Math.max(3, shellH - (prSplit._CHROME_ESTIMATE || 8));
-                    var minP = 3;
-                    var wH = Math.max(minP, Math.floor(vpH * (s.splitViewRatio || 0.6)));
-                    wH = Math.min(wH, vpH - minP - 1);
-                    var cH = vpH - wH - 1;
-                    var shellRows = Math.max(3, cH - 3); // border(2) + title(1)
-                    var shellCols = Math.max(20, (s.width || 80) - 4); // border(2) + safety(2)
-                    try {
-                        s.shellSession = prSplit.spawnShellSession(s.activeVerifyWorktree, {
-                            rows: shellRows,
-                            cols: shellCols
-                        });
-                        s.shellScreen = '';
-                        s.shellViewOffset = 0;
-                        s.shellAutoScroll = true;
-                        // Open split-view with Shell tab.
-                        if (!s.splitViewEnabled) {
-                            s.splitViewEnabled = true;
-                            syncMainViewport(s);
-                        }
-                        s.splitViewTab = 'shell';
-                        s.splitViewFocus = 'claude';
-                        return [s, tea.tick(C.TICK_INTERVAL_MS, 'shell-poll')];
-                    } catch (e) {
-                        log.printf('verify: spawn shell failed: %s', e.message || String(e));
-                    }
-                } else {
-                    // Shell already open — just switch to the tab.
-                    s.splitViewTab = 'shell';
-                    s.splitViewFocus = 'claude';
+                var shellResult = openVerifyWorktreeShell(s);
+                if (shellResult && shellResult.opened) {
+                    return [s, tea.tick(C.TICK_INTERVAL_MS, 'shell-poll')];
+                }
+                if (shellResult && shellResult.error) {
+                    log.printf('verify: spawn shell failed: %s', shellResult.error.message || String(shellResult.error));
                 }
                 return [s, null];
             }
             // Interrupt active verify session via stop button.
             // Same double-click pattern as Ctrl+C: first click sends
             // SIGINT, second click within 2s sends SIGKILL.
-            if (s.activeVerifySession && zone.inBounds('verify-interrupt', msg)) {
+            if (activeVerifySession && zone.inBounds('verify-interrupt', msg)) {
                 var now = Date.now();
                 if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < C.SIGKILL_WINDOW_MS) {
-                    try { s.activeVerifySession.kill(); } catch (e) { log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e)); }
+                    try { activeVerifySession.kill(); } catch (e) { log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e)); }
                 } else {
-                    try { s.activeVerifySession.interrupt(); } catch (e) { log.debug('cancelVerify: verifySession.interrupt failed: ' + (e.message || e)); }
+                    try { activeVerifySession.interrupt(); } catch (e) { log.debug('cancelVerify: verifySession.interrupt failed: ' + (e.message || e)); }
                 }
                 s.lastVerifyInterruptTime = now;
                 return [s, null];
@@ -539,7 +512,7 @@
 
             // Determine if split-view is viable at current terminal size
             // without mutating s.splitViewEnabled (view purity).
-            var splitViewViable = s.splitViewEnabled;
+            var splitViewViable = s.splitViewEnabled && s.wizardState !== 'ERROR';
             var wizardH = 0;
             var claudeH = 0;
             if (splitViewViable) {
@@ -589,13 +562,13 @@
                     ? styles.dim().render('(' + s.outputLines.length + ')') : '';
                 var verifyTabLabel = '';
                 // T352: Show Verify tab during both CaptureSession and fallback paths.
-                if (s.activeVerifySession || s.verifyFallbackRunning || s.verifyScreen) {
+                if (getInteractivePaneSession(s, 'verify') || s.verifyFallbackRunning || s.verifyScreen) {
                     verifyTabLabel = s.splitViewTab === 'verify'
                         ? styles.primaryButton().render(' Verify ')
                         : styles.dim().render(' Verify ');
                 }
                 var shellTabLabel = '';
-                if (s.shellSession) {
+                if (getInteractivePaneSession(s, 'shell')) {
                     shellTabLabel = s.splitViewTab === 'shell'
                         ? styles.primaryButton().render(' Shell ')
                         : styles.dim().render(' Shell ');
@@ -819,6 +792,8 @@
                 verifyingIdx: -1,          // -1=not started, 0..N=in progress, N=done
                 verifyOutput: {},          // { branchName: [line, ...] }
                 expandedVerifyBranch: null, // branchName for expandable output
+                errorFromState: '',        // state to return to from ERROR
+                errorSplitViewState: null, // { enabled, focus, tab } snapshot
 
                 // Live verification session (CaptureSession).
                 activeVerifySession: null,     // CaptureSession JS object (or null)

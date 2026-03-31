@@ -71,6 +71,12 @@ type Mux struct {
 	lastWriteAt atomic.Int64
 }
 
+// MuxSession adapts the currently attached mux child to the shared
+// [InteractiveSession] contract used by standalone capture sessions.
+type MuxSession struct {
+	mux *Mux
+}
+
 // New creates a new Mux with the given I/O and terminal fd.
 func New(stdin io.Reader, stdout io.Writer, termFd int, opts ...Option) *Mux {
 	cfg := defaultConfig()
@@ -328,6 +334,11 @@ func (m *Mux) SetOutputFunc(fn func([]byte)) {
 	m.outputFn = fn
 }
 
+// Session returns an adapter for the mux's currently attached PTY session.
+func (m *Mux) Session() *MuxSession {
+	return &MuxSession{mux: m}
+}
+
 // LastWriteTime returns the time of the most recent session
 // output (teeLoop write). Returns the zero Time if no output has
 // been received yet. Safe to call from any goroutine.
@@ -380,6 +391,73 @@ func (m *Mux) WriteToChild(p []byte) (int, error) {
 	}
 	return session.Write(p)
 }
+
+// ResizeSession updates the mux-side terminal snapshot and propagates the new
+// dimensions to the attached session.
+func (m *Mux) ResizeSession(rows, cols int) error {
+	if rows <= 0 || cols <= 0 {
+		return errors.New("termmux: rows and cols must be positive")
+	}
+
+	m.mu.Lock()
+	if m.session == nil {
+		m.mu.Unlock()
+		return ErrNoChild
+	}
+	m.termRows = rows
+	m.termCols = cols
+	if m.vterm != nil {
+		m.vterm.Resize(rows, cols)
+	}
+	resizeFn := m.cfg.ResizeFn
+	m.mu.Unlock()
+
+	if resizeFn != nil {
+		return resizeFn(uint16(rows), uint16(cols))
+	}
+
+	return nil
+}
+
+// Target returns the active target metadata for the attached mux session.
+func (s *MuxSession) Target() SessionTarget {
+	return s.mux.ActiveTarget()
+}
+
+// SetTarget updates the active target metadata for the attached mux session.
+func (s *MuxSession) SetTarget(target SessionTarget) {
+	if target.Kind == SessionKindUnknown {
+		target.Kind = SessionKindPTY
+	}
+	s.mux.SetActiveTarget(target)
+}
+
+// Output returns the mux-captured plain-text screen content.
+func (s *MuxSession) Output() string {
+	return s.mux.ChildExitOutput()
+}
+
+// Screen returns the mux-captured ANSI screen content.
+func (s *MuxSession) Screen() string {
+	return s.mux.ChildScreen()
+}
+
+// Resize propagates dimensions to the attached mux session.
+func (s *MuxSession) Resize(rows, cols int) error {
+	return s.mux.ResizeSession(rows, cols)
+}
+
+// Write forwards bytes to the attached mux session.
+func (s *MuxSession) Write(data []byte) (int, error) {
+	return s.mux.WriteToChild(data)
+}
+
+// Close detaches the active mux session.
+func (s *MuxSession) Close() error {
+	return s.mux.Detach()
+}
+
+var _ InteractiveSession = (*MuxSession)(nil)
 
 // handleResize is called when the terminal is resized (SIGWINCH).
 // It updates the internal dimensions, resizes the VTerm (accounting for

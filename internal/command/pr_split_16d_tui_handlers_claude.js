@@ -20,6 +20,16 @@
     function startAnalysis(s) { return prSplit._startAnalysis(s); }
     function startExecution(s) { return prSplit._startExecution(s); }
     function syncMainViewport(s) { return prSplit._syncMainViewport(s); }
+    function enterErrorState(s, details) {
+        if (typeof prSplit._enterErrorState === 'function') {
+            return prSplit._enterErrorState(s, details);
+        }
+        s.errorDetails = details || s.errorDetails || 'An unexpected error occurred.';
+        s.errorFromState = s.errorFromState || (s.wizard && s.wizard.current) || s.wizardState || '';
+        try { s.wizard.transition('ERROR'); } catch (te) { log.debug('wizard: transition to ERROR failed: ' + (te.message || te)); }
+        s.wizardState = s.wizard.current;
+        return [s, null];
+    }
 
     // --- Claude Check Handlers ---
 
@@ -425,10 +435,7 @@
         s.isProcessing = false;
 
         if (result && result.error) {
-            s.errorDetails = result.error;
-            try { s.wizard.transition('ERROR'); } catch (te) { log.debug('wizard: transition to ERROR failed: ' + (te.message || te)); }  // T116
-            s.wizardState = 'ERROR';
-            return [s, null];
+            return enterErrorState(s, result.error);  // T116
         }
 
         // Populate caches from pipeline report.
@@ -479,9 +486,7 @@
             s.wizardState = 'PLAN_REVIEW';
         } else {
             // Pipeline didn't produce enough data — error.
-            s.errorDetails = 'Automated pipeline completed without a plan.';
-            try { s.wizard.transition('ERROR'); } catch (te) { log.debug('wizard: transition to ERROR failed: ' + (te.message || te)); }  // T116
-            s.wizardState = 'ERROR';
+            return enterErrorState(s, 'Automated pipeline completed without a plan.');  // T116
         }
 
         return [s, null];

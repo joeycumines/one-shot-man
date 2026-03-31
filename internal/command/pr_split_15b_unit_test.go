@@ -431,7 +431,7 @@ func TestChunk15b_OutputPane_NarrowWidth(t *testing.T) {
 	if !strings.Contains(s, "Output") {
 		t.Error("narrow output pane should still have title")
 	}
-	if !strings.Contains(s, "20 lines") {
-		t.Error("expected '20 lines' count")
+	if strings.Contains(s, "20 lines") || strings.Contains(s, "line(s)") {
+		t.Error("narrow output pane should not show a line-count title")
 	}
 }

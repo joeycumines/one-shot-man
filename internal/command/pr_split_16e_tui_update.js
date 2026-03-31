@@ -55,6 +55,8 @@
     var CHROME_ESTIMATE = prSplit._CHROME_ESTIMATE;
     var pollClaudeScreenshot = prSplit._pollClaudeScreenshot;
     var C = prSplit._TUI_CONSTANTS;
+    var getInteractivePaneSession = prSplit._getInteractivePaneSession;
+    var listSplitViewTabs = prSplit._listSplitViewTabs;
 
     // Late-bound shim — handleMouseClick is defined in chunk 16f (loaded after this).
     function handleMouseClick(msg, s) { return prSplit._handleMouseClick(msg, s); }
@@ -73,19 +75,9 @@
     // T327/T328: Write raw bytes to the child terminal of the active tab.
     function writeMouseToPane(bytes, s) {
         var tab = s.splitViewTab;
-        if (tab === 'claude') {
-            if (typeof tuiMux !== 'undefined' && tuiMux &&
-                typeof tuiMux.writeToChild === 'function') {
-                try { tuiMux.writeToChild(bytes); return true; } catch (e) { log.debug('writeInput: tuiMux.writeToChild failed: ' + (e.message || e)); return false; }
-            }
-        } else if (tab === 'verify') {
-            if (s.activeVerifySession && typeof s.activeVerifySession.write === 'function') {
-                try { s.activeVerifySession.write(bytes); return true; } catch (e) { log.debug('writeInput: verifySession.write failed: ' + (e.message || e)); return false; }
-            }
-        } else if (tab === 'shell') {
-            if (s.shellSession && typeof s.shellSession.write === 'function') {
-                try { s.shellSession.write(bytes); return true; } catch (e) { log.debug('writeInput: shellSession.write failed: ' + (e.message || e)); return false; }
-            }
+        var session = getInteractivePaneSession(s, tab);
+        if (session && typeof session.write === 'function') {
+            try { session.write(bytes); return true; } catch (e) { log.debug('writeInput: ' + tab + ' session.write failed: ' + (e.message || e)); return false; }
         }
         return false;
     }
@@ -120,11 +112,13 @@
                 var cH = vpH - wH - 1;
                 var paneRows = Math.max(3, cH - 3);
                 var paneCols = Math.max(20, (s.width || 80) - 4);
-                if (s.activeVerifySession && typeof s.activeVerifySession.resize === 'function') {
-                    try { s.activeVerifySession.resize(paneRows, paneCols); } catch (e) { log.debug('resize: verifySession.resize failed: ' + (e.message || e)); }
-                }
-                if (s.shellSession && typeof s.shellSession.resize === 'function') {
-                    try { s.shellSession.resize(paneRows, paneCols); } catch (e) { log.debug('resize: shellSession.resize failed: ' + (e.message || e)); }
+                var interactiveTabs = ['claude', 'verify', 'shell'];
+                for (var ti = 0; ti < interactiveTabs.length; ti++) {
+                    var resizeTab = interactiveTabs[ti];
+                    var resizeSession = getInteractivePaneSession(s, resizeTab);
+                    if (resizeSession && typeof resizeSession.resize === 'function') {
+                        try { resizeSession.resize(paneRows, paneCols); } catch (e) { log.debug('resize: ' + resizeTab + ' session.resize failed: ' + (e.message || e)); }
+                    }
                 }
             }
 
@@ -465,26 +459,27 @@
         // Global key bindings.
         if (msg.type === 'Key') {
             var k = msg.key;
+            var activeVerifySession = getInteractivePaneSession(s, 'verify');
 
             // Live verify session: intercept Ctrl+C to stop verification
             // instead of showing the cancel dialog.
             // First Ctrl+C sends SIGINT; second within 2s sends SIGKILL
             // (handles processes that ignore SIGINT).
-            if (k === 'ctrl+c' && s.activeVerifySession) {
+            if (k === 'ctrl+c' && activeVerifySession) {
                 var now = Date.now();
                 if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < C.SIGKILL_WINDOW_MS) {
                     // Double Ctrl+C — force kill.
-                    try { s.activeVerifySession.kill(); } catch (e) { log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e)); }
+                    try { activeVerifySession.kill(); } catch (e) { log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e)); }
                 } else {
                     // First Ctrl+C — graceful interrupt.
-                    try { s.activeVerifySession.interrupt(); } catch (e) { log.debug('cancelVerify: verifySession.interrupt failed: ' + (e.message || e)); }
+                    try { activeVerifySession.interrupt(); } catch (e) { log.debug('cancelVerify: verifySession.interrupt failed: ' + (e.message || e)); }
                 }
                 s.lastVerifyInterruptTime = now;
                 return [s, null];
             }
 
             // Live verify session: ↑/↓ scroll the output viewport.
-            if (s.activeVerifySession) {
+            if (activeVerifySession) {
                 if (k === 'up' || k === 'k') {
                     s.verifyAutoScroll = false;
                     s.verifyViewportOffset = (s.verifyViewportOffset || 0) + 1;
@@ -559,9 +554,7 @@
                 }
                 // T44+T322+T380+T388: Ctrl+O cycles through available tabs in split-view bottom pane.
                 if (k === 'ctrl+o') {
-                    var tabs = ['claude', 'output'];
-                    if (s.activeVerifySession || s.verifyFallbackRunning || s.verifyScreen) tabs.push('verify');
-                    if (s.shellSession) tabs.push('shell');
+                    var tabs = listSplitViewTabs(s);
                     var idx = tabs.indexOf(s.splitViewTab);
                     s.splitViewTab = tabs[(idx + 1) % tabs.length];
                     return [s, null];
@@ -640,10 +633,11 @@
                         // Forward non-reserved keys to the verify CaptureSession.
                         if (!CLAUDE_RESERVED_KEYS[k]) {
                             var vBytes = keyToTermBytes(k);
-                            if (vBytes !== null && s.activeVerifySession &&
-                                typeof s.activeVerifySession.write === 'function') {
+                            var verifySession = getInteractivePaneSession(s, 'verify');
+                            if (vBytes !== null && verifySession &&
+                                typeof verifySession.write === 'function') {
                                 try {
-                                    s.activeVerifySession.write(vBytes);
+                                    verifySession.write(vBytes);
                                     s.verifyViewportOffset = 0;
                                     s.verifyAutoScroll = true;
                                 } catch (e) {
@@ -659,10 +653,11 @@
                     if (s.splitViewTab === 'shell') {
                         if (!INTERACTIVE_RESERVED_KEYS[k]) {
                             var shBytes = keyToTermBytes(k);
-                            if (shBytes !== null && s.shellSession &&
-                                typeof s.shellSession.write === 'function') {
+                            var shellSession = getInteractivePaneSession(s, 'shell');
+                            if (shBytes !== null && shellSession &&
+                                typeof shellSession.write === 'function') {
                                 try {
-                                    s.shellSession.write(shBytes);
+                                    shellSession.write(shBytes);
                                     s.shellViewOffset = 0;
                                     s.shellAutoScroll = true;
                                 } catch (e) {
@@ -700,10 +695,11 @@
                     // Forward non-reserved keys to Claude's PTY.
                     if (!CLAUDE_RESERVED_KEYS[k]) {
                         var bytes = keyToTermBytes(k);
-                        if (bytes !== null && typeof tuiMux !== 'undefined' && tuiMux &&
-                            typeof tuiMux.writeToChild === 'function') {
+                        var claudeSession = getInteractivePaneSession(s, 'claude');
+                        if (bytes !== null && claudeSession &&
+                            typeof claudeSession.write === 'function') {
                             try {
-                                tuiMux.writeToChild(bytes);
+                                claudeSession.write(bytes);
                                 // Auto-scroll to bottom on input (follow live output).
                                 s.claudeViewOffset = 0;
                             } catch (e) {
@@ -788,13 +784,13 @@
             }
             // T059: BRANCH_BUILDING: 'z' toggles pause/resume on
             // the active verify session. Only when a verify is running.
-            if (k === 'z' && s.wizardState === 'BRANCH_BUILDING' && s.activeVerifySession) {
+            if (k === 'z' && s.wizardState === 'BRANCH_BUILDING' && activeVerifySession) {
                 if (s.verifyPaused) {
-                    try { s.activeVerifySession.resume(); s.verifyPaused = false; } catch (e) {
+                    try { activeVerifySession.resume(); s.verifyPaused = false; } catch (e) {
                         log.printf('verify: resume failed: %s', e.message || String(e));
                     }
                 } else {
-                    try { s.activeVerifySession.pause(); s.verifyPaused = true; } catch (e) {
+                    try { activeVerifySession.pause(); s.verifyPaused = true; } catch (e) {
                         log.printf('verify: pause failed: %s', e.message || String(e));
                     }
                 }
@@ -804,7 +800,7 @@
             // verification as manually passed ("Mark as Passed").
             // Only active when verification is NOT currently running and
             // there is at least one failed (non-passed, non-skipped) result.
-            if (k === 'p' && s.wizardState === 'BRANCH_BUILDING' && !s.activeVerifySession) {
+            if (k === 'p' && s.wizardState === 'BRANCH_BUILDING' && !activeVerifySession) {
                 var vResults = s.verificationResults || [];
                 // Find the last failed result.
                 var failIdx = -1;
@@ -937,7 +933,7 @@
 
         // Live verify session mouse wheel → scroll output viewport.
         // Only applies when verify output is visible (non-split or verify tab active).
-        if (msg.type === 'Mouse' && msg.isWheel && s.activeVerifySession &&
+        if (msg.type === 'Mouse' && msg.isWheel && getInteractivePaneSession(s, 'verify') &&
             (!s.splitViewEnabled || s.splitViewTab === 'verify')) {
             if (msg.button === 'wheel up') {
                 s.verifyAutoScroll = false;

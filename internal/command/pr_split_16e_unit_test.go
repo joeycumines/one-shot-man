@@ -183,6 +183,38 @@ func TestChunk16e_WriteMouseToPane_ClaudeTab(t *testing.T) {
 	}
 }
 
+func TestChunk16e_WriteMouseToPane_ClaudeTabSessionWrapper(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	val, err := evalJS(`
+		(function() {
+			var written = [];
+			globalThis.tuiMux = {
+				session: function() {
+					return {
+						write: function(b) { written.push(b); }
+					};
+				}
+			};
+			var s = {splitViewTab: 'claude'};
+			var ok = prSplit._writeMouseToPane('wrapped-bytes', s);
+			delete globalThis.tuiMux;
+			return JSON.stringify({ok: ok, written: written});
+		})()
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	if !strings.Contains(s, `"ok":true`) {
+		t.Errorf("claude session wrapper write should succeed: %s", s)
+	}
+	if !strings.Contains(s, `"written":["wrapped-bytes"]`) {
+		t.Errorf("bytes should be written through session wrapper: %s", s)
+	}
+}
+
 func TestChunk16e_WriteMouseToPane_VerifyTab(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)

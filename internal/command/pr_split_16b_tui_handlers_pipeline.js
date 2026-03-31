@@ -14,6 +14,18 @@
     var C = prSplit._TUI_CONSTANTS;
     var handleConfigState = prSplit._handleConfigState;
     var handlePlanReviewState = prSplit._handlePlanReviewState;
+    var clearVerifyPaneSession = prSplit._clearVerifyPaneSession;
+
+    function enterErrorState(s, details) {
+        if (typeof prSplit._enterErrorState === 'function') {
+            return prSplit._enterErrorState(s, details);
+        }
+        s.errorDetails = details || s.errorDetails || 'An unexpected error occurred.';
+        s.errorFromState = s.errorFromState || (s.wizard && s.wizard.current) || s.wizardState || '';
+        try { s.wizard.transition('ERROR'); } catch (te) { log.debug('wizard: transition to ERROR failed: ' + (te.message || te)); }
+        s.wizardState = s.wizard.current;
+        return [s, null];
+    }
 
     // --- Report Formatting — Human-readable display for the report overlay ---
 
@@ -291,11 +303,7 @@
             st.analysisCache = await prSplit.analyzeDiffAsync({ baseBranch: prSplit.runtime.baseBranch });
         } catch (e) {
             if (s.wizard.current === 'CANCELLED') return; // wizard already cancelled
-            s.isProcessing = false;
-            s.errorDetails = 'Analysis failed: ' + (e.message || String(e));
-            try { s.wizard.transition('ERROR'); } catch (te) { log.debug('wizard: transition to ERROR failed: ' + (te.message || te)); }
-            s.wizardState = s.wizard.current;
-            return;
+            return enterErrorState(s, 'Analysis failed: ' + (e.message || String(e)));
         }
         s.analysisSteps[1].done = true;
         s.analysisSteps[1].active = false;
@@ -306,11 +314,7 @@
         if (!s.isProcessing || s.wizard.current === 'CANCELLED') return;
 
         if (st.analysisCache.error) {
-            s.isProcessing = false;
-            s.errorDetails = st.analysisCache.error;
-            try { s.wizard.transition('ERROR'); } catch (te) { log.debug('wizard: transition to ERROR failed: ' + (te.message || te)); }
-            s.wizardState = s.wizard.current;
-            return;
+            return enterErrorState(s, st.analysisCache.error);
         }
         if (!st.analysisCache.files || st.analysisCache.files.length === 0) {
             s.isProcessing = false;
@@ -339,11 +343,7 @@
             }
         } catch (e) {
             if (s.wizard.current === 'CANCELLED') return; // T001: guard
-            s.isProcessing = false;
-            s.errorDetails = 'Grouping failed: ' + (e.message || String(e));
-            try { s.wizard.transition('ERROR'); } catch (te) { log.debug('wizard: transition to ERROR failed: ' + (te.message || te)); }
-            s.wizardState = s.wizard.current;
-            return;
+            return enterErrorState(s, 'Grouping failed: ' + (e.message || String(e)));
         }
         s.analysisSteps[2].done = true;
         s.analysisSteps[2].active = false;
@@ -364,11 +364,7 @@
             });
         } catch (e) {
             if (s.wizard.current === 'CANCELLED') return; // T001: guard
-            s.isProcessing = false;
-            s.errorDetails = 'Plan creation failed: ' + (e.message || String(e));
-            try { s.wizard.transition('ERROR'); } catch (te) { log.debug('wizard: transition to ERROR failed: ' + (te.message || te)); }
-            s.wizardState = s.wizard.current;
-            return;
+            return enterErrorState(s, 'Plan creation failed: ' + (e.message || String(e)));
         }
         s.analysisSteps[3].done = true;
         s.analysisSteps[3].active = false;
@@ -384,11 +380,7 @@
         s.analysisProgress = 1.0;
 
         if (!validation.valid) {
-            s.isProcessing = false;
-            s.errorDetails = 'Plan validation failed: ' + validation.errors.join('; ');
-            try { s.wizard.transition('ERROR'); } catch (te) { log.debug('wizard: transition to ERROR failed: ' + (te.message || te)); }
-            s.wizardState = s.wizard.current;
-            return;
+            return enterErrorState(s, 'Plan validation failed: ' + validation.errors.join('; '));
         }
 
         s.isProcessing = false;
@@ -434,11 +426,7 @@
 
         // Pipeline completed. Check for error set by .then() rejection.
         if (s.analysisError) {
-            s.isProcessing = false;
-            s.errorDetails = s.analysisError;
-            try { s.wizard.transition('ERROR'); } catch (e) { log.debug('wizard: transition to ERROR failed: ' + (e.message || e)); }
-            s.wizardState = s.wizard.current;
-            return [s, null];
+            return enterErrorState(s, s.analysisError);
         }
 
         // Success or handled inline (error/cancel paths set state directly).
@@ -505,22 +493,7 @@
         s.verifyOutput = {};
         s.expandedVerifyBranch = null;
         // Reset live verification session state.
-        if (s.activeVerifySession) {
-            try { s.activeVerifySession.close(); } catch (e) { log.debug('pipelineCleanup: verifySession.close failed: ' + (e.message || e)); }
-        }
-        if (s.activeVerifyWorktree && s.activeVerifyDir) {
-            try { prSplit.cleanupVerifyWorktree(s.activeVerifyDir, s.activeVerifyWorktree); } catch (e) { log.debug('pipelineCleanup: verifyWorktree cleanup failed: ' + (e.message || e)); }
-        }
-        s.activeVerifySession = null;
-        s.activeVerifyWorktree = null;
-        s.activeVerifyBranch = null;
-        s.activeVerifyDir = null;
-        s.activeVerifyStartTime = 0;
-        s.verifyElapsedMs = 0;
-        s.verifyViewportOffset = 0;
-        s.verifyAutoScroll = true;
-        s.lastVerifyInterruptTime = 0;
-        s.verifyPaused = false;  // T059
+        clearVerifyPaneSession(s, { debugPrefix: 'pipelineCleanup', keepDisplay: false });
 
         // Transition: PLAN_REVIEW → BRANCH_BUILDING.
         if (s.wizard.current === 'PLAN_REVIEW') {
@@ -705,11 +678,7 @@
         } catch (e) {
             // T308: If user navigated away from EQUIV_CHECK, don't mutate state.
             if (s.wizard.current === 'CANCELLED' || s.wizardState !== 'EQUIV_CHECK') return;
-            s.isProcessing = false;
-            s.errorDetails = 'Equivalence check failed: ' + (e.message || String(e));
-            try { s.wizard.transition('ERROR'); } catch (te) { log.debug('wizard: transition to ERROR failed: ' + (te.message || te)); }
-            s.wizardState = s.wizard.current;
-            return;
+            return enterErrorState(s, 'Equivalence check failed: ' + (e.message || String(e)));
         }
 
         // T308: If user navigated away, don't mutate state.
@@ -717,11 +686,7 @@
 
         // Defensive: treat null/undefined result as error.
         if (!equivResult) {
-            s.isProcessing = false;
-            s.errorDetails = 'Equivalence check returned no result.';
-            try { s.wizard.transition('ERROR'); } catch (te) { log.debug('wizard: transition to ERROR failed: ' + (te.message || te)); }
-            s.wizardState = s.wizard.current;
-            return;
+            return enterErrorState(s, 'Equivalence check returned no result.');
         }
 
         // Annotate with skip information.
@@ -761,11 +726,7 @@
 
         // Pipeline completed. Check for error.
         if (s.equivError) {
-            s.isProcessing = false;
-            s.errorDetails = 'Equivalence check failed: ' + s.equivError;
-            try { s.wizard.transition('ERROR'); } catch (e) { log.debug('wizard: transition to ERROR failed: ' + (e.message || e)); }
-            s.wizardState = s.wizard.current;
-            return [s, null];
+            return enterErrorState(s, 'Equivalence check failed: ' + s.equivError);
         }
 
         // Success — state already transitioned by runEquivCheckAsync.

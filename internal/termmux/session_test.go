@@ -2,7 +2,10 @@ package termmux
 
 import (
 	"bytes"
+	"io"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestSessionTarget_String(t *testing.T) {
@@ -105,5 +108,55 @@ func TestMuxSessionTargets_ResetOnDetach(t *testing.T) {
 	}
 	if got := m.PassthroughTarget(); !got.IsZero() {
 		t.Fatalf("PassthroughTarget() after Detach = %#v; want zero", got)
+	}
+}
+
+func TestMuxSessionAdapter_RoundTripsState(t *testing.T) {
+	var resizeRows, resizeCols uint16
+
+	m := New(nil, io.Discard, -1)
+	m.SetResizeFunc(func(rows, cols uint16) error {
+		resizeRows = rows
+		resizeCols = cols
+		return nil
+	})
+
+	child := newMockChild()
+	if err := m.Attach(child); err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+	defer func() {
+		child.Close()
+		<-m.teeDone
+	}()
+
+	session := m.Session()
+	session.SetTarget(SessionTarget{Name: "claude", ID: "claude-1"})
+	if got := session.Target(); got.Kind != SessionKindPTY || got.Name != "claude" || got.ID != "claude-1" {
+		t.Fatalf("Target() = %#v; want PTY claude target", got)
+	}
+
+	if _, err := session.Write([]byte("hello")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for mux output, got %q", session.Output())
+		default:
+		}
+		if strings.Contains(session.Output(), "hello") {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if err := session.Resize(12, 34); err != nil {
+		t.Fatalf("Resize: %v", err)
+	}
+	if resizeRows != 12 || resizeCols != 34 {
+		t.Fatalf("resize = %dx%d; want 12x34", resizeRows, resizeCols)
 	}
 }

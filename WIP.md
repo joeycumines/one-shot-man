@@ -1,5 +1,101 @@
 # WIP — Takumi's Desperate Diary
 
+## Session 14
+
+### ACTIVE — task 5 foundations: shared interactive-session contract
+- Resumed from the first unfinished blueprint slice after task 4: unify `CaptureSession` with the session-aware mux model.
+- Re-read:
+  - `DIRECTIVE.txt`
+  - `./.claude/skills/blueprint-json/SKILL.md`
+  - `./.claude/skills/strict-review-gate/SKILL.md`
+- Constraint check:
+  - `#todo` is not available in this environment, so the recurring reread reminder cannot be scheduled via tool. Compensating by recording the requirement here in `WIP.md` and keeping `DIRECTIVE.txt` / skill rereads explicit in-session.
+  - The worktree already contained unrelated modifications in `internal/command/*`, `example.config.mk`, `docs/pr-split-state-machine.md`, `blueprint.json`, and `WIP.md`. Treating them as existing project state and avoiding destructive cleanup.
+- Implementation slice in progress:
+  - Added `termmux.InteractiveSession` in `internal/termmux/session.go` as the shared contract for target metadata, inline rendering, resize, write, and close.
+  - Refactored `CaptureSession` to satisfy the shared contract by introducing `Write([]byte)` plus `WriteString(string)` as the compatibility helper used by existing call sites.
+  - Added `MuxSession` in `internal/termmux/termmux.go` plus `Mux.Session()` and `Mux.ResizeSession()` so the attached mux child can be exposed through the same contract as `CaptureSession`.
+  - Updated `internal/builtin/termmux/module.go`:
+    - generic `wrapInteractiveSession(...)`
+    - `mux.session()` JS method
+    - `WrapCaptureSession(...)` now composes the shared session wrapper instead of duplicating common methods
+- Verification findings so far:
+  - `make integration-test-termmux` immediately caught fallout:
+    - stale `CaptureSession` tests were still calling the old string-based `Write`
+    - new mux-session test was missing `io` import and referenced a helper not present in `internal/termmux`
+  - Patched both issues:
+    - `internal/termmux/capture_test.go` now uses `WriteString`
+    - `internal/termmux/session_test.go` now imports `io`, waits for mux-captured output, and no longer depends on a foreign helper
+  - Added the next JS-side unification slice:
+    - `internal/command/pr_split_13_tui.js` now exports shared pane-session helpers:
+      - `_getClaudePaneSession`
+      - `_getInteractivePaneSession`
+      - `_hasInteractivePaneSession`
+      - `_listSplitViewTabs`
+    - `internal/command/pr_split_16e_tui_update.js` now routes pane writes, pane resize propagation, and Ctrl+O tab cycling through the shared pane-session helpers instead of hand-coded verify/shell/claude branches.
+    - `internal/command/pr_split_15b_tui_chrome.js` now uses the same shared helpers for verify/shell presence and focused INPUT hints.
+    - `internal/command/pr_split_16e_unit_test.go` now covers the Claude `tuiMux.session()` wrapper path in addition to the older `writeToChild` fallback path.
+    - `internal/command/pr_split_16a_tui_focus.js`, `internal/command/pr_split_16e_tui_update.js`, and `internal/command/pr_split_16f_tui_model.js` now resolve the verify terminal through the shared pane-session helper for cancel / interrupt / pause-resume control paths, instead of reaching directly into `activeVerifySession`.
+    - `internal/command/pr_split_15c_tui_screens.js` now uses the same helper for live verify viewport interactivity and the post-failure summary hint.
+    - `internal/command/pr_split_15c_unit_test.go` now includes a renderer test that exercises the shared verify-session accessor path.
+  - Added the next lifecycle-consolidation slice on top of the shared accessors:
+    - `internal/command/pr_split_13_tui.js` now owns the shared verify/shell session lifecycle helpers:
+      - `_closeInteractivePaneSession`
+      - `_cleanupShellPaneSession`
+      - `_clearVerifyPaneSession`
+      - `_openVerifyWorktreeShell`
+    - `internal/command/pr_split_16c_tui_handlers_verify.js` now uses those helpers for:
+      - cancel/quit cleanup
+      - verify-session polling teardown
+      - shell-session polling teardown and verify resume
+    - `internal/command/pr_split_16f_tui_model.js` now uses the shared lifecycle helpers for:
+      - pause/resume button routing through the shared verify session accessor
+      - opening the verify worktree shell
+      - shell/verify tab visibility checks in the split-view chrome
+    - `internal/command/pr_split_16b_tui_handlers_pipeline.js` now resets verification state via `_clearVerifyPaneSession(...)` instead of open-coded cleanup.
+    - `internal/command/pr_split_15d_tui_dialogs.js` now checks for an in-flight verify session via the shared interactive-pane accessor in the cancel overlay.
+    - `internal/command/pr_split_13_tui_test.go` now covers:
+      - helper export presence
+      - verify cleanup preserving post-mortem display while cleaning dependent shell state
+      - opening the verify worktree shell through the shared helper
+  - Latest validation on the current diff:
+    - `make test-prsplit-fast` ✅
+    - `make integration-test-termmux` ✅
+    - `go test -count=1 ./internal/builtin/termmux/...` ✅
+    - `go test -count=1 ./internal/command -run 'TestChunk13_(BuildCommandsRegistered|ClearVerifyPaneSession_CleansDependentShell|OpenVerifyWorktreeShell_UsesSharedLifecycle)|TestChunk16f_VerifyPauseResume|TestE2E_(ShellTabLifecycle|VerifyToShellAndBack)'` ✅
+    - Re-ran `make test-prsplit-fast` after converting the last raw verify/shell reads in `15d`, `16b`, and `16f` ✅
+  - Broad validation status:
+    - `make make-all-with-log` previously caught a real vet failure in `internal/builtin/termmux/module_test.go` (undefined helper). That failure was fixed by replacing the nonexistent helper with a package-local `testStringIO` stub.
+    - A fresh repo-wide make sweep has not yet been re-established as complete/green after the subsequent JS refactor, so do not treat the broad sweep as passed.
+  - Review status:
+    - Spawned one hostile reviewer against `diff vs HEAD`; waiting on results before deciding whether to keep refining this task-5 slice or freeze the diff for a full Rule-of-Two gate later.
+- Session timing note:
+  - `session-start.txt` exists but currently contains `1774178131` (epoch-style value, not ISO-8601), so the first shell-based deadline computation using the old ISO parser failed. If this needs to govern the nine-hour window precisely, normalize the tracker file to one consistent format and recompute with shell-only date math before final reporting.
+- Immediate next step:
+  - Inspect whether task 5 still has meaningful architectural gaps beyond the helper/lifecycle consolidation, especially around direct state writes when creating verify sessions and around shell/verify state remaining separate concepts in the model.
+  - If the implementation looks locally complete, widen verification (`make make-all-with-log` and/or additional pr-split targets) before attempting any review gate.
+
+## Session 13
+
+### ACTIVE — pr-split UI error-cluster repair
+- Implemented and validated the currently proven bug fixes from `scratch/numerous-errors.md`:
+  - CONFIG Source/Target Branch rows now render inline with their bordered fields.
+  - Output pane titles no longer expose a raw line-count badge.
+  - ERROR screens now record `errorFromState`, suppress the duplicate split-view pane, and render the previous state in the error body.
+  - ERROR navigation now restores the prior split-view state when Back is activated, and the WizardState transition table now allows recovery from ERROR back to the originating state.
+  - `docs/pr-split-state-machine.md` now records the current recoverable flow and focus model.
+  - Execution no longer falls back to `git commit --allow-empty`, so empty split branches fail loudly instead of reaching PR creation as empty heads.
+- Tests executed successfully:
+  - `go test ./internal/command -run 'TestChunk13_ViewConfigScreen|TestChunk13_WizardView_|TestChunk16_AnalysisPoll_|TestChunk16_FocusActivate_Error|TestChunk15b_OutputPane_NarrowWidth' -count=1`
+  - `make test-prsplit-fast`
+  - `make integration-test-termmux`
+- Broad suite probe:
+  - `make test-prsplit-all` now passes with the widened timeout and the empty-commit fix in place.
+- Blueprint update status:
+  - Marked the proven UI fixes, focus coverage, state-transition documentation, and empty-commit PR-creation fix as done in `blueprint.json`.
+- Immediate next step:
+  - Continue on the remaining redesign tasks, starting with the broader session-model work.
+
 ## Session 10
 
 ### ACTIVE — termmux / pr-split audit and end-to-end requirements spec

@@ -17,15 +17,15 @@ require (
 	github.com/dop251/goja v0.0.0-20260311135729-065cd970411c
 	github.com/dop251/goja_nodejs v0.0.0-20260212111938-1f56ff5bcf14
 	github.com/expr-lang/expr v1.17.8
-	github.com/go-git/go-git/v6 v6.0.0-20260324221343-cd85c8c75d34
+	github.com/go-git/go-git/v6 v6.0.0-20260328145551-a93bccd59f82
 	github.com/google/uuid v1.6.0
 	github.com/joeycumines/go-behaviortree v1.11.0
 	github.com/joeycumines/go-eventloop v0.0.0-20260306044146-d41d75c38083
 	github.com/joeycumines/go-inprocgrpc v0.0.0-20260306044219-a3095125631d
 	github.com/joeycumines/go-pabt v0.2.0
-	github.com/joeycumines/go-prompt v0.0.0-20260306044252-d9bfdf689780
+	github.com/joeycumines/go-prompt v0.0.0-20260331032446-9186991b1af7
 	github.com/joeycumines/goja-eventloop v0.0.0-20260306044159-2f437ac1223c
-	github.com/joeycumines/goja-grpc v0.0.0-20260306044203-c75f2f876f98
+	github.com/joeycumines/goja-grpc v0.0.0-20260331032357-983806976d09
 	github.com/joeycumines/goja-protobuf v0.0.0-20260306044208-4d1774d84a35
 	github.com/lrstanley/bubblezone v1.0.0
 	github.com/modelcontextprotocol/go-sdk v1.4.1
@@ -57,7 +57,7 @@ require (
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/go-git/gcfg/v2 v2.0.2 // indirect
-	github.com/go-git/go-billy/v6 v6.0.0-20260226131633-45bd0956d66f // indirect
+	github.com/go-git/go-billy/v6 v6.0.0-20260328065524-593ae452e14d // indirect
 	github.com/go-sourcemap/sourcemap v2.1.4+incompatible // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/google/jsonschema-go v0.4.2 // indirect
@@ -68,7 +68,7 @@ require (
 	github.com/joeycumines/simple-command-output-filter v0.2.1 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
-	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
+	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
@@ -96,7 +96,7 @@ require (
 	golang.org/x/telemetry v0.0.0-20260316223853-b6b0c46d1ccd // indirect
 	golang.org/x/tools/cmd/godoc v0.1.0-deprecated // indirect
 	golang.org/x/tools/godoc v0.1.0-deprecated // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260319201613-d00831a3d3e7 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260330182312-d5a96adf58d8 // indirect
 	google.golang.org/grpc v1.79.3 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

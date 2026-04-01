@@ -5,8 +5,8 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/dop251/goja"
@@ -15,12 +15,46 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/argv"
 )
 
+// hasTrailingPathSeparator returns true if the given path ends with a path separator.
+// It is OS-aware: on POSIX systems, only checks for forward slash; on Windows,
+// checks for both forward slash and backslash to handle user input correctly.
+func hasTrailingPathSeparator(path string) bool {
+	if strings.HasSuffix(path, string(filepath.Separator)) {
+		return true
+	}
+	// On Windows, also check for forward slash (common in user input)
+	if runtime.GOOS == "windows" && strings.HasSuffix(path, "/") {
+		return true
+	}
+	return false
+}
+
+// detectPathSeparator returns the path separator used in the given path.
+// If the path contains both separators (mixed), it prefers the last one used.
+// If no separator is found, it returns the OS-specific separator.
+func detectPathSeparator(path string) string {
+	// Use positional awareness: find the last occurrence of each separator
+	// and prefer the one that appears later in the string.
+	lastSlash := strings.LastIndexByte(path, '/')
+	lastBackslash := strings.LastIndexByte(path, '\\')
+
+	if lastBackslash > lastSlash {
+		return "\\"
+	}
+	if lastSlash > lastBackslash {
+		return "/"
+	}
+	// Default to OS-specific separator if neither or both at same position
+	return string(filepath.Separator)
+}
+
 // getFilepathSuggestions provides file and directory path completion.
 // It expands '~' and returns suggestions that properly replace the input path.
 func getFilepathSuggestions(path string) []prompt.Suggest {
-	// Handle the simple case of "~" separately to suggest "~/"
+	// Bare ~ suggests ~/ (or ~\ on Windows) to guide the user toward
+	// directory-level completion.
 	if path == "~" {
-		return []prompt.Suggest{{Text: "~/"}}
+		return []prompt.Suggest{{Text: "~" + string(filepath.Separator)}}
 	}
 
 	// Handle empty path - should list current directory contents
@@ -33,21 +67,20 @@ func getFilepathSuggestions(path string) []prompt.Suggest {
 		for _, entry := range entries {
 			text := entry.Name()
 			if entry.IsDir() {
-				text += "/"
+				text += string(filepath.Separator)
 			}
 			suggestions = append(suggestions, prompt.Suggest{Text: text})
 		}
 		return suggestions
 	}
 
-	// Expand tilde in the path
+	// Expand tilde in the path (~/ on Unix, ~\ on Windows)
+	// Use the canonical expandTilde function from context.go
 	expandedPath := path
-	if strings.HasPrefix(path, "~/") {
-		usr, err := user.Current()
-		if err == nil { // Silently ignore error if home dir can't be found
-			expandedPath = filepath.Join(usr.HomeDir, path[2:])
-		}
+	if expanded, err := expandTilde(path); err == nil {
+		expandedPath = expanded
 	}
+	// If expandTilde fails, fall back to unexpanded path (best-effort)
 
 	// Determine the directory to scan and the prefix of the file/dir to match
 	dirToScan := filepath.Dir(expandedPath)
@@ -58,7 +91,7 @@ func getFilepathSuggestions(path string) []prompt.Suggest {
 	if expandedPath == "/" {
 		dirToScan = "/"
 		prefix = ""
-	} else if fi, err := os.Stat(expandedPath); err == nil && fi.IsDir() && strings.HasSuffix(path, "/") {
+	} else if fi, err := os.Stat(expandedPath); err == nil && fi.IsDir() && hasTrailingPathSeparator(path) {
 		// Only scan directory contents when the user typed a trailing slash.
 		// Without the slash, scan the parent to suggest the directory name
 		// itself (e.g. "bin/") so the user can tab-complete into it.
@@ -72,6 +105,8 @@ func getFilepathSuggestions(path string) []prompt.Suggest {
 	}
 
 	var suggestions []prompt.Suggest
+	// Detect the separator style the user is using
+	separator := detectPathSeparator(path)
 	for _, entry := range entries {
 		if strings.HasPrefix(entry.Name(), prefix) {
 			// Build the full replacement text that includes the directory path
@@ -79,11 +114,11 @@ func getFilepathSuggestions(path string) []prompt.Suggest {
 			if dirToScan == "." {
 				// For current directory, just use the entry name
 				text = entry.Name()
-			} else if strings.HasSuffix(path, "/") || prefix == "" {
-				// If input ends with / or we're completing in a directory,
+			} else if hasTrailingPathSeparator(path) || prefix == "" {
+				// If input ends with a separator or we're completing in a directory,
 				// append the entry name to the input path
-				if !strings.HasSuffix(path, "/") {
-					text = path + "/" + entry.Name()
+				if !hasTrailingPathSeparator(path) {
+					text = path + separator + entry.Name()
 				} else {
 					text = path + entry.Name()
 				}
@@ -98,13 +133,18 @@ func getFilepathSuggestions(path string) []prompt.Suggest {
 					text = dirPart + entry.Name()
 				} else if dirPart == "~" && strings.HasPrefix(path, "~//") {
 					text = "~//" + entry.Name()
+				} else if dirPart == "~" && strings.HasPrefix(path, "~\\") {
+					// Preserve Windows tilde-backslash style (~\\)
+					text = "~\\" + entry.Name()
 				} else {
-					text = dirPart + "/" + entry.Name()
+					// Use the detected separator to preserve user's input style
+					text = dirPart + separator + entry.Name()
 				}
 			}
 
 			if entry.IsDir() {
-				text += "/"
+				// Preserve the user's separator style for directory suffix
+				text += separator
 			}
 
 			suggestions = append(suggestions, prompt.Suggest{Text: text})
@@ -486,7 +526,7 @@ func (tm *TUIManager) getDefaultCompletionSuggestionsFor(before, full string) []
 				// argv.BeforeCursor returns completed tokens BEFORE the cursor, excluding the current token.
 				// Therefore, when typing the first argument, len(words) == 1 (words[0] is the command),
 				// and currentWord is the partial argument. When typing the second argument, len(words) == 2.
-				isSimpleArgument := len(words) == 1 && currentWord != "" && !strings.Contains(currentWord, "/")
+				isSimpleArgument := len(words) == 1 && currentWord != "" && !strings.ContainsAny(currentWord, "/\\")
 				shouldAvoidFallback := isSimpleArgument && !strings.HasSuffix(before, " ")
 				if hasFileCompleters && len(suggestions) == 0 && !shouldAvoidFallback {
 					fallbackSuggestions := getFilepathSuggestions("")

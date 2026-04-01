@@ -4,7 +4,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -1321,13 +1320,13 @@ func TestFilepathSuggestions_TildeDoubleSlash(t *testing.T) {
 		t.Skip("Skipping ~// test on Windows")
 	}
 
-	usr, err := user.Current()
+	home, err := os.UserHomeDir()
 	if err != nil {
-		t.Skipf("Skipping: cannot get current user: %v", err)
+		t.Skipf("Skipping: cannot get home dir: %v", err)
 	}
 
 	// Read home dir to find a candidate
-	entries, err := os.ReadDir(usr.HomeDir)
+	entries, err := os.ReadDir(home)
 	if err != nil {
 		t.Skipf("Skipping: cannot read home dir: %v", err)
 	}
@@ -2508,4 +2507,193 @@ func TestUnknownCompleter_MixedWithKnown(t *testing.T) {
 	if !hasFile {
 		t.Error("expected file suggestion 'test.txt' despite unknown completers in mix")
 	}
+}
+
+func TestGetFilepathSuggestionsWindowsTildeBackslash(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only test")
+	}
+
+	// Set up a fake home directory
+	fakeHome := t.TempDir()
+	t.Setenv("USERPROFILE", fakeHome)
+	t.Setenv("HOME", fakeHome)
+
+	// Verify os.UserHomeDir returns our fake home
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("os.UserHomeDir failed: %v", err)
+	}
+	if home != fakeHome {
+		t.Fatalf("os.UserHomeDir returned %q, want %q", home, fakeHome)
+	}
+
+	// Create test files and directories
+	docsDir := filepath.Join(fakeHome, "Documents")
+	if err := os.MkdirAll(docsDir, 0o755); err != nil {
+		t.Fatalf("failed to create Documents dir: %v", err)
+	}
+	docsFile := filepath.Join(docsDir, "readme.txt")
+	if err := os.WriteFile(docsFile, []byte("readme"), 0o644); err != nil {
+		t.Fatalf("failed to write readme.txt: %v", err)
+	}
+
+	homeFile := filepath.Join(fakeHome, "config.json")
+	if err := os.WriteFile(homeFile, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("failed to write config.json: %v", err)
+	}
+
+	t.Run("tilde backslash preserves separator style", func(t *testing.T) {
+		// Test that ~\ preserves the backslash style in suggestions
+		suggestions := getFilepathSuggestions("~\\")
+		if len(suggestions) == 0 {
+			t.Fatal("expected at least one suggestion for ~\\, got none")
+		}
+
+		// Verify that the backslash style is preserved in suggestions
+		foundBackslash := false
+		for _, sugg := range suggestions {
+			if strings.Contains(sugg.Text, "\\") {
+				foundBackslash = true
+				break
+			}
+		}
+		if !foundBackslash {
+			t.Errorf("expected suggestions to preserve backslash style, got: %v", suggestions)
+		}
+	})
+
+	t.Run("tilde backslash directory triggers scan", func(t *testing.T) {
+		// Test that ~\Documents\ correctly triggers directory scanning
+		// (the suffix check should recognize the backslash)
+		suggestions := getFilepathSuggestions("~\\Documents\\")
+		if len(suggestions) == 0 {
+			t.Fatal("expected at least one suggestion for ~\\Documents\\, got none")
+		}
+
+		// Should find readme.txt in the Documents directory
+		foundReadme := false
+		for _, sugg := range suggestions {
+			if strings.Contains(sugg.Text, "readme.txt") {
+				foundReadme = true
+				// Verify that the backslash style is preserved
+				if !strings.Contains(sugg.Text, "\\") {
+					t.Errorf("expected suggestion to preserve backslash style, got: %q", sugg.Text)
+				}
+				break
+			}
+		}
+		if !foundReadme {
+			t.Errorf("expected to find readme.txt in suggestions, got: %v", suggestions)
+		}
+	})
+
+	t.Run("tilde backslash partial path completion", func(t *testing.T) {
+		// Test that ~\Doc completes to ~\Documents\
+		suggestions := getFilepathSuggestions("~\\Doc")
+		if len(suggestions) == 0 {
+			t.Fatal("expected at least one suggestion for ~\\Doc, got none")
+		}
+
+		// Should find Documents directory
+		foundDocs := false
+		for _, sugg := range suggestions {
+			if strings.Contains(sugg.Text, "Documents") {
+				foundDocs = true
+				// Verify that the backslash style is preserved
+				if !strings.Contains(sugg.Text, "\\") {
+					t.Errorf("expected suggestion to preserve backslash style, got: %q", sugg.Text)
+				}
+				break
+			}
+		}
+		if !foundDocs {
+			t.Errorf("expected to find Documents in suggestions, got: %v", suggestions)
+		}
+	})
+
+	t.Run("tilde backslash lists home directory contents", func(t *testing.T) {
+		// Test that ~\ lists files in the home directory
+		suggestions := getFilepathSuggestions("~\\")
+		if len(suggestions) == 0 {
+			t.Fatal("expected at least one suggestion for ~\\, got none")
+		}
+
+		// Should find config.json and Documents directory
+		foundConfig := false
+		foundDocs := false
+		for _, sugg := range suggestions {
+			if strings.Contains(sugg.Text, "config.json") {
+				foundConfig = true
+			}
+			if strings.Contains(sugg.Text, "Documents") {
+				foundDocs = true
+				// Directories should have trailing separator
+				if !strings.HasSuffix(sugg.Text, "\\") && !strings.HasSuffix(sugg.Text, "/") {
+					t.Errorf("expected directory suggestion to have trailing separator, got: %q", sugg.Text)
+				}
+			}
+		}
+		if !foundConfig {
+			t.Errorf("expected to find config.json in suggestions, got: %v", suggestions)
+		}
+		if !foundDocs {
+			t.Errorf("expected to find Documents in suggestions, got: %v", suggestions)
+		}
+	})
+
+	t.Run("bare tilde suggests backslash-terminated path", func(t *testing.T) {
+		// Test that bare ~ suggests ~\ (backslash-terminated on Windows)
+		suggestions := getFilepathSuggestions("~")
+		if len(suggestions) == 0 {
+			t.Fatal("expected at least one suggestion for ~, got none")
+		}
+
+		// The first suggestion should be ~\ (backslash-terminated)
+		firstSugg := suggestions[0]
+		if firstSugg.Text != "~\\" {
+			t.Errorf("expected bare ~ to suggest ~\\ on Windows, got: %q", firstSugg.Text)
+		}
+	})
+
+	t.Run("empty string suggests backslash-terminated directories", func(t *testing.T) {
+		// Create a test directory in current working directory
+		testDir := t.TempDir()
+		originalWd, err := os.Getwd()
+		if err != nil {
+			t.Fatalf("failed to get working directory: %v", err)
+		}
+		defer os.Chdir(originalWd)
+
+		if err := os.Chdir(testDir); err != nil {
+			t.Fatalf("failed to chdir: %v", err)
+		}
+
+		// Create a test directory
+		if err := os.Mkdir("testdir", 0o755); err != nil {
+			t.Fatalf("failed to create testdir: %v", err)
+		}
+
+		// Test that empty string suggests directories with backslash terminator
+		suggestions := getFilepathSuggestions("")
+		if len(suggestions) == 0 {
+			t.Fatal("expected at least one suggestion for empty string, got none")
+		}
+
+		// Find the testdir suggestion
+		foundTestDir := false
+		for _, sugg := range suggestions {
+			if strings.Contains(sugg.Text, "testdir") {
+				foundTestDir = true
+				// Verify that directories are backslash-terminated on Windows
+				if !strings.HasSuffix(sugg.Text, "\\") {
+					t.Errorf("expected directory suggestion to have trailing backslash on Windows, got: %q", sugg.Text)
+				}
+				break
+			}
+		}
+		if !foundTestDir {
+			t.Errorf("expected to find testdir in suggestions, got: %v", suggestions)
+		}
+	})
 }

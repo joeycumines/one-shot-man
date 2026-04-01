@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -12,6 +13,71 @@ import (
 
 	"golang.org/x/tools/txtar"
 )
+
+// expandTilde replaces ~ with the user's home directory.
+// It handles bare ~, paths starting with ~/ (e.g., ~/foo/bar), and on
+// Windows, paths starting with ~\ (e.g., ~\Documents\file.txt).
+//
+// Note: POSIX ~username/ expansion (to another user's home directory) is
+// not supported. Only the current user's home directory is resolved.
+func expandTilde(path string) (string, error) {
+	isTildeSlash := strings.HasPrefix(path, "~/") ||
+		(runtime.GOOS == "windows" && len(path) >= 2 && path[0] == '~' && path[1] == '\\')
+
+	if !isTildeSlash && path != "~" {
+		return path, nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("unable to determine home directory for tilde expansion: %w", err)
+	}
+
+	if path == "~" {
+		return home, nil
+	}
+
+	// Manually concatenate and clean to avoid ~//path vulnerability.
+	// Some systems treat paths starting with // as absolute, which would
+	// discard the home directory entirely. We use filepath.Clean to
+	// normalize the result.
+	return filepath.Clean(home + string(filepath.Separator) + path[2:]), nil
+}
+
+// canonicalizeUserPath converts a user-provided path to a canonical owner key.
+// It performs tilde expansion, resolves to an absolute path, and normalizes
+// relative to the ContextManager's base path. This ensures consistent handling
+// of user inputs across AddPath and RemovePath.
+//
+// Note: RefreshPath has its own empty-path guard at the top of the function
+// to prevent basePath-relative logic from converting "" to "." before
+// canonicalization can reject it.
+//
+// It returns both the canonical owner key and the absolute path for efficiency,
+// avoiding redundant path resolution in callers.
+func (cm *ContextManager) canonicalizeUserPath(path string) (string, string, error) {
+	// Guard against empty string inputs to prevent unintentional root owner mutation.
+	// An empty string would resolve to the process CWD, which could cause
+	// RemovePath("") to canonicalize to "." and wipe the tracked root owner
+	// unintentionally.
+	if path == "" {
+		return "", "", fmt.Errorf("empty path is not valid")
+	}
+
+	// Expand tilde before converting to absolute path
+	expanded, err := expandTilde(path)
+	if err != nil {
+		return "", "", err
+	}
+
+	absPath, err := filepath.Abs(expanded)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get absolute path: %w", err)
+	}
+
+	owner := cm.normalizeOwnerPath(absPath)
+	return owner, absPath, nil
+}
 
 // ContextManager handles tracking and managing file paths and content as context
 // for building LLM prompts.
@@ -66,6 +132,58 @@ func (cm *ContextManager) normalizeOwnerPath(absPath string) string {
 	return relPath
 }
 
+// findOwnerFromUserPath attempts to resolve a user-provided path to a tracked
+// owner key. It performs a sophisticated 3-step resolution:
+//
+//  1. Try the raw path as an exact owner match
+//  2. If not found and path is relative/non-tilde, try basePath-relative normalization
+//  3. If still not found, try full canonicalization (tilde expansion + CWD resolution)
+//
+// This ensures that paths like "root/", "./root", or "~/project" all resolve to
+// the same tracked owner regardless of which form was used to add the path.
+//
+// The caller MUST hold at least a read lock on cm.mutex when calling this method.
+//
+// Returns (owner, true) if a tracked owner is found, ("", false) otherwise.
+func (cm *ContextManager) findOwnerFromUserPath(path string) (string, bool) {
+	// Guard against empty strings - they should never match a tracked owner.
+	// This prevents RemovePath("") from accidentally removing the root owner.
+	if path == "" {
+		return "", false
+	}
+
+	// Step 1: Try raw path as exact owner match
+	if _, tracked := cm.ownerFiles[path]; tracked {
+		return path, true
+	}
+
+	// Step 2: Try basePath-relative normalization for relative, non-tilde paths.
+	// This handles cases where the caller adds "root/" but the canonical owner
+	// is "root". We need to resolve against basePath, not the process CWD.
+	if !filepath.IsAbs(path) && !strings.HasPrefix(path, "~") {
+		absPath := filepath.Join(cm.basePath, path)
+		if cleaned, err := filepath.Abs(absPath); err == nil {
+			if relativeOwner := cm.normalizeOwnerPath(cleaned); relativeOwner != path {
+				if _, tracked := cm.ownerFiles[relativeOwner]; tracked {
+					return relativeOwner, true
+				}
+			}
+		}
+	}
+
+	// Step 3: Fall back to CLI/CWD-style canonicalization (tilde expansion,
+	// absolute path resolution, CWD-relative handling).
+	normalized, _, err := cm.canonicalizeUserPath(path)
+	if err == nil {
+		if _, tracked := cm.ownerFiles[normalized]; tracked {
+			return normalized, true
+		}
+	}
+
+	// No tracked owner found
+	return "", false
+}
+
 func (cm *ContextManager) absolutePathFromOwner(owner string) (string, error) {
 	if owner == "." {
 		return cm.basePath, nil
@@ -82,21 +200,31 @@ func (cm *ContextManager) absolutePathFromOwner(owner string) (string, error) {
 // Historically AddPath resolved relative inputs against the process CWD
 // (matching typical CLI/shell expectations). That behavior is preserved so
 // callers which supply user/CLI paths continue to get the expected result.
+// Additionally, ~ is expanded to the user's home directory.
+//
+// BREAKING CHANGE: Empty strings are now explicitly rejected and return an error.
+// Previously, AddPath("") would resolve to the current working directory, but this
+// behavior was unsafe and could cause unintended root context mutation.
 func (cm *ContextManager) AddPath(path string) error {
-	cm.mutex.Lock()
-	defer cm.mutex.Unlock()
-
-	absPath, err := filepath.Abs(path)
+	// Perform path resolution operations (tilde expansion, filepath.Abs, os.Lstat)
+	// BEFORE acquiring the lock. These operations can be slow and involve syscalls,
+	// so holding the lock during them would cause contention. However, the actual
+	// file reading and directory walking (in addPathWithOwnerLocked) still happen
+	// inside the lock - adding large files/directories will temporarily block
+	// other operations.
+	owner, absPath, err := cm.canonicalizeUserPath(path)
 	if err != nil {
-		return fmt.Errorf("failed to get absolute path: %w", err)
+		return err
 	}
-
-	owner := cm.normalizeOwnerPath(absPath)
 
 	info, err := os.Lstat(absPath)
 	if err != nil {
 		return fmt.Errorf("failed to stat path %s: %w", path, err)
 	}
+
+	// Only acquire the lock for the map mutation and file reading
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
 
 	return cm.addPathWithOwnerLocked(absPath, owner, info)
 }
@@ -111,8 +239,13 @@ func (cm *ContextManager) AddPath(path string) error {
 // the owner allows callers (e.g., TUI rehydration) to keep persisted labels
 // in sync with the backend and avoid ghost entries.
 func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
-	cm.mutex.Lock()
-	defer cm.mutex.Unlock()
+	// Guard against empty string inputs to prevent unintentional root owner mutation.
+	// An empty string would resolve to the basePath, which could cause
+	// silent and unintentional modification of the root context during
+	// session rehydration.
+	if ownerPath == "" {
+		return "", fmt.Errorf("empty path is not valid for AddRelativePath")
+	}
 
 	// Accept both forward- and back-slash separators for owner labels so
 	// that sessions created on Windows (or with Windows-style labels) can
@@ -121,6 +254,8 @@ func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
 	// should operate on the exact label provided. Normalization is a caller
 	// concern (TUI rehydration code performs a conditional normalization
 	// fallback when appropriate).
+
+	// Perform I/O-intensive operations BEFORE acquiring the lock
 	absPath, err := cm.absolutePathFromOwner(ownerPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve path %s: %w", ownerPath, err)
@@ -148,6 +283,10 @@ func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to stat path %s: %w", ownerPath, err)
 	}
+
+	// Only acquire the lock for the minimal critical section
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
 
 	owner := cm.normalizeOwnerPath(absPath)
 	if err := cm.addPathWithOwnerLocked(absPath, owner, info); err != nil {
@@ -331,43 +470,45 @@ func (cm *ContextManager) removeOwnerLocked(owner string) bool {
 }
 
 // RemovePath removes a path from the context.
+// Tilde expansion is supported, so paths like "~/myfile.txt" work correctly.
+// Empty strings return nil (idempotent no-op) without crashing or wiping context.
+//
+// If the caller supplies a basename-only value (no separators), RemovePath
+// attempts to match tracked paths by basename. If multiple matches exist,
+// this returns an error; if a single unique match exists, it performs the
+// appropriate removal.
 func (cm *ContextManager) RemovePath(path string) error {
-	cm.mutex.Lock()
-	defer cm.mutex.Unlock()
+	// Use RLock promotion pattern: find the owner under read lock, then
+	// acquire write lock only for the actual removal. This avoids holding
+	// an exclusive lock during path resolution operations (tilde expansion,
+	// filepath.Abs, etc.).
+	cm.mutex.RLock()
+	owner, found := cm.findOwnerFromUserPath(path)
+	cm.mutex.RUnlock()
 
-	if cm.removeOwnerLocked(path) {
+	if found {
+		cm.mutex.Lock()
+		defer cm.mutex.Unlock()
+		cm.removeOwnerLocked(owner)
 		return nil
-	}
-
-	var rel string
-	if path != "" {
-		abs := path
-		if !filepath.IsAbs(abs) {
-			abs = filepath.Join(cm.basePath, path)
-		}
-		if a2, err := filepath.Abs(abs); err == nil {
-			rel = cm.normalizeOwnerPath(a2)
-			if rel != "" && rel != path {
-				if cm.removeOwnerLocked(rel) {
-					return nil
-				}
-			}
-			if a2 != path {
-				if cm.removeOwnerLocked(a2) {
-					return nil
-				}
-			}
-		}
 	}
 
 	// If the caller supplied a basename-only value (no separators) attempt
 	// to match tracked paths by basename. If multiple matches exist treat
 	// this as ambiguous; if a single unique match exists perform the
 	// appropriate removal logic for that tracked entry.
+	//
+	// NOTE: This section holds the write lock for the entire operation to
+	// ensure atomicity. The matching and removal must happen as one unit
+	// to prevent race conditions where the matched entry is modified or
+	// removed between the match check and the removal.
 	base := filepath.Base(path)
 	// Only treat suffix matching when the input appears to be a bare basename
 	// (e.g., "foo.txt") and not a path containing separators.
 	if path != "" && path == base {
+		cm.mutex.Lock()
+		defer cm.mutex.Unlock()
+
 		var matchKey string
 		matches := 0
 		for k := range cm.paths {
@@ -750,28 +891,30 @@ func (cm *ContextManager) LoadFromTxtarString(data string) error {
 // The provided path is matched against tracked owner keys. If the raw value
 // is not an exact match (e.g. the caller passes "src/" but the canonical
 // owner is "src"), RefreshPath normalizes the input via the same logic used
-// by AddPath to recover the canonical key.
+// by AddPath to recover the canonical key. Tilde expansion is supported.
+//
+// Empty strings are explicitly rejected and return an error to prevent
+// unintended root context mutation.
 func (cm *ContextManager) RefreshPath(path string) error {
-	cm.mutex.Lock()
-	defer cm.mutex.Unlock()
-
-	owner := path
-	if _, tracked := cm.ownerFiles[owner]; !tracked {
-		// Normalize: the caller may provide a variant of the path
-		// (trailing slash, "./" prefix, etc.) that differs from the
-		// canonical key computed during AddPath. Resolve to absolute
-		// then re-normalize to recover the canonical owner.
-		absPath, err := cm.absolutePathFromOwner(path)
-		if err != nil {
-			return fmt.Errorf("path %s is not a tracked owner", path)
-		}
-		normalized := cm.normalizeOwnerPath(absPath)
-		if _, tracked := cm.ownerFiles[normalized]; !tracked {
-			return fmt.Errorf("path %s is not a tracked owner", path)
-		}
-		owner = normalized
+	// Hard guard against empty strings at the very top, before any path
+	// resolution logic runs. This prevents "" from resolving to "." and
+	// potentially mutating the root owner unintentionally.
+	if path == "" {
+		return fmt.Errorf("empty path is not valid")
 	}
 
+	// Find the tracked owner before acquiring the lock. This involves path
+	// resolution operations (filepath.Abs, etc.) that we don't want to do
+	// while holding the lock.
+	cm.mutex.RLock()
+	owner, found := cm.findOwnerFromUserPath(path)
+	cm.mutex.RUnlock()
+
+	if !found {
+		return fmt.Errorf("path %s is not a tracked owner", path)
+	}
+
+	// Resolve absolute path and stat outside the lock
 	absPath, err := cm.absolutePathFromOwner(owner)
 	if err != nil {
 		return fmt.Errorf("failed to resolve path %s: %w", path, err)
@@ -780,6 +923,17 @@ func (cm *ContextManager) RefreshPath(path string) error {
 	info, err := os.Lstat(absPath)
 	if err != nil {
 		return fmt.Errorf("failed to stat path %s: %w", path, err)
+	}
+
+	// Only acquire the write lock for the minimal critical section
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
+
+	// Re-verify tracked state to prevent TOCTOU resurrection.
+	// Between releasing the read lock (above) and acquiring this write lock,
+	// another goroutine could have removed the owner. If so, error out.
+	if _, tracked := cm.ownerFiles[owner]; !tracked {
+		return fmt.Errorf("path %s is not a tracked owner", path)
 	}
 
 	return cm.addPathWithOwnerLocked(absPath, owner, info)

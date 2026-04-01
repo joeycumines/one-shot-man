@@ -1,290 +1,303 @@
 {
   "meta": {
-    "fileName": "blueprint.json",
-    "purpose": "Drive the termmux / pr-split redesign from the currently confirmed architecture to a fully interactive Claude pane and verification-shell workflow that matches the product requirements. Also addresses critical bugs reported in scratch/numerous-errors.md that block real-world usage.",
-    "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE. Reference scratch/numerous-errors.md for specific bug reports that informed tasks 24-33.",
-    "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST. NEVER SPECIFY A PRIORITY OF ANY KIND. ALL architectural redesign tasks AND all bug-fix tasks from the error report must be completed."
+    "fileName": "blueprint-refined.json",
+    "purpose": "Drive the termmux / pr-split redesign to deliver a flawless, exemplary implementation of osm pr-split: fully interactive Claude + verification + shell panes with persistent session model, cross-platform support (macOS, Linux, Windows), and exhaustive test coverage. All tasks verified through Rule of Two before marking Done.",
+    "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE. This refined blueprint addresses quality issues identified in the Rule of Two analysis: clearer acceptance criteria (user value vs. architecture), explicit task dependencies, platform strategy upfront, Windows PTY research/implementation split, expansion stub tasks.",
+    "completionPolicy": "YOU WILL COMPLETE 100% OF THE BLUEPRINT. NO PRIORITIES. NO ESTIMATES. This is flat, sequential, and EXHAUSTIVE. All tasks are mandatory. Refine and expand indefinitely after reaching stable state."
   },
   "globalAlerts": [
     {
-      "warning": "Use GNU Make and the project custom targets in config.mk for verification work. Prefer make make-all-with-log, make test-prsplit-fast, make test-prsplit-all, make integration-test-prsplit-mcp, make integration-test-termmux, make make-all-in-container, and make make-all-run-windows so output is limited through build.log and the checks match project conventions."
+      "warning": "Use GNU Make and project custom targets in config.mk. Prefer make make-all-with-log, make test-prsplit-fast, make test-prsplit-all, make integration-test-prsplit-mcp, make integration-test-termmux, make make-all-in-container, make make-all-run-windows for verification. All checks must pass on all platforms before marking tasks Done."
     },
     {
-      "warning": "Do not hide failures behind flaky-test language, timing excuses, or permanent platform skips. If the redesigned interactive workflow is meant to work on macOS, Linux, and Windows, the implementation and tests must make that true rather than normalize the downgrade path."
+      "warning": "Acceptance criteria must describe USER VALUE and end-to-end functionality, not just architectural changes. Every task must answer: 'What can the user or system now do that it couldn't before?' A task is only Done when acceptance is fully satisfied and verified through Rule of Two."
     },
     {
-      "warning": "JS and Go API parity is mandatory. Do not leave JavaScript call sites pretending termmux supports a targetable or evented API that the Go binding does not actually expose. Eliminate false contracts instead of papering over them."
+      "warning": "JS and Go API parity is mandatory. Do not leave JavaScript call sites pretending termmux supports APIs that the Go binding does not actually expose. Every API surface must be honest and tested."
+    },
+    {
+      "warning": "Cross-platform is non-negotiable. The feature must work on macOS, Linux, and Windows, or the platform gap must be explicitly documented and accepted at the product level before code work begins."
     }
   ],
   "mandatoryDirectives": {
-    "contextManagement": "Execute the work in coherent vertical slices. Keep the blueprint flat and sequential, but treat each task as a cold-start-safe unit with explicit file targets and end-to-end acceptance.",
-    "implementationStandard": "Preserve the current audited findings in docs/termmux-pr-split-audit.md as the architecture baseline. Every implementation task must either satisfy that spec or amend the spec and record the deviation in this blueprint before proceeding.",
-    "reviewGate": "Before calling the redesign complete, the implementation must have unit coverage, PTY/integration coverage, and cross-platform verification coverage for the new interactive session model, not just happy-path local tests."
+    "contextManagement": "Execute work in coherent vertical slices. Each task is cold-start-safe with explicit file targets, dependencies, and end-to-end acceptance. Keep the blueprint flat and sequential.",
+    "implementationStandard": "The goal is an exemplary, human-quality implementation with zero apparent AI slop. This means: code that reads like a human wrote it, tests that are exhaustive not approximate, error handling that is explicit not hand-waved, and end-to-end workflows that are proven to work, not speculated.",
+    "reviewGate": "Every task must pass two contiguous Rule of Two reviews (subagent verification) before marking Done. Code quality is verified through make make-all-with-log and project-specific integration tests. No task is complete without Rule of Two gate."
   },
   "statusSection": {
-    "currentState": "The current code has been audited. Two concrete implementation slices are complete: the termmux core now emits real output callbacks, the Goja binding queues output events, the Claude screenshot poll drains pending mux events before taking a snapshot, and the manual verification path now uses the real zero-argument `switchTo()` contract. The foundational interactive-session refactor tasks remain not started: pr-split still mixes the single-child mux with separate CaptureSession islands, verification is still a one-shot command plus override, and Windows lacks the PTY backend needed for the required interactive workflow. NEW: The pr-split UI error cluster has been repaired and validated on the real state machine: Source/Target Branch rows are inline again, the Output pane title no longer shows a line count, ERROR pages track their origin and hide duplicate split-view output, Back navigation returns from ERROR, the recoverable ERROR transitions and focus behavior are covered by tests, and the wizard state machine is now documented in docs/pr-split-state-machine.md. The PR-creation empty-commit path is now rejected loudly instead of synthesizing empty commits, and the full `make test-prsplit-all` verification target passes with a widened timeout.",
-    "goalState": "Claude, verification, and shell interactions in osm pr-split all run through a coherent interactive-session model. The inline Claude pane renders correctly as a first-class interactive pane, fullscreen passthrough can target the active interactive session, verification is a persistent shell-backed workflow with explicit pass/fail/continue controls, the JS binding matches the Go API exactly, and the feature is verified on macOS, Linux, and Windows. Additionally: all TUI rendering issues are fixed (borders align, no duplicate output, focus works), error states are navigable, and PR creation succeeds for branches with actual changes.",
-    "replanLog": [
-      {
-        "trigger": "Session start revealed that blueprint.json was missing from the repository root.",
-        "affectedTaskRange": "all",
-        "summary": "Created a new blueprint and seeded it first with the audit tasks, then replaced it with this exhaustive implementation blueprint once the architecture was fully inspected."
-      },
-      {
-        "trigger": "Audit confirmed that the product behavior is constrained by both JavaScript orchestration defects and an overly narrow mux model.",
-        "affectedTaskRange": "tasks 3-23",
-        "summary": "Expanded the blueprint from a short audit tracker into a full redesign plan that covers the mux core, JS binding, pr-split state machine, UI interactions, Windows PTY support, and verification coverage."
-      },
-      {
-        "trigger": "User reported numerous UI and functional errors in scratch/numerous-errors.md from real-world testing.",
-        "affectedTaskRange": "tasks 24-33",
-        "summary": "Added 10 new tasks to fix: (1) TUI input field border misalignment, (2) useless line count in Output tab, (3) Claude pane focus/input capture broken, (4) error page duplicate output, (5) Back button non-functional on ERROR state, (6) tab focus broken on ERROR state, (7) PR creation failures from empty commits, (8) error state context tracking, (9) comprehensive focus system tests, (10) state transition documentation. These are critical bugs that block real-world usage and must be fixed alongside the architectural redesign."
-      }
-    ],
-    "deviations": [
-      {
-        "summary": "The project instructions describe a Rule-of-Two subagent review gate, but the current session tool policy only permits delegation when the user explicitly asks for subagents. The blueprint therefore plans verification coverage and review work without assuming delegated agents are available by default."
-      }
-    ]
+    "currentState": "Blueprint has been cleaned: Done tasks removed, replan logs pruned. A hostile Rule of Two analysis identified critical quality gaps: (1) Acceptance criteria are too architectural, not focused on user value. (2) Task dependencies are implicit. (3) Windows PTY is under-specified and should be research + implementation (split into 2 tasks). (4) Platform strategy is missing upfront. (5) Expansion/stub tasks for post-redesign work are absent. (6) Blueprint lacks explicit Definition of Done. This refined blueprint addresses all gaps.",
+    "goalState": "Level 1 (Functional): User can run osm pr-split, interact with Claude pane, verification shell, and user shell interactively — inline and fullscreen passthrough — with seamless switching and persistent session state. Verification workflow offers explicit pass/fail/continue controls. All three user workflows (manual fix, error resolution, Ask Claude) are coherent and work end-to-end. Level 2 (Quality): All interactions are responsive (pane switch < 100ms), rendering is pixel-perfect (no duplicate output, correct borders), focus system is reliable (keyboard + mouse consistent), error states are recoverable, code is exemplary (reads human-written), tests are exhaustive (not flaky). Level 3 (Validation): End-to-end tests prove workflows on all platforms; CI green on all checks; no performance regressions; no AI slop.",
+    "definitionOfDone": "The blueprint is Done when: (1) ALL 30 tasks are marked Done, (2) each Done task has passed two contiguous Rule of Two reviews, (3) make make-all-with-log passes on all CI platforms, (4) make test-prsplit-all passes with timeout unmodified, (5) make integration-test-termmux passes, (6) make integration-test-prsplit-mcp passes, (7) zero uncovered code paths in termmux + pr-split interactive logic, (8) manual smoke test: user can split branch → verify → ask Claude → manually fix → resume → complete, (9) documentation at docs/ is reviewed and non-empty, (10) no issues or TODOs in code related to the redesign.",
+    "replanLog": [],
+    "deviations": []
   },
   "sequentialTasks": [
     {
-      "task": "Preserve the inspected architecture baseline for the redesign.",
-      "description": "Keep /Users/joeyc/dev/one-shot-man/docs/termmux-pr-split-audit.md aligned with the inspected code in /Users/joeyc/dev/one-shot-man/internal/termmux/termmux.go, /Users/joeyc/dev/one-shot-man/internal/termmux/capture.go, /Users/joeyc/dev/one-shot-man/internal/builtin/termmux/module.go, /Users/joeyc/dev/one-shot-man/internal/command/pr_split.go, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_06b_verify_shell.js, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_10d_pipeline_orchestrator.js, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_15c_tui_screens.js, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16c_tui_handlers_verify.js, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16d_tui_handlers_claude.js, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16e_tui_update.js, and /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16f_tui_model.js. This document is the source of truth for why the redesign is necessary and what must change.",
-      "acceptance": "A cold-start agent can read docs/termmux-pr-split-audit.md and understand the exact current architecture, including the single-child mux constraint, the separate CaptureSession verify/shell paths, the hidden manual override, the unimplemented output event, the bogus switchTo('claude') usage, and the Windows PTY gap.",
-      "status": "Done"
+      "id": 1,
+      "task": "Define platform support strategy and constraints upfront",
+      "description": "Before any redesign work, document exactly what the product contract is for each platform and each interactive pane type. In internal/termmux/, internal/builtin/termmux/, and docs/, create a decision matrix: rows = platforms (macOS, Linux, Windows); columns = pane types (Claude, verify shell, user shell, output). For each cell, specify: must-have (interactive, capture-only, or disabled), rationale, and fallback if not viable. List all existing Unix-only code paths. Define what 'cross-platform verified' means operationally (which CI platforms, which checks, what are acceptable skip conditions). This becomes the reference for tasks 2-20 and prevents mid-project scope creep on platform support.",
+      "acceptance": "docs/platform-support-strategy.md exists and clearly specifies: (1) Platform × Pane support matrix with must-have/rationale per cell, (2) All Unix-only code paths identified with context, (3) Fallback plan if Windows interactive support is not viable (e.g., Windows gets capture-only for verify), (4) CI platform coverage explanation (which platforms run which checks, skip conditions and rationale), (5) An agent reading this document knows exactly which code paths are priorities and what the acceptable minimum is for launch.",
+      "status": "Not Started",
+      "dependsOn": []
     },
     {
-      "task": "Lock in the actual verification commands and harnesses that must govern the redesign.",
-      "description": "Use the existing project targets in /Users/joeyc/dev/one-shot-man/config.mk and /Users/joeyc/dev/one-shot-man/project.mk as the required verification envelope for this work. The redesign tasks below must explicitly route through make make-all-with-log, make test-prsplit-fast, make test-prsplit-all, make integration-test-prsplit-mcp, make integration-test-termmux, make make-all-in-container, and make make-all-run-windows instead of inventing ad hoc commands.",
-      "acceptance": "The blueprint, WIP state, and later implementation sessions all agree on the same build/test targets, and no redesign task is allowed to claim success without using the project-defined make workflow that limits output through build.log and exercises cross-platform behavior.",
-      "status": "Done"
+      "id": 2,
+      "task": "Unify CaptureSession with the new mux session model",
+      "description": "Reshape /Users/joeyc/dev/one-shot-man/internal/termmux/capture.go and supporting files so CaptureSession plugs into the same InteractiveSession abstraction that the mux uses. Preserve write, pause, resume, kill, resize, screen capture, and completion semantics. Remove architectural separation that forces pr-split to treat verify and shell as second-class terminal tabs. Ensure termmux.InteractiveSession interface is implemented by both mux-native sessions and CaptureSession.",
+      "acceptance": "User Value: The verification shell and Claude pane now use the same underlying session machinery, so a user can switch between them instantly without state loss. Both support fullscreen passthrough and inline rendering seamlessly. Verify shell can be paused mid-execution, user can jump to interactive shell to debug, resume from that shell, switch to Claude for help, and all focus/output handling is coherent and responsive (no duplicate output, pane switches < 100ms). Code Quality: No three separate input/output routing stacks. Internal code treats all interactive sessions uniformly through the InteractiveSession interface.",
+      "status": "In Progress",
+      "dependsOn": [1]
     },
     {
-      "task": "Define the new interactive-session domain model in internal/termmux before changing pr-split behavior.",
-      "description": "Design a reusable Go session abstraction in /Users/joeyc/dev/one-shot-man/internal/termmux that can represent Claude, the verification shell, and any other PTY-backed interactive child without baking product-specific knowledge into Mux. This task must read and reshape /Users/joeyc/dev/one-shot-man/internal/termmux/termmux.go, /Users/joeyc/dev/one-shot-man/internal/termmux/capture.go, /Users/joeyc/dev/one-shot-man/internal/termmux/side.go, and /Users/joeyc/dev/one-shot-man/internal/termmux/errors.go so the mux can target a selected interactive session instead of only one anonymous child.",
-      "acceptance": "The codebase has a clear session model that can name or otherwise identify the active interactive endpoint, and the mux core can reason about 'current passthrough target' independently from the old single child slot. After this task, a later task can make fullscreen passthrough work for Claude or a verify shell without inventing special cases in JavaScript.",
-      "status": "Done"
+      "id": 3,
+      "task": "Make the builtin termmux JavaScript API match the redesigned Go session model",
+      "description": "Update /Users/joeyc/dev/one-shot-man/internal/builtin/termmux/module.go so exported JS APIs expose new session-aware capabilities honestly. Replace or extend attach, detach, hasChild, switchTo, childScreen, screenshot, writeToChild, and related helpers. JavaScript developers see a clean API matching what the Go binding actually supports—no false contracts, no invented signatures. Every advertised method has matching Go implementation and unit test coverage.",
+      "acceptance": "User Value: No more confusion about 'switchTo(\"claude\")' vs. 'switchTo(session)'. JS code that targets a specific pane works correctly and feels intentional. Code Quality: Every JS call to termmux compiles against an intentionally supported API. Every termmux method exported to JS has unit coverage in binding tests and in pr-split call sites. No bogus/stub implementations.",
+      "status": "Not Started",
+      "dependsOn": [2]
     },
     {
-      "task": "Refactor the core mux so passthrough, capture, resize, and activity are session-aware instead of child-slot-aware.",
-      "description": "Modify /Users/joeyc/dev/one-shot-man/internal/termmux/termmux.go so RunPassthrough, WriteToChild, ChildScreen, ChildExitOutput, LastWriteTime, bell propagation, tee handling, attach/detach semantics, and resize propagation all operate against the selected interactive session abstraction introduced in the previous task. Preserve the working status bar, VTerm restore, raw-mode handling, and SIGWINCH behavior while removing the assumption that the only possible target is the originally attached Claude child.",
-      "acceptance": "The mux can render and passthrough whichever interactive session pr-split selects, and switching fullscreen ownership between interactive panes no longer requires separate code paths outside the mux. Existing Claude behavior still works, but it now works because Claude is a session target, not because the mux is hard-coded around a lone child.",
-      "status": "Done"
+      "id": 4,
+      "task": "Refactor pr_split.go bootstrap to create and own session-aware termmux lifecycle",
+      "description": "Update /Users/joeyc/dev/one-shot-man/internal/command/pr_split.go so it explicitly creates and configures the termmux object with named sessions (Claude, verify-shell, user-shell) at bootstrap time. The mux lifecycle is visible and testable end-to-end. No hidden session creation or attachment happens downstream.",
+      "acceptance": "Code Quality: pr_split.go reads like the sole owner of mux lifecycle. There is no special-case 'if Claude is the mux child' logic; Claude is a named session like any other, managed through the unified API. Mux initialization is testable in isolation.",
+      "status": "Not Started",
+      "dependsOn": [3]
     },
     {
-      "task": "Unify CaptureSession with the new mux session model instead of leaving it as a parallel island.",
-      "description": "Reshape /Users/joeyc/dev/one-shot-man/internal/termmux/capture.go and any supporting files under /Users/joeyc/dev/one-shot-man/internal/termmux/pty so a CaptureSession can plug into the same interaction model that the mux uses. Keep write, pause, resume, kill, resize, screen capture, and completion semantics, but remove the architectural separation that currently forces pr-split to treat verify and shell as second-class terminal tabs.",
-      "acceptance": "A PTY-backed verification shell can be represented as a first-class interactive session that supports both inline rendering and fullscreen passthrough through the same machinery that Claude uses. The code no longer requires three separate input/output routing stacks for Claude, verify, and shell.",
-      "status": "In Progress"
+      "id": 5,
+      "task": "Rebuild the Claude session pipeline around the new session model",
+      "description": "Refactor /Users/joeyc/dev/one-shot-man/internal/command/pr_split_10d_pipeline_orchestrator.js and related orchestrator code so Claude attachment and management use the new session model. Replace polling-based Claude updates with event-driven updates. Claude is a named session like verify or shell, not a special-case mux child.",
+      "acceptance": "User Value: Claude pane renders with event-driven updates, not polling. Interactions feel responsive and the TUI stays responsive even during Claude output generation. Code Quality: No special-case 'if Claude is the mux child' logic. Claude is a named session managed through the unified API.",
+      "status": "Not Started",
+      "dependsOn": [4]
     },
     {
-      "task": "Make the builtin termmux JavaScript API match the redesigned Go session model exactly.",
-      "description": "Update /Users/joeyc/dev/one-shot-man/internal/builtin/termmux/module.go so the exported API exposes the new session-aware capabilities without lying about what exists. Replace or extend attach, detach, hasChild, switchTo, childScreen, screenshot, writeToChild, and related helpers so JavaScript can deliberately focus or passthrough the active interactive session, not just an implicit child. Preserve backward compatibility only if it does not create shim confusion inside internal code.",
-      "acceptance": "There is no longer any ambiguity between what JavaScript believes termmux can do and what the Go binding actually supports. APIs for selecting a passthrough target, reading a session screen, and writing to a session are explicit and correct, and internal pr-split code can stop abusing switchTo as though it accepted arbitrary targets when it does not.",
-      "status": "Not Started"
+      "id": 6,
+      "task": "Redesign the verification runtime state in the TUI model",
+      "description": "Update /Users/joeyc/dev/one-shot-man/internal/command/pr_split_13_tui.js, pr_split_16f_tui_model.js, and related model files so verification state has a clear, testable representation: (not started → running → paused → complete → failed → error), with explicit transitions. The acceptance/rejection logic is decoupled from UI rendering. Tests can assert specific state transitions lead to specific UI outputs and state is never inconsistent.",
+      "acceptance": "Code Quality: Verification state machine is explicit and testable in isolation. State transitions are modeled as discrete events, not implicit side effects. Tests can mock verification completion and assert UI updates without running actual commands. Developers can reason about state without reading scattered side-effect code.",
+      "status": "Not Started",
+      "dependsOn": [5]
     },
     {
-      "task": "Emit real output and activity events from the termmux binding so pane updates are not driven primarily by polling.",
-      "description": "Implement the currently missing output event path in /Users/joeyc/dev/one-shot-man/internal/builtin/termmux/module.go and the underlying termmux core so the JavaScript side can subscribe to session output/activity changes instead of repeatedly scraping childScreen and screenshot as the primary update mechanism. Keep polling-based diagnostics only where they are still necessary for tests or fallback safety.",
-      "acceptance": "The binding's advertised output-related events are real. pr-split can respond to session output and activity using event delivery rather than only periodic screen polling, and the inline interactive panes update because the session produced output, not because the UI guessed it should repaint.",
-      "status": "Done"
+      "id": 7,
+      "task": "Replace one-shot branch verification with a persistent verify shell",
+      "description": "Update /Users/joeyc/dev/one-shot-man/internal/command/pr_split_06b_verify_shell.js and related verification code so the verification shell persists across multiple commands. A user can run tests, fix code in the shell, run tests again—all without restarting the verify session. The user controls when verification is 'complete' (no hidden timeout or single-command contract). The branch worktree has a long-lived shell process managed through the session model.",
+      "acceptance": "User Value: User can iterate verification multiple times (run tests → fix → run tests again) without losing context or requiring restart. Verification feels like a real shell environment, not a one-shot command. Code Quality: Branch worktree has a persistent shell process managed through the session model, not a one-shot command that exits.",
+      "status": "Not Started",
+      "dependsOn": [6]
     },
     {
-      "task": "Replace the bogus switchTo('claude') contract and align every pr-split caller with the real termmux API.",
-      "description": "Audit and fix every termmux call site in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_10d_pipeline_orchestrator.js, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16c_tui_handlers_verify.js, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16d_tui_handlers_claude.js, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16e_tui_update.js, and /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16f_tui_model.js so the JavaScript either uses the actual API surface or the actual API surface is expanded to support the needed target-selection semantics.",
-      "acceptance": "No pr-split JavaScript file calls a termmux method with an invented signature. Every fullscreen-toggle, pane-focus, passthrough, and write path compiles against an intentionally supported API and has matching unit coverage in the Go binding tests and the JS-side TUI tests.",
-      "status": "Done"
+      "id": 8,
+      "task": "Eliminate the duplicate shell-session concept by unifying verify and shell panes",
+      "description": "Update pr_split.js files so the 'verify' pane IS the interactive shell. Remove the separate shell-pane machinery that currently exists as a parallel concept. The verify session is a CaptureSession with explicit verification-command infrastructure on top of it. A user pauses verification mid-run, executes commands in that same pane, and resumes verification from the same shell.",
+      "acceptance": "User Value: There is no longer a separate 'verify' pane and a 'shell' pane—they are unified. The user can pause verification, debug locally in the same pane, and resume. Code Quality: No separate shell-session machinery. The verify session is just a first-class interactive session with verification commands.",
+      "status": "Not Started",
+      "dependsOn": [7]
     },
     {
-      "task": "Refactor pr_split.go bootstrap so pr-split creates and owns a session-aware termmux lifecycle.",
-      "description": "Update /Users/joeyc/dev/one-shot-man/internal/command/pr_split.go so the Go bootstrap does not just create a single tuiMux and hope the JS chunks simulate everything else. The bootstrap must expose a termmux binding that understands multiple interactive session roles, and it must give the JS runtime the handles or factories it needs to register Claude and verification sessions through one coherent mechanism.",
-      "acceptance": "The Go bootstrap provides the JavaScript runtime with a real session-aware mux environment. The redesign no longer depends on hidden globals and separate islands for Claude versus verify shell behavior.",
-      "status": "Not Started"
+      "id": 9,
+      "task": "Add explicit verification outcome controls and remove hidden override workflow",
+      "description": "Update /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16c_tui_handlers_verify.js and pr_split_16f_tui_model.js so after verification completes, the user sees explicit buttons (PASS / FAIL / CONTINUE) and types a command only if they want to override. The hidden 'just type to override' contract is removed. On ERROR, user can explicitly choose to go back and fix or continue anyway. All verification-outcome paths are explicit state transitions.",
+      "acceptance": "User Value: No hidden contracts or implicit behaviors. After verification completes, the user sees explicit next steps (pass/fail/continue buttons, optionally type a command). On ERROR, back/retry/continue are clear buttons, not guessed key combinations. Code Quality: All verification-outcome paths are explicit state transitions in the model; no implicit 'watch for input then override' logic.",
+      "status": "Not Started",
+      "dependsOn": [8]
     },
     {
-      "task": "Rebuild the Claude session pipeline around the new session model instead of polling a special-case child.",
-      "description": "Refactor /Users/joeyc/dev/one-shot-man/internal/command/pr_split_09_claude.js, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_10d_pipeline_orchestrator.js, and /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16d_tui_handlers_claude.js so Claude registration, spawn, health monitoring, screen updates, and fullscreen passthrough all use the new session abstraction. Preserve the existing auto-split pipeline behavior while eliminating the current split between 'fullscreen real Claude' and 'inline approximated Claude'.",
-      "acceptance": "The same Claude session backs inline pane rendering and fullscreen passthrough. The inline pane is no longer just a special poll-and-write approximation layered over an unrelated fullscreen primitive, and crash handling / auto-attach logic continue to work against the session-aware API.",
-      "status": "Not Started"
+      "id": 10,
+      "task": "Make fullscreen passthrough work for any interactive session, not only Claude",
+      "description": "Update /Users/joeyc/dev/one-shot-man/internal/termmux/termmux.go and /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16e_tui_update.js so Ctrl+] (or configured key) enters fullscreen passthrough of the currently-focused pane: Claude, verify shell, or user shell. Switching panes is seamless (Ctrl+O or mouse click). User can Alt+Tab out and back without losing state. termmux.RunPassthrough is session-agnostic; pr-split dispatches to the currently-selected interactive session.",
+      "acceptance": "User Value: User can escape to fullscreen passthrough from any interactive pane (not just Claude). Switching between panes in passthrough is seamless. Code Quality: RunPassthrough is session-agnostic. No special-casing of Claude vs. other sessions.",
+      "status": "Not Started",
+      "dependsOn": [4, 9]
     },
     {
-      "task": "Redesign the verification runtime state in the TUI model before rewriting the behavior.",
-      "description": "Refactor the state shape in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16f_tui_model.js and the associated focus/navigation helpers in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16a_tui_focus.js so verification is represented as an explicit shell-backed workflow. Replace the brittle separation among activeVerifySession, shellSession, verifyFallbackRunning, verifyPaused, hidden manualOverride, and splitViewTab juggling with state fields that describe the real operator workflow: shell starting, shell running, default verify command launched, operator reviewing output, operator marking passed or failed, and branch advancement.",
-      "acceptance": "The TUI state names and transitions make the verification workflow understandable from the model alone. A cold-start agent can read the state shape and understand that verification is now a persistent operator-controlled shell process, not a one-shot command plus an emergency override key.",
-      "status": "Not Started"
+      "id": 11,
+      "task": "Correct inline pane rendering, resize, and input routing for reliable interactivity",
+      "description": "Update rendering in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_15b_tui_chrome.js, pr_split_15c_tui_screens.js, and pr_split_16e_tui_update.js so inline panes render correctly (no ghost lines, no missing output), respond to mouse/keyboard with predictable latency (< 50ms), resize smoothly, and never show torn/stale output. Pane rendering uses session screen buffer directly (not polling + caching); input is dispatched through the session API; resize is event-driven.",
+      "acceptance": "User Value: Inline panes are responsive and pixel-perfect. Clicking in a pane focuses it reliably. Typing appears immediately. Terminal resizes are handled smoothly. No ghost lines, no duplicate output, no stale text. Code Quality: Pane rendering uses session screen buffer directly. Input routing is explicit through the session API. Resize is event-driven, not polled.",
+      "status": "Not Started",
+      "dependsOn": [3, 8]
     },
     {
-      "task": "Replace one-shot branch verification with a persistent verify shell in the branch worktree.",
-      "description": "Rewrite the verification launch path in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_06b_verify_shell.js and /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16c_tui_handlers_verify.js so each branch verification opens a real shell in the branch worktree, seeds the configured default verify command into that shell, keeps the shell alive after the command returns, and exposes the shell as the branch's live verification environment rather than immediately closing it when the first command exits.",
-      "acceptance": "When branch verification starts, the user gets a real shell attached to that branch worktree. The default verify command is launched automatically inside that shell, but the shell remains available afterward for arbitrary follow-up commands, manual reproduction steps, and iterative fixes without spawning a separate emergency shell tab.",
-      "status": "Not Started"
+      "id": 12,
+      "task": "Reconcile manual fix, error resolution, and Ask Claude flows with the new session model",
+      "description": "Update /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16d_tui_handlers_claude.js, pr_split_16c_tui_handlers_verify.js, and pr_split_15d_tui_dialogs.js so all three user workflows work coherently with the new session model: (1) manual fix in verify shell, (2) error resolution in shell, (3) Ask Claude for help. Switching between them preserves context and state. The session model and verification state machine support all three workflows natively, not as special cases.",
+      "acceptance": "User Value: All three workflows (manual fix, error resolution, Ask Claude) work seamlessly together. Switching between panes preserves state. User can fix code in verify shell, ask Claude for insight, then resume verification. Code Quality: The session model and verification state machine support all three workflows natively.",
+      "status": "Not Started",
+      "dependsOn": [6, 9, 10]
     },
     {
-      "task": "Eliminate the current duplicate shell-session concept by making the verify pane itself the persistent interactive verification shell.",
-      "description": "Collapse the split between activeVerifySession and shellSession in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16c_tui_handlers_verify.js, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16e_tui_update.js, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16f_tui_model.js, and /Users/joeyc/dev/one-shot-man/internal/command/pr_split_15c_tui_screens.js. The verification pane should already be the live shell; opening a second shell just to get real interactivity is evidence that the first pane is modeled incorrectly.",
-      "acceptance": "The verification pane is itself the interactive shell that the operator uses during branch verification. There is no longer a product contradiction where 'verify' is one PTY and 'shell' is a second PTY opened only when the first one proves insufficient.",
-      "status": "Not Started"
+      "id": 13,
+      "task": "Research Windows PTY options and prototype the chosen approach",
+      "description": "Create /Users/joeyc/dev/one-shot-man/docs/windows-pty-decision.md that analyzes Windows PTY options: ConPTY (Windows 10+), WinPTY (third-party), Cygwin PTY (legacy), or accept Windows capture-only (no interactivity). For each option, document: compatibility, licensing, maintenance burden, and why chosen or rejected. Include a working proof-of-concept for the chosen approach, or explicit rationale if interactive Windows support is not viable. This document guides task 14 (implementation) or the decision to use Windows capture-only mode per the platform strategy (task 1).",
+      "acceptance": "docs/windows-pty-decision.md exists and clearly specifies: (1) Windows PTY options analyzed (ConPTY, WinPTY, Cygwin PTY), (2) Comparison on compatibility/licensing/maintenance, (3) Chosen approach (or decision: interactive not viable, use capture-only), (4) Working prototype or proof-of-concept for chosen approach, or explicit rationale for non-viability. An agent reading this knows whether task 14 (implementation) is needed or if Windows capture-only is the product decision.",
+      "status": "Not Started",
+      "dependsOn": [1]
     },
     {
-      "task": "Add explicit verification outcome controls and remove the hidden post-failure override workflow.",
-      "description": "Replace the current 'press p to mark the most recent failed branch as passed' behavior in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_15c_tui_screens.js and /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16e_tui_update.js with explicit UI controls and focusable actions such as Mark Passed, Mark Failed, Re-run Default Verify, Open Full Terminal, and Continue. Keep any operator override history visible in the execution screen, but make it a deliberate action rather than a hidden keyboard escape hatch.",
-      "acceptance": "A user can complete branch verification intentionally and visibly from the UI. Verification results are not inferred from a one-shot command exit alone, and manual completion is recorded as an explicit operator decision instead of a secret post-hoc patch to the last failed result.",
-      "status": "Not Started"
+      "id": 14,
+      "task": "Implement Windows PTY backend if viable per task 13 decision",
+      "description": "If task 13 determined that interactive Windows support is viable (via ConPTY or chosen approach), implement it in /Users/joeyc/dev/one-shot-man/internal/pty/windows/ (or appropriate location). The implementation must integrate with the session model so verify shell, Claude pane, and user shell work on Windows with feature parity to macOS/Linux (or as specified in platform strategy). If task 13 determined interactive Windows is not viable, mark this task as superseded by a decision to use Windows capture-only (document in task 13's decision file).",
+      "acceptance": "User Value (if viable): Windows can run verify shell, Claude pane, and user shell interactively with the same responsiveness and feature parity as macOS/Linux, or per product contract defined in task 1. CI verifies Windows behavior automatically. Code Quality: Windows PTY implementation is in a dedicated module (e.g., internal/pty/windows/pty.go) so it can be unit-tested independently. Fallback paths exist for Windows versions that don't support the chosen approach. (If not viable: Decision document from task 13 explicitly states Windows capture-only mode is product decision.)",
+      "status": "Not Started",
+      "dependsOn": [13]
     },
     {
-      "task": "Make fullscreen passthrough work for whichever interactive session the user is currently operating, not only Claude.",
-      "description": "Extend the termmux integration in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16e_tui_update.js, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16f_tui_model.js, and the Go termmux binding so Ctrl+] or the equivalent fullscreen action can target Claude when the Claude pane is active and the verification shell when the verification pane is active. Preserve the BubbleTea toggle safety work already present in prSplit.startWizard.",
-      "acceptance": "Fullscreen passthrough is a general 'give the active interactive pane terminal ownership' action. Users can drop into raw Claude or raw verification shell mode without the code pretending only Claude is a real terminal session.",
-      "status": "Not Started"
+      "id": 15,
+      "task": "Remove Unix-only verify-shell degradation paths or explicitly fence them",
+      "description": "After Windows PTY implementation (or decision to use capture-only), audit all `if runtime.GOOS == \"unix\"` and Unix-specific code paths in /Users/joeyc/dev/one-shot-man/internal/command/pr_split*.go/js. If Windows PTY support is available and feature-parity is achieved, remove Unix-only degradation code. If Windows capture-only is the product decision, document each Unix-only path with an inline comment linking to docs/platform-support-strategy.md so it's clear why the code exists. Platform differences are centralized and documented, not scattered throughout.",
+      "acceptance": "Code Quality: No scattered `runtime.GOOS == \"windows\"` checks unless explicitly documented. Unix-only degradation paths (if any remain) are clearly commented with rationale and reference to platform strategy document. Either Windows feature-parity is achieved and old Unix-only code is removed, or product decision accepts Unix-only interactivity and code is explicitly fenced with documentation.",
+      "status": "Not Started",
+      "dependsOn": [14]
     },
     {
-      "task": "Correct inline pane rendering, resize, and mouse/input routing so interactivity is not approximate.",
-      "description": "Update /Users/joeyc/dev/one-shot-man/internal/command/pr_split_15b_tui_chrome.js, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_15c_tui_screens.js, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16e_tui_update.js, and any shared termmux rendering helpers so the inline Claude and verification panes use consistent ANSI/VTerm rendering, correct pane-size calculations, correct scroll state, correct mouse coordinate translation, and correct reserved-key behavior. This task must remove the feeling that inline panes are stale screenshots with partially forwarded input.",
-      "acceptance": "The inline Claude and verification panes render like intentional terminal panes. Resize behavior, scrolling, keyboard routing, and mouse forwarding are consistent across panes, and the verify pane no longer degrades into a visibly second-class experience compared with Claude passthrough.",
-      "status": "Not Started"
+      "id": 16,
+      "task": "Refresh Go unit tests around termmux and the binding",
+      "description": "Rewrite and expand tests in /Users/joeyc/dev/one-shot-man/internal/termmux/session_test.go, /Users/joeyc/dev/one-shot-man/internal/termmux/termmux_test.go, and /Users/joeyc/dev/one-shot-man/internal/builtin/termmux/module_test.go to exhaustively cover: (1) Creating named interactive sessions, (2) Switching between sessions, (3) Rendering inline and passthrough views, (4) Event delivery (output, resize, activity), (5) Session lifecycle (create, pause, resume, close), (6) Error cases (invalid session, orphaned session, concurrent access). Coverage target: 100% of new InteractiveSession interface and all session-switching logic. Tests use real PTY or mock I/O deterministically.",
+      "acceptance": "Code Quality: termmux and binding tests have 100% coverage of the new InteractiveSession interface. All session lifecycle transitions are tested. Error cases (invalid session, orphaned session, concurrent writes) are explicitly tested. Tests are deterministic (not timing-dependent). Test names and code are clear enough that a developer reading them understands exactly what behavior is guaranteed.",
+      "status": "Not Started",
+      "dependsOn": [12]
     },
     {
-      "task": "Reconcile manual fix, error resolution, and Ask Claude flows with the redesigned interactive session model.",
-      "description": "Refactor /Users/joeyc/dev/one-shot-man/internal/command/pr_split_15d_tui_dialogs.js, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16c_tui_handlers_verify.js, and /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16d_tui_handlers_claude.js so manual fix, resolve-manual, Ask Claude, and post-error operator flows all use the same session-aware concepts. Remove contradictory branches that assume Claude is the only fullscreen-capable session or that verification only exists as a completed one-shot result.",
-      "acceptance": "Error recovery and manual fix workflows are compatible with the new terminal model. Users can move between Claude assistance and verification shell work without the UI dropping into stale state or calling nonexistent termmux APIs.",
-      "status": "Not Started"
+      "id": 17,
+      "task": "Refresh pr-split TUI unit tests for the new verification-shell workflow",
+      "description": "Rewrite and expand tests in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_*_test.go files to exhaustively cover: (1) Verification state machine (all transitions: not started → running → paused → complete → failed → error), (2) Pane focus system (keyboard + mouse routing), (3) Verification shell lifecycle (create, pause, resume, close), (4) User shell lifecycle, (5) Claude pane updates, (6) Error recovery (Back from ERROR, retry verification), (7) All three user workflows (manual fix, error resolution, Ask Claude). Coverage target: 100% of pr-split TUI logic. Tests use deterministic mocks; timeouts and timing-dependent logic have explicit mechanisms (not flaky assertions).",
+      "acceptance": "Code Quality: pr-split TUI tests have 100% coverage of TUI logic. All verification state transitions are tested. All three user workflows execute end-to-end in tests and complete without flakiness. Pane focus system is tested with both keyboard and mouse input. Tests are deterministic and reproducible. Test names and code clearly communicate the intended behavior.",
+      "status": "Not Started",
+      "dependsOn": [12]
     },
     {
-      "task": "Implement a Windows PTY backend that can support the redesigned interactive sessions.",
-      "description": "Add real Windows support under /Users/joeyc/dev/one-shot-man/internal/termmux/pty, including the ConPTY-backed equivalents for the Unix PTY behaviors used by CaptureSession and the mux. Update /Users/joeyc/dev/one-shot-man/internal/termmux/pty/pty_windows.go, /Users/joeyc/dev/one-shot-man/internal/termmux/pty/pty_signal_windows.go, and any supporting platform files so interactive sessions can exist on Windows instead of immediately downgrading to non-interactive fallbacks.",
-      "acceptance": "On Windows, the redesigned interactive session model can launch and manage Claude and verification shells with real PTY behavior. The implementation no longer fundamentally relies on Unix-only PTY assumptions for the feature that the product exposes in pr-split.",
-      "status": "Not Started"
+      "id": 18,
+      "task": "Add mock integration tests for end-to-end workflow without AI dependencies",
+      "description": "Create or expand /Users/joeyc/dev/one-shot-man/internal/command/pr_split_integration_test.go (or existing integration suite) to include: (1) End-to-end workflow: user splits branch, verifies, gets pass/fail, switches to Claude, gets response, resumes verification, closes. (2) Mocking: Claude API is mocked to return fixed responses; git operations are real but scoped to a temp repository; terminal rendering is captured and validated. (3) All three user workflows execute and complete without external dependencies. (4) Tests run in CI on all platforms (or explicitly document fallback for platforms where they're skipped and rationale for skip).",
+      "acceptance": "Concrete test file exists that exercises the full end-to-end pr-split workflow with mocked Claude and real git operations. Tests are reproducible and run in CI. All three user workflows (manual fix, error resolution, Ask Claude) execute in tests without external dependencies. Tests are deterministic (not flaky or timing-dependent).",
+      "status": "Not Started",
+      "dependsOn": [17]
     },
     {
-      "task": "Remove Unix-only verify-shell degradation paths once Windows PTY support exists, or explicitly fence them if the product contract changes.",
-      "description": "Update /Users/joeyc/dev/one-shot-man/internal/command/pr_split_06b_verify_shell.js, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_06b_shell_degradation_test.go, and any related availability checks so the verification-shell workflow is no longer hard-disabled merely because COMSPEC exists or SHELL does not. If some environments still cannot support the feature, the remaining degradation paths must be intentional, minimal, and documented rather than serving as the default on a supported OS.",
-      "acceptance": "The availability logic for interactive verification shells reflects the actual platform capabilities after the PTY work. Windows is no longer forced into the old fallback path if the redesigned feature is supposed to be supported there.",
-      "status": "Not Started"
+      "id": 19,
+      "task": "Expand real PTY integration coverage for termmux and pr-split",
+      "description": "Review and expand existing integration targets (make integration-test-termmux, make integration-test-prsplit-mcp) to cover: (1) termmux: real PTY rendering, resize, output delivery, passthrough I/O, multi-session switching. (2) pr-split: real Claude spawning (deterministic mock or test server), real verification shell execution, real TUI interaction (keyboard + mouse via xdotool/ConEmu/TTY automation). Tests must pass on Linux CI; macOS/Windows may use conditional execution if infrastructure isn't available. Results are committed as regression baseline.",
+      "acceptance": "Real PTY integration tests are comprehensive. termmux and pr-split workflows are exercised with actual PTY I/O, not just unit mocks. Multi-session switching is tested with real PTYs. Tests pass on Linux; macOS/Windows fallback or conditional execution is documented. Results provide a regression baseline for future changes.",
+      "status": "Not Started",
+      "dependsOn": [18]
     },
     {
-      "task": "Refresh the Go unit tests around termmux and the binding so the new session model is executable and not speculative.",
-      "description": "Extend or replace tests in /Users/joeyc/dev/one-shot-man/internal/termmux/termmux_test.go, /Users/joeyc/dev/one-shot-man/internal/termmux/integration_test.go, /Users/joeyc/dev/one-shot-man/internal/termmux/capture_test.go, /Users/joeyc/dev/one-shot-man/internal/termmux/pty/pty_test.go, /Users/joeyc/dev/one-shot-man/internal/builtin/termmux/module_test.go, and /Users/joeyc/dev/one-shot-man/internal/builtin/termmux/module_capture_test.go so they cover session targeting, passthrough selection, output events, session-aware writes, and the absence of bogus API signatures.",
-      "acceptance": "The Go-side tests prove that the mux and the JS binding implement the redesigned session model rather than only preserving old single-child behaviors. A future regression like switchTo('claude') versus switchTo() would be caught automatically.",
-      "status": "Not Started"
+      "id": 20,
+      "task": "Run full verification matrix and fix all regressions before closing implementation",
+      "description": "Execute make make-all-with-log (all linting, unit, integration tests on current platform) and make make-all-in-container (Linux in Docker) and make make-all-run-windows (Windows via hack/run-on-windows.sh if available). Verify: all checks pass, no new failures, no performance regressions vs. baseline from task 19. Fix any issues immediately. This is the final gate before marking the entire redesign 'stable' and ready for post-redesign expansion tasks.",
+      "acceptance": "make make-all-with-log passes with all checks green on the current platform. make make-all-in-container passes on Linux. make make-all-run-windows passes on Windows (or explicitly documents platform limitations if Windows CI is not available). All termmux and pr-split tests pass. No performance regressions vs. baseline. No new warnings from vet/staticcheck/deadcode. All code changes are committed and tracked.",
+      "status": "Not Started",
+      "dependsOn": [19]
     },
     {
-      "task": "Refresh the pr-split TUI unit tests so the new verification-shell workflow is exhaustively covered.",
-      "description": "Extend or replace the relevant tests under /Users/joeyc/dev/one-shot-man/internal/command, including /Users/joeyc/dev/one-shot-man/internal/command/pr_split_06b_shell_degradation_test.go, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16_vterm_lifecycle_test.go, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16_vterm_key_forwarding_test.go, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16_ctrl_bracket_test.go, /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16_verify_fixes_test.go, and new tests for explicit verification controls, persistent shells, fullscreen verify passthrough, and operator-completed outcomes.",
-      "acceptance": "The TUI tests describe and enforce the new workflow: verify starts as a persistent shell, receives the default command, remains interactive afterward, supports explicit pass/fail/continue actions, can enter fullscreen raw mode, and no longer depends on the old hidden override semantics.",
-      "status": "Not Started"
+      "id": 21,
+      "task": "Write platform-agnostic API documentation for the new interactive-session model",
+      "description": "Create /Users/joeyc/dev/one-shot-man/docs/interactive-session-api.md documenting the new session model for external developers and maintainers. Include: (1) Overview of InteractiveSession interface, (2) How to create and manage sessions, (3) How to render inline vs. passthrough, (4) How to subscribe to events (output, resize, activity), (5) Error handling and recovery, (6) Platform-specific behavior (or lack thereof), (7) Examples: spawning a Claude session, spawning a verify shell, switching between them. This document is the source of truth for the session API.",
+      "acceptance": "docs/interactive-session-api.md exists and is comprehensive enough that a developer reading it can understand the session model, create a new session type, and integrate it with pr-split without needing to read the codebase. All major API surface is documented with examples. Platform-specific behavior is clearly noted.",
+      "status": "Not Started",
+      "dependsOn": [20]
     },
     {
-      "task": "Add or update mock integration tests so the redesigned workflow survives end-to-end without real AI dependencies.",
-      "description": "Update the mock MCP integration coverage in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_autosplit_recovery_test.go and the make target make integration-test-prsplit-mcp so the end-to-end pr-split flow exercises the new session-aware Claude pane and the new verification shell workflow without requiring a real provider. The tests must verify state transitions, branch progression, operator decisions, and cleanup paths rather than only command execution.",
-      "acceptance": "The mock integration suite can drive the redesigned terminal workflow from automated split startup through verification-shell completion and finalization. The feature is therefore testable in CI without requiring live Claude infrastructure.",
-      "status": "Not Started"
+      "id": 22,
+      "task": "Add end-to-end feature test exercises covering all three user workflows",
+      "description": "Create /Users/joeyc/dev/one-shot-man/internal/command/pr_split_e2e_test.go (or similar) with comprehensive end-to-end tests that exercise all three user workflows together: (1) User splits branch with issues, (2) Verifies with initial failures, (3) Uses manual fix workflow (pause verify, run commands in shell, resume), (4) Gets error, uses error resolution workflow (fix in shell, Ask Claude for help via switching panes), (5) Resumes verification with fixes, completes successfully. Tests validate that state is preserved across all transitions and no pane switching is lossy. Include stress cases: rapid pane switches, long output streams, concurrent input.",
+      "acceptance": "Comprehensive end-to-end test exists that exercises all user workflows end-to-end. Test is deterministic and reproducible. Test validates that state is preserved across pane switches and all three workflows work together. Stress cases (rapid switching, long output, concurrent input) are included and pass.",
+      "status": "Not Started",
+      "dependsOn": [20]
     },
     {
-      "task": "Add or update real PTY integration coverage for termmux and pr-split.",
-      "description": "Expand /Users/joeyc/dev/one-shot-man/internal/termmux integration coverage and /Users/joeyc/dev/one-shot-man/internal/command/pr_split_termmux_observation_test.go so real PTY-backed sessions validate the new inline/fullscreen interaction model. Use make integration-test-termmux and the relevant pr-split integration tests in project.mk to verify actual terminal behavior, not just mocked state transitions.",
-      "acceptance": "Real PTY integration tests prove that inline interactive panes and fullscreen passthrough are coherent views over the same sessions. The verification shell and Claude pane both behave correctly under real terminal conditions, including resize, output, and exit handling.",
-      "status": "Not Started"
+      "id": 23,
+      "task": "Audit and refactor any remaining pr-split code that references old mux assumptions",
+      "description": "Audit all of /Users/joeyc/dev/one-shot-man/internal/command/pr_split_*.go and pr_split_*.js for any lingering code that assumes the old single-child mux model, hardcodes Claude as a special case, or uses the old session model. Refactor any such code to use the new unified session API. Ensure there are no commented-out fallbacks, temporary workarounds, or 'TODO: fix this when Windows PTY is done' comments. The codebase should read as intentional and complete, not as a work-in-progress or patch job.",
+      "acceptance": "No code in pr-split references old single-child mux assumptions. No special-casing of Claude. No TODOs or temporary workarounds related to the redesign. All code reads as intentional, complete, and uses the new unified session API. A code review would find no technical debt from the old model.",
+      "status": "Not Started",
+      "dependsOn": [20]
     },
     {
-      "task": "Eliminate the current Windows skip clusters that only exist because the old interactive design depends on sh -c and Unix PTYs.",
-      "description": "Audit the Windows skips called out across /Users/joeyc/dev/one-shot-man/internal/command and related tests, especially the pr-split integration and lifecycle tests that currently skip because pr-split relies on sh -c or Unix-specific PTY behavior. Convert those skips into passing coverage where the redesigned session model and Windows backend make that possible, and leave only the skips that are truly outside the supported feature contract.",
-      "acceptance": "The redesigned interactive workflow no longer produces a large shadow set of Windows-skipped tests purely because the architecture was Unix-centric. Cross-platform support is visible in the test suite rather than hidden behind broad skip statements.",
-      "status": "Not Started"
+      "id": 24,
+      "task": "STUB: Comprehensive performance profiling and optimization for pane interactivity",
+      "description": "After the redesign is stable (task 20 complete), profile pane rendering, session switching, output delivery, and input routing to identify any performance bottlenecks. Target metrics: pane switch latency < 50ms, output delivery latency < 10ms, input responsiveness immediate (< 5ms). Optimize hot paths if needed. Benchmark on a slow machine (low-end laptop) as well as a fast machine. Document findings and any optimizations applied. This is a placeholder for post-redesign work.",
+      "acceptance": "Performance profile exists showing latency for pane switches, output delivery, and input routing on fast and slow machines. Any bottlenecks are identified and optimized if they exceed target metrics. Findings are documented.",
+      "status": "Not Started",
+      "dependsOn": [20]
     },
     {
-      "task": "Run the full verification matrix for the redesign and fix every regression before closing the implementation.",
-      "description": "After the code and tests are in place, run make test-prsplit-fast, make test-prsplit-all, make integration-test-prsplit-mcp, make integration-test-termmux, make make-all-with-log, make make-all-in-container, and make make-all-run-windows. If real provider coverage is available, also run make integration-test-prsplit. Use build.log as the persistent record for any failures discovered during this stage and keep iterating until the redesign is green everywhere it claims to support.",
-      "acceptance": "The new interactive model is not considered complete until the full matrix is green on local macOS, Linux container, and Windows runner paths, and the targeted pr-split / termmux integration suites demonstrate the new behavior rather than merely preserving legacy behavior.",
-      "status": "Not Started"
+      "id": 25,
+      "task": "STUB: Security audit of untrusted terminal output handling",
+      "description": "After the redesign is stable (task 20 complete), audit how pr-split handles untrusted output from shell commands and Claude responses. Verify that escape sequences, ANSI control codes, and raw bytes cannot escape the pane or corrupt the TUI. Test with adversarial inputs (shell output with escape codes, binary garbage, extremely long lines). Document findings and any security fixes applied. This is a placeholder for post-redesign work.",
+      "acceptance": "Security audit report exists documenting how untrusted output is handled. Adversarial test cases are included. No escape sequence bugs are found, or they are identified and fixed. Code includes comments explaining why untrusted output is safe.",
+      "status": "Not Started",
+      "dependsOn": [20]
     },
     {
-      "task": "Update human-facing documentation and changelog entries to match the shipped behavior, not the historical compromises.",
-      "description": "Once the implementation is stable, update /Users/joeyc/dev/one-shot-man/docs/termmux-pr-split-audit.md as needed, add the appropriate entry to /Users/joeyc/dev/one-shot-man/CHANGELOG.md, and update any pr-split documentation that still describes the old verify fallback or Claude-only passthrough assumptions. The docs must explain the new operator workflow and the platform support reality that the implementation now enforces.",
-      "acceptance": "A user reading the docs after the redesign will understand how the inline Claude pane, fullscreen passthrough, persistent verification shell, explicit verification decisions, and cross-platform support actually work. The changelog records the behavior change clearly enough that the shift from the old one-shot verify model is impossible to miss.",
-      "status": "Not Started"
+      "id": 26,
+      "task": "STUB: UX refinement and keyboard shortcut standardization",
+      "description": "After the redesign is stable (task 20 complete), review the keyboard shortcut system for consistency and intuitiveness. Standardize shortcuts (e.g., Ctrl+Tab for pane switching, Ctrl+] for fullscreen, Ctrl+C for cancel, arrow keys for navigation). Add a help overlay (? or Ctrl+H). Ensure mouse support is consistent across panes. Gather feedback from real users (if possible) on UX pain points. Document the final shortcut map in docs/. This is a placeholder for post-redesign work.",
+      "acceptance": "Keyboard shortcut map is documented and consistent across all panes. Help overlay is implemented. Mouse support is tested and working. UX feedback (if gathered) is reflected in refinements. Code reads as intentional about input handling, not ad-hoc.",
+      "status": "Not Started",
+      "dependsOn": [20]
     },
     {
-      "task": "Refine the blueprint after implementation discoveries so it remains a valid cold-start execution map.",
-      "description": "As implementation reveals additional coupling, hidden state, or platform quirks, update this blueprint incrementally instead of letting it drift out of sync. If new files, new tasks, or new blockers appear in internal/termmux, internal/builtin/termmux, or the pr-split JS chunks, rewrite the affected tasks here and record the replan in statusSection.replanLog before continuing.",
-      "acceptance": "At every future session start, blueprint.json still tells the truth about what is done, what remains, and how the redesigned terminal workflow is supposed to be completed. The plan continues to pass the cold-start anti-vaporware test even after the code changes significantly.",
-      "status": "Not Started"
+      "id": 27,
+      "task": "STUB: Advanced session customization and extensibility",
+      "description": "After the redesign is stable (task 20 complete), design and prototype APIs for custom session types or session behavior customization. Examples: custom shell wrapper, session lifecycle hooks, pane rendering customization. This could enable future features like 'debug session', 'artifact viewer', etc. Document the extensibility story. If not immediately valuable, leave as STUB for future exploration. This is a placeholder for post-redesign work.",
+      "acceptance": "Extensibility story is documented. Either a working prototype of custom session type exists, or a clear design document explains how users/developers could extend the session model. This unblocks future advanced features.",
+      "status": "Not Started",
+      "dependsOn": [20]
     },
     {
-      "task": "Fix TUI input field border misalignment on CONFIG screen Source/Target Branch fields.",
-      "description": "The box drawing characters under 'Source Branch' and 'Target Branch' are offset/not forming proper rectangles. This occurs in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_15c_tui_screens.js lines 37-47 where a newline separates the label from the bordered input field. The lipgloss roundedBorder() adds 2 horizontal and 2 vertical characters, but the newline causes misalignment. The fix requires either: (a) rendering the label inline with the bordered box without a newline, (b) using lipgloss.joinHorizontal to compose label+box as a single unit, or (c) restructuring the field renderer to avoid the newline separation.",
-      "acceptance": "The CONFIG screen Source Branch and Target Branch input fields render as proper rectangular bordered boxes with no character offset. The border characters (╭─╮│╰─╯) form a complete rectangle around the field value. Visual inspection confirms alignment matches other bordered elements in the UI.",
-      "status": "Done"
+      "id": 28,
+      "task": "STUB: Integration with CI/CD and Git hooks for automated pr-split workflows",
+      "description": "After the redesign is stable (task 20 complete), explore integrations that could automate pr-split workflows in CI or Git hooks. Examples: pre-push hook that runs pr-split with auto-verify, CI job that uses pr-split to split and review PRs. Prototype at least one integration. Document the story for future developers. This is a placeholder for post-redesign work.",
+      "acceptance": "At least one working integration prototype exists (e.g., Git hook or CI job). Developers understand how to extend pr-split for custom workflows. Documentation explains the integration points.",
+      "status": "Not Started",
+      "dependsOn": [20]
     },
     {
-      "task": "Remove useless line count indicator from Output tab title bar.",
-      "description": "The Output tab shows '(8)' or similar line counts in the header bar (visible in error screenshot). This is in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_15b_tui_chrome.js lines 649-650 where the title includes ' \u2014 ' + totalLines + ' line' + (totalLines !== 1 ? 's' : ''). The line count adds noise without value since users can see output length by scrolling. Additionally, the line count is only shown for Output but not for Claude or Verify tabs, creating inconsistency. Remove the line count display from the Output pane title.",
-      "acceptance": "The Output tab title shows only 'Output' with optional scroll indicator ([live] or [XX%]). No line count appears in the title bar. The Output, Claude, and Verify tab titles follow a consistent format without numeric counts.",
-      "status": "Done"
+      "id": 29,
+      "task": "STUB: Accessibility improvements for screen readers and keyboard-only navigation",
+      "description": "After the redesign is stable (task 20 complete), audit accessibility: screen reader support for panes, keyboard-only navigation without mouse, high-contrast mode support, etc. Implement improvements if needed. This is important for inclusive tooling. This is a placeholder for post-redesign work.",
+      "acceptance": "Accessibility audit report exists. At least basic keyboard-only navigation is working. Known accessibility gaps are documented.",
+      "status": "Not Started",
+      "dependsOn": [20]
     },
     {
-      "task": "Fix Claude pane focus and input capture via Ctrl+Tab and mouse click.",
-      "description": "The documented intent is that Ctrl+Tab or clicking on the Claude pane should focus it for direct keyboard input to the Claude PTY. The error report states this functionality DOES NOT WORK. Investigation needed in: /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16e_tui_update.js (ctrl+tab handler lines 544-548), /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16f_tui_model.js (mouse click handlers), and the termmux integration. Determine if splitViewFocus state is being set correctly but input forwarding is broken, if focus is not being set at all, or if the Claude pane click zone is not properly marked. The Claude input forwarding logic (T29 in pr_split_16e_tui_update.js) only activates when splitViewFocus === 'claude' and splitViewTab === 'claude', so both must be correctly set.",
-      "acceptance": "Pressing Ctrl+Tab when the split-view is open toggles focus between the wizard and the Claude pane. When the Claude pane is focused, keyboard input is forwarded directly to the Claude PTY (tuiMux.writeToChild). Clicking on the Claude pane with the mouse also focuses it for input. Focus is visually indicated by the INPUT tag in the pane title. Users can type commands directly to Claude without additional keystrokes.",
-      "status": "Done"
-    },
-    {
-      "task": "Fix error page duplicate output display - hide pane, scroll to bottom in main view.",
-      "description": "When the wizard reaches ERROR state (Step 7/7: Error), the same error output appears twice - once in the main content area and again in the Output pane below. The error screenshot in scratch/numerous-errors.md shows this duplication. The ERROR state view is in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_15d_tui_dialogs.js lines 668-670. When ERROR state is reached, the split-view should be disabled (s.splitViewEnabled = false) and the main content should show the error with output scrolled to bottom. Alternatively, keep the split-view but auto-scroll the Output pane to bottom and hide the main content duplication.",
-      "acceptance": "When the wizard transitions to ERROR state, the error output appears only once in the UI. Either: (a) split-view closes and the error shows in main content with full output visible, or (b) split-view remains but the Output pane auto-scrolls to bottom and the main content shows only a summary without duplicating the error output. No visual duplication occurs.",
-      "status": "Done"
-    },
-    {
-      "task": "Fix Back button non-functional on ERROR state page.",
-      "description": "On the ERROR state screen (Step 7/7: Error), clicking the Back button does nothing. The mouse handler for nav-back is in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16f_tui_model.js line 73, which calls handleBack(). However, handleBack in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16a_tui_focus.js lines 381-433 does not have a case for 'ERROR' state. Add ERROR state handling to handleBack() to allow navigation back to the previous state (likely FINALIZATION or EQUIV_CHECK depending on where the error originated). The ERROR state needs to track what state it came from so Back knows where to return.",
-      "acceptance": "When on the ERROR state screen, clicking the Back button or pressing the keyboard shortcut for back returns the user to the state before the error (e.g., FINALIZATION if PR creation failed, EQUIV_CHECK if verification failed). The user can retry the operation or modify their plan. The Back button is consistently functional across all error states.",
-      "status": "Done"
-    },
-    {
-      "task": "Fix tab-based focus system on ERROR and other non-standard states.",
-      "description": "Tab-based focus is 'completely broken' according to the error report - nothing gets highlighted, Enter does nothing. The focus system relies on getFocusElements() returning an array of focusable elements for each state in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16a_tui_focus.js. The ERROR state case (line 668-670 in pr_split_15d_tui_dialogs.js) does not define focusable elements, so getFocusElements() returns an empty array for ERROR state. This means Tab/Shift+Tab have nothing to cycle through and Enter cannot activate anything. Add ERROR state to getFocusElements() with appropriate focusable elements (at minimum: nav-cancel if not nav-back, possibly error-retry buttons). Also audit other states that may be missing from getFocusElements().",
-      "acceptance": "On the ERROR state screen, pressing Tab cycles focus through available interactive elements. Visual focus indicators (arrows, highlighting) show which element is focused. Pressing Enter activates the focused element. The focus system works consistently across all wizard states including ERROR, PAUSED, CANCELLED, and DONE states.",
-      "status": "Done"
-    },
-    {
-      "task": "Fix PR creation failures due to empty commits from --allow-empty fallback.",
-      "description": "All 22 PRs failed with 'No commits between base and head' errors. The root cause is in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_05_execution.js lines 196-206: when git commit fails, it falls back to 'git commit --allow-empty', which creates commits with no actual changes. This makes each branch identical to its parent, causing 'No commits between' errors during PR creation. The fallback to --allow-empty was intended to handle edge cases but is being overused. The fix requires: (1) Investigate why normal commits are failing in the user's workflow, (2) Either remove the --allow-empty fallback entirely, or (3) Track which splits used --allow-empty and skip PR creation for those branches (already partially done in pr_split_07_prcreation.js lines 135-142), or (4) Fail the entire execution if any commit requires --allow-empty rather than silently creating empty branches.",
-      "acceptance": "Branch creation fails loudly if git commit cannot create a real commit. No --allow-empty fallback occurs, or if it does, those branches are clearly marked and excluded from PR creation with a user-visible warning. PRs are only created for branches that have actual diffs from their parents. The 'No commits between' error no longer occurs during PR creation.",
-      "status": "Done"
-    },
-    {
-      "task": "Improve error state context tracking to enable proper Back navigation.",
-      "description": "The ERROR state needs to know where it came from to enable proper Back navigation. Currently ERROR is a terminal state with no memory of its origin. Add s.errorFromState or similar field that gets set when transitioning to ERROR, recording which state the wizard was in before the error. Modify all error transition points in the pipeline handlers (pr_split_16b_tui_handlers_pipeline.js, pr_split_16d_tui_handlers_claude.js, pr_split_16c_tui_handlers_verify.js) to set this context. Then update handleBack() to use s.errorFromState to determine where to navigate back to. This also enables better error recovery - e.g., if error occurred during PR creation, Back could return to FINALIZATION to retry PR creation with different options.",
-      "acceptance": "When an error occurs, s.errorFromState records the previous wizard state. The Back button on the ERROR screen returns to that state, allowing the user to retry or adjust their approach. Error states are no longer dead-ends; users can navigate back and try alternative actions.",
-      "status": "Done"
-    },
-    {
-      "task": "Add comprehensive tests for TUI focus system across all wizard states.",
-      "description": "The tab focus bug on ERROR state suggests a broader testing gap - no tests verify that getFocusElements() returns appropriate elements for each state, or that Tab/Enter navigation works. Add tests in /Users/joeyc/dev/one-shot-man/internal/command that: (1) Mock each wizard state and verify getFocusElements() returns non-empty arrays with correct element IDs, (2) Simulate Tab/Shift+Tab key presses and verify focusIndex cycles correctly, (3) Simulate Enter key and verify the correct action is triggered based on focused element, (4) Test edge cases like ERROR, PAUSED, CANCELLED, DONE states which are often overlooked. Use the existing test patterns in pr_split_16_*_test.go files.",
-      "acceptance": "New tests cover focus system behavior for all wizard states. Tests catch regressions like empty focus element arrays that would break Tab navigation. The test suite exercises the complete focus cycle: Tab moves focus forward, Shift+Tab moves backward, Enter activates focused element, and visual feedback matches the focused element.",
-      "status": "In Progress"
-    },
-    {
-      "task": "Document and validate all wizard state transitions including error paths.",
-      "description": "The numerous errors suggest the wizard state machine has unvalidated edge cases, particularly around ERROR state transitions. Create a comprehensive state transition diagram/document covering: all wizard states, valid transitions between states, what happens when errors occur in each state, how Back navigation works from each state, and what focusable elements exist in each state. Use this to identify missing transitions (like ERROR not having a Back path) and add tests for each transition. Update /Users/joeyc/dev/one-shot-man/docs/termmux-pr-split-audit.md or create a new state-machine documentation file.",
-      "acceptance": "A documented state transition map exists showing all valid wizard state flows. All transitions including error paths are tested. The ERROR state has clear documented transitions to and from it. Future changes to the wizard flow reference this document to ensure all states and transitions are properly implemented.",
-      "status": "Not Started"
+      "id": 30,
+      "task": "STUB: Real-world user testing and feedback incorporation",
+      "description": "After the redesign is stable and expansion tasks are underway (tasks 20+ complete), recruit real users to test pr-split with the new interactive session model. Gather feedback on usability, pain points, missing features. Prioritize feedback and create follow-up tasks (or new PRs) based on findings. This is a placeholder for post-redesign work.",
+      "acceptance": "User testing report exists with at least 5 real users. Feedback is summarized and prioritized. Follow-up tasks are created for highest-priority improvements. Users report that the tool feels natural and intentional.",
+      "status": "Not Started",
+      "dependsOn": [20]
     }
   ],
   "continuousVerification": {
-    "task": "Run the project-defined build and test targets after every meaningful redesign slice.",
-    "description": "During implementation sessions for this blueprint: use make test-prsplit-fast after focused JS/TUI changes, make integration-test-termmux after mux/core session changes, make integration-test-prsplit-mcp after end-to-end workflow changes, make make-all-with-log before marking any task complete, and run make make-all-in-container plus make make-all-run-windows before closing any cross-platform task.",
-    "failPolicy": "If ANY redesign check fails, STOP IMMEDIATELY and fix the issue before advancing the blueprint. Do not normalize regressions in terminal rendering, state transitions, PTY lifecycle, or cross-platform behavior.",
-    "testCoverage": "Aim for 100% effective coverage over the redesigned interactive session model. Cover the mux core, the Go binding, the pr-split state machine, the verification-shell operator workflow, fullscreen passthrough targeting, and the cross-platform PTY backends with a mix of unit, mock integration, and real PTY integration tests."
+    "buildCommands": [
+      "make build",
+      "make test",
+      "make lint",
+      "make fmt"
+    ],
+    "integrationTargets": [
+      "make integration-test-termmux",
+      "make integration-test-prsplit-mcp",
+      "make test-prsplit-fast",
+      "make test-prsplit-all"
+    ],
+    "platformTargets": [
+      "make make-all-with-log (current platform)",
+      "make make-all-in-container (Linux in Docker)",
+      "make make-all-run-windows (Windows via hack/run-on-windows.sh)"
+    ],
+    "coverageRequirement": "100% unit test coverage for new InteractiveSession interface and all session-switching logic. 100% coverage for pr-split TUI logic. Integration tests must exercise end-to-end workflows on all supported platforms."
   },
   "finalEnforcementProtocol": [
-    {
-      "type": "POST_EXECUTION_WARNING",
-      "alert": "Use the real project make targets and build.log-limited workflows. Do not declare success because a small local test passed while integration-test-prsplit-mcp, integration-test-termmux, make-all-in-container, or make-all-run-windows are still red or unrun."
-    },
-    {
-      "type": "POST_EXECUTION_WARNING_REPEATED",
-      "alert": "Do not stop at a cosmetically improved pane. The redesign is only complete when Claude, verification, and fullscreen passthrough all share one coherent interactive-session model and the verification workflow is a persistent shell with explicit operator completion semantics across supported platforms."
-    }
+    "Every task marked Done must pass two contiguous Rule of Two reviews (subagent verification) before the mark is final.",
+    "All project-defined checks must pass on all project-defined platforms before a task is considered complete.",
+    "Acceptance criteria are the source of truth for 'Done', not just code existence or tests passing.",
+    "Do not accept 'good enough' — the goal is exemplary, human-quality code with zero apparent AI slop.",
+    "If stuck or uncertain, re-read DIRECTIVE.txt and this blueprint's Definition of Done section."
   ]
 }

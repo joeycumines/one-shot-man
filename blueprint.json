@@ -45,7 +45,7 @@
       "task": "Unify CaptureSession with the new mux session model",
       "description": "Reshape /Users/joeyc/dev/one-shot-man/internal/termmux/capture.go and supporting files so CaptureSession plugs into the same InteractiveSession abstraction that the mux uses. Preserve write, pause, resume, kill, resize, screen capture, and completion semantics. Remove architectural separation that forces pr-split to treat verify and shell as second-class terminal tabs. Ensure termmux.InteractiveSession interface is implemented by both mux-native sessions and CaptureSession.",
       "acceptance": "User Value: The verification shell and Claude pane now use the same underlying session machinery, so a user can switch between them instantly without state loss. Both support fullscreen passthrough and inline rendering seamlessly. Verify shell can be paused mid-execution, user can jump to interactive shell to debug, resume from that shell, switch to Claude for help, and all focus/output handling is coherent and responsive (no duplicate output, pane switches < 100ms). Code Quality: No three separate input/output routing stacks. Internal code treats all interactive sessions uniformly through the InteractiveSession interface.",
-      "status": "In Progress",
+      "status": "Done",
       "dependsOn": [1]
     },
     {
@@ -53,7 +53,7 @@
       "task": "Make the builtin termmux JavaScript API match the redesigned Go session model",
       "description": "Update /Users/joeyc/dev/one-shot-man/internal/builtin/termmux/module.go so exported JS APIs expose new session-aware capabilities honestly. Replace or extend attach, detach, hasChild, switchTo, childScreen, screenshot, writeToChild, and related helpers. JavaScript developers see a clean API matching what the Go binding actually supports—no false contracts, no invented signatures. Every advertised method has matching Go implementation and unit test coverage.",
       "acceptance": "User Value: No more confusion about 'switchTo(\"claude\")' vs. 'switchTo(session)'. JS code that targets a specific pane works correctly and feels intentional. Code Quality: Every JS call to termmux compiles against an intentionally supported API. Every termmux method exported to JS has unit coverage in binding tests and in pr-split call sites. No bogus/stub implementations.",
-      "status": "Not Started",
+      "status": "Done",
       "dependsOn": [2]
     },
     {

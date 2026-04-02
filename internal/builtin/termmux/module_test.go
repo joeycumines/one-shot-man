@@ -148,6 +148,27 @@ func TestModule_NewMux_DetachIdempotent(t *testing.T) {
 	}
 }
 
+func TestModule_SwitchTo_NoChild(t *testing.T) {
+	runtime, _ := testRequire(t)
+
+	// switchTo() with no child attached should return an error result,
+	// not panic or hang.
+	v, err := runtime.RunString(`
+		var m = require('osm:termmux').newMux();
+		JSON.stringify(m.switchTo());
+	`)
+	if err != nil {
+		t.Fatalf("switchTo() with no child: %v", err)
+	}
+	got := v.String()
+	if !strings.Contains(got, `"reason":"error"`) {
+		t.Fatalf("switchTo() should return error reason, got %q", got)
+	}
+	if !strings.Contains(got, `"error"`) {
+		t.Fatalf("switchTo() should contain error message, got %q", got)
+	}
+}
+
 func TestModule_NewMux_ScreenshotEmpty(t *testing.T) {
 	runtime, _ := testRequire(t)
 
@@ -282,6 +303,38 @@ func TestModule_MuxSessionWrapper_isDone_isRunning(t *testing.T) {
 	}
 	if !strings.Contains(got, `"isDone":false`) {
 		t.Fatalf("session.isDone() should be false with child attached, got %q", got)
+	}
+}
+
+func TestModule_MuxSessionWrapper_MethodEnumeration(t *testing.T) {
+	// Verify that mux.session() exposes exactly the InteractiveSession
+	// method set — no more, no less. This is the JS-side counterpart of
+	// the Go compile-time check: var _ InteractiveSession = (*MuxSession)(nil).
+	runtime, _ := testRequire(t)
+
+	handle := parent.WrapStringIO(&testStringIO{})
+	if err := runtime.Set("__muxHandle", handle); err != nil {
+		t.Fatalf("Set __muxHandle: %v", err)
+	}
+
+	v, err := runtime.RunString(`
+		var tm = require('osm:termmux');
+		var mux = tm.newMux();
+		mux.attach(__muxHandle);
+		var session = mux.session();
+		var methods = Object.keys(session).sort().join(',');
+		methods;
+	`)
+	if err != nil {
+		t.Fatalf("method enumeration: %v", err)
+	}
+
+	got := v.String()
+	// InteractiveSession: 9 methods — output, screen, target, setTarget,
+	// resize, write, close, isRunning, isDone.
+	want := "close,isDone,isRunning,output,resize,screen,setTarget,target,write"
+	if got != want {
+		t.Fatalf("mux.session() methods = %q; want %q", got, want)
 	}
 }
 

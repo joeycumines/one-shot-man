@@ -747,6 +747,19 @@ func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.C
 	return obj
 }
 
+// wrapInteractiveSession wraps a [parent.InteractiveSession] into a Goja
+// object with JavaScript-callable methods. This is the shared base for both
+// mux [MuxSession] wrappers (via [WrapMux].session()) and [CaptureSession]
+// wrappers (via [WrapCaptureSession]).
+//
+// Exported methods (9 total):
+//
+//	output, screen, target, setTarget, resize, write, close, isRunning, isDone.
+//
+// CaptureSession wrappers override close, resize, isRunning, and isDone
+// with implementation-specific versions and add capture-only methods
+// (start, interrupt, kill, pause, resume, isPaused, wait, sendEOF, pid,
+// exitCode).
 func wrapInteractiveSession(runtime *goja.Runtime, session parent.InteractiveSession, defaultKind parent.SessionKind) goja.Value {
 	obj := runtime.NewObject()
 

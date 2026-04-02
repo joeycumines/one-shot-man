@@ -107,6 +107,61 @@ func newPrSplitEvalFromFlags(t testing.TB, args ...string) (*PrSplitCommand, fun
 }
 
 // ---------------------------------------------------------------------------
+// Bootstrap verification: tuiMux and sessionTypes globals
+// ---------------------------------------------------------------------------
+
+func TestBootstrap_TuiMux_SessionTypes(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	_, evalJS := newPrSplitEvalFromFlags(t, "--test", "--store=memory", "--session="+t.Name())
+
+	// tuiMux must be available as a global.
+	v, err := evalJS(`typeof tuiMux`)
+	if err != nil {
+		t.Fatalf("tuiMux typeof: %v", err)
+	}
+	if v != "object" {
+		t.Fatalf("tuiMux typeof = %v; want object", v)
+	}
+
+	// tuiMux.session() must return a valid InteractiveSession wrapper.
+	v, err = evalJS(`typeof tuiMux.session`)
+	if err != nil {
+		t.Fatalf("tuiMux.session typeof: %v", err)
+	}
+	if v != "function" {
+		t.Fatalf("tuiMux.session typeof = %v; want function", v)
+	}
+
+	// The mux's active session target should be pre-configured as "claude".
+	v, err = evalJS(`JSON.stringify(tuiMux.session().target())`)
+	if err != nil {
+		t.Fatalf("session target: %v", err)
+	}
+	got := v.(string)
+	if !strings.Contains(got, `"name":"claude"`) {
+		t.Fatalf("session target should have name=claude, got %s", got)
+	}
+	if !strings.Contains(got, `"kind":"pty"`) {
+		t.Fatalf("session target should have kind=pty, got %s", got)
+	}
+
+	// sessionTypes global must be available with claude and verify entries.
+	v, err = evalJS(`JSON.stringify(sessionTypes)`)
+	if err != nil {
+		t.Fatalf("sessionTypes: %v", err)
+	}
+	st := v.(string)
+	if !strings.Contains(st, `"claude"`) {
+		t.Fatalf("sessionTypes should contain claude, got %s", st)
+	}
+	if !strings.Contains(st, `"verify"`) {
+		t.Fatalf("sessionTypes should contain verify, got %s", st)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Integration Test: Heuristic Split (no AI required, real git)
 // ---------------------------------------------------------------------------
 

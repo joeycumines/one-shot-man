@@ -61,7 +61,7 @@
       "task": "Refactor pr_split.go bootstrap to create and own session-aware termmux lifecycle",
       "description": "Update /Users/joeyc/dev/one-shot-man/internal/command/pr_split.go so it explicitly creates and configures the termmux object with named sessions (Claude, verify-shell, user-shell) at bootstrap time. The mux lifecycle is visible and testable end-to-end. No hidden session creation or attachment happens downstream.",
       "acceptance": "Code Quality: pr_split.go reads like the sole owner of mux lifecycle. There is no special-case 'if Claude is the mux child' logic; Claude is a named session like any other, managed through the unified API. Mux initialization is testable in isolation.",
-      "status": "Not Started",
+      "status": "Done",
       "dependsOn": [3]
     },
     {

@@ -416,9 +416,13 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 }
 
 // setupEngineGlobals injects JS globals (config, prSplitConfig, template,
-// tuiMux) and loads the 30 chunk files into the Goja engine. Returns the
-// terminal file descriptor (needed for interactive-mode terminal state
-// save/restore).
+// tuiMux, sessionTypes) and loads the 30 chunk files into the Goja engine.
+// Returns the terminal file descriptor (needed for interactive-mode terminal
+// state save/restore).
+//
+// This function is the sole owner of mux lifecycle initialization. All
+// session-related globals are configured here — JS chunks use them but
+// never create new mux instances.
 func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripting.Engine, stdout io.Writer) (termFd int, err error) {
 	// Inject command name for state namespacing.
 	engine.SetGlobal("config", map[string]any{
@@ -450,15 +454,48 @@ func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripti
 		"cleanupOnFailure": c.cleanupOnFailure,
 	})
 
-	// TUI Mux — terminal multiplexer between osm and child PTY (Claude Code).
+	// ── Session lifecycle: tuiMux ────────────────────────────────────
+	//
+	// The TUI mux owns the fullscreen passthrough between osm and a child
+	// PTY (Claude Code). JS chunks interact with it via the tuiMux global:
+	//
+	//   1. pr_split_09_claude.js  → spawns Claude, gets AgentHandle
+	//   2. pr_split_10d_orchestrator.js → tuiMux.attach(handle)
+	//   3. pr_split_16d_tui_handlers_claude.js → tuiMux.switchTo() (blocking)
+	//   4. pr_split_10a_pipeline_config.js → executor.close() / deferred detach
+	//
+	// Verification shells are standalone CaptureSession objects (see
+	// pr_split_06b_verify_shell.js) — they are NOT attached to tuiMux.
+	//
 	// Uses os.Stdin directly (not go-prompt's wrapped readers) because
-	// the command-blocking model ensures go-prompt is paused during passthrough.
-	// stdout is injected for testability; in production it's os.Stdout.
+	// the command-blocking model ensures go-prompt is paused during
+	// passthrough. stdout is injected for testability.
 	termFd = int(os.Stdin.Fd())
 	tuiMux := termmux.New(os.Stdin, stdout, termFd)
 
+	// Pre-configure the mux's session target so switchTo() enters with
+	// correct metadata from the start (not assigned lazily in JS chunks).
+	tuiMux.SetActiveTarget(termmux.SessionTarget{
+		Name: "claude",
+		Kind: termmux.SessionKindPTY,
+	})
+
 	// Expose the mux to JS through the standardized osm:termmux interface.
 	engine.SetGlobal("tuiMux", termmuxmod.WrapMux(ctx, engine.Runtime(), tuiMux))
+
+	// Session type constants: JS uses these to create and label sessions
+	// consistently. Defined here so the Go bootstrap and all JS chunks
+	// agree on the session vocabulary.
+	engine.SetGlobal("sessionTypes", map[string]any{
+		"claude": map[string]any{
+			"name": "claude",
+			"kind": "pty",
+		},
+		"verify": map[string]any{
+			"name": "verify",
+			"kind": "capture",
+		},
+	})
 
 	// Load the 30 chunked script files in dependency order.
 	if err := loadChunkedScript(engine); err != nil {

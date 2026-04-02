@@ -284,11 +284,16 @@ func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
 		return "", fmt.Errorf("failed to stat path %s: %w", ownerPath, err)
 	}
 
+	// Normalize the owner path BEFORE acquiring the lock to maintain
+	// symmetry with AddPath, which calls canonicalizeUserPath (which
+	// calls normalizeOwnerPath) outside the lock. This keeps the critical
+	// section as small as possible.
+	owner := cm.normalizeOwnerPath(absPath)
+
 	// Only acquire the lock for the minimal critical section
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
 
-	owner := cm.normalizeOwnerPath(absPath)
 	if err := cm.addPathWithOwnerLocked(absPath, owner, info); err != nil {
 		return "", err
 	}
@@ -471,13 +476,21 @@ func (cm *ContextManager) removeOwnerLocked(owner string) bool {
 
 // RemovePath removes a path from the context.
 // Tilde expansion is supported, so paths like "~/myfile.txt" work correctly.
-// Empty strings return nil (idempotent no-op) without crashing or wiping context.
+//
+// Empty strings are explicitly rejected and return an error to maintain
+// API symmetry with AddPath, AddRelativePath, and RefreshPath.
 //
 // If the caller supplies a basename-only value (no separators), RemovePath
 // attempts to match tracked paths by basename. If multiple matches exist,
 // this returns an error; if a single unique match exists, it performs the
 // appropriate removal.
 func (cm *ContextManager) RemovePath(path string) error {
+	// Guard against empty string inputs to maintain API symmetry with
+	// AddPath, AddRelativePath, and RefreshPath. All of these methods
+	// explicitly reject empty strings, and RemovePath should do the same.
+	if path == "" {
+		return fmt.Errorf("empty path is not valid")
+	}
 	// Use RLock promotion pattern: find the owner under read lock, then
 	// acquire write lock only for the actual removal. This avoids holding
 	// an exclusive lock during path resolution operations (tilde expansion,

@@ -2697,3 +2697,103 @@ func TestGetFilepathSuggestionsWindowsTildeBackslash(t *testing.T) {
 		}
 	})
 }
+
+// =============================================================================
+// REGRESSION TESTS FOR CRITICAL BUG FIXES
+// =============================================================================
+
+// TestIssue002_DetectPathSeparator_POSIX_BackslashIsFilenameChar verifies that
+// on POSIX systems, backslash is NOT treated as a path separator (it's a valid
+// filename character). The current logic incorrectly treats \ as a separator on
+// all platforms, which can corrupt user input on Linux/macOS.
+func TestIssue002_DetectPathSeparator_POSIX_BackslashIsFilenameChar(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping POSIX-specific test on Windows")
+	}
+
+	// On POSIX, backslash is a valid filename character, not a separator.
+	// If a user types a path like "foo\bar" (literally backslash in filename),
+	// the completion engine should detect "/" as the separator if present,
+	// or default to the OS separator, NOT detect \ as a separator.
+
+	testCases := []struct {
+		name     string
+		path     string
+		expected string // expected separator on POSIX
+	}{
+		{
+			name:     "forward slash path",
+			path:     "usr/local/bin",
+			expected: "/",
+		},
+		{
+			name:     "backslash in filename (POSIX valid)",
+			path:     "foo\\bar", // literal backslash is valid filename char on POSIX
+			expected: "/",        // should NOT detect \ as separator
+		},
+		{
+			name:     "mixed with backslash later in string",
+			path:     "path/to/file\\with\\backslash",
+			expected: "/", // should still use / since it's POSIX
+		},
+		{
+			name:     "no separator - default to OS",
+			path:     "filename",
+			expected: string("/"), // POSIX default
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := DetectPathSeparator(tc.path)
+			if result != tc.expected {
+				t.Errorf("DetectPathSeparator(%q) = %q, want %q", tc.path, result, tc.expected)
+			}
+		})
+	}
+}
+
+// TestIssue002_DetectPathSeparator_Windows_HonorsBackslash verifies that on
+// Windows, backslash IS a separator and should be detected.
+func TestIssue002_DetectPathSeparator_Windows_HonorsBackslash(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("skipping Windows-specific test on POSIX")
+	}
+
+	// On Windows, backslash IS a separator and should be detected.
+	testCases := []struct {
+		name     string
+		path     string
+		expected string
+	}{
+		{
+			name:     "backslash path",
+			path:     `Users\John\Documents`,
+			expected: "\\",
+		},
+		{
+			name:     "forward slash path",
+			path:     "Users/John/Documents",
+			expected: "/",
+		},
+		{
+			name:     "mixed - backslash last wins",
+			path:     `folder/sub\file`,
+			expected: "\\",
+		},
+		{
+			name:     "mixed - forward slash last wins",
+			path:     `folder\sub/file`,
+			expected: "/",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := DetectPathSeparator(tc.path)
+			if result != tc.expected {
+				t.Errorf("DetectPathSeparator(%q) = %q, want %q", tc.path, result, tc.expected)
+			}
+		})
+	}
+}

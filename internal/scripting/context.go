@@ -5,44 +5,14 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/joeycumines/one-shot-man/internal/filepathutil"
 	"golang.org/x/tools/txtar"
 )
-
-// expandTilde replaces ~ with the user's home directory.
-// It handles bare ~, paths starting with ~/ (e.g., ~/foo/bar), and on
-// Windows, paths starting with ~\ (e.g., ~\Documents\file.txt).
-//
-// Note: POSIX ~username/ expansion (to another user's home directory) is
-// not supported. Only the current user's home directory is resolved.
-func expandTilde(path string) (string, error) {
-	isTildeSlash := strings.HasPrefix(path, "~/") ||
-		(runtime.GOOS == "windows" && len(path) >= 2 && path[0] == '~' && path[1] == '\\')
-
-	if !isTildeSlash && path != "~" {
-		return path, nil
-	}
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("unable to determine home directory for tilde expansion: %w", err)
-	}
-
-	if path == "~" {
-		return home, nil
-	}
-
-	// Manually concatenate and clean to avoid ~//path vulnerability.
-	// Some systems treat paths starting with // as absolute, which would
-	// discard the home directory entirely. We use filepath.Clean to
-	// normalize the result.
-	return filepath.Clean(home + string(filepath.Separator) + path[2:]), nil
-}
 
 // canonicalizeUserPath converts a user-provided path to a canonical owner key.
 // It performs tilde expansion, resolves to an absolute path, and normalizes
@@ -65,7 +35,7 @@ func (cm *ContextManager) canonicalizeUserPath(path string) (string, string, err
 	}
 
 	// Expand tilde before converting to absolute path
-	expanded, err := expandTilde(path)
+	expanded, err := filepathutil.ExpandTilde(path)
 	if err != nil {
 		return "", "", err
 	}
@@ -160,7 +130,12 @@ func (cm *ContextManager) findOwnerFromUserPath(path string) (string, bool) {
 	// Step 2: Try basePath-relative normalization for relative, non-tilde paths.
 	// This handles cases where the caller adds "root/" but the canonical owner
 	// is "root". We need to resolve against basePath, not the process CWD.
-	if !filepath.IsAbs(path) && !strings.HasPrefix(path, "~") {
+	//
+	// IMPORTANT: We only skip this step for actual tilde expansion forms (e.g., "~/", "~\"),
+	// not for literal paths that happen to start with "~" (e.g., "~cache", "~tmp").
+	// Literal tilde paths should get basePath-relative normalization just like any
+	// other relative path.
+	if !filepath.IsAbs(path) && !filepathutil.IsTildeExpansionPath(path) {
 		absPath := filepath.Join(cm.basePath, path)
 		if cleaned, err := filepath.Abs(absPath); err == nil {
 			if relativeOwner := cm.normalizeOwnerPath(cleaned); relativeOwner != path {
@@ -491,17 +466,16 @@ func (cm *ContextManager) RemovePath(path string) error {
 	if path == "" {
 		return fmt.Errorf("empty path is not valid")
 	}
-	// Use RLock promotion pattern: find the owner under read lock, then
-	// acquire write lock only for the actual removal. This avoids holding
-	// an exclusive lock during path resolution operations (tilde expansion,
-	// filepath.Abs, etc.).
-	cm.mutex.RLock()
-	owner, found := cm.findOwnerFromUserPath(path)
-	cm.mutex.RUnlock()
 
+	// Acquire write lock for the entire operation to ensure atomicity.
+	// The lookup and removal must happen as one unit to prevent race
+	// conditions where a path is removed and re-added between lookup and removal.
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
+
+	// Try to find the owner under the write lock
+	owner, found := cm.findOwnerFromUserPath(path)
 	if found {
-		cm.mutex.Lock()
-		defer cm.mutex.Unlock()
 		cm.removeOwnerLocked(owner)
 		return nil
 	}
@@ -510,18 +484,10 @@ func (cm *ContextManager) RemovePath(path string) error {
 	// to match tracked paths by basename. If multiple matches exist treat
 	// this as ambiguous; if a single unique match exists perform the
 	// appropriate removal logic for that tracked entry.
-	//
-	// NOTE: This section holds the write lock for the entire operation to
-	// ensure atomicity. The matching and removal must happen as one unit
-	// to prevent race conditions where the matched entry is modified or
-	// removed between the match check and the removal.
 	base := filepath.Base(path)
 	// Only treat suffix matching when the input appears to be a bare basename
 	// (e.g., "foo.txt") and not a path containing separators.
 	if path != "" && path == base {
-		cm.mutex.Lock()
-		defer cm.mutex.Unlock()
-
 		var matchKey string
 		matches := 0
 		for k := range cm.paths {

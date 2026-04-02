@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dop251/goja"
+	"github.com/joeycumines/one-shot-man/internal/filepathutil"
 )
 
 const (
@@ -26,6 +27,7 @@ func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, m
 		exports := module.Get("exports").(*goja.Object)
 
 		// readFile(path: string): { content: string, error: bool, message: string }
+		// Automatically expands ~ to the user's home directory before reading.
 		_ = exports.Set("readFile", func(call goja.FunctionCall) goja.Value {
 			var path string
 			if len(call.Arguments) > 0 {
@@ -34,6 +36,13 @@ func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, m
 			if path == "" {
 				return vm.ToValue(map[string]any{"error": true, "message": "empty path", "content": ""})
 			}
+
+			// Expand tilde before reading
+			expanded, err := filepathutil.ExpandTilde(path)
+			if err == nil && expanded != path {
+				path = expanded
+			}
+
 			data, err := os.ReadFile(path)
 			if err != nil {
 				return vm.ToValue(map[string]any{"error": true, "message": err.Error(), "content": ""})
@@ -42,6 +51,7 @@ func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, m
 		})
 
 		// fileExists(path: string): boolean
+		// Automatically expands ~ to the user's home directory before checking.
 		_ = exports.Set("fileExists", func(call goja.FunctionCall) goja.Value {
 			var path string
 			if len(call.Arguments) > 0 {
@@ -50,7 +60,14 @@ func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, m
 			if path == "" {
 				return vm.ToValue(false)
 			}
-			_, err := os.Stat(path)
+
+			// Expand tilde before checking file existence
+			expanded, err := filepathutil.ExpandTilde(path)
+			if err == nil && expanded != path {
+				path = expanded
+			}
+
+			_, err = os.Stat(path)
 			return vm.ToValue(err == nil)
 		})
 
@@ -188,7 +205,14 @@ func parseWriteArgs(vm *goja.Runtime, call goja.FunctionCall) (string, string, o
 }
 
 // resolvePath converts a possibly relative path to absolute using the working directory.
+// Expands ~ to the user's home directory before conversion.
 func resolvePath(path string) string {
+	// Expand tilde first
+	expanded, err := filepathutil.ExpandTilde(path)
+	if err == nil && expanded != path {
+		path = expanded
+	}
+
 	if filepath.IsAbs(path) {
 		return filepath.Clean(path)
 	}

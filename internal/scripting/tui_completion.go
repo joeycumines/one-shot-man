@@ -13,6 +13,7 @@ import (
 	"github.com/joeycumines/go-prompt"
 	istrings "github.com/joeycumines/go-prompt/strings"
 	"github.com/joeycumines/one-shot-man/internal/argv"
+	"github.com/joeycumines/one-shot-man/internal/filepathutil"
 )
 
 // hasTrailingPathSeparator returns true if the given path ends with a path separator.
@@ -83,12 +84,12 @@ func getFilepathSuggestions(path string) []prompt.Suggest {
 	}
 
 	// Expand tilde in the path (~/ on Unix, ~\ on Windows)
-	// Use the canonical expandTilde function from context.go
+	// Use the canonical ExpandTilde function from filepathutil
 	expandedPath := path
-	if expanded, err := expandTilde(path); err == nil {
+	if expanded, err := filepathutil.ExpandTilde(path); err == nil {
 		expandedPath = expanded
 	}
-	// If expandTilde fails, fall back to unexpanded path (best-effort)
+	// If ExpandTilde fails, fall back to unexpanded path (best-effort)
 
 	// Determine the directory to scan and the prefix of the file/dir to match
 	dirToScan := filepath.Dir(expandedPath)
@@ -534,7 +535,14 @@ func (tm *TUIManager) getDefaultCompletionSuggestionsFor(before, full string) []
 				// argv.BeforeCursor returns completed tokens BEFORE the cursor, excluding the current token.
 				// Therefore, when typing the first argument, len(words) == 1 (words[0] is the command),
 				// and currentWord is the partial argument. When typing the second argument, len(words) == 2.
-				isSimpleArgument := len(words) == 1 && currentWord != "" && !strings.ContainsAny(currentWord, "/\\")
+				// IMPORTANT: On POSIX systems, backslash is a valid filename character, not a path separator.
+				// We only treat it as a separator on Windows. This ensures that POSIX filenames containing
+				// backslashes are not incorrectly treated as path-like arguments.
+				hasSep := strings.ContainsRune(currentWord, '/')
+				if runtime.GOOS == "windows" {
+					hasSep = hasSep || strings.ContainsRune(currentWord, '\\')
+				}
+				isSimpleArgument := len(words) == 1 && currentWord != "" && !hasSep
 				shouldAvoidFallback := isSimpleArgument && !strings.HasSuffix(before, " ")
 				if hasFileCompleters && len(suggestions) == 0 && !shouldAvoidFallback {
 					fallbackSuggestions := getFilepathSuggestions("")

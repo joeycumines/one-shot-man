@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/joeycumines/one-shot-man/internal/filepathutil"
 )
 
 // TestContextPathsInTxtarHeaders tests that file paths are meaningfully preserved
@@ -817,7 +819,7 @@ func TestAddPathExpandsTilde(t *testing.T) {
 		t.Fatalf("os.UserHomeDir returned %q, want %q", home, fakeHome)
 	}
 
-	// Test expandTilde function directly - this is a pure function that
+	// Test filepathutil.ExpandTilde function directly - this is a pure function that
 	// doesn't depend on file system state, so testing in isolation is sufficient
 	// to verify the tilde expansion logic.
 
@@ -839,16 +841,16 @@ func TestAddPathExpandsTilde(t *testing.T) {
 
 		for _, tc := range unixTestCases {
 			t.Run(tc.name, func(t *testing.T) {
-				result, err := expandTilde(tc.input)
+				result, err := filepathutil.ExpandTilde(tc.input)
 				if err != nil {
-					t.Fatalf("expandTilde(%q) returned error: %v", tc.input, err)
+					t.Fatalf("filepathutil.ExpandTilde(%q) returned error: %v", tc.input, err)
 				}
 				expected := tc.expected
 				if expected == "" {
 					expected = tc.input
 				}
 				if result != expected {
-					t.Errorf("expandTilde(%q) = %q, want %q", tc.input, result, expected)
+					t.Errorf("filepathutil.ExpandTilde(%q) = %q, want %q", tc.input, result, expected)
 				}
 			})
 		}
@@ -876,22 +878,22 @@ func TestAddPathExpandsTilde(t *testing.T) {
 
 		for _, tc := range windowsTestCases {
 			t.Run(tc.name, func(t *testing.T) {
-				result, err := expandTilde(tc.input)
+				result, err := filepathutil.ExpandTilde(tc.input)
 				if err != nil {
-					t.Fatalf("expandTilde(%q) returned error: %v", tc.input, err)
+					t.Fatalf("filepathutil.ExpandTilde(%q) returned error: %v", tc.input, err)
 				}
 				expected := tc.expected
 				if expected == "" {
 					expected = tc.input
 				}
 				if result != expected {
-					t.Errorf("expandTilde(%q) = %q, want %q", tc.input, result, expected)
+					t.Errorf("filepathutil.ExpandTilde(%q) = %q, want %q", tc.input, result, expected)
 				}
 			})
 		}
 	})
 
-	// Verify that expandTilde does not modify non-tilde paths.
+	// Verify that filepathutil.ExpandTilde does not modify non-tilde paths.
 	// We use a temp file to avoid mutating host system state.
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "testfile.txt")
@@ -899,14 +901,14 @@ func TestAddPathExpandsTilde(t *testing.T) {
 		t.Fatalf("failed to write test file: %v", err)
 	}
 
-	// Verify that expandTilde does not modify non-tilde paths.
+	// Verify that filepathutil.ExpandTilde does not modify non-tilde paths.
 	absPath, err := filepath.Abs(testFile)
 	if err != nil {
 		t.Fatalf("failed to get absolute path: %v", err)
 	}
-	result, err := expandTilde(absPath)
+	result, err := filepathutil.ExpandTilde(absPath)
 	if err != nil {
-		t.Fatalf("expandTilde returned error: %v", err)
+		t.Fatalf("filepathutil.ExpandTilde returned error: %v", err)
 	}
 	if result != absPath {
 		t.Errorf("absolute path should not be modified, got: %s", result)
@@ -928,7 +930,7 @@ func TestAddPathExpandsTilde(t *testing.T) {
 		t.Fatalf("NewContextManager failed: %v", err)
 	}
 
-	// Use ~/testsub/tilde_file.txt as the path — expandTilde should resolve
+	// Use ~/testsub/tilde_file.txt as the path — filepathutil.ExpandTilde should resolve
 	// it against fakeHome.
 	if err := cm.AddPath("~/testsub/tilde_file.txt"); err != nil {
 		t.Fatalf("AddPath with tilde path failed: %v", err)
@@ -959,12 +961,12 @@ func TestExpandTildeBareTilde(t *testing.T) {
 		t.Fatalf("os.UserHomeDir returned %q, want %q", home, fakeHome)
 	}
 
-	result, err := expandTilde("~")
+	result, err := filepathutil.ExpandTilde("~")
 	if err != nil {
-		t.Fatalf("expandTilde(\"~\") returned error: %v", err)
+		t.Fatalf("filepathutil.ExpandTilde(\"~\") returned error: %v", err)
 	}
 	if result != fakeHome {
-		t.Errorf("expandTilde(\"~\") = %q, want %q", result, fakeHome)
+		t.Errorf("filepathutil.ExpandTilde(\"~\") = %q, want %q", result, fakeHome)
 	}
 }
 
@@ -985,13 +987,13 @@ func TestExpandTildeWindowsSeparator(t *testing.T) {
 		t.Fatalf("os.UserHomeDir returned %q, want %q", home, fakeHome)
 	}
 
-	result, err := expandTilde("~\\Documents\\file.txt")
+	result, err := filepathutil.ExpandTilde("~\\Documents\\file.txt")
 	if err != nil {
-		t.Fatalf("expandTilde returned error: %v", err)
+		t.Fatalf("filepathutil.ExpandTilde returned error: %v", err)
 	}
 	want := filepath.Join(fakeHome, "Documents", "file.txt")
 	if result != want {
-		t.Errorf("expandTilde(\"~\\\\Documents\\\\file.txt\") = %q, want %q", result, want)
+		t.Errorf("filepathutil.ExpandTilde(\"~\\\\Documents\\\\file.txt\") = %q, want %q", result, want)
 	}
 }
 
@@ -1039,7 +1041,7 @@ func TestAddPathBareTilde(t *testing.T) {
 }
 
 func TestExpandTildeErrorWhenHomeDirUnavailable(t *testing.T) {
-	// Test that expandTilde returns a proper error when os.UserHomeDir fails.
+	// Test that filepathutil.ExpandTilde returns a proper error when os.UserHomeDir fails.
 	// We simulate this by unsetting HOME and USERPROFILE, which may cause
 	// os.UserHomeDir to fail on some systems.
 	//
@@ -1056,7 +1058,7 @@ func TestExpandTildeErrorWhenHomeDirUnavailable(t *testing.T) {
 	os.Unsetenv("USERPROFILE")
 
 	// Try to expand a tilde path - it may fail depending on the system
-	result, err := expandTilde("~/test.txt")
+	result, err := filepathutil.ExpandTilde("~/test.txt")
 
 	// Restore original values only if they were originally set
 	t.Cleanup(func() {

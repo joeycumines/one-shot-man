@@ -159,9 +159,9 @@
 
     // --- cleanupExecutor — resource cleanup ---
 
-    // Closes the Claude executor and cleans up resources. Detaches from
-    // tuiMux so ctrl+] stops trying to forward to a dead child process.
-    // When force-cancelled, sends SIGKILL to skip graceful shutdown.
+    // Closes the Claude executor and cleans up resources. After close, the
+    // session model (isDone) signals the pipeline's aliveCheckFn and the
+    // TUI health poll — no explicit detach needed.
     function cleanupExecutor() {
         var isForceCancelled = prSplit.isForceCancelled;
         var claudeExec = prSplit._state.claudeExecutor;
@@ -186,12 +186,12 @@
                 log.printf('auto-split cleanupExecutor: Claude close error: %s', e.message || String(e));
             }
         }
-        // Avoid synchronous detach here — in some PTY edge cases Detach can
-        // stall while terminal I/O is still unwinding. The child is already
-        // closed above, so leaving mux detach for the next attach path keeps
-        // cleanup non-blocking.
+        // No synchronous detach. When the child PTY closes, the session
+        // model fires Done() (event-driven) and session().isDone() returns
+        // true. The pipeline and TUI poll isDone() directly — the old
+        // st.claudeCrashDetected flag is no longer needed.
         if (typeof tuiMux !== 'undefined' && tuiMux) {
-            log.printf('auto-split cleanupExecutor: skipping immediate tuiMux.detach (non-blocking cleanup)');
+            log.printf('auto-split cleanupExecutor: child closed — session().isDone() will signal completion');
         }
         log.printf('auto-split cleanupExecutor: done');
     }

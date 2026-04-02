@@ -562,7 +562,8 @@ func TestChunk16_CtrlBracketTermmux(t *testing.T) {
 	raw, err := evalJS(`(function() {
 		var switchCalled = false;
 		globalThis.tuiMux = {
-			switchTo: function() { switchCalled = true; return {reason: 'toggle'}; }
+			switchTo: function() { switchCalled = true; return {reason: 'toggle'}; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; }
 		};
 
 		var result = globalThis.prSplit._onToggle();

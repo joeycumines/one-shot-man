@@ -24,6 +24,7 @@ var __savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 var __writtenBytes = [];
 globalThis.tuiMux = {
 	hasChild: function() { return true; },
+	session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; }, write: function(data) { __writtenBytes.push(data); }, screen: function() { return 'mock screen'; }, output: function() { return 'mock screenshot'; }, resize: function() { return null; }, target: function() { return { name: 'claude', kind: 'pty' }; }, close: function() {} }; },
 	childScreen: function() { return 'mock screen'; },
 	screenshot: function() { return 'mock screenshot'; },
 	lastActivityMs: function() { return 100; },
@@ -594,6 +595,7 @@ func TestChunk16_VTerm_KeyForwarding_WriteToChildThrowsSwallowed(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; }, write: function(bytes) { throw new Error('child process ended'); }, screen: function() { return 'mock'; }, output: function() { return 'mock'; }, resize: function() { return null; }, target: function() { return { name: 'claude', kind: 'pty' }; }, close: function() {} }; },
 			childScreen: function() { return 'mock'; },
 			screenshot: function() { return 'mock'; },
 			lastActivityMs: function() { return 100; },

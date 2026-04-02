@@ -369,9 +369,9 @@ func TestChunk16_CrashDetection_AutoPoll(t *testing.T) {
 		if (newState.errorDetails.indexOf('segfault') < 0) {
 			errors.push('errorDetails should contain diagnostic, got: ' + newState.errorDetails);
 		}
-		// Shared state flag should also be set.
-		if (!globalThis.prSplit._state.claudeCrashDetected) {
-			errors.push('shared state claudeCrashDetected should be true');
+		// Shared state flag should NOT be set (crash is view-state only).
+		if (globalThis.prSplit._state.claudeCrashDetected) {
+			errors.push('shared state claudeCrashDetected should NOT be true');
 		}
 		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
 		return 'OK';
@@ -381,6 +381,76 @@ func TestChunk16_CrashDetection_AutoPoll(t *testing.T) {
 	}
 	if raw != "OK" {
 		t.Errorf("crash detection auto-poll: %v", raw)
+	}
+}
+
+// TestChunk16_CrashDetection_SessionModel verifies that the session model's
+// isDone() drives crash detection when tuiMux is present. Also verifies that
+// isDone()=true from a never-attached session (no executor) does NOT trigger
+// false crash detection (pre-closed sentinel channel guard).
+func TestChunk16_CrashDetection_SessionModel(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+
+		// --- Subtest 1: isDone()=true WITH executor → crash detected ---
+		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		globalThis.tuiMux = {
+			hasChild: function() { return false; },
+			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
+			screenshot: function() { return ''; },
+			childScreen: function() { return ''; }
+		};
+		globalThis.prSplit._state.claudeExecutor = {
+			handle: { isAlive: function() { return false; } },
+			captureDiagnostic: function() { return 'session-model crash'; }
+		};
+		var s = initState('BRANCH_BUILDING');
+		s.autoSplitRunning = true;
+		s.isProcessing = true;
+		s.lastClaudeHealthCheckMs = 0;
+
+		var r = update({type: 'Tick', id: 'auto-poll'}, s);
+		var newState = r[0];
+		if (newState.wizardState !== 'ERROR_RESOLUTION') {
+			errors.push('subtest1: want ERROR_RESOLUTION, got ' + newState.wizardState);
+		}
+		if (!newState.claudeCrashDetected) {
+			errors.push('subtest1: claudeCrashDetected should be true');
+		}
+		if (newState.errorDetails.indexOf('session-model crash') < 0) {
+			errors.push('subtest1: errorDetails should contain diagnostic');
+		}
+
+		// --- Subtest 2: isDone()=true WITHOUT executor → no false positive ---
+		globalThis.prSplit._state.claudeExecutor = null;
+		var s2 = initState('BRANCH_BUILDING');
+		s2.autoSplitRunning = true;
+		s2.isProcessing = true;
+		s2.lastClaudeHealthCheckMs = 0;
+
+		var r2 = update({type: 'Tick', id: 'auto-poll'}, s2);
+		var newState2 = r2[0];
+		if (newState2.wizardState === 'ERROR_RESOLUTION') {
+			errors.push('subtest2: should NOT transition to ERROR_RESOLUTION without executor');
+		}
+		if (newState2.claudeCrashDetected) {
+			errors.push('subtest2: claudeCrashDetected should be false (no executor)');
+		}
+
+		// Cleanup.
+		if (savedMux !== undefined) { globalThis.tuiMux = savedMux; } else { delete globalThis.tuiMux; }
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("session model crash detection: %v", raw)
 	}
 }
 
@@ -944,6 +1014,7 @@ func TestChunk16_PollClaudeScreenshot_NoChild(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },
+			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
 			screenshot: function() { return 'should-not-be-called'; },
 			childScreen: function() { return 'should-not-be-called'; }
 		};
@@ -985,6 +1056,7 @@ func TestChunk16_PollClaudeScreenshot_WithChild(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			childScreen: function() { return 'ansi-content-here'; },
 			screenshot: function() { return 'plain-content-here'; }
 		};
@@ -1052,6 +1124,7 @@ func TestChunk16_SwitchTo_NoChild(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },
+			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
 			switchTo: function() { switchCalled = true; },
 			screenshot: function() { return ''; },
 			childScreen: function() { return ''; }
@@ -1087,6 +1160,7 @@ func TestChunk16_SwitchTo_WithChild(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			switchTo: function() { switchCalled = true; return {reason: 'toggle'}; },
 			screenshot: function() { return ''; },
 			childScreen: function() { return ''; }

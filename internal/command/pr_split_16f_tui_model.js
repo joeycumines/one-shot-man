@@ -100,7 +100,8 @@
         // Claude status badge — T45: click to re-open split-view if closed.
         if (zone.inBounds('claude-status', msg)) {
             if (typeof tuiMux !== 'undefined' && tuiMux &&
-                (typeof tuiMux.hasChild !== 'function' || tuiMux.hasChild())) {
+                typeof tuiMux.session === 'function' &&
+                tuiMux.session().isRunning()) {
                 // T45: If split-view is not open, open it (re-clears manual dismiss).
                 if (!s.splitViewEnabled) {
                     s.splitViewEnabled = true;
@@ -935,7 +936,8 @@
     prSplit._onToggle = function() {
         var muxAvail = typeof tuiMux !== 'undefined' && !!tuiMux;
         var childAttached = muxAvail &&
-            (typeof tuiMux.hasChild !== 'function' || tuiMux.hasChild());
+            typeof tuiMux.session === 'function' &&
+            tuiMux.session().isRunning();
         log.printf('ctrl+] toggle: muxAvail=%s childAttached=%s',
             String(muxAvail), String(childAttached));
         if (muxAvail &&

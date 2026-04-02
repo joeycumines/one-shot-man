@@ -69,7 +69,7 @@
       "task": "Rebuild the Claude session pipeline around the new session model",
       "description": "Refactor /Users/joeyc/dev/one-shot-man/internal/command/pr_split_10d_pipeline_orchestrator.js and related orchestrator code so Claude attachment and management use the new session model. Replace polling-based Claude updates with event-driven updates. Claude is a named session like verify or shell, not a special-case mux child.",
       "acceptance": "User Value: Claude pane renders with event-driven updates, not polling. Interactions feel responsive and the TUI stays responsive even during Claude output generation. Code Quality: No special-case 'if Claude is the mux child' logic. Claude is a named session managed through the unified API.",
-      "status": "Not Started",
+      "status": "Done",
       "dependsOn": [4]
     },
     {

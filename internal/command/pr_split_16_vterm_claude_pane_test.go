@@ -25,6 +25,7 @@ const vtermMuxSetup = `
 var __savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 globalThis.tuiMux = {
 	hasChild: function() { return true; },
+	session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 	childScreen: function() { return ''; },
 	screenshot: function() { return ''; },
 	lastActivityMs: function() { return 100; }
@@ -161,6 +162,7 @@ func TestChunk16_VTerm_RenderClaudePane_Placeholder_EmptyContent(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			childScreen: function() { return ''; },
 			screenshot: function() { return ''; }
 		};
@@ -319,6 +321,7 @@ func TestChunk16_VTerm_PollClaudeScreenshot_DrainsMuxEvents(t *testing.T) {
 		var pollCalls = 0;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			pollEvents: function() { pollCalls++; return 1; },
 			childScreen: function() { return 'ANSI screen'; },
 			screenshot: function() { return 'plain screen'; },
@@ -360,6 +363,7 @@ func TestChunk16_VTerm_PollScreenshot_CapturesFromMux(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			childScreen: function() { return '\x1b[33mANSI yellow\x1b[0m'; },
 			screenshot: function() { return 'plain screenshot output'; },
 			lastActivityMs: function() { return 100; },
@@ -407,6 +411,7 @@ func TestChunk16_VTerm_PollScreenshot_NoChild_ClearsState(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },
+			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
 			childScreen: function() { return ''; },
 			screenshot: function() { return ''; },
 			lastActivityMs: function() { return 0; },
@@ -489,6 +494,7 @@ func TestChunk16_VTerm_PollScreenshot_AutoCloseOnChildExit(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },
+			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
 			childScreen: function() { return ''; },
 			screenshot: function() { return ''; },
 			lastActivityMs: function() { return 0; },
@@ -884,6 +890,7 @@ func TestChunk16_VTerm_AutoAttach_SmallTerminalPrevented(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			childScreen: function() { return 'content'; },
 			screenshot: function() { return 'content'; },
 			lastActivityMs: function() { return 100; }
@@ -943,6 +950,7 @@ func TestChunk16_VTerm_FullRenderPipeline_MuxToView(t *testing.T) {
 		var ansiContent = '\x1b[1;36mClaude is working...\x1b[0m\nAnalyzing repository structure\n\x1b[32mDone!\x1b[0m';
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			childScreen: function() { return ansiContent; },
 			screenshot: function() { return 'Claude is working...\nAnalyzing repository structure\nDone!'; },
 			lastActivityMs: function() { return 200; },

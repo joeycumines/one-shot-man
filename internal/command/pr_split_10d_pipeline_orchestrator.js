@@ -416,15 +416,25 @@
 
         sessionId = executor.sessionId;
 
-        // Heartbeat function: checks if the Claude process is still alive.
-        // Also checks for crash detection flag set by the TUI health poll.
+        // Heartbeat function: checks if the Claude session is still alive.
+        // Uses the session model (isDone) as the primary event-driven signal,
+        // with a direct handle.isAlive() fallback for headless mode.
         aliveCheckFn = function() {
-            // T106: claudeCrashDetected is only set by the TUI health monitor.
-            // In headless mode (no tuiMux), ignore the flag to avoid false
-            // positives from uninitialized state.
-            if (tuiMux && state.claudeCrashDetected) {
-                return false;
+            // Session model: isDone() is event-driven (channel-based), replaces
+            // the old polling-based claudeCrashDetected flag. When the mux's
+            // child PTY closes, Done() fires and isDone() returns true.
+            // IMPORTANT: isDone() also returns true when no child was ever
+            // attached (pre-closed sentinel channel). Guard with executor.
+            if (claudeExecutor && claudeExecutor.handle &&
+                typeof tuiMux !== 'undefined' && tuiMux &&
+                typeof tuiMux.session === 'function') {
+                var sess = tuiMux.session();
+                if (typeof sess.isDone === 'function' && sess.isDone()) {
+                    return false;
+                }
             }
+            // Direct handle check: covers headless mode (no tuiMux) and
+            // catches process death before PTY output fully drains.
             if (!claudeExecutor || !claudeExecutor.handle ||
                 typeof claudeExecutor.handle.isAlive !== 'function' ||
                 !claudeExecutor.handle.isAlive()) {
@@ -435,6 +445,8 @@
         };
 
         // Attach Claude's PTY handle to tuiMux so ctrl+] can forward.
+        // The session target was pre-configured as sessionTypes.claude at
+        // bootstrap (setupEngineGlobals) — no lazy assignment needed.
         if (claudeExecutor && claudeExecutor.handle && typeof tuiMux !== 'undefined' && tuiMux) {
 	            if (typeof claudeExecutor.handle.isAlive === 'function' && !claudeExecutor.handle.isAlive()) {
 	                log.printf('auto-split: Claude process died between spawn and attach — ctrl+] will not work');
@@ -442,7 +454,8 @@
 	            } else {
 	                try {
 	                    tuiMux.attach(claudeExecutor.handle);
-	                    log.printf('auto-split: attached Claude handle to tuiMux for ctrl+] toggle');
+	                    log.printf('auto-split: attached Claude (%s) handle to tuiMux',
+	                        typeof sessionTypes !== 'undefined' && sessionTypes.claude ? sessionTypes.claude.name : 'claude');
 	                } catch (e) {
 	                    log.printf('auto-split: tuiMux attach warning: %s', e.message || String(e));
 	                }
@@ -793,9 +806,16 @@
                 if (!resumeSpawn.error) {
                     sessionId = resumeSpawn.sessionId;
                     aliveCheckFn = function() {
-                        // T106: Guard with tuiMux (headless safety).
-                        if (tuiMux && state.claudeCrashDetected) {
-                            return false;
+                        // Session model: event-driven crash detection.
+                        // Guard isDone() with executor — returns true for
+                        // never-attached sessions (pre-closed sentinel).
+                        if (claudeExecutor && claudeExecutor.handle &&
+                            typeof tuiMux !== 'undefined' && tuiMux &&
+                            typeof tuiMux.session === 'function') {
+                            var sess = tuiMux.session();
+                            if (typeof sess.isDone === 'function' && sess.isDone()) {
+                                return false;
+                            }
                         }
                         return claudeExecutor && claudeExecutor.handle &&
                                typeof claudeExecutor.handle.isAlive === 'function' &&

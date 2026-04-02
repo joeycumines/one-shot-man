@@ -24,6 +24,7 @@ const lifecycleMuxSetup = `
 var __savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 globalThis.tuiMux = {
 	hasChild: function() { return true; },
+	session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 	childScreen: function() { return 'claude output'; },
 	screenshot: function() { return 'claude screenshot'; },
 	lastActivityMs: function() { return 100; },
@@ -339,6 +340,7 @@ func TestChunk16_VTerm_Lifecycle_NoChildNoAutoAttach(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },
+			session: function() { return { isRunning: function() { return false; }, isDone: function() { return false; } }; },
 			childScreen: function() { return ''; },
 			screenshot: function() { return ''; },
 			lastActivityMs: function() { return -1; }
@@ -386,6 +388,7 @@ func TestChunk16_VTerm_Lifecycle_AutoCloseOnChildExit(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },  // child exited
+			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
 			childScreen: function() { return ''; },
 			screenshot: function() { return ''; },
 			lastActivityMs: function() { return -1; },
@@ -447,6 +450,7 @@ func TestChunk16_VTerm_Lifecycle_AutoCloseBlockedDuringPipeline(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },  // child exited
+			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
 			childScreen: function() { return ''; },
 			screenshot: function() { return ''; },
 			lastActivityMs: function() { return -1; },
@@ -529,6 +533,7 @@ func TestChunk16_VTerm_Lifecycle_ClaudeBadgeIdle(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			childScreen: function() { return 'output'; },
 			screenshot: function() { return 'output'; },
 			lastActivityMs: function() { return 5000; }  // 5s idle
@@ -601,6 +606,7 @@ func TestChunk16_VTerm_Lifecycle_ClaudeBadgeQuiet(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			childScreen: function() { return 'output'; },
 			screenshot: function() { return 'output'; },
 			lastActivityMs: function() { return 30000; }  // 30s quiet
@@ -953,6 +959,7 @@ func TestChunk16_VTerm_Lifecycle_FullFlow(t *testing.T) {
 			s.autoSplitRunning = false;
 			s.claudeAutoAttached = true;
 			globalThis.tuiMux.hasChild = function() { return false; };
+			globalThis.tuiMux.session = function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; };
 
 			r = update({type: 'Tick', id: 'claude-screenshot'}, s);
 			s = r[0];
@@ -984,6 +991,7 @@ func TestChunk16_VTerm_Lifecycle_ManualOpenNotAutoClosed(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },
+			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
 			childScreen: function() { return ''; },
 			screenshot: function() { return ''; },
 			lastActivityMs: function() { return -1; },

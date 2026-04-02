@@ -290,7 +290,8 @@
         // Left: termmux toggle hint + split-view hint.
         // T309: Only show Ctrl+] Claude when a Claude child is actually attached.
         var hasMuxChild = typeof tuiMux !== 'undefined' && tuiMux &&
-            (typeof tuiMux.hasChild !== 'function' || tuiMux.hasChild());
+            typeof tuiMux.session === 'function' &&
+            tuiMux.session().isRunning();
         var leftParts;
         if (hasMuxChild) {
             leftParts = veryNarrow ? 'C-]' : 'Ctrl+] Claude';

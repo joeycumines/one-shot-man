@@ -832,7 +832,6 @@
 
         if (choice === 'fallback-heuristic') {
             s.claudeCrashDetected = false;
-            st.claudeCrashDetected = false;
             prSplit.runtime.mode = 'heuristic';
             // Reset wizard to PLAN_GENERATION so startAnalysis picks up.
             s.wizard.transition('PLAN_GENERATION');
@@ -882,7 +881,8 @@
             };
             if (typeof tuiMux !== 'undefined' && tuiMux &&
                 typeof tuiMux.switchTo === 'function' &&
-                (typeof tuiMux.hasChild !== 'function' || tuiMux.hasChild())) {
+                typeof tuiMux.session === 'function' &&
+                tuiMux.session().isRunning()) {
                 tuiMux.switchTo();
             }
             return [s, null];

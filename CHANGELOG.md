@@ -114,6 +114,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refactored txtar collision handling to use full relative paths instead of filename-only deduplication
 - `osm pr-split` orchestrator magic numbers: 7 hardcoded timing literals (launcher poll, timeout, stable-need, post-dismiss, plan-poll timeout, check-interval, min-poll-interval) moved from `pr_split_10d_pipeline_orchestrator.js` to centralized `AUTOMATED_DEFAULTS` in chunk 10a
 - `osm pr-split` remaining magic numbers: 7 additional timing constants moved to shared defaults — spawn delay (09→AUTOMATED_DEFAULTS), resolve grace period and backoff base/cap (10c→AUTOMATED_DEFAULTS), TUI elapsed thresholds (15b→local `TUI_THRESHOLDS` object)
+- `osm pr-split` Claude session pipeline: replaced shared mutable `st.claudeCrashDetected` flag with event-driven `session().isDone()` and `session().isRunning()` from the InteractiveSession interface — crash detection is now channel-based (fires when child PTY output drains), auto-attach and status badge use `isRunning()` instead of `hasChild()`, and all `isDone()` checks are guarded with executor existence to prevent false positives from the pre-closed sentinel channel on never-attached sessions
 
 ### Deprecated
 - `osm:nextIntegerId` module name: use `osm:nextIntegerID` instead (old name still works as an alias)

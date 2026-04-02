@@ -877,6 +877,7 @@ func TestChunk16_MouseClick_ClaudeStatusBadge(t *testing.T) {
 		// calling tuiMux.switchTo(), so we mock tuiMux with hasChild().
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			screenshot: function() { return ''; },
 			childScreen: function() { return ''; },
 			lastActivityMs: function() { return 500; }

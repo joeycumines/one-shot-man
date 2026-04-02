@@ -323,47 +323,69 @@
 
         // Still running — update progress from pipeline state and poll again.
         if (s.autoSplitRunning) {
-            // Claude health check: poll isAlive() every 5 seconds.
+            // Claude health check: use session model (event-driven via isDone)
+            // with direct handle.isAlive() fallback every healthPollMs.
             var healthPollMs = typeof prSplit.AUTOMATED_DEFAULTS.claudeHealthPollMs === 'number' ? prSplit.AUTOMATED_DEFAULTS.claudeHealthPollMs : 5000;
             var now = Date.now();
             if (!s.lastClaudeHealthCheckMs || (now - s.lastClaudeHealthCheckMs >= healthPollMs)) {
                 s.lastClaudeHealthCheckMs = now;
+
+                // Session model check: isDone() fires when the mux child's
+                // PTY output drains — event-driven, no shared mutable flag.
+                // IMPORTANT: isDone() also returns true when NO child was ever
+                // attached (pre-closed sentinel channel). Guard with executor
+                // existence to avoid false crash detection at startup.
                 var executor = st.claudeExecutor;
+                var sessionDead = false;
                 if (executor && executor.handle &&
+                    typeof tuiMux !== 'undefined' && tuiMux &&
+                    typeof tuiMux.session === 'function') {
+                    var sess = tuiMux.session();
+                    if (typeof sess.isDone === 'function' && sess.isDone()) {
+                        sessionDead = true;
+                    }
+                }
+
+                // Direct handle fallback — catches process death before
+                // PTY output fully drains (more responsive).
+                if (!sessionDead && executor && executor.handle &&
                     typeof executor.handle.isAlive === 'function') {
                     if (!executor.handle.isAlive()) {
-                        // Claude process died — capture diagnostic output.
-                        var diagnostic = '';
-                        if (typeof executor.captureDiagnostic === 'function') {
-                            diagnostic = executor.captureDiagnostic();
-                        }
-                        log.printf('auto-split: Claude crash detected by TUI health poll');
-
-                        // Signal the pipeline to abort on its next aliveCheck.
-                        st.claudeCrashDetected = true;
-
-                        // Transition to error resolution with crash context.
-                        s.isProcessing = false;
-                        s.autoSplitRunning = false;
-                        s.claudeCrashDetected = true;
-                        s.errorDetails = 'Claude process crashed unexpectedly.' +
-                            (diagnostic ? '\n\nLast output:\n' + diagnostic : '');
-                        // T45: Auto-close split-view on Claude crash with notification.
-                        if (s.splitViewEnabled) {
-                            s.splitViewEnabled = false;
-                            s.claudeScreenshot = '';
-                            s.claudeScreen = '';
-                            s.claudeViewOffset = 0;
-                            s.splitViewFocus = 'wizard';
-                            s.splitViewTab = 'claude';
-                            s.claudeAutoAttachNotif = 'Claude crashed \u2014 split-view closed';
-                            s.claudeAutoAttachNotifAt = Date.now();
-                            syncMainViewport(s); // T120: sync dimensions after close.
-                        }
-                        s.wizard.transition('ERROR_RESOLUTION');
-                        s.wizardState = 'ERROR_RESOLUTION';
-                        return [s, tea.tick(C.DISMISS_NOTIF_MS, 'dismiss-attach-notif')];
+                        sessionDead = true;
                     }
+                }
+
+                if (sessionDead) {
+                    // Claude process died — capture diagnostic output.
+                    var diagnostic = '';
+                    if (executor && typeof executor.captureDiagnostic === 'function') {
+                        diagnostic = executor.captureDiagnostic();
+                    }
+                    log.printf('auto-split: Claude crash detected by TUI health check (session model)');
+
+                    // Transition to error resolution with crash context.
+                    // No st.claudeCrashDetected — the pipeline's aliveCheckFn
+                    // uses session().isDone() directly (event-driven).
+                    s.isProcessing = false;
+                    s.autoSplitRunning = false;
+                    s.claudeCrashDetected = true;
+                    s.errorDetails = 'Claude process crashed unexpectedly.' +
+                        (diagnostic ? '\n\nLast output:\n' + diagnostic : '');
+                    // T45: Auto-close split-view on Claude crash with notification.
+                    if (s.splitViewEnabled) {
+                        s.splitViewEnabled = false;
+                        s.claudeScreenshot = '';
+                        s.claudeScreen = '';
+                        s.claudeViewOffset = 0;
+                        s.splitViewFocus = 'wizard';
+                        s.splitViewTab = 'claude';
+                        s.claudeAutoAttachNotif = 'Claude crashed \u2014 split-view closed';
+                        s.claudeAutoAttachNotifAt = Date.now();
+                        syncMainViewport(s); // T120: sync dimensions after close.
+                    }
+                    s.wizard.transition('ERROR_RESOLUTION');
+                    s.wizardState = 'ERROR_RESOLUTION';
+                    return [s, tea.tick(C.DISMISS_NOTIF_MS, 'dismiss-attach-notif')];
                 }
             }
             // T45+T388: Auto-attach Claude pane when Claude spawns.
@@ -375,7 +397,8 @@
             if (!s.claudeAutoAttached && !s.claudeManuallyDismissed &&
                 s.height >= C.INLINE_VIEW_HEIGHT &&
                 typeof tuiMux !== 'undefined' && tuiMux &&
-                typeof tuiMux.hasChild === 'function' && tuiMux.hasChild()) {
+                typeof tuiMux.session === 'function' &&
+                tuiMux.session().isRunning()) {
                 s.splitViewEnabled = true;
                 s.splitViewFocus = 'wizard';   // keep wizard focused
                 s.splitViewTab = 'claude';     // show Claude tab
@@ -510,8 +533,10 @@
         }
 
         // Successful restart — clear crash flags and resume pipeline.
+        // Note: only s.claudeCrashDetected (view state) is cleared. The
+        // pipeline's aliveCheckFn uses session().isDone() directly — no
+        // shared module-level crash flag to reset.
         s.claudeCrashDetected = false;
-        st.claudeCrashDetected = false;
         s.errorDetails = null; // T114: clear stale error from restart phase
         log.printf('auto-split: Claude restarted successfully, session=%s', result.sessionId || '(none)');
 
@@ -853,7 +878,7 @@
         // Guard: no tuiMux or no attached child — set empty screen so
         // renderClaudePane shows "No Claude session attached" placeholder.
         if (typeof tuiMux === 'undefined' || !tuiMux ||
-            (typeof tuiMux.hasChild === 'function' && !tuiMux.hasChild())) {
+            (typeof tuiMux.session === 'function' && !tuiMux.session().isRunning())) {
             s.claudeScreen = '';
             s.claudeScreenshot = '';
             // T45: If Claude was auto-attached and the child disappears,

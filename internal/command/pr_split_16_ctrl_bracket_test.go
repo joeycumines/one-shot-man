@@ -36,6 +36,7 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 			var switchCalled = false;
 			globalThis.tuiMux = {
 				hasChild: function() { return true; },
+				session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 				switchTo: function() { switchCalled = true; return {reason: 'toggle'}; }
 			};
 			try {
@@ -64,6 +65,7 @@ func TestKeyHandling_CtrlBracket_EquivCheck(t *testing.T) {
 			var switchCalled = false;
 			globalThis.tuiMux = {
 				hasChild: function() { return false; },
+				session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
 				switchTo: function() { switchCalled = true; }
 			};
 			try {
@@ -163,6 +165,7 @@ func TestStatusBar_CtrlBracketHint_ConditionalOnMux(t *testing.T) {
 		raw, err := evalJS(`(function() {
 			globalThis.tuiMux = {
 				hasChild: function() { return true; },
+				session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 				lastActivityMs: function() { return Date.now(); }
 			};
 			try {
@@ -189,6 +192,7 @@ func TestStatusBar_CtrlBracketHint_ConditionalOnMux(t *testing.T) {
 		raw, err := evalJS(`(function() {
 			globalThis.tuiMux = {
 				hasChild: function() { return false; },
+				session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
 				lastActivityMs: function() { return Date.now(); }
 			};
 			try {
@@ -235,7 +239,8 @@ func TestStatusBar_CtrlBracketHint_ConditionalOnMux(t *testing.T) {
 
 		raw, err := evalJS(`(function() {
 			globalThis.tuiMux = {
-				hasChild: function() { return false; }
+				hasChild: function() { return false; },
+				session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; }
 			};
 			try {
 				// veryNarrow (<40): would show 'C-]' if child attached, empty if not.
@@ -429,6 +434,7 @@ func TestStatusBar_VerifyShellShortcuts(t *testing.T) {
 		raw, err := evalJS(`(function() {
 			globalThis.tuiMux = {
 				hasChild: function() { return true; },
+				session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 				lastActivityMs: function() { return 500; }
 			};
 			try {

@@ -53,6 +53,7 @@ func TestChunk16_T45_AutoAttachOnAutoPoll(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			screenshot: function() { return ''; },
 			childScreen: function() { return ''; },
 			lastActivityMs: function() { return 500; }
@@ -107,6 +108,7 @@ func TestChunk16_T45_AutoAttachSkippedSmallTerminal(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			screenshot: function() { return ''; },
 			childScreen: function() { return ''; },
 			lastActivityMs: function() { return 500; }
@@ -160,6 +162,7 @@ func TestChunk16_T45_ManualDismissPreventsAutoReopen(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			screenshot: function() { return ''; },
 			childScreen: function() { return ''; },
 			lastActivityMs: function() { return 500; }
@@ -273,6 +276,7 @@ func TestChunk16_T45_ClaudeStatusBadgeOpensView(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			screenshot: function() { return ''; },
 			childScreen: function() { return ''; },
 			lastActivityMs: function() { return 500; }
@@ -320,6 +324,7 @@ func TestChunk16_T45_ExitAutoClosesSplitView(t *testing.T) {
 		// Mock tuiMux with no child (Claude exited).
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },
+			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
 			screenshot: function() { return ''; },
 			childScreen: function() { return ''; }
 		};
@@ -367,6 +372,7 @@ func TestChunk16_T45_NoAutoCloseWhenPipelineRunning(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },
+			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
 			screenshot: function() { return ''; },
 			childScreen: function() { return ''; }
 		};
@@ -464,6 +470,7 @@ func TestChunk16_T45_AutoAttachFiresOnlyOnce(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			screenshot: function() { return ''; },
 			childScreen: function() { return ''; },
 			lastActivityMs: function() { return 500; }
@@ -822,6 +829,7 @@ func TestChunk16_T46_PollDetectsQuestion(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			screenshot: function() { return 'Do you want to continue? (y/n)'; },
 			childScreen: function() { return 'screen-data'; },
 			lastActivityMs: function() { return 5000; } // idle 5s
@@ -862,6 +870,7 @@ func TestChunk16_T46_PollThrottlesDetection(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			screenshot: function() { return 'Would you like to proceed?'; },
 			childScreen: function() { return ''; },
 			lastActivityMs: function() { return 5000; }
@@ -900,6 +909,7 @@ func TestChunk16_T46_PollNonProcessingSkipsDetection(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			screenshot: function() { return 'Do you want to continue? (y/n)'; },
 			childScreen: function() { return ''; },
 			lastActivityMs: function() { return 5000; }
@@ -938,6 +948,7 @@ func TestChunk16_T46_PollAutoDismissesOnResume(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			screenshot: function() { return 'Working on it...'; },
 			childScreen: function() { return ''; },
 			lastActivityMs: function() { return 100; } // Claude is streaming
@@ -978,6 +989,7 @@ func TestChunk16_T46_PollDoesNotDismissWhileTyping(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			screenshot: function() { return 'Working on it...'; },
 			childScreen: function() { return ''; },
 			lastActivityMs: function() { return 100; }
@@ -1145,7 +1157,8 @@ func TestChunk16_T46_EnterSendsToClaudePTY(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			writeToChild: function(data) { sentData.push(data); },
-			hasChild: function() { return true; }
+			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; }
 		};
 
 		var s = initState('PLAN_GENERATION');
@@ -1197,7 +1210,8 @@ func TestChunk16_T46_EnterEmptyDoesNotSend(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			writeToChild: function(data) { sentData.push(data); },
-			hasChild: function() { return true; }
+			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; }
 		};
 
 		var s = initState('PLAN_GENERATION');
@@ -1233,7 +1247,8 @@ func TestChunk16_T46_ConversationHistoryAccumulates(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			writeToChild: function(data) {},
-			hasChild: function() { return true; }
+			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; }
 		};
 
 		var s = initState('PLAN_GENERATION');
@@ -1397,7 +1412,8 @@ func TestChunk16_T46_EnterResetsThrottleTimestamp(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			writeToChild: function(data) {},
-			hasChild: function() { return true; }
+			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; }
 		};
 
 		var s = initState('PLAN_GENERATION');
@@ -1564,7 +1580,8 @@ func TestChunk16_T46_ConversationHistoryCap(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			writeToChild: function(data) {},
-			hasChild: function() { return true; }
+			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; }
 		};
 
 		var s = initState('PLAN_GENERATION');
@@ -1631,6 +1648,7 @@ func TestChunk16_T393_QuestionDetectedWithLiveHandle(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			screenshot: function() { return 'Do you want to continue? (y/n)'; },
 			childScreen: function() { return 'screen-data'; },
 			lastActivityMs: function() { return 5000; }
@@ -1675,6 +1693,7 @@ func TestChunk16_T393_QuestionNotDetectedIfHandleDead(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			screenshot: function() { return 'Do you want to continue? (y/n)'; },
 			childScreen: function() { return 'screen-data'; },
 			lastActivityMs: function() { return 5000; }
@@ -1781,7 +1800,8 @@ func TestChunk16_T393_WriteToChildErrorSurfaced(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
 			writeToChild: function(data) { throw new Error('PTY closed'); },
-			hasChild: function() { return true; }
+			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; }
 		};
 
 		var s = initState('PLAN_GENERATION');
@@ -1823,7 +1843,8 @@ func TestChunk16_T393_WriteToChildMissingSurfaced(t *testing.T) {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		// tuiMux exists but without writeToChild.
 		globalThis.tuiMux = {
-			hasChild: function() { return true; }
+			hasChild: function() { return true; },
+			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; }
 		};
 
 		var s = initState('PLAN_GENERATION');

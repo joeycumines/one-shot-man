@@ -89,6 +89,14 @@
         if (typeof s.analysisRunning === 'boolean') s.analysisRunning = false;
         if (typeof s.autoSplitRunning === 'boolean') s.autoSplitRunning = false;
 
+        // Track error in verification phase if we were in a verification-related phase.
+        var vp = s.verifyPhase;
+        if (vp && vp !== prSplit._verifyPhases.NOT_STARTED &&
+            vp !== prSplit._verifyPhases.COMPLETE &&
+            vp !== prSplit._verifyPhases.ERROR) {
+            prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.ERROR);
+        }
+
         try { s.wizard.transition('ERROR'); } catch (te) { log.debug('wizard: transition to ERROR failed: ' + (te.message || te)); }
         s.wizardState = s.wizard.current;
         return [s, null];
@@ -548,6 +556,8 @@
                 // T121: Safety net — if the user reaches BRANCH_BUILDING
                 // (e.g., after automated split completes), advance to
                 // EQUIV_CHECK so they can review equivalence results.
+                prSplit._resetVerifyPhase(s);
+                prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.EQUIV_CHECK);
                 s.isProcessing = true;
                 return startEquivCheck(s);
             case 'EQUIV_CHECK':
@@ -921,6 +931,9 @@
             if (focused.id === 'equiv-reverify') {
                 s.isProcessing = true;
                 s.equivalenceResult = null;
+                // Reset verifyPhase — re-running equiv from terminal COMPLETE/FAILED.
+                prSplit._resetVerifyPhase(s);
+                prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.EQUIV_CHECK);
                 return startEquivCheck(s);
             }
             // T079: Revise Plan — go back to PLAN_REVIEW from EQUIV_CHECK.

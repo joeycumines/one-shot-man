@@ -5050,3 +5050,499 @@ func TestChunk13_ViewErrorResolutionScreen_CrashMode(t *testing.T) {
 		t.Errorf("error resolution crash mode view: %v", raw)
 	}
 }
+
+// ---------------------------------------------------------------------------
+//  Verify phase state machine tests (Task 6)
+// ---------------------------------------------------------------------------
+
+// TestChunk13_VerifyPhase_Constants verifies that all phase and status
+// constants are exported and contain the expected values.
+func TestChunk13_VerifyPhase_Constants(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`JSON.stringify({
+		phases: globalThis.prSplit._verifyPhases,
+		statuses: globalThis.prSplit._branchStatuses
+	})`)
+	if err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+
+	var result struct {
+		Phases   map[string]string `json:"phases"`
+		Statuses map[string]string `json:"statuses"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	wantPhases := map[string]string{
+		"NOT_STARTED": "not-started",
+		"RUNNING":     "running",
+		"PAUSED":      "paused",
+		"EQUIV_CHECK": "equiv-check",
+		"COMPLETE":    "complete",
+		"FAILED":      "failed",
+		"ERROR":       "error",
+	}
+	for k, v := range wantPhases {
+		if got := result.Phases[k]; got != v {
+			t.Errorf("verifyPhases[%s] = %q, want %q", k, got, v)
+		}
+	}
+	if len(result.Phases) != len(wantPhases) {
+		t.Errorf("verifyPhases has %d entries, want %d", len(result.Phases), len(wantPhases))
+	}
+
+	wantStatuses := map[string]string{
+		"PENDING": "pending",
+		"ACTIVE":  "active",
+		"PASSED":  "passed",
+		"FAILED":  "failed",
+		"SKIPPED": "skipped",
+	}
+	for k, v := range wantStatuses {
+		if got := result.Statuses[k]; got != v {
+			t.Errorf("branchStatuses[%s] = %q, want %q", k, got, v)
+		}
+	}
+	if len(result.Statuses) != len(wantStatuses) {
+		t.Errorf("branchStatuses has %d entries, want %d", len(result.Statuses), len(wantStatuses))
+	}
+}
+
+// TestChunk13_VerifyPhase_ExportsExist verifies that the transition and
+// reset functions are exported on prSplit.
+func TestChunk13_VerifyPhase_ExportsExist(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`JSON.stringify({
+		transition: typeof globalThis.prSplit._transitionVerifyPhase,
+		reset: typeof globalThis.prSplit._resetVerifyPhase,
+		phases: typeof globalThis.prSplit._verifyPhases,
+		statuses: typeof globalThis.prSplit._branchStatuses
+	})`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := raw.(string)
+	want := `{"transition":"function","reset":"function","phases":"object","statuses":"object"}`
+	if got != want {
+		t.Errorf("got %s, want %s", got, want)
+	}
+}
+
+// TestChunk13_VerifyPhase_ValidTransitions exercises every allowed transition
+// in the _VERIFY_TRANSITIONS map and confirms they succeed.
+func TestChunk13_VerifyPhase_ValidTransitions(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var phases = prSplit._verifyPhases;
+		var trans = prSplit._transitionVerifyPhase;
+		var errors = [];
+
+		// Helper: create state at a given phase (bypassing transition for setup).
+		function stateAt(phase) { return { verifyPhase: phase }; }
+
+		// NOT_STARTED → RUNNING
+		var s = stateAt(phases.NOT_STARTED);
+		if (!trans(s, phases.RUNNING)) errors.push('NOT_STARTED→RUNNING failed');
+		if (s.verifyPhase !== phases.RUNNING) errors.push('NOT_STARTED→RUNNING: got ' + s.verifyPhase);
+
+		// NOT_STARTED → ERROR
+		s = stateAt(phases.NOT_STARTED);
+		if (!trans(s, phases.ERROR)) errors.push('NOT_STARTED→ERROR failed');
+		if (s.verifyPhase !== phases.ERROR) errors.push('NOT_STARTED→ERROR: got ' + s.verifyPhase);
+
+		// NOT_STARTED → EQUIV_CHECK (skip-verify path)
+		s = stateAt(phases.NOT_STARTED);
+		if (!trans(s, phases.EQUIV_CHECK)) errors.push('NOT_STARTED→EQUIV_CHECK failed');
+		if (s.verifyPhase !== phases.EQUIV_CHECK) errors.push('NOT_STARTED→EQUIV_CHECK: got ' + s.verifyPhase);
+
+		// RUNNING → PAUSED
+		s = stateAt(phases.RUNNING);
+		if (!trans(s, phases.PAUSED)) errors.push('RUNNING→PAUSED failed');
+		if (s.verifyPhase !== phases.PAUSED) errors.push('RUNNING→PAUSED: got ' + s.verifyPhase);
+
+		// RUNNING → EQUIV_CHECK
+		s = stateAt(phases.RUNNING);
+		if (!trans(s, phases.EQUIV_CHECK)) errors.push('RUNNING→EQUIV_CHECK failed');
+		if (s.verifyPhase !== phases.EQUIV_CHECK) errors.push('RUNNING→EQUIV_CHECK: got ' + s.verifyPhase);
+
+		// RUNNING → FAILED
+		s = stateAt(phases.RUNNING);
+		if (!trans(s, phases.FAILED)) errors.push('RUNNING→FAILED failed');
+		if (s.verifyPhase !== phases.FAILED) errors.push('RUNNING→FAILED: got ' + s.verifyPhase);
+
+		// RUNNING → ERROR
+		s = stateAt(phases.RUNNING);
+		if (!trans(s, phases.ERROR)) errors.push('RUNNING→ERROR failed');
+		if (s.verifyPhase !== phases.ERROR) errors.push('RUNNING→ERROR: got ' + s.verifyPhase);
+
+		// PAUSED → RUNNING
+		s = stateAt(phases.PAUSED);
+		if (!trans(s, phases.RUNNING)) errors.push('PAUSED→RUNNING failed');
+		if (s.verifyPhase !== phases.RUNNING) errors.push('PAUSED→RUNNING: got ' + s.verifyPhase);
+
+		// PAUSED → ERROR
+		s = stateAt(phases.PAUSED);
+		if (!trans(s, phases.ERROR)) errors.push('PAUSED→ERROR failed');
+		if (s.verifyPhase !== phases.ERROR) errors.push('PAUSED→ERROR: got ' + s.verifyPhase);
+
+		// EQUIV_CHECK → COMPLETE
+		s = stateAt(phases.EQUIV_CHECK);
+		if (!trans(s, phases.COMPLETE)) errors.push('EQUIV_CHECK→COMPLETE failed');
+		if (s.verifyPhase !== phases.COMPLETE) errors.push('EQUIV_CHECK→COMPLETE: got ' + s.verifyPhase);
+
+		// EQUIV_CHECK → FAILED
+		s = stateAt(phases.EQUIV_CHECK);
+		if (!trans(s, phases.FAILED)) errors.push('EQUIV_CHECK→FAILED failed');
+		if (s.verifyPhase !== phases.FAILED) errors.push('EQUIV_CHECK→FAILED: got ' + s.verifyPhase);
+
+		// EQUIV_CHECK → ERROR
+		s = stateAt(phases.EQUIV_CHECK);
+		if (!trans(s, phases.ERROR)) errors.push('EQUIV_CHECK→ERROR failed');
+		if (s.verifyPhase !== phases.ERROR) errors.push('EQUIV_CHECK→ERROR: got ' + s.verifyPhase);
+
+		// FAILED → RUNNING (retry)
+		s = stateAt(phases.FAILED);
+		if (!trans(s, phases.RUNNING)) errors.push('FAILED→RUNNING failed');
+		if (s.verifyPhase !== phases.RUNNING) errors.push('FAILED→RUNNING: got ' + s.verifyPhase);
+
+		// FAILED → NOT_STARTED (full restart)
+		s = stateAt(phases.FAILED);
+		if (!trans(s, phases.NOT_STARTED)) errors.push('FAILED→NOT_STARTED failed');
+		if (s.verifyPhase !== phases.NOT_STARTED) errors.push('FAILED→NOT_STARTED: got ' + s.verifyPhase);
+
+		// FAILED → ERROR (error escalation)
+		s = stateAt(phases.FAILED);
+		if (!trans(s, phases.ERROR)) errors.push('FAILED→ERROR failed');
+		if (s.verifyPhase !== phases.ERROR) errors.push('FAILED→ERROR: got ' + s.verifyPhase);
+
+		// ERROR → RUNNING (recovery)
+		s = stateAt(phases.ERROR);
+		if (!trans(s, phases.RUNNING)) errors.push('ERROR→RUNNING failed');
+		if (s.verifyPhase !== phases.RUNNING) errors.push('ERROR→RUNNING: got ' + s.verifyPhase);
+
+		// ERROR → NOT_STARTED (recovery reset)
+		s = stateAt(phases.ERROR);
+		if (!trans(s, phases.NOT_STARTED)) errors.push('ERROR→NOT_STARTED failed');
+		if (s.verifyPhase !== phases.NOT_STARTED) errors.push('ERROR→NOT_STARTED: got ' + s.verifyPhase);
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("valid transitions: %v", raw)
+	}
+}
+
+// TestChunk13_VerifyPhase_InvalidTransitions verifies that disallowed
+// transitions return false and leave state unchanged.
+func TestChunk13_VerifyPhase_InvalidTransitions(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var phases = prSplit._verifyPhases;
+		var trans = prSplit._transitionVerifyPhase;
+		var errors = [];
+
+		function stateAt(phase) { return { verifyPhase: phase }; }
+
+		// COMPLETE is terminal — no transitions allowed.
+		var s = stateAt(phases.COMPLETE);
+		if (trans(s, phases.RUNNING)) errors.push('COMPLETE→RUNNING should be invalid');
+		if (s.verifyPhase !== phases.COMPLETE) errors.push('COMPLETE state changed');
+
+		s = stateAt(phases.COMPLETE);
+		if (trans(s, phases.NOT_STARTED)) errors.push('COMPLETE→NOT_STARTED should be invalid');
+		if (s.verifyPhase !== phases.COMPLETE) errors.push('COMPLETE state changed');
+
+		// NOT_STARTED → PAUSED (can't pause what hasn't started)
+		s = stateAt(phases.NOT_STARTED);
+		if (trans(s, phases.PAUSED)) errors.push('NOT_STARTED→PAUSED should be invalid');
+		if (s.verifyPhase !== phases.NOT_STARTED) errors.push('NOT_STARTED mutated');
+
+		// NOT_STARTED → COMPLETE (can't complete without running)
+		s = stateAt(phases.NOT_STARTED);
+		if (trans(s, phases.COMPLETE)) errors.push('NOT_STARTED→COMPLETE should be invalid');
+		if (s.verifyPhase !== phases.NOT_STARTED) errors.push('NOT_STARTED mutated');
+
+		// RUNNING → NOT_STARTED (must go through FAILED/ERROR first)
+		s = stateAt(phases.RUNNING);
+		if (trans(s, phases.NOT_STARTED)) errors.push('RUNNING→NOT_STARTED should be invalid');
+		if (s.verifyPhase !== phases.RUNNING) errors.push('RUNNING mutated');
+
+		// RUNNING → COMPLETE (can't skip equiv check)
+		s = stateAt(phases.RUNNING);
+		if (trans(s, phases.COMPLETE)) errors.push('RUNNING→COMPLETE should be invalid');
+
+		// PAUSED → EQUIV_CHECK (must resume first)
+		s = stateAt(phases.PAUSED);
+		if (trans(s, phases.EQUIV_CHECK)) errors.push('PAUSED→EQUIV_CHECK should be invalid');
+
+		// PAUSED → FAILED (must resume first)
+		s = stateAt(phases.PAUSED);
+		if (trans(s, phases.FAILED)) errors.push('PAUSED→FAILED should be invalid');
+
+		// EQUIV_CHECK → RUNNING (can't go back to running)
+		s = stateAt(phases.EQUIV_CHECK);
+		if (trans(s, phases.RUNNING)) errors.push('EQUIV_CHECK→RUNNING should be invalid');
+
+		// EQUIV_CHECK → NOT_STARTED
+		s = stateAt(phases.EQUIV_CHECK);
+		if (trans(s, phases.NOT_STARTED)) errors.push('EQUIV_CHECK→NOT_STARTED should be invalid');
+
+		// Self-transitions should be invalid too.
+		s = stateAt(phases.RUNNING);
+		if (trans(s, phases.RUNNING)) errors.push('RUNNING→RUNNING self-transition should be invalid');
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("invalid transitions: %v", raw)
+	}
+}
+
+// TestChunk13_VerifyPhase_DefaultNotStarted verifies that transitionVerifyPhase
+// treats undefined/missing verifyPhase as NOT_STARTED.
+func TestChunk13_VerifyPhase_DefaultNotStarted(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var phases = prSplit._verifyPhases;
+		var trans = prSplit._transitionVerifyPhase;
+
+		// State with no verifyPhase property at all.
+		var s = {};
+		if (!trans(s, phases.RUNNING)) return 'FAIL: undefined→RUNNING should succeed';
+		if (s.verifyPhase !== phases.RUNNING) return 'FAIL: phase not set to RUNNING';
+
+		// State with verifyPhase explicitly undefined.
+		s = { verifyPhase: undefined };
+		if (!trans(s, phases.ERROR)) return 'FAIL: undefined→ERROR should succeed';
+		if (s.verifyPhase !== phases.ERROR) return 'FAIL: phase not set to ERROR';
+
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("default not-started: %v", raw)
+	}
+}
+
+// TestChunk13_VerifyPhase_Reset verifies that resetVerifyPhase unconditionally
+// sets verifyPhase to NOT_STARTED from any state.
+func TestChunk13_VerifyPhase_Reset(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var phases = prSplit._verifyPhases;
+		var reset = prSplit._resetVerifyPhase;
+		var errors = [];
+
+		// Reset from every phase.
+		var allPhases = [
+			phases.NOT_STARTED, phases.RUNNING, phases.PAUSED,
+			phases.EQUIV_CHECK, phases.COMPLETE, phases.FAILED, phases.ERROR
+		];
+		for (var i = 0; i < allPhases.length; i++) {
+			var s = { verifyPhase: allPhases[i] };
+			reset(s);
+			if (s.verifyPhase !== phases.NOT_STARTED) {
+				errors.push('reset from ' + allPhases[i] + ': got ' + s.verifyPhase);
+			}
+		}
+
+		// Reset from undefined.
+		var s2 = {};
+		reset(s2);
+		if (s2.verifyPhase !== phases.NOT_STARTED) {
+			errors.push('reset from undefined: got ' + s2.verifyPhase);
+		}
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("reset: %v", raw)
+	}
+}
+
+// TestChunk13_VerifyPhase_TerminalStates verifies that COMPLETE has no
+// outgoing transitions (is terminal).
+func TestChunk13_VerifyPhase_TerminalStates(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var phases = prSplit._verifyPhases;
+		var trans = prSplit._transitionVerifyPhase;
+		var errors = [];
+
+		// Try every possible destination from COMPLETE.
+		var all = [
+			phases.NOT_STARTED, phases.RUNNING, phases.PAUSED,
+			phases.EQUIV_CHECK, phases.COMPLETE, phases.FAILED, phases.ERROR
+		];
+		for (var i = 0; i < all.length; i++) {
+			var s = { verifyPhase: phases.COMPLETE };
+			if (trans(s, all[i])) {
+				errors.push('COMPLETE→' + all[i] + ' should be blocked');
+			}
+		}
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("terminal states: %v", raw)
+	}
+}
+
+// TestChunk13_VerifyPhase_HappyPath exercises the full happy-path lifecycle:
+// NOT_STARTED → RUNNING → PAUSED → RUNNING → EQUIV_CHECK → COMPLETE.
+func TestChunk13_VerifyPhase_HappyPath(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var phases = prSplit._verifyPhases;
+		var trans = prSplit._transitionVerifyPhase;
+		var s = { verifyPhase: phases.NOT_STARTED };
+		var errors = [];
+
+		// NOT_STARTED → RUNNING
+		if (!trans(s, phases.RUNNING)) errors.push('step1 failed');
+		if (s.verifyPhase !== phases.RUNNING) errors.push('step1: ' + s.verifyPhase);
+
+		// RUNNING → PAUSED
+		if (!trans(s, phases.PAUSED)) errors.push('step2 failed');
+		if (s.verifyPhase !== phases.PAUSED) errors.push('step2: ' + s.verifyPhase);
+
+		// PAUSED → RUNNING
+		if (!trans(s, phases.RUNNING)) errors.push('step3 failed');
+		if (s.verifyPhase !== phases.RUNNING) errors.push('step3: ' + s.verifyPhase);
+
+		// RUNNING → EQUIV_CHECK
+		if (!trans(s, phases.EQUIV_CHECK)) errors.push('step4 failed');
+		if (s.verifyPhase !== phases.EQUIV_CHECK) errors.push('step4: ' + s.verifyPhase);
+
+		// EQUIV_CHECK → COMPLETE
+		if (!trans(s, phases.COMPLETE)) errors.push('step5 failed');
+		if (s.verifyPhase !== phases.COMPLETE) errors.push('step5: ' + s.verifyPhase);
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("happy path: %v", raw)
+	}
+}
+
+// TestChunk13_VerifyPhase_FailRetryPath exercises:
+// NOT_STARTED → RUNNING → FAILED → RUNNING → EQUIV_CHECK → COMPLETE.
+func TestChunk13_VerifyPhase_FailRetryPath(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var phases = prSplit._verifyPhases;
+		var trans = prSplit._transitionVerifyPhase;
+		var s = { verifyPhase: phases.NOT_STARTED };
+		var errors = [];
+
+		if (!trans(s, phases.RUNNING)) errors.push('step1');
+		if (!trans(s, phases.FAILED))  errors.push('step2');
+		if (!trans(s, phases.RUNNING)) errors.push('step3 retry');
+		if (!trans(s, phases.EQUIV_CHECK)) errors.push('step4');
+		if (!trans(s, phases.COMPLETE)) errors.push('step5');
+
+		if (s.verifyPhase !== phases.COMPLETE) errors.push('final: ' + s.verifyPhase);
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("fail-retry path: %v", raw)
+	}
+}
+
+// TestChunk13_VerifyPhase_ErrorRecoveryPath exercises:
+// NOT_STARTED → RUNNING → ERROR → NOT_STARTED → RUNNING → EQUIV_CHECK → COMPLETE.
+func TestChunk13_VerifyPhase_ErrorRecoveryPath(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var phases = prSplit._verifyPhases;
+		var trans = prSplit._transitionVerifyPhase;
+		var s = { verifyPhase: phases.NOT_STARTED };
+		var errors = [];
+
+		if (!trans(s, phases.RUNNING)) errors.push('step1');
+		if (!trans(s, phases.ERROR)) errors.push('step2');
+		if (!trans(s, phases.NOT_STARTED)) errors.push('step3 recovery');
+		if (!trans(s, phases.RUNNING)) errors.push('step4');
+		if (!trans(s, phases.EQUIV_CHECK)) errors.push('step5');
+		if (!trans(s, phases.COMPLETE)) errors.push('step6');
+
+		if (s.verifyPhase !== phases.COMPLETE) errors.push('final: ' + s.verifyPhase);
+
+		if (errors.length > 0) return 'FAIL: ' + errors.join('; ');
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("error recovery path: %v", raw)
+	}
+}
+
+// TestChunk13_VerifyPhase_InitStateIncludesField verifies that initState
+// includes verifyPhase set to NOT_STARTED.
+func TestChunk13_VerifyPhase_InitStateIncludesField(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = prSplit._wizardInit();
+		return s.verifyPhase;
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok := raw.(string)
+	if !ok || got != "not-started" {
+		t.Errorf("initState verifyPhase = %v, want %q", raw, "not-started")
+	}
+}

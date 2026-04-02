@@ -473,6 +473,10 @@
         s.wizard.transition('EQUIV_CHECK');
         s.wizardState = 'EQUIV_CHECK';
         s.isProcessing = true;
+        // Reset verifyPhase before transition — enterErrorState may have
+        // set it to ERROR during conflict resolution.
+        prSplit._resetVerifyPhase(s);
+        prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.EQUIV_CHECK);
         return startEquivCheck(s);
     }
 
@@ -492,6 +496,7 @@
         s.verifyingIdx = -1;
         s.verifyOutput = {};
         s.expandedVerifyBranch = null;
+        prSplit._resetVerifyPhase(s);
         // Reset live verification session state.
         clearVerifyPaneSession(s, { debugPrefix: 'pipelineCleanup', keepDisplay: false });
 
@@ -631,8 +636,9 @@
         }
 
         if (s.executionNextStep === 'equiv') {
-            // Start equivalence check.
+            // Start equivalence check (no verify command configured).
             s.executionNextStep = null;
+            prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.EQUIV_CHECK);
             return startEquivCheck(s);
         }
 
@@ -705,8 +711,12 @@
         // On FAIL/mismatch, stay on EQUIV_CHECK so user can interact
         // with Re-verify/Revise Plan/Continue buttons.
         if (equivResult.equivalent) {
+            prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.COMPLETE);
             try { s.wizard.transition('FINALIZATION', { equivalence: equivResult }); } catch (te) { log.debug('wizard: transition to FINALIZATION failed: ' + (te.message || te)); }
             s.wizardState = s.wizard.current;
+        } else {
+            // Mismatch — verification failed.
+            prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.FAILED);
         }
         // On mismatch: wizardState stays EQUIV_CHECK, view shows results + buttons.
     }

@@ -122,8 +122,14 @@
 
         var splits = st.planCache.splits;
         if (!splits || s.verifyingIdx >= splits.length) {
-            // All branches verified — move to equiv check.
+            // All branches verified — transition to equiv check phase.
+            prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.EQUIV_CHECK);
             return startEquivCheck(s);
+        }
+
+        // First call: transition from NOT_STARTED to RUNNING.
+        if (s.verifyPhase === prSplit._verifyPhases.NOT_STARTED) {
+            prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.RUNNING);
         }
 
         // T115: On the very first branch, kick off an async baseline check
@@ -176,6 +182,7 @@
         if (skipReason) {
             s.verificationResults.push({
                 name: branchName,
+                status: prSplit._branchStatuses.SKIPPED,
                 passed: false,
                 skipped: true,
                 error: skipReason,
@@ -205,6 +212,7 @@
         if (sessionResult.skipped) {
             s.verificationResults.push({
                 name: branchName,
+                status: prSplit._branchStatuses.SKIPPED,
                 passed: true,
                 skipped: true,
                 error: null,
@@ -366,6 +374,7 @@
 
         s.verificationResults.push({
             name: branchName,
+            status: (exitCode === 0 && !isTimeout) ? prSplit._branchStatuses.PASSED : prSplit._branchStatuses.FAILED,
             passed: exitCode === 0 && !isTimeout,
             skipped: false,
             error: errorMsg,
@@ -425,6 +434,8 @@
 
         s.verificationResults.push({
             name: branchName,
+            status: verifyResult.skipped ? prSplit._branchStatuses.SKIPPED
+                : (verifyResult.passed ? prSplit._branchStatuses.PASSED : prSplit._branchStatuses.FAILED),
             passed: verifyResult.passed,
             skipped: verifyResult.skipped || false,
             error: errorMsg,
@@ -480,6 +491,7 @@
 
             s.verificationResults.push({
                 name: branchName,
+                status: prSplit._branchStatuses.FAILED,
                 passed: false,
                 skipped: false,
                 error: fallbackError,
@@ -833,6 +845,8 @@
         if (choice === 'fallback-heuristic') {
             s.claudeCrashDetected = false;
             prSplit.runtime.mode = 'heuristic';
+            // Reset verification phase — restarting from plan generation.
+            prSplit._resetVerifyPhase(s);
             // Reset wizard to PLAN_GENERATION so startAnalysis picks up.
             s.wizard.transition('PLAN_GENERATION');
             s.wizardState = 'PLAN_GENERATION';
@@ -889,12 +903,15 @@
 
         case 'skip':
             // Transition to EQUIV_CHECK happened in handleErrorResolutionState.
-            // Dispatch equivalence check via async startEquivCheck.
+            // Reset verify phase (enterErrorState set it to ERROR) then move to equiv.
+            prSplit._resetVerifyPhase(s);
+            prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.EQUIV_CHECK);
             s.isProcessing = true;
             return startEquivCheck(s);
 
         case 'retry':
             // Transition to PLAN_GENERATION happened. Re-run analysis.
+            prSplit._resetVerifyPhase(s);
             return startAnalysis(s);
 
         case 'abort':

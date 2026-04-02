@@ -77,7 +77,7 @@
       "task": "Redesign the verification runtime state in the TUI model",
       "description": "Update /Users/joeyc/dev/one-shot-man/internal/command/pr_split_13_tui.js, pr_split_16f_tui_model.js, and related model files so verification state has a clear, testable representation: (not started → running → paused → complete → failed → error), with explicit transitions. The acceptance/rejection logic is decoupled from UI rendering. Tests can assert specific state transitions lead to specific UI outputs and state is never inconsistent.",
       "acceptance": "Code Quality: Verification state machine is explicit and testable in isolation. State transitions are modeled as discrete events, not implicit side effects. Tests can mock verification completion and assert UI updates without running actual commands. Developers can reason about state without reading scattered side-effect code.",
-      "status": "Not Started",
+      "status": "Done",
       "dependsOn": [5]
     },
     {

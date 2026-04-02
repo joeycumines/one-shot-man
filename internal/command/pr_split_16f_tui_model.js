@@ -252,7 +252,7 @@
             // T059: Pause/Resume active verify session via dedicated buttons.
             if (activeVerifySession && zone.inBounds('verify-pause', msg)) {
                 if (!s.verifyPaused) {
-                    try { activeVerifySession.pause(); s.verifyPaused = true; } catch (e) {
+                    try { activeVerifySession.pause(); s.verifyPaused = true; prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.PAUSED); } catch (e) {
                         log.printf('verify: pause failed: %s', e.message || String(e));
                     }
                 }
@@ -260,7 +260,7 @@
             }
             if (activeVerifySession && zone.inBounds('verify-resume', msg)) {
                 if (s.verifyPaused) {
-                    try { activeVerifySession.resume(); s.verifyPaused = false; } catch (e) {
+                    try { activeVerifySession.resume(); s.verifyPaused = false; prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.RUNNING); } catch (e) {
                         log.printf('verify: resume failed: %s', e.message || String(e));
                     }
                 }
@@ -424,6 +424,9 @@
             if (zone.inBounds('equiv-reverify', msg)) {
                 s.isProcessing = true;
                 s.equivalenceResult = null;
+                // Reset verifyPhase — re-running equiv from terminal COMPLETE/FAILED.
+                prSplit._resetVerifyPhase(s);
+                prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.EQUIV_CHECK);
                 return startEquivCheck(s);
             }
             if (zone.inBounds('equiv-revise', msg)) {
@@ -787,6 +790,11 @@
                 // Equivalence check state.
                 equivRunning: false,
                 equivError: null,
+
+                // Verification lifecycle phase (state machine defined in
+                // chunk 13). Tracks what the verification subsystem is doing
+                // independently from the wizard's high-level state.
+                verifyPhase: prSplit._verifyPhases.NOT_STARTED,
 
                 // Verification state (per-branch, after branch creation).
                 verificationResults: [],   // Array parallel to splits

@@ -786,11 +786,11 @@
             // the active verify session. Only when a verify is running.
             if (k === 'z' && s.wizardState === 'BRANCH_BUILDING' && activeVerifySession) {
                 if (s.verifyPaused) {
-                    try { activeVerifySession.resume(); s.verifyPaused = false; } catch (e) {
+                    try { activeVerifySession.resume(); s.verifyPaused = false; prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.RUNNING); } catch (e) {
                         log.printf('verify: resume failed: %s', e.message || String(e));
                     }
                 } else {
-                    try { activeVerifySession.pause(); s.verifyPaused = true; } catch (e) {
+                    try { activeVerifySession.pause(); s.verifyPaused = true; prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.PAUSED); } catch (e) {
                         log.printf('verify: pause failed: %s', e.message || String(e));
                     }
                 }

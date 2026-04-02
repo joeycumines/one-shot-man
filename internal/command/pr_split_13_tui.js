@@ -69,6 +69,65 @@
     // States from which pause is allowed.
     var PAUSABLE_STATES = { 'PLAN_GENERATION': true, 'BRANCH_BUILDING': true };
 
+    // --- Verification Phase State Machine ---
+    // Tracks the per-branch verification + equivalence lifecycle
+    // independently from the wizard's high-level state machine.
+    // The wizard tracks which screen the user sees; verifyPhase tracks
+    // what the verification subsystem is doing within that screen.
+
+    // Verification lifecycle phases.
+    var verifyPhases = {
+        NOT_STARTED:   'not-started',      // No verification has begun
+        RUNNING:       'running',          // Branches being verified one-by-one
+        PAUSED:        'paused',           // Verify subprocess paused (SIGSTOP)
+        EQUIV_CHECK:   'equiv-check',      // Equivalence check in progress
+        COMPLETE:      'complete',         // All verification and equiv passed
+        FAILED:        'failed',           // Some verification or equiv failed
+        ERROR:         'error'             // Unrecoverable error
+    };
+
+    // Per-branch verification statuses.
+    var branchStatuses = {
+        PENDING:  'pending',    // Not yet verified
+        ACTIVE:   'active',     // Currently being verified
+        PASSED:   'passed',     // Verification passed
+        FAILED:   'failed',     // Verification failed
+        SKIPPED:  'skipped'     // Skipped (dependency failed)
+    };
+
+    // Valid transitions for verification phases.
+    var _VERIFY_TRANSITIONS = {};
+    _VERIFY_TRANSITIONS[verifyPhases.NOT_STARTED] = [verifyPhases.RUNNING, verifyPhases.EQUIV_CHECK, verifyPhases.ERROR];
+    _VERIFY_TRANSITIONS[verifyPhases.RUNNING]     = [verifyPhases.PAUSED, verifyPhases.EQUIV_CHECK, verifyPhases.FAILED, verifyPhases.ERROR];
+    _VERIFY_TRANSITIONS[verifyPhases.PAUSED]      = [verifyPhases.RUNNING, verifyPhases.ERROR];
+    _VERIFY_TRANSITIONS[verifyPhases.EQUIV_CHECK]  = [verifyPhases.COMPLETE, verifyPhases.FAILED, verifyPhases.ERROR];
+    _VERIFY_TRANSITIONS[verifyPhases.COMPLETE]    = [];  // Terminal
+    _VERIFY_TRANSITIONS[verifyPhases.FAILED]      = [verifyPhases.RUNNING, verifyPhases.NOT_STARTED, verifyPhases.ERROR];  // Retry / error escalation
+    _VERIFY_TRANSITIONS[verifyPhases.ERROR]       = [verifyPhases.RUNNING, verifyPhases.NOT_STARTED];  // Recovery
+
+    // transitionVerifyPhase validates and applies a verification phase
+    // transition. Returns true on success, false if the transition is
+    // invalid (with a log warning). Callers should check the return value
+    // but may proceed — invalid transitions are informational, not fatal.
+    function transitionVerifyPhase(s, toPhase) {
+        var from = s.verifyPhase || verifyPhases.NOT_STARTED;
+        var allowed = _VERIFY_TRANSITIONS[from];
+        if (!allowed || allowed.indexOf(toPhase) < 0) {
+            log.printf('verify: invalid phase transition %s \u2192 %s (allowed: %s)',
+                from, toPhase, allowed ? allowed.join(', ') : 'none');
+            return false;
+        }
+        log.debug('verify: phase %s \u2192 %s', from, toPhase);
+        s.verifyPhase = toPhase;
+        return true;
+    }
+
+    // resetVerifyPhase unconditionally resets to NOT_STARTED (used by
+    // retry and wizard reset paths that bypass normal transitions).
+    function resetVerifyPhase(s) {
+        s.verifyPhase = verifyPhases.NOT_STARTED;
+    }
+
     // WizardState is the pr-split wizard state machine.
     function WizardState() {
         this.current = 'IDLE';
@@ -828,6 +887,12 @@
     }
 
     prSplit._handleFinalizationState = handleFinalizationState;
+
+    // Cross-chunk exports — verification state machine.
+    prSplit._verifyPhases = verifyPhases;
+    prSplit._branchStatuses = branchStatuses;
+    prSplit._transitionVerifyPhase = transitionVerifyPhase;
+    prSplit._resetVerifyPhase = resetVerifyPhase;
 
     // Cross-chunk export — tuiState for command and core chunks.
     prSplit._tuiState = tuiState;

@@ -37,7 +37,7 @@
       "task": "Define platform support strategy and constraints upfront",
       "description": "Before any redesign work, document exactly what the product contract is for each platform and each interactive pane type. In internal/termmux/, internal/builtin/termmux/, and docs/, create a decision matrix: rows = platforms (macOS, Linux, Windows); columns = pane types (Claude, verify shell, user shell, output). For each cell, specify: must-have (interactive, capture-only, or disabled), rationale, and fallback if not viable. List all existing Unix-only code paths. Define what 'cross-platform verified' means operationally (which CI platforms, which checks, what are acceptable skip conditions). This becomes the reference for tasks 2-20 and prevents mid-project scope creep on platform support.",
       "acceptance": "docs/platform-support-strategy.md exists and clearly specifies: (1) Platform × Pane support matrix with must-have/rationale per cell, (2) All Unix-only code paths identified with context, (3) Fallback plan if Windows interactive support is not viable (e.g., Windows gets capture-only for verify), (4) CI platform coverage explanation (which platforms run which checks, skip conditions and rationale), (5) An agent reading this document knows exactly which code paths are priorities and what the acceptable minimum is for launch.",
-      "status": "Not Started",
+      "status": "Done",
       "dependsOn": []
     },
     {

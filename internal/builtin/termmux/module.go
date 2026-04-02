@@ -792,6 +792,19 @@ func wrapInteractiveSession(runtime *goja.Runtime, session parent.InteractiveSes
 		}
 	})
 
+	_ = obj.Set("isRunning", func() bool {
+		return session.IsRunning()
+	})
+
+	_ = obj.Set("isDone", func() bool {
+		select {
+		case <-session.Done():
+			return true
+		default:
+			return false
+		}
+	})
+
 	return obj
 }
 

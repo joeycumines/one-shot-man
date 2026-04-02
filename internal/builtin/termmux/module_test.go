@@ -215,6 +215,18 @@ func (s *testStringIO) Close() error {
 	return nil
 }
 
+// blockingTestStringIO blocks on Receive() until done is closed,
+// allowing tests to observe the mux in a "child is running" state.
+type blockingTestStringIO struct {
+	testStringIO
+	done chan struct{}
+}
+
+func (s *blockingTestStringIO) Receive() (string, error) {
+	<-s.done
+	return "", io.EOF
+}
+
 func TestModule_MuxSessionWrapper(t *testing.T) {
 	runtime, _ := testRequire(t)
 
@@ -239,6 +251,37 @@ func TestModule_MuxSessionWrapper(t *testing.T) {
 	got := v.String()
 	if !strings.Contains(got, `"name":"claude"`) || !strings.Contains(got, `"kind":"pty"`) {
 		t.Fatalf("session.target() = %q; want claude PTY metadata", got)
+	}
+}
+
+func TestModule_MuxSessionWrapper_isDone_isRunning(t *testing.T) {
+	runtime, _ := testRequire(t)
+
+	// Use a blocking testStringIO that doesn't immediately EOF.
+	sio := &blockingTestStringIO{done: make(chan struct{})}
+	handle := parent.WrapStringIO(sio)
+	if err := runtime.Set("__muxHandle", handle); err != nil {
+		t.Fatalf("Set __muxHandle: %v", err)
+	}
+	defer close(sio.done) // unblock Receive so teeLoop can exit
+
+	// With a child attached, isRunning should be true and isDone should be false.
+	v, err := runtime.RunString(`
+		var tm = require('osm:termmux');
+		var mux = tm.newMux();
+		mux.attach(__muxHandle);
+		var session = mux.session();
+		JSON.stringify({isRunning: session.isRunning(), isDone: session.isDone()});
+	`)
+	if err != nil {
+		t.Fatalf("mux session isRunning/isDone: %v", err)
+	}
+	got := v.String()
+	if !strings.Contains(got, `"isRunning":true`) {
+		t.Fatalf("session.isRunning() should be true with child attached, got %q", got)
+	}
+	if !strings.Contains(got, `"isDone":false`) {
+		t.Fatalf("session.isDone() should be false with child attached, got %q", got)
 	}
 }
 

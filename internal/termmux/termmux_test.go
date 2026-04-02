@@ -104,6 +104,47 @@ func TestDetach(t *testing.T) {
 	}
 }
 
+func TestChildDone_NoChild(t *testing.T) {
+	var stdin, stdout bytes.Buffer
+	m := New(&stdin, &stdout, -1)
+
+	// ChildDone returns a closed channel when no child is attached.
+	select {
+	case <-m.ChildDone():
+		// Expected.
+	default:
+		t.Fatal("ChildDone() should be closed when no child is attached")
+	}
+}
+
+func TestChildDone_WithChild(t *testing.T) {
+	var stdin, stdout bytes.Buffer
+	m := New(&stdin, &stdout, -1)
+
+	child := newMockChild()
+	if err := m.Attach(child); err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+
+	// While child is alive, ChildDone should not be closed.
+	select {
+	case <-m.ChildDone():
+		t.Fatal("ChildDone() should not be closed while child is alive")
+	default:
+		// Expected.
+	}
+
+	child.Close()
+
+	// After child exits, ChildDone should close.
+	select {
+	case <-m.ChildDone():
+		// Expected.
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for ChildDone() to close")
+	}
+}
+
 func TestTeeLoop_VTermCapture(t *testing.T) {
 	childR, childW := io.Pipe()
 	mc := &pipeMockChild{r: childR, w: io.Discard}

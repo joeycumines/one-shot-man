@@ -97,4 +97,18 @@ type InteractiveSession interface {
 	Resize(rows, cols int) error
 	Write([]byte) (int, error)
 	Close() error
+
+	// Done returns a channel that is closed when the session terminates.
+	// Callers can select on this channel to react to session completion
+	// without polling. For Mux sessions, the channel closes when the
+	// attached child exits or is detached. For CaptureSession, the
+	// channel closes when the underlying process exits. If no session
+	// is active, the returned channel is already closed.
+	Done() <-chan struct{}
+
+	// IsRunning reports whether the session is actively processing.
+	// For Mux sessions, this is true when a child is attached.
+	// For CaptureSession, this is true when the process is running
+	// (started and not yet exited).
+	IsRunning() bool
 }

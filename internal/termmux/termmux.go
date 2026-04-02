@@ -339,6 +339,25 @@ func (m *Mux) Session() *MuxSession {
 	return &MuxSession{mux: m}
 }
 
+// closedChan is a pre-closed channel returned by ChildDone when no child is attached.
+var closedChan = func() chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}()
+
+// ChildDone returns a channel that is closed when the attached child session
+// exits (its output channel is drained). If no child is attached, the
+// returned channel is already closed.
+func (m *Mux) ChildDone() <-chan struct{} {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.childEOF == nil {
+		return closedChan
+	}
+	return m.childEOF
+}
+
 // LastWriteTime returns the time of the most recent session
 // output (teeLoop write). Returns the zero Time if no output has
 // been received yet. Safe to call from any goroutine.
@@ -455,6 +474,17 @@ func (s *MuxSession) Write(data []byte) (int, error) {
 // Close detaches the active mux session.
 func (s *MuxSession) Close() error {
 	return s.mux.Detach()
+}
+
+// Done returns a channel that is closed when the attached child session exits.
+// If no child is attached, the returned channel is already closed.
+func (s *MuxSession) Done() <-chan struct{} {
+	return s.mux.ChildDone()
+}
+
+// IsRunning reports whether a child process is currently attached to the mux.
+func (s *MuxSession) IsRunning() bool {
+	return s.mux.HasChild()
 }
 
 var _ InteractiveSession = (*MuxSession)(nil)

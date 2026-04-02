@@ -160,3 +160,94 @@ func TestMuxSessionAdapter_RoundTripsState(t *testing.T) {
 		t.Fatalf("resize = %dx%d; want 12x34", resizeRows, resizeCols)
 	}
 }
+
+func TestMuxSession_Done_NoChild(t *testing.T) {
+	var stdin, stdout bytes.Buffer
+	m := New(&stdin, &stdout, -1)
+	session := m.Session()
+
+	// Done() should return an already-closed channel when no child is attached.
+	select {
+	case <-session.Done():
+		// Expected: channel is already closed.
+	default:
+		t.Fatal("Done() should be closed when no child is attached")
+	}
+}
+
+func TestMuxSession_IsRunning_NoChild(t *testing.T) {
+	var stdin, stdout bytes.Buffer
+	m := New(&stdin, &stdout, -1)
+	session := m.Session()
+
+	if session.IsRunning() {
+		t.Fatal("IsRunning() should be false when no child is attached")
+	}
+}
+
+func TestMuxSession_Done_WithChild(t *testing.T) {
+	var stdin, stdout bytes.Buffer
+	m := New(&stdin, &stdout, -1)
+
+	child := newMockChild()
+	if err := m.Attach(child); err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+
+	session := m.Session()
+
+	// IsRunning should be true with a child attached.
+	if !session.IsRunning() {
+		t.Fatal("IsRunning() should be true when child is attached")
+	}
+
+	// Done() should NOT be closed while child is attached.
+	select {
+	case <-session.Done():
+		t.Fatal("Done() should not be closed while child is attached")
+	default:
+		// Expected: channel is open.
+	}
+
+	// Close the child — this triggers EOF and Done().
+	child.Close()
+
+	// Wait for the tee goroutine to finish and close childEOF.
+	select {
+	case <-session.Done():
+		// Expected: channel is now closed.
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for Done() to close after child exit")
+	}
+}
+
+func TestMuxSession_Done_AfterDetach(t *testing.T) {
+	var stdin, stdout bytes.Buffer
+	m := New(&stdin, &stdout, -1)
+
+	child := newMockChild()
+	if err := m.Attach(child); err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+
+	child.Close()
+	<-m.teeDone
+
+	if err := m.Detach(); err != nil {
+		t.Fatalf("Detach: %v", err)
+	}
+
+	session := m.Session()
+
+	// After detach, Done() should return a closed channel.
+	select {
+	case <-session.Done():
+		// Expected: already closed.
+	default:
+		t.Fatal("Done() should be closed after Detach")
+	}
+
+	if session.IsRunning() {
+		t.Fatal("IsRunning() should be false after Detach")
+	}
+}

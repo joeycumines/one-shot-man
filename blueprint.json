@@ -279,6 +279,14 @@
       "acceptance": "User Value: The 'Ask Claude' button works in all pr-split modes (auto and non-auto). Clicking it spawns a Claude session and the user gets help regardless of auto mode setting. The mode only controls auto-start behavior, not manual invocation. Code Quality: No conditional gating of the Ask Claude workflow on auto mode when the button is already visible. The handler path for 'Ask Claude' is unified and works identically regardless of mode. Tests cover both auto and non-auto modes invoking Ask Claude.",
       "status": "Not Started",
       "dependsOn": [12]
+    },
+    {
+      "id": 32,
+      "task": "Fix border formatting around autodetect/main values for source and target branch on PR split wizard configure page",
+      "description": "The borders surrounding the autodetect and main/default values for the source branch and target branch fields on the PR split wizard's first page (the 'configure' page) are persistently broken. The rendering is wrong — borders clip, overlap, misalign, or wrap incorrectly — and the exact manifestation changes depending on terminal width/height. This is a layout and rendering bug in the TUI chrome/border logic for these specific field widgets. The fix must use strict test-driven development: (1) FIRST, write a failing test that captures the broken rendering at multiple terminal sizes (narrow, medium, wide; short, tall). The test must assert the exact rendered output (character-by-character or via golden files) for the configure page's branch selection fields, proving the borders are wrong. (2) THEN, fix the border rendering code so the test passes. (3) The fix must be robust — borders must render correctly at any terminal size, not just the tested sizes. Identify the root cause (likely in pr_split_15b_tui_chrome.js, pr_split_15c_tui_screens.js, or the field/widget rendering code) and fix it properly, not with a size-specific hack.",
+      "acceptance": "User Value: The configure page renders with clean, correctly-aligned borders around the source branch and target branch fields at every terminal size. No clipping, no overlap, no misalignment, no wrapping artifacts. The autodetect/main values sit cleanly inside their bordered containers regardless of terminal dimensions. Code Quality: A failing test exists FIRST that proves the bug at multiple terminal sizes (at minimum: 80x24, 100x30, 120x40, and a narrow case like 60x20). The test captures rendered output and asserts correct border placement. After the fix, the test passes. The root cause is identified and fixed in the rendering/chrome code, not worked around with size-specific conditionals. The fix is general — borders render correctly at any terminal size, not just the tested ones. No regressions in other bordered widgets.",
+      "status": "Not Started",
+      "dependsOn": [11]
     }
   ],
   "continuousVerification": {

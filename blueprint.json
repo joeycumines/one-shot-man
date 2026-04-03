@@ -85,7 +85,7 @@
       "task": "Replace one-shot branch verification with a persistent verify shell",
       "description": "Update /Users/joeyc/dev/one-shot-man/internal/command/pr_split_06b_verify_shell.js and related verification code so the verification shell persists across multiple commands. A user can run tests, fix code in the shell, run tests again—all without restarting the verify session. The user controls when verification is 'complete' (no hidden timeout or single-command contract). The branch worktree has a long-lived shell process managed through the session model.",
       "acceptance": "User Value: User can iterate verification multiple times (run tests → fix → run tests again) without losing context or requiring restart. Verification feels like a real shell environment, not a one-shot command. Code Quality: Branch worktree has a persistent shell process managed through the session model, not a one-shot command that exits.",
-      "status": "Not Started",
+      "status": "In Progress",
       "dependsOn": [6]
     },
     {

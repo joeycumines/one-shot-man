@@ -428,10 +428,7 @@ func (p *Panel) GetVisibleLines(paneID string, height int) ([]string, error) {
 	}
 
 	// Calculate the window based on scroll position.
-	end := max(total-pane.ScrollPos, 0)
-	if end > total {
-		end = total
-	}
+	end := min(max(total-pane.ScrollPos, 0), total)
 	start := max(end-height, 0)
 
 	result := make([]string, end-start)

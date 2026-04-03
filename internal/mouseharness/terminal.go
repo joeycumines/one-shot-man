@@ -342,12 +342,11 @@ func (c *Console) getVisibleTop() int {
 // coordinates, not absolute buffer positions.
 func (c *Console) bufferRowToViewportRow(bufferRow int) int {
 	visibleTop := c.getVisibleTop()
-	viewportY := max(
+	viewportY := min(
 		// Clamp to valid viewport range
-		bufferRow-(visibleTop-1), 1)
-	if viewportY > c.height {
-		viewportY = c.height
-	}
+		max(
+
+			bufferRow-(visibleTop-1), 1), c.height)
 	return viewportY
 }
 

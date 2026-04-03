@@ -113,10 +113,7 @@ found:
 		if totalRows > c.height {
 			visibleTop = totalRows - c.height + 1
 		}
-		viewportY := max(loc.Row-(visibleTop-1), 1)
-		if viewportY > c.height {
-			viewportY = c.height
-		}
+		viewportY := min(max(loc.Row-(visibleTop-1), 1), c.height)
 
 		c.tb.Logf("[CLICK DEBUG] ClickElement %q: loc.Row=%d (buffer-absolute), viewportY=%d, centerX=%d, totalRows=%d, visibleTop=%d",
 			content, loc.Row, viewportY, centerX, totalRows, visibleTop)

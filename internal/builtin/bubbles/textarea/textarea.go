@@ -71,10 +71,7 @@ func runeWidth(r rune) int {
 // empty, visualX is clamped to [0, len(line)] and returned directly.
 func hitTestColumn(line []rune, width int, targetSegment int, visualX int) int {
 	if width <= 0 || len(line) == 0 {
-		col := max(visualX, 0)
-		if col > len(line) {
-			col = len(line)
-		}
+		col := min(max(visualX, 0), len(line))
 		return col
 	}
 

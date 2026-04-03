@@ -423,7 +423,7 @@ func diffArrays(a, b []any, path string) []any {
 	maxLen := max(len(b), len(a))
 
 	var ops []any
-	for i := 0; i < maxLen; i++ {
+	for i := range maxLen {
 		childPath := path + "/" + strconv.Itoa(i)
 		switch {
 		case i >= len(a):

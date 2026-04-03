@@ -226,10 +226,7 @@ func TestBufferRowToViewportRow(t *testing.T) {
 				visibleTop = actualLineCount - tt.terminalHeight + 1
 			}
 
-			viewportY := max(tt.bufferRow-(visibleTop-1), 1)
-			if viewportY > tt.terminalHeight {
-				viewportY = tt.terminalHeight
-			}
+			viewportY := min(max(tt.bufferRow-(visibleTop-1), 1), tt.terminalHeight)
 
 			assert.Equal(t, tt.expectedViewportRow, viewportY, "viewport row mismatch")
 		})

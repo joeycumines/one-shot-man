@@ -66,20 +66,14 @@ func (m Model) View() string {
 	}
 
 	maxOffset := contentHeight - viewportHeight
-	yOffset := max(m.YOffset, 0)
-	if yOffset > maxOffset {
-		yOffset = maxOffset
-	}
+	yOffset := min(max(m.YOffset, 0), maxOffset)
 
 	// Thumb height is proportional to how much content is visible.
 	// thumbHeight ~= viewportHeight^2 / contentHeight
 	windowHeightF := float64(viewportHeight)
 	contentHeightF := float64(contentHeight)
 	thumbHeightRaw := windowHeightF * (windowHeightF / contentHeightF)
-	thumbHeight := min(int(clamp(windowHeightF, 1, thumbHeightRaw)), viewportHeight)
-	if thumbHeight < 1 {
-		thumbHeight = 1
-	}
+	thumbHeight := max(min(int(clamp(windowHeightF, 1, thumbHeightRaw)), viewportHeight), 1)
 
 	// Thumb position maps the scroll offset onto the remaining track space.
 	maxTop := viewportHeight - thumbHeight

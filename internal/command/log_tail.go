@@ -128,7 +128,7 @@ func readLastNLines(r io.Reader, n int) []string {
 	total := min(count, n)
 	result := make([]string, total)
 	start := idx - total
-	for i := 0; i < total; i++ {
+	for i := range total {
 		result[i] = ring[(start+i)%n]
 	}
 	return result

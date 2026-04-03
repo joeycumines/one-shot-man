@@ -382,10 +382,7 @@ func TestBufferRowToViewportRow_AllClampPaths(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			viewportY := max(tc.bufferRow-(visibleTop-1), 1)
-			if viewportY > height {
-				viewportY = height
-			}
+			viewportY := min(max(tc.bufferRow-(visibleTop-1), 1), height)
 			assert.Equal(t, tc.want, viewportY)
 		})
 	}

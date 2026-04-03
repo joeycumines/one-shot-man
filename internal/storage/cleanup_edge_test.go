@@ -130,7 +130,6 @@ func TestCleaner_ConcurrentCleaners(t *testing.T) {
 	results := make([]result, 2)
 
 	for i := range 2 {
-		i := i
 		go func() {
 			defer wg.Done()
 			<-gate

@@ -24,6 +24,12 @@ func IsTildeExpansionPath(path string) bool {
 		(runtime.GOOS == "windows" && len(path) >= 2 && path[0] == '~' && path[1] == '\\')
 }
 
+// userHomeDir is the function used by ExpandTilde to resolve the current user's
+// home directory. It defaults to os.UserHomeDir. Same-package tests may override
+// this directly for deterministic behavior without relying on global OS state that
+// has fallback mechanisms (e.g., getpwuid on Unix).
+var userHomeDir = os.UserHomeDir
+
 // ExpandTilde replaces ~ with the user's home directory.
 // It handles bare ~, paths starting with ~/ (e.g., ~/foo/bar), and on
 // Windows, paths starting with ~\ (e.g., ~\Documents\file.txt).
@@ -31,17 +37,20 @@ func IsTildeExpansionPath(path string) bool {
 // Note: POSIX ~username/ expansion (to another user's home directory) is
 // not supported. Only the current user's home directory is resolved.
 //
-// This function relies on os.UserHomeDir() which queries global system state
-// (environment variables HOME and USERPROFILE on Unix and Windows respectively).
-// This means ExpandTilde is NOT a pure function - its output depends on the
-// environment at the time of calling. Tests that manipulate environment variables
-// should use t.Setenv() for proper isolation when testing this function.
+// This function relies on userHomeDir (os.UserHomeDir by default) which queries
+// global system state (environment variables HOME and USERPROFILE on Unix and
+// Windows respectively). This means ExpandTilde is NOT a pure function - its
+// output depends on the environment at the time of calling. Same-package tests
+// that need deterministic home directory resolution should assign directly to
+// the unexported userHomeDir variable rather than manipulating environment
+// variables, since os.UserHomeDir has OS-level fallback mechanisms (e.g.,
+// getpwuid on Unix) that can succeed even when environment variables are unset.
 func ExpandTilde(path string) (string, error) {
 	if !IsTildeExpansionPath(path) {
 		return path, nil
 	}
 
-	home, err := os.UserHomeDir()
+	home, err := userHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("unable to determine home directory for tilde expansion: %w", err)
 	}

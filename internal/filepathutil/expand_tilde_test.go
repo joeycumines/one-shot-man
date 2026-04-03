@@ -1,7 +1,7 @@
 package filepathutil
 
 import (
-	"os"
+	"fmt"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -11,6 +11,8 @@ import (
 // TestIsTildeExpansionPath tests that IsTildeExpansionPath correctly
 // identifies actual tilde expansion forms vs literal paths starting with "~".
 func TestIsTildeExpansionPath(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		path     string
@@ -41,6 +43,7 @@ func TestIsTildeExpansionPath(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			result := IsTildeExpansionPath(tc.path)
 			if result != tc.expected {
 				t.Errorf("IsTildeExpansionPath(%q) = %v, want %v", tc.path, result, tc.expected)
@@ -60,13 +63,11 @@ func TestIsTildeExpansionPathWindows(t *testing.T) {
 		path     string
 		expected bool
 	}{
-		// Windows-specific tilde expansion forms (should return true)
 		{"tilde with backslash", "~\\", true},
 		{"tilde with Windows path", "~\\Documents\\file.txt", true},
 		{"tilde with nested Windows path", "~\\src\\project", true},
 		{"tilde with trailing backslash", "~\\src\\", true},
 
-		// Literal paths on Windows (should return false)
 		{"literal tilde cache", "~cache", false},
 		{"literal tilde tmp", "~tmp", false},
 		{"literal tilde with backslash but not second char", "~cache\\", false},
@@ -89,7 +90,6 @@ func TestIsTildeExpansionPathPOSIX(t *testing.T) {
 		t.Skip("skipping POSIX-specific test on Windows")
 	}
 
-	// On POSIX, ~\ is NOT a tilde expansion form
 	tests := []string{
 		"~\\",
 		"~\\Documents\\file.txt",
@@ -106,19 +106,45 @@ func TestIsTildeExpansionPathPOSIX(t *testing.T) {
 	}
 }
 
-// TestExpandTildeBareTilde tests that bare "~" expands to the user's home directory.
-func TestExpandTildeBareTilde(t *testing.T) {
-	fakeHome := t.TempDir()
-	t.Setenv("HOME", fakeHome)
-	t.Setenv("USERPROFILE", fakeHome)
+// ---------------------------------------------------------------------------
+// ExpandTilde tests — deterministic via direct userHomeDir override
+// ---------------------------------------------------------------------------
 
-	home, err := os.UserHomeDir()
+// setupFakeHome overrides userHomeDir for deterministic testing. Returns the
+// fake home path. Original is restored via t.Cleanup.
+func setupFakeHome(t *testing.T) string {
+	t.Helper()
+	fakeHome := t.TempDir()
+	orig := userHomeDir
+	userHomeDir = func() (string, error) { return fakeHome, nil }
+	t.Cleanup(func() { userHomeDir = orig })
+
+	// Verify the override works
+	home, err := userHomeDir()
 	if err != nil {
-		t.Fatalf("os.UserHomeDir failed: %v", err)
+		t.Fatalf("overridden userHomeDir failed: %v", err)
 	}
 	if home != fakeHome {
-		t.Fatalf("os.UserHomeDir returned %q, want %q", home, fakeHome)
+		t.Fatalf("overridden userHomeDir returned %q, want %q", home, fakeHome)
 	}
+	return fakeHome
+}
+
+// setupBrokenHome overrides userHomeDir to always fail. Original is restored
+// via t.Cleanup.
+func setupBrokenHome(t *testing.T) {
+	t.Helper()
+	orig := userHomeDir
+	userHomeDir = func() (string, error) {
+		return "", fmt.Errorf("home directory unavailable: $HOME is not set")
+	}
+	t.Cleanup(func() { userHomeDir = orig })
+}
+
+// TestExpandTildeBareTilde tests that bare "~" expands to the home directory
+// resolved by the injected resolver.
+func TestExpandTildeBareTilde(t *testing.T) {
+	fakeHome := setupFakeHome(t)
 
 	result, err := ExpandTilde("~")
 	if err != nil {
@@ -129,24 +155,13 @@ func TestExpandTildeBareTilde(t *testing.T) {
 	}
 }
 
-// TestExpandTildeUnix tests Unix-style tilde expansion.
+// TestExpandTildeUnix tests Unix-style tilde expansion using the injected resolver.
 func TestExpandTildeUnix(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Unix-specific test")
 	}
 
-	fakeHome := t.TempDir()
-	t.Setenv("HOME", fakeHome)
-	// Ensure USERPROFILE is also set so os.UserHomeDir is consistent.
-	t.Setenv("USERPROFILE", fakeHome)
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Fatalf("os.UserHomeDir failed: %v", err)
-	}
-	if home != fakeHome {
-		t.Fatalf("os.UserHomeDir returned %q, want %q", home, fakeHome)
-	}
+	fakeHome := setupFakeHome(t)
 
 	tests := []struct {
 		name     string
@@ -172,24 +187,13 @@ func TestExpandTildeUnix(t *testing.T) {
 	}
 }
 
-// TestExpandTildeWindows tests Windows-style tilde expansion.
+// TestExpandTildeWindows tests Windows-style tilde expansion using the injected resolver.
 func TestExpandTildeWindows(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("Windows-only test")
 	}
 
-	fakeHome := t.TempDir()
-	t.Setenv("USERPROFILE", fakeHome)
-	// Clear HOME on Windows to force USERPROFILE usage.
-	t.Setenv("HOME", "")
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Fatalf("os.UserHomeDir failed: %v", err)
-	}
-	if home != fakeHome {
-		t.Fatalf("os.UserHomeDir returned %q, want %q", home, fakeHome)
-	}
+	fakeHome := setupFakeHome(t)
 
 	tests := []struct {
 		name     string
@@ -215,44 +219,127 @@ func TestExpandTildeWindows(t *testing.T) {
 	}
 }
 
+// TestExpandTilde_JoinRegressionGuard is a targeted regression test proving
+// that ExpandTilde("~/foo") produces /home/user/foo — NOT /foo.
+//
+// This guards against a critical path-math bug: if the remainder after ~
+// extraction starts with a separator and is passed to filepath.Join, Go
+// treats it as absolute and discards the home directory entirely:
+//
+//	filepath.Join("/home/user", "/foo") == "/foo"  // BUG!
+//
+// The current implementation avoids this by using manual concatenation with
+// path[2:] (which skips both ~ AND /), then filepath.Clean.
+func TestExpandTilde_JoinRegressionGuard(t *testing.T) {
+	fakeHome := setupFakeHome(t)
+
+	tests := []struct {
+		input  string
+		suffix string // expected suffix after the home directory
+	}{
+		{"~/foo", "foo"},
+		{"~/bar/baz", filepath.Join("bar", "baz")},
+		{"~/.hidden", ".hidden"},
+		{"~/nested/deep/path.txt", filepath.Join("nested", "deep", "path.txt")},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			result, err := ExpandTilde(tc.input)
+			if err != nil {
+				t.Fatalf("ExpandTilde(%q) error: %v", tc.input, err)
+			}
+
+			expected := filepath.Join(fakeHome, tc.suffix)
+			if result != expected {
+				t.Fatalf("ExpandTilde(%q) = %q, want %q — home directory was discarded!", tc.input, result, expected)
+			}
+
+			// Verify result is actually under the home directory
+			if !strings.HasPrefix(result, fakeHome) {
+				t.Fatalf("ExpandTilde(%q) = %q — result is NOT under home directory %q!", tc.input, result, fakeHome)
+			}
+		})
+	}
+}
+
 // TestExpandTildeErrorWhenHomeDirUnavailable verifies that ExpandTilde returns
 // a descriptive error when the home directory cannot be determined.
-// Uses t.Setenv to properly isolate the test from global state.
+// Uses setupBrokenHome to directly override the unexported userHomeDir
+// variable for deterministic behavior regardless of OS-level fallbacks
+// (getpwuid on Unix, registry on Windows).
 func TestExpandTildeErrorWhenHomeDirUnavailable(t *testing.T) {
-	// Unset both environment variables so os.UserHomeDir will fail.
-	// t.Setenv properly restores the original value after the test.
-	t.Setenv("HOME", "")
-	t.Setenv("USERPROFILE", "")
+	setupBrokenHome(t)
 
 	result, err := ExpandTilde("~/test.txt")
 	if err == nil {
-		// On systems where os.UserHomeDir has fallback mechanisms (e.g., /etc/passwd
-		// on some Unix systems), expansion may succeed even with env vars unset.
-		// In that case, just verify the result is a valid absolute path.
-		if result == "" {
-			t.Errorf("expected non-empty result on success, got empty string")
-		}
-		if !filepath.IsAbs(result) {
-			t.Errorf("result should be absolute path, got: %q", result)
-		}
-		return
+		t.Fatalf("ExpandTilde(\"~/test.txt\") succeeded with result %q — expected error when home directory is unavailable", result)
 	}
 
-	// If expansion failed, verify the error message is descriptive.
-	if !strings.Contains(err.Error(), "unable to determine home directory") {
-		t.Errorf("expected error about home directory, got: %v", err)
+	// Verify the error message is descriptive
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "unable to determine home directory") {
+		t.Errorf("expected error mentioning 'unable to determine home directory', got: %v", errMsg)
+	}
+	if !strings.Contains(errMsg, "home directory unavailable") {
+		t.Errorf("expected wrapped error from resolver mentioning 'home directory unavailable', got: %v", errMsg)
 	}
 	if result != "" {
 		t.Errorf("expected empty result on error, got: %q", result)
 	}
 }
 
+// TestExpandTilde_BareTildeFailure verifies that bare "~" also fails
+// deterministically when the home directory resolver fails.
+func TestExpandTilde_BareTildeFailure(t *testing.T) {
+	setupBrokenHome(t)
+
+	result, err := ExpandTilde("~")
+	if err == nil {
+		t.Fatalf("ExpandTilde(\"~\") succeeded with result %q — expected error when home directory is unavailable", result)
+	}
+	if !strings.Contains(err.Error(), "unable to determine home directory") {
+		t.Errorf("expected error about home directory, got: %v", err)
+	}
+}
+
+// TestExpandTilde_NonTildePathsIgnoreBrokenHome verifies that paths without
+// tilde expansion forms are returned unchanged even when the home directory
+// resolver is broken. This is correct behavior — no tilde, no resolution needed.
+func TestExpandTilde_NonTildePathsIgnoreBrokenHome(t *testing.T) {
+	setupBrokenHome(t)
+
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"relative path", "foo/bar.txt"},
+		{"absolute path", "/usr/local/bin"},
+		{"empty string", ""},
+		{"literal tilde cache", "~cache"},
+		{"literal tilde bar/baz", "~bar/baz"},
+		{"dot", "."},
+		{"dotdot", ".."},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := ExpandTilde(tc.input)
+			if err != nil {
+				t.Fatalf("ExpandTilde(%q) should not fail for non-tilde paths, got: %v", tc.input, err)
+			}
+			if result != tc.input {
+				t.Errorf("ExpandTilde(%q) = %q, want %q (unchanged)", tc.input, result, tc.input)
+			}
+		})
+	}
+}
+
 // TestExpandTildeDoesNotModifyLiteralPaths verifies that literal paths starting
 // with "~" but not matching tilde expansion forms are returned unchanged.
 func TestExpandTildeDoesNotModifyLiteralPaths(t *testing.T) {
-	fakeHome := t.TempDir()
-	t.Setenv("HOME", fakeHome)
-	t.Setenv("USERPROFILE", fakeHome)
+	fakeHome := setupFakeHome(t)
+	_ = fakeHome
 
 	tests := []struct {
 		name  string
@@ -281,9 +368,8 @@ func TestExpandTildeDoesNotModifyLiteralPaths(t *testing.T) {
 // TestExpandTildeAbsolutePathsUnchanged verifies that absolute paths and
 // non-tilde relative paths are returned unchanged.
 func TestExpandTildeAbsolutePathsUnchanged(t *testing.T) {
-	fakeHome := t.TempDir()
-	t.Setenv("HOME", fakeHome)
-	t.Setenv("USERPROFILE", fakeHome)
+	fakeHome := setupFakeHome(t)
+	_ = fakeHome
 
 	tests := []struct {
 		name  string
@@ -312,9 +398,13 @@ func TestExpandTildeAbsolutePathsUnchanged(t *testing.T) {
 	}
 }
 
-// TestExpandTildeWithLiteralTildePaths tests that ExpandTilde does not
-// modify literal paths that happen to start with "~".
+// TestExpandTildeWithLiteralTildePaths tests that ExpandTilde correctly
+// distinguishes between literal tilde paths (unchanged) and actual tilde
+// expansion forms (expanded). Uses injected resolver for determinism.
+// No t.Skip on error — all paths must resolve deterministically.
 func TestExpandTildeWithLiteralTildePaths(t *testing.T) {
+	fakeHome := setupFakeHome(t)
+
 	tests := []struct {
 		name     string
 		input    string
@@ -326,7 +416,7 @@ func TestExpandTildeWithLiteralTildePaths(t *testing.T) {
 		{"literal tilde foo", "~foo", true},
 		{"literal tilde with slash but not second char", "~cache/", true},
 
-		// Actual tilde expansion forms should be modified
+		// Actual tilde expansion forms should be modified (expanded)
 		{"bare tilde", "~", false},
 		{"tilde with forward slash", "~/", false},
 		{"tilde with path", "~/Documents", false},
@@ -340,9 +430,7 @@ func TestExpandTildeWithLiteralTildePaths(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			result, err := ExpandTilde(tc.input)
 			if err != nil {
-				// Some paths might fail if home directory is not available
-				// (e.g., in minimal test environments)
-				t.Skipf("ExpandTilde failed (home dir unavailable): %v", err)
+				t.Fatalf("ExpandTilde(%q) failed: %v", tc.input, err)
 			}
 
 			same := result == tc.input
@@ -350,8 +438,13 @@ func TestExpandTildeWithLiteralTildePaths(t *testing.T) {
 				if tc.wantSame {
 					t.Errorf("ExpandTilde(%q) = %q, want %q (unchanged)", tc.input, result, tc.input)
 				} else {
-					t.Errorf("ExpandTilde(%q) = %q, want different value (should expand)", tc.input, result)
+					t.Errorf("ExpandTilde(%q) = %q, want different value (should expand to path under %q)", tc.input, result, fakeHome)
 				}
+			}
+
+			// For expansion forms, verify the result is actually under the home directory
+			if !tc.wantSame && !strings.HasPrefix(result, fakeHome) {
+				t.Errorf("ExpandTilde(%q) = %q — expanded path is NOT under home directory %q", tc.input, result, fakeHome)
 			}
 		})
 	}

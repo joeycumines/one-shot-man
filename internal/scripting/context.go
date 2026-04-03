@@ -114,17 +114,19 @@ func (cm *ContextManager) normalizeOwnerPath(absPath string) string {
 //
 // The caller MUST hold at least a read lock on cm.mutex when calling this method.
 //
-// Returns (owner, true) if a tracked owner is found, ("", false) otherwise.
-func (cm *ContextManager) findOwnerFromUserPath(path string) (string, bool) {
+// Returns (owner, true, nil) if a tracked owner is found, ("", false, nil) if
+// not found, or ("", false, err) if canonicalization itself fails (e.g.,
+// corrupted $HOME preventing tilde expansion).
+func (cm *ContextManager) findOwnerFromUserPath(path string) (string, bool, error) {
 	// Guard against empty strings - they should never match a tracked owner.
 	// This prevents RemovePath("") from accidentally removing the root owner.
 	if path == "" {
-		return "", false
+		return "", false, nil
 	}
 
 	// Step 1: Try raw path as exact owner match
 	if _, tracked := cm.ownerFiles[path]; tracked {
-		return path, true
+		return path, true, nil
 	}
 
 	// Step 2: Try basePath-relative normalization for relative, non-tilde paths.
@@ -140,7 +142,7 @@ func (cm *ContextManager) findOwnerFromUserPath(path string) (string, bool) {
 		if cleaned, err := filepath.Abs(absPath); err == nil {
 			if relativeOwner := cm.normalizeOwnerPath(cleaned); relativeOwner != path {
 				if _, tracked := cm.ownerFiles[relativeOwner]; tracked {
-					return relativeOwner, true
+					return relativeOwner, true, nil
 				}
 			}
 		}
@@ -148,15 +150,20 @@ func (cm *ContextManager) findOwnerFromUserPath(path string) (string, bool) {
 
 	// Step 3: Fall back to CLI/CWD-style canonicalization (tilde expansion,
 	// absolute path resolution, CWD-relative handling).
+	// If canonicalizeUserPath fails (e.g., corrupted $HOME preventing tilde
+	// expansion), we MUST bubble the error up — the caller (RemovePath,
+	// RefreshPath) needs to know that the failure was a system error, not a
+	// benign cache miss.
 	normalized, _, err := cm.canonicalizeUserPath(path)
-	if err == nil {
-		if _, tracked := cm.ownerFiles[normalized]; tracked {
-			return normalized, true
-		}
+	if err != nil {
+		return "", false, fmt.Errorf("findOwnerFromUserPath(%q): %w", path, err)
+	}
+	if _, tracked := cm.ownerFiles[normalized]; tracked {
+		return normalized, true, nil
 	}
 
 	// No tracked owner found
-	return "", false
+	return "", false, nil
 }
 
 func (cm *ContextManager) absolutePathFromOwner(owner string) (string, error) {
@@ -474,7 +481,10 @@ func (cm *ContextManager) RemovePath(path string) error {
 	defer cm.mutex.Unlock()
 
 	// Try to find the owner under the write lock
-	owner, found := cm.findOwnerFromUserPath(path)
+	owner, found, findErr := cm.findOwnerFromUserPath(path)
+	if findErr != nil {
+		return fmt.Errorf("removePath: %w", findErr)
+	}
 	if found {
 		cm.removeOwnerLocked(owner)
 		return nil
@@ -886,8 +896,12 @@ func (cm *ContextManager) RefreshPath(path string) error {
 	// resolution operations (filepath.Abs, etc.) that we don't want to do
 	// while holding the lock.
 	cm.mutex.RLock()
-	owner, found := cm.findOwnerFromUserPath(path)
+	owner, found, findErr := cm.findOwnerFromUserPath(path)
 	cm.mutex.RUnlock()
+
+	if findErr != nil {
+		return fmt.Errorf("refreshPath: %w", findErr)
+	}
 
 	if !found {
 		return fmt.Errorf("path %s is not a tracked owner", path)

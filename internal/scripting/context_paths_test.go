@@ -864,6 +864,7 @@ func TestAddPathExpandsTilde(t *testing.T) {
 
 // TestRefreshPathExpandsTilde verifies that ContextManager.RefreshPath
 // correctly handles tilde paths and updates the content from the expanded path.
+// Uses an actual ~/tilde path (not a bare relative path) as the test name implies.
 func TestRefreshPathExpandsTilde(t *testing.T) {
 	fakeHome := t.TempDir()
 	t.Setenv("HOME", fakeHome)
@@ -894,16 +895,17 @@ func TestRefreshPathExpandsTilde(t *testing.T) {
 		t.Fatalf("failed to update test file: %v", err)
 	}
 
-	// Refresh using tilde path - should resolve to the same file
-	logical := filepath.Join("refresh_test", "refresh.txt")
-	if err := cm.RefreshPath(logical); err != nil {
-		t.Fatalf("RefreshPath failed: %v", err)
+	// Refresh using an ACTUAL tilde path — the test name says "ExpandsTilde"
+	tildePath := "~/refresh_test/refresh.txt"
+	if err := cm.RefreshPath(tildePath); err != nil {
+		t.Fatalf("RefreshPath(%q) failed: %v", tildePath, err)
 	}
 
-	// Verify content was updated
+	// Verify content was updated (logical path is relative to basePath)
+	logical := filepath.Join("refresh_test", "refresh.txt")
 	cp, ok := cm.GetPath(logical)
 	if !ok {
-		t.Fatalf("expected path to be tracked after refresh")
+		t.Fatalf("expected path %q to be tracked after refresh", logical)
 	}
 	if cp.Content != "updated content" {
 		t.Errorf("expected updated content, got: %q", cp.Content)
@@ -912,6 +914,7 @@ func TestRefreshPathExpandsTilde(t *testing.T) {
 
 // TestRemovePathExpandsTilde verifies that ContextManager.RemovePath
 // correctly normalizes and removes paths specified with tilde notation.
+// Uses an actual ~/tilde path (not a bare basename) as the test name implies.
 func TestRemovePathExpandsTilde(t *testing.T) {
 	fakeHome := t.TempDir()
 	t.Setenv("HOME", fakeHome)
@@ -939,14 +942,15 @@ func TestRemovePathExpandsTilde(t *testing.T) {
 		t.Fatalf("expected file to be tracked before removal")
 	}
 
-	// Remove using just the logical name (which should work)
-	if err := cm.RemovePath(logical); err != nil {
-		t.Fatalf("RemovePath failed: %v", err)
+	// Remove using an ACTUAL tilde path — the test name says "ExpandsTilde"
+	tildePath := "~/remove_test.txt"
+	if err := cm.RemovePath(tildePath); err != nil {
+		t.Fatalf("RemovePath(%q) failed: %v", tildePath, err)
 	}
 
 	// Verify it was removed
 	if _, ok := cm.GetPath(logical); ok {
-		t.Errorf("expected file to be removed after RemovePath")
+		t.Errorf("expected file to be removed after RemovePath(%q)", tildePath)
 	}
 }
 

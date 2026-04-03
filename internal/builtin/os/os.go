@@ -33,26 +33,6 @@ func expandTildeOnly(path string) (string, error) {
 	return expanded, nil
 }
 
-// resolvePathReturningError expands ~ and resolves to an absolute path.
-// Returns an error if tilde expansion fails or if working directory cannot be determined.
-// NOTE: This function should NOT be used for readFile/fileExists as it breaks
-// symlink traversal and requires os.Getwd() to succeed. Use expandTildeOnly instead.
-func resolvePathReturningError(path string) (string, error) {
-	expanded, err := filepathutil.ExpandTilde(path)
-	if err != nil {
-		return "", fmt.Errorf("tilde expansion failed: %w", err)
-	}
-	path = expanded
-	if filepath.IsAbs(path) {
-		return filepath.Clean(path), nil
-	}
-	wd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("could not determine working directory: %w", err)
-	}
-	return filepath.Join(wd, path), nil
-}
-
 // Require returns a module loader for `osm:os` that uses the provided base context
 // and a TUI sink for fallback messaging (may be nil).
 func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, module *goja.Object) {
@@ -95,7 +75,11 @@ func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, m
 
 			expanded, err := expandTildeOnly(path)
 			if err != nil {
-				return vm.ToValue(false)
+				// Tilde expansion failure is NOT "file not found" — it's a
+				// system-level error (corrupted $HOME, missing env vars).
+				// Panicking makes the error explicit and consistent with
+				// isAbsolute's error handling.
+				panic(vm.NewGoError(fmt.Errorf("fileExists: %w", err)))
 			}
 
 			_, err = os.Stat(expanded)
@@ -183,11 +167,11 @@ func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, m
 			if path == "" {
 				panic(vm.NewGoError(fmt.Errorf("writeFile: path is required")))
 			}
-			resolved, err := resolvePathReturningError(path)
+			expanded, err := expandTildeOnly(path)
 			if err != nil {
 				panic(vm.NewGoError(fmt.Errorf("writeFile: %w", err)))
 			}
-			path = resolved
+			path = expanded
 			if createDirs {
 				if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 					panic(vm.NewGoError(fmt.Errorf("writeFile: %w", err)))
@@ -208,7 +192,7 @@ func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, m
 			if path == "" {
 				panic(vm.NewGoError(fmt.Errorf("appendFile: path is required")))
 			}
-			resolved, err := resolvePathReturningError(path)
+			resolved, err := expandTildeOnly(path)
 			if err != nil {
 				panic(vm.NewGoError(fmt.Errorf("appendFile: %w", err)))
 			}

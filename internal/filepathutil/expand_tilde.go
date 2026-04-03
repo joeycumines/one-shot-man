@@ -30,6 +30,12 @@ func IsTildeExpansionPath(path string) bool {
 //
 // Note: POSIX ~username/ expansion (to another user's home directory) is
 // not supported. Only the current user's home directory is resolved.
+//
+// This function relies on os.UserHomeDir() which queries global system state
+// (environment variables HOME and USERPROFILE on Unix and Windows respectively).
+// This means ExpandTilde is NOT a pure function - its output depends on the
+// environment at the time of calling. Tests that manipulate environment variables
+// should use t.Setenv() for proper isolation when testing this function.
 func ExpandTilde(path string) (string, error) {
 	if !IsTildeExpansionPath(path) {
 		return path, nil

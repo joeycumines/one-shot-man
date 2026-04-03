@@ -219,27 +219,10 @@ func TestExpandTildeWindows(t *testing.T) {
 // a descriptive error when the home directory cannot be determined.
 // Uses t.Setenv to properly isolate the test from global state.
 func TestExpandTildeErrorWhenHomeDirUnavailable(t *testing.T) {
-	// Save original values using LookupEnv to distinguish between unset and empty string.
-	origHome, homeWasSet := os.LookupEnv("HOME")
-	origUserProfile, userProfileWasSet := os.LookupEnv("USERPROFILE")
-
 	// Unset both environment variables so os.UserHomeDir will fail.
-	os.Unsetenv("HOME")
-	os.Unsetenv("USERPROFILE")
-
-	// Restore original values after the test.
-	t.Cleanup(func() {
-		if homeWasSet {
-			os.Setenv("HOME", origHome)
-		} else {
-			os.Unsetenv("HOME")
-		}
-		if userProfileWasSet {
-			os.Setenv("USERPROFILE", origUserProfile)
-		} else {
-			os.Unsetenv("USERPROFILE")
-		}
-	})
+	// t.Setenv properly restores the original value after the test.
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
 
 	result, err := ExpandTilde("~/test.txt")
 	if err == nil {
@@ -249,7 +232,7 @@ func TestExpandTildeErrorWhenHomeDirUnavailable(t *testing.T) {
 		if result == "" {
 			t.Errorf("expected non-empty result on success, got empty string")
 		}
-		if !filepath.IsAbs(result) && result != "~/test.txt" {
+		if !filepath.IsAbs(result) {
 			t.Errorf("result should be absolute path, got: %q", result)
 		}
 		return

@@ -20,8 +20,23 @@ const (
 	clipboardTimeout = time.Second * 10
 )
 
-// resolvePathReturningError expands ~ and resolves to an absolute path.
+// expandTildeOnly expands ~ to the user's home directory but does NOT
+// absolutize the path. This allows relative paths to be passed directly
+// to os.ReadFile/os.Stat, enabling proper kernel-level path resolution
+// including physical ".." traversal through symlinks.
 // Returns an error if tilde expansion fails.
+func expandTildeOnly(path string) (string, error) {
+	expanded, err := filepathutil.ExpandTilde(path)
+	if err != nil {
+		return "", fmt.Errorf("tilde expansion failed: %w", err)
+	}
+	return expanded, nil
+}
+
+// resolvePathReturningError expands ~ and resolves to an absolute path.
+// Returns an error if tilde expansion fails or if working directory cannot be determined.
+// NOTE: This function should NOT be used for readFile/fileExists as it breaks
+// symlink traversal and requires os.Getwd() to succeed. Use expandTildeOnly instead.
 func resolvePathReturningError(path string) (string, error) {
 	expanded, err := filepathutil.ExpandTilde(path)
 	if err != nil {
@@ -36,18 +51,6 @@ func resolvePathReturningError(path string) (string, error) {
 		return "", fmt.Errorf("could not determine working directory: %w", err)
 	}
 	return filepath.Join(wd, path), nil
-}
-
-// resolvePath converts a possibly relative path to absolute using the working directory.
-// Expands ~ to the user's home directory before conversion.
-// On error (e.g., tilde expansion failure), returns the unexpanded path to maintain
-// backward compatibility with callers that don't check errors.
-func resolvePath(path string) string {
-	resolved, err := resolvePathReturningError(path)
-	if err != nil {
-		return path
-	}
-	return resolved
 }
 
 // Require returns a module loader for `osm:os` that uses the provided base context
@@ -67,12 +70,12 @@ func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, m
 				return vm.ToValue(map[string]any{"error": true, "message": "empty path", "content": ""})
 			}
 
-			resolved, err := resolvePathReturningError(path)
+			expanded, err := expandTildeOnly(path)
 			if err != nil {
 				return vm.ToValue(map[string]any{"error": true, "message": err.Error(), "content": ""})
 			}
 
-			data, err := os.ReadFile(resolved)
+			data, err := os.ReadFile(expanded)
 			if err != nil {
 				return vm.ToValue(map[string]any{"error": true, "message": err.Error(), "content": ""})
 			}
@@ -90,17 +93,18 @@ func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, m
 				return vm.ToValue(false)
 			}
 
-			resolved, err := resolvePathReturningError(path)
+			expanded, err := expandTildeOnly(path)
 			if err != nil {
 				return vm.ToValue(false)
 			}
 
-			_, err = os.Stat(resolved)
+			_, err = os.Stat(expanded)
 			return vm.ToValue(err == nil)
 		})
 
 		// isAbsolute(path: string): boolean
 		// Expands ~ to the user's home directory before checking.
+		// Panics on tilde expansion failure to make error handling explicit.
 		_ = exports.Set("isAbsolute", func(call goja.FunctionCall) goja.Value {
 			var path string
 			if len(call.Arguments) > 0 {
@@ -110,7 +114,11 @@ func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, m
 				return vm.ToValue(false)
 			}
 			// Expand tilde so that ~/foo is treated as absolute (expanded form is absolute).
-			expanded, _ := filepathutil.ExpandTilde(path)
+			// If expansion fails, panic to make the error explicit instead of silently returning false.
+			expanded, err := filepathutil.ExpandTilde(path)
+			if err != nil {
+				panic(vm.NewGoError(fmt.Errorf("isAbsolute: %w", err)))
+			}
 			return vm.ToValue(filepath.IsAbs(expanded))
 		})
 
@@ -168,12 +176,18 @@ func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, m
 
 		// writeFile(path, content, options?): undefined
 		// options: { mode?: number (default 0644), createDirs?: boolean (default false) }
+		// Automatically expands ~ to the user's home directory before writing.
+		// Panics on tilde expansion failure to prevent data loss from silent fallback.
 		_ = exports.Set("writeFile", func(call goja.FunctionCall) goja.Value {
 			path, content, mode, createDirs := parseWriteArgs(vm, call)
 			if path == "" {
 				panic(vm.NewGoError(fmt.Errorf("writeFile: path is required")))
 			}
-			path = resolvePath(path)
+			resolved, err := resolvePathReturningError(path)
+			if err != nil {
+				panic(vm.NewGoError(fmt.Errorf("writeFile: %w", err)))
+			}
+			path = resolved
 			if createDirs {
 				if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 					panic(vm.NewGoError(fmt.Errorf("writeFile: %w", err)))
@@ -187,12 +201,18 @@ func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, m
 
 		// appendFile(path, content, options?): undefined
 		// options: { mode?: number (default 0644), createDirs?: boolean (default false) }
+		// Automatically expands ~ to the user's home directory before appending.
+		// Panics on tilde expansion failure to prevent data corruption from silent fallback.
 		_ = exports.Set("appendFile", func(call goja.FunctionCall) goja.Value {
 			path, content, mode, createDirs := parseWriteArgs(vm, call)
 			if path == "" {
 				panic(vm.NewGoError(fmt.Errorf("appendFile: path is required")))
 			}
-			path = resolvePath(path)
+			resolved, err := resolvePathReturningError(path)
+			if err != nil {
+				panic(vm.NewGoError(fmt.Errorf("appendFile: %w", err)))
+			}
+			path = resolved
 			if createDirs {
 				if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 					panic(vm.NewGoError(fmt.Errorf("appendFile: %w", err)))

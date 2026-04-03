@@ -1203,17 +1203,18 @@ func TestIsAbsolute_TildeExpansionFailure(t *testing.T) {
 	})
 
 	// Test with tilde path when HOME is unset
-	// CURRENT BUG: Returns false instead of erroring
+	// EXPECTED: Should panic with tilde expansion error
 	res, err := isAbsolute(goja.Undefined(), runtime.ToValue("~/foo"))
-	if err != nil {
-		t.Fatalf("isAbsolute unexpected panic: %v", err)
+
+	// After fix: should panic with tilde expansion error
+	if err == nil {
+		t.Fatalf("expected isAbsolute to panic when tilde expansion fails, but got result: %v", res.ToBoolean())
 	}
 
-	if res.ToBoolean() {
-		t.Errorf("isAbsolute(\"~/foo\") should return false when expansion fails (returns empty string), got true")
+	// Verify the error message mentions tilde expansion or home directory
+	if !strings.Contains(err.Error(), "tilde expansion") && !strings.Contains(err.Error(), "home directory") {
+		t.Fatalf("expected tilde expansion error, got: %v", err)
 	}
-	// BUG: We can't distinguish between "not absolute" and "expansion failed"
-	t.Skip("BUG: isAbsolute silently drops tilde expansion error - returns false for both 'not absolute' and 'expansion failed'")
 }
 
 // TestIsAbsolute_TildePaths verifies the expected behavior of isAbsolute
@@ -1253,3 +1254,7 @@ func TestIsAbsolute_TildePaths(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// tilde expansion tests — demonstrates critical bugs in current implementation
+// ---------------------------------------------------------------------------

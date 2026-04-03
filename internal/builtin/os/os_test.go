@@ -1034,42 +1034,26 @@ func TestWriteFile_TildeExpansion(t *testing.T) {
 
 // TestWriteFile_TildeExpansionFailure verifies that writeFile panics with a
 // descriptive error when tilde expansion fails (home directory unavailable).
-// Uses t.Setenv for proper test isolation.
+// Uses the injectable expandTilde var for deterministic failure without
+// relying on os.UserHomeDir's OS-level fallbacks (getpwuid, etc.).
 func TestWriteFile_TildeExpansionFailure(t *testing.T) {
+	orig := expandTilde
+	expandTilde = func(path string) (string, error) {
+		return "", fmt.Errorf("home directory unavailable: $HOME is not set")
+	}
+	t.Cleanup(func() { expandTilde = orig })
+
 	vm, exports := setupModuleAllPlatforms(t, nil)
 	writeFile := requireCallable(t, exports, "writeFile")
-
-	dir := t.TempDir()
-	origDir, _ := os.Getwd()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(origDir) })
-
-	// Use t.Setenv to isolate HOME manipulation (not os.Unsetenv which mutates
-	// global process state and breaks parallel tests)
-	t.Setenv("HOME", "")
-	t.Setenv("USERPROFILE", "")
 
 	opts := vm.NewObject()
 	_ = opts.Set("createDirs", true)
 	_, err := writeFile(goja.Undefined(), vm.ToValue("~/secrets.txt"), vm.ToValue("secret-key: abc123"), opts)
 
 	if err == nil {
-		// On systems where os.UserHomeDir has OS-level fallbacks (getpwuid, etc.),
-		// tilde expansion may succeed even with HOME="". In that case, verify
-		// no literal "~" directory was created in the CWD.
-		literalTildePath := filepath.Join(dir, "~", "secrets.txt")
-		if _, statErr := os.Stat(literalTildePath); statErr == nil {
-			t.Fatalf("expected tilde expansion error, but call succeeded silently and created literal '~' directory at %q", literalTildePath)
-		}
-		// Expansion succeeded via OS fallback — file was written to the real
-		// home directory. This is acceptable behavior; the failure path is
-		// tested deterministically in internal/filepathutil.
-		return
+		t.Fatal("expected tilde expansion error, got nil")
 	}
 
-	// Expansion failed — verify error message mentions tilde or home directory
 	errMsg := err.Error()
 	if !strings.Contains(errMsg, "tilde expansion") && !strings.Contains(errMsg, "home directory") {
 		t.Fatalf("expected tilde expansion error, got: %v", errMsg)
@@ -1106,31 +1090,24 @@ func TestAppendFile_TildeExpansion(t *testing.T) {
 }
 
 // TestAppendFile_TildeExpansionFailure verifies that appendFile panics with a
-// descriptive error when tilde expansion fails. Uses t.Setenv for isolation.
+// descriptive error when tilde expansion fails. Uses the injectable expandTilde
+// var for deterministic failure.
 func TestAppendFile_TildeExpansionFailure(t *testing.T) {
+	orig := expandTilde
+	expandTilde = func(path string) (string, error) {
+		return "", fmt.Errorf("home directory unavailable: $HOME is not set")
+	}
+	t.Cleanup(func() { expandTilde = orig })
+
 	vm, exports := setupModuleAllPlatforms(t, nil)
 	appendFile := requireCallable(t, exports, "appendFile")
-
-	dir := t.TempDir()
-	origDir, _ := os.Getwd()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(origDir) })
-
-	t.Setenv("HOME", "")
-	t.Setenv("USERPROFILE", "")
 
 	opts := vm.NewObject()
 	_ = opts.Set("createDirs", true)
 	_, err := appendFile(goja.Undefined(), vm.ToValue("~/data.txt"), vm.ToValue("appended data"), opts)
 
 	if err == nil {
-		literalTildePath := filepath.Join(dir, "~", "data.txt")
-		if _, statErr := os.Stat(literalTildePath); statErr == nil {
-			t.Fatalf("expected tilde expansion error, but call succeeded silently and created literal '~' directory at %q", literalTildePath)
-		}
-		return
+		t.Fatal("expected tilde expansion error, got nil")
 	}
 
 	errMsg := err.Error()
@@ -1172,12 +1149,16 @@ func TestReadFile_TildeExpansion(t *testing.T) {
 // error object (not a panic) when tilde expansion fails, and the error message
 // explicitly mentions tilde expansion or home directory — proving the failure
 // is from tilde expansion, not from a missing file.
+// Uses the injectable expandTilde var for deterministic failure.
 func TestReadFile_TildeExpansionFailure(t *testing.T) {
+	orig := expandTilde
+	expandTilde = func(path string) (string, error) {
+		return "", fmt.Errorf("home directory unavailable: $HOME is not set")
+	}
+	t.Cleanup(func() { expandTilde = orig })
+
 	vm, exports := setupModuleAllPlatforms(t, nil)
 	readFile := requireCallable(t, exports, "readFile")
-
-	t.Setenv("HOME", "")
-	t.Setenv("USERPROFILE", "")
 
 	res, err := readFile(goja.Undefined(), vm.ToValue("~/file.txt"))
 	if err != nil {
@@ -1186,20 +1167,9 @@ func TestReadFile_TildeExpansionFailure(t *testing.T) {
 
 	resMap := exportMap(t, vm, res)
 	if resMap["error"] != true {
-		// On systems with OS-level fallbacks, expansion may succeed. In that
-		// case, readFile would fail with "file not found" at the real home dir.
-		// This is not the tilde expansion failure — skip gracefully.
-		msg, _ := resMap["message"].(string)
-		if strings.Contains(msg, "tilde expansion") || strings.Contains(msg, "home directory") {
-			// Correct: tilde expansion failed and was surfaced
-			return
-		}
-		// Expansion succeeded via fallback but file doesn't exist at real home.
-		// This is expected — we can't force expansion failure from this package.
-		return
+		t.Fatalf("expected error=true, got: %#v", resMap)
 	}
 
-	// Error was returned — assert the message explicitly mentions tilde/home
 	msg := resMap["message"].(string)
 	if msg == "" {
 		t.Fatalf("expected error message, got empty string")
@@ -1245,24 +1215,22 @@ func TestFileExists_TildeExpansion(t *testing.T) {
 
 // TestFileExists_TildeExpansionFailure verifies that fileExists panics (does
 // NOT silently return false) when tilde expansion fails.
+// Uses the injectable expandTilde var for deterministic failure.
 func TestFileExists_TildeExpansionFailure(t *testing.T) {
+	orig := expandTilde
+	expandTilde = func(path string) (string, error) {
+		return "", fmt.Errorf("home directory unavailable: $HOME is not set")
+	}
+	t.Cleanup(func() { expandTilde = orig })
+
 	vm, exports := setupModuleAllPlatforms(t, nil)
 	fileExists := requireCallable(t, exports, "fileExists")
 
-	t.Setenv("HOME", "")
-	t.Setenv("USERPROFILE", "")
-
 	_, err := fileExists(goja.Undefined(), vm.ToValue("~/any-path.txt"))
-
 	if err == nil {
-		// On systems with OS fallbacks, expansion may succeed. In that case,
-		// fileExists returns a boolean (not an error) for an existing/non-existing
-		// file at the real home. The failure path is tested deterministically
-		// in internal/filepathutil via setUserHomeDirForTesting.
-		return
+		t.Fatal("expected tilde expansion error, got nil")
 	}
 
-	// Expansion failed — fileExists must panic, not silently return false
 	errMsg := err.Error()
 	if !strings.Contains(errMsg, "fileExists") {
 		t.Fatalf("expected fileExists error prefix, got: %v", errMsg)
@@ -1274,21 +1242,20 @@ func TestFileExists_TildeExpansionFailure(t *testing.T) {
 
 // TestIsAbsolute_TildeExpansionFailure verifies that isAbsolute panics
 // (does NOT silently return false) when tilde expansion fails.
+// Uses the injectable expandTilde var for deterministic failure.
 func TestIsAbsolute_TildeExpansionFailure(t *testing.T) {
+	orig := expandTilde
+	expandTilde = func(path string) (string, error) {
+		return "", fmt.Errorf("home directory unavailable: $HOME is not set")
+	}
+	t.Cleanup(func() { expandTilde = orig })
+
 	vm, exports := setupModuleAllPlatforms(t, nil)
 	isAbsolute := requireCallable(t, exports, "isAbsolute")
 
-	t.Setenv("HOME", "")
-	t.Setenv("USERPROFILE", "")
-
-	res, err := isAbsolute(goja.Undefined(), vm.ToValue("~/foo"))
-
+	_, err := isAbsolute(goja.Undefined(), vm.ToValue("~/foo"))
 	if err == nil {
-		// On systems with OS fallbacks, expansion may succeed. isAbsolute
-		// would then return true (expanded path is absolute). The failure
-		// path is tested deterministically in internal/filepathutil.
-		_ = res
-		return
+		t.Fatal("expected tilde expansion error, got nil")
 	}
 
 	if !strings.Contains(err.Error(), "isAbsolute") {

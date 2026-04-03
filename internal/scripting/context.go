@@ -14,6 +14,34 @@ import (
 	"golang.org/x/tools/txtar"
 )
 
+// isTildeOwnerLabel returns true if the given owner label is a tilde path
+// that should be expanded before path resolution. Unlike
+// filepathutil.IsTildeExpansionPath (which is platform-aware for current-host
+// semantics), this function accepts BOTH forward-slash and backslash tilde
+// forms regardless of runtime GOOS. This is necessary because persisted
+// session state may originate from a different OS — a Windows session with
+// "~\Documents\file.txt" must be correctly rehydrated on Linux/macOS.
+func isTildeOwnerLabel(path string) bool {
+	return path == "~" ||
+		strings.HasPrefix(path, "~/") ||
+		(len(path) >= 2 && path[0] == '~' && path[1] == '\\')
+}
+
+// expandTildeOwnerLabel expands a tilde owner label to an absolute path.
+// It normalizes backslash-tilde forms (e.g. "~\Documents") to forward-slash
+// before expansion so that filepathutil.ExpandTilde works correctly on all
+// platforms.
+func expandTildeOwnerLabel(path string) (string, error) {
+	normalized := path
+	if len(path) >= 2 && path[0] == '~' && path[1] == '\\' {
+		// Preserve tilde + convert backslashes after it to forward slashes.
+		// This makes "~\Documents\file.txt" become "~/Documents/file.txt"
+		// which filepathutil.ExpandTilde handles on all platforms.
+		normalized = "~/" + strings.ReplaceAll(path[2:], "\\", "/")
+	}
+	return filepathutil.ExpandTilde(normalized)
+}
+
 // canonicalizeUserPath converts a user-provided path to a canonical owner key.
 // It performs tilde expansion, resolves to an absolute path, and normalizes
 // relative to the ContextManager's base path. This ensures consistent handling
@@ -136,8 +164,10 @@ func (cm *ContextManager) findOwnerFromUserPath(path string) (string, bool, erro
 	// IMPORTANT: We only skip this step for actual tilde expansion forms (e.g., "~/", "~\"),
 	// not for literal paths that happen to start with "~" (e.g., "~cache", "~tmp").
 	// Literal tilde paths should get basePath-relative normalization just like any
-	// other relative path.
-	if !filepath.IsAbs(path) && !filepathutil.IsTildeExpansionPath(path) {
+	// other relative path. We use isTildeOwnerLabel (cross-platform) rather than
+	// filepathutil.IsTildeExpansionPath (host-specific) because findOwnerFromUserPath
+	// is used for session rehydration where labels may originate from different OSes.
+	if !filepath.IsAbs(path) && !isTildeOwnerLabel(path) {
 		absPath := filepath.Join(cm.basePath, path)
 		if cleaned, err := filepath.Abs(absPath); err == nil {
 			if relativeOwner := cm.normalizeOwnerPath(cleaned); relativeOwner != path {
@@ -150,10 +180,13 @@ func (cm *ContextManager) findOwnerFromUserPath(path string) (string, bool, erro
 
 	// Step 3: Fall back to CLI/CWD-style canonicalization (tilde expansion,
 	// absolute path resolution, CWD-relative handling).
-	// If canonicalizeUserPath fails (e.g., corrupted $HOME preventing tilde
-	// expansion), we MUST bubble the error up — the caller (RemovePath,
-	// RefreshPath) needs to know that the failure was a system error, not a
-	// benign cache miss.
+	// If canonicalizeUserPath fails, we bubble the error up. This includes
+	// tilde expansion failure (corrupted $HOME) AND filepath.Abs/Getwd
+	// failure (invalid process CWD). The caller (RemovePath, RefreshPath)
+	// needs to know that the failure was a system error, not a benign cache
+	// miss. Note: this means RemovePath("foo") may return an error in
+	// degenerate environments (invalid CWD) where it previously returned
+	// nil. This is intentional — silently swallowing system errors is worse.
 	normalized, _, err := cm.canonicalizeUserPath(path)
 	if err != nil {
 		return "", false, fmt.Errorf("findOwnerFromUserPath(%q): %w", path, err)
@@ -216,10 +249,18 @@ func (cm *ContextManager) AddPath(path string) error {
 // internal use (e.g. session rehydration) where stored owner labels must be
 // resolved against the manager's configured base rather than the process CWD.
 //
-// It returns the canonical "owner" key that the ContextManager used to store
-// the path (this is the normalized, relative form when possible). Returning
-// the owner allows callers (e.g., TUI rehydration) to keep persisted labels
-// in sync with the backend and avoid ghost entries.
+// It returns a label suitable for persisting as a TUI display label. For
+// tilde-prefixed inputs (e.g. "~/.claude/agents/Takumi.md"), the original
+// tilde form is returned unchanged. For all other inputs, the normalized
+// owner key is returned. This allows callers (e.g., TUI rehydration) to
+// keep persisted labels in sync without replacing user-friendly tilde paths
+// with absolute paths.
+//
+// Note: the returned value is NOT necessarily the internal owner key used
+// by the ContextManager's paths map. Use normalizeOwnerPath on the resolved
+// absolute path to obtain the true internal key if needed. Operations like
+// RemovePath and RefreshPath handle tilde expansion internally via
+// findOwnerFromUserPath, so the tilde-form label round-trips correctly.
 func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
 	// Guard against empty string inputs to prevent unintentional root owner mutation.
 	// An empty string would resolve to the basePath, which could cause
@@ -243,8 +284,8 @@ func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
 	// Without expansion, filepath.IsAbs returns false for "~/" and the path
 	// would be incorrectly resolved relative to basePath.
 	verifiedPath := ownerPath
-	if filepathutil.IsTildeExpansionPath(ownerPath) {
-		expanded, err := filepathutil.ExpandTilde(ownerPath)
+	if isTildeOwnerLabel(ownerPath) {
+		expanded, err := expandTildeOwnerLabel(ownerPath)
 		if err != nil {
 			return "", fmt.Errorf("failed to expand tilde in owner path %s: %w", ownerPath, err)
 		}
@@ -299,7 +340,7 @@ func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
 	// path). The internal ContextManager maps use the normalized absolute
 	// owner key; findOwnerFromUserPath (used by RemovePath, RefreshPath)
 	// expands tildes during lookup, so the tilde label remains functional.
-	if filepathutil.IsTildeExpansionPath(ownerPath) {
+	if isTildeOwnerLabel(ownerPath) {
 		return ownerPath, nil
 	}
 	return owner, nil

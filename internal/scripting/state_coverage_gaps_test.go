@@ -1639,6 +1639,93 @@ func TestContextManager_AddRelativePath_TildeLabel(t *testing.T) {
 	if !strings.Contains(err.Error(), "failed to stat") {
 		t.Errorf("expected stat error, got: %v", err)
 	}
+
+	// Test 6: RemovePath round-trips through tilde expansion correctly.
+	// After RemovePath("~/.claude/agents/Takumi.md"), the file should no
+	// longer be tracked internally.
+	err = cm.RemovePath("~/.claude/agents/Takumi.md")
+	if err != nil {
+		t.Fatalf("RemovePath with tilde label: %v", err)
+	}
+	_, exists = cm.GetPath(absOwner)
+	if exists {
+		t.Fatal("expected file to be removed after RemovePath with tilde label")
+	}
+
+	// Test 7: RefreshPath round-trips through tilde expansion after re-adding.
+	_, err = cm.AddRelativePath("~/.claude/agents/Takumi.md")
+	if err != nil {
+		t.Fatalf("re-add after remove: %v", err)
+	}
+	// Modify the file on disk so RefreshPath has observable effect
+	updatedPath := filepath.Join(fakeHome, ".claude", "agents", "Takumi.md")
+	if err := os.WriteFile(updatedPath, []byte("# Updated Takumi"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	err = cm.RefreshPath("~/.claude/agents/Takumi.md")
+	if err != nil {
+		t.Fatalf("RefreshPath with tilde label: %v", err)
+	}
+	cp2, exists := cm.GetPath(absOwner)
+	if !exists {
+		t.Fatal("expected file to still be tracked after RefreshPath")
+	}
+	if cp2.Content != "# Updated Takumi" {
+		t.Errorf("expected refreshed content, got %q", cp2.Content)
+	}
+}
+
+// TestContextManager_AddRelativePath_CrossPlatformTildeLabel verifies that
+// Windows-style tilde labels (e.g. "~\Documents\file.txt") are correctly
+// handled on all platforms for cross-host session rehydration.
+func TestContextManager_AddRelativePath_CrossPlatformTildeLabel(t *testing.T) {
+	// NOT t.Parallel() — t.Setenv mutates process environment.
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	// Create a file at <fakeHome>/docs/notes.txt
+	docsDir := filepath.Join(fakeHome, "docs")
+	if err := os.MkdirAll(docsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	docFile := filepath.Join(docsDir, "notes.txt")
+	if err := os.WriteFile(docFile, []byte("cross-platform notes"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cm, _ := NewContextManager(t.TempDir())
+
+	// Add using Windows-style backslash tilde label
+	owner, err := cm.AddRelativePath(`~\docs\notes.txt`)
+	if err != nil {
+		t.Fatalf("AddRelativePath with backslash tilde label: %v", err)
+	}
+	// The returned owner should preserve the original backslash form
+	if owner != `~\docs\notes.txt` {
+		t.Errorf("expected backslash tilde form %q, got %q", `~\docs\notes.txt`, owner)
+	}
+
+	// Verify the file is tracked internally under the normalized path
+	normalizedAbsOwner := cm.normalizeOwnerPath(docFile)
+	cp, exists := cm.GetPath(normalizedAbsOwner)
+	if !exists {
+		t.Fatalf("expected file to be tracked under %q", normalizedAbsOwner)
+	}
+	if cp.Content != "cross-platform notes" {
+		t.Errorf("expected content, got %q", cp.Content)
+	}
+
+	// RemovePath with forward-slash tilde label should also find and remove it
+	// (findOwnerFromUserPath canonicalizes through both forms)
+	err = cm.RemovePath("~/docs/notes.txt")
+	if err != nil {
+		t.Fatalf("RemovePath with forward-slash after backslash add: %v", err)
+	}
+	_, exists = cm.GetPath(normalizedAbsOwner)
+	if exists {
+		t.Fatal("expected file to be removed after cross-slash RemovePath")
+	}
 }
 
 // TestSetSharedSymbols tests SetSharedSymbols.

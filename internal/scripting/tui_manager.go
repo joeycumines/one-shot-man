@@ -1227,8 +1227,9 @@ func (tm *TUIManager) rehydrateContextManager() (int, int) {
 			// POSIX filenames that include backslashes ("foo\bar.txt") which
 			// are legal on Linux/macOS and must not be silently converted to
 			// directory separators.
-			// Attempt to re-add using the stored label. AddRelativePath now
-			// returns the canonical owner key used by the backend so we can
+			// Attempt to re-add using the stored label. AddRelativePath
+			// returns a display label (the original tilde form for tilde
+			// inputs, or the normalized owner key otherwise) so we can
 			// update the in-memory TUI state to keep labels in sync.
 			owner, err := tm.engine.contextManager.AddRelativePath(label)
 

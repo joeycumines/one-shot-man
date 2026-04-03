@@ -25,8 +25,16 @@ const (
 // to os.ReadFile/os.Stat, enabling proper kernel-level path resolution
 // including physical ".." traversal through symlinks.
 // Returns an error if tilde expansion fails.
+//
+// expandTilde is the underlying function used for tilde expansion.
+// Same-package tests may override this directly for deterministic behavior
+// without relying on os.UserHomeDir's OS-level fallbacks (e.g., getpwuid
+// on Unix) that can succeed even when HOME is blank, causing tests to
+// write to the operator's real home directory.
+var expandTilde = filepathutil.ExpandTilde
+
 func expandTildeOnly(path string) (string, error) {
-	expanded, err := filepathutil.ExpandTilde(path)
+	expanded, err := expandTilde(path)
 	if err != nil {
 		return "", fmt.Errorf("tilde expansion failed: %w", err)
 	}
@@ -99,7 +107,7 @@ func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, m
 			}
 			// Expand tilde so that ~/foo is treated as absolute (expanded form is absolute).
 			// If expansion fails, panic to make the error explicit instead of silently returning false.
-			expanded, err := filepathutil.ExpandTilde(path)
+			expanded, err := expandTilde(path)
 			if err != nil {
 				panic(vm.NewGoError(fmt.Errorf("isAbsolute: %w", err)))
 			}

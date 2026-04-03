@@ -237,8 +237,22 @@ func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
 	// concern (TUI rehydration code performs a conditional normalization
 	// fallback when appropriate).
 
+	// For tilde-prefixed owner labels (e.g. "~/.claude/agents/Takumi.md"),
+	// expand tilde to an absolute path for existence verification below,
+	// but preserve the original tilde-form label as the stored owner.
+	// Without expansion, filepath.IsAbs returns false for "~/" and the path
+	// would be incorrectly resolved relative to basePath.
+	verifiedPath := ownerPath
+	if filepathutil.IsTildeExpansionPath(ownerPath) {
+		expanded, err := filepathutil.ExpandTilde(ownerPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to expand tilde in owner path %s: %w", ownerPath, err)
+		}
+		verifiedPath = expanded
+	}
+
 	// Perform I/O-intensive operations BEFORE acquiring the lock
-	absPath, err := cm.absolutePathFromOwner(ownerPath)
+	absPath, err := cm.absolutePathFromOwner(verifiedPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve path %s: %w", ownerPath, err)
 	}
@@ -253,7 +267,7 @@ func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
 	// because they resolve outside the base path. We still compute the
 	// relative form to detect errors, but do not treat leading ".." as an
 	// operational error during rehydration.
-	if !filepath.IsAbs(ownerPath) {
+	if !filepath.IsAbs(verifiedPath) {
 		if _, rerr := filepath.Rel(cm.basePath, absPath); rerr != nil {
 			return "", fmt.Errorf("failed to compute relative path: %w", rerr)
 		}
@@ -278,6 +292,15 @@ func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
 
 	if err := cm.addPathWithOwnerLocked(absPath, owner, info); err != nil {
 		return "", err
+	}
+	// For tilde-prefixed inputs, return the original tilde form so that
+	// TUI state labels are preserved (e.g. "~/.claude/agents/Takumi.md"
+	// stays as-is rather than being replaced with the expanded absolute
+	// path). The internal ContextManager maps use the normalized absolute
+	// owner key; findOwnerFromUserPath (used by RemovePath, RefreshPath)
+	// expands tildes during lookup, so the tilde label remains functional.
+	if filepathutil.IsTildeExpansionPath(ownerPath) {
+		return ownerPath, nil
 	}
 	return owner, nil
 }

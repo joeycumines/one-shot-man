@@ -1552,6 +1552,95 @@ func TestContextManager_NormalizeOwnerPath_OutsideBase(t *testing.T) {
 	}
 }
 
+// TestContextManager_AbsolutePathFromOwner_TildeExpansion tests that
+// AddRelativePath correctly handles tilde-prefixed owner labels: expanding
+// tilde ONLY for existence verification, while preserving the original tilde
+// form as the returned owner (so TUI state labels remain user-friendly).
+// This is a regression test for: when a user adds a file like
+// ~/.claude/agents/Takumi.md, the raw tilde path is stored as the TUI state
+// label. On rehydration, AddRelativePath must expand tilde to verify the file
+// exists but must return the original tilde label unchanged.
+func TestContextManager_AddRelativePath_TildeLabel(t *testing.T) {
+	// NOT t.Parallel() — we manipulate the process HOME/USERPROFILE.
+	// Set up a fake home directory with a real file inside it so that
+	// the lstat check in AddRelativePath succeeds.
+	fakeHome := t.TempDir()
+	fileDir := filepath.Join(fakeHome, ".claude", "agents")
+	if err := os.MkdirAll(fileDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	filePath := filepath.Join(fileDir, "Takumi.md")
+	if err := os.WriteFile(filePath, []byte("# Takumi"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Override os.UserHomeDir's source of truth.
+	// Unix: $HOME, Windows: $USERPROFILE
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	// Base path is separate from the file — tilde paths resolve to home
+	// regardless of basePath.
+	cm, _ := NewContextManager(t.TempDir())
+
+	// Test 1: AddRelativePath with tilde label succeeds and returns the
+	// ORIGINAL tilde form (not the expanded absolute path).
+	owner, err := cm.AddRelativePath("~/.claude/agents/Takumi.md")
+	if err != nil {
+		t.Fatalf("AddRelativePath with tilde label: %v", err)
+	}
+	if owner != "~/.claude/agents/Takumi.md" {
+		t.Errorf("expected tilde form %q, got %q — owner should preserve tilde", "~/.claude/agents/Takumi.md", owner)
+	}
+
+	// Test 2: The file is tracked internally under the normalized absolute
+	// owner key. Verify it can be retrieved via the absolute path.
+	absOwner := cm.normalizeOwnerPath(filePath)
+	cp, exists := cm.GetPath(absOwner)
+	if !exists {
+		t.Fatalf("expected file to be tracked under absolute owner %q", absOwner)
+	}
+	if cp.Type != "file" {
+		t.Errorf("expected type=file, got %q", cp.Type)
+	}
+
+	// Test 3: Bare "~" also preserves tilde form and resolves correctly.
+	// Create a file directly in the fake home.
+	homeFile := filepath.Join(fakeHome, "home.txt")
+	if err := os.WriteFile(homeFile, []byte("home"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	owner2, err := cm.AddRelativePath("~/home.txt")
+	if err != nil {
+		t.Fatalf("AddRelativePath ~/home.txt: %v", err)
+	}
+	if owner2 != "~/home.txt" {
+		t.Errorf("expected %q, got %q", "~/home.txt", owner2)
+	}
+
+	// Test 4: Non-tilde relative paths still work as before (unchanged behavior).
+	relFile := filepath.Join(cm.basePath, "local.txt")
+	if err := os.WriteFile(relFile, []byte("local"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	owner3, err := cm.AddRelativePath("local.txt")
+	if err != nil {
+		t.Fatalf("AddRelativePath local.txt: %v", err)
+	}
+	if owner3 != "local.txt" {
+		t.Errorf("expected %q, got %q", "local.txt", owner3)
+	}
+
+	// Test 5: Non-existent tilde path returns error (file truly missing).
+	_, err = cm.AddRelativePath("~/.claude/nonexistent.md")
+	if err == nil {
+		t.Fatal("expected error for nonexistent tilde path")
+	}
+	if !strings.Contains(err.Error(), "failed to stat") {
+		t.Errorf("expected stat error, got: %v", err)
+	}
+}
+
 // TestSetSharedSymbols tests SetSharedSymbols.
 func TestSetSharedSymbols(t *testing.T) {
 	t.Parallel()

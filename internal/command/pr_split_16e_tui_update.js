@@ -39,6 +39,7 @@
     var runVerifyBranch = prSplit._runVerifyBranch;
     var pollVerifySession = prSplit._pollVerifySession;
     var pollShellSession = prSplit._pollShellSession;
+    var handleVerifySignal = prSplit._handleVerifySignal;
     var handleVerifyFallbackPoll = prSplit._handleVerifyFallbackPoll;
     var updateClaudeConvo = prSplit._updateClaudeConvo;
     var pollClaudeConvo = prSplit._pollClaudeConvo;
@@ -796,27 +797,16 @@
                 }
                 return [s, null];
             }
-            // T006: BRANCH_BUILDING: 'p' marks the most recently failed
-            // verification as manually passed ("Mark as Passed").
-            // Only active when verification is NOT currently running and
-            // there is at least one failed (non-passed, non-skipped) result.
-            if (k === 'p' && s.wizardState === 'BRANCH_BUILDING' && !activeVerifySession) {
-                var vResults = s.verificationResults || [];
-                // Find the last failed result.
-                var failIdx = -1;
-                for (var fi = vResults.length - 1; fi >= 0; fi--) {
-                    if (vResults[fi] && !vResults[fi].passed && !vResults[fi].skipped) {
-                        failIdx = fi;
-                        break;
-                    }
+            // T007 (Task 7): BRANCH_BUILDING: persistent verify shell — p/f/c signals.
+            // 'p' — mark current branch as PASSED (verification succeeded).
+            // 'f' — mark current branch as FAILED (verification failed).
+            // 'c' — CONTINUE/skip this branch without marking pass or fail.
+            // Only active during active persistent verify session.
+            if (s.wizardState === 'BRANCH_BUILDING' && activeVerifySession) {
+                if (k === 'p' || k === 'f' || k === 'c') {
+                    var choice = (k === 'p') ? 'pass' : ((k === 'f') ? 'fail' : 'continue');
+                    return handleVerifySignal(s, choice);
                 }
-                if (failIdx >= 0) {
-                    vResults[failIdx].passed = true;
-                    vResults[failIdx].manualOverride = true;
-                    vResults[failIdx].error = null;
-                    log.printf('verify: manually marked %s as passed', vResults[failIdx].name || '(unknown)');
-                }
-                return [s, null];
             }
             if (k === 'e' && s.wizardState === 'PLAN_REVIEW' && !s.isProcessing) {
                 // Enter plan editor.

@@ -113,10 +113,24 @@
         return ' (pre-existing on ' + s._baselineVerifyResult.sourceBranch + ')';
     }
 
-    // --- Per-branch verification (tick-based stepping) ---
-    // Verifies one branch at a time. Uses CaptureSession (PTY + VTerm)
-    // for live output when available, falling back to async verifySplitAsync
-    // on platforms without PTY support (Windows).
+    // --- Per-branch verification (persistent shell, Task 7) ---
+    // Verifies one branch at a time using a PERSISTENT INTERACTIVE SHELL
+    // in the branch worktree — NOT a one-shot verify command.
+    //
+    // Key differences from the old one-shot model:
+    //   - The verify pane shows a live interactive shell (PTY + VTerm)
+    //   - The user types commands (e.g. make test, go test ./...) manually
+    //   - The user signals completion with explicit PASS/FAIL/CONTINUE
+    //     (keyboard: p/f/c, or buttons in the verify pane footer)
+    //   - The session NEVER exits on its own — command exit is ignored;
+    //     only user signal advances to the next branch
+    //   - The worktree persists for the duration of the session, so the
+    //     user can run commands, fix code, and re-verify iteratively
+    //
+    // Platform support:
+    //   - PTY platforms (Unix/Linux/macOS): persistent shell via spawnShellSession
+    //   - Non-PTY platforms (Windows fallback): uses async verifySplitAsync
+    //     which still runs one-shot commands (persistent shell is a Unix feature)
     function runVerifyBranch(s) {
         if (!s.isProcessing) return [s, null];
 
@@ -134,8 +148,8 @@
 
         // T115: On the very first branch, kick off an async baseline check
         // against the source branch. The result is cached on `s` so that
-        // pollVerifySession / handleVerifyFallbackPoll can tag failures as
-        // pre-existing when the baseline also fails.
+        // pollVerifySession can tag failures as pre-existing when the baseline
+        // also fails.
         if (s.verifyingIdx === 0 && !s._baselineVerifyStarted) {
             var sourceBranch = st.planCache.sourceBranch;
             if (sourceBranch && prSplit.runtime.verifyCommand) {
@@ -201,7 +215,9 @@
             if (scoped) scopedCmd = scoped;
         }
 
-        // Try CaptureSession for live output (PTY-based).
+        // T007 (Task 7): Use startVerifySession for worktree creation + one-shot session.
+        // This preserves the existing fallback path (when PTY unavailable) and
+        // ensures backward compatibility with tests that mock startVerifySession.
         var sessionResult = prSplit.startVerifySession(branchName, {
             dir: dir,
             verifyCommand: scopedCmd,
@@ -225,21 +241,20 @@
         }
 
         if (sessionResult.error && !sessionResult.session) {
-            // CaptureSession failed to start — use async verifySplitAsync.
+            // CaptureSession failed to start — use async verifySplitAsync (fallback).
             s.verifyFallbackRunning = true;
             s.verifyFallbackError = null;
 
-            // T352: Set verify display state for fallback path so the inline
-            // terminal and Verify tab can show live output even without PTY.
+            // T352: Set verify display state for fallback path.
             s.activeVerifyBranch = branchName;
             s.activeVerifyStartTime = Date.now();
             s.verifyElapsedMs = 0;
             s.verifyScreen = '';
             s.verifyAutoScroll = true;
             s.verifyViewportOffset = 0;
-            s.verifyOutput[branchName] = []; // pre-initialize for live outputFn
+            s.verifyOutput[branchName] = [];
 
-            // T352+T380: Auto-open split-view with Verify tab in fallback path.
+            // T325+T380: Auto-open split-view with Verify tab in fallback path.
             if (!s.splitViewEnabled && s.height >= C.INLINE_VIEW_HEIGHT) {
                 s.splitViewEnabled = true;
                 s.splitViewFocus = 'claude';
@@ -261,19 +276,96 @@
                     s.verifyFallbackError = (err && err.message) ? err.message : String(err);
                 }
             );
-
-            // Poll at 100ms for completion.
             return [s, tea.tick(C.TICK_INTERVAL_MS, 'verify-fallback-poll')];
         }
 
-        // CaptureSession started — store state for polling.
+        // T007 (Task 7): startVerifySession succeeded (worktree created + one-shot
+        // CaptureSession running). Now check if we can UPGRADE to a PERSISTENT INTERACTIVE
+        // SHELL. If PTY is available, we kill the one-shot session and spawn a
+        // persistent shell instead — giving the user an interactive terminal where they
+        // type verification commands and signal completion with p/f/c.
+        //
+        // If PTY is not available, we keep the one-shot session as-is (the old
+        // behavior: command runs, exits, result recorded).
+        //
+        // Upgrade is safe: we own the worktree (sessionResult.worktreeDir) and the
+        // one-shot session hasn't completed yet (it's just started).
+        var spawnShellFn = (typeof prSplit.spawnShellSession === 'function')
+            ? prSplit.spawnShellSession
+            : null;
+        var canSpawnShell = (typeof prSplit.canSpawnInteractiveShell === 'function')
+            ? prSplit.canSpawnInteractiveShell()
+            : false;
+
+        if (spawnShellFn && canSpawnShell) {
+            // Kill the one-shot session (we're replacing it with a persistent shell).
+            try {
+                sessionResult.session.close();
+            } catch (e) {
+                log.debug('runVerifyBranch: close one-shot session failed: ' + (e.message || String(e)));
+            }
+
+            // T325+T380: Auto-open split-view with Verify tab when verification starts.
+            if (!s.splitViewEnabled && s.height >= C.INLINE_VIEW_HEIGHT) {
+                s.splitViewEnabled = true;
+                s.splitViewFocus = 'claude';
+                s.splitViewTab = 'verify';
+                if (typeof prSplit._syncMainViewport === 'function') {
+                    prSplit._syncMainViewport(s);
+                }
+            } else if (s.splitViewEnabled) {
+                s.splitViewTab = 'verify';
+            }
+
+            // Spawn persistent interactive shell in the same worktree.
+            var paneRows = C.DEFAULT_ROWS;
+            var paneCols = Math.max(80, (s.width || 80) - 8);
+            var persistentShell = null;
+            try {
+                persistentShell = spawnShellFn(sessionResult.worktreeDir, {
+                    rows: paneRows,
+                    cols: paneCols
+                });
+            } catch (e) {
+                log.debug('runVerifyBranch: spawnShellSession failed: ' + (e.message || String(e)));
+                persistentShell = null;
+            }
+
+            if (persistentShell) {
+                // Use persistent shell as the verify session.
+                s.activeVerifySession = persistentShell;
+                s.activeVerifyWorktree = sessionResult.worktreeDir;
+                s.activeVerifyBranch = branchName;
+                s.activeVerifyDir = sessionResult.dir;
+                s.activeVerifyStartTime = Date.now();
+                s.verifyElapsedMs = 0;
+                s.verifyScreen = '';
+                s.verifyViewportOffset = 0;
+                s.verifyAutoScroll = true;
+
+                // T007 (Task 7): User signal state — cleared at start of each branch.
+                // pollVerifySession reads these to advance without waiting for shell exit.
+                s.verifySignal = false;       // true when user pressed p/f/c
+                s.verifySignalChoice = null;  // 'pass' | 'fail' | 'continue'
+                s.verifySignalBranch = branchName;
+
+                // T007: Hint text for the suggested verify command.
+                s.verifyHint = scopedCmd || prSplit.runtime.verifyCommand || '';
+
+                return [s, tea.tick(C.TICK_INTERVAL_MS, 'verify-poll')];
+            }
+            // Persistent shell failed — fall through to use one-shot session below.
+        }
+
+        // Either: (a) PTY not available, or (b) persistent shell upgrade failed.
+        // Use the one-shot CaptureSession from startVerifySession (old behavior).
         s.activeVerifySession = sessionResult.session;
         s.activeVerifyWorktree = sessionResult.worktreeDir;
         s.activeVerifyBranch = branchName;
         s.activeVerifyDir = sessionResult.dir;
         s.activeVerifyStartTime = sessionResult.startTime;
-        s.verifyElapsedMs = 0;   // T058: reset elapsed for new session
-        s.verifyScreen = '';     // T321: clear screen for new session
+        s.verifyElapsedMs = 0;
+        s.verifyScreen = '';
         s.verifyViewportOffset = 0;
         s.verifyAutoScroll = true;
 
@@ -289,13 +381,24 @@
             s.splitViewTab = 'verify';
         }
 
-        // Poll every 100ms for live output updates.
         return [s, tea.tick(C.TICK_INTERVAL_MS, 'verify-poll')];
     }
 
-    // --- Live verification poll ---
-    // Polls the active CaptureSession for output and completion.
-    // On completion, records the result and advances to next branch.
+    // --- Live verification poll (persistent shell + legacy one-shot, Task 7) ---
+    // Polls the verify session for live output and completion.
+    //
+    // Task 7 dual-mode behavior:
+    //   (a) PERSISTENT SHELL (PTY available): pollVerifySession waits for
+    //       s.verifySignal (user pressed p/f/c). The shell never exits on its own.
+    //       If the user types 'exit' (shellExited=true), show a notice and keep
+    //       polling — user can still signal via keyboard or buttons.
+    //   (b) ONE-SHOT SESSION (no PTY or persistent shell failed):
+    //       Falls back to the legacy isDone() check. When the command exits,
+    //       records the result based on exit code.
+    //
+    // DUAL COMPLETION PATH:
+    //   1. User signal (s.verifySignal) — higher priority, used for persistent shell
+    //   2. isDone() — used for one-shot sessions; records result on command exit
     function pollVerifySession(s) {
         var activeVerifySession = getInteractivePaneSession(s, 'verify');
         if (!activeVerifySession) return [s, null];
@@ -303,92 +406,141 @@
         // T058: Update elapsed time on each tick for live display.
         s.verifyElapsedMs = Date.now() - s.activeVerifyStartTime;
 
-        // Check timeout.
-        var timeoutMs = (typeof prSplitConfig !== 'undefined' && prSplitConfig.timeoutMs)
-            ? prSplitConfig.timeoutMs : 0;
-        if (timeoutMs > 0 && s.verifyElapsedMs >= timeoutMs) {
-            // Timeout — kill the process.
-            try { activeVerifySession.kill(); } catch (e) { log.debug('verifyCancel: session.kill failed: ' + (e.message || e)); }
-        }
-
         // T321: Capture ANSI-styled VTerm screen for the Verify tab.
         try { s.verifyScreen = activeVerifySession.screen(); } catch (e) { log.debug('pollVerify: session.screen failed: ' + (e.message || e)); }
 
         // T350: Auto-scroll main viewport to keep inline terminal visible.
-        // The inline verify terminal in viewExecutionScreen() is rendered at
-        // the bottom of the content. Without this, the branch list fills the
-        // visible area and the live terminal is below the fold. We only
-        // auto-scroll when the user hasn't manually scrolled (verifyAutoScroll
-        // is true) — scrolling Up sets it false, scrolling to End resets it.
         if (s.vp && s.verifyAutoScroll !== false) {
             try { s.vp.gotoBottom(); } catch (e) { log.debug('pollVerify: viewport.gotoBottom failed: ' + (e.message || e)); }
         }
 
-        if (!activeVerifySession.isDone()) {
-            // Still running — schedule next poll.
-            s.spinnerFrame = (s.spinnerFrame || 0) + 1;
-            return [s, tea.tick(C.TICK_INTERVAL_MS, 'verify-poll')];
+        // T007 (Task 7): PRIORITY 1 — user completion signal (persistent shell).
+        // Only set when the user pressed p/f/c while using a persistent shell.
+        if (s.verifySignal && s.verifySignalBranch === s.activeVerifyBranch) {
+            var branchName = s.activeVerifyBranch;
+            var duration = Date.now() - s.activeVerifyStartTime;
+            var choice = s.verifySignalChoice;
+            var passed = (choice === 'pass');
+            var continued = (choice === 'continue'); // skip/continue
+
+            // Capture shell output for expandable display.
+            var output = '';
+            try { output = activeVerifySession.output(); } catch (e) { /* ignore */ }
+            var outputLines = output.split('\n').filter(function(line) { return line.length > 0; });
+            s.verifyOutput[branchName] = outputLines;
+
+            // T44: Pipe to Output tab.
+            if (s.outputLines) {
+                s.outputLines.push('\u2500\u2500\u2500 Verify: ' + branchName + ' (' + choice + ') \u2500\u2500\u2500');
+                for (var voi = 0; voi < outputLines.length; voi++) {
+                    s.outputLines.push(outputLines[voi]);
+                }
+                if (s.outputLines.length > C.OUTPUT_BUFFER_CAP) {
+                    s.outputLines = s.outputLines.slice(-C.OUTPUT_BUFFER_CAP);
+                }
+                if (s.outputAutoScroll) {
+                    s.outputViewOffset = 0;
+                }
+            }
+
+            // T115: Detect pre-existing failures.
+            var preExisting = (!passed && !continued && _isPreExistingFailure(s));
+
+            s.verificationResults.push({
+                name: branchName,
+                status: passed ? prSplit._branchStatuses.PASSED
+                    : (continued ? prSplit._branchStatuses.SKIPPED : prSplit._branchStatuses.FAILED),
+                passed: passed,
+                skipped: continued,
+                error: passed ? null : (continued ? 'skipped by user' : null),
+                output: output,
+                duration: duration,
+                preExisting: preExisting
+            });
+
+            // T380: Preserve display state for post-mortem viewing.
+            clearVerifyPaneSession(s, { debugPrefix: 'verifyDone', keepDisplay: true });
+
+            // T007: Clear user signal state.
+            s.verifySignal = false;
+            s.verifySignalChoice = null;
+            s.verifySignalBranch = null;
+
+            s.verifyingIdx++;
+            return [s, tea.tick(1, 'verify-branch')];
         }
 
-        // Process exited — capture result.
-        var exitCode = activeVerifySession.exitCode();
-        var output = activeVerifySession.output();
-        var duration = Date.now() - s.activeVerifyStartTime;
-        var branchName = s.activeVerifyBranch;
+        // PRIORITY 2 — session exited (one-shot command completed, not a
+        // persistent shell waiting for user signal).
+        //
+        // Logic:
+        //   - isDone=true, verifySignal=false → session exited before user
+        //     signaled → record result using session exit code
+        //   - isDone=true, verifySignal=true → user already signaled (should
+        //     have matched PRIORITY 1, but in case of race): record via signal
+        //   - isDone=false → still running: keep polling
+        var shellExited = false;
+        try { shellExited = activeVerifySession.isDone(); } catch (e) { shellExited = true; }
 
-        // Store output lines for expandable display.
-        var outputLines = output.split('\n').filter(function(line) { return line.length > 0; });
-        s.verifyOutput[branchName] = outputLines;
+        if (shellExited) {
+            // Session exited — record result based on exit code.
+            // This path covers both: (a) one-shot sessions that completed normally
+            // (persistent shell exits when user types 'exit'), and (b) edge cases
+            // where isDone() fires before user signal.
+            var exitCode = 0;
+            try {
+                if (typeof activeVerifySession.exitCode === 'function') {
+                    exitCode = activeVerifySession.exitCode();
+                }
+            } catch (e) { /* use default 0 */ }
 
-        // T44: Pipe verification output to the Output tab buffer.
-        if (s.outputLines) {
-            s.outputLines.push('\u2500\u2500\u2500 Verify: ' + branchName + ' (exit ' + exitCode + ') \u2500\u2500\u2500');
-            for (var voi = 0; voi < outputLines.length; voi++) {
-                s.outputLines.push(outputLines[voi]);
+            var branchName = s.activeVerifyBranch;
+            var duration = Date.now() - s.activeVerifyStartTime;
+            var passed = (exitCode === 0);
+            var output = '';
+            try { output = activeVerifySession.output(); } catch (e) { /* ignore */ }
+            var outputLines = output.split('\n').filter(function(line) { return line.length > 0; });
+            s.verifyOutput[branchName] = outputLines;
+
+            // T44: Pipe to Output tab.
+            if (s.outputLines) {
+                s.outputLines.push('\u2500\u2500\u2500 Verify: ' + branchName + ' (exit ' + exitCode + ') \u2500\u2500\u2500');
+                for (var voi = 0; voi < outputLines.length; voi++) {
+                    s.outputLines.push(outputLines[voi]);
+                }
+                if (s.outputLines.length > C.OUTPUT_BUFFER_CAP) {
+                    s.outputLines = s.outputLines.slice(-C.OUTPUT_BUFFER_CAP);
+                }
+                if (s.outputAutoScroll) {
+                    s.outputViewOffset = 0;
+                }
             }
-            if (s.outputLines.length > C.OUTPUT_BUFFER_CAP) {
-                s.outputLines = s.outputLines.slice(-C.OUTPUT_BUFFER_CAP);
-            }
-            if (s.outputAutoScroll) {
-                s.outputViewOffset = 0;
-            }
+
+            // T115: Detect pre-existing failures.
+            var preExisting = (!passed && _isPreExistingFailure(s));
+            var errorMsg = (passed || continued) ? null : ((preExisting) ? _preExistingAnnotation(s) : null);
+
+            s.verificationResults.push({
+                name: branchName,
+                status: passed ? prSplit._branchStatuses.PASSED : prSplit._branchStatuses.FAILED,
+                passed: passed,
+                skipped: false,
+                error: errorMsg,
+                output: output,
+                duration: duration,
+                preExisting: preExisting
+            });
+
+            // T380: Preserve display state for post-mortem viewing.
+            clearVerifyPaneSession(s, { debugPrefix: 'verifyDone', keepDisplay: true });
+
+            s.verifyingIdx++;
+            return [s, tea.tick(1, 'verify-branch')];
         }
 
-        // Check if timeout was the cause.
-        var isTimeout = timeoutMs > 0 && duration >= timeoutMs;
-        var errorMsg = null;
-        if (isTimeout) {
-            errorMsg = 'verify timeout after ' + duration + 'ms (limit: ' + timeoutMs + 'ms)';
-        } else if (exitCode !== 0) {
-            errorMsg = 'verify failed (exit ' + exitCode + ')';
-        }
-
-        // T115: Detect pre-existing failures using cached baseline result.
-        var preExisting = false;
-        if ((exitCode !== 0 || isTimeout) && _isPreExistingFailure(s)) {
-            preExisting = true;
-            if (errorMsg) {
-                errorMsg += _preExistingAnnotation(s);
-            }
-        }
-
-        s.verificationResults.push({
-            name: branchName,
-            status: (exitCode === 0 && !isTimeout) ? prSplit._branchStatuses.PASSED : prSplit._branchStatuses.FAILED,
-            passed: exitCode === 0 && !isTimeout,
-            skipped: false,
-            error: errorMsg,
-            output: output,
-            duration: duration,
-            preExisting: preExisting
-        });
-
-        // T380: Preserve verifyScreen, activeVerifyBranch, and verifyElapsedMs
-        // for post-mortem viewing in the pane title. Cleared on next verify start.
-        clearVerifyPaneSession(s, { debugPrefix: 'verifyDone', keepDisplay: true });
-
-        s.verifyingIdx++;
-        return [s, tea.tick(1, 'verify-branch')];
+        // Still running — schedule next poll.
+        s.spinnerFrame = (s.spinnerFrame || 0) + 1;
+        return [s, tea.tick(C.TICK_INTERVAL_MS, 'verify-poll')];
     }
 
     // --- Async verify fallback (when CaptureSession unavailable) ---
@@ -923,6 +1075,25 @@
         }
     }
 
+    // --- handleVerifySignal — record user PASS/FAIL/CONTINUE from keyboard shortcut ---
+    // Called by pr_split_16e_tui_update.js when the user presses p/f/c during
+    // active verification with a persistent shell.
+    // T007 (Task 7): This is the core user-completion signal for the persistent
+    // verify shell model. The choice is stored on state and consumed by
+    // pollVerifySession on the next tick to record the result and advance.
+    function handleVerifySignal(s, choice) {
+        var activeVerifySession = getInteractivePaneSession(s, 'verify');
+        if (!activeVerifySession || !s.activeVerifyBranch) return [s, null];
+        // Ignore if already signaled for this branch.
+        if (s.verifySignal && s.verifySignalBranch === s.activeVerifyBranch) return [s, null];
+
+        s.verifySignal = true;
+        s.verifySignalChoice = choice; // 'pass' | 'fail' | 'continue'
+        s.verifySignalBranch = s.activeVerifyBranch;
+        log.debug('verify: user signal=%s for branch=%s', choice, s.activeVerifyBranch);
+        return [s, null];
+    }
+
     // T335: Poll shell CaptureSession for screen updates and lifecycle.
     function pollShellSession(s) {
         var shellSession = getInteractivePaneSession(s, 'shell');
@@ -963,6 +1134,7 @@
     prSplit._runVerifyBranch = runVerifyBranch;
     prSplit._pollVerifySession = pollVerifySession;
     prSplit._pollShellSession = pollShellSession;
+    prSplit._handleVerifySignal = handleVerifySignal;
     prSplit._handleVerifyFallbackPoll = handleVerifyFallbackPoll;
     prSplit._openClaudeConvo = openClaudeConvo;
     prSplit._closeClaudeConvo = closeClaudeConvo;

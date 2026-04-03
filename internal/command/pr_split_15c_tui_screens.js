@@ -772,44 +772,70 @@
             }
         }
 
-        // Footer with keybinding hints.
+        // Footer with keybinding hints and controls.
         // T351: Only show interactive controls when CaptureSession
         // is active. Fallback (plain text) shows just scroll hint.
         var footer;
         if (verifySession) {
-            // T059: Pause/Resume button for verify subprocess.
-            var pauseResumeBtn;
-            if (s.verifyPaused) {
-                pauseResumeBtn = zone.mark('verify-resume',
-                    styles.focusedSecondaryButton().render('\u25b6 Resume'));
-            } else {
-                pauseResumeBtn = zone.mark('verify-pause',
-                    styles.secondaryButton().render('\u23f8 Pause'));
+            // T007 (Task 7): Verify pane is now a PERSISTENT INTERACTIVE SHELL.
+            // The footer shows PASS/FAIL/CONTINUE controls for user completion,
+            // plus hint text about the suggested verify command.
+            var footerParts = [];
+
+            // Hint: show the suggested verify command.
+            if (s.verifyHint) {
+                footerParts.push(styles.dim().render('\u2318 Hint: ' + s.verifyHint));
             }
-            // T007/T338: Open Shell in verify worktree.
-            // Disabled on Windows where CaptureSession is unavailable.
-            var openShellBtn = '';
+
+            // T007: PASS / FAIL / CONTINUE buttons for explicit user completion.
+            // The old pause/resume for the one-shot command is less relevant now
+            // that the shell is persistent and user-driven. We keep pause/resume
+            // for completeness (SIGSTOP/SIGCONT still useful in some cases).
+            if (!s.verifyShellExited) {
+                // PASS button: green, marks branch as passed.
+                footerParts.push(zone.mark('verify-pass',
+                    styles.secondaryButton().render('\u2713 PASS')));
+                // FAIL button: red-ish, marks branch as failed.
+                footerParts.push(zone.mark('verify-fail',
+                    styles.secondaryButton().render('\u2717 FAIL')));
+                // CONTINUE button: skip/continue without marking pass or fail.
+                footerParts.push(zone.mark('verify-continue',
+                    styles.secondaryButton().render('\u25b6 CONTINUE')));
+
+                // Pause/Resume (less critical for persistent shell, keep for flexibility).
+                if (s.verifyPaused) {
+                    footerParts.push(zone.mark('verify-resume',
+                        styles.secondaryButton().render('\u25b6 Resume')));
+                } else {
+                    footerParts.push(zone.mark('verify-pause',
+                        styles.secondaryButton().render('\u23f8 Pause')));
+                }
+            } else {
+                // Shell exited — show a notice and re-open hint.
+                footerParts.push(styles.warningBadge().render(' Shell exited '));
+                footerParts.push(styles.dim().render(' p: PASS  f: FAIL  c: CONTINUE '));
+            }
+
+            // Open Shell: redundant with persistent shell, but kept for cases where
+            // the user wants a SECOND shell in a separate tab for comparison.
             if (s.activeVerifyWorktree) {
                 if (typeof prSplit.canSpawnInteractiveShell === 'function' &&
                     !prSplit.canSpawnInteractiveShell()) {
-                    openShellBtn = styles.dim().render('\ue795 Shell (Unix only)');
+                    // Windows — disable
+                    footerParts.push(styles.dim().render('\ue795 Shell (Unix only)'));
                 } else {
-                    openShellBtn = zone.mark('verify-open-shell',
-                        styles.secondaryButton().render('\ue795 Shell'));
+                    footerParts.push(zone.mark('verify-open-shell',
+                        styles.secondaryButton().render('\ue795 Shell')));
                 }
             }
-            var interruptHint = zone.mark('verify-interrupt', styles.dim().render(
-                'Ctrl+C: Stop  2\u00d7Ctrl+C: Force Kill'));
-            var scrollHint = styles.dim().render(
-                '\u2191\u2193: Scroll' + scrollIndicator);
-            if (openShellBtn) {
-                footer = lipgloss.joinHorizontal(lipgloss.Center,
-                    scrollHint, '  ', pauseResumeBtn, '  ',
-                    openShellBtn, '  ', interruptHint);
-            } else {
-                footer = lipgloss.joinHorizontal(lipgloss.Center,
-                    scrollHint, '  ', pauseResumeBtn, '  ', interruptHint);
-            }
+
+            // Interrupt and scroll hints.
+            footerParts.push(zone.mark('verify-interrupt', styles.dim().render(
+                'Ctrl+C: Stop  2\u00d7Ctrl+C: Force Kill')));
+            footerParts.push(styles.dim().render('\u2191\u2193: Scroll' + scrollIndicator));
+
+            footer = lipgloss.joinHorizontal(lipgloss.Center,
+                footerParts.join('  '));
         } else {
             // Fallback path — no interactive controls, just scroll.
             footer = styles.dim().render(

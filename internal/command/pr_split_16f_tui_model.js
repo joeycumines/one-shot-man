@@ -291,6 +291,23 @@
                 s.lastVerifyInterruptTime = now;
                 return [s, null];
             }
+            // T007 (Task 7): PASS / FAIL / CONTINUE buttons for persistent verify shell.
+            // These set the user completion signal consumed by pollVerifySession.
+            if (zone.inBounds('verify-pass', msg)) {
+                if (typeof prSplit._handleVerifySignal === 'function') {
+                    return prSplit._handleVerifySignal(s, 'pass');
+                }
+            }
+            if (zone.inBounds('verify-fail', msg)) {
+                if (typeof prSplit._handleVerifySignal === 'function') {
+                    return prSplit._handleVerifySignal(s, 'fail');
+                }
+            }
+            if (zone.inBounds('verify-continue', msg)) {
+                if (typeof prSplit._handleVerifySignal === 'function') {
+                    return prSplit._handleVerifySignal(s, 'continue');
+                }
+            }
             for (var vi = 0; vi < st.planCache.splits.length; vi++) {
                 var vbranch = st.planCache.splits[vi].name;
                 if (zone.inBounds('verify-expand-' + vbranch, msg)) {
@@ -816,6 +833,15 @@
                 verifyAutoScroll: true,        // auto-scroll to bottom
                 lastVerifyInterruptTime: 0,    // timestamp of last Ctrl+C interrupt
                 verifyPaused: false,           // T059: true when verify is paused (SIGSTOP)
+
+                // T007 (Task 7): Persistent verify shell user-signal state.
+                // These are set by handleVerifySignal (p/f/c keyboard shortcuts or buttons)
+                // and consumed by pollVerifySession to record the branch result.
+                verifySignal: false,           // true when user pressed p/f/c
+                verifySignalChoice: null,      // 'pass' | 'fail' | 'continue'
+                verifySignalBranch: null,      // branchName when signal was set
+                verifyShellExited: false,     // true when persistent shell exited (user typed 'exit')
+                verifyHint: '',               // suggested verify command text
 
                 // Interactive shell in verify worktree (CaptureSession).
                 shellSession: null,            // CaptureSession JS object (or null)

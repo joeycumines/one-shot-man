@@ -405,6 +405,15 @@
             s.verifyElapsedMs = 0;
             s.verifyScreen = '';
         }
+        // T007 (Task 7): Also preserve display state for the persistent shell
+        // user-signal fields (so p/f/c footer stays visible until next branch).
+        if (keepDisplay) {
+            // Keep verifySignal state for the footer to remain active
+            // (it will be cleared by pollVerifySession after recording result).
+        } else {
+            s.verifyShellExited = false;
+            s.verifyHint = '';
+        }
     }
 
     function openVerifyWorktreeShell(s) {

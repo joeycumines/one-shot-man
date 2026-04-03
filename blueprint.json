@@ -271,6 +271,14 @@
       "acceptance": "User testing report exists with at least 5 real users. Feedback is summarized and prioritized. Follow-up tasks are created for highest-priority improvements. Users report that the tool feels natural and intentional.",
       "status": "Not Started",
       "dependsOn": [20]
+    },
+    {
+      "id": 31,
+      "task": "Support 'Ask Claude' in pr-split regardless of auto mode",
+      "description": "Currently, the 'Ask Claude' button/option in pr-split only works when the mode is set to auto. This is nonsensical — if the button is shown in the TUI, clicking it should work regardless of whether auto mode is enabled. Update the pr-split TUI handlers (pr_split_16d_tui_handlers_claude.js and related files) so that the 'Ask Claude' workflow is always available when the button is displayed, even in non-auto modes. The mode should only control whether Claude starts automatically, not whether the user can manually invoke it.",
+      "acceptance": "User Value: The 'Ask Claude' button works in all pr-split modes (auto and non-auto). Clicking it spawns a Claude session and the user gets help regardless of auto mode setting. The mode only controls auto-start behavior, not manual invocation. Code Quality: No conditional gating of the Ask Claude workflow on auto mode when the button is already visible. The handler path for 'Ask Claude' is unified and works identically regardless of mode. Tests cover both auto and non-auto modes invoking Ask Claude.",
+      "status": "Not Started",
+      "dependsOn": [12]
     }
   ],
   "continuousVerification": {

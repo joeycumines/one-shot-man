@@ -222,14 +222,19 @@ func TestExpandTildeWindows(t *testing.T) {
 // TestExpandTilde_JoinRegressionGuard is a targeted regression test proving
 // that ExpandTilde("~/foo") produces /home/user/foo — NOT /foo.
 //
-// This guards against a critical path-math bug: if the remainder after ~
-// extraction starts with a separator and is passed to filepath.Join, Go
-// treats it as absolute and discards the home directory entirely:
+// This guards against a critical path-math bug: Go's filepath.Join replaces
+// prior elements when a later element begins with a separator. If the
+// remainder after tilde extraction is joined naively, the home directory is
+// lost:
 //
-//	filepath.Join("/home/user", "/foo") == "/foo"  // BUG!
+//	filepath.Join("/home/user", "/foo") == "/foo"  // BUG — home discarded!
 //
-// The current implementation avoids this by using manual concatenation with
-// path[2:] (which skips both ~ AND /), then filepath.Clean.
+// The current implementation avoids this by using filepath.Clean on the
+// concatenation of home, separator, and path[2:] (which skips both "~" and
+// the separator, yielding "foo" from "~/foo"). filepath.Clean then
+// normalizes the result. Because path[2:] strips the separator, repeated
+// separators in the original input (e.g., "~//foo") are handled correctly —
+// filepath.Clean collapses them.
 func TestExpandTilde_JoinRegressionGuard(t *testing.T) {
 	fakeHome := setupFakeHome(t)
 
@@ -241,6 +246,9 @@ func TestExpandTilde_JoinRegressionGuard(t *testing.T) {
 		{"~/bar/baz", filepath.Join("bar", "baz")},
 		{"~/.hidden", ".hidden"},
 		{"~/nested/deep/path.txt", filepath.Join("nested", "deep", "path.txt")},
+		{"~//foo", "foo"},                    // double-slash: filepath.Clean collapses
+		{"~///bar", "bar"},                   // triple-slash: filepath.Clean collapses
+		{"~//a//b", filepath.Join("a", "b")}, // multiple double-slashes
 	}
 
 	for _, tc := range tests {

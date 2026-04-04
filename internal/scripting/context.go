@@ -62,8 +62,12 @@ func (cm *ContextManager) canonicalizeUserPath(path string) (string, string, err
 		return "", "", fmt.Errorf("empty path is not valid")
 	}
 
-	// Expand tilde before converting to absolute path
-	expanded, err := filepathutil.ExpandTilde(path)
+	// Expand tilde before converting to absolute path. Use expandTildeOwnerLabel
+	// (cross-platform) instead of filepathutil.ExpandTilde (host-specific) so
+	// that backslash tilde labels (e.g., "~\docs\notes.txt") are correctly
+	// expanded on all hosts. This supports cross-host session rehydration where
+	// Windows-style labels must resolve on POSIX and vice versa.
+	expanded, err := expandTildeOwnerLabel(path)
 	if err != nil {
 		return "", "", err
 	}
@@ -632,13 +636,22 @@ func (cm *ContextManager) RemovePath(path string) error {
 	return nil
 }
 
-// GetPath returns information about a tracked path.
+// GetPath returns information about a tracked path. The input path is
+// resolved using findOwnerFromUserPath, which performs tilde expansion,
+// basePath-relative normalization, and canonicalization. This means that
+// TUI-friendly labels returned by AddRelativePath (e.g., "~/foo/bar.txt")
+// can be passed directly to GetPath and will resolve to the correct internal
+// owner key.
 func (cm *ContextManager) GetPath(path string) (*contextPath, bool) {
 	cm.mutex.RLock()
 	defer cm.mutex.RUnlock()
 
-	contextPath, exists := cm.paths[path]
-	return contextPath, exists
+	owner, found, err := cm.findOwnerFromUserPath(path)
+	if err != nil || !found {
+		return nil, false
+	}
+	cp, exists := cm.paths[owner]
+	return cp, exists
 }
 
 // ListPaths returns all tracked paths.

@@ -1008,3 +1008,183 @@ func TestTildePathRoundTrip(t *testing.T) {
 		t.Errorf("expected txtar header to contain logical path, got: %s", txtarString)
 	}
 }
+
+// TestGetPath_ResolvesTildeLabelFromAddRelativePath verifies that GetPath
+// resolves tilde-form labels returned by AddRelativePath. This is a TDD
+// regression test for a critical API disconnect: AddRelativePath("~/foo.txt")
+// returns "~/foo.txt" as the TUI label, but GetPath("~/foo.txt") did a raw
+// cm.paths["~/foo.txt"] lookup which always failed because the internal owner
+// key is a normalized relative/absolute path — never the tilde form.
+//
+// A TUI calling GetPath("~/foo.txt") would silently fail. The fix is for
+// GetPath to use findOwnerFromUserPath, which expands tildes during lookup.
+func TestGetPath_ResolvesTildeLabelFromAddRelativePath(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	// Create a file under the fake home
+	testFile := filepath.Join(fakeHome, "tracked_file.txt")
+	if err := os.WriteFile(testFile, []byte("hello from tilde"), 0o644); err != nil {
+		t.Fatalf("write test file: %v", err)
+	}
+
+	cm, err := NewContextManager(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewContextManager: %v", err)
+	}
+
+	// AddRelativePath with a tilde label
+	tildeLabel := "~/tracked_file.txt"
+	returnedLabel, err := cm.AddRelativePath(tildeLabel)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q): %v", tildeLabel, err)
+	}
+	if returnedLabel != tildeLabel {
+		t.Fatalf("AddRelativePath returned %q, want %q", returnedLabel, tildeLabel)
+	}
+
+	// THE BUG: GetPath(tildeLabel) does raw map lookup and fails.
+	// After the fix, it should resolve through findOwnerFromUserPath.
+	cp, ok := cm.GetPath(tildeLabel)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false — TUI cannot retrieve paths added via AddRelativePath tilde label", tildeLabel)
+	}
+	if cp.Content != "hello from tilde" {
+		t.Errorf("content mismatch: got %q, want %q", cp.Content, "hello from tilde")
+	}
+
+	// Also verify GetPath returns false for genuinely unknown paths
+	_, ok = cm.GetPath("~/completely_unknown.txt")
+	if ok {
+		t.Error("GetPath should return false for untracked paths")
+	}
+}
+
+// TestGetPath_ResolvesTildeLabelNestedPath tests GetPath with a more deeply
+// nested tilde label to ensure the resolution pipeline works for multi-level
+// relative paths under the home directory.
+func TestGetPath_ResolvesTildeLabelNestedPath(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	nestedDir := filepath.Join(fakeHome, ".config", "osm")
+	if err := os.MkdirAll(nestedDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	testFile := filepath.Join(nestedDir, "config.yaml")
+	if err := os.WriteFile(testFile, []byte("key: value"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	cm, err := NewContextManager(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewContextManager: %v", err)
+	}
+
+	tildeLabel := "~/.config/osm/config.yaml"
+	returnedLabel, err := cm.AddRelativePath(tildeLabel)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q): %v", tildeLabel, err)
+	}
+	if returnedLabel != tildeLabel {
+		t.Fatalf("returned label %q, want %q", returnedLabel, tildeLabel)
+	}
+
+	cp, ok := cm.GetPath(tildeLabel)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false for nested tilde label", tildeLabel)
+	}
+	if cp.Content != "key: value" {
+		t.Errorf("content: got %q, want %q", cp.Content, "key: value")
+	}
+}
+
+// TestCrossPlatformTildeRehydrationRoundTrip verifies that backslash tilde
+// labels (e.g., "~\docs\notes.txt") round-trip correctly through
+// AddRelativePath → RemovePath → AddRelativePath → RefreshPath on POSIX.
+//
+// The canonicalizeUserPath function must use expandTildeOwnerLabel (cross-platform)
+// instead of filepathutil.ExpandTilde (host-specific) so that Windows-style
+// backslash tilde forms are correctly normalized and expanded on all hosts.
+// Without this fix, RemovePath("~\\docs\\notes.txt") and RefreshPath same
+// would fail because filepathutil.ExpandTilde rejects ~\ on POSIX.
+func TestCrossPlatformTildeRehydrationRoundTrip(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test; verifies backslash-tilde expansion on non-Windows hosts")
+	}
+
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	// Create file at ~/docs/notes.txt
+	docsDir := filepath.Join(fakeHome, "docs")
+	if err := os.MkdirAll(docsDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	testFile := filepath.Join(docsDir, "notes.txt")
+	if err := os.WriteFile(testFile, []byte("original content"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	cm, err := NewContextManager(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewContextManager: %v", err)
+	}
+
+	// Step 1: Add using Windows-style backslash tilde label
+	backslashLabel := `~\docs\notes.txt`
+	returnedLabel, err := cm.AddRelativePath(backslashLabel)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q): %v", backslashLabel, err)
+	}
+	if returnedLabel != backslashLabel {
+		t.Errorf("AddRelativePath returned %q, want %q (backslash form preserved)", returnedLabel, backslashLabel)
+	}
+
+	// Step 2: Verify it's tracked via GetPath with forward-slash tilde label
+	// (findOwnerFromUserPath should resolve either form)
+	cp, ok := cm.GetPath("~/docs/notes.txt")
+	if !ok {
+		t.Fatalf("GetPath(\"~/docs/notes.txt\") returned false after AddRelativePath with backslash label")
+	}
+	if cp.Content != "original content" {
+		t.Errorf("content: got %q, want %q", cp.Content, "original content")
+	}
+
+	// Step 3: RemovePath with the same backslash label
+	err = cm.RemovePath(backslashLabel)
+	if err != nil {
+		t.Fatalf("RemovePath(%q): %v — backslash tilde label must be removable on POSIX", backslashLabel, err)
+	}
+	_, ok = cm.GetPath("~/docs/notes.txt")
+	if ok {
+		t.Error("path should be removed after RemovePath")
+	}
+
+	// Step 4: Re-add and RefreshPath with backslash label
+	_, err = cm.AddRelativePath(backslashLabel)
+	if err != nil {
+		t.Fatalf("re-AddRelativePath(%q): %v", backslashLabel, err)
+	}
+
+	// Modify file on disk
+	if err := os.WriteFile(testFile, []byte("refreshed content"), 0o644); err != nil {
+		t.Fatalf("write updated: %v", err)
+	}
+
+	err = cm.RefreshPath(backslashLabel)
+	if err != nil {
+		t.Fatalf("RefreshPath(%q): %v — backslash tilde label must be refreshable on POSIX", backslashLabel, err)
+	}
+
+	cp, ok = cm.GetPath("~/docs/notes.txt")
+	if !ok {
+		t.Fatalf("GetPath after refresh failed")
+	}
+	if cp.Content != "refreshed content" {
+		t.Errorf("content after refresh: got %q, want %q", cp.Content, "refreshed content")
+	}
+}

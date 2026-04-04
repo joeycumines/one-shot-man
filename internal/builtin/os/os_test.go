@@ -1261,8 +1261,12 @@ func TestIsAbsolute_TildeExpansionFailure(t *testing.T) {
 	if !strings.Contains(err.Error(), "isAbsolute") {
 		t.Fatalf("expected isAbsolute error prefix, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "tilde expansion") && !strings.Contains(err.Error(), "home directory") {
-		t.Fatalf("expected tilde expansion error, got: %v", err)
+	// isAbsolute must use expandTildeOnly (like writeFile/appendFile/fileExists)
+	// so the error chain includes the "tilde expansion failed:" wrapper.
+	// Without expandTildeOnly, the error is only "isAbsolute: <raw error>"
+	// and the consistent "tilde expansion" prefix is missing.
+	if !strings.Contains(err.Error(), "tilde expansion") {
+		t.Fatalf("expected error to contain 'tilde expansion' for API consistency with writeFile/appendFile/fileExists, got: %v", err)
 	}
 }
 
@@ -1276,11 +1280,11 @@ func TestIsAbsolute_TildePaths(t *testing.T) {
 	t.Setenv("HOME", fakeHome)
 	t.Setenv("USERPROFILE", fakeHome)
 
-	absPathExpectation := goruntime.GOOS != "windows"
 	absPath := "/abs/path"
 	if goruntime.GOOS == "windows" {
 		absPath = `C:\abs\path`
 	}
+	absPathExpectation := filepath.IsAbs(absPath)
 
 	tests := []struct {
 		path     string

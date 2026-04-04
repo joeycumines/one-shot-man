@@ -21,9 +21,11 @@ const (
 )
 
 // expandTildeOnly expands ~ to the user's home directory but does NOT
-// absolutize the path. This allows relative paths to be passed directly
-// to os.ReadFile/os.Stat, enabling proper kernel-level path resolution
-// including physical ".." traversal through symlinks.
+// absolutize non-tilde paths. Tilde-expanded paths are inherently absolute
+// since they resolve to $HOME. Non-tilde paths are returned unchanged.
+// This allows relative paths to be passed directly to os.ReadFile/os.Stat,
+// enabling proper kernel-level path resolution including physical ".."
+// traversal through symlinks.
 // Returns an error if tilde expansion fails.
 //
 // expandTilde is the underlying function used for tilde expansion.
@@ -107,7 +109,8 @@ func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, m
 			}
 			// Expand tilde so that ~/foo is treated as absolute (expanded form is absolute).
 			// If expansion fails, panic to make the error explicit instead of silently returning false.
-			expanded, err := expandTilde(path)
+			// Uses expandTildeOnly for API consistency with writeFile, appendFile, fileExists.
+			expanded, err := expandTildeOnly(path)
 			if err != nil {
 				panic(vm.NewGoError(fmt.Errorf("isAbsolute: %w", err)))
 			}

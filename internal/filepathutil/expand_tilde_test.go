@@ -141,6 +141,17 @@ func setupBrokenHome(t *testing.T) {
 	t.Cleanup(func() { userHomeDir = orig })
 }
 
+// setupRelativeHome overrides userHomeDir to return a relative (non-absolute)
+// path. Original is restored via t.Cleanup.
+func setupRelativeHome(t *testing.T) string {
+	t.Helper()
+	relativeHome := "relative-home"
+	orig := userHomeDir
+	userHomeDir = func() (string, error) { return relativeHome, nil }
+	t.Cleanup(func() { userHomeDir = orig })
+	return relativeHome
+}
+
 // TestExpandTildeBareTilde tests that bare "~" expands to the home directory
 // resolved by the injected resolver.
 func TestExpandTildeBareTilde(t *testing.T) {
@@ -308,6 +319,40 @@ func TestExpandTilde_BareTildeFailure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unable to determine home directory") {
 		t.Errorf("expected error about home directory, got: %v", err)
+	}
+}
+
+// TestExpandTilde_RelativeHomeErrors verifies that ExpandTilde rejects a
+// tilde expansion when the resolved home directory is not an absolute path.
+// This is a safety guard: tilde-expanded paths are documented as inherently
+// absolute, so a relative home directory would produce a relative result,
+// violating the contract and potentially causing downstream bugs in callers
+// that assume absolute paths (e.g., ContextManager's canonicalizeUserPath).
+func TestExpandTilde_RelativeHomeErrors(t *testing.T) {
+	relativeHome := setupRelativeHome(t)
+
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"tilde with forward slash", "~/test.txt"},
+		{"bare tilde", "~"},
+		{"tilde with nested path", "~/foo/bar/baz.txt"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := ExpandTilde(tc.input)
+			if err == nil {
+				t.Fatalf("ExpandTilde(%q) succeeded with result %q — expected error when home directory is relative (%q)", tc.input, result, relativeHome)
+			}
+			if !strings.Contains(err.Error(), "not absolute") {
+				t.Errorf("expected error mentioning 'not absolute', got: %v", err)
+			}
+			if result != "" {
+				t.Errorf("expected empty result on error, got: %q", result)
+			}
+		})
 	}
 }
 

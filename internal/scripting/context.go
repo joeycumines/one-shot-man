@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -184,6 +185,22 @@ func (cm *ContextManager) findOwnerFromUserPath(path string) (string, bool, erro
 		}
 	}
 
+	// Step 2.5: Host-specific canonicalization. This gives AddPath-user-input
+	// semantics priority over cross-platform rehydration semantics. On POSIX,
+	// ~\foo is treated as a literal path (matching AddPath/canonicalizeUserPath)
+	// before we fall through to step 3 which may interpret it as home-relative.
+	// This ensures that the same string AddPath("~\docs/notes.txt") used to add
+	// a path will resolve to the SAME owner key when passed to RemovePath or
+	// RefreshPath. Cross-platform tilde expansion (step 3) only runs if
+	// host-specific canonicalization didn't find a match, preserving the
+	// rehydration use case for AddRelativePath labels.
+	hostNormalized, _, canonErr := cm.canonicalizeUserPath(path)
+	if canonErr == nil {
+		if _, tracked := cm.ownerFiles[hostNormalized]; tracked {
+			return hostNormalized, true, nil
+		}
+	}
+
 	// Step 3: Fall back to full canonicalization with cross-platform tilde
 	// support. Use expandTildeOwnerLabel (cross-platform) directly so that
 	// rehydration labels like "~\docs\notes.txt" resolve correctly on all
@@ -300,13 +317,44 @@ func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
 	// caller for TUI display purposes. Without expansion, filepath.IsAbs
 	// returns false for "~/" and the path would be incorrectly resolved
 	// relative to basePath.
+	//
+	// On POSIX, backslash-tilde labels (e.g. "~\docs\notes.txt") are first
+	// tried as literal basePath-relative paths. If the literal file exists,
+	// it is used — preserving the AddPath symmetry for literal "~\" directory
+	// names. Only if the literal file does not exist do we fall through to
+	// cross-platform tilde expansion for Windows-originated rehydration labels.
 	verifiedPath := ownerPath
 	if isTildeOwnerLabel(ownerPath) {
-		expanded, err := expandTildeOwnerLabel(ownerPath)
-		if err != nil {
-			return "", fmt.Errorf("failed to expand tilde in owner path %s: %w", ownerPath, err)
+		// On POSIX, check for a literal file at basePath-relative to the
+		// owner label first. This handles the case where a real directory
+		// named "~\docs" exists under basePath (added via AddPath on POSIX).
+		// Convert backslashes to forward slashes for the filesystem lookup
+		// since on POSIX, backslash is a valid filename character but the
+		// owner label may use backslashes as path separators (Windows-style).
+		if runtime.GOOS != "windows" && strings.HasPrefix(ownerPath, `~\`) {
+			literalRelative := strings.ReplaceAll(ownerPath, "\\", "/")
+			literalPath := filepath.Join(cm.basePath, literalRelative)
+			if _, err := os.Lstat(literalPath); err == nil {
+				// Literal file exists — use it instead of tilde expansion.
+				verifiedPath = literalPath
+			} else if !os.IsNotExist(err) {
+				// Real filesystem error (permission denied, etc.) — bubble it up.
+				return "", fmt.Errorf("failed to stat literal path %s: %w", literalPath, err)
+			} else {
+				// File does not exist — fall through to cross-platform tilde expansion.
+				expanded, expandErr := expandTildeOwnerLabel(ownerPath)
+				if expandErr != nil {
+					return "", fmt.Errorf("failed to expand tilde in owner path %s: %w", ownerPath, expandErr)
+				}
+				verifiedPath = expanded
+			}
+		} else {
+			expanded, expandErr := expandTildeOwnerLabel(ownerPath)
+			if expandErr != nil {
+				return "", fmt.Errorf("failed to expand tilde in owner path %s: %w", ownerPath, expandErr)
+			}
+			verifiedPath = expanded
 		}
-		verifiedPath = expanded
 	}
 
 	// Perform I/O-intensive operations BEFORE acquiring the lock

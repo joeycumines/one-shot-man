@@ -55,6 +55,10 @@ func ExpandTilde(path string) (string, error) {
 		return "", fmt.Errorf("unable to determine home directory for tilde expansion: %w", err)
 	}
 
+	if !filepath.IsAbs(home) {
+		return "", fmt.Errorf("home directory for tilde expansion is not absolute: %q", home)
+	}
+
 	if path == "~" {
 		return home, nil
 	}

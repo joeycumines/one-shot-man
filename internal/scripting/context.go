@@ -332,21 +332,48 @@ func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
 		// since on POSIX, backslash is a valid filename character but the
 		// owner label may use backslashes as path separators (Windows-style).
 		if runtime.GOOS != "windows" && strings.HasPrefix(ownerPath, `~\`) {
-			literalRelative := strings.ReplaceAll(ownerPath, "\\", "/")
-			literalPath := filepath.Join(cm.basePath, literalRelative)
+			// On POSIX, filepath.Join does NOT treat backslash as a path
+			// separator — backslash is a valid filename character. Probe the
+			// exact base-relative literal path first, preserving any literal
+			// backslash directory names (e.g. a directory actually named "~\docs").
+			//
+			// Step 1: Exact literal probe — no backslash rewriting.
+			literalPath := filepath.Join(cm.basePath, ownerPath)
 			if _, err := os.Lstat(literalPath); err == nil {
-				// Literal file exists — use it instead of tilde expansion.
+				// Literal file exists under basePath — use it. The returned
+				// label (ownerPath) round-trips because findOwnerFromUserPath
+				// step 2 (basePath-relative normalization) treats "~\docs/..."
+				// as a non-tilde-expansion relative path on POSIX and resolves
+				// it to the same owner key: <base>/~\docs/... → "~\docs/...".
 				verifiedPath = literalPath
 			} else if !os.IsNotExist(err) {
-				// Real filesystem error (permission denied, etc.) — bubble it up.
 				return "", fmt.Errorf("failed to stat literal path %s: %w", literalPath, err)
 			} else {
-				// File does not exist — fall through to cross-platform tilde expansion.
-				expanded, expandErr := expandTildeOwnerLabel(ownerPath)
-				if expandErr != nil {
-					return "", fmt.Errorf("failed to expand tilde in owner path %s: %w", ownerPath, expandErr)
+				// Step 2: Normalized probe — convert backslashes to forward
+				// slashes for Windows-to-POSIX rehydration where the directory
+				// structure uses forward slashes (e.g. <basePath>/~/docs/notes.txt).
+				normalizedRelative := strings.ReplaceAll(ownerPath, "\\", "/")
+				normalizedPath := filepath.Join(cm.basePath, normalizedRelative)
+				if _, err := os.Lstat(normalizedPath); err == nil {
+					verifiedPath = normalizedPath
+					// Return the normalized label so it round-trips correctly.
+					// The original backslash label would NOT resolve to this
+					// owner via findOwnerFromUserPath (step 2 produces a
+					// different key with literal backslashes), so we must
+					// return the forward-slash form for TUI consistency.
+					ownerPath = normalizedRelative
+				} else if !os.IsNotExist(err) {
+					return "", fmt.Errorf("failed to stat normalized path %s: %w", normalizedPath, err)
+				} else {
+					// Step 3: Neither literal nor normalized path exists under
+					// basePath. Fall through to cross-platform tilde expansion
+					// for Windows-originated rehydration labels targeting $HOME.
+					expanded, expandErr := expandTildeOwnerLabel(ownerPath)
+					if expandErr != nil {
+						return "", fmt.Errorf("failed to expand tilde in owner path %s: %w", ownerPath, expandErr)
+					}
+					verifiedPath = expanded
 				}
-				verifiedPath = expanded
 			}
 		} else {
 			expanded, expandErr := expandTildeOwnerLabel(ownerPath)

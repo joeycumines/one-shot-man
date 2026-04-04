@@ -30,13 +30,13 @@ func hasTrailingPathSeparator(path string) bool {
 	return false
 }
 
-// DetectPathSeparator returns the path separator used in the given path.
+// detectPathSeparator returns the path separator used in the given path.
 // If the path contains both separators (mixed), it prefers the last one used.
 // If no separator is found, it returns the OS-specific separator.
 //
 // On POSIX systems, backslash is NOT treated as a path separator (it's a valid
 // filename character). On Windows, both forward slash and backslash are recognized.
-func DetectPathSeparator(path string) string {
+func detectPathSeparator(path string) string {
 	// Use positional awareness: find the last occurrence of each separator
 	// and prefer the one that appears later in the string.
 	lastSlash := strings.LastIndexByte(path, '/')
@@ -115,7 +115,7 @@ func getFilepathSuggestions(path string) []prompt.Suggest {
 
 	var suggestions []prompt.Suggest
 	// Detect the separator style the user is using
-	separator := DetectPathSeparator(path)
+	separator := detectPathSeparator(path)
 	for _, entry := range entries {
 		if strings.HasPrefix(entry.Name(), prefix) {
 			// Build the full replacement text that includes the directory path

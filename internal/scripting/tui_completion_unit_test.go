@@ -2745,7 +2745,7 @@ func TestIssue002_DetectPathSeparator_POSIX_BackslashIsFilenameChar(t *testing.T
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := DetectPathSeparator(tc.path)
+			result := detectPathSeparator(tc.path)
 			if result != tc.expected {
 				t.Errorf("DetectPathSeparator(%q) = %q, want %q", tc.path, result, tc.expected)
 			}
@@ -2790,7 +2790,7 @@ func TestIssue002_DetectPathSeparator_Windows_HonorsBackslash(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			result := DetectPathSeparator(tc.path)
+			result := detectPathSeparator(tc.path)
 			if result != tc.expected {
 				t.Errorf("DetectPathSeparator(%q) = %q, want %q", tc.path, result, tc.expected)
 			}

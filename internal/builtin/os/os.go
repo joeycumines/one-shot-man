@@ -20,14 +20,6 @@ const (
 	clipboardTimeout = time.Second * 10
 )
 
-// expandTildeOnly expands ~ to the user's home directory but does NOT
-// absolutize non-tilde paths. Tilde-expanded paths are inherently absolute
-// since they resolve to $HOME. Non-tilde paths are returned unchanged.
-// This allows relative paths to be passed directly to os.ReadFile/os.Stat,
-// enabling proper kernel-level path resolution including physical ".."
-// traversal through symlinks.
-// Returns an error if tilde expansion fails.
-//
 // expandTilde is the underlying function used for tilde expansion.
 // Same-package tests may override this directly for deterministic behavior
 // without relying on os.UserHomeDir's OS-level fallbacks (e.g., getpwuid
@@ -35,6 +27,13 @@ const (
 // write to the operator's real home directory.
 var expandTilde = filepathutil.ExpandTilde
 
+// expandTildeOnly expands ~ to the user's home directory but does NOT
+// absolutize non-tilde paths. Tilde-expanded paths are inherently absolute
+// since they resolve to $HOME. Non-tilde paths are returned unchanged.
+// This allows relative paths to be passed directly to os.ReadFile/os.Stat,
+// enabling proper kernel-level path resolution including physical ".."
+// traversal through symlinks.
+// Returns an error if tilde expansion fails.
 func expandTildeOnly(path string) (string, error) {
 	expanded, err := expandTilde(path)
 	if err != nil {

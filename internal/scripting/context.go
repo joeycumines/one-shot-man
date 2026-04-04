@@ -62,12 +62,13 @@ func (cm *ContextManager) canonicalizeUserPath(path string) (string, string, err
 		return "", "", fmt.Errorf("empty path is not valid")
 	}
 
-	// Expand tilde before converting to absolute path. Use expandTildeOwnerLabel
-	// (cross-platform) instead of filepathutil.ExpandTilde (host-specific) so
-	// that backslash tilde labels (e.g., "~\docs\notes.txt") are correctly
-	// expanded on all hosts. This supports cross-host session rehydration where
-	// Windows-style labels must resolve on POSIX and vice versa.
-	expanded, err := expandTildeOwnerLabel(path)
+	// Expand tilde before converting to absolute path. Use host-specific
+	// filepathutil.ExpandTilde so that POSIX systems treat ~\foo as a literal
+	// path (not $HOME/foo), keeping ContextManager semantics consistent with
+	// internal/builtin/os which also uses filepathutil.ExpandTilde. Cross-
+	// platform tilde expansion (expandTildeOwnerLabel) is reserved for
+	// rehydration paths (AddRelativePath, findOwnerFromUserPath).
+	expanded, err := filepathutil.ExpandTilde(path)
 	if err != nil {
 		return "", "", err
 	}
@@ -165,13 +166,14 @@ func (cm *ContextManager) findOwnerFromUserPath(path string) (string, bool, erro
 	// This handles cases where the caller adds "root/" but the canonical owner
 	// is "root". We need to resolve against basePath, not the process CWD.
 	//
-	// IMPORTANT: We only skip this step for actual tilde expansion forms (e.g., "~/", "~\"),
+	// IMPORTANT: We only skip this step for actual tilde expansion forms (e.g., "~/"),
 	// not for literal paths that happen to start with "~" (e.g., "~cache", "~tmp").
 	// Literal tilde paths should get basePath-relative normalization just like any
-	// other relative path. We use isTildeOwnerLabel (cross-platform) rather than
-	// filepathutil.IsTildeExpansionPath (host-specific) because findOwnerFromUserPath
-	// is used for session rehydration where labels may originate from different OSes.
-	if !filepath.IsAbs(path) && !isTildeOwnerLabel(path) {
+	// other relative path. We use filepathutil.IsTildeExpansionPath (host-specific)
+	// because findOwnerFromUserPath serves both user-input flows (RemovePath,
+	// RefreshPath) and rehydration flows. On POSIX, ~\foo is NOT a tilde expansion
+	// form and should receive basePath-relative normalization.
+	if !filepath.IsAbs(path) && !filepathutil.IsTildeExpansionPath(path) {
 		absPath := filepath.Join(cm.basePath, path)
 		if cleaned, err := filepath.Abs(absPath); err == nil {
 			if relativeOwner := cm.normalizeOwnerPath(cleaned); relativeOwner != path {
@@ -182,19 +184,28 @@ func (cm *ContextManager) findOwnerFromUserPath(path string) (string, bool, erro
 		}
 	}
 
-	// Step 3: Fall back to CLI/CWD-style canonicalization (tilde expansion,
-	// absolute path resolution, CWD-relative handling).
-	// If canonicalizeUserPath fails, we bubble the error up. This includes
-	// tilde expansion failure (corrupted $HOME) AND filepath.Abs/Getwd
-	// failure (invalid process CWD). The caller (RemovePath, RefreshPath)
-	// needs to know that the failure was a system error, not a benign cache
-	// miss. Note: this means RemovePath("foo") may return an error in
-	// degenerate environments (invalid CWD) where it previously returned
-	// nil. This is intentional — silently swallowing system errors is worse.
-	normalized, _, err := cm.canonicalizeUserPath(path)
+	// Step 3: Fall back to full canonicalization with cross-platform tilde
+	// support. Use expandTildeOwnerLabel (cross-platform) directly so that
+	// rehydration labels like "~\docs\notes.txt" resolve correctly on all
+	// hosts. canonicalizeUserPath uses host-specific tilde expansion which
+	// is correct for AddPath but too narrow for RemovePath/RefreshPath which
+	// must also handle cross-platform session rehydration labels.
+	//
+	// If expansion or path resolution fails, we bubble the error up. The
+	// caller (RemovePath, RefreshPath) needs to know that the failure was
+	// a system error, not a benign cache miss. Note: this means
+	// RemovePath("foo") may return an error in degenerate environments
+	// (invalid CWD) where it previously returned nil. This is intentional
+	// — silently swallowing system errors is worse.
+	expanded, err := expandTildeOwnerLabel(path)
 	if err != nil {
 		return "", false, fmt.Errorf("findOwnerFromUserPath(%q): %w", path, err)
 	}
+	absPath, err := filepath.Abs(expanded)
+	if err != nil {
+		return "", false, fmt.Errorf("findOwnerFromUserPath(%q): %w", path, err)
+	}
+	normalized := cm.normalizeOwnerPath(absPath)
 	if _, tracked := cm.ownerFiles[normalized]; tracked {
 		return normalized, true, nil
 	}
@@ -283,10 +294,12 @@ func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
 	// fallback when appropriate).
 
 	// For tilde-prefixed owner labels (e.g. "~/.claude/agents/Takumi.md"),
-	// expand tilde to an absolute path for existence verification below,
-	// but preserve the original tilde-form label as the stored owner.
-	// Without expansion, filepath.IsAbs returns false for "~/" and the path
-	// would be incorrectly resolved relative to basePath.
+	// expand tilde to an absolute path for existence verification below.
+	// Note: the internal owner key is the normalized path (not the original
+	// tilde label). The original tilde-form label is only returned to the
+	// caller for TUI display purposes. Without expansion, filepath.IsAbs
+	// returns false for "~/" and the path would be incorrectly resolved
+	// relative to basePath.
 	verifiedPath := ownerPath
 	if isTildeOwnerLabel(ownerPath) {
 		expanded, err := expandTildeOwnerLabel(ownerPath)
@@ -637,15 +650,57 @@ func (cm *ContextManager) RemovePath(path string) error {
 }
 
 // GetPath returns information about a tracked path. The input path is
-// resolved using findOwnerFromUserPath, which performs tilde expansion,
-// basePath-relative normalization, and canonicalization. This means that
-// TUI-friendly labels returned by AddRelativePath (e.g., "~/foo/bar.txt")
-// can be passed directly to GetPath and will resolve to the correct internal
-// owner key.
+// resolved using a multi-step strategy that first checks all tracked paths
+// (cm.paths), then falls back to owner resolution for tilde-form labels:
+//
+//  1. Direct cm.paths[path] fast path
+//  2. basePath-relative normalization against cm.paths
+//  3. Full canonicalization (host-specific tilde + CWD) against cm.paths
+//  4. Fallback: findOwnerFromUserPath for tilde labels from AddRelativePath
+//
+// Steps 1-3 resolve against cm.paths (all tracked entries including child
+// files under tracked directories). Step 4 falls back to owner resolution
+// which handles tilde-form labels that were returned by AddRelativePath.
 func (cm *ContextManager) GetPath(path string) (*contextPath, bool) {
 	cm.mutex.RLock()
 	defer cm.mutex.RUnlock()
 
+	// Step 1: Direct lookup — fast path for exact key match in cm.paths.
+	if cp, exists := cm.paths[path]; exists {
+		return cp, exists
+	}
+
+	// Step 2: basePath-relative normalization. For relative paths that are
+	// not host-specific tilde expansion forms, resolve against basePath and
+	// check cm.paths. This handles paths like "root/sub/child.txt" that were
+	// registered when a directory was tracked.
+	if path != "" && !filepath.IsAbs(path) && !filepathutil.IsTildeExpansionPath(path) {
+		absPath := filepath.Join(cm.basePath, path)
+		if cleaned, err := filepath.Abs(absPath); err == nil {
+			if relative := cm.normalizeOwnerPath(cleaned); relative != path {
+				if cp, exists := cm.paths[relative]; exists {
+					return cp, exists
+				}
+			}
+		}
+	}
+
+	// Step 3: Full canonicalization (host-specific tilde expansion + CWD
+	// resolution) against cm.paths. This handles paths like "./note.txt"
+	// or "../sibling/file.txt" that need CWD-aware resolution.
+	if path != "" {
+		normalized, _, err := cm.canonicalizeUserPath(path)
+		if err == nil && normalized != path {
+			if cp, exists := cm.paths[normalized]; exists {
+				return cp, exists
+			}
+		}
+	}
+
+	// Step 4: Fallback to owner resolution. This handles tilde-form labels
+	// from AddRelativePath (e.g., "~/foo/bar.txt") where the internal owner
+	// key is the normalized absolute path but the caller has the original
+	// tilde-form label.
 	owner, found, err := cm.findOwnerFromUserPath(path)
 	if err != nil || !found {
 		return nil, false

@@ -56,6 +56,9 @@ func TestPromptFlow_Unix_Integration_CompleteWorkflow(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
 	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 
 	binaryPath := buildTestBinary(t)
 
@@ -145,6 +148,9 @@ func TestPromptFlow_Unix_MetaPromptVariations(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
 	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 
 	testCases := []struct {
 		name           string
@@ -199,6 +205,9 @@ func TestPromptFlow_Unix_MetaPromptVariations(t *testing.T) {
 func TestPromptFlow_Unix_ContextAssembly(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
+	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
 	}
 
 	binaryPath := buildTestBinary(t)
@@ -331,6 +340,9 @@ func TestPromptFlow_Unix_ListShowsMissing(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
 	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 
 	binaryPath := buildTestBinary(t)
 
@@ -400,6 +412,9 @@ func TestPromptFlow_Unix_ListShowsMissing(t *testing.T) {
 func TestPromptFlow_Unix_DiskReadInMeta(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
+	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
 	}
 
 	binaryPath := buildTestBinary(t)
@@ -476,6 +491,10 @@ func TestPromptFlow_Unix_DiskReadInMeta(t *testing.T) {
 // TestPromptFlow_Unix_DifferentTemplateConfigurations tests various template
 // customizations to ensure the templating system works correctly.
 func TestPromptFlow_Unix_DifferentTemplateConfigurations(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
+
 	binaryPath := buildTestBinary(t)
 
 	workspace := createTestWorkspace(t)
@@ -559,6 +578,9 @@ func TestPromptFlow_Unix_DifferentTemplateConfigurations(t *testing.T) {
 func TestPromptFlow_Unix_GitDiffIntegration(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
+	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
 	}
 
 	binaryPath := buildTestBinary(t)
@@ -669,6 +691,9 @@ func TestPromptFlow_Unix_GitDiffSingleCommit(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
 	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 
 	binaryPath := buildTestBinary(t)
 
@@ -768,6 +793,9 @@ func main() {
 func TestPromptFlow_Unix_GitDiffMalformedPayload(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
+	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
 	}
 
 	binaryPath := buildTestBinary(t)
@@ -910,6 +938,9 @@ func TestPromptFlow_Unix_MetaIncludesGitDiff(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
 	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 
 	binaryPath := buildTestBinary(t)
 
@@ -996,6 +1027,9 @@ func TestPromptFlow_Unix_MetaIncludesGitDiff(t *testing.T) {
 func TestPromptFlow_Unix_ClipboardIntegration(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
+	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
 	}
 
 	binaryPath := buildTestBinary(t)

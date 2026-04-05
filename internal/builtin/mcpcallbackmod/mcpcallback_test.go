@@ -674,6 +674,9 @@ func TestMCPCallback_SocketAcceptsConnection(t *testing.T) {
 // --- E2E MCP tool call test ---
 
 func TestMCPCallback_E2E_ToolCall(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping E2E MCP tool call test in short mode")
+	}
 	p := testutil.NewTestEventLoopProvider()
 	t.Cleanup(p.Stop)
 	loadModules(t, p)

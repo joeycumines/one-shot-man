@@ -13,6 +13,10 @@ import (
 )
 
 func TestConsole_Integration_New(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -40,6 +44,10 @@ func TestConsole_Integration_New(t *testing.T) {
 }
 
 func TestConsole_Integration_FindElement(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -76,6 +84,10 @@ func TestConsole_Integration_FindElement(t *testing.T) {
 }
 
 func TestConsole_Integration_ClickElement(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -113,6 +125,10 @@ func TestConsole_Integration_ClickElement(t *testing.T) {
 }
 
 func TestConsole_Integration_ScrollWheel(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -161,6 +177,10 @@ func TestConsole_Integration_ScrollWheel(t *testing.T) {
 }
 
 func TestConsole_Integration_ClickElementAndExpect(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -194,6 +214,10 @@ func TestConsole_Integration_ClickElementAndExpect(t *testing.T) {
 }
 
 func TestConsole_Integration_GetElementCenter(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -233,6 +257,10 @@ func TestConsole_Integration_GetElementCenter(t *testing.T) {
 }
 
 func TestConsole_Integration_ClickWithButton(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -271,6 +299,10 @@ func TestConsole_Integration_ClickWithButton(t *testing.T) {
 }
 
 func TestConsole_Integration_DebugBuffer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -303,6 +335,10 @@ func TestConsole_Integration_DebugBuffer(t *testing.T) {
 }
 
 func TestConsole_Integration_RequireClick(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

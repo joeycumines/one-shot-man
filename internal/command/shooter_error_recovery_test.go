@@ -18,6 +18,7 @@ import (
 // TEST-ER-001: Verify that a module loading error (e.g., remove 'osm:bt' from script)
 // causes the script to exit with a non-zero exit code
 func TestShooterError_ER001_ModuleLoadingError(t *testing.T) {
+	skipSlow(t)
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
@@ -100,6 +101,7 @@ func TestShooterError_ER001_ModuleLoadingError(t *testing.T) {
 // TEST-ER-002: Create a modified test script that contains an intentional error
 // (e.g., call undefined function) and verify it exits with non-zero code and logs the error
 func TestShooterError_ER002_RuntimeIntentionalError(t *testing.T) {
+	skipSlow(t)
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
@@ -392,6 +394,7 @@ func TestShooterError_ER003_NormalExecution(t *testing.T) {
 //
 // TEST-ER-004: Verify that behavior tree errors (e.g., invalid enemy type) are caught and logged
 func TestShooterError_ER004_BehaviorTreeErrors(t *testing.T) {
+	skipSlow(t)
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
@@ -643,6 +646,7 @@ func TestShooterError_ER004_BehaviorTreeErrors(t *testing.T) {
 
 // TestShooterError_PanicRecovery verifies that panics are recovered and converted to errors
 func TestShooterError_PanicRecovery(t *testing.T) {
+	skipSlow(t)
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
@@ -682,6 +686,7 @@ func TestShooterError_PanicRecovery(t *testing.T) {
 
 // TestShooterError_MultipleErrors verifies that multiple errors can be detected
 func TestShooterError_MultipleErrors(t *testing.T) {
+	skipSlow(t)
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,

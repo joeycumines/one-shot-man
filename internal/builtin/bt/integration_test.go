@@ -43,6 +43,9 @@ func waitForTreeCompletion(t *testing.T, tree bt.Node, timeout time.Duration) (b
 // go-behaviortree composites (Sequence, Selector) with JavaScript leaf behaviors.
 func TestIntegration_GoCompositeWithJSLeaves(t *testing.T) {
 	t.Parallel()
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 
 	bridge := testBridge(t)
 	bb := new(Blackboard)
@@ -145,6 +148,9 @@ func TestIntegration_GoCompositeWithJSLeaves(t *testing.T) {
 
 // TestIntegration_AsyncJSLeafWithTicker demonstrates using JS leaves with bt.Ticker
 func TestIntegration_AsyncJSLeafWithTicker(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	t.Parallel()
 
 	bridge := testBridge(t)
@@ -191,6 +197,9 @@ func TestIntegration_AsyncJSLeafWithTicker(t *testing.T) {
 
 // TestIntegration_Memorize demonstrates using bt.Memorize with async JS leaves
 func TestIntegration_Memorize(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	t.Parallel()
 
 	bridge := testBridge(t)
@@ -250,6 +259,9 @@ func TestIntegration_Memorize(t *testing.T) {
 
 // TestIntegration_Fork demonstrates using bt.Fork with parallel JS leaves
 func TestIntegration_Fork(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	t.Parallel()
 
 	bridge := testBridge(t)
@@ -310,6 +322,9 @@ func TestIntegration_Fork(t *testing.T) {
 // TestIntegration_SharedModeManagerShutdown verifies CRITICAL #1 fix:
 // Manager.done() promise resolves without hanging when bridge is stopped (shared mode)
 func TestIntegration_SharedModeManagerShutdown(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	t.Parallel()
 
 	// Create external event loop (shared mode owner)
@@ -454,6 +469,9 @@ func TestIntegration_SharedModeManagerShutdown(t *testing.T) {
 
 // TestIntegration_SharedModeTickerShutdown verifies createTickerJSWrapper fallback
 func TestIntegration_SharedModeTickerShutdown(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
 	t.Parallel()
 
 	// Create external event loop (shared mode owner)

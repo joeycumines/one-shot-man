@@ -12,6 +12,8 @@ import (
 )
 
 func TestCodeReviewCommand_ActualGitDiffExecution(t *testing.T) {
+	skipSlow(t)
+
 	// Only run this test if we're in a git repository
 	if !isGitRepository() {
 		t.Skip("Skipping git diff test - not in a git repository")

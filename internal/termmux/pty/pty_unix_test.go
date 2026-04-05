@@ -18,6 +18,10 @@ import (
 // After the fix (T10), child processes should be killed along with the parent
 // because they share a process group.
 func TestPTYSpawn_ForceKill_OrphanSurvival(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	t.Parallel()
 	skipIfWindows(t)
 

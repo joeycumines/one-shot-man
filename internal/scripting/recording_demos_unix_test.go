@@ -160,6 +160,10 @@ func typeStringFast(t *testing.T, recorder *InputCaptureRecorder, s string) {
 // - Navigating between documents
 // - Copying the prompt
 func TestRecording_SuperDocument_Visual(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
+
 	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "super-document-visual.tape")
@@ -352,6 +356,10 @@ func TestRecording_SuperDocument_Visual(t *testing.T) {
 
 // TestRecording_SuperDocument_Shell demonstrates the super-document shell mode.
 func TestRecording_SuperDocument_Shell(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
+
 	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "super-document-shell.tape")
@@ -514,6 +522,10 @@ func TestRecording_SuperDocument_Shell(t *testing.T) {
 
 // TestRecording_SuperDocument_Interop demonstrates visual<->shell mode switching.
 func TestRecording_SuperDocument_Interop(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
+
 	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "super-document-interop.tape")
@@ -704,6 +716,10 @@ func TestRecording_SuperDocument_Interop(t *testing.T) {
 
 // TestRecording_CodeReview demonstrates the code-review command.
 func TestRecording_CodeReview(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
+
 	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "code-review.tape")
@@ -878,6 +894,10 @@ func TestRecording_CodeReview(t *testing.T) {
 
 // TestRecording_PromptFlow demonstrates the prompt-flow command.
 func TestRecording_PromptFlow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
+
 	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "prompt-flow.tape")
@@ -1060,6 +1080,10 @@ func TestRecording_PromptFlow(t *testing.T) {
 
 // TestRecording_Goal demonstrates the goal command with a sample workflow.
 func TestRecording_Goal(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
+
 	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "goal.tape")
@@ -1198,6 +1222,10 @@ func TestRecording_Goal(t *testing.T) {
 
 // TestRecording_Quickstart is a quick overview demo.
 func TestRecording_Quickstart(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
+
 	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "quickstart.tape")
@@ -1300,6 +1328,10 @@ func TestRecording_Quickstart(t *testing.T) {
 
 // TestRecording_SuperDocument_Visual_Light demonstrates light theme.
 func TestRecording_SuperDocument_Visual_Light(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
+
 	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "super-document-visual-light.tape")
@@ -1449,6 +1481,10 @@ func TestRecording_SuperDocument_Visual_Light(t *testing.T) {
 // - Moving the player with arrow keys
 // - Shooting with space bar
 func TestRecording_Script_BT_Shooter(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
+
 	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "script-example-bt-shooter.tape")
@@ -1644,6 +1680,10 @@ func TestRecording_Script_BT_Shooter(t *testing.T) {
 // - Watching the AI solve the pick and place problem
 // - Verifying the WIN! condition is reached
 func TestRecording_Script_PickAndPlace(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
+
 	sessionID := testutil.NewTestSessionID("recording-demo", t.Name())
 	outputDir := getRecordingOutputDir()
 	tapePath := filepath.Join(outputDir, "script-example-pick-and-place.tape")

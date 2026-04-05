@@ -255,6 +255,10 @@ func TestSpawnChild_KillIdempotent(t *testing.T) {
 }
 
 func TestSpawnChild_ContextCancel(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	t.Parallel()
 	skipIfWindows(t)
 

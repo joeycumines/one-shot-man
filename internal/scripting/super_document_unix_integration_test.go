@@ -63,6 +63,9 @@ func TestSuperDocument_TUIRendering(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
 	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 
 	binaryPath := buildTestBinary(t)
 
@@ -119,6 +122,9 @@ func TestSuperDocument_TUIRendering(t *testing.T) {
 func TestSuperDocument_KeyboardNavigation(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
+	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
 	}
 
 	binaryPath := buildTestBinary(t)
@@ -181,6 +187,9 @@ func TestSuperDocument_KeyboardNavigation(t *testing.T) {
 func TestSuperDocument_AddDocumentViaKeyboard(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
+	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
 	}
 
 	binaryPath := buildTestBinary(t)
@@ -257,6 +266,9 @@ func TestSuperDocument_MouseClickAddButton(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
 	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 
 	binaryPath := buildTestBinary(t)
 
@@ -322,6 +334,9 @@ func TestSuperDocument_MouseClickAddButton(t *testing.T) {
 func TestSuperDocument_PreviewTruncatesAndStripsNewlines(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
+	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
 	}
 
 	binaryPath := buildTestBinary(t)
@@ -393,6 +408,9 @@ func TestSuperDocument_PreviewTruncatesAndStripsNewlines(t *testing.T) {
 func TestSuperDocument_LoadFileViaKeyboard(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
+	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
 	}
 
 	binaryPath := buildTestBinary(t)
@@ -472,6 +490,9 @@ func TestSuperDocument_LoadFileViaKeyboard(t *testing.T) {
 func TestSuperDocument_CopyPromptWithDocuments(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
+	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
 	}
 
 	binaryPath := buildTestBinary(t)
@@ -562,6 +583,9 @@ func TestSuperDocument_ErrorOnCopyWithNoDocuments(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
 	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 
 	binaryPath := buildTestBinary(t)
 
@@ -613,6 +637,9 @@ func TestSuperDocument_ErrorOnCopyWithNoDocuments(t *testing.T) {
 func TestSuperDocument_HelpCommand(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
+	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
 	}
 
 	binaryPath := buildTestBinary(t)
@@ -675,6 +702,9 @@ func TestSuperDocument_CtrlCQuits(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
 	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 
 	binaryPath := buildTestBinary(t)
 
@@ -724,6 +754,9 @@ func TestSuperDocument_CtrlCQuits(t *testing.T) {
 func TestSuperDocument_MouseClickAddAndConfirm(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
+	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
 	}
 
 	binaryPath := buildTestBinary(t)
@@ -790,6 +823,9 @@ func TestSuperDocument_MouseClickAddAndConfirm(t *testing.T) {
 func TestSuperDocument_MouseClickDocumentSelection(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
+	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
 	}
 
 	binaryPath := buildTestBinary(t)
@@ -873,6 +909,9 @@ func TestSuperDocument_MouseClickCopyPrompt(t *testing.T) {
 	}
 	if os.Getuid() == 0 {
 		t.Skip("mouse TUI tests unreliable as root (e.g. Docker)")
+	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
 	}
 
 	binaryPath := buildTestBinary(t)
@@ -979,6 +1018,9 @@ func TestSuperDocument_KeyboardEditDocument(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
 	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 
 	binaryPath := buildTestBinary(t)
 	env := newTestProcessEnv(t)
@@ -1046,6 +1088,9 @@ func TestSuperDocument_KeyboardEditDocument(t *testing.T) {
 func TestSuperDocument_REPLTUIToggle(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
+	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
 	}
 
 	binaryPath := buildTestBinary(t)
@@ -1136,6 +1181,9 @@ func TestSuperDocument_MultilineTextarea(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
 	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 
 	binaryPath := buildTestBinary(t)
 	env := newTestProcessEnv(t)
@@ -1225,6 +1273,9 @@ func TestSuperDocument_MouseWheelDoesNotTriggerButtonClick(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
 	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 
 	binaryPath := buildTestBinary(t)
 	env := newTestProcessEnv(t)
@@ -1310,6 +1361,9 @@ func TestSuperDocument_MouseClickTextareaFocus(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
 	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 
 	binaryPath := buildTestBinary(t)
 	env := newTestProcessEnv(t)
@@ -1386,6 +1440,9 @@ func TestSuperDocument_MouseClickTextareaFocus(t *testing.T) {
 func TestSuperDocument_BacktabNavigation(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
+	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
 	}
 
 	binaryPath := buildTestBinary(t)
@@ -1496,6 +1553,9 @@ func TestSuperDocument_ScrollViaKeyboard(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
 	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 
 	binaryPath := buildTestBinary(t)
 	env := newTestProcessEnv(t)
@@ -1567,6 +1627,9 @@ func TestSuperDocument_ScrollViaKeyboard(t *testing.T) {
 func TestSuperDocument_PageKeysBringNewContentIntoView(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
+	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
 	}
 
 	binaryPath := buildTestBinary(t)
@@ -1655,6 +1718,9 @@ func TestSuperDocument_PageKeysBringNewContentIntoView(t *testing.T) {
 func TestSuperDocument_ArrowMovesSelectionAndKeepsInViewport(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
+	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
 	}
 
 	binaryPath := buildTestBinary(t)
@@ -1832,6 +1898,9 @@ func TestSuperDocument_FastScrollDoesNotInsertGarbage(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
 	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 
 	binaryPath := buildTestBinary(t)
 	env := newTestProcessEnv(t)
@@ -1972,6 +2041,9 @@ func TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
 	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 
 	binaryPath := buildTestBinary(t)
 	env := newTestProcessEnv(t)
@@ -2063,6 +2135,9 @@ func TestSuperDocument_ViewportUnlocksOnScrollSnapsBackOnTyping(t *testing.T) {
 func TestSuperDocument_JumpButtonsUnlockViewport(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
+	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
 	}
 
 	binaryPath := buildTestBinary(t)
@@ -2162,6 +2237,9 @@ func TestSuperDocument_JumpButtonsUnlockViewport(t *testing.T) {
 func TestSuperDocument_PasteInTextarea(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
+	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
 	}
 
 	binaryPath := buildTestBinary(t)

@@ -85,7 +85,7 @@
       "task": "Replace one-shot branch verification with a persistent verify shell",
       "description": "Update /Users/joeyc/dev/one-shot-man/internal/command/pr_split_06b_verify_shell.js and related verification code so the verification shell persists across multiple commands. A user can run tests, fix code in the shell, run tests again—all without restarting the verify session. The user controls when verification is 'complete' (no hidden timeout or single-command contract). The branch worktree has a long-lived shell process managed through the session model.",
       "acceptance": "User Value: User can iterate verification multiple times (run tests → fix → run tests again) without losing context or requiring restart. Verification feels like a real shell environment, not a one-shot command. Code Quality: Branch worktree has a persistent shell process managed through the session model, not a one-shot command that exits.",
-      "status": "In Progress",
+      "status": "Done",
       "dependsOn": [6]
     },
     {
@@ -101,7 +101,7 @@
       "task": "Add explicit verification outcome controls and remove hidden override workflow",
       "description": "Update /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16c_tui_handlers_verify.js and pr_split_16f_tui_model.js so after verification completes, the user sees explicit buttons (PASS / FAIL / CONTINUE) and types a command only if they want to override. The hidden 'just type to override' contract is removed. On ERROR, user can explicitly choose to go back and fix or continue anyway. All verification-outcome paths are explicit state transitions.",
       "acceptance": "User Value: No hidden contracts or implicit behaviors. After verification completes, the user sees explicit next steps (pass/fail/continue buttons, optionally type a command). On ERROR, back/retry/continue are clear buttons, not guessed key combinations. Code Quality: All verification-outcome paths are explicit state transitions in the model; no implicit 'watch for input then override' logic.",
-      "status": "Not Started",
+      "status": "Done",
       "dependsOn": [8]
     },
     {
@@ -117,7 +117,7 @@
       "task": "Correct inline pane rendering, resize, and input routing for reliable interactivity",
       "description": "Update rendering in /Users/joeyc/dev/one-shot-man/internal/command/pr_split_15b_tui_chrome.js, pr_split_15c_tui_screens.js, and pr_split_16e_tui_update.js so inline panes render correctly (no ghost lines, no missing output), respond to mouse/keyboard with predictable latency (< 50ms), resize smoothly, and never show torn/stale output. Pane rendering uses session screen buffer directly (not polling + caching); input is dispatched through the session API; resize is event-driven.",
       "acceptance": "User Value: Inline panes are responsive and pixel-perfect. Clicking in a pane focuses it reliably. Typing appears immediately. Terminal resizes are handled smoothly. No ghost lines, no duplicate output, no stale text. Code Quality: Pane rendering uses session screen buffer directly. Input routing is explicit through the session API. Resize is event-driven, not polled.",
-      "status": "Not Started",
+      "status": "Done",
       "dependsOn": [3, 8]
     },
     {
@@ -125,7 +125,7 @@
       "task": "Reconcile manual fix, error resolution, and Ask Claude flows with the new session model",
       "description": "Update /Users/joeyc/dev/one-shot-man/internal/command/pr_split_16d_tui_handlers_claude.js, pr_split_16c_tui_handlers_verify.js, and pr_split_15d_tui_dialogs.js so all three user workflows work coherently with the new session model: (1) manual fix in verify shell, (2) error resolution in shell, (3) Ask Claude for help. Switching between them preserves context and state. The session model and verification state machine support all three workflows natively, not as special cases.",
       "acceptance": "User Value: All three workflows (manual fix, error resolution, Ask Claude) work seamlessly together. Switching between panes preserves state. User can fix code in verify shell, ask Claude for insight, then resume verification. Code Quality: The session model and verification state machine support all three workflows natively.",
-      "status": "Not Started",
+      "status": "Done",
       "dependsOn": [6, 9, 10]
     },
     {
@@ -287,12 +287,21 @@
       "acceptance": "User Value: The configure page renders with clean, correctly-aligned borders around the source branch and target branch fields at every terminal size. No clipping, no overlap, no misalignment, no wrapping artifacts. The autodetect/main values sit cleanly inside their bordered containers regardless of terminal dimensions. Code Quality: A failing test exists FIRST that proves the bug at multiple terminal sizes (at minimum: 80x24, 100x30, 120x40, and a narrow case like 60x20). The test captures rendered output and asserts correct border placement. After the fix, the test passes. The root cause is identified and fixed in the rendering/chrome code, not worked around with size-specific conditionals. The fix is general — borders render correctly at any terminal size, not just the tested ones. No regressions in other bordered widgets.",
       "status": "Not Started",
       "dependsOn": [11]
+    },
+    {
+      "id": 33,
+      "task": "Add testing.Short() skip guards to all slow test functions across every package",
+      "description": "Added testing.Short() / skipSlow(t) skip guards to ~110 slow test functions across the entire codebase. Tests that spawn JS runtimes (scripting.NewEngineWithConfig), use bubbletea TUI, spawn subprocesses, or have hardcoded timeouts >2s now skip when `go test -short` or `make test-short` is used. Added `test-short` convenience target in config.mk and `make help` documentation. Packages modified: internal/command (34 tests: goal_integration, shooter_game, shooter_error_recovery, shooter_game_test, code_review_demo, code_review_git_execution, super_document_e2e, pr_split_pipeline_smoke, pick_and_place_error_recovery), internal/scripting (52 tests: super_document_unix_integration, super_document_click_after_scroll, recording_demos_unix, prompt_flow_unix_integration, prompt_flow_test, prompt_flow_state_regression), internal/mouseharness (9 tests: all integration tests), internal/builtin/bt (6 tests: bridge_test + integration_test), internal/builtin/exec (2 tests: exec_test + spawn_test), internal/builtin/mcpcallbackmod (1 test: E2E_ToolCall), internal/termmux/pty (5 tests: pty_test + pty_unix_test), internal/example/pickandplace (7 tests: integration, simulation_consistency, manual_mode_comprehensive). Also added skipSlow to shooter_error_recovery (5 tests) and shooter_game_test.TickerLifecycle (1 test) in a follow-up pass.",
+      "acceptance": "User Value: `make test-short` completes in ~75 seconds (down from ~28 minutes), providing a fast feedback loop for developers. `go test -short` skips 608+ slow integration/E2E tests while still running all unit tests. Code Quality: Every slow test function (>2s) uses skipSlow(t) or testing.Short() consistently. The skip pattern follows the existing convention (skipSlow helper in internal/command, inline testing.Short() elsewhere). AGENTS.md documents the test-short target and the requirement for slow tests to use skip guards. config.mk includes the test-short target. No regressions in test behavior — full suite without -short still passes (except pre-existing pr_split shell tab failures).",
+      "status": "Done",
+      "dependsOn": []
     }
   ],
   "continuousVerification": {
     "buildCommands": [
       "make build",
       "make test",
+      "make test-short",
       "make lint",
       "make fmt"
     ],

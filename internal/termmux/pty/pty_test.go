@@ -364,6 +364,10 @@ func TestSpawn_DefaultConfig(t *testing.T) {
 }
 
 func TestProcess_ContextCancel(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	t.Parallel()
 	skipIfWindows(t)
 
@@ -607,6 +611,10 @@ func TestProcess_Pid_NilCmd(t *testing.T) {
 // Regression test for: auto-split hang when Claude doesn't read stdin fast
 // enough — cancel (SIGKILL) could never be delivered.
 func TestProcess_WriteSignalDeadlock(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	t.Parallel()
 	skipIfWindows(t)
 
@@ -664,6 +672,10 @@ func TestProcess_WriteSignalDeadlock(t *testing.T) {
 // TestProcess_CloseWhileWriteBlocked verifies that Close can proceed
 // while Write is blocked on a full PTY buffer.
 func TestProcess_CloseWhileWriteBlocked(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	t.Parallel()
 	skipIfWindows(t)
 
@@ -741,6 +753,10 @@ func (h *stuckHandle) SignalCount(sig os.Signal) int {
 // TestProcess_Close_ForceKillWaitTimeout verifies Close does not block forever
 // when the process never reports exit after SIGKILL.
 func TestProcess_Close_ForceKillWaitTimeout(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	t.Parallel()
 
 	r, w, err := os.Pipe()

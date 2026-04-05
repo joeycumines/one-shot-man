@@ -66,6 +66,7 @@ func main() {
 // Integration tests exercising the JS interpreter end-to-end for built-in goals
 func TestGoalScript_DocGenerator_PromptContainsTypeInstructions(t *testing.T) {
 	t.Parallel()
+	skipSlow(t)
 
 	goalRegistry := newTestGoalRegistryForGoal()
 	g, err := goalRegistry.Get("doc-generator")
@@ -113,6 +114,7 @@ func TestGoalScript_DocGenerator_PromptContainsTypeInstructions(t *testing.T) {
 
 func TestGoalScript_TestGenerator_PromptContainsTypeInstructions(t *testing.T) {
 	t.Parallel()
+	skipSlow(t)
 
 	goalRegistry := newTestGoalRegistryForGoal()
 	g, err := goalRegistry.Get("test-generator")
@@ -160,6 +162,7 @@ func TestGoalScript_TestGenerator_PromptContainsTypeInstructions(t *testing.T) {
 
 func TestGoalScript_MoraleImprover_LoadsAndInitializes(t *testing.T) {
 	t.Parallel()
+	skipSlow(t)
 
 	goalRegistry := newTestGoalRegistryForGoal()
 	g, err := goalRegistry.Get("morale-improver")
@@ -219,6 +222,7 @@ func TestGoalScript_MoraleImprover_LoadsAndInitializes(t *testing.T) {
 
 func TestGoalScript_MoraleImprover_ContextManagerCommands(t *testing.T) {
 	t.Parallel()
+	skipSlow(t)
 
 	goalRegistry := newTestGoalRegistryForGoal()
 	g, err := goalRegistry.Get("morale-improver")
@@ -291,6 +295,7 @@ func TestGoalScript_MoraleImprover_ContextManagerCommands(t *testing.T) {
 
 func TestGoalScript_MoraleImprover_StateVariableCommands(t *testing.T) {
 	t.Parallel()
+	skipSlow(t)
 
 	goalRegistry := newTestGoalRegistryForGoal()
 	g, err := goalRegistry.Get("morale-improver")
@@ -367,6 +372,7 @@ func TestGoalScript_MoraleImprover_StateVariableCommands(t *testing.T) {
 
 func TestGoalScript_MoraleImprover_PromptTemplateRendering(t *testing.T) {
 	t.Parallel()
+	skipSlow(t)
 
 	goalRegistry := newTestGoalRegistryForGoal()
 	g, err := goalRegistry.Get("morale-improver")
@@ -444,6 +450,8 @@ func TestGoalScript_MoraleImprover_PromptTemplateRendering(t *testing.T) {
 }
 
 func TestGoalScript_MoraleImprover_ErrorHandling(t *testing.T) {
+	skipSlow(t)
+
 	goalRegistry := newTestGoalRegistryForGoal()
 	g, err := goalRegistry.Get("morale-improver")
 	if err != nil {
@@ -510,6 +518,7 @@ func TestGoalScript_MoraleImprover_ErrorHandling(t *testing.T) {
 
 func TestGoalScript_MoraleImprover_TUIElements(t *testing.T) {
 	t.Parallel()
+	skipSlow(t)
 
 	goalRegistry := newTestGoalRegistryForGoal()
 	g, err := goalRegistry.Get("morale-improver")
@@ -551,6 +560,7 @@ func TestGoalScript_MoraleImprover_TUIElements(t *testing.T) {
 
 func TestGoalScript_MoraleImprover_EmbeddedHotSnippets(t *testing.T) {
 	t.Parallel()
+	skipSlow(t)
 
 	goalRegistry := newTestGoalRegistryForGoal()
 	g, err := goalRegistry.Get("morale-improver")
@@ -635,6 +645,7 @@ func TestGoalScript_MoraleImprover_EmbeddedHotSnippets(t *testing.T) {
 
 func TestGoalScript_CommitMessage_EmbeddedHotSnippet(t *testing.T) {
 	t.Parallel()
+	skipSlow(t)
 
 	goalRegistry := newTestGoalRegistryForGoal()
 	g, err := goalRegistry.Get("commit-message")

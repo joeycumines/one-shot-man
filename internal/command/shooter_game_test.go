@@ -26,6 +26,8 @@ func shooterGetFloat64(val any) float64 {
 
 // TestShooterGame_Distance tests the Euclidean distance calculation utility function
 func TestShooterGame_Distance(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
@@ -120,6 +122,8 @@ func TestShooterGame_Distance(t *testing.T) {
 
 // TestShooterGame_Clamp tests the clamp utility function
 func TestShooterGame_Clamp(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
@@ -215,6 +219,8 @@ func TestShooterGame_Clamp(t *testing.T) {
 
 // TestShooterGame_CreateExplosion tests the explosion particle creation utility function
 func TestShooterGame_CreateExplosion(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
@@ -348,6 +354,8 @@ func TestShooterGame_CreateExplosion(t *testing.T) {
 
 // TestShooterGame_InitialState tests game state initialization and entity constructors
 func TestShooterGame_InitialState(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
@@ -834,6 +842,8 @@ func TestShooterGame_InitialState(t *testing.T) {
 
 // TestShooterGame_CollisionDetection tests collision detection between game entities
 func TestShooterGame_CollisionDetection(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
@@ -1395,6 +1405,8 @@ func TestShooterGame_CollisionDetection(t *testing.T) {
 
 // TestShooterGame_WaveManagement tests wave spawning, completion, and victory conditions
 func TestShooterGame_WaveManagement(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
@@ -1946,6 +1958,8 @@ func TestShooterGame_WaveManagement(t *testing.T) {
 
 // TestShooterGame_BehaviorTreeLeaves tests all behavior tree leaf functions in isolation
 func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
@@ -3291,6 +3305,8 @@ func TestShooterGame_BehaviorTreeLeaves(t *testing.T) {
 // TestShooterGame_InputHandling tests keyboard input handling for player controls
 // CRITICAL per blueprint (TEST-010)
 func TestShooterGame_InputHandling(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
@@ -3987,6 +4003,8 @@ func TestShooterGame_InputHandling(t *testing.T) {
 // TestShooterGame_GameModeStateMachine tests game mode state transitions
 // CRITICAL per blueprint (TEST-011)
 func TestShooterGame_GameModeStateMachine(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
@@ -4521,6 +4539,7 @@ func TestShooterGame_GameModeStateMachine(t *testing.T) {
 // TestShooterGame_TickerLifecycle tests behavior tree ticker lifecycle management
 // CRITICAL per blueprint (TEST-012)
 func TestShooterGame_TickerLifecycle(t *testing.T) {
+	skipSlow(t)
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
@@ -5020,6 +5039,8 @@ func TestShooterGame_TickerLifecycle(t *testing.T) {
 // TestShooterGame_GameLoopIntegration tests full tick flow and game loop integration
 // TEST-007: Critical for ensuring game updates correctly over time
 func TestShooterGame_GameLoopIntegration(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
@@ -5442,6 +5463,8 @@ func TestShooterGame_GameLoopIntegration(t *testing.T) {
 // TestShooterGame_EdgeCases tests edge cases and boundary conditions
 // TEST-013: Critical for robustness under unusual conditions
 func TestShooterGame_EdgeCases(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")
@@ -5860,6 +5883,8 @@ func TestShooterGame_EdgeCases(t *testing.T) {
 // TestShooterGame_BlackboardThreadSafety tests concurrent read/write operations
 // TEST-014: Simplified test for basic thread-safety verification
 func TestShooterGame_BlackboardThreadSafety(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("shooter-game", t.Name()), "memory")

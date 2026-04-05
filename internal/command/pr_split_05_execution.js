@@ -316,7 +316,6 @@
             if (progressFn) {
                 progressFn('Creating branch ' + (i + 1) + '/' + plan.splits.length + ': ' + split.name);
             }
-
             var co = await gitExecAsync(worktreePath, ['checkout', '-b', split.name, currentBase]);
             if (co.code !== 0) {
                 splitResult.error = 'create branch ' + split.name + ' from ' + currentBase + ' failed: ' + co.stderr.trim();

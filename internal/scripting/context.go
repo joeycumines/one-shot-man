@@ -307,18 +307,26 @@ func (cm *ContextManager) AddPath(path string) error {
 // internal use (e.g. session rehydration) where stored owner labels must be
 // resolved against the manager's configured base rather than the process CWD.
 //
-// It returns a label suitable for persisting as a TUI display label. For
+// It returns a label suitable for persisting as a TUI display label. For most
 // tilde-prefixed inputs (e.g. "~/.claude/agents/Takumi.md"), the original
-// tilde form is returned unchanged. For all other inputs, the normalized
-// owner key is returned. This allows callers (e.g., TUI rehydration) to
-// keep persisted labels in sync without replacing user-friendly tilde paths
-// with absolute paths.
+// tilde form is returned unchanged. On POSIX, if a forward-slash tilde owner
+// label resolves via the base-relative literal probe (for example "~/" ->
+// "<basePath>/~" or "~/docs/../x.txt" -> "<basePath>/~/x.txt"), the returned
+// label is canonicalized to the normalized owner key so it round-trips through
+// GetPath, RefreshPath, and RemovePath. For all other inputs, the normalized
+// owner key is returned.
 //
 // Note: the returned value is NOT necessarily the internal owner key used
 // by the ContextManager's paths map. Use normalizeOwnerPath on the resolved
 // absolute path to obtain the true internal key if needed. Operations like
 // RemovePath and RefreshPath handle tilde expansion internally via
-// findOwnerFromUserPath, so the tilde-form label round-trips correctly.
+// findOwnerFromUserPath, so tilde-form labels continue to work.
+//
+// On POSIX, AddRelativePath deliberately gives precedence to basePath-relative
+// literal "~" owner labels before $HOME expansion. This preserves rehydration
+// for persisted owner keys like "~/docs/file.txt" that originate from files
+// under <basePath>/~/... and would otherwise be incorrectly reinterpreted as
+// home-directory paths.
 func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
 	// Guard against empty string inputs to prevent unintentional root owner mutation.
 	// An empty string would resolve to the basePath, which could cause
@@ -338,24 +346,21 @@ func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
 
 	// For tilde-prefixed owner labels (e.g. "~/.claude/agents/Takumi.md"),
 	// expand tilde to an absolute path for existence verification below.
-	// Note: the internal owner key is the normalized path (not the original
-	// tilde label). The original tilde-form label is only returned to the
-	// caller for TUI display purposes. Without expansion, filepath.IsAbs
-	// returns false for "~/" and the path would be incorrectly resolved
-	// relative to basePath.
+	// Note: the internal owner key is the normalized path (not always the
+	// original tilde label). The returned label is chosen to preserve a
+	// stable, user-friendly form that round-trips through GetPath,
+	// RefreshPath, and RemovePath.
 	//
-	// On POSIX, backslash-tilde labels (e.g. "~\docs\notes.txt") are first
-	// tried as literal basePath-relative paths. If the literal file exists,
-	// it is used — preserving the AddPath symmetry for literal "~\" directory
-	// names. Only if the literal file does not exist do we fall through to
-	// cross-platform tilde expansion for Windows-originated rehydration labels.
+	// On POSIX, AddRelativePath gives precedence to literal basePath-relative
+	// "~" owner labels before falling back to cross-platform tilde expansion.
+	// This preserves rehydration of persisted owner keys such as
+	// "<basePath>/~/docs/file.txt" -> "~/docs/file.txt". For forward-slash
+	// tilde labels resolved by this literal probe, the raw input may not be a
+	// stable owner label (e.g. "~/" or "~/docs/../x.txt"), so the final
+	// returned label is canonicalized to the normalized owner key below.
 	verifiedPath := ownerPath
+	posixForwardSlashLiteralProbeUsed := false
 	if isTildeOwnerLabel(ownerPath) {
-		// On POSIX, check for a literal file at basePath-relative to the
-		// owner label first. This handles the case where a real directory
-		// named "~" or "~\docs" exists under basePath (added via AddPath
-		// on POSIX). Only if the literal file does not exist do we fall
-		// through to cross-platform tilde expansion.
 		if runtime.GOOS != "windows" {
 			if strings.HasPrefix(ownerPath, `~\`) {
 				// On POSIX, filepath.Join does NOT treat backslash as a path
@@ -395,12 +400,16 @@ func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
 					}
 				}
 			} else {
-				// ~/ labels (forward-slash tilde): probe base-relative literal
-				// first. A real directory named "~" under basePath should take
-				// priority over $HOME expansion, matching the ~\ probe above.
+				// Bare "~" and "~/" labels: probe the literal basePath-relative
+				// location first so persisted owner keys for <basePath>/~/...
+				// rehydrate to the same entry. If this literal probe wins, the
+				// final returned label is canonicalized to the normalized owner
+				// key below because raw forms like "~/" or "~/docs/../x.txt"
+				// are not stable lookup keys.
 				literalPath := filepath.Join(cm.basePath, ownerPath)
 				if _, err := os.Lstat(literalPath); err == nil {
 					verifiedPath = literalPath
+					posixForwardSlashLiteralProbeUsed = true
 				} else if !os.IsNotExist(err) {
 					return "", fmt.Errorf("failed to stat literal path %s: %w", literalPath, err)
 				} else {
@@ -462,15 +471,17 @@ func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
 	if err := cm.addPathWithOwnerLocked(absPath, owner, info); err != nil {
 		return "", err
 	}
-	// For tilde-prefixed inputs, return the original tilde/backslash form
-	// so that TUI state labels are preserved (e.g. "~/.claude/agents/Takumi.md"
-	// or "~\docs\notes.txt" stays as-is rather than being replaced with the
-	// expanded absolute path). The internal ContextManager maps use the
-	// normalized absolute owner key; findOwnerFromUserPath (used by
-	// RemovePath, RefreshPath) resolves the label via step 2.7
-	// (POSIX backslash→forward-slash mapping) or step 3 (tilde expansion),
-	// so the returned label remains functional.
+
+	// For tilde-prefixed inputs, preserve the original tilde/backslash form
+	// where it is already a stable label. On POSIX, if a forward-slash tilde
+	// label resolved via the base-relative literal probe, return the canonical
+	// owner instead so that non-canonical raw forms like "~/" or
+	// "~/docs/../x.txt" round-trip through GetPath, RefreshPath, and
+	// RemovePath.
 	if isTildeOwnerLabel(ownerPath) {
+		if runtime.GOOS != "windows" && posixForwardSlashLiteralProbeUsed {
+			return owner, nil
+		}
 		return ownerPath, nil
 	}
 	return owner, nil

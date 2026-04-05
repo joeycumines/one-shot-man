@@ -137,11 +137,13 @@ func (cm *ContextManager) normalizeOwnerPath(absPath string) string {
 }
 
 // findOwnerFromUserPath attempts to resolve a user-provided path to a tracked
-// owner key. It performs a sophisticated 3-step resolution:
+// owner key. It performs a multi-step resolution:
 //
 //  1. Try the raw path as an exact owner match
 //  2. If not found and path is relative/non-tilde, try basePath-relative normalization
-//  3. If still not found, try full canonicalization (tilde expansion + CWD resolution)
+//     2.5. Host-specific canonicalization (tilde expansion + CWD resolution)
+//     2.7. POSIX backslash-label to forward-slash owner key mapping
+//  3. Cross-platform tilde expansion fallback for rehydration labels
 //
 // This ensures that paths like "root/", "./root", or "~/project" all resolve to
 // the same tracked owner regardless of which form was used to add the path.
@@ -195,12 +197,26 @@ func (cm *ContextManager) findOwnerFromUserPath(path string) (string, bool, erro
 	// host-specific canonicalization didn't find a match, preserving the
 	// rehydration use case for AddRelativePath labels.
 	hostNormalized, _, canonErr := cm.canonicalizeUserPath(path)
+	// Step 2.7: Normalized forward-slash probe for POSIX backslash labels.
+	// AddRelativePath's normalized-probe path (Step 2) stores the owner
+	// key as the forward-slash form (e.g. "~/docs/notes.txt" from
+	// filepath.Rel) but returns the original backslash label
+	// (e.g. "~\docs\notes.txt"). This step maps the backslash label to
+	// the forward-slash owner so GetPath, RefreshPath, and RemovePath can
+	// resolve it before Step 3 (cross-platform tilde fallback) misinterprets
+	// the backslash label as $HOME-relative.
+	if runtime.GOOS != "windows" && strings.Contains(path, "\\") {
+		normalized := strings.ReplaceAll(path, "\\", "/")
+		if _, tracked := cm.ownerFiles[normalized]; tracked {
+			return normalized, true, nil
+		}
+	}
+
 	if canonErr == nil {
 		if _, tracked := cm.ownerFiles[hostNormalized]; tracked {
 			return hostNormalized, true, nil
 		}
 	}
-
 	// Step 3: Fall back to full canonicalization with cross-platform tilde
 	// support. Use expandTildeOwnerLabel (cross-platform) directly so that
 	// rehydration labels like "~\docs\notes.txt" resolve correctly on all
@@ -356,12 +372,17 @@ func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
 				normalizedPath := filepath.Join(cm.basePath, normalizedRelative)
 				if _, err := os.Lstat(normalizedPath); err == nil {
 					verifiedPath = normalizedPath
-					// Return the normalized label so it round-trips correctly.
-					// The original backslash label would NOT resolve to this
-					// owner via findOwnerFromUserPath (step 2 produces a
-					// different key with literal backslashes), so we must
-					// return the forward-slash form for TUI consistency.
-					ownerPath = normalizedRelative
+					// IMPORTANT: We do NOT reassign ownerPath to the
+					// normalized forward-slash form. The returned label
+					// must preserve the original backslash label (e.g.
+					// "~\docs\notes.txt") so it doesn't collide with
+					// genuine tilde expansion labels ("~/docs/notes.txt"
+					// → $HOME/docs/notes.txt). Rehydration with the
+					// backslash label follows the same POSIX flow and
+					// resolves to the same base-relative file.
+					// findOwnerFromUserPath step 2.7 maps the backslash
+					// label to the forward-slash owner key for
+					// GetPath/RefreshPath/RemovePath resolution.
 				} else if !os.IsNotExist(err) {
 					return "", fmt.Errorf("failed to stat normalized path %s: %w", normalizedPath, err)
 				} else {
@@ -426,12 +447,14 @@ func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
 	if err := cm.addPathWithOwnerLocked(absPath, owner, info); err != nil {
 		return "", err
 	}
-	// For tilde-prefixed inputs, return the original tilde form so that
-	// TUI state labels are preserved (e.g. "~/.claude/agents/Takumi.md"
-	// stays as-is rather than being replaced with the expanded absolute
-	// path). The internal ContextManager maps use the normalized absolute
-	// owner key; findOwnerFromUserPath (used by RemovePath, RefreshPath)
-	// expands tildes during lookup, so the tilde label remains functional.
+	// For tilde-prefixed inputs, return the original tilde/backslash form
+	// so that TUI state labels are preserved (e.g. "~/.claude/agents/Takumi.md"
+	// or "~\docs\notes.txt" stays as-is rather than being replaced with the
+	// expanded absolute path). The internal ContextManager maps use the
+	// normalized absolute owner key; findOwnerFromUserPath (used by
+	// RemovePath, RefreshPath) resolves the label via step 2.7
+	// (POSIX backslash→forward-slash mapping) or step 3 (tilde expansion),
+	// so the returned label remains functional.
 	if isTildeOwnerLabel(ownerPath) {
 		return ownerPath, nil
 	}

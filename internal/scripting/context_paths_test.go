@@ -1856,8 +1856,14 @@ func TestAddRelativePath_LiteralBackslashTildeOnPOSIX(t *testing.T) {
 // TestAddRelativePath_NormalizedProbeRoundTrip verifies the Step 2 fallback
 // path: when no literal backslash directory exists but a forward-slash
 // equivalent does (e.g. <basePath>/~/docs/notes.txt), AddRelativePath with
-// "~\docs\notes.txt" falls through to the normalized probe, returns the
-// forward-slash label, and that label round-trips correctly.
+// "~\docs\notes.txt" falls through to the normalized probe, preserves the
+// original backslash label, and that label round-trips correctly via
+// GetPath/RefreshPath/RemovePath.
+//
+// The returned label MUST be the original backslash form ("~\docs\notes.txt"),
+// NOT the forward-slash form ("~/docs/notes.txt"). Returning the forward-slash
+// form would collide with genuine tilde expansion labels and break
+// rehydration (see TestAddRelativePath_NormalizedProbeLabelRehydratesToSameFile).
 func TestAddRelativePath_NormalizedProbeRoundTrip(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX-only test; windows does not allow backslash in filenames")
@@ -1894,9 +1900,11 @@ func TestAddRelativePath_NormalizedProbeRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddRelativePath(%q): %v", backslashLabel, err)
 	}
-	// The returned label should be the normalized forward-slash form.
-	if returnedLabel != `~/docs/notes.txt` {
-		t.Errorf("AddRelativePath returned %q, want ~/docs/notes.txt (normalized form)", returnedLabel)
+	// The returned label MUST preserve the original backslash form.
+	// Returning ~/docs/notes.txt would collide with genuine tilde labels
+	// and break rehydration (see TestAddRelativePath_NormalizedProbeLabelRehydratesToSameFile).
+	if returnedLabel != backslashLabel {
+		t.Errorf("AddRelativePath returned %q, want %q (original backslash label preserved)", returnedLabel, backslashLabel)
 	}
 
 	// Round-trip: GetPath, RefreshPath, RemovePath must work with the returned label.
@@ -1930,5 +1938,79 @@ func TestAddRelativePath_NormalizedProbeRoundTrip(t *testing.T) {
 	_, ok = cm.GetPath(returnedLabel)
 	if ok {
 		t.Fatalf("GetPath(%q) still true after RemovePath", returnedLabel)
+	}
+}
+
+// TestAddRelativePath_NormalizedProbeLabelRehydratesToSameFile proves that the
+// label returned by AddRelativePath's normalized-probe path (POSIX Step 2) is
+// safe to persist and rehydrate. The label must resolve to the SAME base-relative
+// file when fed back through a fresh ContextManager — NOT to $HOME/...
+//
+// Regression test for the persistence/rehydration blocker identified in review:
+// the normalized-probe branch was returning "~/docs/notes.txt" (forward-slash),
+// which on rehydration expands via tilde to $HOME/docs/notes.txt instead of the
+// original <base>/~/docs/notes.txt.
+func TestAddRelativePath_NormalizedProbeLabelRehydratesToSameFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test")
+	}
+
+	base := t.TempDir()
+	fakeHome := t.TempDir()
+
+	// Base-relative literal "~" directory (forward-slash on filesystem).
+	baseDir := filepath.Join(base, "~", "docs")
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	baseFile := filepath.Join(baseDir, "notes.txt")
+	if err := os.WriteFile(baseFile, []byte("base content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Distinct home-backed file.
+	homeDir := filepath.Join(fakeHome, "docs")
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	homeFile := filepath.Join(homeDir, "notes.txt")
+	if err := os.WriteFile(homeFile, []byte("home content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	cm1, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	label, err := cm1.AddRelativePath(`~\docs\notes.txt`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Rehydrate the label through a FRESH ContextManager.
+	// If the label is "~/docs/notes.txt" (forward-slash), rehydration would
+	// expand via tilde to $HOME/docs/notes.txt — WRONG target.
+	// The label MUST be "~\docs\notes.txt" (backslash) so rehydration
+	// follows the same POSIX flow and resolves to the base-relative file.
+	cm2, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = cm2.AddRelativePath(label)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cp, ok := cm2.GetPath(label)
+	if !ok {
+		t.Fatal("rehydrated label not found")
+	}
+	if cp.Content != "base content" {
+		t.Fatalf("rehydration targeted the WRONG file: got %q, want %q — the returned label %q is not safe to persist", cp.Content, "base content", label)
 	}
 }

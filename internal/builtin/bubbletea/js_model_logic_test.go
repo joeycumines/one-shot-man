@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	tea "charm.land/bubbletea/v2"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
 )
@@ -89,7 +89,7 @@ func TestJSModelLogic_Update(t *testing.T) {
 		}
 		model.jsRunner = &SyncJSRunner{Runtime: vm}
 
-		newModel, cmd := model.Update(tea.KeyPressMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		newModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 		assert.NotNil(t, newModel)
 		assert.NotNil(t, cmd)
 	})

@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	tea "charm.land/bubbletea/v2"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 type model struct {
@@ -24,7 +24,7 @@ func (m model) Init() tea.Cmd {
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
+	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
@@ -36,28 +36,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastY = 0
 		}
 
-	case tea.MouseClickMsg:
+	case tea.MouseMsg:
 		m.lastX = msg.X
 		m.lastY = msg.Y
 
-	case tea.MouseReleaseMsg:
-		m.lastX = msg.X
-		m.lastY = msg.Y
-		if msg.Button == tea.MouseLeft {
-			m.clicked = true
-		}
-
-	case tea.MouseMotionMsg:
-		m.lastX = msg.X
-		m.lastY = msg.Y
-
-	case tea.MouseWheelMsg:
-		m.lastX = msg.X
-		m.lastY = msg.Y
 		switch msg.Button {
-		case tea.MouseWheelUp:
+		case tea.MouseButtonLeft:
+			if msg.Action == tea.MouseActionRelease {
+				m.clicked = true
+			}
+		case tea.MouseButtonWheelUp:
 			m.scrolled++
-		case tea.MouseWheelDown:
+		case tea.MouseButtonWheelDown:
 			m.scrolled--
 		}
 	}
@@ -65,7 +55,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) View() tea.View {
+func (m model) View() string {
 	var status string
 	if m.clicked {
 		status = "[Clicked!]"
@@ -76,7 +66,7 @@ func (m model) View() tea.View {
 	scrollStatus := fmt.Sprintf("Scroll: %d", m.scrolled)
 	posStatus := fmt.Sprintf("Last: (%d,%d)", m.lastX, m.lastY)
 
-	v := tea.NewView(fmt.Sprintf(`Dummy TUI for mouseharness tests
+	return fmt.Sprintf(`Dummy TUI for mouseharness tests
 
 %s
 
@@ -84,15 +74,12 @@ func (m model) View() tea.View {
 %s
 
 Press 'q' to quit, 'r' to reset
-`, status, scrollStatus, posStatus))
-	v.MouseMode = tea.MouseModeAllMotion
-	v.AltScreen = true
-	return v
+`, status, scrollStatus, posStatus)
 }
 
 func main() {
 	// Enable mouse support
-	p := tea.NewProgram(model{})
+	p := tea.NewProgram(model{}, tea.WithMouseAllMotion())
 	if _, err := p.Run(); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

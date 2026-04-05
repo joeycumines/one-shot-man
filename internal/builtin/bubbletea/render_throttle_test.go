@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
 )
@@ -259,7 +259,7 @@ func TestRenderThrottle_AlwaysRenderTypes(t *testing.T) {
 	}{
 		{"Tick", tickMsg{id: "1"}, true},
 		{"WindowSize", tea.WindowSizeMsg{Width: 80, Height: 24}, true},
-		{"Key", tea.KeyPressMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}, false},
+		{"Key", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}, false},
 	}
 
 	for _, tc := range tests {

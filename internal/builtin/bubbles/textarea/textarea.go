@@ -42,7 +42,7 @@ import (
 	"github.com/charmbracelet/bubbles/cursor"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
-	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/dop251/goja"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	"github.com/rivo/uniseg"

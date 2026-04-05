@@ -45,7 +45,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	tea "charm.land/bubbletea/v2"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dop251/goja"
 	zone "github.com/lrstanley/bubblezone"
 )
@@ -156,8 +156,9 @@ func Require(manager *Manager) func(runtime *goja.Runtime, module *goja.Object) 
 				return runtime.ToValue(false)
 			}
 
-			// Check coordinates manually since bubblezone uses v1 MouseMsg
-			inBounds := x >= zoneInfo.StartX && x <= zoneInfo.EndX && y >= zoneInfo.StartY && y <= zoneInfo.EndY
+			// Create a tea.MouseMsg for the InBounds check
+			mouseMsg := tea.MouseMsg{X: x, Y: y}
+			inBounds := zoneInfo.InBounds(mouseMsg)
 			return runtime.ToValue(inBounds)
 		})
 

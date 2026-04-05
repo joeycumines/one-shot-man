@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,7 +17,7 @@ func TestJsToTeaMsg_KeyEvents(t *testing.T) {
 	tests := []struct {
 		name     string
 		jsObj    func() *goja.Object
-		expected tea.KeyPressMsg
+		expected tea.KeyMsg
 	}{
 		{
 			name: "Basic Key 'q'",
@@ -27,7 +27,7 @@ func TestJsToTeaMsg_KeyEvents(t *testing.T) {
 				obj.Set("key", "q")
 				return obj
 			},
-			expected: tea.KeyPressMsg{Type: tea.KeyRunes, Runes: []rune{'q'}},
+			expected: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}},
 		},
 		{
 			name: "Named Key 'enter'",
@@ -37,7 +37,7 @@ func TestJsToTeaMsg_KeyEvents(t *testing.T) {
 				obj.Set("key", "enter")
 				return obj
 			},
-			expected: tea.KeyPressMsg{Type: tea.KeyEnter},
+			expected: tea.KeyMsg{Type: tea.KeyEnter},
 		},
 		{
 			name: "Named Key 'backspace'",
@@ -47,7 +47,7 @@ func TestJsToTeaMsg_KeyEvents(t *testing.T) {
 				obj.Set("key", "backspace")
 				return obj
 			},
-			expected: tea.KeyPressMsg{Type: tea.KeyBackspace},
+			expected: tea.KeyMsg{Type: tea.KeyBackspace},
 		},
 		{
 			name: "Unknown Key treated as runes",
@@ -57,7 +57,7 @@ func TestJsToTeaMsg_KeyEvents(t *testing.T) {
 				obj.Set("key", "some-weird-key")
 				return obj
 			},
-			expected: tea.KeyPressMsg{Type: tea.KeyRunes, Runes: []rune("some-weird-key")},
+			expected: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("some-weird-key")},
 		},
 	}
 
@@ -65,11 +65,11 @@ func TestJsToTeaMsg_KeyEvents(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			msg := JsToTeaMsg(vm, tc.jsObj())
 			require.NotNil(t, msg)
-			keyMsg, ok := msg.(tea.KeyPressMsg)
+			keyMsg, ok := msg.(tea.KeyMsg)
 			require.True(t, ok, "Expected KeyMsg")
-			assert.Equal(t, tc.expected.Code, keyMsg.Code)
-			if len(tc.expected.Text) > 0 {
-				assert.Equal(t, tc.expected.Text, keyMsg.Text)
+			assert.Equal(t, tc.expected.Type, keyMsg.Type)
+			if len(tc.expected.Runes) > 0 {
+				assert.Equal(t, tc.expected.Runes, keyMsg.Runes)
 			}
 		})
 	}
@@ -204,18 +204,18 @@ func TestJsToTeaMsg_Invalid(t *testing.T) {
 	}
 }
 
-// TestMsgToJS_KeyMsg verifies conversion of tea.KeyPressMsg to JS object
+// TestMsgToJS_KeyMsg verifies conversion of tea.KeyMsg to JS object
 func TestMsgToJS_KeyMsg(t *testing.T) {
 	model := &jsModel{} // msgToJS is a method on jsModel
 
 	tests := []struct {
 		name  string
-		msg   tea.KeyPressMsg
+		msg   tea.KeyMsg
 		check func(*testing.T, map[string]any)
 	}{
 		{
 			name: "Simple 'a'",
-			msg:  tea.KeyPressMsg{Type: tea.KeyRunes, Runes: []rune{'a'}},
+			msg:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}},
 			check: func(t *testing.T, res map[string]any) {
 				assert.Equal(t, "Key", res["type"])
 				assert.Equal(t, "a", res["key"])
@@ -226,7 +226,7 @@ func TestMsgToJS_KeyMsg(t *testing.T) {
 		},
 		{
 			name: "Ctrl+C",
-			msg:  tea.KeyPressMsg{Type: tea.KeyCtrlC},
+			msg:  tea.KeyMsg{Type: tea.KeyCtrlC},
 			check: func(t *testing.T, res map[string]any) {
 				assert.Equal(t, "Key", res["type"])
 				assert.Equal(t, "ctrl+c", res["key"])
@@ -235,7 +235,7 @@ func TestMsgToJS_KeyMsg(t *testing.T) {
 		},
 		{
 			name: "Alt+Runes",
-			msg:  tea.KeyPressMsg{Type: tea.KeyRunes, Runes: []rune{'b'}, Alt: true},
+			msg:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}, Alt: true},
 			check: func(t *testing.T, res map[string]any) {
 				assert.Equal(t, "Key", res["type"])
 				assert.Equal(t, "alt+b", res["key"])
@@ -244,7 +244,7 @@ func TestMsgToJS_KeyMsg(t *testing.T) {
 		},
 		{
 			name: "Bracketed Paste",
-			msg:  tea.KeyPressMsg{Type: tea.KeyRunes, Runes: []rune("paste"), Paste: true},
+			msg:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("paste"), Paste: true},
 			check: func(t *testing.T, res map[string]any) {
 				assert.Equal(t, "Key", res["type"])
 				assert.True(t, res["paste"].(bool))

@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	tea "charm.land/bubbletea/v2"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dop251/goja"
 )
 
@@ -35,7 +35,7 @@ func TestToggleModel_Update_NonToggle(t *testing.T) {
 	tm := &toggleModel{inner: inner, toggleKey: 0x1D}
 
 	// Send a regular 'q' key — should NOT trigger toggle
-	keyMsg := tea.KeyPressMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
+	keyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
 	model, cmd := tm.Update(keyMsg)
 	if model != tm {
 		t.Error("expected Update to return same toggleModel")
@@ -54,7 +54,7 @@ func TestToggleModel_Update_ToggleByRune(t *testing.T) {
 	tm := &toggleModel{inner: inner, toggleKey: 0x1D}
 
 	// Send a KeyMsg with rune 0x1D (Ctrl+])
-	keyMsg := tea.KeyPressMsg{Type: tea.KeyRunes, Runes: []rune{0x1D}}
+	keyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{0x1D}}
 	model, cmd := tm.Update(keyMsg)
 	if model != tm {
 		t.Error("expected Update to return same toggleModel")
@@ -73,7 +73,7 @@ func TestToggleModel_Update_ToggleByCtrlCloseBracket(t *testing.T) {
 	tm := &toggleModel{inner: inner, toggleKey: 0x1D}
 
 	// Send KeyCtrlCloseBracket (Ctrl+])
-	keyMsg := tea.KeyPressMsg{Type: tea.KeyCtrlCloseBracket}
+	keyMsg := tea.KeyMsg{Type: tea.KeyCtrlCloseBracket}
 	model, cmd := tm.Update(keyMsg)
 	if model != tm {
 		t.Error("expected Update to return same toggleModel")
@@ -93,14 +93,14 @@ func TestToggleModel_Update_DifferentToggleKey(t *testing.T) {
 	tm := &toggleModel{inner: inner, toggleKey: 0x01}
 
 	// Ctrl+] should NOT trigger toggle
-	keyMsg := tea.KeyPressMsg{Type: tea.KeyCtrlCloseBracket}
+	keyMsg := tea.KeyMsg{Type: tea.KeyCtrlCloseBracket}
 	_, cmd := tm.Update(keyMsg)
 	if cmd != nil {
 		t.Error("Ctrl+] should not trigger with toggleKey=0x01")
 	}
 
 	// Rune 0x01 should trigger toggle
-	keyMsg = tea.KeyPressMsg{Type: tea.KeyRunes, Runes: []rune{0x01}}
+	keyMsg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{0x01}}
 	_, cmd = tm.Update(keyMsg)
 	if cmd == nil {
 		t.Error("expected toggle for rune 0x01")
@@ -350,7 +350,7 @@ type stubModel struct {
 }
 
 func (m *stubModel) Init() tea.Cmd { return m.initCmd }
-func (m *stubModel) View() tea.View { return m.view }
+func (m *stubModel) View() string  { return m.view }
 func (m *stubModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.updateCount++
 	return m, nil

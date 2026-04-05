@@ -1,4 +1,4 @@
-// Package lipgloss provides JavaScript bindings for charm.land/lipgloss/v2.
+// Package lipgloss provides JavaScript bindings for github.com/charmbracelet/lipgloss.
 //
 // The module is exposed as "osm:lipgloss" and provides styling capabilities for terminal UIs.
 // All functionality is exposed to JavaScript, following the established pattern of no global state.
@@ -81,7 +81,7 @@ import (
 	"strconv"
 	"strings"
 
-	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/dop251/goja"
 )
 

@@ -4,8 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // --- View edge cases ---
@@ -17,7 +16,7 @@ func TestView_NegativeViewportHeight(t *testing.T) {
 		withChars("T", "."),
 		withStyles(lipgloss.NewStyle(), lipgloss.NewStyle()),
 	)
-	if got := m.View().String(); got != "" {
+	if got := m.View(); got != "" {
 		t.Errorf("expected empty view for negative viewport height, got %q", got)
 	}
 }
@@ -29,7 +28,7 @@ func TestView_NegativeContentHeight(t *testing.T) {
 		withChars("T", "."),
 		withStyles(lipgloss.NewStyle(), lipgloss.NewStyle()),
 	)
-	view := m.View().String()
+	view := m.View()
 	lines := strings.Split(view, "\n")
 	if len(lines) != 5 {
 		t.Errorf("expected 5 lines, got %d", len(lines))
@@ -50,7 +49,7 @@ func TestView_ContentEqualsViewport(t *testing.T) {
 		withChars("T", "."),
 		withStyles(lipgloss.NewStyle(), lipgloss.NewStyle()),
 	)
-	view := m.View().String()
+	view := m.View()
 	lines := strings.Split(view, "\n")
 	// All thumb since content fits in viewport
 	for i, line := range lines {
@@ -68,7 +67,7 @@ func TestView_ViewportHeightOne(t *testing.T) {
 		withChars("T", "."),
 		withStyles(lipgloss.NewStyle(), lipgloss.NewStyle()),
 	)
-	view := m.View().String()
+	view := m.View()
 	// Single line, must be thumb
 	if !strings.Contains(view, "T") {
 		t.Errorf("expected thumb for single-line viewport, got %q", view)
@@ -87,7 +86,7 @@ func TestView_ScrolledToBottom(t *testing.T) {
 		withChars("T", "."),
 		withStyles(lipgloss.NewStyle(), lipgloss.NewStyle()),
 	)
-	view := m.View().String()
+	view := m.View()
 	lines := strings.Split(view, "\n")
 	if len(lines) != 10 {
 		t.Fatalf("expected 10 lines, got %d", len(lines))
@@ -107,7 +106,7 @@ func TestView_ScrolledToMiddle(t *testing.T) {
 		withChars("T", "."),
 		withStyles(lipgloss.NewStyle(), lipgloss.NewStyle()),
 	)
-	view := m.View().String()
+	view := m.View()
 	lines := strings.Split(view, "\n")
 
 	// Find first thumb
@@ -133,7 +132,7 @@ func TestView_TrackCharNBSP(t *testing.T) {
 		withChars("T", " "), // space track char
 		withStyles(lipgloss.NewStyle(), lipgloss.NewStyle()),
 	)
-	view := m.View().String()
+	view := m.View()
 	lines := strings.Split(view, "\n")
 	// Track lines (non-thumb) should use NBSP
 	for i := 3; i < len(lines); i++ {
@@ -154,7 +153,7 @@ func TestView_ThumbCharNBSP(t *testing.T) {
 		withChars(" ", "."), // space thumb char
 		withStyles(lipgloss.NewStyle(), lipgloss.NewStyle()),
 	)
-	view := m.View().String()
+	view := m.View()
 	// All lines should be thumb with NBSP
 	lines := strings.Split(view, "\n")
 	for i, line := range lines {
@@ -250,7 +249,7 @@ func TestView_VeryLargeContent(t *testing.T) {
 		withChars("T", "."),
 		withStyles(lipgloss.NewStyle(), lipgloss.NewStyle()),
 	)
-	view := m.View().String()
+	view := m.View()
 	lines := strings.Split(view, "\n")
 	if len(lines) != 20 {
 		t.Errorf("expected 20 lines, got %d", len(lines))
@@ -278,7 +277,7 @@ func TestView_ContentBarelyLarger(t *testing.T) {
 		withChars("T", "."),
 		withStyles(lipgloss.NewStyle(), lipgloss.NewStyle()),
 	)
-	view := m.View().String()
+	view := m.View()
 	lines := strings.Split(view, "\n")
 	if len(lines) != 10 {
 		t.Errorf("expected 10 lines, got %d", len(lines))

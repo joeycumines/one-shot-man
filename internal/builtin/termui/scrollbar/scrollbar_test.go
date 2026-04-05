@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/dop251/goja"
 	termuisb "github.com/joeycumines/one-shot-man/internal/termui/scrollbar"
 	"github.com/muesli/termenv"

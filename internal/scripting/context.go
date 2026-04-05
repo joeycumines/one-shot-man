@@ -15,13 +15,11 @@ import (
 	"golang.org/x/tools/txtar"
 )
 
-// isTildeOwnerLabel returns true if the given owner label is a tilde path
-// that should be expanded before path resolution. Unlike
-// filepathutil.IsTildeExpansionPath (which is platform-aware for current-host
-// semantics), this function accepts BOTH forward-slash and backslash tilde
-// forms regardless of runtime GOOS. This is necessary because persisted
-// session state may originate from a different OS — a Windows session with
-// "~\Documents\file.txt" must be correctly rehydrated on Linux/macOS.
+// isTildeOwnerLabel reports whether the given path is a tilde form requiring expansion
+// before path resolution. It intentionally accepts both forward-slash and backslash
+// forms, bypassing filepathutil.IsTildeExpansionPath's host-awareness, to ensure that
+// persisted session state originating from different operating systems (e.g., Windows)
+// can be correctly rehydrated on any platform.
 func isTildeOwnerLabel(path string) bool {
 	return path == "~" ||
 		strings.HasPrefix(path, "~/") ||
@@ -29,15 +27,13 @@ func isTildeOwnerLabel(path string) bool {
 }
 
 // expandTildeOwnerLabel expands a tilde owner label to an absolute path.
-// It normalizes backslash-tilde forms (e.g. "~\Documents") to forward-slash
-// before expansion so that filepathutil.ExpandTilde works correctly on all
-// platforms.
+// Backslash-tilde forms are normalized to forward slashes beforehand to guarantee
+// that filepathutil.ExpandTilde successfully expands them across all host platforms.
 func expandTildeOwnerLabel(path string) (string, error) {
 	normalized := path
 	if len(path) >= 2 && path[0] == '~' && path[1] == '\\' {
-		// Preserve tilde + convert backslashes after it to forward slashes.
-		// This makes "~\Documents\file.txt" become "~/Documents/file.txt"
-		// which filepathutil.ExpandTilde handles on all platforms.
+		// Normalize backslashes to ensure filepathutil.ExpandTilde handles
+		// Windows-style tilde paths correctly on all platforms.
 		normalized = "~/" + strings.ReplaceAll(path[2:], "\\", "/")
 	}
 	return filepathutil.ExpandTilde(normalized)
@@ -45,30 +41,22 @@ func expandTildeOwnerLabel(path string) (string, error) {
 
 // canonicalizeUserPath converts a user-provided path to a canonical owner key.
 // It performs tilde expansion, resolves to an absolute path, and normalizes
-// relative to the ContextManager's base path. This ensures consistent handling
-// of user inputs across AddPath and RemovePath.
-//
-// Note: RefreshPath has its own empty-path guard at the top of the function
-// to prevent basePath-relative logic from converting "" to "." before
-// canonicalization can reject it.
+// relative to the ContextManager's base path to ensure consistent handling of
+// user inputs across state mutation methods.
 //
 // It returns both the canonical owner key and the absolute path for efficiency,
 // avoiding redundant path resolution in callers.
 func (cm *ContextManager) canonicalizeUserPath(path string) (string, string, error) {
-	// Guard against empty string inputs to prevent unintentional root owner mutation.
-	// An empty string would resolve to the process CWD, which could cause
-	// RemovePath("") to canonicalize to "." and wipe the tracked root owner
-	// unintentionally.
+	// Reject empty strings to prevent resolving to the process CWD, which
+	// could cause unintentional mutations to the root owner.
 	if path == "" {
 		return "", "", fmt.Errorf("empty path is not valid")
 	}
 
-	// Expand tilde before converting to absolute path. Use host-specific
-	// filepathutil.ExpandTilde so that POSIX systems treat ~\foo as a literal
-	// path (not $HOME/foo), keeping ContextManager semantics consistent with
-	// internal/builtin/os which also uses filepathutil.ExpandTilde. Cross-
-	// platform tilde expansion (expandTildeOwnerLabel) is reserved for
-	// rehydration paths (AddRelativePath, findOwnerFromUserPath).
+	// Use host-specific filepathutil.ExpandTilde to ensure POSIX systems treat
+	// "~\foo" as a literal path rather than "$HOME/foo". This maintains semantics
+	// consistent with internal/builtin/os. Cross-platform expansion is reserved
+	// strictly for rehydration workflows.
 	expanded, err := filepathutil.ExpandTilde(path)
 	if err != nil {
 		return "", "", err
@@ -118,6 +106,8 @@ func NewContextManager(basePath string) (*ContextManager, error) {
 	}, nil
 }
 
+// normalizeOwnerPath standardizes an absolute path relative to the ContextManager's
+// base path, ensuring consistent lookup keys regardless of traversal anomalies.
 func (cm *ContextManager) normalizeOwnerPath(absPath string) string {
 	relPath, err := filepath.Rel(cm.basePath, absPath)
 	if err != nil {
@@ -137,25 +127,16 @@ func (cm *ContextManager) normalizeOwnerPath(absPath string) string {
 }
 
 // findOwnerFromUserPath attempts to resolve a user-provided path to a tracked
-// owner key. It performs a multi-step resolution:
-//
-//  1. Try the raw path as an exact owner match
-//  2. If not found and path is relative/non-tilde, try basePath-relative normalization
-//     2.5. Host-specific canonicalization (tilde expansion + CWD resolution)
-//     2.7. POSIX backslash-label to forward-slash owner key mapping
-//  3. Cross-platform tilde expansion fallback for rehydration labels
-//
-// This ensures that paths like "root/", "./root", or "~/project" all resolve to
-// the same tracked owner regardless of which form was used to add the path.
+// owner key using a multi-step resolution strategy to ensure paths like "root/",
+// "./root", or "~/project" consistently resolve to their tracked owner.
 //
 // The caller MUST hold at least a read lock on cm.mutex when calling this method.
 //
-// Returns (owner, true, nil) if a tracked owner is found, ("", false, nil) if
-// not found, or ("", false, err) if canonicalization itself fails (e.g.,
-// corrupted $HOME preventing tilde expansion).
+// It returns (owner, true, nil) on success, ("", false, nil) on a cache miss,
+// or an error if canonicalization fails (e.g., corrupted $HOME).
 func (cm *ContextManager) findOwnerFromUserPath(path string) (string, bool, error) {
-	// Guard against empty strings - they should never match a tracked owner.
-	// This prevents RemovePath("") from accidentally removing the root owner.
+	// Prevent empty strings from matching a tracked owner, avoiding
+	// accidental root owner removals.
 	if path == "" {
 		return "", false, nil
 	}
@@ -165,17 +146,9 @@ func (cm *ContextManager) findOwnerFromUserPath(path string) (string, bool, erro
 		return path, true, nil
 	}
 
-	// Step 2: Try basePath-relative normalization for relative, non-tilde paths.
-	// This handles cases where the caller adds "root/" but the canonical owner
-	// is "root". We need to resolve against basePath, not the process CWD.
-	//
-	// IMPORTANT: We only skip this step for actual tilde expansion forms (e.g., "~/"),
-	// not for literal paths that happen to start with "~" (e.g., "~cache", "~tmp").
-	// Literal tilde paths should get basePath-relative normalization just like any
-	// other relative path. We use filepathutil.IsTildeExpansionPath (host-specific)
-	// because findOwnerFromUserPath serves both user-input flows (RemovePath,
-	// RefreshPath) and rehydration flows. On POSIX, ~\foo is NOT a tilde expansion
-	// form and should receive basePath-relative normalization.
+	// Step 2: basePath-relative normalization for relative, non-tilde paths.
+	// We bypass this for literal tilde expansion forms to prevent conflict, but
+	// literal paths starting with "~" (e.g., "~cache") must normalize relative to basePath.
 	if !filepath.IsAbs(path) && !filepathutil.IsTildeExpansionPath(path) {
 		absPath := filepath.Join(cm.basePath, path)
 		if cleaned, err := filepath.Abs(absPath); err == nil {
@@ -187,38 +160,20 @@ func (cm *ContextManager) findOwnerFromUserPath(path string) (string, bool, erro
 		}
 	}
 
-	// Step 2.5: Host-specific canonicalization. This gives AddPath-user-input
-	// semantics priority over cross-platform rehydration semantics. On POSIX,
-	// ~\foo is treated as a literal path (matching AddPath/canonicalizeUserPath)
-	// before we fall through to step 3 which may interpret it as home-relative.
-	// This ensures that the same string AddPath("~\docs/notes.txt") used to add
-	// a path will resolve to the SAME owner key when passed to RemovePath or
-	// RefreshPath. Cross-platform tilde expansion (step 3) only runs if
-	// host-specific canonicalization didn't find a match, preserving the
-	// rehydration use case for AddRelativePath labels.
+	// Step 2.5: Host-specific canonicalization.
+	// AddPath user-input semantics take priority over cross-platform rehydration.
+	// On POSIX, this treats "~\foo" as a literal path matching canonicalizeUserPath.
 	hostNormalized, _, canonErr := cm.canonicalizeUserPath(path)
-	// Step 2.5 check FIRST: host-specific canonicalization has priority over
-	// rehydration normalization. AddPath-user-input semantics must win.
 	if canonErr == nil {
 		if _, tracked := cm.ownerFiles[hostNormalized]; tracked {
 			return hostNormalized, true, nil
 		}
 	}
+
 	// Step 2.7: Normalized forward-slash probe for POSIX backslash labels.
-	// AddRelativePath's normalized-probe path (Step 2) stores the owner
-	// key as the forward-slash form (e.g. "~/docs/notes.txt" from
-	// filepath.Rel) but returns the original backslash label
-	// (e.g. "~\docs\notes.txt"). This step maps the backslash label to
-	// the forward-slash owner so GetPath, RefreshPath, and RemovePath can
-	// resolve it before Step 3 (cross-platform tilde fallback) misinterprets
-	// the backslash label as $HOME-relative.
-	//
-	// Restricted to tilde-prefixed labels only (strings.HasPrefix, not
-	// strings.Contains) to avoid false-positive matching of arbitrary POSIX
-	// paths that happen to contain backslashes. Uses filepath.Clean +
-	// filepath.Join + normalizeOwnerPath to match the same normalization
-	// pipeline that AddRelativePath uses, ensuring labels with . or .. or
-	// duplicate separators round-trip correctly.
+	// Maps original backslash labels from AddRelativePath (e.g., "~\docs\notes.txt")
+	// back to their forward-slash stored owner keys to prevent Step 3 from misinterpreting
+	// them as $HOME-relative. Restricted to tilde-prefixes to avoid false positives.
 	if runtime.GOOS != "windows" && strings.HasPrefix(path, `~\`) {
 		normalizedRel := filepath.Clean(strings.ReplaceAll(path, "\\", "/"))
 		normalizedAbs := filepath.Join(cm.basePath, normalizedRel)
@@ -227,19 +182,10 @@ func (cm *ContextManager) findOwnerFromUserPath(path string) (string, bool, erro
 			return normalizedOwner, true, nil
 		}
 	}
-	// Step 3: Fall back to full canonicalization with cross-platform tilde
-	// support. Use expandTildeOwnerLabel (cross-platform) directly so that
-	// rehydration labels like "~\docs\notes.txt" resolve correctly on all
-	// hosts. canonicalizeUserPath uses host-specific tilde expansion which
-	// is correct for AddPath but too narrow for RemovePath/RefreshPath which
-	// must also handle cross-platform session rehydration labels.
-	//
-	// If expansion or path resolution fails, we bubble the error up. The
-	// caller (RemovePath, RefreshPath) needs to know that the failure was
-	// a system error, not a benign cache miss. Note: this means
-	// RemovePath("foo") may return an error in degenerate environments
-	// (invalid CWD) where it previously returned nil. This is intentional
-	// — silently swallowing system errors is worse.
+
+	// Step 3: Cross-platform tilde fallback.
+	// Uses expandTildeOwnerLabel so rehydration labels accurately resolve on all hosts.
+	// Errors bubble up to distinguish system failures from benign cache misses.
 	expanded, err := expandTildeOwnerLabel(path)
 	if err != nil {
 		return "", false, fmt.Errorf("findOwnerFromUserPath(%q): %w", path, err)
@@ -253,16 +199,16 @@ func (cm *ContextManager) findOwnerFromUserPath(path string) (string, bool, erro
 		return normalized, true, nil
 	}
 
-	// No tracked owner found
 	return "", false, nil
 }
 
+// absolutePathFromOwner converts a tracked owner key back to a canonical absolute path.
 func (cm *ContextManager) absolutePathFromOwner(owner string) (string, error) {
 	if owner == "." {
 		return cm.basePath, nil
 	}
 	if filepath.IsAbs(owner) {
-		// Ensure we return a canonical absolute path for absolute inputs.
+		// Guarantee a canonical absolute path for absolute inputs.
 		return filepath.Abs(owner)
 	}
 	return filepath.Abs(filepath.Join(cm.basePath, owner))
@@ -279,12 +225,8 @@ func (cm *ContextManager) absolutePathFromOwner(owner string) (string, error) {
 // Previously, AddPath("") would resolve to the current working directory, but this
 // behavior was unsafe and could cause unintended root context mutation.
 func (cm *ContextManager) AddPath(path string) error {
-	// Perform path resolution operations (tilde expansion, filepath.Abs, os.Lstat)
-	// BEFORE acquiring the lock. These operations can be slow and involve syscalls,
-	// so holding the lock during them would cause contention. However, the actual
-	// file reading and directory walking (in addPathWithOwnerLocked) still happen
-	// inside the lock - adding large files/directories will temporarily block
-	// other operations.
+	// Perform I/O-intensive path resolution (tilde expansion, Abs, Lstat) before
+	// acquiring the lock to prevent syscalls from causing lock contention.
 	owner, absPath, err := cm.canonicalizeUserPath(path)
 	if err != nil {
 		return err
@@ -295,103 +237,51 @@ func (cm *ContextManager) AddPath(path string) error {
 		return fmt.Errorf("failed to stat path %s: %w", path, err)
 	}
 
-	// Only acquire the lock for the map mutation and file reading
+	// Minimize lock contention by restricting the critical section to state mutation and file I/O.
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
 
 	return cm.addPathWithOwnerLocked(absPath, owner, info)
 }
 
-// AddRelativePath resolves the provided owner-style path relative to the
-// ContextManager base path and then registers it. This is intended for
-// internal use (e.g. session rehydration) where stored owner labels must be
-// resolved against the manager's configured base rather than the process CWD.
+// AddRelativePath resolves and registers an owner-style path relative to the
+// ContextManager base path. It is primarily used for internal session rehydration
+// where stored owner labels must resolve against the configured base, not the process CWD.
 //
-// It returns a label suitable for persisting as a TUI display label. For most
-// tilde-prefixed inputs (e.g. "~/.claude/agents/Takumi.md"), the original
-// tilde form is returned unchanged. On POSIX, if a forward-slash tilde owner
-// label resolves via the base-relative literal probe (for example "~/" ->
-// "<basePath>/~" or "~/docs/../x.txt" -> "<basePath>/~/x.txt"), the returned
-// label is canonicalized to the normalized owner key so it round-trips through
-// GetPath, RefreshPath, and RemovePath. For all other inputs, the normalized
-// owner key is returned.
-//
-// Note: the returned value is NOT necessarily the internal owner key used
-// by the ContextManager's paths map. Use normalizeOwnerPath on the resolved
-// absolute path to obtain the true internal key if needed. Operations like
-// RemovePath and RefreshPath handle tilde expansion internally via
-// findOwnerFromUserPath, so tilde-form labels continue to work.
-//
-// On POSIX, AddRelativePath deliberately gives precedence to basePath-relative
-// literal "~" owner labels before $HOME expansion. This preserves rehydration
-// for persisted owner keys like "~/docs/file.txt" that originate from files
-// under <basePath>/~/... and would otherwise be incorrectly reinterpreted as
-// home-directory paths.
+// It returns a stable label suitable for persisting as a TUI display label.
 func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
-	// Guard against empty string inputs to prevent unintentional root owner mutation.
-	// An empty string would resolve to the basePath, which could cause
-	// silent and unintentional modification of the root context during
-	// session rehydration.
+	// Reject empty strings to prevent silent and unintentional root context
+	// mutation during session rehydration.
 	if ownerPath == "" {
 		return "", fmt.Errorf("empty path is not valid for AddRelativePath")
 	}
 
-	// Accept both forward- and back-slash separators for owner labels so
-	// that sessions created on Windows (or with Windows-style labels) can
-	// be rehydrated on other hosts. Important: do NOT mutate the caller's
-	// label (e.g. converting backslashes to separators) — the ContextManager
-	// should operate on the exact label provided. Normalization is a caller
-	// concern (TUI rehydration code performs a conditional normalization
-	// fallback when appropriate).
-
-	// For tilde-prefixed owner labels (e.g. "~/.claude/agents/Takumi.md"),
-	// expand tilde to an absolute path for existence verification below.
-	// Note: the internal owner key is the normalized path (not always the
-	// original tilde label). The returned label is chosen to preserve a
-	// stable, user-friendly form that round-trips through GetPath,
-	// RefreshPath, and RemovePath.
-	//
-	// On POSIX, AddRelativePath gives precedence to literal basePath-relative
-	// "~" owner labels before falling back to cross-platform tilde expansion.
-	// This preserves rehydration of persisted owner keys such as
-	// "<basePath>/~/docs/file.txt" -> "~/docs/file.txt". For forward-slash
-	// tilde labels resolved by this literal probe, the raw input may not be a
-	// stable owner label (e.g. "~/" or "~/docs/../x.txt"), so the final
-	// returned label is canonicalized to the normalized owner key below.
 	verifiedPath := ownerPath
 	posixForwardSlashLiteralProbeUsed := false
+
 	if isTildeOwnerLabel(ownerPath) {
 		if runtime.GOOS != "windows" {
 			if strings.HasPrefix(ownerPath, `~\`) {
-				// On POSIX, filepath.Join does NOT treat backslash as a path
-				// separator -- backslash is a valid filename character. Probe the
-				// exact base-relative literal path first, preserving any literal
-				// backslash directory names (e.g. a directory actually named "~\docs").
-				//
-				// Step 1: Exact literal probe -- no backslash rewriting.
+				// Step 1: Exact literal probe. Preserves literal backslash directory names.
 				literalPath := filepath.Join(cm.basePath, ownerPath)
 				if _, err := os.Lstat(literalPath); err == nil {
 					verifiedPath = literalPath
 				} else if !os.IsNotExist(err) {
 					return "", fmt.Errorf("failed to stat literal path %s: %w", literalPath, err)
 				} else {
-					// Step 2: Normalized probe -- convert backslashes to forward
-					// slashes for Windows-to-POSIX rehydration where the directory
-					// structure uses forward slashes (e.g. <basePath>/~/docs/notes.txt).
+					// Step 2: Normalized probe. Facilitates Windows-to-POSIX rehydration
+					// where the directory structure uses forward slashes.
 					normalizedRelative := strings.ReplaceAll(ownerPath, "\\", "/")
 					normalizedPath := filepath.Join(cm.basePath, normalizedRelative)
 					if _, err := os.Lstat(normalizedPath); err == nil {
 						verifiedPath = normalizedPath
-						// IMPORTANT: We do NOT reassign ownerPath to the
-						// normalized forward-slash form. The returned label
-						// must preserve the original backslash label so it
-						// doesn't collide with genuine tilde expansion labels.
+						// Maintain the original backslash label so it doesn't collide
+						// with genuine tilde expansion labels.
 					} else if !os.IsNotExist(err) {
 						return "", fmt.Errorf("failed to stat normalized path %s: %w", normalizedPath, err)
 					} else {
-						// Step 3: Neither literal nor normalized path exists under
-						// basePath. Fall through to cross-platform tilde expansion
-						// for Windows-originated rehydration labels targeting $HOME.
+						// Step 3: Cross-platform tilde expansion fallback for Windows-originated
+						// rehydration labels targeting $HOME.
 						expanded, expandErr := expandTildeOwnerLabel(ownerPath)
 						if expandErr != nil {
 							return "", fmt.Errorf("failed to expand tilde in owner path %s: %w", ownerPath, expandErr)
@@ -400,12 +290,8 @@ func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
 					}
 				}
 			} else {
-				// Bare "~" and "~/" labels: probe the literal basePath-relative
-				// location first so persisted owner keys for <basePath>/~/...
-				// rehydrate to the same entry. If this literal probe wins, the
-				// final returned label is canonicalized to the normalized owner
-				// key below because raw forms like "~/" or "~/docs/../x.txt"
-				// are not stable lookup keys.
+				// Probe the literal basePath-relative location first so persisted
+				// owner keys rehydrate consistently.
 				literalPath := filepath.Join(cm.basePath, ownerPath)
 				if _, err := os.Lstat(literalPath); err == nil {
 					verifiedPath = literalPath
@@ -429,42 +315,30 @@ func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
 		}
 	}
 
-	// Perform I/O-intensive operations BEFORE acquiring the lock
+	// Perform I/O-intensive absolute path resolution before acquiring the lock.
 	absPath, err := cm.absolutePathFromOwner(verifiedPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve path %s: %w", ownerPath, err)
 	}
 
-	// Historically AddRelativePath rejected relative owner labels that
-	// resolved outside the configured base path. ContextManager is not a
-	// security sandbox — rejecting such labels breaks legitimate
-	// rehydration scenarios where external absolute paths were previously
-	// normalized into relative labels (e.g. sessions that were made portable
-	// and later rehydrated on a different host). To avoid creating sessions
-	// that cannot be reloaded, we do not reject relative inputs solely
-	// because they resolve outside the base path. We still compute the
-	// relative form to detect errors, but do not treat leading ".." as an
-	// operational error during rehydration.
+	// Tolerate relative owner labels resolving outside the base path to support
+	// rehydrating portable sessions that were moved across hosts.
 	if !filepath.IsAbs(verifiedPath) {
 		if _, rerr := filepath.Rel(cm.basePath, absPath); rerr != nil {
 			return "", fmt.Errorf("failed to compute relative path: %w", rerr)
 		}
 	}
 
-	// Verify the target exists to avoid adding dead entries during
-	// rehydration.
+	// Prevent adding dead entries during rehydration by verifying existence.
 	info, err := os.Lstat(absPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to stat path %s: %w", ownerPath, err)
 	}
 
-	// Normalize the owner path BEFORE acquiring the lock to maintain
-	// symmetry with AddPath, which calls canonicalizeUserPath (which
-	// calls normalizeOwnerPath) outside the lock. This keeps the critical
-	// section as small as possible.
+	// Normalize the owner path before acquiring the lock to maintain symmetry
+	// with AddPath and minimize the critical section.
 	owner := cm.normalizeOwnerPath(absPath)
 
-	// Only acquire the lock for the minimal critical section
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
 
@@ -472,12 +346,6 @@ func (cm *ContextManager) AddRelativePath(ownerPath string) (string, error) {
 		return "", err
 	}
 
-	// For tilde-prefixed inputs, preserve the original tilde/backslash form
-	// where it is already a stable label. On POSIX, if a forward-slash tilde
-	// label resolved via the base-relative literal probe, return the canonical
-	// owner instead so that non-canonical raw forms like "~/" or
-	// "~/docs/../x.txt" round-trip through GetPath, RefreshPath, and
-	// RemovePath.
 	if isTildeOwnerLabel(ownerPath) {
 		if runtime.GOOS != "windows" && posixForwardSlashLiteralProbeUsed {
 			return owner, nil
@@ -672,20 +540,15 @@ func (cm *ContextManager) removeOwnerLocked(owner string) bool {
 // this returns an error; if a single unique match exists, it performs the
 // appropriate removal.
 func (cm *ContextManager) RemovePath(path string) error {
-	// Guard against empty string inputs to maintain API symmetry with
-	// AddPath, AddRelativePath, and RefreshPath. All of these methods
-	// explicitly reject empty strings, and RemovePath should do the same.
 	if path == "" {
 		return fmt.Errorf("empty path is not valid")
 	}
 
-	// Acquire write lock for the entire operation to ensure atomicity.
-	// The lookup and removal must happen as one unit to prevent race
-	// conditions where a path is removed and re-added between lookup and removal.
+	// Acquire the write lock for the entire operation to guarantee atomicity.
+	// Lookup and removal must be contiguous to prevent TOCTOU race conditions.
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
 
-	// Try to find the owner under the write lock
 	owner, found, findErr := cm.findOwnerFromUserPath(path)
 	if findErr != nil {
 		return fmt.Errorf("removePath: %w", findErr)
@@ -695,13 +558,9 @@ func (cm *ContextManager) RemovePath(path string) error {
 		return nil
 	}
 
-	// If the caller supplied a basename-only value (no separators) attempt
-	// to match tracked paths by basename. If multiple matches exist treat
-	// this as ambiguous; if a single unique match exists perform the
-	// appropriate removal logic for that tracked entry.
+	// Resolve targeted removals for bare basenames. Multiple matches are treated as
+	// ambiguous to prevent unintended deletions.
 	base := filepath.Base(path)
-	// Only treat suffix matching when the input appears to be a bare basename
-	// (e.g., "foo.txt") and not a path containing separators.
 	if path != "" && path == base {
 		var matchKey string
 		matches := 0
@@ -716,30 +575,19 @@ func (cm *ContextManager) RemovePath(path string) error {
 		}
 
 		if matches == 1 {
-			// First, if the matching key is itself an owner entry attempt
-			// to remove it via the existing owner-removal logic.
 			if cm.removeOwnerLocked(matchKey) {
 				return nil
 			}
 
-			// Otherwise perform a targeted removal of the tracked path. This
-			// removes the path from the primary paths map and cleans up any
-			// owner bookkeeping that references it.
 			if cp, ok := cm.paths[matchKey]; ok {
 				if cp.Type == "directory" {
-					// If it is a directory, removing the owner is the correct
-					// semantics (shouldn't generally reach here as removeOwner
-					// would have handled it above), but handle defensively.
+					// Handle defensive removals where the owner is implicitly a directory.
 					cm.removeOwnerLocked(matchKey)
 					return nil
 				}
 
-				// For files: remove from paths, from any owner sets, and
-				// update fileOwners counts and directory children lists.
 				delete(cm.paths, matchKey)
 
-				// Clean up ownerFiles and update directory children where
-				// applicable.
 				for owner, set := range cm.ownerFiles {
 					if _, present := set[matchKey]; present {
 						delete(set, matchKey)
@@ -747,8 +595,6 @@ func (cm *ContextManager) RemovePath(path string) error {
 							delete(cm.ownerFiles, owner)
 						}
 
-						// If the owner is a directory entry, try to remove the
-						// child from its recorded Children slice.
 						if ownerCP, ok := cm.paths[owner]; ok && ownerCP.Type == "directory" {
 							var newChildren []string
 							for _, child := range ownerCP.Children {
@@ -761,7 +607,6 @@ func (cm *ContextManager) RemovePath(path string) error {
 					}
 				}
 
-				// Remove any fileOwners bookkeeping for the removed path.
 				delete(cm.fileOwners, matchKey)
 
 				return nil
@@ -769,35 +614,26 @@ func (cm *ContextManager) RemovePath(path string) error {
 		}
 	}
 
-	// If path is not found, we consider it successfully removed (idempotent).
+	// Idempotent success if the path is already absent.
 	return nil
 }
 
-// GetPath returns information about a tracked path. The input path is
-// resolved using a multi-step strategy that first checks all tracked paths
-// (cm.paths), then falls back to owner resolution for tilde-form labels:
-//
-//  1. Direct cm.paths[path] fast path
-//  2. basePath-relative normalization against cm.paths
-//  3. Full canonicalization (host-specific tilde + CWD) against cm.paths
-//  4. Fallback: findOwnerFromUserPath for tilde labels from AddRelativePath
-//
-// Steps 1-3 resolve against cm.paths (all tracked entries including child
-// files under tracked directories). Step 4 falls back to owner resolution
-// which handles tilde-form labels that were returned by AddRelativePath.
+// GetPath returns information about a tracked path using a multi-step resolution:
+//  1. Direct cm.paths[path] lookup (fast path)
+//  2. basePath-relative normalization
+//  3. Full canonicalization (host-specific tilde + CWD)
+//  4. Fallback to owner resolution (handles tilde-form labels from AddRelativePath)
 func (cm *ContextManager) GetPath(path string) (*ContextPath, bool) {
 	cm.mutex.RLock()
 	defer cm.mutex.RUnlock()
 
-	// Step 1: Direct lookup — fast path for exact key match in cm.paths.
+	// Step 1: Direct lookup fast path.
 	if cp, exists := cm.paths[path]; exists {
 		return cp, exists
 	}
 
-	// Step 2: basePath-relative normalization. For relative paths that are
-	// not host-specific tilde expansion forms, resolve against basePath and
-	// check cm.paths. This handles paths like "root/sub/child.txt" that were
-	// registered when a directory was tracked.
+	// Step 2: basePath-relative normalization for non-tilde relative paths
+	// (e.g., resolving "root/sub/child.txt" registered via directory tracking).
 	if path != "" && !filepath.IsAbs(path) && !filepathutil.IsTildeExpansionPath(path) {
 		absPath := filepath.Join(cm.basePath, path)
 		if cleaned, err := filepath.Abs(absPath); err == nil {
@@ -809,9 +645,8 @@ func (cm *ContextManager) GetPath(path string) (*ContextPath, bool) {
 		}
 	}
 
-	// Step 3: Full canonicalization (host-specific tilde expansion + CWD
-	// resolution) against cm.paths. This handles paths like "./note.txt"
-	// or "../sibling/file.txt" that need CWD-aware resolution.
+	// Step 3: Full canonicalization against cm.paths to handle CWD-aware
+	// resolutions (e.g., "./note.txt" or "../sibling/file.txt").
 	if path != "" {
 		normalized, _, err := cm.canonicalizeUserPath(path)
 		if err == nil && normalized != path {
@@ -821,11 +656,8 @@ func (cm *ContextManager) GetPath(path string) (*ContextPath, bool) {
 		}
 	}
 
-	// Step 3.5: Legacy POSIX backslash-label probe against cm.paths.
-	// AddRelativePath's normalized-probe path stores owner keys in
-	// forward-slash form (e.g. "~/docs/notes.txt") while returning original
-	// backslash labels (e.g. "~\docs\notes.txt"). Probe that normalized
-	// form directly so child files under tracked directories round-trip too.
+	// Step 3.5: Legacy POSIX backslash-label probe. Matches the normalized
+	// forward-slash owner key to ensure child files round-trip correctly.
 	if runtime.GOOS != "windows" && strings.HasPrefix(path, `~\`) {
 		normalizedRel := filepath.Clean(strings.ReplaceAll(path, "\\", "/"))
 		normalizedAbs := filepath.Join(cm.basePath, normalizedRel)
@@ -835,10 +667,8 @@ func (cm *ContextManager) GetPath(path string) (*ContextPath, bool) {
 		}
 	}
 
-	// Step 4: Fallback to owner resolution. This handles tilde-form labels
-	// from AddRelativePath (e.g., "~/foo/bar.txt") where the internal owner
-	// key is the normalized absolute path but the caller has the original
-	// tilde-form label.
+	// Step 4: Fallback to owner resolution to handle tilde-form labels
+	// where the internal key is the normalized absolute path.
 	owner, found, err := cm.findOwnerFromUserPath(path)
 	if err != nil || !found {
 		return nil, false
@@ -859,9 +689,8 @@ func (cm *ContextManager) ListPaths() []string {
 	return paths
 }
 
-// computePathLCA computes the lowest common ancestor directory prefix
-// shared by all given paths. Returns "" if there is no common directory
-// component (e.g. all files are at root level, or paths diverge immediately).
+// computePathLCA computes the lowest common ancestor directory prefix shared
+// by all given paths, providing structural context. Returns "" if paths diverge immediately.
 func computePathLCA(paths []string) string {
 	if len(paths) == 0 {
 		return ""
@@ -869,12 +698,11 @@ func computePathLCA(paths []string) string {
 
 	sep := string(filepath.Separator)
 
-	// Split each path into directory components (exclude the filename).
 	var allDirs [][]string
 	for _, p := range paths {
 		dir := filepath.Dir(filepath.Clean(p))
 		if dir == "." {
-			continue // no directory component
+			continue
 		}
 		allDirs = append(allDirs, strings.Split(dir, sep))
 	}
@@ -883,7 +711,6 @@ func computePathLCA(paths []string) string {
 		return ""
 	}
 
-	// Find the longest common prefix across all directory component slices.
 	prefix := make([]string, len(allDirs[0]))
 	copy(prefix, allDirs[0])
 	for _, parts := range allDirs[1:] {
@@ -913,16 +740,15 @@ func (cm *ContextManager) ToTxtar() *txtar.Archive {
 
 	archive := &txtar.Archive{}
 
-	// Build a list of file paths and group by basename to detect collisions.
 	type entry struct {
 		key     string
 		path    string
 		content string
 	}
 	var files []entry
+	// Group by basename to detect naming collisions.
 	baseGroups := make(map[string][]entry)
 
-	// Collect tracked directory names for metadata.
 	var trackedDirs []string
 
 	for k, cp := range cm.paths {
@@ -933,12 +759,11 @@ func (cm *ContextManager) ToTxtar() *txtar.Archive {
 		if cp.Type != "file" {
 			continue
 		}
-		// Determine absolute path to read from disk.
 		absPath := cp.Path
 		if !filepath.IsAbs(absPath) {
 			absPath = filepath.Join(cm.basePath, cp.Path)
 		}
-		// Read the latest content from disk; silently skip on error (e.g., file removed).
+		// Read the latest content from disk; silently skip on error to tolerate deleted files.
 		data, err := os.ReadFile(absPath)
 		if err != nil {
 			continue
@@ -949,7 +774,7 @@ func (cm *ContextManager) ToTxtar() *txtar.Archive {
 		baseGroups[base] = append(baseGroups[base], e)
 	}
 
-	// Compute LCA of all relative file paths to provide structural context.
+	// Compute LCA of all relative file paths to establish structural context.
 	var relativePaths []string
 	for _, e := range files {
 		if !filepath.IsAbs(e.path) {
@@ -958,8 +783,8 @@ func (cm *ContextManager) ToTxtar() *txtar.Archive {
 	}
 	lca := computePathLCA(relativePaths)
 
-	// Build txtar comment with context metadata. This helps LLMs and humans
-	// understand where the files originate and which directories are tracked.
+	// Embed context metadata in the txtar comment to help LLMs understand file origins
+	// and tracked directory structures.
 	var comment strings.Builder
 	comment.WriteString("context root: " + filepath.ToSlash(cm.basePath) + "\n")
 	if lca != "" {
@@ -975,10 +800,9 @@ func (cm *ContextManager) ToTxtar() *txtar.Archive {
 	}
 	archive.Comment = []byte(comment.String())
 
-	// Helper: compute export names for a set of paths that share the same basename.
-	// For relative paths in collision groups, full paths are always used to preserve
-	// directory structure and avoid false proximity impressions. For absolute paths,
-	// suffix expansion is used to keep names manageable.
+	// computeUniqueSuffixes generates export names. It prioritizes full relative paths
+	// for all-relative collision groups to preserve directory structure and prevent
+	// false proximity impressions. Absolute paths fall back to suffix expansion.
 	computeUniqueSuffixes := func(group []entry) map[string]string {
 		out := make(map[string]string, len(group))
 		if len(group) == 1 {
@@ -991,7 +815,6 @@ func (cm *ContextManager) ToTxtar() *txtar.Archive {
 			return out
 		}
 
-		// Check if all paths in the collision group are relative.
 		allRelative := true
 		for _, e := range group {
 			if filepath.IsAbs(e.path) {
@@ -1000,10 +823,6 @@ func (cm *ContextManager) ToTxtar() *txtar.Archive {
 			}
 		}
 
-		// For all-relative collision groups, always use the full relative path.
-		// Full relative paths are inherently unique (same map key) and preserve
-		// the complete directory structure, avoiding the false proximity that
-		// occurs when minimal unique suffixes strip common prefixes.
 		if allRelative {
 			for _, e := range group {
 				out[e.key] = filepath.Clean(e.path)
@@ -1011,7 +830,6 @@ func (cm *ContextManager) ToTxtar() *txtar.Archive {
 			return out
 		}
 
-		// For mixed or all-absolute groups: use suffix expansion algorithm.
 		type comps struct {
 			key   string
 			parts []string
@@ -1027,7 +845,6 @@ func (cm *ContextManager) ToTxtar() *txtar.Archive {
 				maxDepth = n
 			}
 		}
-		// Increase depth from 1 (basename) until all suffixes are unique or we exhaust.
 		depth := 1
 		for depth <= maxDepth {
 			counts := make(map[string]int, len(arr))
@@ -1061,24 +878,22 @@ func (cm *ContextManager) ToTxtar() *txtar.Archive {
 			}
 			depth++
 		}
-		// Fallback: use full cleaned paths
 		for _, c := range arr {
 			out[c.key] = strings.Join(c.parts, sep)
 		}
 		return out
 	}
 
-	// Determine export names per entry key.
 	exportNames := make(map[string]string, len(files))
 	for _, group := range baseGroups {
 		names := computeUniqueSuffixes(group)
 		for k, v := range names {
-			// Normalize separators to '/' for portability and stable txtar display
+			// Normalize separators for portability and stable txtar display.
 			exportNames[k] = filepath.ToSlash(v)
 		}
 	}
 
-	// Emit files in a stable order (sorted by export name)
+	// Emit files in a stable, alphabetically sorted order.
 	type outFile struct {
 		name string
 		data []byte
@@ -1110,7 +925,6 @@ func (cm *ContextManager) FromTxtar(archive *txtar.Archive) error {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
 
-	// Clear existing context
 	cm.paths = make(map[string]*ContextPath)
 	cm.ownerFiles = make(map[string]map[string]struct{})
 	cm.fileOwners = make(map[string]int)
@@ -1155,16 +969,12 @@ func (cm *ContextManager) LoadFromTxtarString(data string) error {
 // Empty strings are explicitly rejected and return an error to prevent
 // unintended root context mutation.
 func (cm *ContextManager) RefreshPath(path string) error {
-	// Hard guard against empty strings at the very top, before any path
-	// resolution logic runs. This prevents "" from resolving to "." and
-	// potentially mutating the root owner unintentionally.
+	// Prevent empty strings from resolving to "." and unintentionally mutating the root owner.
 	if path == "" {
 		return fmt.Errorf("empty path is not valid")
 	}
 
-	// Find the tracked owner before acquiring the lock. This involves path
-	// resolution operations (filepath.Abs, etc.) that we don't want to do
-	// while holding the lock.
+	// Execute I/O-intensive path resolution operations outside the lock.
 	cm.mutex.RLock()
 	owner, found, findErr := cm.findOwnerFromUserPath(path)
 	cm.mutex.RUnlock()
@@ -1177,7 +987,6 @@ func (cm *ContextManager) RefreshPath(path string) error {
 		return fmt.Errorf("path %s is not a tracked owner", path)
 	}
 
-	// Resolve absolute path and stat outside the lock
 	absPath, err := cm.absolutePathFromOwner(owner)
 	if err != nil {
 		return fmt.Errorf("failed to resolve path %s: %w", path, err)
@@ -1188,13 +997,12 @@ func (cm *ContextManager) RefreshPath(path string) error {
 		return fmt.Errorf("failed to stat path %s: %w", path, err)
 	}
 
-	// Only acquire the write lock for the minimal critical section
+	// Minimize the write lock critical section.
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
 
-	// Re-verify tracked state to prevent TOCTOU resurrection.
-	// Between releasing the read lock (above) and acquiring this write lock,
-	// another goroutine could have removed the owner. If so, error out.
+	// Re-verify tracked state to prevent TOCTOU resurrection if another
+	// goroutine removed the owner between releasing the read lock and acquiring the write lock.
 	if _, tracked := cm.ownerFiles[owner]; !tracked {
 		return fmt.Errorf("path %s is not a tracked owner", path)
 	}

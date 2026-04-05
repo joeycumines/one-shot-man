@@ -4,7 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/muesli/termenv"
 )
 
@@ -115,7 +116,7 @@ func TestScrollbarMath(t *testing.T) {
 				withStyles(lipgloss.NewStyle(), lipgloss.NewStyle()),
 			)
 
-			view := m.View()
+			view := m.View().String()
 			lines := strings.Split(view, "\n")
 
 			if len(lines) != tc.viewportHeight {
@@ -153,7 +154,7 @@ func TestScrollbarZeroViewportHeight(t *testing.T) {
 		withChars("T", "."),
 		withStyles(lipgloss.NewStyle(), lipgloss.NewStyle()),
 	)
-	if got := m.View(); got != "" {
+	if got := m.View().String(); got != "" {
 		t.Fatalf("expected empty view for zero viewport height, got %q", got)
 	}
 }
@@ -180,7 +181,7 @@ func TestScrollbarOutput(t *testing.T) {
 		withStyles(thumbStyle, trackStyle),
 	)
 
-	view := m.View()
+	view := m.View().String()
 	lines := strings.Split(view, "\n")
 
 	// Verify Top 5 lines are thumb (Red background)

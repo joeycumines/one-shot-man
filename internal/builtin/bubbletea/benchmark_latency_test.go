@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/dop251/goja"
 )
 
@@ -26,7 +26,7 @@ import (
 // ============================================================================
 
 // BenchmarkJsToTeaMsg_KeyMsg measures the time to convert a JS key event
-// object to a Go tea.KeyMsg. This is called for EVERY key press.
+// object to a Go tea.KeyPressMsg. This is called for EVERY key press.
 func BenchmarkJsToTeaMsg_KeyMsg(b *testing.B) {
 	runtime := goja.New()
 
@@ -123,8 +123,8 @@ func BenchmarkMsgToJS_KeyMsg(b *testing.B) {
 		runtime: runtime,
 	}
 
-	// Create a realistic tea.KeyMsg
-	keyMsg := tea.KeyMsg{
+	// Create a realistic tea.KeyPressMsg
+	keyMsg := tea.KeyPressMsg{
 		Type:  tea.KeyRunes,
 		Runes: []rune{'w'},
 	}
@@ -282,7 +282,7 @@ func BenchmarkParseKey_Modifier(b *testing.B) {
 
 // BenchmarkFullKeyPipeline simulates the full path of a key event:
 // 1. Create JS key event object
-// 2. Convert to Go tea.KeyMsg (JsToTeaMsg)
+// 2. Convert to Go tea.KeyPressMsg (JsToTeaMsg)
 // 3. Convert back to JS (msgToJS)
 // 4. Extract command from response (valueToCmd with tick)
 func BenchmarkFullKeyPipeline(b *testing.B) {
@@ -400,7 +400,7 @@ func BenchmarkGojaToValue_Map(b *testing.B) {
 func BenchmarkNativeTeaKeyMsg(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		msg := tea.KeyMsg{
+		msg := tea.KeyPressMsg{
 			Type:  tea.KeyRunes,
 			Runes: []rune{'w'},
 		}
@@ -565,7 +565,7 @@ func BenchmarkFullUpdateCycle(b *testing.B) {
 		jsRunner:    &SyncJSRunner{Runtime: runtime},
 	}
 
-	keyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}
+	keyMsg := tea.KeyPressMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}
 
 	b.ResetTimer()
 	b.ReportAllocs()

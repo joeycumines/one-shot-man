@@ -79,7 +79,7 @@ import (
 	"unsafe"
 
 	"github.com/charmbracelet/bubbles/viewport"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/dop251/goja"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	jslipgloss "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"

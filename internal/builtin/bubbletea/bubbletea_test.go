@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/cursor"
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -510,7 +510,7 @@ func TestJsModel_Update_QuitCommand(t *testing.T) {
 	model.Init()
 
 	// Simulate 'q' key press
-	keyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
+	keyMsg := tea.KeyPressMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
 	_, cmd := model.Update(keyMsg)
 
 	// Verify that cmd is tea.Quit

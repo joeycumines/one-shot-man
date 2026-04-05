@@ -1,6 +1,6 @@
 //go:generate go run ../../../internal/cmd/generate-bubbletea-key-mapping
 
-// Package bubbletea provides JavaScript bindings for github.com/charmbracelet/bubbletea.
+// Package bubbletea provides JavaScript bindings for charm.land/bubbletea/v2.
 //
 // The module is exposed as "osm:bubbletea" and provides TUI program capabilities.
 // All functionality is exposed to JavaScript, following the established pattern of no global state.
@@ -135,7 +135,7 @@ import (
 	"syscall"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/dop251/goja"
 	"golang.org/x/term"
 )

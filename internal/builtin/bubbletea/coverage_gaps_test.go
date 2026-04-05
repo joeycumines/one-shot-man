@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,7 +24,7 @@ type noopModel struct{}
 
 func (noopModel) Init() tea.Cmd                       { return nil }
 func (noopModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return noopModel{}, nil }
-func (noopModel) View() string                        { return "" }
+func (noopModel) View() tea.View { return "" }
 
 // ========================================================================
 // valueToCmd — all cmd type descriptors
@@ -463,7 +463,7 @@ func TestUpdate_NilGuards(t *testing.T) {
 	t.Run("nil model", func(t *testing.T) {
 		t.Parallel()
 		var m *jsModel
-		retModel, cmd := m.Update(tea.KeyMsg{})
+		retModel, cmd := m.Update(tea.KeyPressMsg{})
 		assert.Nil(t, retModel)
 		assert.Nil(t, cmd)
 	})
@@ -471,7 +471,7 @@ func TestUpdate_NilGuards(t *testing.T) {
 	t.Run("nil updateFn", func(t *testing.T) {
 		t.Parallel()
 		m := &jsModel{runtime: goja.New(), updateFn: nil}
-		retModel, cmd := m.Update(tea.KeyMsg{})
+		retModel, cmd := m.Update(tea.KeyPressMsg{})
 		assert.Equal(t, m, retModel)
 		assert.Nil(t, cmd)
 	})
@@ -1057,7 +1057,7 @@ func TestUpdate_RunJSSyncError(t *testing.T) {
 		state:    vm.NewObject(),
 		jsRunner: &errorJSRunner{},
 	}
-	retModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	retModel, cmd := model.Update(tea.KeyPressMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 	assert.Equal(t, model, retModel)
 	assert.Nil(t, cmd)
 }
@@ -1191,7 +1191,7 @@ func TestUpdate_NilUpdateFnWithRuntime(t *testing.T) {
 		runtime:  vm,
 		updateFn: nil,
 	}
-	retModel, cmd := model.Update(tea.KeyMsg{})
+	retModel, cmd := model.Update(tea.KeyPressMsg{})
 	assert.Equal(t, model, retModel)
 	assert.Nil(t, cmd)
 }
@@ -1204,7 +1204,7 @@ func TestUpdate_NilRuntime(t *testing.T) {
 			return nil, nil
 		},
 	}
-	retModel, cmd := model.Update(tea.KeyMsg{})
+	retModel, cmd := model.Update(tea.KeyPressMsg{})
 	assert.Equal(t, model, retModel)
 	assert.Nil(t, cmd)
 }

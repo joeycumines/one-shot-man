@@ -4,7 +4,8 @@ package scrollbar
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // Model defines the state of the scrollbar.
@@ -50,9 +51,9 @@ func New(opts ...Option) Model {
 
 // View renders the scrollbar component strictly adhering to the calculated logic.
 // It returns a string exactly ViewportHeight tall.
-func (m Model) View() string {
+func (m Model) View() tea.View {
 	if m.ViewportHeight <= 0 {
-		return ""
+		return tea.View{}
 	}
 
 	// Normalise / clamp inputs.
@@ -62,7 +63,7 @@ func (m Model) View() string {
 	// When there is no scrollable range (content fits in the viewport), render
 	// a full-height thumb (a standard convention indicating "no scrolling").
 	if contentHeight == 0 || contentHeight <= viewportHeight {
-		return render(viewportHeight, 0, viewportHeight, m)
+		return tea.NewView(render(viewportHeight, 0, viewportHeight, m))
 	}
 
 	maxOffset := contentHeight - viewportHeight
@@ -89,7 +90,7 @@ func (m Model) View() string {
 		thumbTop = maxTop
 	}
 
-	return render(viewportHeight, thumbTop, thumbHeight, m)
+	return tea.NewView(render(viewportHeight, thumbTop, thumbHeight, m))
 
 }
 

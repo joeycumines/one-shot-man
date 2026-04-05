@@ -8,6 +8,148 @@ import (
 	"testing"
 )
 
+func TestAddRelativePath_BackslashTildeHomeFallbackCanonicalizesToAbsoluteOwnerOnPOSIX(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test")
+	}
+
+	base := t.TempDir()
+	fakeHome := t.TempDir()
+
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("USERPROFILE", fakeHome)
+
+	homeDir := filepath.Join(fakeHome, "docs")
+	if err := os.MkdirAll(homeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	homeFile := filepath.Join(homeDir, "notes.txt")
+	if err := os.WriteFile(homeFile, []byte("home-notes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const origLabel = `~\docs\notes.txt`
+
+	returnedLabel, err := cm.AddRelativePath(origLabel)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q): %v", origLabel, err)
+	}
+
+	if returnedLabel != origLabel {
+		t.Fatalf("AddRelativePath(%q) returned %q, want orig", origLabel, returnedLabel)
+	}
+
+	cp, ok := cm.GetPath(returnedLabel)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false; paths: %v", returnedLabel, cm.ListPaths())
+	}
+	if cp.Type != "file" {
+		t.Fatalf("GetPath(%q) type = %q, want %q", returnedLabel, cp.Type, "file")
+	}
+	if cp.Content != "home-notes" {
+		t.Fatalf("GetPath(%q) content = %q, want %q", returnedLabel, cp.Content, "home-notes")
+	}
+}
+
+func TestAddRelativePath_BackslashTildeNormalizedBaseProbeCanonicalizesOnPOSIX(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test")
+	}
+
+	base := t.TempDir()
+
+	targetDir := filepath.Join(base, "~", "docs")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	targetFile := filepath.Join(targetDir, "notes.txt")
+	if err := os.WriteFile(targetFile, []byte("base-notes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const origLabel = `~\docs\notes.txt`
+
+	returnedLabel, err := cm.AddRelativePath(origLabel)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q): %v", origLabel, err)
+	}
+
+	if returnedLabel != origLabel {
+		t.Fatalf("AddRelativePath(%q) returned %q, want orig", origLabel, returnedLabel)
+	}
+
+	cp, ok := cm.GetPath(returnedLabel)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false; paths: %v", returnedLabel, cm.ListPaths())
+	}
+	if cp.Type != "file" {
+		t.Fatalf("GetPath(%q) type = %q, want %q", returnedLabel, cp.Type, "file")
+	}
+	if cp.Content != "base-notes" {
+		t.Fatalf("GetPath(%q) content = %q, want %q", returnedLabel, cp.Content, "base-notes")
+	}
+}
+
+func TestGetPath_BackslashChildPathUnderTrackedDirectoryOnPOSIX(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only test")
+	}
+
+	base := t.TempDir()
+
+	targetDir := filepath.Join(base, "~", "docs")
+	if err := os.MkdirAll(targetDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	targetFile := filepath.Join(targetDir, "notes.txt")
+	if err := os.WriteFile(targetFile, []byte("directory-child"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cm, err := NewContextManager(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	returnedLabel, err := cm.AddRelativePath(`~\docs`)
+	if err != nil {
+		t.Fatalf("AddRelativePath(%q): %v", `~\docs`, err)
+	}
+
+	// PR behavior correctly preserves the original backslash label here
+	wantOwner := `~\docs`
+	if returnedLabel != wantOwner {
+		t.Fatalf("AddRelativePath(%q) returned %q, want original label %q", `~\docs`, returnedLabel, wantOwner)
+	}
+
+	cp, ok := cm.GetPath(`~\docs\notes.txt`)
+	if !ok {
+		t.Fatalf("GetPath(%q) returned false; paths: %v", `~\docs\notes.txt`, cm.ListPaths())
+	}
+	if cp.Type != "file" {
+		t.Fatalf("GetPath(%q) type = %q, want %q", `~\docs\notes.txt`, cp.Type, "file")
+	}
+	if cp.Path != filepath.ToSlash(filepath.Join("~", "docs", "notes.txt")) {
+		t.Fatalf("GetPath(%q) path = %q, want %q", `~\docs\notes.txt`, cp.Path, filepath.ToSlash(filepath.Join("~", "docs", "notes.txt")))
+	}
+	if cp.Content != "directory-child" {
+		t.Fatalf("GetPath(%q) content = %q, want %q", `~\docs\notes.txt`, cp.Content, "directory-child")
+	}
+}
+
 func TestAddRelativePath_ForwardSlashTildeRootCanonicalizesOnPOSIX(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX-only test")

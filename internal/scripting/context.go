@@ -86,15 +86,15 @@ func (cm *ContextManager) canonicalizeUserPath(path string) (string, string, err
 // ContextManager handles tracking and managing file paths and content as context
 // for building LLM prompts.
 type ContextManager struct {
-	paths      map[string]*contextPath
+	paths      map[string]*ContextPath
 	basePath   string
 	mutex      sync.RWMutex
 	ownerFiles map[string]map[string]struct{}
 	fileOwners map[string]int
 }
 
-// contextPath represents a tracked file or directory with metadata.
-type contextPath struct {
+// ContextPath represents a tracked file or directory with metadata.
+type ContextPath struct {
 	Path       string            `json:"path"`
 	Type       string            `json:"type"` // "file" or "directory"
 	Content    string            `json:"content,omitempty"`
@@ -111,7 +111,7 @@ func NewContextManager(basePath string) (*ContextManager, error) {
 	}
 
 	return &ContextManager{
-		paths:      make(map[string]*contextPath),
+		paths:      make(map[string]*ContextPath),
 		basePath:   absBase,
 		ownerFiles: make(map[string]map[string]struct{}),
 		fileOwners: make(map[string]int),
@@ -517,7 +517,7 @@ func (cm *ContextManager) addFileLocked(absPath, logicalPath, owner string, info
 
 	cp, exists := cm.paths[logicalPath]
 	if !exists || cp.Type != "file" {
-		cp = &contextPath{
+		cp = &ContextPath{
 			Path:     logicalPath,
 			Type:     "file",
 			Metadata: make(map[string]string),
@@ -558,7 +558,7 @@ func (cm *ContextManager) addDirectoryLocked(absPath, owner string, info fs.File
 		return fmt.Errorf("failed to scan directory %s: %w", absPath, err)
 	}
 
-	cm.paths[owner] = &contextPath{
+	cm.paths[owner] = &ContextPath{
 		Path:       owner,
 		Type:       "directory",
 		Metadata:   make(map[string]string),
@@ -785,7 +785,7 @@ func (cm *ContextManager) RemovePath(path string) error {
 // Steps 1-3 resolve against cm.paths (all tracked entries including child
 // files under tracked directories). Step 4 falls back to owner resolution
 // which handles tilde-form labels that were returned by AddRelativePath.
-func (cm *ContextManager) GetPath(path string) (*contextPath, bool) {
+func (cm *ContextManager) GetPath(path string) (*ContextPath, bool) {
 	cm.mutex.RLock()
 	defer cm.mutex.RUnlock()
 
@@ -818,6 +818,20 @@ func (cm *ContextManager) GetPath(path string) (*contextPath, bool) {
 			if cp, exists := cm.paths[normalized]; exists {
 				return cp, exists
 			}
+		}
+	}
+
+	// Step 3.5: Legacy POSIX backslash-label probe against cm.paths.
+	// AddRelativePath's normalized-probe path stores owner keys in
+	// forward-slash form (e.g. "~/docs/notes.txt") while returning original
+	// backslash labels (e.g. "~\docs\notes.txt"). Probe that normalized
+	// form directly so child files under tracked directories round-trip too.
+	if runtime.GOOS != "windows" && strings.HasPrefix(path, `~\`) {
+		normalizedRel := filepath.Clean(strings.ReplaceAll(path, "\\", "/"))
+		normalizedAbs := filepath.Join(cm.basePath, normalizedRel)
+		normalized := cm.normalizeOwnerPath(normalizedAbs)
+		if cp, exists := cm.paths[normalized]; exists {
+			return cp, exists
 		}
 	}
 
@@ -1097,12 +1111,12 @@ func (cm *ContextManager) FromTxtar(archive *txtar.Archive) error {
 	defer cm.mutex.Unlock()
 
 	// Clear existing context
-	cm.paths = make(map[string]*contextPath)
+	cm.paths = make(map[string]*ContextPath)
 	cm.ownerFiles = make(map[string]map[string]struct{})
 	cm.fileOwners = make(map[string]int)
 
 	for _, file := range archive.Files {
-		contextPath := &contextPath{
+		contextPath := &ContextPath{
 			Path:     file.Name,
 			Type:     "file",
 			Content:  string(file.Data),
@@ -1259,7 +1273,7 @@ func (cm *ContextManager) Clear() {
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
 
-	cm.paths = make(map[string]*contextPath)
+	cm.paths = make(map[string]*ContextPath)
 	cm.ownerFiles = make(map[string]map[string]struct{})
 	cm.fileOwners = make(map[string]int)
 }

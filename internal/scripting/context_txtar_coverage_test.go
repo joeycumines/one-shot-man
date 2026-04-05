@@ -39,7 +39,7 @@ func TestToTxtar_TrackedDirectories(t *testing.T) {
 
 	// Manually add a tracked directory to exercise the directory branch.
 	relDir := "tracked-dir"
-	cm.paths[relDir] = &contextPath{
+	cm.paths[relDir] = &ContextPath{
 		Path:       relDir,
 		Type:       "directory",
 		Metadata:   map[string]string{},
@@ -77,7 +77,7 @@ func TestToTxtar_UnreadableFile(t *testing.T) {
 	}
 
 	// Add a path that points to a non-existent file.
-	cm.paths["ghost.go"] = &contextPath{
+	cm.paths["ghost.go"] = &ContextPath{
 		Path:       "ghost.go",
 		Type:       "file",
 		Metadata:   map[string]string{},
@@ -105,7 +105,7 @@ func TestToTxtar_UnknownType(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cm.paths["symlink-thing"] = &contextPath{
+	cm.paths["symlink-thing"] = &ContextPath{
 		Path:       "symlink-thing",
 		Type:       "symlink", // neither "file" nor "directory"
 		Metadata:   map[string]string{},
@@ -139,7 +139,7 @@ func TestToTxtar_AbsolutePath_SingleFile(t *testing.T) {
 	}
 
 	// Add with absolute path in the context path struct.
-	cm.paths[absFile] = &contextPath{
+	cm.paths[absFile] = &ContextPath{
 		Path:       absFile,
 		Type:       "file",
 		Metadata:   map[string]string{},
@@ -189,13 +189,13 @@ func TestToTxtar_AbsolutePath_Collision(t *testing.T) {
 	}
 
 	// Add as absolute paths.
-	cm.paths[file1] = &contextPath{
+	cm.paths[file1] = &ContextPath{
 		Path:       file1,
 		Type:       "file",
 		Metadata:   map[string]string{},
 		UpdateTime: time.Now(),
 	}
-	cm.paths[file2] = &contextPath{
+	cm.paths[file2] = &ContextPath{
 		Path:       file2,
 		Type:       "file",
 		Metadata:   map[string]string{},

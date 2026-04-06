@@ -172,8 +172,9 @@ The goal is a codebase where every line has a reason to exist, every feature is 
 3. **Session Locking**: Always use proper session locking to prevent corruption
 4. **Platform Compatibility**: Code must work identically on Linux, macOS, and Windows
 5. **Script Discovery**: User scripts are auto-discovered from configured paths (experimental UX)
-6. **Go as Reusable Modules**: Go code must be exposed as reusable, modular implementations accessible via `osm script`. Never hardcode application-specific logic—deliver value for other implementations.
-7. **JS for App-Specific Logic**: All application-specific functionality MUST be modeled as JavaScript. Don't do anything in Go that someone else couldn't do using OSM.
+6. **Avoid Prepositions in Names**: Do not use prepositions in method or function names (e.g. prefer `LoadConfig` over `LoadFromConfig` or `SendEvent` over `SendEventTo`).
+7. **Go as Reusable Modules**: Go code must be exposed as reusable, modular implementations accessible via `osm script`. Never hardcode application-specific logic—deliver value for other implementations.
+8. **JS for App-Specific Logic**: All application-specific functionality MUST be modeled as JavaScript. Don't do anything in Go that someone else couldn't do using OSM.
 
 ## Documentation
 

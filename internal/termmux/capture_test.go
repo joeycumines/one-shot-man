@@ -784,9 +784,9 @@ func TestCaptureSession_Passthrough_ChildExit(t *testing.T) {
 	// TermFd < 0 means no raw mode is attempted — safe for CI.
 	var stdout bytes.Buffer
 	reason, err := cs.Passthrough(ctx, PassthroughConfig{
-		Stdin:   strings.NewReader(""), // empty stdin — child will exit on its own
-		Stdout:  &stdout,
-		TermFd:  -1, // no real TTY
+		Stdin:  strings.NewReader(""), // empty stdin — child will exit on its own
+		Stdout: &stdout,
+		TermFd: -1, // no real TTY
 	})
 	if err != nil {
 		t.Fatalf("Passthrough returned error: %v", err)
@@ -826,9 +826,9 @@ func TestCaptureSession_Passthrough_ContextCancel(t *testing.T) {
 	}()
 
 	reason, err := cs.Passthrough(ctx, PassthroughConfig{
-		Stdin:   strings.NewReader(""),
-		Stdout:  io.Discard,
-		TermFd:  -1,
+		Stdin:  strings.NewReader(""),
+		Stdout: io.Discard,
+		TermFd: -1,
 	})
 	if reason != ExitContext {
 		t.Fatalf("expected ExitContext, got %v (err=%v)", reason, err)

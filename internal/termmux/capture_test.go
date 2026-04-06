@@ -1,7 +1,9 @@
 package termmux
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -715,5 +717,120 @@ func TestCaptureSession_ConcurrentOutput(t *testing.T) {
 	output := cs.Output()
 	if !strings.Contains(output, "line50") {
 		t.Fatalf("expected output to contain 'line50', got %q", output)
+	}
+}
+
+func TestCaptureSession_Passthrough_NotStarted(t *testing.T) {
+	t.Parallel()
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "echo",
+		Args:    []string{"test"},
+	})
+
+	reason, err := cs.Passthrough(context.Background(), PassthroughConfig{})
+	if reason != ExitError {
+		t.Fatalf("expected ExitError, got %v", reason)
+	}
+	if err != ErrNoChild {
+		t.Fatalf("expected ErrNoChild, got %v", err)
+	}
+}
+
+func TestCaptureSession_Passthrough_AfterClose(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "echo",
+		Args:    []string{"test"},
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	cs.Wait()
+	cs.Close()
+
+	reason, err := cs.Passthrough(context.Background(), PassthroughConfig{})
+	if reason != ExitError {
+		t.Fatalf("expected ExitError, got %v", reason)
+	}
+	if err != ErrNoChild {
+		t.Fatalf("expected ErrNoChild, got %v", err)
+	}
+}
+
+func TestCaptureSession_Passthrough_ChildExit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping passthrough integration test in short mode")
+	}
+	t.Parallel()
+	skipIfWindows(t)
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "echo",
+		Args:    []string{"passthrough child exit test"},
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer cs.Close()
+
+	// Use a context with timeout to avoid hanging.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// PassthroughConfig with no real terminal (non-TTY environment).
+	// TermFd < 0 means no raw mode is attempted — safe for CI.
+	var stdout bytes.Buffer
+	reason, err := cs.Passthrough(ctx, PassthroughConfig{
+		Stdin:   strings.NewReader(""), // empty stdin — child will exit on its own
+		Stdout:  &stdout,
+		TermFd:  -1, // no real TTY
+	})
+	if err != nil {
+		t.Fatalf("Passthrough returned error: %v", err)
+	}
+	if reason != ExitChildExit {
+		t.Fatalf("expected ExitChildExit, got %v", reason)
+	}
+
+	// Verify that passthrough forwarded the child output to stdout.
+	if !strings.Contains(stdout.String(), "passthrough child exit test") {
+		t.Fatalf("expected stdout to contain child output, got %q", stdout.String())
+	}
+}
+
+func TestCaptureSession_Passthrough_ContextCancel(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping passthrough integration test in short mode")
+	}
+	t.Parallel()
+	skipIfWindows(t)
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "sleep",
+		Args:    []string{"60"},
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer cs.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Cancel context after a short delay.
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		cancel()
+	}()
+
+	reason, err := cs.Passthrough(ctx, PassthroughConfig{
+		Stdin:   strings.NewReader(""),
+		Stdout:  io.Discard,
+		TermFd:  -1,
+	})
+	if reason != ExitContext {
+		t.Fatalf("expected ExitContext, got %v (err=%v)", reason, err)
 	}
 }

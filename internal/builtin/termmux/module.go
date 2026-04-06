@@ -16,6 +16,7 @@ import (
 	"github.com/dop251/goja"
 
 	parent "github.com/joeycumines/one-shot-man/internal/termmux"
+	"github.com/joeycumines/one-shot-man/internal/termmux/ptyio"
 )
 
 // Event name constants exposed to JS.
@@ -631,11 +632,11 @@ func newCaptureSession(ctx context.Context, runtime *goja.Runtime, call goja.Fun
 // JavaScript-callable methods. Exported so callers (e.g., pr_split.go) can
 // create a Go-side CaptureSession and expose it through the same interface.
 //
-// AUDIT (T004/T059): All 19 methods verified present and type-correct:
+// AUDIT (T004/T059/T10): All 20 methods verified present and type-correct:
 //
 //	start, isRunning, output, screen, interrupt, kill, pause, resume,
 //	isPaused, resize, wait, write, sendEOF, close, pid, exitCode, isDone,
-//	target, setTarget.
+//	target, setTarget, passthrough.
 //
 // The 6 methods called by runVerifyBranch/pollVerifySession (isDone,
 // exitCode, output, close, interrupt, kill) are confirmed bound with
@@ -742,6 +743,40 @@ func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.C
 		default:
 			return false
 		}
+	})
+
+	// ── passthrough(toggleKey?) → { reason, error? } ────
+	// BLOCKING: enters raw passthrough mode, returns when user toggles or child exits.
+	// Uses os.Stdin/os.Stdout and the real terminal state. The caller (BubbleTea's
+	// toggleModel) must have already released the terminal before calling this.
+	_ = obj.Set("passthrough", func(call goja.FunctionCall) map[string]any {
+		toggleKey := byte(parent.DefaultToggleKey)
+		if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+			cfgObj := call.Argument(0).ToObject(runtime)
+			if cfgObj != nil {
+				if v := cfgObj.Get("toggleKey"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+					toggleKey = byte(v.ToInteger())
+				}
+			}
+		}
+
+		termFd := int(os.Stdin.Fd())
+		reason, err := cs.Passthrough(ctx, parent.PassthroughConfig{
+			Stdin:         os.Stdin,
+			Stdout:        os.Stdout,
+			TermFd:        termFd,
+			ToggleKey:     toggleKey,
+			TermState:     ptyio.RealTermState{},
+			BlockingGuard: parent.DefaultBlockingGuard(),
+		})
+
+		result := map[string]any{
+			"reason": exitReasonString(reason),
+		}
+		if err != nil {
+			result["error"] = err.Error()
+		}
+		return result
 	})
 
 	return obj

@@ -279,6 +279,18 @@ func (p *Process) Pid() int {
 	return p.cmd.Pid()
 }
 
+// File returns the PTY master file descriptor. The caller must NOT close
+// the returned file — it is owned by the Process and will be closed by
+// Close. Returns nil if the process has not been started or has been closed.
+func (p *Process) File() *os.File {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed || p.ptyFile == nil {
+		return nil
+	}
+	return p.ptyFile
+}
+
 // Close terminates the child process and releases the PTY.
 // It sends SIGTERM, waits up to 5 seconds, then sends SIGKILL.
 // Close is idempotent — subsequent calls return nil.

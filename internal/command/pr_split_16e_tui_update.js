@@ -868,12 +868,12 @@
             // contention. ToggleReturn message handled below.
         }
 
-        // T394: Handle ToggleReturn from toggleModel after passthrough exits
-        // (or skipped because no child was attached).
+        // T394/T10: Handle ToggleReturn from toggleModel after passthrough exits
+        // (or skipped because no interactive session was available).
         if (msg.type === 'ToggleReturn') {
             if (msg.skipped) {
-                // No Claude child — show notification.
-                s.claudeAutoAttachNotif = 'Claude not available \u2014 no active Claude session';
+                // No interactive session — show notification.
+                s.claudeAutoAttachNotif = 'Passthrough not available \u2014 no active interactive session';
                 s.claudeAutoAttachNotifAt = Date.now();
             }
             return [s, null];

@@ -892,7 +892,11 @@
         // Model init returns a startup heartbeat command so the update loop
         // can keep draining mux events even when the TUI is otherwise idle.
         var _initModelFn = function() {
-            return [ _initStateFn(), tea.tick(C.TICK_INTERVAL_MS, 'mux-poll') ];
+            var state = _initStateFn();
+            // T10: Store current model state reference so _onToggle can
+            // access focused pane and active sessions for passthrough dispatch.
+            prSplit._toggleModelState = state;
+            return [ state, tea.tick(C.TICK_INTERVAL_MS, 'mux-poll') ];
         };
 
         // Unit tests still expect the exported wizard init helper to be
@@ -934,20 +938,46 @@
     prSplit._wizardModel = _wizardModel;
     prSplit._createWizardModel = createWizardModel;
 
-    // T394: onToggle callback for Ctrl+] passthrough. Extracted as a named
+    // T394/T10: onToggle callback for Ctrl+] passthrough. Extracted as a named
     // function so tests can exercise the guard logic independently.
+    // T10: Now dispatches to any focused interactive pane, not only mux.
     prSplit._onToggle = function() {
+        // Read current model state (stored by _initModelFn on each init).
+        var tuiState = prSplit._toggleModelState;
+        var focusTab = tuiState && tuiState.splitViewTab || 'claude';
+        var focusPane = tuiState && tuiState.splitViewFocus || 'wizard';
+
+        log.printf('ctrl+] toggle: focusPane=%s focusTab=%s', focusPane, focusTab);
+
+        // 1. If Claude pane is focused (or mux is the default), try mux passthrough.
         var muxAvail = typeof tuiMux !== 'undefined' && !!tuiMux;
-        var childAttached = muxAvail &&
+        var muxAttached = muxAvail &&
             typeof tuiMux.session === 'function' &&
             tuiMux.session().isRunning();
-        log.printf('ctrl+] toggle: muxAvail=%s childAttached=%s',
-            String(muxAvail), String(childAttached));
-        if (muxAvail &&
-            typeof tuiMux.switchTo === 'function' && childAttached) {
+        if (muxAvail && typeof tuiMux.switchTo === 'function' && muxAttached &&
+            (focusTab === 'claude' || focusPane === 'wizard')) {
+            log.printf('ctrl+] toggle: dispatching to mux.switchTo');
             return tuiMux.switchTo();
         }
-        // No child — return indicator for ToggleReturn handler.
+
+        // 2. Try verify pane passthrough (any active CaptureSession).
+        var verifySession = tuiState && tuiState.activeVerifySession;
+        if (verifySession && typeof verifySession.passthrough === 'function' &&
+            verifySession.isRunning && verifySession.isRunning()) {
+            log.printf('ctrl+] toggle: dispatching to verify session passthrough');
+            // Emit focus event for consistency with mux path.
+            if (typeof tui !== 'undefined' && tui.emit) {
+                tui.emit('focus', { side: 'claude', action: 'enter' });
+            }
+            var result = verifySession.passthrough({ toggleKey: 0x1D });
+            if (typeof tui !== 'undefined' && tui.emit) {
+                tui.emit('focus', { side: 'osm', action: 'return' });
+            }
+            return result;
+        }
+
+        // No interactive session — return indicator for ToggleReturn handler.
+        log.printf('ctrl+] toggle: no child available, skipping');
         return {skipped: true, reason: 'no_child'};
     };
 

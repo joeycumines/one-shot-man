@@ -92,7 +92,7 @@ func New(stdin io.Reader, stdout io.Writer, termFd int, opts ...Option) *Mux {
 		termCols:      80,
 		statusBar:     statusbar.New(stdout),
 		termState:     ptyio.RealTermState{},
-		blockingGuard: defaultBlockingGuard(),
+		blockingGuard: DefaultBlockingGuard(),
 		detachTimeout: 5 * time.Second,
 	}
 	m.statusBar.SetToggleKey(cfg.ToggleKey)

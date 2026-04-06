@@ -13,7 +13,7 @@ import (
 // ---------------------------------------------------------------------------
 // T004: CaptureSession JS binding completeness tests
 //
-// Validates that all 19 methods exposed by WrapCaptureSession are callable
+// Validates that all 20 methods exposed by WrapCaptureSession are callable
 // from JS and return the expected types. Uses real PTY (requires unix).
 //
 // The six methods called by runVerifyBranch/pollVerifySession:
@@ -33,6 +33,7 @@ import (
 //   write(data) → void
 //   sendEOF()   → void
 //   pid()       → number
+//   passthrough(cfg?) → {reason, error?}
 // ---------------------------------------------------------------------------
 
 func TestCaptureSession_JSBinding_AllMethods(t *testing.T) {
@@ -45,12 +46,12 @@ func TestCaptureSession_JSBinding_AllMethods(t *testing.T) {
 		var tm = require('osm:termmux');
 		var cs = tm.newCaptureSession('echo', ['hello T004']);
 
-		// Verify all 19 methods exist and are functions.
+		// Verify all 20 methods exist and are functions.
 		var methods = [
 			'start', 'isRunning', 'output', 'screen', 'interrupt', 'kill',
 			'pause', 'resume', 'isPaused',
 			'resize', 'wait', 'write', 'sendEOF', 'close', 'pid', 'exitCode', 'isDone',
-			'target', 'setTarget'
+			'target', 'setTarget', 'passthrough'
 		];
 		var missing = [];
 		for (var i = 0; i < methods.length; i++) {

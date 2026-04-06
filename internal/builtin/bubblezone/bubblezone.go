@@ -45,7 +45,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dop251/goja"
 	zone "github.com/lrstanley/bubblezone"
 )
@@ -156,9 +155,12 @@ func Require(manager *Manager) func(runtime *goja.Runtime, module *goja.Object) 
 				return runtime.ToValue(false)
 			}
 
-			// Create a tea.MouseMsg for the InBounds check
-			mouseMsg := tea.MouseMsg{X: x, Y: y}
-			inBounds := zoneInfo.InBounds(mouseMsg)
+			// Check bounds directly using zone info.
+			// In v2, bubblezone is incompatible (it imports the old bubbletea package
+			// and expects tea.MouseMsg as a struct, not an interface).
+			// We implement the bounds check directly using the zone's coordinates.
+			inBounds := x >= zoneInfo.StartX && x <= zoneInfo.EndX &&
+				y >= zoneInfo.StartY && y <= zoneInfo.EndY
 			return runtime.ToValue(inBounds)
 		})
 

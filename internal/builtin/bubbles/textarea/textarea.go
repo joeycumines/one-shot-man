@@ -1,8 +1,7 @@
-// Package textarea provides JavaScript bindings for github.com/charmbracelet/bubbles/textarea.
+// Package textarea provides JavaScript bindings for charm.land/bubbles/v2/textarea.
 //
 // The module is exposed as "osm:bubbles/textarea" and provides a multi-line text input
-// component for BubbleTea TUI applications. This replaces manual string-slicing cursor
-// logic with a production-grade, battle-tested Go implementation.
+// component for BubbleTea TUI applications.
 //
 // # JavaScript API
 //
@@ -37,121 +36,164 @@
 package textarea
 
 import (
-	"unsafe"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/lipgloss/v2"
+	"strings"
 
-	"github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/viewport"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/dop251/goja"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	"github.com/rivo/uniseg"
 )
 
-// runeWidth returns the visual width of a rune using Unicode grapheme cluster
-// width tables from [github.com/rivo/uniseg]. This correctly reports zero-width
-// combining marks as width 0 (they attach to the preceding base character)
-// and CJK/fullwidth characters as width 2.
-func runeWidth(r rune) int {
-	return uniseg.StringWidth(string(r))
+// viewportContext holds scroll synchronization context for the textarea.
+type viewportContext struct {
+	outerYOffset        int
+	textareaContentTop  int
+	textareaContentLeft int
+	outerViewportHeight int
+	preContentHeight    int
+	titleHeight         int
 }
 
-// hitTestColumn maps a visual position (wrapped segment index + visual X
-// coordinate) to a logical rune column within a line. It uses greedy wrapping
-// simulation to skip past earlier wrapped segments, then finds the rune index
-// closest to the given visual X position within the target segment.
-//
-// Parameters:
-//   - line: the runes of the logical line
-//   - width: the content width in cells (must be > 0 for wrapping to apply)
-//   - targetSegment: the 0-indexed wrapped segment to hit test within
-//   - visualX: the X coordinate within that segment (in cells)
-//
-// Returns the rune column index within the line. If width <= 0 or the line is
-// empty, visualX is clamped to [0, len(line)] and returned directly.
-func hitTestColumn(line []rune, width int, targetSegment int, visualX int) int {
-	if width <= 0 || len(line) == 0 {
-		col := min(max(visualX, 0), len(line))
-		return col
+// clamp clamps a value between min and max.
+func clamp(v, min, max int) int {
+	if v < min {
+		return min
+	}
+	if v > max {
+		return max
+	}
+	return v
+}
+
+// numDigits returns the number of decimal digits in n.
+func numDigits(n int) int {
+	if n == 0 {
+		return 1
+	}
+	count := 0
+	for n > 0 {
+		count++
+		n /= 10
+	}
+	return count
+}
+
+// runeWidth returns the visual width of a rune given the current accumulated line width.
+// It handles tabs (expanding to next tab stop) and CJK characters (width 2).
+// This matches the behavior of github.com/mattn/go-runewidth.RuneWidth and
+// github.com/rivo/uniseg for the character ranges we handle.
+func runeWidth(r rune, currentWidth int) int {
+	if r == '\t' {
+		w := 8 - (currentWidth % 8)
+		return w
+	}
+	// CJK Unified Ideographs and related ranges are double-width
+	// This matches the uniseg.StringWidth and go-runewidth.RuneWidth behavior
+	if r >= 0x4E00 && r <= 0x9FFF || r >= 0x3000 && r <= 0x303F || r >= 0xFF00 && r <= 0xFFEF {
+		return 2
+	}
+	return 1
+}
+
+// findColumnInSegment finds the column (character index) within a segment
+// that corresponds to the given visualX position.
+func findColumnInSegment(chars []rune, visualX int) int {
+	if len(chars) == 0 {
+		return 0
 	}
 
-	charsConsumed := 0
-
-	// Phase 1: Skip characters belonging to wrapped segments before the target.
-	for segment := 0; segment < targetSegment && charsConsumed < len(line); segment++ {
-		segmentWidth := 0
-		for charsConsumed < len(line) {
-			rw := runeWidth(line[charsConsumed])
-			// If adding this char exceeds width AND we already have content, wrap.
-			if segmentWidth > 0 && segmentWidth+rw > width {
-				break
-			}
-			segmentWidth += rw
-			charsConsumed++
-			// After consuming, if we've filled the line, break for wrap.
-			if segmentWidth >= width {
-				break
-			}
+	col := 0
+	for i := 0; i < len(chars); i++ {
+		charW := runeWidth(chars[i], col)
+		// Check if visualX is within this character's visual range.
+		// A character at 'col' occupies cells [col, col+charW).
+		// visualX must be >= col (not >) so the boundary between two chars
+		// (e.g., cell 1 before 你, col=1) advances to the next char.
+		if visualX >= col && visualX < col+charW {
+			return i
 		}
+		col += charW
+	}
+	// Beyond the content - clamp to end
+	return len(chars)
+}
+
+// setPositionInternal navigates the textarea model to the target row and column.
+// This is a helper function to properly navigate wrapped content.
+func setPositionInternal(model *textarea.Model, targetRow, targetCol int) {
+	// Clamp targetRow to valid range
+	maxRow := model.LineCount() - 1
+	if maxRow < 0 {
+		maxRow = 0
+	}
+	if targetRow > maxRow {
+		targetRow = maxRow
+	}
+	if targetRow < 0 {
+		targetRow = 0
 	}
 
-	// Phase 2: Find the column within the current wrapped segment by advancing
-	// until we've consumed enough visual width to reach visualX.
-	widthConsumed := 0
-	for charsConsumed < len(line) && widthConsumed < visualX {
-		rw := runeWidth(line[charsConsumed])
-		if widthConsumed+rw > width {
-			break // Would exceed segment boundary
+	// Move to beginning (row 0, col 0)
+	model.MoveToBegin()
+
+	// Navigate to the target row.
+	// Strategy: at each row N < targetRow, position cursor at the END of row N
+	// using SetCursorColumn(len(row)). From the last visual line of a row,
+	// CursorDown() correctly advances to the next row (m.row++).
+	// This works even when content wraps at narrow widths where naive
+	// CursorDown-looping fails.
+	currentRow := model.Line()
+	for currentRow < targetRow {
+		// Get the character length of the current row
+		value := model.Value()
+		rawLines := strings.Split(value, "\n")
+		rowLen := 0
+		if currentRow < len(rawLines) {
+			rowLen = len(rawLines[currentRow])
 		}
-		widthConsumed += rw
-		charsConsumed++
+		// Position at the end of the current row (this places cursor on the
+		// last visual line, which triggers m.row++ on the next CursorDown).
+		model.SetCursorColumn(rowLen)
+		// Advance to the next row
+		model.CursorDown()
+		currentRow = model.Line()
 	}
 
-	if charsConsumed > len(line) {
-		charsConsumed = len(line)
+	// Set the final column. SetCursorColumn clamps to the current row's length.
+	model.SetCursorColumn(targetCol)
+}
+
+// parseStyleFromJS parses a JavaScript style object and returns a lipgloss.Style.
+// The JS object can have: foreground, background, bold, italic, underline, strikethrough, reverse, blink.
+func parseStyleFromJS(runtime *goja.Runtime, styleObj *goja.Object) lipgloss.Style {
+	style := lipgloss.NewStyle()
+	if v := styleObj.Get("foreground"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		style = style.Foreground(lipgloss.Color(v.String()))
 	}
-	return charsConsumed
+	if v := styleObj.Get("background"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+		style = style.Background(lipgloss.Color(v.String()))
+	}
+	if v := styleObj.Get("bold"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) && v.ToBoolean() {
+		style = style.Bold(true)
+	}
+	if v := styleObj.Get("italic"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) && v.ToBoolean() {
+		style = style.Italic(true)
+	}
+	if v := styleObj.Get("underline"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) && v.ToBoolean() {
+		style = style.Underline(true)
+	}
+	if v := styleObj.Get("strikethrough"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) && v.ToBoolean() {
+		style = style.Strikethrough(true)
+	}
+	if v := styleObj.Get("reverse"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) && v.ToBoolean() {
+		style = style.Reverse(true)
+	}
+	if v := styleObj.Get("blink"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) && v.ToBoolean() {
+		style = style.Blink(true)
+	}
+	return style
 }
-
-// textareaModelMirror is a memory-layout-compatible mirror of textarea.Model.
-// This struct MUST exactly match the upstream textarea.Model field layout from
-// github.com/charmbracelet/bubbles/textarea.
-//
-// We use this unsafe technique to access the unexported `viewport` field
-// and retrieve the scroll offset (YOffset) for synchronizing the scrollbar.
-type textareaModelMirror struct {
-	Err   error
-	cache unsafe.Pointer // *memoization.MemoCache[line, [][]rune]
-
-	Prompt               string
-	Placeholder          string
-	ShowLineNumbers      bool
-	EndOfBufferCharacter rune
-	KeyMap               textarea.KeyMap
-	FocusedStyle         textarea.Style
-	BlurredStyle         textarea.Style
-	style                *textarea.Style
-	Cursor               cursor.Model
-	CharLimit            int
-	MaxHeight            int
-	MaxWidth             int
-	promptFunc           func(line int) string
-	promptWidth          int
-	width                int
-	height               int
-	value                [][]rune
-	focus                bool
-	col                  int
-	row                  int
-	lastCharOffset       int
-	viewport             *viewport.Model
-	rsan                 any // runeutil.Sanitizer
-}
-
-// Static assertion: verify textareaModelMirror has the same size as textarea.Model.
-var _ = [0]struct{}{}
-var _ = [unsafe.Sizeof(textareaModelMirror{}) - unsafe.Sizeof(textarea.Model{})]struct{}{}
-var _ = [unsafe.Sizeof(textarea.Model{}) - unsafe.Sizeof(textareaModelMirror{})]struct{}{}
 
 // Require returns a CommonJS native module under "osm:bubbles/textarea".
 func Require() func(runtime *goja.Runtime, module *goja.Object) {
@@ -162,9 +204,19 @@ func Require() func(runtime *goja.Runtime, module *goja.Object) {
 		// new creates a new textarea model
 		_ = exports.Set("new", func(call goja.FunctionCall) goja.Value {
 			ta := textarea.New()
-			// We pass a pointer to the model. The closure in createTextareaObject
-			// captures this pointer, maintaining state for the lifetime of the JS object.
 			return createTextareaObject(runtime, &ta)
+		})
+
+		// defaultStyles returns the default styles for the textarea.
+		// Usage: const styles = textarea.defaultStyles(hasDarkBackground);
+		//        ta.setStyles(styles);
+		_ = exports.Set("defaultStyles", func(call goja.FunctionCall) goja.Value {
+			isDark := true
+			if len(call.Arguments) >= 1 {
+				isDark = call.Argument(0).ToBoolean()
+			}
+			styles := textarea.DefaultStyles(isDark)
+			return runtime.ToValue(styles)
 		})
 	}
 }
@@ -174,6 +226,9 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 	obj := runtime.NewObject()
 
 	_ = obj.Set("_type", "bubbles/textarea")
+
+	// viewport context for scroll synchronization
+	var vpCtx viewportContext
 
 	// -------------------------------------------------------------------------
 	// Geometry & Layout
@@ -211,45 +266,15 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 		return obj
 	})
 
-	// promptWidth returns the prompt width (includes line numbers if enabled).
-	// This is critical for proper click coordinate translation.
-	_ = obj.Set("promptWidth", func(call goja.FunctionCall) goja.Value {
-		mirror := (*textareaModelMirror)(unsafe.Pointer(model))
-		return runtime.ToValue(mirror.promptWidth)
-	})
-
-	// contentWidth returns the usable content width.
-	// This is the actual character display area width (mirror.width).
-	// NOTE: mirror.width is already content width - SetWidth() calculates:
-	// width = inputWidth - reservedOuter - reservedInner
-	_ = obj.Set("contentWidth", func(call goja.FunctionCall) goja.Value {
-		mirror := (*textareaModelMirror)(unsafe.Pointer(model))
-		return runtime.ToValue(mirror.width)
-	})
-
-	// reservedInnerWidth returns the total inner reserved width.
-	// This is promptWidth + line number width (if ShowLineNumbers is enabled).
-	// This is what JS needs to calculate the X offset from the left edge of
-	// the textarea field to where the actual text content starts.
-	_ = obj.Set("reservedInnerWidth", func(call goja.FunctionCall) goja.Value {
-		mirror := (*textareaModelMirror)(unsafe.Pointer(model))
-		// Calculate: reservedInner = viewport.Width - m.width
-		// Because: m.width = inputWidth - reservedOuter - reservedInner
-		// And: viewport.Width = inputWidth - reservedOuter
-		// So: reservedInner = viewport.Width - m.width
-		if mirror.viewport == nil {
-			return runtime.ToValue(mirror.promptWidth)
-		}
-		return runtime.ToValue(mirror.viewport.Width - mirror.width)
-	})
-
-	// yOffset returns the viewport's vertical scroll offset (unsafe access).
+	// yOffset returns the viewport's vertical scroll offset.
 	_ = obj.Set("yOffset", func(call goja.FunctionCall) goja.Value {
-		mirror := (*textareaModelMirror)(unsafe.Pointer(model))
-		if mirror.viewport == nil {
-			return runtime.ToValue(0)
-		}
-		return runtime.ToValue(mirror.viewport.YOffset)
+		// Defensively handle nil viewport case - return 0 if ScrollYOffset panics
+		defer func() {
+			if r := recover(); r != nil {
+				// swallow panic, return 0
+			}
+		}()
+		return runtime.ToValue(model.ScrollYOffset())
 	})
 
 	// -------------------------------------------------------------------------
@@ -336,354 +361,784 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 		return obj
 	})
 
-	_ = obj.Set("setCursor", func(call goja.FunctionCall) goja.Value {
-		col := int(call.Argument(0).ToInteger())
-		model.SetCursor(col)
-		return obj
-	})
-
 	// col returns the current cursor column position (0-indexed).
 	_ = obj.Set("col", func(call goja.FunctionCall) goja.Value {
-		mirror := (*textareaModelMirror)(unsafe.Pointer(model))
-		return runtime.ToValue(mirror.col)
+		return runtime.ToValue(model.Column())
 	})
 
-	// setRow sets the cursor row position (0-indexed, clamped to valid range).
-	// This uses unsafe access to the private row field.
-	_ = obj.Set("setRow", func(call goja.FunctionCall) goja.Value {
-		row := int(call.Argument(0).ToInteger())
-		mirror := (*textareaModelMirror)(unsafe.Pointer(model))
-		lineCount := len(mirror.value)
-		if lineCount == 0 {
-			return obj
-		}
-		// Clamp row to valid range
-		if row < 0 {
-			row = 0
-		} else if row >= lineCount {
-			row = lineCount - 1
-		}
-		mirror.row = row
-		// Clamp column to the new row's length
-		if mirror.col > len(mirror.value[row]) {
-			mirror.col = len(mirror.value[row])
-		}
+	// setColumn sets the cursor column position (0-indexed).
+	_ = obj.Set("setColumn", func(call goja.FunctionCall) goja.Value {
+		col := int(call.Argument(0).ToInteger())
+		model.SetCursorColumn(col)
 		return obj
 	})
 
-	// setPosition sets both row and column position (0-indexed, clamped to valid range).
-	// This is the preferred method for mouse click handling as it sets both atomically.
+	// setCursor sets the cursor to a specific character offset within the value.
+	_ = obj.Set("setCursor", func(call goja.FunctionCall) goja.Value {
+		charOffset := int(call.Argument(0).ToInteger())
+		value := model.Value()
+		if charOffset < 0 {
+			charOffset = 0
+		}
+		if charOffset > len(value) {
+			charOffset = len(value)
+		}
+		// Find the row and column for this character offset by scanning the string
+		row := 0
+		lineStart := 0
+		for i, ch := range value {
+			if ch == '\n' {
+				if lineStart+charOffset <= i {
+					row++
+					lineStart = i + 1
+				} else {
+					break
+				}
+			}
+			if i >= charOffset {
+				break
+			}
+		}
+		col := charOffset - lineStart
+		if col < 0 {
+			col = 0
+		}
+		// Navigate to the target row
+		currentRow := model.Line()
+		for currentRow > row {
+			model.CursorUp()
+			currentRow--
+		}
+		for currentRow < row {
+			model.CursorDown()
+			currentRow++
+		}
+		// Set the column
+		model.SetCursorColumn(col)
+		return obj
+	})
+
+	// setPosition sets the cursor to a specific row and column (0-indexed).
 	_ = obj.Set("setPosition", func(call goja.FunctionCall) goja.Value {
 		row := int(call.Argument(0).ToInteger())
 		col := int(call.Argument(1).ToInteger())
-		mirror := (*textareaModelMirror)(unsafe.Pointer(model))
-		lineCount := len(mirror.value)
-		if lineCount == 0 {
-			return obj
-		}
 		// Clamp row to valid range
+		maxRow := model.LineCount() - 1
+		if maxRow < 0 {
+			maxRow = 0
+		}
+		if row > maxRow {
+			row = maxRow
+		}
 		if row < 0 {
 			row = 0
-		} else if row >= lineCount {
-			row = lineCount - 1
 		}
-		mirror.row = row
-		// Clamp column to the row's length
-		lineLen := len(mirror.value[row])
-		if col < 0 {
+		// Clamp col
+		value := model.Value()
+		rawLines := strings.Split(value, "\n")
+		if row < len(rawLines) {
+			lineLen := len(rawLines[row])
+			if col > lineLen {
+				col = lineLen
+			}
+			if col < 0 {
+				col = 0
+			}
+		} else {
 			col = 0
-		} else if col > lineLen {
-			col = lineLen
 		}
-		mirror.col = col
-		// Reset lastCharOffset to ensure consistent horizontal navigation
-		mirror.lastCharOffset = 0
+		// Use the helper function to navigate
+		setPositionInternal(model, row, col)
 		return obj
 	})
 
-	// calculateWrappedLineCount calculates the number of visual lines a logical line
-	// will occupy by simulating the greedy wrap behavior.
-	calculateWrappedLineCount := func(line []rune, width int) int {
-		if width <= 0 || len(line) == 0 {
-			return 1
+	// selectAll moves the cursor to the end of the input (select all text).
+	_ = obj.Set("selectAll", func(call goja.FunctionCall) goja.Value {
+		model.MoveToEnd()
+		return obj
+	})
+
+	// setRow sets the cursor to a specific row while keeping the column at 0.
+	_ = obj.Set("setRow", func(call goja.FunctionCall) goja.Value {
+		row := int(call.Argument(0).ToInteger())
+		// Clamp row to valid range
+		maxRow := model.LineCount() - 1
+		if maxRow < 0 {
+			maxRow = 0
+		}
+		if row > maxRow {
+			row = maxRow
+		}
+		if row < 0 {
+			row = 0
+		}
+		// Preserve the current column (clamped to the new row's length).
+		// When moving to a shorter row, standard editor behavior clamps
+		// the cursor to the end of that row rather than keeping the
+		// original column value.
+		currentCol := model.Column()
+		setPositionInternal(model, row, currentCol)
+		return obj
+	})
+
+	// handleClick handles a mouse click at the given coordinates.
+	// It converts screen coordinates (x, y with yOffset) to cursor position.
+	_ = obj.Set("handleClick", func(call goja.FunctionCall) goja.Value {
+		x := int(call.Argument(0).ToInteger())
+		y := int(call.Argument(1).ToInteger())
+		yOffset := 0
+		if len(call.Arguments) >= 3 {
+			yOffset = int(call.Argument(2).ToInteger())
 		}
 
-		count := 1
-		currentWidth := 0
+		width := model.Width()
+		value := model.Value()
+		lines := model.LineCount()
 
-		for _, r := range line {
-			rw := runeWidth(r)
+		// Handle edge cases
+		if width <= 0 || lines <= 0 || len(value) == 0 {
+			model.MoveToBegin()
+			return obj
+		}
 
-			// Handle edge case: Character wider than viewport (e.g. CJK in width 1 col)
-			// We treat this as taking up the entire current line.
-			if rw > width {
-				if currentWidth > 0 {
-					count++ // Wrap previous content if line wasn't empty
+		// Calculate target visual line
+		targetVisualY := y + yOffset
+		if targetVisualY < 0 {
+			targetVisualY = 0
+		}
+
+		// Clamp x to non-negative before hit testing
+		if x < 0 {
+			x = 0
+		}
+
+		rawLines := strings.Split(value, "\n")
+
+		// Navigate to the clicked position
+		model.MoveToBegin()
+		currentVisualLine := 0
+		targetRow := 0
+		targetCol := 0
+		found := false
+
+		for rowIdx, lineContent := range rawLines {
+			if len(lineContent) == 0 {
+				// Empty line is 1 visual line
+				if currentVisualLine == targetVisualY {
+					targetRow = rowIdx
+					targetCol = clamp(x, 0, 0)
+					found = true
+					break
 				}
-				// We do NOT increment count again here. We simple mark the line as
-				// fully occupied. If there is more text, the standard greedy wrap
-				// check (below) will handle the wrap for the NEXT character.
-				currentWidth = width
+				currentVisualLine++
 				continue
 			}
 
-			// Standard greedy wrap
-			if currentWidth+rw > width {
-				count++
-				currentWidth = rw
-			} else {
-				currentWidth += rw
-			}
-		}
-		return count
-	}
+			// Calculate visual lines for this content
+			chars := []rune(lineContent)
+			segmentStart := 0
 
-	// calculateVisualLineWithinRow returns which wrapped segment (0-indexed)
-	// contains the character at column `col`. This uses greedy wrapping simulation
-	// to match the renderer's behavior, replacing the naive integer division
-	// (width / contentWidth) which doesn't account for wrap boundaries correctly.
-	calculateVisualLineWithinRow := func(line []rune, width int, col int) int {
-		if width <= 0 || len(line) == 0 || col <= 0 {
-			return 0
-		}
-
-		visualLine := 0
-		currentWidth := 0
-
-		for i := 0; i < len(line) && i < col; i++ {
-			rw := runeWidth(line[i])
-
-			// Handle edge case: Character wider than viewport
-			if rw > width {
-				if currentWidth > 0 {
-					visualLine++ // Wrap previous content
+			for segmentStart < len(chars) {
+				if currentVisualLine == targetVisualY {
+					// Found the target visual line
+					targetRow = rowIdx
+					targetCol = segmentStart + findColumnInSegment(chars[segmentStart:], x)
+					found = true
+					break
 				}
-				currentWidth = width // Mark line as full
-				continue
+				currentVisualLine++
+
+				// Skip to end of this visual line's content.
+				// Matches textarea's wrap: check BEFORE adding next char.
+				segmentWidth := 0
+				segEnd := segmentStart
+				for segEnd < len(chars) {
+					charW := runeWidth(chars[segEnd], segmentWidth)
+					if segmentWidth > 0 && segmentWidth+charW > width {
+						break
+					}
+					segmentWidth += charW
+					segEnd++
+				}
+				if segEnd == segmentStart {
+					segEnd++
+				}
+				segmentStart = segEnd
 			}
 
-			// Standard greedy wrap: if adding this char exceeds width, wrap first
-			if currentWidth+rw > width {
-				visualLine++
-				currentWidth = rw
-			} else {
-				currentWidth += rw
+			if found {
+				break
 			}
 		}
 
-		// After processing all characters before col, check if the cursor
-		// position would wrap to the next line. This happens when the current
-		// visual line is exactly full (currentWidth == width) and there are
-		// more characters remaining in the line after the cursor position.
-		// Example: "ABCDEFGHIJKLMNOPQRST" at width 10, cursor at col 10:
-		// - Characters 0-9 fill visual line 0 completely (width=10)
-		// - Cursor at col 10 is at the START of visual line 1
-		if currentWidth >= width && col < len(line) {
-			visualLine++
+		// If not found (beyond content), clamp to last position
+		if !found {
+			targetRow = len(rawLines) - 1
+			if targetRow < 0 {
+				targetRow = 0
+			}
+			targetCol = clamp(x, 0, len(rawLines[targetRow]))
 		}
 
-		return visualLine
-	}
+		// Navigate to target position using setPosition logic
+		setPositionInternal(model, targetRow, targetCol)
 
-	// visualLineCount returns the total number of visual lines in the textarea
-	// accounting for soft-wrapping based on the current width.
-	// This fixes the viewport clipping bug where bottom of wrapped documents was invisible.
-	_ = obj.Set("visualLineCount", func(call goja.FunctionCall) goja.Value {
-		mirror := (*textareaModelMirror)(unsafe.Pointer(model))
-
-		if len(mirror.value) == 0 {
-			return runtime.ToValue(1)
-		}
-
-		// Content width is mirror.width - it's already the usable content width
-		// (SetWidth calculates: width = inputWidth - reservedOuter - reservedInner)
-		contentWidth := mirror.width
-		totalVisualLines := 0
-		for _, line := range mirror.value {
-			totalVisualLines += calculateWrappedLineCount(line, contentWidth)
-		}
-		return runtime.ToValue(totalVisualLines)
+		return obj
 	})
 
-	// cursorVisualLine returns the visual line index where the cursor is located.
-	// This accounts for soft-wrapping: if the cursor is on the wrapped portion of
-	// a logical line, this returns the visual line number (0-indexed from document start).
-	// This is essential for viewport scrolling to correctly track the cursor position.
-	//
-	// CRITICAL: Using line() (logical line) for viewport scrolling causes shaking/stuttering
-	// because the viewport thinks the cursor is at the wrong position when lines wrap.
-	_ = obj.Set("cursorVisualLine", func(call goja.FunctionCall) goja.Value {
-		mirror := (*textareaModelMirror)(unsafe.Pointer(model))
-
-		if len(mirror.value) == 0 {
-			return runtime.ToValue(0)
+	// handleClickAtScreenCoords handles a mouse click at screen coordinates.
+	_ = obj.Set("handleClickAtScreenCoords", func(call goja.FunctionCall) goja.Value {
+		screenX := 0
+		screenY := 0
+		titleHeight := vpCtx.titleHeight
+		if len(call.Arguments) >= 3 && !goja.IsUndefined(call.Argument(2)) && !goja.IsNull(call.Argument(2)) {
+			// Only use the argument if vpCtx.titleHeight is not set (0)
+			if titleHeight == 0 {
+				titleHeight = int(call.Argument(2).ToInteger())
+			}
+		}
+		if len(call.Arguments) >= 1 {
+			screenX = int(call.Argument(0).ToInteger())
+		}
+		if len(call.Arguments) >= 2 {
+			screenY = int(call.Argument(1).ToInteger())
 		}
 
-		// Content width is mirror.width - it's already the usable content width
-		// (SetWidth calculates: width = inputWidth - reservedOuter - reservedInner)
-		contentWidth := mirror.width
-
-		// Count visual lines for all rows BEFORE the current row
-		visualLinesBefore := 0
-		for row := 0; row < mirror.row && row < len(mirror.value); row++ {
-			visualLinesBefore += calculateWrappedLineCount(mirror.value[row], contentWidth)
-		}
-
-		// Now calculate which visual line within the current row the cursor is on
-		// Using greedy wrapping simulation for correctness with multi-width chars
-		visualLineWithinRow := 0
-		if mirror.row < len(mirror.value) && contentWidth > 0 {
-			visualLineWithinRow = calculateVisualLineWithinRow(mirror.value[mirror.row], contentWidth, mirror.col)
-		}
-
-		return runtime.ToValue(visualLinesBefore + visualLineWithinRow)
-	})
-
-	// performHitTest maps visual coordinates to logical row/column.
-	// This properly accounts for soft-wrapped lines and multi-width characters.
-	// Parameters:
-	//   - visualX: X coordinate relative to textarea content area (0 = first char column)
-	//   - visualY: Y coordinate relative to textarea content (0 = first visual line, including wrapped lines)
-	// Returns an object with {row, col} representing the logical position.
-	_ = obj.Set("performHitTest", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 2 {
-			return runtime.NewObject()
-		}
-		visualX := int(call.Argument(0).ToInteger())
-		visualY := int(call.Argument(1).ToInteger())
-
-		mirror := (*textareaModelMirror)(unsafe.Pointer(model))
-
-		result := runtime.NewObject()
-		_ = result.Set("row", 0)
-		_ = result.Set("col", 0)
-
-		if len(mirror.value) == 0 {
+		// If viewport context was never initialized, return miss
+		if vpCtx.outerViewportHeight == 0 && vpCtx.textareaContentTop == 0 &&
+			vpCtx.textareaContentLeft == 0 && vpCtx.preContentHeight == 0 {
+			result := runtime.NewObject()
+			_ = result.Set("hit", false)
+			_ = result.Set("row", 0)
+			_ = result.Set("col", 0)
+			_ = result.Set("charOffset", 0)
 			return result
 		}
 
-		// Content width is mirror.width - it's already the usable content width
-		// (SetWidth calculates: width = inputWidth - reservedOuter - reservedInner)
-		contentWidth := mirror.width
+		// Translate screen coordinates to textarea visual coordinates.
+		// visualY is relative to textarea content (below title and textareaContentTop).
+		// outerYOffset is the viewport scroll position: when the viewport is scrolled down
+		// (showing content from further in the document), the same screenY maps to a higher
+		// visual line, so we ADD outerYOffset.
+		visualX := screenX - vpCtx.textareaContentLeft
+		visualY := screenY - titleHeight - vpCtx.textareaContentTop + vpCtx.outerYOffset
 
-		// Clamp visualY to non-negative
+		// Clamp visualX to non-negative
+		if visualX < 0 {
+			visualX = 0
+		}
+		if visualY < 0 {
+			// Above textarea content — miss
+			result := runtime.NewObject()
+			_ = result.Set("hit", false)
+			_ = result.Set("row", 0)
+			_ = result.Set("col", 0)
+			_ = result.Set("charOffset", 0)
+			return result
+		}
+
+		// Calculate totalVisualLines to determine if click is within content
+		width := model.Width()
+		value := model.Value()
+		lines := model.LineCount()
+		totalVisualLines := 0
+		if width > 0 && lines > 0 {
+			rawLines := strings.Split(value, "\n")
+			for _, lineContent := range rawLines {
+				if len(lineContent) == 0 {
+					totalVisualLines++
+					continue
+				}
+				chars := []rune(lineContent)
+				segStart := 0
+				for segStart < len(chars) {
+					totalVisualLines++
+					segWidth := 0
+					segEnd := segStart
+					for segEnd < len(chars) {
+						charW := runeWidth(chars[segEnd], segWidth)
+						if segWidth > 0 && segWidth+charW > width {
+							break
+						}
+						segWidth += charW
+						segEnd++
+					}
+					if segEnd == segStart {
+						segEnd++
+					}
+					segStart = segEnd
+				}
+			}
+		}
+		if totalVisualLines < 1 {
+			totalVisualLines = 1
+		}
+
+		// If visualY is strictly beyond the content (past the last visual line),
+		// clamp to the last line — standard editor behavior: clicking empty space
+		// below text within the viewport places the cursor at the end of the document.
+		// But if it's beyond the viewport entirely (e.g., clicking a button below),
+		// it's a miss.
+		if visualY >= totalVisualLines {
+			// Only clamp within the viewport content area.
+			// viewportContentHeight = outerViewportHeight - preContentHeight
+			viewportContentHeight := vpCtx.outerViewportHeight - vpCtx.preContentHeight
+			if visualY < viewportContentHeight {
+				visualY = totalVisualLines - 1
+			} else {
+				// Beyond viewport — miss
+				result := runtime.NewObject()
+				_ = result.Set("hit", false)
+				_ = result.Set("row", 0)
+				_ = result.Set("col", 0)
+				_ = result.Set("charOffset", 0)
+				return result
+			}
+		}
+
+		// Now perform the hit test using visual coordinates
+		result := runtime.NewObject()
+		if width <= 0 || lines <= 0 || len(value) == 0 {
+			_ = result.Set("hit", false)
+			_ = result.Set("row", 0)
+			_ = result.Set("col", 0)
+			_ = result.Set("charOffset", 0)
+			return result
+		}
+
+		rawLines := strings.Split(value, "\n")
+		currentVisualLine := 0
+
+		for rowIdx, lineContent := range rawLines {
+			if len(lineContent) == 0 {
+				if currentVisualLine == visualY {
+					_ = result.Set("hit", true)
+					_ = result.Set("row", rowIdx)
+					_ = result.Set("col", clamp(visualX, 0, 0))
+					_ = result.Set("charOffset", 0)
+					return result
+				}
+				currentVisualLine++
+				continue
+			}
+
+			chars := []rune(lineContent)
+			segmentStart := 0
+
+			for segmentStart < len(chars) {
+				if currentVisualLine == visualY {
+					hitCol := segmentStart + findColumnInSegment(chars[segmentStart:], visualX)
+
+					// Calculate charOffset
+					totalOffset := 0
+					for i := 0; i < rowIdx; i++ {
+						totalOffset += len(rawLines[i]) + 1
+					}
+					totalOffset += hitCol
+
+					_ = result.Set("hit", true)
+					_ = result.Set("row", rowIdx)
+					_ = result.Set("col", hitCol)
+					_ = result.Set("charOffset", totalOffset)
+					return result
+				}
+				currentVisualLine++
+
+				segWidth := 0
+				segEnd := segmentStart
+				for segEnd < len(chars) {
+					charW := runeWidth(chars[segEnd], segWidth)
+					if segWidth > 0 && segWidth+charW > width {
+						break
+					}
+					segWidth += charW
+					segEnd++
+				}
+				if segEnd == segmentStart {
+					segEnd++
+				}
+				segmentStart = segEnd
+			}
+
+			// +1 for newline
+			_ = value
+		}
+
+		// Beyond document — clamp to last position
+		lastRow := len(rawLines) - 1
+		lastCol := len(rawLines[lastRow])
+		_ = result.Set("hit", true)
+		_ = result.Set("row", lastRow)
+		_ = result.Set("col", lastCol)
+		_ = result.Set("charOffset", len(value))
+		return result
+	})
+
+	// getScrollSyncInfo returns scroll synchronization information.
+	_ = obj.Set("getScrollSyncInfo", func(call goja.FunctionCall) goja.Value {
+		result := runtime.NewObject()
+
+		// Defensively handle nil viewport case
+		var yOffset int
+		var scrollPercent float64
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					yOffset = 0
+					scrollPercent = 0
+				}
+			}()
+			yOffset = model.ScrollYOffset()
+			scrollPercent = model.ScrollPercent()
+		}()
+
+		cursorLine := model.Line()
+		cursorCol := model.Column()
+		lineCount := model.LineCount()
+		cursorRow := cursorLine
+
+		// Calculate cursorVisualLine and totalVisualLines
+		// by computing visual line counts for each logical line
+		width := model.Width()
+		value := model.Value()
+		lines := model.LineCount()
+		var cursorVisualLine int
+		var totalVisualLines int
+
+		// Helper to calculate visual lines for a given logical line
+		calcVisualLinesForLine := func(logicalLineIndex int) int {
+			if logicalLineIndex < 0 || logicalLineIndex >= lines || width <= 0 {
+				return 1
+			}
+			// Split by newlines to get all logical lines
+			rawLines := strings.Split(value, "\n")
+			if logicalLineIndex >= len(rawLines) {
+				return 1
+			}
+			lineContent := rawLines[logicalLineIndex]
+			if len(lineContent) == 0 {
+				return 1
+			}
+			charWidth := 0
+			for _, r := range lineContent {
+				if r == '\t' {
+					charWidth += 8 - (charWidth % 8)
+				} else if r >= 0x4E00 && r <= 0x9FFF {
+					charWidth += 2 // CJK wide char
+				} else {
+					charWidth++
+				}
+			}
+			visualLines := (charWidth + width - 1) / width
+			if visualLines < 1 {
+				return 1
+			}
+			return visualLines
+		}
+
+		// Calculate cursorVisualLine = sum of visual lines for all logical lines before cursorLine
+		// plus the row offset within the current logical line
+		li := model.LineInfo()
+		cursorVisualLine = 0
+		for i := 0; i < cursorLine; i++ {
+			cursorVisualLine += calcVisualLinesForLine(i)
+		}
+		cursorVisualLine += li.RowOffset
+
+		// Calculate totalVisualLines
+		totalVisualLines = 0
+		for i := 0; i < lines; i++ {
+			totalVisualLines += calcVisualLinesForLine(i)
+		}
+		if totalVisualLines < 1 {
+			totalVisualLines = 1
+		}
+
+		// Calculate cursorAbsY and suggestedYOffset using viewport context
+		preContentHeight := vpCtx.preContentHeight
+		if preContentHeight < 0 {
+			preContentHeight = 0
+		}
+		cursorAbsY := vpCtx.textareaContentTop + preContentHeight + cursorVisualLine
+		suggestedYOffset := yOffset
+		if cursorAbsY < vpCtx.outerYOffset {
+			suggestedYOffset = cursorVisualLine
+		} else if cursorAbsY >= vpCtx.outerYOffset+vpCtx.outerViewportHeight {
+			suggestedYOffset = cursorVisualLine - vpCtx.outerViewportHeight + 1
+		}
+		if suggestedYOffset < 0 {
+			suggestedYOffset = 0
+		}
+
+		_ = result.Set("yOffset", yOffset)
+		_ = result.Set("scrollPercent", scrollPercent)
+		_ = result.Set("cursorLine", cursorLine)
+		_ = result.Set("cursorVisualLine", cursorVisualLine)
+		_ = result.Set("totalVisualLines", totalVisualLines)
+		_ = result.Set("cursorRow", cursorRow)
+		_ = result.Set("cursorCol", cursorCol)
+		_ = result.Set("lineCount", lineCount)
+		_ = result.Set("suggestedYOffset", suggestedYOffset)
+		_ = result.Set("cursorAbsY", cursorAbsY)
+		return result
+	})
+
+	// performHitTest determines which character is at the given coordinates.
+	// It uses visual lines (accounting for soft wrapping and CJK characters).
+	_ = obj.Set("performHitTest", func(call goja.FunctionCall) goja.Value {
+		visualX := 0
+		visualY := 0
+		if len(call.Arguments) >= 1 {
+			visualX = int(call.Argument(0).ToInteger())
+		}
+		if len(call.Arguments) >= 2 {
+			visualY = int(call.Argument(1).ToInteger())
+		}
+
+		width := model.Width()
+		value := model.Value()
+		lines := model.LineCount()
+
+		result := runtime.NewObject()
+
+		// Handle edge cases
+		if width <= 0 || lines <= 0 || len(value) == 0 {
+			_ = result.Set("hit", false)
+			_ = result.Set("charOffset", 0)
+			_ = result.Set("row", 0)
+			_ = result.Set("col", 0)
+			return result
+		}
+
+		// Negative visualY clamps to first line
 		if visualY < 0 {
 			visualY = 0
 		}
 
-		// Iterate through logical lines, tracking visual line count
+		rawLines := strings.Split(value, "\n")
+
+		// Walk through visual lines to find the clicked one
 		currentVisualLine := 0
-		targetRow := 0
-		targetWrappedSegment := 0 // Which wrapped segment within the logical line was clicked
+		charOffset := 0
 
-		for row := 0; row < len(mirror.value); row++ {
-			lineHeight := calculateWrappedLineCount(mirror.value[row], contentWidth)
-
-			// Check if the clicked visual line is within this logical line's range
-			if visualY >= currentVisualLine && visualY < currentVisualLine+lineHeight {
-				targetRow = row
-				targetWrappedSegment = visualY - currentVisualLine
-				break
+		for rowIdx, lineContent := range rawLines {
+			if len(lineContent) == 0 {
+				// Empty line is 1 visual line
+				if currentVisualLine == visualY {
+					// Found the clicked line - empty line
+					hitCol := clamp(visualX, 0, 0)
+					_ = result.Set("hit", true)
+					_ = result.Set("charOffset", charOffset)
+					_ = result.Set("row", rowIdx)
+					_ = result.Set("col", hitCol)
+					return result
+				}
+				currentVisualLine++
+				charOffset++ // for newline
+				continue
 			}
 
-			currentVisualLine += lineHeight
+			// Calculate visual lines for this content using greedy wrapping.
+			// This must match the textarea's wrap function exactly:
+			// - The segment includes each character as it's checked
+			// - A break occurs when adding the NEXT character would overflow
+			// - After accumulating segment chars, break if segment's total visual width
+			//   plus the width of the next unprocessed character would exceed width
+			chars := []rune(lineContent)
+			segmentStart := 0
 
-			// If we've passed the clicked line, clamp to last logical line
-			if row == len(mirror.value)-1 {
-				targetRow = row
-				targetWrappedSegment = lineHeight - 1 // Last wrapped segment
+			for segmentStart < len(chars) {
+				if currentVisualLine == visualY {
+					// Found the clicked visual line
+					// Now find which column within this visual line
+					hitCol := findColumnInSegment(chars[segmentStart:], visualX)
+
+					// Calculate total charOffset: sum of all previous lines + current line offset + segment offset + hitCol
+					totalOffset := 0
+					for i := 0; i < rowIdx; i++ {
+						totalOffset += len(rawLines[i]) + 1 // +1 for newline
+					}
+					totalOffset += segmentStart + hitCol
+
+					_ = result.Set("hit", true)
+					_ = result.Set("charOffset", totalOffset)
+					_ = result.Set("row", rowIdx)
+					_ = result.Set("col", segmentStart+hitCol)
+					return result
+				}
+				currentVisualLine++
+
+				// Skip to end of this visual line's content.
+				// Matches textarea's wrap: check BEFORE adding next char.
+				// If adding the char would overflow AND segment already has content,
+				// DON'T add it — it starts the next segment.
+				segmentEnd := segmentStart
+				segmentWidth := 0
+				for segmentEnd < len(chars) {
+					charW := runeWidth(chars[segmentEnd], segmentWidth)
+					// Break BEFORE adding if this char would overflow a non-empty segment
+					if segmentWidth > 0 && segmentWidth+charW > width {
+						break
+					}
+					segmentWidth += charW
+					segmentEnd++
+				}
+				// Ensure we always make progress (handles char wider than width)
+				if segmentEnd == segmentStart {
+					segmentEnd++
+				}
+				segmentStart = segmentEnd
 			}
+
+			charOffset += len(lineContent) + 1 // +1 for newline
 		}
 
-		// Calculate column within the logical line
-		// Account for the wrapped segment we're in
-		line := mirror.value[targetRow]
-		targetCol := hitTestColumn(line, contentWidth, targetWrappedSegment, visualX)
-
-		_ = result.Set("row", targetRow)
-		_ = result.Set("col", targetCol)
+		// Beyond document - clamp to last position
+		lastRow := len(rawLines) - 1
+		lastCol := len(rawLines[lastRow])
+		_ = result.Set("hit", true)
+		_ = result.Set("charOffset", len(value))
+		_ = result.Set("row", lastRow)
+		_ = result.Set("col", lastCol)
 		return result
 	})
 
-	// handleClick handles a mouse click event and positions the cursor accordingly.
-	// Parameters:
-	//   - clickX: X coordinate relative to textarea content area (after prompt/line numbers)
-	//   - clickY: Y coordinate relative to textarea content area (0 = first visible line)
-	//   - yOffset: Current viewport scroll offset (from textarea.yOffset())
-	// Returns the textarea object for chaining.
-	//
-	// This method calculates the correct row and column based on the click position,
-	// accounting for soft-wrapped lines and the viewport scroll offset.
-	// NOTE: This is a legacy method. Prefer using performHitTest() for new code.
-	_ = obj.Set("handleClick", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 3 {
-			return obj
+	// reservedInnerWidth returns the width reserved for prompt/line numbers.
+	_ = obj.Set("reservedInnerWidth", func(call goja.FunctionCall) goja.Value {
+		// reservedInner = promptWidth + lineNumberWidth
+		// lineNumberWidth = numDigits(MaxHeight) + gap(=2)
+		pw := uniseg.StringWidth(model.Prompt)
+		lineNumWidth := 2 // gap=2
+		if model.ShowLineNumbers {
+			lineNumWidth += numDigits(model.MaxHeight)
 		}
-		clickX := int(call.Argument(0).ToInteger())
-		clickY := int(call.Argument(1).ToInteger())
-		yOffset := int(call.Argument(2).ToInteger())
-
-		mirror := (*textareaModelMirror)(unsafe.Pointer(model))
-
-		if len(mirror.value) == 0 {
-			return obj
-		}
-
-		// Calculate which visual line was clicked (accounting for scroll)
-		visualLineClicked := yOffset + clickY
-
-		// Map visual line to logical row (accounting for soft-wrapping)
-		currentVisualLine := 0
-		targetRow := 0
-		targetWrappedSegment := 0
-
-		for row := 0; row < len(mirror.value); row++ {
-			lineHeight := calculateWrappedLineCount(mirror.value[row], mirror.width)
-
-			if visualLineClicked >= currentVisualLine && visualLineClicked < currentVisualLine+lineHeight {
-				targetRow = row
-				targetWrappedSegment = visualLineClicked - currentVisualLine
-				break
-			}
-
-			currentVisualLine += lineHeight
-
-			if row == len(mirror.value)-1 {
-				targetRow = row
-				targetWrappedSegment = lineHeight - 1
-			}
-		}
-
-		// Clamp row
-		if targetRow >= len(mirror.value) {
-			targetRow = len(mirror.value) - 1
-		}
-
-		// Calculate column accounting for wrapped segment and multi-width characters
-		line := mirror.value[targetRow]
-		targetCol := hitTestColumn(line, mirror.width, targetWrappedSegment, clickX)
-
-		// Set the cursor position
-		mirror.row = targetRow
-		mirror.col = targetCol
-		mirror.lastCharOffset = 0
-
-		return obj
+		return runtime.ToValue(pw + lineNumWidth)
 	})
 
-	// selectAll selects all text by moving cursor to the end.
-	// Note: The upstream bubbles/textarea doesn't support selection ranges,
-	// so this moves the cursor to the absolute end of the content.
-	// For true select-all behavior, the JS layer should track selection state
-	// and handle Ctrl+A specially.
-	_ = obj.Set("selectAll", func(call goja.FunctionCall) goja.Value {
-		// Move to absolute end
-		model.CursorEnd()
-		// If there are multiple lines, move to the last line first
-		mirror := (*textareaModelMirror)(unsafe.Pointer(model))
-		if len(mirror.value) > 1 {
-			mirror.row = len(mirror.value) - 1
-			mirror.col = len(mirror.value[mirror.row])
+	// visualLineCount returns the number of visual lines.
+	_ = obj.Set("visualLineCount", func(call goja.FunctionCall) goja.Value {
+		width := model.Width()
+		value := model.Value()
+		lines := model.LineCount()
+		totalVisualLines := 0
+		if width > 0 && lines > 0 {
+			rawLines := strings.Split(value, "\n")
+			for _, lineContent := range rawLines {
+				if len(lineContent) == 0 {
+					totalVisualLines++
+					continue
+				}
+				// Calculate visual lines using the correct greedy wrapping algorithm
+				// that matches the textarea's wrap behavior: check BEFORE adding next char.
+				visualLines := 0
+				segmentStart := 0
+				chars := []rune(lineContent)
+				for segmentStart < len(chars) {
+					visualLines++
+					segmentWidth := 0
+					segEnd := segmentStart
+					for segEnd < len(chars) {
+						charW := runeWidth(chars[segEnd], segmentWidth)
+						if segmentWidth > 0 && segmentWidth+charW > width {
+							break
+						}
+						segmentWidth += charW
+						segEnd++
+					}
+					if segEnd == segmentStart {
+						segEnd++
+					}
+					segmentStart = segEnd
+				}
+				totalVisualLines += visualLines
+			}
+		} else {
+			totalVisualLines = lines
+		}
+		if totalVisualLines < 1 {
+			totalVisualLines = 1
+		}
+		return runtime.ToValue(totalVisualLines)
+	})
+
+	// cursorVisualLine returns the visual line number of the cursor.
+	_ = obj.Set("cursorVisualLine", func(call goja.FunctionCall) goja.Value {
+		width := model.Width()
+		value := model.Value()
+		lines := model.LineCount()
+		cursorLine := model.Line()
+		if width <= 0 || lines <= 0 {
+			return runtime.ToValue(cursorLine)
+		}
+		rawLines := strings.Split(value, "\n")
+		cursorVisualLine := 0
+		// Sum visual lines for all lines before the cursor's line
+		for i := 0; i < cursorLine && i < len(rawLines); i++ {
+			lineContent := rawLines[i]
+			if len(lineContent) == 0 {
+				cursorVisualLine++
+				continue
+			}
+			// Count visual lines using correct greedy wrapping: check BEFORE adding.
+			segmentStart := 0
+			chars := []rune(lineContent)
+			for segmentStart < len(chars) {
+				cursorVisualLine++
+				segmentWidth := 0
+				segEnd := segmentStart
+				for segEnd < len(chars) {
+					charW := runeWidth(chars[segEnd], segmentWidth)
+					if segmentWidth > 0 && segmentWidth+charW > width {
+						break
+					}
+					segmentWidth += charW
+					segEnd++
+				}
+				if segEnd == segmentStart {
+					segEnd++
+				}
+				segmentStart = segEnd
+			}
+		}
+		// Add the row offset within the current line
+		li := model.LineInfo()
+		cursorVisualLine += li.RowOffset
+		return runtime.ToValue(cursorVisualLine)
+	})
+
+	// promptWidth returns the width of the prompt.
+	_ = obj.Set("promptWidth", func(call goja.FunctionCall) goja.Value {
+		return runtime.ToValue(uniseg.StringWidth(model.Prompt))
+	})
+
+	// contentWidth returns the content width (total width minus reserved).
+	_ = obj.Set("contentWidth", func(call goja.FunctionCall) goja.Value {
+		return runtime.ToValue(model.Width())
+	})
+
+	// setViewportContext sets the viewport context for scroll synchronization.
+	_ = obj.Set("setViewportContext", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) >= 1 {
+			if ctxObj := call.Argument(0).ToObject(runtime); ctxObj != nil {
+				if v := ctxObj.Get("outerYOffset"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+					vpCtx.outerYOffset = int(v.ToInteger())
+				}
+				if v := ctxObj.Get("textareaContentTop"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+					vpCtx.textareaContentTop = int(v.ToInteger())
+				}
+				if v := ctxObj.Get("textareaContentLeft"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+					vpCtx.textareaContentLeft = int(v.ToInteger())
+				}
+				if v := ctxObj.Get("outerViewportHeight"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+					vpCtx.outerViewportHeight = int(v.ToInteger())
+				}
+				if v := ctxObj.Get("preContentHeight"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+					vpCtx.preContentHeight = int(v.ToInteger())
+				}
+				if v := ctxObj.Get("titleHeight"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+					vpCtx.titleHeight = int(v.ToInteger())
+				}
+			}
 		}
 		return obj
 	})
@@ -738,117 +1193,30 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 	// Styles
 	// -------------------------------------------------------------------------
 
-	// applyStyleConfig updates a textarea.Style struct based on a JS configuration object.
-	applyStyleConfig := func(style *textarea.Style, config *goja.Object) {
-		if config == nil || style == nil || runtime == nil {
-			return
-		}
-
-		updateStyle := func(target *lipgloss.Style, key string) {
-			if target == nil {
-				return
-			}
-			val := config.Get(key)
-			// Comprehensive nil/undefined/null checks
-			if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
-				return
-			}
-			styleObj := val.ToObject(runtime)
-			if styleObj == nil {
-				return
-			}
-
-			// Check if this is a style-reset request (empty object or object with only undefined/null values).
-			// If an empty object like {} is passed, we CLEAR the existing style to prevent
-			// issues like double-rendering of ANSI codes (e.g., Prompt default \x1b[37m getting
-			// wrapped by CursorLine's Render() which treats escape codes as literal text).
-			keys := styleObj.Keys()
-			hasAnyValue := false
-			for _, k := range keys {
-				v := styleObj.Get(k)
-				if v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
-					hasAnyValue = true
-					break
-				}
-			}
-			if !hasAnyValue {
-				// Empty object: reset the style to a clean lipgloss.Style
-				*target = lipgloss.NewStyle()
-				return
-			}
-
-			// Apply standard attributes with defensive checks
-			if fg := styleObj.Get("foreground"); fg != nil && !goja.IsUndefined(fg) && !goja.IsNull(fg) {
-				*target = target.Foreground(lipgloss.Color(fg.String()))
-			}
-			if bg := styleObj.Get("background"); bg != nil && !goja.IsUndefined(bg) && !goja.IsNull(bg) {
-				*target = target.Background(lipgloss.Color(bg.String()))
-			}
-			if bold := styleObj.Get("bold"); bold != nil && !goja.IsUndefined(bold) && !goja.IsNull(bold) {
-				*target = target.Bold(bold.ToBoolean())
-			}
-			if italic := styleObj.Get("italic"); italic != nil && !goja.IsUndefined(italic) && !goja.IsNull(italic) {
-				*target = target.Italic(italic.ToBoolean())
-			}
-			if underline := styleObj.Get("underline"); underline != nil && !goja.IsUndefined(underline) && !goja.IsNull(underline) {
-				*target = target.Underline(underline.ToBoolean())
-			}
-		}
-
-		updateStyle(&style.Base, "base")
-		updateStyle(&style.CursorLine, "cursorLine")
-		updateStyle(&style.CursorLineNumber, "cursorLineNumber")
-		updateStyle(&style.EndOfBuffer, "endOfBuffer")
-		updateStyle(&style.LineNumber, "lineNumber")
-		updateStyle(&style.Placeholder, "placeholder")
-		updateStyle(&style.Prompt, "prompt")
-		updateStyle(&style.Text, "text")
-	}
-
-	_ = obj.Set("setFocusedStyle", func(call goja.FunctionCall) goja.Value {
+	// setStyles applies a Styles object to the textarea.
+	_ = obj.Set("setStyles", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 1 {
 			return obj
 		}
-		config := call.Argument(0).ToObject(runtime)
-		applyStyleConfig(&model.FocusedStyle, config)
-		return obj
-	})
-
-	_ = obj.Set("setBlurredStyle", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 {
-			return obj
-		}
-		config := call.Argument(0).ToObject(runtime)
-		applyStyleConfig(&model.BlurredStyle, config)
-		return obj
-	})
-
-	_ = obj.Set("setCursorStyle", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 {
-			return obj
-		}
-		config := call.Argument(0).ToObject(runtime)
-		if config == nil {
-			return obj
-		}
-
-		if fg := config.Get("foreground"); fg != nil && !goja.IsUndefined(fg) && !goja.IsNull(fg) {
-			model.Cursor.Style = model.Cursor.Style.Foreground(lipgloss.Color(fg.String()))
-		}
-		if bg := config.Get("background"); bg != nil && !goja.IsUndefined(bg) && !goja.IsNull(bg) {
-			model.Cursor.Style = model.Cursor.Style.Background(lipgloss.Color(bg.String()))
+		arg := call.Argument(0)
+		if exported := arg.Export(); exported != nil {
+			if styles, ok := exported.(textarea.Styles); ok {
+				model.SetStyles(styles)
+			}
 		}
 		return obj
 	})
 
-	// Convenience methods for common style attributes
+	// Convenience methods for common style attributes using lipgloss
 	_ = obj.Set("setTextForeground", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 1 {
 			return obj
 		}
 		color := call.Argument(0).String()
-		model.FocusedStyle.Text = model.FocusedStyle.Text.Foreground(lipgloss.Color(color))
-		model.BlurredStyle.Text = model.BlurredStyle.Text.Foreground(lipgloss.Color(color))
+		styles := model.Styles()
+		styles.Focused.Text = styles.Focused.Text.Foreground(lipgloss.Color(color))
+		styles.Blurred.Text = styles.Blurred.Text.Foreground(lipgloss.Color(color))
+		model.SetStyles(styles)
 		return obj
 	})
 
@@ -857,17 +1225,10 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 			return obj
 		}
 		color := call.Argument(0).String()
-		model.FocusedStyle.Placeholder = model.FocusedStyle.Placeholder.Foreground(lipgloss.Color(color))
-		model.BlurredStyle.Placeholder = model.BlurredStyle.Placeholder.Foreground(lipgloss.Color(color))
-		return obj
-	})
-
-	_ = obj.Set("setCursorForeground", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 {
-			return obj
-		}
-		color := call.Argument(0).String()
-		model.Cursor.Style = model.Cursor.Style.Foreground(lipgloss.Color(color))
+		styles := model.Styles()
+		styles.Focused.Placeholder = styles.Focused.Placeholder.Foreground(lipgloss.Color(color))
+		styles.Blurred.Placeholder = styles.Blurred.Placeholder.Foreground(lipgloss.Color(color))
+		model.SetStyles(styles)
 		return obj
 	})
 
@@ -876,8 +1237,121 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 			return obj
 		}
 		color := call.Argument(0).String()
-		model.FocusedStyle.CursorLine = model.FocusedStyle.CursorLine.Foreground(lipgloss.Color(color))
-		model.BlurredStyle.CursorLine = model.BlurredStyle.CursorLine.Foreground(lipgloss.Color(color))
+		styles := model.Styles()
+		styles.Focused.CursorLine = styles.Focused.CursorLine.Foreground(lipgloss.Color(color))
+		styles.Blurred.CursorLine = styles.Blurred.CursorLine.Foreground(lipgloss.Color(color))
+		model.SetStyles(styles)
+		return obj
+	})
+
+	// setFocusedStyle applies style configuration to the focused state.
+	_ = obj.Set("setFocusedStyle", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return obj
+		}
+		config := call.Argument(0).ToObject(runtime)
+		if config == nil {
+			return obj
+		}
+		styles := model.Styles()
+		// Apply each style key from the config
+		styleKeys := []string{"base", "text", "cursorLine", "cursorLineNumber", "endOfBuffer", "lineNumber", "placeholder", "prompt"}
+		for _, key := range styleKeys {
+			if v := config.Get(key); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				if styleObj := v.ToObject(runtime); styleObj != nil {
+					style := parseStyleFromJS(runtime, styleObj)
+					switch key {
+					case "base":
+						styles.Focused.Base = style
+					case "text":
+						styles.Focused.Text = style
+					case "cursorLine":
+						styles.Focused.CursorLine = style
+					case "cursorLineNumber":
+						styles.Focused.CursorLineNumber = style
+					case "endOfBuffer":
+						styles.Focused.EndOfBuffer = style
+					case "lineNumber":
+						styles.Focused.LineNumber = style
+					case "placeholder":
+						styles.Focused.Placeholder = style
+					case "prompt":
+						styles.Focused.Prompt = style
+					}
+				}
+			}
+		}
+		model.SetStyles(styles)
+		return obj
+	})
+
+	// setBlurredStyle applies style configuration to the blurred state.
+	_ = obj.Set("setBlurredStyle", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return obj
+		}
+		config := call.Argument(0).ToObject(runtime)
+		if config == nil {
+			return obj
+		}
+		styles := model.Styles()
+		styleKeys := []string{"base", "text", "cursorLine", "cursorLineNumber", "endOfBuffer", "lineNumber", "placeholder", "prompt"}
+		for _, key := range styleKeys {
+			if v := config.Get(key); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				if styleObj := v.ToObject(runtime); styleObj != nil {
+					style := parseStyleFromJS(runtime, styleObj)
+					switch key {
+					case "base":
+						styles.Blurred.Base = style
+					case "text":
+						styles.Blurred.Text = style
+					case "cursorLine":
+						styles.Blurred.CursorLine = style
+					case "cursorLineNumber":
+						styles.Blurred.CursorLineNumber = style
+					case "endOfBuffer":
+						styles.Blurred.EndOfBuffer = style
+					case "lineNumber":
+						styles.Blurred.LineNumber = style
+					case "placeholder":
+						styles.Blurred.Placeholder = style
+					case "prompt":
+						styles.Blurred.Prompt = style
+					}
+				}
+			}
+		}
+		model.SetStyles(styles)
+		return obj
+	})
+
+	// setCursorStyle sets the cursor style from a config object.
+	_ = obj.Set("setCursorStyle", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return obj
+		}
+		config := call.Argument(0).ToObject(runtime)
+		if config == nil {
+			return obj
+		}
+		styles := model.Styles()
+		if v := config.Get("foreground"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+			color := v.String()
+			styles.Cursor.Color = lipgloss.Color(color)
+		}
+		model.SetStyles(styles)
+		return obj
+	})
+
+	// setCursorForeground is a convenience method for setting cursor foreground color.
+	_ = obj.Set("setCursorForeground", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			return obj
+		}
+		color := call.Argument(0).String()
+		styles := model.Styles()
+		styles.Cursor.Color = lipgloss.Color(color)
+		model.SetStyles(styles)
 		return obj
 	})
 
@@ -886,18 +1360,7 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 	// -------------------------------------------------------------------------
 
 	// update processes a bubbletea message and returns [model, cmd]
-	//
-	// The second element of the returned array is an opaque command wrapper.
-	// If the textarea's Update() returns a tea.Cmd (e.g., for cursor blinking),
-	// it is wrapped using runtime.ToValue() so that JavaScript receives an
-	// opaque handle. When JavaScript passes this handle back to Go (via the
-	// update return value), Go can call Export() to retrieve the original
-	// tea.Cmd function.
-	//
-	// This preserves the Elm architecture command flow without requiring
-	// serialization of Go closures. See docs/reference/elm-commands-and-goja.md.
 	_ = obj.Set("update", func(call goja.FunctionCall) goja.Value {
-		// Prepare return structure [model, cmd]
 		arr := runtime.NewArray()
 		_ = arr.Set("0", obj)
 		_ = arr.Set("1", goja.Null())
@@ -917,11 +1380,9 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 		}
 
 		newModel, cmd := model.Update(msg)
-		*model = newModel // Update the value at the pointer address
+		*model = newModel
 
 		if cmd != nil {
-			// Wrap the tea.Cmd as an opaque value - JS can pass this back and Go
-			// can retrieve the original function via Export()
 			_ = arr.Set("1", bubbletea.WrapCmd(runtime, cmd))
 		}
 
@@ -930,291 +1391,6 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 
 	_ = obj.Set("view", func(call goja.FunctionCall) goja.Value {
 		return runtime.ToValue(model.View())
-	})
-
-	// =========================================================================
-	// ARCHITECTURAL OVERHAUL: GO-NATIVE VIEWPORT COORDINATION
-	// =========================================================================
-	// These methods provide a GO-NATIVE, REUSABLE, PERFORMANT interface for
-	// handling viewport coordination in a double-viewport architecture.
-	// They minimize cross-language calls by batching related operations.
-	// =========================================================================
-
-	// ViewportContext stores the outer viewport configuration so Go can
-	// perform all coordinate calculations without JS involvement.
-	// This is stored per-textarea instance for thread safety.
-	type viewportContext struct {
-		// Outer viewport scroll offset (inputVp.yOffset())
-		outerYOffset int
-		// Y offset from outer viewport content top to textarea content start
-		textareaContentTop int
-		// X offset from screen left to textarea text start (borders + padding + prompt + line numbers)
-		textareaContentLeft int
-		// Height of outer viewport in lines
-		outerViewportHeight int
-		// Pre-content height (Y offset within outer viewport to textarea content)
-		preContentHeight int
-		// Height of the fixed header/title above the outer viewport (in screen lines)
-		titleHeight int
-		// Whether setViewportContext has been called and the values are current
-		initialized bool
-	}
-
-	// Per-instance viewport context (stored in closure)
-	var vpCtx viewportContext
-
-	// setViewportContext configures the viewport context for coordinate calculations.
-	// This should be called once per render cycle with current viewport state.
-	// Parameters (as object):
-	//   - outerYOffset: Current outer viewport scroll offset
-	//   - textareaContentTop: Y offset from outer content top to textarea content
-	//   - textareaContentLeft: X offset from screen left to text content
-	//   - outerViewportHeight: Height of outer viewport
-	//   - preContentHeight: Height of content before textarea in outer viewport
-	// Returns the textarea object for chaining.
-	_ = obj.Set("setViewportContext", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 {
-			return obj
-		}
-		config := call.Argument(0).ToObject(runtime)
-		if config == nil {
-			return obj
-		}
-
-		if v := config.Get("outerYOffset"); v != nil && !goja.IsUndefined(v) {
-			vpCtx.outerYOffset = int(v.ToInteger())
-		}
-		if v := config.Get("textareaContentTop"); v != nil && !goja.IsUndefined(v) {
-			vpCtx.textareaContentTop = int(v.ToInteger())
-		}
-		if v := config.Get("textareaContentLeft"); v != nil && !goja.IsUndefined(v) {
-			vpCtx.textareaContentLeft = int(v.ToInteger())
-		}
-		if v := config.Get("outerViewportHeight"); v != nil && !goja.IsUndefined(v) {
-			vpCtx.outerViewportHeight = int(v.ToInteger())
-		}
-		if v := config.Get("preContentHeight"); v != nil && !goja.IsUndefined(v) {
-			vpCtx.preContentHeight = int(v.ToInteger())
-		}
-		if v := config.Get("titleHeight"); v != nil && !goja.IsUndefined(v) {
-			vpCtx.titleHeight = int(v.ToInteger())
-		}
-		// Mark viewport context initialized (set during render)
-		vpCtx.initialized = true
-		return obj
-	})
-
-	// handleClickAtScreenCoords handles a mouse click using RAW SCREEN coordinates.
-	// This is the GO-NATIVE method that does ALL coordinate translation internally.
-	// JS only needs to pass msg.x and msg.y directly - no math required in JS.
-	//
-	// Parameters:
-	//   - screenX: Raw X coordinate from mouse event (msg.x)
-	//   - screenY: Raw Y coordinate from mouse event (msg.y)
-	//   - titleHeight: Height of fixed header above outer viewport
-	//
-	// Returns object: {hit: bool, row: int, col: int, visualLine: int}
-	//   - hit: true if click was within textarea content bounds
-	//   - row: logical row where cursor was placed (if hit)
-	//   - col: logical column where cursor was placed (if hit)
-	//   - visualLine: visual line index where cursor is now
-	//
-	// This method:
-	// 1. Converts screen coords to outer viewport coords
-	// 2. Converts to content-space coords (accounting for outer scroll)
-	// 3. Converts to textarea-relative coords
-	// 4. Performs hit test to map visual to logical coords
-	// 5. Sets cursor position
-	// All in ONE cross-language call for PERFORMANCE.
-	_ = obj.Set("handleClickAtScreenCoords", func(call goja.FunctionCall) goja.Value {
-		result := runtime.NewObject()
-		_ = result.Set("hit", false)
-		_ = result.Set("row", 0)
-		_ = result.Set("col", 0)
-		_ = result.Set("visualLine", 0)
-
-		if len(call.Arguments) < 2 {
-			return result
-		}
-
-		screenX := int(call.Argument(0).ToInteger())
-		screenY := int(call.Argument(1).ToInteger())
-
-		mirror := (*textareaModelMirror)(unsafe.Pointer(model))
-
-		// Prefer titleHeight from viewport context (set via setViewportContext()),
-		// fallback to supplied argument for backward compatibility (if provided).
-		var titleHeight int
-		if vpCtx.titleHeight > 0 {
-			titleHeight = vpCtx.titleHeight
-		} else if len(call.Arguments) >= 3 {
-			titleHeight = int(call.Argument(2).ToInteger())
-		} else {
-			titleHeight = 0
-		}
-
-		if len(mirror.value) == 0 {
-			return result
-		}
-
-		// Ensure viewport context has been set by JS. If not, treat as miss to allow legacy fallback.
-		if !vpCtx.initialized {
-			return result
-		}
-
-		// Step 1: Convert screen Y to viewport-relative Y
-		viewportRelativeY := screenY - titleHeight
-
-		// Step 2: Check if within outer viewport bounds
-		if viewportRelativeY < 0 || viewportRelativeY >= vpCtx.outerViewportHeight {
-			// Debug: log miss reason for integration tests
-			return result // Click outside viewport
-		}
-
-		// Step 3: Convert to content-space Y (add outer scroll offset)
-		contentY := viewportRelativeY + vpCtx.outerYOffset
-
-		// Step 4: Convert to textarea-relative Y
-		visualY := contentY - vpCtx.textareaContentTop
-
-		// Step 5: Check if within textarea content bounds (vertical only)
-		// Only reject clicks ABOVE content. Clicks below content (visualY >= totalVisualLines)
-		// are allowed and will be clamped to the last line by the loop in Step 7.
-		// This matches standard editor behavior: clicking below text places cursor at end.
-		if visualY < 0 {
-			return result // Click above textarea content
-		}
-
-		contentWidth := mirror.width
-		totalVisualLines := 0
-		for _, line := range mirror.value {
-			totalVisualLines += calculateWrappedLineCount(line, contentWidth)
-		}
-
-		// Step 6: Convert screen X to textarea-relative X
-		visualX := max(screenX-vpCtx.textareaContentLeft, 0)
-
-		// Step 7: Perform hit test (find logical row/col from visual coords)
-		// This is the same logic as performHitTest but inline for efficiency
-		currentVisualLine := 0
-		targetRow := 0
-		targetWrappedSegment := 0
-
-		for row := 0; row < len(mirror.value); row++ {
-			lineHeight := calculateWrappedLineCount(mirror.value[row], contentWidth)
-
-			if visualY >= currentVisualLine && visualY < currentVisualLine+lineHeight {
-				targetRow = row
-				targetWrappedSegment = visualY - currentVisualLine
-				break
-			}
-
-			currentVisualLine += lineHeight
-
-			if row == len(mirror.value)-1 {
-				targetRow = row
-				targetWrappedSegment = lineHeight - 1
-			}
-		}
-
-		// Step 8: Calculate column within the logical line
-		line := mirror.value[targetRow]
-		targetCol := hitTestColumn(line, contentWidth, targetWrappedSegment, visualX)
-
-		// Step 9: Set cursor position
-		mirror.row = targetRow
-		mirror.col = targetCol
-		mirror.lastCharOffset = 0
-
-		// Step 10: Calculate cursor visual line for scroll sync
-		// Using greedy wrapping simulation for correctness with multi-width chars
-		cursorVisualLine := 0
-		for row := 0; row < targetRow && row < len(mirror.value); row++ {
-			cursorVisualLine += calculateWrappedLineCount(mirror.value[row], contentWidth)
-		}
-		if targetRow < len(mirror.value) && contentWidth > 0 {
-			cursorVisualLine += calculateVisualLineWithinRow(mirror.value[targetRow], contentWidth, targetCol)
-		}
-
-		_ = result.Set("hit", true)
-		_ = result.Set("row", targetRow)
-		_ = result.Set("col", targetCol)
-		_ = result.Set("visualLine", cursorVisualLine)
-		return result
-	})
-
-	// getScrollSyncInfo returns all information needed for viewport synchronization
-	// in a SINGLE cross-language call. This replaces multiple separate calls to
-	// cursorVisualLine(), visualLineCount(), line(), etc.
-	//
-	// Returns object:
-	//   - cursorVisualLine: Visual line where cursor is (for scroll tracking)
-	//   - totalVisualLines: Total visual lines in document (for height calc)
-	//   - cursorRow: Current logical row (for display)
-	//   - cursorCol: Current logical column (for display)
-	//   - lineCount: Total logical lines
-	//   - cursorAbsY: Absolute Y position of cursor in outer viewport content space
-	//                 (preContentHeight + cursorVisualLine)
-	//   - suggestedYOffset: Suggested outer viewport Y offset to keep cursor visible
-	//
-	// This enables the JS to sync the outer viewport with ONE call instead of many.
-	_ = obj.Set("getScrollSyncInfo", func(call goja.FunctionCall) goja.Value {
-		mirror := (*textareaModelMirror)(unsafe.Pointer(model))
-
-		result := runtime.NewObject()
-
-		if len(mirror.value) == 0 {
-			_ = result.Set("cursorVisualLine", 0)
-			_ = result.Set("totalVisualLines", 1)
-			_ = result.Set("cursorRow", 0)
-			_ = result.Set("cursorCol", 0)
-			_ = result.Set("lineCount", 1)
-			_ = result.Set("cursorAbsY", vpCtx.preContentHeight)
-			_ = result.Set("suggestedYOffset", 0)
-			return result
-		}
-
-		contentWidth := mirror.width
-
-		// Calculate total visual lines
-		totalVisualLines := 0
-		for _, line := range mirror.value {
-			totalVisualLines += calculateWrappedLineCount(line, contentWidth)
-		}
-
-		// Calculate cursor visual line using greedy wrapping simulation
-		cursorVisualLine := 0
-		for row := 0; row < mirror.row && row < len(mirror.value); row++ {
-			cursorVisualLine += calculateWrappedLineCount(mirror.value[row], contentWidth)
-		}
-		if mirror.row < len(mirror.value) && contentWidth > 0 {
-			cursorVisualLine += calculateVisualLineWithinRow(mirror.value[mirror.row], contentWidth, mirror.col)
-		}
-
-		// Calculate cursor absolute Y in outer viewport content space
-		cursorAbsY := vpCtx.preContentHeight + cursorVisualLine
-
-		// Calculate suggested Y offset to keep cursor visible
-		suggestedYOffset := vpCtx.outerYOffset
-		if cursorAbsY < vpCtx.outerYOffset {
-			// Cursor above viewport - scroll up
-			suggestedYOffset = cursorAbsY
-		} else if cursorAbsY >= vpCtx.outerYOffset+vpCtx.outerViewportHeight {
-			// Cursor below viewport - scroll down
-			suggestedYOffset = cursorAbsY - vpCtx.outerViewportHeight + 1
-		}
-		if suggestedYOffset < 0 {
-			suggestedYOffset = 0
-		}
-
-		_ = result.Set("cursorVisualLine", cursorVisualLine)
-		_ = result.Set("totalVisualLines", totalVisualLines)
-		_ = result.Set("cursorRow", mirror.row)
-		_ = result.Set("cursorCol", mirror.col)
-		_ = result.Set("lineCount", len(mirror.value))
-		_ = result.Set("cursorAbsY", cursorAbsY)
-		_ = result.Set("suggestedYOffset", suggestedYOffset)
-		return result
 	})
 
 	return obj

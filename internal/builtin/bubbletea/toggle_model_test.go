@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/dop251/goja"
 )
 
@@ -24,8 +24,8 @@ func TestToggleModel_View(t *testing.T) {
 	inner := &stubModel{view: "hello toggle"}
 	tm := &toggleModel{inner: inner, toggleKey: 0x1D}
 	got := tm.View()
-	if got != "hello toggle" {
-		t.Errorf("View() = %q, want %q", got, "hello toggle")
+	if got.Content != "hello toggle" {
+		t.Errorf("View().Content = %q, want %q", got.Content, "hello toggle")
 	}
 }
 
@@ -35,7 +35,7 @@ func TestToggleModel_Update_NonToggle(t *testing.T) {
 	tm := &toggleModel{inner: inner, toggleKey: 0x1D}
 
 	// Send a regular 'q' key — should NOT trigger toggle
-	keyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
+	keyMsg := tea.KeyPressMsg{Text: "q"}
 	model, cmd := tm.Update(keyMsg)
 	if model != tm {
 		t.Error("expected Update to return same toggleModel")
@@ -54,7 +54,7 @@ func TestToggleModel_Update_ToggleByRune(t *testing.T) {
 	tm := &toggleModel{inner: inner, toggleKey: 0x1D}
 
 	// Send a KeyMsg with rune 0x1D (Ctrl+])
-	keyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{0x1D}}
+	keyMsg := tea.KeyPressMsg{Code: 0x1D}
 	model, cmd := tm.Update(keyMsg)
 	if model != tm {
 		t.Error("expected Update to return same toggleModel")
@@ -72,8 +72,8 @@ func TestToggleModel_Update_ToggleByCtrlCloseBracket(t *testing.T) {
 	inner := &stubModel{}
 	tm := &toggleModel{inner: inner, toggleKey: 0x1D}
 
-	// Send KeyCtrlCloseBracket (Ctrl+])
-	keyMsg := tea.KeyMsg{Type: tea.KeyCtrlCloseBracket}
+	// Send Ctrl+] — the toggle key
+	keyMsg := tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl}
 	model, cmd := tm.Update(keyMsg)
 	if model != tm {
 		t.Error("expected Update to return same toggleModel")
@@ -93,14 +93,14 @@ func TestToggleModel_Update_DifferentToggleKey(t *testing.T) {
 	tm := &toggleModel{inner: inner, toggleKey: 0x01}
 
 	// Ctrl+] should NOT trigger toggle
-	keyMsg := tea.KeyMsg{Type: tea.KeyCtrlCloseBracket}
+	keyMsg := tea.KeyPressMsg{Code: ']', Mod: tea.ModCtrl}
 	_, cmd := tm.Update(keyMsg)
 	if cmd != nil {
 		t.Error("Ctrl+] should not trigger with toggleKey=0x01")
 	}
 
 	// Rune 0x01 should trigger toggle
-	keyMsg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{0x01}}
+	keyMsg = tea.KeyPressMsg{Code: 0x01}
 	_, cmd = tm.Update(keyMsg)
 	if cmd == nil {
 		t.Error("expected toggle for rune 0x01")
@@ -349,8 +349,8 @@ type stubModel struct {
 	updateCount int
 }
 
-func (m *stubModel) Init() tea.Cmd { return m.initCmd }
-func (m *stubModel) View() string  { return m.view }
+func (m *stubModel) Init() tea.Cmd  { return m.initCmd }
+func (m *stubModel) View() tea.View { return tea.NewView(m.view) }
 func (m *stubModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.updateCount++
 	return m, nil

@@ -4123,7 +4123,7 @@ func TestChunk13_ConfirmCancel_ContextualText(t *testing.T) {
 		var s1 = { width: 80, showConfirmCancel: true, confirmCancelFocus: 0 };
 		var v1 = globalThis.prSplit._viewConfirmCancelOverlay(s1);
 		results.push({
-			hasDefault: v1.indexOf('cancel the PR split') >= 0,
+			hasDefault: v1.indexOf('cancel the PR') >= 0,
 			noVerify: v1.indexOf('verification') < 0
 		});
 
@@ -4132,7 +4132,7 @@ func TestChunk13_ConfirmCancel_ContextualText(t *testing.T) {
 		var v2 = globalThis.prSplit._viewConfirmCancelOverlay(s2);
 		results.push({
 			hasVerify: v2.indexOf('verification') >= 0 || v2.indexOf('Verification') >= 0,
-			noDefault: v2.indexOf('cancel the PR split') < 0
+			noDefault: v2.indexOf('cancel the PR') < 0
 		});
 
 		return JSON.stringify(results);

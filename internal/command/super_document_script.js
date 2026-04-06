@@ -774,8 +774,16 @@ function runVisualTui() {
                 }
             } else if (msg.type === 'Key') {
                 return handleKeys(msg, tuiState);
-            } else if (msg.type === 'Mouse' && msg.action === 'press') {
+            } else if (msg.type === 'MouseClick' && msg.button === 'left') {
                 return handleMouse(msg, tuiState);
+            } else if (msg.type === 'Paste' && tuiState.inputFocus === FOCUS_CONTENT && tuiState.contentTextarea) {
+                // Paste events from bracketed paste mode arrive as tea.PasteMsg
+                // (converted to {type:"Paste", content:"..."} by msgToJS).
+                // Forward to the textarea's update so JsToTeaMsg converts it back
+                // to tea.PasteMsg and the textarea inserts the content.
+                const [newTa, taCmd] = tuiState.contentTextarea.update(msg);
+                tuiState.contentTextarea = newTa;
+                return [tuiState, taCmd];
             }
             return [tuiState, null];
         }, view: function (tuiState) {

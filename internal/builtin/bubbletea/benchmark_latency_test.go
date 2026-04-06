@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/dop251/goja"
 )
 
@@ -123,11 +123,8 @@ func BenchmarkMsgToJS_KeyMsg(b *testing.B) {
 		runtime: runtime,
 	}
 
-	// Create a realistic tea.KeyMsg
-	keyMsg := tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune{'w'},
-	}
+	// Create a realistic tea.KeyPressMsg
+	keyMsg := tea.KeyPressMsg{Text: "w"}
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -400,10 +397,7 @@ func BenchmarkGojaToValue_Map(b *testing.B) {
 func BenchmarkNativeTeaKeyMsg(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		msg := tea.KeyMsg{
-			Type:  tea.KeyRunes,
-			Runes: []rune{'w'},
-		}
+		msg := tea.KeyPressMsg{Text: "w"}
 		_ = msg
 	}
 }
@@ -505,7 +499,7 @@ func BenchmarkViewDirect(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		output := model.View()
-		if output == "" {
+		if output.Content == "" {
 			b.Fatal("View returned empty string")
 		}
 		_ = output
@@ -565,7 +559,7 @@ func BenchmarkFullUpdateCycle(b *testing.B) {
 		jsRunner:    &SyncJSRunner{Runtime: runtime},
 	}
 
-	keyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}
+	keyMsg := tea.KeyPressMsg{Text: "a"}
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -613,14 +607,11 @@ func BenchmarkWrapCmd_Nil(b *testing.B) {
 func BenchmarkMsgToJS_MouseMsg(b *testing.B) {
 	model := &jsModel{}
 
-	mouseMsg := tea.MouseMsg{
+	mouseMsg := tea.MouseClickMsg{
 		X:      40,
 		Y:      12,
-		Button: tea.MouseButtonLeft,
-		Action: tea.MouseActionPress,
-		Alt:    false,
-		Ctrl:   true,
-		Shift:  false,
+		Button: tea.MouseLeft,
+		Mod:    tea.ModCtrl,
 	}
 
 	b.ResetTimer()

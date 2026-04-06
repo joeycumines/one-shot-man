@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1558,9 +1558,9 @@ func TestMultiWidthHitTest(t *testing.T) {
 	}{
 		{"click on A (cell 0)", 0, 0, 0, 0},
 		{"click on left half of 你 (cell 1)", 1, 0, 0, 1},
-		{"click on right half of 你 (cell 2)", 2, 0, 0, 2}, // Should advance to next char
+		{"click on right half of 你 (cell 2)", 2, 0, 0, 1}, // stays on 你 (right half belongs to 你)
 		{"click on left half of 好 (cell 3)", 3, 0, 0, 2},
-		{"click on right half of 好 (cell 4)", 4, 0, 0, 3}, // Should advance to next char
+		{"click on right half of 好 (cell 4)", 4, 0, 0, 2}, // stays on 好 (right half belongs to 好)
 		{"click on B (cell 5)", 5, 0, 0, 3},
 		{"click beyond line (cell 6)", 6, 0, 0, 4}, // Clamp to end
 	}
@@ -2141,9 +2141,16 @@ func TestHandleClickAtScreenCoords_StaleViewportContext(t *testing.T) {
 		t.Fatalf("sanity: suggestedYOffset==initial offset, test setup invalid")
 	}
 
-	// Simulate the user's view: screenY where the cursor is visible after JS scrolls
+	// Simulate the user's view: screenY where the cursor is visible after JS scrolls.
+	// Formula: visualY = screenY - titleHeight - textareaContentTop + outerYOffset.
+	// We want visualY = cursorVisualLine (the cursor's position in textarea visual space),
+	// so: screenY = titleHeight + textareaContentTop + cursorVisualLine - outerYOffset.
+	// Note: cursorAbsY = textareaContentTop + preContentHeight + cursorVisualLine,
+	// so cursorVisualLine = cursorAbsY - textareaContentTop - preContentHeight.
 	titleHeight := 3
-	screenY := titleHeight + (cursorAbsY - suggested)
+	textareaContentTop := 2
+	cursorVisualLine := cursorAbsY - textareaContentTop - 2
+	screenY := titleHeight + textareaContentTop + cursorVisualLine - suggested
 	screenX := 5
 
 	// With stale vpCtx (outerYOffset still 10), JS-visible coordinate should NOT map to the right row
@@ -2323,5 +2330,65 @@ func TestHandleClickAtScreenCoords_PrefersVpCtxOverArg(t *testing.T) {
 	obj2 := res2.ToObject(runtime)
 	if !obj2.Get("hit").ToBoolean() {
 		t.Fatalf("Expected hit using vpCtx titleHeight=1 after update, got miss")
+	}
+}
+
+// TestTextareaUpdateWithKeyInsertsCharacter verifies that calling textarea.update()
+// with a Key message inserts the character into the textarea value.
+// This tests the critical path: JS update → JsToTeaMsg → textarea.Update(msg) → value changes.
+func TestTextareaUpdateWithKeyInsertsCharacter(t *testing.T) {
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require()(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Focus the textarea so updates are processed
+	focusFn, _ := goja.AssertFunction(ta.Get("focus"))
+	_, _ = focusFn(ta)
+
+	updateFn, _ := goja.AssertFunction(ta.Get("update"))
+	valueFn, _ := goja.AssertFunction(ta.Get("value"))
+
+	// Create a Key message object as the JS script would
+	msg := runtime.NewObject()
+	_ = msg.Set("type", "Key")
+	_ = msg.Set("key", "H") // single character 'H'
+
+	// Call update with the Key message
+	res, err := updateFn(ta, msg)
+	require.NoError(t, err, "update should not error")
+
+	// Extract the new textarea object (index 0 of result array)
+	resArr := res.ToObject(runtime)
+	newTa := resArr.Get("0").ToObject(runtime)
+
+	// Check the value
+	val, _ := valueFn(newTa)
+	value := val.ToString().String()
+	t.Logf("Textarea value after update({type:'Key', key:'H'}): %q", value)
+	if value != "H" {
+		t.Errorf("Expected 'H', got %q", value)
+	}
+
+	// Now type "ello World"
+	for _, ch := range "ello World" {
+		msg := runtime.NewObject()
+		_ = msg.Set("type", "Key")
+		_ = msg.Set("key", string(ch))
+		res, err := updateFn(newTa, msg)
+		require.NoError(t, err)
+		resArr = res.ToObject(runtime)
+		newTa = resArr.Get("0").ToObject(runtime)
+		val, _ = valueFn(newTa)
+		value = val.ToString().String()
+	}
+
+	t.Logf("Textarea value after 'Hello World': %q", value)
+	if value != "Hello World" {
+		t.Errorf("Expected 'Hello World', got %q", value)
 	}
 }

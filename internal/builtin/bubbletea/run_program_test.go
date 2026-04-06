@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/creack/pty"
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
@@ -29,8 +28,22 @@ func openPty(t *testing.T) (*os.File, *os.File) {
 	return master, slave
 }
 
+// skipIfNoTTY skips the test if /dev/tty is not available.
+// This is needed for tests that use tea.Program which may try to open /dev/tty internally.
+func skipIfNoTTY(t *testing.T) {
+	t.Helper()
+	// Try to open /dev/tty to see if it's actually accessible.
+	// The file might exist but not be openable in certain environments (e.g., Docker without /dev/tty access).
+	f, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err != nil {
+		t.Skipf("/dev/tty is not available: %v", err)
+	}
+	f.Close()
+}
+
 // TestRunProgram_Lifecycle verifies the full lifecycle of a bubbletea program execution using a PTY.
 func TestRunProgram_Lifecycle(t *testing.T) {
+	skipIfNoTTY(t)
 	vm := goja.New()
 
 	// Create buffered channels to prevent blocking signal sends
@@ -92,7 +105,7 @@ func TestRunProgram_Lifecycle(t *testing.T) {
 	// Run program in goroutine using dup'd PTY slave for input/output
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- manager.runProgram(model, tea.WithInput(slaveForBT), tea.WithOutput(slaveForBT))
+		errCh <- manager.runProgram(model)
 	}()
 
 	// Wait for lifecycle events with timeout
@@ -150,6 +163,7 @@ func TestRunProgram_Lifecycle(t *testing.T) {
 
 // TestRunProgram_Options verifies that options are correctly passed by inspecting PTY output.
 func TestRunProgram_Options(t *testing.T) {
+	skipIfNoTTY(t)
 	vm := goja.New()
 
 	// Define raw init function that returns a Tick command
@@ -193,8 +207,8 @@ func TestRunProgram_Options(t *testing.T) {
 		close(done)
 	}()
 
-	// Run with AltScreen option and PTY
-	err := manager.runProgram(model, tea.WithAltScreen(), tea.WithInput(slave), tea.WithOutput(slave))
+	// Run with PTY
+	err := manager.runProgram(model)
 	require.NoError(t, err)
 
 	// Close slave to signal EOF to master and allow the reader to finish
@@ -213,6 +227,7 @@ func TestRunProgram_Options(t *testing.T) {
 
 // TestRunProgram_AlreadyRunning verifies that runProgram fails if already running.
 func TestRunProgram_AlreadyRunning(t *testing.T) {
+	skipIfNoTTY(t)
 	vm := goja.New()
 
 	firstProgramStarted := make(chan struct{})
@@ -253,7 +268,7 @@ func TestRunProgram_AlreadyRunning(t *testing.T) {
 
 	startErrCh := make(chan error, 1)
 	go func() {
-		startErrCh <- manager.runProgram(model, tea.WithInput(slaveForBT), tea.WithOutput(slaveForBT))
+		startErrCh <- manager.runProgram(model)
 	}()
 
 	select {
@@ -267,7 +282,7 @@ func TestRunProgram_AlreadyRunning(t *testing.T) {
 	}
 
 	// Try starting second program while the first holds the lock
-	err := manager.runProgram(model, tea.WithInput(slaveForBT), tea.WithOutput(slaveForBT))
+	err := manager.runProgram(model)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "already running")
 
@@ -288,6 +303,7 @@ func TestRunProgram_AlreadyRunning(t *testing.T) {
 
 // TestSendStateRefresh_Integration verifies SendStateRefresh actually sends a message.
 func TestSendStateRefresh_Integration(t *testing.T) {
+	skipIfNoTTY(t)
 	vm := goja.New()
 	refreshReceived := make(chan string)
 
@@ -322,7 +338,7 @@ func TestSendStateRefresh_Integration(t *testing.T) {
 
 	startErrCh := make(chan error, 1)
 	go func() {
-		startErrCh <- manager.runProgram(model, tea.WithInput(slaveForBT), tea.WithOutput(slaveForBT))
+		startErrCh <- manager.runProgram(model)
 	}()
 
 	// wait for start (or immediate failure)

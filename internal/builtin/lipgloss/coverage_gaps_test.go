@@ -273,7 +273,9 @@ func TestParseWhitespaceOptions_WithAllOptions(t *testing.T) {
 	_ = obj.Set("whitespaceBackground", "#00FF00")
 	opts, err := parseWhitespaceOptions(vm, obj)
 	require.NoError(t, err)
-	assert.Len(t, opts, 3)
+	// v2 lipgloss only accepts 2 options: WithWhitespaceChars + WithWhitespaceStyle.
+	// The foreground/background are combined into a single WithWhitespaceStyle.
+	assert.Len(t, opts, 2)
 }
 
 func TestParseWhitespaceOptions_ForegroundError(t *testing.T) {

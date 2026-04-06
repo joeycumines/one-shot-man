@@ -2,24 +2,16 @@ package bubbletea
 
 import (
 	"testing"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // TestKeyDefsStringParity verifies that generated KeyDefs have String values
-// that match the actual tea.KeyType.String() output.
+// that match the actual key string representation.
 func TestKeyDefsStringParity(t *testing.T) {
 	for stringVal, keyDef := range KeyDefs {
 		t.Run(keyDef.Name, func(t *testing.T) {
 			// The key in the map should match the String field
 			if stringVal != keyDef.String {
 				t.Errorf("map key %q doesn't match keyDef.String %q", stringVal, keyDef.String)
-			}
-
-			// The Type's String() should match the String field
-			actualString := keyDef.Type.String()
-			if actualString != keyDef.String {
-				t.Errorf("keyDef.Type.String() = %q, want %q", actualString, keyDef.String)
 			}
 		})
 	}
@@ -29,15 +21,22 @@ func TestKeyDefsStringParity(t *testing.T) {
 // Note: Multiple constant names may map to the same KeyDef (e.g., KeyEsc and KeyEscape).
 // In such cases, the KeyDef.Name field contains the canonical name, not the alias.
 func TestKeyDefsByNameParity(t *testing.T) {
-	// Define known aliases that map to canonical names
+	// Define known aliases that map to canonical names in v2.
+	// In v2, ultraviolet uses different canonical names than v1:
+	// - "KeyEscape" is canonical (not "KeyEsc")
+	// - "KeyEnter" is canonical (not "KeyReturn")
+	// - "KeyCtrlC" is canonical (no "KeyBreak" alias in v2)
+	// - "KeyBackspace" is canonical
+	// - "KeyTab" is canonical
+	// - "KeyCtrlAt" is canonical
 	canonicalNames := map[string]string{
-		"KeyEscape":           "KeyEsc",
-		"KeyCtrlOpenBracket":  "KeyEsc",
-		"KeyCtrlM":            "KeyEnter",
+		"KeyEsc":              "KeyEscape",
+		"KeyCtrlOpenBracket":  "KeyEscape", // "esc" maps to KeyEscape in v2
+		"KeyCtrlM":            "KeyEnter",  // "enter" maps to KeyEnter in v2
+		"KeyReturn":           "KeyEnter",  // "enter" maps to KeyEnter in v2
 		"KeyCtrlQuestionMark": "KeyBackspace",
 		"KeyCtrlI":            "KeyTab",
 		"KeyNull":             "KeyCtrlAt",
-		"KeyCtrlC":            "KeyBreak", // KeyCtrlC and KeyBreak both map to "ctrl+c"
 	}
 
 	for name, keyDef := range KeyDefsByName {
@@ -68,78 +67,76 @@ func TestKeyDefsByNameParity(t *testing.T) {
 	}
 }
 
-// TestAllKeyTypesContainsCoreKeys verifies that essential keys are present.
-func TestAllKeyTypesContainsCoreKeys(t *testing.T) {
-	essentialKeys := []tea.KeyType{
-		tea.KeyEnter,
-		tea.KeyEscape,
-		tea.KeyBackspace,
-		tea.KeyUp,
-		tea.KeyDown,
-		tea.KeyLeft,
-		tea.KeyRight,
-		tea.KeyHome,
-		tea.KeyEnd,
-		tea.KeyPgUp,
-		tea.KeyPgDown,
-		tea.KeyCtrlC,
-		tea.KeyRunes,
+// TestAllKeyCodesContainsCoreKeys verifies that essential keys are present.
+func TestAllKeyCodesContainsCoreKeys(t *testing.T) {
+	essentialCodes := []rune{
+		'\r',   // enter
+		'\x1b', // escape
+		'\x7f', // backspace
 	}
 
-	keySet := make(map[tea.KeyType]bool)
-	for _, kt := range AllKeyTypes {
-		keySet[kt] = true
+	codeSet := make(map[rune]bool)
+	for _, code := range AllKeyCodes {
+		codeSet[code] = true
 	}
 
-	for _, kt := range essentialKeys {
-		if !keySet[kt] {
-			t.Errorf("AllKeyTypes missing essential key: %v (string: %q)", kt, kt.String())
+	for _, code := range essentialCodes {
+		if !codeSet[code] {
+			t.Errorf("AllKeyCodes missing essential code: %q", code)
 		}
 	}
 }
 
-// TestKeyDefsCoversAllKeyTypes verifies that KeyDefs has an entry for each key in AllKeyTypes.
-func TestKeyDefsCoversAllKeyTypes(t *testing.T) {
-	for _, kt := range AllKeyTypes {
-		stringVal := kt.String()
-		if _, ok := KeyDefs[stringVal]; !ok {
-			t.Errorf("KeyDefs missing entry for %q (type: %v)", stringVal, kt)
+// TestKeyDefsCoversAllKeyCodes verifies that KeyDefs has an entry for each code in AllKeyCodes.
+func TestKeyDefsCoversAllKeyCodes(t *testing.T) {
+	for _, code := range AllKeyCodes {
+		found := false
+		for _, keyDef := range KeyDefs {
+			if keyDef.Code == code {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("KeyDefs missing entry for code %q", code)
 		}
 	}
 }
 
 // TestFunctionKeysCovered verifies F1-F20 function keys are present.
 func TestFunctionKeysCovered(t *testing.T) {
-	functionKeys := []tea.KeyType{
-		tea.KeyF1, tea.KeyF2, tea.KeyF3, tea.KeyF4, tea.KeyF5,
-		tea.KeyF6, tea.KeyF7, tea.KeyF8, tea.KeyF9, tea.KeyF10,
-		tea.KeyF11, tea.KeyF12, tea.KeyF13, tea.KeyF14, tea.KeyF15,
-		tea.KeyF16, tea.KeyF17, tea.KeyF18, tea.KeyF19, tea.KeyF20,
+	functionKeyNames := []string{
+		"KeyF1", "KeyF2", "KeyF3", "KeyF4", "KeyF5",
+		"KeyF6", "KeyF7", "KeyF8", "KeyF9", "KeyF10",
+		"KeyF11", "KeyF12", "KeyF13", "KeyF14", "KeyF15",
+		"KeyF16", "KeyF17", "KeyF18", "KeyF19", "KeyF20",
 	}
 
-	for _, kt := range functionKeys {
-		stringVal := kt.String()
-		if _, ok := KeyDefs[stringVal]; !ok {
-			t.Errorf("KeyDefs missing function key: %q", stringVal)
+	for _, name := range functionKeyNames {
+		if _, ok := KeyDefsByName[name]; !ok {
+			t.Errorf("KeyDefsByName missing function key: %q", name)
 		}
 	}
 }
 
 // TestCtrlKeysCovered verifies ctrl+letter keys are present.
+// In v2, ctrl+letter keys are not separate constants - they're represented
+// as the letter rune with ModCtrl. The KeyDefs map contains entries for
+// the string representations like "ctrl+a", "ctrl+b", etc.
 func TestCtrlKeysCovered(t *testing.T) {
-	ctrlKeys := []tea.KeyType{
-		tea.KeyCtrlA, tea.KeyCtrlB, tea.KeyCtrlC, tea.KeyCtrlD, tea.KeyCtrlE,
-		tea.KeyCtrlF, tea.KeyCtrlG, tea.KeyCtrlH, tea.KeyCtrlI, tea.KeyCtrlJ,
-		tea.KeyCtrlK, tea.KeyCtrlL, tea.KeyCtrlN, // KeyCtrlM is Enter
-		tea.KeyCtrlO, tea.KeyCtrlP, tea.KeyCtrlQ, tea.KeyCtrlR, tea.KeyCtrlS,
-		tea.KeyCtrlT, tea.KeyCtrlU, tea.KeyCtrlV, tea.KeyCtrlW, tea.KeyCtrlX,
-		tea.KeyCtrlY, tea.KeyCtrlZ,
+	// In v2, ctrl keys are handled via Mod modifier, not separate constants.
+	// Verify that the key string representations exist in KeyDefs.
+	ctrlStrings := []string{
+		"ctrl+a", "ctrl+b", "ctrl+c", "ctrl+d", "ctrl+e",
+		"ctrl+f", "ctrl+g", "ctrl+h", "ctrl+j", "ctrl+k",
+		"ctrl+l", "ctrl+n", "ctrl+o", "ctrl+p", "ctrl+q",
+		"ctrl+r", "ctrl+s", "ctrl+t", "ctrl+u", "ctrl+v",
+		"ctrl+w", "ctrl+x", "ctrl+y", "ctrl+z",
 	}
 
-	for _, kt := range ctrlKeys {
-		stringVal := kt.String()
-		if _, ok := KeyDefs[stringVal]; !ok {
-			t.Errorf("KeyDefs missing ctrl key: %q", stringVal)
+	for _, str := range ctrlStrings {
+		if _, ok := KeyDefs[str]; !ok {
+			t.Errorf("KeyDefs missing ctrl key string: %q", str)
 		}
 	}
 }

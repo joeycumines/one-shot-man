@@ -1,70 +1,87 @@
 package bubbletea
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
-// MouseEventToJS converts a tea.MouseEvent to a JavaScript-compatible map.
-// This uses the generated MouseButtonDefs and MouseActionDefs for consistency
-// with tea.MouseEvent.String().
+// MouseEventToJS converts a tea.MouseMsg to a JavaScript-compatible map.
+// In v2, MouseMsg is an interface. We handle each concrete type.
 func MouseEventToJS(msg tea.MouseMsg) map[string]any {
-	m := tea.MouseEvent(msg)
+	mouse := msg.Mouse()
 
 	// Get button string from generated defs
 	buttonStr := "none"
 	for str, def := range MouseButtonDefs {
-		if def.Button == m.Button {
+		if def.Button == mouse.Button {
 			buttonStr = str
 			break
 		}
 	}
 
-	// Get action string from generated defs
-	actionStr := "press"
-	for str, def := range MouseActionDefs {
-		if def.Action == m.Action {
-			actionStr = str
-			break
-		}
+	// Determine the event type based on the concrete message type
+	var eventType string
+	switch msg.(type) {
+	case tea.MouseClickMsg:
+		eventType = "MouseClick"
+	case tea.MouseReleaseMsg:
+		eventType = "MouseRelease"
+	case tea.MouseMotionMsg:
+		eventType = "MouseMotion"
+	case tea.MouseWheelMsg:
+		eventType = "MouseWheel"
+	default:
+		eventType = "Mouse"
 	}
 
 	return map[string]any{
-		"type":    "Mouse",
-		"x":       m.X,
-		"y":       m.Y,
+		"type":    eventType,
+		"x":       mouse.X,
+		"y":       mouse.Y,
 		"button":  buttonStr,
-		"action":  actionStr,
-		"alt":     m.Alt,
-		"ctrl":    m.Ctrl,
-		"shift":   m.Shift,
-		"isWheel": m.IsWheel(),
-		"string":  m.String(), // Full string representation for debugging
+		"mod":     modToStrings(mouse.Mod),
+		"isWheel": IsWheelButton(mouse.Button),
+		"string":  msg.String(), // Full string representation for debugging
 	}
 }
 
-// JSToMouseEvent converts a JavaScript mouse event object to a tea.MouseMsg.
-// This is the inverse of MouseEventToJS.
-func JSToMouseEvent(buttonStr, actionStr string, x, y int, alt, ctrl, shift bool) tea.MouseMsg {
-	var m tea.MouseEvent
-	m.X = x
-	m.Y = y
-	m.Alt = alt
-	m.Ctrl = ctrl
-	m.Shift = shift
+// JSToMouseEvent converts a JavaScript mouse event object to a tea.Msg.
+// In v2, mouse events are split into separate message types.
+func JSToMouseEvent(buttonStr, actionStr string, x, y int, alt, ctrl, shift bool) tea.Msg {
+	// Build the mouse data
+	var mod tea.KeyMod
+	if alt {
+		mod |= tea.ModAlt
+	}
+	if ctrl {
+		mod |= tea.ModCtrl
+	}
+	if shift {
+		mod |= tea.ModShift
+	}
 
 	// Parse button from string using generated defs
+	var button tea.MouseButton
 	if def, ok := MouseButtonDefs[buttonStr]; ok {
-		m.Button = def.Button
+		button = def.Button
 	} else {
-		m.Button = tea.MouseButtonNone
+		button = tea.MouseNone
 	}
 
-	// Parse action from string using generated defs
-	if def, ok := MouseActionDefs[actionStr]; ok {
-		m.Action = def.Action
-	} else {
-		m.Action = tea.MouseActionPress
+	// In v2, the action and button determine the message type.
+	// Wheel buttons always produce MouseWheelMsg.
+	if IsWheelButton(button) {
+		return tea.MouseWheelMsg{Button: button, Mod: mod, X: x, Y: y}
 	}
 
-	return tea.MouseMsg(m)
+	switch actionStr {
+	case "press", "click":
+		return tea.MouseClickMsg{Button: button, Mod: mod, X: x, Y: y}
+	case "release":
+		return tea.MouseReleaseMsg{Mod: mod, X: x, Y: y}
+	case "motion":
+		return tea.MouseMotionMsg{Button: button, Mod: mod, X: x, Y: y}
+	default:
+		// Default to click
+		return tea.MouseClickMsg{Button: button, Mod: mod, X: x, Y: y}
+	}
 }

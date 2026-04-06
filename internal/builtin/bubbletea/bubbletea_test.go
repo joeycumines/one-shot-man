@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/bubbles/cursor"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/cursor"
+	tea "charm.land/bubbletea/v2"
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -128,24 +128,27 @@ func TestTeaKeysByName_ContainsCoreKeys(t *testing.T) {
 	requireFn(vm, module)
 
 	exports := module.Get("exports").ToObject(vm)
-	keysByNameObj := exports.Get("keysByName").ToObject(vm)
+	keysByNameVal := exports.Get("keysByName")
+	require.False(t, goja.IsUndefined(keysByNameVal), "keysByName should be exported")
+	require.False(t, goja.IsNull(keysByNameVal), "keysByName should not be null")
+	keysByNameObj := keysByNameVal.ToObject(vm)
+	require.NotNil(t, keysByNameObj, "keysByName should be an object")
 
 	// Verify core keys are present by Go constant name
-	// Note: Use actual constant names from keys_gen.go, not intuitive names
-	// - "KeyEsc" not "KeyEscape"
-	// - "KeyCtrlQuestionMark" represents backspace
-	coreKeyNames := []string{"KeyEnter", "KeyEsc", "KeyUp", "KeyDown", "KeyLeft", "KeyRight"}
+	coreKeyNames := []string{"KeyEnter", "KeyEscape", "KeyUp", "KeyDown", "KeyLeft", "KeyRight"}
 	for _, name := range coreKeyNames {
 		val := keysByNameObj.Get(name)
 		assert.False(t, goja.IsUndefined(val), "keysByName[%q] should be defined", name)
-		if !goja.IsUndefined(val) && !goja.IsNull(val) {
-			keyDef := val.ToObject(vm)
-			if keyDef != nil {
-				keyName := keyDef.Get("name")
-				if !goja.IsUndefined(keyName) && !goja.IsNull(keyName) {
-					assert.Equal(t, name, keyName.String(), "keysByName[%q].name should match", name)
-				}
-			}
+		if goja.IsUndefined(val) || goja.IsNull(val) {
+			continue
+		}
+		keyDefObj := val.ToObject(vm)
+		if keyDefObj == nil {
+			continue
+		}
+		keyName := keyDefObj.Get("name")
+		if !goja.IsUndefined(keyName) && !goja.IsNull(keyName) {
+			assert.Equal(t, name, keyName.String(), "keysByName[%q].name should match", name)
 		}
 	}
 }
@@ -468,7 +471,7 @@ func TestJsModel_View(t *testing.T) {
 
 	// Test View
 	view := model.View()
-	assert.Equal(t, "Message: Hello World", view)
+	assert.Equal(t, "Message: Hello World", view.Content)
 }
 
 func TestJsModel_Update_QuitCommand(t *testing.T) {
@@ -510,7 +513,7 @@ func TestJsModel_Update_QuitCommand(t *testing.T) {
 	model.Init()
 
 	// Simulate 'q' key press
-	keyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}
+	keyMsg := tea.KeyPressMsg{Text: "q"}
 	_, cmd := model.Update(keyMsg)
 
 	// Verify that cmd is tea.Quit
@@ -675,31 +678,6 @@ func TestAltScreenCommands(t *testing.T) {
 	assert.Equal(t, "exitAltScreen", resultObj.Get("_cmdType").String())
 }
 
-func TestBracketedPasteCommands(t *testing.T) {
-	ctx := context.Background()
-	vm := goja.New()
-	manager := newTestManager(ctx, vm)
-	module := vm.NewObject()
-	require.NoError(t, module.Set("exports", vm.NewObject()))
-
-	requireFn := Require(ctx, manager)
-	requireFn(vm, module)
-
-	_ = vm.Set("tea", module.Get("exports"))
-
-	// Test enableBracketedPaste
-	result, err := vm.RunString(`tea.enableBracketedPaste()`)
-	require.NoError(t, err)
-	resultObj := result.ToObject(vm)
-	assert.Equal(t, "enableBracketedPaste", resultObj.Get("_cmdType").String())
-
-	// Test disableBracketedPaste
-	result, err = vm.RunString(`tea.disableBracketedPaste()`)
-	require.NoError(t, err)
-	resultObj = result.ToObject(vm)
-	assert.Equal(t, "disableBracketedPaste", resultObj.Get("_cmdType").String())
-}
-
 func TestReportFocusCommands(t *testing.T) {
 	ctx := context.Background()
 	vm := goja.New()
@@ -783,8 +761,6 @@ func TestRequire_AllNewFunctionsExported(t *testing.T) {
 		"showCursor",
 		"enterAltScreen",
 		"exitAltScreen",
-		"enableBracketedPaste",
-		"disableBracketedPaste",
 		"enableReportFocus",
 		"disableReportFocus",
 		"windowSize",

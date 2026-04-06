@@ -158,24 +158,24 @@ const program = tea.newModel({
                 }
             }
 
-            if (msg.type === 'Mouse') {
-                if (msg.action === 'press' && msg.button === 'left') {
-                    if (zone.inBounds("add-btn", msg)) {
-                        model.mode = 'add';
-                        model.textarea.focus();
-                        return [model, null];
-                    }
-
-                    const yRelative = msg.y - model.headerHeight;
-                    if (yRelative >= 0 && yRelative < model.viewport.height()) {
-                        const clickedRow = yRelative + model.viewport.yOffset();
-                        if (clickedRow >= 0 && clickedRow < model.todos.length) {
-                            model.selectedIdx = clickedRow;
-                            model.todos[model.selectedIdx].done = !model.todos[model.selectedIdx].done;
-                        }
-                    }
+            if (msg.type === 'MouseClick' && msg.button === 'left') {
+                if (zone.inBounds("add-btn", msg)) {
+                    model.mode = 'add';
+                    model.textarea.focus();
+                    return [model, null];
                 }
 
+                const yRelative = msg.y - model.headerHeight;
+                if (yRelative >= 0 && yRelative < model.viewport.height()) {
+                    const clickedRow = yRelative + model.viewport.yOffset();
+                    if (clickedRow >= 0 && clickedRow < model.todos.length) {
+                        model.selectedIdx = clickedRow;
+                        model.todos[model.selectedIdx].done = !model.todos[model.selectedIdx].done;
+                    }
+                }
+            }
+
+            if (msg.type === 'MouseWheel') {
                 if (msg.button === 'wheel up') {
                     model.viewport.lineUp(1);
                 } else if (msg.button === 'wheel down') {

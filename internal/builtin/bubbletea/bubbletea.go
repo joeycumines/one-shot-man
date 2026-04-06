@@ -88,7 +88,7 @@
 //	    altScreen: true,       // Use alternate screen buffer
 //	    mouse: true,           // Enable mouse support (all motion)
 //	    mouseCellMotion: true, // Enable mouse cell motion only
-//	    bracketedPaste: true,  // Enable bracketed paste
+//	    // Note: bracketed paste is always enabled (\x1b[?2004h) — no program option needed
 //	    reportFocus: true,     // Enable focus/blur reporting
 //	});
 //
@@ -135,7 +135,7 @@ import (
 	"syscall"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/dop251/goja"
 	"golang.org/x/term"
 )
@@ -460,7 +460,7 @@ func JsToTeaMsg(runtime *goja.Runtime, obj *goja.Object) tea.Msg {
 			return nil
 		}
 		key, _ := ParseKey(keyVal.String())
-		return tea.KeyMsg(key)
+		return key
 
 	case "Mouse":
 		x := int(obj.Get("x").ToInteger())
@@ -493,6 +493,19 @@ func JsToTeaMsg(runtime *goja.Runtime, obj *goja.Object) tea.Msg {
 			Width:  w,
 			Height: h,
 		}
+
+	case "PasteStart":
+		return tea.PasteStartMsg{}
+
+	case "PasteEnd":
+		return tea.PasteEndMsg{}
+
+	case "Paste":
+		content := ""
+		if v := obj.Get("content"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+			content = v.String()
+		}
+		return tea.PasteMsg{Content: content}
 	}
 
 	return nil
@@ -639,14 +652,29 @@ func (m *jsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		slog.Debug("bubbletea: Update called with Tick message", "id", jsMsg["id"])
 	}
 
-	// Check if this message type should force an immediate render
-	if m.throttleEnabled && m.alwaysRenderTypes != nil {
-		if msgType, ok := jsMsg["type"].(string); ok {
-			if m.alwaysRenderTypes[msgType] {
-				m.throttleMu.Lock()
-				m.forceNextRender = true
-				m.throttleMu.Unlock()
+	// Check if this message type should force an immediate render.
+	// Paste events (PasteStart, Paste, PasteEnd) should always force render
+	// since the textarea needs to update immediately with pasted content.
+	if m.throttleEnabled {
+		forceRender := false
+		if m.alwaysRenderTypes != nil {
+			if msgType, ok := jsMsg["type"].(string); ok && m.alwaysRenderTypes[msgType] {
+				forceRender = true
 			}
+		}
+		if !forceRender {
+			// Always render for paste events
+			if msgType, ok := jsMsg["type"].(string); ok {
+				switch msgType {
+				case "Paste", "PasteStart", "PasteEnd":
+					forceRender = true
+				}
+			}
+		}
+		if forceRender {
+			m.throttleMu.Lock()
+			m.forceNextRender = true
+			m.throttleMu.Unlock()
 		}
 	}
 
@@ -714,14 +742,14 @@ func (m *jsModel) updateDirect(jsMsg map[string]any) tea.Cmd {
 // Render Throttling: When throttleEnabled is true, this method may return a cached
 // view if the minimum interval has not elapsed. A delayed renderRefreshMsg is scheduled
 // to ensure the view is eventually re-rendered.
-func (m *jsModel) View() string {
+func (m *jsModel) View() tea.View {
 	if m == nil || m.viewFn == nil || m.runtime == nil {
-		return "[BT] View: nil model/viewFn/runtime"
+		return tea.NewView("[BT] View: nil model/viewFn/runtime")
 	}
 
 	// If init had an error, show it
 	if m.initError != "" {
-		return "[BT] " + m.initError
+		return tea.NewView("[BT] " + m.initError)
 	}
 
 	// Render throttling logic
@@ -759,7 +787,7 @@ func (m *jsModel) View() string {
 			}
 			cached := m.cachedView
 			m.throttleMu.Unlock()
-			return cached
+			return tea.NewView(cached)
 		}
 
 		// Will do an actual render - update state
@@ -780,7 +808,7 @@ func (m *jsModel) View() string {
 		return nil
 	})
 	if err != nil {
-		return fmt.Sprintf("[BT] View error (event loop): %v", err)
+		return tea.NewView(fmt.Sprintf("[BT] View error (event loop): %v", err))
 	}
 
 	// Cache the view if throttling is enabled
@@ -790,7 +818,7 @@ func (m *jsModel) View() string {
 		m.throttleMu.Unlock()
 	}
 
-	return viewStr
+	return tea.NewView(viewStr)
 }
 
 // viewDirect performs the actual view call. MUST be called from event loop goroutine.
@@ -819,31 +847,47 @@ func (m *jsModel) viewDirect() string {
 // Handles all bubbletea message types comprehensively.
 func (m *jsModel) msgToJS(msg tea.Msg) map[string]any {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		// Extract runes as an array for unicode/IME support
-		runes := make([]string, len(msg.Runes))
-		for i, r := range msg.Runes {
-			runes[i] = string(r)
-		}
+	case tea.KeyPressMsg:
+		key := msg.Key()
+		// Extract text for unicode/IME support
+		text := key.Text
 
 		// Get the string representation
+		// Use key.Text when non-empty (e.g. " " for space) to produce the correct
+		// JS "key" value for printable characters. msg.String() returns named keys
+		// like "space" for KeySpace, which fails ValidateTextareaInput.
 		keyStr := msg.String()
+		if key.Text != "" {
+			keyStr = key.Text
+		}
 
-		// Detect modifiers from the Key type, not from string parsing
-		// KeyMsg embeds Key which has Type, Runes, Alt, Paste
-		key := tea.Key(msg)
+		// Detect modifiers
+		mod := key.Mod
 
 		return map[string]any{
-			"type":  "Key",
-			"key":   keyStr,
-			"runes": runes,
-			"alt":   key.Alt,
-			"ctrl":  isCtrlKey(key.Type),
-			"paste": key.Paste, // Bracketed paste indicator
+			"type": "Key",
+			"key":  keyStr,
+			"text": text,
+			"mod":  modToStrings(mod),
+			"code": key.Code,
+		}
+
+	case tea.KeyReleaseMsg:
+		key := msg.Key()
+		text := key.Text
+		keyStr := msg.String()
+		mod := key.Mod
+
+		return map[string]any{
+			"type": "KeyRelease",
+			"key":  keyStr,
+			"text": text,
+			"mod":  modToStrings(mod),
+			"code": key.Code,
 		}
 
 	case tea.MouseMsg:
-		// Use the generated MouseEventToJS which ensures consistency with tea.MouseEvent.String()
+		// Use the generated MouseEventToJS which ensures consistency with tea.Mouse.String()
 		return MouseEventToJS(msg)
 
 	case tea.WindowSizeMsg:
@@ -887,41 +931,61 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]any {
 			"key":  msg.key,
 		}
 
+	case tea.PasteMsg:
+		return map[string]any{
+			"type":    "Paste",
+			"content": msg.Content,
+		}
+
+	case tea.PasteStartMsg:
+		return map[string]any{
+			"type": "PasteStart",
+		}
+
+	case tea.PasteEndMsg:
+		return map[string]any{
+			"type": "PasteEnd",
+		}
+
 	case renderRefreshMsg:
 		// Internal message for render throttle - returns nil to skip JS processing
 		// The Update method handles this specially to force a render
 		return nil
 
 	case toggleReturnMsg:
-		m := map[string]any{
+		resultMap := map[string]any{
 			"type": "ToggleReturn",
 		}
-		maps.Copy(m, msg.Result)
-		return m
+		maps.Copy(resultMap, msg.Result)
+		return resultMap
 
 	default:
 		return nil
 	}
 }
 
-// isCtrlKey checks if the key type is a control key.
-func isCtrlKey(kt tea.KeyType) bool {
-	switch kt {
-	case tea.KeyCtrlA, tea.KeyCtrlB, tea.KeyCtrlC, tea.KeyCtrlD, tea.KeyCtrlE,
-		tea.KeyCtrlF, tea.KeyCtrlG, tea.KeyCtrlH, tea.KeyCtrlI, tea.KeyCtrlJ,
-		tea.KeyCtrlK, tea.KeyCtrlL, tea.KeyCtrlM, tea.KeyCtrlN, tea.KeyCtrlO,
-		tea.KeyCtrlP, tea.KeyCtrlQ, tea.KeyCtrlR, tea.KeyCtrlS, tea.KeyCtrlT,
-		tea.KeyCtrlU, tea.KeyCtrlV, tea.KeyCtrlW, tea.KeyCtrlX, tea.KeyCtrlY,
-		tea.KeyCtrlZ, tea.KeyCtrlOpenBracket, tea.KeyCtrlBackslash,
-		tea.KeyCtrlCloseBracket, tea.KeyCtrlCaret, tea.KeyCtrlUnderscore,
-		tea.KeyCtrlQuestionMark, tea.KeyCtrlAt,
-		tea.KeyCtrlUp, tea.KeyCtrlDown, tea.KeyCtrlLeft, tea.KeyCtrlRight,
-		tea.KeyCtrlHome, tea.KeyCtrlEnd, tea.KeyCtrlPgUp, tea.KeyCtrlPgDown,
-		tea.KeyCtrlShiftUp, tea.KeyCtrlShiftDown, tea.KeyCtrlShiftLeft,
-		tea.KeyCtrlShiftRight, tea.KeyCtrlShiftHome, tea.KeyCtrlShiftEnd:
-		return true
+// modToStrings converts a KeyMod to a slice of modifier name strings.
+func modToStrings(mod tea.KeyMod) []string {
+	var mods []string
+	if mod.Contains(tea.ModCtrl) {
+		mods = append(mods, "ctrl")
 	}
-	return false
+	if mod.Contains(tea.ModAlt) {
+		mods = append(mods, "alt")
+	}
+	if mod.Contains(tea.ModShift) {
+		mods = append(mods, "shift")
+	}
+	if mod.Contains(tea.ModMeta) {
+		mods = append(mods, "meta")
+	}
+	if mod.Contains(tea.ModHyper) {
+		mods = append(mods, "hyper")
+	}
+	if mod.Contains(tea.ModSuper) {
+		mods = append(mods, "super")
+	}
+	return mods
 }
 
 // valueToCmd converts a JavaScript value to a tea.Cmd.
@@ -979,39 +1043,19 @@ func (m *jsModel) valueToCmd(val goja.Value) (ret tea.Cmd) {
 	case "tick":
 		return m.extractTickCmd(obj)
 
-	case "setWindowTitle":
-		titleVal := obj.Get("title")
-		if titleVal == nil || goja.IsUndefined(titleVal) || goja.IsNull(titleVal) {
-			return nil
-		}
-		return tea.SetWindowTitle(titleVal.String())
+	// In v2, terminal state is controlled declaratively via tea.View fields.
+	// These command types are removed. Scripts should return view objects
+	// with the appropriate fields set (altScreen, mouseMode, reportFocus, etc.)
+	// instead of using imperative commands.
 
-	case "hideCursor":
-		return tea.HideCursor
+	case "requestWindowSize":
+		return tea.RequestWindowSize
 
-	case "showCursor":
-		return tea.ShowCursor
-
-	case "enterAltScreen":
-		return tea.EnterAltScreen
-
-	case "exitAltScreen":
-		return tea.ExitAltScreen
-
-	case "enableBracketedPaste":
-		return tea.EnableBracketedPaste
-
-	case "disableBracketedPaste":
-		return tea.DisableBracketedPaste
-
-	case "enableReportFocus":
-		return tea.EnableReportFocus
-
-	case "disableReportFocus":
-		return tea.DisableReportFocus
-
-	case "windowSize":
-		return tea.WindowSize()
+	case "enableBracketedPaste", "disableBracketedPaste":
+		// No-op: bracketed paste mode is controlled unconditionally via
+		// \x1b[?2004h (DECSET 200) in runProgram and \x1b[?2004l (DECRST 200)
+		// in restoreTerminal. The jsModel field has been removed.
+		return nil
 	}
 
 	return nil
@@ -1143,7 +1187,7 @@ func (m *toggleModel) Init() tea.Cmd {
 }
 
 func (m *toggleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if keyMsg, ok := msg.(tea.KeyMsg); ok {
+	if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
 		if m.isToggleKey(keyMsg) {
 			return m, m.toggleCmd()
 		}
@@ -1153,19 +1197,19 @@ func (m *toggleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *toggleModel) View() string {
+func (m *toggleModel) View() tea.View {
 	return m.inner.View()
 }
 
 // isToggleKey checks if a BubbleTea key message matches the configured toggle key.
-func (m *toggleModel) isToggleKey(msg tea.KeyMsg) bool {
-	k := tea.Key(msg)
+func (m *toggleModel) isToggleKey(msg tea.KeyPressMsg) bool {
+	k := msg.Key()
 	// Match by rune (handles most key configurations)
-	if len(k.Runes) == 1 && byte(k.Runes[0]) == m.toggleKey {
+	if k.Code == rune(m.toggleKey) {
 		return true
 	}
-	// Match Ctrl+] specifically (0x1D) — BubbleTea parses this as KeyCtrlCloseBracket
-	if k.Type == tea.KeyCtrlCloseBracket && m.toggleKey == 0x1D {
+	// Match Ctrl+] specifically (0x1D) — v2 parses this with Code = ']' and Mod = ModCtrl
+	if k.Code == ']' && k.Mod.Contains(tea.ModCtrl) && m.toggleKey == 0x1D {
 		return true
 	}
 	return false
@@ -1340,30 +1384,6 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 			_ = mouseButtonsByNameObj.Set(name, buttonDefJS)
 		}
 		_ = exports.Set("mouseButtonsByName", mouseButtonsByNameObj)
-
-		// mouseActions exposes mouse action definitions for JS to access action metadata
-		// The keys are the string representations (e.g., "press", "release", "motion")
-		mouseActionsObj := runtime.NewObject()
-		for _, stringVal := range slices.Sorted(maps.Keys(MouseActionDefs)) {
-			actionDef := MouseActionDefs[stringVal]
-			actionDefJS := runtime.NewObject()
-			_ = actionDefJS.Set("name", actionDef.Name)
-			_ = actionDefJS.Set("string", actionDef.String)
-			_ = mouseActionsObj.Set(stringVal, actionDefJS)
-		}
-		_ = exports.Set("mouseActions", mouseActionsObj)
-
-		// mouseActionsByName exposes mouse action definitions by their Go constant name
-		// (e.g., "MouseActionPress", "MouseActionRelease", "MouseActionMotion")
-		mouseActionsByNameObj := runtime.NewObject()
-		for _, name := range slices.Sorted(maps.Keys(MouseActionDefsByName)) {
-			actionDef := MouseActionDefsByName[name]
-			actionDefJS := runtime.NewObject()
-			_ = actionDefJS.Set("name", actionDef.Name)
-			_ = actionDefJS.Set("string", actionDef.String)
-			_ = mouseActionsByNameObj.Set(name, actionDefJS)
-		}
-		_ = exports.Set("mouseActionsByName", mouseActionsByNameObj)
 
 		// isValidTextareaInput validates if a key event should be forwarded to a textarea.
 		// Uses WHITELIST approach: only explicitly allowed inputs pass through.
@@ -1560,43 +1580,13 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 			// Set as current model for command registration
 			currentModel = model
 
-			// Parse options
-			var opts []tea.ProgramOption
+			// Parse options — in v2, terminal features (altScreen, mouse, etc.)
+			// are declarative View fields, not program options.
+			// Only toggleKey/onToggle (Termux passthrough) remain as run() options.
 			var toggleWrapper *toggleModel
 			if len(call.Arguments) > 1 {
 				optObj := call.Argument(1).ToObject(runtime)
 				if optObj != nil {
-					// Helper to safely check if a value is truthy
-					// Returns true only if value exists, is not nil/undefined/null, and is boolean true
-					isTruthy := func(v goja.Value) bool {
-						if v == nil {
-							return false
-						}
-						if goja.IsUndefined(v) || goja.IsNull(v) {
-							return false
-						}
-						return v.ToBoolean()
-					}
-
-					if isTruthy(optObj.Get("altScreen")) {
-						opts = append(opts, tea.WithAltScreen())
-					}
-					if isTruthy(optObj.Get("mouse")) {
-						opts = append(opts, tea.WithMouseAllMotion())
-					}
-					if isTruthy(optObj.Get("mouseCellMotion")) {
-						opts = append(opts, tea.WithMouseCellMotion())
-					}
-					if isTruthy(optObj.Get("reportFocus")) {
-						opts = append(opts, tea.WithReportFocus())
-					}
-					// Note: bracketedPaste is enabled by default in bubbletea
-					// Use WithoutBracketedPaste to disable (check if explicitly set to false)
-					bracketedPaste := optObj.Get("bracketedPaste")
-					if bracketedPaste != nil && !goja.IsUndefined(bracketedPaste) && !goja.IsNull(bracketedPaste) && !bracketedPaste.ToBoolean() {
-						opts = append(opts, tea.WithoutBracketedPaste())
-					}
-
 					// Toggle key support — integrates with termmux passthrough.
 					// When toggleKey and onToggle are both set, the model is wrapped
 					// in a toggleModel that intercepts the toggle key and executes
@@ -1668,7 +1658,7 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 			manager.mu.Unlock()
 
 			go func() {
-				done <- manager.runProgram(programModel, opts...)
+				done <- manager.runProgram(programModel)
 			}()
 
 			return goja.Undefined()
@@ -1758,16 +1748,6 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 			return createCommand("exitAltScreen", nil)
 		})
 
-		// enableBracketedPaste enables bracketed paste mode
-		_ = exports.Set("enableBracketedPaste", func(call goja.FunctionCall) goja.Value {
-			return createCommand("enableBracketedPaste", nil)
-		})
-
-		// disableBracketedPaste disables bracketed paste mode
-		_ = exports.Set("disableBracketedPaste", func(call goja.FunctionCall) goja.Value {
-			return createCommand("disableBracketedPaste", nil)
-		})
-
 		// enableReportFocus enables focus/blur reporting
 		_ = exports.Set("enableReportFocus", func(call goja.FunctionCall) goja.Value {
 			return createCommand("enableReportFocus", nil)
@@ -1788,13 +1768,25 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 // runProgram runs a bubbletea program with the given model.
 // Handles TTY detection, terminal state cleanup, panic recovery, and proper I/O setup.
 // If a panic occurs, the terminal is restored before printing the stack trace to stderr.
-func (m *Manager) runProgram(model tea.Model, opts ...tea.ProgramOption) (err error) {
+//
+// In v2, terminal features (altScreen, mouse, etc.) are controlled declaratively
+// via tea.View fields returned by the model's View() method, not via program options.
+func (m *Manager) runProgram(model tea.Model) (err error) {
 	// Debug: check if manager is properly initialized
 	if m == nil {
 		return fmt.Errorf("runProgram: manager is nil")
 	}
 	if m.ctx == nil {
 		return fmt.Errorf("runProgram: manager.ctx is nil")
+	}
+
+	// Enable bracketed paste mode so \x1b[200~...\x1b[201~ sequences are
+	// recognized as paste events (tea.PasteStartMsg/PasteEndMsg/PasteMsg).
+	// We send this to the terminal here, before BubbleTea's read loop starts.
+	// Note: bracketed paste mode is always enabled; the jsModel-level field was
+	// removed as it was dead code (never read, only written).
+	if m.output != nil {
+		_, _ = m.output.Write([]byte("\x1b[?2004h"))
 	}
 
 	ctx, cancel := context.WithCancelCause(m.ctx)
@@ -1834,8 +1826,12 @@ func (m *Manager) runProgram(model tea.Model, opts ...tea.ProgramOption) (err er
 		}
 	}
 
-	// restoreTerminal restores the terminal state if we have a saved state
+	// restoreTerminal restores the terminal state and disables bracketed paste mode.
 	restoreTerminal := func() {
+		// Disable bracketed paste mode (DECRST 200)
+		if m.output != nil {
+			_, _ = m.output.Write([]byte("\x1b[?2004l"))
+		}
 		if origState != nil && ttyFd >= 0 {
 			_ = term.Restore(ttyFd, origState)
 		}
@@ -1868,14 +1864,12 @@ func (m *Manager) runProgram(model tea.Model, opts ...tea.ProgramOption) (err er
 	}()
 
 	// Configure input/output
+	// In v2, WithInputTTY() is removed — v2 always opens the TTY for input automatically.
+	var opts []tea.ProgramOption
 	if f, ok := input.(*os.File); ok {
 		opts = append(opts, tea.WithInput(f))
-	} else if input != nil {
-		// For non-file readers, try to use input TTY
-		if isTTY {
-			opts = append(opts, tea.WithInputTTY())
-		}
 	}
+	// For non-file readers, v2 handles TTY automatically — no option needed.
 
 	if f, ok := output.(*os.File); ok {
 		opts = append(opts, tea.WithOutput(f))

@@ -3,7 +3,7 @@ package viewport
 import (
 	"testing"
 
-	"github.com/charmbracelet/bubbles/viewport"
+	"charm.land/bubbles/v2/viewport"
 	"github.com/dop251/goja"
 	jslipgloss "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"
 )
@@ -12,20 +12,23 @@ import (
 // Unit Tests: Core Logic
 // -----------------------------------------------------------------------------
 
-func TestGetUnexportedXOffset(t *testing.T) {
-	// Setup a real viewport model
-	m := viewport.New(20, 10)
+func TestXOffset(t *testing.T) {
+	// Setup a real viewport model using v2 options pattern
+	m := viewport.New(
+		viewport.WithWidth(20),
+		viewport.WithHeight(10),
+	)
 
 	// Set X Offset using public API, which sets the private field
 	expectedX := 5
 	m.SetContent("This is a test content that is long enough to require horizontal scrolling. This content determines the longest line width.")
 	m.SetXOffset(expectedX)
 
-	// Use our reflection helper to read it back
-	got := getUnexportedXOffset(&m)
+	// Use the public XOffset() method to read it back
+	got := m.XOffset()
 
 	if got != expectedX {
-		t.Errorf("reflection helper failed: expected %d, got %d", expectedX, got)
+		t.Errorf("XOffset failed: expected %d, got %d", expectedX, got)
 	}
 }
 

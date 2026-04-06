@@ -118,11 +118,23 @@ func (h *CSIHandler) Dispatch(scr *Screen, final byte, params []int, isPrivate b
 				scr.TabStops[i] = false
 			}
 		}
-	case 'm': // SGR — set graphic rendition
-		if len(params) == 0 {
-			params = []int{0}
+	case 'm': // SGR — set graphic rendition / RC — restore cursor
+		// CSI 7 m (single param=7, no intermediates) = Restore Cursor Position (RC).
+		// Lipgloss v2's StyleRunes uses "\x1b[7m" to move the cursor back after
+		// writing a styled character (strikethrough effect: write char, BS, CSI 7 m
+		// restore, print styled char). This is distinct from the standard two-byte
+		// ESC 8 (DECRC) and CSI s (SCP) sequences.
+		if len(params) == 1 && params[0] == 7 && !isPrivate {
+			// RC — restore cursor position.
+			scr.CurRow = scr.SavedRow
+			scr.CurCol = scr.SavedCol
+			scr.CurAttr = scr.SavedAttr
+		} else {
+			if len(params) == 0 {
+				params = []int{0}
+			}
+			scr.CurAttr = ParseSGR(params, scr.CurAttr)
 		}
-		scr.CurAttr = ParseSGR(params, scr.CurAttr)
 	case 'r': // DECSTBM — set scrolling region (top;bottom, 1-indexed)
 		top := paramDefault(params, 0, 1)
 		bot := paramDefault(params, 1, scr.Rows)

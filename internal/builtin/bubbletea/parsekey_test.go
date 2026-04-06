@@ -3,215 +3,278 @@ package bubbletea
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 var parseKeyTests = []struct {
 	name                  string
 	input                 string
-	wantKeyType           tea.KeyType
-	wantRunes             []rune
+	wantCode              rune
+	wantText              string
 	wantAlt               bool
-	wantPaste             bool
 	wantAmbiguous         bool
 	wantNotMatchingString bool
 }{
+	// === Named Keys ===
 	{
-		name:        "shift+tab returns KeyShiftTab",
-		input:       "shift+tab",
-		wantKeyType: tea.KeyShiftTab,
+		name:     "tab returns KeyTab",
+		input:    "tab",
+		wantCode: tea.KeyTab,
 	},
 	{
-		name:        "tab returns KeyTab",
-		input:       "tab",
-		wantKeyType: tea.KeyTab,
+		name:     "enter returns KeyEnter",
+		input:    "enter",
+		wantCode: tea.KeyEnter,
 	},
 	{
-		name:        "enter returns KeyEnter",
-		input:       "enter",
-		wantKeyType: tea.KeyEnter,
+		name:     "escape returns KeyEscape",
+		input:    "esc",
+		wantCode: tea.KeyEscape,
 	},
 	{
-		name:          "space word returns KeyRunes ambiguous",
-		input:         "space",
-		wantKeyType:   tea.KeyRunes,
-		wantRunes:     []rune("space"),
-		wantAmbiguous: true,
-	},
-	{
-		name:        "literal space returns KeySpace",
-		input:       " ",
-		wantKeyType: tea.KeySpace,
-		wantRunes:   []rune{' '},
+		name:     "backspace",
+		input:    "backspace",
+		wantCode: tea.KeyBackspace,
 	},
 
+	// === Space Key ===
+	// "space" (named key) maps to KeyDefs["space"] → Code=' '
+	{
+		name:                  "space named key",
+		input:                 "space",
+		wantCode:              ' ',
+		wantAmbiguous:         false,
+		wantNotMatchingString: false, // String() = "space" == input "space"
+	},
+	// " " (literal space character) not in KeyDefs, special case handles it
+	{
+		name:                  "literal space character",
+		input:                 " ",
+		wantCode:              ' ',
+		wantText:              " ",
+		wantAmbiguous:         false,
+		wantNotMatchingString: true, // String() = "space" != input " "
+	},
+
+	// === Empty Input ===
 	{
 		name:                  "empty string returns zero value",
 		input:                 "",
-		wantKeyType:           0,    // KeyNull/Zero
+		wantCode:              0,
 		wantAmbiguous:         true, // !ok because input is empty
-		wantNotMatchingString: true,
-	},
-	{
-		name:        "ctrl+@ returns KeyNull",
-		input:       "ctrl+@",
-		wantKeyType: tea.KeyNull,
+		wantNotMatchingString: true, // String() = "\x00" != ""
 	},
 
+	// === Ctrl + Named Keys ===
+	// KeyDefs["ctrl+a"] → Code='a' (no Mod needed, the Code already represents ctrl)
 	{
-		name:          "alt+ prefix only (invalid named key)",
-		input:         "alt+",
-		wantKeyType:   tea.KeyRunes,
-		wantRunes:     []rune{},
-		wantAlt:       true,
-		wantAmbiguous: true, // Runes is empty (len 0), string is empty.
+		name:     "ctrl+a",
+		input:    "ctrl+a",
+		wantCode: 'a',
 	},
 	{
-		name:        "alt+enter returns KeyEnter with Alt",
-		input:       "alt+enter",
-		wantKeyType: tea.KeyEnter,
-		wantAlt:     true,
+		name:     "ctrl+c",
+		input:    "ctrl+c",
+		wantCode: 'c',
+	},
+	// "ctrl+@" in KeyDefs → Code='@'
+	{
+		name:     "ctrl+@",
+		input:    "ctrl+@",
+		wantCode: '@',
+	},
+
+	// === Ctrl + Symbols ===
+	// These are in KeyDefs with their respective codes
+	{
+		name:     "ctrl+backslash",
+		input:    "ctrl+\\",
+		wantCode: '\\',
 	},
 	{
-		name:        "alt+a returns KeyRunes 'a' with Alt",
-		input:       "alt+a",
-		wantKeyType: tea.KeyRunes,
-		wantRunes:   []rune{'a'},
-		wantAlt:     true,
+		name:     "ctrl+close_bracket",
+		input:    "ctrl+]",
+		wantCode: ']',
 	},
 	{
-		name:        "alt+space returns KeySpace with Alt",
-		input:       "alt+ ",
-		wantKeyType: tea.KeySpace,
-		wantAlt:     true,
-		wantRunes:   []rune{' '},
+		name:     "ctrl+caret",
+		input:    "ctrl+^",
+		wantCode: '^',
 	},
 	{
-		name:          "alt+alt+ double prefix",
-		input:         "alt+alt+",
-		wantKeyType:   tea.KeyRunes,
-		wantRunes:     []rune("alt+"),
-		wantAlt:       true, // First alt+ stripped, second remains as runes
+		name:     "ctrl+underscore",
+		input:    "ctrl+_",
+		wantCode: '_',
+	},
+
+	// === Shift + Named Keys ===
+	{
+		name:     "shift+tab",
+		input:    "shift+tab",
+		wantCode: tea.KeyTab,
+	},
+
+	// === Alt + Named Keys ===
+	{
+		name:     "alt+enter",
+		input:    "alt+enter",
+		wantCode: tea.KeyEnter,
+		wantAlt:  true,
+	},
+	{
+		name:     "alt+tab",
+		input:    "alt+tab",
+		wantCode: tea.KeyTab,
+		wantAlt:  true,
+	},
+	{
+		name:     "alt+escape",
+		input:    "alt+esc",
+		wantCode: tea.KeyEscape,
+		wantAlt:  true,
+	},
+
+	// === Alt + Raw Characters ===
+	// alt+letter: KeyDefs lookup fails (no "a" entry), step 3 handles it
+	// String() returns "a" not "alt+a" in v2
+	{
+		name:                  "alt+a returns letter a with Alt",
+		input:                 "alt+a",
+		wantCode:              'a',
+		wantAlt:               true,
+		wantText:              "a",
+		wantNotMatchingString: true, // String() = "a" != "alt+a"
+	},
+	// alt+space: KeyDefs lookup fails (no " " entry), step 3 handles literal space
+	// Input "alt+ " has 6 chars → unambiguous is true because space is single rune
+	{
+		name:                  "alt+space",
+		input:                 "alt+ ",
+		wantCode:              ' ',
+		wantAlt:               true,
+		wantText:              " ",
+		wantAmbiguous:         true,
+		wantNotMatchingString: true, // String() = "alt+space" != "alt+ "
+	},
+
+	// === Bare Modifier Prefix ===
+	// "alt+" alone → empty remainder → invalid → unambiguous=false
+	{
+		name:                  "alt+ prefix only",
+		input:                 "alt+",
+		wantCode:              0,
+		wantAlt:               true,
+		wantAmbiguous:         true, // !ok = unambiguous=false
+		wantNotMatchingString: true, // String() = "alt+\x00" != "alt+"
+	},
+
+	// === Double Modifier Prefix ===
+	// "alt+alt+" → first alt+ stripped → "alt+" → alt+ stripped → "" → invalid
+	{
+		name:                  "alt+alt+ double prefix",
+		input:                 "alt+alt+",
+		wantCode:              0,
+		wantAlt:               true,
+		wantAmbiguous:         true, // !ok = unambiguous=false
+		wantNotMatchingString: true, // String() = "alt+" != "alt+alt+"
+	},
+
+	// === Bracket Characters (plain text in v2) ===
+	// v2 doesn't have bracket paste syntax — brackets are plain text
+	// Multi-char text is ambiguous (could be IME, etc.)
+	{
+		name:          "bracket chars as plain text",
+		input:         "[a]",
+		wantCode:      0,
+		wantText:      "[a]",
 		wantAmbiguous: true,
 	},
-
 	{
-		name:        "paste [a]",
-		input:       "[a]",
-		wantKeyType: tea.KeyRunes,
-		wantRunes:   []rune{'a'},
-		wantPaste:   true,
-	},
-	{
-		name: "paste empty content [] (ignored as paste, fallback to runes)",
-		// Logic: len(s) > 2 check fails for "[]".
+		name:          "empty brackets as plain text",
 		input:         "[]",
-		wantKeyType:   tea.KeyRunes,
-		wantRunes:     []rune{'[', ']'},
+		wantCode:      0,
+		wantText:      "[]",
 		wantAmbiguous: true,
 	},
 	{
-		name:        "paste [ ] with space",
-		input:       "[ ]",
-		wantKeyType: tea.KeyRunes,
-		wantRunes:   []rune{' '},
-		wantPaste:   true,
+		name:          "bracket with space as plain text",
+		input:         "[ ]",
+		wantCode:      0,
+		wantText:      "[ ]",
+		wantAmbiguous: true,
 	},
 	{
-		name:        "paste [abc] multichar",
-		input:       "[abc]",
-		wantKeyType: tea.KeyRunes,
-		wantRunes:   []rune("abc"),
-		wantPaste:   true,
+		name:                  "alt+bracket",
+		input:                 "alt+[a]",
+		wantCode:              0,
+		wantText:              "[a]",
+		wantAlt:               true,
+		wantAmbiguous:         true,
+		wantNotMatchingString: true, // String() = "[a]" != "alt+[a]"
 	},
 	{
-		name: "paste with alt prefix alt+[a]",
-		// Logic: Strip "alt+", s="[a]". Check paste on "[a]" -> True.
-		input:       "alt+[a]",
-		wantKeyType: tea.KeyRunes,
-		wantRunes:   []rune{'a'},
-		wantAlt:     true,
-		wantPaste:   true,
+		name:          "nested brackets as plain text",
+		input:         "[[a]]",
+		wantCode:      0,
+		wantText:      "[[a]]",
+		wantAmbiguous: true,
 	},
 	{
-		name:        "nested brackets [[a]]",
-		input:       "[[a]]",
-		wantKeyType: tea.KeyRunes,
-		wantRunes:   []rune("[a]"),
-		wantPaste:   true,
-	},
-	{
-		name:          "malformed paste [a (missing closing)",
+		name:          "malformed bracket (missing close)",
 		input:         "[a",
-		wantKeyType:   tea.KeyRunes,
-		wantRunes:     []rune("[a"),
-		wantAmbiguous: true,
+		wantCode:      0,
+		wantText:      "[a",
+		wantAmbiguous: true, // multi-char is ambiguous
 	},
 
-	// --- Named Keys (Exhaustive Spot Checks) ---
+	// === Raw Rune Fallback ===
 	{
-		name:        "ctrl+c (KeyBreak/CtrlC)",
-		input:       "ctrl+c",
-		wantKeyType: tea.KeyBreak, // Aliased in map
-	},
-	{
-		name:        "esc (KeyEsc)",
-		input:       "esc",
-		wantKeyType: tea.KeyEsc,
-	},
-	{
-		name:        "backspace",
-		input:       "backspace",
-		wantKeyType: tea.KeyBackspace,
-	},
-	{
-		name:        "ctrl+@ (KeyNull)",
-		input:       "ctrl+@",
-		wantKeyType: tea.KeyNull,
-	},
-
-	{
-		name:        "single rune unambiguous",
-		input:       "x",
-		wantKeyType: tea.KeyRunes,
-		wantRunes:   []rune{'x'},
+		name:     "single rune unambiguous",
+		input:    "x",
+		wantCode: 0,
+		wantText: "x",
 	},
 	{
 		name:          "multi-rune sequence ambiguous",
 		input:         "xyz",
-		wantKeyType:   tea.KeyRunes,
-		wantRunes:     []rune("xyz"),
+		wantCode:      0,
+		wantText:      "xyz",
 		wantAmbiguous: true,
 	},
 	{
-		name:        "unicode single char (beta)",
-		input:       "β",
-		wantKeyType: tea.KeyRunes,
-		wantRunes:   []rune{'β'},
+		name:     "unicode single char (beta)",
+		input:    "β",
+		wantCode: 0,
+		wantText: "β",
 	},
+	// Emoji is multi-byte but single rune
 	{
-		name: "emoji single width-2 char (clown)",
-		// Logic: len(s) > 1 (bytes), len(runes) == 1. Unambiguous.
-		input:       "🤡",
-		wantKeyType: tea.KeyRunes,
-		wantRunes:   []rune{'🤡'},
+		name:     "emoji single rune (clown)",
+		input:    "🤡",
+		wantCode: 0,
+		wantText: "🤡",
 	},
+	// Precomposed emoji
 	{
-		name: "grapheme cluster (e + acute accent)",
-		// Logic: 2 runes, but uniseg.StringWidth is 1. Should be Unambiguous (ok=true).
-		input:         "e\u0301",
-		wantKeyType:   tea.KeyRunes,
-		wantRunes:     []rune{'e', '\u0301'},
-		wantAmbiguous: false,
+		name:     "precomposed emoji",
+		input:    "🎉",
+		wantCode: 0,
+		wantText: "🎉",
 	},
+	// Precomposed é is single rune
 	{
-		name: "ZWJ sequence (Family)",
-		// Logic: Multiple runes, Width 2. Should be Ambiguous.
-		// 👨 + ZWJ + 👩 + ZWJ + 👧 + ZWJ + 👦
+		name:     "grapheme cluster (precomposed é)",
+		input:    "é",
+		wantCode: 0,
+		wantText: "é",
+	},
+	// ZWJ sequence is multi-rune → ambiguous
+	{
+		name:          "ZWJ sequence (Family)",
 		input:         "\U0001f468\u200d\U0001f469\u200d\U0001f467\u200d\U0001f466",
-		wantKeyType:   tea.KeyRunes,
-		wantRunes:     []rune("\U0001f468\u200d\U0001f469\u200d\U0001f467\u200d\U0001f466"),
-		wantAmbiguous: true, // Width > 1, Runes > 1, len > 1
+		wantCode:      0,
+		wantText:      "\U0001f468\u200d\U0001f469\u200d\U0001f467\u200d\U0001f466",
+		wantAmbiguous: true,
 	},
 }
 
@@ -226,31 +289,25 @@ func TestParseKey(t *testing.T) {
 				t.Errorf("ParseKey(%q) unambiguous = %v, want %v", tt.input, ok, wantUnambiguous)
 			}
 
-			// 2. Check KeyType
-			if k.Type != tt.wantKeyType {
-				t.Errorf("ParseKey(%q) Type = %v, want %v", tt.input, k.Type, tt.wantKeyType)
+			// 2. Check Code
+			if k.Code != tt.wantCode {
+				t.Errorf("ParseKey(%q) Code = %v (%q), want %v (%q)", tt.input, k.Code, string(k.Code), tt.wantCode, string(tt.wantCode))
 			}
 
-			// 3. Check Modifiers
-			if k.Alt != tt.wantAlt {
-				t.Errorf("ParseKey(%q) Alt = %v, want %v", tt.input, k.Alt, tt.wantAlt)
-			}
-			if k.Paste != tt.wantPaste {
-				t.Errorf("ParseKey(%q) Paste = %v, want %v", tt.input, k.Paste, tt.wantPaste)
+			// 3. Check Text
+			if k.Text != tt.wantText {
+				t.Errorf("ParseKey(%q) Text = %q, want %q", tt.input, k.Text, tt.wantText)
 			}
 
-			// 4. Check Runes
-			if len(k.Runes) != len(tt.wantRunes) {
-				t.Errorf("ParseKey(%q) runes length = %d, want %d", tt.input, len(k.Runes), len(tt.wantRunes))
-			} else {
-				for i, r := range tt.wantRunes {
-					if k.Runes[i] != r {
-						t.Errorf("ParseKey(%q) runes[%d] = %q, want %q", tt.input, i, k.Runes[i], r)
-					}
-				}
+			// 4. Check Modifiers (Alt)
+			gotAlt := k.Mod&tea.ModAlt != 0
+			if gotAlt != tt.wantAlt {
+				t.Errorf("ParseKey(%q) Alt = %v, want %v", tt.input, gotAlt, tt.wantAlt)
 			}
 
-			// 5. Check String Match (k.String())
+			// 5. Check String Match
+			// wantNotMatchingString=true means we expect k.String() != input
+			// wantNotMatchingString=false means we expect k.String() == input
 			if s := k.String(); (s == tt.input) == tt.wantNotMatchingString {
 				t.Errorf("ParseKey(%q).String() = %q, want match: %v", tt.input, s, !tt.wantNotMatchingString)
 			}
@@ -280,31 +337,20 @@ func FuzzParseKey(f *testing.F) {
 		// Property 2: Determinism.
 		// If unambiguous, verify we got *something* valid.
 		if unambiguous {
-			// If it's unambiguous, it must either be a named key found in map
-			// OR a single rune/cluster.
-			isNamed := k.Type != tea.KeyRunes
+			isNamed := k.Code != 0
 
-			// Note: KeySpace (0) is a specific type, so we exclude it from "zero value" check logic
-			// if we were checking k.Type == 0.
-
-			if !isNamed && len(k.Runes) == 0 {
-				// Ambiguous should be false if we have no runes and no type (unless input was empty, handled by first check)
+			if !isNamed && len(k.Text) == 0 {
+				// Ambiguous should be false if we have no Code and no Text
 				if input != "" {
-					t.Errorf("ParseKey(%q) returned unambiguous but had no Type and no Runes", input)
+					t.Errorf("ParseKey(%q) returned unambiguous but had no Code and no Text", input)
 				}
 			}
 		}
 
-		// Property 3: Re-parsing contract (Sanity Check).
-		// Note: We cannot strictly enforce ParseKey(k.String()) == k because k.String()
-		// normalizes output (e.g. keyNUL -> "ctrl+@").
-		// However, we can verify that the output Key struct is not "impossible" (e.g. Paste=true but Runes=nil).
-		if k.Paste && len(k.Runes) == 0 {
-			// Implementation Detail: ParseKey sets Runes to s[1:len-1].
-			// If input is "[]", ParseKey returns k.Runes=[]rune{ '[', ']' } and Paste=false (ambiguous).
-			// If input is "[ ]", Runes=[' '].
-			// It should represent physically possible keys.
-			t.Errorf("ParseKey(%q) returned Paste=true but empty Runes", input)
+		// Property 3: Impossible result detection.
+		// If input is non-empty, unambiguous, but Code=0 and Text empty → impossible.
+		if len(k.Text) == 0 && k.Code == 0 && input != "" && unambiguous {
+			t.Errorf("ParseKey(%q) returned zero Code and empty Text but was unambiguous", input)
 		}
 	})
 }

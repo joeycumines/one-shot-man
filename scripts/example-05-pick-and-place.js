@@ -1590,7 +1590,7 @@ try {
         for (let i = 0; i < state.pendingInputs.length; i++) {
             const msg = state.pendingInputs[i];
 
-            if (msg.type === 'Mouse' && msg.action === 'press' && msg.button === 'left') {
+            if (msg.type === 'MouseClick' && msg.button === 'left') {
                 latestMouseMsg = msg; // Last writer wins
             } else if (msg.type === 'Key') {
                 switch (msg.key) {
@@ -1744,7 +1744,7 @@ try {
             return [state, null];
         }
 
-        if (msg.type === 'Mouse' && msg.action === 'press' && msg.button === 'left') {
+        if (msg.type === 'MouseClick' && msg.button === 'left') {
             state.pendingInputs.push(msg);
             return [state, null];
         }

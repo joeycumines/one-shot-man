@@ -1,6 +1,7 @@
 package bubbletea
 
 import (
+	"strings"
 	"unicode"
 )
 
@@ -50,6 +51,19 @@ func ValidateTextareaInput(keyStr string, isPaste bool) InputValidationResult {
 	// This includes: enter, backspace, tab, arrows, pgup/pgdown, delete, ctrl+*, etc.
 	if _, ok := KeyDefs[keyStr]; ok {
 		return InputValidationResult{Valid: true, Reason: "recognized key"}
+	}
+
+	// Handle modifier+key combinations (e.g., "ctrl+home", "shift+left", "ctrl+end")
+	// by stripping the modifier prefix and checking if the remainder is a valid key.
+	modifierPrefixes := []string{"ctrl+", "alt+", "shift+", "meta+", "hyper+", "super+"}
+	for _, prefix := range modifierPrefixes {
+		if strings.HasPrefix(keyStr, prefix) {
+			remainder := keyStr[len(prefix):]
+			// Check if the remainder (the key without modifier) is a valid named key
+			if _, ok := KeyDefs[remainder]; ok {
+				return InputValidationResult{Valid: true, Reason: "recognized modifier+key"}
+			}
+		}
 	}
 
 	// Single character validation

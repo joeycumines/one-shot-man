@@ -4,13 +4,14 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
+	"github.com/stretchr/testify/require"
 )
 
-// parseMouseEvent parses a string representation of a mouse event back into a MouseEvent.
-// This is used only in tests. The string format matches tea.MouseEvent.String().
-func parseMouseEvent(s string) (tea.MouseEvent, bool) {
-	var m tea.MouseEvent
+// parseMouseEvent parses a string representation of a mouse event back into a tea.Mouse.
+// This is used only in tests. The string format matches tea.Mouse.String().
+func parseMouseEvent(s string) (tea.Mouse, bool) {
+	var m tea.Mouse
 
 	if s == "" {
 		return m, false
@@ -18,29 +19,29 @@ func parseMouseEvent(s string) (tea.MouseEvent, bool) {
 
 	// Parse modifiers
 	remaining := s
+	var mod tea.KeyMod
 	for {
 		if strings.HasPrefix(remaining, "ctrl+") {
-			m.Ctrl = true
+			mod |= tea.ModCtrl
 			remaining = remaining[5:]
 		} else if strings.HasPrefix(remaining, "alt+") {
-			m.Alt = true
+			mod |= tea.ModAlt
 			remaining = remaining[4:]
 		} else if strings.HasPrefix(remaining, "shift+") {
-			m.Shift = true
+			mod |= tea.ModShift
 			remaining = remaining[6:]
 		} else {
 			break
 		}
 	}
+	m.Mod = mod
 
 	if remaining == "motion" {
-		m.Button = tea.MouseButtonNone
-		m.Action = tea.MouseActionMotion
+		m.Button = tea.MouseNone
 		return m, true
 	}
 	if remaining == "release" {
-		m.Button = tea.MouseButtonNone
-		m.Action = tea.MouseActionRelease
+		m.Button = tea.MouseNone
 		return m, true
 	}
 
@@ -59,21 +60,6 @@ func parseMouseEvent(s string) (tea.MouseEvent, bool) {
 	}
 
 	m.Button = bestButtonDef.Button
-
-	after := remaining[bestButtonLen:]
-	after = strings.TrimPrefix(after, " ")
-
-	if after == "" {
-		m.Action = tea.MouseActionPress
-		return m, true
-	}
-
-	if actionDef, ok := MouseActionDefs[after]; ok {
-		m.Action = actionDef.Action
-		return m, true
-	}
-
-	m.Action = tea.MouseActionPress
 	return m, true
 }
 
@@ -81,219 +67,171 @@ func TestParseMouseEvent(t *testing.T) {
 	tests := []struct {
 		name   string
 		input  string
-		want   tea.MouseEvent
+		want   tea.Mouse
 		wantOk bool
 	}{
-		// Basic button presses
 		{
 			name:  "left press",
-			input: "left press",
-			want: tea.MouseEvent{
-				Button: tea.MouseButtonLeft,
-				Action: tea.MouseActionPress,
+			input: "left",
+			want: tea.Mouse{
+				Button: tea.MouseLeft,
 			},
 			wantOk: true,
 		},
 		{
 			name:  "right press",
-			input: "right press",
-			want: tea.MouseEvent{
-				Button: tea.MouseButtonRight,
-				Action: tea.MouseActionPress,
+			input: "right",
+			want: tea.Mouse{
+				Button: tea.MouseRight,
 			},
 			wantOk: true,
 		},
 		{
 			name:  "middle press",
-			input: "middle press",
-			want: tea.MouseEvent{
-				Button: tea.MouseButtonMiddle,
-				Action: tea.MouseActionPress,
+			input: "middle",
+			want: tea.Mouse{
+				Button: tea.MouseMiddle,
 			},
 			wantOk: true,
 		},
-		// Button releases
-		{
-			name:  "left release",
-			input: "left release",
-			want: tea.MouseEvent{
-				Button: tea.MouseButtonLeft,
-				Action: tea.MouseActionRelease,
-			},
-			wantOk: true,
-		},
-		{
-			name:  "right release",
-			input: "right release",
-			want: tea.MouseEvent{
-				Button: tea.MouseButtonRight,
-				Action: tea.MouseActionRelease,
-			},
-			wantOk: true,
-		},
-		// Wheel events (no action needed - they're always press)
 		{
 			name:  "wheel up",
 			input: "wheel up",
-			want: tea.MouseEvent{
-				Button: tea.MouseButtonWheelUp,
-				Action: tea.MouseActionPress,
+			want: tea.Mouse{
+				Button: tea.MouseWheelUp,
 			},
 			wantOk: true,
 		},
 		{
 			name:  "wheel down",
 			input: "wheel down",
-			want: tea.MouseEvent{
-				Button: tea.MouseButtonWheelDown,
-				Action: tea.MouseActionPress,
+			want: tea.Mouse{
+				Button: tea.MouseWheelDown,
 			},
 			wantOk: true,
 		},
 		{
 			name:  "wheel left",
 			input: "wheel left",
-			want: tea.MouseEvent{
-				Button: tea.MouseButtonWheelLeft,
-				Action: tea.MouseActionPress,
+			want: tea.Mouse{
+				Button: tea.MouseWheelLeft,
 			},
 			wantOk: true,
 		},
 		{
 			name:  "wheel right",
 			input: "wheel right",
-			want: tea.MouseEvent{
-				Button: tea.MouseButtonWheelRight,
-				Action: tea.MouseActionPress,
+			want: tea.Mouse{
+				Button: tea.MouseWheelRight,
 			},
 			wantOk: true,
 		},
-		// Motion event
 		{
 			name:  "motion",
 			input: "motion",
-			want: tea.MouseEvent{
-				Button: tea.MouseButtonNone,
-				Action: tea.MouseActionMotion,
+			want: tea.Mouse{
+				Button: tea.MouseNone,
 			},
 			wantOk: true,
 		},
-		// Release without button
 		{
 			name:  "release alone",
 			input: "release",
-			want: tea.MouseEvent{
-				Button: tea.MouseButtonNone,
-				Action: tea.MouseActionRelease,
-			},
-			wantOk: true,
-		},
-		// With modifiers
-		{
-			name:  "ctrl left press",
-			input: "ctrl+left press",
-			want: tea.MouseEvent{
-				Button: tea.MouseButtonLeft,
-				Action: tea.MouseActionPress,
-				Ctrl:   true,
+			want: tea.Mouse{
+				Button: tea.MouseNone,
 			},
 			wantOk: true,
 		},
 		{
-			name:  "alt right press",
-			input: "alt+right press",
-			want: tea.MouseEvent{
-				Button: tea.MouseButtonRight,
-				Action: tea.MouseActionPress,
-				Alt:    true,
+			name:  "ctrl left",
+			input: "ctrl+left",
+			want: tea.Mouse{
+				Button: tea.MouseLeft,
+				Mod:    tea.ModCtrl,
 			},
 			wantOk: true,
 		},
 		{
-			name:  "shift middle press",
-			input: "shift+middle press",
-			want: tea.MouseEvent{
-				Button: tea.MouseButtonMiddle,
-				Action: tea.MouseActionPress,
-				Shift:  true,
+			name:  "alt right",
+			input: "alt+right",
+			want: tea.Mouse{
+				Button: tea.MouseRight,
+				Mod:    tea.ModAlt,
 			},
 			wantOk: true,
 		},
 		{
-			name:  "ctrl alt left press",
-			input: "ctrl+alt+left press",
-			want: tea.MouseEvent{
-				Button: tea.MouseButtonLeft,
-				Action: tea.MouseActionPress,
-				Ctrl:   true,
-				Alt:    true,
+			name:  "shift middle",
+			input: "shift+middle",
+			want: tea.Mouse{
+				Button: tea.MouseMiddle,
+				Mod:    tea.ModShift,
 			},
 			wantOk: true,
 		},
 		{
-			name:  "ctrl alt shift left press",
-			input: "ctrl+alt+shift+left press",
-			want: tea.MouseEvent{
-				Button: tea.MouseButtonLeft,
-				Action: tea.MouseActionPress,
-				Ctrl:   true,
-				Alt:    true,
-				Shift:  true,
+			name:  "ctrl alt left",
+			input: "ctrl+alt+left",
+			want: tea.Mouse{
+				Button: tea.MouseLeft,
+				Mod:    tea.ModCtrl | tea.ModAlt,
+			},
+			wantOk: true,
+		},
+		{
+			name:  "ctrl alt shift left",
+			input: "ctrl+alt+shift+left",
+			want: tea.Mouse{
+				Button: tea.MouseLeft,
+				Mod:    tea.ModCtrl | tea.ModAlt | tea.ModShift,
 			},
 			wantOk: true,
 		},
 		{
 			name:  "ctrl wheel up",
 			input: "ctrl+wheel up",
-			want: tea.MouseEvent{
-				Button: tea.MouseButtonWheelUp,
-				Action: tea.MouseActionPress,
-				Ctrl:   true,
-			},
-			wantOk: true,
-		},
-		// Extended buttons
-		{
-			name:  "backward press",
-			input: "backward press",
-			want: tea.MouseEvent{
-				Button: tea.MouseButtonBackward,
-				Action: tea.MouseActionPress,
+			want: tea.Mouse{
+				Button: tea.MouseWheelUp,
+				Mod:    tea.ModCtrl,
 			},
 			wantOk: true,
 		},
 		{
-			name:  "forward press",
-			input: "forward press",
-			want: tea.MouseEvent{
-				Button: tea.MouseButtonForward,
-				Action: tea.MouseActionPress,
+			name:  "backward",
+			input: "backward",
+			want: tea.Mouse{
+				Button: tea.MouseBackward,
 			},
 			wantOk: true,
 		},
 		{
-			name:  "button 10 press",
-			input: "button 10 press",
-			want: tea.MouseEvent{
+			name:  "forward",
+			input: "forward",
+			want: tea.Mouse{
+				Button: tea.MouseForward,
+			},
+			wantOk: true,
+		},
+		{
+			name:  "button 10",
+			input: "button 10",
+			want: tea.Mouse{
 				Button: tea.MouseButton10,
-				Action: tea.MouseActionPress,
 			},
 			wantOk: true,
 		},
 		{
-			name:  "button 11 press",
-			input: "button 11 press",
-			want: tea.MouseEvent{
+			name:  "button 11",
+			input: "button 11",
+			want: tea.Mouse{
 				Button: tea.MouseButton11,
-				Action: tea.MouseActionPress,
 			},
 			wantOk: true,
 		},
-		// Empty input
 		{
 			name:   "empty string",
 			input:  "",
-			want:   tea.MouseEvent{},
+			want:   tea.Mouse{},
 			wantOk: false,
 		},
 	}
@@ -311,17 +249,8 @@ func TestParseMouseEvent(t *testing.T) {
 			if got.Button != tt.want.Button {
 				t.Errorf("parseMouseEvent(%q) button = %v, want %v", tt.input, got.Button, tt.want.Button)
 			}
-			if got.Action != tt.want.Action {
-				t.Errorf("parseMouseEvent(%q) action = %v, want %v", tt.input, got.Action, tt.want.Action)
-			}
-			if got.Ctrl != tt.want.Ctrl {
-				t.Errorf("parseMouseEvent(%q) ctrl = %v, want %v", tt.input, got.Ctrl, tt.want.Ctrl)
-			}
-			if got.Alt != tt.want.Alt {
-				t.Errorf("parseMouseEvent(%q) alt = %v, want %v", tt.input, got.Alt, tt.want.Alt)
-			}
-			if got.Shift != tt.want.Shift {
-				t.Errorf("parseMouseEvent(%q) shift = %v, want %v", tt.input, got.Shift, tt.want.Shift)
+			if got.Mod != tt.want.Mod {
+				t.Errorf("parseMouseEvent(%q) mod = %v, want %v", tt.input, got.Mod, tt.want.Mod)
 			}
 		})
 	}
@@ -332,47 +261,24 @@ func TestMouseEventToJS(t *testing.T) {
 		name       string
 		event      tea.MouseMsg
 		wantButton string
-		wantAction string
 		wantWheel  bool
 	}{
 		{
-			name: "left press",
-			event: tea.MouseMsg(tea.MouseEvent{
-				Button: tea.MouseButtonLeft,
-				Action: tea.MouseActionPress,
-			}),
+			name:       "left click",
+			event:      tea.MouseClickMsg{Button: tea.MouseLeft},
 			wantButton: "left",
-			wantAction: "press",
 			wantWheel:  false,
 		},
 		{
-			name: "right release",
-			event: tea.MouseMsg(tea.MouseEvent{
-				Button: tea.MouseButtonRight,
-				Action: tea.MouseActionRelease,
-			}),
-			wantButton: "right",
-			wantAction: "release",
-			wantWheel:  false,
-		},
-		{
-			name: "wheel up",
-			event: tea.MouseMsg(tea.MouseEvent{
-				Button: tea.MouseButtonWheelUp,
-				Action: tea.MouseActionPress,
-			}),
+			name:       "wheel up",
+			event:      tea.MouseWheelMsg{Button: tea.MouseWheelUp},
 			wantButton: "wheel up",
-			wantAction: "press",
 			wantWheel:  true,
 		},
 		{
-			name: "motion",
-			event: tea.MouseMsg(tea.MouseEvent{
-				Button: tea.MouseButtonNone,
-				Action: tea.MouseActionMotion,
-			}),
+			name:       "motion",
+			event:      tea.MouseMotionMsg{Button: tea.MouseNone},
 			wantButton: "none",
-			wantAction: "motion",
 			wantWheel:  false,
 		},
 	}
@@ -383,9 +289,6 @@ func TestMouseEventToJS(t *testing.T) {
 			if js["button"] != tt.wantButton {
 				t.Errorf("MouseEventToJS() button = %v, want %v", js["button"], tt.wantButton)
 			}
-			if js["action"] != tt.wantAction {
-				t.Errorf("MouseEventToJS() action = %v, want %v", js["action"], tt.wantAction)
-			}
 			if js["isWheel"] != tt.wantWheel {
 				t.Errorf("MouseEventToJS() isWheel = %v, want %v", js["isWheel"], tt.wantWheel)
 			}
@@ -395,107 +298,134 @@ func TestMouseEventToJS(t *testing.T) {
 
 func TestJSToMouseEvent(t *testing.T) {
 	tests := []struct {
-		name      string
-		button    string
-		action    string
-		x, y      int
-		alt       bool
-		ctrl      bool
-		shift     bool
-		wantEvent tea.MouseEvent
+		name       string
+		button     string
+		action     string
+		x, y       int
+		alt        bool
+		ctrl       bool
+		shift      bool
+		wantButton tea.MouseButton
+		wantMod    tea.KeyMod
 	}{
 		{
-			name:   "left press",
-			button: "left",
-			action: "press",
-			x:      10,
-			y:      20,
-			wantEvent: tea.MouseEvent{
-				Button: tea.MouseButtonLeft,
-				Action: tea.MouseActionPress,
-				X:      10,
-				Y:      20,
-			},
+			name:       "left press",
+			button:     "left",
+			action:     "press",
+			x:          10,
+			y:          20,
+			wantButton: tea.MouseLeft,
 		},
 		{
-			name:   "wheel down with modifiers",
-			button: "wheel down",
-			action: "press",
-			x:      5,
-			y:      15,
-			ctrl:   true,
-			alt:    true,
-			wantEvent: tea.MouseEvent{
-				Button: tea.MouseButtonWheelDown,
-				Action: tea.MouseActionPress,
-				X:      5,
-				Y:      15,
-				Ctrl:   true,
-				Alt:    true,
-			},
+			name:       "wheel down with modifiers",
+			button:     "wheel down",
+			action:     "press",
+			x:          5,
+			y:          15,
+			ctrl:       true,
+			alt:        true,
+			wantButton: tea.MouseWheelDown,
+			wantMod:    tea.ModCtrl | tea.ModAlt,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := JSToMouseEvent(tt.button, tt.action, tt.x, tt.y, tt.alt, tt.ctrl, tt.shift)
-			event := tea.MouseEvent(got)
-			if event.Button != tt.wantEvent.Button {
-				t.Errorf("JSToMouseEvent() button = %v, want %v", event.Button, tt.wantEvent.Button)
-			}
-			if event.Action != tt.wantEvent.Action {
-				t.Errorf("JSToMouseEvent() action = %v, want %v", event.Action, tt.wantEvent.Action)
-			}
-			if event.X != tt.wantEvent.X {
-				t.Errorf("JSToMouseEvent() x = %v, want %v", event.X, tt.wantEvent.X)
-			}
-			if event.Y != tt.wantEvent.Y {
-				t.Errorf("JSToMouseEvent() y = %v, want %v", event.Y, tt.wantEvent.Y)
-			}
-			if event.Ctrl != tt.wantEvent.Ctrl {
-				t.Errorf("JSToMouseEvent() ctrl = %v, want %v", event.Ctrl, tt.wantEvent.Ctrl)
-			}
-			if event.Alt != tt.wantEvent.Alt {
-				t.Errorf("JSToMouseEvent() alt = %v, want %v", event.Alt, tt.wantEvent.Alt)
+			switch m := got.(type) {
+			case tea.MouseClickMsg:
+				if m.Button != tt.wantButton {
+					t.Errorf("JSToMouseEvent() button = %v, want %v", m.Button, tt.wantButton)
+				}
+				if m.X != tt.x {
+					t.Errorf("JSToMouseEvent() x = %v, want %v", m.X, tt.x)
+				}
+				if m.Y != tt.y {
+					t.Errorf("JSToMouseEvent() y = %v, want %v", m.Y, tt.y)
+				}
+				if m.Mod != tt.wantMod {
+					t.Errorf("JSToMouseEvent() mod = %v, want %v", m.Mod, tt.wantMod)
+				}
+			case tea.MouseWheelMsg:
+				// Wheel buttons always produce MouseWheelMsg in v2
+				if m.Button != tt.wantButton {
+					t.Errorf("JSToMouseEvent() button = %v, want %v", m.Button, tt.wantButton)
+				}
+				if m.X != tt.x {
+					t.Errorf("JSToMouseEvent() x = %v, want %v", m.X, tt.x)
+				}
+				if m.Y != tt.y {
+					t.Errorf("JSToMouseEvent() y = %v, want %v", m.Y, tt.y)
+				}
+				if m.Mod != tt.wantMod {
+					t.Errorf("JSToMouseEvent() mod = %v, want %v", m.Mod, tt.wantMod)
+				}
+			default:
+				t.Errorf("JSToMouseEvent() returned unexpected type %T", got)
 			}
 		})
 	}
 }
 
 func TestMouseEventRoundTrip(t *testing.T) {
-	// Test that MouseEventToJS -> JSToMouseEvent preserves the event
-	events := []tea.MouseEvent{
-		{Button: tea.MouseButtonLeft, Action: tea.MouseActionPress, X: 10, Y: 20},
-		{Button: tea.MouseButtonRight, Action: tea.MouseActionRelease, X: 5, Y: 15, Ctrl: true},
-		{Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress, X: 0, Y: 0},
-		{Button: tea.MouseButtonNone, Action: tea.MouseActionMotion, X: 100, Y: 200, Alt: true, Shift: true},
+	events := []struct {
+		msg  tea.MouseMsg
+		want tea.Mouse
+	}{
+		{tea.MouseClickMsg{Button: tea.MouseLeft, X: 10, Y: 20}, tea.Mouse{Button: tea.MouseLeft, X: 10, Y: 20}},
+		{tea.MouseClickMsg{Button: tea.MouseRight, X: 5, Y: 15, Mod: tea.ModCtrl}, tea.Mouse{Button: tea.MouseRight, X: 5, Y: 15, Mod: tea.ModCtrl}},
+		{tea.MouseWheelMsg{Button: tea.MouseWheelUp, X: 0, Y: 0}, tea.Mouse{Button: tea.MouseWheelUp, X: 0, Y: 0}},
+		{tea.MouseMotionMsg{Button: tea.MouseNone, X: 100, Y: 200, Mod: tea.ModAlt | tea.ModShift}, tea.Mouse{Button: tea.MouseNone, X: 100, Y: 200, Mod: tea.ModAlt | tea.ModShift}},
 	}
 
-	for _, orig := range events {
-		js := MouseEventToJS(tea.MouseMsg(orig))
-		reconstructed := JSToMouseEvent(
-			js["button"].(string),
-			js["action"].(string),
-			js["x"].(int),
-			js["y"].(int),
-			js["alt"].(bool),
-			js["ctrl"].(bool),
-			js["shift"].(bool),
-		)
-		got := tea.MouseEvent(reconstructed)
+	for _, tc := range events {
+		js := MouseEventToJS(tc.msg)
+		require.NotNil(t, js)
 
-		if got.Button != orig.Button {
-			t.Errorf("Round-trip button mismatch: got %v, want %v", got.Button, orig.Button)
+		button := js["button"].(string)
+		x := js["x"].(int)
+		y := js["y"].(int)
+		mod := js["mod"].([]string)
+
+		// Reconstruct modifiers from the mod slice
+		var alt, ctrl, shift bool
+		for _, m := range mod {
+			switch m {
+			case "alt":
+				alt = true
+			case "ctrl":
+				ctrl = true
+			case "shift":
+				shift = true
+			}
 		}
-		if got.Action != orig.Action {
-			t.Errorf("Round-trip action mismatch: got %v, want %v", got.Action, orig.Action)
+
+		reconstructed := JSToMouseEvent(button, "", x, y, alt, ctrl, shift)
+
+		// Extract the Mouse from the reconstructed message
+		var gotMouse tea.Mouse
+		switch m := reconstructed.(type) {
+		case tea.MouseClickMsg:
+			gotMouse = m.Mouse()
+		case tea.MouseWheelMsg:
+			gotMouse = m.Mouse()
+		case tea.MouseMotionMsg:
+			gotMouse = m.Mouse()
+		case tea.MouseReleaseMsg:
+			gotMouse = m.Mouse()
+		default:
+			t.Errorf("Unexpected message type: %T", reconstructed)
+			continue
 		}
-		if got.X != orig.X || got.Y != orig.Y {
-			t.Errorf("Round-trip position mismatch: got (%d,%d), want (%d,%d)", got.X, got.Y, orig.X, orig.Y)
+
+		if gotMouse.Button != tc.want.Button {
+			t.Errorf("Round-trip button mismatch: got %v, want %v", gotMouse.Button, tc.want.Button)
 		}
-		if got.Ctrl != orig.Ctrl || got.Alt != orig.Alt || got.Shift != orig.Shift {
-			t.Errorf("Round-trip modifier mismatch: got (ctrl=%v,alt=%v,shift=%v), want (ctrl=%v,alt=%v,shift=%v)",
-				got.Ctrl, got.Alt, got.Shift, orig.Ctrl, orig.Alt, orig.Shift)
+		if gotMouse.X != tc.want.X || gotMouse.Y != tc.want.Y {
+			t.Errorf("Round-trip position mismatch: got (%d,%d), want (%d,%d)", gotMouse.X, gotMouse.Y, tc.want.X, tc.want.Y)
+		}
+		if gotMouse.Mod != tc.want.Mod {
+			t.Errorf("Round-trip modifier mismatch: got %v, want %v", gotMouse.Mod, tc.want.Mod)
 		}
 	}
 }

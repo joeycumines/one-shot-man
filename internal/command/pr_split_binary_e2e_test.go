@@ -657,13 +657,39 @@ func TestBinaryE2E_ClaudeCommandFlags(t *testing.T) {
 
 func assertContainsAny(t *testing.T, output, label string, substrs ...string) {
 	t.Helper()
-	lower := strings.ToLower(output)
+	// Strip ANSI escape sequences from the captured output before checking substrings.
+	// When using lipgloss v2, styled strings (e.g. style.success("Done")) embed ANSI
+	// codes that can cause substring matching to fail on otherwise-correct output.
+	clean := stripANSI(output)
+	lower := strings.ToLower(clean)
 	for _, s := range substrs {
 		if strings.Contains(lower, strings.ToLower(s)) {
 			return
 		}
 	}
 	t.Errorf("%s: expected one of %v in output, got:\n%s", label, substrs, output)
+}
+
+// stripANSI removes ANSI escape sequences from a string for plain-text matching.
+func stripANSI(s string) string {
+	var result strings.Builder
+	i := 0
+	for i < len(s) {
+		if i+1 < len(s) && s[i] == '\x1b' && s[i+1] == '[' {
+			j := i + 2
+			for j < len(s) && !((s[j] >= 'A' && s[j] <= 'Z') || (s[j] >= 'a' && s[j] <= 'z')) {
+				j++
+			}
+			if j < len(s) {
+				j++
+			}
+			i = j
+			continue
+		}
+		result.WriteByte(s[i])
+		i++
+	}
+	return result.String()
 }
 
 // ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,7 +24,7 @@ type noopModel struct{}
 
 func (noopModel) Init() tea.Cmd                       { return nil }
 func (noopModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return noopModel{}, nil }
-func (noopModel) View() string                        { return "" }
+func (noopModel) View() tea.View                      { return tea.NewView("") }
 
 // ========================================================================
 // valueToCmd — all cmd type descriptors
@@ -41,21 +41,14 @@ func TestValueToCmd_AllCmdTypes(t *testing.T) {
 		extra     func(*goja.Object) // optional extra properties
 		expectNil bool
 	}{
+		// Commands that still exist in v2
 		{"quit", "quit", nil, false},
 		{"clearScreen", "clearScreen", nil, false},
-		{"hideCursor", "hideCursor", nil, false},
-		{"showCursor", "showCursor", nil, false},
-		{"enterAltScreen", "enterAltScreen", nil, false},
-		{"exitAltScreen", "exitAltScreen", nil, false},
-		{"enableBracketedPaste", "enableBracketedPaste", nil, false},
-		{"disableBracketedPaste", "disableBracketedPaste", nil, false},
-		{"enableReportFocus", "enableReportFocus", nil, false},
-		{"disableReportFocus", "disableReportFocus", nil, false},
-		{"windowSize", "windowSize", nil, false},
-		{"setWindowTitle with title", "setWindowTitle", func(o *goja.Object) {
-			_ = o.Set("title", "hello")
-		}, false},
-		{"setWindowTitle nil title", "setWindowTitle", nil, true},
+		{"requestWindowSize", "requestWindowSize", nil, false},
+		// Removed commands (now declarative View fields in v2) - these return nil
+		// hideCursor, showCursor, enterAltScreen, exitAltScreen, enableBracketedPaste,
+		// disableBracketedPaste, enableReportFocus, disableReportFocus, windowSize,
+		// setWindowTitle - all removed in v2
 		{"unknown type", "nonexistent", nil, true},
 	}
 
@@ -360,14 +353,16 @@ func TestView_NilGuards(t *testing.T) {
 	t.Run("nil model", func(t *testing.T) {
 		t.Parallel()
 		var m *jsModel
-		assert.Contains(t, m.View(), "nil model/viewFn/runtime")
+		v := m.View()
+		assert.Contains(t, v.Content, "nil model/viewFn/runtime")
 	})
 
 	t.Run("nil viewFn", func(t *testing.T) {
 		t.Parallel()
 		vm := goja.New()
 		m := &jsModel{runtime: vm, viewFn: nil}
-		assert.Contains(t, m.View(), "nil model/viewFn/runtime")
+		v := m.View()
+		assert.Contains(t, v.Content, "nil model/viewFn/runtime")
 	})
 
 	t.Run("nil runtime", func(t *testing.T) {
@@ -378,7 +373,8 @@ func TestView_NilGuards(t *testing.T) {
 				return nil, nil
 			},
 		}
-		assert.Contains(t, m.View(), "nil model/viewFn/runtime")
+		v := m.View()
+		assert.Contains(t, v.Content, "nil model/viewFn/runtime")
 	})
 }
 
@@ -396,9 +392,9 @@ func TestView_InitError(t *testing.T) {
 	m.jsRunner = &SyncJSRunner{Runtime: vm}
 
 	output := m.View()
-	assert.Contains(t, output, "Init error")
-	assert.Contains(t, output, "something went wrong")
-	assert.NotContains(t, output, "should not appear")
+	assert.Contains(t, output.Content, "Init error")
+	assert.Contains(t, output.Content, "something went wrong")
+	assert.NotContains(t, output.Content, "should not appear")
 }
 
 // ========================================================================
@@ -463,7 +459,7 @@ func TestUpdate_NilGuards(t *testing.T) {
 	t.Run("nil model", func(t *testing.T) {
 		t.Parallel()
 		var m *jsModel
-		retModel, cmd := m.Update(tea.KeyMsg{})
+		retModel, cmd := m.Update(tea.KeyPressMsg{})
 		assert.Nil(t, retModel)
 		assert.Nil(t, cmd)
 	})
@@ -471,7 +467,7 @@ func TestUpdate_NilGuards(t *testing.T) {
 	t.Run("nil updateFn", func(t *testing.T) {
 		t.Parallel()
 		m := &jsModel{runtime: goja.New(), updateFn: nil}
-		retModel, cmd := m.Update(tea.KeyMsg{})
+		retModel, cmd := m.Update(tea.KeyPressMsg{})
 		assert.Equal(t, m, retModel)
 		assert.Nil(t, cmd)
 	})
@@ -518,27 +514,30 @@ func TestInit_NilGuards(t *testing.T) {
 func TestJSToMouseEvent_UnknownInputs(t *testing.T) {
 	t.Parallel()
 
-	t.Run("unknown button → MouseButtonNone", func(t *testing.T) {
+	t.Run("unknown button → MouseNone", func(t *testing.T) {
 		t.Parallel()
 		msg := JSToMouseEvent("totally_bogus_button", "press", 1, 2, false, false, false)
-		assert.Equal(t, tea.MouseButtonNone, tea.MouseEvent(msg).Button)
-		assert.Equal(t, tea.MouseActionPress, tea.MouseEvent(msg).Action)
+		mc, ok := msg.(tea.MouseClickMsg)
+		require.True(t, ok)
+		assert.Equal(t, tea.MouseNone, mc.Button)
 	})
 
-	t.Run("unknown action → MouseActionPress", func(t *testing.T) {
+	t.Run("unknown action → defaults to click", func(t *testing.T) {
 		t.Parallel()
 		msg := JSToMouseEvent("left", "totally_bogus_action", 3, 4, true, false, true)
-		assert.Equal(t, tea.MouseButtonLeft, tea.MouseEvent(msg).Button)
-		assert.Equal(t, tea.MouseActionPress, tea.MouseEvent(msg).Action)
-		assert.True(t, tea.MouseEvent(msg).Alt)
-		assert.True(t, tea.MouseEvent(msg).Shift)
+		mc, ok := msg.(tea.MouseClickMsg)
+		require.True(t, ok)
+		assert.Equal(t, tea.MouseLeft, mc.Button)
+		assert.True(t, mc.Mod&tea.ModAlt != 0)
+		assert.True(t, mc.Mod&tea.ModShift != 0)
 	})
 
 	t.Run("both unknown", func(t *testing.T) {
 		t.Parallel()
 		msg := JSToMouseEvent("???", "???", 0, 0, false, false, false)
-		assert.Equal(t, tea.MouseButtonNone, tea.MouseEvent(msg).Button)
-		assert.Equal(t, tea.MouseActionPress, tea.MouseEvent(msg).Action)
+		mc, ok := msg.(tea.MouseClickMsg)
+		require.True(t, ok)
+		assert.Equal(t, tea.MouseNone, mc.Button)
 	})
 }
 
@@ -815,7 +814,6 @@ func TestRequire_SimpleCommandExports(t *testing.T) {
 	cmds := []string{
 		"quit", "clearScreen", "hideCursor", "showCursor",
 		"enterAltScreen", "exitAltScreen",
-		"enableBracketedPaste", "disableBracketedPaste",
 		"enableReportFocus", "disableReportFocus",
 		"windowSize",
 	}
@@ -987,15 +985,6 @@ func TestRequire_MouseButtonsExport(t *testing.T) {
 	assert.True(t, len(mouseButtons.Keys()) > 0, "mouseButtons should not be empty")
 }
 
-func TestRequire_MouseActionsExport(t *testing.T) {
-	t.Parallel()
-	vm, exports := requireExports(t)
-
-	mouseActions := exports.Get("mouseActions").ToObject(vm)
-	assert.NotNil(t, mouseActions)
-	assert.True(t, len(mouseActions.Keys()) > 0, "mouseActions should not be empty")
-}
-
 // ========================================================================
 // Require — run without valid model
 // ========================================================================
@@ -1057,7 +1046,7 @@ func TestUpdate_RunJSSyncError(t *testing.T) {
 		state:    vm.NewObject(),
 		jsRunner: &errorJSRunner{},
 	}
-	retModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	retModel, cmd := model.Update(tea.KeyPressMsg{Text: "a"})
 	assert.Equal(t, model, retModel)
 	assert.Nil(t, cmd)
 }
@@ -1074,7 +1063,7 @@ func TestView_RunJSSyncError(t *testing.T) {
 		jsRunner: &errorJSRunner{},
 	}
 	output := model.View()
-	assert.Contains(t, output, "View error (event loop)")
+	assert.Contains(t, output.Content, "View error (event loop)")
 }
 
 // ========================================================================
@@ -1140,7 +1129,7 @@ func TestView_ThrottleSchedulesTimer(t *testing.T) {
 	// Second render should schedule timer
 	model.throttleTimerSet = false
 	output2 := model.View()
-	assert.Equal(t, "view", output2, "should return cached view")
+	assert.Equal(t, "view", output2.Content, "should return cached view")
 	assert.True(t, model.throttleTimerSet, "should have scheduled timer")
 
 	// Cancel to prevent goroutine leak
@@ -1191,7 +1180,7 @@ func TestUpdate_NilUpdateFnWithRuntime(t *testing.T) {
 		runtime:  vm,
 		updateFn: nil,
 	}
-	retModel, cmd := model.Update(tea.KeyMsg{})
+	retModel, cmd := model.Update(tea.KeyPressMsg{})
 	assert.Equal(t, model, retModel)
 	assert.Nil(t, cmd)
 }
@@ -1204,7 +1193,7 @@ func TestUpdate_NilRuntime(t *testing.T) {
 			return nil, nil
 		},
 	}
-	retModel, cmd := model.Update(tea.KeyMsg{})
+	retModel, cmd := model.Update(tea.KeyPressMsg{})
 	assert.Equal(t, model, retModel)
 	assert.Nil(t, cmd)
 }

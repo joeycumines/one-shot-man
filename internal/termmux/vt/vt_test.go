@@ -469,6 +469,84 @@ func TestVTerm_DECSC_DECRC(t *testing.T) {
 	}
 }
 
+// ── T124: CSI 7 m (Restore Cursor) used by lipgloss v2 ──────────
+// Lipgloss v2's StyleRunes uses "\x1b[7m" to restore cursor position after
+// writing a character (strikethrough pattern: char, BS, CSI 7 m, styled char).
+
+func TestVTerm_CSIRestoreCursor(t *testing.T) {
+	v := NewVTerm(5, 20)
+
+	// Write "AB" at col 0-1, then restore cursor to col 0 with CSI 7 m.
+	v.Write([]byte("AB"))
+	// Save cursor (DECSC) at col 2.
+	v.Write([]byte("\x1b7"))
+	// Move cursor forward.
+	v.Write([]byte("\x1b[3C"))
+	// Restore cursor to saved position (col 2) using CSI 7 m.
+	v.Write([]byte("\x1b[7m"))
+	// Write "X" at the restored position.
+	v.Write([]byte("X"))
+
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	// CSI 7 m restored cursor to col 2, then 'X' was written (cursor→3).
+	// Cell at col 2 should now be 'X'.
+	if v.active.Cells[0][2].Ch != 'X' {
+		t.Errorf("Cell[0][2] = %c, want 'X'", v.active.Cells[0][2].Ch)
+	}
+	// Cells 0,1 should still be A,B.
+	if v.active.Cells[0][0].Ch != 'A' || v.active.Cells[0][1].Ch != 'B' {
+		t.Errorf("Cell[0][0..1] = %c%c, want 'AB'", v.active.Cells[0][0].Ch, v.active.Cells[0][1].Ch)
+	}
+	// Cursor is now at col 3 after writing 'X'.
+	if v.active.CurCol != 3 {
+		t.Errorf("CurCol after CSI 7 m + write = %d, want 3", v.active.CurCol)
+	}
+}
+
+func TestVTerm_CSIRestoreCursor_AlsoRestoresAttr(t *testing.T) {
+	v := NewVTerm(5, 20)
+
+	// Save cursor with bold+red.
+	v.Write([]byte("\x1b[1;31m")) // bold+red
+	v.Write([]byte("\x1b7"))       // DECSC - save cursor
+	// Reset attrs.
+	v.Write([]byte("\x1b[0m"))
+	// Restore with CSI 7 m.
+	v.Write([]byte("\x1b[7m"))
+
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if !v.active.CurAttr.Bold {
+		t.Error("CurAttr after CSI 7 m should be Bold")
+	}
+}
+
+// ── T125: CSI 7 m vs SGR 7 disambiguation ─────────────────────────
+// CSI 7 m = restore cursor. SGR 7 (params=[7] with no intermediates) = CSI 7 m
+// (restore cursor). If there IS a private/intermediate byte before the final m,
+// then it would be a real SGR. Our parser handles this correctly.
+
+func TestVTerm_CSIRestoreCursor_NoSavedPosition(t *testing.T) {
+	v := NewVTerm(5, 20)
+
+	// Write 'A' at col 0. No explicit save. CSI 7 m restores to default (0,0).
+	// Then write 'B' at col 0 (overwrites 'A').
+	v.Write([]byte("A"))
+	v.Write([]byte("\x1b[7m")) // CSI 7 m with no saved position → cursor goes to (0,0).
+	v.Write([]byte("B"))
+
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	// 'B' overwrote 'A' because CSI 7 m moved cursor to col 0.
+	if v.active.Cells[0][0].Ch != 'B' {
+		t.Errorf("Cell[0][0] = %c, want 'B' (CSI 7 m restored to col 0)", v.active.Cells[0][0].Ch)
+	}
+	if v.active.CurCol != 1 {
+		t.Errorf("CurCol = %d, want 1", v.active.CurCol)
+	}
+}
+
 // ── T113: Concurrent VTerm.Write safety ────────────────────────────
 
 func TestVTerm_ConcurrentWrite(t *testing.T) {

@@ -38,7 +38,6 @@
     var updateConfirmCancel = prSplit._updateConfirmCancel;
     var runVerifyBranch = prSplit._runVerifyBranch;
     var pollVerifySession = prSplit._pollVerifySession;
-    var pollShellSession = prSplit._pollShellSession;
     var handleVerifySignal = prSplit._handleVerifySignal;
     var handleVerifyFallbackPoll = prSplit._handleVerifyFallbackPoll;
     var updateClaudeConvo = prSplit._updateClaudeConvo;
@@ -103,7 +102,7 @@
             // T120: Sync viewport dimensions from update, not view.
             syncMainViewport(s);
 
-            // T336: Resize verify and shell CaptureSession terminals.
+            // T336: Resize interactive CaptureSession terminals.
             if (s.splitViewEnabled) {
                 var h = s.height || C.DEFAULT_ROWS;
                 var vpH = Math.max(3, h - CHROME_ESTIMATE);
@@ -113,7 +112,8 @@
                 var cH = vpH - wH - 1;
                 var paneRows = Math.max(3, cH - 3);
                 var paneCols = Math.max(20, (s.width || 80) - 4);
-                var interactiveTabs = ['claude', 'verify', 'shell'];
+                // Task 8: Shell tab removed from interactive tabs.
+                var interactiveTabs = ['claude', 'verify'];
                 for (var ti = 0; ti < interactiveTabs.length; ti++) {
                     var resizeTab = interactiveTabs[ti];
                     var resizeSession = getInteractivePaneSession(s, resizeTab);
@@ -598,41 +598,48 @@
                         // Output tab is read-only — don't forward to PTY, don't scroll Claude.
                         return [s, null];
                     }
-                    // T324: Verify tab — forward input to verify CaptureSession.
+                    // Task 8: Verify tab is now a full interactive shell.
+                    // With a live CaptureSession, forward ALL non-pane-management keys
+                    // to the terminal (arrow keys, j/k, etc. reach the child process).
+                    // In fallback mode (no PTY, verifyFallbackRunning), use scroll keys.
                     if (s.splitViewTab === 'verify') {
-                        // Scroll keys adjust the verify viewport.
-                        if (k === 'up' || k === 'k') {
-                            s.verifyViewportOffset = (s.verifyViewportOffset || 0) + 1;
-                            s.verifyAutoScroll = false;
+                        // Fallback path: no PTY, user views text output — scroll keys apply.
+                        if (s.verifyFallbackRunning || !getInteractivePaneSession(s, 'verify')) {
+                            if (k === 'up' || k === 'k') {
+                                s.verifyViewportOffset = (s.verifyViewportOffset || 0) + 1;
+                                s.verifyAutoScroll = false;
+                                return [s, null];
+                            }
+                            if (k === 'down' || k === 'j') {
+                                s.verifyViewportOffset = Math.max(0, (s.verifyViewportOffset || 0) - 1);
+                                if (s.verifyViewportOffset === 0) s.verifyAutoScroll = true;
+                                return [s, null];
+                            }
+                            if (k === 'pgup') {
+                                s.verifyViewportOffset = (s.verifyViewportOffset || 0) + 5;
+                                s.verifyAutoScroll = false;
+                                return [s, null];
+                            }
+                            if (k === 'pgdown') {
+                                s.verifyViewportOffset = Math.max(0, (s.verifyViewportOffset || 0) - 5);
+                                if (s.verifyViewportOffset === 0) s.verifyAutoScroll = true;
+                                return [s, null];
+                            }
+                            if (k === 'home') {
+                                s.verifyViewportOffset = C.FAR_SCROLL_SENTINEL;
+                                s.verifyAutoScroll = false;
+                                return [s, null];
+                            }
+                            if (k === 'end') {
+                                s.verifyViewportOffset = 0;
+                                s.verifyAutoScroll = true;
+                                return [s, null];
+                            }
                             return [s, null];
                         }
-                        if (k === 'down' || k === 'j') {
-                            s.verifyViewportOffset = Math.max(0, (s.verifyViewportOffset || 0) - 1);
-                            if (s.verifyViewportOffset === 0) s.verifyAutoScroll = true;
-                            return [s, null];
-                        }
-                        if (k === 'pgup') {
-                            s.verifyViewportOffset = (s.verifyViewportOffset || 0) + 5;
-                            s.verifyAutoScroll = false;
-                            return [s, null];
-                        }
-                        if (k === 'pgdown') {
-                            s.verifyViewportOffset = Math.max(0, (s.verifyViewportOffset || 0) - 5);
-                            if (s.verifyViewportOffset === 0) s.verifyAutoScroll = true;
-                            return [s, null];
-                        }
-                        if (k === 'home') {
-                            s.verifyViewportOffset = C.FAR_SCROLL_SENTINEL;
-                            s.verifyAutoScroll = false;
-                            return [s, null];
-                        }
-                        if (k === 'end') {
-                            s.verifyViewportOffset = 0;
-                            s.verifyAutoScroll = true;
-                            return [s, null];
-                        }
-                        // Forward non-reserved keys to the verify CaptureSession.
-                        if (!CLAUDE_RESERVED_KEYS[k]) {
+                        // Live verify session: fully interactive — only pane-management
+                        // keys are reserved, everything else goes to the terminal.
+                        if (!INTERACTIVE_RESERVED_KEYS[k]) {
                             var vBytes = keyToTermBytes(k);
                             var verifySession = getInteractivePaneSession(s, 'verify');
                             if (vBytes !== null && verifySession &&
@@ -641,26 +648,6 @@
                                     verifySession.write(vBytes);
                                     s.verifyViewportOffset = 0;
                                     s.verifyAutoScroll = true;
-                                } catch (e) {
-                                    // Swallow — write may fail if session ended.
-                                }
-                            }
-                            return [s, null];
-                        }
-                    }
-                    // T334: Shell tab — forward ALL non-reserved keys to shell CaptureSession.
-                    // T386: Shell is fully interactive — use minimal reserved set so
-                    // arrow keys, j/k, pgup/pgdown, home/end reach the child process.
-                    if (s.splitViewTab === 'shell') {
-                        if (!INTERACTIVE_RESERVED_KEYS[k]) {
-                            var shBytes = keyToTermBytes(k);
-                            var shellSession = getInteractivePaneSession(s, 'shell');
-                            if (shBytes !== null && shellSession &&
-                                typeof shellSession.write === 'function') {
-                                try {
-                                    shellSession.write(shBytes);
-                                    s.shellViewOffset = 0;
-                                    s.shellAutoScroll = true;
                                 } catch (e) {
                                     // Swallow — write may fail if session ended.
                                 }
@@ -1005,9 +992,6 @@
             }
             if (msg.id === 'verify-poll') {
                 return pollVerifySession(s);
-            }
-            if (msg.id === 'shell-poll') {
-                return pollShellSession(s);
             }
             if (msg.id === 'verify-fallback-poll') {
                 return handleVerifyFallbackPoll(s);

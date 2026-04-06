@@ -1040,16 +1040,6 @@ func TestResizePropagation_VerifySession_T387(t *testing.T) {
 			}
 		};
 
-		// Mock shellSession to verify both are called.
-		var shellResizeCalls = [];
-		s.shellSession = {
-			isAlive: function() { return true; },
-			screen: function() { return ''; },
-			resize: function(rows, cols) {
-				shellResizeCalls.push({ rows: rows, cols: cols });
-			}
-		};
-
 		// Send a WindowSize message.
 		var r = globalThis.prSplit._wizardUpdate(
 			{type: 'WindowSize', width: 120, height: 40}, s);
@@ -1067,16 +1057,6 @@ func TestResizePropagation_VerifySession_T387(t *testing.T) {
 			}
 			if (resizeCalls[0].cols < 20) {
 				errors.push('verify cols too small: ' + resizeCalls[0].cols);
-			}
-		}
-		if (shellResizeCalls.length !== 1) {
-			errors.push('shellSession.resize should be called once, got ' +
-				shellResizeCalls.length);
-		} else {
-			// Both sessions should get the same dimensions.
-			if (shellResizeCalls[0].rows !== resizeCalls[0].rows) {
-				errors.push('shell rows (' + shellResizeCalls[0].rows +
-					') != verify rows (' + resizeCalls[0].rows + ')');
 			}
 		}
 
@@ -1103,7 +1083,6 @@ func TestResizePropagation_NoSession_T387(t *testing.T) {
 		s.width = 80;
 		s.height = 24;
 		s.activeVerifySession = null;
-		s.shellSession = null;
 
 		// Should not crash.
 		var r = globalThis.prSplit._wizardUpdate(

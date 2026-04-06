@@ -98,17 +98,15 @@ func TestChunk13_BuildCommandsRegistered(t *testing.T) {
 	checkDefined("_buildCommands")
 	checkDefined("_buildReport")
 	checkDefined("_clearVerifyPaneSession")
-	checkDefined("_cleanupShellPaneSession")
-	checkDefined("_openVerifyWorktreeShell")
+	// Task 8: _cleanupShellPaneSession and _openVerifyWorktreeShell removed.
 }
 
-func TestChunk13_ClearVerifyPaneSession_CleansDependentShell(t *testing.T) {
+func TestChunk13_ClearVerifyPaneSession_CleansVerifyOnly(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	raw, err := evalJS(`(function() {
 		var verifyClosed = 0;
-		var shellClosed = 0;
 		var cleanupArgs = [];
 		globalThis.prSplit.cleanupVerifyWorktree = function(dir, wt) { cleanupArgs.push([dir, wt]); };
 
@@ -126,28 +124,19 @@ func TestChunk13_ClearVerifyPaneSession_CleansDependentShell(t *testing.T) {
 			verifyAutoScroll: false,
 			verifyPaused: true,
 			lastVerifyInterruptTime: 42,
-			shellSession: {
-				close: function() { shellClosed++; }
-			},
-			shellScreen: 'shell',
-			shellViewOffset: 3,
-			shellAutoScroll: false,
-			splitViewTab: 'shell'
+			splitViewTab: 'verify'
 		};
 
 		globalThis.prSplit._clearVerifyPaneSession(s, { keepDisplay: true, debugPrefix: 'test' });
 
 		if (verifyClosed !== 1) return 'FAIL: verify close count=' + verifyClosed;
-		if (shellClosed !== 1) return 'FAIL: shell close count=' + shellClosed;
 		if (cleanupArgs.length !== 1) return 'FAIL: cleanup calls=' + cleanupArgs.length;
 		if (s.activeVerifySession !== null) return 'FAIL: verify session not cleared';
-		if (s.shellSession !== null) return 'FAIL: shell session not cleared';
 		if (s.splitViewTab !== 'verify') return 'FAIL: splitViewTab=' + s.splitViewTab;
 		if (s.verifyScreen !== 'still here') return 'FAIL: verifyScreen changed';
 		if (s.activeVerifyBranch !== 'split/01-types') return 'FAIL: branch changed';
 		if (s.verifyElapsedMs !== 456) return 'FAIL: elapsed changed';
 		if (s.verifyPaused) return 'FAIL: verifyPaused should be false';
-		if (s.shellScreen !== '') return 'FAIL: shellScreen=' + JSON.stringify(s.shellScreen);
 		return 'OK';
 	})()`)
 	if err != nil {
@@ -158,52 +147,8 @@ func TestChunk13_ClearVerifyPaneSession_CleansDependentShell(t *testing.T) {
 	}
 }
 
-func TestChunk13_OpenVerifyWorktreeShell_UsesSharedLifecycle(t *testing.T) {
-	t.Parallel()
-	evalJS := prsplittest.NewTUIEngine(t)
-
-	raw, err := evalJS(`(function() {
-		var pauseCalled = 0;
-		var spawnArgs = null;
-		globalThis.prSplit._TUI_CONSTANTS = { DEFAULT_ROWS: 24 };
-		globalThis.prSplit._syncMainViewport = function(s) { s._synced = true; };
-		globalThis.prSplit.spawnShellSession = function(worktree, opts) {
-			spawnArgs = { worktree: worktree, rows: opts.rows, cols: opts.cols };
-			return { close: function(){}, screen: function(){ return ''; }, isDone: function(){ return false; } };
-		};
-
-		var s = {
-			activeVerifySession: {
-				pause: function() { pauseCalled++; }
-			},
-			activeVerifyWorktree: '/tmp/wt',
-			verifyPaused: false,
-			height: 24,
-			width: 100,
-			splitViewEnabled: false,
-			splitViewRatio: 0.5
-		};
-
-		var result = globalThis.prSplit._openVerifyWorktreeShell(s);
-		if (!result || !result.opened) return 'FAIL: result=' + JSON.stringify(result);
-		if (pauseCalled !== 1) return 'FAIL: pauseCalled=' + pauseCalled;
-		if (!spawnArgs || spawnArgs.worktree !== '/tmp/wt') return 'FAIL: spawn args missing';
-		if (spawnArgs.rows < 3 || spawnArgs.cols < 20) return 'FAIL: invalid shell dims';
-		if (s.shellSession === null) return 'FAIL: shellSession missing';
-		if (!s.splitViewEnabled) return 'FAIL: splitViewEnabled should be true';
-		if (s.splitViewTab !== 'shell') return 'FAIL: splitViewTab=' + s.splitViewTab;
-		if (s.splitViewFocus !== 'claude') return 'FAIL: splitViewFocus=' + s.splitViewFocus;
-		if (!s.verifyPaused) return 'FAIL: verifyPaused should be true';
-		if (!s._synced) return 'FAIL: sync not called';
-		return 'OK';
-	})()`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if raw != "OK" {
-		t.Errorf("open verify worktree shell: %v", raw)
-	}
-}
+// Task 8: TestChunk13_OpenVerifyWorktreeShell_UsesSharedLifecycle removed —
+// _openVerifyWorktreeShell no longer exists; shell tab is unified into verify pane.
 
 // TestChunk13_AllCommandNames verifies that buildCommands returns an object
 // with all expected command names (including abort and override).

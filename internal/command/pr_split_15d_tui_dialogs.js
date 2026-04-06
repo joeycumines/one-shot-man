@@ -320,10 +320,6 @@
                 lines.push(padRight('  Ctrl+C', 22) + 'Interrupt current verify (2x = force kill)');
                 lines.push(padRight('  p', 22) + 'Mark failed branch as passed (override)');
             }
-            // T007/T338: Open Shell hint — only shown when verify session is active.
-            if (ws === 'BRANCH_BUILDING') {
-                lines.push(padRight('  \ue795 Shell', 22) + 'Open interactive shell in worktree (Unix)');
-            }
             lines.push('');
         }
 
@@ -331,10 +327,11 @@
         lines.push(styles.label().render('Split View'));
         lines.push(padRight('  Ctrl+L', 22) + 'Toggle split view');
         lines.push(padRight('  Ctrl+Tab', 22) + 'Focus wizard / terminal pane');
-        lines.push(padRight('  Ctrl+O', 22) + 'Cycle tabs (Claude, Output, Verify, Shell)');
+        // Task 8: Shell tab removed from tab cycle.
+        lines.push(padRight('  Ctrl+O', 22) + 'Cycle tabs (Claude, Output, Verify)');
         lines.push(padRight('  Ctrl+]', 22) + 'Full Claude passthrough');
         lines.push(padRight('  Ctrl+= / Ctrl+-', 22) + 'Resize split view');
-        // T337: Verify/Shell terminal tab interaction hints.
+        // Task 8: Verify terminal tab interaction hints.
         if (ws === 'BRANCH_BUILDING' || ws === 'EQUIV_CHECK') {
             lines.push(padRight('  (type in pane)', 22) + 'Keys forwarded to focused terminal');
             lines.push(padRight('  Mouse in pane', 22) + 'Clicks forwarded (SGR mouse)');

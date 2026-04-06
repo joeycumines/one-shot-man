@@ -45,39 +45,6 @@ func BenchmarkRender_VerifyPane(b *testing.B) {
 	}
 }
 
-// BenchmarkRender_ShellPane measures per-render cost of renderShellPane with an
-// active shell session containing output at 80x24.
-func BenchmarkRender_ShellPane(b *testing.B) {
-	evalJS := prsplittest.NewTUIEngine(b)
-
-	setupJS := `
-		var _benchShellContent = '';
-		for (var i = 0; i < 200; i++) {
-			_benchShellContent += '$ command-' + i + '\r\noutput line ' + i + '\r\n';
-		}
-		globalThis._benchShellState = {
-			shellSession: true,
-			shellScreen: _benchShellContent,
-			splitViewFocus: 'claude',
-			splitViewTab: 'shell',
-			activeVerifyWorktree: '/tmp/bench-worktree'
-		};
-		'ready'
-	`
-	if _, err := evalJS(setupJS); err != nil {
-		b.Fatal(err)
-	}
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_, err := evalJS(`globalThis.prSplit._renderShellPane(globalThis._benchShellState, 80, 24)`)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
 // BenchmarkRender_MouseToTermBytes measures the cost of translating a BubbleTea
 // mouse message into SGR terminal bytes. This is a lightweight pure-computation
 // function so it should be extremely fast.
@@ -146,8 +113,8 @@ func BenchmarkRender_VerifyPane_Wide(b *testing.B) {
 }
 
 // BenchmarkRender_TabBar_AllTabs measures the cost of rendering the full wizard
-// view with all 4 tabs visible (Claude, Output, Verify, Shell). The tab bar
-// construction involves Lipgloss style calls, zone marks, and string assembly.
+// view with all tabs visible (Claude, Output, Verify). The tab bar construction
+// involves Lipgloss style calls, zone marks, and string assembly.
 func BenchmarkRender_TabBar_AllTabs(b *testing.B) {
 	evalJS := prsplittest.NewTUIEngineWithHelpers(b)
 
@@ -176,19 +143,7 @@ func BenchmarkRender_TabBar_AllTabs(b *testing.B) {
 			pause: function() {},
 			resume: function() {}
 		};
-		_benchTabState.shellSession = {
-			isDone: function() { return false; },
-			exitCode: function() { return -1; },
-			screen: function() { return '$ pwd'; },
-			output: function() { return ''; },
-			write: function() {},
-			close: function() {},
-			kill: function() {},
-			pause: function() {},
-			resume: function() {}
-		};
 		_benchTabState.verifyScreen = 'Verify running...';
-		_benchTabState.shellScreen = '$ pwd';
 		_benchTabState.activeVerifyBranch = 'split/01-bench';
 		_benchTabState.activeVerifyStartTime = Date.now() - 5000;
 		_benchTabState.verifyAutoScroll = true;

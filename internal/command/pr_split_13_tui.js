@@ -342,16 +342,11 @@
         var pane = tab || s.splitViewTab || 'claude';
         if (pane === 'claude') return getClaudePaneSession();
         if (pane === 'verify') return s.activeVerifySession || null;
-        if (pane === 'shell') return s.shellSession || null;
         return null;
     }
 
-    function resetShellPaneState(s) {
-        s.shellSession = null;
-        s.shellScreen = '';
-        s.shellViewOffset = 0;
-        s.shellAutoScroll = true;
-    }
+    // Task 8: Shell tab removed — verify pane IS the interactive shell.
+    // No separate shell pane state to reset.
 
     function closeInteractivePaneSession(s, tab, debugPrefix) {
         var session = getInteractivePaneSession(s, tab);
@@ -365,10 +360,8 @@
         }
     }
 
-    function cleanupShellPaneSession(s, debugPrefix) {
-        closeInteractivePaneSession(s, 'shell', debugPrefix || 'shellCleanup');
-        resetShellPaneState(s);
-    }
+    // Task 8: Shell tab removed — cleanupShellPaneSession no longer needed.
+    // All interactive session cleanup goes through clearVerifyPaneSession.
 
     function clearVerifyPaneSession(s, opts) {
         var options = opts || {};
@@ -383,12 +376,6 @@
             } catch (e) {
                 log.debug((options.debugPrefix || 'verifyCleanup') + ': verifyWorktree cleanup failed: ' + (e.message || e));
             }
-        }
-
-        cleanupShellPaneSession(s, options.debugPrefix || 'verifyCleanup');
-
-        if (s.splitViewTab === 'shell') {
-            s.splitViewTab = keepDisplay ? 'verify' : 'output';
         }
 
         s.activeVerifySession = null;
@@ -416,77 +403,22 @@
         }
     }
 
-    function openVerifyWorktreeShell(s) {
-        var constants = prSplit._TUI_CONSTANTS || {};
-        var verifySession = getInteractivePaneSession(s, 'verify');
-        if (!verifySession || !s.activeVerifyWorktree) {
-            return { opened: false, reason: 'verify session unavailable' };
-        }
-
-        var existingShell = getInteractivePaneSession(s, 'shell');
-        if (existingShell) {
-            s.splitViewTab = 'shell';
-            s.splitViewFocus = 'claude';
-            return { opened: false, existing: true };
-        }
-
-        if (!s.verifyPaused && typeof verifySession.pause === 'function') {
-            try {
-                verifySession.pause();
-                s.verifyPaused = true;
-            } catch (e) {
-                log.debug('tabSwitch: verifySession.pause failed: ' + (e.message || e));
-            }
-        }
-
-        var shellH = s.height || constants.DEFAULT_ROWS || 24;
-        var vpH = Math.max(3, shellH - (prSplit._CHROME_ESTIMATE || 8));
-        var minP = 3;
-        var wH = Math.max(minP, Math.floor(vpH * (s.splitViewRatio || 0.6)));
-        wH = Math.min(wH, vpH - minP - 1);
-        var cH = vpH - wH - 1;
-        var shellRows = Math.max(3, cH - 3);
-        var shellCols = Math.max(20, (s.width || 80) - 4);
-
-        try {
-            s.shellSession = prSplit.spawnShellSession(s.activeVerifyWorktree, {
-                rows: shellRows,
-                cols: shellCols
-            });
-            s.shellScreen = '';
-            s.shellViewOffset = 0;
-            s.shellAutoScroll = true;
-            if (!s.splitViewEnabled) {
-                s.splitViewEnabled = true;
-                if (typeof prSplit._syncMainViewport === 'function') {
-                    prSplit._syncMainViewport(s);
-                }
-            }
-            s.splitViewTab = 'shell';
-            s.splitViewFocus = 'claude';
-            return { opened: true };
-        } catch (e) {
-            return { opened: false, error: e };
-        }
-    }
-
     function hasInteractivePaneSession(s, tab) {
         return !!getInteractivePaneSession(s, tab);
     }
 
+    // Task 8: Shell tab removed — only claude, output, verify tabs remain.
     function listSplitViewTabs(s) {
         var tabs = ['claude', 'output'];
         if (hasInteractivePaneSession(s, 'verify') || s.verifyFallbackRunning || s.verifyScreen) tabs.push('verify');
-        if (hasInteractivePaneSession(s, 'shell')) tabs.push('shell');
         return tabs;
     }
 
     prSplit._getClaudePaneSession = getClaudePaneSession;
     prSplit._getInteractivePaneSession = getInteractivePaneSession;
     prSplit._closeInteractivePaneSession = closeInteractivePaneSession;
-    prSplit._cleanupShellPaneSession = cleanupShellPaneSession;
     prSplit._clearVerifyPaneSession = clearVerifyPaneSession;
-    prSplit._openVerifyWorktreeShell = openVerifyWorktreeShell;
+    // Task 8: _cleanupShellPaneSession and _openVerifyWorktreeShell removed — shell tab is unified into verify pane.
     prSplit._hasInteractivePaneSession = hasInteractivePaneSession;
     prSplit._listSplitViewTabs = listSplitViewTabs;
 

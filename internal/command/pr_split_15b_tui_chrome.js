@@ -302,15 +302,9 @@
             if (leftParts) leftParts += '  ';
             leftParts += 'Ctrl+L Split';
         }
-        // T337: Context-sensitive hints for verify/shell tabs.
-        // When the bottom pane is focused on an interactive terminal tab, show
-        // an INPUT indicator instead of the generic Ctrl+O hint — the user is
-        // already interacting with a tab and needs to know where keys go.
+        // Task 8: Context-sensitive hints — shell tab removed, verify is the interactive pane.
         if (!narrow && s.splitViewEnabled) {
-            if (s.splitViewFocus === 'claude' && s.splitViewTab === 'shell' &&
-                getInteractivePaneSession(s, 'shell')) {
-                leftParts += '  INPUT \u25b8 Shell';
-            } else if (s.splitViewFocus === 'claude' && s.splitViewTab === 'verify' &&
+            if (s.splitViewFocus === 'claude' && s.splitViewTab === 'verify' &&
                 getInteractivePaneSession(s, 'verify')) {
                 leftParts += '  INPUT \u25b8 Verify';
             } else {
@@ -783,64 +777,7 @@
         return paneStyle.render(contentLines.join('\n'));
     }
 
-    // T332: renderShellPane — interactive shell terminal in split-view bottom pane.
-    // Follows same pattern as renderVerifyPane.
-    function renderShellPane(s, width, height) {
-        var hasSession = !!getInteractivePaneSession(s, 'shell');
-        var isFocused = (s.splitViewFocus === 'claude' && s.splitViewTab === 'shell');
-        var borderColor = isFocused ? COLORS.primary
-            : (hasSession ? COLORS.success : COLORS.border);
-
-        var contentH = Math.max(1, height - 2);
-        var viewH = Math.max(1, contentH - 1);
-        var viewW = Math.max(10, width - 6);
-
-        if (!hasSession) {
-            var phMsg = styles.dim().render('No shell session active.');
-            var phStyle = lipgloss.newStyle()
-                .border(lipgloss.roundedBorder())
-                .borderForeground(borderColor)
-                .width(width - 2)
-                .height(contentH);
-            return phStyle.render(phMsg);
-        }
-
-        var worktree = s.activeVerifyWorktree || '.';
-        var shortDir = worktree.length > viewW - 10
-            ? '\u2026' + worktree.substring(worktree.length - (viewW - 11))
-            : worktree;
-        var titleText = styles.bold().render('Shell: ' + shortDir);
-        if (isFocused) {
-            titleText += styles.dim().render(' \u2502 type to interact');
-        }
-
-        var raw = s.shellScreen || '';
-        var lines = raw.split('\n');
-        var offset = s.shellViewOffset || 0;
-        var start = Math.max(0, lines.length - viewH - offset);
-        var end = start + viewH;
-        var visible = lines.slice(start, end);
-
-        var contentLines = [titleText];
-        for (var i = 0; i < visible.length; i++) {
-            var ln = visible[i];
-            if (lipgloss.width(ln) > viewW) {
-                ln = lipgloss.truncate(ln, viewW);
-            }
-            contentLines.push(ln);
-        }
-        while (contentLines.length < contentH) {
-            contentLines.push('');
-        }
-
-        var paneStyle = lipgloss.newStyle()
-            .border(lipgloss.roundedBorder())
-            .borderForeground(borderColor)
-            .width(width - 2)
-            .height(contentH);
-
-        return paneStyle.render(contentLines.join('\n'));
-    }
+    // Task 8: renderShellPane removed — shell tab unified into verify pane.
 
     // Export chrome for testing.
     prSplit._renderTitleBar = renderTitleBar;
@@ -849,7 +786,7 @@
     prSplit._renderClaudePane = renderClaudePane;
     prSplit._renderOutputPane = renderOutputPane;
     prSplit._renderVerifyPane = renderVerifyPane;
-    prSplit._renderShellPane = renderShellPane;
+    // Task 8: _renderShellPane removed — no longer needed.
     prSplit._renderStepDots = renderStepDots;
     prSplit._viewClaudeConvoOverlay = viewClaudeConvoOverlay;
     prSplit._renderClaudeQuestionPrompt = renderClaudeQuestionPrompt;

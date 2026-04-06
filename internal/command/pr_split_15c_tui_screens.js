@@ -816,18 +816,7 @@
                 footerParts.push(styles.dim().render(' p: PASS  f: FAIL  c: CONTINUE '));
             }
 
-            // Open Shell: redundant with persistent shell, but kept for cases where
-            // the user wants a SECOND shell in a separate tab for comparison.
-            if (s.activeVerifyWorktree) {
-                if (typeof prSplit.canSpawnInteractiveShell === 'function' &&
-                    !prSplit.canSpawnInteractiveShell()) {
-                    // Windows — disable
-                    footerParts.push(styles.dim().render('\ue795 Shell (Unix only)'));
-                } else {
-                    footerParts.push(zone.mark('verify-open-shell',
-                        styles.secondaryButton().render('\ue795 Shell')));
-                }
-            }
+            // Task 8: Shell tab removed — verify pane IS the interactive shell.
 
             // Interrupt and scroll hints.
             footerParts.push(zone.mark('verify-interrupt', styles.dim().render(

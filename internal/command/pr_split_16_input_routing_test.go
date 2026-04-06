@@ -7,7 +7,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// T342: Input routing tests for verify/shell/claude/output tabs
+// T342: Input routing tests for verify/claude/output tabs
 //
 // These are mock-only tests — no PTY spawning. They exercise the keyboard
 // input dispatch logic in _wizardUpdate (chunk 16e) when split-view is
@@ -15,7 +15,7 @@ import (
 //
 // Key routing rules:
 //   - Verify tab + activeVerifySession: non-reserved keys → session.write()
-//   - Shell tab + shellSession:         non-reserved keys → session.write()
+//   - Verify tab (interactive): non-reserved keys → session.write()
 //   - Output tab:                       read-only, keys consumed (no forwarding)
 //   - Claude tab:                       non-reserved keys → tuiMux.writeToChild()
 //   - Reserved keys (ctrl+tab, ctrl+o): always handled by split-view controls
@@ -64,51 +64,6 @@ func TestInputRouting_VerifyTabConsumedKey(t *testing.T) {
 	}
 	if raw != "OK" {
 		t.Errorf("verify tab consumed key: %v", raw)
-	}
-}
-
-func TestInputRouting_ShellTabConsumedKey(t *testing.T) {
-	t.Parallel()
-	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
-
-	raw, err := evalJS(`(function() {
-		var errors = [];
-		var written = [];
-		var s = initState('BRANCH_BUILDING');
-		s.splitViewEnabled = true;
-		s.splitViewFocus = 'claude';
-		s.splitViewTab = 'shell';
-		s.shellSession = {
-			write: function(b) { written.push(b); },
-			screen: function() { return ''; },
-			isDone: function() { return false; }
-		};
-		s.shellScreen = '';
-		s.shellViewOffset = 0;
-		s.shellAutoScroll = true;
-
-		var r = sendKey(s, 'a');
-		var ns = r[0];
-
-		// State should be unchanged — key consumed by shell tab forwarding.
-		if (ns.wizardState !== 'BRANCH_BUILDING') {
-			errors.push('wizardState changed to ' + ns.wizardState);
-		}
-
-		// The 'a' key should have been forwarded to the shell session.
-		if (written.length === 0) {
-			errors.push('shellSession.write was not called');
-		} else if (written[0] !== 'a') {
-			errors.push('wrong bytes written: ' + JSON.stringify(written[0]));
-		}
-
-		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
-	})()`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if raw != "OK" {
-		t.Errorf("shell tab consumed key: %v", raw)
 	}
 }
 
@@ -220,22 +175,21 @@ func TestInputRouting_CtrlOCyclesTabs(t *testing.T) {
 			errors.push('output→claude: got ' + r[0].splitViewTab);
 		}
 
-		// Extended cycle with both sessions: claude → output → verify → shell → claude.
+		// Extended cycle with verify session: claude → output → verify → claude.
 		var s2 = initState('BRANCH_BUILDING');
 		s2.splitViewEnabled = true;
 		s2.splitViewFocus = 'claude';
 		s2.splitViewTab = 'claude';
 		s2.activeVerifySession = { write: function(){}, screen: function(){return '';}, isDone: function(){return false;} };
-		s2.shellSession = { write: function(){}, screen: function(){return '';}, isDone: function(){return false;} };
 
 		var tabs = [];
 		var cur = s2;
-		for (var i = 0; i < 5; i++) {
+		for (var i = 0; i < 4; i++) {
 			var r2 = sendKey(cur, 'ctrl+o');
 			cur = r2[0];
 			tabs.push(cur.splitViewTab);
 		}
-		var expected = 'output,verify,shell,claude,output';
+		var expected = 'output,verify,claude,output';
 		if (tabs.join(',') !== expected) {
 			errors.push('extended cycle: expected [' + expected + '] got [' + tabs.join(',') + ']');
 		}

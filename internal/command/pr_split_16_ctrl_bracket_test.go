@@ -261,7 +261,7 @@ func TestStatusBar_CtrlBracketHint_ConditionalOnMux(t *testing.T) {
 	})
 }
 
-// T337: Status bar shortcuts for verify/shell tabs.
+// T337: Status bar shortcuts for verify tab.
 func TestStatusBar_VerifyShellShortcuts(t *testing.T) {
 	t.Parallel()
 
@@ -333,29 +333,8 @@ func TestStatusBar_VerifyShellShortcuts(t *testing.T) {
 		}
 	})
 
-	t.Run("shell_tab_focused_shows_input_shell", func(t *testing.T) {
-		t.Parallel()
-		evalJS := prsplittest.NewTUIEngine(t)
-
-		raw, err := evalJS(`(function() {
-			var s = {
-				width: 80, wizardState: 'BRANCH_BUILDING',
-				splitViewEnabled: true, splitViewFocus: 'claude',
-				splitViewTab: 'shell', shellSession: { screen: function() { return ''; } }
-			};
-			return globalThis.prSplit._renderStatusBar(s);
-		})()`)
-		if err != nil {
-			t.Fatal(err)
-		}
-		rendered := raw.(string)
-		if !strings.Contains(rendered, "INPUT") || !strings.Contains(rendered, "Shell") {
-			t.Errorf("expected 'INPUT ▸ Shell' when shell tab focused, got:\n%s", rendered)
-		}
-		if strings.Contains(rendered, "Ctrl+O Tab") {
-			t.Errorf("expected Ctrl+O Tab to be replaced by INPUT indicator, got:\n%s", rendered)
-		}
-	})
+	// Task 8: shell_tab_focused_shows_input_shell subtest removed —
+	// shell tab unified into verify pane.
 
 	t.Run("verify_tab_no_session_shows_ctrl_o", func(t *testing.T) {
 		t.Parallel()
@@ -464,7 +443,7 @@ func TestStatusBar_VerifyShellShortcuts(t *testing.T) {
 	})
 }
 
-// T337: Help overlay documents verify/shell shortcuts.
+// T337: Help overlay documents verify tab shortcuts.
 func TestHelpOverlay_VerifyShellDocs(t *testing.T) {
 	t.Parallel()
 

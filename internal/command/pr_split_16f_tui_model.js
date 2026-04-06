@@ -26,7 +26,6 @@
     var renderClaudePane = prSplit._renderClaudePane;
     var renderOutputPane = prSplit._renderOutputPane;
     var renderVerifyPane = prSplit._renderVerifyPane;
-    var renderShellPane = prSplit._renderShellPane;
     var viewForState = prSplit._viewForState;
     var viewHelpOverlay = prSplit._viewHelpOverlay;
     var viewConfirmCancelOverlay = prSplit._viewConfirmCancelOverlay;
@@ -53,7 +52,7 @@
     var viewEditorDialog = prSplit._viewEditorDialog;
     var getFocusElements = prSplit._getFocusElements;
     var getInteractivePaneSession = prSplit._getInteractivePaneSession;
-    var openVerifyWorktreeShell = prSplit._openVerifyWorktreeShell;
+    // Task 8: Shell tab removed — openVerifyWorktreeShell removed entirely.
 
     // Cross-chunk imports — from chunks 16b/16c/16d.
     var startEquivCheck = prSplit._startEquivCheck;
@@ -129,10 +128,6 @@
             }
             if (zone.inBounds('split-tab-verify', msg)) {
                 s.splitViewTab = 'verify';
-                return [s, null];
-            }
-            if (zone.inBounds('split-tab-shell', msg)) {
-                s.splitViewTab = 'shell';
                 return [s, null];
             }
         }
@@ -266,18 +261,7 @@
                 }
                 return [s, null];
             }
-            // T333: Open interactive shell in the verify worktree using CaptureSession.
-            if (activeVerifySession && s.activeVerifyWorktree &&
-                zone.inBounds('verify-open-shell', msg)) {
-                var shellResult = openVerifyWorktreeShell(s);
-                if (shellResult && shellResult.opened) {
-                    return [s, tea.tick(C.TICK_INTERVAL_MS, 'shell-poll')];
-                }
-                if (shellResult && shellResult.error) {
-                    log.printf('verify: spawn shell failed: %s', shellResult.error.message || String(shellResult.error));
-                }
-                return [s, null];
-            }
+            // Task 8: Shell tab removed — verify pane IS the interactive shell.
             // Interrupt active verify session via stop button.
             // Same double-click pattern as Ctrl+C: first click sends
             // SIGINT, second click within 2s sends SIGKILL.
@@ -588,22 +572,15 @@
                         ? styles.primaryButton().render(' Verify ')
                         : styles.dim().render(' Verify ');
                 }
-                var shellTabLabel = '';
-                if (getInteractivePaneSession(s, 'shell')) {
-                    shellTabLabel = s.splitViewTab === 'shell'
-                        ? styles.primaryButton().render(' Shell ')
-                        : styles.dim().render(' Shell ');
-                }
+                // Task 8: Shell tab removed from tab bar.
                 var tabBar = zone.mark('split-tab-claude', claudeTabLabel) + ' ' +
                     zone.mark('split-tab-output', outputTabLabel) +
                     (outputCount ? ' ' + outputCount : '') +
-                    (verifyTabLabel ? ' ' + zone.mark('split-tab-verify', verifyTabLabel) : '') +
-                    (shellTabLabel ? ' ' + zone.mark('split-tab-shell', shellTabLabel) : '');
+                    (verifyTabLabel ? ' ' + zone.mark('split-tab-verify', verifyTabLabel) : '');
                 var focusLabel = s.splitViewFocus === 'wizard'
                     ? '\u25b2 Wizard'
                     : (s.splitViewTab === 'output' ? '\u25bc Output'
-                       : (s.splitViewTab === 'verify' ? '\u25bc Verify'
-                          : (s.splitViewTab === 'shell' ? '\u25bc Shell' : '\u25bc Claude')));
+                       : (s.splitViewTab === 'verify' ? '\u25bc Verify' : '\u25bc Claude'));
                 var splitHint = 'Ctrl+Tab: switch  Ctrl+O: tab  Ctrl+L: close';
                 // T44: labelW must include tabBar visual width + all separator decorators.
                 // Template: leftFill + '┤ ' + tabBar + ' · ' + focusLabel + ' · ' + splitHint + ' ├' + rightFill
@@ -615,14 +592,12 @@
                 var paneDivider = styles.dim().render(
                     leftFill + '\u2524 ' + tabBar + ' \u00b7 ' + focusLabel + ' \u00b7 ' + splitHint + ' \u251c' + rightFill);
 
-                // T44: Bottom pane — switch between Claude, Output, Verify, and Shell tabs.
+                // Task 8: Bottom pane — Claude, Output, Verify tabs only.
                 var bottomPane;
                 if (s.splitViewTab === 'output') {
                     bottomPane = renderOutputPane(s, w, claudeH);
                 } else if (s.splitViewTab === 'verify') {
                     bottomPane = renderVerifyPane(s, w, claudeH);
-                } else if (s.splitViewTab === 'shell') {
-                    bottomPane = renderShellPane(s, w, claudeH);
                 } else {
                     bottomPane = renderClaudePane(s, w, claudeH);
                 }
@@ -843,12 +818,6 @@
                 verifyShellExited: false,     // true when persistent shell exited (user typed 'exit')
                 verifyHint: '',               // suggested verify command text
 
-                // Interactive shell in verify worktree (CaptureSession).
-                shellSession: null,            // CaptureSession JS object (or null)
-                shellScreen: '',               // ANSI-styled VTerm screen from shell CaptureSession
-                shellViewOffset: 0,            // scroll offset (lines from bottom)
-                shellAutoScroll: true,         // auto-scroll to bottom on output
-
                 // Fallback verification (async, when CaptureSession unavailable).
                 verifyFallbackRunning: false,  // true while async verifySplitAsync is running
                 verifyFallbackError: null,     // error string from fallback verification
@@ -857,7 +826,7 @@
                 splitViewEnabled: false,       // true when split-view is active
                 splitViewRatio: 0.6,           // wizard gets this fraction of content height
                 splitViewFocus: 'wizard',      // 'wizard' or 'claude' — which pane is focused
-                splitViewTab: 'claude',        // T44: 'claude' | 'output' | 'verify' | 'shell' — active tab
+                splitViewTab: 'claude',        // Task 8: 'claude' | 'output' | 'verify' — active tab
                 claudeScreenshot: '',          // cached plain-text screenshot from tuiMux
                 claudeScreen: '',              // cached ANSI-styled screen from tuiMux (T28)
                 claudeViewOffset: 0,           // scroll offset in Claude pane (lines from bottom)

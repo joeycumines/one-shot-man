@@ -308,14 +308,13 @@ func TestChunk16c_ConfirmCancel_UnknownKeyNoop(t *testing.T) {
 }
 
 // TestChunk16c_ConfirmCancel_CleanupSessions verifies that confirmCancel
-// cleans up active verify session, shell session, and resets tab to output.
+// cleans up active verify session and resets tab to output.
 func TestChunk16c_ConfirmCancel_CleanupSessions(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	val, err := evalJS(`(function() {
 		var sessionClosed = false;
-		var shellClosed = false;
 		var s = {
 			showConfirmCancel: true,
 			confirmCancelFocus: 0,
@@ -331,19 +330,13 @@ func TestChunk16c_ConfirmCancel_CleanupSessions(t *testing.T) {
 			verifyAutoScroll: false,
 			verifyPaused: true,
 			splitViewTab: 'verify',
-			shellSession: {close: function(){ shellClosed = true; }},
-			shellScreen: 'shell content',
-			shellViewOffset: 3,
-			shellAutoScroll: false,
 		};
 		var r = prSplit._updateConfirmCancel({type:'Key', key:'y'}, s);
 		var ns = r[0];
 		return JSON.stringify({
 			sessionClosed: sessionClosed,
-			shellClosed: shellClosed,
 			tabReset: ns.splitViewTab === 'output',
 			verifyCleared: ns.activeVerifySession === null && ns.activeVerifyBranch === null,
-			shellCleared: ns.shellSession === null && ns.shellScreen === '',
 			verifyScreenCleared: ns.verifyScreen === '' && ns.verifyViewportOffset === 0,
 			verifyAutoScrollReset: ns.verifyAutoScroll === true,
 			verifyPausedReset: ns.verifyPaused === false,
@@ -354,8 +347,8 @@ func TestChunk16c_ConfirmCancel_CleanupSessions(t *testing.T) {
 	}
 	s := val.(string)
 	for _, field := range []string{
-		"sessionClosed", "shellClosed", "tabReset", "verifyCleared",
-		"shellCleared", "verifyScreenCleared", "verifyAutoScrollReset", "verifyPausedReset",
+		"sessionClosed", "tabReset", "verifyCleared",
+		"verifyScreenCleared", "verifyAutoScrollReset", "verifyPausedReset",
 	} {
 		if !strings.Contains(s, `"`+field+`":true`) {
 			t.Errorf("cleanup should set %s to true: %s", field, s)

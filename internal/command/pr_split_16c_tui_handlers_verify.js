@@ -14,7 +14,6 @@
     var st = prSplit._state;
     var C = prSplit._TUI_CONSTANTS;
     var getInteractivePaneSession = prSplit._getInteractivePaneSession;
-    var cleanupShellPaneSession = prSplit._cleanupShellPaneSession;
     var clearVerifyPaneSession = prSplit._clearVerifyPaneSession;
     var handleErrorResolutionState = prSplit._handleErrorResolutionState;
     // Late-bound cross-chunk references (defined in later chunks, resolved at call time).
@@ -26,7 +25,7 @@
         // Helper to clean up any active verify session before quitting.
         function cleanupActiveSession() {
             // T325: Reset tab before clearing session for atomic state transition.
-            if (s.splitViewTab === 'verify' || s.splitViewTab === 'shell') {
+            if (s.splitViewTab === 'verify') {
                 s.splitViewTab = 'output';
             }
             clearVerifyPaneSession(s, { debugPrefix: 'cleanup', keepDisplay: false });
@@ -623,10 +622,7 @@
         s.activeVerifyStartTime = 0;
         s.verifyAutoScroll = true;
         s.verifyViewportOffset = 0;
-        // T380: Keep verify tab visible for post-mortem review; only switch shell away.
-        if (s.splitViewTab === 'shell') {
-            s.splitViewTab = 'verify';
-        }
+        // T380: Keep verify tab visible for post-mortem review.
 
         // Error in the .then rejection handler — record a failure result.
         if (s.verifyFallbackError) {
@@ -1094,46 +1090,11 @@
         return [s, null];
     }
 
-    // T335: Poll shell CaptureSession for screen updates and lifecycle.
-    function pollShellSession(s) {
-        var shellSession = getInteractivePaneSession(s, 'shell');
-        if (!shellSession) return [s, null];
-
-        // Capture screen.
-        try {
-            s.shellScreen = shellSession.screen();
-        } catch (e) {
-            s.shellScreen = '';
-        }
-
-        // Check if shell has exited.
-        var done = false;
-        try { done = shellSession.isDone(); } catch (e) { done = true; }
-
-        if (done) {
-            cleanupShellPaneSession(s, 'tabSwitch');
-
-            // Resume verify if it was paused for the shell.
-            var activeVerifySession = getInteractivePaneSession(s, 'verify');
-            if (s.verifyPaused && activeVerifySession) {
-                try { activeVerifySession.resume(); s.verifyPaused = false; } catch (e) { log.debug('tabSwitch: verifySession.resume failed: ' + (e.message || e)); }
-            }
-
-            // Switch away from shell tab.
-            if (s.splitViewTab === 'shell') {
-                s.splitViewTab = activeVerifySession ? 'verify' : 'output';
-            }
-
-            return [s, null];
-        }
-
-        return [s, tea.tick(C.TICK_INTERVAL_MS, 'shell-poll')];
-    }
     // Cross-chunk exports.
     prSplit._updateConfirmCancel = updateConfirmCancel;
     prSplit._runVerifyBranch = runVerifyBranch;
     prSplit._pollVerifySession = pollVerifySession;
-    prSplit._pollShellSession = pollShellSession;
+    // Task 8: _pollShellSession removed — shell tab unified into verify pane.
     prSplit._handleVerifySignal = handleVerifySignal;
     prSplit._handleVerifyFallbackPoll = handleVerifyFallbackPoll;
     prSplit._openClaudeConvo = openClaudeConvo;

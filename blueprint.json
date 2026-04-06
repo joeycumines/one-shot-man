@@ -93,7 +93,7 @@
       "task": "Eliminate the duplicate shell-session concept by unifying verify and shell panes",
       "description": "Update pr_split.js files so the 'verify' pane IS the interactive shell. Remove the separate shell-pane machinery that currently exists as a parallel concept. The verify session is a CaptureSession with explicit verification-command infrastructure on top of it. A user pauses verification mid-run, executes commands in that same pane, and resumes verification from the same shell.",
       "acceptance": "User Value: There is no longer a separate 'verify' pane and a 'shell' pane—they are unified. The user can pause verification, debug locally in the same pane, and resume. Code Quality: No separate shell-session machinery. The verify session is just a first-class interactive session with verification commands.",
-      "status": "In Progress",
+      "status": "Done",
       "dependsOn": [7]
     },
     {

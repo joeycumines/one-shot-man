@@ -114,6 +114,14 @@
                     try { resizeSession.resize(paneRows, paneCols); } catch (e) { log.debug('resize: ' + resizeTab + ' session.resize failed: ' + (e.message || e)); }
                 }
             }
+            // Task 44: Sync SessionManager's internal VTerm dimensions so
+            // childScreen()/snapshot() return properly-sized ANSI output.
+            if (typeof tuiMux !== 'undefined' && tuiMux &&
+                typeof tuiMux.resize === 'function') {
+                try { tuiMux.resize(paneRows, paneCols); } catch (e) {
+                    log.debug("session manager resize failed", { error: e.message || String(e) });
+                }
+            }
         }
 
         // Sync report overlay dimensions if currently open.

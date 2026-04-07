@@ -502,3 +502,101 @@ func TestEventKind_AllStrings(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// DroppedCount
+// ---------------------------------------------------------------------------
+
+func TestEventBus_DroppedCount_InitiallyZero(t *testing.T) {
+	t.Parallel()
+
+	bus := NewEventBus()
+	defer bus.Close()
+
+	if got := bus.DroppedCount(); got != 0 {
+		t.Errorf("DroppedCount() = %d, want 0", got)
+	}
+}
+
+func TestEventBus_DroppedCount_CountsDroppedEvents(t *testing.T) {
+	t.Parallel()
+
+	bus := NewEventBus()
+	defer bus.Close()
+
+	// Subscribe with buffer size 1 — second publish fills buffer,
+	// third publish drops.
+	_, ch := bus.Subscribe(1)
+
+	bus.Publish(Event{Kind: EventBell, SessionID: 1, Time: time.Now()})
+	bus.Publish(Event{Kind: EventResize, SessionID: 2, Time: time.Now()})
+	bus.Publish(Event{Kind: EventSessionOutput, SessionID: 3, Time: time.Now()})
+
+	// At least 2 events should have been dropped (buffer holds 1).
+	if got := bus.DroppedCount(); got < 2 {
+		t.Errorf("DroppedCount() = %d, want >= 2", got)
+	}
+
+	// First event should have been delivered.
+	select {
+	case evt := <-ch:
+		if evt.Kind != EventBell {
+			t.Errorf("first event Kind = %s, want bell", evt.Kind)
+		}
+		if evt.SessionID != 1 {
+			t.Errorf("first event SessionID = %d, want 1", evt.SessionID)
+		}
+	default:
+		t.Fatal("expected at least one event in channel")
+	}
+}
+
+func TestEventBus_DroppedCount_MultipleSubscribers(t *testing.T) {
+	t.Parallel()
+
+	bus := NewEventBus()
+	defer bus.Close()
+
+	// Two subscribers, each with buffer 1.
+	_, ch1 := bus.Subscribe(1)
+	_, ch2 := bus.Subscribe(1)
+
+	// Fill both buffers.
+	bus.Publish(Event{Kind: EventBell, Time: time.Now()})
+	// This drops for both subscribers.
+	bus.Publish(Event{Kind: EventResize, Time: time.Now()})
+
+	// 2 drops: one per subscriber.
+	if got := bus.DroppedCount(); got != 2 {
+		t.Errorf("DroppedCount() = %d, want 2", got)
+	}
+
+	// Both received the first event.
+	for i, ch := range []<-chan Event{ch1, ch2} {
+		select {
+		case evt := <-ch:
+			if evt.Kind != EventBell {
+				t.Errorf("subscriber %d: Kind = %s, want bell", i, evt.Kind)
+			}
+		default:
+			t.Fatalf("subscriber %d: expected event in channel", i)
+		}
+	}
+}
+
+func TestEventBus_DroppedCount_NoDropsWithLargeBuffer(t *testing.T) {
+	t.Parallel()
+
+	bus := NewEventBus()
+	defer bus.Close()
+
+	_, _ = bus.Subscribe(64)
+
+	for range 10 {
+		bus.Publish(Event{Kind: EventBell, Time: time.Now()})
+	}
+
+	if got := bus.DroppedCount(); got != 0 {
+		t.Errorf("DroppedCount() = %d, want 0 (large buffer, no drops)", got)
+	}
+}

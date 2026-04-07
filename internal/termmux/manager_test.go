@@ -1820,6 +1820,36 @@ func (d *delayedSession) start(ch chan []byte) {
 	d.ch = ch
 }
 
+func TestSessionManager_EventsDropped(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	// Subscribe with buffer size 1 — guaranteed to overflow quickly.
+	_, _ = m.Subscribe(1)
+
+	session := newControllableSession()
+	_, err := m.Register(session, SessionTarget{Name: "drop-test"})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+
+	// Pump output rapidly to generate many EventSessionOutput events that
+	// overflow the subscriber's buffer-1 channel.
+	for range 20 {
+		session.readerCh <- []byte("x")
+	}
+
+	// Give the worker goroutine time to process output and publish events.
+	time.Sleep(300 * time.Millisecond)
+
+	dropped := m.EventsDropped()
+	if dropped == 0 {
+		t.Error("EventsDropped() = 0, want > 0 with buffer-1 subscriber and rapid output")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Fuzz testing
 // ---------------------------------------------------------------------------

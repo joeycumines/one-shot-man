@@ -844,6 +844,13 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 		return runtime.ToValue(result)
 	})
 
+	// eventsDropped() → number
+	// Returns the cumulative count of events that could not be delivered
+	// to at least one subscriber because its channel buffer was full.
+	_ = obj.Set("eventsDropped", func() int64 {
+		return mgr.EventsDropped()
+	})
+
 	// passthrough({stdin?, stdout?, termFd?, toggleKey?, statusBar?, restoreScreen?, resizeFn?})
 	// → {reason: string, error?: string}
 	// Enters passthrough mode for the active session. Blocks until

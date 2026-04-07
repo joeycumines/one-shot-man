@@ -1,7 +1,9 @@
 package termmux
 
 import (
+	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -98,6 +100,10 @@ type EventBus struct {
 	subscribers map[int]chan<- Event
 	nextID      int
 	closed      bool
+
+	// droppedEvents counts events that could not be delivered because a
+	// subscriber's channel was full. Accessed atomically outside the mutex.
+	droppedEvents atomic.Int64
 }
 
 // NewEventBus creates an EventBus ready for use.
@@ -177,6 +183,8 @@ func (b *EventBus) Publish(event Event) {
 		case ch <- event:
 		default:
 			// Channel full — event dropped for this subscriber.
+			b.droppedEvents.Add(1)
+			slog.Debug("event dropped", "eventKind", event.Kind, "sessionId", event.SessionID)
 		}
 	}
 }
@@ -197,6 +205,13 @@ func (b *EventBus) Close() {
 		close(ch)
 		delete(b.subscribers, id)
 	}
+}
+
+// DroppedCount returns the cumulative number of events that could not be
+// delivered to at least one subscriber because its channel buffer was full.
+// Safe to call concurrently from any goroutine.
+func (b *EventBus) DroppedCount() int64 {
+	return b.droppedEvents.Load()
 }
 
 // emit is the internal publish path used by the SessionManager worker

@@ -96,6 +96,10 @@ func startManager(t *testing.T, opts ...ManagerOption) (*SessionManager, func())
 	go func() {
 		errCh <- m.Run(ctx)
 	}()
+	// Wait for the worker goroutine to start processing before
+	// returning — prevents races where API calls arrive before
+	// the worker is ready.
+	<-m.Started()
 	cleanup := func() {
 		cancel()
 		<-errCh
@@ -1009,6 +1013,7 @@ func TestSessionManager_Close_ClosesAllSessions(t *testing.T) {
 	go func() {
 		errCh <- m.Run(ctx)
 	}()
+	<-m.Started()
 
 	s1 := newControllableSession()
 	s2 := newControllableSession()
@@ -1331,6 +1336,42 @@ func TestSessionManager_RoundTrip(t *testing.T) {
 // Post-shutdown: ErrManagerNotRunning
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Methods before Run / after Close / after context cancel
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_MethodsBeforeRun(t *testing.T) {
+	t.Parallel()
+
+	m := NewSessionManager()
+	// Do NOT call Run — all methods should immediately return ErrManagerNotRunning.
+
+	if _, err := m.Register(newControllableSession(), SessionTarget{Name: "pre-run"}); err != ErrManagerNotRunning {
+		t.Errorf("Register before Run: err = %v, want ErrManagerNotRunning", err)
+	}
+	if err := m.Unregister(1); err != ErrManagerNotRunning {
+		t.Errorf("Unregister before Run: err = %v, want ErrManagerNotRunning", err)
+	}
+	if err := m.Activate(1); err != ErrManagerNotRunning {
+		t.Errorf("Activate before Run: err = %v, want ErrManagerNotRunning", err)
+	}
+	if err := m.Input([]byte("data")); err != ErrManagerNotRunning {
+		t.Errorf("Input before Run: err = %v, want ErrManagerNotRunning", err)
+	}
+	if err := m.Resize(50, 120); err != ErrManagerNotRunning {
+		t.Errorf("Resize before Run: err = %v, want ErrManagerNotRunning", err)
+	}
+	if got := m.ActiveID(); got != 0 {
+		t.Errorf("ActiveID before Run = %d, want 0", got)
+	}
+	if got := m.Sessions(); got != nil {
+		t.Errorf("Sessions before Run = %v, want nil", got)
+	}
+	if got := m.Snapshot(1); got != nil {
+		t.Errorf("Snapshot before Run = %v, want nil", got)
+	}
+}
+
 func TestSessionManager_MethodsAfterClose(t *testing.T) {
 	t.Parallel()
 
@@ -1339,6 +1380,7 @@ func TestSessionManager_MethodsAfterClose(t *testing.T) {
 	defer cancel()
 	errCh := make(chan error, 1)
 	go func() { errCh <- m.Run(ctx) }()
+	<-m.Started()
 
 	// Register one session, then close.
 	_, _ = m.Register(newControllableSession(), SessionTarget{Name: "test"})
@@ -1379,6 +1421,7 @@ func TestSessionManager_MethodsAfterContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
 	go func() { errCh <- m.Run(ctx) }()
+	<-m.Started()
 
 	_, _ = m.Register(newControllableSession(), SessionTarget{Name: "test"})
 
@@ -1400,6 +1443,7 @@ func TestSessionManager_CloseIdempotent(t *testing.T) {
 	defer cancel()
 	errCh := make(chan error, 1)
 	go func() { errCh <- m.Run(ctx) }()
+	<-m.Started()
 
 	m.Close()
 	<-errCh
@@ -1723,6 +1767,7 @@ func TestSessionManager_Pipeline_ShutdownStopsReaders(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() { errCh <- m.Run(ctx) }()
+	<-m.Started()
 
 	session := newControllableSession()
 	_, _ = m.Register(session, SessionTarget{Name: "shutdown-test"})

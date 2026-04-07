@@ -988,6 +988,18 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 		}()
 	})
 
+	// started() → Promise-like blocking call. Waits for Run to begin
+	// processing requests. Returns true if the worker started, false
+	// if it shut down before starting.
+	_ = obj.Set("started", func() bool {
+		select {
+		case <-mgr.Started():
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	})
+
 	_ = obj.Set("close", func() {
 		mgr.Close()
 	})

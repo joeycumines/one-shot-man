@@ -285,6 +285,10 @@ type SessionManager struct {
 	// stopped and all resources have been released.
 	done chan struct{}
 
+	// started is closed by Run when the worker goroutine begins
+	// processing. Used by sendRequest to detect calls before Run.
+	started chan struct{}
+
 	// readerCtx is a context derived from Run's ctx parameter. It is
 	// cancelled during shutdown to signal all per-session reader
 	// goroutines to exit. This prevents goroutine leaks when the
@@ -348,6 +352,7 @@ func NewSessionManager(opts ...ManagerOption) *SessionManager {
 		mergedOutput: make(chan sessionOutput, 64),
 		eventBus:     NewEventBus(),
 		done:         make(chan struct{}),
+		started:      make(chan struct{}),
 		sessions:     make(map[SessionID]*managedSession),
 		nextID:       1,
 		termRows:     24,
@@ -383,6 +388,10 @@ func (m *SessionManager) Run(ctx context.Context) error {
 	m.readerCtx, m.readerCancel = context.WithCancel(ctx)
 	defer m.readerCancel()
 
+	// Signal that the worker has started. This unblocks sendRequest
+	// callers that were waiting for the worker to be ready.
+	close(m.started)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -411,6 +420,17 @@ func (m *SessionManager) Close() {
 	<-m.done
 }
 
+// Started returns a channel that is closed when the worker goroutine has
+// started processing requests. Callers that need to guarantee the manager
+// is ready before sending requests can wait on this channel:
+//
+//	go mgr.Run(ctx)
+//	<-mgr.Started()
+//	mgr.Register(...)
+func (m *SessionManager) Started() <-chan struct{} {
+	return m.started
+}
+
 // closeReqChan idempotently closes reqChan.
 func (m *SessionManager) closeReqChan() {
 	defer func() { recover() }() // ignore double-close panic
@@ -433,9 +453,16 @@ func (m *SessionManager) Unsubscribe(id int) bool {
 }
 
 // sendRequest sends a request to the worker goroutine and blocks until the
-// worker replies. Returns ErrManagerNotRunning if the request channel is
-// closed (worker has stopped).
+// worker replies. Returns ErrManagerNotRunning if the worker has not started
+// (Run not called) or has stopped (reqChan closed).
 func (m *SessionManager) sendRequest(kind requestKind, payload any) (resp response) {
+	// Fast-path guard: worker must have started.
+	select {
+	case <-m.started:
+	default:
+		return response{err: ErrManagerNotRunning}
+	}
+
 	reply := make(chan response, 1)
 	req := request{kind: kind, payload: payload, reply: reply}
 	defer func() {
@@ -445,8 +472,16 @@ func (m *SessionManager) sendRequest(kind requestKind, payload any) (resp respon
 		}
 	}()
 	m.reqChan <- req
-	resp = <-reply
-	return resp
+
+	// Wait for the worker's response. Also select on done to prevent
+	// deadlock if the worker exits before processing this request
+	// (e.g., context cancellation while requests are buffered).
+	select {
+	case resp = <-reply:
+		return resp
+	case <-m.done:
+		return response{err: ErrManagerNotRunning}
+	}
 }
 
 // Register adds a new session to the manager and returns its unique SessionID.

@@ -133,6 +133,14 @@
     function runVerifyBranch(s) {
         if (!s.isProcessing) return [s, null];
 
+        // Guard: clean up any existing verify session before starting a new one.
+        // Prevents session leaks if runVerifyBranch is called while a previous
+        // verify session is still active (e.g., rapid branch transitions, error
+        // recovery, pipeline restarts, or duplicate tick scheduling).
+        if (s.activeVerifySession) {
+            clearVerifyPaneSession(s, { keepDisplay: false, debugPrefix: 'runVerifyBranch-guard' });
+        }
+
         var splits = st.planCache.splits;
         if (!splits || s.verifyingIdx >= splits.length) {
             // All branches verified — transition to equiv check phase.

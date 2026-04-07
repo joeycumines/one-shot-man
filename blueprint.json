@@ -214,7 +214,8 @@
       "task": "Decompose wizardUpdateImpl god function (KILL-004)",
       "description": "Decompose the ~600-line wizardUpdateImpl god function in pr_split_16e_tui_update.js into per-message-type handler dispatch functions. Separate key messages, mouse messages, window resizes, tick messages, and overlays into independently testable components.",
       "acceptance": "wizardUpdateImpl is reduced to a concise, top-level dispatch function. The monolithic structure is refactored into modular handlers with zero behavioral regressions.",
-      "status": "Not Started"
+      "status": "Done",
+      "completedNote": "Decomposed 972-line wizardUpdateImpl into 6 handler functions + 30-line dispatch: handleWindowResize, handleOverlays, handleKeyMessage, handleToggleReturn, handleMouseMessage, handleTickMessage. Each handler is independently testable. The dispatch function routes based on msg.type with overlay interception for all non-Tick messages. Build/lint/test-short all pass (53 packages). Zero behavioral regressions — all 12 existing unit tests + integration tests pass unmodified."
     },
     {
       "id": 7,

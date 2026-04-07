@@ -82,83 +82,60 @@
         return false;
     }
 
-    // --- wizardUpdateImpl — main BubbleTea update dispatch ---
-    //  Extracted from createWizardModel._updateFn for file splitting.
-    function wizardUpdateImpl(msg, s) {
-        if (typeof tuiMux !== 'undefined' && tuiMux &&
-            typeof tuiMux.pollEvents === 'function') {
-            try {
-                tuiMux.pollEvents();
-            } catch (e) {
-                log.debug('wizardUpdateImpl: tuiMux.pollEvents failed: ' + (e.message || e));
-            }
-        }
+    // --- Per-message-type handler functions ---
+    // Extracted from wizardUpdateImpl for modularity and testability.
 
-        // WindowSize — always handle.
-        if (msg.type === 'WindowSize') {
-            s.width = msg.width;
-            s.height = msg.height;
+    // handleWindowResize processes WindowSize messages: sets dimensions,
+    // syncs viewports, resizes interactive CaptureSession terminals, and
+    // handles first-render initialization.
+    function handleWindowResize(msg, s) {
+        s.width = msg.width;
+        s.height = msg.height;
 
-            // T120: Sync viewport dimensions from update, not view.
-            syncMainViewport(s);
+        // T120: Sync viewport dimensions from update, not view.
+        syncMainViewport(s);
 
-            // T336: Resize interactive CaptureSession terminals.
-            if (s.splitViewEnabled) {
-                var h = s.height || C.DEFAULT_ROWS;
-                var vpH = Math.max(3, h - CHROME_ESTIMATE);
-                var minP = 3;
-                var wH = Math.max(minP, Math.floor(vpH * (s.splitViewRatio || 0.6)));
-                wH = Math.min(wH, vpH - minP - 1);
-                var cH = vpH - wH - 1;
-                var paneRows = Math.max(3, cH - 3);
-                var paneCols = Math.max(20, (s.width || 80) - 4);
-                // Task 8: Shell tab removed from interactive tabs.
-                var interactiveTabs = ['claude', 'verify'];
-                for (var ti = 0; ti < interactiveTabs.length; ti++) {
-                    var resizeTab = interactiveTabs[ti];
-                    var resizeSession = getInteractivePaneSession(s, resizeTab);
-                    if (resizeSession && typeof resizeSession.resize === 'function') {
-                        try { resizeSession.resize(paneRows, paneCols); } catch (e) { log.debug('resize: ' + resizeTab + ' session.resize failed: ' + (e.message || e)); }
-                    }
+        // T336: Resize interactive CaptureSession terminals.
+        if (s.splitViewEnabled) {
+            var h = s.height || C.DEFAULT_ROWS;
+            var vpH = Math.max(3, h - CHROME_ESTIMATE);
+            var minP = 3;
+            var wH = Math.max(minP, Math.floor(vpH * (s.splitViewRatio || 0.6)));
+            wH = Math.min(wH, vpH - minP - 1);
+            var cH = vpH - wH - 1;
+            var paneRows = Math.max(3, cH - 3);
+            var paneCols = Math.max(20, (s.width || 80) - 4);
+            // Task 8: Shell tab removed from interactive tabs.
+            var interactiveTabs = ['claude', 'verify'];
+            for (var ti = 0; ti < interactiveTabs.length; ti++) {
+                var resizeTab = interactiveTabs[ti];
+                var resizeSession = getInteractivePaneSession(s, resizeTab);
+                if (resizeSession && typeof resizeSession.resize === 'function') {
+                    try { resizeSession.resize(paneRows, paneCols); } catch (e) { log.debug('resize: ' + resizeTab + ' session.resize failed: ' + (e.message || e)); }
                 }
             }
-
-            // Sync report overlay dimensions if currently open.
-            if (s.showingReport) {
-                syncReportOverlay(s);
-            }
-
-            if (s.needsInitClear) {
-                s.needsInitClear = false;
-                // Start the wizard on first render.
-                s.wizardState = 'CONFIG';
-                s.wizard.transition('CONFIG');
-                // T42: Auto-detect Claude on startup to default to 'auto' strategy.
-                return [s, tea.batch(tea.clearScreen(), tea.tick(1, 'auto-detect-claude'))];
-            }
-            return [s, null];
         }
 
-        // Reset focus index on wizard state transition.
-        if (s.wizardState !== s._prevWizardState) {
-            s.focusIndex = 0;
-            s._prevWizardState = s.wizardState;
-            // T46: Clear inline question state on screen transition to
-            // prevent orphaned input mode on screens that don't render
-            // the question prompt.
-            if (s.claudeQuestionDetected || s.claudeQuestionInputActive) {
-                s.claudeQuestionDetected = false;
-                s.claudeQuestionLine = '';
-                s.claudeQuestionInputText = '';
-                s.claudeQuestionInputActive = false;
-            }
+        // Sync report overlay dimensions if currently open.
+        if (s.showingReport) {
+            syncReportOverlay(s);
         }
 
-        // Overlays intercept all user input when active, but Tick
-        // messages always pass through — they are programmatic
-        // continuations (e.g. verify-poll) that must not be dropped.
-        if (msg.type !== 'Tick') {
+        if (s.needsInitClear) {
+            s.needsInitClear = false;
+            // Start the wizard on first render.
+            s.wizardState = 'CONFIG';
+            s.wizard.transition('CONFIG');
+            // T42: Auto-detect Claude on startup to default to 'auto' strategy.
+            return [s, tea.batch(tea.clearScreen(), tea.tick(1, 'auto-detect-claude'))];
+        }
+        return [s, null];
+    }
 
+    // handleOverlays intercepts user input when an overlay is active.
+    // Returns [s, cmd] if the overlay consumed the message, or null
+    // if no overlay was active and the caller should continue dispatch.
+    function handleOverlays(msg, s) {
         if (s.showHelp) {
             if (msg.type === 'Key') {
                 // Any key closes help.
@@ -455,431 +432,439 @@
             return [s, null];
         }
 
-        } // end: if (msg.type !== 'Tick') — overlay guard
+        // No overlay intercepted — return null so caller continues dispatch.
+        return null;
+    }
 
-        // Global key bindings.
-        if (msg.type === 'Key') {
-            var k = msg.key;
-            var activeVerifySession = getInteractivePaneSession(s, 'verify');
+    // handleKeyMessage processes Key messages that were not intercepted
+    // by overlays. Covers: verify session keys, split-view keybindings,
+    // help/cancel/navigation, viewport scroll, and screen-specific shortcuts.
+    function handleKeyMessage(msg, s) {
+        var k = msg.key;
+        var activeVerifySession = getInteractivePaneSession(s, 'verify');
 
-            // Live verify session: intercept Ctrl+C to stop verification
-            // instead of showing the cancel dialog.
-            // First Ctrl+C sends SIGINT; second within 2s sends SIGKILL
-            // (handles processes that ignore SIGINT).
-            if (k === 'ctrl+c' && activeVerifySession) {
-                var now = Date.now();
-                if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < C.SIGKILL_WINDOW_MS) {
-                    // Double Ctrl+C — force kill.
-                    try { activeVerifySession.kill(); } catch (e) { log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e)); }
-                } else {
-                    // First Ctrl+C — graceful interrupt.
-                    try { activeVerifySession.interrupt(); } catch (e) { log.debug('cancelVerify: verifySession.interrupt failed: ' + (e.message || e)); }
-                }
-                s.lastVerifyInterruptTime = now;
+        // Live verify session: intercept Ctrl+C to stop verification
+        // instead of showing the cancel dialog.
+        // First Ctrl+C sends SIGINT; second within 2s sends SIGKILL
+        // (handles processes that ignore SIGINT).
+        if (k === 'ctrl+c' && activeVerifySession) {
+            var now = Date.now();
+            if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < C.SIGKILL_WINDOW_MS) {
+                // Double Ctrl+C — force kill.
+                try { activeVerifySession.kill(); } catch (e) { log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e)); }
+            } else {
+                // First Ctrl+C — graceful interrupt.
+                try { activeVerifySession.interrupt(); } catch (e) { log.debug('cancelVerify: verifySession.interrupt failed: ' + (e.message || e)); }
+            }
+            s.lastVerifyInterruptTime = now;
+            return [s, null];
+        }
+
+        // Live verify session: ↑/↓ scroll the output viewport.
+        if (activeVerifySession) {
+            if (k === 'up' || k === 'k') {
+                s.verifyAutoScroll = false;
+                s.verifyViewportOffset = (s.verifyViewportOffset || 0) + 1;
                 return [s, null];
             }
-
-            // Live verify session: ↑/↓ scroll the output viewport.
-            if (activeVerifySession) {
-                if (k === 'up' || k === 'k') {
-                    s.verifyAutoScroll = false;
-                    s.verifyViewportOffset = (s.verifyViewportOffset || 0) + 1;
-                    return [s, null];
-                }
-                if (k === 'down' || k === 'j') {
-                    s.verifyViewportOffset = Math.max(0, (s.verifyViewportOffset || 0) - 1);
-                    if (s.verifyViewportOffset === 0) {
-                        s.verifyAutoScroll = true;
-                    }
-                    return [s, null];
-                }
-                if (k === 'home') {
-                    s.verifyAutoScroll = false;
-                    s.verifyViewportOffset = C.FAR_SCROLL_SENTINEL; // far back
-                    return [s, null];
-                }
-                if (k === 'end') {
-                    s.verifyViewportOffset = 0;
+            if (k === 'down' || k === 'j') {
+                s.verifyViewportOffset = Math.max(0, (s.verifyViewportOffset || 0) - 1);
+                if (s.verifyViewportOffset === 0) {
                     s.verifyAutoScroll = true;
-                    return [s, null];
                 }
-            }
-
-            // Split-view: Ctrl+L to toggle Claude window-in-window.
-            if (k === 'ctrl+l') {
-                s.splitViewEnabled = !s.splitViewEnabled;
-                syncMainViewport(s); // T120: sync dimensions after toggle.
-                if (s.splitViewEnabled) {
-                    // T45: User re-opened — clear manual dismiss flag.
-                    s.claudeManuallyDismissed = false;
-                    // Start screenshot polling. Preserve focusIndex.
-                    return [s, tea.tick(C.TICK_INTERVAL_MS, 'claude-screenshot')];
-                } else {
-                    // T45: User explicitly closed — set manual dismiss flag
-                    // so auto-attach does not re-open the pane.
-                    s.claudeManuallyDismissed = true;
-                    // Reset split-view state on disable. Preserve focusIndex.
-                    s.claudeScreenshot = '';
-                    s.claudeScreen = '';
-                    s.claudeViewOffset = 0;
-                    s.splitViewFocus = 'wizard';
-                    s.splitViewTab = 'claude'; // T44: reset tab on disable
-                    // T46: Clear inline question state — the question prompt
-                    // wouldn't auto-dismiss with split-view disabled (no
-                    // pollClaudeScreenshot running to clear it).
-                    s.claudeQuestionDetected = false;
-                    s.claudeQuestionLine = '';
-                    s.claudeQuestionInputText = '';
-                    s.claudeQuestionInputActive = false;
-                }
-                return [s, null];
-            }
-
-            // Split-view keybindings (only when enabled).
-            if (s.splitViewEnabled) {
-                // T380: Ctrl+Tab switches focus between wizard and pane (works during verify).
-                if (k === 'ctrl+tab') {
-                    s.splitViewFocus = (s.splitViewFocus === 'wizard') ? 'claude' : 'wizard';
-                    return [s, null];
-                }
-                // Ctrl+= / Ctrl+- to adjust ratio.
-                if (k === 'ctrl++' || k === 'ctrl+=') {
-                    s.splitViewRatio = Math.min(0.8, s.splitViewRatio + 0.1);
-                    syncMainViewport(s); // T120: sync dimensions after ratio change.
-                    return [s, null];
-                }
-                if (k === 'ctrl+-') {
-                    s.splitViewRatio = Math.max(0.2, s.splitViewRatio - 0.1);
-                    syncMainViewport(s); // T120: sync dimensions after ratio change.
-                    return [s, null];
-                }
-                // T44+T322+T380+T388: Ctrl+O cycles through available tabs in split-view bottom pane.
-                if (k === 'ctrl+o') {
-                    var tabs = listSplitViewTabs(s);
-                    var idx = tabs.indexOf(s.splitViewTab);
-                    s.splitViewTab = tabs[(idx + 1) % tabs.length];
-                    return [s, null];
-                }
-                // T29: Claude pane keyboard input forwarding.
-                // When Claude pane is focused, forward non-reserved keys to child PTY.
-                if (s.splitViewFocus === 'claude') {
-                    // T44: Output tab scroll keys (when output tab is active).
-                    if (s.splitViewTab === 'output') {
-                        if (k === 'up' || k === 'k') {
-                            s.outputViewOffset = (s.outputViewOffset || 0) + 1;
-                            s.outputAutoScroll = false;
-                            return [s, null];
-                        }
-                        if (k === 'down' || k === 'j') {
-                            s.outputViewOffset = Math.max(0, (s.outputViewOffset || 0) - 1);
-                            if (s.outputViewOffset === 0) s.outputAutoScroll = true;
-                            return [s, null];
-                        }
-                        if (k === 'pgup') {
-                            s.outputViewOffset = (s.outputViewOffset || 0) + 5;
-                            s.outputAutoScroll = false;
-                            return [s, null];
-                        }
-                        if (k === 'pgdown') {
-                            s.outputViewOffset = Math.max(0, (s.outputViewOffset || 0) - 5);
-                            if (s.outputViewOffset === 0) s.outputAutoScroll = true;
-                            return [s, null];
-                        }
-                        if (k === 'home') {
-                            s.outputViewOffset = C.FAR_SCROLL_SENTINEL;
-                            s.outputAutoScroll = false;
-                            return [s, null];
-                        }
-                        if (k === 'end') {
-                            s.outputViewOffset = 0;
-                            s.outputAutoScroll = true;
-                            return [s, null];
-                        }
-                        // Output tab is read-only — don't forward to PTY, don't scroll Claude.
-                        return [s, null];
-                    }
-                    // Task 8: Verify tab is now a full interactive shell.
-                    // With a live CaptureSession, forward ALL non-pane-management keys
-                    // to the terminal (arrow keys, j/k, etc. reach the child process).
-                    // In fallback mode (no PTY, verifyFallbackRunning), use scroll keys.
-                    if (s.splitViewTab === 'verify') {
-                        // Fallback path: no PTY, user views text output — scroll keys apply.
-                        if (s.verifyFallbackRunning || !getInteractivePaneSession(s, 'verify')) {
-                            if (k === 'up' || k === 'k') {
-                                s.verifyViewportOffset = (s.verifyViewportOffset || 0) + 1;
-                                s.verifyAutoScroll = false;
-                                return [s, null];
-                            }
-                            if (k === 'down' || k === 'j') {
-                                s.verifyViewportOffset = Math.max(0, (s.verifyViewportOffset || 0) - 1);
-                                if (s.verifyViewportOffset === 0) s.verifyAutoScroll = true;
-                                return [s, null];
-                            }
-                            if (k === 'pgup') {
-                                s.verifyViewportOffset = (s.verifyViewportOffset || 0) + 5;
-                                s.verifyAutoScroll = false;
-                                return [s, null];
-                            }
-                            if (k === 'pgdown') {
-                                s.verifyViewportOffset = Math.max(0, (s.verifyViewportOffset || 0) - 5);
-                                if (s.verifyViewportOffset === 0) s.verifyAutoScroll = true;
-                                return [s, null];
-                            }
-                            if (k === 'home') {
-                                s.verifyViewportOffset = C.FAR_SCROLL_SENTINEL;
-                                s.verifyAutoScroll = false;
-                                return [s, null];
-                            }
-                            if (k === 'end') {
-                                s.verifyViewportOffset = 0;
-                                s.verifyAutoScroll = true;
-                                return [s, null];
-                            }
-                            return [s, null];
-                        }
-                        // Live verify session: fully interactive — only pane-management
-                        // keys are reserved, everything else goes to the terminal.
-                        if (!INTERACTIVE_RESERVED_KEYS[k]) {
-                            var vBytes = keyToTermBytes(k);
-                            var verifySession = getInteractivePaneSession(s, 'verify');
-                            if (vBytes !== null && verifySession &&
-                                typeof verifySession.write === 'function') {
-                                try {
-                                    verifySession.write(vBytes);
-                                    s.verifyViewportOffset = 0;
-                                    s.verifyAutoScroll = true;
-                                } catch (e) {
-                                    // Swallow — write may fail if session ended.
-                                }
-                            }
-                            return [s, null];
-                        }
-                    }
-                    // Viewport scroll keys — scroll the Claude pane output.
-                    if (k === 'up' || k === 'k') {
-                        s.claudeViewOffset = (s.claudeViewOffset || 0) + 1;
-                        return [s, null];
-                    }
-                    if (k === 'down' || k === 'j') {
-                        s.claudeViewOffset = Math.max(0, (s.claudeViewOffset || 0) - 1);
-                        return [s, null];
-                    }
-                    if (k === 'pgup') {
-                        s.claudeViewOffset = (s.claudeViewOffset || 0) + 5;
-                        return [s, null];
-                    }
-                    if (k === 'pgdown') {
-                        s.claudeViewOffset = Math.max(0, (s.claudeViewOffset || 0) - 5);
-                        return [s, null];
-                    }
-                    if (k === 'home') {
-                        s.claudeViewOffset = C.FAR_SCROLL_SENTINEL;
-                        return [s, null];
-                    }
-                    if (k === 'end') {
-                        s.claudeViewOffset = 0;
-                        return [s, null];
-                    }
-                    // Forward non-reserved keys to Claude's PTY.
-                    if (!CLAUDE_RESERVED_KEYS[k]) {
-                        var bytes = keyToTermBytes(k);
-                        var claudeSession = getInteractivePaneSession(s, 'claude');
-                        if (bytes !== null && claudeSession &&
-                            typeof claudeSession.write === 'function') {
-                            try {
-                                claudeSession.write(bytes);
-                                // Auto-scroll to bottom on input (follow live output).
-                                s.claudeViewOffset = 0;
-                            } catch (e) {
-                                // Swallow — write may fail if child ended.
-                            }
-                        }
-                        return [s, null];
-                    }
-                }
-            }
-
-            // Help toggle.
-            if (k === '?' || k === 'f1') {
-                s.showHelp = true;
-                return [s, null];
-            }
-            // Cancel.
-            if (k === 'ctrl+c') {
-                s.showConfirmCancel = true;
-                s.confirmCancelFocus = 0;  // T031: reset focus to 'Yes' on open
-                return [s, null];
-            }
-            // Escape — back or close.
-            if (k === 'esc') {
-                return handleBack(s);
-            }
-            // Enter — activate focused element or forward action.
-            if (k === 'enter') {
-                var activated = handleFocusActivate(s);
-                if (activated) return activated;
-                return handleNext(s);
-            }
-            // Navigation: j/k/up/down = list navigation (splits only).
-            if (k === 'j' || k === 'down') {
-                return handleListNav(s, 1);
-            }
-            if (k === 'k' || k === 'up') {
-                return handleListNav(s, -1);
-            }
-            // Tab/Shift+Tab = full focus cycling across all elements.
-            if (k === 'tab') {
-                return handleNavDown(s);
-            }
-            if (k === 'shift+tab') {
-                return handleNavUp(s);
-            }
-            // Viewport scroll.
-            if (k === 'pgdown') {
-                if (s.vp) s.vp.halfPageDown();
-                return [s, null];
-            }
-            if (k === 'pgup') {
-                if (s.vp) s.vp.halfPageUp();
                 return [s, null];
             }
             if (k === 'home') {
-                if (s.vp) s.vp.gotoTop();
+                s.verifyAutoScroll = false;
+                s.verifyViewportOffset = C.FAR_SCROLL_SENTINEL; // far back
                 return [s, null];
             }
             if (k === 'end') {
-                if (s.vp) s.vp.gotoBottom();
+                s.verifyViewportOffset = 0;
+                s.verifyAutoScroll = true;
                 return [s, null];
             }
-            // Screen-specific key shortcuts.
-            // BRANCH_BUILDING: 'e' toggles expand/collapse on the
-            // most recently verified branch with output.
-            if (k === 'e' && s.wizardState === 'BRANCH_BUILDING') {
-                if (s.expandedVerifyBranch !== null && s.expandedVerifyBranch !== undefined) {
-                    // Collapse the currently expanded branch.
-                    s.expandedVerifyBranch = null;
-                } else if (st.planCache && st.planCache.splits && s.verifyOutput) {
-                    // Find the last branch that has verification output to expand.
-                    for (var ei = st.planCache.splits.length - 1; ei >= 0; ei--) {
-                        var eBranch = st.planCache.splits[ei].name;
-                        if (s.verifyOutput[eBranch] && s.verifyOutput[eBranch].length > 0) {
-                            s.expandedVerifyBranch = eBranch;
-                            break;
-                        }
-                    }
-                }
-                return [s, null];
-            }
-            // T059: BRANCH_BUILDING: 'z' toggles pause/resume on
-            // the active verify session. Only when a verify is running.
-            if (k === 'z' && s.wizardState === 'BRANCH_BUILDING' && activeVerifySession) {
-                if (s.verifyPaused) {
-                    try { activeVerifySession.resume(); s.verifyPaused = false; prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.RUNNING); } catch (e) {
-                        log.printf('verify: resume failed: %s', e.message || String(e));
-                    }
-                } else {
-                    try { activeVerifySession.pause(); s.verifyPaused = true; prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.PAUSED); } catch (e) {
-                        log.printf('verify: pause failed: %s', e.message || String(e));
-                    }
-                }
-                return [s, null];
-            }
-            // T007 (Task 7): BRANCH_BUILDING: persistent verify shell — p/f/c signals.
-            // 'p' — mark current branch as PASSED (verification succeeded).
-            // 'f' — mark current branch as FAILED (verification failed).
-            // 'c' — CONTINUE/skip this branch without marking pass or fail.
-            // Only active during active persistent verify session.
-            if (s.wizardState === 'BRANCH_BUILDING' && activeVerifySession) {
-                if (k === 'p' || k === 'f' || k === 'c') {
-                    var choice = (k === 'p') ? 'pass' : ((k === 'f') ? 'fail' : 'continue');
-                    return handleVerifySignal(s, choice);
-                }
-            }
-            if (k === 'e' && s.wizardState === 'PLAN_REVIEW' && !s.isProcessing) {
-                // Enter plan editor.
-                return enterPlanEditor(s);
-            }
-            // PLAN_EDITOR: inline title rename (T17).
-            if (k === 'e' && s.wizardState === 'PLAN_EDITOR') {
-                var eidx = s.selectedSplitIdx || 0;
-                if (st.planCache && st.planCache.splits && st.planCache.splits[eidx]) {
-                    s.editorTitleEditing = true;
-                    s.editorTitleEditingIdx = eidx;
-                    s.editorTitleText = st.planCache.splits[eidx].name || '';
-                }
-                return [s, null];
-            }
-            // PLAN_EDITOR: Space toggles checked state on highlighted file (T17).
-            if (k === ' ' && s.wizardState === 'PLAN_EDITOR') {
-                var sidx = s.selectedSplitIdx || 0;
-                var fidx = s.selectedFileIdx || 0;
-                if (st.planCache && st.planCache.splits && st.planCache.splits[sidx] &&
-                    st.planCache.splits[sidx].files && st.planCache.splits[sidx].files[fidx]) {
-                    if (!s.editorCheckedFiles) s.editorCheckedFiles = {};
-                    var fkey = sidx + '-' + fidx;
-                    s.editorCheckedFiles[fkey] = !s.editorCheckedFiles[fkey];
-                }
-                return [s, null];
-            }
-            // PLAN_EDITOR: Shift+up/down reorder files within split (T17).
-            if (k === 'shift+up' && s.wizardState === 'PLAN_EDITOR') {
-                var sidx = s.selectedSplitIdx || 0;
-                var fidx = s.selectedFileIdx || 0;
-                if (st.planCache && st.planCache.splits && st.planCache.splits[sidx] &&
-                    st.planCache.splits[sidx].files && fidx > 0) {
-                    var reFiles = st.planCache.splits[sidx].files;
-                    var tmp = reFiles[fidx - 1];
-                    reFiles[fidx - 1] = reFiles[fidx];
-                    reFiles[fidx] = tmp;
-                    // Also swap checked state to follow the file.
-                    if (!s.editorCheckedFiles) s.editorCheckedFiles = {};
-                    var ckFrom = sidx + '-' + fidx;
-                    var ckTo = sidx + '-' + (fidx - 1);
-                    var tmpCk = s.editorCheckedFiles[ckFrom];
-                    s.editorCheckedFiles[ckFrom] = s.editorCheckedFiles[ckTo];
-                    s.editorCheckedFiles[ckTo] = tmpCk;
-                    s.selectedFileIdx = fidx - 1;
-                }
-                return [s, null];
-            }
-            if (k === 'shift+down' && s.wizardState === 'PLAN_EDITOR') {
-                var sidx = s.selectedSplitIdx || 0;
-                var fidx = s.selectedFileIdx || 0;
-                if (st.planCache && st.planCache.splits && st.planCache.splits[sidx] &&
-                    st.planCache.splits[sidx].files && fidx < st.planCache.splits[sidx].files.length - 1) {
-                    var reFiles = st.planCache.splits[sidx].files;
-                    var tmp = reFiles[fidx + 1];
-                    reFiles[fidx + 1] = reFiles[fidx];
-                    reFiles[fidx] = tmp;
-                    // Also swap checked state to follow the file.
-                    if (!s.editorCheckedFiles) s.editorCheckedFiles = {};
-                    var ckFrom = sidx + '-' + fidx;
-                    var ckTo = sidx + '-' + (fidx + 1);
-                    var tmpCk = s.editorCheckedFiles[ckFrom];
-                    s.editorCheckedFiles[ckFrom] = s.editorCheckedFiles[ckTo];
-                    s.editorCheckedFiles[ckTo] = tmpCk;
-                    s.selectedFileIdx = fidx + 1;
-                }
-                return [s, null];
-            }
-            // T394: Ctrl+] passthrough is now handled by toggleModel wrapper
-            // in BubbleTea (see startWizard). The wrapper properly calls
-            // ReleaseTerminal before RunPassthrough, preventing stdin
-            // contention. ToggleReturn message handled below.
         }
 
-        // T394/T10: Handle ToggleReturn from toggleModel after passthrough exits
-        // (or skipped because no interactive session was available).
-        if (msg.type === 'ToggleReturn') {
-            if (msg.skipped) {
-                // No interactive session — show notification.
-                s.claudeAutoAttachNotif = 'Passthrough not available \u2014 no active interactive session';
-                s.claudeAutoAttachNotifAt = Date.now();
+        // Split-view: Ctrl+L to toggle Claude window-in-window.
+        if (k === 'ctrl+l') {
+            s.splitViewEnabled = !s.splitViewEnabled;
+            syncMainViewport(s); // T120: sync dimensions after toggle.
+            if (s.splitViewEnabled) {
+                // T45: User re-opened — clear manual dismiss flag.
+                s.claudeManuallyDismissed = false;
+                // Start screenshot polling. Preserve focusIndex.
+                return [s, tea.tick(C.TICK_INTERVAL_MS, 'claude-screenshot')];
+            } else {
+                // T45: User explicitly closed — set manual dismiss flag
+                // so auto-attach does not re-open the pane.
+                s.claudeManuallyDismissed = true;
+                // Reset split-view state on disable. Preserve focusIndex.
+                s.claudeScreenshot = '';
+                s.claudeScreen = '';
+                s.claudeViewOffset = 0;
+                s.splitViewFocus = 'wizard';
+                s.splitViewTab = 'claude'; // T44: reset tab on disable
+                // T46: Clear inline question state — the question prompt
+                // wouldn't auto-dismiss with split-view disabled (no
+                // pollClaudeScreenshot running to clear it).
+                s.claudeQuestionDetected = false;
+                s.claudeQuestionLine = '';
+                s.claudeQuestionInputText = '';
+                s.claudeQuestionInputActive = false;
             }
             return [s, null];
         }
 
-        // Mouse handling.
+        // Split-view keybindings (only when enabled).
+        if (s.splitViewEnabled) {
+            // T380: Ctrl+Tab switches focus between wizard and pane (works during verify).
+            if (k === 'ctrl+tab') {
+                s.splitViewFocus = (s.splitViewFocus === 'wizard') ? 'claude' : 'wizard';
+                return [s, null];
+            }
+            // Ctrl+= / Ctrl+- to adjust ratio.
+            if (k === 'ctrl++' || k === 'ctrl+=') {
+                s.splitViewRatio = Math.min(0.8, s.splitViewRatio + 0.1);
+                syncMainViewport(s); // T120: sync dimensions after ratio change.
+                return [s, null];
+            }
+            if (k === 'ctrl+-') {
+                s.splitViewRatio = Math.max(0.2, s.splitViewRatio - 0.1);
+                syncMainViewport(s); // T120: sync dimensions after ratio change.
+                return [s, null];
+            }
+            // T44+T322+T380+T388: Ctrl+O cycles through available tabs in split-view bottom pane.
+            if (k === 'ctrl+o') {
+                var tabs = listSplitViewTabs(s);
+                var idx = tabs.indexOf(s.splitViewTab);
+                s.splitViewTab = tabs[(idx + 1) % tabs.length];
+                return [s, null];
+            }
+            // T29: Claude pane keyboard input forwarding.
+            // When Claude pane is focused, forward non-reserved keys to child PTY.
+            if (s.splitViewFocus === 'claude') {
+                // T44: Output tab scroll keys (when output tab is active).
+                if (s.splitViewTab === 'output') {
+                    if (k === 'up' || k === 'k') {
+                        s.outputViewOffset = (s.outputViewOffset || 0) + 1;
+                        s.outputAutoScroll = false;
+                        return [s, null];
+                    }
+                    if (k === 'down' || k === 'j') {
+                        s.outputViewOffset = Math.max(0, (s.outputViewOffset || 0) - 1);
+                        if (s.outputViewOffset === 0) s.outputAutoScroll = true;
+                        return [s, null];
+                    }
+                    if (k === 'pgup') {
+                        s.outputViewOffset = (s.outputViewOffset || 0) + 5;
+                        s.outputAutoScroll = false;
+                        return [s, null];
+                    }
+                    if (k === 'pgdown') {
+                        s.outputViewOffset = Math.max(0, (s.outputViewOffset || 0) - 5);
+                        if (s.outputViewOffset === 0) s.outputAutoScroll = true;
+                        return [s, null];
+                    }
+                    if (k === 'home') {
+                        s.outputViewOffset = C.FAR_SCROLL_SENTINEL;
+                        s.outputAutoScroll = false;
+                        return [s, null];
+                    }
+                    if (k === 'end') {
+                        s.outputViewOffset = 0;
+                        s.outputAutoScroll = true;
+                        return [s, null];
+                    }
+                    // Output tab is read-only — don't forward to PTY, don't scroll Claude.
+                    return [s, null];
+                }
+                // Task 8: Verify tab is now a full interactive shell.
+                // With a live CaptureSession, forward ALL non-pane-management keys
+                // to the terminal (arrow keys, j/k, etc. reach the child process).
+                // In fallback mode (no PTY, verifyFallbackRunning), use scroll keys.
+                if (s.splitViewTab === 'verify') {
+                    // Fallback path: no PTY, user views text output — scroll keys apply.
+                    if (s.verifyFallbackRunning || !getInteractivePaneSession(s, 'verify')) {
+                        if (k === 'up' || k === 'k') {
+                            s.verifyViewportOffset = (s.verifyViewportOffset || 0) + 1;
+                            s.verifyAutoScroll = false;
+                            return [s, null];
+                        }
+                        if (k === 'down' || k === 'j') {
+                            s.verifyViewportOffset = Math.max(0, (s.verifyViewportOffset || 0) - 1);
+                            if (s.verifyViewportOffset === 0) s.verifyAutoScroll = true;
+                            return [s, null];
+                        }
+                        if (k === 'pgup') {
+                            s.verifyViewportOffset = (s.verifyViewportOffset || 0) + 5;
+                            s.verifyAutoScroll = false;
+                            return [s, null];
+                        }
+                        if (k === 'pgdown') {
+                            s.verifyViewportOffset = Math.max(0, (s.verifyViewportOffset || 0) - 5);
+                            if (s.verifyViewportOffset === 0) s.verifyAutoScroll = true;
+                            return [s, null];
+                        }
+                        if (k === 'home') {
+                            s.verifyViewportOffset = C.FAR_SCROLL_SENTINEL;
+                            s.verifyAutoScroll = false;
+                            return [s, null];
+                        }
+                        if (k === 'end') {
+                            s.verifyViewportOffset = 0;
+                            s.verifyAutoScroll = true;
+                            return [s, null];
+                        }
+                        return [s, null];
+                    }
+                    // Live verify session: fully interactive — only pane-management
+                    // keys are reserved, everything else goes to the terminal.
+                    if (!INTERACTIVE_RESERVED_KEYS[k]) {
+                        var vBytes = keyToTermBytes(k);
+                        var verifySession = getInteractivePaneSession(s, 'verify');
+                        if (vBytes !== null && verifySession &&
+                            typeof verifySession.write === 'function') {
+                            try {
+                                verifySession.write(vBytes);
+                                s.verifyViewportOffset = 0;
+                                s.verifyAutoScroll = true;
+                            } catch (e) {
+                                // Swallow — write may fail if session ended.
+                            }
+                        }
+                        return [s, null];
+                    }
+                }
+                // Viewport scroll keys — scroll the Claude pane output.
+                if (k === 'up' || k === 'k') {
+                    s.claudeViewOffset = (s.claudeViewOffset || 0) + 1;
+                    return [s, null];
+                }
+                if (k === 'down' || k === 'j') {
+                    s.claudeViewOffset = Math.max(0, (s.claudeViewOffset || 0) - 1);
+                    return [s, null];
+                }
+                if (k === 'pgup') {
+                    s.claudeViewOffset = (s.claudeViewOffset || 0) + 5;
+                    return [s, null];
+                }
+                if (k === 'pgdown') {
+                    s.claudeViewOffset = Math.max(0, (s.claudeViewOffset || 0) - 5);
+                    return [s, null];
+                }
+                if (k === 'home') {
+                    s.claudeViewOffset = C.FAR_SCROLL_SENTINEL;
+                    return [s, null];
+                }
+                if (k === 'end') {
+                    s.claudeViewOffset = 0;
+                    return [s, null];
+                }
+                // Forward non-reserved keys to Claude's PTY.
+                if (!CLAUDE_RESERVED_KEYS[k]) {
+                    var bytes = keyToTermBytes(k);
+                    var claudeSession = getInteractivePaneSession(s, 'claude');
+                    if (bytes !== null && claudeSession &&
+                        typeof claudeSession.write === 'function') {
+                        try {
+                            claudeSession.write(bytes);
+                            // Auto-scroll to bottom on input (follow live output).
+                            s.claudeViewOffset = 0;
+                        } catch (e) {
+                            // Swallow — write may fail if child ended.
+                        }
+                    }
+                    return [s, null];
+                }
+            }
+        }
+
+        // Help toggle.
+        if (k === '?' || k === 'f1') {
+            s.showHelp = true;
+            return [s, null];
+        }
+        // Cancel.
+        if (k === 'ctrl+c') {
+            s.showConfirmCancel = true;
+            s.confirmCancelFocus = 0;  // T031: reset focus to 'Yes' on open
+            return [s, null];
+        }
+        // Escape — back or close.
+        if (k === 'esc') {
+            return handleBack(s);
+        }
+        // Enter — activate focused element or forward action.
+        if (k === 'enter') {
+            var activated = handleFocusActivate(s);
+            if (activated) return activated;
+            return handleNext(s);
+        }
+        // Navigation: j/k/up/down = list navigation (splits only).
+        if (k === 'j' || k === 'down') {
+            return handleListNav(s, 1);
+        }
+        if (k === 'k' || k === 'up') {
+            return handleListNav(s, -1);
+        }
+        // Tab/Shift+Tab = full focus cycling across all elements.
+        if (k === 'tab') {
+            return handleNavDown(s);
+        }
+        if (k === 'shift+tab') {
+            return handleNavUp(s);
+        }
+        // Viewport scroll.
+        if (k === 'pgdown') {
+            if (s.vp) s.vp.halfPageDown();
+            return [s, null];
+        }
+        if (k === 'pgup') {
+            if (s.vp) s.vp.halfPageUp();
+            return [s, null];
+        }
+        if (k === 'home') {
+            if (s.vp) s.vp.gotoTop();
+            return [s, null];
+        }
+        if (k === 'end') {
+            if (s.vp) s.vp.gotoBottom();
+            return [s, null];
+        }
+        // Screen-specific key shortcuts.
+        // BRANCH_BUILDING: 'e' toggles expand/collapse on the
+        // most recently verified branch with output.
+        if (k === 'e' && s.wizardState === 'BRANCH_BUILDING') {
+            if (s.expandedVerifyBranch !== null && s.expandedVerifyBranch !== undefined) {
+                // Collapse the currently expanded branch.
+                s.expandedVerifyBranch = null;
+            } else if (st.planCache && st.planCache.splits && s.verifyOutput) {
+                // Find the last branch that has verification output to expand.
+                for (var ei = st.planCache.splits.length - 1; ei >= 0; ei--) {
+                    var eBranch = st.planCache.splits[ei].name;
+                    if (s.verifyOutput[eBranch] && s.verifyOutput[eBranch].length > 0) {
+                        s.expandedVerifyBranch = eBranch;
+                        break;
+                    }
+                }
+            }
+            return [s, null];
+        }
+        // T059: BRANCH_BUILDING: 'z' toggles pause/resume on
+        // the active verify session. Only when a verify is running.
+        if (k === 'z' && s.wizardState === 'BRANCH_BUILDING' && activeVerifySession) {
+            if (s.verifyPaused) {
+                try { activeVerifySession.resume(); s.verifyPaused = false; prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.RUNNING); } catch (e) {
+                    log.printf('verify: resume failed: %s', e.message || String(e));
+                }
+            } else {
+                try { activeVerifySession.pause(); s.verifyPaused = true; prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.PAUSED); } catch (e) {
+                    log.printf('verify: pause failed: %s', e.message || String(e));
+                }
+            }
+            return [s, null];
+        }
+        // T007 (Task 7): BRANCH_BUILDING: persistent verify shell — p/f/c signals.
+        // 'p' — mark current branch as PASSED (verification succeeded).
+        // 'f' — mark current branch as FAILED (verification failed).
+        // 'c' — CONTINUE/skip this branch without marking pass or fail.
+        // Only active during active persistent verify session.
+        if (s.wizardState === 'BRANCH_BUILDING' && activeVerifySession) {
+            if (k === 'p' || k === 'f' || k === 'c') {
+                var choice = (k === 'p') ? 'pass' : ((k === 'f') ? 'fail' : 'continue');
+                return handleVerifySignal(s, choice);
+            }
+        }
+        if (k === 'e' && s.wizardState === 'PLAN_REVIEW' && !s.isProcessing) {
+            // Enter plan editor.
+            return enterPlanEditor(s);
+        }
+        // PLAN_EDITOR: inline title rename (T17).
+        if (k === 'e' && s.wizardState === 'PLAN_EDITOR') {
+            var eidx = s.selectedSplitIdx || 0;
+            if (st.planCache && st.planCache.splits && st.planCache.splits[eidx]) {
+                s.editorTitleEditing = true;
+                s.editorTitleEditingIdx = eidx;
+                s.editorTitleText = st.planCache.splits[eidx].name || '';
+            }
+            return [s, null];
+        }
+        // PLAN_EDITOR: Space toggles checked state on highlighted file (T17).
+        if (k === ' ' && s.wizardState === 'PLAN_EDITOR') {
+            var sidx = s.selectedSplitIdx || 0;
+            var fidx = s.selectedFileIdx || 0;
+            if (st.planCache && st.planCache.splits && st.planCache.splits[sidx] &&
+                st.planCache.splits[sidx].files && st.planCache.splits[sidx].files[fidx]) {
+                if (!s.editorCheckedFiles) s.editorCheckedFiles = {};
+                var fkey = sidx + '-' + fidx;
+                s.editorCheckedFiles[fkey] = !s.editorCheckedFiles[fkey];
+            }
+            return [s, null];
+        }
+        // PLAN_EDITOR: Shift+up/down reorder files within split (T17).
+        if (k === 'shift+up' && s.wizardState === 'PLAN_EDITOR') {
+            var sidx = s.selectedSplitIdx || 0;
+            var fidx = s.selectedFileIdx || 0;
+            if (st.planCache && st.planCache.splits && st.planCache.splits[sidx] &&
+                st.planCache.splits[sidx].files && fidx > 0) {
+                var reFiles = st.planCache.splits[sidx].files;
+                var tmp = reFiles[fidx - 1];
+                reFiles[fidx - 1] = reFiles[fidx];
+                reFiles[fidx] = tmp;
+                // Also swap checked state to follow the file.
+                if (!s.editorCheckedFiles) s.editorCheckedFiles = {};
+                var ckFrom = sidx + '-' + fidx;
+                var ckTo = sidx + '-' + (fidx - 1);
+                var tmpCk = s.editorCheckedFiles[ckFrom];
+                s.editorCheckedFiles[ckFrom] = s.editorCheckedFiles[ckTo];
+                s.editorCheckedFiles[ckTo] = tmpCk;
+                s.selectedFileIdx = fidx - 1;
+            }
+            return [s, null];
+        }
+        if (k === 'shift+down' && s.wizardState === 'PLAN_EDITOR') {
+            var sidx = s.selectedSplitIdx || 0;
+            var fidx = s.selectedFileIdx || 0;
+            if (st.planCache && st.planCache.splits && st.planCache.splits[sidx] &&
+                st.planCache.splits[sidx].files && fidx < st.planCache.splits[sidx].files.length - 1) {
+                var reFiles = st.planCache.splits[sidx].files;
+                var tmp = reFiles[fidx + 1];
+                reFiles[fidx + 1] = reFiles[fidx];
+                reFiles[fidx] = tmp;
+                // Also swap checked state to follow the file.
+                if (!s.editorCheckedFiles) s.editorCheckedFiles = {};
+                var ckFrom = sidx + '-' + fidx;
+                var ckTo = sidx + '-' + (fidx + 1);
+                var tmpCk = s.editorCheckedFiles[ckFrom];
+                s.editorCheckedFiles[ckFrom] = s.editorCheckedFiles[ckTo];
+                s.editorCheckedFiles[ckTo] = tmpCk;
+                s.selectedFileIdx = fidx + 1;
+            }
+            return [s, null];
+        }
+        // T394: Ctrl+] passthrough is now handled by toggleModel wrapper
+        // in BubbleTea (see startWizard). The wrapper properly calls
+        // ReleaseTerminal before RunPassthrough, preventing stdin
+        // contention. ToggleReturn message handled by handleToggleReturn.
+        return [s, null];
+    }
+
+    // handleToggleReturn processes ToggleReturn messages from the toggle
+    // model after passthrough exits or was skipped.
+    function handleToggleReturn(msg, s) {
+        if (msg.skipped) {
+            // No interactive session — show notification.
+            s.claudeAutoAttachNotif = 'Passthrough not available \u2014 no active interactive session';
+            s.claudeAutoAttachNotifAt = Date.now();
+        }
+        return [s, null];
+    }
+
+    // handleMouseMessage processes Mouse messages that were not intercepted
+    // by overlays. Covers: child terminal forwarding, verify scroll, split
+    // pane scroll, main viewport scroll, and click dispatch.
+    function handleMouseMessage(msg, s) {
         // Wheel events must be checked BEFORE press — wheel events
         // have action:"press" AND isWheel:true, so the press guard
         // would intercept them and send them to handleMouseClick.
@@ -888,7 +873,7 @@
         // Intercepts motion, release, and wheel before wizard-managed handlers.
         // Press events are NOT intercepted here — they go through
         // handleMouseClick for zone detection first.
-        if (msg.type === 'Mouse' && s.splitViewEnabled &&
+        if (s.splitViewEnabled &&
             s.splitViewFocus === 'claude' && s.splitViewTab !== 'output') {
             var fwdAction = msg.action;
             if (fwdAction === 'motion' || (fwdAction === 'release' && !msg.isWheel)) {
@@ -910,7 +895,7 @@
 
         // Live verify session mouse wheel → scroll output viewport.
         // Only applies when verify output is visible (non-split or verify tab active).
-        if (msg.type === 'Mouse' && msg.isWheel && getInteractivePaneSession(s, 'verify') &&
+        if (msg.isWheel && getInteractivePaneSession(s, 'verify') &&
             (!s.splitViewEnabled || s.splitViewTab === 'verify')) {
             if (msg.button === 'wheel up') {
                 s.verifyAutoScroll = false;
@@ -928,7 +913,7 @@
 
         // Split-view Claude pane mouse wheel → scroll Claude screenshot.
         // T44: Also handle Output tab scrolling.
-        if (msg.type === 'Mouse' && msg.isWheel && s.splitViewEnabled &&
+        if (msg.isWheel && s.splitViewEnabled &&
             s.splitViewFocus === 'claude') {
             if (s.splitViewTab === 'output') {
                 // Output tab scrolling.
@@ -955,7 +940,7 @@
             }
         }
 
-        if (msg.type === 'Mouse' && msg.isWheel && s.vp) {
+        if (msg.isWheel && s.vp) {
             if (msg.button === 'wheel up') {
                 s.vp.scrollUp(3);
                 return [s, null];
@@ -966,95 +951,153 @@
             }
         }
 
-        if (msg.type === 'Mouse' && msg.action === 'press' && !msg.isWheel) {
+        if (msg.action === 'press' && !msg.isWheel) {
             return handleMouseClick(msg, s);
         }
 
-        // Tick-based polling and execution steps.
-        if (msg.type === 'Tick') {
-            if (msg.id === 'mux-poll') {
-                return [s, tea.tick(C.TICK_INTERVAL_MS, 'mux-poll')];
-            }
-            // Heuristic analysis polling (async Promise+poll pattern).
-            if (msg.id === 'analysis-poll') {
-                return handleAnalysisPoll(s);
-            }
-            // Execution polling (async Promise+poll pattern).
-            if (msg.id === 'execution-poll') {
-                return handleExecutionPoll(s);
-            }
-            // Equivalence check polling (async Promise+poll pattern).
-            if (msg.id === 'equiv-poll') {
-                return handleEquivPoll(s);
-            }
-            if (msg.id === 'verify-branch') {
-                return runVerifyBranch(s);
-            }
-            if (msg.id === 'verify-poll') {
-                return pollVerifySession(s);
-            }
-            if (msg.id === 'verify-fallback-poll') {
-                return handleVerifyFallbackPoll(s);
-            }
-            // Automated pipeline polling.
-            if (msg.id === 'auto-poll') {
-                return handleAutoSplitPoll(s);
-            }
-            // Resolve-conflicts polling.
-            if (msg.id === 'resolve-poll') {
-                return handleResolvePoll(s);
-            }
-            // Claude restart polling (non-blocking restart flow).
-            if (msg.id === 'restart-claude-poll') {
-                return handleRestartClaudePoll(s);
-            }
-            // Claude availability check (CONFIG screen).
-            if (msg.id === 'check-claude') {
-                return handleClaudeCheck(s);
-            }
-            // T42: Auto-detect Claude on startup to default to 'auto' strategy.
-            if (msg.id === 'auto-detect-claude') {
-                // Skip if user already manually selected a strategy.
-                if (s.userHasSelectedStrategy) return [s, null];
-                // Skip if already checking or detected.
-                if (s.claudeCheckStatus) return [s, null];
-                return handleClaudeCheck(s);
-            }
-            if (msg.id === 'claude-check-poll') {
-                return handleClaudeCheckPoll(s);
-            }
-            // Split-view: poll Claude screenshot.
-            if (msg.id === 'claude-screenshot') {
-                return pollClaudeScreenshot(s);
-            }
-            // Claude conversation: poll for async send/wait completion.
-            if (msg.id === 'claude-convo-poll') {
-                return pollClaudeConvo(s);
-            }
-            // T095: PR creation polling.
-            if (msg.id === 'pr-creation-poll') {
-                return handlePRCreationPoll(s);
-            }
-            // T028: Auto-dismiss transient notification after 5s.
-            // Guard: only dismiss if the current notification is old enough
-            // to prevent a stale tick from clearing a newer notification.
-            if (msg.id === 'dismiss-attach-notif') {
-                if (s.claudeAutoAttachNotifAt && (Date.now() - s.claudeAutoAttachNotifAt) >= C.AUTO_ATTACH_NOTIF_GUARD_MS) {
-                    s.claudeAutoAttachNotif = '';
-                    s.claudeAutoAttachNotifAt = 0;
-                }
-                return [s, null];
-            }
-            // T073: Auto-dismiss clipboard flash after 3s.
-            if (msg.id === 'dismiss-clipboard-flash') {
-                if (s.clipboardFlashAt && (Date.now() - s.clipboardFlashAt) >= C.CLIPBOARD_FLASH_GUARD_MS) {
-                    s.clipboardFlash = '';
-                    s.clipboardFlashAt = 0;
-                }
-                return [s, null];
+        return [s, null];
+    }
+
+    // handleTickMessage processes Tick messages — programmatic continuations
+    // dispatched by timer-based polling (analysis, execution, verify, Claude
+    // screenshot, conversation, PR creation, transient notification dismiss).
+    function handleTickMessage(msg, s) {
+        if (msg.id === 'mux-poll') {
+            return [s, tea.tick(C.TICK_INTERVAL_MS, 'mux-poll')];
+        }
+        // Heuristic analysis polling (async Promise+poll pattern).
+        if (msg.id === 'analysis-poll') {
+            return handleAnalysisPoll(s);
+        }
+        // Execution polling (async Promise+poll pattern).
+        if (msg.id === 'execution-poll') {
+            return handleExecutionPoll(s);
+        }
+        // Equivalence check polling (async Promise+poll pattern).
+        if (msg.id === 'equiv-poll') {
+            return handleEquivPoll(s);
+        }
+        if (msg.id === 'verify-branch') {
+            return runVerifyBranch(s);
+        }
+        if (msg.id === 'verify-poll') {
+            return pollVerifySession(s);
+        }
+        if (msg.id === 'verify-fallback-poll') {
+            return handleVerifyFallbackPoll(s);
+        }
+        // Automated pipeline polling.
+        if (msg.id === 'auto-poll') {
+            return handleAutoSplitPoll(s);
+        }
+        // Resolve-conflicts polling.
+        if (msg.id === 'resolve-poll') {
+            return handleResolvePoll(s);
+        }
+        // Claude restart polling (non-blocking restart flow).
+        if (msg.id === 'restart-claude-poll') {
+            return handleRestartClaudePoll(s);
+        }
+        // Claude availability check (CONFIG screen).
+        if (msg.id === 'check-claude') {
+            return handleClaudeCheck(s);
+        }
+        // T42: Auto-detect Claude on startup to default to 'auto' strategy.
+        if (msg.id === 'auto-detect-claude') {
+            // Skip if user already manually selected a strategy.
+            if (s.userHasSelectedStrategy) return [s, null];
+            // Skip if already checking or detected.
+            if (s.claudeCheckStatus) return [s, null];
+            return handleClaudeCheck(s);
+        }
+        if (msg.id === 'claude-check-poll') {
+            return handleClaudeCheckPoll(s);
+        }
+        // Split-view: poll Claude screenshot.
+        if (msg.id === 'claude-screenshot') {
+            return pollClaudeScreenshot(s);
+        }
+        // Claude conversation: poll for async send/wait completion.
+        if (msg.id === 'claude-convo-poll') {
+            return pollClaudeConvo(s);
+        }
+        // T095: PR creation polling.
+        if (msg.id === 'pr-creation-poll') {
+            return handlePRCreationPoll(s);
+        }
+        // T028: Auto-dismiss transient notification after 5s.
+        // Guard: only dismiss if the current notification is old enough
+        // to prevent a stale tick from clearing a newer notification.
+        if (msg.id === 'dismiss-attach-notif') {
+            if (s.claudeAutoAttachNotifAt && (Date.now() - s.claudeAutoAttachNotifAt) >= C.AUTO_ATTACH_NOTIF_GUARD_MS) {
+                s.claudeAutoAttachNotif = '';
+                s.claudeAutoAttachNotifAt = 0;
             }
             return [s, null];
         }
+        // T073: Auto-dismiss clipboard flash after 3s.
+        if (msg.id === 'dismiss-clipboard-flash') {
+            if (s.clipboardFlashAt && (Date.now() - s.clipboardFlashAt) >= C.CLIPBOARD_FLASH_GUARD_MS) {
+                s.clipboardFlash = '';
+                s.clipboardFlashAt = 0;
+            }
+            return [s, null];
+        }
+        return [s, null];
+    }
+
+    // --- wizardUpdateImpl — main BubbleTea update dispatch ---
+    //
+    // Thin dispatch function that routes messages to per-type handlers.
+    // Each handler is independently testable. The dispatch order is:
+    //   1. Poll mux events (always)
+    //   2. WindowSize → handleWindowResize (before state reset)
+    //   3. Wizard state transition reset
+    //   4. Overlay interception (all non-Tick messages)
+    //   5. Per-type dispatch: Key, ToggleReturn, Mouse, Tick
+    function wizardUpdateImpl(msg, s) {
+        if (typeof tuiMux !== 'undefined' && tuiMux &&
+            typeof tuiMux.pollEvents === 'function') {
+            try {
+                tuiMux.pollEvents();
+            } catch (e) {
+                log.debug('wizardUpdateImpl: tuiMux.pollEvents failed: ' + (e.message || e));
+            }
+        }
+
+        // WindowSize — always handle (before state reset and overlays).
+        if (msg.type === 'WindowSize') {
+            return handleWindowResize(msg, s);
+        }
+
+        // Reset focus index on wizard state transition.
+        if (s.wizardState !== s._prevWizardState) {
+            s.focusIndex = 0;
+            s._prevWizardState = s.wizardState;
+            // T46: Clear inline question state on screen transition to
+            // prevent orphaned input mode on screens that don't render
+            // the question prompt.
+            if (s.claudeQuestionDetected || s.claudeQuestionInputActive) {
+                s.claudeQuestionDetected = false;
+                s.claudeQuestionLine = '';
+                s.claudeQuestionInputText = '';
+                s.claudeQuestionInputActive = false;
+            }
+        }
+
+        // Overlays intercept all user input when active, but Tick
+        // messages always pass through — they are programmatic
+        // continuations (e.g. verify-poll) that must not be dropped.
+        if (msg.type !== 'Tick') {
+            var overlayResult = handleOverlays(msg, s);
+            if (overlayResult) return overlayResult;
+        }
+
+        // Per-message-type dispatch.
+        if (msg.type === 'Key') return handleKeyMessage(msg, s);
+        if (msg.type === 'ToggleReturn') return handleToggleReturn(msg, s);
+        if (msg.type === 'Mouse') return handleMouseMessage(msg, s);
+        if (msg.type === 'Tick') return handleTickMessage(msg, s);
 
         return [s, null];
     }

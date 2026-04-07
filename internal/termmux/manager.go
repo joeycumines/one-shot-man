@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"sync/atomic"
 	"time"
 
@@ -458,6 +459,13 @@ func (m *SessionManager) Unsubscribe(id int) bool {
 	return m.eventBus.Unsubscribe(id)
 }
 
+// EventsDropped returns the cumulative number of events that could not be
+// delivered to at least one subscriber because its channel buffer was full.
+// Safe to call from any goroutine.
+func (m *SessionManager) EventsDropped() int64 {
+	return m.eventBus.DroppedCount()
+}
+
 // sendRequest sends a request to the worker goroutine and blocks until the
 // worker replies. Returns ErrManagerNotRunning if the worker has not started
 // (Run not called) or has stopped (reqChan closed).
@@ -640,8 +648,10 @@ func (m *SessionManager) handleUnregister(id SessionID) response {
 		return response{err: fmt.Errorf("%w: already closed", ErrInvalidTransition)}
 	}
 
-	// Close the underlying session (ignore errors — best effort on teardown).
-	_ = ms.session.Close()
+	// Close the underlying session — log errors rather than silently discarding.
+	if err := ms.session.Close(); err != nil {
+		slog.Warn("session close failed during unregister", "sessionID", id, "error", err)
+	}
 	ms.state = SessionClosed
 	delete(m.sessions, id)
 
@@ -697,8 +707,9 @@ func (m *SessionManager) handleResize(p *resizePayload) response {
 			continue
 		}
 		ms.vterm.Resize(p.rows, p.cols)
-		_ = ms.session.Resize(p.rows, p.cols)
-		_ = id // used for iteration
+		if err := ms.session.Resize(p.rows, p.cols); err != nil {
+			slog.Warn("session resize failed", "sessionID", id, "rows", p.rows, "cols", p.cols, "error", err)
+		}
 	}
 	m.eventBus.emit(EventResize, 0)
 	return response{}
@@ -744,7 +755,9 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 		} else if ms.state == SessionCreated {
 			// Process exited immediately without output (e.g., /bin/true).
 			// Skip Exited and go directly to Closed.
-			_ = ms.session.Close()
+			if err := ms.session.Close(); err != nil {
+				slog.Warn("session close failed during immediate exit", "sessionID", so.id, "error", err)
+			}
 			ms.state = SessionClosed
 			if m.activeID == so.id {
 				m.activeID = 0
@@ -762,12 +775,15 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 
 	// Tee to passthrough writer if active.
 	if w := ms.passthroughWriter.Load(); w != nil {
-		// Best-effort write — don't let passthrough errors affect VTerm.
-		_, _ = (*w).Write(so.data)
+		if _, err := (*w).Write(so.data); err != nil {
+			slog.Warn("passthrough tee write failed", "sessionID", so.id, "error", err)
+		}
 	}
 
 	// Update VTerm with the raw output.
-	_, _ = ms.vterm.Write(so.data)
+	if _, err := ms.vterm.Write(so.data); err != nil {
+		slog.Debug("vterm write failed", "sessionID", so.id, "error", err)
+	}
 
 	// Publish a new immutable snapshot.
 	m.snapshotGen++
@@ -956,7 +972,9 @@ func (m *SessionManager) shutdownSessions() {
 	for _, id := range ids {
 		ms := m.sessions[id]
 		if ms.state != SessionClosed {
-			_ = ms.session.Close()
+			if err := ms.session.Close(); err != nil {
+				slog.Warn("session close failed during shutdown", "sessionID", id, "error", err)
+			}
 			ms.state = SessionClosed
 			m.eventBus.emit(EventSessionClosed, id)
 		}

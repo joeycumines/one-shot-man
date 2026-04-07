@@ -509,7 +509,7 @@ func TestVTerm_CSIRestoreCursor_AlsoRestoresAttr(t *testing.T) {
 
 	// Save cursor with bold+red.
 	v.Write([]byte("\x1b[1;31m")) // bold+red
-	v.Write([]byte("\x1b7"))       // DECSC - save cursor
+	v.Write([]byte("\x1b7"))      // DECSC - save cursor
 	// Reset attrs.
 	v.Write([]byte("\x1b[0m"))
 	// Restore with CSI 7 m.

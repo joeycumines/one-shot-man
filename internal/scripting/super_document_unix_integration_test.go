@@ -835,26 +835,27 @@ func TestSuperDocument_MouseClickDocumentSelection(t *testing.T) {
 	expect(snap, "Documents: 1", 5*time.Second)
 	expect(snap, "[X] Remove", 5*time.Second)
 
-	// Now click on [X] Remove using dynamic element location
-	snap = cp.Snapshot()
-	if err := mouse.ClickElement(ctx, "[X] Remove", 5*time.Second); err != nil {
-		t.Fatalf("Failed to click [X] Remove: %v", err)
+	// Click [X] Remove using ClickElementAndExpect — captures a fresh snapshot
+	// AFTER the click is dispatched so the expect doesn't use a stale offset.
+	// Note: The TUI renders "Delete" with the "D" as a separate style segment,
+	// and an intermediate CUB 3 escape sequence (\x1b[3G) overwrites it in the
+	// raw buffer — parseTerminalBuffer sees only "elete". We search for "elete"
+	// (the normalized form) so the test matches what's actually on screen.
+	if err := mouse.ClickElementAndExpect(ctx, "[X] Remove", "elete", 5*time.Second); err != nil {
+		t.Fatalf("Failed to click [X] Remove: %v\nBuffer: %s", err, cp.String())
 	}
 
-	// Should be in confirm mode
-	expect(snap, "Delete document", 5*time.Second)
 	expect(snap, "(y/n)", 5*time.Second)
 	expect(snap, "[Y]es", 5*time.Second)
 	expect(snap, "[N]o", 5*time.Second)
 
-	// Click [Y]es to confirm deletion
+	// Click [Y]es to confirm deletion — also use ClickElementAndExpect
 	snap = cp.Snapshot()
-	if err := mouse.ClickElement(ctx, "[Y]es", 5*time.Second); err != nil {
-		t.Fatalf("Failed to click [Y]es: %v", err)
+	if err := mouse.ClickElementAndExpect(ctx, "[Y]es", "Documents: 0", 5*time.Second); err != nil {
+		t.Fatalf("Failed to click [Y]es: %v\nBuffer: %s", err, cp.String())
 	}
 
 	// Verify document was deleted
-	expect(snap, "Documents: 0", 5*time.Second)
 	expect(snap, "Deleted document #1", 5*time.Second)
 
 	// Quit

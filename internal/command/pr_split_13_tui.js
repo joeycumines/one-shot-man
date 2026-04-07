@@ -339,10 +339,104 @@
     }
 
     function getInteractivePaneSession(s, tab) {
-        var pane = tab || s.splitViewTab || 'claude';
+        if (!s && !tab) return null;
+        var pane = tab || (s && s.splitViewTab) || 'claude';
         if (pane === 'claude') return getClaudePaneSession();
-        if (pane === 'verify') return s.activeVerifySession || null;
+        if (pane === 'verify') {
+            if (!s) return null;
+            var val = s.activeVerifySession;
+            if (val == null) return null;
+            // Task 48: If val is a number (SessionManager ID), build a proxy
+            // that routes screen/output through tuiMux.snapshot. Otherwise
+            // (legacy tests or mocks), return the object directly.
+            if (typeof val === 'number') {
+                return _buildVerifyProxy(val, s._verifySessionRef);
+            }
+            return val;
+        }
         return null;
+    }
+
+    // Task 48: Build a proxy object that presents the same API as a
+    // CaptureSession but routes screen reads through SessionManager snapshots
+    // and cleanup through tuiMux.unregister. The captureRef is retained only
+    // for isDone/exitCode — capabilities not yet exposed by SessionManager.
+    function _buildVerifyProxy(sessionID, captureRef) {
+        return {
+            screen: function() {
+                try {
+                    var snap = tuiMux.snapshot(sessionID);
+                    return snap ? (snap.fullScreen || '') : '';
+                } catch (e) {
+                    log.debug('verifyProxy.screen failed', { sessionID: sessionID, error: e.message || String(e) });
+                    return '';
+                }
+            },
+            output: function() {
+                try {
+                    var snap = tuiMux.snapshot(sessionID);
+                    return snap ? (snap.plainText || '') : '';
+                } catch (e) {
+                    log.debug('verifyProxy.output failed', { sessionID: sessionID, error: e.message || String(e) });
+                    return '';
+                }
+            },
+            isDone: function() {
+                return captureRef ? captureRef.isDone() : true;
+            },
+            exitCode: function() {
+                return captureRef && typeof captureRef.exitCode === 'function'
+                    ? captureRef.exitCode() : -1;
+            },
+            close: function() {
+                try { tuiMux.unregister(sessionID); } catch (e) {
+                    log.debug('verifyProxy.close failed', { sessionID: sessionID, error: e.message || String(e) });
+                }
+            },
+            isRunning: function() {
+                return captureRef ? !captureRef.isDone() : false;
+            },
+            passthrough: function() {
+                // Task 48: Activate verify session in SessionManager, enter
+                // passthrough via tuiMux.switchTo, then re-activate Claude.
+                var prevID = tuiMux.activeID();
+                try {
+                    tuiMux.activate(sessionID);
+                } catch (e) {
+                    log.debug('verifyProxy.passthrough: activate failed', { sessionID: sessionID, error: e.message || String(e) });
+                    return { skipped: true, reason: 'activate_failed' };
+                }
+                var result = tuiMux.switchTo();
+                if (prevID && prevID !== sessionID) {
+                    try { tuiMux.activate(prevID); } catch (e) {
+                        log.debug('verifyProxy.passthrough: re-activate failed', { prevID: prevID, error: e.message || String(e) });
+                    }
+                }
+                return result;
+            },
+            interrupt: function() { if (captureRef && captureRef.interrupt) captureRef.interrupt(); },
+            kill: function() { if (captureRef && captureRef.kill) captureRef.kill(); },
+            pause: function() { if (captureRef && captureRef.pause) captureRef.pause(); },
+            resume: function() { if (captureRef && captureRef.resume) captureRef.resume(); },
+            isPaused: function() { return captureRef && captureRef.isPaused ? captureRef.isPaused() : false; },
+            write: function(data) {
+                // Task 48: Route through SessionManager. Temporarily activate the
+                // verify session, send input, then restore the prior active session.
+                var prevID = tuiMux.activeID();
+                try {
+                    tuiMux.activate(sessionID);
+                    tuiMux.input(typeof data === 'string' ? data : String(data));
+                } finally {
+                    if (prevID && prevID !== sessionID) {
+                        try { tuiMux.activate(prevID); } catch (e) {}
+                    }
+                }
+            },
+            resize: function(rows, cols) {
+                // SessionManager.Resize broadcasts to ALL managed sessions.
+                tuiMux.resize(rows, cols);
+            }
+        };
     }
 
     // Task 8: Shell tab removed — verify pane IS the interactive shell.
@@ -379,6 +473,7 @@
         }
 
         s.activeVerifySession = null;
+        s._verifySessionRef = null; // Task 48: clear CaptureSession reference
         s.activeVerifyWorktree = null;
         s.activeVerifyDir = null;
         s.activeVerifyStartTime = 0;

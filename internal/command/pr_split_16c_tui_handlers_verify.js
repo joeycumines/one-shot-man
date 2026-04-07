@@ -297,6 +297,20 @@
         //
         // Upgrade is safe: we own the worktree (sessionResult.worktreeDir) and the
         // one-shot session hasn't completed yet (it's just started).
+
+        // Task 48: Register the one-shot CaptureSession with SessionManager so
+        // screen reads, event tracking, and cleanup go through tuiMux. The raw
+        // CaptureSession reference is stored in _verifySessionRef for isDone/exitCode
+        // (capabilities not yet in SessionManager).
+        var verifySessionID = null;
+        if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.register === 'function') {
+            try {
+                verifySessionID = tuiMux.register(sessionResult.session, { kind: 'verify', name: branchName });
+            } catch (e) {
+                log.debug('runVerifyBranch: tuiMux.register failed', { error: e.message || String(e) });
+            }
+        }
+
         var spawnShellFn = (typeof prSplit.spawnShellSession === 'function')
             ? prSplit.spawnShellSession
             : null;
@@ -305,11 +319,22 @@
             : false;
 
         if (spawnShellFn && canSpawnShell) {
-            // Kill the one-shot session (we're replacing it with a persistent shell).
-            try {
-                sessionResult.session.close();
-            } catch (e) {
-                log.debug('runVerifyBranch: close one-shot session failed: ' + (e.message || String(e)));
+            // Task 48: Unregister the one-shot session from SessionManager before
+            // closing it — unregister calls Close internally.
+            if (verifySessionID != null && typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.unregister === 'function') {
+                try {
+                    tuiMux.unregister(verifySessionID);
+                } catch (e) {
+                    log.debug('runVerifyBranch: tuiMux.unregister one-shot failed', { error: e.message || String(e) });
+                }
+                verifySessionID = null;
+            } else {
+                // Fallback: close the one-shot session directly.
+                try {
+                    sessionResult.session.close();
+                } catch (e) {
+                    log.debug('runVerifyBranch: close one-shot session failed', { error: e.message || String(e) });
+                }
             }
 
             // T325+T380: Auto-open split-view with Verify tab when verification starts.
@@ -334,13 +359,24 @@
                     cols: paneCols
                 });
             } catch (e) {
-                log.debug('runVerifyBranch: spawnShellSession failed: ' + (e.message || String(e)));
+                log.debug('runVerifyBranch: spawnShellSession failed', { error: e.message || String(e) });
                 persistentShell = null;
             }
 
             if (persistentShell) {
-                // Use persistent shell as the verify session.
-                s.activeVerifySession = persistentShell;
+                // Task 48: Register persistent shell with SessionManager.
+                var shellSessionID = null;
+                if (typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.register === 'function') {
+                    try {
+                        shellSessionID = tuiMux.register(persistentShell, { kind: 'verify', name: branchName });
+                    } catch (e) {
+                        log.debug('runVerifyBranch: tuiMux.register shell failed', { error: e.message || String(e) });
+                    }
+                }
+
+                // Task 48: Store SessionManager ID (number) and CaptureSession ref.
+                s.activeVerifySession = shellSessionID != null ? shellSessionID : persistentShell;
+                s._verifySessionRef = persistentShell;
                 s.activeVerifyWorktree = sessionResult.worktreeDir;
                 s.activeVerifyBranch = branchName;
                 s.activeVerifyDir = sessionResult.dir;
@@ -362,11 +398,43 @@
                 return [s, tea.tick(C.TICK_INTERVAL_MS, 'verify-poll')];
             }
             // Persistent shell failed — fall through to use one-shot session below.
+            // Re-register the one-shot session if it was unregistered above.
+            if (verifySessionID == null && typeof tuiMux !== 'undefined' && tuiMux && typeof tuiMux.register === 'function') {
+                // The one-shot session was closed via unregister; we need a fresh one.
+                // Re-create via startVerifySession.
+                sessionResult = prSplit.startVerifySession(branchName, {
+                    dir: dir,
+                    verifyCommand: scopedCmd,
+                    rows: C.DEFAULT_ROWS,
+                    cols: Math.max(80, (s.width || 80) - 8)
+                });
+                if (sessionResult.error || !sessionResult.session) {
+                    // Total failure — record error and advance.
+                    s.verificationResults.push({
+                        name: branchName,
+                        status: prSplit._branchStatuses.FAILED,
+                        passed: false,
+                        skipped: false,
+                        error: sessionResult.error || 'session restart failed',
+                        output: '',
+                        duration: 0,
+                        preExisting: false
+                    });
+                    s.verifyingIdx++;
+                    return [s, tea.tick(1, 'verify-branch')];
+                }
+                try {
+                    verifySessionID = tuiMux.register(sessionResult.session, { kind: 'verify', name: branchName });
+                } catch (e) {
+                    log.debug('runVerifyBranch: re-register one-shot failed', { error: e.message || String(e) });
+                }
+            }
         }
 
         // Either: (a) PTY not available, or (b) persistent shell upgrade failed.
-        // Use the one-shot CaptureSession from startVerifySession (old behavior).
-        s.activeVerifySession = sessionResult.session;
+        // Task 48: Store SessionManager ID (number) and CaptureSession reference.
+        s.activeVerifySession = verifySessionID != null ? verifySessionID : sessionResult.session;
+        s._verifySessionRef = sessionResult.session;
         s.activeVerifyWorktree = sessionResult.worktreeDir;
         s.activeVerifyBranch = branchName;
         s.activeVerifyDir = sessionResult.dir;

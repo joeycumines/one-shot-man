@@ -962,10 +962,12 @@
             return tuiMux.switchTo();
         }
 
-        // 2. Try verify pane passthrough (any active CaptureSession).
-        var verifySession = tuiState && tuiState.activeVerifySession;
+        // 2. Try verify pane passthrough (Task 48: routes through SessionManager proxy).
+        var verifySession = (typeof prSplit._getInteractivePaneSession === 'function')
+            ? prSplit._getInteractivePaneSession(tuiState, 'verify')
+            : null;
         if (verifySession && typeof verifySession.passthrough === 'function' &&
-            verifySession.isRunning && verifySession.isRunning()) {
+            typeof verifySession.isRunning === 'function' && verifySession.isRunning()) {
             log.printf('ctrl+] toggle: dispatching to verify session passthrough');
             // Emit focus event for consistency with mux path.
             if (typeof tui !== 'undefined' && tui.emit) {

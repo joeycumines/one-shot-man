@@ -459,3 +459,130 @@ func TestMuxEvents_BellQueueDrain(t *testing.T) {
 		t.Errorf("bell event pane = %v, want claude", got)
 	}
 }
+
+// ── SessionManager session() wrapper tests ──────────────
+
+// recordingStringIO is a test double for [parent.StringIO] that records
+// all Send() calls for verification. Receive() blocks until Close().
+type recordingStringIO struct {
+	sent   []string
+	closed chan struct{}
+}
+
+func newRecordingStringIO() *recordingStringIO {
+	return &recordingStringIO{closed: make(chan struct{})}
+}
+
+func (r *recordingStringIO) Send(input string) error {
+	r.sent = append(r.sent, input)
+	return nil
+}
+
+func (r *recordingStringIO) Receive() (string, error) {
+	<-r.closed
+	return "", fmt.Errorf("closed")
+}
+
+func (r *recordingStringIO) Close() error {
+	select {
+	case <-r.closed:
+	default:
+		close(r.closed)
+	}
+	return nil
+}
+
+// TestSessionWrapper_WriteResize verifies that the session() convenience
+// wrapper on the WrapSessionManager object exposes callable write() and
+// resize() methods that correctly delegate to SessionManager.Input() and
+// SessionManager.Resize() respectively.
+//
+// This is the core regression test for GAP-C01/C02 from the pr-split
+// autopsy: the session() wrapper was missing write/resize methods,
+// causing all inline Claude interactivity to silently fail.
+func TestSessionWrapper_WriteResize(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	// 1. Create and start a SessionManager.
+	mgr := parent.NewSessionManager()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- mgr.Run(ctx) }()
+	<-mgr.Started()
+
+	// 2. Create a recording StringIOSession and register it.
+	rec := newRecordingStringIO()
+	sio := parent.NewStringIOSession(rec)
+	sio.Start()
+	id, err := mgr.Register(sio, parent.SessionTarget{Name: "test", Kind: "pty"})
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if id == 0 {
+		t.Fatal("Register returned zero SessionID")
+	}
+
+	// 3. Wrap the SessionManager for JS access.
+	runtime := goja.New()
+	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1)
+	_ = runtime.Set("tuiMux", tuiMux)
+
+	// 4. Verify session().write exists and is callable.
+	v, err := runtime.RunString(`typeof tuiMux.session().write`)
+	if err != nil {
+		t.Fatalf("typeof session().write: %v", err)
+	}
+	if v.String() != "function" {
+		t.Fatalf("session().write type = %q, want 'function'", v.String())
+	}
+
+	// 5. Verify session().resize exists and is callable.
+	v, err = runtime.RunString(`typeof tuiMux.session().resize`)
+	if err != nil {
+		t.Fatalf("typeof session().resize: %v", err)
+	}
+	if v.String() != "function" {
+		t.Fatalf("session().resize type = %q, want 'function'", v.String())
+	}
+
+	// 6. Call session().write('hello') — bytes should reach the StringIOSession.
+	_, err = runtime.RunString(`tuiMux.session().write('hello')`)
+	if err != nil {
+		t.Fatalf("session().write('hello'): %v", err)
+	}
+	if len(rec.sent) != 1 || rec.sent[0] != "hello" {
+		t.Errorf("expected sent=['hello'], got %v", rec.sent)
+	}
+
+	// 7. Call session().resize(40, 120) — should not error.
+	_, err = runtime.RunString(`tuiMux.session().resize(40, 120)`)
+	if err != nil {
+		t.Fatalf("session().resize(40, 120): %v", err)
+	}
+
+	// 8. Verify all other session() methods still work.
+	v, err = runtime.RunString(`
+		var s = tuiMux.session();
+		var methods = ['isRunning', 'isDone', 'output', 'screen', 'target', 'setTarget', 'write', 'resize'];
+		var missing = [];
+		for (var i = 0; i < methods.length; i++) {
+			if (typeof s[methods[i]] !== 'function') {
+				missing.push(methods[i] + ':' + typeof s[methods[i]]);
+			}
+		}
+		JSON.stringify(missing);
+	`)
+	if err != nil {
+		t.Fatalf("method presence check: %v", err)
+	}
+	if v.String() != "[]" {
+		t.Errorf("missing methods on session(): %s", v.String())
+	}
+
+	// Cleanup.
+	cancel()
+	<-errCh
+}

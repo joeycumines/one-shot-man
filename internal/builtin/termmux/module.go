@@ -1049,8 +1049,8 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 	})
 
 	// ── session() → convenience wrapper ──────────────────
-	// Returns an object with isRunning, output, screen, target, setTarget
-	// for the active session.
+	// Returns an object with isRunning, isDone, output, screen, target,
+	// setTarget, write, and resize for the active session.
 	_ = obj.Set("session", func() goja.Value {
 		sessionObj := runtime.NewObject()
 
@@ -1120,6 +1120,24 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 				activeSessionTarget.ID = v.String()
 			}
 			return goja.Undefined()
+		})
+
+		// write(data) — sends bytes to the active session's PTY via
+		// SessionManager.Input. Panics on error (Go error → JS exception)
+		// to match the wrapInteractiveSession.write contract.
+		_ = sessionObj.Set("write", func(data string) {
+			if err := mgr.Input([]byte(data)); err != nil {
+				panic(runtime.NewGoError(err))
+			}
+		})
+
+		// resize(rows, cols) — broadcasts new dimensions to all sessions
+		// via SessionManager.Resize. Panics on error (Go error → JS
+		// exception) to match the wrapInteractiveSession.resize contract.
+		_ = sessionObj.Set("resize", func(rows, cols int) {
+			if err := mgr.Resize(rows, cols); err != nil {
+				panic(runtime.NewGoError(err))
+			}
 		})
 
 		return sessionObj

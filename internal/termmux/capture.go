@@ -37,7 +37,7 @@ type CaptureConfig struct {
 
 // CaptureSession manages a PTY-attached command with real-time output capture
 // via an in-memory VT100 emulator. It is a simplified, standalone alternative
-// to Mux for cases where only output capture is needed — no terminal
+// to SessionManager for cases where only output capture is needed — no terminal
 // multiplexing, toggle keys, status bar, or raw-mode management.
 //
 // Usage:
@@ -547,7 +547,7 @@ type PassthroughConfig struct {
 // BubbleTea or any other consumer (typically achieved by calling
 // ReleaseTerminal before this function and RestoreTerminal after).
 //
-// Unlike Mux.RunPassthrough, this method:
+// Unlike SessionManager.Passthrough, this method:
 //   - Does NOT render a status bar
 //   - Does NOT restore VTerm on exit (the caller should re-render)
 //   - Clears the screen on entry (simple ESC[2J)

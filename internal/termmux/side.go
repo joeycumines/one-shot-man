@@ -2,16 +2,6 @@ package termmux
 
 import "fmt"
 
-// Side represents which participant currently owns the terminal.
-type Side int
-
-const (
-	// SideOsm means osm's TUI owns the terminal.
-	SideOsm Side = iota
-	// SideClaude means the interactive session owns the terminal.
-	SideClaude
-)
-
 // ExitReason describes why RunPassthrough returned.
 type ExitReason int
 

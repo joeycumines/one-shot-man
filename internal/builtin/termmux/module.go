@@ -6,7 +6,6 @@ package termmux
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -157,11 +156,6 @@ func Require(ctx context.Context, input io.Reader, output io.Writer) func(*goja.
 		_ = exports.Set("EVENT_BELL", EventBell)
 		_ = exports.Set("EVENT_OUTPUT", EventOutput)
 
-		// ── Constructor ──────────────────────────────────────
-		_ = exports.Set("newMux", func(call goja.FunctionCall) goja.Value {
-			return newMux(ctx, runtime, input, output, call)
-		})
-
 		// ── CaptureSession factory ───────────────────────────
 		_ = exports.Set("newCaptureSession", func(call goja.FunctionCall) goja.Value {
 			return newCaptureSession(ctx, runtime, call)
@@ -172,411 +166,6 @@ func Require(ctx context.Context, input io.Reader, output io.Writer) func(*goja.
 			return newSessionManager(ctx, runtime, call)
 		})
 	}
-}
-
-// newMux creates a [parent.Mux] from an optional JS options object and returns
-// a wrapped JS object exposing all multiplexer methods.
-//
-// JS signature:
-//
-//	termmux.newMux({ toggleKey?: number, statusEnabled?: boolean, initialStatus?: string })
-func newMux(ctx context.Context, runtime *goja.Runtime, input io.Reader, output io.Writer, call goja.FunctionCall) goja.Value {
-	var opts []parent.Option
-
-	// Parse optional config object.
-	if arg := call.Argument(0); arg != nil && !goja.IsUndefined(arg) && !goja.IsNull(arg) {
-		obj := arg.ToObject(runtime)
-		if v := obj.Get("toggleKey"); v != nil && !goja.IsUndefined(v) {
-			key := byte(v.ToInteger())
-			opts = append(opts, func(c *parent.Config) { c.ToggleKey = key })
-		}
-		if v := obj.Get("statusEnabled"); v != nil && !goja.IsUndefined(v) {
-			enabled := v.ToBoolean()
-			opts = append(opts, func(c *parent.Config) { c.StatusEnabled = enabled })
-		}
-		if v := obj.Get("initialStatus"); v != nil && !goja.IsUndefined(v) {
-			status := v.String()
-			opts = append(opts, func(c *parent.Config) { c.InitialStatus = status })
-		}
-	}
-
-	// Resolve terminal I/O from provided args or OS defaults.
-	stdin := input
-	stdout := output
-	termFd := int(os.Stdin.Fd())
-	if stdin == nil {
-		stdin = os.Stdin
-	}
-	if stdout == nil {
-		stdout = os.Stdout
-	}
-
-	mux := parent.New(stdin, stdout, termFd, opts...)
-	return WrapMux(ctx, runtime, mux)
-}
-
-// WrapMux wraps a [parent.Mux] into a Goja object with JavaScript-callable methods.
-// This is exported so callers (e.g., pr_split.go) can create a Go-side Mux and
-// expose it to JS through the same standardized interface that newMux() provides.
-func WrapMux(ctx context.Context, runtime *goja.Runtime, mux *parent.Mux) goja.Value {
-	obj := runtime.NewObject()
-	events := newMuxEvents()
-
-	// ── attach(handle) ───────────────────────────────────
-	// Accepts AgentHandle (map with _goHandle), StringIO, or io.ReadWriteCloser.
-	// On ErrAlreadyAttached, detaches first then retries once.
-	_ = obj.Set("attach", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) == 0 {
-			panic(runtime.NewTypeError("attach: handle argument is required"))
-		}
-		raw := call.Argument(0).Export()
-		child, err := resolveChild(raw)
-		if err != nil {
-			panic(runtime.NewTypeError(fmt.Sprintf("attach: %v", err)))
-		}
-		if err := attachWithRetry(mux, child); err != nil {
-			panic(runtime.NewGoError(err))
-		}
-		return goja.Undefined()
-	})
-
-	// ── detach() ─────────────────────────────────────────
-	// Idempotent — safe to call with no child attached.
-	_ = obj.Set("detach", func() {
-		if err := mux.Detach(); err != nil {
-			panic(runtime.NewGoError(err))
-		}
-	})
-
-	// ── hasChild() → boolean ─────────────────────────────
-	_ = obj.Set("hasChild", func() bool {
-		return mux.HasChild()
-	})
-
-	// ── switchTo() → { reason, error?, childOutput? } ────
-	// BLOCKING: enters raw passthrough mode, returns when user toggles or child exits.
-	// Emits "focus" event on entry (side: "claude") and exit (side: "osm").
-	// Emits "exit" event with the passthrough result.
-	// Drains pending async events before returning.
-	_ = obj.Set("switchTo", func() map[string]any {
-		// Focus → claude before entering passthrough.
-		events.emit(runtime, EventFocus, map[string]any{"side": "claude"})
-
-		reason, err := mux.RunPassthrough(ctx)
-		result := map[string]any{
-			"reason": exitReasonString(reason),
-		}
-		if err != nil {
-			result["error"] = err.Error()
-		}
-		if reason == parent.ExitChildExit {
-			if output := mux.ChildExitOutput(); output != "" {
-				result["childOutput"] = output
-			}
-		}
-
-		// Focus → osm after exiting passthrough.
-		events.emit(runtime, EventFocus, map[string]any{"side": "osm"})
-
-		// Emit exit event with the passthrough result.
-		events.emit(runtime, EventExit, result)
-
-		// Drain any async events that accumulated during passthrough.
-		events.drain(runtime)
-
-		return result
-	})
-
-	// ── activeSide() → "osm" | "claude" ─────────────────
-	_ = obj.Set("activeSide", func() string {
-		if mux.ActiveSide() == parent.SideClaude {
-			return "claude"
-		}
-		return "osm"
-	})
-
-	// ── setStatus(text) ──────────────────────────────────
-	_ = obj.Set("setStatus", func(s string) {
-		mux.SetClaudeStatus(s)
-	})
-
-	// ── setToggleKey(keyByte) ────────────────────────────
-	_ = obj.Set("setToggleKey", func(k int) {
-		mux.SetToggleKey(byte(k))
-	})
-
-	// ── setStatusEnabled(bool) ───────────────────────────
-	_ = obj.Set("setStatusEnabled", func(b bool) {
-		mux.SetStatusEnabled(b)
-	})
-
-	// ── setResizeFunc(fn) ────────────────────────────────
-	// Installs user resize handler AND queues "resize" events for listeners.
-	// The underlying resize callback runs on the SIGWINCH goroutine, so we
-	// queue events rather than emitting synchronously.
-	_ = obj.Set("setResizeFunc", func(fn func(int, int)) {
-		mux.SetResizeFunc(func(rows, cols uint16) error {
-			fn(int(rows), int(cols))
-			events.queue(EventResize, map[string]any{
-				"rows": int(rows),
-				"cols": int(cols),
-			})
-			return nil
-		})
-	})
-
-	// ── bell event wiring ────────────────────────────────
-	// Install mux bell callback that queues "bell" events for JS listeners.
-	// The callback runs on the tee goroutine so we use queue() (thread-safe)
-	// rather than emit() (JS-goroutine only). JS receives bell events via
-	// pollEvents() or drain().
-	mux.SetBellFunc(func() {
-		events.queue(EventBell, map[string]any{
-			"pane": "claude",
-		})
-	})
-
-	// ── output event wiring ─────────────────────────────
-	// Queue an output event whenever the child PTY produces bytes. The JS
-	// side can use this to refresh panes from the latest mux snapshot without
-	// depending on a separate ad hoc polling contract.
-	mux.SetOutputFunc(func(data []byte) {
-		events.queue(EventOutput, map[string]any{
-			"pane":  "claude",
-			"chunk": string(data),
-		})
-	})
-
-	// ── screenshot() → string ────────────────────────────
-	// Returns plain-text VTerm buffer content for diagnostics/test assertions.
-	_ = obj.Set("screenshot", func() string {
-		return mux.ChildExitOutput()
-	})
-
-	// ── childScreen() → string ───────────────────────────
-	// Returns the VTerm buffer as ANSI escape-sequence output suitable for
-	// rendering in a terminal or TUI pane. Unlike screenshot() (plain text),
-	// this preserves colors, cursor position, and formatting.
-	_ = obj.Set("childScreen", func() string {
-		return mux.ChildScreen()
-	})
-
-	// ── writeToChild(data) ───────────────────────────────
-	// Sends raw bytes to the attached child process's stdin. Accepts a string.
-	// Throws if no child is attached.
-	_ = obj.Set("writeToChild", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) == 0 {
-			panic(runtime.NewTypeError("writeToChild: data argument is required"))
-		}
-		data := call.Argument(0).String()
-		n, err := mux.WriteToChild([]byte(data))
-		if err != nil {
-			panic(runtime.NewGoError(err))
-		}
-		return runtime.ToValue(n)
-	})
-
-	// ── session() → InteractiveSession wrapper ──────────
-	// Returns an object exposing the attached PTY through the session
-	// interface. In addition to the base InteractiveSession methods
-	// (resize, write, close, isDone, reader), this adds MuxSession-
-	// specific methods (output, screen, target, setTarget, isRunning)
-	// for backward compatibility with existing JS scripts.
-	_ = obj.Set("session", func() goja.Value {
-		ms := mux.Session()
-		sessionObj := wrapInteractiveSession(runtime, ms, parent.SessionKindPTY).ToObject(runtime)
-
-		// MuxSession-specific methods (concrete type, not interface).
-		_ = sessionObj.Set("output", func() string {
-			return ms.Output()
-		})
-		_ = sessionObj.Set("screen", func() string {
-			return ms.Screen()
-		})
-		_ = sessionObj.Set("target", func() map[string]any {
-			target := ms.Target()
-			return map[string]any{
-				"id":   target.ID,
-				"name": target.Name,
-				"kind": target.Kind.String(),
-			}
-		})
-		_ = sessionObj.Set("setTarget", func(target map[string]any) {
-			if target == nil {
-				panic(runtime.NewTypeError("setTarget: target object is required"))
-			}
-			ms.SetTarget(targetFromJS(target, parent.SessionKindPTY))
-		})
-		_ = sessionObj.Set("isRunning", func() bool {
-			return ms.IsRunning()
-		})
-
-		return sessionObj
-	})
-
-	// ── lastActivityMs() → int64 ─────────────────────────
-	// Returns milliseconds since the last child process output, or -1 if
-	// no output has been received yet. Used by the HUD overlay to show an
-	// activity indicator (live vs idle).
-	_ = obj.Set("lastActivityMs", func() int64 {
-		t := mux.LastWriteTime()
-		if t.IsZero() {
-			return -1
-		}
-		return time.Since(t).Milliseconds()
-	})
-
-	// ── on(event, callback) → id ─────────────────────────
-	// Registers a listener for an event type. Returns a numeric ID for off().
-	// Supported events: exit, resize, focus, bell, output.
-	// Note: "output" events require parent termmux changes to fire.
-	_ = obj.Set("on", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 2 {
-			panic(runtime.NewTypeError("on: requires (event, callback)"))
-		}
-		event := call.Argument(0).String()
-		if !validEvents[event] {
-			panic(runtime.NewTypeError(fmt.Sprintf("on: unknown event %q", event)))
-		}
-		callback, ok := goja.AssertFunction(call.Argument(1))
-		if !ok {
-			panic(runtime.NewTypeError("on: callback must be a function"))
-		}
-		id := events.on(event, callback)
-		return runtime.ToValue(id)
-	})
-
-	// ── off(id) → boolean ────────────────────────────────
-	// Removes a previously registered listener. Returns true if it existed.
-	_ = obj.Set("off", func(id int) bool {
-		return events.off(id)
-	})
-
-	// ── pollEvents() → number ────────────────────────────
-	// Drains pending async events (resize, bell, output) and delivers them to
-	// registered listeners. Returns the count of events delivered. Call this
-	// periodically from JS to receive events from non-JS goroutines.
-	_ = obj.Set("pollEvents", func() int {
-		return events.drain(runtime)
-	})
-
-	// fromModel wraps a BubbleTea model with termmux toggle key integration.
-	// Returns { model: <model>, options: { altScreen: true, toggleKey: <byte>, onToggle: <fn> } }
-	// where onToggle calls mux.switchTo(). Usage:
-	//
-	//   const tf = mux.fromModel(model);
-	//   tea.run(tf.model, tf.options);
-	//
-	// Or with custom options:
-	//
-	//   const tf = mux.fromModel(model, { altScreen: false, toggleKey: 0x1D });
-	//   tea.run(tf.model, Object.assign(tf.options, { reportFocus: true }));
-	_ = obj.Set("fromModel", func(call goja.FunctionCall) goja.Value {
-		if len(call.Arguments) < 1 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
-			panic(runtime.NewTypeError("fromModel requires a model argument"))
-		}
-		model := call.Argument(0)
-
-		// Parse optional config overrides
-		altScreen := true
-		toggleKeyByte := int(parent.DefaultToggleKey)
-		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
-			cfgObj := call.Argument(1).ToObject(runtime)
-			if cfgObj != nil {
-				if v := cfgObj.Get("altScreen"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
-					altScreen = v.ToBoolean()
-				}
-				if v := cfgObj.Get("toggleKey"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
-					toggleKeyByte = int(v.ToInteger())
-				}
-			}
-		}
-
-		result := runtime.NewObject()
-		_ = result.Set("model", model)
-
-		runOpts := runtime.NewObject()
-		_ = runOpts.Set("altScreen", altScreen)
-		_ = runOpts.Set("toggleKey", toggleKeyByte)
-
-		// onToggle calls mux.switchTo() — blocks during passthrough.
-		// This closure captures the mux and ctx from WrapMux's scope.
-		_ = runOpts.Set("onToggle", func(fc goja.FunctionCall) goja.Value {
-			if !mux.HasChild() {
-				return goja.Undefined()
-			}
-
-			// Emit focus event: entering Claude's terminal
-			events.emit(runtime, EventFocus, map[string]any{
-				"side": "claude", "action": "enter",
-			})
-
-			reason, err := mux.RunPassthrough(ctx)
-
-			res := map[string]any{
-				"reason": exitReasonString(reason),
-			}
-			if err != nil {
-				res["error"] = err.Error()
-			}
-
-			// Emit focus event: returning to osm's terminal
-			events.emit(runtime, EventFocus, map[string]any{
-				"side": "osm", "action": "return",
-			})
-
-			return runtime.ToValue(res)
-		})
-
-		_ = result.Set("options", runOpts)
-		return result
-	})
-
-	return obj
-}
-
-// resolveChild converts a JS-exported value into an [io.ReadWriteCloser]
-// suitable for [parent.Mux.Attach]. Supports:
-//   - [parent.StringIO] (Send/Receive/Close)
-//   - map with "_goHandle" key containing StringIO or io.ReadWriteCloser
-//   - [io.ReadWriteCloser] directly
-func resolveChild(raw any) (io.ReadWriteCloser, error) {
-	// Case 1: Direct StringIO (Go test callers).
-	if sio, ok := raw.(parent.StringIO); ok {
-		return parent.WrapStringIO(sio), nil
-	}
-
-	// Case 2: Goja-wrapped AgentHandle — map with _goHandle.
-	if m, ok := raw.(map[string]any); ok {
-		if goHandle, exists := m["_goHandle"]; exists && goHandle != nil {
-			if sio, ok := goHandle.(parent.StringIO); ok {
-				return parent.WrapStringIO(sio), nil
-			}
-			if rwc, ok := goHandle.(io.ReadWriteCloser); ok {
-				return rwc, nil
-			}
-		}
-	}
-
-	// Case 3: Direct io.ReadWriteCloser.
-	if rwc, ok := raw.(io.ReadWriteCloser); ok {
-		return rwc, nil
-	}
-
-	return nil, errors.New("argument must implement Send/Receive/Close (or be a wrapped AgentHandle with _goHandle)")
-}
-
-// attachWithRetry calls [parent.Mux.Attach] with automatic detach-and-retry
-// on [parent.ErrAlreadyAttached].
-func attachWithRetry(mux *parent.Mux, child io.ReadWriteCloser) error {
-	err := mux.Attach(child)
-	if err != nil && errors.Is(err, parent.ErrAlreadyAttached) {
-		if detachErr := mux.Detach(); detachErr != nil {
-			return fmt.Errorf("detach before reattach: %w", detachErr)
-		}
-		err = mux.Attach(child)
-	}
-	return err
 }
 
 // exitReasonString maps a [parent.ExitReason] to its JS string constant.
@@ -851,8 +440,8 @@ func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.C
 
 // wrapInteractiveSession wraps a [parent.InteractiveSession] into a Goja
 // object with JavaScript-callable methods. This is the shared base for both
-// mux [MuxSession] wrappers (via [WrapMux].session()) and [CaptureSession]
-// wrappers (via [WrapCaptureSession]).
+// [SessionManager] session wrappers (via [WrapSessionManager].session())
+// and [CaptureSession] wrappers (via [WrapCaptureSession]).
 //
 // Exported methods (5 total, matching the trimmed InteractiveSession interface):
 //
@@ -974,14 +563,58 @@ func newSessionManager(ctx context.Context, runtime *goja.Runtime, call goja.Fun
 	}
 
 	mgr := parent.NewSessionManager(opts...)
-	return WrapSessionManager(ctx, runtime, mgr)
+	return WrapSessionManager(ctx, runtime, mgr, os.Stdin, os.Stdout, -1)
 }
 
 // WrapSessionManager wraps a [parent.SessionManager] into a Goja object with
 // JavaScript-callable methods. Exported so callers can create a Go-side
 // SessionManager and expose it through the same interface.
-func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.SessionManager) goja.Value {
+//
+// The stdin/stdout/termFd parameters provide terminal I/O for passthrough
+// mode. Pass os.Stdin, os.Stdout, and -1 (or int(os.Stdin.Fd())) as defaults.
+func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.SessionManager, stdin io.Reader, stdout io.Writer, termFd int) goja.Value {
 	obj := runtime.NewObject()
+
+	// ── Closure state for Mux-equivalent convenience methods ──
+	events := newMuxEvents()
+	sb := statusbar.New(stdout)
+	var toggleKey byte = parent.DefaultToggleKey
+	sb.SetToggleKey(toggleKey)
+	var statusEnabled bool
+	var resizeFn func(rows, cols uint16) error
+	var activeSessionTarget parent.SessionTarget
+	var swappedOnce bool
+
+	// ── EventBus → muxEvents bridge ──────────────────────
+	// Subscribe to the SessionManager's EventBus and forward relevant
+	// events into the JS-side muxEvents queue. The goroutine exits when
+	// ctx is cancelled.
+	busID, busCh := mgr.Subscribe(64)
+	go func() {
+		defer mgr.Unsubscribe(busID)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case evt, ok := <-busCh:
+				if !ok {
+					return
+				}
+				switch evt.Kind {
+				case parent.EventSessionExited:
+					events.queue(EventExit, map[string]any{"pane": "claude"})
+				case parent.EventBell:
+					events.queue(EventBell, map[string]any{"pane": "claude"})
+				case parent.EventSessionOutput:
+					data := map[string]any{"pane": "claude"}
+					if raw, ok := evt.Data.([]byte); ok {
+						data["chunk"] = string(raw)
+					}
+					events.queue(EventOutput, data)
+				}
+			}
+		}
+	}()
 
 	_ = obj.Set("run", func() {
 		go func() {
@@ -1020,20 +653,20 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 
 		// pollEvents() → Event[]
 		_ = result.Set("pollEvents", func() goja.Value {
-			events := make([]map[string]any, 0)
+			evts := make([]map[string]any, 0)
 			for {
 				select {
 				case evt, ok := <-ch:
 					if !ok {
-						return runtime.ToValue(events)
+						return runtime.ToValue(evts)
 					}
-					events = append(events, map[string]any{
+					evts = append(evts, map[string]any{
 						"kind":      evt.Kind.String(),
 						"sessionId": uint64(evt.SessionID),
 						"time":      evt.Time.UnixMilli(),
 					})
 				default:
-					return runtime.ToValue(events)
+					return runtime.ToValue(evts)
 				}
 			}
 		})
@@ -1190,8 +823,8 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 				cfg.RestoreScreen = v.ToBoolean()
 			}
 			if v := opts.Get("statusBar"); v != nil && !goja.IsUndefined(v) {
-				if sb, ok := v.Export().(*statusbar.StatusBar); ok {
-					cfg.StatusBar = sb
+				if ssb, ok := v.Export().(*statusbar.StatusBar); ok {
+					cfg.StatusBar = ssb
 				}
 			}
 			if v := opts.Get("resizeFn"); v != nil && !goja.IsUndefined(v) {
@@ -1221,6 +854,437 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 		if err != nil {
 			_ = result.Set("error", err.Error())
 		}
+		return result
+	})
+
+	// ── Mux-equivalent convenience methods ───────────────
+
+	// ── attach(handle) ───────────────────────────────────
+	// Accepts InteractiveSession wrappers, AgentHandle (map with _goHandle),
+	// StringIO, or raw InteractiveSession. Registers and activates the session.
+	// If a session is already active, unregisters it first then retries once.
+	_ = obj.Set("attach", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("attach: handle argument is required"))
+		}
+		raw := call.Argument(0).Export()
+
+		var session parent.InteractiveSession
+
+		// Try to extract _goSession from a JS wrapper object first.
+		if jsObj := call.Argument(0).ToObject(runtime); jsObj != nil {
+			if s := unwrapInteractiveSession(jsObj); s != nil {
+				session = s
+			}
+		}
+
+		// Check for map with _goHandle.
+		if session == nil {
+			if m, ok := raw.(map[string]any); ok {
+				if goHandle, exists := m["_goHandle"]; exists && goHandle != nil {
+					switch h := goHandle.(type) {
+					case parent.StringIO:
+						sio := parent.NewStringIOSession(h)
+						sio.Start()
+						session = sio
+					case parent.InteractiveSession:
+						session = h
+					}
+				}
+			}
+		}
+
+		// Check raw directly.
+		if session == nil {
+			switch h := raw.(type) {
+			case parent.StringIO:
+				sio := parent.NewStringIOSession(h)
+				sio.Start()
+				session = sio
+			case parent.InteractiveSession:
+				session = h
+			}
+		}
+
+		if session == nil {
+			panic(runtime.NewTypeError("attach: argument must be an InteractiveSession, StringIO, or wrapped AgentHandle"))
+		}
+
+		id, err := mgr.Register(session, activeSessionTarget)
+		if err != nil {
+			// Auto-detach: if there's an active session, unregister it and retry.
+			if activeID := mgr.ActiveID(); activeID != 0 {
+				_ = mgr.Unregister(activeID)
+				id, err = mgr.Register(session, activeSessionTarget)
+			}
+			if err != nil {
+				panic(runtime.NewGoError(err))
+			}
+		}
+		if activateErr := mgr.Activate(id); activateErr != nil {
+			panic(runtime.NewGoError(activateErr))
+		}
+		return goja.Undefined()
+	})
+
+	// ── detach() ─────────────────────────────────────────
+	// Unregisters the active session. Idempotent — safe to call with
+	// no active session.
+	_ = obj.Set("detach", func() {
+		if id := mgr.ActiveID(); id != 0 {
+			_ = mgr.Unregister(id)
+		}
+	})
+
+	// ── hasChild() → boolean ─────────────────────────────
+	_ = obj.Set("hasChild", func() bool {
+		return mgr.ActiveID() != 0
+	})
+
+	// ── switchTo() → { reason, error?, childOutput? } ────
+	// BLOCKING: enters raw passthrough mode, returns when user toggles or child exits.
+	// Emits "focus" event on entry (side: "claude") and exit (side: "osm").
+	// Emits "exit" event with the passthrough result.
+	// Drains pending async events before returning.
+	_ = obj.Set("switchTo", func() goja.Value {
+		// Guard: no child attached.
+		if mgr.ActiveID() == 0 {
+			return goja.Undefined()
+		}
+
+		// Focus → claude before entering passthrough.
+		events.emit(runtime, EventFocus, map[string]any{
+			"side": "claude", "action": "enter",
+		})
+
+		// Build PassthroughConfig from stored state.
+		cfg := parent.PassthroughConfig{
+			Stdin:         stdin,
+			Stdout:        stdout,
+			TermFd:        termFd,
+			ToggleKey:     toggleKey,
+			TermState:     ptyio.RealTermState{},
+			BlockingGuard: parent.DefaultBlockingGuard(),
+			RestoreScreen: swappedOnce,
+		}
+		if statusEnabled {
+			cfg.StatusBar = sb
+		}
+		if resizeFn != nil {
+			cfg.ResizeFn = resizeFn
+		}
+
+		reason, err := mgr.Passthrough(ctx, cfg)
+		swappedOnce = true
+
+		// Focus → osm after exiting passthrough.
+		events.emit(runtime, EventFocus, map[string]any{
+			"side": "osm", "action": "return",
+		})
+
+		result := map[string]any{
+			"reason": exitReasonString(reason),
+		}
+		if err != nil {
+			result["error"] = err.Error()
+		}
+
+		// Include childOutput (plain text snapshot) on exit.
+		if id := mgr.ActiveID(); id != 0 {
+			if snap := mgr.Snapshot(id); snap != nil {
+				result["childOutput"] = snap.PlainText
+			}
+		}
+
+		// Emit exit event and drain pending async events.
+		events.emit(runtime, EventExit, map[string]any{
+			"reason": exitReasonString(reason),
+			"pane":   "claude",
+		})
+		events.drain(runtime)
+
+		return runtime.ToValue(result)
+	})
+
+	// ── screenshot() → string ────────────────────────────
+	// Returns plain-text VTerm buffer content for the active session.
+	_ = obj.Set("screenshot", func() string {
+		id := mgr.ActiveID()
+		if id == 0 {
+			return ""
+		}
+		snap := mgr.Snapshot(id)
+		if snap == nil {
+			return ""
+		}
+		return snap.PlainText
+	})
+
+	// ── childScreen() → string ───────────────────────────
+	// Returns the VTerm buffer as ANSI escape-sequence output for the
+	// active session.
+	_ = obj.Set("childScreen", func() string {
+		id := mgr.ActiveID()
+		if id == 0 {
+			return ""
+		}
+		snap := mgr.Snapshot(id)
+		if snap == nil {
+			return ""
+		}
+		return snap.ANSI
+	})
+
+	// ── writeToChild(data) → number ──────────────────────
+	// Sends raw bytes to the active session's stdin. Returns bytes written.
+	_ = obj.Set("writeToChild", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			panic(runtime.NewTypeError("writeToChild: data argument is required"))
+		}
+		data := []byte(call.Argument(0).String())
+		if err := mgr.Input(data); err != nil {
+			return runtime.ToValue(0)
+		}
+		return runtime.ToValue(len(data))
+	})
+
+	// ── session() → convenience wrapper ──────────────────
+	// Returns an object with isRunning, output, screen, target, setTarget
+	// for the active session.
+	_ = obj.Set("session", func() goja.Value {
+		sessionObj := runtime.NewObject()
+
+		_ = sessionObj.Set("isRunning", func() bool {
+			return mgr.ActiveID() != 0
+		})
+
+		// isDone() → true when: (a) no child was ever attached, or
+		// (b) the active session has exited / been closed.
+		_ = sessionObj.Set("isDone", func() bool {
+			id := mgr.ActiveID()
+			if id == 0 {
+				return true
+			}
+			for _, info := range mgr.Sessions() {
+				if info.ID == id {
+					return info.State == parent.SessionExited || info.State == parent.SessionClosed
+				}
+			}
+			return true // session not found — treat as done
+		})
+
+		_ = sessionObj.Set("output", func() string {
+			id := mgr.ActiveID()
+			if id == 0 {
+				return ""
+			}
+			snap := mgr.Snapshot(id)
+			if snap == nil {
+				return ""
+			}
+			return snap.PlainText
+		})
+
+		_ = sessionObj.Set("screen", func() string {
+			id := mgr.ActiveID()
+			if id == 0 {
+				return ""
+			}
+			snap := mgr.Snapshot(id)
+			if snap == nil {
+				return ""
+			}
+			return snap.ANSI
+		})
+
+		_ = sessionObj.Set("target", func() goja.Value {
+			result := runtime.NewObject()
+			_ = result.Set("id", activeSessionTarget.ID)
+			_ = result.Set("name", activeSessionTarget.Name)
+			_ = result.Set("kind", string(activeSessionTarget.Kind))
+			return result
+		})
+
+		_ = sessionObj.Set("setTarget", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 1 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
+				panic(runtime.NewTypeError("setTarget: target object is required"))
+			}
+			tObj := call.Argument(0).ToObject(runtime)
+			if v := tObj.Get("name"); v != nil && !goja.IsUndefined(v) {
+				activeSessionTarget.Name = v.String()
+			}
+			if v := tObj.Get("kind"); v != nil && !goja.IsUndefined(v) {
+				activeSessionTarget.Kind = parent.SessionKind(v.String())
+			}
+			if v := tObj.Get("id"); v != nil && !goja.IsUndefined(v) {
+				activeSessionTarget.ID = v.String()
+			}
+			return goja.Undefined()
+		})
+
+		return sessionObj
+	})
+
+	// ── lastActivityMs() → int64 ─────────────────────────
+	// Returns milliseconds since the last snapshot update, or -1 if no
+	// active session or snapshot.
+	_ = obj.Set("lastActivityMs", func() int64 {
+		id := mgr.ActiveID()
+		if id == 0 {
+			return -1
+		}
+		snap := mgr.Snapshot(id)
+		if snap == nil || snap.Timestamp.IsZero() {
+			return -1
+		}
+		return time.Since(snap.Timestamp).Milliseconds()
+	})
+
+	// ── setStatus(text) ──────────────────────────────────
+	_ = obj.Set("setStatus", func(s string) {
+		sb.SetStatus(s)
+	})
+
+	// ── setToggleKey(keyByte) ────────────────────────────
+	_ = obj.Set("setToggleKey", func(k int) {
+		toggleKey = byte(k)
+		sb.SetToggleKey(toggleKey)
+	})
+
+	// ── setStatusEnabled(bool) ───────────────────────────
+	_ = obj.Set("setStatusEnabled", func(b bool) {
+		statusEnabled = b
+	})
+
+	// ── setResizeFunc(fn) ────────────────────────────────
+	// Installs user resize handler AND queues "resize" events for listeners.
+	_ = obj.Set("setResizeFunc", func(fn func(int, int)) {
+		resizeFn = func(rows, cols uint16) error {
+			fn(int(rows), int(cols))
+			events.queue(EventResize, map[string]any{
+				"rows": int(rows),
+				"cols": int(cols),
+			})
+			return nil
+		}
+	})
+
+	// ── on(event, callback) → id ─────────────────────────
+	// Registers a listener for an event type. Returns a numeric ID for off().
+	// Supported events: exit, resize, focus, bell, output.
+	_ = obj.Set("on", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(runtime.NewTypeError("on: requires (event, callback)"))
+		}
+		event := call.Argument(0).String()
+		if !validEvents[event] {
+			panic(runtime.NewTypeError(fmt.Sprintf("on: unknown event %q", event)))
+		}
+		callback, ok := goja.AssertFunction(call.Argument(1))
+		if !ok {
+			panic(runtime.NewTypeError("on: callback must be a function"))
+		}
+		id := events.on(event, callback)
+		return runtime.ToValue(id)
+	})
+
+	// ── off(id) → boolean ────────────────────────────────
+	// Removes a previously registered listener. Returns true if it existed.
+	_ = obj.Set("off", func(id int) bool {
+		return events.off(id)
+	})
+
+	// ── pollEvents() → number ────────────────────────────
+	// Drains pending async events and delivers them to registered listeners.
+	// Returns the count of events delivered.
+	_ = obj.Set("pollEvents", func() int {
+		return events.drain(runtime)
+	})
+
+	// ── activeSide() → "osm" ─────────────────────────────
+	// Passthrough is blocking so when JS can ask, it's always "osm".
+	_ = obj.Set("activeSide", func() string {
+		return "osm"
+	})
+
+	// ── fromModel(model, opts?) ──────────────────────────
+	// Wraps a BubbleTea model with termmux toggle key integration.
+	// Returns { model, options: { altScreen, toggleKey, onToggle } }.
+	_ = obj.Set("fromModel", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
+			panic(runtime.NewTypeError("fromModel requires a model argument"))
+		}
+		model := call.Argument(0)
+
+		// Parse optional config overrides.
+		altScreen := true
+		toggleKeyByte := int(toggleKey)
+		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
+			cfgObj := call.Argument(1).ToObject(runtime)
+			if cfgObj != nil {
+				if v := cfgObj.Get("altScreen"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+					altScreen = v.ToBoolean()
+				}
+				if v := cfgObj.Get("toggleKey"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+					toggleKeyByte = int(v.ToInteger())
+				}
+			}
+		}
+
+		result := runtime.NewObject()
+		_ = result.Set("model", model)
+
+		runOpts := runtime.NewObject()
+		_ = runOpts.Set("altScreen", altScreen)
+		_ = runOpts.Set("toggleKey", toggleKeyByte)
+
+		// onToggle calls switchTo() — blocks during passthrough.
+		_ = runOpts.Set("onToggle", func(fc goja.FunctionCall) goja.Value {
+			if mgr.ActiveID() == 0 {
+				return goja.Undefined()
+			}
+
+			// Emit focus event: entering Claude's terminal.
+			events.emit(runtime, EventFocus, map[string]any{
+				"side": "claude", "action": "enter",
+			})
+
+			// Build PassthroughConfig from stored state.
+			cfg := parent.PassthroughConfig{
+				Stdin:         stdin,
+				Stdout:        stdout,
+				TermFd:        termFd,
+				ToggleKey:     byte(toggleKeyByte),
+				TermState:     ptyio.RealTermState{},
+				BlockingGuard: parent.DefaultBlockingGuard(),
+				RestoreScreen: swappedOnce,
+			}
+			if statusEnabled {
+				cfg.StatusBar = sb
+			}
+			if resizeFn != nil {
+				cfg.ResizeFn = resizeFn
+			}
+
+			reason, err := mgr.Passthrough(ctx, cfg)
+			swappedOnce = true
+
+			res := map[string]any{
+				"reason": exitReasonString(reason),
+			}
+			if err != nil {
+				res["error"] = err.Error()
+			}
+
+			// Emit focus event: returning to osm's terminal.
+			events.emit(runtime, EventFocus, map[string]any{
+				"side": "osm", "action": "return",
+			})
+
+			return runtime.ToValue(res)
+		})
+
+		_ = result.Set("options", runOpts)
 		return result
 	})
 

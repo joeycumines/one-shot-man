@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dop251/goja"
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
 	"github.com/joeycumines/one-shot-man/internal/termmux"
@@ -471,17 +472,39 @@ func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripti
 	// the command-blocking model ensures go-prompt is paused during
 	// passthrough. stdout is injected for testability.
 	termFd = int(os.Stdin.Fd())
-	tuiMux := termmux.New(os.Stdin, stdout, termFd)
 
-	// Pre-configure the mux's session target so switchTo() enters with
-	// correct metadata from the start (not assigned lazily in JS chunks).
-	tuiMux.SetActiveTarget(termmux.SessionTarget{
-		Name: "claude",
-		Kind: termmux.SessionKindPTY,
-	})
+	// Create a SessionManager with default terminal dimensions. JS
+	// chunks call run() to start the worker goroutine and register/
+	// activate sessions as needed. The WrapSessionManager binding
+	// provides the same API surface (attach, switchTo, session, etc.)
+	// that JS scripts expect.
+	tuiMgr := termmux.NewSessionManager()
+	tuiMux := termmuxmod.WrapSessionManager(ctx, engine.Runtime(), tuiMgr, os.Stdin, stdout, termFd)
 
-	// Expose the mux to JS through the standardized osm:termmux interface.
-	engine.SetGlobal("tuiMux", termmuxmod.WrapMux(ctx, engine.Runtime(), tuiMux))
+	// Pre-configure session target metadata so attach() registers with
+	// the correct identity from the start (not assigned lazily in JS).
+	// Uses session().setTarget() on the wrapped object.
+	targetObj := engine.Runtime().NewObject()
+	_ = targetObj.Set("name", "claude")
+	_ = targetObj.Set("kind", string(termmux.SessionKindPTY))
+	setTargetFn, _ := goja.AssertFunction(tuiMux.ToObject(engine.Runtime()).Get("session"))
+	if setTargetFn != nil {
+		sessionObj, _ := setTargetFn(goja.Undefined())
+		if sessionObj != nil {
+			stFn, _ := goja.AssertFunction(sessionObj.ToObject(engine.Runtime()).Get("setTarget"))
+			if stFn != nil {
+				_, _ = stFn(goja.Undefined(), targetObj)
+			}
+		}
+	}
+
+	// Start the SessionManager worker goroutine so it's ready for
+	// register/activate calls from JS.
+	go func() { _ = tuiMgr.Run(ctx) }()
+	<-tuiMgr.Started()
+
+	// Expose the manager to JS through the standardized osm:termmux interface.
+	engine.SetGlobal("tuiMux", tuiMux)
 
 	// Session type constants: JS uses these to create and label sessions
 	// consistently. Defined here so the Go bootstrap and all JS chunks

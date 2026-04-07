@@ -21,20 +21,28 @@ import (
 
 // Event name constants exposed to JS.
 const (
-	EventExit   = "exit"
-	EventResize = "resize"
-	EventFocus  = "focus"
-	EventBell   = "bell"
-	EventOutput = "output"
+	EventExit            = "exit"
+	EventResize          = "resize"
+	EventFocus           = "focus"
+	EventBell            = "bell"
+	EventOutput          = "output"
+	EventRegistered      = "registered"
+	EventActivated       = "activated"
+	EventClosed          = "closed"
+	EventTerminalResize  = "terminal-resize"
 )
 
 // validEvents is the set of event names accepted by on().
 var validEvents = map[string]bool{
-	EventExit:   true,
-	EventResize: true,
-	EventFocus:  true,
-	EventBell:   true,
-	EventOutput: true,
+	EventExit:           true,
+	EventResize:         true,
+	EventFocus:          true,
+	EventBell:           true,
+	EventOutput:         true,
+	EventRegistered:     true,
+	EventActivated:      true,
+	EventClosed:         true,
+	EventTerminalResize: true,
 }
 
 // eventListener is a single registered JS callback for an event type.
@@ -155,6 +163,10 @@ func Require(ctx context.Context, input io.Reader, output io.Writer) func(*goja.
 		_ = exports.Set("EVENT_FOCUS", EventFocus)
 		_ = exports.Set("EVENT_BELL", EventBell)
 		_ = exports.Set("EVENT_OUTPUT", EventOutput)
+		_ = exports.Set("EVENT_REGISTERED", EventRegistered)
+		_ = exports.Set("EVENT_ACTIVATED", EventActivated)
+		_ = exports.Set("EVENT_CLOSED", EventClosed)
+		_ = exports.Set("EVENT_TERMINAL_RESIZE", EventTerminalResize)
 
 		// ── CaptureSession factory ───────────────────────────
 		_ = exports.Set("newCaptureSession", func(call goja.FunctionCall) goja.Value {
@@ -586,8 +598,8 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 	var swappedOnce bool
 
 	// ── EventBus → muxEvents bridge ──────────────────────
-	// Subscribe to the SessionManager's EventBus and forward relevant
-	// events into the JS-side muxEvents queue. The goroutine exits when
+	// Subscribe to the SessionManager's EventBus and forward all event
+	// kinds into the JS-side muxEvents queue. The goroutine exits when
 	// ctx is cancelled.
 	busID, busCh := mgr.Subscribe(64)
 	go func() {
@@ -600,13 +612,37 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 				if !ok {
 					return
 				}
+				sid := uint64(evt.SessionID)
 				switch evt.Kind {
+				case parent.EventSessionRegistered:
+					events.queue(EventRegistered, map[string]any{
+						"sessionId": sid,
+					})
+				case parent.EventSessionActivated:
+					events.queue(EventActivated, map[string]any{
+						"sessionId": sid,
+					})
 				case parent.EventSessionExited:
-					events.queue(EventExit, map[string]any{"pane": "claude"})
+					events.queue(EventExit, map[string]any{
+						"pane":      "claude",
+						"sessionId": sid,
+					})
+				case parent.EventSessionClosed:
+					events.queue(EventClosed, map[string]any{
+						"sessionId": sid,
+					})
+				case parent.EventResize:
+					events.queue(EventTerminalResize, map[string]any{})
 				case parent.EventBell:
-					events.queue(EventBell, map[string]any{"pane": "claude"})
+					events.queue(EventBell, map[string]any{
+						"pane":      "claude",
+						"sessionId": sid,
+					})
 				case parent.EventSessionOutput:
-					data := map[string]any{"pane": "claude"}
+					data := map[string]any{
+						"pane":      "claude",
+						"sessionId": sid,
+					}
 					if raw, ok := evt.Data.([]byte); ok {
 						data["chunk"] = string(raw)
 					}
@@ -1189,7 +1225,8 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 
 	// ── on(event, callback) → id ─────────────────────────
 	// Registers a listener for an event type. Returns a numeric ID for off().
-	// Supported events: exit, resize, focus, bell, output.
+	// Supported events: exit, resize, focus, bell, output, registered,
+	// activated, closed, terminal-resize.
 	_ = obj.Set("on", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 2 {
 			panic(runtime.NewTypeError("on: requires (event, callback)"))

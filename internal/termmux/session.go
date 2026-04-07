@@ -92,7 +92,7 @@ func (t SessionTarget) WithKind(kind SessionKind) SessionTarget {
 // lifecycle tracking (IsRunning) are the SessionManager's responsibility —
 // they are NOT part of this interface.
 //
-// Concrete types such as [CaptureSession] and [MuxSession] may offer
+// Concrete types such as [CaptureSession] and [StringIOSession] may offer
 // additional methods (Output, Screen, Target, etc.) beyond this interface
 // for direct callers that hold the concrete type.
 type InteractiveSession interface {
@@ -113,7 +113,6 @@ type InteractiveSession interface {
 	// Reader returns a channel that streams raw PTY output chunks.
 	// A nil value on the channel is never sent; instead, the channel is
 	// closed when the session's output ends (process exit / PTY EOF).
-	// The channel is created during Start (or Attach for Mux sessions)
-	// and is safe to read from any goroutine.
+	// The channel is safe to read from any goroutine.
 	Reader() <-chan []byte
 }

@@ -156,6 +156,69 @@ commit-meta3: ## Commit meta changes for Tasks 43-50
 		-m "for commit-task43 through commit-task49, test helpers, and" \
 		-m "session timer management. Update WIP.md progress notes."
 
+.PHONY: commit-task52
+commit-task52: ## Commit Task 52: Address error-discarding patterns in SessionManager
+	git add internal/termmux/manager.go
+	git commit -m "Log all discarded errors in SessionManager worker" \
+		-m "Replace every silently-discarded error in manager.go with" \
+		-m "structured slog calls:" \
+		-m "" \
+		-m "- session.Close() errors: slog.Warn (3 sites: unregister," \
+		-m "  immediate-exit, shutdown)" \
+		-m "- session.Resize() errors: slog.Warn with sessionID + dimensions" \
+		-m "- passthrough tee Write() errors: slog.Warn" \
+		-m "- VTerm Write() errors: slog.Debug (in-memory, unlikely)" \
+		-m "" \
+		-m "Removes the _ = id iteration suppression in handleResize since" \
+		-m "id is now consumed by the error log. A grep for '_ = ms.session'" \
+		-m "and '_, _ =' in manager.go now returns zero results."
+
+.PHONY: commit-task50
+commit-task50: ## Commit Task 50: EventBus dropped event metrics
+	git add internal/termmux/eventbus.go \
+		internal/termmux/eventbus_test.go \
+		internal/termmux/manager_test.go \
+		internal/builtin/termmux/module.go
+	git commit -m "Add dropped event counter to EventBus" \
+		-m "Track events that could not be delivered because a subscriber's" \
+		-m "channel buffer was full. Uses atomic.Int64 for lock-free reads." \
+		-m "" \
+		-m "- EventBus.Publish(): increment counter + slog.Debug on drop" \
+		-m "- EventBus.DroppedCount(): returns cumulative drop count" \
+		-m "- SessionManager.EventsDropped(): delegates to EventBus" \
+		-m "- JS binding: eventsDropped() → number" \
+		-m "" \
+		-m "Four unit tests (InitiallyZero, CountsDropped, MultipleSubscribers," \
+		-m "NoDropsWithLargeBuffer) plus one integration test via" \
+		-m "SessionManager exercising the full pipeline."
+
+.PHONY: commit-meta4
+commit-meta4: ## Commit meta changes for Tasks 50-53
+	git add -f WIP.md blueprint.json config.mk
+	git rm --cached -f scratch/task42-r2-pass1d.md scratch/task42-r2-pass1e.md \
+		scratch/task42-r2-pass1f.md scratch/task42-r2-pass2f.md \
+		scratch/task50-r2-pass1.md scratch/task50-r2-pass2.md 2>/dev/null || true
+	git add scratch/task53-r2-pass1.md scratch/task53-r2-pass2.md \
+		scratch/task52-r2-pass1.md scratch/task52-r2-pass2.md 2>/dev/null || true
+	git commit -m "Update blueprint and meta files for Tasks 50-53" \
+		-m "Mark Tasks 52 and 53 as Done in blueprint.json. Add Make" \
+		-m "targets commit-task50, commit-task53, commit-meta4. Update" \
+		-m "WIP.md progress notes. Clean up stale scratch review files."
+
+.PHONY: commit-task53
+commit-task53: ## Commit Task 53: Configurable drain timeout in CaptureSession
+	git add internal/termmux/capture.go \
+		internal/termmux/capture_test.go
+	git commit -m "Make drain timeout configurable in CaptureSession" \
+		-m "Add DrainTimeout field to CaptureConfig with a default of" \
+		-m "5 seconds applied in NewCaptureSession when <= 0. Replace" \
+		-m "the hardcoded time.After(5*time.Second) in Close() with" \
+		-m "cs.cfg.DrainTimeout." \
+		-m "" \
+		-m "Two new tests verify the default (5s) and custom timeout" \
+		-m "(100ms with sleep-60 process). All existing CaptureConfig" \
+		-m "instantiations are compatible via zero-value defaulting."
+
 .PHONY: test-passthrough-resize
 test-passthrough-resize: ## Run passthrough resize tests
 	go -C . test -race -timeout=60s -count=1 -run 'TestPassthrough_Resize' -v ./internal/termmux/...

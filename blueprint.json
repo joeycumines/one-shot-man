@@ -161,7 +161,7 @@
       "task": "Address error-discarding patterns in SessionManager (GAP-L02)",
       "description": "manager.go discards errors in several places: _ = ms.session.Close() (3 locations), _, _ = ms.vterm.Write(so.data), _, _ = (*w).Write(so.data). While VTerm is in-memory and unlikely to fail, the session.Close() ignores deserve attention: a failed close could leak resources. Fix: (1) Log session.Close() errors via slog at warn level with session ID; (2) For VTerm writes, log at debug level if the write returns an error (unexpected, but observable); (3) For passthrough tee writes, log at warn level (stdout write failure during passthrough is significant).",
       "acceptance": "No error return in SessionManager is silently discarded. Every _ = ms.session.Close() is replaced with a logged error. VTerm write errors are observable via debug-level logging. Passthrough tee write errors are logged at warn level. A grep for '_ = ms.session' and '_, _ =' in manager.go returns zero results.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": 53,
@@ -169,7 +169,7 @@
       "task": "Add CaptureSession.Close() configurable drain timeout (GAP-L01)",
       "description": "capture.go Close() has a hardcoded 5-second drain timeout. The existing pattern uses CaptureConfig struct (capture.go:94 NewCaptureSession(cfg CaptureConfig)). Add DrainTimeout time.Duration field to CaptureConfig with a default of 5 seconds applied in NewCaptureSession. Update any existing CaptureConfig instantiations to use the field where appropriate. This allows tests to use shorter timeouts for faster feedback and production to use longer timeouts if needed.",
       "acceptance": "CaptureSession.Close() drain timeout is configurable via CaptureConfig.DrainTimeout field. Default is 5 seconds. A test verifies that a custom timeout (e.g., 100ms) is respected.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": 54,

@@ -165,6 +165,11 @@ func Require(ctx context.Context, input io.Reader, output io.Writer) func(*goja.
 		_ = exports.Set("newCaptureSession", func(call goja.FunctionCall) goja.Value {
 			return newCaptureSession(ctx, runtime, call)
 		})
+
+		// ── SessionManager factory (experimental) ────────────
+		_ = exports.Set("newSessionManager", func(call goja.FunctionCall) goja.Value {
+			return newSessionManager(ctx, runtime, call)
+		})
 	}
 }
 
@@ -871,4 +876,58 @@ func targetFromJS(raw map[string]any, defaultKind parent.SessionKind) parent.Ses
 		target.Kind = defaultKind
 	}
 	return target
+}
+
+// newSessionManager creates a [parent.SessionManager] from an optional JS
+// options object and returns a wrapped JS object.
+//
+// JS signature:
+//
+//	termmux.newSessionManager({ rows?: number, cols?: number, requestBuffer?: number })
+func newSessionManager(ctx context.Context, runtime *goja.Runtime, call goja.FunctionCall) goja.Value {
+	var opts []parent.ManagerOption
+
+	if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+		cfgObj := call.Argument(0).ToObject(runtime)
+		if cfgObj != nil {
+			if v := cfgObj.Get("rows"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				rows := int(v.ToInteger())
+				cols := 80
+				if c := cfgObj.Get("cols"); c != nil && !goja.IsUndefined(c) && !goja.IsNull(c) {
+					cols = int(c.ToInteger())
+				}
+				opts = append(opts, parent.WithTermSize(rows, cols))
+			} else if v := cfgObj.Get("cols"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				opts = append(opts, parent.WithTermSize(24, int(v.ToInteger())))
+			}
+			if v := cfgObj.Get("requestBuffer"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				opts = append(opts, parent.WithRequestBuffer(int(v.ToInteger())))
+			}
+			if v := cfgObj.Get("outputBuffer"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				opts = append(opts, parent.WithMergedOutputBuffer(int(v.ToInteger())))
+			}
+		}
+	}
+
+	mgr := parent.NewSessionManager(opts...)
+	return WrapSessionManager(ctx, runtime, mgr)
+}
+
+// WrapSessionManager wraps a [parent.SessionManager] into a Goja object with
+// JavaScript-callable methods. Exported so callers can create a Go-side
+// SessionManager and expose it through the same interface.
+func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.SessionManager) goja.Value {
+	obj := runtime.NewObject()
+
+	_ = obj.Set("run", func() {
+		go func() {
+			_ = mgr.Run(ctx)
+		}()
+	})
+
+	_ = obj.Set("close", func() {
+		mgr.Close()
+	})
+
+	return obj
 }

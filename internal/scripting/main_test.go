@@ -65,9 +65,9 @@ func TestMain(m *testing.M) {
 		testBinaryPath += ".exe"
 	}
 
-	// Build the binary (enable integration tag for sync protocol)
+	// Build the binary
 	fmt.Printf("TestMain: building test binary to %s\n", testBinaryPath)
-	cmd := exec.Command("go", "build", "-tags=integration", "-o", testBinaryPath, "./cmd/osm")
+	cmd := exec.Command("go", "build", "-o", testBinaryPath, "./cmd/osm")
 	cmd.Dir = repoRoot
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -91,6 +91,12 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	fmt.Printf("TestMain: added %s to PATH\n", testBinDir)
+
+	// Enable go-prompt sync protocol for deterministic PTY I/O in tests.
+	if err := os.Setenv("OSM_SYNC_PROTOCOL", "1"); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "Failed to set OSM_SYNC_PROTOCOL: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Run all tests
 	exitCode := m.Run()

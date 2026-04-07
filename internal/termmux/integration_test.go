@@ -1,5 +1,3 @@
-//go:build integration && !windows
-
 package termmux
 
 import (
@@ -23,6 +21,9 @@ func stripANSI(s string) string { return ansiRE.ReplaceAllString(s, "") }
 // ── T074: Toggle key round-trip ────────────────────────────────────
 
 func TestIntegration_ToggleKeyRoundTrip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test")
+	}
 	t.Parallel()
 	ts := newMockTermState(80, 24)
 	bg := &mockBlockingGuard{}
@@ -78,6 +79,9 @@ func TestIntegration_ToggleKeyRoundTrip(t *testing.T) {
 // ── T076: Goroutine leak detection after Attach/Detach cycles ──────
 
 func TestIntegration_NoGoroutineLeakAfterCycles(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test")
+	}
 	t.Parallel()
 	ts := newMockTermState(80, 24)
 	bg := &mockBlockingGuard{}
@@ -136,6 +140,9 @@ func TestIntegration_NoGoroutineLeakAfterCycles(t *testing.T) {
 // ── T079: Child process exit during passthrough ────────────────────
 
 func TestIntegration_ChildExitDuringPassthrough(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test")
+	}
 	t.Parallel()
 	ts := newMockTermState(80, 24)
 	bg := &mockBlockingGuard{}
@@ -176,6 +183,9 @@ func TestIntegration_ChildExitDuringPassthrough(t *testing.T) {
 // ── T080: Context cancellation during passthrough ──────────────────
 
 func TestIntegration_ContextCancelDuringPassthrough(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test")
+	}
 	t.Parallel()
 	ts := newMockTermState(80, 24)
 	bg := &mockBlockingGuard{}
@@ -208,6 +218,9 @@ func TestIntegration_ContextCancelDuringPassthrough(t *testing.T) {
 // ── T082: Rapid toggle cycling stress test ─────────────────────────
 
 func TestIntegration_RapidToggleCycling(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test")
+	}
 	t.Parallel()
 	ts := newMockTermState(80, 24)
 	bg := &mockBlockingGuard{}
@@ -274,6 +287,9 @@ func TestIntegration_RapidToggleCycling(t *testing.T) {
 // ── T075: VTerm screen capture and restore with toggle round-trip ──
 
 func TestIntegration_VTermCaptureAndRestore(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test")
+	}
 	t.Parallel()
 	ts := newMockTermState(80, 24)
 	bg := &mockBlockingGuard{}
@@ -341,6 +357,9 @@ func TestIntegration_VTermCaptureAndRestore(t *testing.T) {
 // ── T077: EAGAIN resilience ────────────────────────────────────────
 
 func TestIntegration_EAGAINResilienceStdin(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test")
+	}
 	t.Parallel()
 	// This test verifies the EAGAIN retry logic in the stdin goroutine.
 	// We use a custom reader that returns EAGAIN for the first N reads,
@@ -381,6 +400,9 @@ func TestIntegration_EAGAINResilienceStdin(t *testing.T) {
 // ── T078: UTF-8 split across read boundaries ──────────────────────
 
 func TestIntegration_UTF8SplitAcrossReads(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test")
+	}
 	t.Parallel()
 	ts := newMockTermState(80, 24)
 	bg := &mockBlockingGuard{}
@@ -424,6 +446,9 @@ func TestIntegration_UTF8SplitAcrossReads(t *testing.T) {
 // ── T081: Status bar coexistence with child output ─────────────────
 
 func TestIntegration_StatusBarWithChildOutput(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test")
+	}
 	t.Parallel()
 	ts := newMockTermState(80, 24)
 	bg := &mockBlockingGuard{}

@@ -38,6 +38,7 @@ func TestPromptFlow_GoalCommandOpensEditor(t *testing.T) {
 			"EDITOR=" + editorScript,
 			"VISUAL=",
 			"OSM_CLIPBOARD=cat > /dev/null",
+			"OSM_SYNC_PROTOCOL=1",
 		}),
 	)
 	if err != nil {
@@ -90,6 +91,7 @@ func TestPromptFlow_UseCommandOpensEditor(t *testing.T) {
 			"EDITOR=" + editorScript,
 			"VISUAL=",
 			"OSM_CLIPBOARD=cat > /dev/null",
+			"OSM_SYNC_PROTOCOL=1",
 		}),
 	)
 	if err != nil {
@@ -148,7 +150,7 @@ func buildPromptFlowTestBinary(t *testing.T) string {
 	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
 
 	binaryPath := filepath.Join(t.TempDir(), "osm-test")
-	cmd := exec.Command("go", "build", "-tags=integration", "-o", binaryPath, "./cmd/osm")
+	cmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/osm")
 	cmd.Dir = projectDir // Critical: set working directory to project root
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

@@ -225,7 +225,7 @@ func BuildPickAndPlaceTestBinary(t *testing.T) string {
 	binaryPath := filepath.Join(t.TempDir(), "osm-pickplace-test")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "go", "build", "-tags=integration", "-o", binaryPath, "./cmd/osm")
+	cmd := exec.CommandContext(ctx, "go", "build", "-o", binaryPath, "./cmd/osm")
 	cmd.Dir = projectDir // Critical: set working directory to project root
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -256,6 +256,7 @@ func NewPickAndPlaceTestProcessEnv(tb testing.TB) []string {
 		"OSM_SESSION=" + sessionID,
 		"OSM_STORE=memory",
 		"OSM_CLIPBOARD=cat > " + clipboardFile,
+		"OSM_SYNC_PROTOCOL=1",
 	}
 }
 

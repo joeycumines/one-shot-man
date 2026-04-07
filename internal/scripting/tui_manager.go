@@ -943,8 +943,8 @@ func (tm *TUIManager) buildGoPrompt(cfg promptBuildConfig) *prompt.Prompt {
 		options = append(options, prompt.WithIndentSize(cfg.indentSize))
 	}
 
-	// This enables the sync protocol when built with the `integration` build tag
-	options = append(options, staticGoPromptOptions...)
+	// Enable the sync protocol when OSM_SYNC_PROTOCOL=1 (for E2E test builds).
+	options = append(options, goPromptSyncOptions()...)
 
 	// CRITICAL: Inject the shared reader/writer into go-prompt.
 	// This ensures go-prompt uses the same terminal I/O as bubbletea,

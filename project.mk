@@ -47,7 +47,7 @@ integration-test-prsplit-mcp: ## Run pr-split MCP mock integration tests (no rea
 
 .PHONY: integration-test-termmux
 integration-test-termmux: ## Run termmux integration tests with real PTY processes
-	$(GO) test -race -v -count=1 -timeout=5m -tags=integration ./internal/termmux/...
+	$(GO) test -race -v -count=1 -timeout=5m -run 'TestIntegration_' ./internal/termmux/... ./internal/termmux/ptyio/...
 
 .PHONY: bench-termmux
 bench-termmux: ## Run termmux benchmarks

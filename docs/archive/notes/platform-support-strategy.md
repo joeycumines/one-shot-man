@@ -110,7 +110,7 @@ All three platforms run identical CI steps (`make` with auto-detected parallelis
 ### Acceptable Skip Conditions
 
 1. **Windows PTY tests** are skipped until ConPTY backend is implemented (task 14). This is acceptable because: (a) the PTY stub returns `ErrNotSupported` deterministically, (b) all non-PTY logic (analysis, grouping, planning, rendering, state machine) runs and is tested on Windows, and (c) the skip is guarded by an explicit `runtime.GOOS == "windows"` check, not a flaky condition.
-2. **Integration tests** gated by `//go:build integration && !windows` are opt-in and run only via explicit make targets. The `&& !windows` constraint means Windows can never run these tests even with explicit opt-in — this is intentional because they require real PTY processes. Unit tests cover the same logic without external dependencies.
+2. **Integration tests** gated by `testing.Short()` and `runtime.GOOS` checks are opt-in via explicit make targets (`make integration-test-termmux`). PTY-dependent tests skip on Windows with a runtime check. Unit tests cover the same logic without external dependencies.
 
 ## Decision: Cross-Platform Verified
 

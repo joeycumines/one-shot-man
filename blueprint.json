@@ -290,7 +290,8 @@
       "task": "Benchmark pane switching and render pipeline",
       "description": "Add a performance test using testing.B in internal/command/pr_split_16_bench_test.go that benchmarks the pane switching and rendering latency via SessionManager. Validate that switching between the Claude session and user shell takes < 50ms per switch. Use pprof if needed to isolate allocation bottlenecks in the render path.",
       "acceptance": "A benchmark test `BenchmarkPaneSwitching` runs locally. Pprof output shows pane switch latency consistently below 50ms at scale with 1000 simulated log lines.",
-      "status": "Not Started"
+      "status": "Done",
+      "completedNote": "Three benchmarks in internal/termmux/manager_bench_test.go (176 lines): BenchmarkPaneSwitching (~1.5μs/op, 33,000× below 50ms target), BenchmarkSnapshot (~640ns/op pure read), BenchmarkInputThroughput (~24MB/s). Uses benchSession mock (InteractiveSession with atomic close guard and pre-queued output). Pre-existing project.mk bench-termmux target covers the new file. 3-run results on Apple M2 Pro: consistent 1508-1528ns/op for pane switching with 4 allocs. R2: 2 contiguous clean passes. Committed as 0e3a537e."
     },
     {
       "id": 15,

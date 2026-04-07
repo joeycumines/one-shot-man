@@ -256,7 +256,6 @@ func (cs *CaptureSession) IsRunning() bool {
 	return proc.IsAlive()
 }
 
-
 // Interrupt sends SIGINT to the child process.
 func (cs *CaptureSession) Interrupt() error {
 	cs.mu.Lock()

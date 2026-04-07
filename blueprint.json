@@ -89,7 +89,7 @@
       "task": "Fix stale MuxSession doc comment in session.go (GAP-M01)",
       "description": "internal/termmux/session.go line ~95 has a doc comment referencing '[MuxSession]' as a concrete type implementing InteractiveSession, but MuxSession was deleted in Task 37. Replace the reference with the actual surviving implementors: CaptureSession and StringIOSession.",
       "acceptance": "The doc comment on the InteractiveSession interface references only types that actually exist in the codebase. go doc generates a valid link for each referenced type.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": 44,
@@ -97,7 +97,7 @@
       "task": "Fix resize path to call SessionManager.Resize() from JS (GAP-M04)",
       "description": "In pr_split_16e_tui_update.js handleWindowResize: the resize handler calls session.resize() on the wrapper object but never calls tuiMux.resize() which delegates to mgr.Resize(). When the terminal is resized in split-view, the SessionManager's internal VTerm is NOT resized, causing stale dimension snapshots. Fix: add a call to tuiMux.resize(rows, cols) in the resize handler AFTER any per-session resize. This ensures the SessionManager broadcasts resize to all registered sessions and updates its internal VTerm dimensions.",
       "acceptance": "Terminal resize in split-view causes both the per-session resize AND mgr.Resize() to fire. The SessionManager's VTerm dimensions match the terminal dimensions. childScreen() returns properly-sized ANSI output after resize.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": 45,
@@ -105,7 +105,7 @@
       "task": "Forward all EventBus events through muxEvents bridge (GAP-M05)",
       "description": "In internal/builtin/termmux/module.go ~line 588, the EventBus→muxEvents bridge goroutine only forwards 3 of 7 event types (EventSessionExited, EventBell, EventSessionOutput). Four event types are silently dropped: EventSessionRegistered, EventSessionActivated, EventSessionClosed, EventResize. Add forwarding for all 7 types. EXISTING JS event key names MUST be preserved — 'exit' stays EventExit, 'output' stays EventOutput, 'bell' stays EventBell. For the 4 new event types, add new constants and validEvents entries: EventRegistered='registered', EventActivated='activated', EventClosed='closed', EventTerminalResize='terminal-resize'. CRITICAL NAMING NOTE: the existing EventResize constant (value 'resize') in validEvents maps to the JS-level setResizeFunc callback path — user-initiated window resize handled entirely in JS. The NEW EventTerminalResize constant (value 'terminal-resize') maps to the EventBus Go-level resize propagation — SessionManager-level dimension changes broadcast to all sessions. These are TWO SEPARATE event streams with different sources. Do NOT merge them. Update validEvents map (lines 33-39) to include the new keys. Add cases to the bridge goroutine switch statement (~line 595) for EventSessionRegistered→EventRegistered, EventSessionActivated→EventActivated, EventSessionClosed→EventClosed, EventResize→EventTerminalResize. Also update the existing EventSessionExited case to send session metadata (SessionID, target) in the event data map. Verify that existing JS on() call sites (search for .on('exit', .on('output', .on('bell') in internal/command/*.js) are NOT broken by this change — they use the EXISTING key names which are unchanged.",
       "acceptance": "JS callbacks registered via tuiMux.on() receive events for all 7 EventBus event kinds using the correct key names. Existing keys (exit, output, bell) are UNCHANGED. New keys (registered, activated, closed, terminal-resize) are added to both constants and validEvents map. A test subscribes to each event type and verifies delivery. Existing JS on() call sites for exit/output/bell are NOT broken.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": 46,
@@ -113,7 +113,7 @@
       "task": "Add passthrough StatusBar integration tests (GAP-M02)",
       "description": "internal/termmux/passthrough.go has StatusBar integration (scroll region reservation, mouse event filtering, rendering) but zero test coverage. Add tests to internal/termmux/passthrough_test.go: (1) TestPassthroughStatusBar_ScrollRegionSetup — verify that when PassthroughConfig.StatusBar is non-nil, the scroll region is set before entering raw mode; (2) TestPassthroughStatusBar_MouseRouting — verify sgrmouse.filterMouseForStatusBar logic routes clicks on the status bar row to the StatusBar rather than the PTY; (3) TestPassthroughStatusBar_RenderRestore — verify that after passthrough exit, the terminal is restored using FullScreen from ScreenSnapshot. Use testing.Short() guards.",
       "acceptance": "Three tests cover the StatusBar scroll region, mouse routing, and terminal restore paths in passthrough mode. All pass under race detector. The tests safely skip when 'go test -short' is run.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": 47,
@@ -121,7 +121,7 @@
       "task": "Add passthrough + resize interaction tests (GAP-M03)",
       "description": "Terminal resize during passthrough is untested. Add tests: (1) TestPassthrough_ResizeDuringPassthrough — start passthrough, send SIGWINCH-like resize event via PassthroughConfig.ResizeFn, verify session receives correct dimensions; (2) TestPassthrough_ResizeFnCallback — verify the ResizeFn field in PassthroughConfig is called during resize with correct new dimensions. Use testing.Short() guards.",
       "acceptance": "Two tests cover the resize-during-passthrough path. ResizeFn callback fires with correct dimensions. Resize propagates to the active session's PTY. Tests pass under race detector and skip with testing.Short().",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": 48,
@@ -129,7 +129,7 @@
       "task": "Migrate verify sessions into SessionManager (GAP-H02)",
       "description": "Verify sessions (created in pr_split_16c_tui_handlers_verify.js via prSplit.startVerifySession()) currently create standalone CaptureSession objects stored in s.activeVerifySession. They bypass SessionManager entirely — no COW snapshots, no typed state machine, no EventBus events. Migrate: (1) After CaptureSession creation, register it with tuiMux (which wraps SessionManager) via tuiMux.register(session, {kind:'verify', name: branchName}); (2) Use tuiMux.snapshot(sessionID) for screen reads instead of session.screen(); (3) Use tuiMux.writeToChild matching session for input instead of session.write() directly; (4) On verify branch completion, tuiMux.unregister(sessionID). Update: pollVerifySession, runVerifyBranch, clearVerifyPaneSession, _onToggle verify path (pr_split_16f_tui_model.js). The existing tuiMux event system (with GAP-M05 fix, all events forwarded) can be used for verify session lifecycle tracking.",
       "acceptance": "Verify sessions are managed by SessionManager — registered on creation, tracked via COW snapshots, cleaned up via unregister on completion. s.activeVerifySession stores the SessionManager sessionID (number) instead of a raw CaptureSession. pr_split no longer creates any standalone CaptureSession outside SessionManager management. All existing verify-related tests pass unmodified.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": 49,
@@ -137,7 +137,7 @@
       "task": "Remove VTerm from CaptureSession — eliminate double processing (GAP-H03)",
       "description": "Every PTY output byte is processed by TWO VTerms: one in CaptureSession (capture.go readerLoop line 222 writes cs.term.Write(chunk) AND forwards to outputCh) and one in SessionManager's managedSession. After Task 48, all sessions are registered with SessionManager, so no JS code reads CaptureSession's VTerm directly. Remove: (1) cs.term (*vt.VTerm) field from CaptureSession struct; (2) cs.term.Write(chunk) call in readerLoop (line 222) — readerLoop becomes pure forwarder: read from PTY→outputCh; (3) Output() method (returns cs.term.String()); (4) Screen() method (returns cs.term — the VTerm instance); (5) cs.term.Resize(rows, cols) call in CaptureSession.Resize() (line 382) — after removing VTerm, Resize() only needs to call cs.proc.Resize(): the PTY resize, no VTerm resize; (6) cs.term initialization in NewCaptureSession — remove the vt.NewVTerm() call; (7) Any other cs.term references (grep capture.go for 'cs.term'). Update any remaining JS call sites that use .output()/.screen() to use tuiMux.snapshot(id) instead. Note: Target(), SetTarget(), IsRunning() are NOT deleted here — they are metadata/lifecycle methods unrelated to VTerm; their removal is an architectural decision tracked in Task 56.",
       "acceptance": "Each PTY byte flows through exactly one VTerm.Write() call — verifiable by reading capture.go readerLoop (no cs.term.Write present). CaptureSession has zero VTerm dependency — grep capture.go for 'cs.term' returns zero results. The Output()/Screen() methods are DELETED from CaptureSession (no deprecated stubs). CaptureSession.Resize() only calls PTY resize (cs.proc.Resize), no VTerm resize. readerLoop is a pure forwarder: PTY→outputCh. All JS code uses SessionManager snapshots for screen data.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": 50,
@@ -145,7 +145,7 @@
       "task": "Add EventBus publish metrics for dropped events (GAP-M06)",
       "description": "internal/termmux/eventbus.go Publish() uses non-blocking sends — if a subscriber's buffer is full, the event is silently dropped. Add: (1) A droppedEventCount atomic counter per EventBus; (2) Logging (via slog at debug level) when an event is dropped, including event kind; (3) A DroppedCount() method on EventBus that returns the total dropped count; (4) Expose via SessionManager: EventsDropped() int64. This makes event loss observable rather than invisible.",
       "acceptance": "When a subscriber's buffer is full and an event is dropped, it is logged at debug level and counted. SessionManager.EventsDropped() returns the cumulative count. A test verifies: subscribe with buffer size 1, publish 3 events rapidly, verify EventsDropped() > 0 and that the first event was received.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": 51,

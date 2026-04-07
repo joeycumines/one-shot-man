@@ -147,6 +147,146 @@ commit-meta2: ## Commit meta changes (blueprint, config, review artifacts) for T
 	git add -f scratch/task42-r2-pass1d.md scratch/task42-r2-pass1e.md scratch/task42-r2-pass1f.md scratch/task42-r2-pass2f.md 2>/dev/null || true
 	git commit -m "Update blueprint and process artifacts for Tasks 41/42"
 
+.PHONY: commit-meta3
+commit-meta3: ## Commit meta changes for Tasks 43-50
+	git add blueprint.json config.mk internal/termmux/capture.go
+	git add -f WIP.md scratch/task50-r2-pass1.md scratch/task50-r2-pass2.md 2>/dev/null || true
+	git commit -m "Update blueprint and process artifacts for Tasks 43-50" \
+		-m "Mark Tasks 43-50 as Done in blueprint.json. Add Make targets" \
+		-m "for commit-task43 through commit-task49, test helpers, and" \
+		-m "session timer management. Update WIP.md progress notes."
+
+.PHONY: test-passthrough-resize
+test-passthrough-resize: ## Run passthrough resize tests
+	go -C . test -race -timeout=60s -count=1 -run 'TestPassthrough_Resize' -v ./internal/termmux/...
+
+.PHONY: commit-task46
+commit-task46: ## Commit Task 46: Passthrough StatusBar integration tests
+	git add internal/termmux/passthrough_test.go
+	git commit -m "Add passthrough StatusBar integration tests" \
+		-m "Three new tests cover previously-untested StatusBar code paths:" \
+		-m "- ScrollRegionSetup: DECSTBM escape sequence, reset, render" \
+		-m "- MouseRouting: SGR mouse click on status bar → ExitToggle" \
+		-m "- RenderRestore: VTerm screen restore + post-restore re-render" \
+		-m "" \
+		-m "All tests use testing.Short() guards, t.Parallel(), and pass" \
+		-m "under the race detector."
+
+.PHONY: commit-task47
+commit-task47: ## Commit Task 47: Passthrough resize interaction tests
+	git add internal/termmux/passthrough_test.go
+	git commit -m "Add passthrough resize interaction tests" \
+		-m "Two new tests cover the resize-during-passthrough path:" \
+		-m "- ResizeDuringPassthrough: mgr.Resize(24,80) propagates to session" \
+		-m "- ResizeFnCallback: ResizeFn fires with StatusBar-adjusted dims (23,80)" \
+		-m "" \
+		-m "Both tests use testing.Short() guards, t.Parallel(), and pass" \
+		-m "under the race detector."
+
+.PHONY: commit-task48
+commit-task48: ## Commit Task 48: Migrate verify sessions into SessionManager
+	git add internal/command/pr_split_13_tui.js \
+		internal/command/pr_split_16c_tui_handlers_verify.js \
+		internal/command/pr_split_16f_tui_model.js
+	git commit -m "Migrate verify sessions into SessionManager" \
+		-m "Verify sessions (CaptureSession objects) are now registered with" \
+		-m "SessionManager on creation via tuiMux.register(). Screen reads" \
+		-m "route through tuiMux.snapshot() (COW snapshots) and cleanup uses" \
+		-m "tuiMux.unregister() instead of direct session.close()." \
+		-m "" \
+		-m "Key changes:" \
+		-m "- s.activeVerifySession stores SessionManager sessionID (number)" \
+		-m "- _buildVerifyProxy() wraps sessionID with same API as CaptureSession" \
+		-m "- getInteractivePaneSession() returns proxy for numbers, raw for objects" \
+		-m "- _onToggle uses getInteractivePaneSession instead of direct access" \
+		-m "- Persistent shell upgrade: unregister -> re-register flow" \
+		-m "- Graceful fallback when tuiMux unavailable (raw session retained)" \
+		-m "" \
+		-m "All existing verify-related tests pass unmodified."
+
+.PHONY: test-passthrough-statusbar
+test-passthrough-statusbar: ## Run passthrough StatusBar tests
+	go -C . test -race -timeout=60s -count=1 -run TestPassthroughStatusBar -v ./internal/termmux/...
+
+.PHONY: commit-task45
+commit-task45: ## Commit Task 45: Forward all EventBus events through muxEvents bridge
+	git add internal/builtin/termmux/module.go
+	git commit -m "Forward all 7 EventBus event kinds through muxEvents bridge" \
+		-m "The EventBus→muxEvents bridge goroutine previously only forwarded" \
+		-m "3 of 7 event types (exit, bell, output). Add cases for the" \
+		-m "remaining 4: registered, activated, closed, terminal-resize." \
+		-m "" \
+		-m "Add 4 new JS event constants, validEvents entries, and EVENT_" \
+		-m "exports. Existing event names (exit, bell, output, resize, focus)" \
+		-m "are unchanged. EventTerminalResize (terminal-resize) is distinct" \
+		-m "from EventResize (resize) which maps to JS SIGWINCH callbacks." \
+		-m "" \
+		-m "Also adds sessionId metadata to exit and bell event payloads."
+
+.PHONY: commit-task44
+commit-task44: ## Commit Task 44: Fix resize path to call SessionManager.Resize()
+	git add internal/command/pr_split_16e_tui_update.js
+	git commit -m "Sync SessionManager VTerm dimensions on split-view resize" \
+		-m "Add tuiMux.resize(paneRows, paneCols) call after per-session PTY" \
+		-m "resizes in handleWindowResize. Without this, the SessionManager's" \
+		-m "internal VTerms retained stale dimensions, causing childScreen()" \
+		-m "and snapshot() to return incorrectly-sized ANSI output." \
+		-m "" \
+		-m "The call flows through mgr.Resize() which updates termRows/termCols," \
+		-m "resizes every session's VTerm, and emits EventResize."
+
+.PHONY: commit-task43
+commit-task43: ## Commit Task 43: Fix stale MuxSession doc comment (GAP-M01)
+	git add internal/termmux/session.go
+	git commit -m "Fix stale MuxSession references in InteractiveSession doc" \
+		-m "Replace deleted [MuxSession] type reference with [StringIOSession]" \
+		-m "in the concrete types list. Remove stale '(or Attach for Mux" \
+		-m "sessions)' parenthetical from the Reader() doc comment. Both" \
+		-m "referenced types (CaptureSession, StringIOSession) now exist" \
+		-m "in the package."
+
+.PHONY: commit-task49
+commit-task49: ## Commit Task 49: Remove VTerm from CaptureSession
+	git add internal/termmux/capture.go \
+		internal/termmux/session.go \
+		internal/termmux/capture_test.go \
+		internal/builtin/termmux/module.go \
+		internal/builtin/termmux/module_capture_test.go \
+		internal/command/pr_split_06b_shell_test.go
+	git commit -m "Remove VTerm from CaptureSession" \
+		-m "CaptureSession is now a pure PTY forwarder: raw bytes flow" \
+		-m "from the PTY through outputCh to Reader() consumers." \
+		-m "SessionManager maintains its own VTerm per session, so the" \
+		-m "CaptureSession-level VTerm caused redundant double processing." \
+		-m "" \
+		-m "Key changes:" \
+		-m "- Remove term *vt.VTerm field, vt import, cs.term.Write/Resize" \
+		-m "- Delete Output() and Screen() methods from CaptureSession" \
+		-m "- Remove output()/screen() JS bindings from WrapCaptureSession" \
+		-m "- Add readAvailable() non-blocking channel drain to JS wrapper" \
+		-m "- Add testOutputCollector helper for Go tests" \
+		-m "- Update 5 JS shell tests to use readAvailable()" \
+		-m "- Fix all stale VTerm/Output/Screen doc comments"
+
+.PHONY: check-session-timer
+check-session-timer: ## Verify session timer and show remaining time
+	@START=$$(awk -F= '/^START=/{print $$2}' scratch/session_timer.txt 2>/dev/null); \
+	if [ -z "$$START" ]; then echo "NO TIMER FOUND — resetting to NOW"; START=$$(date +%s); printf "START=%s\nDURATION=9h\n" "$$START" > scratch/session_timer.txt; fi; \
+	NOW=$$(date +%s); \
+	END=$$((START + 9*3600)); \
+	ELAPSED=$$(( (NOW - START) / 60 )); \
+	REMAINING=$$(( (END - NOW) / 60 )); \
+	echo "Session started: $$(date -r $$START '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date -d @$$START '+%Y-%m-%d %H:%M:%S' 2>/dev/null)"; \
+	echo "Current time:    $$(date '+%Y-%m-%d %H:%M:%S')"; \
+	echo "Elapsed: $${ELAPSED}m / 540m"; \
+	echo "Remaining: $${REMAINING}m"; \
+	if [ $$REMAINING -le 0 ]; then echo "⚠️  TIME EXCEEDED — session should have ended"; else echo "✅ Time remaining: $${REMAINING} minutes"; fi
+
+.PHONY: reset-session-timer
+reset-session-timer: ## Reset the 9-hour session timer to now
+	@printf "START=%s\nDURATION=9h\n" "$$(date +%s)" > scratch/session_timer.txt
+	@echo "Timer reset to $$(date '+%Y-%m-%d %H:%M:%S')"
+
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 
 endif

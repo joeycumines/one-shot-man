@@ -1819,3 +1819,190 @@ func (d *delayedSession) start(ch chan []byte) {
 	defer d.mu.Unlock()
 	d.ch = ch
 }
+
+// ---------------------------------------------------------------------------
+// Fuzz testing
+// ---------------------------------------------------------------------------
+
+// fuzzSession is a minimal InteractiveSession for fuzz testing.
+// It accepts writes, ignores resizes, and produces initial output
+// to exercise the merged output pipeline.
+type fuzzSession struct {
+	doneCh   chan struct{}
+	readerCh chan []byte
+	closed   atomic.Bool
+}
+
+func newFuzzSession() *fuzzSession {
+	s := &fuzzSession{
+		doneCh:   make(chan struct{}),
+		readerCh: make(chan []byte, 4),
+	}
+	// Pre-enqueue output to exercise the merged output pipeline.
+	s.readerCh <- []byte("fuzz output\r\n")
+	return s
+}
+
+func (s *fuzzSession) Write(data []byte) (int, error) {
+	if s.closed.Load() {
+		return 0, io.ErrClosedPipe
+	}
+	return len(data), nil
+}
+
+func (s *fuzzSession) Resize(int, int) error { return nil }
+
+func (s *fuzzSession) Close() error {
+	if s.closed.CompareAndSwap(false, true) {
+		close(s.readerCh)
+		close(s.doneCh)
+	}
+	return nil
+}
+
+func (s *fuzzSession) Done() <-chan struct{} { return s.doneCh }
+func (s *fuzzSession) Reader() <-chan []byte { return s.readerCh }
+
+// FuzzSessionRouter bombards the SessionManager with parallel, random
+// operation sequences (Register, Activate, Input, Unregister, Resize,
+// Snapshot, ActiveID, Sessions, Subscribe, Unsubscribe) from multiple
+// goroutines. The goal is to discover race conditions, panics, or
+// deadlocks in the worker goroutine under chaotic interleaving.
+//
+// Run with: go test -fuzz=FuzzSessionRouter -fuzztime=30s ./internal/termmux/
+func FuzzSessionRouter(f *testing.F) {
+	// Seed corpus: representative operation sequences.
+	// Each byte encodes an operation (byte % 10).
+	f.Add([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9})             // one of each op
+	f.Add([]byte{0, 0, 0, 1, 2, 2, 3, 3, 3})                 // register-heavy then unregister
+	f.Add([]byte{0, 1, 3, 0, 1, 3, 0, 1, 3})                 // register-activate-unregister cycles
+	f.Add([]byte{0, 2, 2, 2, 2, 2, 2, 2, 2, 2})              // register then input flood
+	f.Add([]byte{0, 4, 4, 4, 4, 4, 4, 4, 4, 4})              // register then resize flood
+	f.Add([]byte{3, 3, 3, 1, 1, 5, 5})                        // unregister/activate/snapshot on empty
+	f.Add([]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3}) // register many, then unregister
+	f.Add([]byte{8, 0, 2, 9, 8, 0, 2, 4, 9, 3})              // subscribe/unsubscribe interleaved
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		if len(data) < 2 {
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		mgr := NewSessionManager(WithTermSize(24, 80))
+		errCh := make(chan error, 1)
+		go func() { errCh <- mgr.Run(ctx) }()
+		<-mgr.Started()
+
+		defer func() {
+			mgr.Close()
+			<-errCh
+		}()
+
+		const numWorkers = 4
+		chunkSize := max(len(data)/numWorkers, 1)
+
+		// Shared state: session IDs and subscriber IDs protected by mutex.
+		var mu sync.Mutex
+		var sessionIDs []SessionID
+		var subIDs []int
+
+		var wg sync.WaitGroup
+		for w := range numWorkers {
+			start := w * chunkSize
+			end := start + chunkSize
+			if w == numWorkers-1 {
+				end = len(data)
+			}
+			if start >= len(data) {
+				break
+			}
+			chunk := data[start:end]
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for _, b := range chunk {
+					op := b % 10
+					switch op {
+					case 0: // Register a new session
+						s := newFuzzSession()
+						id, err := mgr.Register(s, SessionTarget{
+							Name: "fuzz",
+							Kind: SessionKindCapture,
+						})
+						if err == nil {
+							mu.Lock()
+							sessionIDs = append(sessionIDs, id)
+							mu.Unlock()
+						}
+
+					case 1: // Activate a random registered session
+						mu.Lock()
+						ids := append([]SessionID(nil), sessionIDs...)
+						mu.Unlock()
+						if len(ids) > 0 {
+							idx := int(b/10) % len(ids)
+							_ = mgr.Activate(ids[idx])
+						}
+
+					case 2: // Input to active session
+						_ = mgr.Input([]byte{b, b ^ 0xFF})
+
+					case 3: // Unregister a random session
+						mu.Lock()
+						ids := append([]SessionID(nil), sessionIDs...)
+						mu.Unlock()
+						if len(ids) > 0 {
+							idx := int(b/10) % len(ids)
+							_ = mgr.Unregister(ids[idx])
+						}
+
+					case 4: // Resize with fuzzer-derived dimensions
+						rows := int(b/10)%50 + 1
+						cols := int(b/20)%200 + 1
+						_ = mgr.Resize(rows, cols)
+
+					case 5: // Snapshot a random session
+						mu.Lock()
+						ids := append([]SessionID(nil), sessionIDs...)
+						mu.Unlock()
+						if len(ids) > 0 {
+							idx := int(b/10) % len(ids)
+							_ = mgr.Snapshot(ids[idx])
+						}
+
+					case 6: // ActiveID query
+						_ = mgr.ActiveID()
+
+					case 7: // Sessions list query
+						_ = mgr.Sessions()
+
+					case 8: // Subscribe to events
+						subID, ch := mgr.Subscribe(8)
+						mu.Lock()
+						subIDs = append(subIDs, subID)
+						mu.Unlock()
+						// Drain events in background to prevent blocking.
+						go func() {
+							for range ch {
+							}
+						}()
+
+					case 9: // Unsubscribe
+						mu.Lock()
+						ids := append([]int(nil), subIDs...)
+						mu.Unlock()
+						if len(ids) > 0 {
+							idx := int(b/10) % len(ids)
+							mgr.Unsubscribe(ids[idx])
+						}
+					}
+				}
+			}()
+		}
+
+		wg.Wait()
+	})
+}

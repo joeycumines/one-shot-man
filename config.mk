@@ -47,6 +47,12 @@ test-short: ## Run all tests with -short flag (skips slow integration/E2E tests)
 test-termmux: ## Run all termmux tests including slow passthrough tests (with race detection)
 	$(GO) -C . test -race -v -count=1 -timeout=5m ./internal/termmux/...
 
+.PHONY: fuzz-session-router
+fuzz-session-router: ## Fuzz the SessionManager router (30s default)
+fuzz-session-router: FUZZTIME ?= 30s
+fuzz-session-router:
+	$(GO) test -run=^$$ -fuzz=FuzzSessionRouter -fuzztime=$(FUZZTIME) ./internal/termmux
+
 ##@ PR Split Test Targets
 
 .PHONY: test-prsplit-fast

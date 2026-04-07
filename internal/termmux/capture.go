@@ -11,6 +11,7 @@ import (
 
 	"github.com/joeycumines/one-shot-man/internal/termmux/pty"
 	"github.com/joeycumines/one-shot-man/internal/termmux/ptyio"
+	"github.com/joeycumines/one-shot-man/internal/termmux/statusbar"
 	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
 )
 
@@ -502,7 +503,8 @@ func (cs *CaptureSession) SendEOF() error {
 	return cs.WriteString("\x04")
 }
 
-// PassthroughConfig configures a CaptureSession passthrough session.
+// PassthroughConfig configures a passthrough session.
+// Used by both CaptureSession.Passthrough() and SessionManager.Passthrough().
 type PassthroughConfig struct {
 	// Stdin is the user's terminal input (typically os.Stdin).
 	Stdin io.Reader
@@ -516,6 +518,25 @@ type PassthroughConfig struct {
 	TermState ptyio.TermState
 	// BlockingGuard abstracts fd blocking mode management.
 	BlockingGuard ptyio.BlockingGuard
+
+	// --- Fields below are used only by SessionManager.Passthrough() ---
+
+	// StatusBar, when non-nil, reserves the last terminal row for a
+	// persistent status line. A scroll region is set to constrain
+	// child output, and SGR mouse events on the status bar row are
+	// intercepted (click → ExitToggle).
+	StatusBar *statusbar.StatusBar
+
+	// ResizeFn, when non-nil, is called after terminal resize events
+	// to propagate the new dimensions to the child process. The rows
+	// parameter accounts for the status bar height.
+	ResizeFn func(rows, cols uint16) error
+
+	// RestoreScreen controls the initial display when entering
+	// passthrough via SessionManager. When true, the active session's
+	// VTerm screen is restored in-place (flicker-free re-entry).
+	// When false, the screen is cleared (first swap).
+	RestoreScreen bool
 }
 
 // Passthrough enters raw terminal passthrough mode for this CaptureSession.

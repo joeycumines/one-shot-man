@@ -317,6 +317,12 @@ type SessionManager struct {
 
 	// snapshotGen is the monotonic counter for ScreenSnapshot.Gen.
 	snapshotGen uint64
+
+	// passthroughSessionID is the session ID currently in passthrough
+	// mode, or 0 if none. Only the worker goroutine reads/writes this.
+	// It prevents concurrent passthrough calls and ensures tee
+	// enable/disable operates on the correct session.
+	passthroughSessionID SessionID
 }
 
 // ManagerOption configures a SessionManager. Pass options to NewSessionManager.
@@ -567,6 +573,12 @@ func (m *SessionManager) dispatch(req request) {
 	case reqClose:
 		m.shutdownSessions()
 		resp = response{}
+	case reqActiveWriter:
+		resp = m.handleActiveWriter()
+	case reqEnablePassthroughTee:
+		resp = m.handleEnablePassthroughTee(req.payload.(*passthroughTeePayload))
+	case reqDisablePassthroughTee:
+		resp = m.handleDisablePassthroughTee()
 	default:
 		resp = response{err: fmt.Errorf("termmux: unknown request kind %d", req.kind)}
 	}
@@ -841,6 +853,93 @@ func waitForReader(ctx context.Context, session InteractiveSession) <-chan []byt
 			}
 		}
 	}
+}
+
+// handleActiveWriter returns the active session's InteractiveSession as an
+// io.Writer. Used by Passthrough to write directly to the PTY without routing
+// through the worker (low-latency path).
+func (m *SessionManager) handleActiveWriter() response {
+	if m.activeID == 0 {
+		return response{err: ErrSessionNotFound}
+	}
+	ms, ok := m.sessions[m.activeID]
+	if !ok {
+		return response{err: fmt.Errorf("%w: active session %d disappeared", ErrSessionNotFound, m.activeID)}
+	}
+	if ms.state != SessionRunning && ms.state != SessionCreated {
+		return response{err: fmt.Errorf("%w: session %d in state %s", ErrInvalidTransition, m.activeID, ms.state)}
+	}
+	return response{value: io.Writer(ms.session)}
+}
+
+// handleEnablePassthroughTee sets a tee writer on the active session so that
+// raw output chunks are forwarded to the provided writer in addition to the
+// VTerm. Used during passthrough for low-latency stdout forwarding.
+//
+// The payload is a *passthroughTeePayload containing the writer and the
+// target session ID. This ensures the tee is set on the specific session
+// the caller is passthroughing, not whatever happens to be active later.
+//
+// Returns ErrPassthroughActive if passthrough is already in progress.
+func (m *SessionManager) handleEnablePassthroughTee(p *passthroughTeePayload) response {
+	if m.passthroughSessionID != 0 {
+		return response{err: ErrPassthroughActive}
+	}
+	ms, ok := m.sessions[p.id]
+	if !ok {
+		return response{err: fmt.Errorf("%w: session %d", ErrSessionNotFound, p.id)}
+	}
+	ms.passthroughWriter.Store(&p.w)
+	m.passthroughSessionID = p.id
+	return response{}
+}
+
+// handleDisablePassthroughTee clears the tee writer on the session that
+// was previously enabled. Uses passthroughSessionID to ensure it clears
+// the correct session regardless of whether activeID has changed.
+//
+// If the session was removed between enable and disable, the handler
+// silently succeeds: the session is already gone and clearing its tee
+// is a no-op. Resetting passthroughSessionID still correctly ends the
+// passthrough guard.
+func (m *SessionManager) handleDisablePassthroughTee() response {
+	if m.passthroughSessionID == 0 {
+		return response{} // no-op — already disabled
+	}
+	ms, ok := m.sessions[m.passthroughSessionID]
+	if ok {
+		ms.passthroughWriter.Store(nil)
+	}
+	m.passthroughSessionID = 0
+	return response{}
+}
+
+// activeWriter returns an io.Writer pointing to the active session's PTY
+// input. Used by Passthrough for direct stdin forwarding.
+func (m *SessionManager) activeWriter() (io.Writer, error) {
+	resp := m.sendRequest(reqActiveWriter, nil)
+	if resp.err != nil {
+		return nil, resp.err
+	}
+	return resp.value.(io.Writer), nil
+}
+
+// passthroughTeePayload carries the writer and target session for tee
+// enable/disable operations.
+type passthroughTeePayload struct {
+	w  io.Writer
+	id SessionID
+}
+
+// enablePassthroughTee asks the worker to start teeing raw output from
+// the given session to w (in addition to VTerm processing).
+func (m *SessionManager) enablePassthroughTee(id SessionID, w io.Writer) error {
+	return m.sendRequest(reqEnablePassthroughTee, &passthroughTeePayload{w: w, id: id}).err
+}
+
+// disablePassthroughTee asks the worker to stop teeing raw output.
+func (m *SessionManager) disablePassthroughTee() error {
+	return m.sendRequest(reqDisablePassthroughTee, nil).err
 }
 
 // shutdownSessions performs deterministic, ordered shutdown of all sessions.

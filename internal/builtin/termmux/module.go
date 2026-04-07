@@ -17,6 +17,7 @@ import (
 
 	parent "github.com/joeycumines/one-shot-man/internal/termmux"
 	"github.com/joeycumines/one-shot-man/internal/termmux/ptyio"
+	"github.com/joeycumines/one-shot-man/internal/termmux/statusbar"
 )
 
 // Event name constants exposed to JS.
@@ -1151,6 +1152,76 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 			}
 		}
 		return runtime.ToValue(result)
+	})
+
+	// passthrough({stdin?, stdout?, termFd?, toggleKey?, statusBar?, restoreScreen?, resizeFn?})
+	// → {reason: string, error?: string}
+	// Enters passthrough mode for the active session. Blocks until
+	// the user presses the toggle key, the session exits, or the
+	// context is cancelled.
+	_ = obj.Set("passthrough", func(call goja.FunctionCall) goja.Value {
+		cfg := parent.PassthroughConfig{
+			TermFd:        -1,
+			ToggleKey:     0x1D, // Ctrl+]
+			TermState:     ptyio.RealTermState{},
+			BlockingGuard: parent.DefaultBlockingGuard(),
+		}
+
+		if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+			opts := call.Argument(0).ToObject(runtime)
+
+			if v := opts.Get("stdin"); v != nil && !goja.IsUndefined(v) {
+				if r, ok := v.Export().(io.Reader); ok {
+					cfg.Stdin = r
+				}
+			}
+			if v := opts.Get("stdout"); v != nil && !goja.IsUndefined(v) {
+				if w, ok := v.Export().(io.Writer); ok {
+					cfg.Stdout = w
+				}
+			}
+			if v := opts.Get("termFd"); v != nil && !goja.IsUndefined(v) {
+				cfg.TermFd = int(v.ToInteger())
+			}
+			if v := opts.Get("toggleKey"); v != nil && !goja.IsUndefined(v) {
+				cfg.ToggleKey = byte(v.ToInteger())
+			}
+			if v := opts.Get("restoreScreen"); v != nil && !goja.IsUndefined(v) {
+				cfg.RestoreScreen = v.ToBoolean()
+			}
+			if v := opts.Get("statusBar"); v != nil && !goja.IsUndefined(v) {
+				if sb, ok := v.Export().(*statusbar.StatusBar); ok {
+					cfg.StatusBar = sb
+				}
+			}
+			if v := opts.Get("resizeFn"); v != nil && !goja.IsUndefined(v) {
+				if fn, ok := goja.AssertFunction(v); ok {
+					cfg.ResizeFn = func(rows, cols uint16) error {
+						_, err := fn(goja.Undefined(), runtime.ToValue(rows), runtime.ToValue(cols))
+						if err != nil {
+							return fmt.Errorf("resizeFn: %w", err)
+						}
+						return nil
+					}
+				}
+			}
+		}
+
+		// Default stdin/stdout to os.Stdin/os.Stdout if not provided.
+		if cfg.Stdin == nil {
+			cfg.Stdin = os.Stdin
+		}
+		if cfg.Stdout == nil {
+			cfg.Stdout = os.Stdout
+		}
+
+		reason, err := mgr.Passthrough(ctx, cfg)
+		result := runtime.NewObject()
+		_ = result.Set("reason", reason.String())
+		if err != nil {
+			_ = result.Set("error", err.Error())
+		}
+		return result
 	})
 
 	return obj

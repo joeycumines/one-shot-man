@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,6 +23,91 @@ func (mockSession) Write([]byte) (int, error) { return 0, nil }
 func (mockSession) Close() error              { return nil }
 func (mockSession) Done() <-chan struct{}     { ch := make(chan struct{}); close(ch); return ch }
 func (mockSession) IsRunning() bool           { return false }
+
+// controllableSession is a richer mock that records calls and allows
+// controlling behavior from tests.
+type controllableSession struct {
+	writtenData []byte
+	writeMu     sync.Mutex
+	writeErr    error
+	resizeCalls []resizePayload
+	closeCalled atomic.Bool
+	doneCh      chan struct{}
+}
+
+func newControllableSession() *controllableSession {
+	return &controllableSession{
+		doneCh: make(chan struct{}),
+	}
+}
+
+func (s *controllableSession) Target() SessionTarget     { return SessionTarget{} }
+func (s *controllableSession) SetTarget(SessionTarget)   {}
+func (s *controllableSession) Output() string            { return "" }
+func (s *controllableSession) Screen() string            { return "" }
+func (s *controllableSession) IsRunning() bool           { return !s.closeCalled.Load() }
+func (s *controllableSession) Done() <-chan struct{}      { return s.doneCh }
+
+func (s *controllableSession) Write(data []byte) (int, error) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	if s.writeErr != nil {
+		return 0, s.writeErr
+	}
+	s.writtenData = append(s.writtenData, data...)
+	return len(data), nil
+}
+
+func (s *controllableSession) Resize(rows, cols int) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	s.resizeCalls = append(s.resizeCalls, resizePayload{rows: rows, cols: cols})
+	return nil
+}
+
+func (s *controllableSession) Close() error {
+	s.closeCalled.Store(true)
+	select {
+	case <-s.doneCh:
+	default:
+		close(s.doneCh)
+	}
+	return nil
+}
+
+func (s *controllableSession) Written() []byte {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	cp := make([]byte, len(s.writtenData))
+	copy(cp, s.writtenData)
+	return cp
+}
+
+func (s *controllableSession) Resizes() []resizePayload {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	cp := make([]resizePayload, len(s.resizeCalls))
+	copy(cp, s.resizeCalls)
+	return cp
+}
+
+// startManager creates a SessionManager, starts the worker, and returns
+// the manager and a cleanup function. Cleanup cancels the context and
+// waits for the worker to stop.
+func startManager(t *testing.T, opts ...ManagerOption) (*SessionManager, func()) {
+	t.Helper()
+	m := NewSessionManager(opts...)
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- m.Run(ctx)
+	}()
+	cleanup := func() {
+		cancel()
+		<-errCh
+	}
+	return m, cleanup
+}
 
 // ---------------------------------------------------------------------------
 // SessionState transition tests
@@ -657,5 +743,736 @@ func TestSessionManager_ContextCancellation(t *testing.T) {
 
 	if err := <-errCh; err != context.Canceled {
 		t.Fatalf("Run error = %v, want context.Canceled", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Public API: Register
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_Register(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	session := newControllableSession()
+	id, err := m.Register(session, SessionTarget{Name: "shell", Kind: SessionKindPTY})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+	if id != 1 {
+		t.Errorf("id = %d, want 1", id)
+	}
+
+	// Register a second session — should get id 2.
+	id2, err := m.Register(newControllableSession(), SessionTarget{Name: "claude"})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+	if id2 != 2 {
+		t.Errorf("id2 = %d, want 2", id2)
+	}
+}
+
+func TestSessionManager_Register_FirstBecomesActive(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	_, err := m.Register(newControllableSession(), SessionTarget{Name: "first"})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+
+	activeID := m.ActiveID()
+	if activeID != 1 {
+		t.Errorf("ActiveID = %d, want 1 (first registered)", activeID)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Public API: Activate
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_Activate(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	_, _ = m.Register(newControllableSession(), SessionTarget{Name: "first"})
+	id2, _ := m.Register(newControllableSession(), SessionTarget{Name: "second"})
+
+	// Activate second session.
+	if err := m.Activate(id2); err != nil {
+		t.Fatalf("Activate error: %v", err)
+	}
+	if got := m.ActiveID(); got != id2 {
+		t.Errorf("ActiveID = %d, want %d", got, id2)
+	}
+}
+
+func TestSessionManager_Activate_InvalidID(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	err := m.Activate(999)
+	if err == nil {
+		t.Fatal("expected error for invalid session ID")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Public API: Input
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_Input(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	session := newControllableSession()
+	_, _ = m.Register(session, SessionTarget{Name: "shell"})
+
+	if err := m.Input([]byte("hello")); err != nil {
+		t.Fatalf("Input error: %v", err)
+	}
+
+	// Give the mock time to record the write.
+	time.Sleep(10 * time.Millisecond)
+
+	if got := string(session.Written()); got != "hello" {
+		t.Errorf("written = %q, want %q", got, "hello")
+	}
+}
+
+func TestSessionManager_Input_NoActiveSession(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	err := m.Input([]byte("data"))
+	if err == nil {
+		t.Fatal("expected error when no active session")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Public API: Resize
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_Resize(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	s1 := newControllableSession()
+	s2 := newControllableSession()
+	_, _ = m.Register(s1, SessionTarget{Name: "a"})
+	_, _ = m.Register(s2, SessionTarget{Name: "b"})
+
+	if err := m.Resize(50, 120); err != nil {
+		t.Fatalf("Resize error: %v", err)
+	}
+
+	time.Sleep(10 * time.Millisecond)
+
+	for _, s := range []*controllableSession{s1, s2} {
+		resizes := s.Resizes()
+		if len(resizes) != 1 {
+			t.Fatalf("resize calls = %d, want 1", len(resizes))
+		}
+		if resizes[0].rows != 50 || resizes[0].cols != 120 {
+			t.Errorf("resize = %dx%d, want 50x120", resizes[0].rows, resizes[0].cols)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Public API: Snapshot
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_Snapshot(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	_, _ = m.Register(newControllableSession(), SessionTarget{Name: "test"})
+
+	snap := m.Snapshot(1)
+	if snap == nil {
+		t.Fatal("Snapshot is nil for registered session")
+	}
+	if snap.Rows != 24 || snap.Cols != 80 {
+		t.Errorf("snap dimensions = %dx%d, want 24x80", snap.Rows, snap.Cols)
+	}
+}
+
+func TestSessionManager_Snapshot_Unknown(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	if snap := m.Snapshot(999); snap != nil {
+		t.Errorf("Snapshot for unknown ID should be nil, got %+v", snap)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Public API: Sessions
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_Sessions(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	_, _ = m.Register(newControllableSession(), SessionTarget{Name: "shell", Kind: SessionKindPTY})
+	_, _ = m.Register(newControllableSession(), SessionTarget{Name: "claude", Kind: SessionKindCapture})
+
+	infos := m.Sessions()
+	if len(infos) != 2 {
+		t.Fatalf("Sessions count = %d, want 2", len(infos))
+	}
+
+	// At least one should be active.
+	var foundActive bool
+	for _, info := range infos {
+		if info.IsActive {
+			foundActive = true
+		}
+	}
+	if !foundActive {
+		t.Error("no active session found in Sessions()")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Public API: Unregister
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_Unregister(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "shell"})
+
+	if err := m.Unregister(id); err != nil {
+		t.Fatalf("Unregister error: %v", err)
+	}
+
+	// Session should have been closed.
+	if !session.closeCalled.Load() {
+		t.Error("session.Close() was not called")
+	}
+
+	// Snapshot should return nil for removed session.
+	if snap := m.Snapshot(id); snap != nil {
+		t.Error("Snapshot should return nil for unregistered session")
+	}
+}
+
+func TestSessionManager_Unregister_ClearsActive(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	id, _ := m.Register(newControllableSession(), SessionTarget{Name: "sole"})
+
+	_ = m.Unregister(id)
+
+	if got := m.ActiveID(); got != 0 {
+		t.Errorf("ActiveID = %d, want 0 after unregistering active session", got)
+	}
+}
+
+func TestSessionManager_Unregister_NotFound(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	err := m.Unregister(999)
+	if err == nil {
+		t.Fatal("expected error for non-existent session ID")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Public API: Close (graceful shutdown)
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_Close_ClosesAllSessions(t *testing.T) {
+	t.Parallel()
+
+	m := NewSessionManager()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- m.Run(ctx)
+	}()
+
+	s1 := newControllableSession()
+	s2 := newControllableSession()
+	s3 := newControllableSession()
+	_, _ = m.Register(s1, SessionTarget{Name: "a"})
+	_, _ = m.Register(s2, SessionTarget{Name: "b"})
+	_, _ = m.Register(s3, SessionTarget{Name: "c"})
+
+	m.Close()
+
+	if err := <-errCh; err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	for i, s := range []*controllableSession{s1, s2, s3} {
+		if !s.closeCalled.Load() {
+			t.Errorf("session %d: Close() was not called during shutdown", i+1)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// mergedOutput: session output processing
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_MergedOutput_VTerm(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	_, err := m.Register(newControllableSession(), SessionTarget{Name: "test"})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+
+	// Simulate PTY output by sending directly to mergedOutput.
+	m.mergedOutput <- sessionOutput{id: 1, data: []byte("hello world")}
+
+	// Wait for the worker to process.
+	time.Sleep(50 * time.Millisecond)
+
+	snap := m.Snapshot(1)
+	if snap == nil {
+		t.Fatal("Snapshot is nil after output")
+	}
+	if snap.PlainText != "hello world" {
+		t.Errorf("PlainText = %q, want %q", snap.PlainText, "hello world")
+	}
+	if snap.ANSI == "" {
+		t.Error("ANSI should not be empty after output")
+	}
+	if snap.FullScreen == "" {
+		t.Error("FullScreen should not be empty after output")
+	}
+	if snap.Gen < 2 {
+		t.Errorf("Gen = %d, should be >= 2 (initial + output)", snap.Gen)
+	}
+}
+
+func TestSessionManager_MergedOutput_CreatedToRunning(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	_, _ = m.Register(newControllableSession(), SessionTarget{Name: "test"})
+
+	// Before output — should be Created.
+	infos := m.Sessions()
+	for _, info := range infos {
+		if info.State != SessionCreated {
+			t.Errorf("initial state = %s, want created", info.State)
+		}
+	}
+
+	// Send output — should transition to Running.
+	m.mergedOutput <- sessionOutput{id: 1, data: []byte("x")}
+	time.Sleep(50 * time.Millisecond)
+
+	infos = m.Sessions()
+	for _, info := range infos {
+		if info.ID == 1 && info.State != SessionRunning {
+			t.Errorf("state after output = %s, want running", info.State)
+		}
+	}
+}
+
+func TestSessionManager_MergedOutput_EOF(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	subID, evtCh := m.Subscribe(64)
+	defer m.Unsubscribe(subID)
+
+	_, _ = m.Register(newControllableSession(), SessionTarget{Name: "test"})
+
+	// Transition to Running first (EOF only valid from Running).
+	m.mergedOutput <- sessionOutput{id: 1, data: []byte("x")}
+	time.Sleep(50 * time.Millisecond)
+
+	// Send EOF sentinel.
+	m.mergedOutput <- sessionOutput{id: 1, data: nil}
+	time.Sleep(50 * time.Millisecond)
+
+	infos := m.Sessions()
+	for _, info := range infos {
+		if info.ID == 1 && info.State != SessionExited {
+			t.Errorf("state after EOF = %s, want exited", info.State)
+		}
+	}
+
+	// Verify EventSessionExited was published.
+	var foundExited bool
+	for {
+		select {
+		case evt := <-evtCh:
+			if evt.Kind == EventSessionExited && evt.SessionID == 1 {
+				foundExited = true
+			}
+		default:
+			goto done
+		}
+	}
+done:
+	if !foundExited {
+		t.Error("EventSessionExited not received")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Event delivery via public API
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_Events_Register(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	subID, evtCh := m.Subscribe(64)
+	defer m.Unsubscribe(subID)
+
+	_, _ = m.Register(newControllableSession(), SessionTarget{Name: "test"})
+
+	select {
+	case evt := <-evtCh:
+		if evt.Kind != EventSessionRegistered {
+			t.Errorf("Kind = %s, want session-registered", evt.Kind)
+		}
+		if evt.SessionID != 1 {
+			t.Errorf("SessionID = %d, want 1", evt.SessionID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for register event")
+	}
+}
+
+func TestSessionManager_Events_Activate(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	subID, evtCh := m.Subscribe(64)
+	defer m.Unsubscribe(subID)
+
+	_, _ = m.Register(newControllableSession(), SessionTarget{Name: "a"})
+	id2, _ := m.Register(newControllableSession(), SessionTarget{Name: "b"})
+
+	// Drain register events.
+	<-evtCh
+	<-evtCh
+
+	_ = m.Activate(id2)
+
+	select {
+	case evt := <-evtCh:
+		if evt.Kind != EventSessionActivated {
+			t.Errorf("Kind = %s, want session-activated", evt.Kind)
+		}
+		if evt.SessionID != id2 {
+			t.Errorf("SessionID = %d, want %d", evt.SessionID, id2)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for activate event")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// sortSessionIDs
+// ---------------------------------------------------------------------------
+
+func TestSortSessionIDs(t *testing.T) {
+	t.Parallel()
+
+	ids := []SessionID{3, 1, 5, 2, 4}
+	sortSessionIDs(ids)
+
+	want := []SessionID{5, 4, 3, 2, 1}
+	for i, id := range ids {
+		if id != want[i] {
+			t.Errorf("ids[%d] = %d, want %d", i, id, want[i])
+		}
+	}
+}
+
+func TestSortSessionIDs_Empty(t *testing.T) {
+	t.Parallel()
+	sortSessionIDs(nil) // Must not panic.
+}
+
+func TestSortSessionIDs_Single(t *testing.T) {
+	t.Parallel()
+	ids := []SessionID{42}
+	sortSessionIDs(ids)
+	if ids[0] != 42 {
+		t.Errorf("ids[0] = %d, want 42", ids[0])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Concurrent access under race detector
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_ConcurrentAccess(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	const goroutines = 10
+	const iterations = 100
+
+	var wg sync.WaitGroup
+
+	// Concurrent registrations.
+	wg.Add(goroutines)
+	for range goroutines {
+		go func() {
+			defer wg.Done()
+			for range iterations {
+				_, _ = m.Register(newControllableSession(), SessionTarget{Name: "test"})
+			}
+		}()
+	}
+
+	// Concurrent queries.
+	wg.Add(goroutines)
+	for range goroutines {
+		go func() {
+			defer wg.Done()
+			for range iterations {
+				_ = m.ActiveID()
+				_ = m.Sessions()
+				_ = m.Snapshot(SessionID(1))
+			}
+		}()
+	}
+
+	// Concurrent input.
+	wg.Add(goroutines)
+	for range goroutines {
+		go func() {
+			defer wg.Done()
+			for range iterations {
+				_ = m.Input([]byte("x"))
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+// ---------------------------------------------------------------------------
+// Register→Activate→Input→Snapshot round-trip
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_RoundTrip(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "shell", Kind: SessionKindPTY})
+
+	// Activate (already active as first session, but verify explicit activate works).
+	if err := m.Activate(id); err != nil {
+		t.Fatalf("Activate error: %v", err)
+	}
+
+	// Send input.
+	if err := m.Input([]byte("ls -la\n")); err != nil {
+		t.Fatalf("Input error: %v", err)
+	}
+	time.Sleep(10 * time.Millisecond)
+
+	if got := string(session.Written()); got != "ls -la\n" {
+		t.Errorf("written = %q, want %q", got, "ls -la\n")
+	}
+
+	// Simulate output.
+	m.mergedOutput <- sessionOutput{id: id, data: []byte("total 42\n")}
+	time.Sleep(50 * time.Millisecond)
+
+	// Get snapshot.
+	snap := m.Snapshot(id)
+	if snap == nil {
+		t.Fatal("Snapshot is nil after output")
+	}
+	if snap.PlainText != "total 42" {
+		t.Errorf("PlainText = %q, want %q", snap.PlainText, "total 42")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Post-shutdown: ErrManagerNotRunning
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_MethodsAfterClose(t *testing.T) {
+	t.Parallel()
+
+	m := NewSessionManager()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- m.Run(ctx) }()
+
+	// Register one session, then close.
+	_, _ = m.Register(newControllableSession(), SessionTarget{Name: "test"})
+	m.Close()
+	<-errCh
+
+	// All mutation methods should return ErrManagerNotRunning.
+	if _, err := m.Register(newControllableSession(), SessionTarget{Name: "post-close"}); err != ErrManagerNotRunning {
+		t.Errorf("Register after Close: err = %v, want ErrManagerNotRunning", err)
+	}
+	if err := m.Unregister(1); err != ErrManagerNotRunning {
+		t.Errorf("Unregister after Close: err = %v, want ErrManagerNotRunning", err)
+	}
+	if err := m.Activate(1); err != ErrManagerNotRunning {
+		t.Errorf("Activate after Close: err = %v, want ErrManagerNotRunning", err)
+	}
+	if err := m.Input([]byte("data")); err != ErrManagerNotRunning {
+		t.Errorf("Input after Close: err = %v, want ErrManagerNotRunning", err)
+	}
+	if err := m.Resize(50, 120); err != ErrManagerNotRunning {
+		t.Errorf("Resize after Close: err = %v, want ErrManagerNotRunning", err)
+	}
+	if got := m.ActiveID(); got != 0 {
+		t.Errorf("ActiveID after Close = %d, want 0", got)
+	}
+	if got := m.Sessions(); got != nil {
+		t.Errorf("Sessions after Close = %v, want nil", got)
+	}
+	if got := m.Snapshot(1); got != nil {
+		t.Errorf("Snapshot after Close = %v, want nil", got)
+	}
+}
+
+func TestSessionManager_MethodsAfterContextCancel(t *testing.T) {
+	t.Parallel()
+
+	m := NewSessionManager()
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() { errCh <- m.Run(ctx) }()
+
+	_, _ = m.Register(newControllableSession(), SessionTarget{Name: "test"})
+
+	// Cancel context instead of calling Close.
+	cancel()
+	<-errCh
+
+	// API should return ErrManagerNotRunning (reqChan is closed by Run on ctx cancel).
+	if _, err := m.Register(newControllableSession(), SessionTarget{Name: "post-cancel"}); err != ErrManagerNotRunning {
+		t.Errorf("Register after cancel: err = %v, want ErrManagerNotRunning", err)
+	}
+}
+
+func TestSessionManager_CloseIdempotent(t *testing.T) {
+	t.Parallel()
+
+	m := NewSessionManager()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- m.Run(ctx) }()
+
+	m.Close()
+	<-errCh
+
+	// Second close should not panic.
+	m.Close()
+}
+
+// ---------------------------------------------------------------------------
+// EOF on Created-state session
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_MergedOutput_EOF_Created(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	subID, evtCh := m.Subscribe(64)
+	defer m.Unsubscribe(subID)
+
+	session := newControllableSession()
+	_, _ = m.Register(session, SessionTarget{Name: "quick-exit"})
+
+	// Drain register event.
+	<-evtCh
+
+	// Send EOF without any data first (process exits immediately).
+	m.mergedOutput <- sessionOutput{id: 1, data: nil}
+	time.Sleep(50 * time.Millisecond)
+
+	// Session should be removed (Closed via Created→Closed shortcut).
+	if snap := m.Snapshot(1); snap != nil {
+		t.Error("Snapshot should be nil for closed session")
+	}
+
+	// Session should have been closed.
+	if !session.closeCalled.Load() {
+		t.Error("session.Close() was not called")
+	}
+
+	// Verify EventSessionClosed was published.
+	var foundClosed bool
+	for {
+		select {
+		case evt := <-evtCh:
+			if evt.Kind == EventSessionClosed && evt.SessionID == 1 {
+				foundClosed = true
+			}
+		default:
+			goto done
+		}
+	}
+done:
+	if !foundClosed {
+		t.Error("EventSessionClosed not received for Created→Closed")
 	}
 }

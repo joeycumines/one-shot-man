@@ -803,6 +803,11 @@ func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.C
 func wrapInteractiveSession(runtime *goja.Runtime, session parent.InteractiveSession, defaultKind parent.SessionKind) goja.Value {
 	obj := runtime.NewObject()
 
+	// Store the Go session for later retrieval by unwrapInteractiveSession.
+	// Non-enumerable so it doesn't appear in Object.keys().
+	_ = obj.DefineDataProperty("_goSession", runtime.ToValue(session),
+		goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_FALSE)
+
 	_ = obj.Set("output", func() string {
 		return session.Output()
 	})
@@ -876,6 +881,18 @@ func targetFromJS(raw map[string]any, defaultKind parent.SessionKind) parent.Ses
 		target.Kind = defaultKind
 	}
 	return target
+}
+
+// unwrapInteractiveSession retrieves the Go InteractiveSession stored on a
+// JS wrapper object by wrapInteractiveSession. Returns nil if the object
+// does not contain a _goSession property.
+func unwrapInteractiveSession(obj *goja.Object) parent.InteractiveSession {
+	v := obj.Get("_goSession")
+	if v == nil || goja.IsUndefined(v) || goja.IsNull(v) {
+		return nil
+	}
+	session, _ := v.Export().(parent.InteractiveSession)
+	return session
 }
 
 // newSessionManager creates a [parent.SessionManager] from an optional JS
@@ -968,6 +985,114 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 	// unsubscribe(id) → boolean
 	_ = obj.Set("unsubscribe", func(id int) bool {
 		return mgr.Unsubscribe(id)
+	})
+
+	// register(session, {name?, kind?, id?}) → sessionID (number)
+	_ = obj.Set("register", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(runtime.NewTypeError("register requires at least 1 argument (session)"))
+		}
+
+		// Extract the InteractiveSession from the JS wrapper.
+		sessionObj := call.Argument(0).ToObject(runtime)
+		session := unwrapInteractiveSession(sessionObj)
+		if session == nil {
+			panic(runtime.NewTypeError("register: first argument must be an InteractiveSession wrapper"))
+		}
+
+		var target parent.SessionTarget
+		if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) && !goja.IsNull(call.Argument(1)) {
+			tObj := call.Argument(1).ToObject(runtime)
+			if v := tObj.Get("name"); v != nil && !goja.IsUndefined(v) {
+				target.Name = v.String()
+			}
+			if v := tObj.Get("kind"); v != nil && !goja.IsUndefined(v) {
+				target.Kind = parent.SessionKind(v.String())
+			}
+			if v := tObj.Get("id"); v != nil && !goja.IsUndefined(v) {
+				target.ID = v.String()
+			}
+		}
+
+		id, err := mgr.Register(session, target)
+		if err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return runtime.ToValue(uint64(id))
+	})
+
+	// unregister(id) → void
+	_ = obj.Set("unregister", func(id uint64) {
+		if err := mgr.Unregister(parent.SessionID(id)); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+	})
+
+	// activate(id) → void
+	_ = obj.Set("activate", func(id uint64) {
+		if err := mgr.Activate(parent.SessionID(id)); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+	})
+
+	// input(data) → void
+	_ = obj.Set("input", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(runtime.NewTypeError("input requires 1 argument (data)"))
+		}
+		data := []byte(call.Argument(0).String())
+		if err := mgr.Input(data); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	// resize(rows, cols) → void
+	_ = obj.Set("resize", func(rows, cols int) {
+		if err := mgr.Resize(rows, cols); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+	})
+
+	// snapshot(id) → {gen, plainText, ansi, fullScreen, rows, cols, timestamp} | null
+	_ = obj.Set("snapshot", func(id uint64) goja.Value {
+		snap := mgr.Snapshot(parent.SessionID(id))
+		if snap == nil {
+			return goja.Null()
+		}
+		result := runtime.NewObject()
+		_ = result.Set("gen", snap.Gen)
+		_ = result.Set("plainText", snap.PlainText)
+		_ = result.Set("ansi", snap.ANSI)
+		_ = result.Set("fullScreen", snap.FullScreen)
+		_ = result.Set("rows", snap.Rows)
+		_ = result.Set("cols", snap.Cols)
+		_ = result.Set("timestamp", snap.Timestamp.UnixMilli())
+		return result
+	})
+
+	// activeID() → number
+	_ = obj.Set("activeID", func() uint64 {
+		return uint64(mgr.ActiveID())
+	})
+
+	// sessions() → [{id, target: {name, kind, id}, state, isActive}]
+	_ = obj.Set("sessions", func() goja.Value {
+		infos := mgr.Sessions()
+		result := make([]map[string]any, len(infos))
+		for i, info := range infos {
+			result[i] = map[string]any{
+				"id": uint64(info.ID),
+				"target": map[string]any{
+					"name": info.Target.Name,
+					"kind": string(info.Target.Kind),
+					"id":   info.Target.ID,
+				},
+				"state":    info.State.String(),
+				"isActive": info.IsActive,
+			}
+		}
+		return runtime.ToValue(result)
 	})
 
 	return obj

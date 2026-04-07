@@ -377,23 +377,35 @@ func (m *SessionManager) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			m.drainSessions()
+			m.shutdownSessions()
+			// Close reqChan so any callers blocked on sendRequest
+			// will panic-recover with ErrManagerNotRunning.
+			m.closeReqChan()
 			return ctx.Err()
 		case req, ok := <-m.reqChan:
 			if !ok {
-				m.drainSessions()
+				m.shutdownSessions()
 				return nil
 			}
 			m.dispatch(req)
+		case so := <-m.mergedOutput:
+			m.handleSessionOutput(so)
 		}
 	}
 }
 
 // Close signals the worker goroutine to stop by closing the request channel.
-// It blocks until the worker has finished processing.
+// It blocks until the worker has finished processing. Safe to call multiple
+// times — subsequent calls are no-ops.
 func (m *SessionManager) Close() {
-	close(m.reqChan)
+	m.closeReqChan()
 	<-m.done
+}
+
+// closeReqChan idempotently closes reqChan.
+func (m *SessionManager) closeReqChan() {
+	defer func() { recover() }() // ignore double-close panic
+	close(m.reqChan)
 }
 
 // Subscribe registers a subscriber for events produced by this manager.
@@ -411,53 +423,336 @@ func (m *SessionManager) Unsubscribe(id int) bool {
 	return m.eventBus.Unsubscribe(id)
 }
 
+// sendRequest sends a request to the worker goroutine and blocks until the
+// worker replies. Returns ErrManagerNotRunning if the request channel is
+// closed (worker has stopped).
+func (m *SessionManager) sendRequest(kind requestKind, payload any) (resp response) {
+	reply := make(chan response, 1)
+	req := request{kind: kind, payload: payload, reply: reply}
+	defer func() {
+		if r := recover(); r != nil {
+			// reqChan was closed — worker has stopped.
+			resp = response{err: ErrManagerNotRunning}
+		}
+	}()
+	m.reqChan <- req
+	resp = <-reply
+	return resp
+}
+
+// Register adds a new session to the manager and returns its unique SessionID.
+// The first registered session automatically becomes the active input target.
+func (m *SessionManager) Register(session InteractiveSession, target SessionTarget) (SessionID, error) {
+	resp := m.sendRequest(reqRegister, &registerPayload{session: session, target: target})
+	if resp.err != nil {
+		return 0, resp.err
+	}
+	return resp.value.(SessionID), nil
+}
+
+// Unregister closes and removes a session by ID.
+func (m *SessionManager) Unregister(id SessionID) error {
+	return m.sendRequest(reqUnregister, id).err
+}
+
+// Activate switches the active input target to the session with the given ID.
+func (m *SessionManager) Activate(id SessionID) error {
+	return m.sendRequest(reqActivate, id).err
+}
+
+// Input writes data to the active session's PTY.
+func (m *SessionManager) Input(data []byte) error {
+	return m.sendRequest(reqInput, data).err
+}
+
+// Resize broadcasts new terminal dimensions to all sessions.
+func (m *SessionManager) Resize(rows, cols int) error {
+	return m.sendRequest(reqResize, &resizePayload{rows: rows, cols: cols}).err
+}
+
+// Snapshot returns the latest screen snapshot for the given session, or nil
+// if the session does not exist.
+func (m *SessionManager) Snapshot(id SessionID) *ScreenSnapshot {
+	resp := m.sendRequest(reqSnapshot, id)
+	if resp.value == nil {
+		return nil
+	}
+	snap, _ := resp.value.(*ScreenSnapshot)
+	return snap
+}
+
+// ActiveID returns the active session's ID, or 0 if no session is active.
+func (m *SessionManager) ActiveID() SessionID {
+	resp := m.sendRequest(reqActiveID, nil)
+	if resp.err != nil {
+		return 0
+	}
+	return resp.value.(SessionID)
+}
+
+// Sessions returns a list of all managed sessions as value copies.
+func (m *SessionManager) Sessions() []SessionInfo {
+	resp := m.sendRequest(reqSessions, nil)
+	if resp.err != nil {
+		return nil
+	}
+	return resp.value.([]SessionInfo)
+}
+
 // dispatch routes a request to the appropriate handler. This method runs
 // exclusively within the worker goroutine started by Run.
 func (m *SessionManager) dispatch(req request) {
 	var resp response
 	switch req.kind {
 	case reqRegister:
-		p := req.payload.(*registerPayload)
-		id := SessionID(m.nextID)
-		m.nextID++
-		m.snapshotGen++
-		ms := &managedSession{
-			session:    p.session,
-			vterm:      vt.NewVTerm(int(m.termRows), int(m.termCols)),
-			state:      SessionCreated,
-			target:     p.target,
-			lastActive: time.Now(),
-			outputCh:   make(chan []byte, 64),
-		}
-		if !ms.state.validTransition(SessionRunning) {
-			resp = response{err: fmt.Errorf("%w: %s -> %s", ErrInvalidTransition, ms.state, SessionRunning)}
-			break
-		}
-		m.sessions[id] = ms
-		if m.activeID == 0 {
-			m.activeID = id
-		}
-		snap := &ScreenSnapshot{
-			Gen:       m.snapshotGen,
-			Rows:      m.termRows,
-			Cols:      m.termCols,
-			Timestamp: time.Now(),
-		}
-		ms.snapshot.Store(snap)
-		m.eventBus.emit(EventSessionRegistered, id)
-		resp = response{value: id}
+		resp = m.handleRegister(req.payload.(*registerPayload))
+	case reqUnregister:
+		resp = m.handleUnregister(req.payload.(SessionID))
+	case reqActivate:
+		resp = m.handleActivate(req.payload.(SessionID))
+	case reqInput:
+		resp = m.handleInput(req.payload.([]byte))
+	case reqResize:
+		resp = m.handleResize(req.payload.(*resizePayload))
+	case reqSnapshot:
+		resp = m.handleSnapshot(req.payload.(SessionID))
+	case reqActiveID:
+		resp = response{value: m.activeID}
+	case reqSessions:
+		resp = m.handleSessions()
+	case reqClose:
+		m.shutdownSessions()
+		resp = response{}
 	default:
-		resp = response{err: errors.New("termmux: unimplemented request kind")}
+		resp = response{err: fmt.Errorf("termmux: unknown request kind %d", req.kind)}
 	}
 	if req.reply != nil {
 		req.reply <- resp
 	}
 }
 
-// drainSessions transitions all sessions to Closed state. Called during
-// shutdown from the worker goroutine.
-func (m *SessionManager) drainSessions() {
-	for _, ms := range m.sessions {
-		ms.state = SessionClosed
+// handleRegister creates a new managed session, assigns a SessionID, and
+// stores it in the sessions map. The first registered session becomes active.
+func (m *SessionManager) handleRegister(p *registerPayload) response {
+	id := m.nextID
+	m.nextID++
+	m.snapshotGen++
+
+	v := vt.NewVTerm(m.termRows, m.termCols)
+	v.BellFn = func() {
+		m.eventBus.emit(EventBell, id)
+	}
+
+	ms := &managedSession{
+		session:    p.session,
+		vterm:      v,
+		state:      SessionCreated,
+		target:     p.target,
+		lastActive: time.Now(),
+		outputCh:   make(chan []byte, 64),
+	}
+
+	snap := &ScreenSnapshot{
+		Gen:       m.snapshotGen,
+		Rows:      m.termRows,
+		Cols:      m.termCols,
+		Timestamp: time.Now(),
+	}
+	ms.snapshot.Store(snap)
+	m.sessions[id] = ms
+
+	if m.activeID == 0 {
+		m.activeID = id
+	}
+
+	m.eventBus.emit(EventSessionRegistered, id)
+	return response{value: id}
+}
+
+// handleUnregister validates the session exists and is not already closed,
+// closes it, removes it from the map, and clears activeID if needed.
+func (m *SessionManager) handleUnregister(id SessionID) response {
+	ms, ok := m.sessions[id]
+	if !ok {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, id)}
+	}
+	if ms.state == SessionClosed {
+		return response{err: fmt.Errorf("%w: already closed", ErrInvalidTransition)}
+	}
+
+	// Close the underlying session (ignore errors — best effort on teardown).
+	_ = ms.session.Close()
+	ms.state = SessionClosed
+	delete(m.sessions, id)
+
+	if m.activeID == id {
+		m.activeID = 0
+	}
+
+	m.eventBus.emit(EventSessionClosed, id)
+	return response{}
+}
+
+// handleActivate switches the active session. The session must exist and
+// be in Created or Running state.
+func (m *SessionManager) handleActivate(id SessionID) response {
+	ms, ok := m.sessions[id]
+	if !ok {
+		return response{err: fmt.Errorf("%w: %d", ErrSessionNotFound, id)}
+	}
+	if ms.state != SessionCreated && ms.state != SessionRunning {
+		return response{err: fmt.Errorf("%w: cannot activate session in state %s",
+			ErrInvalidTransition, ms.state)}
+	}
+	m.activeID = id
+	ms.lastActive = time.Now()
+	m.eventBus.emit(EventSessionActivated, id)
+	return response{}
+}
+
+// handleInput writes data to the active session's PTY.
+func (m *SessionManager) handleInput(data []byte) response {
+	if m.activeID == 0 {
+		return response{err: ErrSessionNotFound}
+	}
+	ms, ok := m.sessions[m.activeID]
+	if !ok {
+		return response{err: fmt.Errorf("%w: active session %d disappeared",
+			ErrSessionNotFound, m.activeID)}
+	}
+	if ms.state != SessionRunning && ms.state != SessionCreated {
+		return response{err: fmt.Errorf("%w: session %d in state %s",
+			ErrInvalidTransition, m.activeID, ms.state)}
+	}
+	_, err := ms.session.Write(data)
+	return response{err: err}
+}
+
+// handleResize broadcasts the new terminal dimensions to all non-closed sessions.
+func (m *SessionManager) handleResize(p *resizePayload) response {
+	m.termRows = p.rows
+	m.termCols = p.cols
+	for id, ms := range m.sessions {
+		if ms.state == SessionClosed {
+			continue
+		}
+		ms.vterm.Resize(p.rows, p.cols)
+		_ = ms.session.Resize(p.rows, p.cols)
+		_ = id // used for iteration
+	}
+	m.eventBus.emit(EventResize, 0)
+	return response{}
+}
+
+// handleSnapshot returns the latest screen snapshot for the given session.
+func (m *SessionManager) handleSnapshot(id SessionID) response {
+	ms, ok := m.sessions[id]
+	if !ok {
+		return response{}
+	}
+	return response{value: ms.snapshot.Load()}
+}
+
+// handleSessions builds a list of SessionInfo values from the sessions map.
+func (m *SessionManager) handleSessions() response {
+	infos := make([]SessionInfo, 0, len(m.sessions))
+	for id, ms := range m.sessions {
+		infos = append(infos, SessionInfo{
+			ID:       id,
+			Target:   ms.target,
+			State:    ms.state,
+			IsActive: id == m.activeID,
+		})
+	}
+	return response{value: infos}
+}
+
+// handleSessionOutput processes a chunk of raw PTY output from the merged
+// output channel. A nil data field is the EOF sentinel.
+func (m *SessionManager) handleSessionOutput(so sessionOutput) {
+	ms, ok := m.sessions[so.id]
+	if !ok {
+		return // Session already removed — discard.
+	}
+
+	// EOF sentinel: transition to Exited (from Running) or directly to
+	// Closed (from Created — process exited without producing output).
+	if so.data == nil {
+		if ms.state.validTransition(SessionExited) {
+			ms.state = SessionExited
+			m.eventBus.emit(EventSessionExited, so.id)
+		} else if ms.state == SessionCreated {
+			// Process exited immediately without output (e.g., /bin/true).
+			// Skip Exited and go directly to Closed.
+			_ = ms.session.Close()
+			ms.state = SessionClosed
+			if m.activeID == so.id {
+				m.activeID = 0
+			}
+			delete(m.sessions, so.id)
+			m.eventBus.emit(EventSessionClosed, so.id)
+		}
+		return
+	}
+
+	// Transition Created → Running on first output.
+	if ms.state == SessionCreated {
+		ms.state = SessionRunning
+	}
+
+	// Tee to passthrough writer if active.
+	if w := ms.passthroughWriter.Load(); w != nil {
+		// Best-effort write — don't let passthrough errors affect VTerm.
+		_, _ = (*w).Write(so.data)
+	}
+
+	// Update VTerm with the raw output.
+	_, _ = ms.vterm.Write(so.data)
+
+	// Publish a new immutable snapshot.
+	m.snapshotGen++
+	snap := &ScreenSnapshot{
+		Gen:        m.snapshotGen,
+		PlainText:  ms.vterm.String(),
+		ANSI:       ms.vterm.ContentANSI(),
+		FullScreen: ms.vterm.RenderFullScreen(),
+		Rows:       m.termRows,
+		Cols:       m.termCols,
+		Timestamp:  time.Now(),
+	}
+	ms.snapshot.Store(snap)
+	m.eventBus.emit(EventSessionOutput, so.id)
+}
+
+// shutdownSessions performs deterministic, ordered shutdown of all sessions.
+// Sessions are closed in descending ID order to ensure reproducible behavior.
+func (m *SessionManager) shutdownSessions() {
+	// Collect and sort session IDs in descending order.
+	ids := make([]SessionID, 0, len(m.sessions))
+	for id := range m.sessions {
+		ids = append(ids, id)
+	}
+	sortSessionIDs(ids)
+
+	// Close each session in sorted order.
+	for _, id := range ids {
+		ms := m.sessions[id]
+		if ms.state != SessionClosed {
+			_ = ms.session.Close()
+			ms.state = SessionClosed
+			m.eventBus.emit(EventSessionClosed, id)
+		}
+		delete(m.sessions, id)
+	}
+	m.activeID = 0
+}
+
+// sortSessionIDs sorts a slice of SessionIDs in descending order.
+func sortSessionIDs(ids []SessionID) {
+	// Simple insertion sort — session count is always small.
+	for i := 1; i < len(ids); i++ {
+		for j := i; j > 0 && ids[j] > ids[j-1]; j-- {
+			ids[j], ids[j-1] = ids[j-1], ids[j]
+		}
 	}
 }

@@ -107,6 +107,46 @@ commit-meta: ## Commit meta changes (blueprint, config, etc)
 	git add blueprint.json config.mk scratch/
 	git commit -m "Update blueprint and process artifacts for Tasks 40/51"
 
+.PHONY: commit-task41
+commit-task41: ## Commit Task 41: E2E keystroke test
+	git add internal/command/pr_split_inline_e2e_test.go
+	git commit -m "Add E2E test: keystroke reaches PTY via SessionManager" \
+		-m "Exercise the full pr-split command engine stack (PrepareEngine +" \
+		-m "setupEngineGlobals + 30 chunked JS scripts) and prove that" \
+		-m "session().write('hello') delivers bytes through SessionManager" \
+		-m "to a recording StringIOSession mock. Also tests resize and ANSI" \
+		-m "escape round-trips." \
+		-m "" \
+		-m "Includes newPrSplitEvalWithMgr helper that exposes the" \
+		-m "SessionManager for Go-side session registration in tests."
+
+.PHONY: test-inline-e2e
+test-inline-e2e: ## Run the inline keystroke E2E test with race detector
+	go -C . test -race -timeout=120s -count=1 -run TestInlineKeystrokeReachesPTY -v ./internal/command/...
+
+.PHONY: commit-task42
+commit-task42: ## Commit Task 42: Fix architecture doc inaccuracies (GAP-H04)
+	git add -f scratch/termmux-architecture.md
+	git commit -m "Fix 31 inaccuracies in termmux architecture doc" \
+		-m "Cross-reference scratch/termmux-architecture.md against actual" \
+		-m "source code in internal/termmux/ and correct every factual" \
+		-m "discrepancy. Fixes span method signatures, struct fields, state" \
+		-m "transitions, shutdown ordering, passthrough mode mechanics," \
+		-m "concurrency model, functional option types, and Event.Data" \
+		-m "documentation." \
+		-m "" \
+		-m "Verified: 2 contiguous Rule of Two passes (independent reviewer" \
+		-m "cross-referenced all 13 public methods, 35+ struct fields," \
+		-m "5 state transitions, worker select loop, both shutdown paths," \
+		-m "and passthrough architecture against Go source). Zero remaining" \
+		-m "inaccuracies that would mislead an implementer."
+
+.PHONY: commit-meta2
+commit-meta2: ## Commit meta changes (blueprint, config, review artifacts) for Tasks 41/42
+	git add blueprint.json config.mk
+	git add -f scratch/task42-r2-pass1d.md scratch/task42-r2-pass1e.md scratch/task42-r2-pass1f.md scratch/task42-r2-pass2f.md 2>/dev/null || true
+	git commit -m "Update blueprint and process artifacts for Tasks 41/42"
+
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 
 endif

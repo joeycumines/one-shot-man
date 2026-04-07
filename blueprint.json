@@ -42,7 +42,7 @@
     "tmuxWisdom": "tmux's architecture (single-threaded event loop, containment hierarchy, buffered event I/O, input routing via active session, delta rendering) is the reference model. The Go translation uses a single worker goroutine instead of an event loop, channels instead of callbacks, and atomic.Pointer instead of direct memory access. See scratch/termmux-architecture.md for full details."
   },
   "statusSection": {
-    "currentState": "Tasks 40 and 51 DONE and committed. Task 40: write/resize methods added to session() wrapper (GAP-C01/C02 fix) — committed 2ca1115d. Task 51: printf-style log.debug violations fixed in verify handlers — committed 4145d8bb. 15 foundational tasks (1-15, 30-39) also Done. Next: Task 41 (E2E keystroke test). All remaining tasks (41-50, 52-65) Not Started.",
+    "currentState": "Tasks 40, 41, 42, and 51 DONE and committed. Task 42: architecture doc (scratch/termmux-architecture.md) fixed — 31+ inaccuracies corrected across 6 review rounds, passed Rule of Two (Pass 1f + 2f). Next: Task 43 (fix stale MuxSession doc comment).",
     "goalState": "Level 1 (Functional): User can run osm pr-split, interact with Claude pane, verification shell, and user shell interactively — inline and fullscreen passthrough — with seamless switching through a true multi-session manager. Windows ConPTY is fully supported. Level 2 (Quality): All interactions are responsive, rendering is pixel-perfect (no duplicate output, correct borders), focus system is reliable, error states are recoverable, code is exemplary (reads human-written), tests are exhaustive (no build tag violations). Level 3 (Validation): End-to-end tests prove workflows on all platforms; CI green on all checks; no performance regressions; no AI slop.",
     "definitionOfDone": "The blueprint is Done when: (1) ALL tasks are marked Done, (2) each Done task has passed two contiguous Rule of Two reviews, (3) zero-uncovered-code-paths exist for the new functionality, (4) manual smoke tests confirm behavior across platforms, (5) docs are fully updated, and (6) all integration tests pass on all CI platforms.",
     "replanLog": [
@@ -73,7 +73,7 @@
       "task": "Add E2E test: verify keystroke reaches PTY via SessionManager",
       "description": "Create an end-to-end test proving the write path works. In internal/command/pr_split_inline_e2e_test.go: (1) Create a SessionManager with a mock InteractiveSession that records Write() calls; (2) Wrap it via WrapSessionManager to get the JS tuiMux object; (3) From JS, call tuiMux.session().write('hello') and verify the bytes arrive at the mock session's Write method via mgr.Input(); (4) Test resize: call tuiMux.session().resize(40, 120) and verify mgr.Resize(40, 120) is called. Use testing.Short() guard. This test directly addresses the autopsy finding that no E2E test exists for the JS→Go→PTY input path.",
       "acceptance": "A test proves the full round-trip: JS code calls session().write(bytes) → Go mgr.Input() → mock session Write() receives the bytes. A second test proves resize round-trip. Both tests pass under race detector. The test safely skips when 'go test -short' is run.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": 42,
@@ -81,7 +81,7 @@
       "task": "Fix architecture doc inaccuracies (GAP-H04)",
       "description": "scratch/termmux-architecture.md has 6 documented inaccuracies vs the actual implementation: (1) Method name 'SendInput()' should be 'Input()'; (2) Signature 'Close() error' — actual Close() returns nothing (void); (3) Method 'run()' lowercase — actual is exported 'Run()'; (4) Select loop described with 'sessionDone' case — no such case exists, exit detected via EOF sentinel in mergedOutput; (5) Describes 'managedSession.outputCh' field — no such field exists (removed during implementation); (6) Describes 'Start()' method triggering Created→Running — no Start() method, transition is automatic on first output. Fix all 6 inaccuracies by reading manager.go, capture.go, session.go and updating the architecture doc to match reality.",
       "acceptance": "Every method name, type signature, select-loop case, and field name in scratch/termmux-architecture.md matches the actual Go source code. No future implementer will be misled by the architecture doc.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": 43,

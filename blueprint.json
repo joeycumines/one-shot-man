@@ -275,7 +275,8 @@
       "task": "Implement E2E Claude integration test with a mock binary (GAP-010)",
       "description": "Current pipeline tests rely heavily on mock MCP servers rather than a true binary. Implement an end-to-end integration test in internal/command/pr_split_binary_e2e_test.go that uses a generic mock binary specifically representing the real Claude CLI to verify process management, full lifecycle connection, and termination via SessionManager. You MUST include a testing.Short() or skipSlow(t) guard at the top of the test function because it spawns subprocesses, strictly adhering to AGENTS.md test rules.",
       "acceptance": "An E2E test runs the overarching pr-split workflow by spawning a mock Claude binary locally, proving that process management works seamlessly with the SessionManager and PTYs end-to-end. The test safely skips when 'go test -short' is run, ensuring fast feedback loops are not polluted.",
-      "status": "Not Started"
+      "status": "Done",
+      "completedNote": "TestBinaryE2E_ClaudeProcessLifecycle added in internal/command/pr_split_binary_e2e_test.go (118 lines). Creates a mock Claude shell script that writes PID to file and stays alive via stdin (cat > /dev/null). Dispatches 'auto-split' batch command to exercise the full binary → JS engine → ClaudeCodeExecutor.resolveAsync() → PTY spawn → MCP handshake timeout → process cleanup path. Verifies: (1) no panics in combined output, (2) mock spawned (PID file exists), (3) no orphan process after binary exit (syscall.Kill probe), (4) exit behavior logging (clean EOF vs signal kill). Uses skipSlow(t), t.Parallel(), t.TempDir(), --store=memory, --session=t.Name() per project conventions. Build tag //go:build unix (syscall.Kill). R2: 2 contiguous clean passes. Committed as 808bf69e."
     },
     {
       "id": 13,

@@ -929,5 +929,46 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 		mgr.Close()
 	})
 
+	// subscribe(bufSize?) → { id, channel }
+	// Returns a subscriber ID and begins collecting events. Use
+	// pollEvents to drain the channel from JS.
+	_ = obj.Set("subscribe", func(call goja.FunctionCall) goja.Value {
+		bufSize := 64
+		if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) {
+			bufSize = int(call.Argument(0).ToInteger())
+		}
+		id, ch := mgr.Subscribe(bufSize)
+
+		result := runtime.NewObject()
+		_ = result.Set("id", id)
+
+		// pollEvents() → Event[]
+		_ = result.Set("pollEvents", func() goja.Value {
+			events := make([]map[string]any, 0)
+			for {
+				select {
+				case evt, ok := <-ch:
+					if !ok {
+						return runtime.ToValue(events)
+					}
+					events = append(events, map[string]any{
+						"kind":      evt.Kind.String(),
+						"sessionId": uint64(evt.SessionID),
+						"time":      evt.Time.UnixMilli(),
+					})
+				default:
+					return runtime.ToValue(events)
+				}
+			}
+		})
+
+		return result
+	})
+
+	// unsubscribe(id) → boolean
+	_ = obj.Set("unsubscribe", func(id int) bool {
+		return mgr.Unsubscribe(id)
+	})
+
 	return obj
 }

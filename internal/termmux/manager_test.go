@@ -13,15 +13,15 @@ import (
 // mockSession is a minimal InteractiveSession for type-level tests.
 type mockSession struct{}
 
-func (mockSession) Target() SessionTarget          { return SessionTarget{} }
-func (mockSession) SetTarget(SessionTarget)        {}
-func (mockSession) Output() string                 { return "" }
-func (mockSession) Screen() string                 { return "" }
-func (mockSession) Resize(int, int) error          { return nil }
-func (mockSession) Write([]byte) (int, error)      { return 0, nil }
-func (mockSession) Close() error                   { return nil }
-func (mockSession) Done() <-chan struct{}           { ch := make(chan struct{}); close(ch); return ch }
-func (mockSession) IsRunning() bool                { return false }
+func (mockSession) Target() SessionTarget     { return SessionTarget{} }
+func (mockSession) SetTarget(SessionTarget)   {}
+func (mockSession) Output() string            { return "" }
+func (mockSession) Screen() string            { return "" }
+func (mockSession) Resize(int, int) error     { return nil }
+func (mockSession) Write([]byte) (int, error) { return 0, nil }
+func (mockSession) Close() error              { return nil }
+func (mockSession) Done() <-chan struct{}     { ch := make(chan struct{}); close(ch); return ch }
+func (mockSession) IsRunning() bool           { return false }
 
 // ---------------------------------------------------------------------------
 // SessionState transition tests
@@ -413,30 +413,8 @@ func TestNewSessionManager_WithOptions(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// EventKind and Event
+// Event construction
 // ---------------------------------------------------------------------------
-
-func TestEventKind_String(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		kind EventKind
-		want string
-	}{
-		{EventSessionRegistered, "session-registered"},
-		{EventSessionActivated, "session-activated"},
-		{EventSessionOutput, "session-output"},
-		{EventSessionExited, "session-exited"},
-		{EventSessionClosed, "session-closed"},
-		{EventResize, "resize"},
-		{EventBell, "bell"},
-		{EventKind(99), "unknown"},
-	}
-	for _, tc := range cases {
-		if got := tc.kind.String(); got != tc.want {
-			t.Errorf("EventKind(%d).String() = %q, want %q", tc.kind, got, tc.want)
-		}
-	}
-}
 
 func TestEvent_Construction(t *testing.T) {
 	t.Parallel()

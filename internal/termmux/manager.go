@@ -343,7 +343,7 @@ func NewSessionManager(opts ...ManagerOption) *SessionManager {
 	m := &SessionManager{
 		reqChan:      make(chan request, 64),
 		mergedOutput: make(chan sessionOutput, 64),
-		eventBus:     &EventBus{},
+		eventBus:     NewEventBus(),
 		done:         make(chan struct{}),
 		sessions:     make(map[SessionID]*managedSession),
 		nextID:       1,
@@ -373,6 +373,7 @@ var ErrInvalidTransition = errors.New("termmux: invalid state transition")
 // happen exclusively within this goroutine. Run must be called exactly once.
 func (m *SessionManager) Run(ctx context.Context) error {
 	defer close(m.done)
+	defer m.eventBus.Close()
 	for {
 		select {
 		case <-ctx.Done():
@@ -393,6 +394,21 @@ func (m *SessionManager) Run(ctx context.Context) error {
 func (m *SessionManager) Close() {
 	close(m.reqChan)
 	<-m.done
+}
+
+// Subscribe registers a subscriber for events produced by this manager.
+// The returned channel receives events; it is closed when Unsubscribe is
+// called or the manager shuts down. bufSize controls the channel buffer
+// (defaults to 64 if < 1). Events are delivered via non-blocking sends —
+// a slow subscriber's events are silently dropped.
+func (m *SessionManager) Subscribe(bufSize int) (int, <-chan Event) {
+	return m.eventBus.Subscribe(bufSize)
+}
+
+// Unsubscribe removes a previously registered event subscriber and closes
+// its channel. Returns true if the subscriber existed.
+func (m *SessionManager) Unsubscribe(id int) bool {
+	return m.eventBus.Unsubscribe(id)
 }
 
 // dispatch routes a request to the appropriate handler. This method runs

@@ -1,5 +1,7 @@
 # Hana may steer you through $(error ...) messages. Be prepared to drop everything and obey immediately...
-
+# [CLEARED 2026-04-08] Full autopsy text read: 01_smoking_gun.md, 02_anatomy.md,
+# 03_gap_analysis.md, 04_claim_verification.md, 05_honest_conclusions.md, README.md.
+# All gaps catalogued. Task 40 directly addresses GAP-C01/C02.
 
 .DEFAULT_GOAL := all
 
@@ -89,6 +91,21 @@ test-tilde-paths-in-container:
 .PHONY: test-tilde-paths-on-windows
 test-tilde-paths-on-windows: ## Run tilde path tests on remote Windows
 	hack/run-on-windows.sh moo make test-tilde-paths
+
+.PHONY: commit-task40
+commit-task40: ## Commit Task 40: session() wrapper write/resize
+	git add internal/builtin/termmux/module.go internal/builtin/termmux/module_test.go
+	git commit -F scratch/commit-msg-task40.txt
+
+.PHONY: commit-task51
+commit-task51: ## Commit Task 51: fix printf-style log.debug violations
+	git add internal/command/pr_split_13_tui.js internal/command/pr_split_16c_tui_handlers_verify.js
+	git commit -m "Fix printf-style log.debug calls in verify phase handlers" -m "Replace two log.debug calls using printf-style %s arguments with" -m "structured logging attrs objects. The jsLogDebug signature expects" -m "(msg: string, attrs?: map[string]any) — positional string arguments" -m "caused TypeErrors that silently broke the verify phase state machine." -m "" -m "Also convert messages to lowercase, punctuation-free, event-phrased" -m "format per project structured logging conventions."
+
+.PHONY: commit-meta
+commit-meta: ## Commit meta changes (blueprint, config, etc)
+	git add blueprint.json config.mk scratch/
+	git commit -m "Update blueprint and process artifacts for Tasks 40/51"
 
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 

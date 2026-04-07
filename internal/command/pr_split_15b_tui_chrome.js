@@ -518,9 +518,16 @@
             lines.push('');
         }
 
+        // On-demand spawn progress (T5: Ask Claude in non-auto modes).
+        if (s.claudeOnDemandSpawning && convo.spawnProgress) {
+            lines.push(styles.dim().render('\u23f3 ' + convo.spawnProgress));
+            lines.push('');
+        }
+
         // Conversation history.
         var historyHeight = h - 7; // title(2) + blank(1) + input(2) + status(1) + padding(1)
         if (convo.lastError) historyHeight -= 2;
+        if (s.claudeOnDemandSpawning && convo.spawnProgress) historyHeight -= 2;
         historyHeight = Math.max(3, historyHeight);
 
         var historyLines = [];
@@ -565,9 +572,13 @@
         // Input field.
         var inputPrefix = convo.sending
             ? styles.dim().render('\u23f3 Sending...')
+            : s.claudeOnDemandSpawning
+            ? styles.dim().render('\u23f3 Connecting...')
             : styles.bold().render('\u276f ');
         var inputText = convo.sending
             ? styles.dim().render('Waiting for Claude to respond...')
+            : s.claudeOnDemandSpawning
+            ? styles.dim().render('Spawning Claude process...')
             : (convo.inputText || '') + styles.dim().render('\u2588');
         lines.push(inputPrefix + truncate(inputText, w - 8));
 

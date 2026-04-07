@@ -257,7 +257,8 @@
             }
 
             // "Ask Claude" interactive conversation button (T16).
-            if (st.claudeExecutor) {
+            // T5: Show when Claude binary is available, even without a spawned executor.
+            if (st.claudeExecutor || s.claudeCheckStatus === 'available') {
                 lines.push('');
                 lines.push(styles.dim().render(repeatStr('\u2500', Math.min(40, (s.width || 80) - 12))));
                 lines.push('');

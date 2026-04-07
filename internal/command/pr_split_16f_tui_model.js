@@ -862,8 +862,10 @@
                     sending: false,            // async send in flight
                     waitingForTool: null,       // MCP tool being waited on (or null)
                     lastError: null,           // last error string
-                    scrollOffset: 0            // scroll offset in history view
+                    scrollOffset: 0,           // scroll offset in history view
+                    spawnProgress: null        // T5: on-demand spawn progress message
                 },
+                claudeOnDemandSpawning: false, // T5: async Claude spawn in flight
 
                 // Auto-split pipeline state.
                 autoSplitRunning: false,

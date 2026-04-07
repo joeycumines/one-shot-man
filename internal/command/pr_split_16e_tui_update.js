@@ -1013,6 +1013,14 @@
         if (msg.id === 'claude-check-poll') {
             return handleClaudeCheckPoll(s);
         }
+        // T5: On-demand Claude spawn polling (Ask Claude in non-auto modes).
+        if (msg.id === 'claude-spawn-poll') {
+            if (s.claudeOnDemandSpawning) {
+                return [s, tea.tick(C.CLAUDE_CHECK_POLL_MS, 'claude-spawn-poll')];
+            }
+            // Spawn completed (success or failure) — UI will re-render.
+            return [s, null];
+        }
         // Split-view: poll Claude screenshot.
         if (msg.id === 'claude-screenshot') {
             return pollClaudeScreenshot(s);

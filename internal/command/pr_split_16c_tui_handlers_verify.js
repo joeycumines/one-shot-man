@@ -664,29 +664,192 @@
     }
 
     // --- Claude Conversation (T16) ---
+
+    // ensureMCPCallback creates the MCP callback transport for Claude
+    // IPC if one does not already exist. Called on-demand by
+    // openClaudeConvo so that "Ask Claude" works regardless of whether
+    // the automated pipeline was ever started.
+    function ensureMCPCallback() {
+        if (prSplit._mcpCallbackObj) {
+            return { error: null };
+        }
+        try {
+            var mcpMod = require('osm:mcp');
+            var MCPCallbackMod = require('osm:mcpcallback');
+            var srv = mcpMod.createServer('pr-split-callback', '1.0.0');
+            var mcpCallbackObj = MCPCallbackMod.MCPCallback({ server: srv });
+
+            mcpCallbackObj.addTool('reportSplitPlan',
+                'Report a split plan for PR splitting.',
+                {
+                    type: 'object',
+                    properties: {
+                        stages: {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    name: { type: 'string', description: 'Branch name suffix' },
+                                    files: { type: 'array', items: { type: 'string' } },
+                                    message: { type: 'string', description: 'Commit message' },
+                                    order: { type: 'number', description: 'Execution order' }
+                                },
+                                required: ['name', 'files']
+                            }
+                        }
+                    },
+                    required: ['stages']
+                });
+
+            mcpCallbackObj.addTool('reportResolution',
+                'Report conflict resolution for a PR split branch.',
+                {
+                    type: 'object',
+                    properties: {
+                        patches: { type: 'array', items: { type: 'object', properties: { file: { type: 'string' }, content: { type: 'string' } } } },
+                        commands: { type: 'array', items: { type: 'string' } },
+                        preExistingFailure: { type: 'boolean' },
+                        preExistingDetails: { type: 'string' },
+                        reSplitSuggested: { type: 'boolean' },
+                        reSplitReason: { type: 'string' }
+                    }
+                });
+
+            mcpCallbackObj.addTool('heartbeat',
+                'Send a heartbeat to indicate Claude is still actively working.',
+                {
+                    type: 'object',
+                    properties: {
+                        status: { type: 'string', description: 'Optional status message' }
+                    }
+                });
+
+            mcpCallbackObj.initSync();
+            prSplit._mcpCallbackObj = mcpCallbackObj;
+            log.printf('on-demand MCP callback initialized at %s', mcpCallbackObj.address || '(unknown)');
+            return { error: null };
+        } catch (e) {
+            return { error: 'MCP callback setup failed: ' + (e.message || String(e)) };
+        }
+    }
+
+    // spawnClaudeOnDemand creates the MCP callback transport and spawns
+    // a Claude executor when "Ask Claude" is used outside the automated
+    // pipeline. Updates s.claudeOnDemandSpawning and s.claudeConvo
+    // state for tick-based progress rendering.
+    async function spawnClaudeOnDemand(s) {
+        try {
+            s.claudeConvo.spawnProgress = 'Setting up MCP transport\u2026';
+
+            var mcpResult = ensureMCPCallback();
+            if (mcpResult.error) {
+                s.claudeConvo.lastError = mcpResult.error;
+                s.claudeOnDemandSpawning = false;
+                return;
+            }
+
+            // Create executor if needed (T42 may have already created one).
+            var executor = st.claudeExecutor;
+            if (!executor) {
+                if (typeof prSplitConfig === 'undefined') {
+                    s.claudeConvo.lastError = 'Configuration not available.';
+                    s.claudeOnDemandSpawning = false;
+                    return;
+                }
+                executor = new (prSplit.ClaudeCodeExecutor)(prSplitConfig);
+                st.claudeExecutor = executor;
+            }
+
+            // Resolve binary path if not already resolved.
+            if (!executor.resolved) {
+                s.claudeConvo.spawnProgress = 'Resolving Claude binary\u2026';
+                var resolveResult = await executor.resolveAsync(function(msg) {
+                    s.claudeConvo.spawnProgress = msg;
+                });
+                if (resolveResult.error) {
+                    s.claudeConvo.lastError = resolveResult.error;
+                    s.claudeOnDemandSpawning = false;
+                    return;
+                }
+            }
+
+            // Spawn the Claude process.
+            s.claudeConvo.spawnProgress = 'Starting Claude process\u2026';
+            var mcpCb = prSplit._mcpCallbackObj;
+            var spawnResult = await executor.spawn(null, {
+                mcpConfigPath: mcpCb.mcpConfigPath
+            });
+            if (spawnResult && spawnResult.error) {
+                s.claudeConvo.lastError = spawnResult.error;
+                s.claudeOnDemandSpawning = false;
+                return;
+            }
+
+            // Success — clear error and progress state.
+            s.claudeConvo.lastError = null;
+            s.claudeConvo.spawnProgress = null;
+            s.claudeOnDemandSpawning = false;
+            log.printf('on-demand Claude spawn succeeded (session=%s)', spawnResult.sessionId || '');
+        } catch (e) {
+            s.claudeConvo.lastError = 'Claude spawn error: ' + (e.message || String(e));
+            s.claudeOnDemandSpawning = false;
+        }
+    }
+
     // openClaudeConvo opens the conversation overlay.
     function openClaudeConvo(s, context) {
         // Check Claude availability.
         var executor = st.claudeExecutor;
-        if (!executor || !executor.handle) {
-            s.claudeConvo.lastError = 'Claude is not running. Select "auto" strategy and run analysis first.';
+
+        // Happy path: executor alive — open conversation immediately.
+        if (executor && executor.handle &&
+            (typeof executor.handle.isAlive !== 'function' || executor.handle.isAlive())) {
             s.claudeConvo.active = true;
             s.claudeConvo.context = context;
+            s.claudeConvo.inputText = '';
+            s.claudeConvo.lastError = null;
+            s.claudeConvo.scrollOffset = 0;
             return [s, null];
         }
-        if (typeof executor.handle.isAlive === 'function' && !executor.handle.isAlive()) {
+
+        // Dead handle — report and allow retry.
+        if (executor && executor.handle &&
+            typeof executor.handle.isAlive === 'function' && !executor.handle.isAlive()) {
             s.claudeConvo.lastError = 'Claude process has exited. Restart analysis to reconnect.';
             s.claudeConvo.active = true;
             s.claudeConvo.context = context;
             return [s, null];
         }
 
+        // No executor or no handle — try on-demand spawn.
+        // Gate: Claude binary was already checked and is unavailable.
+        if (s.claudeCheckStatus === 'unavailable') {
+            s.claudeConvo.lastError = 'Claude is not installed. Install Claude Code CLI (claude) or Ollama (ollama).';
+            s.claudeConvo.active = true;
+            s.claudeConvo.context = context;
+            return [s, null];
+        }
+
+        // Already spawning — don't double-launch, but re-open the overlay
+        // if the user requested it (e.g. closed with Escape, then re-clicked).
+        if (s.claudeOnDemandSpawning) {
+            s.claudeConvo.active = true;
+            s.claudeConvo.context = context;
+            return [s, null];
+        }
+
+        // Start on-demand spawn.
         s.claudeConvo.active = true;
         s.claudeConvo.context = context;
         s.claudeConvo.inputText = '';
         s.claudeConvo.lastError = null;
         s.claudeConvo.scrollOffset = 0;
-        return [s, null];
+        s.claudeOnDemandSpawning = true;
+        s.claudeConvo.spawnProgress = 'Connecting to Claude\u2026';
+
+        spawnClaudeOnDemand(s);
+
+        return [s, tea.tick(C.CLAUDE_CHECK_POLL_MS, 'claude-spawn-poll')];
     }
 
     // closeClaudeConvo dismisses the conversation overlay.
@@ -694,6 +857,10 @@
         s.claudeConvo.active = false;
         s.claudeConvo.inputText = '';
         s.claudeConvo.scrollOffset = 0;
+        s.claudeConvo.spawnProgress = null;
+        // Note: claudeOnDemandSpawning is intentionally NOT cleared here.
+        // The async spawn continues in the background so the session is
+        // ready when the user re-opens the overlay.
         // Keep history and context for re-opening.
         return [s, null];
     }
@@ -710,8 +877,8 @@
                 return closeClaudeConvo(s);
             }
 
-            // Enter submits the current input (if not already sending).
-            if (k === 'enter' && !convo.sending) {
+            // Enter submits the current input (if not already sending or spawning).
+            if (k === 'enter' && !convo.sending && !s.claudeOnDemandSpawning) {
                 var text = (convo.inputText || '').trim();
                 if (text.length > 0) {
                     return submitClaudeMessage(s, text);
@@ -720,7 +887,7 @@
             }
 
             // Backspace.
-            if (k === 'backspace' && !convo.sending) {
+            if (k === 'backspace' && !convo.sending && !s.claudeOnDemandSpawning) {
                 var t = convo.inputText || '';
                 if (t.length > 0) {
                     convo.inputText = t.substring(0, t.length - 1);
@@ -729,7 +896,7 @@
             }
 
             // Ctrl+U: clear input line.
-            if (k === 'ctrl+u' && !convo.sending) {
+            if (k === 'ctrl+u' && !convo.sending && !s.claudeOnDemandSpawning) {
                 convo.inputText = '';
                 return [s, null];
             }
@@ -744,8 +911,8 @@
                 return [s, null];
             }
 
-            // Single printable char — accumulate (when not sending).
-            if (k.length === 1 && !convo.sending) {
+            // Single printable char — accumulate (when not sending or spawning).
+            if (k.length === 1 && !convo.sending && !s.claudeOnDemandSpawning) {
                 convo.inputText = (convo.inputText || '') + k;
                 return [s, null];
             }

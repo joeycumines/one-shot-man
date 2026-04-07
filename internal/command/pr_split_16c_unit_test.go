@@ -841,7 +841,8 @@ func TestChunk16c_PollClaudeConvo_IdleReturnsNull(t *testing.T) {
 // ──────────────────────────── openClaudeConvo ──────────────────────────────
 
 // TestChunk16c_OpenClaudeConvo_NoExecutor verifies that when no Claude
-// executor exists, openClaudeConvo sets lastError and still activates overlay.
+// executor exists AND Claude is detected as unavailable, openClaudeConvo
+// sets lastError and still activates the overlay.
 func TestChunk16c_OpenClaudeConvo_NoExecutor(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
@@ -851,13 +852,15 @@ func TestChunk16c_OpenClaudeConvo_NoExecutor(t *testing.T) {
 		st.claudeExecutor = null;
 		if (!prSplit._state) prSplit._state = st;
 
-		var s = {claudeConvo: {}};
+		// T5: With claudeCheckStatus='unavailable', openClaudeConvo shows
+		// an immediate error instead of attempting on-demand spawn.
+		var s = {claudeConvo: {}, claudeCheckStatus: 'unavailable'};
 		var r = prSplit._openClaudeConvo(s, 'plan-review');
 		var c = r[0].claudeConvo;
 		return JSON.stringify({
 			active: c.active === true,
 			hasError: typeof c.lastError === 'string' && c.lastError.length > 0,
-			errorMentionsNotRunning: (c.lastError || '').indexOf('not running') >= 0,
+			errorMentionsInstall: (c.lastError || '').indexOf('not installed') >= 0,
 			contextSet: c.context === 'plan-review',
 		});
 	})()`)
@@ -865,9 +868,98 @@ func TestChunk16c_OpenClaudeConvo_NoExecutor(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := val.(string)
-	for _, field := range []string{"active", "hasError", "errorMentionsNotRunning", "contextSet"} {
+	for _, field := range []string{"active", "hasError", "errorMentionsInstall", "contextSet"} {
 		if !strings.Contains(s, `"`+field+`":true`) {
-			t.Errorf("no-executor: %s should be true: %s", field, s)
+			t.Errorf("no-executor-unavailable: %s should be true: %s", field, s)
+		}
+	}
+}
+
+// TestChunk16c_OpenClaudeConvo_OnDemandSpawn verifies that when no executor
+// exists but Claude is available, openClaudeConvo triggers on-demand spawn.
+func TestChunk16c_OpenClaudeConvo_OnDemandSpawn(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	val, err := evalJS(`(function() {
+		var st = prSplit._state || {};
+		st.claudeExecutor = null;
+		if (!prSplit._state) prSplit._state = st;
+
+		// T5: When Claude status is not 'unavailable', openClaudeConvo
+		// starts an on-demand spawn (async) rather than erroring immediately.
+		var s = {claudeConvo: {}, claudeCheckStatus: 'available'};
+		var r = prSplit._openClaudeConvo(s, 'plan-review');
+		var state = r[0];
+		var cmd = r[1]; // tea.tick command
+		return JSON.stringify({
+			active: state.claudeConvo.active === true,
+			noError: !state.claudeConvo.lastError,
+			spawning: state.claudeOnDemandSpawning === true,
+			hasProgress: typeof state.claudeConvo.spawnProgress === 'string',
+			hasCmd: cmd !== null && cmd !== undefined,
+			contextSet: state.claudeConvo.context === 'plan-review',
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	for _, field := range []string{"active", "noError", "spawning", "hasProgress", "hasCmd", "contextSet"} {
+		if !strings.Contains(s, `"`+field+`":true`) {
+			t.Errorf("on-demand-spawn: %s should be true: %s", field, s)
+		}
+	}
+}
+
+// TestChunk16c_OpenClaudeConvo_ReopenDuringSpawn verifies that closing and
+// re-opening the overlay while an on-demand spawn is in progress correctly
+// re-activates the overlay without launching a second spawn.
+func TestChunk16c_OpenClaudeConvo_ReopenDuringSpawn(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	val, err := evalJS(`(function() {
+		var st = prSplit._state || {};
+		st.claudeExecutor = null;
+		if (!prSplit._state) prSplit._state = st;
+
+		// Step 1: Open — starts on-demand spawn.
+		var s = {claudeConvo: {}, claudeCheckStatus: 'available'};
+		var r = prSplit._openClaudeConvo(s, 'plan-review');
+		s = r[0];
+		// s.claudeOnDemandSpawning should be true, overlay active.
+
+		// Step 2: Close overlay (Escape). Spawn continues in background.
+		r = prSplit._closeClaudeConvo(s);
+		s = r[0];
+		var closedActive = s.claudeConvo.active; // false
+		var stillSpawning = s.claudeOnDemandSpawning; // true
+
+		// Step 3: Re-open. Should NOT double-launch but SHOULD re-activate.
+		r = prSplit._openClaudeConvo(s, 'error-resolution');
+		s = r[0];
+		var cmd = r[1]; // null (no new tick — existing tick continues)
+
+		return JSON.stringify({
+			closedInactive: closedActive === false,
+			stillSpawning: stillSpawning === true,
+			reopenedActive: s.claudeConvo.active === true,
+			contextUpdated: s.claudeConvo.context === 'error-resolution',
+			noDoubleCmd: cmd === null,
+			spawningPreserved: s.claudeOnDemandSpawning === true,
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	for _, field := range []string{
+		"closedInactive", "stillSpawning", "reopenedActive",
+		"contextUpdated", "noDoubleCmd", "spawningPreserved",
+	} {
+		if !strings.Contains(s, `"`+field+`":true`) {
+			t.Errorf("reopen-during-spawn: %s should be true: %s", field, s)
 		}
 	}
 }

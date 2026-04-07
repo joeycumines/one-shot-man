@@ -318,7 +318,9 @@
             if (ws === 'BRANCH_BUILDING') {
                 lines.push(padRight('  z', 22) + 'Pause / resume verify (SIGSTOP/SIGCONT)');
                 lines.push(padRight('  Ctrl+C', 22) + 'Interrupt current verify (2x = force kill)');
-                lines.push(padRight('  p', 22) + 'Mark failed branch as passed (override)');
+                lines.push(padRight('  p', 22) + 'Mark branch as passed (override)');
+                lines.push(padRight('  f', 22) + 'Mark branch as failed');
+                lines.push(padRight('  c', 22) + 'Continue / skip branch');
             }
             lines.push('');
         }
@@ -329,7 +331,7 @@
         lines.push(padRight('  Ctrl+Tab', 22) + 'Focus wizard / terminal pane');
         // Task 8: Shell tab removed from tab cycle.
         lines.push(padRight('  Ctrl+O', 22) + 'Cycle tabs (Claude, Output, Verify)');
-        lines.push(padRight('  Ctrl+]', 22) + 'Full Claude passthrough');
+        lines.push(padRight('  Ctrl+]', 22) + 'Full passthrough (focused pane)');
         lines.push(padRight('  Ctrl+= / Ctrl+-', 22) + 'Resize split view');
         // Task 8: Verify terminal tab interaction hints.
         if (ws === 'BRANCH_BUILDING' || ws === 'EQUIV_CHECK') {

@@ -15,6 +15,7 @@ import (
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	tea "charm.land/bubbletea/v2"
 )
 
 func openPty(t *testing.T) (*os.File, *os.File) {
@@ -166,7 +167,7 @@ func TestRunProgram_Options(t *testing.T) {
 	skipIfNoTTY(t)
 	vm := goja.New()
 
-	// Define raw init function that returns a Tick command
+	// Define raw init function that returns a Tick command (causes program to exit after tick)
 	initFnRaw := func(this goja.Value, args ...goja.Value) (goja.Value, error) {
 		newState := vm.NewObject()
 		tick := map[string]any{
@@ -178,9 +179,10 @@ func TestRunProgram_Options(t *testing.T) {
 	}
 
 	model := &jsModel{
-		runtime: vm,
-		// We'll override initFn below with initFnRaw
-		initFn: createViewFn(vm, func(state goja.Value) string { return "" }),
+		runtime:     vm,
+		altScreen:   true, // Test that altScreen option sends escape sequences
+		mouseMode:   tea.MouseModeAllMotion, // Test that mouse option sends escape sequences
+		initFn:      initFnRaw, // Use tick so program exits deterministically
 		updateFn: func(this goja.Value, args ...goja.Value) (goja.Value, error) {
 			// When we receive the tick (or any message), quit
 			quit := map[string]any{"_cmdType": "quit"}
@@ -189,7 +191,6 @@ func TestRunProgram_Options(t *testing.T) {
 		viewFn: createViewFn(vm, func(state goja.Value) string { return "" }),
 		state:  vm.NewObject(),
 	}
-	model.initFn = initFnRaw
 
 	model.jsRunner = &SyncJSRunner{Runtime: vm}
 
@@ -223,6 +224,7 @@ func TestRunProgram_Options(t *testing.T) {
 	outStr := buf.String()
 	assert.Contains(t, outStr, "\x1b[?1049h", "Should contain enter alt screen sequence")
 	assert.Contains(t, outStr, "\x1b[?1049l", "Should contain exit alt screen sequence")
+	assert.Contains(t, outStr, "\x1b[?1006h", "Should contain SGR mouse mode (all motion) sequence")
 }
 
 // TestRunProgram_AlreadyRunning verifies that runProgram fails if already running.

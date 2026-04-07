@@ -213,7 +213,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 
 | Module | Description | Key exports |
 |--------|-------------|-------------|
-| `osm:bubbletea` | BubbleTea TUI framework bindings | `newModel(config) → Model`, `run(model, opts?)`, `isTTY() → bool`; Commands: `quit()`, `clearScreen()`, `batch(…cmds)`, `sequence(…cmds)`, `tick(ms, id?)`, `setWindowTitle(s)`, `hideCursor()`, `showCursor()`, `enterAltScreen()`, `exitAltScreen()`, `enableBracketedPaste()`, `disableBracketedPaste()`, `enableReportFocus()`, `disableReportFocus()`, `windowSize()`; Metadata: `keys`, `keysByName`, `mouseButtons`, `mouseActions`; Validation: `isValidTextareaInput(key, paste?)`, `isValidLabelInput(key, paste?)` |
+| `osm:bubbletea` | BubbleTea v2 TUI framework bindings | `newModel(config) → Model`, `run(model, opts?)`; opts (declarative View fields): `{altScreen, mouse, mouseCellMotion, reportFocus, windowTitle}`; `isTTY() → bool`; Commands: `quit()`, `clearScreen()`, `batch(…cmds)`, `sequence(…cmds)`, `tick(ms, id?)`, `requestWindowSize()`; Metadata: `keys`, `keysByName`, `mouseButtons`, `mouseActions`; Validation: `isValidTextareaInput(key, paste?)`, `isValidLabelInput(key, paste?)` |
 | `osm:lipgloss` | Lipgloss terminal styling | `newStyle() → Style` (chainable, immutable); Style methods: `.bold()`, `.italic()`, `.foreground(color)`, `.background(color)`, `.padding(…)`, `.margin(…)`, `.width(n)`, `.height(n)`, `.border(type)`, `.align(pos)`, `.render(…strs) → string`, `.copy()`, `.inherit(other)`; Layout: `joinHorizontal(pos, …strs)`, `joinVertical(pos, …strs)`, `place(w, h, hPos, vPos, str)`, `width(str)`, `height(str)`, `size(str)`; Borders: `normalBorder()`, `roundedBorder()`, `doubleBorder()`, etc.; Constants: `Left`, `Center`, `Right`, `Top`, `Bottom` |
 | `osm:bubblezone` | Zone-based mouse hit-testing | `mark(id, content) → string`, `scan(renderedView) → string`, `inBounds(id, mouseMsg) → bool`, `get(id) → {startX, startY, endX, endY, width, height}`, `newPrefix() → string`, `close()` |
 | `osm:bubbles/viewport` | Scrollable viewport component | `new(width?, height?) → Viewport`; Viewport: `.setContent(s)`, `.setWidth(n)`, `.setHeight(n)`, `.scrollDown(n)`, `.scrollUp(n)`, `.gotoTop()`, `.gotoBottom()`, `.pageUp()`, `.pageDown()`, `.setYOffset(n)`, `.yOffset()`, `.scrollPercent()`, `.atTop()`, `.atBottom()`, `.totalLineCount()`, `.visibleLineCount()`, `.setStyle(lipglossStyle)`, `.update(msg)`, `.view()` |
@@ -329,29 +329,36 @@ See: [planning-and-acting-using-behavior-trees.md](reference/planning-and-acting
 
 ### osm:bubbletea (TUI Framework)
 
-Terminal UI framework based on [Charm BubbleTea](https://github.com/charmbracelet/bubbletea).
+Terminal UI framework based on [Charm BubbleTea v2](https://github.com/charmbracelet/bubbletea).
 
 **Program lifecycle**:
 - `tea.newModel(config)` — Create an Elm-architecture model (`config`: `{init, update, view}` functions; optional `renderThrottle` config)
-- `tea.run(model, opts?)` — Run TUI program (blocks until exit); opts: `{altScreen, mouse, mouseCellMotion, bracketedPaste, reportFocus}`
+- `tea.run(model, opts?)` — Run TUI program (blocks until exit). Options are declarative View fields in v2:
+  - `{altScreen: true}` — Enter alternate screen buffer (`View.AltScreen`)
+  - `{mouse: true}` — Enable SGR mouse mode, all motion (`View.MouseMode=AllMotion`)
+  - `{mouseCellMotion: true}` — Enable SGR mouse mode, cell motion only (`View.MouseMode=CellMotion`)
+  - `{reportFocus: true}` — Enable focus/blur reporting (`View.ReportFocus`)
+  - `{windowTitle: 'My App'}` — Set terminal window title (`View.WindowTitle`)
+  - Bracketed paste is always enabled (no option needed)
 - `tea.isTTY() → bool` — Check if terminal is a TTY
 
 **Commands** (returned from update as second element of `[model, cmd]`):
 - `tea.quit()`, `tea.clearScreen()`
 - `tea.batch(...cmds)`, `tea.sequence(...cmds)` — Combine commands
 - `tea.tick(ms, id?)` — Timer command (delivers `{type: 'Tick', id, time}` message)
-- `tea.setWindowTitle(s)`, `tea.hideCursor()`, `tea.showCursor()`
-- `tea.enterAltScreen()`, `tea.exitAltScreen()`
-- `tea.enableBracketedPaste()`, `tea.disableBracketedPaste()`
-- `tea.enableReportFocus()`, `tea.disableReportFocus()`
-- `tea.windowSize()` — Query current terminal size
+- `tea.requestWindowSize()` — Query current terminal size (delivers `{type: 'WindowSize', width, height}`)
 
 **Message types** (received in `update(msg, model)`):
-- `Key` — `{type, key, runes, alt, ctrl, paste}`
-- `Mouse` — `{type, x, y, button, action, alt, ctrl, shift}`
-- `WindowSize` — `{type, width, height}`
-- `Focus` / `Blur` — `{type}` (requires `reportFocus` option)
-- `Tick` — `{type, id, time}` (from `tea.tick()` command)
+- `Key` — `{type: 'Key', key, text, mod, code, shiftedCode, baseCode, isRepeat}`
+- `MouseClick` — `{type: 'MouseClick', x, y, button, mod}` (left/right/middle click)
+- `MouseRelease` — `{type: 'MouseRelease', x, y, button, mod}`
+- `MouseMotion` — `{type: 'MouseMotion', x, y, mod}` (only when mouse mode is enabled)
+- `MouseWheel` — `{type: 'MouseWheel', x, y, button, mod}`
+- `Paste` — `{type: 'Paste', content}` (bracketed paste content, separate from Key events)
+- `PasteStart` / `PasteEnd` — paste sequence markers
+- `WindowSize` — `{type: 'WindowSize', width, height}`
+- `Focus` / `Blur` — `{type: 'Focus'}` / `{type: 'Blur'}` (requires `reportFocus` option)
+- `Tick` — `{type: 'Tick', id, time}` (from `tea.tick()` command)
 
 **Metadata objects**: `tea.keys`, `tea.keysByName`, `tea.mouseButtons`, `tea.mouseActions` — lookup tables for key/mouse definitions.
 

@@ -45,10 +45,7 @@ func TestValueToCmd_AllCmdTypes(t *testing.T) {
 		{"quit", "quit", nil, false},
 		{"clearScreen", "clearScreen", nil, false},
 		{"requestWindowSize", "requestWindowSize", nil, false},
-		// Removed commands (now declarative View fields in v2) - these return nil
-		// hideCursor, showCursor, enterAltScreen, exitAltScreen, enableBracketedPaste,
-		// disableBracketedPaste, enableReportFocus, disableReportFocus, windowSize,
-		// setWindowTitle - all removed in v2
+		// Bracketed paste is always enabled (\x1b[?2004h sent in runProgram) — no JS API needed
 		{"unknown type", "nonexistent", nil, true},
 	}
 
@@ -634,26 +631,6 @@ func TestRequire_TickNoArgs(t *testing.T) {
 	assert.False(t, goja.IsUndefined(errVal), "should have error property")
 }
 
-func TestRequire_SetWindowTitleNoArgs(t *testing.T) {
-	t.Parallel()
-	vm := goja.New()
-	manager := newTestManager(context.Background(), vm)
-	module := vm.NewObject()
-	_ = module.Set("exports", vm.NewObject())
-	requireFn := Require(context.Background(), manager)
-	requireFn(vm, module)
-	exports := module.Get("exports").ToObject(vm)
-
-	// setWindowTitle() with no args → error
-	fn, ok := goja.AssertFunction(exports.Get("setWindowTitle"))
-	require.True(t, ok)
-	result, err := fn(goja.Undefined())
-	require.NoError(t, err)
-	obj := result.ToObject(vm)
-	errVal := obj.Get("error")
-	assert.False(t, goja.IsUndefined(errVal), "should have error property")
-}
-
 func TestRequire_TickNegativeDuration(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
@@ -803,34 +780,8 @@ func TestRequire_NewModel_WithRenderThrottle(t *testing.T) {
 }
 
 // ========================================================================
-// Require exports — simple command functions
+// Require exports — batch and sequence
 // ========================================================================
-
-func TestRequire_SimpleCommandExports(t *testing.T) {
-	t.Parallel()
-	vm, exports := requireExports(t)
-
-	// Test each simple command export returns an object with _cmdType
-	cmds := []string{
-		"quit", "clearScreen", "hideCursor", "showCursor",
-		"enterAltScreen", "exitAltScreen",
-		"enableReportFocus", "disableReportFocus",
-		"windowSize",
-	}
-
-	for _, name := range cmds {
-		t.Run(name, func(t *testing.T) {
-			// No t.Parallel() — shared vm
-			fn, ok := goja.AssertFunction(exports.Get(name))
-			require.True(t, ok, "export %q not found", name)
-			result, err := fn(goja.Undefined())
-			require.NoError(t, err)
-			obj := result.ToObject(vm)
-			cmdType := obj.Get("_cmdType")
-			assert.Equal(t, name, cmdType.String())
-		})
-	}
-}
 
 func TestRequire_BatchAndSequence(t *testing.T) {
 	t.Parallel()
@@ -869,18 +820,6 @@ func TestRequire_TickWithId(t *testing.T) {
 	obj := result.ToObject(vm)
 	assert.Equal(t, "tick", obj.Get("_cmdType").String())
 	assert.Equal(t, "timer-1", obj.Get("id").String())
-}
-
-func TestRequire_SetWindowTitleWithArg(t *testing.T) {
-	t.Parallel()
-	vm, exports := requireExports(t)
-	fn, ok := goja.AssertFunction(exports.Get("setWindowTitle"))
-	require.True(t, ok)
-	result, err := fn(goja.Undefined(), vm.ToValue("My Title"))
-	require.NoError(t, err)
-	obj := result.ToObject(vm)
-	assert.Equal(t, "setWindowTitle", obj.Get("_cmdType").String())
-	assert.Equal(t, "My Title", obj.Get("title").String())
 }
 
 func TestRequire_IsTTY(t *testing.T) {

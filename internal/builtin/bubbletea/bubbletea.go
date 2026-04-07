@@ -44,16 +44,7 @@
 //	tea.batch(...cmds);            // Batch multiple commands
 //	tea.sequence(...cmds);         // Execute commands in sequence
 //	tea.tick(durationMs, id);      // Timer command (returns tickMsg with id)
-//	tea.setWindowTitle(title);     // Set terminal window title
-//	tea.hideCursor();              // Hide the cursor
-//	tea.showCursor();              // Show the cursor
-//	tea.enterAltScreen();          // Enter alternate screen buffer
-//	tea.exitAltScreen();           // Exit alternate screen buffer
-//	tea.enableBracketedPaste();    // Enable bracketed paste mode
-//	tea.disableBracketedPaste();   // Disable bracketed paste mode
-//	tea.enableReportFocus();       // Enable focus/blur reporting
-//	tea.disableReportFocus();      // Disable focus/blur reporting
-//	tea.windowSize();              // Query current window size
+//	tea.requestWindowSize();       // Query current window size (returns windowSizeMsg)
 //
 //	// Key events
 //	// msg.type === 'Key'
@@ -83,13 +74,15 @@
 //	// msg.id - the id passed to tick()
 //	// msg.time - timestamp in milliseconds
 //
-//	// Program options
+//	// Program options — these set tea.View fields, which cursedRenderer reads
+//	// to send the corresponding escape sequences (\x1b[?1049h, \x1b[?1006h, etc.).
 //	tea.run(model, {
-//	    altScreen: true,       // Use alternate screen buffer
-//	    mouse: true,           // Enable mouse support (all motion)
-//	    mouseCellMotion: true, // Enable mouse cell motion only
-//	    // Note: bracketed paste is always enabled (\x1b[?2004h) — no program option needed
-//	    reportFocus: true,     // Enable focus/blur reporting
+//	    altScreen: true,        // Use alternate screen buffer (sets View.AltScreen)
+//	    mouse: true,           // Enable mouse support — all motion (sets View.MouseMode=AllMotion)
+//	    mouseCellMotion: true, // Enable mouse cell motion only (sets View.MouseMode=CellMotion)
+//	    reportFocus: true,     // Enable focus/blur reporting (sets View.ReportFocus)
+//	    windowTitle: 'My App', // Set terminal window title (sets View.WindowTitle)
+//	    // Note: bracketed paste is always enabled (\x1b[?2004h) — no option needed
 //	});
 //
 // # Error Handling
@@ -524,6 +517,14 @@ type jsModel struct {
 	cmdMu       sync.Mutex
 	jsRunner    JSRunner // Optional: thread-safe JS execution via event loop
 
+	// Terminal feature modes (set by tea.run() from JS options, read in View())
+	// In v2, these control the tea.View fields that cursedRenderer reads
+	// to send the corresponding escape sequences (\x1b[?1049h, \x1b[?1006h, etc.)
+	altScreen   bool
+	mouseMode   tea.MouseMode
+	reportFocus bool
+	windowTitle string
+
 	// Render throttling state (optional, opt-in feature)
 	throttleEnabled    bool            // Whether throttling is enabled (default: false)
 	throttleIntervalMs int64           // Minimum ms between renders (default: 16)
@@ -647,11 +648,6 @@ func (m *jsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Log Update calls for debugging tick loop issues
-	if msgType, ok := jsMsg["type"].(string); ok && msgType == "Tick" {
-		slog.Debug("bubbletea: Update called with Tick message", "id", jsMsg["id"])
-	}
-
 	// Check if this message type should force an immediate render.
 	// Paste events (PasteStart, Paste, PasteEnd) should always force render
 	// since the textarea needs to update immediately with pasted content.
@@ -710,8 +706,6 @@ func (m *jsModel) updateDirect(jsMsg map[string]any) tea.Cmd {
 		slog.Error("bubbletea: updateDirect: JS update function error", "error", err, "msgType", jsMsg["type"])
 		return nil
 	}
-	slog.Debug("bubbletea: updateDirect: JS update returned successfully", "msgType", jsMsg["type"])
-
 	// Result should be [newState, cmd] array
 	resultObj := result.ToObject(m.runtime)
 	if resultObj == nil || resultObj.ClassName() != "Array" {
@@ -763,6 +757,7 @@ func (m *jsModel) View() tea.View {
 		shouldThrottle := !m.forceNextRender && elapsed < intervalDur && m.cachedView != ""
 
 		if shouldThrottle {
+			slog.Debug("bubbletea: View throttling", "elapsed", elapsed, "interval", intervalDur, "cachedLen", len(m.cachedView))
 			// Schedule a delayed render if not already scheduled
 			if !m.throttleTimerSet && m.program != nil && m.throttleCtx != nil {
 				m.throttleTimerSet = true
@@ -786,8 +781,22 @@ func (m *jsModel) View() tea.View {
 				}()
 			}
 			cached := m.cachedView
+			altScreen := m.altScreen
+			mouseMode := m.mouseMode
+			reportFocus := m.reportFocus
+			windowTitle := m.windowTitle
 			m.throttleMu.Unlock()
-			return tea.NewView(cached)
+			// Wire mode fields into the cached view so cursedRenderer.viewEquals
+			// sees a change from the previous view and flushes output.
+			// Without this, throttled renders return zero-valued mode fields,
+			// so viewEquals compares AltScreen=false vs AltScreen=false (no change)
+			// and flush() sends nothing to the PTY.
+			v := tea.NewView(cached)
+			v.AltScreen = altScreen
+			v.MouseMode = mouseMode
+			v.ReportFocus = reportFocus
+			v.WindowTitle = windowTitle
+			return v
 		}
 
 		// Will do an actual render - update state
@@ -818,7 +827,16 @@ func (m *jsModel) View() tea.View {
 		m.throttleMu.Unlock()
 	}
 
-	return tea.NewView(viewStr)
+	// Wire terminal feature mode fields into the View.
+	// cursedRenderer reads View.AltScreen, View.MouseMode, View.ReportFocus,
+	// and View.WindowTitle to send the corresponding escape sequences.
+	// Without this, tea.run({altScreen:true,mouse:true}) is SILENTLY IGNORED.
+	v := tea.NewView(viewStr)
+	v.AltScreen = m.altScreen
+	v.MouseMode = m.mouseMode
+	v.ReportFocus = m.reportFocus
+	v.WindowTitle = m.windowTitle
+	return v
 }
 
 // viewDirect performs the actual view call. MUST be called from event loop goroutine.
@@ -1583,10 +1601,33 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 			// Parse options — in v2, terminal features (altScreen, mouse, etc.)
 			// are declarative View fields, not program options.
 			// Only toggleKey/onToggle (Termux passthrough) remain as run() options.
+			// Terminal feature options (altScreen, mouse, mouseCellMotion, reportFocus,
+			// windowTitle) are extracted here and stored on the jsModel so that
+			// jsModel.View() can set them on the tea.View struct.
 			var toggleWrapper *toggleModel
 			if len(call.Arguments) > 1 {
 				optObj := call.Argument(1).ToObject(runtime)
 				if optObj != nil {
+					// Parse terminal feature options — these set View fields, not program options.
+					// cursedRenderer reads View.AltScreen/View.MouseMode/View.ReportFocus
+					// and sends the corresponding escape sequences.
+					if altScreenVal := optObj.Get("altScreen"); altScreenVal != nil && !goja.IsUndefined(altScreenVal) && !goja.IsNull(altScreenVal) && altScreenVal.ToBoolean() {
+						model.altScreen = true
+					}
+					if mouseVal := optObj.Get("mouse"); mouseVal != nil && !goja.IsUndefined(mouseVal) && !goja.IsNull(mouseVal) && mouseVal.ToBoolean() {
+						// mouse:true means all motion (click + drag + move)
+						model.mouseMode = tea.MouseModeAllMotion
+					} else if mcVal := optObj.Get("mouseCellMotion"); mcVal != nil && !goja.IsUndefined(mcVal) && !goja.IsNull(mcVal) && mcVal.ToBoolean() {
+						// mouseCellMotion:true means click + drag only
+						model.mouseMode = tea.MouseModeCellMotion
+					}
+					if rfVal := optObj.Get("reportFocus"); rfVal != nil && !goja.IsUndefined(rfVal) && !goja.IsNull(rfVal) && rfVal.ToBoolean() {
+						model.reportFocus = true
+					}
+					if titleVal := optObj.Get("windowTitle"); titleVal != nil && !goja.IsUndefined(titleVal) && !goja.IsNull(titleVal) {
+						model.windowTitle = titleVal.String()
+					}
+
 					// Toggle key support — integrates with termmux passthrough.
 					// When toggleKey and onToggle are both set, the model is wrapped
 					// in a toggleModel that intercepts the toggle key and executes
@@ -1718,49 +1759,11 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 			})
 		})
 
-		// setWindowTitle sets the terminal window title
-		_ = exports.Set("setWindowTitle", func(call goja.FunctionCall) goja.Value {
-			if len(call.Arguments) < 1 {
-				return createError(ErrCodeInvalidArgs, "setWindowTitle requires a title string")
-			}
-			return createCommand("setWindowTitle", map[string]any{
-				"title": call.Argument(0).String(),
-			})
-		})
-
-		// hideCursor hides the cursor
-		_ = exports.Set("hideCursor", func(call goja.FunctionCall) goja.Value {
-			return createCommand("hideCursor", nil)
-		})
-
-		// showCursor shows the cursor
-		_ = exports.Set("showCursor", func(call goja.FunctionCall) goja.Value {
-			return createCommand("showCursor", nil)
-		})
-
-		// enterAltScreen enters the alternate screen buffer
-		_ = exports.Set("enterAltScreen", func(call goja.FunctionCall) goja.Value {
-			return createCommand("enterAltScreen", nil)
-		})
-
-		// exitAltScreen exits the alternate screen buffer
-		_ = exports.Set("exitAltScreen", func(call goja.FunctionCall) goja.Value {
-			return createCommand("exitAltScreen", nil)
-		})
-
-		// enableReportFocus enables focus/blur reporting
-		_ = exports.Set("enableReportFocus", func(call goja.FunctionCall) goja.Value {
-			return createCommand("enableReportFocus", nil)
-		})
-
-		// disableReportFocus disables focus/blur reporting
-		_ = exports.Set("disableReportFocus", func(call goja.FunctionCall) goja.Value {
-			return createCommand("disableReportFocus", nil)
-		})
-
-		// windowSize queries the current window size
-		_ = exports.Set("windowSize", func(call goja.FunctionCall) goja.Value {
-			return createCommand("windowSize", nil)
+		// NOTE: The following v1 imperative commands are REMOVED in v2.
+		// requestWindowSize queries the current window size (v2 API).
+		// Returns tea.RequestWindowSize — the program will receive a WindowSizeMsg.
+		_ = exports.Set("requestWindowSize", func(call goja.FunctionCall) goja.Value {
+			return createCommand("requestWindowSize", nil)
 		})
 	}
 }

@@ -597,3 +597,102 @@ func TestPassthroughStatusBar_RenderRestore(t *testing.T) {
 		t.Errorf("status bar render count = %d, want >= 2 (initial + post-restore); got %q", renderCount, got)
 	}
 }
+
+func TestPassthrough_ResizeDuringPassthrough(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	t.Parallel()
+
+	m, session, _ := passthroughTestManager(t)
+
+	toggleKey := byte(0x1D)
+	stdin := bytes.NewReader([]byte{toggleKey})
+	stdout := &syncBuffer{}
+
+	ts := &ptTestTermState{width: 80, height: 24}
+
+	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
+		Stdin:     stdin,
+		Stdout:    stdout,
+		TermFd:    3,
+		TermState: ts,
+		ToggleKey: toggleKey,
+	})
+	if err != nil {
+		t.Fatalf("Passthrough error: %v", err)
+	}
+	if reason != ExitToggle {
+		t.Errorf("reason = %v, want ExitToggle", reason)
+	}
+
+	// Passthrough should have called mgr.Resize(24, 80) during setup
+	// (no status bar, TermFd >= 0, TermState non-nil).
+	// This propagates to session.Resize(24, 80).
+	session.writeMu.Lock()
+	resizes := append([]resizePayload(nil), session.resizeCalls...)
+	session.writeMu.Unlock()
+
+	found := false
+	for _, r := range resizes {
+		if r.rows == 24 && r.cols == 80 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("session did not receive Resize(24, 80); got %v", resizes)
+	}
+}
+
+func TestPassthrough_ResizeFnCallback(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	t.Parallel()
+
+	m, _, _ := passthroughTestManager(t)
+
+	toggleKey := byte(0x1D)
+	stdin := bytes.NewReader([]byte{toggleKey})
+	stdout := &syncBuffer{}
+
+	ts := &ptTestTermState{width: 80, height: 24}
+	sb := statusbar.New(stdout)
+
+	var resizeFnCalled bool
+	var resizeFnRows, resizeFnCols uint16
+
+	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
+		Stdin:     stdin,
+		Stdout:    stdout,
+		TermFd:    3,
+		TermState: ts,
+		ToggleKey: toggleKey,
+		StatusBar: sb,
+		ResizeFn: func(rows, cols uint16) error {
+			resizeFnCalled = true
+			resizeFnRows = rows
+			resizeFnCols = cols
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Passthrough error: %v", err)
+	}
+	if reason != ExitToggle {
+		t.Errorf("reason = %v, want ExitToggle", reason)
+	}
+
+	// ResizeFn should have been called during setup (passthrough.go ~line 95-98)
+	// with dimensions accounting for the status bar: childH = 24 - 1 = 23, w = 80.
+	if !resizeFnCalled {
+		t.Error("ResizeFn was not called")
+	}
+	if resizeFnRows != 23 {
+		t.Errorf("ResizeFn rows = %d, want 23 (24 terminal - 1 status bar)", resizeFnRows)
+	}
+	if resizeFnCols != 80 {
+		t.Errorf("ResizeFn cols = %d, want 80", resizeFnCols)
+	}
+}

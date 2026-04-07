@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/joeycumines/one-shot-man/internal/termmux/statusbar"
 	"golang.org/x/term"
 )
 
@@ -441,5 +442,158 @@ func TestSessionManager_Passthrough_RestoreScreen(t *testing.T) {
 	got := stdout.String()
 	if !strings.Contains(got, "screen-content") {
 		t.Errorf("stdout did not contain restored screen content; got %q", got)
+	}
+}
+
+func TestPassthroughStatusBar_ScrollRegionSetup(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	t.Parallel()
+
+	m, _, _ := passthroughTestManager(t)
+
+	toggleKey := byte(0x1D)
+	stdin := bytes.NewReader([]byte{toggleKey})
+	stdout := &syncBuffer{}
+
+	ts := &ptTestTermState{width: 80, height: 24}
+	sb := statusbar.New(stdout) // writes to stdout so we can inspect
+
+	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
+		Stdin:     stdin,
+		Stdout:    stdout,
+		TermFd:    3, // non-negative enables terminal state
+		TermState: ts,
+		ToggleKey: toggleKey,
+		StatusBar: sb,
+	})
+	if err != nil {
+		t.Fatalf("Passthrough error: %v", err)
+	}
+	if reason != ExitToggle {
+		t.Errorf("reason = %v, want ExitToggle", reason)
+	}
+
+	// Verify TermState.MakeRaw was called (proves TermFd was used).
+	if !ts.rawCalled {
+		t.Error("MakeRaw not called")
+	}
+
+	// Verify stdout contains a DECSTBM scroll region escape sequence.
+	// Format: ESC [ 1 ; <height-1> r
+	// For 24-row terminal: ESC [1;23r
+	got := stdout.String()
+	if !strings.Contains(got, "\x1b[1;23r") {
+		t.Errorf("stdout missing scroll region setup (DECSTBM); got %q", got)
+	}
+
+	// Verify that the reset scroll region is emitted (from deferred ResetScrollRegion).
+	if !strings.Contains(got, "\x1b[r") {
+		t.Errorf("stdout missing scroll region reset; got %q", got)
+	}
+
+	// Verify that status bar content was rendered.
+	if !strings.Contains(got, "[Claude]") {
+		t.Errorf("stdout missing status bar render; got %q", got)
+	}
+}
+
+func TestPassthroughStatusBar_MouseRouting(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	t.Parallel()
+
+	m, _, _ := passthroughTestManager(t)
+
+	// Build an SGR mouse left-click on row 24 (the status bar row in a 24-row terminal).
+	// Format: ESC [ < 0 ; 1 ; 24 M
+	mouseClick := []byte("\x1b[<0;1;24M")
+
+	stdin := bytes.NewReader(mouseClick)
+	stdout := &syncBuffer{}
+
+	ts := &ptTestTermState{width: 80, height: 24}
+	sb := statusbar.New(stdout)
+
+	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
+		Stdin:     stdin,
+		Stdout:    stdout,
+		TermFd:    3,
+		TermState: ts,
+		ToggleKey: 0x1D,
+		StatusBar: sb,
+	})
+	if err != nil {
+		t.Fatalf("Passthrough error: %v", err)
+	}
+
+	// The status bar click should trigger ExitToggle (same as toggle key).
+	if reason != ExitToggle {
+		t.Errorf("reason = %v, want ExitToggle (status bar click)", reason)
+	}
+}
+
+func TestPassthroughStatusBar_RenderRestore(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in -short mode")
+	}
+	t.Parallel()
+
+	m, session, id := passthroughTestManager(t)
+
+	// Send output so VTerm has content for FullScreen restoration.
+	session.readerCh <- []byte("restore-me")
+	deadline := time.After(2 * time.Second)
+	for {
+		snap := m.Snapshot(id)
+		if snap != nil && strings.Contains(snap.PlainText, "restore-me") {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for snapshot")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	toggleKey := byte(0x1D)
+	stdin := bytes.NewReader([]byte{toggleKey})
+	stdout := &syncBuffer{}
+
+	ts := &ptTestTermState{width: 80, height: 24}
+	sb := statusbar.New(stdout)
+
+	reason, err := m.Passthrough(context.Background(), PassthroughConfig{
+		Stdin:         stdin,
+		Stdout:        stdout,
+		TermFd:        3,
+		TermState:     ts,
+		ToggleKey:     toggleKey,
+		StatusBar:     sb,
+		RestoreScreen: true,
+	})
+	if err != nil {
+		t.Fatalf("Passthrough error: %v", err)
+	}
+	if reason != ExitToggle {
+		t.Errorf("reason = %v, want ExitToggle", reason)
+	}
+
+	got := stdout.String()
+
+	// Verify VTerm screen was restored (FullScreen contains the content).
+	if !strings.Contains(got, "restore-me") {
+		t.Errorf("stdout missing restored screen content; got %q", got)
+	}
+
+	// After RestoreScreen, the status bar should be re-rendered
+	// (passthrough.go line 85-86: if cfg.StatusBar != nil && statusBarLines > 0).
+	// Count occurrences of "[Claude]" — should appear more than once
+	// (initial render + post-restore render).
+	renderCount := strings.Count(got, "[Claude]")
+	if renderCount < 2 {
+		t.Errorf("status bar render count = %d, want >= 2 (initial + post-restore); got %q", renderCount, got)
 	}
 }

@@ -13,27 +13,33 @@ import (
 // ---------------------------------------------------------------------------
 // T004: CaptureSession JS binding completeness tests
 //
-// Validates that all 20 methods exposed by WrapCaptureSession are callable
+// Validates that all 18 methods exposed by WrapCaptureSession are callable
 // from JS and return the expected types. Uses real PTY (requires unix).
 //
-// The six methods called by runVerifyBranch/pollVerifySession:
+// The four methods called by runVerifyBranch/pollVerifySession:
 //   isDone()    → boolean
 //   exitCode()  → number
-//   output()    → string
 //   close()     → void
 //   interrupt() → void
-//   kill()      → void
 //
 // Additional methods:
 //   start()     → void
 //   isRunning() → boolean
-//   screen()    → string
 //   resize(r,c) → void
 //   wait()      → {code, error?}
 //   write(data) → void
 //   sendEOF()   → void
 //   pid()       → number
+//   kill()      → void
+//   pause()     → void
+//   resume()    → void
+//   isPaused()  → boolean
+//   target()    → object
+//   setTarget() → void
 //   passthrough(cfg?) → {reason, error?}
+//
+// Note: output() and screen() were removed in Task 49 (VTerm elimination).
+// Screen reads now go through SessionManager snapshots.
 // ---------------------------------------------------------------------------
 
 func TestCaptureSession_JSBinding_AllMethods(t *testing.T) {
@@ -48,10 +54,11 @@ func TestCaptureSession_JSBinding_AllMethods(t *testing.T) {
 
 		// Verify all 20 methods exist and are functions.
 		var methods = [
-			'start', 'isRunning', 'output', 'screen', 'interrupt', 'kill',
+			'start', 'isRunning', 'interrupt', 'kill',
 			'pause', 'resume', 'isPaused',
 			'resize', 'wait', 'write', 'sendEOF', 'close', 'pid', 'exitCode', 'isDone',
-			'target', 'setTarget', 'passthrough'
+			'target', 'setTarget', 'passthrough',
+			'reader', 'readAvailable'
 		];
 		var missing = [];
 		for (var i = 0; i < methods.length; i++) {
@@ -126,31 +133,21 @@ func TestCaptureSession_JSBinding_AllMethods(t *testing.T) {
 		t.Errorf("exitCode() = %d, want 0", v.ToInteger())
 	}
 
-	// output() should return a string (not bytes/ArrayBuffer).
-	v, err = rt.RunString(`typeof cs.output()`)
+	// output() and screen() were removed in Task 49 — screen reads go
+	// through SessionManager snapshots. Verify they are absent.
+	v, err = rt.RunString(`typeof cs.output`)
 	if err != nil {
-		t.Fatalf("output() typeof check failed: %v", err)
+		t.Fatalf("typeof cs.output check failed: %v", err)
 	}
-	if v.String() != "string" {
-		t.Errorf("output() should return string, got %q", v.String())
+	if v.String() != "undefined" {
+		t.Errorf("output should be undefined after VTerm removal, got %q", v.String())
 	}
-
-	v, err = rt.RunString(`cs.output()`)
+	v, err = rt.RunString(`typeof cs.screen`)
 	if err != nil {
-		t.Fatalf("output() failed: %v", err)
+		t.Fatalf("typeof cs.screen check failed: %v", err)
 	}
-	output := v.String()
-	if !strings.Contains(output, "hello T004") {
-		t.Errorf("output() = %q, expected to contain 'hello T004'", output)
-	}
-
-	// screen() should return a string (may differ from output).
-	v, err = rt.RunString(`typeof cs.screen()`)
-	if err != nil {
-		t.Fatalf("screen() type check failed: %v", err)
-	}
-	if v.String() != "string" {
-		t.Errorf("screen() should return string, got %q", v.String())
+	if v.String() != "undefined" {
+		t.Errorf("screen should be undefined after VTerm removal, got %q", v.String())
 	}
 
 	// target() should return metadata with at least kind information.
@@ -346,13 +343,13 @@ func TestCaptureSession_JSBinding_WriteAndSendEOF(t *testing.T) {
 		t.Errorf("cat should exit 0, got %s", v.String())
 	}
 
-	// Output should contain our written text.
-	v, err = rt.RunString(`cs.output()`)
+	// isDone should be true after wait.
+	v, err = rt.RunString(`cs.isDone()`)
 	if err != nil {
-		t.Fatalf("output() failed: %v", err)
+		t.Fatalf("isDone() after wait failed: %v", err)
 	}
-	if !strings.Contains(v.String(), "hello from JS") {
-		t.Errorf("output() = %q, should contain 'hello from JS'", v.String())
+	if !v.ToBoolean() {
+		t.Error("isDone() should be true after wait")
 	}
 
 	_, err = rt.RunString(`cs.close()`)

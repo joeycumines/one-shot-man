@@ -12,7 +12,6 @@ import (
 	"github.com/joeycumines/one-shot-man/internal/termmux/pty"
 	"github.com/joeycumines/one-shot-man/internal/termmux/ptyio"
 	"github.com/joeycumines/one-shot-man/internal/termmux/statusbar"
-	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
 )
 
 // CaptureConfig configures a CaptureSession.
@@ -35,10 +34,10 @@ type CaptureConfig struct {
 	Cols int
 }
 
-// CaptureSession manages a PTY-attached command with real-time output capture
-// via an in-memory VT100 emulator. It is a simplified, standalone alternative
-// to SessionManager for cases where only output capture is needed — no terminal
-// multiplexing, toggle keys, status bar, or raw-mode management.
+// CaptureSession manages a PTY-attached command with real-time output capture.
+// It is a simplified, standalone alternative to SessionManager for cases where
+// only raw output forwarding is needed — no terminal multiplexing, toggle keys,
+// status bar, or raw-mode management.
 //
 // Usage:
 //
@@ -48,7 +47,7 @@ type CaptureConfig struct {
 //	    Dir:     "/path/to/project",
 //	})
 //	if err := cs.Start(ctx); err != nil { ... }
-//	// Poll cs.Output() or cs.Screen() for progress.
+//	// Consume raw output via cs.Reader().
 //	exitCode, err := cs.Wait()
 //	cs.Close()
 //
@@ -57,7 +56,6 @@ type CaptureSession struct {
 	mu     sync.Mutex
 	cfg    CaptureConfig
 	proc   *pty.Process
-	term   *vt.VTerm
 	target SessionTarget
 
 	// Lifecycle state.
@@ -106,7 +104,6 @@ func NewCaptureSession(cfg CaptureConfig) *CaptureSession {
 	}
 	return &CaptureSession{
 		cfg:    cfg,
-		term:   vt.NewVTerm(rows, cols),
 		done:   make(chan struct{}),
 		rows:   rows,
 		cols:   cols,
@@ -187,21 +184,20 @@ func (cs *CaptureSession) Start(ctx context.Context) error {
 	cs.mu.Unlock()
 	go cs.reader.ReadLoop(readerCtx)
 
-	// Start the background reader that feeds PTY output to the VTerm
-	// and the Reader() channel. The reader goroutine also captures exit
-	// status before signaling completion, ensuring Wait() always returns
-	// the correct exit code.
+	// Start the background reader that forwards PTY output to the
+	// Reader() channel. The reader goroutine also captures exit status
+	// before signaling completion, ensuring Wait() always returns the
+	// correct exit code.
 	go cs.readerLoop()
 
 	return nil
 }
 
-// readerLoop consumes output from the BufferedReader channel and writes to
-// both the VTerm (for backward-compatible Output/Screen) and the outputCh
-// (for Reader() consumers like SessionManager). When passthroughActive is
-// true, output is also forwarded to passthroughOutput (typically os.Stdout).
-// After the channel closes (PTY EOF), it captures the process exit status
-// and closes cs.done.
+// readerLoop consumes output from the BufferedReader channel and forwards
+// chunks to the outputCh (for Reader() consumers like SessionManager).
+// When passthroughActive is true, output is also forwarded to
+// passthroughOutput (typically os.Stdout). After the channel closes
+// (PTY EOF), it captures the process exit status and closes cs.done.
 func (cs *CaptureSession) readerLoop() {
 	defer close(cs.done)
 
@@ -216,14 +212,10 @@ func (cs *CaptureSession) readerLoop() {
 		}
 	}()
 
-	// Drain all output from the BufferedReader into VTerm and outputCh.
+	// Drain all output from the BufferedReader into outputCh.
 	for chunk := range reader.Output() {
-		// VTerm.Write is internally synchronized (has its own mutex).
-		_, _ = cs.term.Write(chunk)
-
 		// Forward to Reader() channel for SessionManager consumption.
-		// Non-blocking: if nobody is consuming Reader(), data is still
-		// captured in VTerm. Avoids stalling the readerLoop which would
+		// Non-blocking send avoids stalling the readerLoop which would
 		// block the PTY and potentially deadlock the child process.
 		if outputCh != nil {
 			// Copy chunk to avoid aliasing with BufferedReader's buffer.
@@ -264,26 +256,6 @@ func (cs *CaptureSession) IsRunning() bool {
 	return proc.IsAlive()
 }
 
-// Output returns a plain-text snapshot of the virtual terminal screen.
-// Each row is a string of non-NUL characters (trailing spaces stripped),
-// joined by newlines. Returns an empty string if the session has not been
-// started. Thread-safe.
-func (cs *CaptureSession) Output() string {
-	return cs.term.String()
-}
-
-// Screen returns a full ANSI-escaped representation of the virtual terminal
-// suitable for rendering in a terminal emulator. Returns an empty string if
-// the session has not been started. Thread-safe.
-func (cs *CaptureSession) Screen() string {
-	cs.mu.Lock()
-	started := cs.started
-	cs.mu.Unlock()
-	if !started {
-		return ""
-	}
-	return cs.term.RenderFullScreen()
-}
 
 // Interrupt sends SIGINT to the child process.
 func (cs *CaptureSession) Interrupt() error {
@@ -359,8 +331,8 @@ func (cs *CaptureSession) IsPaused() bool {
 	return cs.paused
 }
 
-// Resize changes the PTY and VTerm dimensions. Returns an error if the
-// session has not been started.
+// Resize changes the PTY dimensions. Returns an error if the session has
+// not been started.
 func (cs *CaptureSession) Resize(rows, cols int) error {
 	if rows <= 0 || cols <= 0 {
 		return errors.New("capture: rows and cols must be positive")
@@ -374,12 +346,10 @@ func (cs *CaptureSession) Resize(rows, cols int) error {
 	if proc == nil {
 		return errors.New("capture: not started")
 	}
-	// Resize PTY first (delivers SIGWINCH to child).
+	// Resize PTY (delivers SIGWINCH to child).
 	if err := proc.Resize(uint16(rows), uint16(cols)); err != nil {
 		return err
 	}
-	// Then resize VTerm so screen buffer matches.
-	cs.term.Resize(rows, cols)
 	cs.mu.Lock()
 	cs.rows = rows
 	cs.cols = cols
@@ -554,7 +524,7 @@ type PassthroughConfig struct {
 //
 // The readerLoop continues running during passthrough — when
 // passthroughActive is true, output chunks are also forwarded to
-// passthroughOutput (stdout) in addition to being written to VTerm.
+// passthroughOutput (stdout) in addition to the outputCh channel.
 // This avoids a data race because only the BufferedReader reads from
 // the PTY fd; the passthrough only reads from os.Stdin.
 func (cs *CaptureSession) Passthrough(ctx context.Context, cfg PassthroughConfig) (ExitReason, error) {

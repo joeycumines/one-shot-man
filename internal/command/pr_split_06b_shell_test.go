@@ -56,25 +56,31 @@ func TestSpawnShell_HappyPath(t *testing.T) {
 		try {
 			session = globalThis.prSplit.spawnShellSession(%q, {rows: 24, cols: 80});
 
-			// Wait for shell prompt to appear.
+			// Wait for shell prompt to appear (any output).
+			var output = '';
 			var deadline = Date.now() + 5000;
-			while (Date.now() < deadline && !session.screen()) {
-				// busy-wait — Goja has no setTimeout
+			while (Date.now() < deadline) {
+				var chunk = session.readAvailable();
+				if (chunk === null) break;
+				output += chunk;
+				if (output) break;
 			}
 
 			session.write('echo hello_test_marker\n');
 
-			// Poll for marker in screen output.
+			// Poll for marker in accumulated output.
 			deadline = Date.now() + 5000;
 			var found = false;
 			while (Date.now() < deadline) {
-				var scr = session.screen();
-				if (scr && scr.indexOf('hello_test_marker') >= 0) {
+				var chunk = session.readAvailable();
+				if (chunk === null) break;
+				output += chunk;
+				if (output.indexOf('hello_test_marker') >= 0) {
 					found = true;
 					break;
 				}
 			}
-			if (!found) errors.push('did not find hello_test_marker in screen output');
+			if (!found) errors.push('did not find hello_test_marker in output');
 		} catch (e) {
 			errors.push('spawn error: ' + e.message);
 		} finally {
@@ -105,10 +111,12 @@ func TestSpawnShell_ExitDetection(t *testing.T) {
 		try {
 			session = globalThis.prSplit.spawnShellSession(%q, {rows: 24, cols: 80});
 
-			// Wait for shell prompt.
+			// Wait for shell prompt (any output).
 			var deadline = Date.now() + 5000;
-			while (Date.now() < deadline && !session.screen()) {
-				// busy-wait
+			while (Date.now() < deadline) {
+				var chunk = session.readAvailable();
+				if (chunk === null) break;
+				if (chunk) break;
 			}
 
 			session.write('exit\n');
@@ -160,27 +168,32 @@ func TestSpawnShell_WorktreeDir(t *testing.T) {
 		try {
 			session = globalThis.prSplit.spawnShellSession(dir, {rows: 24, cols: 200});
 
-			// Wait for shell prompt.
+			// Wait for shell prompt (any output).
+			var output = '';
 			var deadline = Date.now() + 5000;
-			while (Date.now() < deadline && !session.screen()) {
-				// busy-wait
+			while (Date.now() < deadline) {
+				var chunk = session.readAvailable();
+				if (chunk === null) break;
+				output += chunk;
+				if (output) break;
 			}
 
 			session.write('pwd\n');
 
-			// Poll for the temp dir path in screen output.
+			// Poll for the temp dir path in output.
 			deadline = Date.now() + 5000;
 			var found = false;
 			while (Date.now() < deadline) {
-				var scr = session.screen();
-				if (scr && scr.indexOf(dir) >= 0) {
+				var chunk = session.readAvailable();
+				if (chunk === null) break;
+				output += chunk;
+				if (output.indexOf(dir) >= 0) {
 					found = true;
 					break;
 				}
 			}
 			if (!found) {
-				var finalScreen = session.screen() || '<empty>';
-				errors.push('pwd output did not contain ' + dir + '; screen: ' + finalScreen.substring(0, 200));
+				errors.push('pwd output did not contain ' + dir + '; output: ' + output.substring(0, 200));
 			}
 		} catch (e) {
 			errors.push('error: ' + e.message);
@@ -212,10 +225,12 @@ func TestSpawnShell_Resize(t *testing.T) {
 		try {
 			session = globalThis.prSplit.spawnShellSession(%q, {rows: 24, cols: 80});
 
-			// Wait for shell to start.
+			// Wait for shell to start (any output).
 			var deadline = Date.now() + 5000;
-			while (Date.now() < deadline && !session.screen()) {
-				// busy-wait
+			while (Date.now() < deadline) {
+				var chunk = session.readAvailable();
+				if (chunk === null) break;
+				if (chunk) break;
 			}
 
 			// Resize — should not throw.
@@ -254,8 +269,9 @@ func TestSpawnShell_CustomRowsCols(t *testing.T) {
 			var deadline = Date.now() + 5000;
 			var started = false;
 			while (Date.now() < deadline) {
-				var scr = session.screen();
-				if (scr !== null && scr !== undefined) {
+				var chunk = session.readAvailable();
+				if (chunk === null) break;
+				if (chunk) {
 					started = true;
 					break;
 				}

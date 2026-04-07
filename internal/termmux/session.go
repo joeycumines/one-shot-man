@@ -93,7 +93,7 @@ func (t SessionTarget) WithKind(kind SessionKind) SessionTarget {
 // they are NOT part of this interface.
 //
 // Concrete types such as [CaptureSession] and [StringIOSession] may offer
-// additional methods (Output, Screen, Target, etc.) beyond this interface
+// additional methods (Target, Passthrough, etc.) beyond this interface
 // for direct callers that hold the concrete type.
 type InteractiveSession interface {
 	// Write sends raw bytes to the session's PTY stdin.

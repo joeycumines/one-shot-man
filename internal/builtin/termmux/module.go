@@ -21,15 +21,15 @@ import (
 
 // Event name constants exposed to JS.
 const (
-	EventExit            = "exit"
-	EventResize          = "resize"
-	EventFocus           = "focus"
-	EventBell            = "bell"
-	EventOutput          = "output"
-	EventRegistered      = "registered"
-	EventActivated       = "activated"
-	EventClosed          = "closed"
-	EventTerminalResize  = "terminal-resize"
+	EventExit           = "exit"
+	EventResize         = "resize"
+	EventFocus          = "focus"
+	EventBell           = "bell"
+	EventOutput         = "output"
+	EventRegistered     = "registered"
+	EventActivated      = "activated"
+	EventClosed         = "closed"
+	EventTerminalResize = "terminal-resize"
 )
 
 // validEvents is the set of event names accepted by on().
@@ -270,29 +270,24 @@ func newCaptureSession(ctx context.Context, runtime *goja.Runtime, call goja.Fun
 // JavaScript-callable methods. Exported so callers (e.g., pr_split.go) can
 // create a Go-side CaptureSession and expose it through the same interface.
 //
-// AUDIT (T004/T059/T10): All 20 methods verified present and type-correct:
+// AUDIT (T004/T059/T10/T49): All 20 methods verified present and type-correct:
 //
-//	start, isRunning, output, screen, interrupt, kill, pause, resume,
-//	isPaused, resize, wait, write, sendEOF, close, pid, exitCode, isDone,
-//	target, setTarget, passthrough.
+//	start, isRunning, interrupt, kill, pause, resume, isPaused,
+//	resize, wait, write, sendEOF, close, pid, exitCode, isDone,
+//	target, setTarget, passthrough, reader, readAvailable.
 //
-// The 6 methods called by runVerifyBranch/pollVerifySession (isDone,
-// exitCode, output, close, interrupt, kill) are confirmed bound with
-// correct signatures via module_capture_test.go.
+// The 4 methods called by runVerifyBranch/pollVerifySession (isDone,
+// exitCode, close, interrupt) are confirmed bound with correct signatures
+// via module_capture_test.go. Screen reads go through SessionManager
+// snapshots via the _buildVerifyProxy in JS (Task 48).
 func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.CaptureSession) goja.Value {
 	obj := wrapInteractiveSession(runtime, cs, parent.SessionKindCapture).ToObject(runtime)
 
 	// ── CaptureSession-specific methods (not part of InteractiveSession) ──
 
-	// output() → string — plain-text VTerm snapshot.
-	_ = obj.Set("output", func() string {
-		return cs.Output()
-	})
-
-	// screen() → string — full ANSI-escaped VTerm rendering.
-	_ = obj.Set("screen", func() string {
-		return cs.Screen()
-	})
+	// Task 49: Output() and Screen() removed from CaptureSession.
+	// Screen reads now go through SessionManager snapshots via the
+	// _buildVerifyProxy in JS (Task 48).
 
 	// target() → {id, name, kind}
 	_ = obj.Set("target", func() map[string]any {
@@ -455,13 +450,13 @@ func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.C
 // [SessionManager] session wrappers (via [WrapSessionManager].session())
 // and [CaptureSession] wrappers (via [WrapCaptureSession]).
 //
-// Exported methods (5 total, matching the trimmed InteractiveSession interface):
+// Exported methods (6 total, matching the trimmed InteractiveSession interface):
 //
-//	resize, write, close, isDone, reader.
+//	resize, write, close, isDone, reader, readAvailable.
 //
 // CaptureSession wrappers add concrete-type-specific methods
-// (output, screen, target, setTarget, isRunning, start, interrupt, kill,
-// pause, resume, isPaused, wait, sendEOF, pid, exitCode, passthrough).
+// (target, setTarget, isRunning, start, interrupt, kill, pause, resume,
+// isPaused, wait, sendEOF, pid, exitCode, passthrough).
 func wrapInteractiveSession(runtime *goja.Runtime, session parent.InteractiveSession, defaultKind parent.SessionKind) goja.Value {
 	obj := runtime.NewObject()
 
@@ -509,6 +504,32 @@ func wrapInteractiveSession(runtime *goja.Runtime, session parent.InteractiveSes
 			return goja.Null()
 		}
 		return runtime.ToValue(string(data))
+	})
+
+	// readAvailable() drains all currently-buffered chunks from the Reader()
+	// channel without blocking. Returns an empty string when nothing is
+	// buffered and null when the channel is closed. Useful for polling loops
+	// in synchronous JS contexts (Goja has no setTimeout).
+	_ = obj.Set("readAvailable", func() goja.Value {
+		ch := session.Reader()
+		if ch == nil {
+			return goja.Null()
+		}
+		var buf []byte
+		for {
+			select {
+			case data, ok := <-ch:
+				if !ok {
+					if len(buf) > 0 {
+						return runtime.ToValue(string(buf))
+					}
+					return goja.Null()
+				}
+				buf = append(buf, data...)
+			default:
+				return runtime.ToValue(string(buf))
+			}
+		}
 	})
 
 	return obj

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -16,6 +17,48 @@ func skipIfWindows(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("PTY not supported on Windows")
 	}
+}
+
+// testOutputCollector reads all output from a CaptureSession's Reader() channel
+// in a background goroutine. Call startCollector(cs) immediately after cs.Start().
+//
+//   - current() returns accumulated output so far (non-blocking).
+//   - wait() blocks until Reader() closes and returns all output.
+type testOutputCollector struct {
+	mu   sync.Mutex
+	buf  bytes.Buffer
+	done chan struct{}
+}
+
+func startCollector(cs *CaptureSession) *testOutputCollector {
+	tc := &testOutputCollector{done: make(chan struct{})}
+	ch := cs.Reader()
+	if ch == nil {
+		close(tc.done)
+		return tc
+	}
+	go func() {
+		defer close(tc.done)
+		for chunk := range ch {
+			tc.mu.Lock()
+			tc.buf.Write(chunk)
+			tc.mu.Unlock()
+		}
+	}()
+	return tc
+}
+
+func (tc *testOutputCollector) current() string {
+	tc.mu.Lock()
+	defer tc.mu.Unlock()
+	return tc.buf.String()
+}
+
+func (tc *testOutputCollector) wait() string {
+	<-tc.done
+	tc.mu.Lock()
+	defer tc.mu.Unlock()
+	return tc.buf.String()
 }
 
 func TestCaptureSession_EchoHello(t *testing.T) {
@@ -30,6 +73,7 @@ func TestCaptureSession_EchoHello(t *testing.T) {
 		t.Fatalf("Start failed: %v", err)
 	}
 	defer cs.Close()
+	collector := startCollector(cs)
 
 	code, err := cs.Wait()
 	if err != nil {
@@ -39,7 +83,7 @@ func TestCaptureSession_EchoHello(t *testing.T) {
 		t.Fatalf("expected exit code 0, got %d", code)
 	}
 
-	output := cs.Output()
+	output := collector.wait()
 	if !strings.Contains(output, "hello capture") {
 		t.Fatalf("expected output to contain %q, got %q", "hello capture", output)
 	}
@@ -142,6 +186,7 @@ func TestCaptureSession_PauseResume(t *testing.T) {
 		t.Fatalf("Start failed: %v", err)
 	}
 	defer cs.Close()
+	collector := startCollector(cs)
 
 	// Let the process run and produce some output.
 	time.Sleep(500 * time.Millisecond)
@@ -166,9 +211,9 @@ func TestCaptureSession_PauseResume(t *testing.T) {
 
 	// Capture output after pausing and verify it stops growing.
 	time.Sleep(200 * time.Millisecond)
-	outputAfterPause := cs.Output()
+	outputAfterPause := collector.current()
 	time.Sleep(500 * time.Millisecond)
-	outputStill := cs.Output()
+	outputStill := collector.current()
 	if outputAfterPause != outputStill {
 		// On some systems the child might have buffered output that arrives
 		// after the SIGSTOP is delivered, so we only warn rather than fail
@@ -192,7 +237,7 @@ func TestCaptureSession_PauseResume(t *testing.T) {
 
 	// Let it run a bit more and verify new output arrives.
 	time.Sleep(500 * time.Millisecond)
-	outputAfterResume := cs.Output()
+	outputAfterResume := collector.current()
 	if len(outputAfterResume) <= len(outputStill) {
 		t.Fatalf("expected more output after resume, got %d bytes (was %d)",
 			len(outputAfterResume), len(outputStill))
@@ -406,21 +451,22 @@ func TestCaptureSession_Write(t *testing.T) {
 		t.Fatalf("Start failed: %v", err)
 	}
 	defer cs.Close()
+	collector := startCollector(cs)
 
 	// Write to stdin; cat echoes it back.
 	if err := cs.WriteString("hello from stdin\n"); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
-	// Wait a bit for the echo to come back through PTY → VTerm.
+	// Wait a bit for the echo to come back through PTY.
 	deadline := time.After(5 * time.Second)
 	for {
 		select {
 		case <-deadline:
-			t.Fatalf("timed out waiting for echoed output, got: %q", cs.Output())
+			t.Fatalf("timed out waiting for echoed output, got: %q", collector.current())
 		default:
 		}
-		if strings.Contains(cs.Output(), "hello from stdin") {
+		if strings.Contains(collector.current(), "hello from stdin") {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -456,34 +502,34 @@ func TestCaptureSession_SendEOF(t *testing.T) {
 	}
 }
 
-func TestCaptureSession_Screen(t *testing.T) {
+func TestCaptureSession_ReaderOutput(t *testing.T) {
 	t.Parallel()
 	skipIfWindows(t)
 
 	cs := NewCaptureSession(CaptureConfig{
 		Command: "echo",
-		Args:    []string{"screen test"},
+		Args:    []string{"reader test"},
 	})
 
-	// Screen before start should be empty.
-	if s := cs.Screen(); s != "" {
-		t.Fatalf("expected empty Screen before Start, got %q", s)
+	// Reader before start should be nil.
+	if ch := cs.Reader(); ch != nil {
+		t.Fatal("expected nil Reader before Start")
 	}
 
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
 	defer cs.Close()
+	collector := startCollector(cs)
 
 	cs.Wait()
 
-	screen := cs.Screen()
-	if screen == "" {
-		t.Fatal("expected non-empty Screen after Wait")
+	output := collector.wait()
+	if output == "" {
+		t.Fatal("expected non-empty output after Wait")
 	}
-	// Screen output contains ANSI escapes — verify some content is present.
-	if !strings.Contains(screen, "screen test") {
-		t.Fatalf("expected Screen to contain %q, got length %d", "screen test", len(screen))
+	if !strings.Contains(output, "reader test") {
+		t.Fatalf("expected output to contain %q, got %q", "reader test", output)
 	}
 }
 
@@ -534,9 +580,10 @@ func TestCaptureSession_WorkingDirectory(t *testing.T) {
 		t.Fatalf("Start failed: %v", err)
 	}
 	defer cs.Close()
+	collector := startCollector(cs)
 
 	cs.Wait()
-	output := strings.TrimSpace(cs.Output())
+	output := strings.TrimSpace(collector.wait())
 	output = strings.ReplaceAll(output, "\r", "")
 	output = strings.ReplaceAll(output, "\n", "")
 
@@ -565,9 +612,10 @@ func TestCaptureSession_EnvVars(t *testing.T) {
 		t.Fatalf("Start failed: %v", err)
 	}
 	defer cs.Close()
+	collector := startCollector(cs)
 
 	cs.Wait()
-	output := cs.Output()
+	output := collector.wait()
 	if !strings.Contains(output, "capture_value_99") {
 		t.Fatalf("expected output to contain %q, got %q", "capture_value_99", output)
 	}
@@ -613,8 +661,8 @@ func TestCaptureSession_NotStarted_Methods(t *testing.T) {
 	if _, err := cs.Wait(); err == nil {
 		t.Fatal("expected error from Wait before Start")
 	}
-	if cs.Output() != "" {
-		t.Fatal("expected empty Output before Start")
+	if ch := cs.Reader(); ch != nil {
+		t.Fatal("expected nil Reader before Start")
 	}
 	if cs.Pid() != 0 {
 		t.Fatal("expected Pid=0 before Start")
@@ -654,9 +702,10 @@ func TestCaptureSession_MultilineOutput(t *testing.T) {
 		t.Fatalf("Start failed: %v", err)
 	}
 	defer cs.Close()
+	collector := startCollector(cs)
 
 	cs.Wait()
-	output := cs.Output()
+	output := collector.wait()
 	for _, expected := range []string{"line1", "line2", "line3"} {
 		if !strings.Contains(output, expected) {
 			t.Fatalf("expected output to contain %q, got %q", expected, output)
@@ -697,13 +746,14 @@ func TestCaptureSession_ConcurrentOutput(t *testing.T) {
 		t.Fatalf("Start failed: %v", err)
 	}
 	defer cs.Close()
+	collector := startCollector(cs)
 
-	// Concurrent Output() reads while process is running.
+	// Concurrent current() reads while process is running.
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		for {
-			_ = cs.Output()
+			_ = collector.current()
 			if !cs.IsRunning() {
 				return
 			}
@@ -714,7 +764,7 @@ func TestCaptureSession_ConcurrentOutput(t *testing.T) {
 	cs.Wait()
 	<-done
 
-	output := cs.Output()
+	output := collector.wait()
 	if !strings.Contains(output, "line50") {
 		t.Fatalf("expected output to contain 'line50', got %q", output)
 	}
@@ -917,13 +967,13 @@ func TestCaptureSession_Reader_ChannelClosedOnExit(t *testing.T) {
 	}
 }
 
-func TestCaptureSession_Reader_ConsistentWithOutput(t *testing.T) {
+func TestCaptureSession_Reader_Content(t *testing.T) {
 	t.Parallel()
 	skipIfWindows(t)
 
 	cs := NewCaptureSession(CaptureConfig{
 		Command: "echo",
-		Args:    []string{"consistency test"},
+		Args:    []string{"reader content test"},
 	})
 	if err := cs.Start(context.Background()); err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -938,12 +988,7 @@ func TestCaptureSession_Reader_ConsistentWithOutput(t *testing.T) {
 
 	cs.Wait()
 
-	// Both Reader and Output should contain the same content.
-	output := cs.Output()
-	if !strings.Contains(readerBuf.String(), "consistency test") {
+	if !strings.Contains(readerBuf.String(), "reader content test") {
 		t.Fatalf("Reader output %q does not contain expected text", readerBuf.String())
-	}
-	if !strings.Contains(output, "consistency test") {
-		t.Fatalf("Output() %q does not contain expected text", output)
 	}
 }

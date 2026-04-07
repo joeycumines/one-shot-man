@@ -39,10 +39,15 @@
     "tmuxWisdom": "tmux's architecture (single-threaded event loop, containment hierarchy, buffered event I/O, input routing via active session, delta rendering) is the reference model. The Go translation uses a single worker goroutine instead of an event loop, channels instead of callbacks, and atomic.Pointer instead of direct memory access. See scratch/termmux-architecture.md for full details."
   },
   "statusSection": {
-    "currentState": "Blueprint expanded with comprehensive SessionManager architecture. Task 3 has been restructured as an architecture-first approach: Task 3 now captures the foundational constraints and defines the architecture document. Tasks 30-39 implement the architecture in self-contained, Jira-task-worthy units with full acceptance criteria. All downstream tasks (4+) depend on the SessionManager being complete. Architecture reference is scratch/termmux-architecture.md.",
+    "currentState": "Two printf-style log.debug calls identified by pr-split-log-debug-autopsy-20260407 cause silent verify phase state machine failures. Two new tasks (16, 17) inserted to fix the violations and prevent recurrence. All later tasks relocated to maintain dependency order.",
     "goalState": "Level 1 (Functional): User can run osm pr-split, interact with Claude pane, verification shell, and user shell interactively — inline and fullscreen passthrough — with seamless switching through a true multi-session manager. Windows ConPTY is fully supported. Level 2 (Quality): All interactions are responsive, rendering is pixel-perfect (no duplicate output, correct borders), focus system is reliable, error states are recoverable, code is exemplary (reads human-written), tests are exhaustive (no build tag violations). Level 3 (Validation): End-to-end tests prove workflows on all platforms; CI green on all checks; no performance regressions; no AI slop.",
     "definitionOfDone": "The blueprint is Done when: (1) ALL tasks are marked Done, (2) each Done task has passed two contiguous Rule of Two reviews, (3) zero-uncovered-code-paths exist for the new functionality, (4) manual smoke tests confirm behavior across platforms, (5) docs are fully updated, and (6) all integration tests pass on all CI platforms.",
     "replanLog": [
+      {
+        "trigger": "pr-split-log-debug-autopsy-20260407: Insert fix tasks and relocate all not-done tasks",
+        "affectedTasks": "Tasks 2, 4-15 (not-done) moved to new IDs 16-27; new Tasks 16 and 17 inserted",
+        "summary": "Autopsy in ./scratch/pr-split-log-debug-autopsy-20260407/ identified two printf-style log.debug calls that violate the jsLogDebug signature (msg string, attrs ...map[string]any). The violations cause silent verify phase state machine failures — transitionVerifyPhase throws before state is updated. Two fix tasks inserted at the front. All not-done tasks renumbered to maintain dependency order. Task 2 (ConPTY) moved to Task 18, Tasks 4-15 moved to Tasks 19-30."
+      },
       {
         "trigger": "Task 7 Replan: Post-Task-6 handler mapping",
         "affectedTasks": "Tasks 4, 9, 13",
@@ -304,6 +309,126 @@
       "acceptance": "The SessionManager worker goroutine is proved practically to survive chaotic, interleaved requests and I/O from concurrent sessions, guaranteeing that no sequence of rapid session switching by the user while background streams are active will ever cause a deadlock, panic, or freeze the CLI. The fuzz test runs under `go test -fuzz` and discovers no issues after at least 30 seconds of fuzzing.",
       "status": "Done",
       "completedNote": "FuzzSessionRouter added in internal/termmux/manager_test.go (~190 lines): fuzzSession type implements InteractiveSession with atomic close guard and pre-enqueued output; fuzz test exercises all 10 public SessionManager API methods (Register, Activate, Input, Unregister, Resize, Snapshot, ActiveID, Sessions, Subscribe, Unsubscribe) via 4 concurrent goroutines with random byte-driven operation selection. 8 seed corpus entries cover diverse patterns. Make targets added: config.mk `fuzz-session-router` (standalone) and project.mk `fuzz-termmux` (includes FuzzSessionRouter). 30s fuzz run: 180,112 executions, zero failures. R2: 2 contiguous clean passes."
+    },
+    {
+      "id": 16,
+      "dependsOn": [],
+      "task": "Fix printf-style log.debug call in transitionVerifyPhase (pr_split_13_tui.js:120)",
+      "description": "Fix the TypeError caused by passing printf-style arguments to log.debug in transitionVerifyPhase. In internal/command/pr_split_13_tui.js line 120, change:\n    log.debug('verify: phase %s \\u2192 %s', from, toPhase);\nto:\n    log.debug('verify: phase ' + from + ' \\u2192 ' + toPhase);\nThis follows the existing pattern used by all other log.debug calls in the codebase (string concatenation). The log.printf call on line 116 is already correct — it accepts varargs. The log.debug call is the violation. Also add a test that verifies the fix: write a test in internal/command/pr_split_13_tui_test.go (or a new test file) that calls transitionVerifyPhase with various phase transitions and verifies no TypeError is thrown and the state machine advances correctly. The test should exercise: NOT_STARTED→RUNNING, RUNNING→EQUIV_CHECK, EQUIV_CHECK→PAUSED, PAUSED→FAILED, etc.",
+      "acceptance": "transitionVerifyPhase no longer throws a TypeError during any phase transition. The verify phase state machine advances correctly — s.verifyPhase is set to toPhase after every valid transition. A test exercises all valid transition paths and asserts s.verifyPhase is updated. The log.printf call on line 116 is unchanged (already correct). All existing tests pass.",
+      "status": "Not Started"
+    },
+    {
+      "id": 17,
+      "dependsOn": [],
+      "task": "Fix printf-style log.debug call in handleVerifySignal (pr_split_16c_tui_handlers_verify.js:1264)",
+      "description": "Fix the TypeError caused by passing printf-style arguments to log.debug in handleVerifySignal. In internal/command/pr_split_16c_tui_handlers_verify.js line 1264, change:\n    log.debug('verify: user signal=%s for branch=%s', choice, s.activeVerifyBranch);\nto:\n    log.debug('verify: user signal=' + choice + ' for branch=' + s.activeVerifyBranch);\nThis follows the existing pattern. Also audit the rest of pr_split_16c_tui_handlers_verify.js for any other printf-style log calls — grep for log.(debug|info|warn|error)\\([^)]*%[a-z] across all internal/command/*.js files to ensure there are no remaining violations after Tasks 16 and 17.",
+      "acceptance": "handleVerifySignal no longer throws a TypeError when the user presses p, f, or c during branch verification. A grep of all internal/command/*.js files finds zero remaining printf-style log.debug/info/warn/error calls (no %s, %d, %v, etc. in log calls). All existing tests pass.",
+      "status": "Not Started"
+    },
+    {
+      "id": 18,
+      "dependsOn": [],
+      "task": "Implement ConPTY Windows support (GAP-005)",
+      "description": "Windows PTY support is missing, currently dropping Windows to capture-only mode. Implement full ConPTY support in internal/termmux/pty/ and internal/termmux/platform_windows.go to bring interactive parity to Windows users.",
+      "acceptance": "pr-split verify shell, Claude pane, and user shell are fully interactive on Windows via ConPTY, with seamless functional parity to macOS and Linux.",
+      "status": "Not Started"
+    },
+    {
+      "id": 19,
+      "dependsOn": [39],
+      "task": "Implement fullscreen passthrough for any interactive session (GAP-008)",
+      "description": "POST-REPLAN: Passthrough is triggered via Ctrl+] which is handled by the toggleModel wrapper in BubbleTea (see startWizard in pr_split_16b_tui_model.js). The return is processed by handleToggleReturn in pr_split_16e_tui_update.js. Currently passthrough only activates for the Claude session. To extend: (1) In handleKeyMessage (pr_split_16e_tui_update.js), detect which pane has focus via s.splitViewFocus + s.splitViewTab. (2) Before entering passthrough, activate the focused session's ID via tuiMux.switchTo(focusedSessionID). (3) The toggleModel wrapper then enters passthrough for the active session. The split-view focus state is already tracked (s.splitViewFocus === 'claude'|'wizard', s.splitViewTab === 'claude'|'verify'|'output').",
+      "acceptance": "Users can hit Ctrl+] from the Verify Pane or user shell and get a fullscreen passthrough experience (not just inline). Session switching works flawlessly while in passthrough. The passthrough activates for whichever pane has focus, not hardcoded to Claude.",
+      "status": "Not Started"
+    },
+    {
+      "id": 20,
+      "dependsOn": [39],
+      "task": "Support 'Ask Claude' in pr-split regardless of auto mode (GAP-002)",
+      "description": "The 'Ask Claude' button in pr-split throws an error in non-auto modes. Update the TUI handlers so that the 'Ask Claude' workflow spawns a Claude session on-demand via sessionMgr.register() and works whenever the button is displayed, regardless of the user's strategy mode. The SessionManager makes this cleaner: registering a new session is explicit and doesn't conflict with existing sessions.",
+      "acceptance": "Clicking 'Ask Claude' successfully opens the Claude session and allows the user to get help in all pr-split modes (auto, manual, heuristic, directory). No auto-mode gating for this feature.",
+      "status": "Not Started"
+    },
+    {
+      "id": 21,
+      "dependsOn": [39],
+      "task": "Decompose wizardUpdateImpl god function (KILL-004)",
+      "description": "Decompose the ~600-line wizardUpdateImpl god function in pr_split_16e_tui_update.js into per-message-type handler dispatch functions. Separate key messages, mouse messages, window resizes, tick messages, and overlays into independently testable components.",
+      "acceptance": "wizardUpdateImpl is reduced to a concise, top-level dispatch function. The monolithic structure is refactored into modular handlers with zero behavioral regressions.",
+      "status": "Not Started"
+    },
+    {
+      "id": 22,
+      "dependsOn": [21],
+      "task": "Checkpoint: Replan TUI routing tasks based on new modular structure",
+      "description": "Research Task & Replanning Checkpoint: Inspect the output of Task 21 to map the new modular handler structure. Do not guess the new file names or function structures. Locate where verify messages, key captures, and pane switching now live in the refactored TUI. Re-write all subsequent TUI-dependent tasks (like Verify session leak fix and TUI keymap docs) with exact, concrete file pointers based on this new reality. Proceed to next task ONLY after the blueprint has been replanned.",
+      "acceptance": "The planner has explored the post-Task-21 codebase and updated the blueprint. Dependent tasks are heavily revised to point to the actual, correct un-papered file and function targets. A Replan Log entry is recorded.",
+      "status": "Not Started"
+    },
+    {
+      "id": 23,
+      "dependsOn": [],
+      "task": "Fix border formatting around autodetect/main values for source and target branch on PR split wizard configure page (GAP-003)",
+      "description": "The borders surrounding the autodetect and main/default values for the source branch and target branch fields on the PR split wizard's configure page are broken and clip/wrap based on terminal constraints. Write a failing test that captures the broken rendering at multiple terminal sizes. Then fix the border rendering code in pr_split_15c_tui_screens.js so the test passes. Ensure borders render correctly at any terminal size without clipping or wrapping incorrectly.",
+      "acceptance": "Configure page renders cleanly with correctly-aligned borders around source and target branch fields at every terminal size. Golden-file tests exist proving the fix works across sizes.",
+      "status": "Not Started"
+    },
+    {
+      "id": 24,
+      "dependsOn": [39, 22],
+      "task": "Fix Verify session leak on branch re-order (KILL-001)",
+      "description": "POST-REPLAN: Verify session lifecycle is managed in pr_split_16c_tui_handlers_verify.js (runVerifyBranch, pollVerifySession) dispatched from handleTickMessage in pr_split_16e_tui_update.js. Research found: (1) verify sessions are standalone CaptureSession objects NOT registered with SessionManager — tracked only via s.activeVerifySession, (2) shift+up/shift+down only reorders files in PLAN_EDITOR (not branches during verification), (3) the actual leak vector is runVerifyBranch being called while s.activeVerifySession is still set (duplicate tick, error recovery, pipeline restart). Fix: defensive guard at the top of runVerifyBranch that calls clearVerifyPaneSession if s.activeVerifySession is truthy.",
+      "acceptance": "Moving between branch verification states cleanly shuts down the previous verify session and starts the new one without output leakage or hanging orphaned processes. The guard is a no-op in the normal flow where pollVerifySession already cleans up before scheduling the next branch.",
+      "status": "Not Started"
+    },
+    {
+      "id": 25,
+      "dependsOn": [39],
+      "task": "Fix Claude orphan on double-SIGINT (KILL-002)",
+      "description": "When a user hits double-SIGINT in internal/command/pr_split.go, os.Exit(130) runs without executing defers, skipping Claude executor cleanly and leaving Claude worker process groups orphaned. The fix: intercept the double-SIGINT and call sessionMgr.Close() synchronously before os.Exit(130). SessionManager.Close() performs deterministic shutdown: cancels all sessions, waits for Done() channels, SIGTERM→SIGKILL sequence. This ensures all PTY child processes are cleaned up. For the case where the SessionManager's shutdown hangs (process won't die), add a hard timeout (e.g., 5 seconds) after which os.Exit(130) proceeds anyway. Use platform-appropriate primitives: process groups on Unix (syscall.Kill(-pid, sig)), Job Objects on Windows.",
+      "acceptance": "Double Ctrl+C exits the program immediately but strictly guarantees all attached session processes are killed via SessionManager.Close() across Linux, macOS, and Windows without orphaned background processes remaining. A hard timeout ensures the UI doesn't hang indefinitely on a zombie process.",
+      "status": "Not Started"
+    },
+    {
+      "id": 26,
+      "dependsOn": [],
+      "task": "Remove -tags=integration build tag violation (GAP-009)",
+      "description": "Remove the usage of `-tags=integration` and `+build integration` tags from the codebase. Rely exclusively on `testing.Short()` / `-short` flag for skipping slow execution, according to project rules, and update project.mk accordingly.",
+      "acceptance": "Developers and CI systems can reliably partition fast vs. slow tests using standard Go test flags (`go test -short`) without needing custom build tags. Standard Go tooling (like gopls and IDE test runners) works flawlessly out of the box without requiring special build constraint configuration.",
+      "status": "Not Started"
+    },
+    {
+      "id": 27,
+      "dependsOn": [39],
+      "task": "Implement E2E Claude integration test with a mock binary (GAP-010)",
+      "description": "Current pipeline tests rely heavily on mock MCP servers rather than a true binary. Implement an end-to-end integration test in internal/command/pr_split_binary_e2e_test.go that uses a generic mock binary specifically representing the real Claude CLI to verify process management, full lifecycle connection, and termination via SessionManager. You MUST include a testing.Short() or skipSlow(t) guard at the top of the test function because it spawns subprocesses, strictly adhering to AGENTS.md test rules.",
+      "acceptance": "An E2E test runs the overarching pr-split workflow by spawning a mock Claude binary locally, proving that process management works seamlessly with the SessionManager and PTYs end-to-end. The test safely skips when 'go test -short' is run, ensuring fast feedback loops are not polluted.",
+      "status": "Not Started"
+    },
+    {
+      "id": 28,
+      "dependsOn": [22],
+      "task": "Concrete UX refinement and TUI keymap docs",
+      "description": "POST-REPLAN: All TUI keybindings are now in handleKeyMessage (pr_split_16e_tui_update.js). Overlay keybindings are in handleOverlays. The help toggle (? or f1) is in handleKeyMessage — it sets s.showHelp=true. The help rendering is in pr_split_15d_tui_dialogs.js. Ctrl+Tab is ALREADY implemented in handleKeyMessage (split-view section) — it switches s.splitViewFocus between 'wizard' and 'claude'. Remaining work: (1) Update the help overlay content in pr_split_15d_tui_dialogs.js to show ALL registered shortcuts (currently just a static help text). The source of truth is handleKeyMessage. (2) Add docs/reference/tui-api.md with a markdown keymap table. (3) Verify Ctrl+Tab doesn't eat input in non-split-view mode (currently it only fires when s.splitViewEnabled is true — safe).",
+      "acceptance": "Ctrl+Tab navigates panes without eating input; ? opens a Lipgloss-rendered modal with all registered shortcuts; Docs contain a markdown table matching 1:1 with TUI keymap registers.",
+      "status": "Not Started"
+    },
+    {
+      "id": 29,
+      "dependsOn": [35],
+      "task": "Benchmark pane switching and render pipeline",
+      "description": "Add a performance test using testing.B in internal/command/pr_split_16_bench_test.go that benchmarks the pane switching and rendering latency via SessionManager. Validate that switching between the Claude session and user shell takes < 50ms per switch. Use pprof if needed to isolate allocation bottlenecks in the render path.",
+      "acceptance": "A benchmark test `BenchmarkPaneSwitching` runs locally. Pprof output shows pane switch latency consistently below 50ms at scale with 1000 simulated log lines.",
+      "status": "Not Started"
+    },
+    {
+      "id": 30,
+      "dependsOn": [35],
+      "task": "Add fuzz testing to SessionManager routing logic",
+      "description": "Add a go fuzz test `FuzzSessionRouter` in internal/termmux/manager_test.go to bombard the SessionManager with parallel, random byte sequences and session-switch commands (Register, Activate, Input, Unregister in random order) to find race conditions, panics, or deadlocks in the worker goroutine.",
+      "acceptance": "The SessionManager worker goroutine is proved practically to survive chaotic, interleaved requests and I/O from concurrent sessions, guaranteeing that no sequence of rapid session switching by the user while background streams are active will ever cause a deadlock, panic, or freeze the CLI. The fuzz test runs under `go test -fuzz` and discovers no issues after at least 30 seconds of fuzzing.",
+      "status": "Not Started"
     }
   ],
   "continuousVerification": {

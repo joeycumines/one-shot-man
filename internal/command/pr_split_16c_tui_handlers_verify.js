@@ -1261,7 +1261,7 @@
         s.verifySignal = true;
         s.verifySignalChoice = choice; // 'pass' | 'fail' | 'continue'
         s.verifySignalBranch = s.activeVerifyBranch;
-        log.debug('verify: user signal=%s for branch=%s', choice, s.activeVerifyBranch);
+        log.debug('verify user signal', {choice: choice, branch: s.activeVerifyBranch});
         return [s, null];
     }
 

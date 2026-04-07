@@ -330,9 +330,10 @@ func TestModule_MuxSessionWrapper_MethodEnumeration(t *testing.T) {
 	}
 
 	got := v.String()
-	// InteractiveSession: 9 methods — output, screen, target, setTarget,
-	// resize, write, close, isRunning, isDone.
-	want := "close,isDone,isRunning,output,resize,screen,setTarget,target,write"
+	// InteractiveSession base: 5 methods (resize, write, close, isDone, reader).
+	// MuxSession-specific: 5 methods (output, screen, target, setTarget, isRunning).
+	// Total: 10 enumerable methods.
+	want := "close,isDone,isRunning,output,reader,resize,screen,setTarget,target,write"
 	if got != want {
 		t.Fatalf("mux.session() methods = %q; want %q", got, want)
 	}

@@ -251,3 +251,79 @@ func TestMuxSession_Done_AfterDetach(t *testing.T) {
 		t.Fatal("IsRunning() should be false after Detach")
 	}
 }
+
+func TestMuxSession_Reader_NoChild(t *testing.T) {
+	var stdin, stdout bytes.Buffer
+	m := New(&stdin, &stdout, -1)
+	session := m.Session()
+
+	// Reader() should return nil when no child is attached.
+	if ch := session.Reader(); ch != nil {
+		t.Fatal("Reader() should return nil when no child is attached")
+	}
+}
+
+func TestMuxSession_Reader_WithChild(t *testing.T) {
+	var stdin bytes.Buffer
+	var stdout bytes.Buffer
+	m := New(&stdin, &stdout, -1)
+
+	child := newMockChild()
+	if err := m.Attach(child); err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+
+	session := m.Session()
+	ch := session.Reader()
+	if ch == nil {
+		t.Fatal("Reader() should return a non-nil channel when child is attached")
+	}
+
+	// Write data to the mock child (PTY echo — the mock child pipes
+	// writes back as reads) and verify it appears on the Reader channel.
+	if _, err := session.Write([]byte("hello")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	// The teeLoop processes chunks from reader.Output(), but the mock
+	// child may echo differently. Just verify the channel is functional
+	// by waiting for at least one chunk or timeout.
+	select {
+	case chunk := <-ch:
+		if len(chunk) == 0 {
+			t.Error("received empty chunk from Reader")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for Reader chunk")
+	}
+
+	child.Close()
+	<-m.teeDone
+}
+
+func TestMuxSession_Reader_NilAfterDetach(t *testing.T) {
+	var stdin, stdout bytes.Buffer
+	m := New(&stdin, &stdout, -1)
+
+	child := newMockChild()
+	if err := m.Attach(child); err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+
+	session := m.Session()
+	if ch := session.Reader(); ch == nil {
+		t.Fatal("Reader() should be non-nil while attached")
+	}
+
+	child.Close()
+	<-m.teeDone
+
+	if err := m.Detach(); err != nil {
+		t.Fatalf("Detach: %v", err)
+	}
+
+	// After detach, Reader() should return nil (not a closed channel).
+	if ch := session.Reader(); ch != nil {
+		t.Fatal("Reader() should return nil after Detach()")
+	}
+}

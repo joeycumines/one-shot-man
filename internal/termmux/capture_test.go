@@ -834,3 +834,116 @@ func TestCaptureSession_Passthrough_ContextCancel(t *testing.T) {
 		t.Fatalf("expected ExitContext, got %v (err=%v)", reason, err)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Reader() channel tests
+// ---------------------------------------------------------------------------
+
+func TestCaptureSession_Reader_BeforeStart(t *testing.T) {
+	t.Parallel()
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "echo",
+		Args:    []string{"test"},
+	})
+
+	if ch := cs.Reader(); ch != nil {
+		t.Fatal("Reader() should return nil before Start()")
+	}
+}
+
+func TestCaptureSession_Reader_StreamsOutput(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "echo",
+		Args:    []string{"hello reader"},
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer cs.Close()
+
+	ch := cs.Reader()
+	if ch == nil {
+		t.Fatal("Reader() returned nil after Start()")
+	}
+
+	// Drain all chunks from the Reader channel.
+	var buf bytes.Buffer
+	for chunk := range ch {
+		buf.Write(chunk)
+	}
+
+	// The channel should be closed after process exit.
+	if !strings.Contains(buf.String(), "hello reader") {
+		t.Fatalf("Reader output %q does not contain %q", buf.String(), "hello reader")
+	}
+}
+
+func TestCaptureSession_Reader_ChannelClosedOnExit(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "echo",
+		Args:    []string{"done"},
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer cs.Close()
+
+	ch := cs.Reader()
+
+	// Wait for the process to finish.
+	cs.Wait()
+
+	// Reader channel should be closed (all chunks drained).
+	// Drain remaining chunks.
+	for range ch {
+		// consume
+	}
+
+	// Channel is now closed — confirm with non-blocking receive.
+	select {
+	case _, ok := <-ch:
+		if ok {
+			t.Fatal("expected Reader channel to be closed")
+		}
+	default:
+		// Channel closed, as expected.
+	}
+}
+
+func TestCaptureSession_Reader_ConsistentWithOutput(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "echo",
+		Args:    []string{"consistency test"},
+	})
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer cs.Close()
+
+	// Drain Reader channel.
+	var readerBuf bytes.Buffer
+	for chunk := range cs.Reader() {
+		readerBuf.Write(chunk)
+	}
+
+	cs.Wait()
+
+	// Both Reader and Output should contain the same content.
+	output := cs.Output()
+	if !strings.Contains(readerBuf.String(), "consistency test") {
+		t.Fatalf("Reader output %q does not contain expected text", readerBuf.String())
+	}
+	if !strings.Contains(output, "consistency test") {
+		t.Fatalf("Output() %q does not contain expected text", output)
+	}
+}

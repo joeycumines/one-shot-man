@@ -376,10 +376,41 @@ func WrapMux(ctx context.Context, runtime *goja.Runtime, mux *parent.Mux) goja.V
 	})
 
 	// ── session() → InteractiveSession wrapper ──────────
-	// Returns an object exposing the attached PTY through the same session
-	// interface used by CaptureSession bindings.
+	// Returns an object exposing the attached PTY through the session
+	// interface. In addition to the base InteractiveSession methods
+	// (resize, write, close, isDone, reader), this adds MuxSession-
+	// specific methods (output, screen, target, setTarget, isRunning)
+	// for backward compatibility with existing JS scripts.
 	_ = obj.Set("session", func() goja.Value {
-		return wrapInteractiveSession(runtime, mux.Session(), parent.SessionKindPTY)
+		ms := mux.Session()
+		sessionObj := wrapInteractiveSession(runtime, ms, parent.SessionKindPTY).ToObject(runtime)
+
+		// MuxSession-specific methods (concrete type, not interface).
+		_ = sessionObj.Set("output", func() string {
+			return ms.Output()
+		})
+		_ = sessionObj.Set("screen", func() string {
+			return ms.Screen()
+		})
+		_ = sessionObj.Set("target", func() map[string]any {
+			target := ms.Target()
+			return map[string]any{
+				"id":   target.ID,
+				"name": target.Name,
+				"kind": target.Kind.String(),
+			}
+		})
+		_ = sessionObj.Set("setTarget", func(target map[string]any) {
+			if target == nil {
+				panic(runtime.NewTypeError("setTarget: target object is required"))
+			}
+			ms.SetTarget(targetFromJS(target, parent.SessionKindPTY))
+		})
+		_ = sessionObj.Set("isRunning", func() bool {
+			return ms.IsRunning()
+		})
+
+		return sessionObj
 	})
 
 	// ── lastActivityMs() → int64 ─────────────────────────
@@ -649,6 +680,36 @@ func newCaptureSession(ctx context.Context, runtime *goja.Runtime, call goja.Fun
 func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.CaptureSession) goja.Value {
 	obj := wrapInteractiveSession(runtime, cs, parent.SessionKindCapture).ToObject(runtime)
 
+	// ── CaptureSession-specific methods (not part of InteractiveSession) ──
+
+	// output() → string — plain-text VTerm snapshot.
+	_ = obj.Set("output", func() string {
+		return cs.Output()
+	})
+
+	// screen() → string — full ANSI-escaped VTerm rendering.
+	_ = obj.Set("screen", func() string {
+		return cs.Screen()
+	})
+
+	// target() → {id, name, kind}
+	_ = obj.Set("target", func() map[string]any {
+		target := cs.Target()
+		return map[string]any{
+			"id":   target.ID,
+			"name": target.Name,
+			"kind": target.Kind.String(),
+		}
+	})
+
+	// setTarget({name?, kind?, id?})
+	_ = obj.Set("setTarget", func(target map[string]any) {
+		if target == nil {
+			panic(runtime.NewTypeError("setTarget: target object is required"))
+		}
+		cs.SetTarget(targetFromJS(target, parent.SessionKindCapture))
+	})
+
 	// ── start() ──────────────────────────────────────────
 	_ = obj.Set("start", func() {
 		if err := cs.Start(ctx); err != nil {
@@ -792,14 +853,13 @@ func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.C
 // mux [MuxSession] wrappers (via [WrapMux].session()) and [CaptureSession]
 // wrappers (via [WrapCaptureSession]).
 //
-// Exported methods (9 total):
+// Exported methods (5 total, matching the trimmed InteractiveSession interface):
 //
-//	output, screen, target, setTarget, resize, write, close, isRunning, isDone.
+//	resize, write, close, isDone, reader.
 //
-// CaptureSession wrappers override close, resize, isRunning, and isDone
-// with implementation-specific versions and add capture-only methods
-// (start, interrupt, kill, pause, resume, isPaused, wait, sendEOF, pid,
-// exitCode).
+// CaptureSession wrappers add concrete-type-specific methods
+// (output, screen, target, setTarget, isRunning, start, interrupt, kill,
+// pause, resume, isPaused, wait, sendEOF, pid, exitCode, passthrough).
 func wrapInteractiveSession(runtime *goja.Runtime, session parent.InteractiveSession, defaultKind parent.SessionKind) goja.Value {
 	obj := runtime.NewObject()
 
@@ -807,30 +867,6 @@ func wrapInteractiveSession(runtime *goja.Runtime, session parent.InteractiveSes
 	// Non-enumerable so it doesn't appear in Object.keys().
 	_ = obj.DefineDataProperty("_goSession", runtime.ToValue(session),
 		goja.FLAG_FALSE, goja.FLAG_FALSE, goja.FLAG_FALSE)
-
-	_ = obj.Set("output", func() string {
-		return session.Output()
-	})
-
-	_ = obj.Set("target", func() map[string]any {
-		target := session.Target()
-		return map[string]any{
-			"id":   target.ID,
-			"name": target.Name,
-			"kind": target.Kind.String(),
-		}
-	})
-
-	_ = obj.Set("screen", func() string {
-		return session.Screen()
-	})
-
-	_ = obj.Set("setTarget", func(target map[string]any) {
-		if target == nil {
-			panic(runtime.NewTypeError("setTarget: target object is required"))
-		}
-		session.SetTarget(targetFromJS(target, defaultKind))
-	})
 
 	_ = obj.Set("resize", func(rows, cols int) {
 		if err := session.Resize(rows, cols); err != nil {
@@ -850,10 +886,6 @@ func wrapInteractiveSession(runtime *goja.Runtime, session parent.InteractiveSes
 		}
 	})
 
-	_ = obj.Set("isRunning", func() bool {
-		return session.IsRunning()
-	})
-
 	_ = obj.Set("isDone", func() bool {
 		select {
 		case <-session.Done():
@@ -861,6 +893,20 @@ func wrapInteractiveSession(runtime *goja.Runtime, session parent.InteractiveSes
 		default:
 			return false
 		}
+	})
+
+	// reader() returns a Go channel adapter: call reader() to get the next
+	// chunk (blocking), or null when the channel is closed.
+	_ = obj.Set("reader", func() goja.Value {
+		ch := session.Reader()
+		if ch == nil {
+			return goja.Null()
+		}
+		data, ok := <-ch
+		if !ok {
+			return goja.Null()
+		}
+		return runtime.ToValue(string(data))
 	})
 
 	return obj

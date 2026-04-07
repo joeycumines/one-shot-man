@@ -69,6 +69,11 @@ type Mux struct {
 	// teeLoop write (child process output). Updated atomically — safe to
 	// read from any goroutine without holding mu.
 	lastWriteAt atomic.Int64
+
+	// outputCh streams raw PTY output for consumption by SessionManager
+	// via the Reader() method. Created during Attach, closed by teeLoop
+	// on EOF. Each chunk is sent after VTerm processing.
+	outputCh chan []byte
 }
 
 // MuxSession adapts the currently attached mux child to the shared
@@ -117,6 +122,7 @@ func (m *Mux) Attach(session io.ReadWriteCloser) error {
 	m.vterm = vt.NewVTerm(m.termRows, m.termCols)
 	m.childEOF = make(chan struct{})
 	m.teeDone = make(chan struct{})
+	m.outputCh = make(chan []byte, 16)
 
 	// T16: Wire bell callback. When bell fires from the child PTY
 	// and the mux is NOT in passthrough mode (background pane), propagate
@@ -197,6 +203,16 @@ func (m *Mux) SetPassthroughTarget(target SessionTarget) {
 
 func (m *Mux) teeLoop(reader *ptyio.BufferedReader, teeDone, childEOF chan struct{}) {
 	defer close(teeDone)
+
+	m.mu.Lock()
+	outputCh := m.outputCh
+	m.mu.Unlock()
+	defer func() {
+		if outputCh != nil {
+			close(outputCh)
+		}
+	}()
+
 	for chunk := range reader.Output() {
 		m.mu.Lock()
 		vtm := m.vterm
@@ -217,6 +233,18 @@ func (m *Mux) teeLoop(reader *ptyio.BufferedReader, teeDone, childEOF chan struc
 
 		if outputFn != nil {
 			outputFn(chunk)
+		}
+
+		// Forward to Reader() channel for SessionManager consumption.
+		if outputCh != nil {
+			cp := make([]byte, len(chunk))
+			copy(cp, chunk)
+			select {
+			case outputCh <- cp:
+			default:
+				// Non-blocking: if SessionManager isn't consuming,
+				// don't stall the teeLoop. Data is still in VTerm.
+			}
 		}
 
 		// Forward to stdout only during passthrough.
@@ -258,6 +286,7 @@ func (m *Mux) Detach() error {
 	m.vterm = nil
 	m.reader = nil
 	m.readerCancel = nil
+	m.outputCh = nil
 	m.active = SideOsm
 	m.swappedOnce = false
 	m.mu.Unlock()
@@ -485,6 +514,15 @@ func (s *MuxSession) Done() <-chan struct{} {
 // IsRunning reports whether a child process is currently attached to the mux.
 func (s *MuxSession) IsRunning() bool {
 	return s.mux.HasChild()
+}
+
+// Reader returns a channel that streams raw PTY output chunks. The channel
+// is created during Attach and closed when the child exits (teeLoop EOF).
+// Returns nil if no child is attached.
+func (s *MuxSession) Reader() <-chan []byte {
+	s.mux.mu.Lock()
+	defer s.mux.mu.Unlock()
+	return s.mux.outputCh
 }
 
 var _ InteractiveSession = (*MuxSession)(nil)

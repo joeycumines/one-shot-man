@@ -14,15 +14,11 @@ import (
 // mockSession is a minimal InteractiveSession for type-level tests.
 type mockSession struct{}
 
-func (mockSession) Target() SessionTarget     { return SessionTarget{} }
-func (mockSession) SetTarget(SessionTarget)   {}
-func (mockSession) Output() string            { return "" }
-func (mockSession) Screen() string            { return "" }
 func (mockSession) Resize(int, int) error     { return nil }
 func (mockSession) Write([]byte) (int, error) { return 0, nil }
 func (mockSession) Close() error              { return nil }
 func (mockSession) Done() <-chan struct{}     { ch := make(chan struct{}); close(ch); return ch }
-func (mockSession) IsRunning() bool           { return false }
+func (mockSession) Reader() <-chan []byte     { ch := make(chan []byte); close(ch); return ch }
 
 // controllableSession is a richer mock that records calls and allows
 // controlling behavior from tests.
@@ -33,20 +29,18 @@ type controllableSession struct {
 	resizeCalls []resizePayload
 	closeCalled atomic.Bool
 	doneCh      chan struct{}
+	readerCh    chan []byte
 }
 
 func newControllableSession() *controllableSession {
 	return &controllableSession{
-		doneCh: make(chan struct{}),
+		doneCh:   make(chan struct{}),
+		readerCh: make(chan []byte, 16),
 	}
 }
 
-func (s *controllableSession) Target() SessionTarget     { return SessionTarget{} }
-func (s *controllableSession) SetTarget(SessionTarget)   {}
-func (s *controllableSession) Output() string            { return "" }
-func (s *controllableSession) Screen() string            { return "" }
-func (s *controllableSession) IsRunning() bool           { return !s.closeCalled.Load() }
-func (s *controllableSession) Done() <-chan struct{}      { return s.doneCh }
+func (s *controllableSession) Done() <-chan struct{} { return s.doneCh }
+func (s *controllableSession) Reader() <-chan []byte { return s.readerCh }
 
 func (s *controllableSession) Write(data []byte) (int, error) {
 	s.writeMu.Lock()

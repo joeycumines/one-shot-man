@@ -77,6 +77,11 @@ type CaptureSession struct {
 	reader       *ptyio.BufferedReader
 	readerCancel context.CancelFunc // cancels BufferedReader.ReadLoop
 
+	// outputCh streams raw PTY output for consumption by SessionManager
+	// via the Reader() method. Each chunk is a copy of what the
+	// BufferedReader produces. The channel is closed on EOF.
+	outputCh chan []byte
+
 	// Passthrough state: when passthroughActive is true, the readerLoop
 	// also writes output chunks to passthroughOutput (typically os.Stdout).
 	passthroughActive bool
@@ -177,32 +182,57 @@ func (cs *CaptureSession) Start(ctx context.Context) error {
 	cs.mu.Lock()
 	cs.reader = ptyio.NewBufferedReader(proc.File(), 16)
 	cs.readerCancel = readerCancel
+	cs.outputCh = make(chan []byte, 16)
 	cs.mu.Unlock()
 	go cs.reader.ReadLoop(readerCtx)
 
-	// Start the background reader that feeds PTY output to the VTerm.
-	// The reader goroutine also captures exit status before signaling
-	// completion, ensuring Wait() always returns the correct exit code.
+	// Start the background reader that feeds PTY output to the VTerm
+	// and the Reader() channel. The reader goroutine also captures exit
+	// status before signaling completion, ensuring Wait() always returns
+	// the correct exit code.
 	go cs.readerLoop()
 
 	return nil
 }
 
 // readerLoop consumes output from the BufferedReader channel and writes to
-// the VTerm. When passthroughActive is true, output is also forwarded to
-// passthroughOutput (typically os.Stdout). After the channel closes (PTY
-// EOF), it captures the process exit status and closes cs.done.
+// both the VTerm (for backward-compatible Output/Screen) and the outputCh
+// (for Reader() consumers like SessionManager). When passthroughActive is
+// true, output is also forwarded to passthroughOutput (typically os.Stdout).
+// After the channel closes (PTY EOF), it captures the process exit status
+// and closes cs.done.
 func (cs *CaptureSession) readerLoop() {
 	defer close(cs.done)
 
 	cs.mu.Lock()
 	reader := cs.reader
+	outputCh := cs.outputCh
 	cs.mu.Unlock()
 
-	// Drain all output from the BufferedReader into the VTerm.
+	defer func() {
+		if outputCh != nil {
+			close(outputCh)
+		}
+	}()
+
+	// Drain all output from the BufferedReader into VTerm and outputCh.
 	for chunk := range reader.Output() {
 		// VTerm.Write is internally synchronized (has its own mutex).
 		_, _ = cs.term.Write(chunk)
+
+		// Forward to Reader() channel for SessionManager consumption.
+		// Non-blocking: if nobody is consuming Reader(), data is still
+		// captured in VTerm. Avoids stalling the readerLoop which would
+		// block the PTY and potentially deadlock the child process.
+		if outputCh != nil {
+			// Copy chunk to avoid aliasing with BufferedReader's buffer.
+			cp := make([]byte, len(chunk))
+			copy(cp, chunk)
+			select {
+			case outputCh <- cp:
+			default:
+			}
+		}
 
 		// During passthrough, also forward raw output to stdout.
 		cs.mu.Lock()
@@ -354,6 +384,15 @@ func (cs *CaptureSession) Resize(rows, cols int) error {
 	cs.cols = cols
 	cs.mu.Unlock()
 	return nil
+}
+
+// Reader returns a channel that streams raw PTY output chunks. The channel
+// is created during Start and closed when the child process exits (EOF).
+// Returns nil if the session has not been started.
+func (cs *CaptureSession) Reader() <-chan []byte {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	return cs.outputCh
 }
 
 // Wait blocks until the child process exits and the output has been fully

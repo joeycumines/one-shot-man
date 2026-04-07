@@ -309,7 +309,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	}
 	defer cleanup()
 
-	termFd, err := c.setupEngineGlobals(ctx, engine, stdout)
+	termFd, tuiMgr, err := c.setupEngineGlobals(ctx, engine, stdout)
 	if err != nil {
 		return err
 	}
@@ -336,9 +336,8 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		// escape sequences are no-ops when already in normal mode.
 		//
 		// Note on double-SIGINT (os.Exit): this defer does NOT run
-		// on os.Exit; that path has its own explicit restore above.
-		// Note on Claude process: os.Exit closes all FDs including
-		// the PTY master, which sends SIGHUP to Claude — no orphan.
+		// on os.Exit; that path has its own explicit restore + session
+		// cleanup above — see the forceCloseSessionManager call.
 		defer func() {
 			if savedTermState != nil {
 				_ = term.Restore(termFd, savedTermState)
@@ -349,9 +348,13 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 
 		// Double-SIGINT force-exit handler. After the first signal cancels
 		// ctx (triggering BubbleTea's graceful quit via context propagation),
-		// a second SIGINT force-exits with best-effort terminal restoration.
-		// This prevents the user from being stuck if graceful shutdown hangs
-		// (e.g., Claude subprocess won't terminate).
+		// a second SIGINT force-exits with best-effort terminal restoration
+		// and explicit session cleanup (SIGTERM→SIGKILL to child process
+		// groups via SessionManager.Close).
+		//
+		// tuiMgr is captured by the closure; it was returned from
+		// setupEngineGlobals above, so it is already assigned and
+		// never reassigned — no data race.
 		done := make(chan struct{})
 		defer close(done)
 		go func() {
@@ -364,7 +367,8 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 
 			select {
 			case <-sigCh:
-				// Second interrupt — force exit with terminal restore.
+				// Second interrupt — kill sessions then force exit.
+				forceCloseSessionManager(tuiMgr)
 				if savedTermState != nil {
 					_ = term.Restore(termFd, savedTermState)
 				}
@@ -424,7 +428,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 // This function is the sole owner of mux lifecycle initialization. All
 // session-related globals are configured here — JS chunks use them but
 // never create new mux instances.
-func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripting.Engine, stdout io.Writer) (termFd int, err error) {
+func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripting.Engine, stdout io.Writer) (termFd int, sessionMgr *termmux.SessionManager, err error) {
 	// Inject command name for state namespacing.
 	engine.SetGlobal("config", map[string]any{
 		"name": "pr-split",
@@ -522,10 +526,10 @@ func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripti
 
 	// Load the 30 chunked script files in dependency order.
 	if err := loadChunkedScript(engine); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 
-	return termFd, nil
+	return termFd, tuiMgr, nil
 }
 
 // applyConfigDefaults applies config-file values to command fields where the
@@ -649,6 +653,30 @@ func (c *PrSplitCommand) validateGitRepo() error {
 	}
 
 	return nil
+}
+
+// forceCloseSessionManager attempts to gracefully shut down the
+// SessionManager within a hard 5-second deadline. This sends
+// SIGTERM→SIGKILL to all child process groups via
+// SessionManager.Close → CaptureSession.Close → Process.Close.
+// If the deadline expires, we log a warning and return — the
+// caller then proceeds with os.Exit, which closes PTY master FDs
+// and sends SIGHUP to surviving process groups as a last resort.
+func forceCloseSessionManager(mgr *termmux.SessionManager) {
+	if mgr == nil {
+		return
+	}
+	closeDone := make(chan struct{})
+	go func() {
+		mgr.Close()
+		close(closeDone)
+	}()
+	select {
+	case <-closeDone:
+		slog.Info("pr-split: SessionManager closed before force-exit")
+	case <-time.After(5 * time.Second):
+		slog.Warn("pr-split: SessionManager.Close() timed out, proceeding with force-exit")
+	}
 }
 
 // parseClaudeEnv parses a comma-separated KEY=VALUE string into a map.

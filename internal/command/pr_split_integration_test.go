@@ -48,7 +48,7 @@ func newPrSplitEvalFromFlags(t testing.TB, args ...string) (*PrSplitCommand, fun
 	}
 	t.Cleanup(cleanup)
 
-	if _, err := cmd.setupEngineGlobals(ctx, engine, &stdout); err != nil {
+	if _, _, err := cmd.setupEngineGlobals(ctx, engine, &stdout); err != nil {
 		t.Fatalf("setup engine globals: %v", err)
 	}
 

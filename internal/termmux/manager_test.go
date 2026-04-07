@@ -1874,13 +1874,13 @@ func FuzzSessionRouter(f *testing.F) {
 	// Seed corpus: representative operation sequences.
 	// Each byte encodes an operation (byte % 10).
 	f.Add([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9})             // one of each op
-	f.Add([]byte{0, 0, 0, 1, 2, 2, 3, 3, 3})                 // register-heavy then unregister
-	f.Add([]byte{0, 1, 3, 0, 1, 3, 0, 1, 3})                 // register-activate-unregister cycles
-	f.Add([]byte{0, 2, 2, 2, 2, 2, 2, 2, 2, 2})              // register then input flood
-	f.Add([]byte{0, 4, 4, 4, 4, 4, 4, 4, 4, 4})              // register then resize flood
-	f.Add([]byte{3, 3, 3, 1, 1, 5, 5})                        // unregister/activate/snapshot on empty
+	f.Add([]byte{0, 0, 0, 1, 2, 2, 3, 3, 3})                // register-heavy then unregister
+	f.Add([]byte{0, 1, 3, 0, 1, 3, 0, 1, 3})                // register-activate-unregister cycles
+	f.Add([]byte{0, 2, 2, 2, 2, 2, 2, 2, 2, 2})             // register then input flood
+	f.Add([]byte{0, 4, 4, 4, 4, 4, 4, 4, 4, 4})             // register then resize flood
+	f.Add([]byte{3, 3, 3, 1, 1, 5, 5})                      // unregister/activate/snapshot on empty
 	f.Add([]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 3, 3, 3}) // register many, then unregister
-	f.Add([]byte{8, 0, 2, 9, 8, 0, 2, 4, 9, 3})              // subscribe/unsubscribe interleaved
+	f.Add([]byte{8, 0, 2, 9, 8, 0, 2, 4, 9, 3})             // subscribe/unsubscribe interleaved
 
 	f.Fuzz(func(t *testing.T, data []byte) {
 		if len(data) < 2 {

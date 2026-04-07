@@ -2,6 +2,7 @@ package command
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -3335,6 +3336,62 @@ func TestChunk13_ViewConfigScreen_AdvancedToggle(t *testing.T) {
 	}
 	if !strings.Contains(raw.(string), "Max files") {
 		t.Error("viewConfig with showAdvanced=true should show 'Max files'")
+	}
+}
+
+// TestChunk13_ViewConfigScreen_BorderVerticalAlignment verifies that the
+// bordered card around source/target branch values maintains consistent
+// vertical alignment across all its rendered lines. A bug where the indent
+// is applied only to the first line of a multi-line card would cause the
+// left border (│) to appear at different columns on subsequent lines.
+func TestChunk13_ViewConfigScreen_BorderVerticalAlignment(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	for _, width := range []int{80, 120, 60} {
+		raw, err := evalJS(fmt.Sprintf(`(function() {
+			globalThis.prSplit._state.analysisCache = {currentBranch: 'feature/source'};
+			globalThis.prSplit.runtime.baseBranch = 'main';
+			return globalThis.prSplit._viewConfigScreen({
+				wizardState: 'CONFIG', width: %d, showAdvanced: false
+			});
+		})()`, width))
+		if err != nil {
+			t.Fatalf("width=%d: %v", width, err)
+		}
+		rendered := raw.(string)
+		lines := strings.Split(rendered, "\n")
+
+		// For each bordered card block, verify the left border character
+		// (any of ╭│╰) appears at the same visual column on every line.
+		var blockStartCol = -1
+		var blockLines int
+		for _, line := range lines {
+			stripped := ansiRegex.ReplaceAllString(line, "")
+			runes := []rune(stripped)
+			col := -1
+			for i, r := range runes {
+				if r == '╭' || r == '│' || r == '╰' {
+					col = i
+					break
+				}
+			}
+			if col >= 0 {
+				if blockStartCol < 0 {
+					blockStartCol = col
+				}
+				blockLines++
+				if col != blockStartCol {
+					t.Errorf("width=%d: border misaligned at block line %d "+
+						"(expected col %d, got %d)\nfull output:\n%s",
+						width, blockLines, blockStartCol, col, rendered)
+				}
+			} else if blockStartCol >= 0 {
+				// End of a block — reset for the next one.
+				blockStartCol = -1
+				blockLines = 0
+			}
+		}
 	}
 }
 

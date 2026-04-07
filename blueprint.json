@@ -89,7 +89,8 @@
       "task": "Define SessionManager architecture and constraints (GAP-001/007)",
       "description": "This task establishes the architectural foundation for all subsequent SessionManager work. Read and internalize scratch/termmux-architecture.md which defines: (1) Single worker goroutine owns all mutable state — no mutexes for session state — inspired by tmux's single-threaded event loop from server.c/proc.c; (2) Channel-based request/reply (ping-pong) for all mutations, modeled after tmux's command queue (cmdq); (3) Copy-on-write ScreenSnapshot via atomic.Pointer for non-blocking reads, replacing tmux's direct memory access with Go-idiomatic concurrent read patterns; (4) EventBus for fan-out event delivery (session registered/activated/output/exited/closed/resize/bell); (5) InteractiveSession interface trimmed to minimal contract (Write, Resize, Close, Done, Reader) — VTerm ownership moves from individual sessions to the managedSession wrapper in the worker; (6) Mux type eliminated entirely — SessionManager subsumes all Mux functionality; (7) Module-extractable design — zero imports from osm internal packages; (8) Containment hierarchy extensible to Windows/Layouts (tmux-like session→window→pane model for future). The architecture document (scratch/termmux-architecture.md) is the AUTHORITATIVE reference for tasks 30-39. No deviation without a replan log entry. Implementation must follow the phased approach: core types → worker → session integration → public API → Mux elimination → JS shim → caller migration.",
       "acceptance": "The architecture document exists at scratch/termmux-architecture.md, has been reviewed through Rule of Two, and serves as the single authoritative reference for the SessionManager implementation. All subsequent tasks (30-39) can be cold-started by reading this document first.",
-      "status": "Not Started"
+      "status": "Done",
+      "completedNote": "scratch/termmux-architecture.md exists (~500 lines). Rule of Two passed in prior session (2 contiguous passes). Document covers: single worker goroutine, channel-based request/reply, COW snapshots, EventBus, InteractiveSession trimming, Mux elimination, module extractability."
     },
     {
       "id": 30,
@@ -209,7 +210,8 @@
       "task": "Fix border formatting around autodetect/main values for source and target branch on PR split wizard configure page (GAP-003)",
       "description": "The borders surrounding the autodetect and main/default values for the source branch and target branch fields on the PR split wizard's configure page are broken and clip/wrap based on terminal constraints. Write a failing test that captures the broken rendering at multiple terminal sizes. Then fix the border rendering code in pr_split_15c_tui_screens.js so the test passes. Ensure borders render correctly at any terminal size without clipping or wrapping incorrectly.",
       "acceptance": "Configure page renders cleanly with correctly-aligned borders around source and target branch fields at every terminal size. Golden-file tests exist proving the fix works across sizes.",
-      "status": "Not Started"
+      "status": "Done",
+      "completedNote": "Two bugs fixed in pr_split_15c_tui_screens.js: (1) Width constant changed from -8 to -6 (correct accounting: indent=2+spacer=2+border=2=6; lipgloss Width() is content+padding, borders are added on top). (2) Multi-line indent changed from '  '+joinHorizontal(...) (only indents line 1) to lipgloss.newStyle().paddingLeft(2).render(joinHorizontal(...)) which indents all 5 lines of the bordered card block. Failing test TestChunk13_ViewConfigScreen_BorderVerticalAlignment added to pr_split_13_tui_test.go — tests border alignment at widths 60/80/120 by stripping ANSI and comparing rune positions of border characters across all lines in each card block. Test verified failing before fix (24 errors: col 17 vs 15) and passing after fix."
     },
     {
       "id": 9,

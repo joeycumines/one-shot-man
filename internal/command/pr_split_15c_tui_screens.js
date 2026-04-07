@@ -37,17 +37,18 @@
         // Config form (non-editable display for now, wizard sets these).
         var srcBranch = (st.analysisCache && st.analysisCache.currentBranch) || '(auto-detect)';
         var srcLabel = styles.bold().render('Source Branch');
+        var indent = lipgloss.newStyle().paddingLeft(2);
         var srcField = styles.activeCard().width(
-            Math.max(20, (s.width || 80) - lipgloss.width(srcLabel) - 8)
+            Math.max(20, (s.width || 80) - lipgloss.width(srcLabel) - 6)
         ).render(styles.fieldValue().render(srcBranch));
-        lines.push('  ' + lipgloss.joinHorizontal(lipgloss.Left, srcLabel, '  ', srcField));
+        lines.push(indent.render(lipgloss.joinHorizontal(lipgloss.Left, srcLabel, '  ', srcField)));
         lines.push('');
 
         var targetLabel = styles.bold().render('Target Branch');
         var targetField = styles.activeCard().width(
-            Math.max(20, (s.width || 80) - lipgloss.width(targetLabel) - 8)
+            Math.max(20, (s.width || 80) - lipgloss.width(targetLabel) - 6)
         ).render(styles.fieldValue().render(runtime.baseBranch || 'main'));
-        lines.push('  ' + lipgloss.joinHorizontal(lipgloss.Left, targetLabel, '  ', targetField));
+        lines.push(indent.render(lipgloss.joinHorizontal(lipgloss.Left, targetLabel, '  ', targetField)));
         lines.push('');
 
         // Strategy selection.

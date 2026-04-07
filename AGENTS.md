@@ -78,10 +78,12 @@ The JavaScript environment provides these globals:
 
 - `ctx` / `context` - Context management (files, diffs, git state)
 - `output` - Output formatting and clipboard
-- `log` - Logging (debug, info, warn, error, printf, getLogs, searchLogs, clearLogs)
+- `log` - Logging (debug/info/warn/error/printf), backed by `slog`; same semantics, attrs as a plain object
 - `tui` - Terminal UI integration (Bubble Tea, Lipgloss)
 
 Native modules are available under `osm:` prefix (see `docs/scripting.md`).
+
+**Log example**: `log.info("user authenticated", { userId: 42, method: "oauth" })`
 
 ### Session Management
 
@@ -175,6 +177,7 @@ The goal is a codebase where every line has a reason to exist, every feature is 
 6. **Avoid Prepositions in Names**: Do not use prepositions in method or function names (e.g. prefer `LoadConfig` over `LoadFromConfig` or `SendEvent` over `SendEventTo`).
 7. **Go as Reusable Modules**: Go code must be exposed as reusable, modular implementations accessible via `osm script`. Never hardcode application-specific logic—deliver value for other implementations.
 8. **JS for App-Specific Logic**: All application-specific functionality MUST be modeled as JavaScript. Don't do anything in Go that someone else couldn't do using OSM.
+9. **Structured Logging**: Applies to ALL logging—Go's `log/slog` and the JS `log` API alike. All log calls must: use a lowercase, punctuation-free, event-phrased message; never use string concatenation; attach all context as camelCase key-value attributes (Go: alternating `key, value` pairs; JS: a plain object). Prefer passing `*slog.Logger` explicitly rather than relying on `slog.Default`. Use `log.printf` (JS) only when printf-style formatting is genuinely needed.
 
 ## Documentation
 

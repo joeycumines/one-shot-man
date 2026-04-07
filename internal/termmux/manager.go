@@ -252,10 +252,6 @@ type managedSession struct {
 	// lastActive records the last time this session was the active input target.
 	lastActive time.Time
 
-	// outputCh receives raw PTY output chunks from the per-session
-	// reader goroutine. The worker reads from this via mergedOutput.
-	outputCh <-chan []byte
-
 	// passthroughWriter, when non-nil, receives a copy of each raw output
 	// chunk before VTerm processing. Used during passthrough for
 	// low-latency stdout forwarding.
@@ -288,6 +284,13 @@ type SessionManager struct {
 	// done is closed when Run returns, signaling that the worker has
 	// stopped and all resources have been released.
 	done chan struct{}
+
+	// readerCtx is a context derived from Run's ctx parameter. It is
+	// cancelled during shutdown to signal all per-session reader
+	// goroutines to exit. This prevents goroutine leaks when the
+	// manager shuts down while sessions still have open Reader channels.
+	readerCtx    context.Context
+	readerCancel context.CancelFunc
 
 	// --- Fields below are owned exclusively by the worker goroutine. ---
 	// They are listed here for documentation but MUST NOT be accessed
@@ -374,6 +377,12 @@ var ErrInvalidTransition = errors.New("termmux: invalid state transition")
 func (m *SessionManager) Run(ctx context.Context) error {
 	defer close(m.done)
 	defer m.eventBus.Close()
+
+	// Create a reader context for per-session goroutines. Cancelled
+	// during shutdown to ensure they exit promptly.
+	m.readerCtx, m.readerCancel = context.WithCancel(ctx)
+	defer m.readerCancel()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -549,7 +558,6 @@ func (m *SessionManager) handleRegister(p *registerPayload) response {
 		state:      SessionCreated,
 		target:     p.target,
 		lastActive: time.Now(),
-		outputCh:   make(chan []byte, 64),
 	}
 
 	snap := &ScreenSnapshot{
@@ -566,6 +574,11 @@ func (m *SessionManager) handleRegister(p *registerPayload) response {
 	}
 
 	m.eventBus.emit(EventSessionRegistered, id)
+
+	// Spawn a per-session goroutine that pipes the session's Reader()
+	// output into the merged output channel for worker processing.
+	m.startReaderGoroutine(id, p.session)
+
 	return response{value: id}
 }
 
@@ -722,6 +735,77 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 	}
 	ms.snapshot.Store(snap)
 	m.eventBus.emit(EventSessionOutput, so.id)
+}
+
+// startReaderGoroutine spawns a goroutine that reads from a session's
+// Reader() channel and forwards each chunk to the merged output channel
+// as sessionOutput{id, data}. When the Reader channel closes (EOF), it
+// sends a nil-data sentinel.
+//
+// The goroutine respects readerCtx: if the context is cancelled (manager
+// shutdown), the goroutine exits without attempting to send the EOF
+// sentinel, since the worker may no longer be consuming mergedOutput.
+//
+// If session.Reader() returns nil (session not yet started), the goroutine
+// polls periodically until Reader becomes available or the session's Done
+// channel closes.
+func (m *SessionManager) startReaderGoroutine(id SessionID, session InteractiveSession) {
+	go func() {
+		ch := waitForReader(m.readerCtx, session)
+		if ch == nil {
+			// Session closed or context cancelled before Reader available.
+			select {
+			case m.mergedOutput <- sessionOutput{id: id}:
+			case <-m.readerCtx.Done():
+			}
+			return
+		}
+
+		for {
+			select {
+			case data, ok := <-ch:
+				if !ok {
+					// Reader channel closed (EOF).
+					select {
+					case m.mergedOutput <- sessionOutput{id: id}:
+					case <-m.readerCtx.Done():
+					}
+					return
+				}
+				select {
+				case m.mergedOutput <- sessionOutput{id: id, data: data}:
+				case <-m.readerCtx.Done():
+					return
+				}
+			case <-m.readerCtx.Done():
+				return
+			}
+		}
+	}()
+}
+
+// waitForReader polls session.Reader() until it returns a non-nil channel.
+// Returns nil if the context is cancelled or the session's Done channel
+// closes before Reader becomes available.
+func waitForReader(ctx context.Context, session InteractiveSession) <-chan []byte {
+	ch := session.Reader()
+	if ch != nil {
+		return ch
+	}
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-session.Done():
+			return nil
+		case <-tick.C:
+			if ch = session.Reader(); ch != nil {
+				return ch
+			}
+		}
+	}
 }
 
 // shutdownSessions performs deterministic, ordered shutdown of all sessions.

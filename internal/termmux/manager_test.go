@@ -580,7 +580,6 @@ func TestManagedSession_SnapshotLoadStore(t *testing.T) {
 func TestManagedSession_AllFields(t *testing.T) {
 	t.Parallel()
 
-	outputCh := make(chan []byte, 1)
 	v := vt.NewVTerm(24, 80)
 
 	ms := &managedSession{
@@ -589,7 +588,6 @@ func TestManagedSession_AllFields(t *testing.T) {
 		state:      SessionCreated,
 		target:     SessionTarget{Name: "shell", Kind: SessionKindPTY},
 		lastActive: time.Now(),
-		outputCh:   outputCh,
 	}
 
 	// Verify session field.
@@ -622,16 +620,6 @@ func TestManagedSession_AllFields(t *testing.T) {
 	// Verify lastActive field.
 	if ms.lastActive.IsZero() {
 		t.Error("lastActive is zero")
-	}
-
-	// Verify outputCh field.
-	if ms.outputCh == nil {
-		t.Error("outputCh is nil")
-	}
-	outputCh <- []byte("data")
-	data := <-ms.outputCh
-	if string(data) != "data" {
-		t.Errorf("outputCh data = %q, want %q", data, "data")
 	}
 
 	// Verify passthroughWriter field (atomic.Pointer[io.Writer]).
@@ -1469,4 +1457,320 @@ done:
 	if !foundClosed {
 		t.Error("EventSessionClosed not received for Created→Closed")
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Merged output pipeline: session.Reader() → reader goroutine → worker
+// ---------------------------------------------------------------------------
+
+func TestSessionManager_Pipeline_OutputFlowsToSnapshot(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, err := m.Register(session, SessionTarget{Name: "pipeline-test"})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+
+	// Send output through the session's Reader channel.
+	session.readerCh <- []byte("pipeline output")
+
+	// Wait for the worker to process.
+	deadline := time.After(2 * time.Second)
+	for {
+		snap := m.Snapshot(id)
+		if snap != nil && snap.PlainText == "pipeline output" {
+			break
+		}
+		select {
+		case <-deadline:
+			snap := m.Snapshot(id)
+			t.Fatalf("timed out waiting for snapshot; PlainText = %q", snap.PlainText)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	snap := m.Snapshot(id)
+	if snap.PlainText != "pipeline output" {
+		t.Errorf("PlainText = %q, want %q", snap.PlainText, "pipeline output")
+	}
+	if snap.ANSI == "" {
+		t.Error("ANSI should not be empty")
+	}
+	if snap.FullScreen == "" {
+		t.Error("FullScreen should not be empty")
+	}
+}
+
+func TestSessionManager_Pipeline_EOFTransition(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	subID, evtCh := m.Subscribe(64)
+	defer m.Unsubscribe(subID)
+
+	session := newControllableSession()
+	_, err := m.Register(session, SessionTarget{Name: "eof-test"})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+	// Drain register event.
+	<-evtCh
+
+	// Send output to transition to Running, then close the channel for EOF.
+	session.readerCh <- []byte("data")
+	time.Sleep(50 * time.Millisecond)
+
+	close(session.readerCh)
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify state transitioned to Exited.
+	infos := m.Sessions()
+	for _, info := range infos {
+		if info.ID == 1 && info.State != SessionExited {
+			t.Errorf("state = %s, want exited", info.State)
+		}
+	}
+
+	// Verify EventSessionExited.
+	var foundExited bool
+	for {
+		select {
+		case evt := <-evtCh:
+			if evt.Kind == EventSessionExited && evt.SessionID == 1 {
+				foundExited = true
+			}
+		default:
+			goto done
+		}
+	}
+done:
+	if !foundExited {
+		t.Error("EventSessionExited not received")
+	}
+}
+
+func TestSessionManager_Pipeline_CreatedToRunningTransition(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	session := newControllableSession()
+	_, err := m.Register(session, SessionTarget{Name: "transition-test"})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+
+	// Before output — should be Created.
+	infos := m.Sessions()
+	for _, info := range infos {
+		if info.ID == 1 && info.State != SessionCreated {
+			t.Errorf("initial state = %s, want created", info.State)
+		}
+	}
+
+	// Send output through Reader channel.
+	session.readerCh <- []byte("first output")
+	time.Sleep(100 * time.Millisecond)
+
+	// Should transition to Running.
+	infos = m.Sessions()
+	for _, info := range infos {
+		if info.ID == 1 && info.State != SessionRunning {
+			t.Errorf("state after output = %s, want running", info.State)
+		}
+	}
+}
+
+func TestSessionManager_Pipeline_SnapshotGenIncreases(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	session := newControllableSession()
+	id, _ := m.Register(session, SessionTarget{Name: "gen-test"})
+
+	initialSnap := m.Snapshot(id)
+	initialGen := initialSnap.Gen
+
+	// Send multiple outputs.
+	for i := 0; i < 5; i++ {
+		session.readerCh <- []byte("x")
+	}
+	time.Sleep(200 * time.Millisecond)
+
+	snap := m.Snapshot(id)
+	if snap.Gen <= initialGen {
+		t.Errorf("Gen = %d, should be > %d after 5 outputs", snap.Gen, initialGen)
+	}
+}
+
+func TestSessionManager_Pipeline_BellEvent(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	subID, evtCh := m.Subscribe(64)
+	defer m.Unsubscribe(subID)
+
+	session := newControllableSession()
+	_, err := m.Register(session, SessionTarget{Name: "bell-test"})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+	// Drain register event.
+	<-evtCh
+
+	// Send BEL character through the Reader channel.
+	session.readerCh <- []byte("\x07")
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify EventBell was published.
+	var foundBell bool
+	for {
+		select {
+		case evt := <-evtCh:
+			if evt.Kind == EventBell && evt.SessionID == 1 {
+				foundBell = true
+			}
+		default:
+			goto done
+		}
+	}
+done:
+	if !foundBell {
+		t.Error("EventBell not received after BEL character")
+	}
+}
+
+func TestSessionManager_Pipeline_MultipleSessionsIndependent(t *testing.T) {
+	t.Parallel()
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	s1 := newControllableSession()
+	s2 := newControllableSession()
+	id1, _ := m.Register(s1, SessionTarget{Name: "session-a"})
+	id2, _ := m.Register(s2, SessionTarget{Name: "session-b"})
+
+	// Send different output to each session.
+	s1.readerCh <- []byte("output-a")
+	s2.readerCh <- []byte("output-b")
+	time.Sleep(200 * time.Millisecond)
+
+	snap1 := m.Snapshot(id1)
+	snap2 := m.Snapshot(id2)
+	if snap1 == nil || snap1.PlainText != "output-a" {
+		t.Errorf("session 1 PlainText = %q, want %q", snap1.PlainText, "output-a")
+	}
+	if snap2 == nil || snap2.PlainText != "output-b" {
+		t.Errorf("session 2 PlainText = %q, want %q", snap2.PlainText, "output-b")
+	}
+}
+
+func TestSessionManager_Pipeline_DelayedStart(t *testing.T) {
+	t.Parallel()
+
+	// Create a session whose Reader() returns nil until "started".
+	session := &delayedSession{
+		doneCh: make(chan struct{}),
+	}
+
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	id, err := m.Register(session, SessionTarget{Name: "delayed"})
+	if err != nil {
+		t.Fatalf("Register error: %v", err)
+	}
+
+	// Reader is nil initially — goroutine should be polling.
+	time.Sleep(50 * time.Millisecond)
+
+	// "Start" the session — Reader() now returns a channel.
+	ch := make(chan []byte, 16)
+	session.start(ch)
+
+	// Send output.
+	ch <- []byte("delayed output")
+	time.Sleep(200 * time.Millisecond)
+
+	snap := m.Snapshot(id)
+	if snap == nil || snap.PlainText != "delayed output" {
+		plain := ""
+		if snap != nil {
+			plain = snap.PlainText
+		}
+		t.Errorf("PlainText = %q, want %q", plain, "delayed output")
+	}
+}
+
+func TestSessionManager_Pipeline_ShutdownStopsReaders(t *testing.T) {
+	t.Parallel()
+
+	m := NewSessionManager()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- m.Run(ctx) }()
+
+	session := newControllableSession()
+	_, _ = m.Register(session, SessionTarget{Name: "shutdown-test"})
+
+	// Send some output.
+	session.readerCh <- []byte("data")
+	time.Sleep(50 * time.Millisecond)
+
+	// Shutdown — reader goroutine should exit cleanly via canceled context.
+	m.Close()
+	if err := <-errCh; err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	// Session should have been closed during shutdown.
+	if !session.closeCalled.Load() {
+		t.Error("session.Close() was not called during shutdown")
+	}
+}
+
+// delayedSession is a mock InteractiveSession whose Reader() returns nil
+// until start() is called. This simulates sessions that are registered
+// before their PTY is initialized.
+type delayedSession struct {
+	mu     sync.Mutex
+	ch     <-chan []byte
+	doneCh chan struct{}
+}
+
+func (d *delayedSession) Write(data []byte) (int, error) { return len(data), nil }
+func (d *delayedSession) Resize(int, int) error          { return nil }
+func (d *delayedSession) Close() error {
+	select {
+	case <-d.doneCh:
+	default:
+		close(d.doneCh)
+	}
+	return nil
+}
+func (d *delayedSession) Done() <-chan struct{} { return d.doneCh }
+func (d *delayedSession) Reader() <-chan []byte {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.ch
+}
+
+func (d *delayedSession) start(ch chan []byte) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.ch = ch
 }

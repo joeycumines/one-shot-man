@@ -212,7 +212,8 @@
       "task": "Support 'Ask Claude' in pr-split regardless of auto mode (GAP-002)",
       "description": "The 'Ask Claude' button in pr-split throws an error in non-auto modes. Update the TUI handlers so that the 'Ask Claude' workflow spawns a Claude session on-demand via sessionMgr.register() and works whenever the button is displayed, regardless of the user's strategy mode. The SessionManager makes this cleaner: registering a new session is explicit and doesn't conflict with existing sessions.",
       "acceptance": "Clicking 'Ask Claude' successfully opens the Claude session and allows the user to get help in all pr-split modes (auto, manual, heuristic, directory). No auto-mode gating for this feature.",
-      "status": "Not Started"
+      "status": "Done",
+      "completedNote": "Added on-demand Claude spawn via ensureMCPCallback() and spawnClaudeOnDemand(). openClaudeConvo now has 4-path dispatch: alive executor (immediate), dead handle (error), binary unavailable (install prompt), or on-demand spawn with async tick-based polling. MCP callback transport created lazily with reportSplitPlan/reportResolution/heartbeat tools. Input blocked during spawn. Button/focus visibility expanded to claudeCheckStatus. Close-during-spawn preserves background spawn; re-open correctly re-activates overlay without double-launch. Three new/updated tests cover all paths including ReopenDuringSpawn scenario."
     },
     {
       "id": 6,

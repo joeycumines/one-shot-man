@@ -32,6 +32,9 @@ type CaptureConfig struct {
 	Rows int
 	// Cols is the virtual terminal column count (default: 80).
 	Cols int
+	// DrainTimeout is the maximum time Close() waits for the reader loop
+	// to finish after the PTY is closed. Defaults to 5 seconds.
+	DrainTimeout time.Duration
 }
 
 // CaptureSession manages a PTY-attached command with real-time output capture.
@@ -101,6 +104,9 @@ func NewCaptureSession(cfg CaptureConfig) *CaptureSession {
 	kind := cfg.Kind
 	if kind == SessionKindUnknown {
 		kind = SessionKindCapture
+	}
+	if cfg.DrainTimeout <= 0 {
+		cfg.DrainTimeout = 5 * time.Second
 	}
 	return &CaptureSession{
 		cfg:    cfg,
@@ -416,7 +422,7 @@ func (cs *CaptureSession) Close() error {
 		// where fd closure doesn't unblock immediately.
 		select {
 		case <-cs.done:
-		case <-time.After(5 * time.Second):
+		case <-time.After(cs.cfg.DrainTimeout):
 		}
 		return err
 	}

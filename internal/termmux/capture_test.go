@@ -992,3 +992,43 @@ func TestCaptureSession_Reader_Content(t *testing.T) {
 		t.Fatalf("Reader output %q does not contain expected text", readerBuf.String())
 	}
 }
+
+func TestCaptureSession_DrainTimeout_DefaultFiveSeconds(t *testing.T) {
+	t.Parallel()
+
+	cs := NewCaptureSession(CaptureConfig{
+		Command: "echo",
+		Args:    []string{"test"},
+	})
+	if cs.cfg.DrainTimeout != 5*time.Second {
+		t.Fatalf("expected default DrainTimeout=5s, got %v", cs.cfg.DrainTimeout)
+	}
+}
+
+func TestCaptureSession_DrainTimeout_Custom(t *testing.T) {
+	t.Parallel()
+	skipIfWindows(t)
+
+	timeout := 100 * time.Millisecond
+	cs := NewCaptureSession(CaptureConfig{
+		Command:      "sleep",
+		Args:         []string{"60"},
+		DrainTimeout: timeout,
+	})
+
+	if err := cs.Start(context.Background()); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	start := time.Now()
+	_ = cs.Close()
+	elapsed := time.Since(start)
+
+	// Close should complete within a reasonable margin of the drain timeout.
+	// The drain timeout fires only if the done channel doesn't close first.
+	// With "sleep 60" the process close is clean, so done may close quickly.
+	// Either way, Close must not hang longer than timeout + generous margin.
+	if elapsed > timeout+2*time.Second {
+		t.Fatalf("Close took %v, expected at most ~%v", elapsed, timeout+2*time.Second)
+	}
+}

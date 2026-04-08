@@ -270,11 +270,14 @@ func newCaptureSession(ctx context.Context, runtime *goja.Runtime, call goja.Fun
 // JavaScript-callable methods. Exported so callers (e.g., pr_split.go) can
 // create a Go-side CaptureSession and expose it through the same interface.
 //
-// AUDIT (T004/T059/T10/T49): All 20 methods verified present and type-correct:
+// AUDIT (T004/T059/T10/T49/T56): All 17 methods verified present and type-correct:
 //
-//	start, isRunning, interrupt, kill, pause, resume, isPaused,
+//	start, interrupt, kill, pause, resume, isPaused,
 //	resize, wait, write, sendEOF, close, pid, exitCode, isDone,
-//	target, setTarget, passthrough, reader, readAvailable.
+//	passthrough, reader, readAvailable.
+//
+// Task 56: target, setTarget, isRunning removed — all JS call sites
+// use SessionManager wrappers (tuiMux.session()) instead.
 //
 // The 4 methods called by runVerifyBranch/pollVerifySession (isDone,
 // exitCode, close, interrupt) are confirmed bound with correct signatures
@@ -288,35 +291,16 @@ func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.C
 	// Task 49: Output() and Screen() removed from CaptureSession.
 	// Screen reads now go through SessionManager snapshots via the
 	// _buildVerifyProxy in JS (Task 48).
-
-	// target() → {id, name, kind}
-	_ = obj.Set("target", func() map[string]any {
-		target := cs.Target()
-		return map[string]any{
-			"id":   target.ID,
-			"name": target.Name,
-			"kind": target.Kind.String(),
-		}
-	})
-
-	// setTarget({name?, kind?, id?})
-	_ = obj.Set("setTarget", func(target map[string]any) {
-		if target == nil {
-			panic(runtime.NewTypeError("setTarget: target object is required"))
-		}
-		cs.SetTarget(targetFromJS(target, parent.SessionKindCapture))
-	})
+	//
+	// Task 56: target(), setTarget(), isRunning() removed from
+	// CaptureSession wrapper. All JS call sites use SessionManager
+	// wrappers (tuiMux.session()) for these operations.
 
 	// ── start() ──────────────────────────────────────────
 	_ = obj.Set("start", func() {
 		if err := cs.Start(ctx); err != nil {
 			panic(runtime.NewGoError(err))
 		}
-	})
-
-	// ── isRunning() → boolean ────────────────────────────
-	_ = obj.Set("isRunning", func() bool {
-		return cs.IsRunning()
 	})
 
 	// ── interrupt() ──────────────────────────────────────
@@ -455,8 +439,8 @@ func WrapCaptureSession(ctx context.Context, runtime *goja.Runtime, cs *parent.C
 //	resize, write, close, isDone, reader, readAvailable.
 //
 // CaptureSession wrappers add concrete-type-specific methods
-// (target, setTarget, isRunning, start, interrupt, kill, pause, resume,
-// isPaused, wait, sendEOF, pid, exitCode, passthrough).
+// (start, interrupt, kill, pause, resume, isPaused, wait, sendEOF,
+// pid, exitCode, passthrough).
 func wrapInteractiveSession(runtime *goja.Runtime, session parent.InteractiveSession, defaultKind parent.SessionKind) goja.Value {
 	obj := runtime.NewObject()
 
@@ -533,23 +517,6 @@ func wrapInteractiveSession(runtime *goja.Runtime, session parent.InteractiveSes
 	})
 
 	return obj
-}
-
-func targetFromJS(raw map[string]any, defaultKind parent.SessionKind) parent.SessionTarget {
-	target := parent.SessionTarget{}
-	if v, ok := raw["id"]; ok && v != nil {
-		target.ID = fmt.Sprint(v)
-	}
-	if v, ok := raw["name"]; ok && v != nil {
-		target.Name = fmt.Sprint(v)
-	}
-	if v, ok := raw["kind"]; ok && v != nil {
-		target.Kind = parent.SessionKind(fmt.Sprint(v))
-	}
-	if target.Kind == parent.SessionKindUnknown {
-		target.Kind = defaultKind
-	}
-	return target
 }
 
 // unwrapInteractiveSession retrieves the Go InteractiveSession stored on a

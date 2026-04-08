@@ -56,10 +56,9 @@ type CaptureConfig struct {
 //
 // All methods are safe for concurrent use.
 type CaptureSession struct {
-	mu     sync.Mutex
-	cfg    CaptureConfig
-	proc   *pty.Process
-	target SessionTarget
+	mu   sync.Mutex
+	cfg  CaptureConfig
+	proc *pty.Process
 
 	// Lifecycle state.
 	started  bool
@@ -101,40 +100,15 @@ func NewCaptureSession(cfg CaptureConfig) *CaptureSession {
 	if cols <= 0 {
 		cols = 80
 	}
-	kind := cfg.Kind
-	if kind == SessionKindUnknown {
-		kind = SessionKindCapture
-	}
 	if cfg.DrainTimeout <= 0 {
 		cfg.DrainTimeout = 5 * time.Second
 	}
 	return &CaptureSession{
-		cfg:    cfg,
-		done:   make(chan struct{}),
-		rows:   rows,
-		cols:   cols,
-		target: SessionTarget{Name: cfg.Name, Kind: kind},
+		cfg:  cfg,
+		done: make(chan struct{}),
+		rows: rows,
+		cols: cols,
 	}
-}
-
-// Target returns the session identity metadata.
-func (cs *CaptureSession) Target() SessionTarget {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
-	if cs.target.Kind == SessionKindUnknown {
-		return SessionTarget{Name: cs.cfg.Name, Kind: SessionKindCapture}
-	}
-	return cs.target
-}
-
-// SetTarget updates the session identity metadata.
-func (cs *CaptureSession) SetTarget(target SessionTarget) {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
-	if target.Kind == SessionKindUnknown {
-		target.Kind = SessionKindCapture
-	}
-	cs.target = target
 }
 
 // Start spawns the command in a PTY and begins capturing output. The context
@@ -249,17 +223,6 @@ func (cs *CaptureSession) readerLoop() {
 	cs.exitErr = err
 	cs.mu.Unlock()
 	// done is closed by the deferred close(cs.done) after this returns.
-}
-
-// IsRunning returns true if the child process has not yet exited.
-func (cs *CaptureSession) IsRunning() bool {
-	cs.mu.Lock()
-	proc := cs.proc
-	cs.mu.Unlock()
-	if proc == nil {
-		return false
-	}
-	return proc.IsAlive()
 }
 
 // Interrupt sends SIGINT to the child process.

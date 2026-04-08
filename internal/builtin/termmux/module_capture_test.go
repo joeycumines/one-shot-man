@@ -11,9 +11,9 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// T004: CaptureSession JS binding completeness tests
+// T004/T056: CaptureSession JS binding completeness tests
 //
-// Validates that all 18 methods exposed by WrapCaptureSession are callable
+// Validates that all 17 methods exposed by WrapCaptureSession are callable
 // from JS and return the expected types. Uses real PTY (requires unix).
 //
 // The four methods called by runVerifyBranch/pollVerifySession:
@@ -24,7 +24,6 @@ import (
 //
 // Additional methods:
 //   start()     → void
-//   isRunning() → boolean
 //   resize(r,c) → void
 //   wait()      → {code, error?}
 //   write(data) → void
@@ -34,12 +33,11 @@ import (
 //   pause()     → void
 //   resume()    → void
 //   isPaused()  → boolean
-//   target()    → object
-//   setTarget() → void
 //   passthrough(cfg?) → {reason, error?}
 //
-// Note: output() and screen() were removed in Task 49 (VTerm elimination).
-// Screen reads now go through SessionManager snapshots.
+// Task 49: output() and screen() removed (VTerm elimination).
+// Task 56: isRunning(), target(), setTarget() removed from CaptureSession;
+//          all JS call sites use SessionManager wrappers instead.
 // ---------------------------------------------------------------------------
 
 func TestCaptureSession_JSBinding_AllMethods(t *testing.T) {
@@ -52,12 +50,12 @@ func TestCaptureSession_JSBinding_AllMethods(t *testing.T) {
 		var tm = require('osm:termmux');
 		var cs = tm.newCaptureSession('echo', ['hello T004']);
 
-		// Verify all 20 methods exist and are functions.
+		// Verify all 17 methods exist and are functions.
 		var methods = [
-			'start', 'isRunning', 'interrupt', 'kill',
+			'start', 'interrupt', 'kill',
 			'pause', 'resume', 'isPaused',
 			'resize', 'wait', 'write', 'sendEOF', 'close', 'pid', 'exitCode', 'isDone',
-			'target', 'setTarget', 'passthrough',
+			'passthrough',
 			'reader', 'readAvailable'
 		];
 		var missing = [];
@@ -80,16 +78,6 @@ func TestCaptureSession_JSBinding_AllMethods(t *testing.T) {
 	_, err = rt.RunString(`cs.start()`)
 	if err != nil {
 		t.Fatalf("cs.start() failed: %v", err)
-	}
-
-	// isRunning should be true right after start (before wait).
-	// Note: fast commands may exit before we check, so we only verify the type.
-	v, err = rt.RunString(`typeof cs.isRunning()`)
-	if err != nil {
-		t.Fatalf("isRunning() failed: %v", err)
-	}
-	if v.String() != "boolean" {
-		t.Errorf("isRunning() should return boolean, got %q", v.String())
 	}
 
 	// pid() should return a positive integer.
@@ -150,26 +138,16 @@ func TestCaptureSession_JSBinding_AllMethods(t *testing.T) {
 		t.Errorf("screen should be undefined after VTerm removal, got %q", v.String())
 	}
 
-	// target() should return metadata with at least kind information.
-	v, err = rt.RunString(`JSON.stringify(cs.target())`)
-	if err != nil {
-		t.Fatalf("target() failed: %v", err)
-	}
-	if !strings.Contains(v.String(), `"kind":"capture"`) {
-		t.Errorf("target() should default to capture kind, got %q", v.String())
-	}
-
-	// setTarget() should accept a metadata object and round-trip it via target().
-	_, err = rt.RunString(`cs.setTarget({ id: 'shell-1', name: 'shell', kind: 'pty' })`)
-	if err != nil {
-		t.Fatalf("setTarget() failed: %v", err)
-	}
-	v, err = rt.RunString(`JSON.stringify(cs.target())`)
-	if err != nil {
-		t.Fatalf("target() after setTarget() failed: %v", err)
-	}
-	if !strings.Contains(v.String(), `"shell"`) || !strings.Contains(v.String(), `"pty"`) {
-		t.Errorf("target() after setTarget() = %q, want shell/pty metadata", v.String())
+	// Task 56: isRunning(), target(), setTarget() removed — all call sites
+	// use SessionManager wrappers. Verify they are absent.
+	for _, removed := range []string{"isRunning", "target", "setTarget"} {
+		v, err = rt.RunString(`typeof cs.` + removed)
+		if err != nil {
+			t.Fatalf("typeof cs.%s check failed: %v", removed, err)
+		}
+		if v.String() != "undefined" {
+			t.Errorf("%s should be undefined after Task 56 removal, got %q", removed, v.String())
+		}
 	}
 
 	// close() should not error on completed session (idempotent).

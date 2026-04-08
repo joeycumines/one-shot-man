@@ -89,41 +89,6 @@ func TestCaptureSession_EchoHello(t *testing.T) {
 	}
 }
 
-func TestCaptureSession_IsRunning(t *testing.T) {
-	t.Parallel()
-	skipIfWindows(t)
-
-	cs := NewCaptureSession(CaptureConfig{
-		Command: "sleep",
-		Args:    []string{"60"},
-	})
-
-	// Not started yet.
-	if cs.IsRunning() {
-		t.Fatal("expected IsRunning=false before Start")
-	}
-
-	if err := cs.Start(context.Background()); err != nil {
-		t.Fatalf("Start failed: %v", err)
-	}
-	defer cs.Close()
-
-	if !cs.IsRunning() {
-		t.Fatal("expected IsRunning=true after Start")
-	}
-
-	if err := cs.Interrupt(); err != nil {
-		t.Fatalf("Interrupt failed: %v", err)
-	}
-
-	code, _ := cs.Wait()
-	_ = code // exit code varies by platform
-
-	if cs.IsRunning() {
-		t.Fatal("expected IsRunning=false after Wait")
-	}
-}
-
 func TestCaptureSession_Interrupt(t *testing.T) {
 	t.Parallel()
 	skipIfWindows(t)
@@ -633,11 +598,6 @@ func TestCaptureSession_InvalidCommand(t *testing.T) {
 		cs.Close()
 		t.Fatal("expected error for invalid command")
 	}
-
-	// After a failed Start, IsRunning should be false.
-	if cs.IsRunning() {
-		t.Fatal("expected IsRunning=false after failed Start")
-	}
 }
 
 func TestCaptureSession_NotStarted_Methods(t *testing.T) {
@@ -754,8 +714,10 @@ func TestCaptureSession_ConcurrentOutput(t *testing.T) {
 		defer close(done)
 		for {
 			_ = collector.current()
-			if !cs.IsRunning() {
+			select {
+			case <-cs.Done():
 				return
+			default:
 			}
 			time.Sleep(time.Millisecond)
 		}

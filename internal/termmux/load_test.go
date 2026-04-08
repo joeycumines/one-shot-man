@@ -70,7 +70,7 @@ func BenchmarkMultiSessionOutput(b *testing.B) {
 	}
 
 	const (
-		numSessions = 3
+		numSessions  = 3
 		preloadLines = 500  // pre-load lines per session
 		bufSize      = 1024 // reader channel buffer
 	)

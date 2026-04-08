@@ -16,7 +16,7 @@ import (
 func skipIfWindows(t *testing.T) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
-		t.Skip("PTY not supported on Windows")
+		t.Skip("test uses Unix-specific commands (sh, cat, sleep, pwd, echo)")
 	}
 }
 

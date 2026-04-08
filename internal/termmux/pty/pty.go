@@ -1,6 +1,5 @@
 // Package pty provides Go-level APIs for spawning and managing processes in
-// pseudo-terminals. It uses creack/pty on Unix systems and returns
-// "not supported" errors on Windows (ConPTY support is a follow-up).
+// pseudo-terminals. It uses creack/pty on Unix systems and ConPTY on Windows.
 package pty
 
 import (
@@ -38,7 +37,8 @@ type SpawnConfig struct {
 // All methods are safe for concurrent use unless otherwise noted.
 type Process struct {
 	mu           sync.Mutex
-	ptyFile      *os.File // Platform-specific PTY master file descriptor.
+	ptyFile      *os.File // Platform-specific: PTY master (Unix) or ConPTY output pipe (Windows).
+	writeFile    *os.File // Separate write pipe for ConPTY (Windows); nil on Unix where ptyFile is bidirectional.
 	ttyFile      *os.File // Slave PTY fd, kept alive to prevent macOS EIO data loss. May be nil.
 	closed       bool
 	draining     bool
@@ -113,6 +113,9 @@ func (p *Process) Write(data string) error {
 		return ErrClosed
 	}
 	f := p.ptyFile
+	if p.writeFile != nil {
+		f = p.writeFile
+	}
 	wt := p.writeTimeout
 	p.mu.Unlock()
 
@@ -304,7 +307,9 @@ func (p *Process) Close() error {
 	cmd := p.cmd
 	f := p.ptyFile
 	tty := p.ttyFile
-	p.ttyFile = nil // prevent double-close with Wait goroutine
+	wf := p.writeFile
+	p.ttyFile = nil   // prevent double-close with Wait goroutine
+	p.writeFile = nil // prevent double-close
 	p.mu.Unlock()
 
 	// Try graceful shutdown first.
@@ -329,7 +334,13 @@ func (p *Process) Close() error {
 		}
 	}
 
-	// Close slave PTY first (if kept alive), then master.
+	// Platform-specific cleanup (e.g., ConPTY handle on Windows).
+	p.platformClose()
+
+	// Close write pipe (ConPTY input on Windows), slave PTY, then master.
+	if wf != nil {
+		_ = wf.Close()
+	}
 	if tty != nil {
 		_ = tty.Close()
 	}

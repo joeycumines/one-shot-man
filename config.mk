@@ -508,6 +508,16 @@ reset-session-timer: ## Reset the 9-hour session timer to now
 	@printf "START=%s\nDURATION=9h\n" "$$(date +%s)" > scratch/session_timer.txt
 	@echo "Timer reset to $$(date '+%Y-%m-%d %H:%M:%S')"
 
+.PHONY: test-tui-interaction
+test-tui-interaction: ## Run TUI interaction tests (keystroke, mouse, resize, session switch, focus)
+	$(GO) -C . test -race -v -count=1 -run "TestKeystrokeForwardingToPTY|TestMouseForwardingToPTY|TestResizePropagation|TestSessionSwitchInput|TestSplitViewFocusTracking" ./internal/command/...
+
+.PHONY: commit-task55
+commit-task55:
+	git add internal/command/pr_split_tui_interaction_test.go
+	git add config.mk
+	git commit -m 'Add E2E TUI interaction test suite' -m '' -m 'Add pr_split_tui_interaction_test.go exercising the full' -m 'BubbleTea→SessionManager→PTY pipeline with 5 integration' -m 'tests: keystroke forwarding, mouse forwarding, resize' -m 'propagation, session switching, and split-view focus' -m 'tracking.' -m '' -m 'Tests use recordingInteractiveSession mock registered' -m 'directly with SessionManager and minimal JS state objects' -m 'passed through wizardUpdateImpl. All tests verify data' -m 'delivery end-to-end with race detection enabled.' -m '' -m 'Includes test-tui-interaction Make target for isolated runs.'
+
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 
 endif

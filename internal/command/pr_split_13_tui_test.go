@@ -4836,7 +4836,7 @@ func TestChunk13_WizardView_ErrorStateSuppressesSplitPane(t *testing.T) {
 	if strings.Contains(s, "DUPLICATE_MARKER") {
 		t.Fatalf("error state should not render the split-view pane, got:\n%s", s)
 	}
-	if strings.Contains(s, "Ctrl+Tab: switch") || strings.Contains(s, "Ctrl+O: tab") {
+	if strings.Contains(s, "Ctrl+Tab: cycle") || strings.Contains(s, "Ctrl+O: tab") {
 		t.Fatalf("error state should not render split-view chrome, got:\n%s", s)
 	}
 }

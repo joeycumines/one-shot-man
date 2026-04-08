@@ -581,7 +581,7 @@
                     ? '\u25b2 Wizard'
                     : (s.splitViewTab === 'output' ? '\u25bc Output'
                        : (s.splitViewTab === 'verify' ? '\u25bc Verify' : '\u25bc Claude'));
-                var splitHint = 'Ctrl+Tab: switch  Ctrl+O: tab  Ctrl+L: close';
+                var splitHint = 'Ctrl+Tab: cycle  Ctrl+O: tab  Ctrl+L: close';
                 // T44: labelW must include tabBar visual width + all separator decorators.
                 // Template: leftFill + '┤ ' + tabBar + ' · ' + focusLabel + ' · ' + splitHint + ' ├' + rightFill
                 // Decorators: ┤(1)+space(1) + ' · '(3) + ' · '(3) + space(1)+├(1) = 10

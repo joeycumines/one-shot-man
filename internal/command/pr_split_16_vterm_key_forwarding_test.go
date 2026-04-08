@@ -748,14 +748,18 @@ func TestChunk16_VTerm_KeyForwarding_CtrlTabInterceptedForFocus(t *testing.T) {
 		s.splitViewTab = 'claude';
 		s.claudeScreen = 'mock content';
 
-		// Ctrl+Tab should switch focus, NOT forward to child.
+		// Ctrl+Tab should cycle to next tab, NOT forward to child.
 		var r = sendKey(s, 'ctrl+tab');
 		var ns = r[0];
 
 		var errors = [];
 
-		if (ns.splitViewFocus !== 'wizard') {
-			errors.push('ctrl+tab should switch focus to wizard');
+		// T61: From claude tab, cycles to output (not back to wizard).
+		if (ns.splitViewFocus !== 'claude') {
+			errors.push('ctrl+tab should stay on pane (got focus=' + ns.splitViewFocus + ')');
+		}
+		if (ns.splitViewTab !== 'output') {
+			errors.push('ctrl+tab should advance to output tab (got tab=' + ns.splitViewTab + ')');
 		}
 		if (__writtenBytes.length !== 0) {
 			errors.push('ctrl+tab should not be forwarded to child');

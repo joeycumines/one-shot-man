@@ -123,7 +123,7 @@ func TestInputRouting_CtrlTabSwitchesFocus(t *testing.T) {
 			errors.push('wizard→claude: got ' + ns.splitViewFocus);
 		}
 
-		// From claude focus, send ctrl+tab → should switch back to wizard.
+		// From claude focus, send ctrl+tab → cycles to output tab (T61).
 		var s2 = initState('BRANCH_BUILDING');
 		s2.splitViewEnabled = true;
 		s2.splitViewFocus = 'claude';
@@ -131,11 +131,21 @@ func TestInputRouting_CtrlTabSwitchesFocus(t *testing.T) {
 
 		var r2 = sendKey(s2, 'ctrl+tab');
 		var ns2 = r2[0];
-		if (ns2.splitViewFocus !== 'wizard') {
-			errors.push('claude→wizard: got ' + ns2.splitViewFocus);
+		if (ns2.splitViewFocus !== 'claude') {
+			errors.push('claude→output focus: got ' + ns2.splitViewFocus);
+		}
+		if (ns2.splitViewTab !== 'output') {
+			errors.push('claude→output tab: got ' + ns2.splitViewTab);
 		}
 
-		// Verify wizardState is unchanged in both cases.
+		// From output, send ctrl+tab → wraps to wizard (no verify).
+		var r3 = sendKey(ns2, 'ctrl+tab');
+		var ns3 = r3[0];
+		if (ns3.splitViewFocus !== 'wizard') {
+			errors.push('output→wizard: got ' + ns3.splitViewFocus);
+		}
+
+		// Verify wizardState is unchanged in all cases.
 		if (ns.wizardState !== 'BRANCH_BUILDING') {
 			errors.push('first toggle changed wizardState to ' + ns.wizardState);
 		}
@@ -255,12 +265,13 @@ func TestInputRouting_ReservedKeysNotForwarded(t *testing.T) {
 		s.splitViewTab = 'verify';
 
 		// Ctrl+Tab is a reserved key — it should NOT be forwarded to terminal.
-		// Instead, it should toggle focus (since activeVerifySession is falsy).
+		// T61: From verify tab (no active verify session, so verify not in cycle),
+		// ctrl+tab cycles to the next available target after wizard → claude.
 		var r = sendKey(s, 'ctrl+tab');
 		var ns = r[0];
 
-		if (ns.splitViewFocus !== 'wizard') {
-			errors.push('ctrl+tab did not toggle focus: got ' + ns.splitViewFocus);
+		if (ns.splitViewFocus !== 'claude') {
+			errors.push('ctrl+tab did not cycle from orphaned verify: got focus=' + ns.splitViewFocus + ' tab=' + ns.splitViewTab);
 		}
 		if (ns.wizardState !== 'BRANCH_BUILDING') {
 			errors.push('wizardState changed to ' + ns.wizardState);

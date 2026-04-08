@@ -1,6 +1,7 @@
 package command
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 
@@ -527,5 +528,171 @@ func TestSplitViewFocusTracking(t *testing.T) {
 	writes = rec.getWrites()
 	if len(writes) != 1 {
 		t.Errorf("wizard focus (again): expected 1 total write, got %v", writes)
+	}
+}
+
+// ── TestCtrlTabCyclesThroughTargets ──────────────────────────────────────────
+// End-to-end: Ctrl+Tab cycles through wizard → claude → output → wizard,
+// updating splitViewFocus and splitViewTab at each step.
+//
+// When a verify session is active, the cycle extends:
+// wizard → claude → output → verify → wizard.
+func TestCtrlTabCyclesThroughTargets(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+
+	_, evalJS := newPrSplitEvalWithMgr(t)
+
+	// ── Phase 1: Without verify — cycle wizard → claude → output → wizard ──
+	startState := testState(true, "wizard", "claude")
+
+	// Press 1: wizard → claude
+	res, err := evalJS(`
+		var __cs1 = ` + startState + `;
+		var __cm1 = { type: 'Key', key: 'ctrl+tab' };
+		var __cr1 = prSplit._wizardUpdateImpl(__cm1, __cs1);
+		JSON.stringify({ focus: __cs1.splitViewFocus, tab: __cs1.splitViewTab });
+	`)
+	if err != nil {
+		t.Fatalf("ctrl+tab press 1: %v", err)
+	}
+	if got, want := fmt.Sprintf("%v", res), `{"focus":"claude","tab":"claude"}`; got != want {
+		t.Errorf("press 1: got %s, want %s", got, want)
+	}
+
+	// Press 2: claude → output
+	res, err = evalJS(`
+		var __cs2 = ` + testState(true, "claude", "claude") + `;
+		var __cm2 = { type: 'Key', key: 'ctrl+tab' };
+		prSplit._wizardUpdateImpl(__cm2, __cs2);
+		JSON.stringify({ focus: __cs2.splitViewFocus, tab: __cs2.splitViewTab });
+	`)
+	if err != nil {
+		t.Fatalf("ctrl+tab press 2: %v", err)
+	}
+	if got, want := fmt.Sprintf("%v", res), `{"focus":"claude","tab":"output"}`; got != want {
+		t.Errorf("press 2: got %s, want %s", got, want)
+	}
+
+	// Press 3: output → wizard (no verify session, so wraps)
+	res, err = evalJS(`
+		var __cs3 = ` + testState(true, "claude", "output") + `;
+		var __cm3 = { type: 'Key', key: 'ctrl+tab' };
+		prSplit._wizardUpdateImpl(__cm3, __cs3);
+		JSON.stringify({ focus: __cs3.splitViewFocus, tab: __cs3.splitViewTab });
+	`)
+	if err != nil {
+		t.Fatalf("ctrl+tab press 3: %v", err)
+	}
+	if got, want := fmt.Sprintf("%v", res), `{"focus":"wizard","tab":"output"}`; got != want {
+		t.Errorf("press 3: got %s, want %s", got, want)
+	}
+
+	// ── Phase 2: With verify session active ───────────────────────────
+	// Create a state with verifyScreen set (triggers verify tab).
+	verifyState := `({
+		wizardState: 'EXECUTING',
+		_prevWizardState: 'EXECUTING',
+		width: 120,
+		height: 40,
+		vp: null,
+		scrollbar: null,
+		showHelp: false,
+		showConfirmCancel: false,
+		showingReport: false,
+		activeEditorDialog: null,
+		claudeConvo: { active: false },
+		claudeQuestionInputActive: false,
+		splitViewEnabled: true,
+		splitViewFocus: 'claude',
+		splitViewTab: 'output',
+		splitViewRatio: 0.6,
+		needsInitClear: false,
+		activeVerifySession: null,
+		focusIndex: 0,
+		claudeViewOffset: 0,
+		verifyViewportOffset: 0,
+		verifyAutoScroll: true,
+		selectionActive: false,
+		selectedText: '',
+		clipboardFlash: '',
+		clipboardFlashAt: 0,
+		claudeScreenshot: '',
+		claudeScreen: '',
+		outputLines: [],
+		claudeManuallyDismissed: false,
+		claudeAutoAttached: false,
+		claudeAutoAttachNotif: '',
+		claudeAutoAttachNotifAt: 0,
+		lastVerifyInterruptTime: 0,
+		verifyScreen: '$ running verify...',
+		verifyPaused: false
+	})`
+
+	// From output tab → verify tab (verify tab appears because verifyScreen is set)
+	res, err = evalJS(`
+		var __cs4 = ` + verifyState + `;
+		var __cm4 = { type: 'Key', key: 'ctrl+tab' };
+		prSplit._wizardUpdateImpl(__cm4, __cs4);
+		JSON.stringify({ focus: __cs4.splitViewFocus, tab: __cs4.splitViewTab });
+	`)
+	if err != nil {
+		t.Fatalf("ctrl+tab with verify (output→verify): %v", err)
+	}
+	if got, want := fmt.Sprintf("%v", res), `{"focus":"claude","tab":"verify"}`; got != want {
+		t.Errorf("with verify: got %s, want %s", got, want)
+	}
+
+	// From verify tab → wizard (wraps around)
+	verifyState2 := `({
+		wizardState: 'EXECUTING',
+		_prevWizardState: 'EXECUTING',
+		width: 120,
+		height: 40,
+		vp: null,
+		scrollbar: null,
+		showHelp: false,
+		showConfirmCancel: false,
+		showingReport: false,
+		activeEditorDialog: null,
+		claudeConvo: { active: false },
+		claudeQuestionInputActive: false,
+		splitViewEnabled: true,
+		splitViewFocus: 'claude',
+		splitViewTab: 'verify',
+		splitViewRatio: 0.6,
+		needsInitClear: false,
+		activeVerifySession: null,
+		focusIndex: 0,
+		claudeViewOffset: 0,
+		verifyViewportOffset: 0,
+		verifyAutoScroll: true,
+		selectionActive: false,
+		selectedText: '',
+		clipboardFlash: '',
+		clipboardFlashAt: 0,
+		claudeScreenshot: '',
+		claudeScreen: '',
+		outputLines: [],
+		claudeManuallyDismissed: false,
+		claudeAutoAttached: false,
+		claudeAutoAttachNotif: '',
+		claudeAutoAttachNotifAt: 0,
+		lastVerifyInterruptTime: 0,
+		verifyScreen: '$ running verify...',
+		verifyPaused: false
+	})`
+
+	res, err = evalJS(`
+		var __cs5 = ` + verifyState2 + `;
+		var __cm5 = { type: 'Key', key: 'ctrl+tab' };
+		prSplit._wizardUpdateImpl(__cm5, __cs5);
+		JSON.stringify({ focus: __cs5.splitViewFocus, tab: __cs5.splitViewTab });
+	`)
+	if err != nil {
+		t.Fatalf("ctrl+tab with verify (verify→wizard): %v", err)
+	}
+	if got, want := fmt.Sprintf("%v", res), `{"focus":"wizard","tab":"verify"}`; got != want {
+		t.Errorf("verify→wizard: got %s, want %s", got, want)
 	}
 }

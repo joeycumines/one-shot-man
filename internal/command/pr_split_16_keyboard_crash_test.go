@@ -170,14 +170,16 @@ func TestChunk16_TabBehaviorInSplitView(t *testing.T) {
 		var r = sendKey(s, 'tab');
 		if (r[0].focusIndex === 0) errors.push('normal tab did not cycle focus');
 
-		// Split-view mode: Ctrl+Tab switches pane focus.
+		// Split-view mode: Ctrl+Tab cycles pane targets (T61).
 		s = initState('CONFIG');
 		s.splitViewEnabled = true;
 		s.splitViewFocus = 'wizard';
 		r = sendKey(s, 'ctrl+tab');
 		if (r[0].splitViewFocus !== 'claude') errors.push('split-view ctrl+tab did not switch to claude');
 		r = sendKey(r[0], 'ctrl+tab');
-		if (r[0].splitViewFocus !== 'wizard') errors.push('split-view ctrl+tab did not switch back to wizard');
+		if (r[0].splitViewTab !== 'output') errors.push('split-view ctrl+tab did not advance to output');
+		r = sendKey(r[0], 'ctrl+tab');
+		if (r[0].splitViewFocus !== 'wizard') errors.push('split-view ctrl+tab did not wrap back to wizard');
 
 		// Split-view + verify session: T380 removed the guard, Ctrl+Tab now switches panes.
 		s = initState('BRANCH_BUILDING');

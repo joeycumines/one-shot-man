@@ -694,9 +694,26 @@
 
         // Split-view keybindings (only when enabled).
         if (s.splitViewEnabled) {
-            // T380: Ctrl+Tab switches focus between wizard and pane (works during verify).
+            // T61: Ctrl+Tab cycles through all focusable targets:
+            // wizard → claude → output → verify (if active) → wizard → ...
             if (k === 'ctrl+tab') {
-                s.splitViewFocus = (s.splitViewFocus === 'wizard') ? 'claude' : 'wizard';
+                var allTargets = ['wizard'];
+                var tabs = listSplitViewTabs(s);
+                for (var ti = 0; ti < tabs.length; ti++) {
+                    allTargets.push(tabs[ti]);
+                }
+                // Determine current position in the cycle.
+                var current = (s.splitViewFocus === 'wizard')
+                    ? 'wizard' : (s.splitViewTab || 'claude');
+                var curIdx = allTargets.indexOf(current);
+                if (curIdx < 0) curIdx = 0;
+                var nextTarget = allTargets[(curIdx + 1) % allTargets.length];
+                if (nextTarget === 'wizard') {
+                    s.splitViewFocus = 'wizard';
+                } else {
+                    s.splitViewFocus = 'claude';
+                    s.splitViewTab = nextTarget;
+                }
                 return [s, null];
             }
 

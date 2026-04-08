@@ -415,6 +415,27 @@ func (cs *CaptureSession) Pid() int {
 	return proc.Pid()
 }
 
+// ExportConfig returns a copy of the session's creation configuration.
+// This enables persistence of the command, arguments, and working directory
+// for session restart scenarios.
+func (cs *CaptureSession) ExportConfig() CaptureConfig {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	cfg := cs.cfg
+	// Deep-copy slices and maps to prevent mutation.
+	if cs.cfg.Args != nil {
+		cfg.Args = make([]string, len(cs.cfg.Args))
+		copy(cfg.Args, cs.cfg.Args)
+	}
+	if cs.cfg.Env != nil {
+		cfg.Env = make(map[string]string, len(cs.cfg.Env))
+		for k, v := range cs.cfg.Env {
+			cfg.Env[k] = v
+		}
+	}
+	return cfg
+}
+
 // Write sends raw bytes to the child process's stdin via the PTY.
 func (cs *CaptureSession) Write(data []byte) (int, error) {
 	cs.mu.Lock()

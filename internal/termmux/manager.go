@@ -195,6 +195,11 @@ const (
 	// reqDisablePassthroughTee asks the worker to stop teeing raw
 	// output. Payload: nil. Reply value: nil.
 	reqDisablePassthroughTee
+
+	// reqExportState asks the worker to build and return a
+	// [PersistedManagerState] snapshot of all managed sessions.
+	// Payload: nil. Reply value: *PersistedManagerState.
+	reqExportState
 )
 
 // registerPayload carries the arguments for a reqRegister request.
@@ -593,6 +598,8 @@ func (m *SessionManager) dispatch(req request) {
 		resp = m.handleEnablePassthroughTee(req.payload.(*passthroughTeePayload))
 	case reqDisablePassthroughTee:
 		resp = m.handleDisablePassthroughTee()
+	case reqExportState:
+		resp = m.handleExportState()
 	default:
 		resp = response{err: fmt.Errorf("termmux: unknown request kind %d", req.kind)}
 	}

@@ -1340,5 +1340,129 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 		return result
 	})
 
+	// ── Persistence methods ──────────────────────────────────────────
+	//
+	// These expose SessionManager state export, PID liveness checks,
+	// and atomic save/load for session persistence across restarts.
+
+	// exportState() → object
+	// Returns a snapshot of all managed sessions with their metadata,
+	// PID (if available), terminal dimensions, and restart config.
+	_ = obj.Set("exportState", func(call goja.FunctionCall) goja.Value {
+		state, err := mgr.ExportState()
+		if err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return runtime.ToValue(persistedStateToJS(state))
+	})
+
+	// saveState(path) → void
+	// Atomically writes the current session manager state to a JSON file.
+	_ = obj.Set("saveState", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(runtime.NewTypeError("saveState: path argument is required"))
+		}
+		path := call.Argument(0).String()
+		if path == "" {
+			panic(runtime.NewTypeError("saveState: path must be non-empty"))
+		}
+		state, err := mgr.ExportState()
+		if err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		if err := parent.SaveManagerState(path, state); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	// loadState(path) → object | null
+	// Reads a previously saved state file. Returns null if not found.
+	_ = obj.Set("loadState", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(runtime.NewTypeError("loadState: path argument is required"))
+		}
+		path := call.Argument(0).String()
+		if path == "" {
+			panic(runtime.NewTypeError("loadState: path must be non-empty"))
+		}
+		state, err := parent.LoadManagerState(path)
+		if err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		if state == nil {
+			return goja.Null()
+		}
+		return runtime.ToValue(persistedStateToJS(state))
+	})
+
+	// removeState(path) → void
+	// Deletes a state file (no-op if it doesn't exist).
+	_ = obj.Set("removeState", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(runtime.NewTypeError("removeState: path argument is required"))
+		}
+		path := call.Argument(0).String()
+		if path == "" {
+			panic(runtime.NewTypeError("removeState: path must be non-empty"))
+		}
+		if err := parent.RemoveManagerState(path); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
+	// processAlive(pid) → boolean
+	// Checks whether a process with the given PID exists.
+	_ = obj.Set("processAlive", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(runtime.NewTypeError("processAlive: pid argument is required"))
+		}
+		pid := int(call.Argument(0).ToInteger())
+		return runtime.ToValue(parent.ProcessAlive(pid))
+	})
+
 	return obj
+}
+
+// persistedStateToJS converts a [parent.PersistedManagerState] to a plain
+// map structure suitable for the Goja runtime.
+func persistedStateToJS(state *parent.PersistedManagerState) map[string]any {
+	sessions := make([]any, len(state.Sessions))
+	for i, s := range state.Sessions {
+		sess := map[string]any{
+			"sessionId":  s.SessionID,
+			"state":      int(s.State),
+			"pid":        s.PID,
+			"rows":       s.Rows,
+			"cols":       s.Cols,
+			"lastActive": s.LastActive.UnixMilli(),
+			"target": map[string]any{
+				"id":   s.Target.ID,
+				"name": s.Target.Name,
+				"kind": string(s.Target.Kind),
+			},
+		}
+		if s.Command != "" {
+			sess["command"] = s.Command
+		}
+		if len(s.Args) > 0 {
+			sess["args"] = s.Args
+		}
+		if s.Dir != "" {
+			sess["dir"] = s.Dir
+		}
+		if len(s.Env) > 0 {
+			sess["env"] = s.Env
+		}
+		sessions[i] = sess
+	}
+	return map[string]any{
+		"version":  state.Version,
+		"activeId": state.ActiveID,
+		"termRows": state.TermRows,
+		"termCols": state.TermCols,
+		"savedAt":  state.SavedAt.UnixMilli(),
+		"sessions": sessions,
+	}
 }

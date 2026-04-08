@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -19,6 +20,7 @@ import (
 	"github.com/dop251/goja"
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
+	"github.com/joeycumines/one-shot-man/internal/storage"
 	"github.com/joeycumines/one-shot-man/internal/termmux"
 
 	termmuxmod "github.com/joeycumines/one-shot-man/internal/builtin/termmux"
@@ -121,6 +123,9 @@ var prSplitChunk16eTUIUpdate string
 //go:embed pr_split_16f_tui_model.js
 var prSplitChunk16fTUIModel string
 
+//go:embed pr_split_16g_persistence.js
+var prSplitChunk16gPersistence string
+
 // prSplitChunks defines the ordered sequence of chunk files for the split
 // architecture. Each entry is (name, source) loaded in order.
 var prSplitChunks = []struct {
@@ -157,6 +162,7 @@ var prSplitChunks = []struct {
 	{"16d_tui_handlers_claude", &prSplitChunk16dTUIHandlersClaude},
 	{"16e_tui_update", &prSplitChunk16eTUIUpdate},
 	{"16f_tui_model", &prSplitChunk16fTUIModel},
+	{"16g_persistence", &prSplitChunk16gPersistence},
 }
 
 // loadChunkedScript loads all pr-split chunk files in order into the engine.
@@ -314,6 +320,14 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		return err
 	}
 
+	// Clean up the persistence state file on normal exit so the next
+	// startup doesn't offer stale resume data. Crash exits leave the
+	// file in place intentionally — that's the resume case.
+	if persistPath, dirErr := storage.SessionDirectory(); dirErr == nil {
+		stateFile := filepath.Join(persistPath, "pr-split-mux.state.json")
+		defer termmux.RemoveManagerState(stateFile)
+	}
+
 	// Interactive mode: launch BubbleTea wizard with signal handling.
 	if c.interactive && !c.testMode {
 		// Save terminal state before BubbleTea enters alt screen / raw mode.
@@ -437,6 +451,14 @@ func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripti
 	// Prompt template embedded from pr_split_template.md.
 	engine.SetGlobal("prSplitTemplate", prSplitTemplate)
 
+	// Compute the persistence state file path for session resume.
+	// Uses the same session directory as the storage backend so
+	// state files live alongside session data.
+	persistStatePath := ""
+	if dir, dirErr := storage.SessionDirectory(); dirErr == nil {
+		persistStatePath = filepath.Join(dir, "pr-split-mux.state.json")
+	}
+
 	// Expose split configuration to JS.
 	claudeArgsList := make([]string, len(c.claudeArgs))
 	copy(claudeArgsList, c.claudeArgs)
@@ -457,6 +479,7 @@ func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripti
 		"timeoutMs":        int64(c.timeout / time.Millisecond),
 		"resumeFromPlan":   c.resume,
 		"cleanupOnFailure": c.cleanupOnFailure,
+		"persistStatePath": persistStatePath,
 	})
 
 	// ── Session lifecycle: tuiMux ────────────────────────────────────

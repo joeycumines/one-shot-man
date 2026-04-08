@@ -111,6 +111,12 @@ type ScreenSnapshot struct {
 	// Cols is the terminal width at the time of capture.
 	Cols int
 
+	// CursorRow is the cursor's row position (0-indexed) at capture time.
+	CursorRow int
+
+	// CursorCol is the cursor's column position (0-indexed) at capture time.
+	CursorCol int
+
 	// Timestamp records when this snapshot was created.
 	Timestamp time.Time
 }
@@ -621,6 +627,7 @@ func (m *SessionManager) handleRegister(p *registerPayload) response {
 		Cols:      m.termCols,
 		Timestamp: time.Now(),
 	}
+	// Initial snapshot has cursor at origin (0,0).
 	ms.snapshot.Store(snap)
 	m.sessions[id] = ms
 
@@ -787,6 +794,7 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 
 	// Publish a new immutable snapshot.
 	m.snapshotGen++
+	curRow, curCol := ms.vterm.CursorPosition()
 	snap := &ScreenSnapshot{
 		Gen:        m.snapshotGen,
 		PlainText:  ms.vterm.String(),
@@ -794,6 +802,8 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 		FullScreen: ms.vterm.RenderFullScreen(),
 		Rows:       m.termRows,
 		Cols:       m.termCols,
+		CursorRow:  curRow,
+		CursorCol:  curCol,
 		Timestamp:  time.Now(),
 	}
 	ms.snapshot.Store(snap)

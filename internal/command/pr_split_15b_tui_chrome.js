@@ -23,6 +23,62 @@
     };
     var repeatStr = prSplit._repeatStr;
 
+    // T62: Reverse-video style for selected text.
+    var selectionStyle = lipgloss.newStyle().reverse(true);
+
+    // T62: Apply reverse-video highlighting to a line at contentLineIndex
+    // if it overlaps the active selection in the given pane tab.
+    // line: the raw text of this content line (plain text, NOT ANSI).
+    // contentLineIndex: the 0-based index in the pane's full content.
+    // paneTab: 'claude' | 'output' | 'verify' — must match selectionPane.
+    // s: the TUI model state.
+    // Returns the (potentially highlighted) line.
+    function applySelectionHighlight(line, contentLineIndex, paneTab, s) {
+        if (!s.selectionActive || s.selectionPane !== paneTab) return line;
+
+        // Normalize selection to (sr,sc)..(er,ec) where sr <= er.
+        var sr = s.selectionStartRow, sc = s.selectionStartCol;
+        var er = s.selectionEndRow, ec = s.selectionEndCol;
+        if (sr > er || (sr === er && sc > ec)) {
+            var tmp;
+            tmp = sr; sr = er; er = tmp;
+            tmp = sc; sc = ec; ec = tmp;
+        }
+
+        var i = contentLineIndex;
+        if (i < sr || i > er) return line; // outside selection
+
+        var startCol, endCol;
+        if (i === sr && i === er) {
+            // Single-line selection.
+            startCol = sc;
+            endCol = ec;
+        } else if (i === sr) {
+            // First line: from startCol to end.
+            startCol = sc;
+            endCol = line.length;
+        } else if (i === er) {
+            // Last line: from start to endCol.
+            startCol = 0;
+            endCol = ec;
+        } else {
+            // Middle line: full line.
+            startCol = 0;
+            endCol = line.length;
+        }
+
+        // Clamp.
+        startCol = Math.max(0, Math.min(startCol, line.length));
+        endCol = Math.max(startCol, Math.min(endCol, line.length));
+
+        if (startCol === endCol) return line;
+
+        var before = line.substring(0, startCol);
+        var selected = line.substring(startCol, endCol);
+        var after = line.substring(endCol);
+        return before + selectionStyle.render(selected) + after;
+    }
+
     // --- Chrome Renderers (T007) ---
     //
     //  Title bar, navigation bar, status bar, step dots
@@ -460,23 +516,36 @@
         var endLine = Math.min(totalLines, startLine + viewH);
 
         // Build viewport content with ANSI-aware line truncation.
+        // T62: When selection is active on the Claude pane and content is ANSI,
+        // we use the plain-text screenshot for selected lines so the reverse-video
+        // highlighting can be applied cleanly.
+        var plainLines = null;
+        if (s.selectionActive && s.selectionPane === 'claude' && isANSI) {
+            var pc = s.claudeScreenshot || '';
+            plainLines = pc ? pc.split('\n') : [];
+            while (plainLines.length > 0 && plainLines[plainLines.length - 1] === '') {
+                plainLines.pop();
+            }
+        }
         var contentLines = [titleText];
         for (var ci = startLine; ci < endLine; ci++) {
             var ln = lines[ci] || '';
+            // T62: For selected lines in ANSI mode, swap to plain text for highlighting.
+            var isSelected = (s.selectionActive && s.selectionPane === 'claude' &&
+                ci >= Math.min(s.selectionStartRow, s.selectionEndRow) &&
+                ci <= Math.max(s.selectionStartRow, s.selectionEndRow));
+            if (isSelected && plainLines && ci < plainLines.length) {
+                ln = applySelectionHighlight(plainLines[ci] || '', ci, 'claude', s);
+            } else if (!isANSI) {
+                ln = applySelectionHighlight(ln, ci, 'claude', s);
+            }
             // Use lipgloss.width for ANSI-aware visual width calculation.
             var visualW = lipgloss.width(ln);
             if (visualW > viewW) {
-                // Truncate: strip ANSI-unaware substring is risky, so we
-                // attempt a visual-width-aware truncation. Since lipgloss
-                // doesn't expose truncate(), we use a simple approach: if
-                // the line has ANSI codes, trim iteratively; for plain text
-                // use substring.
-                if (isANSI) {
-                    // For ANSI lines, let lipgloss.newStyle().maxWidth()
-                    // handle truncation — it's ANSI-aware.
+                if (isANSI && !isSelected) {
                     ln = lipgloss.newStyle().maxWidth(viewW).render(ln);
                 } else {
-                    ln = ln.substring(0, viewW - 3) + '...';
+                    ln = lipgloss.newStyle().maxWidth(viewW).render(ln);
                 }
             }
             contentLines.push(ln);
@@ -670,6 +739,8 @@
         var contentLines = [titleText];
         for (var ci = startLine; ci < endLine; ci++) {
             var ln = lines[ci] || '';
+            // T62: Apply selection highlighting before truncation.
+            ln = applySelectionHighlight(ln, ci, 'output', s);
             var visualW = lipgloss.width(ln);
             if (visualW > viewW) {
                 // Use lipgloss maxWidth for ANSI-safe truncation.
@@ -766,9 +837,28 @@
         var endLine = Math.min(totalLines, startLine + viewH);
 
         // Build viewport with ANSI-aware truncation.
+        // T62: For selected lines, use plain-text verifyScreen for highlighting.
+        var verifyPlainLines = null;
+        if (s.selectionActive && s.selectionPane === 'verify') {
+            // verifyScreen is ANSI; selection works against plain lines.
+            // We re-split the plain text version (same as getPaneContentLines
+            // uses s.verifyScreen which is ANSI — for selection text extraction
+            // we need to strip ANSI). Use the content as-is since the selection
+            // coordinates match the line indices.
+            verifyPlainLines = lines; // treat ANSI lines as source of truth for indices
+        }
         var contentLines = [titleText];
         for (var ci = startLine; ci < endLine; ci++) {
             var ln = lines[ci] || '';
+            // T62: Apply selection highlighting (works on the plain-text content lines).
+            var isSelected = (s.selectionActive && s.selectionPane === 'verify' &&
+                ci >= Math.min(s.selectionStartRow, s.selectionEndRow) &&
+                ci <= Math.max(s.selectionStartRow, s.selectionEndRow));
+            if (isSelected) {
+                // For selected verify lines, apply reverse-video to entire line
+                // since ANSI content makes partial column highlighting impractical.
+                ln = selectionStyle.render(ln);
+            }
             var visualW = lipgloss.width(ln);
             if (visualW > viewW) {
                 ln = lipgloss.newStyle().maxWidth(viewW).render(ln);
@@ -801,5 +891,7 @@
     prSplit._renderStepDots = renderStepDots;
     prSplit._viewClaudeConvoOverlay = viewClaudeConvoOverlay;
     prSplit._renderClaudeQuestionPrompt = renderClaudeQuestionPrompt;
+    // T62: Selection highlight helper.
+    prSplit._applySelectionHighlight = applySelectionHighlight;
 
 })(globalThis.prSplit);

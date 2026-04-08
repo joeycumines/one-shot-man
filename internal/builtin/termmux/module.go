@@ -770,7 +770,7 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 		}
 	})
 
-	// snapshot(id) → {gen, plainText, ansi, fullScreen, rows, cols, timestamp} | null
+	// snapshot(id) → {gen, plainText, ansi, fullScreen, rows, cols, cursorRow, cursorCol, timestamp} | null
 	_ = obj.Set("snapshot", func(id uint64) goja.Value {
 		snap := mgr.Snapshot(parent.SessionID(id))
 		if snap == nil {
@@ -783,6 +783,8 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 		_ = result.Set("fullScreen", snap.FullScreen)
 		_ = result.Set("rows", snap.Rows)
 		_ = result.Set("cols", snap.Cols)
+		_ = result.Set("cursorRow", snap.CursorRow)
+		_ = result.Set("cursorCol", snap.CursorCol)
 		_ = result.Set("timestamp", snap.Timestamp.UnixMilli())
 		return result
 	})

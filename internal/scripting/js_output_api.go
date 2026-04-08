@@ -34,3 +34,16 @@ func (e *Engine) jsOutputToClipboard(text string) {
 		panic(e.vm.NewGoError(err))
 	}
 }
+
+// jsOutputFromClipboard reads text from the system clipboard.
+// Returns the clipboard content as a string, throws a JS error on failure.
+func (e *Engine) jsOutputFromClipboard() string {
+	ctx, cancel := context.WithTimeout(e.ctx, 10*time.Second)
+	defer cancel()
+
+	text, err := builtinos.ClipboardPaste(ctx)
+	if err != nil {
+		panic(e.vm.NewGoError(err))
+	}
+	return text
+}

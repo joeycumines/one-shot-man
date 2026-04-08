@@ -82,6 +82,174 @@
         return false;
     }
 
+    // --- T62: Selection and Copy/Paste Helpers ---
+
+    // getPaneContentLines returns the plain-text lines for the given pane tab.
+    // Used for text extraction during copy and for computing selection bounds.
+    function getPaneContentLines(s) {
+        var tab = s.splitViewTab;
+        if (tab === 'output') {
+            return s.outputLines || [];
+        }
+        if (tab === 'verify') {
+            var vc = s.verifyScreen || '';
+            return vc ? vc.split('\n') : [];
+        }
+        // Claude tab: prefer ANSI, fall back to plain screenshot.
+        // For text extraction we always use plain text.
+        var cc = s.claudeScreenshot || '';
+        return cc ? cc.split('\n') : [];
+    }
+
+    // getPaneVisibleRange returns {startLine, viewH} describing which content
+    // lines are currently visible in the pane viewport. Accounts for scroll
+    // offset per-tab.
+    function getPaneVisibleRange(s) {
+        var tab = s.splitViewTab;
+        var lines = getPaneContentLines(s);
+        var totalLines = lines.length;
+
+        // Compute viewH from pane dimensions.
+        var h = s.height || C.DEFAULT_ROWS;
+        var vpH = Math.max(3, h - CHROME_ESTIMATE);
+        var minP = 3;
+        var wH = Math.max(minP, Math.floor(vpH * (s.splitViewRatio || 0.6)));
+        wH = Math.min(wH, vpH - minP - 1);
+        var cH = vpH - wH - 1;
+        var contentH = Math.max(1, cH - 2); // subtract border top/bottom
+        var viewH = Math.max(1, contentH - 1); // subtract title line
+
+        var offset = 0;
+        if (tab === 'output')      offset = s.outputViewOffset || 0;
+        else if (tab === 'verify') offset = s.verifyViewportOffset || 0;
+        else                       offset = s.claudeViewOffset || 0;
+
+        var startLine;
+        if (offset <= 0) {
+            startLine = Math.max(0, totalLines - viewH);
+        } else {
+            startLine = Math.max(0, totalLines - viewH - offset);
+        }
+        return { startLine: startLine, viewH: viewH };
+    }
+
+    // getCursorInPane returns {row, col} of the cursor within the active pane's
+    // content space. For Claude and verify tabs, reads from the snapshot's cursor
+    // position. For the output tab, defaults to the end of the last line.
+    function getCursorInPane(s) {
+        var tab = s.splitViewTab;
+        if (tab === 'output') {
+            var ol = s.outputLines || [];
+            var lastRow = Math.max(0, ol.length - 1);
+            var lastCol = ol.length > 0 ? (ol[lastRow] || '').length : 0;
+            return { row: lastRow, col: lastCol };
+        }
+        // Claude / verify: read cursor from snapshot.
+        if (typeof tuiMux !== 'undefined' && tuiMux &&
+            typeof tuiMux.snapshot === 'function') {
+            var sid = (tab === 'verify' && s.activeVerifySession)
+                ? s.activeVerifySession.id
+                : (typeof tuiMux.activeID === 'function' ? tuiMux.activeID() : 0);
+            if (sid) {
+                var snap = tuiMux.snapshot(sid);
+                if (snap && snap.cursorRow !== undefined) {
+                    return { row: snap.cursorRow, col: snap.cursorCol };
+                }
+            }
+        }
+        // Fallback: bottom-left.
+        var lines = getPaneContentLines(s);
+        return { row: Math.max(0, lines.length - 1), col: 0 };
+    }
+
+    // startSelection initializes a new text selection at the given content
+    // position. Called on the first Shift+Arrow press or on mouse press+shift.
+    function startSelection(s, row, col) {
+        s.selectionActive = true;
+        s.selectionPane = s.splitViewTab;
+        s.selectionStartRow = row;
+        s.selectionStartCol = col;
+        s.selectionEndRow = row;
+        s.selectionEndCol = col;
+        s.selectionByMouse = false;
+    }
+
+    // extendSelection moves the selection end point by (dRow, dCol).
+    // Clamps to content boundaries.
+    function extendSelection(s, dRow, dCol) {
+        var lines = getPaneContentLines(s);
+        if (lines.length === 0) return;
+        var r = s.selectionEndRow + dRow;
+        var c = s.selectionEndCol + dCol;
+        r = Math.max(0, Math.min(r, lines.length - 1));
+        var lineLen = (lines[r] || '').length;
+        if (c < 0) {
+            // Wrap to end of previous line.
+            if (r > 0) {
+                r--;
+                c = (lines[r] || '').length;
+            } else {
+                c = 0;
+            }
+        } else if (c > lineLen) {
+            // Wrap to start of next line.
+            if (r < lines.length - 1) {
+                r++;
+                c = 0;
+            } else {
+                c = lineLen;
+            }
+        }
+        s.selectionEndRow = r;
+        s.selectionEndCol = c;
+    }
+
+    // extractSelectedText extracts the plain text within the current selection
+    // boundaries. Handles both forward and backward selections.
+    function extractSelectedText(s) {
+        var lines = getPaneContentLines(s);
+        if (lines.length === 0) return '';
+
+        // Normalize to (startRow, startCol) <= (endRow, endCol).
+        var sr = s.selectionStartRow, sc = s.selectionStartCol;
+        var er = s.selectionEndRow, ec = s.selectionEndCol;
+        if (sr > er || (sr === er && sc > ec)) {
+            var tmp;
+            tmp = sr; sr = er; er = tmp;
+            tmp = sc; sc = ec; ec = tmp;
+        }
+
+        if (sr === er) {
+            // Single-line selection.
+            var line = lines[sr] || '';
+            return line.substring(sc, ec);
+        }
+
+        // Multi-line selection.
+        var result = [];
+        // First line: from startCol to end.
+        result.push((lines[sr] || '').substring(sc));
+        // Middle lines: full lines.
+        for (var i = sr + 1; i < er; i++) {
+            result.push(lines[i] || '');
+        }
+        // Last line: from start to endCol.
+        result.push((lines[er] || '').substring(0, ec));
+        return result.join('\n');
+    }
+
+    // clearSelection resets all selection state.
+    function clearSelection(s) {
+        s.selectionActive = false;
+        s.selectionPane = '';
+        s.selectionStartRow = 0;
+        s.selectionStartCol = 0;
+        s.selectionEndRow = 0;
+        s.selectionEndCol = 0;
+        s.selectionByMouse = false;
+        s.selectedText = '';
+    }
+
     // --- Per-message-type handler functions ---
     // Extracted from wizardUpdateImpl for modularity and testability.
 
@@ -531,6 +699,78 @@
                 s.splitViewFocus = (s.splitViewFocus === 'wizard') ? 'claude' : 'wizard';
                 return [s, null];
             }
+
+            // T62: Copy/paste — Ctrl+Shift+C copies selected text to clipboard.
+            if (k === 'ctrl+shift+c') {
+                if (s.selectionActive) {
+                    var selText = extractSelectedText(s);
+                    if (selText) {
+                        try {
+                            output.toClipboard(selText);
+                            s.clipboardFlash = 'Copied ' + selText.length + ' chars';
+                            s.clipboardFlashAt = Date.now();
+                            s.selectedText = selText;
+                        } catch (e) {
+                            s.clipboardFlash = 'Copy failed: ' + (e.message || e);
+                            s.clipboardFlashAt = Date.now();
+                        }
+                    }
+                    clearSelection(s);
+                }
+                return [s, null];
+            }
+
+            // T62: Paste — Ctrl+Shift+V pastes clipboard into active PTY session.
+            if (k === 'ctrl+shift+v') {
+                var tab = s.splitViewTab;
+                // Only paste into interactive panes (Claude, verify), not output.
+                if (tab !== 'output') {
+                    try {
+                        var pastedText = output.fromClipboard();
+                        if (pastedText) {
+                            var pasteSession = getInteractivePaneSession(s, tab);
+                            if (pasteSession && typeof pasteSession.write === 'function') {
+                                pasteSession.write(pastedText);
+                                s.clipboardFlash = 'Pasted ' + pastedText.length + ' chars';
+                                s.clipboardFlashAt = Date.now();
+                            }
+                        }
+                    } catch (e) {
+                        s.clipboardFlash = 'Paste failed: ' + (e.message || e);
+                        s.clipboardFlashAt = Date.now();
+                    }
+                }
+                return [s, null];
+            }
+
+            // T62: Shift+Arrow keys — text selection in split-view pane.
+            if (k === 'shift+up' || k === 'shift+down' ||
+                k === 'shift+left' || k === 'shift+right') {
+                // Clear selection if pane tab changed since selection started.
+                if (s.selectionActive && s.selectionPane !== s.splitViewTab) {
+                    clearSelection(s);
+                }
+                // Start new selection if not active.
+                if (!s.selectionActive) {
+                    var cur = getCursorInPane(s);
+                    startSelection(s, cur.row, cur.col);
+                }
+                // Extend selection.
+                var dRow = 0, dCol = 0;
+                if (k === 'shift+up')    dRow = -1;
+                if (k === 'shift+down')  dRow = 1;
+                if (k === 'shift+left')  dCol = -1;
+                if (k === 'shift+right') dCol = 1;
+                extendSelection(s, dRow, dCol);
+                s.selectedText = extractSelectedText(s);
+                return [s, null];
+            }
+
+            // T62: Escape clears active selection.
+            if (k === 'esc' && s.selectionActive) {
+                clearSelection(s);
+                return [s, null];
+            }
             // Ctrl+= / Ctrl+- to adjust ratio.
             if (k === 'ctrl++' || k === 'ctrl+=') {
                 s.splitViewRatio = Math.min(0.8, s.splitViewRatio + 0.1);
@@ -871,11 +1111,50 @@
 
     // handleMouseMessage processes Mouse messages that were not intercepted
     // by overlays. Covers: child terminal forwarding, verify scroll, split
-    // pane scroll, main viewport scroll, and click dispatch.
+    // pane scroll, main viewport scroll, click dispatch, and T62 selection.
     function handleMouseMessage(msg, s) {
         // Wheel events must be checked BEFORE press — wheel events
         // have action:"press" AND isWheel:true, so the press guard
         // would intercept them and send them to handleMouseClick.
+
+        // T62: Mouse-based text selection in split-view pane.
+        // Intercept Shift+Click to initiate/extend selection, and motion
+        // events to extend an active mouse selection. These must be checked
+        // before child forwarding to avoid sending selection gestures to PTY.
+        if (s.splitViewEnabled && msg.shift && !msg.isWheel) {
+            var ofs = computeSplitPaneContentOffset(s);
+            var vr = getPaneVisibleRange(s);
+            var mRow = msg.row - ofs.row + vr.startLine;
+            var mCol = msg.col - ofs.col;
+            var lines = getPaneContentLines(s);
+            mRow = Math.max(0, Math.min(mRow, lines.length - 1));
+            mCol = Math.max(0, Math.min(mCol, (lines[mRow] || '').length));
+
+            if (msg.action === 'press') {
+                if (!s.selectionActive) {
+                    startSelection(s, mRow, mCol);
+                } else {
+                    // Shift+Click extends to the new position.
+                    s.selectionEndRow = mRow;
+                    s.selectionEndCol = mCol;
+                }
+                s.selectionByMouse = true;
+                s.selectedText = extractSelectedText(s);
+                return [s, null];
+            }
+            if (msg.action === 'motion' && s.selectionActive && s.selectionByMouse) {
+                s.selectionEndRow = mRow;
+                s.selectionEndCol = mCol;
+                s.selectedText = extractSelectedText(s);
+                return [s, null];
+            }
+        }
+
+        // T62: Release ends mouse drag selection (no-op but prevents forwarding).
+        if (s.selectionActive && s.selectionByMouse && msg.action === 'release' && !msg.isWheel) {
+            // Selection is finalized — user can copy with Ctrl+Shift+C.
+            return [s, null];
+        }
 
         // T327/T328: Forward mouse events to focused child terminal.
         // Intercepts motion, release, and wheel before wizard-managed handlers.
@@ -1122,5 +1401,14 @@
     prSplit._wizardUpdateImpl = wizardUpdateImpl;
     prSplit._computeSplitPaneContentOffset = computeSplitPaneContentOffset;
     prSplit._writeMouseToPane = writeMouseToPane;
+
+    // T62: Selection helpers (exported for chrome rendering and testing).
+    prSplit._getPaneContentLines = getPaneContentLines;
+    prSplit._getPaneVisibleRange = getPaneVisibleRange;
+    prSplit._getCursorInPane = getCursorInPane;
+    prSplit._startSelection = startSelection;
+    prSplit._extendSelection = extendSelection;
+    prSplit._extractSelectedText = extractSelectedText;
+    prSplit._clearSelection = clearSelection;
 
 })(globalThis.prSplit);

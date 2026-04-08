@@ -591,7 +591,14 @@
         'pgdown': true,     // scroll Claude pane down (page)
         'home': true,       // scroll Claude pane to top
         'end': true,        // scroll Claude pane to bottom
-        'f1': true          // help
+        'f1': true,         // help
+        // T62: Selection and clipboard keys.
+        'shift+up': true,
+        'shift+down': true,
+        'shift+left': true,
+        'shift+right': true,
+        'ctrl+shift+c': true,
+        'ctrl+shift+v': true
     };
 
     // T386: Minimal reserved keys for fully-interactive tabs (Shell).
@@ -605,7 +612,14 @@
         'ctrl++': true,     // adjust split ratio
         'ctrl+=': true,     // adjust split ratio
         'ctrl+-': true,     // adjust split ratio
-        'f1': true          // help
+        'f1': true,         // help
+        // T62: Selection and clipboard keys.
+        'shift+up': true,
+        'shift+down': true,
+        'shift+left': true,
+        'shift+right': true,
+        'ctrl+shift+c': true,
+        'ctrl+shift+v': true
     };
 
     // Convert BubbleTea key string to terminal byte sequence for PTY forwarding.

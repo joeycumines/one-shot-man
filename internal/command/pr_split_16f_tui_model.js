@@ -841,6 +841,16 @@
                 clipboardFlash: '',             // transient flash text after copy attempt
                 clipboardFlashAt: 0,            // Date.now() when flash was set
 
+                // T62: Split-view copy/paste selection state.
+                selectionActive: false,         // true when text selection is in progress
+                selectionPane: '',              // pane with active selection: 'claude' | 'output' | 'verify'
+                selectionStartRow: 0,           // selection anchor row (0-indexed)
+                selectionStartCol: 0,           // selection anchor column (0-indexed)
+                selectionEndRow: 0,             // selection end row (0-indexed, moves with keyboard/mouse)
+                selectionEndCol: 0,             // selection end column (0-indexed)
+                selectionByMouse: false,        // true if selection was initiated by mouse drag
+                selectedText: '',               // extracted plain text of current selection
+
                 // T46: Claude question detection state.
                 claudeQuestionDetected: false,  // true when question pattern detected in Claude output
                 claudeQuestionLine: '',         // the detected question line from Claude's output

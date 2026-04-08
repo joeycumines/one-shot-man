@@ -800,9 +800,10 @@ func (e *Engine) setupGlobals() {
 
 	// Terminal output functions (separate from logs)
 	_ = e.vm.Set("output", map[string]any{
-		"print":       e.jsOutputPrint,
-		"printf":      e.jsOutputPrintf,
-		"toClipboard": e.jsOutputToClipboard,
+		"print":         e.jsOutputPrint,
+		"printf":        e.jsOutputPrintf,
+		"toClipboard":   e.jsOutputToClipboard,
+		"fromClipboard": e.jsOutputFromClipboard,
 	})
 
 	// TUI and Mode management functions

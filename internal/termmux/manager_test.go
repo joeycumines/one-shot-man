@@ -577,6 +577,36 @@ func TestManagedSession_SnapshotLoadStore(t *testing.T) {
 	}
 }
 
+// TestScreenSnapshot_CursorFields verifies cursor position is preserved in snapshots.
+func TestScreenSnapshot_CursorFields(t *testing.T) {
+	t.Parallel()
+
+	snap := &ScreenSnapshot{
+		Gen:       1,
+		PlainText: "hello",
+		Rows:      24,
+		Cols:      80,
+		CursorRow: 5,
+		CursorCol: 10,
+		Timestamp: time.Now(),
+	}
+
+	if snap.CursorRow != 5 {
+		t.Errorf("CursorRow = %d; want 5", snap.CursorRow)
+	}
+	if snap.CursorCol != 10 {
+		t.Errorf("CursorCol = %d; want 10", snap.CursorCol)
+	}
+
+	// Verify it's stored/loaded correctly via atomic pointer.
+	ms := &managedSession{}
+	ms.snapshot.Store(snap)
+	loaded := ms.snapshot.Load()
+	if loaded.CursorRow != 5 || loaded.CursorCol != 10 {
+		t.Errorf("loaded cursor = (%d,%d); want (5,10)", loaded.CursorRow, loaded.CursorCol)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // managedSession field coverage
 // ---------------------------------------------------------------------------

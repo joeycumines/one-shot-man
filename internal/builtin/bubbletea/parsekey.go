@@ -90,7 +90,15 @@ func ParseKey(input string) (tea.KeyPressMsg, bool) {
 	// =====================================================================
 	if t, ok := KeyDefs[modStr]; ok {
 		k.Code = t.Code
-		k.Text = ""
+		// For named keys that produce printable characters (space, enter, tab, etc.),
+		// set Text to the actual character so the textarea's Update method can
+		// insert it correctly. Without this, it falls through to key.Rune()
+		// which returns the wrong value for named keys like "space" (returns 's').
+		if t.Code >= ' ' && t.Code <= '~' {
+			k.Text = string(t.Code)
+		} else {
+			k.Text = ""
+		}
 		return k, true
 	}
 

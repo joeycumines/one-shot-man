@@ -43,6 +43,7 @@ var parseKeyTests = []struct {
 		name:                  "space named key",
 		input:                 "space",
 		wantCode:              ' ',
+		wantText:              " ", // Text must be " " (not "") for textarea insertion
 		wantAmbiguous:         false,
 		wantNotMatchingString: false, // String() = "space" == input "space"
 	},

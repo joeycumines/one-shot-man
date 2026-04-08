@@ -193,7 +193,7 @@
       "task": "Purge transitional CaptureSession concrete methods",
       "description": "After Task 48 migrates verify sessions to SessionManager and Task 49 removes VTerm from CaptureSession, three metadata/lifecycle methods on CaptureSession should be evaluated for removal. IMPORTANT: These are NOT VTerm-dependent (unlike Output/Screen which are removed in Task 49). Their removal is an ARCHITECTURAL DECISION to eliminate standalone CaptureSession metadata management, since after Task 48 all sessions are registered with SessionManager which provides metadata via SessionTarget and SessionState. Methods to delete: (1) Target() — returns cs.target string, now provided by SessionManager's SessionTarget; (2) SetTarget(string) — sets cs.target, now managed by SessionManager.Register()'s target parameter; (3) IsRunning() — checks proc.IsAlive(), now derived from SessionManager's SessionState (Running vs Exited/Closed). BEFORE deleting: grep all .js files for .target() , .setTarget( , .isRunning() to confirm zero call sites remain outside SessionManager wrappers. ALSO grep all .go files in termmux/ for the same. If any call sites remain that depend on standalone CaptureSession use, DO NOT DELETE — instead create a follow-up task for migration. Update tests: remove any test that exercises Target/SetTarget/IsRunning on standalone CaptureSession.",
       "acceptance": "The three metadata/lifecycle methods (Target, SetTarget, IsRunning) are DELETED from CaptureSession — verified by a grep that finds zero remaining call sites in any .js or .go file. All other methods (Start, Wait, ExitCode, Close, Interrupt, Kill, Pause, Resume, IsPaused, Passthrough, SendEOF, Pid, WriteString, Write, Resize, Done, Reader) remain untouched and functional. 'make lint' (including deadcode) passes clean. The architectural decision to eliminate standalone CaptureSession metadata management is complete: metadata flows exclusively through SessionManager.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": 57,
@@ -201,7 +201,7 @@
       "task": "Create module-extraction boundary test for termmux",
       "description": "The termmux package must be extractable as a standalone Go module with zero osm-internal imports. Create internal/termmux/isolation_test.go that: (1) Imports only termmux and stdlib; (2) Verifies that 'go list -deps ./internal/termmux/...' produces no internal/ imports outside termmux itself; (3) Documents the module-extraction contract as a test assertion, not a convention. This prevents future accidental coupling to osm internals.",
       "acceptance": "The isolation test proves termmux has zero dependency on any osm-internal package. Breaking the isolation contract (e.g., adding an import from internal/command) causes the test to fail. The test runs as part of 'make test' and enforces the module-extraction boundary.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": 58,
@@ -209,7 +209,7 @@
       "task": "Audit all JS→Go boundary methods for API honesty",
       "description": "The autopsy found that the session() wrapper was dishonest (advertised query methods but lacked write/resize). Conduct a systematic audit of EVERY method exposed by WrapSessionManager in module.go: (1) List all methods on the JS tuiMux object; (2) For each, verify it calls the correct Go method; (3) Verify the JS return type matches what the Go method returns; (4) Verify error handling: Go errors become JS exceptions or error returns, not silent failures; (5) Check that every JS method has at least one test. Produce a boundary API reference doc at docs/reference/termmux-js-api.md listing every method with its Go counterpart, parameters, return types, and test coverage status. Fix any dishonesty found during the audit.",
       "acceptance": "A reference doc at docs/reference/termmux-js-api.md lists every JS→Go boundary method with verified parity. Every method has at least one test. Every Go error path produces an observable JS-side effect (exception, error return, or logged warning). No method silently drops data or returns wrong types.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": 59,
@@ -225,7 +225,7 @@
       "task": "Comprehensive documentation refresh for termmux and pr-split",
       "description": "After all code changes stabilize, update documentation end-to-end: (1) docs/architecture.md — update to reflect SessionManager as the core multiplexer, remove Mux references; (2) docs/scripting.md — update termmux module section to show SessionManager API (register/unregister/activate/input/resize/snapshot/subscribe); (3) scratch/termmux-architecture.md — verify Task 42 fixes are current; (4) docs/reference/tui-keymap.md — verify still accurate after any changes; (5) docs/reference/command.md — update pr-split command docs to reflect new session model; (6) Package doc comments (termmux/doc.go, capture.go) — verify accuracy. Target: zero stale references to Mux, MuxSession, WrapMux, or deleted methods.",
       "acceptance": "All documentation accurately reflects the current codebase. Zero references to deleted types (Mux, MuxSession, WrapMux). Architecture doc matches implementation. Scripting guide shows correct JS API. Package doc comments are honest.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": 61,
@@ -257,7 +257,7 @@
       "task": "Implement proper Unicode/emoji width handling in VTerm",
       "description": "The VTerm implementation may incorrectly handle wide Unicode characters (CJK, emoji) that occupy 2 cells in the terminal. Audit vt/ package for: (1) Correct character width calculation (use uniseg or similar for East Asian Width); (2) Cursor movement with wide characters; (3) Line wrapping when a wide character would straddle the right margin; (4) Selection/copy that respects wide characters. This affects rendering quality in all split-view panes.",
       "acceptance": "CJK characters, emoji, and other wide Unicode characters render correctly in split-view panes without cursor misalignment, wrapping artifacts, or truncation. A test with known wide-character sequences (cat emoji, CJK text, zero-width joiners) renders correctly.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": 65,
@@ -265,7 +265,7 @@
       "task": "Investigate tmux scrollback buffer integration for split-view",
       "description": "Research task: investigate adding a scrollback buffer to the VTerm/session model so users can scroll up through history in split-view (currently only the visible portion of the screen is available). Analyze: (1) How tmux implements scrollback (mode-key.c, window.c); (2) Memory bounded design (configurable max lines, ring buffer); (3) Copy-on-write snapshot integration (scrollback should be queryable without blocking the worker); (4) UI for scrollback (Shift+PageUp/Down or Ctrl+Up/Down); (5) Output a design document at scratch/scrollback-design.md for review before implementation.",
       "acceptance": "A design document at scratch/scrollback-design.md describes the scrollback architecture, memory strategy, VTerm integration, and UI controls. The design is reviewed and approved (Rule of Two) before implementation tasks are added.",
-      "status": "Not Started"
+      "status": "Done"
     }
   ],
   "continuousVerification": {

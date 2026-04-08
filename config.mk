@@ -205,6 +205,116 @@ commit-meta4: ## Commit meta changes for Tasks 50-53
 		-m "targets commit-task50, commit-task53, commit-meta4. Update" \
 		-m "WIP.md progress notes. Clean up stale scratch review files."
 
+.PHONY: commit-task57
+commit-task57: ## Commit Task 57: Module isolation test for termmux
+	git add internal/termmux/isolation_test.go
+	git commit -m "Add module-extraction boundary test for termmux" \
+		-m "Enforce that internal/termmux/... has zero imports from osm" \
+		-m "internal packages outside the termmux subtree. Uses go list" \
+		-m "-deps to enumerate all transitive dependencies and rejects" \
+		-m "any matching internal/* but not internal/termmux/*." \
+		-m "" \
+		-m "Dynamic module path discovery via go env GOMOD + go list -m" \
+		-m "avoids hardcoded paths. Includes testing.Short() guard and" \
+		-m "t.Parallel(). Prevents accidental coupling that would block" \
+		-m "extracting termmux as a standalone module."
+
+.PHONY: commit-task56
+commit-task56: ## Commit Task 56: Remove transitional CaptureSession methods
+	git add internal/termmux/capture.go \
+		internal/termmux/capture_test.go \
+		internal/termmux/session_test.go \
+		internal/builtin/termmux/module.go \
+		internal/builtin/termmux/module_capture_test.go
+	git commit -m "Remove Target, SetTarget, IsRunning from CaptureSession" \
+		-m "Purge transitional methods and their JS bindings that are no" \
+		-m "longer used. All JS call sites route through SessionManager" \
+		-m "wrappers (tuiMux.session()) for target/identity and liveness" \
+		-m "checks. The verify proxy uses isDone(), not isRunning()." \
+		-m "" \
+		-m "Deleted from CaptureSession: Target(), SetTarget(), IsRunning()" \
+		-m "methods plus the target field and kind initialization block." \
+		-m "Deleted from WrapCaptureSession: target(), setTarget()," \
+		-m "isRunning() JS bindings and the targetFromJS helper." \
+		-m "" \
+		-m "Updated AUDIT comment (20->17 methods), wrapInteractiveSession" \
+		-m "docstring, and module_capture_test.go (method list + absence" \
+		-m "checks). Replaced IsRunning() in ConcurrentOutput test with" \
+		-m "Done() channel select."
+
+.PHONY: commit-task58
+commit-task58: ## Commit Task 58: JS→Go boundary audit + reference doc + tests
+	git add docs/reference/termmux-js-api.md \
+		internal/builtin/termmux/module_session_test.go
+	git commit -m "Add JS→Go API reference doc and SessionManager binding tests" \
+		-m "Create docs/reference/termmux-js-api.md documenting every" \
+		-m "method exposed by WrapSessionManager (33 methods + session()" \
+		-m "wrapper with 8 methods), WrapCaptureSession (17 methods)," \
+		-m "wrapInteractiveSession (6 shared base methods), module" \
+		-m "exports (18 constants/factories), and the event system." \
+		-m "Tables list JS method names, Go counterparts, parameters," \
+		-m "return types, and error handling patterns." \
+		-m "" \
+		-m "Add module_session_test.go with 31 test functions covering" \
+		-m "all SessionManager JS binding methods: lifecycle (run/" \
+		-m "started/close with both Go and JS entry points), session" \
+		-m "management (register/unregister/activate/attach/detach)," \
+		-m "state queries, I/O, passthrough/switchTo/fromModel edge" \
+		-m "cases, session() wrapper, events, config setters, error" \
+		-m "paths, and a comprehensive method presence check."
+
+.PHONY: commit-task60
+commit-task60: ## Commit Task 60: Documentation refresh for termmux and pr-split
+	git rm docs/reference/mux-architecture.md
+	git add docs/README.md docs/scripting.md docs/architecture.md \
+		docs/reference/termmux-js-api.md
+	git commit -m "Refresh documentation for SessionManager architecture" \
+		-m "Delete obsolete docs/reference/mux-architecture.md which" \
+		-m "described the removed Mux type. Update docs/README.md to" \
+		-m "link to termmux-js-api.md instead." \
+		-m "" \
+		-m "Update docs/scripting.md: replace stale newMux() module" \
+		-m "table entry with newSessionManager() API showing all 33" \
+		-m "methods, update CaptureSession section to reflect removal" \
+		-m "of screen()/output()/target()/setTarget()/isRunning() and" \
+		-m "addition of reader()/readAvailable()/passthrough()/wait()." \
+		-m "" \
+		-m "Update docs/architecture.md split-view pipeline section:" \
+		-m "CaptureSession no longer has VTerm; output flows through" \
+		-m "SessionManager worker goroutine with snapshot() for reads." \
+		-m "" \
+		-m "Clarify termmux-js-api.md removal note: methods moved from" \
+		-m "CaptureSession to SessionManager session() wrapper."
+
+.PHONY: commit-task64
+commit-task64: ## Commit Task 64: Unicode width handling in VTerm
+	git add internal/termmux/vt/screen.go \
+		internal/termmux/vt/wide_char_test.go
+	git commit -m "Fix wide-character boundary repair in VTerm operations" \
+		-m "Add repairWideBoundary helper that clears orphaned wide-char" \
+		-m "halves at edges of cell-modifying operations. Wide chars use" \
+		-m "two cells (rune + NUL placeholder); operations that split" \
+		-m "this pair must blank the orphaned half." \
+		-m "" \
+		-m "Apply repair to six methods: PutChar (before write), EraseChars" \
+		-m "(before erase), InsertChars (cursor + discard boundary)," \
+		-m "DeleteChars (cursor + delete boundary), EraseLine (modes 0/1)," \
+		-m "EraseDisplay (modes 0/1). Modes 2/3 replace entire rows so" \
+		-m "need no boundary repair." \
+		-m "" \
+		-m "Add 25 tests covering all six operations with wide chars:" \
+		-m "cursor-on-placeholder, end-splits-wide-char, consecutive" \
+		-m "wide pairs, ASCII regression, and CSI integration tests" \
+		-m "that exercise the full UTF-8 → dispatch → repair pipeline."
+
+.PHONY: commit-meta5
+commit-meta5: ## Commit meta changes for Tasks 56-58, 60, 64, 65
+	git add blueprint.json WIP.md config.mk
+	git commit -m "Update blueprint status for tasks 56-58, 60, 64, 65" \
+		-m "Mark tasks 56, 57, 58, 60, 64, 65 as Done in blueprint.json." \
+		-m "Update WIP.md with completed task list and remaining work." \
+		-m "Add commit targets for tasks 56-58, 60, 64 and meta5."
+
 .PHONY: commit-task53
 commit-task53: ## Commit Task 53: Configurable drain timeout in CaptureSession
 	git add internal/termmux/capture.go \

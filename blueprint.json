@@ -185,7 +185,7 @@
       "task": "Add comprehensive TUI interaction E2E test suite",
       "description": "The autopsy revealed ZERO end-to-end TUI interaction tests at the JS level. Create internal/command/pr_split_tui_interaction_test.go with tests exercising the full BubbleTea→SessionManager→PTY pipeline: (1) keystroke forwarding (type 'x' → verify PTY receives 'x'); (2) mouse forwarding (click at position → verify PTY receives mouse escape sequence); (3) resize propagation (window resize → verify SessionManager and PTY receive new dimensions); (4) session switching (activate session A, type, switch to B, type → verify correct session receives input); (5) split-view focus tracking (verify keystrokes go to focused pane). These are integration-level tests using mock PTY processes. Use testing.Short() guards.",
       "acceptance": "The full JS→Go→PTY pipeline is PROVEN to work end-to-end: keystrokes typed in split-view panes are confirmed to reach their target PTY process by each test's mock PTY recording the exact bytes received. Mouse events generate correct escape sequences at the PTY. Resize events propagate through both the JS handler and SessionManager. Session switching routes input exclusively to the active session's PTY. Split-view focus tracking ensures only the focused pane's session receives keyboard input. All five paths verified by automated tests using mock PTY processes under race detector. Tests safely skip with testing.Short().",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": 56,

@@ -1,6 +1,6 @@
-# WIP — Task 62 DONE, proceeding to remaining tasks
+# WIP — Task 55 DONE, proceeding to remaining tasks
 
-## Current Status: Tasks 40-53, 56-58, 60, 62, 64, 65 DONE
+## Current Status: Tasks 40-53, 55-58, 60, 62, 64, 65 DONE
 
 ### Session (2026-04-08, implementation sprint continued)
 
@@ -16,6 +16,7 @@
 - **Task 65**: Scrollback buffer design document (scratch/scrollback-design.md, local only)
 - **Task 64**: Wide-character boundary repair in VTerm — `a7dbb069`
 - **Task 62**: Copy/paste and text selection in split-view panes — `60ea614f`
+- **Task 55**: E2E TUI interaction test suite (5 tests) — `f9bc9868`
 
 #### Remaining tasks
 - **Task 54**: ConPTY Windows support (LARGE — may defer)

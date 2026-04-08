@@ -1,6 +1,6 @@
-# WIP — Tasks 40-53, 55-62, 64, 65 DONE
+# WIP — Tasks 40-53, 55-65 DONE
 
-## Current Status: Tasks 40-53, 55-62, 64, 65 DONE
+## Current Status: Tasks 40-53, 55-65 DONE
 
 ### Session (2026-04-08, implementation sprint continued)
 
@@ -19,10 +19,10 @@
 - **Task 55**: E2E TUI interaction test suite (5 tests) — `f9bc9868`
 - **Task 59**: Load/stress tests for SessionManager — `3070178d`
 - **Task 61**: Ctrl+Tab cycles all split-view targets — `9dce44b5`
+- **Task 63**: Session persistence across pr-split restarts — `d854cef2`
 
 #### Remaining tasks
 - **Task 54**: ConPTY Windows support (LARGE — may defer)
-- **Task 63**: Session persistence (depends 48+61)
 
 #### Pre-existing test failures (NOT ours)
 - `TestCaptureSession_Passthrough_ContextCancel`: expects ExitContext, gets EOF (PTY timing)

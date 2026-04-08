@@ -586,6 +586,44 @@ commit-meta9: ## Commit meta changes for Task 61
 		-m 'Mark Task 61 as Done in blueprint.json. Add commit-task61' \
 		-m 'and commit-meta9 targets. Update WIP.md progress notes.'
 
+.PHONY: commit-task63
+commit-task63: ## Commit Task 63: session persistence across pr-split restarts
+	git add internal/termmux/persistence.go internal/termmux/persistence_unix.go internal/termmux/persistence_windows.go
+	git add internal/termmux/persistence_test.go
+	git add internal/termmux/capture.go internal/termmux/manager.go
+	git add internal/builtin/termmux/module.go
+	git add internal/command/pr_split.go internal/command/pr_split_16g_persistence.js
+	git commit \
+		-m 'Add session persistence across pr-split restarts' \
+		-m '' \
+		-m 'Implement the Go persistence layer in termmux: PersistedSession' \
+		-m 'and PersistedManagerState types, atomic save/load via temp file' \
+		-m 'and rename, cross-platform PID liveness detection (signal 0 on' \
+		-m 'Unix, OpenProcess on Windows), and ExportState through the' \
+		-m 'worker goroutine channel.' \
+		-m '' \
+		-m 'Add Pid() and ExportConfig() methods to CaptureSession behind' \
+		-m 'SessionPIDProvider and SessionConfigProvider interfaces. Export' \
+		-m 'deep-copies slices and maps to prevent aliasing.' \
+		-m '' \
+		-m 'Expose 5 JS bindings via osm:termmux module: exportState,' \
+		-m 'saveState, loadState, removeState, processAlive. All validate' \
+		-m 'inputs and propagate errors via Goja panic.' \
+		-m '' \
+		-m 'Wire JS persistence chunk (16g) with auto-save on EventBus' \
+		-m 'transitions (registered, activated, exit, closed), startup' \
+		-m 'resume detection with PID liveness annotation, and cleanup' \
+		-m 'on normal exit via Go defer. Crash exits leave state file' \
+		-m 'for resume detection.'
+
+.PHONY: commit-meta10
+commit-meta10: ## Commit meta changes for Task 63
+	git add blueprint.json WIP.md config.mk
+	git add -f scratch/task63-r2-pass1.md scratch/task63-r2-pass1b.md scratch/task63-r2-pass2.md 2>/dev/null || true
+	git commit -m 'Update blueprint and meta files for Task 63' \
+		-m 'Mark Task 63 as Done in blueprint.json. Add commit-task63' \
+		-m 'and commit-meta10 targets. Update WIP.md progress notes.'
+
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 
 endif

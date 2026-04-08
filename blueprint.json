@@ -249,7 +249,7 @@
       "task": "Implement session persistence across pr-split restarts",
       "description": "When pr-split is restarted (e.g., after crash or manual exit), all session state is lost. Implement session persistence: (1) SessionManager writes session metadata to JSON file via internal/storage/ backend — session ID, target string (from SessionTarget), SessionState enum value, PID, last snapshot timestamp, term dimensions; (2) On startup, check for existing state file (using osm's existing session storage paths from internal/storage/fs.go) and offer to resume previous sessions; (3) For sessions with live processes, detect if PID is still running (os.FindProcess + signal 0) and re-attach via ptyio.NewFileIO on /proc/{pid}/fd or ConPTY pipes; (4) For dead processes, offer to restart with same target. State file is written on every state transition (Registered→Running→Paused→Passthrough→Exited) using the EventBus subscription from Task 45's EventRegistered/EventActivated/EventClosed events. This depends on verify sessions being in SessionManager (Task 48) and tab-based switching (Task 61).",
       "acceptance": "pr-split can detect a previous session on startup and offer to resume. Live processes (if still running) are re-attached and their output is visible. Dead processes are restarted if the user chooses. Session state file is cleaned up on clean exit.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": 64,

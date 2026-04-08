@@ -863,3 +863,131 @@ func TestProcess_Write_CustomTimeout(t *testing.T) {
 		t.Fatalf("Write with custom timeout failed: %v", err)
 	}
 }
+
+// TestConPTY_Smoke verifies basic ConPTY functionality on Windows.
+// This test only runs on Windows and is skipped on other platforms.
+// It validates the core spawn→read→wait lifecycle that cross-compilation
+// alone cannot verify.
+func TestConPTY_Smoke(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("ConPTY smoke test requires Windows")
+	}
+	if testing.Short() {
+		t.Skip("skipping ConPTY smoke test in short mode")
+	}
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	proc, err := Spawn(ctx, SpawnConfig{
+		Command: "cmd.exe",
+		Args:    []string{"/c", "echo", "conpty-smoke-test"},
+		Rows:    24,
+		Cols:    80,
+	})
+	if err != nil {
+		t.Fatalf("Spawn via ConPTY failed: %v", err)
+	}
+	defer proc.Close()
+
+	// Read output — should contain the echo string.
+	var output strings.Builder
+	buf := make([]byte, 4096)
+	for {
+		n, readErr := proc.File().Read(buf)
+		if n > 0 {
+			output.Write(buf[:n])
+		}
+		if strings.Contains(output.String(), "conpty-smoke-test") {
+			break
+		}
+		if readErr != nil {
+			break
+		}
+	}
+	if !strings.Contains(output.String(), "conpty-smoke-test") {
+		t.Fatalf("expected output to contain 'conpty-smoke-test', got %q", output.String())
+	}
+
+	code, waitErr := proc.Wait()
+	if waitErr != nil {
+		t.Fatalf("Wait failed: %v", waitErr)
+	}
+	if code != 0 {
+		t.Fatalf("expected exit code 0, got %d", code)
+	}
+}
+
+// TestConPTY_ContextCancel verifies that context cancellation kills the
+// child process on Windows. This validates KILL-01 from the autopsy:
+// the context watcher goroutine in spawnWithConPTY must actually work.
+func TestConPTY_ContextCancel(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("ConPTY context cancel test requires Windows")
+	}
+	if testing.Short() {
+		t.Skip("skipping ConPTY context cancel test in short mode")
+	}
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	proc, err := Spawn(ctx, SpawnConfig{
+		Command: "cmd.exe",
+		Args:    []string{"/c", "timeout", "/t", "60"},
+		Rows:    24,
+		Cols:    80,
+	})
+	if err != nil {
+		t.Fatalf("Spawn via ConPTY failed: %v", err)
+	}
+	defer proc.Close()
+
+	// Cancel context - should kill the child via the context watcher goroutine.
+	cancel()
+
+	// Wait should complete promptly (child was killed).
+	done := make(chan struct{})
+	go func() {
+		proc.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Child exited as expected.
+	case <-time.After(10 * time.Second):
+		t.Fatal("context cancellation did not kill the Windows child process within 10s")
+	}
+}
+
+// TestConPTY_Resize verifies ResizePseudoConsole works on Windows.
+func TestConPTY_Resize(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("ConPTY resize test requires Windows")
+	}
+	if testing.Short() {
+		t.Skip("skipping ConPTY resize test in short mode")
+	}
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	proc, err := Spawn(ctx, SpawnConfig{
+		Command: "cmd.exe",
+		Args:    []string{"/c", "echo", "resize-test"},
+		Rows:    24,
+		Cols:    80,
+	})
+	if err != nil {
+		t.Fatalf("Spawn via ConPTY failed: %v", err)
+	}
+	defer proc.Close()
+
+	// Resize should succeed without error.
+	if err := proc.Resize(40, 120); err != nil {
+		t.Fatalf("Resize failed: %v", err)
+	}
+}

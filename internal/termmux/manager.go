@@ -725,7 +725,7 @@ func (m *SessionManager) handleResize(p *resizePayload) response {
 			slog.Warn("session resize failed", "sessionID", id, "rows", p.rows, "cols", p.cols, "error", err)
 		}
 	}
-	m.eventBus.emit(EventResize, 0)
+	m.eventBus.emitData(EventResize, 0, [2]int{p.rows, p.cols})
 	return response{}
 }
 
@@ -814,7 +814,7 @@ func (m *SessionManager) handleSessionOutput(so sessionOutput) {
 		Timestamp:  time.Now(),
 	}
 	ms.snapshot.Store(snap)
-	m.eventBus.emit(EventSessionOutput, so.id)
+	m.eventBus.emitData(EventSessionOutput, so.id, so.data)
 }
 
 // startReaderGoroutine spawns a goroutine that reads from a session's

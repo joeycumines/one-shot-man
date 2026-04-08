@@ -365,16 +365,18 @@ func TestSessionManager_WriteToChild(t *testing.T) {
 		t.Fatalf("writeToChild('hello') = %d, want 5", v.ToInteger())
 	}
 
-	// With no session, writeToChild returns 0 (no error thrown).
+	// With no session, writeToChild throws (consistent with session().write()).
 	v, err = runtime.RunString(`
 		tuiMux.detach();
-		tuiMux.writeToChild('fail');
+		var threw = false;
+		try { tuiMux.writeToChild('fail'); } catch(e) { threw = true; }
+		threw;
 	`)
 	if err != nil {
 		t.Fatalf("writeToChild after detach: %v", err)
 	}
-	if v.ToInteger() != 0 {
-		t.Fatalf("writeToChild after detach = %d, want 0", v.ToInteger())
+	if !v.ToBoolean() {
+		t.Fatal("writeToChild after detach should throw, but did not")
 	}
 }
 

@@ -223,3 +223,14 @@ func (b *EventBus) emit(kind EventKind, sessionID SessionID) {
 		Time:      time.Now(),
 	})
 }
+
+// emitData is like emit but attaches a kind-specific payload to the event.
+// Used for events that carry additional data (e.g., EventResize with dimensions).
+func (b *EventBus) emitData(kind EventKind, sessionID SessionID, data any) {
+	b.Publish(Event{
+		Kind:      kind,
+		SessionID: sessionID,
+		Data:      data,
+		Time:      time.Now(),
+	})
+}

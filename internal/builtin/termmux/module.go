@@ -620,7 +620,12 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 						"sessionId": sid,
 					})
 				case parent.EventResize:
-					events.queue(EventTerminalResize, map[string]any{})
+					resizeData := map[string]any{}
+					if dims, ok := evt.Data.([2]int); ok {
+						resizeData["rows"] = dims[0]
+						resizeData["cols"] = dims[1]
+					}
+					events.queue(EventTerminalResize, resizeData)
 				case parent.EventBell:
 					events.queue(EventBell, map[string]any{
 						"pane":      "claude",
@@ -1070,13 +1075,14 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 
 	// ── writeToChild(data) → number ──────────────────────
 	// Sends raw bytes to the active session's stdin. Returns bytes written.
+	// Throws on error (consistent with session().write()).
 	_ = obj.Set("writeToChild", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) == 0 {
 			panic(runtime.NewTypeError("writeToChild: data argument is required"))
 		}
 		data := []byte(call.Argument(0).String())
 		if err := mgr.Input(data); err != nil {
-			return runtime.ToValue(0)
+			panic(runtime.NewGoError(err))
 		}
 		return runtime.ToValue(len(data))
 	})

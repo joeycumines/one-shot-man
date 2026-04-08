@@ -124,7 +124,7 @@ typically available as `tuiMux` in pr-split scripts.
 | `resize(rows, cols)` | `SessionManager.Resize()` | `number, number` | `undefined` | throws |
 | `screenshot()` | `Snapshot()` → plainText | — | `string` | empty if no session |
 | `childScreen()` | `Snapshot()` → ANSI | — | `string` | empty if no session |
-| `writeToChild(data)` | `SessionManager.Input()` | `string` | `number` (bytes) | returns 0 on error |
+| `writeToChild(data)` | `SessionManager.Input()` | `string` | `number` (bytes) | throws |
 | `lastActivityMs()` | `time.Since(snapshot)` | — | `number` (ms, -1 if none) | silent |
 
 ### Passthrough

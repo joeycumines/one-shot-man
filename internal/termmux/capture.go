@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -87,6 +89,10 @@ type CaptureSession struct {
 	// also writes output chunks to passthroughOutput (typically os.Stdout).
 	passthroughActive bool
 	passthroughOutput io.Writer // set before activating passthrough
+
+	// droppedOutput counts output chunks silently dropped by the readerLoop
+	// when outputCh is full. Atomic for lock-free reads.
+	droppedOutput atomic.Int64
 }
 
 // NewCaptureSession creates a new capture session with the given configuration.
@@ -204,6 +210,8 @@ func (cs *CaptureSession) readerLoop() {
 			select {
 			case outputCh <- cp:
 			default:
+				n := cs.droppedOutput.Add(1)
+				slog.Debug("capture output chunk dropped", "droppedTotal", n, "chunkLen", len(chunk))
 			}
 		}
 
@@ -597,6 +605,32 @@ func (cs *CaptureSession) Passthrough(ctx context.Context, cfg PassthroughConfig
 			default:
 			}
 			n, err := cfg.Stdin.Read(buf)
+			// Process data first: io.Reader contract allows n > 0
+			// alongside a non-nil error (commonly io.EOF).
+			if n > 0 {
+				data := buf[:n]
+				// Scan for toggle key.
+				for i := 0; i < len(data); i++ {
+					if data[i] == cfg.ToggleKey {
+						if i > 0 {
+							if err := proc.Write(string(data[:i])); err != nil {
+								_ = err // best-effort before toggle exit
+							}
+						}
+						resultCh <- fwdResult{ExitToggle, nil}
+						return
+					}
+				}
+				if writeErr := proc.Write(string(data)); writeErr != nil {
+					if fwdCtx.Err() != nil {
+						return
+					}
+					resultCh <- fwdResult{ExitError, writeErr}
+					return
+				}
+			}
+			// Handle read error after processing any data returned
+			// alongside it (io.Reader contract: n > 0, err != nil).
 			if err != nil {
 				if fwdCtx.Err() != nil {
 					return
@@ -605,24 +639,10 @@ func (cs *CaptureSession) Passthrough(ctx context.Context, cfg PassthroughConfig
 					runtime.Gosched()
 					continue
 				}
-				resultCh <- fwdResult{ExitError, err}
-				return
-			}
-			data := buf[:n]
-			// Scan for toggle key.
-			for i := 0; i < len(data); i++ {
-				if data[i] == cfg.ToggleKey {
-					if i > 0 {
-						if err := proc.Write(string(data[:i])); err != nil {
-							_ = err // best-effort before toggle exit
-						}
-					}
-					resultCh <- fwdResult{ExitToggle, nil}
-					return
-				}
-			}
-			if err := proc.Write(string(data)); err != nil {
-				if fwdCtx.Err() != nil {
+				// Stdin EOF is normal (reader exhausted). Stop forwarding
+				// and let other goroutines (child exit, context cancel)
+				// determine the exit reason.
+				if errors.Is(err, io.EOF) {
 					return
 				}
 				resultCh <- fwdResult{ExitError, err}
@@ -631,10 +651,17 @@ func (cs *CaptureSession) Passthrough(ctx context.Context, cfg PassthroughConfig
 		}
 	}()
 
-	// Wait for any goroutine to signal completion.
+	// Wait for any goroutine to signal completion. Context cancellation
+	// takes priority: when the parent context is cancelled, the child
+	// process is killed and cs.done closes, so resultCh may fire
+	// simultaneously with ctx.Done(). Checking ctx.Err() after receiving
+	// from resultCh ensures the correct exit reason in the race.
 	select {
 	case r := <-resultCh:
 		cancel()
+		if ctx.Err() != nil {
+			return ExitContext, ctx.Err()
+		}
 		return r.reason, r.err
 	case <-ctx.Done():
 		cancel()

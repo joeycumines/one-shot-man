@@ -776,6 +776,8 @@ function runVisualTui() {
                 return handleKeys(msg, tuiState);
             } else if (msg.type === 'MouseClick' && msg.button === 'left') {
                 return handleMouse(msg, tuiState);
+            } else if (msg.type === 'MouseWheel') {
+                return handleMouse(msg, tuiState);
             } else if (msg.type === 'Paste' && tuiState.inputFocus === FOCUS_CONTENT && tuiState.contentTextarea) {
                 // Paste events from bracketed paste mode arrive as tea.PasteMsg
                 // (converted to {type:"Paste", content:"..."} by msgToJS).
@@ -791,7 +793,7 @@ function runVisualTui() {
         }
     });
 
-    return tea.run(model, {altScreen: true, mouse: true});
+    return tea.run(model);
 }
 
 function configureTextarea(ta, width) {
@@ -1279,8 +1281,8 @@ function handleKeys(msg, s) {
             s.inputViewportUnlocked = false; // Reset on mode exit
         } else {
             // Field input handling
-            // Extract paste flag from message (bracketed paste mode)
-            const isPaste = msg.paste === true;
+            // Extract paste flag from message (bracketed paste mode in Bubble Tea v2)
+            const isPaste = msg.type === 'Paste';
 
             if (s.inputFocus === FOCUS_LABEL) {
                 // Use Go-based validation for label input
@@ -1407,12 +1409,9 @@ function handleMouse(msg, s) {
     // Guard: Only process left-button clicks for button/document activation
     // Wheel events should not trigger actions (they'll be handled as scroll if needed)
     const isLeftClick = msg.button === 'left';
-    // Use msg.isWheel property from MouseEventToJS for proper wheel detection
-    // This aligns with tea.MouseEvent.IsWheel() and handles all wheel button types
-    const isWheelEvent = msg.isWheel === true;
 
     // Handle wheel events for scrolling in list mode via viewport
-    if (isWheelEvent && s.mode === MODE_LIST && s.documents.length > 0 && s.vp) {
+    if (msg.type === 'MouseWheel' && s.mode === MODE_LIST && s.documents.length > 0 && s.vp) {
         // Mouse button strings now match tea.MouseEvent.String(): "wheel up", "wheel down", etc.
         if (msg.button === 'wheel up') {
             s.vp.scrollUp(3); // Scroll viewport up by 3 lines
@@ -1424,7 +1423,7 @@ function handleMouse(msg, s) {
     }
 
     // Handle wheel events for scrolling in input mode via inputVp
-    if (isWheelEvent && s.mode === MODE_INPUT && s.inputVp) {
+    if (msg.type === 'MouseWheel' && s.mode === MODE_INPUT && s.inputVp) {
         // PRECISE MOUSE SCROLL PROPAGATION
         // CHANGE: Removed scroll capture in textarea. Events now always bubble to outer viewport.
 
@@ -1627,7 +1626,7 @@ function handleMouse(msg, s) {
             // Uses handleClickAtScreenCoords() which does ALL coordinate translation in Go.
             // This replaces manual JS coordinate math for PERFORMANCE and CORRECTNESS.
             // The Go method handles: screen→viewport→content→textarea→visual→logical mapping.
-            if (s.contentTextarea && isLeftClick && !isWheelEvent) {
+            if (s.contentTextarea && isLeftClick) {
                 // Defensive: refresh viewport context right before asking Go to hit-test.
                 if (s.contentTextarea.setViewportContext && s.textareaBounds) {
                     s.contentTextarea.setViewportContext({
@@ -1785,7 +1784,11 @@ function renderView(s) {
     else if (s.mode === MODE_CONFIRM) content = renderConfirm(s); else content = renderList(s);
 
     // Wrap with zone.scan() to register zones and strip markers
-    return zone.scan(content);
+    return {
+        content: zone.scan(content),
+        altScreen: true,
+        mouseMode: 'all'
+    };
 }
 
 // Minimal Render Helpers (inlining logic for single-file)

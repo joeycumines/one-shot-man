@@ -66,13 +66,13 @@
       "task": "Remove key.Text override — use msg.String() for v2-native key names",
       "description": "GAP-004. Current: bubbletea.go:874-879 overrides keyStr with key.Text when non-empty, so space remains ' ' instead of 'space'. The plan says ' ' → 'space' (msg.String()). Remove the override so that msg.String() is always used for the 'key' field. This is a BREAKING CHANGE for any JS checking msg.key === ' ' — those scripts will be migrated in later tasks. Files: internal/builtin/bubbletea/bubbletea.go lines 873-879.",
       "acceptance": "msgToJS sets key=msg.String() unconditionally. Space bar produces msg.key='space' not ' '. Printable characters like 'a' still produce 'a' (msg.String() returns 'a' for printable chars). The text field still provides the actual character via key.Text.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Replace JsToTeaMsg legacy 'Mouse' case with v2 split mouse types (MouseClick, MouseRelease, MouseMotion, MouseWheel) — legacy case DELETED simultaneously",
       "description": "GAP-003 (HIGH). Current: JsToTeaMsg at bubbletea.go:458 only handles case 'Mouse' with legacy x/y/button/action/alt/ctrl/shift fields. This is the legacy shim. REQUIRED: DELETE the 'Mouse' case entirely. REPLACE it with four new cases: 'MouseClick', 'MouseRelease', 'MouseMotion', 'MouseWheel'. Each case constructs the corresponding tea.MouseClickMsg/tea.MouseReleaseMsg/tea.MouseMotionMsg/tea.MouseWheelMsg. Use a new v2-native helper function in parsemouse.go that accepts mod array ([]string) instead of individual alt/ctrl/shift bools — the existing JSToMouseEvent is v1 and must not be used for the new cases. Also DELETE the isWheel field from msgToJS mouse output (parsemouse.go:42) — v2 uses type-based dispatch (MouseWheel type), not action-based. Also DELETE the legacy JSToMouseEvent helper from parsemouse.go once the new v2 helper replaces it entirely. The only valid mouse input is now v2 split types. Files: internal/builtin/bubbletea/bubbletea.go lines 458-500, parsemouse.go lines 42,49+.",
       "acceptance": "JsToTeaMsg returns nil for {type:'Mouse', ...} objects — they are invalid input and the case does not exist. JsToTeaMsg(runtime, {type:'MouseClick', x:5, y:10, button:'left', mod:[]}) returns a non-nil tea.MouseClickMsg with correct coordinates. Same for MouseRelease, MouseMotion, MouseWheel. No isWheel field in msgToJS output. parsemouse.go has no v1-style JSToMouseEvent function. Wrapper components (viewport.go:392, textarea.go:1377) updated to expect v2 mouse types. All tests pass.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Update package-level Go documentation in bubbletea.go",
@@ -174,7 +174,7 @@
       "task": "Delete legacy JSToMouseEvent helper and isWheel field — replaced by v2 mouse",
       "description": "Companion to task 5. After replacing the 'Mouse' case in JsToTeaMsg with v2 split types, verify parsemouse.go:42 (isWheel field in msgToJS mouse output) and parsemouse.go:49+ (JSToMouseEvent legacy helper) are fully deleted or replaced by v2-native equivalents. If any v1 mouse conversion code remains, delete it. This task is ONLY for cleanup after task 5 — no new functionality. Files: internal/builtin/bubbletea/parsemouse.go.",
       "acceptance": "grep -r 'isWheel' across internal/builtin/bubbletea/ returns zero hits. grep -r 'JSToMouseEvent' across internal/builtin/bubbletea/ returns zero hits. All tests pass. No v1 mouse conversion code remains.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Eliminate bubblezone v1 dependency — v2-native zone bounds checking or removal",

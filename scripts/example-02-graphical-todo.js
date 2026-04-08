@@ -149,7 +149,7 @@ const program = tea.newModel({
                         model.selectedIdx = Math.min(model.todos.length - 1, model.selectedIdx + 1);
                         ensureSelectionVisible(model);
                         break;
-                    case ' ':
+                    case 'space':
                     case 'enter':
                         if (model.todos[model.selectedIdx]) {
                             model.todos[model.selectedIdx].done = !model.todos[model.selectedIdx].done;
@@ -212,15 +212,16 @@ const program = tea.newModel({
             )
         );
 
-        return zone.scan(lipgloss.joinVertical(lipgloss.Left,
-            title,
-            model.viewport.view(),
-            helpBar
-        ));
+        return {
+            content: zone.scan(lipgloss.joinVertical(lipgloss.Left,
+                title,
+                model.viewport.view(),
+                helpBar
+            )),
+            altScreen: true,
+            mouseMode: 'all'
+        };
     }
 });
 
-tea.run(program, {
-    altScreen: true,
-    mouse: true
-});
+tea.run(program);

@@ -937,7 +937,11 @@
         };
 
         var _viewFn = function(s) {
-            return wizardViewImpl(s);
+            return {
+                content: wizardViewImpl(s),
+                altScreen: true,
+                mouseMode: 'all'
+            };
         };
 
         var model = tea.newModel({
@@ -991,8 +995,6 @@
     // data corruption from concurrent stdin readers.
     prSplit.startWizard = function() {
         return tea.run(_wizardModel, {
-            altScreen: true,
-            mouse: true,
             toggleKey: 0x1D, // Ctrl+]
             onToggle: prSplit._onToggle
         });

@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/stretchr/testify/require"
 )
 
 // parseMouseEvent parses a string representation of a mouse event back into a tea.Mouse.
@@ -260,172 +259,38 @@ func TestMouseEventToJS(t *testing.T) {
 	tests := []struct {
 		name       string
 		event      tea.MouseMsg
+		wantType   string
 		wantButton string
-		wantWheel  bool
 	}{
 		{
 			name:       "left click",
 			event:      tea.MouseClickMsg{Button: tea.MouseLeft},
+			wantType:   "MouseClick",
 			wantButton: "left",
-			wantWheel:  false,
 		},
 		{
 			name:       "wheel up",
 			event:      tea.MouseWheelMsg{Button: tea.MouseWheelUp},
+			wantType:   "MouseWheel",
 			wantButton: "wheel up",
-			wantWheel:  true,
 		},
 		{
 			name:       "motion",
 			event:      tea.MouseMotionMsg{Button: tea.MouseNone},
+			wantType:   "MouseMotion",
 			wantButton: "none",
-			wantWheel:  false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			js := MouseEventToJS(tt.event)
+			if js["type"] != tt.wantType {
+				t.Errorf("MouseEventToJS() type = %v, want %v", js["type"], tt.wantType)
+			}
 			if js["button"] != tt.wantButton {
 				t.Errorf("MouseEventToJS() button = %v, want %v", js["button"], tt.wantButton)
 			}
-			if js["isWheel"] != tt.wantWheel {
-				t.Errorf("MouseEventToJS() isWheel = %v, want %v", js["isWheel"], tt.wantWheel)
-			}
 		})
-	}
-}
-
-func TestJSToMouseEvent(t *testing.T) {
-	tests := []struct {
-		name       string
-		button     string
-		action     string
-		x, y       int
-		alt        bool
-		ctrl       bool
-		shift      bool
-		wantButton tea.MouseButton
-		wantMod    tea.KeyMod
-	}{
-		{
-			name:       "left press",
-			button:     "left",
-			action:     "press",
-			x:          10,
-			y:          20,
-			wantButton: tea.MouseLeft,
-		},
-		{
-			name:       "wheel down with modifiers",
-			button:     "wheel down",
-			action:     "press",
-			x:          5,
-			y:          15,
-			ctrl:       true,
-			alt:        true,
-			wantButton: tea.MouseWheelDown,
-			wantMod:    tea.ModCtrl | tea.ModAlt,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := JSToMouseEvent(tt.button, tt.action, tt.x, tt.y, tt.alt, tt.ctrl, tt.shift)
-			switch m := got.(type) {
-			case tea.MouseClickMsg:
-				if m.Button != tt.wantButton {
-					t.Errorf("JSToMouseEvent() button = %v, want %v", m.Button, tt.wantButton)
-				}
-				if m.X != tt.x {
-					t.Errorf("JSToMouseEvent() x = %v, want %v", m.X, tt.x)
-				}
-				if m.Y != tt.y {
-					t.Errorf("JSToMouseEvent() y = %v, want %v", m.Y, tt.y)
-				}
-				if m.Mod != tt.wantMod {
-					t.Errorf("JSToMouseEvent() mod = %v, want %v", m.Mod, tt.wantMod)
-				}
-			case tea.MouseWheelMsg:
-				// Wheel buttons always produce MouseWheelMsg in v2
-				if m.Button != tt.wantButton {
-					t.Errorf("JSToMouseEvent() button = %v, want %v", m.Button, tt.wantButton)
-				}
-				if m.X != tt.x {
-					t.Errorf("JSToMouseEvent() x = %v, want %v", m.X, tt.x)
-				}
-				if m.Y != tt.y {
-					t.Errorf("JSToMouseEvent() y = %v, want %v", m.Y, tt.y)
-				}
-				if m.Mod != tt.wantMod {
-					t.Errorf("JSToMouseEvent() mod = %v, want %v", m.Mod, tt.wantMod)
-				}
-			default:
-				t.Errorf("JSToMouseEvent() returned unexpected type %T", got)
-			}
-		})
-	}
-}
-
-func TestMouseEventRoundTrip(t *testing.T) {
-	events := []struct {
-		msg  tea.MouseMsg
-		want tea.Mouse
-	}{
-		{tea.MouseClickMsg{Button: tea.MouseLeft, X: 10, Y: 20}, tea.Mouse{Button: tea.MouseLeft, X: 10, Y: 20}},
-		{tea.MouseClickMsg{Button: tea.MouseRight, X: 5, Y: 15, Mod: tea.ModCtrl}, tea.Mouse{Button: tea.MouseRight, X: 5, Y: 15, Mod: tea.ModCtrl}},
-		{tea.MouseWheelMsg{Button: tea.MouseWheelUp, X: 0, Y: 0}, tea.Mouse{Button: tea.MouseWheelUp, X: 0, Y: 0}},
-		{tea.MouseMotionMsg{Button: tea.MouseNone, X: 100, Y: 200, Mod: tea.ModAlt | tea.ModShift}, tea.Mouse{Button: tea.MouseNone, X: 100, Y: 200, Mod: tea.ModAlt | tea.ModShift}},
-	}
-
-	for _, tc := range events {
-		js := MouseEventToJS(tc.msg)
-		require.NotNil(t, js)
-
-		button := js["button"].(string)
-		x := js["x"].(int)
-		y := js["y"].(int)
-		mod := js["mod"].([]string)
-
-		// Reconstruct modifiers from the mod slice
-		var alt, ctrl, shift bool
-		for _, m := range mod {
-			switch m {
-			case "alt":
-				alt = true
-			case "ctrl":
-				ctrl = true
-			case "shift":
-				shift = true
-			}
-		}
-
-		reconstructed := JSToMouseEvent(button, "", x, y, alt, ctrl, shift)
-
-		// Extract the Mouse from the reconstructed message
-		var gotMouse tea.Mouse
-		switch m := reconstructed.(type) {
-		case tea.MouseClickMsg:
-			gotMouse = m.Mouse()
-		case tea.MouseWheelMsg:
-			gotMouse = m.Mouse()
-		case tea.MouseMotionMsg:
-			gotMouse = m.Mouse()
-		case tea.MouseReleaseMsg:
-			gotMouse = m.Mouse()
-		default:
-			t.Errorf("Unexpected message type: %T", reconstructed)
-			continue
-		}
-
-		if gotMouse.Button != tc.want.Button {
-			t.Errorf("Round-trip button mismatch: got %v, want %v", gotMouse.Button, tc.want.Button)
-		}
-		if gotMouse.X != tc.want.X || gotMouse.Y != tc.want.Y {
-			t.Errorf("Round-trip position mismatch: got (%d,%d), want (%d,%d)", gotMouse.X, gotMouse.Y, tc.want.X, tc.want.Y)
-		}
-		if gotMouse.Mod != tc.want.Mod {
-			t.Errorf("Round-trip modifier mismatch: got %v, want %v", gotMouse.Mod, tc.want.Mod)
-		}
 	}
 }

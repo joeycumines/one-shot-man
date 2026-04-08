@@ -475,10 +475,9 @@ func TestJsModel_View(t *testing.T) {
 }
 
 func TestJsModel_View_ModeFields(t *testing.T) {
-	// Test that jsModel.View() wires mode fields into tea.View correctly.
-	// This verifies the critical v2 fix: View.AltScreen, View.MouseMode,
-	// View.ReportFocus, and View.WindowTitle must be set for cursedRenderer
-	// to send the corresponding escape sequences.
+	// In v2, terminal features are set via the JS view() return object,
+	// not via jsModel struct fields. The old fields (altScreen, mouseMode,
+	// reportFocus, windowTitle) no longer exist on jsModel.
 	ctx := context.Background()
 	vm := goja.New()
 	manager := newTestManager(ctx, vm)
@@ -489,55 +488,112 @@ func TestJsModel_View_ModeFields(t *testing.T) {
 	requireFn(vm, module)
 	_ = vm.Set("tea", module.Get("exports"))
 
-	result, err := vm.RunString(`
-		tea.newModel({
-			init: function() { return {}; },
-			update: function(msg, model) { return [model, null]; },
-			view: function(model) { return 'test'; }
-		});
-	`)
-	require.NoError(t, err)
+	t.Run("String Return Content Only", func(t *testing.T) {
+		result, err := vm.RunString(`
+			tea.newModel({
+				init: function() { return {}; },
+				update: function(msg, model) { return [model, null]; },
+				view: function(model) { return 'test'; }
+			});
+		`)
+		require.NoError(t, err)
 
-	modelWrapper := result.ToObject(vm)
-	getModelFn, _ := goja.AssertFunction(modelWrapper.Get("_getModel"))
-	modelVal, _ := getModelFn(goja.Undefined())
-	model, _ := modelVal.Export().(*jsModel)
+		modelWrapper := result.ToObject(vm)
+		getModelFn, _ := goja.AssertFunction(modelWrapper.Get("_getModel"))
+		modelVal, _ := getModelFn(goja.Undefined())
+		model, _ := modelVal.Export().(*jsModel)
 
-	// Case 1: No options — all mode fields should be zero
-	model.altScreen = false
-	model.mouseMode = tea.MouseModeNone
-	model.reportFocus = false
-	model.windowTitle = ""
+		// Plain string view: all mode fields should be zero
+		view := model.View()
+		assert.Equal(t, "test", view.Content)
+		assert.False(t, view.AltScreen, "AltScreen should be false for plain string")
+		assert.Equal(t, tea.MouseModeNone, view.MouseMode, "MouseMode should be None for plain string")
+		assert.False(t, view.ReportFocus, "ReportFocus should be false for plain string")
+		assert.Equal(t, "", view.WindowTitle, "WindowTitle should be empty for plain string")
+	})
 
-	view := model.View()
-	assert.Equal(t, "test", view.Content)
-	assert.False(t, view.AltScreen, "AltScreen should be false when not set")
-	assert.Equal(t, tea.MouseModeNone, view.MouseMode, "MouseMode should be None when not set")
-	assert.False(t, view.ReportFocus, "ReportFocus should be false when not set")
-	assert.Equal(t, "", view.WindowTitle, "WindowTitle should be empty when not set")
+	t.Run("Declarative Object Return", func(t *testing.T) {
+		result, err := vm.RunString(`
+			tea.newModel({
+				init: function() { return {}; },
+				update: function(msg, model) { return [model, null]; },
+				view: function(model) {
+					return {
+						content: 'Hello!',
+						altScreen: true,
+						mouseMode: 'allMotion',
+						reportFocus: true,
+						windowTitle: 'My App'
+					};
+				}
+			});
+		`)
+		require.NoError(t, err)
 
-	// Case 2: All options set — all mode fields should be non-zero
-	model.altScreen = true
-	model.mouseMode = tea.MouseModeAllMotion
-	model.reportFocus = true
-	model.windowTitle = "My App"
+		modelWrapper := result.ToObject(vm)
+		getModelFn, _ := goja.AssertFunction(modelWrapper.Get("_getModel"))
+		modelVal, _ := getModelFn(goja.Undefined())
+		model, _ := modelVal.Export().(*jsModel)
 
-	view = model.View()
-	assert.True(t, view.AltScreen, "AltScreen should be true when set")
-	assert.Equal(t, tea.MouseModeAllMotion, view.MouseMode, "MouseMode should be AllMotion when set")
-	assert.True(t, view.ReportFocus, "ReportFocus should be true when set")
-	assert.Equal(t, "My App", view.WindowTitle, "WindowTitle should be set when configured")
+		view := model.View()
+		assert.Equal(t, "Hello!", view.Content)
+		assert.True(t, view.AltScreen, "AltScreen should be true from object")
+		assert.Equal(t, tea.MouseModeAllMotion, view.MouseMode, "MouseMode should be AllMotion from object")
+		assert.True(t, view.ReportFocus, "ReportFocus should be true from object")
+		assert.Equal(t, "My App", view.WindowTitle, "WindowTitle should be set from object")
+	})
 
-	// Case 3: Cell motion mouse mode
-	model.altScreen = false
-	model.mouseMode = tea.MouseModeCellMotion
-	model.reportFocus = false
-	model.windowTitle = ""
+	t.Run("Declarative CellMotion", func(t *testing.T) {
+		result, err := vm.RunString(`
+			tea.newModel({
+				init: function() { return {}; },
+				update: function(msg, model) { return [model, null]; },
+				view: function(model) {
+					return {
+						content: 'Mouse!',
+						mouseMode: 'cellMotion'
+					};
+				}
+			});
+		`)
+		require.NoError(t, err)
 
-	view = model.View()
-	assert.Equal(t, tea.MouseModeCellMotion, view.MouseMode, "MouseMode should be CellMotion when set")
-	assert.False(t, view.AltScreen)
-	assert.False(t, view.ReportFocus)
+		modelWrapper := result.ToObject(vm)
+		getModelFn, _ := goja.AssertFunction(modelWrapper.Get("_getModel"))
+		modelVal, _ := getModelFn(goja.Undefined())
+		model, _ := modelVal.Export().(*jsModel)
+
+		view := model.View()
+		assert.Equal(t, "Mouse!", view.Content)
+		assert.Equal(t, tea.MouseModeCellMotion, view.MouseMode, "MouseMode should be CellMotion")
+	})
+
+	t.Run("Declarative Only AltScreen", func(t *testing.T) {
+		result, err := vm.RunString(`
+			tea.newModel({
+				init: function() { return {}; },
+				update: function(msg, model) { return [model, null]; },
+				view: function(model) {
+					return {
+						content: 'Alt!',
+						altScreen: true
+					};
+				}
+			});
+		`)
+		require.NoError(t, err)
+
+		modelWrapper := result.ToObject(vm)
+		getModelFn, _ := goja.AssertFunction(modelWrapper.Get("_getModel"))
+		modelVal, _ := getModelFn(goja.Undefined())
+		model, _ := modelVal.Export().(*jsModel)
+
+		view := model.View()
+		assert.Equal(t, "Alt!", view.Content)
+		assert.True(t, view.AltScreen)
+		assert.Equal(t, tea.MouseModeNone, view.MouseMode)
+		assert.False(t, view.ReportFocus)
+	})
 }
 
 func TestJsModel_Update_QuitCommand(t *testing.T) {

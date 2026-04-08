@@ -1554,7 +1554,13 @@ try {
 
         const rows = [];
         for (let y = 0; y < height; y++) rows.push(buffer.slice(y * width, (y + 1) * width).join(''));
-        return rows.join('\n');
+        // Append mode tag so UV writes to PTY whenever mode changes.
+        // Bubble Tea v2 UV renderer uses viewEquals to skip redundant PTY writes.
+        // renderPlayArea() output is identical in automatic vs manual mode (same actors/grid),
+        // so UV would not write to PTY on mode change unless view content differs.
+        // This single-char tag ensures the view string changes and UV writes the new frame.
+        const modeTag = state.gameMode === 'automatic' ? '[A]' : '[M]';
+        return rows.join('\n') + '\n' + modeTag;
     }
 
     // Model Update & Init
@@ -1569,6 +1575,10 @@ try {
         const goalConditions = [pabt.newExprCondition('cubeDeliveredAtGoal', 'value == true', true)];
         state.pabtPlan = pabt.newPlan(state.pabtState, goalConditions);
         state.ticker = bt.newTicker(100, state.pabtPlan.node());
+
+        // CRITICAL: Log tickCount at init time to verify this is the ACTUAL initial state
+        log.info("[INIT] tickCount=" + state.tickCount + " gameMode=" + state.gameMode);
+        log.info("[INIT] about to return from init()");
 
         return [state, tea.tick(16, 'tick')];
     }
@@ -1600,7 +1610,7 @@ try {
                     case 'm':
                         toggleMode = true;
                         break;
-                    case ' ':
+                    case 'space':
                         togglePause = true;
                         break;
                     case 'escape':
@@ -1718,8 +1728,10 @@ try {
                     // Path is inverted stack from findPathManual
                     if (path && path.length > 0) {
                         state.manualPath = path;
+                        log.debug("[PROC] MouseClick path SET: target=(" + clickX + "," + clickY + ") pathLen=" + path.length + " first=" + JSON.stringify(path[path.length-1]));
                     } else {
                         state.manualPath = [];
+                        log.debug("[PROC] MouseClick path EMPTY: target=(" + clickX + "," + clickY + ")");
                     }
                 } else {
                     state.debugLastClick = {
@@ -1750,16 +1762,27 @@ try {
         }
         if (msg.type === 'Key') {
             state.pendingInputs.push(msg);
+            if (msg.key === 'm') {
+                log.debug("[UPDATE] Received 'm' key, pendingInputs.length=" + state.pendingInputs.length);
+            }
             return [state, null];
         }
 
         if (msg.type === 'Tick' && msg.id === 'tick') {
+            // Log if pending inputs are queued
+            if (state.pendingInputs.length > 0 && state.gameMode === 'manual') {
+                log.debug("[TICK] pendingInputs.length=" + state.pendingInputs.length + " tick=" + state.tickCount);
+            }
             // Process Inputs FIRST inside the tick
             const [newState, cmd] = processPendingInputs(state);
             if (cmd) return [newState, cmd]; // e.g. Quit
 
             if (state.paused) return [state, tea.tick(16, 'tick')];
             state.tickCount++;
+            // CRITICAL: Log tickCount increment to verify Tick messages are firing
+            if (state.tickCount % 10 === 0) {
+                log.info("[TICK] tickCount=" + state.tickCount + " gameMode=" + state.gameMode);
+            }
 
             if (state.gameMode === 'automatic') {
                 syncToBlackboard(state);
@@ -1767,6 +1790,9 @@ try {
                 // Tick the manual BT tree for movement and interaction
                 if (state.manualBT) {
                     bt.tick(state.manualBT);
+                }
+                if (state.tickCount % 5 === 0) {
+                    log.debug("[TICK-M] tick=" + state.tickCount + " actor=(" + state.actors.get(state.activeActorId).x.toFixed(1) + "," + state.actors.get(state.activeActorId).y.toFixed(1) + ") MPL=" + state.manualPath.length + " target=" + (state.manualMoveTarget ? (state.manualMoveTarget.x + "," + state.manualMoveTarget.y) : "null"));
                 }
                 // Optimized updates for manual mode (only key props)
                 if (state.blackboard) {
@@ -1789,6 +1815,15 @@ try {
     }
 
     function view(state) {
+        // Write tick counter directly to PTY via console.log.
+        // Bubble Tea v2 UV renderer throttles view renders (returns cached content when
+        // nothing changes), so the debug JSON may not be written to the PTY on every tick.
+        // By writing the tick counter directly via console.log (stdout, not the renderer),
+        // we ensure the PTY always has the current tick count. This lets the test harness
+        // count frames reliably without depending on render output changes.
+        // Note: console.log bypasses the UV renderer entirely and goes straight to PTY.
+        console.log('[TICK:' + state.tickCount + ':' + (state.gameMode === 'automatic' ? 'a' : 'm') + ']');
+
         let output = renderPlayArea(state);
         if (state.debugMode) {
             const actor = state.actors.get(state.activeActorId);
@@ -1803,6 +1838,9 @@ try {
             const debugJSON = JSON.stringify({
                 m: state.gameMode === 'automatic' ? 'a' : 'm',
                 t: state.tickCount,
+                // CRITICAL: Include vc (view call count) that increments every View() call.
+                // This lets us verify View() is being called even if tickCount doesn't change.
+                vc: (state._vc || 0) + 1,
                 tw: state.width,
                 sw: state.spaceWidth,
                 x: Math.round(actor.x * 10) / 10,
@@ -1826,9 +1864,21 @@ try {
                 iet: state.debugInteractEntry ? state.debugInteractEntry.hasTarget : -1,
                 iep: state.debugInteractEntry ? state.debugInteractEntry.pathLen : -1
             });
+            state._vc = (state._vc || 0) + 1;
+            // Log full JSON every 10 ticks for test harness log-based fallback parsing.
+            // Bubble Tea v2 UV renderer writes cell-level incremental ANSI overwrites that
+            // corrupt the debug JSON at the byte level in the PTY stream. By logging the
+            // JSON to a file, the harness can fall back to log parsing when PTY parsing
+            // returns stale data.
+            if (state.tickCount % 10 === 0) {
+                log.debug("[VIEW]" + debugJSON);
+            }
             output += '\n__place_debug_start__\n' + debugJSON + '\n__place_debug_end__';
         }
-        return output;
+        return {
+            content: output,
+            altScreen: true,
+        };
     }
 
     program = tea.newModel({
@@ -1874,7 +1924,7 @@ try {
     }
     if (shouldRun) {
         try {
-            tea.run(program, {altScreen: true, mouse: true});
+            tea.run(program);
         } catch (e) {
             printFatalError(e);
             throw e;

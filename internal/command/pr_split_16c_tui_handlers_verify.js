@@ -93,7 +93,7 @@
                 return dismissOverlay();
             }
         }
-        if (msg.type === 'Mouse' && msg.action === 'press' && !msg.isWheel) {
+        if (msg.type === 'MouseClick') {
             if (zone.inBounds('confirm-yes', msg)) {
                 return confirmCancel();
             }
@@ -750,7 +750,7 @@
         }
 
         // Mouse wheel scrolls history.
-        if (msg.type === 'Mouse' && msg.isWheel) {
+        if (msg.type === 'MouseWheel') {
             if (msg.button === 'wheel up') {
                 convo.scrollOffset = (convo.scrollOffset || 0) + 3;
                 return [s, null];

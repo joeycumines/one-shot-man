@@ -88,11 +88,10 @@ func TestJsToTeaMsg_MouseEvents(t *testing.T) {
 			name: "Left Click",
 			jsObj: func() *goja.Object {
 				obj := vm.NewObject()
-				obj.Set("type", "Mouse")
+				obj.Set("type", "MouseClick")
 				obj.Set("x", 10)
 				obj.Set("y", 20)
 				obj.Set("button", "left")
-				obj.Set("action", "press")
 				return obj
 			},
 			expected: tea.MouseClickMsg{X: 10, Y: 20, Button: tea.MouseLeft},
@@ -101,11 +100,10 @@ func TestJsToTeaMsg_MouseEvents(t *testing.T) {
 			name: "Wheel Up",
 			jsObj: func() *goja.Object {
 				obj := vm.NewObject()
-				obj.Set("type", "Mouse")
+				obj.Set("type", "MouseWheel")
 				obj.Set("x", 5)
 				obj.Set("y", 5)
 				obj.Set("button", "wheel up")
-				obj.Set("action", "press")
 				return obj
 			},
 			expected: tea.MouseWheelMsg{X: 5, Y: 5, Button: tea.MouseWheelUp},
@@ -114,13 +112,14 @@ func TestJsToTeaMsg_MouseEvents(t *testing.T) {
 			name: "Right Click with Modifiers",
 			jsObj: func() *goja.Object {
 				obj := vm.NewObject()
-				obj.Set("type", "Mouse")
+				obj.Set("type", "MouseRelease")
 				obj.Set("x", 0)
 				obj.Set("y", 0)
 				obj.Set("button", "right")
-				obj.Set("action", "release")
-				obj.Set("ctrl", true)
-				obj.Set("alt", true)
+				modArr := vm.NewArray()
+				modArr.Set("0", "ctrl")
+				modArr.Set("1", "alt")
+				obj.Set("mod", modArr)
 				return obj
 			},
 			expected: tea.MouseReleaseMsg{X: 0, Y: 0, Mod: tea.ModCtrl | tea.ModAlt},

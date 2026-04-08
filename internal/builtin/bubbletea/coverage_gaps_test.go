@@ -398,7 +398,7 @@ func TestView_InitError(t *testing.T) {
 // viewDirect — nil/undefined return
 // ========================================================================
 
-func TestViewDirect_NilReturn(t *testing.T) {
+func TestViewDirectResult_NilReturn(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
 
@@ -410,11 +410,12 @@ func TestViewDirect_NilReturn(t *testing.T) {
 		state: vm.NewObject(),
 	}
 
-	output := model.viewDirect()
-	assert.Equal(t, "[BT] View returned nil/undefined", output)
+	_, err := model.viewDirectResult()
+	require.Error(t, err)
+	assert.Equal(t, "view returned nil/undefined", err.Error())
 }
 
-func TestViewDirect_UndefinedReturn(t *testing.T) {
+func TestViewDirectResult_UndefinedReturn(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
 
@@ -426,11 +427,12 @@ func TestViewDirect_UndefinedReturn(t *testing.T) {
 		state: vm.NewObject(),
 	}
 
-	output := model.viewDirect()
-	assert.Equal(t, "[BT] View returned nil/undefined", output)
+	_, err := model.viewDirectResult()
+	require.Error(t, err)
+	assert.Equal(t, "view returned nil/undefined", err.Error())
 }
 
-func TestViewDirect_NilState(t *testing.T) {
+func TestViewDirectResult_NilState(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
 
@@ -442,8 +444,9 @@ func TestViewDirect_NilState(t *testing.T) {
 		state: nil,
 	}
 
-	output := model.viewDirect()
-	assert.Equal(t, "[BT] View: state is nil/undefined", output)
+	_, err := model.viewDirectResult()
+	require.Error(t, err)
+	assert.Equal(t, "state is nil/undefined", err.Error())
 }
 
 // ========================================================================
@@ -501,40 +504,6 @@ func TestInit_NilGuards(t *testing.T) {
 		}
 		cmd := m.Init()
 		assert.Nil(t, cmd)
-	})
-}
-
-// ========================================================================
-// JSToMouseEvent — unknown button/action fallback
-// ========================================================================
-
-func TestJSToMouseEvent_UnknownInputs(t *testing.T) {
-	t.Parallel()
-
-	t.Run("unknown button → MouseNone", func(t *testing.T) {
-		t.Parallel()
-		msg := JSToMouseEvent("totally_bogus_button", "press", 1, 2, false, false, false)
-		mc, ok := msg.(tea.MouseClickMsg)
-		require.True(t, ok)
-		assert.Equal(t, tea.MouseNone, mc.Button)
-	})
-
-	t.Run("unknown action → defaults to click", func(t *testing.T) {
-		t.Parallel()
-		msg := JSToMouseEvent("left", "totally_bogus_action", 3, 4, true, false, true)
-		mc, ok := msg.(tea.MouseClickMsg)
-		require.True(t, ok)
-		assert.Equal(t, tea.MouseLeft, mc.Button)
-		assert.True(t, mc.Mod&tea.ModAlt != 0)
-		assert.True(t, mc.Mod&tea.ModShift != 0)
-	})
-
-	t.Run("both unknown", func(t *testing.T) {
-		t.Parallel()
-		msg := JSToMouseEvent("???", "???", 0, 0, false, false, false)
-		mc, ok := msg.(tea.MouseClickMsg)
-		require.True(t, ok)
-		assert.Equal(t, tea.MouseNone, mc.Button)
 	})
 }
 
@@ -1006,10 +975,10 @@ func TestView_RunJSSyncError(t *testing.T) {
 }
 
 // ========================================================================
-// viewDirect — error and empty string paths
+// viewDirectResult — error and empty string paths
 // ========================================================================
 
-func TestViewDirect_Error(t *testing.T) {
+func TestViewDirectResult_Error(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
 	model := &jsModel{
@@ -1019,11 +988,12 @@ func TestViewDirect_Error(t *testing.T) {
 		},
 		state: vm.NewObject(),
 	}
-	output := model.viewDirect()
-	assert.Contains(t, output, "View error: view failed")
+	_, err := model.viewDirectResult()
+	require.Error(t, err)
+	assert.Equal(t, "view failed", err.Error())
 }
 
-func TestViewDirect_EmptyString(t *testing.T) {
+func TestViewDirectResult_EmptyString(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
 	model := &jsModel{
@@ -1033,8 +1003,10 @@ func TestViewDirect_EmptyString(t *testing.T) {
 		},
 		state: vm.NewObject(),
 	}
-	output := model.viewDirect()
-	assert.Equal(t, "[BT] View returned empty string", output)
+	// viewDirectResult allows empty strings — View() handles them
+	val, err := model.viewDirectResult()
+	require.NoError(t, err)
+	assert.Equal(t, "", val.String())
 }
 
 // ========================================================================

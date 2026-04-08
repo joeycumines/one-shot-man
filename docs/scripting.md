@@ -333,14 +333,26 @@ Terminal UI framework based on [Charm BubbleTea v2](https://github.com/charmbrac
 
 **Program lifecycle**:
 - `tea.newModel(config)` — Create an Elm-architecture model (`config`: `{init, update, view}` functions; optional `renderThrottle` config)
-- `tea.run(model, opts?)` — Run TUI program (blocks until exit). Options are declarative View fields in v2:
-  - `{altScreen: true}` — Enter alternate screen buffer (`View.AltScreen`)
-  - `{mouse: true}` — Enable SGR mouse mode, all motion (`View.MouseMode=AllMotion`)
-  - `{mouseCellMotion: true}` — Enable SGR mouse mode, cell motion only (`View.MouseMode=CellMotion`)
-  - `{reportFocus: true}` — Enable focus/blur reporting (`View.ReportFocus`)
-  - `{windowTitle: 'My App'}` — Set terminal window title (`View.WindowTitle`)
-  - Bracketed paste is always enabled (no option needed)
+- `tea.run(model, opts?)` — Run TUI program (returns immediately, runs asynchronously). Only `toggleKey` and `onToggle` are accepted as options; terminal feature options (`altScreen`, `mouse`, `mouseCellMotion`, `reportFocus`, `windowTitle`) are silently ignored — set them in `view()` instead:
 - `tea.isTTY() → bool` — Check if terminal is a TTY
+
+**View return contract**: The `view()` function can return a string or a declarative object:
+
+```javascript
+// String return — basic content only
+view: function(model) { return 'Hello, world!'; }
+
+// Object return — declarative terminal control
+view: function(model) {
+    return {
+        content: 'Hello, world!',
+        altScreen: true,
+        mouseMode: 'allMotion',  // 'cellMotion', 'none'
+        reportFocus: true,
+        windowTitle: 'My App'
+    };
+}
+```
 
 **Commands** (returned from update as second element of `[model, cmd]`):
 - `tea.quit()`, `tea.clearScreen()`

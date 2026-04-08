@@ -201,7 +201,7 @@
                     if (s.reportVp) { s.reportVp.scrollUp(1); syncReportScrollbar(s); }
                     return [s, null];
                 }
-                if (rk === 'pgdown' || rk === ' ') {
+                if (rk === 'pgdown' || rk === 'space') {
                     if (s.reportVp) { s.reportVp.halfPageDown(); syncReportScrollbar(s); }
                     return [s, null];
                 }
@@ -220,7 +220,7 @@
                 return [s, null];
             }
             // Mouse wheel scrolling within report overlay.
-            if (msg.type === 'Mouse' && msg.isWheel && s.reportVp) {
+            if (msg.type === 'MouseWheel' && s.reportVp) {
                 if (msg.button === 'wheel up') {
                     s.reportVp.scrollUp(3);
                     syncReportScrollbar(s);
@@ -233,7 +233,7 @@
                 }
             }
             // Clicking outside overlay closes it.
-            if (msg.type === 'Mouse' && msg.action === 'press' && !msg.isWheel) {
+            if (msg.type === 'MouseClick') {
                 s.showingReport = false;
                 return [s, null];
             }
@@ -823,7 +823,7 @@
                 return [s, null];
             }
             // PLAN_EDITOR: Space toggles checked state on highlighted file (T17).
-            if (k === ' ' && s.wizardState === 'PLAN_EDITOR') {
+            if (k === 'space' && s.wizardState === 'PLAN_EDITOR') {
                 var sidx = s.selectedSplitIdx || 0;
                 var fidx = s.selectedFileIdx || 0;
                 if (st.planCache && st.planCache.splits && st.planCache.splits[sidx] &&
@@ -893,25 +893,30 @@
         }
 
         // Mouse handling.
-        // Wheel events must be checked BEFORE press — wheel events
-        // have action:"press" AND isWheel:true, so the press guard
-        // would intercept them and send them to handleMouseClick.
+        // MouseWheel events are handled separately from MouseClick/MouseMotion/MouseRelease.
+        // MouseClick is forwarded to handleMouseClick for zone detection.
 
         // T327/T328: Forward mouse events to focused child terminal.
         // Intercepts motion, release, and wheel before wizard-managed handlers.
         // Press events are NOT intercepted here — they go through
         // handleMouseClick for zone detection first.
-        if (msg.type === 'Mouse' && s.splitViewEnabled &&
+        if (s.splitViewEnabled &&
             s.splitViewFocus === 'claude' && s.splitViewTab !== 'output') {
-            var fwdAction = msg.action;
-            if (fwdAction === 'motion' || (fwdAction === 'release' && !msg.isWheel)) {
+            if (msg.type === 'MouseMotion') {
                 var ofs = computeSplitPaneContentOffset(s);
                 var mb = mouseToTermBytes(msg, ofs.row, ofs.col);
                 if (mb && writeMouseToPane(mb, s)) {
                     return [s, null];
                 }
             }
-            if (msg.isWheel) {
+            if (msg.type === 'MouseRelease') {
+                var ofs = computeSplitPaneContentOffset(s);
+                var mb = mouseToTermBytes(msg, ofs.row, ofs.col);
+                if (mb && writeMouseToPane(mb, s)) {
+                    return [s, null];
+                }
+            }
+            if (msg.type === 'MouseWheel') {
                 var ofs = computeSplitPaneContentOffset(s);
                 var mb = mouseToTermBytes(msg, ofs.row, ofs.col);
                 if (mb && writeMouseToPane(mb, s)) {
@@ -923,7 +928,7 @@
 
         // Live verify session mouse wheel → scroll output viewport.
         // Only applies when verify output is visible (non-split or verify tab active).
-        if (msg.type === 'Mouse' && msg.isWheel && getInteractivePaneSession(s, 'verify') &&
+        if (msg.type === 'MouseWheel' && getInteractivePaneSession(s, 'verify') &&
             (!s.splitViewEnabled || s.splitViewTab === 'verify')) {
             if (msg.button === 'wheel up') {
                 s.verifyAutoScroll = false;
@@ -941,7 +946,7 @@
 
         // Split-view Claude pane mouse wheel → scroll Claude screenshot.
         // T44: Also handle Output tab scrolling.
-        if (msg.type === 'Mouse' && msg.isWheel && s.splitViewEnabled &&
+        if (msg.type === 'MouseWheel' && s.splitViewEnabled &&
             s.splitViewFocus === 'claude') {
             if (s.splitViewTab === 'output') {
                 // Output tab scrolling.
@@ -968,7 +973,7 @@
             }
         }
 
-        if (msg.type === 'Mouse' && msg.isWheel && s.vp) {
+        if (msg.type === 'MouseWheel' && s.vp) {
             if (msg.button === 'wheel up') {
                 s.vp.scrollUp(3);
                 return [s, null];
@@ -979,7 +984,7 @@
             }
         }
 
-        if (msg.type === 'Mouse' && msg.action === 'press' && !msg.isWheel) {
+        if (msg.type === 'MouseClick') {
             return handleMouseClick(msg, s);
         }
 

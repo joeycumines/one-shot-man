@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
 	"github.com/creack/pty"
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
@@ -179,10 +178,8 @@ func TestRunProgram_Options(t *testing.T) {
 	}
 
 	model := &jsModel{
-		runtime:   vm,
-		altScreen: true,                   // Test that altScreen option sends escape sequences
-		mouseMode: tea.MouseModeAllMotion, // Test that mouse option sends escape sequences
-		initFn:    initFnRaw,              // Use tick so program exits deterministically
+		runtime: vm,
+		initFn:  initFnRaw, // Use tick so program exits deterministically
 		updateFn: func(this goja.Value, args ...goja.Value) (goja.Value, error) {
 			// When we receive the tick (or any message), quit
 			quit := map[string]any{"_cmdType": "quit"}

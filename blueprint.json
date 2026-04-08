@@ -241,7 +241,7 @@
       "task": "Implement copy/paste support in split-view panes",
       "description": "Users in split-view cannot copy/paste between panes or to/from the system clipboard. Add: (1) A selection mode activated by holding Shift+Arrow keys (or mouse drag) that highlights text in the current pane — use vt/cow.go Snapshot's PlainText() method to extract selected lines, coordinates derived from the COW snapshot's CursorRow/CursorCol fields; (2) Ctrl+Shift+C to copy selected text to system clipboard — use github.com/atotto/clipboard (already in go.sum) for cross-platform clipboard access; (3) Ctrl+Shift+V to paste from system clipboard to the active PTY via session().write(); (4) Visual feedback for selection (reverse-video highlight on the COW snapshot rows). Modify pr_split_16e_tui_update.js to add Shift+Arrow key handling in handleKeyMessage() and mouse drag handling in handleMouseMessage(). The selection state (startRow, startCol, endRow, endCol) is tracked per-session in the TUI model.",
       "acceptance": "Users can select text in any split-view pane via keyboard or mouse, copy to system clipboard, and paste into any active PTY session. Visual selection highlighting confirms the selected region. Works on macOS and Linux (xclip/xsel/wl-clipboard).",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": 63,

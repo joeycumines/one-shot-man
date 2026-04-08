@@ -1,6 +1,6 @@
-# WIP — Task 64 DONE, proceeding to remaining tasks
+# WIP — Task 62 DONE, proceeding to remaining tasks
 
-## Current Status: Tasks 40-53, 56-58, 60, 64, 65 DONE
+## Current Status: Tasks 40-53, 56-58, 60, 62, 64, 65 DONE
 
 ### Session (2026-04-08, implementation sprint continued)
 
@@ -15,14 +15,15 @@
 - **Task 60**: Documentation refresh for SessionManager architecture — `740daaeb`
 - **Task 65**: Scrollback buffer design document (scratch/scrollback-design.md, local only)
 - **Task 64**: Wide-character boundary repair in VTerm — `a7dbb069`
+- **Task 62**: Copy/paste and text selection in split-view panes — `60ea614f`
 
 #### Remaining tasks
 - **Task 54**: ConPTY Windows support (LARGE — may defer)
 - **Task 55**: E2E TUI tests (depends 40+44+48)
 - **Task 59**: Session suspend/resume (depends 55)
 - **Task 61**: Tab-based session switching UI (depends 55)
-- **Task 62**: Performance profiling and optimization
 - **Task 63**: Session persistence (depends 48+61)
 
 #### Pre-existing test failures (NOT ours)
 - `TestCaptureSession_Passthrough_ContextCancel`: expects ExitContext, gets EOF (PTY timing)
+- `TestCaptureSession_Passthrough_ChildExit`: Passthrough returned error: EOF (PTY timing)

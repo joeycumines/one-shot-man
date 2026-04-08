@@ -307,6 +307,46 @@ commit-task64: ## Commit Task 64: Unicode width handling in VTerm
 		-m "wide pairs, ASCII regression, and CSI integration tests" \
 		-m "that exercise the full UTF-8 → dispatch → repair pipeline."
 
+.PHONY: commit-task62
+commit-task62: ## Commit Task 62: Copy/paste support in split-view panes
+	git add internal/termmux/vt/vt.go \
+		internal/termmux/vt/cursor_test.go \
+		internal/termmux/manager.go \
+		internal/termmux/manager_test.go \
+		internal/builtin/termmux/module.go \
+		internal/builtin/os/os.go \
+		internal/builtin/os/os_test.go \
+		internal/scripting/js_output_api.go \
+		internal/scripting/engine_core.go \
+		internal/command/pr_split_16f_tui_model.js \
+		internal/command/pr_split_16d_tui_handlers_claude.js \
+		internal/command/pr_split_16e_tui_update.js \
+		internal/command/pr_split_15b_tui_chrome.js
+	git commit -m "Add copy/paste and text selection to split-view panes" \
+		-m "Implement keyboard and mouse text selection with clipboard" \
+		-m "integration across Claude, Output, and Verify split-view" \
+		-m "panes." \
+		-m "" \
+		-m "Go layer:" \
+		-m "- VTerm.CursorPosition(): thread-safe cursor accessor" \
+		-m "- ScreenSnapshot: add CursorRow/CursorCol fields" \
+		-m "- ClipboardPaste(): multi-platform clipboard read (pbpaste," \
+		-m "  PowerShell, wl-paste, xclip, xsel) with OSM_CLIPBOARD_PASTE" \
+		-m "  env override" \
+		-m "- output.fromClipboard JS binding via Engine" \
+		-m "" \
+		-m "JS layer:" \
+		-m "- Selection helpers: start, extend, extract, clear with line" \
+		-m "  wrapping and backward-selection normalization" \
+		-m "- Keyboard: Shift+Arrow to select, Ctrl+Shift+C/V to copy/" \
+		-m "  paste, Escape to clear selection" \
+		-m "- Mouse: Shift+Click to start/extend, Shift+Drag to extend" \
+		-m "- Rendering: reverse-video highlighting via applySelectionHighlight" \
+		-m "  with column-level precision for plain-text panes" \
+		-m "" \
+		-m "10 new tests across 3 packages (cursor position, clipboard" \
+		-m "paste, snapshot cursor fields)."
+
 .PHONY: commit-meta5
 commit-meta5: ## Commit meta changes for Tasks 56-58, 60, 64, 65
 	git add blueprint.json WIP.md config.mk
@@ -314,6 +354,14 @@ commit-meta5: ## Commit meta changes for Tasks 56-58, 60, 64, 65
 		-m "Mark tasks 56, 57, 58, 60, 64, 65 as Done in blueprint.json." \
 		-m "Update WIP.md with completed task list and remaining work." \
 		-m "Add commit targets for tasks 56-58, 60, 64 and meta5."
+
+.PHONY: commit-meta6
+commit-meta6: ## Commit meta changes for Task 62
+	git add blueprint.json WIP.md config.mk
+	git add -f scratch/task62-r2-pass1.md scratch/task62-r2-pass2.md 2>/dev/null || true
+	git commit -m "Update blueprint and meta files for Task 62" \
+		-m "Mark Task 62 as Done in blueprint.json. Add commit-task62" \
+		-m "and commit-meta6 targets to config.mk. Update WIP.md."
 
 .PHONY: commit-task53
 commit-task53: ## Commit Task 53: Configurable drain timeout in CaptureSession

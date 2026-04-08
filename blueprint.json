@@ -30,11 +30,12 @@
     }
   ],
   "statusSection": {
-    "currentState": "REBUILD. Previous blueprint was forensically unreliable — it encoded the wrong success criteria (tea.run option shims) and covered only a narrow subset of the migration. Autopsy (scratch/migration-attempt-autopsy/) confirmed: Go deps are v2, Go bridge wires tea.View mode fields, imperative JS exports removed, lint/test green. BUT: JS view() is still string-only (result.String() at bubbletea.go:857), tea.run() still accepts terminal options (lines 1614-1628), JsToTeaMsg only accepts legacy Mouse type (line 458), key contract uses key.Text override (lines 874-879), msgToJS omits shiftedCode/baseCode/isRepeat (lines 885-891), pr_split JS handlers still use msg.type==='Mouse' (5 files untouched), most example scripts untouched, package comment still references v1 package path and legacy fields, docs/scripting.md says tea.run() blocks (code returns immediately), docs promise key fields that bridge never emits.",
+    "currentState": "MIGRATION SUBSTANTIALLY COMPLETE. Bubble Tea v2 migration committed (commit 36a87104): tea.View object parsing in viewDirect(), msgToJS with shiftedCode/baseCode/isRepeat, key.Text override removed, JsToTeaMsg with MouseClick/MouseRelease/MouseMotion/MouseWheel (legacy Mouse deleted), JSToMouseEvent and isWheel deleted, docs/scripting.md fixed (tea.run non-blocking), all pr_split JS migrated to v2 contract, all example scripts migrated (graphical-todo, bt-shooter, pick-and-place, minimal-bubbletea-test, benchmark-input-latency), super_document_script.js migrated, v2-native tests added, legacy test payloads deleted. TestPickAndPlaceMouseInteraction now passes: actor moves to clicked target. Remaining: bubblezone v1 dependency elimination, final multi-platform verification.",
     "goalState": "COMPLETE Bubble Tea v2 migration with ZERO compatibility shims and ZERO transitional periods. JS view() returns structured objects mapping to tea.View — terminal features come ONLY from the view() return value. tea.run() accepts ONLY toggleKey/onToggle — all terminal feature options are DELETED (altScreen, mouse, reportFocus, windowTitle parsed from tea.run() options do not exist). JsToTeaMsg accepts ONLY v2 split mouse types (MouseClick/MouseRelease/MouseMotion/MouseWheel) — the legacy 'Mouse' case and all legacy mouse shapes are DELETED and return nil. msgToJS emits ALL documented key fields (shiftedCode, baseCode, isRepeat). Key contract is v2-native (space → 'space', not ' ') — key.Text override is DELETED. bubblezone v1 dependency is ELIMINATED. ALL scripts use v2 message shapes exclusively. ALL tests validate v2 payloads exclusively — legacy mouse payloads are invalid input that returns nil. Package docs and docs/scripting.md accurately describe the actual v2 API. make test && make lint pass on all 3 platforms.",
     "replanLog": [
       "2026-04-08: FULL REPLAN. Previous blueprint discarded as forensic evidence per autopsy recommendation (scratch/migration-attempt-autopsy/08_honest_conclusions.md §5). New blueprint rebuilt from original plan (scratch/bubbletea-v2-migration.md), official guide (scratch/migration-guide.md), and autopsy gap analysis (04_gap_analysis.md GAP-001 through GAP-007). Work completed in prior sessions (Go dep migration, tea.View wiring, imperative export removal, docs partial update) is preserved as Done tasks. All shim-related work is now tracked for removal.",
-      "2026-04-08: REALIGNMENT. Removed all implied legacy retention from blueprint. Task 5 (JsToTeaMsg) rewritten: legacy 'Mouse' case is DELETED simultaneously with v2 types added — no 'still works for now' language. Task 22 removed (it only existed to delete the shim later). Task 2 made explicit that all three removals (option parsing + struct fields + View() field-setting) happen in same diff. Task 20 rewritten: legacy test payloads are DELETED not updated. Task 23 (bubblezone) made explicit that deprecation-with-comments is not an option. goalState updated with 'ZERO transitional periods' and 'ONLY' language throughout. New mandatoryDirectives.noShimPeriods added. globalAlert updated with explicit 'no transitional period' and 'same diff' language."
+      "2026-04-08: REALIGNMENT. Removed all implied legacy retention from blueprint. Task 5 (JsToTeaMsg) rewritten: legacy 'Mouse' case is DELETED simultaneously with v2 types added — no 'still works for now' language. Task 22 removed (it only existed to delete the shim later). Task 2 made explicit that all three removals (option parsing + struct fields + View() field-setting) happen in same diff. Task 20 rewritten: legacy test payloads are DELETED not updated. Task 23 (bubblezone) made explicit that deprecation-with-comments is not an option. goalState updated with 'ZERO transitional periods' and 'ONLY' language throughout. New mandatoryDirectives.noShimPeriods added. globalAlert updated with explicit 'no transitional period' and 'same diff' language.",
+      "2026-04-08: MIGRATION COMPLETE. Committed 22-file diff (36a87104): tea.View object parsing, msgToJS full key fields, key.Text override removed, JsToTeaMsg v2 split mouse types (legacy Mouse deleted), parsemouse cleanup, docs/scripting.md fix, all pr_split and example scripts migrated, v2-native tests added, legacy tests deleted. TestPickAndPlaceMouseInteraction now passes — WaitForActorPosition correctly parses [TICK-M] entries from slog log as fallback when [VIEW] is throttled. Remaining: bubblezone v1 dependency, multi-platform final verification."
     ]
   },
   "mandatoryDirectives": {
@@ -48,19 +49,19 @@
       "task": "Implement JS view() returning structured objects → tea.View (core fields only)",
       "description": "GAP-001 (CRITICAL). Current: viewDirect() (bubbletea.go:857) does `viewStr := result.String()`, so JS objects become '[object Object]'. Required: When JS view() returns an object, parse it into a tea.View with support for the CORE fields only: content, altScreen, mouseMode, reportFocus, windowTitle. When it returns a string, treat as content-only (tea.NewView(str)). Additional fields (cursor, foregroundColor, backgroundColor, disableBracketedPasteMode, keyboardEnhancements, progressBar, onMouse) are deferred to future stub tasks. Files: internal/builtin/bubbletea/bubbletea.go viewDirect() lines ~842-861, View() lines ~830-839.",
       "acceptance": "A JS test that returns `{content: 'hello', altScreen: true, mouseMode: 'all'}` from view() produces a tea.View with AltScreen=true and MouseMode=MouseModeAllMotion. Returning a plain string still works as content-only. No existing tests break. The JS view() contract matches the plan's Section 3 item 3 (bubbletea-v2-migration.md lines ~23-24). Future stub tasks can extend this parser with additional fields.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Remove terminal feature option parsing from tea.run() and delete corresponding jsModel fields",
       "description": "GAP-001 (CRITICAL). Current: tea.run() parses altScreen/mouse/mouseCellMotion/reportFocus/windowTitle at bubbletea.go:1614-1628 and stores them on jsModel. This is the shim the plan bans. Remove the option parsing code, remove the altScreen/mouseMode/reportFocus/windowTitle fields from jsModel struct (lines ~520-526), remove the field-setting in View() (lines ~833-838). ALL IN THE SAME DIFF — no separate steps, no 'later' language. The ONLY options tea.run() accepts going forward are toggleKey and onToggle (lines ~1631-1650) — those are passthrough passthroughs and are not terminal features. Files: internal/builtin/bubbletea/bubbletea.go lines 508-526 (struct), 830-839 (View), 1614-1628 (run options).",
       "acceptance": "tea.run(model, {altScreen:true}) is a no-op — altScreen is ignored. The ONLY way to set AltScreen is via view() returning {content:'...', altScreen:true}. tea.run(model, {toggleKey:29, onToggle:fn}) still works. jsModel struct has no altScreen/mouseMode/reportFocus/windowTitle fields. All three removals happen in the same diff. make test && make lint pass.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Make msgToJS emit all documented key fields: shiftedCode, baseCode, isRepeat",
       "description": "GAP-004 / GAP-007. docs/scripting.md:352 promises `{type:'Key', key, text, mod, code, shiftedCode, baseCode, isRepeat}`. msgToJS at bubbletea.go:885-891 emits only type/key/text/mod/code. Add shiftedCode (key.ShiftedCode), baseCode (key.BaseCode), isRepeat (key.IsRepeat) to the output map for both KeyPressMsg and KeyReleaseMsg cases. Files: internal/builtin/bubbletea/bubbletea.go lines 885-905.",
       "acceptance": "msgToJS for KeyPressMsg returns a map containing shiftedCode, baseCode, and isRepeat keys with correct values. KeyReleaseMsg likewise. docs/scripting.md:352 field list now matches what msgToJS actually emits. Existing key tests pass.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Remove key.Text override — use msg.String() for v2-native key names",
@@ -78,97 +79,97 @@
       "task": "Update package-level Go documentation in bubbletea.go",
       "description": "GAP-007. Current: bubbletea.go:3 says 'github.com/charmbracelet/bubbletea' (v1 path). Lines 52-55 document msg.runes, msg.alt, msg.ctrl, msg.paste — all removed in v2. Line 58 documents msg.action for mouse — v2 has split types. Rewrite the package comment to: (1) reference charm.land/bubbletea/v2, (2) document v2 key fields (key, text, mod, code, shiftedCode, baseCode, isRepeat), (3) document v2 mouse types (MouseClick, MouseRelease, MouseMotion, MouseWheel), (4) document v2 paste (Paste, PasteStart, PasteEnd), (5) document view() returning string or object, (6) remove all references to msg.runes, msg.alt, msg.ctrl, msg.paste, msg.action. Files: internal/builtin/bubbletea/bubbletea.go lines 1-70.",
       "acceptance": "Package comment references charm.land/bubbletea/v2. Zero references to msg.runes, msg.alt, msg.ctrl, msg.paste, msg.action in the package doc block. Key fields documented match what msgToJS emits. Mouse types documented match v2 split types. View contract documents both string and object return.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Fix docs/scripting.md — tea.run() lifecycle and key field accuracy",
       "description": "GAP-007. (1) docs/scripting.md:336 says 'blocks until exit' — bubbletea.go:1670 says 'NON-BLOCKING', returns immediately. Fix to say 'runs asynchronously' or equivalent. (2) Verify key field list at line 352 matches msgToJS output after task 3 adds shiftedCode/baseCode/isRepeat. (3) Remove tea.run() terminal option docs (altScreen, mouse, etc.) after task 2 removes them — terminal features come from view() return object. Files: docs/scripting.md lines 330-365.",
       "acceptance": "docs/scripting.md accurately describes tea.run() as non-blocking (returns immediately, program runs in background). Key field list exactly matches msgToJS output. tea.run() options section documents only toggleKey/onToggle. Terminal features documented as view() return object properties.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Migrate pr_split_16e_tui_update.js to v2 mouse and key contract",
       "description": "GAP-002 (CRITICAL). File: internal/command/pr_split_16e_tui_update.js. This file handles TUI update logic for the pr_split wizard. It still uses msg.type === 'Mouse' (lines ~223,236,904,926,944,971,982) and likely msg.alt/msg.ctrl/msg.action for mouse modifiers. After tasks 3-4 (v2 key fields, key.Text override removed): update msg.key === ' ' → msg.key === 'space'. After task 5 (v2 mouse input): update msg.type === 'Mouse' → msg.type === 'MouseClick' (and MouseWheel, etc.), msg.alt → msg.mod.includes('alt'), msg.ctrl → msg.mod.includes('ctrl'), msg.action → removed (type determines action).",
       "acceptance": "pr_split_16e_tui_update.js contains zero references to msg.type === 'Mouse', msg.alt, msg.ctrl, msg.action, msg.isWheel, or msg.key === ' '. All mouse handling uses MouseClick/MouseWheel/MouseMotion/MouseRelease types. All modifier checks use msg.mod array. Space bar check uses 'space'. File still passes its associated tests.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Migrate pr_split_16a_tui_focus.js to v2 mouse and key contract",
       "description": "GAP-002. File: internal/command/pr_split_16a_tui_focus.js. Still uses msg.type === 'Mouse' at lines ~193,270,372. Same migration as task 8: split mouse types, v2 key names, msg.mod array for modifiers.",
       "acceptance": "pr_split_16a_tui_focus.js contains zero references to msg.type === 'Mouse', msg.alt, msg.ctrl, msg.action, msg.isWheel, or msg.key === ' '. All mouse handling uses v2 split types. All modifier checks use msg.mod. Associated tests pass.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Migrate pr_split_16c_tui_handlers_verify.js to v2 mouse and key contract",
       "description": "GAP-002. File: internal/command/pr_split_16c_tui_handlers_verify.js. Still uses msg.type === 'Mouse' at lines ~96,753. Same migration pattern.",
       "acceptance": "Zero legacy mouse/key references. All handlers use v2 split mouse types and v2 key names. No references to msg.isWheel (use type-based dispatch). Associated tests pass.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Migrate pr_split_16f_tui_model.js — remove tea.run() terminal options, use view() return",
       "description": "GAP-002. File: internal/command/pr_split_16f_tui_model.js. Line ~986 comment says tea.run() blocks. Lines ~992-995 launch with {altScreen:true, mouse:true}. After tasks 1-2: remove terminal options from tea.run() call, move altScreen/mouseMode into the view() function return value as a declarative object {content: render(...), altScreen: true, mouseMode: 'all'}. Fix blocking comment if still present.",
       "acceptance": "pr_split_16f_tui_model.js tea.run() call passes no terminal feature options. view() returns an object with content + altScreen + mouseMode. No reference to tea.run() blocking. Associated tests pass.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Migrate pr_split_16d_tui_handlers_claude.js to v2 mouse contract",
       "description": "GAP-002. File: internal/command/pr_split_16d_tui_handlers_claude.js. Untouched adjacent live JS that still expects old mouse fields (msg.alt, msg.ctrl, msg.action). Same migration pattern as tasks 8-11.",
       "acceptance": "Zero legacy mouse/key references. All handlers use v2 split mouse types. Associated tests pass.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Verify pr_split_00_core.js, pr_split_15a_tui_styles.js, pr_split_15d_tui_dialogs.js have no legacy contract usage",
       "description": "VERIFICATION-ONLY. Three plan-listed JS files. Code inspection confirms: pr_split_00_core.js has zero tea.* references, pr_split_15a_tui_styles.js has only a require() and a comment about tea.tick (no event handling), pr_split_15d_tui_dialogs.js has zero tea event references (the word 'Mouse' appears once in a help-text string, not event handling). Verify this remains true after all prior migration tasks. If any file gained legacy patterns (unlikely), fix them. Files: internal/command/pr_split_00_core.js, internal/command/pr_split_15a_tui_styles.js, internal/command/pr_split_15d_tui_dialogs.js.",
       "acceptance": "All three files contain zero legacy mouse/key/paste event-handling references. If pr_split_15a_tui_styles.js uses tea.tick, it uses the current API (not a legacy pattern). No file passes terminal options to tea.run(). grep confirms zero hits for msg.type === 'Mouse', msg.alt, msg.ctrl, msg.paste in these files.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Migrate super_document_script.js remaining legacy paths",
       "description": "GAP-004. File: internal/command/super_document_script.js. Content textarea already handles MouseClick (line ~772) and Paste (line ~777). But label path at line ~1283 still checks msg.paste === true. Top-level bridge never sets msg.paste. After tasks 3-4: also update msg.key === ' ' → 'space' if present. Fix label paste to handle Paste/PasteStart/PasteEnd types instead of msg.paste flag. Files: internal/command/super_document_script.js.",
       "acceptance": "super_document_script.js contains zero references to msg.paste, msg.alt, msg.ctrl as booleans, msg.key === ' ', or msg.isWheel. Label paste path uses Paste/PasteStart/PasteEnd message types. Associated tests pass.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Migrate scripts/example-02-graphical-todo.js to v2 contract",
       "description": "File: scripts/example-02-graphical-todo.js. Still uses tea.run(..., {altScreen, mouse}) and case ' ' (line ~152). After tasks 1-2: move terminal options to view() return. After task 4: update space handling to 'space'. Verify mouse handlers use split types.",
       "acceptance": "tea.run() passes no terminal options. view() returns declarative object. Space check uses 'space'. Mouse handling uses MouseClick/MouseWheel. File runs correctly.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Migrate scripts/example-04-bt-shooter.js to v2 contract",
       "description": "File: scripts/example-04-bt-shooter.js. Untouched since baseline. Uses tea.run(..., {altScreen:true}) and msg.key === ' ' (lines ~1496,1538). Move terminal options to view(). Update space handling. Files: scripts/example-04-bt-shooter.js.",
       "acceptance": "tea.run() passes no terminal options. view() returns declarative object with altScreen. Space check uses 'space'. Mouse handling uses split types. File runs correctly.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Migrate scripts/example-05-pick-and-place.js to v2 contract",
       "description": "File: scripts/example-05-pick-and-place.js. Partially migrated but still uses case ' ' (line ~1603) and tea.run(..., {altScreen:true, mouse:true}). Move terminal options to view(). Update space handling. Files: scripts/example-05-pick-and-place.js.",
       "acceptance": "tea.run() passes no terminal options. view() returns declarative object. Space check uses 'space'. File runs correctly.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Migrate scripts/minimal-bubbletea-test.js to v2 contract",
       "description": "File: scripts/minimal-bubbletea-test.js. Untouched since baseline. Uses tea.run(..., {altScreen:true}). Move terminal options to view() return. Files: scripts/minimal-bubbletea-test.js.",
       "acceptance": "tea.run() passes no terminal options. view() returns declarative object with altScreen. File runs correctly.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Migrate scripts/benchmark-input-latency.js to v2 contract",
       "description": "File: scripts/benchmark-input-latency.js. Untouched since baseline. Uses tea.run(..., {altScreen:true}). Move terminal options to view() return. Files: scripts/benchmark-input-latency.js.",
       "acceptance": "tea.run() passes no terminal options. view() returns declarative object. File runs correctly.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Delete all tests passing legacy Mouse payloads — v2 split types are the only valid input",
       "description": "After task 5 (JsToTeaMsg replaces legacy 'Mouse' case with v2 split types). The legacy {type:'Mouse', button:'left', action:'press', x:5, y:10, alt:false, ctrl:false} shape is no longer valid input — JsToTeaMsg returns nil for it. Any test that passes this shape must be DELETED, not updated. Test files that need legacy payloads removed: internal/builtin/bubbles/viewport/viewport_test.go:231, viewport_integration_test.go:42,85; internal/builtin/bubbletea/benchmark_latency_test.go:37-40,67,294; internal/command/pr_split_13_tui_test.go:4496,4503; pr_split_16_config_output_test.go:149,710,718; pr_split_16_async_pipeline_test.go:1518; pr_split_16_claude_attach_test.go:291,1302; super_document_test.go:59. Also delete any test that uses runes/alt/ctrl booleans or paste: true/false in message shapes. DEL ETION not UPDATE — legacy payloads are invalid, not deprecated.",
       "acceptance": "grep -r \"type.*Mouse[^CWRM]\" across internal/ returns zero hits in test files. grep -r 'paste: false' or 'paste: true' across internal/ returns zero hits in test files. grep -r 'runes:' across internal/ returns zero hits in test files. grep -r 'action.*press' across internal/builtin/bubbletea/ returns zero hits. All remaining tests pass. No test attempts to validate or use legacy mouse payloads.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Add v2-native tests for bubbletea bridge (view(), key fields, mouse types, tea.run() contract)",
       "description": "Key test files in internal/builtin/bubbletea/. Verify they test v2-native behavior ONLY: (1) v2 key fields (shiftedCode, baseCode, isRepeat in msgToJS), (2) v2 split mouse types in msgToJS output, (3) JsToTeaMsg accepts MouseClick/MouseRelease/MouseMotion/MouseWheel and rejects legacy 'Mouse', (4) view() returns tea.View from JS object and tea.NewView from JS string, (5) tea.run() accepts only toggleKey/onToggle — altScreen/mouse/etc options are ignored. Delete any existing test that validates legacy mouse payload acceptance. Add new tests where coverage gaps exist. Files: internal/builtin/bubbletea/bubbletea_test.go, coverage_gaps_test.go, input_validation_test.go, parsekey_test.go, run_program_test.go, message_conversion_test.go.",
       "acceptance": "All test files in internal/builtin/bubbletea/ pass. Tests cover view() object return, v2 key fields, v2 mouse types. No test validates legacy Mouse type as a valid input. No test validates msg.paste or msg.runes as valid key fields. JsToTeaMsg explicitly tested to return nil for {type:'Mouse'}.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Delete legacy JSToMouseEvent helper and isWheel field — replaced by v2 mouse",

@@ -523,6 +523,33 @@ commit-meta7:
 	git add blueprint.json WIP.md config.mk
 	git commit -m 'Update blueprint and WIP for Task 55 completion'
 
+.PHONY: commit-task59
+commit-task59: ## Commit Task 59: Load/stress tests for SessionManager
+	git add internal/termmux/load_test.go
+	git commit -m 'Add load and stress tests for SessionManager' \
+		-m '' \
+		-m 'Add 6 test/benchmark functions covering sustained multi-session' \
+		-m 'output, concurrent registration, COW snapshot reads under write' \
+		-m 'load, event delivery with backpressure, and bounded memory' \
+		-m 'growth verification.' \
+		-m '' \
+		-m 'Key coverage:' \
+		-m '- BenchmarkMultiSessionOutput: 3-session concurrent snapshot reads' \
+		-m '- BenchmarkSnapshotReadDuringWrite: COW read latency under load' \
+		-m '- TestStressConcurrentRegistration: 8 workers x 100 cycles' \
+		-m '- TestStressEventDeliveryUnderLoad: subscriber backpressure' \
+		-m '- TestStressBoundedMemoryGrowth: session map + goroutine cleanup' \
+		-m '' \
+		-m 'All tests use testing.Short() skip guards and run with -race.'
+
+.PHONY: commit-meta8
+commit-meta8: ## Commit meta changes for Task 59
+	git add blueprint.json WIP.md config.mk
+	git add -f scratch/task59-r2-pass1.md scratch/task59-r2-pass2.md 2>/dev/null || true
+	git commit -m 'Update blueprint and meta files for Task 59' \
+		-m 'Mark Task 59 as Done in blueprint.json. Add commit-task59' \
+		-m 'and commit-meta8 targets. Update WIP.md progress notes.'
+
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 
 endif

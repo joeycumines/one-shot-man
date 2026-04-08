@@ -217,7 +217,7 @@
       "task": "Load test: SessionManager under sustained multi-session output",
       "description": "Create internal/termmux/load_test.go with benchmarks and stress tests for sustained multi-session output: (1) BenchmarkMultiSessionOutput — 3 sessions producing output simultaneously, measure throughput and latency of snapshot updates; (2) StressTestConcurrentRegistration — 100 rapid register/unregister cycles across multiple goroutines; (3) BenchmarkSnapshotReadDuringWrite — measure COW snapshot read latency while output pipeline is active. Verify no deadlocks, no panics, bounded memory growth.",
       "acceptance": "Three performance tests prove SessionManager handles multi-session output without deadlock, panic, or unbounded memory growth. Snapshot read latency during heavy write load remains under 1μs (COW guarantee). Registration/unregistration is safe under concurrent access.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": 60,

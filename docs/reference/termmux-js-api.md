@@ -68,8 +68,9 @@ Created via `newCaptureSession(command, args?, opts?)`.
 | `readAvailable()` | drain `Reader()` channel | — | `string\|null` | non-blocking; null on close |
 | `write(data)` | `InteractiveSession.Write()` | `string` | `undefined` | throws |
 
-**Removed in Task 56:** `target()`, `setTarget()`, `isRunning()` —
-all JS call sites use SessionManager wrappers instead.
+**Removed from CaptureSession in Task 56:** `target()`, `setTarget()`,
+`isRunning()` — these now live on the SessionManager `session()` wrapper
+(see below).
 
 ---
 

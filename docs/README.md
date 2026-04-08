@@ -33,7 +33,7 @@ If you just want to try it, see the [root README](../README.md).
 
 - [Architecture](architecture.md)
 - [PR-Split Chunk Architecture](architecture-pr-split-chunks.md)
-- [Terminal Multiplexer Architecture](reference/mux-architecture.md)
+- [Terminal Multiplexer JS API Reference](reference/termmux-js-api.md)
 - [PR Split Integration Testing](pr-split-testing.md)
 - [Security posture](security.md)
 - [Elm commands and Goja](reference/elm-commands-and-goja.md)

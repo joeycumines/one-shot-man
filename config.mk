@@ -550,6 +550,42 @@ commit-meta8: ## Commit meta changes for Task 59
 		-m 'Mark Task 59 as Done in blueprint.json. Add commit-task59' \
 		-m 'and commit-meta8 targets. Update WIP.md progress notes.'
 
+.PHONY: commit-task61
+commit-task61: ## Commit Task 61: Ctrl+Tab cycles all focusable targets
+	git add internal/command/pr_split_16e_tui_update.js \
+		internal/command/pr_split_16f_tui_model.js \
+		internal/command/pr_split_tui_interaction_test.go \
+		internal/command/pr_split_13_tui_test.go \
+		internal/command/pr_split_16_verify_expand_nav_test.go \
+		internal/command/pr_split_16_split_mouse_test.go \
+		internal/command/pr_split_16_keyboard_crash_test.go \
+		internal/command/pr_split_16_input_routing_test.go \
+		internal/command/pr_split_16_vterm_key_forwarding_test.go \
+		internal/command/pr_split_16_vterm_claude_pane_test.go \
+		internal/command/testdata/golden/tab-bar-all-tabs.golden \
+		internal/command/testdata/golden/tab-bar-verify-only.golden
+	git commit -m 'Cycle Ctrl+Tab through all split-view targets' \
+		-m 'Replace binary wizard/pane toggle with full cycle:' \
+		-m 'wizard → claude → output → verify (if active) → wizard.' \
+		-m '' \
+		-m 'Build dynamic target list from listSplitViewTabs, find' \
+		-m 'current position, advance with modulo wrap. Handles' \
+		-m 'orphaned tabs gracefully (curIdx=-1 falls to index 0).' \
+		-m 'Ctrl+O remains as tab-only cycling within bottom pane.' \
+		-m '' \
+		-m 'Update hint text "switch" → "cycle", fix stale negative' \
+		-m 'assertion in error-state test, update 9 existing tests,' \
+		-m 'add TestCtrlTabCyclesThroughTargets covering both with' \
+		-m 'and without verify scenarios. 2 golden files updated.'
+
+.PHONY: commit-meta9
+commit-meta9: ## Commit meta changes for Task 61
+	git add blueprint.json WIP.md config.mk
+	git add -f scratch/task61-r2-pass1b.md scratch/task61-r2-pass2.md 2>/dev/null || true
+	git commit -m 'Update blueprint and meta files for Task 61' \
+		-m 'Mark Task 61 as Done in blueprint.json. Add commit-task61' \
+		-m 'and commit-meta9 targets. Update WIP.md progress notes.'
+
 # IF YOU NEED A CUSTOM TARGET, DEFINE IT ABOVE THIS LINE, AFTER THE `##@ Custom Targets`
 
 endif

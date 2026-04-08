@@ -1,6 +1,6 @@
-# WIP — Tasks 40-53, 55-60, 62, 64, 65 DONE
+# WIP — Tasks 40-53, 55-62, 64, 65 DONE
 
-## Current Status: Tasks 40-53, 55-60, 62, 64, 65 DONE
+## Current Status: Tasks 40-53, 55-62, 64, 65 DONE
 
 ### Session (2026-04-08, implementation sprint continued)
 
@@ -17,11 +17,11 @@
 - **Task 64**: Wide-character boundary repair in VTerm — `a7dbb069`
 - **Task 62**: Copy/paste and text selection in split-view panes — `60ea614f`
 - **Task 55**: E2E TUI interaction test suite (5 tests) — `f9bc9868`
-- **Task 59**: Load/stress tests for SessionManager — pending commit
+- **Task 59**: Load/stress tests for SessionManager — `3070178d`
+- **Task 61**: Ctrl+Tab cycles all split-view targets — `9dce44b5`
 
 #### Remaining tasks
 - **Task 54**: ConPTY Windows support (LARGE — may defer)
-- **Task 61**: Tab-based session switching UI (depends 48+55)
 - **Task 63**: Session persistence (depends 48+61)
 
 #### Pre-existing test failures (NOT ours)

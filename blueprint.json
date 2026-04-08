@@ -233,7 +233,7 @@
       "task": "Implement tab-based session switching in split-view",
       "description": "Currently Ctrl+Tab switches focus between wizard and Claude panes. Extend the session model to support multiple registered sessions with tab-based switching: (1) Register all panes (Claude, verify, output) with SessionManager; (2) Ctrl+Tab cycles through registered sessions; (3) The focused session receives all input; (4) Screen snapshots render the active session in the focused pane. This leverages SessionManager's multi-session architecture which was designed for exactly this use case.",
       "acceptance": "Users can cycle through all panes (Claude, verify, output) using Ctrl+Tab. Each pane renders the correct session's output. Input is routed to the focused session. The tab order is deterministic and memorable (most-recently-used would be ideal).",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "id": 62,

@@ -141,11 +141,32 @@
         if (Array.isArray(classification)) {
             for (var i = 0; i < classification.length; i++) {
                 var cat = classification[i];
-                if (!cat.name) continue;
-                groups[cat.name] = {
-                    files: cat.files || [],
-                    description: cat.description || ''
-                };
+                // Skip null/undefined items (was throwing TypeError on null.name access)
+                if (!cat) continue;
+                // Plain string item — skip
+                if (typeof cat === 'string') continue;
+                // Object with a name field — standard format
+                if (typeof cat === 'object' && cat.name) {
+                    groups[cat.name] = {
+                        files: cat.files || [],
+                        description: cat.description || ''
+                    };
+                    continue;
+                }
+                // Object without name but with files — synthetic group
+                // Only synthetic if name doesn't exist (undefined/null); empty string '' means skip
+                if (typeof cat === 'object' && cat.name !== '' && !cat.name && cat.files) {
+                    groups['group' + (i + 1)] = {
+                        files: Array.isArray(cat.files) ? cat.files : [cat.files],
+                        description: cat.description || ''
+                    };
+                    continue;
+                }
+                // Plain array — treat as a list of files in a synthetic group
+                if (Array.isArray(cat)) {
+                    groups['group' + (i + 1)] = { files: cat, description: '' };
+                    continue;
+                }
             }
         } else if (classification && typeof classification === 'object') {
             for (var path in classification) {

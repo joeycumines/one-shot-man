@@ -141,7 +141,7 @@ func NewPickAndPlaceHarness(ctx context.Context, t *testing.T, config PickAndPla
 		termtest.WithCommand(h.binaryPath, args...),
 		termtest.WithDefaultTimeout(h.timeout),
 		termtest.WithEnv(testEnv),
-		termtest.WithDir(projectDir), // Set project directory so script paths resolve correctly
+		termtest.WithDir(projectDir),        // Set project directory so script paths resolve correctly
 		termtest.WithSize(ptyRows, ptyCols), // PTY dimensions used for mouse coordinate calculations
 	)
 	if err != nil {
@@ -761,7 +761,7 @@ func (h *PickAndPlaceHarness) Start() error {
 		termtest.WithCommand(h.binaryPath, args...),
 		termtest.WithDefaultTimeout(h.timeout),
 		termtest.WithEnv(testEnv),
-		termtest.WithDir(projectDir), // Set project directory so script paths resolve correctly
+		termtest.WithDir(projectDir),        // Set project directory so script paths resolve correctly
 		termtest.WithSize(ptyRows, ptyCols), // PTY dimensions used for mouse coordinate calculations
 	)
 	if err != nil {
@@ -1219,11 +1219,11 @@ func (h *PickAndPlaceHarness) parseDebugStateFromLog() *PickAndPlaceDebugJSON {
 			if tick > lastTickMTick {
 				lastTickMTick = tick
 				lastTickMState = &PickAndPlaceDebugJSON{
-					Tick:              tick,
-					ActorX:            actorX,
-					ActorY:            actorY,
-					ManualPathLength:  mpl,
-					Mode:              "m", // TICK-M implies manual
+					Tick:             tick,
+					ActorX:           actorX,
+					ActorY:           actorY,
+					ManualPathLength: mpl,
+					Mode:             "m", // TICK-M implies manual
 				}
 			}
 		}

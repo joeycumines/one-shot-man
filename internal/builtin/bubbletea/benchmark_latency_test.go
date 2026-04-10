@@ -690,7 +690,6 @@ func BenchmarkValidateTextareaInput(b *testing.B) {
 		}
 	})
 
-
 }
 
 // BenchmarkValidateLabelInput measures input validation for label fields.

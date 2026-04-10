@@ -915,14 +915,14 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]any {
 		mod := key.Mod
 
 		return map[string]any{
-			"type":         "Key",
-			"key":          keyStr,
-			"text":         text,
-			"mod":          modToStrings(mod),
-			"code":         key.Code,
-			"shiftedCode":  key.ShiftedCode,
-			"baseCode":     key.BaseCode,
-			"isRepeat":     key.IsRepeat,
+			"type":        "Key",
+			"key":         keyStr,
+			"text":        text,
+			"mod":         modToStrings(mod),
+			"code":        key.Code,
+			"shiftedCode": key.ShiftedCode,
+			"baseCode":    key.BaseCode,
+			"isRepeat":    key.IsRepeat,
 		}
 
 	case tea.KeyReleaseMsg:
@@ -932,14 +932,14 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]any {
 		mod := key.Mod
 
 		return map[string]any{
-			"type":         "KeyRelease",
-			"key":          keyStr,
-			"text":         text,
-			"mod":          modToStrings(mod),
-			"code":         key.Code,
-			"shiftedCode":  key.ShiftedCode,
-			"baseCode":     key.BaseCode,
-			"isRepeat":     key.IsRepeat,
+			"type":        "KeyRelease",
+			"key":         keyStr,
+			"text":        text,
+			"mod":         modToStrings(mod),
+			"code":        key.Code,
+			"shiftedCode": key.ShiftedCode,
+			"baseCode":    key.BaseCode,
+			"isRepeat":    key.IsRepeat,
 		}
 
 	case tea.MouseMsg:

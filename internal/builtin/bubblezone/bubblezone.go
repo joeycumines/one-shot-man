@@ -45,8 +45,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/dop251/goja"
 	tea "charm.land/bubbletea/v2"
+	"github.com/dop251/goja"
 	zone "github.com/lrstanley/bubblezone/v2"
 )
 

@@ -78,9 +78,9 @@ func TestValidateTextareaInput(t *testing.T) {
 
 func TestValidateLabelInput(t *testing.T) {
 	tests := []struct {
-		name    string
-		keyStr  string
-		wantOK  bool
+		name   string
+		keyStr string
+		wantOK bool
 	}{
 		// Empty rejected
 		{name: "empty", keyStr: "", wantOK: false},

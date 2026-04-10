@@ -532,7 +532,7 @@ func TestValidateLabelInput_UnicodePrintable(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			result := ValidateLabelInput(tc.input, false)
+			result := ValidateLabelInput(tc.input)
 			assert.Equal(t, tc.expected, result.Valid)
 			assert.Equal(t, tc.reason, result.Reason)
 		})
@@ -626,14 +626,14 @@ func TestRequire_TickNegativeDuration(t *testing.T) {
 func TestValidateTextareaInput_ControlCharNotNamedKey(t *testing.T) {
 	t.Parallel()
 	// Control character that's not in KeyDefs
-	result := ValidateTextareaInput("\x02", false) // ctrl+B raw
+	result := ValidateTextareaInput("\x02") // ctrl+B raw
 	assert.False(t, result.Valid)
 	assert.Equal(t, "control character", result.Reason)
 }
 
 func TestValidateTextareaInput_UnicodePrintable(t *testing.T) {
 	t.Parallel()
-	result := ValidateTextareaInput("日", false)
+	result := ValidateTextareaInput("日")
 	assert.True(t, result.Valid)
 	assert.Equal(t, "unicode printable", result.Reason)
 }
@@ -828,14 +828,6 @@ func TestRequire_IsValidTextareaInput(t *testing.T) {
 		assert.False(t, obj.Get("valid").ToBoolean())
 	})
 
-	t.Run("with isPaste", func(t *testing.T) {
-		fn, ok := goja.AssertFunction(exports.Get("isValidTextareaInput"))
-		require.True(t, ok)
-		result, err := fn(goja.Undefined(), vm.ToValue("a"), vm.ToValue(true))
-		require.NoError(t, err)
-		obj := result.ToObject(vm)
-		assert.True(t, obj.Get("valid").ToBoolean())
-	})
 }
 
 func TestRequire_IsValidLabelInput(t *testing.T) {

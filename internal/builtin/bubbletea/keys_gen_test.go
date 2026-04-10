@@ -1,6 +1,7 @@
 package bubbletea
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -67,23 +68,58 @@ func TestKeyDefsByNameParity(t *testing.T) {
 	}
 }
 
-// TestAllKeyCodesContainsCoreKeys verifies that essential keys are present.
+// TestAllKeyCodesContainsCoreKeys verifies that essential keys are present in
+// KeyDefs, that their Code values are non-zero, their Names start with "Key",
+// and that each code appears in AllKeyCodes.
 func TestAllKeyCodesContainsCoreKeys(t *testing.T) {
-	essentialCodes := []rune{
-		'\r',   // enter
-		'\x1b', // escape
-		'\x7f', // backspace
+	essentialKeys := []struct {
+		keyStr string // lookup key in KeyDefs map
+	}{
+		{"enter"},
+		{"esc"},
+		{"backspace"},
+		{"tab"},
+		{"delete"},
+		{"up"},
+		{"down"},
+		{"left"},
+		{"right"},
+		{"home"},
+		{"end"},
+		{"pgup"},
+		{"pgdown"},
+		{"ctrl+c"},
 	}
 
+	// Build a set of codes from AllKeyCodes for quick lookup.
 	codeSet := make(map[rune]bool)
 	for _, code := range AllKeyCodes {
 		codeSet[code] = true
 	}
 
-	for _, code := range essentialCodes {
-		if !codeSet[code] {
-			t.Errorf("AllKeyCodes missing essential code: %q", code)
-		}
+	for _, ek := range essentialKeys {
+		t.Run(ek.keyStr, func(t *testing.T) {
+			// 1. The key string must exist in KeyDefs.
+			kd, ok := KeyDefs[ek.keyStr]
+			if !ok {
+				t.Fatalf("KeyDefs missing essential key string: %q", ek.keyStr)
+			}
+
+			// 2. The Code must be non-zero.
+			if kd.Code == 0 {
+				t.Errorf("KeyDefs[%q].Code is zero", ek.keyStr)
+			}
+
+			// 3. The Name must start with "Key".
+			if !strings.HasPrefix(kd.Name, "Key") {
+				t.Errorf("KeyDefs[%q].Name = %q, want prefix %q", ek.keyStr, kd.Name, "Key")
+			}
+
+			// 4. The Code must appear in AllKeyCodes.
+			if !codeSet[kd.Code] {
+				t.Errorf("AllKeyCodes missing essential code %q for key %q", kd.Code, ek.keyStr)
+			}
+		})
 	}
 }
 

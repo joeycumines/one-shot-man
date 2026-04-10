@@ -213,7 +213,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 
 | Module | Description | Key exports |
 |--------|-------------|-------------|
-| `osm:bubbletea` | BubbleTea v2 TUI framework bindings | `newModel(config) → Model`, `run(model, opts?)`; opts (declarative View fields): `{altScreen, mouse, mouseCellMotion, reportFocus, windowTitle}`; `isTTY() → bool`; Commands: `quit()`, `clearScreen()`, `batch(…cmds)`, `sequence(…cmds)`, `tick(ms, id?)`, `requestWindowSize()`; Metadata: `keys`, `keysByName`, `mouseButtons`, `mouseActions`; Validation: `isValidTextareaInput(key, paste?)`, `isValidLabelInput(key, paste?)` |
+| `osm:bubbletea` | BubbleTea v2 TUI framework bindings | `newModel(config) → Model`, `run(model, opts?)`; `isTTY() → bool`; Commands: `quit()`, `clearScreen()`, `batch(…cmds)`, `sequence(…cmds)`, `tick(ms, id?)`, `requestWindowSize()`; Metadata: `keys`, `keysByName`, `mouseButtons`; Validation: `isValidTextareaInput(key)`, `isValidLabelInput(key)` |
 | `osm:lipgloss` | Lipgloss terminal styling | `newStyle() → Style` (chainable, immutable); Style methods: `.bold()`, `.italic()`, `.foreground(color)`, `.background(color)`, `.padding(…)`, `.margin(…)`, `.width(n)`, `.height(n)`, `.border(type)`, `.align(pos)`, `.render(…strs) → string`, `.copy()`, `.inherit(other)`; Layout: `joinHorizontal(pos, …strs)`, `joinVertical(pos, …strs)`, `place(w, h, hPos, vPos, str)`, `width(str)`, `height(str)`, `size(str)`; Borders: `normalBorder()`, `roundedBorder()`, `doubleBorder()`, etc.; Constants: `Left`, `Center`, `Right`, `Top`, `Bottom` |
 | `osm:bubblezone` | Zone-based mouse hit-testing | `mark(id, content) → string`, `scan(renderedView) → string`, `inBounds(id, mouseMsg) → bool`, `get(id) → {startX, startY, endX, endY, width, height}`, `newPrefix() → string`, `close()` |
 | `osm:bubbles/viewport` | Scrollable viewport component | `new(width?, height?) → Viewport`; Viewport: `.setContent(s)`, `.setWidth(n)`, `.setHeight(n)`, `.scrollDown(n)`, `.scrollUp(n)`, `.gotoTop()`, `.gotoBottom()`, `.pageUp()`, `.pageDown()`, `.setYOffset(n)`, `.yOffset()`, `.scrollPercent()`, `.atTop()`, `.atBottom()`, `.totalLineCount()`, `.visibleLineCount()`, `.setStyle(lipglossStyle)`, `.update(msg)`, `.view()` |
@@ -333,7 +333,7 @@ Terminal UI framework based on [Charm BubbleTea v2](https://github.com/charmbrac
 
 **Program lifecycle**:
 - `tea.newModel(config)` — Create an Elm-architecture model (`config`: `{init, update, view}` functions; optional `renderThrottle` config)
-- `tea.run(model, opts?)` — Run TUI program (returns immediately, runs asynchronously). Only `toggleKey` and `onToggle` are accepted as options; terminal feature options (`altScreen`, `mouse`, `mouseCellMotion`, `reportFocus`, `windowTitle`) are silently ignored — set them in `view()` instead:
+- `tea.run(model, opts?)` — Run TUI program (returns immediately, runs asynchronously). Options: `{toggleKey, onToggle}` for termmux passthrough integration. Terminal features (`altScreen`, `mouseMode`, `reportFocus`, `windowTitle`) are NO-OP as run() options in v2 — set them via the declarative `view()` return object instead.
 - `tea.isTTY() → bool` — Check if terminal is a TTY
 
 **View return contract**: The `view()` function can return a string or a declarative object:
@@ -372,9 +372,9 @@ view: function(model) {
 - `Focus` / `Blur` — `{type: 'Focus'}` / `{type: 'Blur'}` (requires `reportFocus` option)
 - `Tick` — `{type: 'Tick', id, time}` (from `tea.tick()` command)
 
-**Metadata objects**: `tea.keys`, `tea.keysByName`, `tea.mouseButtons`, `tea.mouseActions` — lookup tables for key/mouse definitions.
+**Metadata objects**: `tea.keys`, `tea.keysByName`, `tea.mouseButtons` — lookup tables for key/mouse definitions.
 
-**Input validation**: `tea.isValidTextareaInput(key, paste?)`, `tea.isValidLabelInput(key, paste?)` — whitelist-based input validators.
+**Input validation**: `tea.isValidTextareaInput(key)`, `tea.isValidLabelInput(key)` — whitelist-based input validators.
 
 ### osm:time
 

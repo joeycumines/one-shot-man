@@ -745,7 +745,7 @@
         }
 
         // Modifier bits.
-        if (msg.shift) btn += 4;
+        if (msg.mod && msg.mod.includes('shift')) btn += 4;
         if (msg.mod && msg.mod.includes('alt'))   btn += 8;
         if (msg.mod && msg.mod.includes('ctrl'))  btn += 16;
 

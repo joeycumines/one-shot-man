@@ -672,7 +672,7 @@ func BenchmarkValidateTextareaInput(b *testing.B) {
 	b.Run("PrintableASCII", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			r := ValidateTextareaInput("a", false)
+			r := ValidateTextareaInput("a")
 			_ = r
 		}
 	})
@@ -680,7 +680,7 @@ func BenchmarkValidateTextareaInput(b *testing.B) {
 	b.Run("NamedKey", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			r := ValidateTextareaInput("enter", false)
+			r := ValidateTextareaInput("enter")
 			_ = r
 		}
 	})
@@ -688,18 +688,12 @@ func BenchmarkValidateTextareaInput(b *testing.B) {
 	b.Run("Rejected", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			r := ValidateTextareaInput("[<65;33;12M", false)
+			r := ValidateTextareaInput("[<65;33;12M")
 			_ = r
 		}
 	})
 
-	b.Run("Paste", func(b *testing.B) {
-		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
-			r := ValidateTextareaInput("paste content", true)
-			_ = r
-		}
-	})
+
 }
 
 // BenchmarkValidateLabelInput measures input validation for label fields.
@@ -707,7 +701,7 @@ func BenchmarkValidateLabelInput(b *testing.B) {
 	b.Run("PrintableASCII", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			r := ValidateLabelInput("a", false)
+			r := ValidateLabelInput("a")
 			_ = r
 		}
 	})
@@ -715,7 +709,7 @@ func BenchmarkValidateLabelInput(b *testing.B) {
 	b.Run("Backspace", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			r := ValidateLabelInput("backspace", false)
+			r := ValidateLabelInput("backspace")
 			_ = r
 		}
 	})
@@ -723,7 +717,7 @@ func BenchmarkValidateLabelInput(b *testing.B) {
 	b.Run("Rejected", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			r := ValidateLabelInput("enter", false)
+			r := ValidateLabelInput("enter")
 			_ = r
 		}
 	})

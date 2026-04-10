@@ -1285,25 +1285,13 @@ function handleKeys(msg, s) {
             s.inputViewportUnlocked = false; // Reset on mode exit
         } else {
             // Field input handling
-            // Extract paste flag from message (bracketed paste mode in Bubble Tea v2)
-            const isPaste = msg.type === 'Paste';
 
             if (s.inputFocus === FOCUS_LABEL) {
                 // Use Go-based validation for label input
-                const validation = tea.isValidLabelInput(k, isPaste);
+                const validation = tea.isValidLabelInput(k);
                 if (validation.valid) {
                     if (k === 'backspace') {
                         s.labelBuffer = s.labelBuffer.slice(0, -1);
-                    } else if (isPaste) {
-                        // Paste event - extract content from bracketed format [content]
-                        // and append to label (stripping brackets if present)
-                        let pasteContent = k;
-                        if (k.startsWith('[') && k.endsWith(']') && k.length > 2) {
-                            pasteContent = k.slice(1, -1);
-                        }
-                        // For labels, only take first line and strip newlines
-                        pasteContent = pasteContent.split('\n')[0].replace(/\r/g, '');
-                        s.labelBuffer += pasteContent;
                     } else {
                         // Single printable character - add to label
                         s.labelBuffer += k;
@@ -1355,7 +1343,7 @@ function handleKeys(msg, s) {
                 // Use Go-based validation for textarea input
                 // This prevents garbage (fragmented escape sequences from rapid scroll)
                 // from being inserted into the document content.
-                const validation = tea.isValidTextareaInput(k, isPaste);
+                const validation = tea.isValidTextareaInput(k);
                 if (msg.type === 'Key' && validation.valid) {
                     // Delegate to native textarea component and capture returned command
                     const [newTa, taCmd] = s.contentTextarea.update(msg);

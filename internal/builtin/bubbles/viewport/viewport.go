@@ -1,4 +1,4 @@
-// Package viewport provides JavaScript bindings for github.com/charmbracelet/bubbles/viewport.
+// Package viewport provides JavaScript bindings for charm.land/bubbles/v2/viewport.
 //
 // The module is exposed as "osm:bubbles/viewport" and provides a scrollable viewport
 // component for BubbleTea TUI applications. This replaces manual scroll offset tracking

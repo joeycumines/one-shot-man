@@ -692,15 +692,6 @@ func (m *jsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		slog.Error("bubbletea: Update: RunJSSync error, returning nil cmd (breaks tick loop!)", "error", err, "msgType", jsMsg["type"])
 		return m, nil
 	}
-	// Force the next View() to render unthrottled so that state changes from
-	// input events (keys, mouse) are reflected immediately in the PTY output.
-	// Without this, input-driven mode/state changes are deferred to the next
-	// tick's render window, causing test polling to read stale cached content.
-	if m.throttleEnabled {
-		m.throttleMu.Lock()
-		m.forceNextRender = true
-		m.throttleMu.Unlock()
-	}
 	return m, cmd
 }
 
@@ -839,8 +830,7 @@ func (m *jsModel) View() tea.View {
 		// If result is an object (not a primitive string), parse declarative fields.
 		// This is the primary v2 mechanism for controlling terminal features.
 		if result != nil && !goja.IsUndefined(result) && !goja.IsNull(result) {
-			if result.ToObject(vm) != nil {
-				obj := result.ToObject(vm)
+			if obj := result.ToObject(vm); obj != nil {
 				if obj != nil && obj.ClassName() == "Object" {
 					hasViewFields = true
 					viewStr = getJSStringProp(obj, "content")
@@ -1277,12 +1267,6 @@ func (m *jsModel) valueToCmd(val goja.Value) (ret tea.Cmd) {
 
 	case "requestWindowSize":
 		return tea.RequestWindowSize
-
-	case "enableBracketedPaste", "disableBracketedPaste":
-		// No-op: bracketed paste mode is controlled unconditionally via
-		// \x1b[?2004h (DECSET 200) in runProgram and \x1b[?2004l (DECRST 200)
-		// in restoreTerminal. The jsModel field has been removed.
-		return nil
 	}
 
 	return nil
@@ -1615,7 +1599,7 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 		// isValidTextareaInput validates if a key event should be forwarded to a textarea.
 		// Uses WHITELIST approach: only explicitly allowed inputs pass through.
 		// This prevents garbage (fragmented escape sequences) from corrupting content.
-		// Parameters: keyStr (string), isPaste (boolean)
+		// Parameters: keyStr (string)
 		// Returns: { valid: boolean, reason: string }
 		_ = exports.Set("isValidTextareaInput", func(call goja.FunctionCall) goja.Value {
 			if len(call.Arguments) < 1 {
@@ -1625,11 +1609,7 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 				})
 			}
 			keyStr := call.Argument(0).String()
-			isPaste := false
-			if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) {
-				isPaste = call.Argument(1).ToBoolean()
-			}
-			result := ValidateTextareaInput(keyStr, isPaste)
+			result := ValidateTextareaInput(keyStr)
 			return runtime.ToValue(map[string]any{
 				"valid":  result.Valid,
 				"reason": result.Reason,
@@ -1638,7 +1618,7 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 
 		// isValidLabelInput validates if a key event should be accepted for a label field.
 		// More restrictive: only single printable characters and backspace.
-		// Parameters: keyStr (string), isPaste (boolean)
+		// Parameters: keyStr (string)
 		// Returns: { valid: boolean, reason: string }
 		_ = exports.Set("isValidLabelInput", func(call goja.FunctionCall) goja.Value {
 			if len(call.Arguments) < 1 {
@@ -1648,11 +1628,7 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 				})
 			}
 			keyStr := call.Argument(0).String()
-			isPaste := false
-			if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) {
-				isPaste = call.Argument(1).ToBoolean()
-			}
-			result := ValidateLabelInput(keyStr, isPaste)
+			result := ValidateLabelInput(keyStr)
 			return runtime.ToValue(map[string]any{
 				"valid":  result.Valid,
 				"reason": result.Reason,

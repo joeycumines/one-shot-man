@@ -84,11 +84,6 @@ Press 'q' to quit, 'r' to reset
 }
 
 func main() {
-	// PATCHED: Force UV to produce full-line output (not smart diffs) for PTY buffer compatibility.
-	// Without this, UV's transformLine produces cursor-move sequences (e.g., "\x1b[6Ced!]") that the
-	// mouseharness PTY buffer cannot reconstruct into full visible content (e.g., "[Clicked!]").
-	_ = os.Setenv("UV_TESTMODE", "1")
-
 	p := tea.NewProgram(model{})
 	if _, err := p.Run(); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)

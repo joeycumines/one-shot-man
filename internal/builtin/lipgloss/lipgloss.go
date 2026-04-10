@@ -1,4 +1,4 @@
-// Package lipgloss provides JavaScript bindings for github.com/charmbracelet/lipgloss.
+// Package lipgloss provides JavaScript bindings for charm.land/lipgloss/v2.
 //
 // The module is exposed as "osm:lipgloss" and provides styling capabilities for terminal UIs.
 // All functionality is exposed to JavaScript, following the established pattern of no global state.
@@ -371,7 +371,8 @@ func Require(manager *Manager) func(runtime *goja.Runtime, module *goja.Object) 
 				if len(call.Arguments) == 0 {
 					return call.This
 				}
-				color, err := parseColor(runtime, call.Argument(0))
+				hasDarkBg := manager.detectedDarkBackground != nil && *manager.detectedDarkBackground
+				color, err := parseColor(runtime, call.Argument(0), hasDarkBg)
 				if err != nil {
 					return returnWithError(state.style, ErrCodeInvalidColor, err.Error())
 				}
@@ -684,7 +685,7 @@ func Require(manager *Manager) func(runtime *goja.Runtime, module *goja.Object) 
 			var opts []lipgloss.WhitespaceOption
 			if len(call.Arguments) > 5 {
 				var err error
-				opts, err = parseWhitespaceOptions(runtime, call.Argument(5))
+				opts, err = parseWhitespaceOptions(runtime, call.Argument(5), manager.detectedDarkBackground != nil && *manager.detectedDarkBackground)
 				if err != nil {
 					panic(runtime.NewGoError(err))
 				}
@@ -702,7 +703,7 @@ func Require(manager *Manager) func(runtime *goja.Runtime, module *goja.Object) 
 			var opts []lipgloss.WhitespaceOption
 			if len(call.Arguments) > 3 {
 				var err error
-				opts, err = parseWhitespaceOptions(runtime, call.Argument(3))
+				opts, err = parseWhitespaceOptions(runtime, call.Argument(3), manager.detectedDarkBackground != nil && *manager.detectedDarkBackground)
 				if err != nil {
 					panic(runtime.NewGoError(err))
 				}
@@ -720,7 +721,7 @@ func Require(manager *Manager) func(runtime *goja.Runtime, module *goja.Object) 
 			var opts []lipgloss.WhitespaceOption
 			if len(call.Arguments) > 3 {
 				var err error
-				opts, err = parseWhitespaceOptions(runtime, call.Argument(3))
+				opts, err = parseWhitespaceOptions(runtime, call.Argument(3), manager.detectedDarkBackground != nil && *manager.detectedDarkBackground)
 				if err != nil {
 					panic(runtime.NewGoError(err))
 				}
@@ -793,7 +794,7 @@ func UnwrapStyle(rt *goja.Runtime, v goja.Value) (lipgloss.Style, error) {
 }
 
 // parseColor strictly validates and parses a Goja value into a color.Color.
-func parseColor(runtime *goja.Runtime, val goja.Value) (color.Color, error) {
+func parseColor(runtime *goja.Runtime, val goja.Value, hasDarkBg bool) (color.Color, error) {
 	if goja.IsUndefined(val) || goja.IsNull(val) {
 		return lipgloss.NoColor{}, nil
 	}
@@ -836,29 +837,25 @@ func parseColor(runtime *goja.Runtime, val goja.Value) (color.Color, error) {
 	}
 
 	// Validate inner colors
-	if _, err := parseColor(runtime, light); err != nil {
+	if _, err := parseColor(runtime, light, hasDarkBg); err != nil {
 		return nil, fmt.Errorf("invalid light color: %w", err)
 	}
 	lCol := lipgloss.Color(light.String())
 
-	if _, err := parseColor(runtime, dark); err != nil {
+	if _, err := parseColor(runtime, dark, hasDarkBg); err != nil {
 		return nil, fmt.Errorf("invalid dark color: %w", err)
 	}
 	dCol := lipgloss.Color(dark.String())
 
-	// Return the light color as default; the actual switching happens at
-	// render time via the terminal's background detection. For standalone
-	// use, we pick based on HasDarkBackground.
-	// Since we can't know the terminal state here, return light as default.
-	// The proper v2 approach is to use lipgloss.LightDark at render time,
-	// but for JS API compatibility we return the light color.
-	// TODO: Consider a runtime-level hasDarkBackground flag.
-	_ = dCol // stored for future runtime-level resolution
-	return lCol, nil
+	// Use lipgloss.LightDark to resolve the correct color variant based on
+	// the detected terminal background. The hasDarkBg flag comes from
+	// lipgloss.HasDarkBackground cached at Manager initialization.
+	ld := lipgloss.LightDark(hasDarkBg)
+	return ld(lCol, dCol), nil
 }
 
 // parseWhitespaceOptions parses options for Place calls.
-func parseWhitespaceOptions(runtime *goja.Runtime, val goja.Value) ([]lipgloss.WhitespaceOption, error) {
+func parseWhitespaceOptions(runtime *goja.Runtime, val goja.Value, hasDarkBg bool) ([]lipgloss.WhitespaceOption, error) {
 	var opts []lipgloss.WhitespaceOption
 	if goja.IsUndefined(val) || goja.IsNull(val) {
 		return opts, nil
@@ -875,14 +872,14 @@ func parseWhitespaceOptions(runtime *goja.Runtime, val goja.Value) ([]lipgloss.W
 	if fgVal != nil && !goja.IsUndefined(fgVal) || bgVal != nil && !goja.IsUndefined(bgVal) {
 		style := lipgloss.NewStyle()
 		if fgVal != nil && !goja.IsUndefined(fgVal) && !goja.IsNull(fgVal) {
-			c, err := parseColor(runtime, fgVal)
+			c, err := parseColor(runtime, fgVal, hasDarkBg)
 			if err != nil {
 				return nil, err
 			}
 			style = style.Foreground(c)
 		}
 		if bgVal != nil && !goja.IsUndefined(bgVal) && !goja.IsNull(bgVal) {
-			c, err := parseColor(runtime, bgVal)
+			c, err := parseColor(runtime, bgVal, hasDarkBg)
 			if err != nil {
 				return nil, err
 			}

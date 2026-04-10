@@ -735,6 +735,7 @@ func startPTYBinary(t *testing.T, repoDir string, extraArgs ...string) (ptmx *os
 		"NO_COLOR=1",
 		"OSM_LOG_LEVEL=debug",
 		"OSM_LOG_FILE="+logFile,
+		"OSM_VERIFY_ONE_SHOT=1",
 	)
 
 	t.Cleanup(func() {

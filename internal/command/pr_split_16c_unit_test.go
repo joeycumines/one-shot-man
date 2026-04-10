@@ -217,7 +217,7 @@ func TestChunk16c_ConfirmCancel_MouseClickZones(t *testing.T) {
 				wizard: {cancel: function(){}, transition: function(){}},
 				wizardState: 'PLAN_REVIEW',
 			};
-			var r1 = prSplit._updateConfirmCancel({type:'Mouse', action:'press', isWheel:false, button:'left'}, s1);
+			var r1 = prSplit._updateConfirmCancel({type:'MouseClick', button:'left', x:10, y:10, mod:[]}, s1);
 			var yesConfirms = r1[0].wizardState === 'CANCELLED';
 
 			// Click on confirm-no.
@@ -228,7 +228,7 @@ func TestChunk16c_ConfirmCancel_MouseClickZones(t *testing.T) {
 				wizardState: 'PLAN_REVIEW',
 				wizard: {cancel: function(){}},
 			};
-			var r2 = prSplit._updateConfirmCancel({type:'Mouse', action:'press', isWheel:false, button:'left'}, s2);
+			var r2 = prSplit._updateConfirmCancel({type:'MouseClick', button:'left', x:10, y:10, mod:[]}, s2);
 			var noDismisses = r2[0].showConfirmCancel === false && r2[0].wizardState === 'PLAN_REVIEW';
 
 			return JSON.stringify({yesConfirms: yesConfirms, noDismisses: noDismisses});
@@ -532,9 +532,9 @@ func TestChunk16c_UpdateClaudeConvo_ScrollKeys(t *testing.T) {
 		var afterClamp = s.claudeConvo.scrollOffset;
 
 		// Mouse wheel up/down.
-		prSplit._updateClaudeConvo({type:'Mouse', isWheel:true, button:'wheel up'}, s);
+		prSplit._updateClaudeConvo({type:'MouseWheel', button:'wheel up', x:0, y:0, mod:[]}, s);
 		var afterWheelUp = s.claudeConvo.scrollOffset;
-		prSplit._updateClaudeConvo({type:'Mouse', isWheel:true, button:'wheel down'}, s);
+		prSplit._updateClaudeConvo({type:'MouseWheel', button:'wheel down', x:0, y:0, mod:[]}, s);
 		var afterWheelDown = s.claudeConvo.scrollOffset;
 
 		return JSON.stringify({
@@ -731,7 +731,7 @@ func TestChunk16c_UpdateClaudeConvo_MouseClickConsumption(t *testing.T) {
 			},
 		};
 		var r = prSplit._updateClaudeConvo({
-			type:'Mouse', action:'press', isWheel:false, button:'left',
+			type:'MouseClick', button:'left', x:10, y:10, mod:[],
 		}, s);
 		return JSON.stringify({
 			inputUnchanged: r[0].claudeConvo.inputText === 'test',

@@ -4490,17 +4490,17 @@ func TestChunk13_WizardUpdate_MouseWheelScroll(t *testing.T) {
 		s.vp.setContent(lines.join('\n'));
 		s.vp.setHeight(10);
 
-		// Mouse wheel events match the Go-side format from parsemouse.go:
-		// {type: "Mouse", button: "wheel down", action: "press", isWheel: true, x, y}
+		// Mouse wheel events use v2 split types:
+		// {type: "MouseWheel", button: "wheel down", x, y, mod: []}
 		var result = globalThis.prSplit._wizardUpdate(
-			{type: 'Mouse', button: 'wheel down', action: 'press', isWheel: true, x: 10, y: 10}, s);
+			{type: 'MouseWheel', button: 'wheel down', x: 10, y: 10, mod: []}, s);
 		if (!result || !result[0]) return 'FAIL: wheel-down returned invalid result';
 
 		var afterDown = result[0].vp.yOffset();
 		if (afterDown <= 0) return 'FAIL: wheel-down did not scroll (yOffset=' + afterDown + ')';
 
 		result = globalThis.prSplit._wizardUpdate(
-			{type: 'Mouse', button: 'wheel up', action: 'press', isWheel: true, x: 10, y: 10}, result[0]);
+			{type: 'MouseWheel', button: 'wheel up', x: 10, y: 10, mod: []}, result[0]);
 		if (!result || !result[0]) return 'FAIL: wheel-up returned invalid result';
 
 		var afterUp = result[0].vp.yOffset();

@@ -273,7 +273,7 @@ func TestChunk16_Keyboard_AllBindingsConsistency(t *testing.T) {
 			var s = initState(state, opts);
 			fillViewport(s);
 			var before = stateSnapshot(s);
-			var r = update({type: 'Key', key: key}, s);
+			var r = sendKey(s, key);
 			var after = stateSnapshot(r[0]);
 			if (before === after && r[1] === null) {
 				errors.push(label + ': no change on key=' + key);

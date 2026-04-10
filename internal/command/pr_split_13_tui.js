@@ -117,7 +117,7 @@
                 from, toPhase, allowed ? allowed.join(', ') : 'none');
             return false;
         }
-        log.debug('verify: phase %s \u2192 %s', from, toPhase);
+        log.printf('verify: phase %s \u2192 %s', from, toPhase);
         s.verifyPhase = toPhase;
         return true;
     }

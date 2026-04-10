@@ -227,8 +227,8 @@ func TestViewport_SyncCommandPropagation(t *testing.T) {
 		const vp = viewport.new(10, 10);
 		vp.setMouseWheelEnabled(true);
 
-		// Simulate mouse wheel up with explicit modifier flags
-		const res = vp.update({ type: 'Mouse', button: 'wheel up', action: 'press', x: 0, y: 0, alt: false, ctrl: false, shift: false });
+		// Simulate mouse wheel up with v2 split type
+		const res = vp.update({ type: 'MouseWheel', button: 'wheel up', x: 0, y: 0, mod: [] });
 		if (!Array.isArray(res)) throw new Error('update did not return array');
 		// Second element can be null OR an opaque function. If it's a descriptor object
 		// with _cmdType it's not a wrapped Go command.

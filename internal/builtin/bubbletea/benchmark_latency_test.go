@@ -64,14 +64,11 @@ func BenchmarkJsToTeaMsg_MouseMsg(b *testing.B) {
 	runtime := goja.New()
 
 	mouseEventJS := `({
-		type: 'Mouse',
+		type: 'MouseClick',
 		x: 40,
 		y: 12,
 		button: 'left',
-		action: 'press',
-		alt: false,
-		ctrl: false,
-		shift: false
+		mod: []
 	})`
 
 	val, err := runtime.RunString(mouseEventJS)

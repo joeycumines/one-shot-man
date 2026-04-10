@@ -1634,20 +1634,59 @@ func TestPickAndPlace_MousePlace_TargetInGoal(t *testing.T) {
 			state.HeldItemID, state.ActorX, state.ActorY)
 	}
 
-	// Navigate toward goal area (around 8, 18) using manual controls
-	// First move LEFT back through gap, then DOWN/LEFT toward goal
-	for range 50 {
+	// Navigate toward goal area (x=7-9, y=17-19) using manual controls.
+	// The actor walks continuously after a key press, so positions can
+	// overshoot by several cells. We navigate in stages:
+	//   1. Move left until x <= 10
+	//   2. Move down until y >= 16
+	//   3. If overshot (y > 20), move up to correct
+	// Anti-stuck: cycle through all 4 directions when stuck for >3 iterations.
+	lastX, lastY := -1.0, -1.0
+	stuckCount := 0
+	for range 100 {
 		state := h.GetDebugState()
-		// Goal area is around x=7-9, y=17-19
-		if state.ActorX <= 10 && state.ActorY >= 16 {
+
+		// Goal proximity check: x in [7,12] and y in [16,20]
+		inGoalX := state.ActorX >= 7 && state.ActorX <= 12
+		inGoalY := state.ActorY >= 16 && state.ActorY <= 20
+		if inGoalX && inGoalY {
 			t.Logf("Near goal area at (%.1f, %.1f)", state.ActorX, state.ActorY)
 			break
 		}
-		// Move toward goal (lower X, higher Y)
-		if state.ActorX > 10 {
+
+		// Detect if we're stuck (position unchanged for multiple iterations)
+		if state.ActorX == lastX && state.ActorY == lastY {
+			stuckCount++
+		} else {
+			stuckCount = 0
+		}
+		lastX, lastY = state.ActorX, state.ActorY
+
+		// If stuck, try alternate directions to get around obstacles.
+		if stuckCount > 3 {
+			switch stuckCount % 4 {
+			case 0:
+				h.SendKey("d") // right
+			case 1:
+				h.SendKey("s") // down
+			case 2:
+				h.SendKey("a") // left
+			case 3:
+				h.SendKey("w") // up
+			}
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+
+		// Prioritized movement toward goal center (x=8, y=18)
+		if state.ActorX > 12 {
 			h.SendKey("a") // Move left
 		} else if state.ActorY < 16 {
 			h.SendKey("s") // Move down
+		} else if state.ActorY > 20 {
+			h.SendKey("w") // Move up (overshot correction)
+		} else if state.ActorX < 7 {
+			h.SendKey("d") // Move right
 		} else {
 			break // Close enough
 		}
@@ -1665,10 +1704,24 @@ func TestPickAndPlace_MousePlace_TargetInGoal(t *testing.T) {
 		t.Fatalf("Lost target before placement, held=%d", stateBeforePlace.HeldItemID)
 	}
 
-	// Click to place target - goal area is 3x3 centered around (8, 18)
-	// Click within or near goal area
-	clickX := 8
-	clickY := 18
+	// Click to place target ADJACENT to actor's current position, within goal area.
+	// The game requires the clicked cell to be adjacent to the actor.
+	// Use actor position + offset toward goal center (8, 18).
+	actorGridX := int(stateBeforePlace.ActorX)
+	actorGridY := int(stateBeforePlace.ActorY)
+	clickX := actorGridX
+	clickY := actorGridY + 1 // Try placing one cell below actor
+	if clickY > 19 {
+		clickY = actorGridY - 1 // or above if at bottom
+	}
+	// Ensure click is in goal region if we can
+	if actorGridX >= 7 && actorGridX <= 9 && actorGridY >= 17 && actorGridY <= 19 {
+		// Actor is IN the goal — click any adjacent cell within goal
+		clickX = actorGridX
+		clickY = actorGridY
+	}
+
+	t.Logf("Placing at grid (%d, %d), actor at (%d, %d)", clickX, clickY, actorGridX, actorGridY)
 
 	if err := h.ClickGrid(clickX, clickY); err != nil {
 		t.Fatalf("Failed to send place click: %v", err)

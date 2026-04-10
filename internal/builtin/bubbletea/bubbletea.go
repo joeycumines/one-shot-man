@@ -1939,6 +1939,22 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 //
 // In v2, terminal features (altScreen, mouse, etc.) are controlled declaratively
 // via tea.View fields returned by the model's View() method, not via program options.
+// unwrapOSFile extracts an *os.File from v, checking first for a direct
+// *os.File and then for the UnwrapFile() interface used by wrapper types
+// (e.g., TUIReader/TUIWriter).  Returns nil if v is nil or not unwrappable.
+func unwrapOSFile(v any) *os.File {
+	if v == nil {
+		return nil
+	}
+	if f, ok := v.(*os.File); ok {
+		return f
+	}
+	if u, ok := v.(interface{ UnwrapFile() *os.File }); ok {
+		return u.UnwrapFile()
+	}
+	return nil
+}
+
 func (m *Manager) runProgram(model tea.Model) (err error) {
 	// Debug: check if manager is properly initialized
 	if m == nil {
@@ -2031,15 +2047,19 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 		}
 	}()
 
-	// Configure input/output
-	// In v2, WithInputTTY() is removed — v2 always opens the TTY for input automatically.
+	// Configure input/output.
+	// In v2, BubbleTea opens /dev/tty for input when no explicit input is provided
+	// via WithInput.  We need to pass the real *os.File so BubbleTea can detect
+	// TTY capabilities (raw mode, signals, etc.).
+	//
+	// Input/output may be wrapper types (e.g., TUIReader) that aren't *os.File
+	// but wrap one.  We check for the UnwrapFile() interface to recover the
+	// underlying file in those cases.
 	var opts []tea.ProgramOption
-	if f, ok := input.(*os.File); ok {
+	if f := unwrapOSFile(input); f != nil {
 		opts = append(opts, tea.WithInput(f))
 	}
-	// For non-file readers, v2 handles TTY automatically — no option needed.
-
-	if f, ok := output.(*os.File); ok {
+	if f := unwrapOSFile(output); f != nil {
 		opts = append(opts, tea.WithOutput(f))
 	}
 

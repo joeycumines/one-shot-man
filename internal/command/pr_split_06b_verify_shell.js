@@ -10,6 +10,10 @@
     // Detect whether an interactive shell can be spawned on this platform.
     // Returns false on Windows (no $SHELL, $COMSPEC present) or when
     // termmux.newCaptureSession is unavailable.
+    //
+    // Also returns false when OSM_VERIFY_ONE_SHOT=1 is set, which forces
+    // one-shot verification mode (used by automated E2E tests where no human
+    // is available to press p/f/c in the persistent shell).
     function canSpawnInteractiveShell() {
         try {
             var termmux = require('osm:termmux');
@@ -19,6 +23,10 @@
         try {
             var osmod = require('osm:os');
             if (osmod && typeof osmod.getenv === 'function') {
+                // E2E test escape hatch: force one-shot verify mode.
+                var oneShot = osmod.getenv('OSM_VERIFY_ONE_SHOT') || '';
+                if (oneShot === '1' || oneShot === 'true') return false;
+
                 // Windows: COMSPEC is set, SHELL is absent.
                 var comspec = osmod.getenv('COMSPEC') || '';
                 var shell = osmod.getenv('SHELL') || '';

@@ -953,9 +953,11 @@
         });
 
         // Export lifecycle functions for unit testing.
+        // _wizardView exports the string-returning impl (not the v2 object
+        // wrapper) so tests can call .indexOf / .split directly.
         prSplit._wizardInit = _initFn;
         prSplit._wizardUpdate = _updateFn;
-        prSplit._wizardView = _viewFn;
+        prSplit._wizardView = wizardViewImpl;
         // NOTE: prSplit._getFocusElements is now exported by chunk 16a.
 
         return model;

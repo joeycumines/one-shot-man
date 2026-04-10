@@ -182,25 +182,19 @@ func TestShooterE2E_DebugOverlay(t *testing.T) {
 		t.Fatalf("Failed to start game: %v", err)
 	}
 
-	// Take a snapshot before pressing space
-	snap := h.console.Snapshot()
-
 	// Press Space to start the game (use WriteString for raw character, NOT SendLine!)
 	t.Log("Pressing Space to start game...")
 	if _, err := h.console.WriteString(" "); err != nil {
 		t.Fatalf("Failed to send space: %v", err)
 	}
 
-	// Use Expect to wait for playing mode indicators
-	if err := h.console.Expect(h.ctx, snap, termtest.Contains("WASD"), "playing mode"); err != nil {
+	// Use VT-parsed screen polling (v2 differential rendering)
+	if err := h.WaitForScreenContent("WASD", 10*time.Second); err != nil {
 		t.Logf("Game did not transition to playing mode: %v", err)
 		t.Skip("Could not verify game start")
 		return
 	}
 	t.Log("✓ Game transitioned to playing mode")
-
-	// Take a snapshot before enabling debug mode
-	snap = h.console.Snapshot()
 
 	// Now enable debug mode (use WriteString for raw character)
 	t.Log("Pressing backtick to enable debug mode...")
@@ -208,15 +202,14 @@ func TestShooterE2E_DebugOverlay(t *testing.T) {
 		t.Fatalf("Failed to send backtick: %v", err)
 	}
 
-	// Use Expect to wait for debug mode indicators
-	if err := h.console.Expect(h.ctx, snap, termtest.Contains("DEBUG MODE"), "debug mode"); err != nil {
+	// Wait for debug mode (VT-parsed screen)
+	if err := h.WaitForScreenContent("DEBUG MODE", 10*time.Second); err != nil {
 		t.Logf("Debug mode did not activate: %v", err)
 		// Try F3 as alternative
-		snap = h.console.Snapshot()
 		if err := h.console.Send("f3"); err != nil {
 			t.Fatalf("Failed to send f3: %v", err)
 		}
-		if err := h.console.Expect(h.ctx, snap, termtest.Contains("DEBUG MODE"), "debug mode via f3"); err != nil {
+		if err := h.WaitForScreenContent("DEBUG MODE", 10*time.Second); err != nil {
 			t.Logf("Debug mode did not activate with f3 either: %v", err)
 			t.Skip("Debug mode not working")
 			return
@@ -264,32 +257,21 @@ func TestShooterE2E_PlayerShoots(t *testing.T) {
 		t.Fatalf("Failed to start game: %v", err)
 	}
 
-	// Take a snapshot before starting
-	snap := h.console.Snapshot()
-
 	// Start game
 	if err := h.SendKey(" "); err != nil {
 		t.Fatalf("Failed to press start: %v", err)
 	}
 
-	// Use Expect to wait for playing mode
-	if err := h.console.Expect(h.ctx, snap, termtest.Contains("WASD"), "playing mode"); err != nil {
+	// Use VT-parsed screen polling (v2 differential rendering)
+	if err := h.WaitForScreenContent("WASD", 10*time.Second); err != nil {
 		t.Logf("Game did not transition to playing mode: %v", err)
 		t.Skip("Could not start game")
 		return
 	}
 	t.Log("✓ Game in playing mode")
 
-	// Take snapshot before enabling debug mode
-	snap = h.console.Snapshot()
-
-	// Enable debug mode with backtick
-	if err := h.SendKey("`"); err != nil {
-		t.Fatalf("Failed to enable debug mode: %v", err)
-	}
-
-	// Wait for debug mode
-	if err := h.console.Expect(h.ctx, snap, termtest.Contains("DEBUG MODE"), "debug mode"); err != nil {
+	// Enable debug mode with retry logic (backtick may be dropped under load)
+	if err := h.EnableDebugMode(); err != nil {
 		t.Logf("Debug mode did not activate: %v", err)
 		t.Skip("Debug mode not working")
 		return
@@ -412,30 +394,19 @@ func TestShooterE2E_EnemyMovement(t *testing.T) {
 		t.Fatalf("Failed to start game: %v", err)
 	}
 
-	// Take a snapshot before starting
-	snap := h.console.Snapshot()
-
 	// Start game
 	if err := h.SendKey(" "); err != nil {
 		t.Fatalf("Failed to press start: %v", err)
 	}
 
-	// Use Expect to wait for playing mode
-	if err := h.console.Expect(h.ctx, snap, termtest.Contains("WASD"), "playing mode"); err != nil {
+	// Use VT-parsed screen polling (v2 differential rendering)
+	if err := h.WaitForScreenContent("WASD", 10*time.Second); err != nil {
 		t.Fatalf("Game did not transition to playing mode: %v", err)
 	}
 	t.Log("✓ Game in playing mode")
 
-	// Take snapshot before enabling debug mode
-	snap = h.console.Snapshot()
-
-	// Enable debug mode with backtick
-	if err := h.SendKey("`"); err != nil {
-		t.Fatalf("Failed to enable debug mode: %v", err)
-	}
-
-	// Wait for debug mode
-	if err := h.console.Expect(h.ctx, snap, termtest.Contains("DEBUG MODE"), "debug mode"); err != nil {
+	// Enable debug mode with retry logic (backtick may be dropped under load)
+	if err := h.EnableDebugMode(); err != nil {
 		t.Fatalf("Debug mode did not activate: %v", err)
 	}
 	t.Log("✓ Debug mode enabled")
@@ -552,30 +523,19 @@ func TestShooterE2E_PlayerMovesImmediately(t *testing.T) {
 		t.Fatalf("Failed to start game: %v", err)
 	}
 
-	// Take snapshot before starting
-	snap := h.console.Snapshot()
-
 	// Start game
 	if err := h.SendKey(" "); err != nil {
 		t.Fatalf("Failed to press start: %v", err)
 	}
 
-	// Wait for playing mode
-	if err := h.console.Expect(h.ctx, snap, termtest.Contains("WASD"), "playing mode"); err != nil {
+	// Wait for playing mode (VT-parsed screen)
+	if err := h.WaitForScreenContent("WASD", 10*time.Second); err != nil {
 		t.Fatalf("Game did not transition to playing mode: %v", err)
 	}
 	t.Log("✓ Game in playing mode")
 
-	// Take snapshot before enabling debug mode
-	snap = h.console.Snapshot()
-
-	// Enable debug mode
-	if err := h.SendKey("`"); err != nil {
-		t.Fatalf("Failed to enable debug mode: %v", err)
-	}
-
-	// Wait for debug mode
-	if err := h.console.Expect(h.ctx, snap, termtest.Contains("DEBUG MODE"), "debug mode"); err != nil {
+	// Enable debug mode with retry logic (backtick may be dropped under load)
+	if err := h.EnableDebugMode(); err != nil {
 		t.Fatalf("Debug mode did not activate: %v", err)
 	}
 	t.Log("✓ Debug mode enabled")
@@ -653,30 +613,19 @@ func TestShooterE2E_PlayerVelocityMatchesExpected(t *testing.T) {
 		t.Fatalf("Failed to start game: %v", err)
 	}
 
-	// Take snapshot before starting
-	snap := h.console.Snapshot()
-
 	// Start game
 	if err := h.SendKey(" "); err != nil {
 		t.Fatalf("Failed to press start: %v", err)
 	}
 
-	// Wait for playing mode
-	if err := h.console.Expect(h.ctx, snap, termtest.Contains("WASD"), "playing mode"); err != nil {
+	// Wait for playing mode (VT-parsed screen)
+	if err := h.WaitForScreenContent("WASD", 10*time.Second); err != nil {
 		t.Fatalf("Game did not transition to playing mode: %v", err)
 	}
 	t.Log("✓ Game in playing mode")
 
-	// Take snapshot before enabling debug mode
-	snap = h.console.Snapshot()
-
-	// Enable debug mode
-	if err := h.SendKey("`"); err != nil {
-		t.Fatalf("Failed to enable debug mode: %v", err)
-	}
-
-	// Wait for debug mode
-	if err := h.console.Expect(h.ctx, snap, termtest.Contains("DEBUG MODE"), "debug mode"); err != nil {
+	// Enable debug mode with retry logic (backtick may be dropped under load)
+	if err := h.EnableDebugMode(); err != nil {
 		t.Fatalf("Debug mode did not activate: %v", err)
 	}
 	t.Log("✓ Debug mode enabled")

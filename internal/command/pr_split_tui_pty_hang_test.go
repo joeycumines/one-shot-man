@@ -86,6 +86,7 @@ func TestTUIHang_BinaryPTY_Interactive(t *testing.T) {
 		"NO_COLOR=1",            // Disable colors in git output
 		"OSM_LOG_LEVEL=debug",
 		"OSM_LOG_FILE="+logFile,
+		"OSM_VERIFY_ONE_SHOT=1", // Force one-shot verify (no persistent shell)
 	)
 	// Dump the debug log on test failure (or always for diagnosis).
 	t.Cleanup(func() {

@@ -1181,20 +1181,21 @@ func (h *PickAndPlaceHarness) parseDebugStateFromLog() *PickAndPlaceDebugJSON {
 			continue
 		}
 
-		// entry.Msg is json.RawMessage.
-		if bytes.HasPrefix(entry.Msg, []byte(viewPrefixBytes)) {
-			// This is a VIEW entry — parse the full state.
-			inner := entry.Msg[len(viewPrefixBytes):]
-			var innerStr string
-			if err := json.Unmarshal(inner, &innerStr); err != nil {
-				innerStr = strings.ReplaceAll(string(inner), "\\\"", "\"")
-				innerStr = strings.ReplaceAll(innerStr, "\\\\", "\\")
-			}
-			if !strings.HasPrefix(innerStr, "{") {
+		// entry.Msg is json.RawMessage — unmarshal to string first to strip
+		// JSON encoding (surrounding quotes and escapes).
+		var msgText string
+		if err := json.Unmarshal(entry.Msg, &msgText); err != nil {
+			continue
+		}
+
+		if strings.HasPrefix(msgText, viewPrefixBytes) {
+			// This is a VIEW entry — parse the embedded state JSON.
+			innerJSON := msgText[len(viewPrefixBytes):]
+			if !strings.HasPrefix(innerJSON, "{") {
 				continue
 			}
 			var state PickAndPlaceDebugJSON
-			if err := json.Unmarshal([]byte(innerStr), &state); err != nil {
+			if err := json.Unmarshal([]byte(innerJSON), &state); err != nil {
 				continue
 			}
 			if state.Tick > lastTick {
@@ -1205,12 +1206,8 @@ func (h *PickAndPlaceHarness) parseDebugStateFromLog() *PickAndPlaceDebugJSON {
 		}
 
 		// Try to parse as [TICK-M] entry.
-		// entry.Msg as raw bytes: "[TICK-M] tick=90 actor=(10.0,11.0) MPL=0 target=null"
-		var msgStr string
-		if err := json.Unmarshal(entry.Msg, &msgStr); err != nil {
-			continue
-		}
-		if !strings.HasPrefix(msgStr, "[TICK-M]") {
+		// msgText: "[TICK-M] tick=90 actor=(10.0,11.0) MPL=0 target=null"
+		if !strings.HasPrefix(msgText, "[TICK-M]") {
 			continue
 		}
 
@@ -1218,7 +1215,7 @@ func (h *PickAndPlaceHarness) parseDebugStateFromLog() *PickAndPlaceDebugJSON {
 		var tick int64
 		var actorX, actorY float64
 		var mpl int
-		if n, _ := fmt.Sscanf(msgStr, "[TICK-M] tick=%d actor=(%f,%f) MPL=%d", &tick, &actorX, &actorY, &mpl); n == 4 {
+		if n, _ := fmt.Sscanf(msgText, "[TICK-M] tick=%d actor=(%f,%f) MPL=%d", &tick, &actorX, &actorY, &mpl); n == 4 {
 			if tick > lastTickMTick {
 				lastTickMTick = tick
 				lastTickMState = &PickAndPlaceDebugJSON{

@@ -84,7 +84,10 @@ Press 'q' to quit, 'r' to reset
 }
 
 func main() {
-	p := tea.NewProgram(model{})
+	// In BubbleTea v2, programs auto-open /dev/tty for input when no
+	// explicit input is provided.  For PTY-based test harnesses that pipe
+	// input through stdin, we must tell v2 to read from stdin explicitly.
+	p := tea.NewProgram(model{}, tea.WithInput(os.Stdin))
 	if _, err := p.Run(); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

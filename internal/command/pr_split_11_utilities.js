@@ -33,7 +33,7 @@
     }
 
     // extractGoImports returns a set of imported package paths from Go files.
-    // Uses osmod.readFile for portability, with cat fallback.
+    // Uses osmod.readFile for portability, with platform-aware fallback.
     function extractGoImports(files) {
         var osmod = prSplit._modules.osmod;
         var exec = prSplit._modules.exec;
@@ -49,9 +49,14 @@
                             content = readResult.content;
                         }
                     } else if (exec) {
-                        var cat = exec.execv(['cat', files[i]]);
-                        if (cat.code === 0) {
-                            content = cat.stdout;
+                        var readResult2;
+                        if (prSplit._isWindows && prSplit._isWindows()) {
+                            readResult2 = exec.execv(['cmd.exe', '/C', 'type "' + files[i] + '"']);
+                        } else {
+                            readResult2 = exec.execv(['cat', files[i]]);
+                        }
+                        if (readResult2.code === 0) {
+                            content = readResult2.stdout;
                         }
                     }
                 } catch (e) {

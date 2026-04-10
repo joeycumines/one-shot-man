@@ -312,7 +312,7 @@
                 // failing branch. This ensures we modify the correct branch
                 // without touching the user's CWD.
                 var patchBranch = fail.branch || fail.name;
-                var patchWorktreeDir = dir + '/../.osm-resolve-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
+                var patchWorktreeDir = prSplit._worktreeTmpPath('osm-resolve-');
                 var patchWtAdd = await gitExecAsync(dir, ['worktree', 'add', patchWorktreeDir, patchBranch]);
                 if (patchWtAdd.code !== 0) {
                     log.printf('auto-split: failed to create worktree for %s: %s', patchBranch, patchWtAdd.stderr.trim());
@@ -343,7 +343,7 @@
                             setTimeout(function() { resolve({ stdout: '', stderr: 'command timed out', code: -1, error: true, message: 'timed out after ' + commandTimeoutMs + 'ms' }); }, commandTimeoutMs);
                         });
                         var cmdResult = await Promise.race([
-                            shellExecAsync('cd ' + shellQuote(patchWorktreeDir) + ' && ' + resolution.commands[c]),
+                            shellExecAsync(((prSplit._isWindows && prSplit._isWindows()) ? 'cd /d ' : 'cd ') + shellQuote(patchWorktreeDir) + ' && ' + resolution.commands[c]),
                             cmdTimeoutPromise
                         ]);
                         if (cmdResult.code === -1 && cmdResult.message && cmdResult.message.indexOf('timed out') !== -1) {

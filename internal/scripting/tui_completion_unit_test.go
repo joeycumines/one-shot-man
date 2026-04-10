@@ -560,7 +560,7 @@ func TestCompletion_WithSpacesAndQuotes_Unit(t *testing.T) {
 }
 
 func TestCompletion_TildeInQuotes(t *testing.T) {
-	// Tilde-only case is special-cased to suggest "~/"
+	// Tilde-only case is special-cased to suggest "~/" ("~\" on Windows).
 	tm := &TUIManager{
 		writer: NewTUIWriterFromIO(io.Discard),
 		commands: map[string]Command{
@@ -572,15 +572,17 @@ func TestCompletion_TildeInQuotes(t *testing.T) {
 	full := "add \"~\""
 	before := full
 	sugg := tm.getDefaultCompletionSuggestionsFor(before, full)
+	tildeSlash := "~" + string(filepath.Separator)
+	addTildeSlash := "add " + tildeSlash
 	var has bool
 	for _, s := range sugg {
-		if s.Text == "~/" || s.Text == "add ~/" {
+		if s.Text == tildeSlash || s.Text == addTildeSlash {
 			has = true
 			break
 		}
 	}
 	if !has {
-		t.Fatalf("expected suggestion for '~/'; got %v", func() []string {
+		t.Fatalf("expected suggestion for %q; got %v", tildeSlash, func() []string {
 			r := make([]string, len(sugg))
 			for i, s := range sugg {
 				r[i] = s.Text

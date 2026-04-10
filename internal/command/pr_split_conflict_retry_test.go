@@ -2148,7 +2148,7 @@ func TestPrSplitCommand_ResolveConflictsWithClaude_SuccessfulFix(t *testing.T) {
 			hasCommitAmend = true
 		case strings.Contains(call, "worktree add") && strings.Contains(call, "split/fix-me"):
 			hasCheckout = true
-		case strings.HasPrefix(call, "sh -c"):
+		case strings.HasPrefix(call, "sh -c") || strings.HasPrefix(call, "cmd.exe /C"):
 			hasShVerify = true
 		}
 	}
@@ -2165,7 +2165,7 @@ func TestPrSplitCommand_ResolveConflictsWithClaude_SuccessfulFix(t *testing.T) {
 		t.Error("Expected git worktree add ... split/fix-me call")
 	}
 	if !hasShVerify {
-		t.Error("Expected sh -c verify command call (from verifySplit)")
+		t.Error("Expected shell verify command call (from verifySplit)")
 	}
 }
 

@@ -54,15 +54,30 @@ func TestChunk00_ShellQuote(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
 
-	tests := []struct {
+	type testCase struct {
 		input    string
 		expected string
-	}{
-		{"hello", "'hello'"},
-		{"it's", `'it'\''s'`},
-		{"", "''"},
-		{"a b", "'a b'"},
-		{`"double"`, `'"double"'`},
+	}
+
+	var tests []testCase
+	if runtime.GOOS == "windows" {
+		// Windows: shellQuote uses double-quote + ^ escaping for cmd.exe.
+		tests = []testCase{
+			{"hello", `"hello"`},
+			{"it's", `"it's"`},
+			{"", `""`},
+			{"a b", `"a b"`},
+			{`"double"`, `"^"double^""`},
+		}
+	} else {
+		// Unix: shellQuote uses single-quote wrapping.
+		tests = []testCase{
+			{"hello", "'hello'"},
+			{"it's", `'it'\''s'`},
+			{"", "''"},
+			{"a b", "'a b'"},
+			{`"double"`, `'"double"'`},
+		}
 	}
 
 	for _, tc := range tests {

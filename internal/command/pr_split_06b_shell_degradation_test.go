@@ -39,7 +39,7 @@ func TestGracefulDegradation_NoShellOnWindows(t *testing.T) {
 				globalThis.prSplit.spawnShellSession('/tmp/test', {rows: 24, cols: 80});
 				return 'FAIL: expected error';
 			} catch (e) {
-				if (e.message.indexOf('Unix') >= 0 && e.message.indexOf('Linux') >= 0) {
+				if (e.message.indexOf('not available') >= 0 && e.message.indexOf('termmux') >= 0) {
 					return 'OK';
 				}
 				return 'FAIL: error message lacks platform info: ' + e.message;

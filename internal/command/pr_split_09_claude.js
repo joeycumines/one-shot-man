@@ -28,21 +28,22 @@
     // Priority: explicit config > 'claude' on PATH > 'ollama' on PATH > error.
     ClaudeCodeExecutor.prototype.resolve = function() {
         var exec = prSplit._modules.exec;
+        var lookupBinary = prSplit._lookupBinary;
         if (this.command) {
-            var check = exec.execv(['which', this.command]);
-            if (check.code !== 0) {
+            var check = lookupBinary(this.command);
+            if (!check.found) {
                 return { error: 'Claude command not found: ' + this.command };
             }
             this.resolved = { command: this.command, type: 'explicit' };
             return { error: null };
         }
 
-        var claudeCheck = exec.execv(['which', 'claude']);
-        if (claudeCheck.code === 0) {
+        var claudeCheck = lookupBinary('claude');
+        if (claudeCheck.found) {
             var versionCheck = exec.execv(['claude', '--version']);
             if (versionCheck.code !== 0) {
                 return {
-                    error: 'Claude found at ' + claudeCheck.stdout.trim() +
+                    error: 'Claude found at ' + claudeCheck.path +
                            ' but version check failed (exit ' + versionCheck.code + '): ' +
                            (versionCheck.stderr || versionCheck.stdout || '').trim()
                 };
@@ -51,8 +52,8 @@
             return { error: null };
         }
 
-        var ollamaCheck = exec.execv(['which', 'ollama']);
-        if (ollamaCheck.code === 0) {
+        var ollamaCheck = lookupBinary('ollama');
+        if (ollamaCheck.found) {
             if (this.model) {
                 var listCheck = exec.execv(['ollama', 'list']);
                 if (listCheck.code !== 0) {
@@ -120,8 +121,8 @@
 
         if (self.command) {
             progress('Resolving binary: ' + self.command + '…');
-            var check = await runAsync(['which', self.command]);
-            if (check.code !== 0) {
+            var check = await prSplit._lookupBinaryAsync(self.command);
+            if (!check.found) {
                 return { error: 'Claude command not found: ' + self.command };
             }
             self.resolved = { command: self.command, type: 'explicit' };
@@ -129,13 +130,13 @@
         }
 
         progress('Resolving binary…');
-        var claudeCheck = await runAsync(['which', 'claude']);
-        if (claudeCheck.code === 0) {
+        var claudeCheck = await prSplit._lookupBinaryAsync('claude');
+        if (claudeCheck.found) {
             progress('Checking version…');
             var versionCheck = await runAsync(['claude', '--version']);
             if (versionCheck.code !== 0) {
                 return {
-                    error: 'Claude found at ' + claudeCheck.stdout.trim() +
+                    error: 'Claude found at ' + claudeCheck.path +
                            ' but version check failed (exit ' + versionCheck.code + '): ' +
                            (versionCheck.stderr || versionCheck.stdout || '').trim()
                 };
@@ -144,8 +145,8 @@
             return { error: null };
         }
 
-        var ollamaCheck = await runAsync(['which', 'ollama']);
-        if (ollamaCheck.code === 0) {
+        var ollamaCheck = await prSplit._lookupBinaryAsync('ollama');
+        if (ollamaCheck.found) {
             progress('Checking Ollama…');
             if (self.model) {
                 var listCheck = await runAsync(['ollama', 'list']);

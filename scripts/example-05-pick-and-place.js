@@ -910,27 +910,10 @@ try {
                             state.gridDirty = true;
                             if (ignoreId === TARGET_ID && isInGoalArea(clickX, clickY)) state.winConditionMet = true;
                         }
-                    } else if (clickedCube || targetCellId !== undefined) {
-                        // Clicked cell is occupied — place at nearest free adjacent cell
-                        const spot = getFreeAdjacentCell(state, actor.x, actor.y, false);
-                        log.debug("[MANUAL_INTERACT_PLACE_NEAREST]", {
-                            blockedX: clickX, blockedY: clickY,
-                            spot: spot ? {x: spot.x, y: spot.y} : null
-                        });
-                        if (spot) {
-                            const c = state.cubes.get(ignoreId);
-                            if (c) {
-                                c.deleted = false;
-                                c.x = spot.x;
-                                c.y = spot.y;
-                                state.spatialGrid.add(c.id, spot.x, spot.y);
-                                actor.heldItem = null;
-                                state.spritesDirty = true;
-                                state.gridDirty = true;
-                                if (ignoreId === TARGET_ID && isInGoalArea(spot.x, spot.y)) state.winConditionMet = true;
-                            }
-                        }
                     }
+                    // NOTE: When clicked cell is occupied, placement is intentionally
+                    // a no-op. The held item stays held until the player clicks on an
+                    // empty cell within range.
                 } else if (clickedCube && !clickedCube.isStatic && !clickedCube.deleted) {
                     clickedCube.deleted = true;
                     state.spatialGrid.remove(clickedCube.x, clickedCube.y, clickedCube.id); // Remove from grid with check

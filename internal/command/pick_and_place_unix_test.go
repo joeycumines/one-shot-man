@@ -1494,7 +1494,7 @@ func TestPickAndPlace_MousePlace_NearestEmpty(t *testing.T) {
 }
 
 // TestPickAndPlace_MousePlace_BlockedCell verifies that clicking on occupied cell
-// while holding places at nearest valid alternative cell.
+// while holding does NOT place — the held item stays held (no-op).
 func TestPickAndPlace_MousePlace_BlockedCell(t *testing.T) {
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
@@ -1531,23 +1531,21 @@ func TestPickAndPlace_MousePlace_BlockedCell(t *testing.T) {
 		t.Fatalf("Failed to pick up cube after 3s, held item is %d", state.HeldItemID)
 	}
 
-	// Navigate near another cube but not adjacent to it
-	// Cube 101 is at (8, 18), navigate to (10, 17)
+	// Navigate the actor northward — away from goal ring, but stay
+	// within PICK_THRESHOLD (5.0) of the occupied target (6, 17).
+	// Actor starts near (7, 18) after pickup; 5x up gets to ~(7, 13).
 	for range 5 {
 		h.SendKey("w")
-		time.Sleep(100 * time.Millisecond)
-	}
-	for range 2 {
-		h.SendKey("d")
 		time.Sleep(100 * time.Millisecond)
 	}
 
 	time.Sleep(300 * time.Millisecond)
 
-	// Click on occupied space (8, 18) where cube 101 is
-	// Should place at nearest empty adjacent cell instead
-	clickX := 8
-	clickY := 18
+	// Click on occupied cell (6, 17) where blockade cube 105 is.
+	// (8,18) is the goal CENTER and is empty — must use an actual ring cell.
+	// Should be a no-op — held item stays held.
+	clickX := 6
+	clickY := 17
 
 	if err := h.ClickGrid(clickX, clickY); err != nil {
 		t.Fatalf("Failed to send place click: %v", err)
@@ -1556,11 +1554,12 @@ func TestPickAndPlace_MousePlace_BlockedCell(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 	stateAfter := h.GetDebugState()
 
-	// Verify cube was placed (not holding)
-	if stateAfter.HeldItemID != -1 {
-		t.Errorf("Expected -1, got %d - cube not placed at nearest cell", stateAfter.HeldItemID)
+	// Verify cube is still held (occupied cell click is a no-op)
+	if stateAfter.HeldItemID != heldId {
+		t.Errorf("Expected held item unchanged (%d), but now holding %d — occupied cell click should be a no-op",
+			heldId, stateAfter.HeldItemID)
 	} else {
-		t.Logf("✓ Placed at nearest alternative cell (heldItemId=-1)")
+		t.Logf("✓ Correctly ignored click on occupied cell — still holding item (id=%d)", stateAfter.HeldItemID)
 	}
 }
 

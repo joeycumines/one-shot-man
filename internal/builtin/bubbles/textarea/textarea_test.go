@@ -2079,6 +2079,101 @@ func TestScenarioMegaChar(t *testing.T) {
 	}
 }
 
+// TestHandleClickAtScreenCoords_MutatesCursor verifies that handleClickAtScreenCoords
+// actually moves the cursor to the clicked position, not just returns coordinates.
+// This is the core contract: JS callers rely on Go to mutate cursor state on click.
+func TestHandleClickAtScreenCoords_MutatesCursor(t *testing.T) {
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require()(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Configure textarea
+	setPromptFn, _ := goja.AssertFunction(ta.Get("setPrompt"))
+	_, _ = setPromptFn(ta, runtime.ToValue(""))
+	setShowLineNumbersFn, _ := goja.AssertFunction(ta.Get("setShowLineNumbers"))
+	_, _ = setShowLineNumbersFn(ta, runtime.ToValue(false))
+	setWidthFn, _ := goja.AssertFunction(ta.Get("setWidth"))
+	_, _ = setWidthFn(ta, runtime.ToValue(40))
+
+	// Multi-line content
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	_, _ = setValueFn(ta, runtime.ToValue("first line\nsecond line\nthird line"))
+
+	lineFn, _ := goja.AssertFunction(ta.Get("line"))
+	colFn, _ := goja.AssertFunction(ta.Get("col"))
+
+	// Move cursor to row 0 explicitly (setValue places cursor at end)
+	setPositionFn, _ := goja.AssertFunction(ta.Get("setPosition"))
+	_, _ = setPositionFn(ta, runtime.ToValue(0), runtime.ToValue(0))
+
+	// Verify cursor starts at row 0
+	lineVal, _ := lineFn(ta)
+	if lineVal.ToInteger() != 0 {
+		t.Fatalf("Initial cursor position should be row 0, got %d", lineVal.ToInteger())
+	}
+
+	// Set viewport context
+	setViewportContextFn, _ := goja.AssertFunction(ta.Get("setViewportContext"))
+	vpConfig := runtime.NewObject()
+	_ = vpConfig.Set("outerYOffset", 0)
+	_ = vpConfig.Set("textareaContentTop", 0)
+	_ = vpConfig.Set("textareaContentLeft", 0)
+	_ = vpConfig.Set("outerViewportHeight", 10)
+	_ = vpConfig.Set("preContentHeight", 0)
+	_ = vpConfig.Set("titleHeight", 0)
+	_, _ = setViewportContextFn(ta, vpConfig)
+
+	handleClickFn, _ := goja.AssertFunction(ta.Get("handleClickAtScreenCoords"))
+
+	// Click on row 2 (third line), col 5
+	res, err := handleClickFn(ta, runtime.ToValue(5), runtime.ToValue(2))
+	if err != nil {
+		t.Fatalf("handleClickAtScreenCoords failed: %v", err)
+	}
+	obj := res.ToObject(runtime)
+	if !obj.Get("hit").ToBoolean() {
+		t.Fatalf("Expected hit=true, got miss")
+	}
+	if obj.Get("row").ToInteger() != 2 {
+		t.Fatalf("Expected returned row=2, got %d", obj.Get("row").ToInteger())
+	}
+
+	// THE KEY ASSERTION: cursor must have moved to the clicked row
+	lineVal, _ = lineFn(ta)
+	if lineVal.ToInteger() != 2 {
+		t.Fatalf("CURSOR MUTATION FAILED: Expected cursor at row 2 after click, got %d", lineVal.ToInteger())
+	}
+	colVal, _ := colFn(ta)
+	if colVal.ToInteger() != 5 {
+		t.Fatalf("CURSOR MUTATION FAILED: Expected cursor at col 5 after click, got %d", colVal.ToInteger())
+	}
+
+	// Click on row 0 (first line), col 3
+	res2, err := handleClickFn(ta, runtime.ToValue(3), runtime.ToValue(0))
+	if err != nil {
+		t.Fatalf("handleClickAtScreenCoords failed: %v", err)
+	}
+	obj2 := res2.ToObject(runtime)
+	if !obj2.Get("hit").ToBoolean() {
+		t.Fatalf("Expected hit=true for second click")
+	}
+
+	lineVal, _ = lineFn(ta)
+	if lineVal.ToInteger() != 0 {
+		t.Fatalf("CURSOR MUTATION FAILED: Expected cursor at row 0 after second click, got %d", lineVal.ToInteger())
+	}
+	colVal, _ = colFn(ta)
+	if colVal.ToInteger() != 3 {
+		t.Fatalf("CURSOR MUTATION FAILED: Expected cursor at col 3 after second click, got %d", colVal.ToInteger())
+	}
+}
+
 // TestHandleClickAtScreenCoords_StaleViewportContext reproduces the "phantom scroll"
 // scenario where setViewportContext has a stale outerYOffset and a click that
 // occurs after JS auto-scroll would map incorrectly until setViewportContext is
@@ -2145,11 +2240,12 @@ func TestHandleClickAtScreenCoords_StaleViewportContext(t *testing.T) {
 	// Formula: visualY = screenY - titleHeight - textareaContentTop + outerYOffset.
 	// We want visualY = cursorVisualLine (the cursor's position in textarea visual space),
 	// so: screenY = titleHeight + textareaContentTop + cursorVisualLine - outerYOffset.
-	// Note: cursorAbsY = textareaContentTop + preContentHeight + cursorVisualLine,
-	// so cursorVisualLine = cursorAbsY - textareaContentTop - preContentHeight.
+	// Note: cursorAbsY = preContentHeight + cursorVisualLine,
+	// so cursorVisualLine = cursorAbsY - preContentHeight.
 	titleHeight := 3
 	textareaContentTop := 2
-	cursorVisualLine := cursorAbsY - textareaContentTop - 2
+	preContentHeight := 2
+	cursorVisualLine := cursorAbsY - preContentHeight
 	screenY := titleHeight + textareaContentTop + cursorVisualLine - suggested
 	screenX := 5
 

@@ -712,9 +712,11 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 		for rowIdx, lineContent := range rawLines {
 			if len(lineContent) == 0 {
 				if currentVisualLine == visualY {
+					hitCol := clamp(visualX, 0, 0)
+					setPositionInternal(model, rowIdx, hitCol)
 					_ = result.Set("hit", true)
 					_ = result.Set("row", rowIdx)
-					_ = result.Set("col", clamp(visualX, 0, 0))
+					_ = result.Set("col", hitCol)
 					_ = result.Set("charOffset", 0)
 					return result
 				}
@@ -736,6 +738,7 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 					}
 					totalOffset += hitCol
 
+					setPositionInternal(model, rowIdx, hitCol)
 					_ = result.Set("hit", true)
 					_ = result.Set("row", rowIdx)
 					_ = result.Set("col", hitCol)
@@ -767,6 +770,7 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 		// Beyond document — clamp to last position
 		lastRow := len(rawLines) - 1
 		lastCol := len(rawLines[lastRow])
+		setPositionInternal(model, lastRow, lastCol)
 		_ = result.Set("hit", true)
 		_ = result.Set("row", lastRow)
 		_ = result.Set("col", lastCol)
@@ -854,12 +858,17 @@ func createTextareaObject(runtime *goja.Runtime, model *textarea.Model) goja.Val
 			totalVisualLines = 1
 		}
 
-		// Calculate cursorAbsY and suggestedYOffset using viewport context
+		// Calculate cursorAbsY and suggestedYOffset using viewport context.
+		// cursorAbsY is the cursor's absolute position within the viewport's
+		// virtual content (preContentHeight + cursorVisualLine). This is used
+		// by JS callers for scroll-sync: comparing against yOffset and setting
+		// yOffset directly. It must NOT include textareaContentTop (a screen
+		// layout offset), because yOffset is content-space, not screen-space.
 		preContentHeight := vpCtx.preContentHeight
 		if preContentHeight < 0 {
 			preContentHeight = 0
 		}
-		cursorAbsY := vpCtx.textareaContentTop + preContentHeight + cursorVisualLine
+		cursorAbsY := preContentHeight + cursorVisualLine
 		suggestedYOffset := yOffset
 		if cursorAbsY < vpCtx.outerYOffset {
 			suggestedYOffset = cursorVisualLine

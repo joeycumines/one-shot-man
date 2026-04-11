@@ -90,28 +90,10 @@ func TestGolden_VerifyPane_Paused(t *testing.T) {
 	testGolden(t, "verify-pane-paused", raw.(string))
 }
 
-// TestGolden_ShellPane_Active renders the shell pane with an active shell
-// session and compares against the stored golden file.
-func TestGolden_ShellPane_Active(t *testing.T) {
-	t.Parallel()
-	evalJS := prsplittest.NewTUIEngine(t)
+// Task 8: TestGolden_ShellPane_Active removed — shell tab unified into verify pane.
 
-	raw, err := evalJS(`globalThis.prSplit._renderShellPane({
-		shellSession: true,
-		shellScreen: '$ go test ./...\nok  \tpkg/types\t0.012s\nok  \tpkg/impl\t0.034s\nFAIL\tpkg/api\t0.056s\n$ ',
-		splitViewFocus: 'claude',
-		splitViewTab: 'shell',
-		shellViewOffset: 0,
-		activeVerifyWorktree: '/tmp/worktrees/split-01-types'
-	}, 80, 20)`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	testGolden(t, "shell-pane-active", raw.(string))
-}
-
-// TestGolden_TabBar_AllTabs renders the pane divider tab bar with all 4 tabs
-// (Claude, Output, Verify, Shell) visible and compares against the golden file.
+// Task 8: TestGolden_TabBar_AllTabs renders the pane divider tab bar with
+// all 3 tabs (Claude, Output, Verify) visible and compares against the golden file.
 func TestGolden_TabBar_AllTabs(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
@@ -150,21 +132,7 @@ func TestGolden_TabBar_AllTabs(t *testing.T) {
 		s.verifyViewportOffset = 0;
 		s.verifyAutoScroll = true;
 
-		// Mock shell session (makes Shell tab visible).
-		s.shellSession = {
-			isDone: function() { return false; },
-			exitCode: function() { return 0; },
-			output: function() { return '$ '; },
-			screen: function() { return '$ '; },
-			write: function() {},
-			close: function() {},
-			kill: function() {},
-			pause: function() {},
-			resume: function() {}
-		};
-		s.shellScreen = '';
-		s.shellViewOffset = 0;
-		s.shellAutoScroll = true;
+		// Task 8: Shell tab removed — only Claude, Output, Verify tabs.
 
 		var view = globalThis.prSplit._wizardView(s);
 		var lines = view.split('\n');
@@ -225,7 +193,7 @@ func TestGolden_TabBar_VerifyOnly(t *testing.T) {
 		s.verifyViewportOffset = 0;
 		s.verifyAutoScroll = true;
 
-		// No shellSession — Shell tab should NOT appear.
+		// Task 8: No shell session — Shell tab does not exist.
 
 		var view = globalThis.prSplit._wizardView(s);
 		var lines = view.split('\n');

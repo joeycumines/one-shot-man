@@ -18,10 +18,11 @@ import (
 // ---------------------------------------------------------------------------
 // Subprocess observation via termtest.Console — verifies the ACTUAL terminal
 // output of `osm pr-split` running as a real process in a PTY. The binary is
-// built with -tags=integration (see buildOSMBinary), which enables go-prompt's
-// sync protocol. This protocol, combined with termtest.Console's synchronized
-// methods (WriteSync, SendSync, SendLine), ensures deterministic input
-// processing — each input is acknowledged before the next is sent.
+// built via buildOSMBinary and must be run with the OSM_SYNC_PROTOCOL=1
+// environment variable (set automatically by the test harness) to enable
+// go-prompt's sync protocol. This protocol, combined with termtest.Console's
+// synchronized methods (WriteSync, SendSync, SendLine), ensures deterministic
+// input processing — each input is acknowledged before the next is sent.
 //
 // Without the sync protocol, go-prompt's readBuffer may deliver multiple
 // characters in a single Read(), causing them to be treated as one
@@ -98,6 +99,7 @@ func TestIntegration_AutoSplitClaude_VTermObservation(t *testing.T) {
 			"TERM=xterm-256color",
 			"HOME=" + t.TempDir(),
 			"OSM_CONFIG=", // Prevent host config interference
+			"OSM_SYNC_PROTOCOL=1",
 		}),
 		termtest.WithSize(termRows, termCols),
 		termtest.WithDefaultTimeout(2*time.Minute),
@@ -315,6 +317,7 @@ func TestIntegration_PrSplit_VTerm_AutoSplitOllamaExactCommand(t *testing.T) {
 			"TERM=xterm-256color",
 			"HOME=" + t.TempDir(),
 			"OSM_CONFIG=",
+			"OSM_SYNC_PROTOCOL=1",
 		}),
 		termtest.WithSize(termRows, termCols),
 		termtest.WithDefaultTimeout(60*time.Second),
@@ -490,6 +493,7 @@ func TestIntegration_PrSplit_VTermCleanExit(t *testing.T) {
 			"HOME=" + t.TempDir(),
 			"OSM_CONFIG=",
 			"OSM_EXIT_TRACE=" + traceFile,
+			"OSM_SYNC_PROTOCOL=1",
 		}),
 		termtest.WithSize(termRows, termCols),
 		termtest.WithDefaultTimeout(30*time.Second),
@@ -585,6 +589,7 @@ func TestIntegration_PrSplit_VTermHeuristicRun(t *testing.T) {
 			"TERM=xterm-256color",
 			"HOME=" + t.TempDir(),
 			"OSM_CONFIG=",
+			"OSM_SYNC_PROTOCOL=1",
 		}),
 		termtest.WithSize(termRows, termCols),
 		termtest.WithDefaultTimeout(60*time.Second),
@@ -756,6 +761,7 @@ func TestIntegration_PrSplit_VTermAutoSplitFallback(t *testing.T) {
 			"TERM=xterm-256color",
 			"HOME=" + t.TempDir(),
 			"OSM_CONFIG=",
+			"OSM_SYNC_PROTOCOL=1",
 		}),
 		termtest.WithSize(termRows, termCols),
 		termtest.WithDefaultTimeout(60*time.Second),
@@ -920,6 +926,7 @@ func TestIntegration_PrSplit_VTermMultiCommand(t *testing.T) {
 			"HOME=" + t.TempDir(),
 			"OSM_CONFIG=",
 			"OSM_EXIT_TRACE=" + traceFile,
+			"OSM_SYNC_PROTOCOL=1",
 		}),
 		termtest.WithSize(termRows, termCols),
 		termtest.WithDefaultTimeout(30*time.Second),
@@ -1043,6 +1050,7 @@ func vtermStartConsole(t *testing.T, ctx context.Context, osmBin, repoDir string
 			"TERM=xterm-256color",
 			"HOME=" + t.TempDir(),
 			"OSM_CONFIG=",
+			"OSM_SYNC_PROTOCOL=1",
 		}),
 		termtest.WithSize(rows, cols),
 		termtest.WithDefaultTimeout(30*time.Second),

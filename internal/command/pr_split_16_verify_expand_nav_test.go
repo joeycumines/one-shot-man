@@ -470,8 +470,8 @@ func TestChunk16_T38_TabCyclesFocusInSplitViewWizard(t *testing.T) {
 	}
 }
 
-// TestChunk16_T38_CtrlTabSwitchesPanes verifies that Ctrl+Tab toggles
-// between wizard and Claude panes in split-view.
+// TestChunk16_T38_CtrlTabSwitchesPanes verifies that Ctrl+Tab cycles
+// through wizard and pane tabs in split-view (T61: full cycle).
 func TestChunk16_T38_CtrlTabSwitchesPanes(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
@@ -479,16 +479,21 @@ func TestChunk16_T38_CtrlTabSwitchesPanes(t *testing.T) {
 	raw, err := evalJS(`(function() {
 		var errors = [];
 
-		// Ctrl+Tab: wizard → claude.
+		// Ctrl+Tab: wizard → claude (first pane tab).
 		var s = initState('CONFIG');
 		s.splitViewEnabled = true;
 		s.splitViewFocus = 'wizard';
 		var r = sendKey(s, 'ctrl+tab');
 		if (r[0].splitViewFocus !== 'claude') errors.push('ctrl+tab did not switch to claude');
 
-		// Ctrl+Tab: claude → wizard.
+		// Ctrl+Tab: claude → output (cycles to next tab, not back to wizard).
 		r = sendKey(r[0], 'ctrl+tab');
-		if (r[0].splitViewFocus !== 'wizard') errors.push('ctrl+tab did not switch back to wizard');
+		if (r[0].splitViewFocus !== 'claude') errors.push('focus not on pane after second ctrl+tab');
+		if (r[0].splitViewTab !== 'output') errors.push('ctrl+tab did not advance to output tab');
+
+		// Ctrl+Tab: output → wizard (no verify, wraps back).
+		r = sendKey(r[0], 'ctrl+tab');
+		if (r[0].splitViewFocus !== 'wizard') errors.push('ctrl+tab did not wrap back to wizard');
 
 		// Ctrl+Tab does nothing when split-view is disabled.
 		s = initState('CONFIG');

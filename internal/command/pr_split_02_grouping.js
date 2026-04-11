@@ -161,7 +161,13 @@
             }
             content = result.content;
         } else {
-            var result = exec.execv(['cat', 'go.mod']);
+            var readCmd = (prSplit._isWindows && prSplit._isWindows()) ? 'type' : 'cat';
+            var result;
+            if (readCmd === 'type') {
+                result = exec.execv(['cmd.exe', '/C', 'type "go.mod"']);
+            } else {
+                result = exec.execv(['cat', 'go.mod']);
+            }
             if (result.code !== 0) {
                 return '';
             }
@@ -251,7 +257,12 @@
                     }
                     fileContent = readResult.content;
                 } else {
-                    var catResult = exec.execv(['cat', goFiles[i]]);
+                    var catResult;
+                    if (prSplit._isWindows && prSplit._isWindows()) {
+                        catResult = exec.execv(['cmd.exe', '/C', 'type "' + goFiles[i] + '"']);
+                    } else {
+                        catResult = exec.execv(['cat', goFiles[i]]);
+                    }
                     if (catResult.code !== 0) {
                         continue;
                     }
@@ -495,16 +506,17 @@
                     if (readResult.error) { continue; }
                     fileContent = readResult.content;
                 } else if (shellExecAsync) {
-                    // Async fallback: exec.spawn('sh', ['-c', 'cat FILE']).
+                    // Async fallback: platform-aware file read.
                     // Genuinely non-blocking — yields to event loop during I/O.
-                    var catResult = await shellExecAsync('cat ' + shellQuote(goFiles[i]));
+                    var catResult = await shellExecAsync((prSplit._isWindows && prSplit._isWindows() ? 'type ' : 'cat ') + shellQuote(goFiles[i]));
                     if (catResult.error) { continue; }
                     fileContent = catResult.stdout;
                 } else {
                     // Last resort: sync exec (only if neither osmod nor spawn available).
-                    var catResult = exec.execv(['cat', goFiles[i]]);
-                    if (catResult.code !== 0) { continue; }
-                    fileContent = catResult.stdout;
+                    var catCmd = (prSplit._isWindows && prSplit._isWindows()) ? 'type' : 'cat';
+                    var catResult2 = exec.execv([catCmd, goFiles[i]]);
+                    if (catResult2.code !== 0) { continue; }
+                    fileContent = catResult2.stdout;
                 }
 
                 var imports = parseGoImports(fileContent);

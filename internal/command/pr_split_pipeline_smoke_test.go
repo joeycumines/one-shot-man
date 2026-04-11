@@ -92,6 +92,7 @@ func setupSmokeTestRepo(t *testing.T) string {
 // verifyEquivalence → cleanupBranches.
 func Test_ChunkedPipeline_HeuristicRun(t *testing.T) {
 	t.Parallel()
+	skipSlow(t)
 
 	dir := setupSmokeTestRepo(t)
 	escaped := escapeJSPath(dir)
@@ -276,6 +277,7 @@ func Test_ChunkedPipeline_HeuristicRun(t *testing.T) {
 // equivalence → cleanup, each via direct globalThis.prSplit function calls.
 func Test_ChunkedPipeline_CommandSequence(t *testing.T) {
 	t.Parallel()
+	skipSlow(t)
 
 	dir := setupSmokeTestRepo(t)
 	escaped := escapeJSPath(dir)

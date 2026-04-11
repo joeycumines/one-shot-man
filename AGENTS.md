@@ -20,6 +20,9 @@ make build
 # Run tests
 make test
 
+# Run fast tests only (skips slow integration/E2E tests via -short flag)
+make test-short
+
 # Run all linters (vet, staticcheck, betteralign, deadcode)
 make lint
 
@@ -75,10 +78,12 @@ The JavaScript environment provides these globals:
 
 - `ctx` / `context` - Context management (files, diffs, git state)
 - `output` - Output formatting and clipboard
-- `log` - Logging (debug, info, warn, error, printf, getLogs, searchLogs, clearLogs)
+- `log` - Logging (debug/info/warn/error/printf), backed by `slog`; same semantics, attrs as a plain object
 - `tui` - Terminal UI integration (Bubble Tea, Lipgloss)
 
 Native modules are available under `osm:` prefix (see `docs/scripting.md`).
+
+**Log example**: `log.info("user authenticated", { userId: 42, method: "oauth" })`
 
 ### Session Management
 
@@ -146,6 +151,7 @@ When modifying **internal code**—meaning any code that isn't depended on by ex
         - Tests must be **fully self-contained** and portable across machines
         - Rare exceptions (e.g., `vhs` for recording) MUST use TestMain flags, documented Make targets, and skip gracefully when unavailable. See `generate-tapes-and-gifs` and `-execute-vhs` for the pattern.
 - NEVER use build tags to segment tests. Prefer supporting "opting out of long tests" via the `go test -short` flag (`testing.Short()`) or use a `TestMain` with custom `flag` package parsing for to support "opt-in" test behavior (ONLY for exceptional cases).
+- **Slow tests MUST use `testing.Short()` skip guards.** Any test that spawns JS runtimes (`scripting.NewEngineWithConfig`), uses bubbletea TUI, spawns subprocesses, or takes >2 seconds must call `skipSlow(t)` (in `internal/command`) or `if testing.Short() { t.Skip(...) }` at the top of the test function. Use `make test-short` for fast feedback.
 
 ### No "AI Slop"
 
@@ -168,8 +174,10 @@ The goal is a codebase where every line has a reason to exist, every feature is 
 3. **Session Locking**: Always use proper session locking to prevent corruption
 4. **Platform Compatibility**: Code must work identically on Linux, macOS, and Windows
 5. **Script Discovery**: User scripts are auto-discovered from configured paths (experimental UX)
-6. **Go as Reusable Modules**: Go code must be exposed as reusable, modular implementations accessible via `osm script`. Never hardcode application-specific logic—deliver value for other implementations.
-7. **JS for App-Specific Logic**: All application-specific functionality MUST be modeled as JavaScript. Don't do anything in Go that someone else couldn't do using OSM.
+6. **Avoid Prepositions in Names**: Do not use prepositions in method or function names (e.g. prefer `LoadConfig` over `LoadFromConfig` or `SendEvent` over `SendEventTo`).
+7. **Go as Reusable Modules**: Go code must be exposed as reusable, modular implementations accessible via `osm script`. Never hardcode application-specific logic—deliver value for other implementations.
+8. **JS for App-Specific Logic**: All application-specific functionality MUST be modeled as JavaScript. Don't do anything in Go that someone else couldn't do using OSM.
+9. **Structured Logging**: Applies to ALL logging—Go's `log/slog` and the JS `log` API alike. All log calls must: use a lowercase, punctuation-free, event-phrased message; never use string concatenation; attach all context as camelCase key-value attributes (Go: alternating `key, value` pairs; JS: a plain object). Prefer passing `*slog.Logger` explicitly rather than relying on `slog.Default`. Use `log.printf` (JS) only when printf-style formatting is genuinely needed.
 
 ## Documentation
 

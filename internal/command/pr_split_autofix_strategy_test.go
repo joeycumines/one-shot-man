@@ -26,7 +26,7 @@ function getStrategy(name) {
 // Helper: check if a call uses the appropriate shell for current platform.
 function isShellCall(call) {
 	var cmd = call.argv[0];
-	return cmd === 'sh' || cmd === 'cmd.exe' || cmd === 'which';
+	return cmd === 'sh' || cmd === 'cmd.exe' || cmd === 'which' || cmd === 'where.exe';
 }
 `
 
@@ -321,7 +321,7 @@ func TestClaudeCodeExecutor_Resolve_ExplicitCommand(t *testing.T) {
 		if _, err := evalJS(`
 			var execMod57 = require('osm:exec');
 			execMod57.execv = function(argv) {
-				if (argv[0] === 'which' && argv[1] === 'my-claude') {
+				if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'my-claude') {
 					return {stdout: '/usr/bin/my-claude', stderr: '', code: 0};
 				}
 				return {stdout: '', stderr: 'not found', code: 1};
@@ -382,7 +382,7 @@ func TestClaudeCodeExecutor_Resolve_AutoDetect(t *testing.T) {
 		if _, err := evalJS(`
 			var execMod57c = require('osm:exec');
 			execMod57c.execv = function(argv) {
-				if (argv[0] === 'which' && argv[1] === 'claude') {
+				if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'claude') {
 					return {stdout: '/usr/local/bin/claude', stderr: '', code: 0};
 				}
 				if (argv[0] === 'claude' && argv[1] === '--version') {
@@ -411,7 +411,7 @@ func TestClaudeCodeExecutor_Resolve_AutoDetect(t *testing.T) {
 		if _, err := evalJS(`
 			var execMod57d = require('osm:exec');
 			execMod57d.execv = function(argv) {
-				if (argv[0] === 'which' && argv[1] === 'claude') {
+				if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'claude') {
 					return {stdout: '/usr/local/bin/claude', stderr: '', code: 0};
 				}
 				if (argv[0] === 'claude' && argv[1] === '--version') {
@@ -440,10 +440,10 @@ func TestClaudeCodeExecutor_Resolve_AutoDetect(t *testing.T) {
 		if _, err := evalJS(`
 			var execMod57e = require('osm:exec');
 			execMod57e.execv = function(argv) {
-				if (argv[0] === 'which' && argv[1] === 'claude') {
+				if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'claude') {
 					return {stdout: '', stderr: '', code: 1};
 				}
-				if (argv[0] === 'which' && argv[1] === 'ollama') {
+				if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'ollama') {
 					return {stdout: '/usr/local/bin/ollama', stderr: '', code: 0};
 				}
 				if (argv[0] === 'ollama' && argv[1] === 'list') {
@@ -472,10 +472,10 @@ func TestClaudeCodeExecutor_Resolve_AutoDetect(t *testing.T) {
 		if _, err := evalJS(`
 			var execMod57f = require('osm:exec');
 			execMod57f.execv = function(argv) {
-				if (argv[0] === 'which' && argv[1] === 'claude') {
+				if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'claude') {
 					return {stdout: '', stderr: '', code: 1};
 				}
-				if (argv[0] === 'which' && argv[1] === 'ollama') {
+				if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'ollama') {
 					return {stdout: '/usr/local/bin/ollama', stderr: '', code: 0};
 				}
 				if (argv[0] === 'ollama' && argv[1] === 'list') {
@@ -944,13 +944,15 @@ func TestAutoFixStrategy_GoBuildMissingImports_Fix(t *testing.T) {
 		if _, err := evalJS(resetGitMockJS); err != nil {
 			t.Fatal(err)
 		}
-		// which goimports fails.
-		// After T078 async conversion, shellExecAsync routes through
-		// exec.spawn('sh', ['-c', 'which goimports']) → mock key '!sh'.
+		// lookupBinaryAsync('goimports') routes through exec.spawn('which', ['goimports'])
+		// → mock key '!which'.
 		if _, err := evalJS(`
-			globalThis._gitResponses['!sh'] = function(argv) {
-				var cmd = argv.join(' ');
-				if (cmd.indexOf('which') >= 0) return _gitFail('');
+			globalThis._gitResponses['!which'] = function(argv) {
+				if (argv.indexOf('goimports') >= 0) return _gitFail('');
+				return _gitOk('');
+			};
+			globalThis._gitResponses['!where.exe'] = function(argv) {
+				if (argv.indexOf('goimports') >= 0) return _gitFail('');
 				return _gitOk('');
 			};
 		`); err != nil {
@@ -977,7 +979,9 @@ func TestAutoFixStrategy_GoBuildMissingImports_Fix(t *testing.T) {
 		// goimports runs but makes no changes.
 		if _, err := evalJS(`
 			globalThis._gitResponses['!which'] = _gitOk('/usr/local/bin/goimports');
+			globalThis._gitResponses['!where.exe'] = _gitOk('/usr/local/bin/goimports');
 			globalThis._gitResponses['!sh'] = _gitOk('');
+			globalThis._gitResponses['!cmd.exe'] = _gitOk('');
 			globalThis._gitResponses['status --porcelain'] = _gitOk('');
 		`); err != nil {
 			t.Fatal(err)
@@ -1102,14 +1106,18 @@ func TestAutoFixStrategy_MakeGenerate_Fix(t *testing.T) {
 		if _, err := evalJS(resetGitMockJS); err != nil {
 			t.Fatal(err)
 		}
-		// Mock: grep for Makefile target → found, make generate → ok,
-		// status shows changes, add+commit default ok.
+		// Mock: osmod.readFile finds 'generate:' target in Makefile,
+		// shellExecAsync('make generate') → ok, status shows changes, add+commit default ok.
 		if _, err := evalJS(`
-			var shCallCount = 0;
-			globalThis._gitResponses['!sh'] = function(argv) {
-				shCallCount++;
-				return _gitOk('');
+			var _origReadFile = require('osm:os').readFile;
+			require('osm:os').readFile = function(p) {
+				if (p === './Makefile' || p === 'Makefile') {
+					return { content: 'all:\nbuild:\ngenerate:\n\tgo generate ./...', error: null };
+				}
+				return _origReadFile ? _origReadFile(p) : { content: '', error: 'not found' };
 			};
+			globalThis._gitResponses['!sh'] = _gitOk('');
+			globalThis._gitResponses['!cmd.exe'] = _gitOk('');
 			globalThis._gitResponses['status --porcelain'] = _gitOk(' M generated.go\n');
 		`); err != nil {
 			t.Fatal(err)
@@ -1117,6 +1125,10 @@ func TestAutoFixStrategy_MakeGenerate_Fix(t *testing.T) {
 
 		val, err := evalJS(`JSON.stringify(await getStrategy('make-generate').fix('.'))`)
 		if err != nil {
+			t.Fatal(err)
+		}
+		// Restore readFile.
+		if _, err := evalJS(`require('osm:os').readFile = _origReadFile;`); err != nil {
 			t.Fatal(err)
 		}
 		r := parseAutoFixResult(t, val)
@@ -1129,17 +1141,18 @@ func TestAutoFixStrategy_MakeGenerate_Fix(t *testing.T) {
 		if _, err := evalJS(resetGitMockJS); err != nil {
 			t.Fatal(err)
 		}
-		// Mock: grep for Makefile target → not found (first sh call fails),
-		// go generate → ok (second sh call succeeds), status shows changes.
+		// Mock: osmod.readFile Makefile → no generate target,
+		// so fix falls back to 'go generate ./...' via shellExecAsync.
 		if _, err := evalJS(`
-			var genCallCount = 0;
-			globalThis._gitResponses['!sh'] = function(argv) {
-				genCallCount++;
-				// First call: grep for Makefile generate target.
-				if (genCallCount === 1) return _gitFail('');
-				// Second call: go generate.
-				return _gitOk('');
+			var _origReadFile2 = require('osm:os').readFile;
+			require('osm:os').readFile = function(p) {
+				if (p === './Makefile' || p === 'Makefile') {
+					return { content: 'all:\nbuild:\ntest:\n\tgo test ./...', error: null };
+				}
+				return _origReadFile2 ? _origReadFile2(p) : { content: '', error: 'not found' };
 			};
+			globalThis._gitResponses['!sh'] = _gitOk('');
+			globalThis._gitResponses['!cmd.exe'] = _gitOk('');
 			globalThis._gitResponses['status --porcelain'] = _gitOk(' M gen.go\n');
 		`); err != nil {
 			t.Fatal(err)
@@ -1147,6 +1160,9 @@ func TestAutoFixStrategy_MakeGenerate_Fix(t *testing.T) {
 
 		val, err := evalJS(`JSON.stringify(await getStrategy('make-generate').fix('.'))`)
 		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`require('osm:os').readFile = _origReadFile2;`); err != nil {
 			t.Fatal(err)
 		}
 		r := parseAutoFixResult(t, val)
@@ -1159,22 +1175,26 @@ func TestAutoFixStrategy_MakeGenerate_Fix(t *testing.T) {
 		if _, err := evalJS(resetGitMockJS); err != nil {
 			t.Fatal(err)
 		}
-		// Both grep and generate succeed but generate returns error.
+		// Mock: osmod.readFile finds generate target, but make generate fails.
 		if _, err := evalJS(`
-			var gfCallCount = 0;
-			globalThis._gitResponses['!sh'] = function(argv) {
-				gfCallCount++;
-				// First call: grep → found.
-				if (gfCallCount === 1) return _gitOk('');
-				// Second call: make generate → fails.
-				return _gitFail('make: *** No rule to make target');
+			var _origReadFile3 = require('osm:os').readFile;
+			require('osm:os').readFile = function(p) {
+				if (p === './Makefile' || p === 'Makefile') {
+					return { content: 'all:\ngenerate:\n\tgo generate ./...', error: null };
+				}
+				return _origReadFile3 ? _origReadFile3(p) : { content: '', error: 'not found' };
 			};
+			globalThis._gitResponses['!sh'] = _gitFail('make: *** No rule to make target');
+			globalThis._gitResponses['!cmd.exe'] = _gitFail('make: *** No rule to make target');
 		`); err != nil {
 			t.Fatal(err)
 		}
 
 		val, err := evalJS(`JSON.stringify(await getStrategy('make-generate').fix('.'))`)
 		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := evalJS(`require('osm:os').readFile = _origReadFile3;`); err != nil {
 			t.Fatal(err)
 		}
 		r := parseAutoFixResult(t, val)

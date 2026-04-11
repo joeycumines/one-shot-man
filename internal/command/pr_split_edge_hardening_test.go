@@ -221,19 +221,41 @@ func TestShellQuote_EdgeCases(t *testing.T) {
 
 	evalJS := prsplittest.NewFullEngine(t, nil)
 
-	cases := []struct {
+	var cases []struct {
 		name   string
 		input  string
 		expect string
-	}{
-		{"empty_string", "", "''"},
-		{"simple", "hello", "'hello'"},
-		{"with_spaces", "hello world", "'hello world'"},
-		{"single_quote", "it's", `'it'\''s'`},
-		{"double_quotes", `say "hi"`, `'say "hi"'`},
-		{"backticks", "echo `whoami`", "'echo `whoami`'"},
-		{"dollar_expansion", "$(rm -rf /)", "'$(rm -rf /)'"},
-		{"newlines", "line1\nline2", "'line1\nline2'"},
+	}
+	if runtime.GOOS == "windows" {
+		cases = []struct {
+			name   string
+			input  string
+			expect string
+		}{
+			{"empty_string", "", `""`},
+			{"simple", "hello", `"hello"`},
+			{"with_spaces", "hello world", `"hello world"`},
+			{"single_quote", "it's", `"it's"`},
+			{"double_quotes", `say "hi"`, `"say ^"hi^""`},
+			{"backticks", "echo `whoami`", "\"echo `whoami`\""},
+			{"dollar_expansion", "$(rm -rf /)", `"$(rm -rf /)"`},
+			{"newlines", "line1\nline2", "\"line1\nline2\""},
+		}
+	} else {
+		cases = []struct {
+			name   string
+			input  string
+			expect string
+		}{
+			{"empty_string", "", "''"},
+			{"simple", "hello", "'hello'"},
+			{"with_spaces", "hello world", "'hello world'"},
+			{"single_quote", "it's", `'it'\''s'`},
+			{"double_quotes", `say "hi"`, `'say "hi"'`},
+			{"backticks", "echo `whoami`", "'echo `whoami`'"},
+			{"dollar_expansion", "$(rm -rf /)", "'$(rm -rf /)'"},
+			{"newlines", "line1\nline2", "'line1\nline2'"},
+		}
 	}
 
 	for _, tc := range cases {

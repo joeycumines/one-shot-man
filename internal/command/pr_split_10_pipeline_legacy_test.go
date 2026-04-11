@@ -2,6 +2,7 @@ package command
 
 import (
 	"encoding/json"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -689,7 +690,7 @@ func TestClaudeCodeExecutor_Resolve(t *testing.T) {
 				var execMod = require('osm:exec');
 				var origExecv = execMod.execv;
 				execMod.execv = function(argv) {
-					if (argv[0] === 'which') {
+					if (argv[0] === 'which' || argv[0] === 'where.exe') {
 						return _gitOk('/usr/bin/my-claude');
 					}
 					return origExecv(argv);
@@ -714,7 +715,7 @@ func TestClaudeCodeExecutor_Resolve(t *testing.T) {
 				var execMod = require('osm:exec');
 				var origExecv = execMod.execv;
 				execMod.execv = function(argv) {
-					if (argv[0] === 'which') {
+					if (argv[0] === 'which' || argv[0] === 'where.exe') {
 						return _gitFail('not found');
 					}
 					return origExecv(argv);
@@ -737,10 +738,10 @@ func TestClaudeCodeExecutor_Resolve(t *testing.T) {
 				var execMod = require('osm:exec');
 				var origExecv = execMod.execv;
 				execMod.execv = function(argv) {
-					if (argv[0] === 'which' && argv[1] === 'claude') {
+					if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'claude') {
 						return _gitOk('/usr/local/bin/claude');
 					}
-					if (argv[0] === 'which') {
+					if (argv[0] === 'which' || argv[0] === 'where.exe') {
 						return _gitFail('not found');
 					}
 					if (argv[0] === 'claude' && argv[1] === '--version') {
@@ -768,13 +769,13 @@ func TestClaudeCodeExecutor_Resolve(t *testing.T) {
 				var execMod = require('osm:exec');
 				var origExecv = execMod.execv;
 				execMod.execv = function(argv) {
-					if (argv[0] === 'which' && argv[1] === 'claude') {
+					if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'claude') {
 						return _gitFail('not found');
 					}
-					if (argv[0] === 'which' && argv[1] === 'ollama') {
+					if ((argv[0] === 'which' || argv[0] === 'where.exe') && argv[1] === 'ollama') {
 						return _gitOk('/usr/bin/ollama');
 					}
-					if (argv[0] === 'which') {
+					if (argv[0] === 'which' || argv[0] === 'where.exe') {
 						return _gitFail('not found');
 					}
 					return origExecv(argv);
@@ -799,7 +800,7 @@ func TestClaudeCodeExecutor_Resolve(t *testing.T) {
 				var execMod = require('osm:exec');
 				var origExecv = execMod.execv;
 				execMod.execv = function(argv) {
-					if (argv[0] === 'which') {
+					if (argv[0] === 'which' || argv[0] === 'where.exe') {
 						return _gitFail('not found');
 					}
 					return origExecv(argv);
@@ -858,18 +859,36 @@ func TestShellQuote(t *testing.T) {
 	// shellQuote is defined in pr_split_00_core.js (chunk 00),
 	// directly callable in the Goja VM scope after loadPrSplitEngineWithEval.
 
-	tests := []struct {
+	type testCase struct {
 		input    string
 		expected string
-	}{
-		{"simple", "'simple'"},
-		{"with space", "'with space'"},
-		{"it's", `'it'\''s'`},
-		{"a'b'c", `'a'\''b'\''c'`},
-		{"", "''"},
-		{"$(whoami)", "'$(whoami)'"},
-		{"`ls`", "'`ls`'"},
-		{"hello\nworld", "'hello\nworld'"},
+	}
+
+	var tests []testCase
+	if runtime.GOOS == "windows" {
+		// Windows: shellQuote uses double-quote + ^ escaping for cmd.exe.
+		tests = []testCase{
+			{"simple", `"simple"`},
+			{"with space", `"with space"`},
+			{"it's", `"it's"`},
+			{"a'b'c", `"a'b'c"`},
+			{"", `""`},
+			{"$(whoami)", `"$(whoami)"`},
+			{"`ls`", "\"`ls`\""},
+			{"hello\nworld", "\"hello\nworld\""},
+		}
+	} else {
+		// Unix: shellQuote uses single-quote wrapping.
+		tests = []testCase{
+			{"simple", "'simple'"},
+			{"with space", "'with space'"},
+			{"it's", `'it'\''s'`},
+			{"a'b'c", `'a'\''b'\''c'`},
+			{"", "''"},
+			{"$(whoami)", "'$(whoami)'"},
+			{"`ls`", "'`ls`'"},
+			{"hello\nworld", "'hello\nworld'"},
+		}
 	}
 
 	for _, tt := range tests {

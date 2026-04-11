@@ -1148,6 +1148,10 @@ func TestBridge_GetCallable(t *testing.T) {
 }
 
 func TestBridge_ConcurrentStopAndSchedule(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	t.Parallel()
 
 	// Create a bridge with manual shutdown control for precise timing
@@ -1291,6 +1295,10 @@ func TestBridge_ConcurrentStopAndSchedule(t *testing.T) {
 // under the mutex lock, preventing any race window where Done() is closed but
 // IsRunning() returns true.
 func TestBridge_C3_LifecycleInvariant_StrictVerification(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	t.Parallel()
 
 	// Run multiple iterations to catch timing issues

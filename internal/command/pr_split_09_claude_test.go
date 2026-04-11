@@ -84,7 +84,7 @@ func TestChunk09_ClaudeCodeExecutor_Resolve_ExplicitNotFound(t *testing.T) {
 		(function() {
 			var origExecv = globalThis.prSplit._modules.exec.execv;
 			globalThis.prSplit._modules.exec.execv = function(args) {
-				if (args[0] === 'which') {
+				if (args[0] === 'which' || args[0] === 'where.exe') {
 					return { code: 1, stdout: '', stderr: 'not found' };
 				}
 				return origExecv(args);
@@ -118,7 +118,7 @@ func TestChunk09_ClaudeCodeExecutor_Resolve_ExplicitFound(t *testing.T) {
 		(function() {
 			var origExecv = globalThis.prSplit._modules.exec.execv;
 			globalThis.prSplit._modules.exec.execv = function(args) {
-				if (args[0] === 'which' && args[1] === 'my-claude') {
+				if ((args[0] === 'which' || args[0] === 'where.exe') && args[1] === 'my-claude') {
 					return { code: 0, stdout: '/usr/bin/my-claude\n', stderr: '' };
 				}
 				return origExecv(args);
@@ -267,7 +267,7 @@ func TestChunk09_ClaudeCodeExecutor_ModelNotAvailable(t *testing.T) {
 			(function() {
 				var origExecv = globalThis.prSplit._modules.exec.execv;
 				globalThis.prSplit._modules.exec.execv = function(args) {
-					if (args[0] === 'which') return { code: 1, stdout: '', stderr: 'not found' };
+					if (args[0] === 'which' || args[0] === 'where.exe') return { code: 1, stdout: '', stderr: 'not found' };
 					return origExecv(args);
 				};
 				var ex = new globalThis.prSplit.ClaudeCodeExecutor({ claudeCommand: '/opt/nonexistent-claude' });
@@ -302,14 +302,14 @@ func TestChunk09_ClaudeCodeExecutor_ModelNotAvailable(t *testing.T) {
 			(function() {
 				var origExecv = globalThis.prSplit._modules.exec.execv;
 				globalThis.prSplit._modules.exec.execv = function(args) {
-					if (args[0] === 'which' && args[1] === 'claude') {
+					if ((args[0] === 'which' || args[0] === 'where.exe') && args[1] === 'claude') {
 						return { code: 0, stdout: '/usr/bin/claude\n', stderr: '' };
 					}
 					if (args[0] === 'claude' && args[1] === '--version') {
 						return { code: 1, stdout: '', stderr: 'segfault' };
 					}
 					// No ollama.
-					if (args[0] === 'which') return { code: 1, stdout: '', stderr: '' };
+					if (args[0] === 'which' || args[0] === 'where.exe') return { code: 1, stdout: '', stderr: '' };
 					return origExecv(args);
 				};
 				var ex = new globalThis.prSplit.ClaudeCodeExecutor({});
@@ -341,11 +341,11 @@ func TestChunk09_ClaudeCodeExecutor_ModelNotAvailable(t *testing.T) {
 				var origExecv = globalThis.prSplit._modules.exec.execv;
 				globalThis.prSplit._modules.exec.execv = function(args) {
 					// No claude on PATH.
-					if (args[0] === 'which' && args[1] === 'claude') {
+					if ((args[0] === 'which' || args[0] === 'where.exe') && args[1] === 'claude') {
 						return { code: 1, stdout: '', stderr: '' };
 					}
 					// Ollama found.
-					if (args[0] === 'which' && args[1] === 'ollama') {
+					if ((args[0] === 'which' || args[0] === 'where.exe') && args[1] === 'ollama') {
 						return { code: 0, stdout: '/usr/bin/ollama\n', stderr: '' };
 					}
 					// ollama list succeeds but model not in output.
@@ -385,7 +385,7 @@ func TestChunk09_ClaudeCodeExecutor_ModelNotAvailable(t *testing.T) {
 			(function() {
 				var origExecv = globalThis.prSplit._modules.exec.execv;
 				globalThis.prSplit._modules.exec.execv = function(args) {
-					if (args[0] === 'which') return { code: 1, stdout: '', stderr: '' };
+					if (args[0] === 'which' || args[0] === 'where.exe') return { code: 1, stdout: '', stderr: '' };
 					return origExecv(args);
 				};
 				var ex = new globalThis.prSplit.ClaudeCodeExecutor({});
@@ -416,8 +416,8 @@ func TestChunk09_ClaudeCodeExecutor_ModelNotAvailable(t *testing.T) {
 			(function() {
 				var origExecv = globalThis.prSplit._modules.exec.execv;
 				globalThis.prSplit._modules.exec.execv = function(args) {
-					if (args[0] === 'which' && args[1] === 'claude') return { code: 1, stdout: '', stderr: '' };
-					if (args[0] === 'which' && args[1] === 'ollama') return { code: 0, stdout: '/usr/bin/ollama\n', stderr: '' };
+					if ((args[0] === 'which' || args[0] === 'where.exe') && args[1] === 'claude') return { code: 1, stdout: '', stderr: '' };
+					if ((args[0] === 'which' || args[0] === 'where.exe') && args[1] === 'ollama') return { code: 0, stdout: '/usr/bin/ollama\n', stderr: '' };
 					if (args[0] === 'ollama' && args[1] === 'list') {
 						return { code: 0, stdout: 'NAME     SIZE    MODIFIED\nllama3   4.7G    2w ago\n', stderr: '' };
 					}

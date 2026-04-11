@@ -13,67 +13,20 @@ import (
 //
 //  These tests override canSpawnInteractiveShell to return false, simulating
 //  the Windows/headless environment regardless of the host OS. This allows
-//  us to verify the rendering and error paths on any CI platform.
+//  us to verify the error paths on any CI platform.
+//
+//  Task 8: The separate Shell tab and Shell button have been removed.
+//  spawnShellSession is still used internally by the verify pane, so the
+//  error-throwing path is still tested.
 // ---------------------------------------------------------------------------
 
 // TestGracefulDegradation_NoShellOnWindows verifies that when
 // canSpawnInteractiveShell() returns false:
-//   - Shell button renders as disabled with "(Unix only)" text
 //   - spawnShellSession() throws a descriptive error
 //   - The Verify tab still appears during fallback verification
 //   - Mouse forwarding is a no-op (no crash on null session)
 func TestGracefulDegradation_NoShellOnWindows(t *testing.T) {
 	t.Parallel()
-
-	t.Run("shell_button_disabled_when_no_pty", func(t *testing.T) {
-		t.Parallel()
-		evalJS := prsplittest.NewTUIEngine(t)
-
-		if _, err := evalJS(viewTestPlanState); err != nil {
-			t.Fatal(err)
-		}
-
-		// Override canSpawnInteractiveShell to return false.
-		raw, err := evalJS(`(function() {
-			var original = globalThis.prSplit.canSpawnInteractiveShell;
-			globalThis.prSplit.canSpawnInteractiveShell = function() { return false; };
-			try {
-				return globalThis.prSplit._viewExecutionScreen({
-					wizardState: 'BRANCH_BUILDING', width: 80,
-					executionResults: [{sha: 'abc123'}],
-					executingIdx: 1,
-					isProcessing: true,
-					verifyingIdx: 1,
-					verificationResults: [{passed: true, name: 'split/api'}],
-					activeVerifySession: {
-						screen: function() { return 'test'; },
-						output: function() { return ''; },
-						isDone: function() { return false; },
-						isRunning: function() { return true; }
-					},
-					verifyScreen: 'test output',
-					activeVerifyBranch: 'split/cli',
-					activeVerifyStartTime: Date.now() - 5000,
-					verifyAutoScroll: true,
-					verifyViewportOffset: 0,
-					activeVerifyWorktree: '/tmp/worktree'
-				});
-			} finally {
-				globalThis.prSplit.canSpawnInteractiveShell = original;
-			}
-		})()`)
-		if err != nil {
-			t.Fatal(err)
-		}
-		rendered := raw.(string)
-		if !strings.Contains(rendered, "Unix only") {
-			t.Errorf("expected 'Unix only' in disabled Shell button, got:\n%s", rendered)
-		}
-		// The Shell button should NOT be zone-marked (clickable).
-		if strings.Contains(rendered, "verify-open-shell") {
-			t.Error("expected Shell button NOT to be zone-marked when PTY unavailable")
-		}
-	})
 
 	t.Run("spawn_throws_descriptive_error", func(t *testing.T) {
 		t.Parallel()
@@ -86,7 +39,7 @@ func TestGracefulDegradation_NoShellOnWindows(t *testing.T) {
 				globalThis.prSplit.spawnShellSession('/tmp/test', {rows: 24, cols: 80});
 				return 'FAIL: expected error';
 			} catch (e) {
-				if (e.message.indexOf('Unix') >= 0 && e.message.indexOf('Linux') >= 0) {
+				if (e.message.indexOf('not available') >= 0 && e.message.indexOf('termmux') >= 0) {
 					return 'OK';
 				}
 				return 'FAIL: error message lacks platform info: ' + e.message;

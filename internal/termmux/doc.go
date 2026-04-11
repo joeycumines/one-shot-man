@@ -1,6 +1,10 @@
-// Package termmux provides a terminal multiplexer for managing multiple
-// PTY-attached child processes with toggle-key switching, screen capture
-// via an in-memory VT100 emulator, and a persistent status bar.
+// Package termmux provides a terminal multiplexer built around a
+// [SessionManager] that owns multiple [InteractiveSession] instances
+// via a single worker goroutine. Sessions can be created from PTYs
+// ([CaptureSession]) or string-based agent handles ([StringIOSession]).
+// The [SessionManager.Passthrough] method enters raw terminal mode for
+// the active session with toggle-key switching, screen capture via an
+// in-memory VT100 emulator, and a persistent status bar.
 //
 // Sub-packages:
 //
@@ -9,6 +13,5 @@
 //   - ptyio: Buffered PTY reader/writer with EAGAIN retry, backpressure,
 //     and platform-specific blocking guard.
 //   - statusbar: Status bar renderer with scroll region management.
-//   - ui: BubbleTea UI models (AutoSplit, PlanEditor)
-//     migrated from the old mux package.
+//   - pty: PTY allocation and management.
 package termmux

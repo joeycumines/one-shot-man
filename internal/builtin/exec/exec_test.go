@@ -105,6 +105,10 @@ func toInt64(v any) int64 {
 }
 
 func TestExecAndExecv(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow test in short mode")
+	}
+
 	t.Parallel()
 	runtime, exports := setupModule(t)
 	execFn := requireCallable(t, exports, "exec")

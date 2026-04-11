@@ -1,18 +1,28 @@
-//go:build integration && !windows
-
 package ptyio
 
 import (
 	"bytes"
 	"context"
 	"os/exec"
+	"runtime"
 	"testing"
 	"time"
 
 	"github.com/creack/pty"
 )
 
+func skipPTYTest(t *testing.T) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("skipping slow PTY integration test")
+	}
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping PTY test on Windows (creack/pty not supported)")
+	}
+}
+
 func TestIntegration_BufferedReader_RealPTY(t *testing.T) {
+	skipPTYTest(t)
 	t.Parallel()
 
 	// Spawn a real process that writes "hello" and keeps the slave PTY
@@ -65,6 +75,7 @@ func TestIntegration_BufferedReader_RealPTY(t *testing.T) {
 }
 
 func TestIntegration_BufferedReader_RealPTY_LargeOutput(t *testing.T) {
+	skipPTYTest(t)
 	t.Parallel()
 
 	// Spawn a process that generates substantial output.
@@ -113,6 +124,7 @@ func TestIntegration_BufferedReader_RealPTY_LargeOutput(t *testing.T) {
 }
 
 func TestIntegration_BufferedReader_RealPTY_ProcessExitClosesDone(t *testing.T) {
+	skipPTYTest(t)
 	t.Parallel()
 
 	// Spawn a fast-exiting process.

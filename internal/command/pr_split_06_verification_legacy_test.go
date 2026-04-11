@@ -1949,11 +1949,11 @@ func TestDiscoverVerifyCommand(t *testing.T) {
 		if _, err := evalJS(`
 			globalThis._testFileExists = {'./Makefile': true};
 			var _osmod = require('osm:os');
-			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p]); };
-			var _origExecv = globalThis.prSplit._modules.exec.execv;
-			globalThis.prSplit._modules.exec.execv = function(args) {
-				if (args[0] === 'gmake') return { code: 1, stdout: '', stderr: 'not found' };
-				return _origExecv(args);
+			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p.replace(/\\/g, '/')]); };
+			var _origLookup = globalThis.prSplit._lookupBinary;
+			globalThis.prSplit._lookupBinary = function(name) {
+				if (name === 'gmake') return { found: false, path: '' };
+				return _origLookup(name);
 			};
 		`); err != nil {
 			t.Fatal(err)
@@ -1962,8 +1962,8 @@ func TestDiscoverVerifyCommand(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		// Restore exec.
-		if _, err := evalJS(`globalThis.prSplit._modules.exec.execv = _origExecv;`); err != nil {
+		// Restore lookup.
+		if _, err := evalJS(`globalThis.prSplit._lookupBinary = _origLookup;`); err != nil {
 			t.Fatal(err)
 		}
 		if raw != "make" {
@@ -1978,11 +1978,11 @@ func TestDiscoverVerifyCommand(t *testing.T) {
 		if _, err := evalJS(`
 			globalThis._testFileExists = {'./GNUmakefile': true};
 			var _osmod = require('osm:os');
-			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p]); };
-			var _origExecv2 = globalThis.prSplit._modules.exec.execv;
-			globalThis.prSplit._modules.exec.execv = function(args) {
-				if (args[0] === 'gmake') return { code: 1, stdout: '', stderr: 'not found' };
-				return _origExecv2(args);
+			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p.replace(/\\/g, '/')]); };
+			var _origLookup2 = globalThis.prSplit._lookupBinary;
+			globalThis.prSplit._lookupBinary = function(name) {
+				if (name === 'gmake') return { found: false, path: '' };
+				return _origLookup2(name);
 			};
 		`); err != nil {
 			t.Fatal(err)
@@ -1991,7 +1991,7 @@ func TestDiscoverVerifyCommand(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := evalJS(`globalThis.prSplit._modules.exec.execv = _origExecv2;`); err != nil {
+		if _, err := evalJS(`globalThis.prSplit._lookupBinary = _origLookup2;`); err != nil {
 			t.Fatal(err)
 		}
 		if raw != "make" {
@@ -2006,11 +2006,11 @@ func TestDiscoverVerifyCommand(t *testing.T) {
 		if _, err := evalJS(`
 			globalThis._testFileExists = {'./makefile': true};
 			var _osmod = require('osm:os');
-			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p]); };
-			var _origExecv3 = globalThis.prSplit._modules.exec.execv;
-			globalThis.prSplit._modules.exec.execv = function(args) {
-				if (args[0] === 'gmake') return { code: 1, stdout: '', stderr: 'not found' };
-				return _origExecv3(args);
+			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p.replace(/\\/g, '/')]); };
+			var _origLookup3 = globalThis.prSplit._lookupBinary;
+			globalThis.prSplit._lookupBinary = function(name) {
+				if (name === 'gmake') return { found: false, path: '' };
+				return _origLookup3(name);
 			};
 		`); err != nil {
 			t.Fatal(err)
@@ -2019,7 +2019,7 @@ func TestDiscoverVerifyCommand(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := evalJS(`globalThis.prSplit._modules.exec.execv = _origExecv3;`); err != nil {
+		if _, err := evalJS(`globalThis.prSplit._lookupBinary = _origLookup3;`); err != nil {
 			t.Fatal(err)
 		}
 		if raw != "make" {
@@ -2034,7 +2034,7 @@ func TestDiscoverVerifyCommand(t *testing.T) {
 		if _, err := evalJS(`
 			globalThis._testFileExists = {};
 			var _osmod = require('osm:os');
-			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p]); };
+			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p.replace(/\\/g, '/')]); };
 		`); err != nil {
 			t.Fatal(err)
 		}
@@ -2054,11 +2054,11 @@ func TestDiscoverVerifyCommand(t *testing.T) {
 		if _, err := evalJS(`
 			globalThis._testFileExists = {'/tmp/project/Makefile': true};
 			var _osmod = require('osm:os');
-			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p]); };
-			var _origExecv4 = globalThis.prSplit._modules.exec.execv;
-			globalThis.prSplit._modules.exec.execv = function(args) {
-				if (args[0] === 'gmake') return { code: 1, stdout: '', stderr: 'not found' };
-				return _origExecv4(args);
+			_osmod.fileExists = function(p) { return !!(globalThis._testFileExists && globalThis._testFileExists[p.replace(/\\/g, '/')]); };
+			var _origLookup4 = globalThis.prSplit._lookupBinary;
+			globalThis.prSplit._lookupBinary = function(name) {
+				if (name === 'gmake') return { found: false, path: '' };
+				return _origLookup4(name);
 			};
 		`); err != nil {
 			t.Fatal(err)
@@ -2067,7 +2067,7 @@ func TestDiscoverVerifyCommand(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := evalJS(`globalThis.prSplit._modules.exec.execv = _origExecv4;`); err != nil {
+		if _, err := evalJS(`globalThis.prSplit._lookupBinary = _origLookup4;`); err != nil {
 			t.Fatal(err)
 		}
 		if raw != "make" {

@@ -203,6 +203,20 @@ func GitMockSetupJS() string {
     execMod.execv = function(argv) {
         globalThis._gitCalls.push({argv: argv.slice()});
 
+        // Cross-platform normalization: map Windows commands to Unix equivalents
+        // when Windows-specific mock entries are not explicitly set.
+        // This allows tests written with '!sh' and '!which' to work on Windows
+        // where the production code calls cmd.exe and where.exe respectively.
+        if (argv[0] === 'where.exe' && globalThis._gitResponses['!where.exe'] === undefined) {
+            argv = ['which'].concat(argv.slice(1));
+        }
+        if (argv[0] === 'cmd.exe' && globalThis._gitResponses['!cmd.exe'] === undefined) {
+            // Normalize cmd.exe /C → sh -c so test handlers match uniformly.
+            var args = argv.slice(1);
+            if (args.length > 0 && args[0] === '/C') { args[0] = '-c'; }
+            argv = ['sh'].concat(args);
+        }
+
         // 'test' command: check _testFileExists set for T24 tests.
         if (argv[0] === 'test' && argv[1] === '-f') {
             var path = argv[2] || '';
@@ -261,17 +275,9 @@ func GitMockSetupJS() string {
     // Mock exec.spawn to route through the same mock dispatcher as execv.
     // Returns a ChildHandle-compatible object with ReadableStream stdout/stderr
     // and an async wait() method. Used by verifySplitAsync (exec.spawn('sh',...)).
+    // Cross-platform normalization is handled by execv, so no remapping needed here.
     execMod.spawn = function(cmd, args) {
         var fullArgv = [cmd].concat(args || []);
-        
-        // For cross-platform compatibility, when cmd.exe is used, map it to !sh responses.
-        // This allows tests that set !sh responses to work on Windows.
-        var useShRoute = (cmd === 'cmd.exe' && globalThis._gitResponses['!sh'] !== undefined);
-        if (useShRoute) {
-            // Temporarily remap so execv sees 'sh' instead of 'cmd.exe'
-            fullArgv = ['sh'].concat(args || []);
-        }
-        
         var r = execMod.execv(fullArgv);
         var stdoutRead = false;
         var stderrRead = false;

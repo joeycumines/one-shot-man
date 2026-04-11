@@ -160,6 +160,17 @@ func Require(ctx context.Context, tuiSink func(string)) func(vm *goja.Runtime, m
 			return goja.Undefined()
 		})
 
+		// clipboardPaste(): string
+		_ = exports.Set("clipboardPaste", func(call goja.FunctionCall) goja.Value {
+			ctx, cancel := context.WithTimeout(ctx, clipboardTimeout)
+			defer cancel()
+			text, err := ClipboardPaste(ctx)
+			if err != nil {
+				panic(vm.NewGoError(err))
+			}
+			return vm.ToValue(text)
+		})
+
 		// getenv(key: string): string
 		_ = exports.Set("getenv", func(call goja.FunctionCall) goja.Value {
 			if len(call.Arguments) == 0 || goja.IsUndefined(call.Argument(0)) || goja.IsNull(call.Argument(0)) {
@@ -383,6 +394,68 @@ func ClipboardCopy(ctx context.Context, tuiSink func(string), text string) error
 		return nil
 	}
 	return fmt.Errorf("no system clipboard available")
+}
+
+// ClipboardPaste reads text from the system clipboard using platform-specific
+// utilities (pbpaste on macOS, PowerShell on Windows, xclip/xsel/wl-paste on Linux).
+// If OSM_CLIPBOARD_PASTE is set, it is used as a custom clipboard read command.
+func ClipboardPaste(ctx context.Context) (string, error) {
+	// override via OSM_CLIPBOARD_PASTE
+	if cmdStr := os.Getenv("OSM_CLIPBOARD_PASTE"); cmdStr != "" {
+		var c *exec.Cmd
+		if goruntime.GOOS == "windows" {
+			c = exec.CommandContext(ctx, "cmd", "/c", cmdStr)
+		} else {
+			c = exec.CommandContext(ctx, "/bin/sh", "-c", cmdStr)
+		}
+		out, err := c.Output()
+		if err == nil {
+			return string(out), nil
+		}
+	}
+
+	var cmd *exec.Cmd
+
+	switch goruntime.GOOS {
+	case "darwin":
+		if _, err := exec.LookPath("pbpaste"); err == nil {
+			cmd = exec.CommandContext(ctx, "pbpaste")
+		}
+	case "windows":
+		if _, err := exec.LookPath("powershell"); err == nil {
+			cmd = exec.CommandContext(ctx, "powershell", "-command", "Get-Clipboard")
+		}
+	default:
+		if os.Getenv("WAYLAND_DISPLAY") != "" {
+			if _, err := exec.LookPath("wl-paste"); err == nil {
+				cmd = exec.CommandContext(ctx, "wl-paste", "--no-newline")
+			}
+		}
+		if cmd == nil {
+			if _, err := exec.LookPath("termux-clipboard-get"); err == nil {
+				cmd = exec.CommandContext(ctx, "termux-clipboard-get")
+			}
+		}
+		if cmd == nil {
+			if _, err := exec.LookPath("xclip"); err == nil {
+				cmd = exec.CommandContext(ctx, "xclip", "-selection", "clipboard", "-o")
+			}
+		}
+		if cmd == nil {
+			if _, err := exec.LookPath("xsel"); err == nil {
+				cmd = exec.CommandContext(ctx, "xsel", "--clipboard", "--output")
+			}
+		}
+	}
+
+	if cmd != nil {
+		out, err := cmd.Output()
+		if err == nil {
+			return string(out), nil
+		}
+	}
+
+	return "", fmt.Errorf("no system clipboard available for reading")
 }
 
 // sanitizeFilename produces a filesystem-safe portion for temp filenames

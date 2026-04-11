@@ -83,32 +83,36 @@ func (t SessionTarget) WithKind(kind SessionKind) SessionTarget {
 	return t
 }
 
-// InteractiveSession is the shared contract for terminal endpoints that can
-// render inline in the TUI and accept direct operator input.
+// InteractiveSession is the minimal contract for terminal endpoints managed
+// by [SessionManager].
 //
-// The contract is intentionally narrow: it captures the common behavior needed
-// by both mux-backed PTY sessions and standalone CaptureSession instances,
-// without forcing callers to know which implementation they received.
+// Implementations provide the essential PTY lifecycle operations: writing
+// input, resizing, closing, completion signalling, and streaming raw output
+// via a channel. Screen capture (VTerm), session metadata (Target), and
+// lifecycle tracking (IsRunning) are the SessionManager's responsibility —
+// they are NOT part of this interface.
+//
+// Concrete types such as [CaptureSession] and [StringIOSession] may offer
+// additional methods (Target, Passthrough, etc.) beyond this interface
+// for direct callers that hold the concrete type.
 type InteractiveSession interface {
-	Target() SessionTarget
-	SetTarget(SessionTarget)
-	Output() string
-	Screen() string
-	Resize(rows, cols int) error
+	// Write sends raw bytes to the session's PTY stdin.
 	Write([]byte) (int, error)
+
+	// Resize changes the PTY dimensions and delivers SIGWINCH.
+	Resize(rows, cols int) error
+
+	// Close terminates the session and releases resources.
 	Close() error
 
 	// Done returns a channel that is closed when the session terminates.
 	// Callers can select on this channel to react to session completion
-	// without polling. For Mux sessions, the channel closes when the
-	// attached child exits or is detached. For CaptureSession, the
-	// channel closes when the underlying process exits. If no session
-	// is active, the returned channel is already closed.
+	// without polling.
 	Done() <-chan struct{}
 
-	// IsRunning reports whether the session is actively processing.
-	// For Mux sessions, this is true when a child is attached.
-	// For CaptureSession, this is true when the process is running
-	// (started and not yet exited).
-	IsRunning() bool
+	// Reader returns a channel that streams raw PTY output chunks.
+	// A nil value on the channel is never sent; instead, the channel is
+	// closed when the session's output ends (process exit / PTY EOF).
+	// The channel is safe to read from any goroutine.
+	Reader() <-chan []byte
 }

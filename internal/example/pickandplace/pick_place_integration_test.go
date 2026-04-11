@@ -14,6 +14,9 @@ import (
 
 // TestPickAndPlace_MouseIntegration loads the example script and tests mouse interaction logic.
 func TestPickAndPlace_MouseIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping pick-and-place integration test in short mode")
+	}
 	// 1. Setup VM and Manager
 	ctx := context.Background()
 	vm := goja.New()

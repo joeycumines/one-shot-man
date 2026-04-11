@@ -23,6 +23,62 @@
     };
     var repeatStr = prSplit._repeatStr;
 
+    // T62: Reverse-video style for selected text.
+    var selectionStyle = lipgloss.newStyle().reverse(true);
+
+    // T62: Apply reverse-video highlighting to a line at contentLineIndex
+    // if it overlaps the active selection in the given pane tab.
+    // line: the raw text of this content line (plain text, NOT ANSI).
+    // contentLineIndex: the 0-based index in the pane's full content.
+    // paneTab: 'claude' | 'output' | 'verify' — must match selectionPane.
+    // s: the TUI model state.
+    // Returns the (potentially highlighted) line.
+    function applySelectionHighlight(line, contentLineIndex, paneTab, s) {
+        if (!s.selectionActive || s.selectionPane !== paneTab) return line;
+
+        // Normalize selection to (sr,sc)..(er,ec) where sr <= er.
+        var sr = s.selectionStartRow, sc = s.selectionStartCol;
+        var er = s.selectionEndRow, ec = s.selectionEndCol;
+        if (sr > er || (sr === er && sc > ec)) {
+            var tmp;
+            tmp = sr; sr = er; er = tmp;
+            tmp = sc; sc = ec; ec = tmp;
+        }
+
+        var i = contentLineIndex;
+        if (i < sr || i > er) return line; // outside selection
+
+        var startCol, endCol;
+        if (i === sr && i === er) {
+            // Single-line selection.
+            startCol = sc;
+            endCol = ec;
+        } else if (i === sr) {
+            // First line: from startCol to end.
+            startCol = sc;
+            endCol = line.length;
+        } else if (i === er) {
+            // Last line: from start to endCol.
+            startCol = 0;
+            endCol = ec;
+        } else {
+            // Middle line: full line.
+            startCol = 0;
+            endCol = line.length;
+        }
+
+        // Clamp.
+        startCol = Math.max(0, Math.min(startCol, line.length));
+        endCol = Math.max(startCol, Math.min(endCol, line.length));
+
+        if (startCol === endCol) return line;
+
+        var before = line.substring(0, startCol);
+        var selected = line.substring(startCol, endCol);
+        var after = line.substring(endCol);
+        return before + selectionStyle.render(selected) + after;
+    }
+
     // --- Chrome Renderers (T007) ---
     //
     //  Title bar, navigation bar, status bar, step dots
@@ -302,15 +358,9 @@
             if (leftParts) leftParts += '  ';
             leftParts += 'Ctrl+L Split';
         }
-        // T337: Context-sensitive hints for verify/shell tabs.
-        // When the bottom pane is focused on an interactive terminal tab, show
-        // an INPUT indicator instead of the generic Ctrl+O hint — the user is
-        // already interacting with a tab and needs to know where keys go.
+        // Task 8: Context-sensitive hints — shell tab removed, verify is the interactive pane.
         if (!narrow && s.splitViewEnabled) {
-            if (s.splitViewFocus === 'claude' && s.splitViewTab === 'shell' &&
-                getInteractivePaneSession(s, 'shell')) {
-                leftParts += '  INPUT \u25b8 Shell';
-            } else if (s.splitViewFocus === 'claude' && s.splitViewTab === 'verify' &&
+            if (s.splitViewFocus === 'claude' && s.splitViewTab === 'verify' &&
                 getInteractivePaneSession(s, 'verify')) {
                 leftParts += '  INPUT \u25b8 Verify';
             } else {
@@ -466,23 +516,36 @@
         var endLine = Math.min(totalLines, startLine + viewH);
 
         // Build viewport content with ANSI-aware line truncation.
+        // T62: When selection is active on the Claude pane and content is ANSI,
+        // we use the plain-text screenshot for selected lines so the reverse-video
+        // highlighting can be applied cleanly.
+        var plainLines = null;
+        if (s.selectionActive && s.selectionPane === 'claude' && isANSI) {
+            var pc = s.claudeScreenshot || '';
+            plainLines = pc ? pc.split('\n') : [];
+            while (plainLines.length > 0 && plainLines[plainLines.length - 1] === '') {
+                plainLines.pop();
+            }
+        }
         var contentLines = [titleText];
         for (var ci = startLine; ci < endLine; ci++) {
             var ln = lines[ci] || '';
+            // T62: For selected lines in ANSI mode, swap to plain text for highlighting.
+            var isSelected = (s.selectionActive && s.selectionPane === 'claude' &&
+                ci >= Math.min(s.selectionStartRow, s.selectionEndRow) &&
+                ci <= Math.max(s.selectionStartRow, s.selectionEndRow));
+            if (isSelected && plainLines && ci < plainLines.length) {
+                ln = applySelectionHighlight(plainLines[ci] || '', ci, 'claude', s);
+            } else if (!isANSI) {
+                ln = applySelectionHighlight(ln, ci, 'claude', s);
+            }
             // Use lipgloss.width for ANSI-aware visual width calculation.
             var visualW = lipgloss.width(ln);
             if (visualW > viewW) {
-                // Truncate: strip ANSI-unaware substring is risky, so we
-                // attempt a visual-width-aware truncation. Since lipgloss
-                // doesn't expose truncate(), we use a simple approach: if
-                // the line has ANSI codes, trim iteratively; for plain text
-                // use substring.
-                if (isANSI) {
-                    // For ANSI lines, let lipgloss.newStyle().maxWidth()
-                    // handle truncation — it's ANSI-aware.
+                if (isANSI && !isSelected) {
                     ln = lipgloss.newStyle().maxWidth(viewW).render(ln);
                 } else {
-                    ln = ln.substring(0, viewW - 3) + '...';
+                    ln = lipgloss.newStyle().maxWidth(viewW).render(ln);
                 }
             }
             contentLines.push(ln);
@@ -524,9 +587,16 @@
             lines.push('');
         }
 
+        // On-demand spawn progress (T5: Ask Claude in non-auto modes).
+        if (s.claudeOnDemandSpawning && convo.spawnProgress) {
+            lines.push(styles.dim().render('\u23f3 ' + convo.spawnProgress));
+            lines.push('');
+        }
+
         // Conversation history.
         var historyHeight = h - 7; // title(2) + blank(1) + input(2) + status(1) + padding(1)
         if (convo.lastError) historyHeight -= 2;
+        if (s.claudeOnDemandSpawning && convo.spawnProgress) historyHeight -= 2;
         historyHeight = Math.max(3, historyHeight);
 
         var historyLines = [];
@@ -571,9 +641,13 @@
         // Input field.
         var inputPrefix = convo.sending
             ? styles.dim().render('\u23f3 Sending...')
+            : s.claudeOnDemandSpawning
+            ? styles.dim().render('\u23f3 Connecting...')
             : styles.bold().render('\u276f ');
         var inputText = convo.sending
             ? styles.dim().render('Waiting for Claude to respond...')
+            : s.claudeOnDemandSpawning
+            ? styles.dim().render('Spawning Claude process...')
             : (convo.inputText || '') + styles.dim().render('\u2588');
         lines.push(inputPrefix + truncate(inputText, w - 8));
 
@@ -665,6 +739,8 @@
         var contentLines = [titleText];
         for (var ci = startLine; ci < endLine; ci++) {
             var ln = lines[ci] || '';
+            // T62: Apply selection highlighting before truncation.
+            ln = applySelectionHighlight(ln, ci, 'output', s);
             var visualW = lipgloss.width(ln);
             if (visualW > viewW) {
                 // Use lipgloss maxWidth for ANSI-safe truncation.
@@ -761,9 +837,28 @@
         var endLine = Math.min(totalLines, startLine + viewH);
 
         // Build viewport with ANSI-aware truncation.
+        // T62: For selected lines, use plain-text verifyScreen for highlighting.
+        var verifyPlainLines = null;
+        if (s.selectionActive && s.selectionPane === 'verify') {
+            // verifyScreen is ANSI; selection works against plain lines.
+            // We re-split the plain text version (same as getPaneContentLines
+            // uses s.verifyScreen which is ANSI — for selection text extraction
+            // we need to strip ANSI). Use the content as-is since the selection
+            // coordinates match the line indices.
+            verifyPlainLines = lines; // treat ANSI lines as source of truth for indices
+        }
         var contentLines = [titleText];
         for (var ci = startLine; ci < endLine; ci++) {
             var ln = lines[ci] || '';
+            // T62: Apply selection highlighting (works on the plain-text content lines).
+            var isSelected = (s.selectionActive && s.selectionPane === 'verify' &&
+                ci >= Math.min(s.selectionStartRow, s.selectionEndRow) &&
+                ci <= Math.max(s.selectionStartRow, s.selectionEndRow));
+            if (isSelected) {
+                // For selected verify lines, apply reverse-video to entire line
+                // since ANSI content makes partial column highlighting impractical.
+                ln = selectionStyle.render(ln);
+            }
             var visualW = lipgloss.width(ln);
             if (visualW > viewW) {
                 ln = lipgloss.newStyle().maxWidth(viewW).render(ln);
@@ -783,64 +878,7 @@
         return paneStyle.render(contentLines.join('\n'));
     }
 
-    // T332: renderShellPane — interactive shell terminal in split-view bottom pane.
-    // Follows same pattern as renderVerifyPane.
-    function renderShellPane(s, width, height) {
-        var hasSession = !!getInteractivePaneSession(s, 'shell');
-        var isFocused = (s.splitViewFocus === 'claude' && s.splitViewTab === 'shell');
-        var borderColor = isFocused ? COLORS.primary
-            : (hasSession ? COLORS.success : COLORS.border);
-
-        var contentH = Math.max(1, height - 2);
-        var viewH = Math.max(1, contentH - 1);
-        var viewW = Math.max(10, width - 6);
-
-        if (!hasSession) {
-            var phMsg = styles.dim().render('No shell session active.');
-            var phStyle = lipgloss.newStyle()
-                .border(lipgloss.roundedBorder())
-                .borderForeground(borderColor)
-                .width(width - 2)
-                .height(contentH);
-            return phStyle.render(phMsg);
-        }
-
-        var worktree = s.activeVerifyWorktree || '.';
-        var shortDir = worktree.length > viewW - 10
-            ? '\u2026' + worktree.substring(worktree.length - (viewW - 11))
-            : worktree;
-        var titleText = styles.bold().render('Shell: ' + shortDir);
-        if (isFocused) {
-            titleText += styles.dim().render(' \u2502 type to interact');
-        }
-
-        var raw = s.shellScreen || '';
-        var lines = raw.split('\n');
-        var offset = s.shellViewOffset || 0;
-        var start = Math.max(0, lines.length - viewH - offset);
-        var end = start + viewH;
-        var visible = lines.slice(start, end);
-
-        var contentLines = [titleText];
-        for (var i = 0; i < visible.length; i++) {
-            var ln = visible[i];
-            if (lipgloss.width(ln) > viewW) {
-                ln = lipgloss.truncate(ln, viewW);
-            }
-            contentLines.push(ln);
-        }
-        while (contentLines.length < contentH) {
-            contentLines.push('');
-        }
-
-        var paneStyle = lipgloss.newStyle()
-            .border(lipgloss.roundedBorder())
-            .borderForeground(borderColor)
-            .width(width - 2)
-            .height(contentH);
-
-        return paneStyle.render(contentLines.join('\n'));
-    }
+    // Task 8: renderShellPane removed — shell tab unified into verify pane.
 
     // Export chrome for testing.
     prSplit._renderTitleBar = renderTitleBar;
@@ -849,9 +887,11 @@
     prSplit._renderClaudePane = renderClaudePane;
     prSplit._renderOutputPane = renderOutputPane;
     prSplit._renderVerifyPane = renderVerifyPane;
-    prSplit._renderShellPane = renderShellPane;
+    // Task 8: _renderShellPane removed — no longer needed.
     prSplit._renderStepDots = renderStepDots;
     prSplit._viewClaudeConvoOverlay = viewClaudeConvoOverlay;
     prSplit._renderClaudeQuestionPrompt = renderClaudeQuestionPrompt;
+    // T62: Selection highlight helper.
+    prSplit._applySelectionHighlight = applySelectionHighlight;
 
 })(globalThis.prSplit);

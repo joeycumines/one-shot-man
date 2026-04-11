@@ -11,6 +11,9 @@
     var resolveDir = prSplit._resolveDir;
     var shellQuote = prSplit._shellQuote;
     var worktreeTmpPath = prSplit._worktreeTmpPath;
+    var shellSpawnSync = prSplit._shellSpawnSync;
+    var shellSpawnAsync = prSplit._shellSpawnAsync;
+    var isWindows = prSplit._isWindows;
     var scopedVerifyCommand = prSplit.scopedVerifyCommand;
     var exec = prSplit._modules.exec;
 
@@ -57,12 +60,19 @@
         }
 
         var startMs = Date.now();
-        var shellCmd = 'cd ' + shellQuote(worktreeDir) + ' && ' + command;
+        var shellCmd;
+        if (isWindows()) {
+            shellCmd = 'cd /d ' + shellQuote(worktreeDir) + ' && ' + command;
+        } else {
+            shellCmd = 'cd ' + shellQuote(worktreeDir) + ' && ' + command;
+        }
 
-        if (timeoutMs > 0) {
+        if (timeoutMs > 0 && !isWindows()) {
             var timeoutSec = Math.ceil(timeoutMs / 1000);
             shellCmd = 'timeout ' + timeoutSec + ' sh -c ' + shellQuote(shellCmd);
         }
+        // Note: Windows timeout is an interactive command; timeout handling
+        // for Windows relies on the Go-level deadline in shellSpawnSync.
 
         var stdoutBuf = '';
         var stderrBuf = '';
@@ -78,7 +88,7 @@
             }
         }
 
-        var result = exec.execStream(['sh', '-c', shellCmd], {
+        var result = shellSpawnSync(shellCmd, {
             onStdout: function(chunk) {
                 stdoutBuf += chunk;
                 emitChunk(chunk);
@@ -372,7 +382,9 @@
         }
 
         try {
-            var session = termmux.newCaptureSession('sh', ['-c', command], {
+            var captureShell = isWindows() ? 'cmd.exe' : 'sh';
+            var captureArgs = isWindows() ? ['/C', command] : ['-c', command];
+            var session = termmux.newCaptureSession(captureShell, captureArgs, {
                 dir: worktreeDir,
                 rows: rows,
                 cols: cols
@@ -468,9 +480,14 @@
         }
 
         var startMs = Date.now();
-        var shellCmd = 'cd ' + shellQuote(worktreeDir) + ' && ' + command;
+        var shellCmd;
+        if (isWindows()) {
+            shellCmd = 'cd /d ' + shellQuote(worktreeDir) + ' && ' + command;
+        } else {
+            shellCmd = 'cd ' + shellQuote(worktreeDir) + ' && ' + command;
+        }
 
-        if (timeoutMs > 0) {
+        if (timeoutMs > 0 && !isWindows()) {
             var timeoutSec = Math.ceil(timeoutMs / 1000);
             shellCmd = 'timeout ' + timeoutSec + ' sh -c ' + shellQuote(shellCmd);
         }
@@ -489,9 +506,9 @@
             }
         }
 
-        // Non-blocking: use exec.spawn() so the event loop stays responsive
-        // during verification. Replaces the former blocking exec.execStream().
-        var child = exec.spawn('sh', ['-c', shellCmd]);
+        // Non-blocking: use platform-aware shell spawn so the event loop
+        // stays responsive during verification.
+        var child = shellSpawnAsync(shellCmd);
 
         // Read stdout and stderr concurrently via async streams.
         async function readStream(stream, onChunk) {

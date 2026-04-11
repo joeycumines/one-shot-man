@@ -15,8 +15,9 @@ import (
 
 func TestGetFilepathSuggestions_Tilde(t *testing.T) {
 	result := getFilepathSuggestions("~")
-	if len(result) != 1 || result[0].Text != "~/" {
-		t.Errorf("expected single suggestion '~/', got %v", result)
+	expected := "~" + string(filepath.Separator)
+	if len(result) != 1 || result[0].Text != expected {
+		t.Errorf("expected single suggestion %q, got %v", expected, result)
 	}
 }
 
@@ -46,11 +47,12 @@ func TestGetFilepathSuggestions_EmptyPath(t *testing.T) {
 
 	foundFile := false
 	foundDir := false
+	expectedDirSuffix := "adir" + string(filepath.Separator)
 	for _, s := range result {
 		if s.Text == "afile.txt" {
 			foundFile = true
 		}
-		if s.Text == "adir/" {
+		if s.Text == expectedDirSuffix {
 			foundDir = true
 		}
 	}
@@ -58,7 +60,7 @@ func TestGetFilepathSuggestions_EmptyPath(t *testing.T) {
 		t.Error("expected 'afile.txt' in suggestions")
 	}
 	if !foundDir {
-		t.Error("expected 'adir/' in suggestions (directory should have trailing /)")
+		t.Errorf("expected %q in suggestions (directory should have trailing separator)", expectedDirSuffix)
 	}
 }
 

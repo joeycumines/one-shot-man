@@ -333,6 +333,9 @@ func clearManualKeys(t *testing.T, vm *goja.Runtime, state *goja.Object) {
 // ============================================================================
 
 func TestManualMode_MouseInteraction_T9(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping manual mode integration test in short mode")
+	}
 	_, vm, state, exports := setupPickAndPlaceTest(t)
 	updateFn := getUpdateFn(t, exports)
 
@@ -653,6 +656,9 @@ func TestManualMode_MouseInteraction_T9(t *testing.T) {
 // ============================================================================
 
 func TestManualMode_ModeSwitching_T10_T12(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping manual mode integration test in short mode")
+	}
 	_, vm, state, exports := setupPickAndPlaceTest(t)
 	updateFn := getUpdateFn(t, exports)
 
@@ -1005,6 +1011,9 @@ func TestManualMode_ModeSwitching_T10_T12(t *testing.T) {
 // ============================================================================
 
 func TestManualMode_WASD_Movement_T13(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping manual mode integration test in short mode")
+	}
 	// NOTE: WASD keys are queued in pendingInputs and processed on Tick.
 	// This test uses sendInputAndTick to properly queue key presses and then tick.
 

@@ -583,9 +583,14 @@ func TestChunk16_VTerm_SplitViewFocusSwitch_CtrlTab(t *testing.T) {
 
 		if (r[0].splitViewFocus !== 'claude') errors.push('Ctrl+Tab should switch focus to claude, got: ' + r[0].splitViewFocus);
 
-		// Ctrl+Tab again should switch back to wizard.
+		// T61: Ctrl+Tab again should advance to output tab (not back to wizard).
 		var r2 = sendKey(r[0], 'ctrl+tab');
-		if (r2[0].splitViewFocus !== 'wizard') errors.push('Ctrl+Tab again should switch back to wizard');
+		if (r2[0].splitViewFocus !== 'claude') errors.push('Ctrl+Tab should stay on pane, got focus: ' + r2[0].splitViewFocus);
+		if (r2[0].splitViewTab !== 'output') errors.push('Ctrl+Tab should advance to output, got tab: ' + r2[0].splitViewTab);
+
+		// Ctrl+Tab one more time should wrap back to wizard.
+		var r3 = sendKey(r2[0], 'ctrl+tab');
+		if (r3[0].splitViewFocus !== 'wizard') errors.push('Ctrl+Tab should wrap to wizard, got: ' + r3[0].splitViewFocus);
 
 		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
 	})()`)

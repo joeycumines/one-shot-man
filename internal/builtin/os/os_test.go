@@ -622,6 +622,92 @@ func TestClipboardCopy_NoArgs(t *testing.T) {
 	}
 }
 
+// --- ClipboardPaste tests (T62) ---
+
+func TestClipboardPaste_OSMClipboardPaste(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("posix-specific test")
+	}
+	t.Setenv("OSM_CLIPBOARD_PASTE", "printf %s hello-paste")
+
+	ctx := context.Background()
+	text, err := ClipboardPaste(ctx)
+	if err != nil {
+		t.Fatalf("ClipboardPaste: %v", err)
+	}
+	if text != "hello-paste" {
+		t.Fatalf("text = %q; want %q", text, "hello-paste")
+	}
+}
+
+func TestClipboardPaste_SystemUtility(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("posix-specific test")
+	}
+
+	// Create a fake system clipboard utility.
+	binDir := t.TempDir()
+	var utilName string
+	switch goruntime.GOOS {
+	case "darwin":
+		utilName = "pbpaste"
+	default:
+		utilName = "wl-paste"
+		t.Setenv("WAYLAND_DISPLAY", "wayland-test-0")
+	}
+	script := "#!/bin/sh\nprintf '%s' system-clip-data\n"
+	binPath := filepath.Join(binDir, utilName)
+	if err := os.WriteFile(binPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake util: %v", err)
+	}
+	t.Setenv("PATH", binDir)
+	t.Setenv("OSM_CLIPBOARD_PASTE", "")
+
+	ctx := context.Background()
+	text, err := ClipboardPaste(ctx)
+	if err != nil {
+		t.Fatalf("ClipboardPaste: %v", err)
+	}
+	if text != "system-clip-data" {
+		t.Fatalf("text = %q; want %q", text, "system-clip-data")
+	}
+}
+
+func TestClipboardPaste_NoClipboard(t *testing.T) {
+	t.Setenv("OSM_CLIPBOARD_PASTE", "")
+	t.Setenv("PATH", filepath.Join(t.TempDir(), "empty"))
+	t.Setenv("WAYLAND_DISPLAY", "")
+
+	ctx := context.Background()
+	_, err := ClipboardPaste(ctx)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "no system clipboard") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestClipboardPaste_JSBinding(t *testing.T) {
+	if goruntime.GOOS == "windows" {
+		t.Skip("posix-specific test")
+	}
+	t.Setenv("OSM_CLIPBOARD_PASTE", "printf %s js-binding-test")
+
+	runtime, exports := setupModule(t, nil)
+	pasteFn := requireCallable(t, exports, "clipboardPaste")
+
+	result, err := pasteFn(goja.Undefined())
+	if err != nil {
+		t.Fatalf("clipboardPaste: %v", err)
+	}
+	got := result.String()
+	if got != "js-binding-test" {
+		t.Fatalf("result = %q; want %q", got, "js-binding-test")
+	}
+	_ = runtime
+}
+
 // --- writeFile and appendFile tests ---
 
 func TestWriteFile_CreatesNewFile(t *testing.T) {

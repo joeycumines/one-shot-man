@@ -135,15 +135,19 @@
     // Prefers 'gmake' (GNU Make on macOS) over 'make' if available.
     // Returns the best make command, or '' if no Makefile found.
     function discoverVerifyCommand(dir) {
+        var sep = isWindows() ? '\\' : '/';
         var names = ['Makefile', 'makefile', 'GNUmakefile'];
         var hasMakefile = false;
         for (var i = 0; i < names.length; i++) {
-            var path = dir ? (dir + '/' + names[i]) : names[i];
+            var path = dir ? (dir + sep + names[i]) : names[i];
             if (osmod && osmod.fileExists(path)) {
                 hasMakefile = true;
                 break;
             } else if (!osmod) {
-                var result = exec.execv(['test', '-f', path]);
+                // Fallback: use platform-aware file existence check.
+                var result = isWindows()
+                    ? exec.execv(['cmd.exe', '/C', 'if exist "' + path + '" (exit 0) else (exit 1)'])
+                    : exec.execv(['test', '-f', path]);
                 if (result.code === 0) { hasMakefile = true; break; }
             }
         }
@@ -151,8 +155,10 @@
 
         // Prefer gmake (GNU Make) if available — required on macOS where
         // the system 'make' is BSD Make 3.81 which cannot run GNU Makefiles.
-        var gmakeCheck = exec.execv(['gmake', '--version']);
-        if (gmakeCheck.code === 0) return 'gmake';
+        // Late-bind through prSplit._lookupBinary so tests can override.
+        var lbFn = (typeof prSplit !== 'undefined' && prSplit._lookupBinary) || lookupBinary;
+        var gmakeLookup = lbFn('gmake');
+        if (gmakeLookup.found) return 'gmake';
 
         return 'make';
     }
@@ -395,9 +401,10 @@
         };
     }
 
-    // shellExecAsync runs an arbitrary shell command asynchronously via exec.spawn('sh', ['-c', ...]).
+    // shellExecAsync runs an arbitrary shell command asynchronously via the
+    // platform shell (sh -c on Unix, cmd.exe /C on Windows).
     // Returns a Promise<{stdout: string, stderr: string, code: number, error: boolean, message: string}>.
-    // Unlike exec.execv(['sh', '-c', ...]) (blocking), this does NOT freeze the event loop,
+    // Uses shellSpawnAsync internally, so the event loop is NOT frozen,
     // allowing BubbleTea to continue rendering and processing events.
     //
     // T078/T109: Generic async shell execution for conflict resolution strategies,
@@ -420,24 +427,8 @@
             outputFn('\u276f ' + command);
         }
 
-        // Detect platform for cross-platform shell execution
-        var isWindows = false;
-        try {
-            if (osmod && typeof osmod.platform === 'function') {
-                isWindows = osmod.platform() === 'windows';
-            }
-        } catch (e) {
-            // Fallback: assume Unix if osmod unavailable
-            isWindows = false;
-        }
-
-        // Use appropriate shell for platform
-        var child;
-        if (isWindows) {
-            child = exec.spawn('cmd.exe', ['/C', command]);
-        } else {
-            child = exec.spawn('sh', ['-c', command]);
-        }
+        // Use platform shell for command dispatch.
+        var child = shellSpawnAsync(command);
 
         // Collect stdout and stderr in parallel (same readAll pattern as gitExecAsync).
         async function readAll(stream, streamOutputFn) {
@@ -504,6 +495,14 @@
         return dir || '.';
     }
 
+    // isWindows returns true when running on Windows.
+    function isWindows() {
+        if (osmod && typeof osmod.platform === 'function') {
+            return osmod.platform() === 'windows';
+        }
+        return false;
+    }
+
     // T103: worktreeTmpPath generates a temporary worktree path in the system
     // temp directory, avoiding the fragile `dir + '/../'` pattern that breaks
     // at filesystem root or non-writable parent directories.  The random
@@ -517,17 +516,83 @@
                 base = envTmp;
             }
         }
-        // Strip trailing slash (macOS TMPDIR often ends with '/').
-        if (base.length > 1 && base.charAt(base.length - 1) === '/') {
-            base = base.substring(0, base.length - 1);
+        // Strip trailing slash or backslash (macOS TMPDIR often ends with
+        // '/', Windows TEMP often ends with '\').
+        if (base.length > 1) {
+            var last = base.charAt(base.length - 1);
+            if (last === '/' || last === '\\') {
+                base = base.substring(0, base.length - 1);
+            }
         }
+        var sep = isWindows() ? '\\' : '/';
         var entropy = Date.now() + '-' + Math.floor(Math.random() * 1000000).toString(36);
-        return base + '/.' + prefix + entropy;
+        return base + sep + '.' + prefix + entropy;
     }
 
-    // shellQuote wraps a string in single quotes, escaping embedded quotes.
+    // shellQuote wraps a string for safe shell interpolation.
+    // On Unix: single-quote escaping.  On Windows: double-quote with ^ escaping
+    // for cmd.exe metacharacters.
     function shellQuote(s) {
+        if (isWindows()) {
+            // cmd.exe: wrap in double quotes, escape special characters.
+            // Inside double quotes, ^ escapes ", !, and ^ itself.
+            // % must be doubled (%% not ^%) to prevent variable expansion.
+            var escaped = s.replace(/%/g, '%%').replace(/["!^]/g, '^$&');
+            return '"' + escaped + '"';
+        }
         return "'" + s.replace(/'/g, "'\\''") + "'";
+    }
+
+    // lookupBinary checks whether a named binary exists on PATH.
+    // Returns {found: bool, path: string} using 'where.exe' on Windows,
+    // 'which' on Unix.
+    function lookupBinary(name) {
+        var cmd = isWindows() ? 'where.exe' : 'which';
+        var result = exec.execv([cmd, name]);
+        return {
+            found: result.code === 0,
+            path: (result.stdout || '').split('\n')[0].trim()
+        };
+    }
+
+    // lookupBinaryAsync is the non-blocking version of lookupBinary.
+    // Returns a Promise<{found: bool, path: string}>.
+    async function lookupBinaryAsync(name) {
+        var cmd = isWindows() ? 'where.exe' : 'which';
+        var child = exec.spawn(cmd, [name]);
+        var stdout = '';
+        while (true) {
+            var chunk = await child.stdout.read();
+            if (chunk.done) break;
+            if (chunk.value !== undefined && chunk.value !== null) {
+                stdout += String(chunk.value);
+            }
+        }
+        var waitResult = await child.wait();
+        return {
+            found: waitResult && waitResult.code === 0,
+            path: stdout.split('\n')[0].trim()
+        };
+    }
+
+    // shellSpawnSync runs a shell command string synchronously through the
+    // platform shell (sh -c on Unix, cmd.exe /C on Windows).
+    // Returns the exec result object.
+    function shellSpawnSync(shellCmd, opts) {
+        if (isWindows()) {
+            return exec.execStream(['cmd.exe', '/C', shellCmd], opts || {});
+        }
+        return exec.execStream(['sh', '-c', shellCmd], opts || {});
+    }
+
+    // shellSpawnAsync runs a shell command string asynchronously through the
+    // platform shell (sh -c on Unix, cmd.exe /C on Windows).
+    // Returns the spawned child process.
+    function shellSpawnAsync(shellCmd) {
+        if (isWindows()) {
+            return exec.spawn('cmd.exe', ['/C', shellCmd]);
+        }
+        return exec.spawn('sh', ['-c', shellCmd]);
     }
 
     // gitAddChangedFiles stages modified, new, and deleted files while
@@ -621,9 +686,12 @@
     }
 
     // dirname extracts the directory at the given depth from a file path.
+    // Handles both forward and back slashes for Windows compatibility.
     function dirname(filepath, depth) {
         depth = depth || 1;
-        var parts = filepath.split('/');
+        // Normalise to forward slashes for splitting.
+        var normalised = filepath.replace(/\\/g, '/');
+        var parts = normalised.split('/');
         if (parts.length <= 1) {
             return '.';
         }
@@ -632,8 +700,10 @@
     }
 
     // fileExtension returns the file extension including the dot, or ''.
+    // Handles both forward and back slashes for Windows compatibility.
     function fileExtension(filepath) {
-        var base = filepath.split('/').pop();
+        var normalised = filepath.replace(/\\/g, '/');
+        var base = normalised.split('/').pop();
         var dot = base.lastIndexOf('.');
         if (dot <= 0) {
             return '';
@@ -721,6 +791,11 @@
     prSplit._resolveDir = resolveDir;
     prSplit._shellQuote = shellQuote;
     prSplit._worktreeTmpPath = worktreeTmpPath;
+    prSplit._isWindows = isWindows;
+    prSplit._lookupBinary = lookupBinary;
+    prSplit._lookupBinaryAsync = lookupBinaryAsync;
+    prSplit._shellSpawnSync = shellSpawnSync;
+    prSplit._shellSpawnAsync = shellSpawnAsync;
     prSplit._gitAddChangedFiles = gitAddChangedFiles;
     prSplit._gitAddChangedFilesAsync = gitAddChangedFilesAsync;
     prSplit._dirname = dirname;

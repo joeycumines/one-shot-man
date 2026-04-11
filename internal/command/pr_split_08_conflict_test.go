@@ -503,26 +503,20 @@ func TestChunk08_Strategy_GoModTidy_Detect(t *testing.T) {
 			var s = null;
 			for (var i = 0; i < strats.length; i++) { if (strats[i].name === 'go-mod-tidy') { s = strats[i]; break; } }
 			if (!s) return JSON.stringify({error: 'not found'});
-			// Mock: file exists check via exec (fallback path when osmod is null).
-			var origExecv = globalThis.prSplit._modules.exec.execv;
-			var origOsmod = globalThis.prSplit._modules.osmod;
-			globalThis.prSplit._modules.osmod = null; // force exec fallback
+			// Mock osmod.fileExists to control file existence checks.
+			var osmod = require('osm:os');
+			var origFileExists = osmod.fileExists;
 
 			// go.mod exists.
-			globalThis.prSplit._modules.exec.execv = function(args) {
-				if (args[0] === 'test' && args[1] === '-f') return { code: 0 };
-				return origExecv(args);
+			osmod.fileExists = function(p) {
+				return p.indexOf('go.mod') >= 0;
 			};
 			var existsResult = s.detect('/fake/dir');
 			// go.mod does NOT exist.
-			globalThis.prSplit._modules.exec.execv = function(args) {
-				if (args[0] === 'test' && args[1] === '-f') return { code: 1 };
-				return origExecv(args);
-			};
+			osmod.fileExists = function(p) { return false; };
 			var notExistsResult = s.detect('/fake/dir');
 
-			globalThis.prSplit._modules.exec.execv = origExecv;
-			globalThis.prSplit._modules.osmod = origOsmod;
+			osmod.fileExists = origFileExists;
 			return JSON.stringify({exists: !!existsResult, notExists: !!notExistsResult});
 		})()
 	`)
@@ -555,24 +549,18 @@ func TestChunk08_Strategy_GoGenerateSum_Detect(t *testing.T) {
 			var s = null;
 			for (var i = 0; i < strats.length; i++) { if (strats[i].name === 'go-generate-sum') { s = strats[i]; break; } }
 			if (!s) return JSON.stringify({error: 'not found'});
-			var origExecv = globalThis.prSplit._modules.exec.execv;
-			var origOsmod = globalThis.prSplit._modules.osmod;
-			globalThis.prSplit._modules.osmod = null;
+			// Mock osmod.fileExists to control file existence checks.
+			var osmod = require('osm:os');
+			var origFileExists = osmod.fileExists;
 
-			globalThis.prSplit._modules.exec.execv = function(args) {
-				if (args[0] === 'test' && args[1] === '-f' && args[2].indexOf('go.sum') >= 0) return { code: 0 };
-				if (args[0] === 'test') return { code: 1 };
-				return origExecv(args);
+			osmod.fileExists = function(p) {
+				return p.indexOf('go.sum') >= 0;
 			};
 			var yes = s.detect('/fake/dir');
-			globalThis.prSplit._modules.exec.execv = function(args) {
-				if (args[0] === 'test') return { code: 1 };
-				return origExecv(args);
-			};
+			osmod.fileExists = function(p) { return false; };
 			var no = s.detect('/fake/dir');
 
-			globalThis.prSplit._modules.exec.execv = origExecv;
-			globalThis.prSplit._modules.osmod = origOsmod;
+			osmod.fileExists = origFileExists;
 			return JSON.stringify({yes: !!yes, no: !!no});
 		})()
 	`)
@@ -651,24 +639,18 @@ func TestChunk08_Strategy_NpmInstall_Detect(t *testing.T) {
 			var s = null;
 			for (var i = 0; i < strats.length; i++) { if (strats[i].name === 'npm-install') { s = strats[i]; break; } }
 			if (!s) return JSON.stringify({error: 'not found'});
-			var origExecv = globalThis.prSplit._modules.exec.execv;
-			var origOsmod = globalThis.prSplit._modules.osmod;
-			globalThis.prSplit._modules.osmod = null;
+			// Mock osmod.fileExists to control file existence checks.
+			var osmod = require('osm:os');
+			var origFileExists = osmod.fileExists;
 
-			globalThis.prSplit._modules.exec.execv = function(args) {
-				if (args[0] === 'test' && args[1] === '-f' && args[2].indexOf('package.json') >= 0) return { code: 0 };
-				if (args[0] === 'test') return { code: 1 };
-				return origExecv(args);
+			osmod.fileExists = function(p) {
+				return p.indexOf('package.json') >= 0;
 			};
 			var yes = s.detect('/work');
-			globalThis.prSplit._modules.exec.execv = function(args) {
-				if (args[0] === 'test') return { code: 1 };
-				return origExecv(args);
-			};
+			osmod.fileExists = function(p) { return false; };
 			var no = s.detect('/work');
 
-			globalThis.prSplit._modules.exec.execv = origExecv;
-			globalThis.prSplit._modules.osmod = origOsmod;
+			osmod.fileExists = origFileExists;
 			return JSON.stringify({yes: !!yes, no: !!no});
 		})()
 	`)
@@ -700,37 +682,50 @@ func TestChunk08_Strategy_MakeGenerate_Detect(t *testing.T) {
 			var s = null;
 			for (var i = 0; i < strats.length; i++) { if (strats[i].name === 'make-generate') { s = strats[i]; break; } }
 			if (!s) return JSON.stringify({error: 'not found'});
-			var origExecv = globalThis.prSplit._modules.exec.execv;
 			var origOsmod = globalThis.prSplit._modules.osmod;
-			globalThis.prSplit._modules.osmod = null;
+			var osmod = require('osm:os');
 
-			// Scenario 1: Makefile with generate target.
-			globalThis.prSplit._modules.exec.execv = function(args) {
-				var cmd = args.join(' ');
-				if (args[0] === 'test' && args[1] === '-f' && args[2].indexOf('Makefile') >= 0) return { code: 0 };
-				if (cmd.indexOf('grep -q "^generate:" Makefile') >= 0) return { code: 0 };
-				return origExecv(args);
+			// Scenario 1: Makefile with generate target (via osmod mocks).
+			var origReadFile = osmod.readFile;
+			var origFileExists = osmod.fileExists;
+			var origReadDir = osmod.readDir;
+			osmod.fileExists = function(p) {
+				if (p === 'Makefile') return true;
+				return false;
+			};
+			osmod.readFile = function(p) {
+				if (p === 'Makefile') return { content: 'all:\ngenerate:\n\tgo generate ./...', error: null };
+				return { content: '', error: 'not found' };
 			};
 			var withMakeGenerate = s.detect('.');
 
 			// Scenario 2: No Makefile but has //go:generate.
-			globalThis.prSplit._modules.exec.execv = function(args) {
-				var cmd = args.join(' ');
-				if (args[0] === 'test') return { code: 1 }; // no Makefile
-				if (cmd.indexOf('go:generate') >= 0) return { code: 0, stdout: './gen.go\n' };
-				return origExecv(args);
+			osmod.fileExists = function(p) {
+				if (p === 'Makefile' || p === 'makefile' || p === 'GNUmakefile') return false;
+				return false;
+			};
+			osmod.readDir = function(p) {
+				return ['gen.go', 'main.go'];
+			};
+			osmod.readFile = function(p) {
+				if (p === 'gen.go') return { content: '//go:generate stringer -type=Foo', error: null };
+				if (p === 'main.go') return { content: 'package main', error: null };
+				return { content: '', error: 'not found' };
 			};
 			var withGoGenerate = s.detect('.');
 
 			// Scenario 3: No Makefile, no go:generate.
-			globalThis.prSplit._modules.exec.execv = function(args) {
-				if (args[0] === 'test') return { code: 1 };
-				return { code: 1, stdout: '' };
+			osmod.fileExists = function(p) { return false; };
+			osmod.readDir = function(p) { return ['main.go']; };
+			osmod.readFile = function(p) {
+				if (p === 'main.go') return { content: 'package main\nfunc main() {}', error: null };
+				return { content: '', error: 'not found' };
 			};
 			var noGenerate = s.detect('.');
 
-			globalThis.prSplit._modules.exec.execv = origExecv;
-			globalThis.prSplit._modules.osmod = origOsmod;
+			osmod.readFile = origReadFile;
+			osmod.fileExists = origFileExists;
+			osmod.readDir = origReadDir;
 			return JSON.stringify({
 				withMakeGenerate: !!withMakeGenerate,
 				withGoGenerate: !!withGoGenerate,

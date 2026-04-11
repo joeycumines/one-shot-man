@@ -12,6 +12,8 @@ import (
 // TestSuperDocumentE2E_FullWorkflow simulates a user going: List -> Add(Form) -> Submit -> List -> Edit -> Submit
 // and verifies that commands (clearScreen on submit) are returned and document content is persisted.
 func TestSuperDocumentE2E_FullWorkflow(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document-e2e", t.Name()), "memory")

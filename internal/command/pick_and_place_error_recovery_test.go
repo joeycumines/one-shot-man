@@ -19,6 +19,8 @@ import (
 // TEST-ER-001: Verify that a module loading error (e.g., remove 'osm:pabt' from script)
 // causes the script to exit with a non-zero exit code
 func TestPickAndPlaceError_ER001_ModuleLoadingError(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
@@ -101,6 +103,8 @@ func TestPickAndPlaceError_ER001_ModuleLoadingError(t *testing.T) {
 // TEST-ER-002: Create a modified test script that contains an intentional error
 // (e.g., call undefined function) and verify it exits with non-zero code and logs the error
 func TestPickAndPlaceError_ER002_RuntimeIntentionalError(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
@@ -367,6 +371,8 @@ func TestPickAndPlaceError_ER003_NormalExecution(t *testing.T) {
 //
 // TEST-ER-004: Verify that PA-BT specific errors are caught and logged
 func TestPickAndPlaceError_ER004_PA_BT_Errors(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
@@ -532,6 +538,8 @@ func TestPickAndPlaceError_ER004_PA_BT_Errors(t *testing.T) {
 
 // TestPickAndPlaceError_PanicRecovery verifies that panics are recovered and converted to errors
 func TestPickAndPlaceError_PanicRecovery(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
@@ -571,6 +579,8 @@ func TestPickAndPlaceError_PanicRecovery(t *testing.T) {
 
 // TestPickAndPlaceError_MultipleErrors verifies that multiple errors can be detected
 func TestPickAndPlaceError_MultipleErrors(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
@@ -632,6 +642,8 @@ func TestPickAndPlaceError_MultipleErrors(t *testing.T) {
 // TestPickAndPlaceError_InvalidKeyboardInput verifies that invalid keyboard input
 // sequences are handled gracefully without crashes
 func TestPickAndPlaceError_InvalidKeyboardInput(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
@@ -770,6 +782,8 @@ func TestPickAndPlaceError_InvalidKeyboardInput(t *testing.T) {
 // TestPickAndPlaceError_StateCorruption verifies that invalid state operations
 // (e.g., deleting non-existent cube, placing with no held cube) are handled gracefully
 func TestPickAndPlaceError_StateCorruption(t *testing.T) {
+	skipSlow(t)
+
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,

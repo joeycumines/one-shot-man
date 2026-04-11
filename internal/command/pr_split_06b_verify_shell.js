@@ -8,8 +8,8 @@
     if (typeof ctx === 'undefined' || typeof log === 'undefined') { return; }
 
     // Detect whether an interactive shell can be spawned on this platform.
-    // Returns false on Windows (no $SHELL, $COMSPEC present) or when
-    // termmux.newCaptureSession is unavailable.
+    // Returns false when termmux.newCaptureSession is unavailable.
+    // On Windows, CaptureSession uses ConPTY; on Unix, it uses pty.
     //
     // Also returns false when OSM_VERIFY_ONE_SHOT=1 is set, which forces
     // one-shot verification mode (used by automated E2E tests where no human
@@ -26,11 +26,6 @@
                 // E2E test escape hatch: force one-shot verify mode.
                 var oneShot = osmod.getenv('OSM_VERIFY_ONE_SHOT') || '';
                 if (oneShot === '1' || oneShot === 'true') return false;
-
-                // Windows: COMSPEC is set, SHELL is absent.
-                var comspec = osmod.getenv('COMSPEC') || '';
-                var shell = osmod.getenv('SHELL') || '';
-                if (comspec && !shell) return false;
             }
         } catch (e) { log.debug('canSpawnInteractiveShell: os.getenv check failed: ' + (e.message || e)); }
 
@@ -51,8 +46,8 @@
             ? prSplit.canSpawnInteractiveShell
             : canSpawnInteractiveShell;
         if (!checkFn()) {
-            throw new Error('Interactive shell requires Unix (Linux/macOS). ' +
-                'CaptureSession-based PTY is not available on this platform.');
+            throw new Error('Interactive shell is not available: ' +
+                'termmux.newCaptureSession unavailable on this platform.');
         }
 
         opts = opts || {};
@@ -60,16 +55,28 @@
         var rows = opts.rows || 24;
         var cols = opts.cols || 120;
 
-        // Determine the user's preferred shell via osm:os module.
+        // Determine the user's preferred shell and arguments.
         var shell = '';
+        var shellArgs = [];
         try {
             var osmod = require('osm:os');
             if (osmod && typeof osmod.getenv === 'function') {
-                shell = osmod.getenv('SHELL') || '';
+                var isWin = osmod.platform && osmod.platform() === 'windows';
+                if (isWin) {
+                    // Windows: prefer COMSPEC (cmd.exe) or powershell.exe.
+                    shell = osmod.getenv('COMSPEC') || 'cmd.exe';
+                    // No '-i' flag for cmd.exe.
+                } else {
+                    shell = osmod.getenv('SHELL') || '';
+                }
             }
-        } catch (e) { log.debug('spawnShell: getenv SHELL failed: ' + (e.message || e)); }
+        } catch (e) { log.debug('spawnShell: getenv failed: ' + (e.message || e)); }
         if (!shell) {
             shell = 'sh';
+            shellArgs = ['-i'];
+        } else if (shell.indexOf('cmd') === -1 && shell.indexOf('powershell') === -1 && shell.indexOf('pwsh') === -1) {
+            // Unix shells: pass -i for interactive mode.
+            shellArgs = ['-i'];
         }
 
         var sessionOpts = {
@@ -81,7 +88,7 @@
             sessionOpts.env = opts.env;
         }
 
-        var session = termmux.newCaptureSession(shell, ['-i'], sessionOpts);
+        var session = termmux.newCaptureSession(shell, shellArgs, sessionOpts);
         session.start();
         return session;
     }

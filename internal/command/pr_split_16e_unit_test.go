@@ -242,33 +242,6 @@ func TestChunk16e_WriteMouseToPane_VerifyTab(t *testing.T) {
 	}
 }
 
-func TestChunk16e_WriteMouseToPane_ShellTab(t *testing.T) {
-	t.Parallel()
-	evalJS := prsplittest.NewTUIEngine(t)
-
-	val, err := evalJS(`
-		(function() {
-			var written = [];
-			var s = {
-				splitViewTab: 'shell',
-				shellSession: {write: function(b) { written.push(b); }},
-			};
-			var ok = prSplit._writeMouseToPane('shell-bytes', s);
-			return JSON.stringify({ok: ok, written: written});
-		})()
-	`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := val.(string)
-	if !strings.Contains(s, `"ok":true`) {
-		t.Errorf("shell tab write should succeed: %s", s)
-	}
-	if !strings.Contains(s, `"written":["shell-bytes"]`) {
-		t.Errorf("bytes should be written to shell session: %s", s)
-	}
-}
-
 func TestChunk16e_WriteMouseToPane_NoSession(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
@@ -280,8 +253,6 @@ func TestChunk16e_WriteMouseToPane_NoSession(t *testing.T) {
 			results.push(prSplit._writeMouseToPane('x', {splitViewTab: 'claude'}));
 			// verify tab but no session.
 			results.push(prSplit._writeMouseToPane('x', {splitViewTab: 'verify'}));
-			// shell tab but no session.
-			results.push(prSplit._writeMouseToPane('x', {splitViewTab: 'shell'}));
 			// unknown tab.
 			results.push(prSplit._writeMouseToPane('x', {splitViewTab: 'unknown'}));
 			// empty state.
@@ -293,7 +264,7 @@ func TestChunk16e_WriteMouseToPane_NoSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := val.(string)
-	if s != "[false,false,false,false,false]" {
+	if s != "[false,false,false,false]" {
 		t.Errorf("all should return false when no session: %s", s)
 	}
 }
@@ -318,12 +289,6 @@ func TestChunk16e_WriteMouseToPane_WriteThrows(t *testing.T) {
 				activeVerifySession: {write: function() { throw new Error('verify-fail'); }},
 			}));
 
-			// shell tab with throwing write.
-			results.push(prSplit._writeMouseToPane('x', {
-				splitViewTab: 'shell',
-				shellSession: {write: function() { throw new Error('shell-fail'); }},
-			}));
-
 			return JSON.stringify(results);
 		})()
 	`)
@@ -331,7 +296,7 @@ func TestChunk16e_WriteMouseToPane_WriteThrows(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := val.(string)
-	if s != "[false,false,false]" {
+	if s != "[false,false]" {
 		t.Errorf("all should return false when write throws: %s", s)
 	}
 }

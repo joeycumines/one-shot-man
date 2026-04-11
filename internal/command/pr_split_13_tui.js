@@ -117,7 +117,7 @@
                 from, toPhase, allowed ? allowed.join(', ') : 'none');
             return false;
         }
-        log.printf('verify: phase %s \u2192 %s', from, toPhase);
+        log.debug('verify phase transition', {from: from, to: toPhase});
         s.verifyPhase = toPhase;
         return true;
     }
@@ -339,19 +339,108 @@
     }
 
     function getInteractivePaneSession(s, tab) {
-        var pane = tab || s.splitViewTab || 'claude';
+        if (!s && !tab) return null;
+        var pane = tab || (s && s.splitViewTab) || 'claude';
         if (pane === 'claude') return getClaudePaneSession();
-        if (pane === 'verify') return s.activeVerifySession || null;
-        if (pane === 'shell') return s.shellSession || null;
+        if (pane === 'verify') {
+            if (!s) return null;
+            var val = s.activeVerifySession;
+            if (val == null) return null;
+            // Task 48: If val is a number (SessionManager ID), build a proxy
+            // that routes screen/output through tuiMux.snapshot. Otherwise
+            // (legacy tests or mocks), return the object directly.
+            if (typeof val === 'number') {
+                return _buildVerifyProxy(val, s._verifySessionRef);
+            }
+            return val;
+        }
         return null;
     }
 
-    function resetShellPaneState(s) {
-        s.shellSession = null;
-        s.shellScreen = '';
-        s.shellViewOffset = 0;
-        s.shellAutoScroll = true;
+    // Task 48: Build a proxy object that presents the same API as a
+    // CaptureSession but routes screen reads through SessionManager snapshots
+    // and cleanup through tuiMux.unregister. The captureRef is retained only
+    // for isDone/exitCode — capabilities not yet exposed by SessionManager.
+    function _buildVerifyProxy(sessionID, captureRef) {
+        return {
+            screen: function() {
+                try {
+                    var snap = tuiMux.snapshot(sessionID);
+                    return snap ? (snap.fullScreen || '') : '';
+                } catch (e) {
+                    log.debug('verifyProxy.screen failed', { sessionID: sessionID, error: e.message || String(e) });
+                    return '';
+                }
+            },
+            output: function() {
+                try {
+                    var snap = tuiMux.snapshot(sessionID);
+                    return snap ? (snap.plainText || '') : '';
+                } catch (e) {
+                    log.debug('verifyProxy.output failed', { sessionID: sessionID, error: e.message || String(e) });
+                    return '';
+                }
+            },
+            isDone: function() {
+                return captureRef ? captureRef.isDone() : true;
+            },
+            exitCode: function() {
+                return captureRef && typeof captureRef.exitCode === 'function'
+                    ? captureRef.exitCode() : -1;
+            },
+            close: function() {
+                try { tuiMux.unregister(sessionID); } catch (e) {
+                    log.debug('verifyProxy.close failed', { sessionID: sessionID, error: e.message || String(e) });
+                }
+            },
+            isRunning: function() {
+                return captureRef ? !captureRef.isDone() : false;
+            },
+            passthrough: function() {
+                // Task 48: Activate verify session in SessionManager, enter
+                // passthrough via tuiMux.switchTo, then re-activate Claude.
+                var prevID = tuiMux.activeID();
+                try {
+                    tuiMux.activate(sessionID);
+                } catch (e) {
+                    log.debug('verifyProxy.passthrough: activate failed', { sessionID: sessionID, error: e.message || String(e) });
+                    return { skipped: true, reason: 'activate_failed' };
+                }
+                var result = tuiMux.switchTo();
+                if (prevID && prevID !== sessionID) {
+                    try { tuiMux.activate(prevID); } catch (e) {
+                        log.debug('verifyProxy.passthrough: re-activate failed', { prevID: prevID, error: e.message || String(e) });
+                    }
+                }
+                return result;
+            },
+            interrupt: function() { if (captureRef && captureRef.interrupt) captureRef.interrupt(); },
+            kill: function() { if (captureRef && captureRef.kill) captureRef.kill(); },
+            pause: function() { if (captureRef && captureRef.pause) captureRef.pause(); },
+            resume: function() { if (captureRef && captureRef.resume) captureRef.resume(); },
+            isPaused: function() { return captureRef && captureRef.isPaused ? captureRef.isPaused() : false; },
+            write: function(data) {
+                // Task 48: Route through SessionManager. Temporarily activate the
+                // verify session, send input, then restore the prior active session.
+                var prevID = tuiMux.activeID();
+                try {
+                    tuiMux.activate(sessionID);
+                    tuiMux.input(typeof data === 'string' ? data : String(data));
+                } finally {
+                    if (prevID && prevID !== sessionID) {
+                        try { tuiMux.activate(prevID); } catch (e) {}
+                    }
+                }
+            },
+            resize: function(rows, cols) {
+                // SessionManager.Resize broadcasts to ALL managed sessions.
+                tuiMux.resize(rows, cols);
+            }
+        };
     }
+
+    // Task 8: Shell tab removed — verify pane IS the interactive shell.
+    // No separate shell pane state to reset.
 
     function closeInteractivePaneSession(s, tab, debugPrefix) {
         var session = getInteractivePaneSession(s, tab);
@@ -365,10 +454,8 @@
         }
     }
 
-    function cleanupShellPaneSession(s, debugPrefix) {
-        closeInteractivePaneSession(s, 'shell', debugPrefix || 'shellCleanup');
-        resetShellPaneState(s);
-    }
+    // Task 8: Shell tab removed — cleanupShellPaneSession no longer needed.
+    // All interactive session cleanup goes through clearVerifyPaneSession.
 
     function clearVerifyPaneSession(s, opts) {
         var options = opts || {};
@@ -385,13 +472,8 @@
             }
         }
 
-        cleanupShellPaneSession(s, options.debugPrefix || 'verifyCleanup');
-
-        if (s.splitViewTab === 'shell') {
-            s.splitViewTab = keepDisplay ? 'verify' : 'output';
-        }
-
         s.activeVerifySession = null;
+        s._verifySessionRef = null; // Task 48: clear CaptureSession reference
         s.activeVerifyWorktree = null;
         s.activeVerifyDir = null;
         s.activeVerifyStartTime = 0;
@@ -416,77 +498,22 @@
         }
     }
 
-    function openVerifyWorktreeShell(s) {
-        var constants = prSplit._TUI_CONSTANTS || {};
-        var verifySession = getInteractivePaneSession(s, 'verify');
-        if (!verifySession || !s.activeVerifyWorktree) {
-            return { opened: false, reason: 'verify session unavailable' };
-        }
-
-        var existingShell = getInteractivePaneSession(s, 'shell');
-        if (existingShell) {
-            s.splitViewTab = 'shell';
-            s.splitViewFocus = 'claude';
-            return { opened: false, existing: true };
-        }
-
-        if (!s.verifyPaused && typeof verifySession.pause === 'function') {
-            try {
-                verifySession.pause();
-                s.verifyPaused = true;
-            } catch (e) {
-                log.debug('tabSwitch: verifySession.pause failed: ' + (e.message || e));
-            }
-        }
-
-        var shellH = s.height || constants.DEFAULT_ROWS || 24;
-        var vpH = Math.max(3, shellH - (prSplit._CHROME_ESTIMATE || 8));
-        var minP = 3;
-        var wH = Math.max(minP, Math.floor(vpH * (s.splitViewRatio || 0.6)));
-        wH = Math.min(wH, vpH - minP - 1);
-        var cH = vpH - wH - 1;
-        var shellRows = Math.max(3, cH - 3);
-        var shellCols = Math.max(20, (s.width || 80) - 4);
-
-        try {
-            s.shellSession = prSplit.spawnShellSession(s.activeVerifyWorktree, {
-                rows: shellRows,
-                cols: shellCols
-            });
-            s.shellScreen = '';
-            s.shellViewOffset = 0;
-            s.shellAutoScroll = true;
-            if (!s.splitViewEnabled) {
-                s.splitViewEnabled = true;
-                if (typeof prSplit._syncMainViewport === 'function') {
-                    prSplit._syncMainViewport(s);
-                }
-            }
-            s.splitViewTab = 'shell';
-            s.splitViewFocus = 'claude';
-            return { opened: true };
-        } catch (e) {
-            return { opened: false, error: e };
-        }
-    }
-
     function hasInteractivePaneSession(s, tab) {
         return !!getInteractivePaneSession(s, tab);
     }
 
+    // Task 8: Shell tab removed — only claude, output, verify tabs remain.
     function listSplitViewTabs(s) {
         var tabs = ['claude', 'output'];
         if (hasInteractivePaneSession(s, 'verify') || s.verifyFallbackRunning || s.verifyScreen) tabs.push('verify');
-        if (hasInteractivePaneSession(s, 'shell')) tabs.push('shell');
         return tabs;
     }
 
     prSplit._getClaudePaneSession = getClaudePaneSession;
     prSplit._getInteractivePaneSession = getInteractivePaneSession;
     prSplit._closeInteractivePaneSession = closeInteractivePaneSession;
-    prSplit._cleanupShellPaneSession = cleanupShellPaneSession;
     prSplit._clearVerifyPaneSession = clearVerifyPaneSession;
-    prSplit._openVerifyWorktreeShell = openVerifyWorktreeShell;
+    // Task 8: _cleanupShellPaneSession and _openVerifyWorktreeShell removed — shell tab is unified into verify pane.
     prSplit._hasInteractivePaneSession = hasInteractivePaneSession;
     prSplit._listSplitViewTabs = listSplitViewTabs;
 

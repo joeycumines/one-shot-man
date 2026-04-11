@@ -223,6 +223,9 @@ func callFindFirstBlocker(t *testing.T, vm *goja.Runtime, exports *goja.Object, 
 // ============================================================================
 
 func TestSimulationConsistency_Physics_T6(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping simulation consistency test in short mode")
+	}
 	// Test physics behavior using only exported script functions.
 	// Verifies: manual mode movement, diagonal movement, position accumulation, and held item exclusion.
 	vmManual, manualState, _, _, exports := setupConsistencyTestPair(t)
@@ -348,6 +351,9 @@ func TestSimulationConsistency_Physics_T6(t *testing.T) {
 // ============================================================================
 
 func TestSimulationConsistency_Collision_T7(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping simulation consistency test in short mode")
+	}
 	// Test collision detection using only exported script functions (getPathInfo, findFirstBlocker).
 	// Verifies: boundary detection, cube collision, and buildBlockedSet consistency.
 	vmManual, manualState, vmAuto, autoState, exports := setupConsistencyTestPair(t)
@@ -528,6 +534,9 @@ func TestSimulationConsistency_Collision_T7(t *testing.T) {
 // ============================================================================
 
 func TestSimulationConsistency_Pathfinding_T8(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping simulation consistency test in short mode")
+	}
 	// Test pathfinding using only exported functions (getPathInfo, findFirstBlocker).
 	vmManual, manualState, vmAuto, autoState, exports := setupConsistencyTestPair(t)
 

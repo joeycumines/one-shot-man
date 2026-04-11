@@ -501,11 +501,12 @@ The PR Split TUI uses a split-view layout during branch building with four multi
 └─────────────────────────────────┘
 ```
 
-**Pipeline:** `CaptureSession → VTerm → screen() → renderPane() → split-view`
+**Pipeline:** `CaptureSession → SessionManager.Register → snapshot() → renderPane() → split-view`
 
-- **CaptureSession** wraps a PTY process with a VTerm screen buffer
-- `screen()` returns the current ANSI-rendered terminal content
-- `write()` forwards keyboard and mouse input to the process
+- **CaptureSession** wraps a PTY process with streaming output via `Reader()`
+- **SessionManager** owns all sessions; the worker goroutine feeds output through an internal VTerm for each session
+- `snapshot(id)` returns the current screen content (plainText, ANSI, dimensions) via copy-on-write
+- `input(data)` / `session().write(data)` forwards keyboard and mouse input to the active session
 - Mouse events are translated to SGR 1006 escape sequences before forwarding
 - The TUI polls at 100ms intervals for screen updates
 - Focus management: `Ctrl+Tab` toggles wizard/pane focus; when pane-focused, input routes to the active tab's process

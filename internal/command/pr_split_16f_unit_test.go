@@ -9,7 +9,7 @@ package command
 //     branchPrefix reads default, verifyCommand reads default
 //   - CONFIG dryRun toggle (1 test): toggles prSplit.runtime.dryRun
 //   - CONFIG field blur on outside click (1 test): clicking outside cancels editing
-//   - Split-view tab clicks (1 test): split-tab-verify and split-tab-shell
+//   - Split-view tab clicks (1 test): split-tab-verify
 //   - BRANCH_BUILDING verify pause/resume (1 test): pause sets verifyPaused,
 //     resume clears it
 //   - PAUSED screen buttons (1 test): pause-resume and pause-quit dispatches
@@ -180,10 +180,10 @@ func TestChunk16f_ConfigFieldBlur(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Split-view tab clicks: split-tab-verify and split-tab-shell
+// Split-view tab clicks: split-tab-verify
 // ---------------------------------------------------------------------------
 
-func TestChunk16f_SplitTabVerifyAndShell(t *testing.T) {
+func TestChunk16f_SplitTabVerify(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
@@ -197,16 +197,6 @@ func TestChunk16f_SplitTabVerifyAndShell(t *testing.T) {
 		try {
 			var r = sendClick(s);
 			if (r[0].splitViewTab !== 'verify') return 'FAIL: tab should be verify, got ' + r[0].splitViewTab;
-		} finally { restore(); }
-
-		// Click split-tab-shell.
-		s = initState('CONFIG');
-		s.splitViewEnabled = true;
-		s.splitViewTab = 'claude';
-		restore = mockZoneHit('split-tab-shell');
-		try {
-			var r = sendClick(s);
-			if (r[0].splitViewTab !== 'shell') return 'FAIL: tab should be shell, got ' + r[0].splitViewTab;
 		} finally { restore(); }
 
 		// Verify tabs are ignored when splitView is disabled.
@@ -226,7 +216,7 @@ func TestChunk16f_SplitTabVerifyAndShell(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("split tab verify/shell: %v", raw)
+		t.Errorf("split tab verify: %v", raw)
 	}
 }
 

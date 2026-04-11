@@ -224,6 +224,7 @@ func (s *Screen) EraseDisplay(mode int) {
 	blank := Cell{Ch: ' ', Attr: s.CurAttr}
 	switch mode {
 	case 0:
+		s.repairWideBoundary(s.CurRow, s.CurCol, s.Cols)
 		for c := s.CurCol; c < s.Cols; c++ {
 			s.Cells[s.CurRow][c] = blank
 		}
@@ -234,7 +235,12 @@ func (s *Screen) EraseDisplay(mode int) {
 		for r := 0; r < s.CurRow; r++ {
 			s.Cells[r] = makeAttrLine(s.Cols, s.CurAttr)
 		}
-		for c := 0; c <= s.CurCol && c < s.Cols; c++ {
+		end := s.CurCol + 1
+		if end > s.Cols {
+			end = s.Cols
+		}
+		s.repairWideBoundary(s.CurRow, 0, end)
+		for c := 0; c < end; c++ {
 			s.Cells[s.CurRow][c] = blank
 		}
 	case 2, 3:
@@ -254,11 +260,17 @@ func (s *Screen) EraseLine(mode int) {
 	blank := Cell{Ch: ' ', Attr: s.CurAttr}
 	switch mode {
 	case 0:
+		s.repairWideBoundary(s.CurRow, s.CurCol, s.Cols)
 		for c := s.CurCol; c < s.Cols; c++ {
 			s.Cells[s.CurRow][c] = blank
 		}
 	case 1:
-		for c := 0; c <= s.CurCol && c < s.Cols; c++ {
+		end := s.CurCol + 1
+		if end > s.Cols {
+			end = s.Cols
+		}
+		s.repairWideBoundary(s.CurRow, 0, end)
+		for c := 0; c < end; c++ {
 			s.Cells[s.CurRow][c] = blank
 		}
 	case 2:
@@ -300,6 +312,30 @@ func (s *Screen) DeleteLines(n int) {
 	s.markDirtyRange(top, bot-1)
 }
 
+// repairWideBoundary clears orphaned wide-character halves at the edges of
+// a cell range [start, end) on the given row.  It must be called BEFORE the
+// caller modifies cells in that range.
+//
+// Left edge:  if cells[start] is a NUL placeholder (second half of a wide
+// char), blank the first half at start-1.
+//
+// Right edge: if cells[end] is a NUL placeholder, it was the second half of
+// a wide char whose first half lies at end-1 and is about to be destroyed.
+// Blank the orphaned placeholder.
+func (s *Screen) repairWideBoundary(row, start, end int) {
+	if row < 0 || row >= s.Rows {
+		return
+	}
+	cells := s.Cells[row]
+	blank := Cell{Ch: ' ', Attr: s.CurAttr}
+	if start > 0 && start < s.Cols && cells[start].Ch == 0 {
+		cells[start-1] = blank
+	}
+	if end > 0 && end < s.Cols && cells[end].Ch == 0 {
+		cells[end] = blank
+	}
+}
+
 // PutChar places a rune at the cursor position with the current attributes,
 // advancing the cursor. Wide characters (width 2) occupy two cells.
 // Uses github.com/rivo/uniseg for width calculation.
@@ -325,6 +361,13 @@ func (s *Screen) PutChar(ch rune) {
 		s.CurCol = 0
 		s.LineFeed()
 	}
+
+	// Repair wide-char pairs that this write would split.
+	end := s.CurCol + width
+	if end > s.Cols {
+		end = s.Cols
+	}
+	s.repairWideBoundary(s.CurRow, s.CurCol, end)
 
 	// Write the character.
 	if s.CurRow >= 0 && s.CurRow < s.Rows &&
@@ -371,9 +414,14 @@ func (s *Screen) EraseChars(n int) {
 		return
 	}
 	s.markDirty(s.CurRow)
+	end := s.CurCol + n
+	if end > s.Cols {
+		end = s.Cols
+	}
+	s.repairWideBoundary(s.CurRow, s.CurCol, end)
 	blank := Cell{Ch: ' ', Attr: s.CurAttr}
-	for i := 0; i < n && s.CurCol+i < s.Cols; i++ {
-		s.Cells[s.CurRow][s.CurCol+i] = blank
+	for i := s.CurCol; i < end; i++ {
+		s.Cells[s.CurRow][i] = blank
 	}
 }
 
@@ -389,6 +437,20 @@ func (s *Screen) InsertChars(n int) {
 	blank := Cell{Ch: ' ', Attr: s.CurAttr}
 	if n > s.Cols-s.CurCol {
 		n = s.Cols - s.CurCol
+	}
+	// Repair wide char split at cursor: if cursor is on a placeholder,
+	// blank the preceding wide char and the placeholder itself so the
+	// shift does not propagate an orphaned NUL.
+	if s.CurCol > 0 && row[s.CurCol].Ch == 0 {
+		row[s.CurCol-1] = blank
+		row[s.CurCol] = blank
+	}
+	// Repair wide char split at discard boundary: cells from
+	// [Cols-n, Cols) are pushed off. If the first discarded cell is a
+	// placeholder, the surviving first half would be orphaned.
+	discard := s.Cols - n
+	if discard > 0 && discard < s.Cols && row[discard].Ch == 0 {
+		row[discard-1] = blank
 	}
 	copy(row[s.CurCol+n:], row[s.CurCol:s.Cols-n])
 	for i := 0; i < n; i++ {
@@ -407,6 +469,16 @@ func (s *Screen) DeleteChars(n int) {
 	blank := Cell{Ch: ' ', Attr: s.CurAttr}
 	if n > s.Cols-s.CurCol {
 		n = s.Cols - s.CurCol
+	}
+	// Repair wide char split at cursor: if cursor sits on a placeholder,
+	// the wide char's first half at CurCol-1 will lose its second half.
+	if s.CurCol > 0 && row[s.CurCol].Ch == 0 {
+		row[s.CurCol-1] = blank
+	}
+	// Repair wide char split at delete boundary: if the first surviving
+	// cell (CurCol+n) is a placeholder, its first half was deleted.
+	if s.CurCol+n < s.Cols && row[s.CurCol+n].Ch == 0 {
+		row[s.CurCol+n] = blank
 	}
 	copy(row[s.CurCol:], row[s.CurCol+n:])
 	for i := s.Cols - n; i < s.Cols; i++ {

@@ -28,7 +28,7 @@ func buildTestBinary(t *testing.T) string {
 	projectDir := filepath.Clean(filepath.Join(wd, "..", ".."))
 
 	binaryPath := filepath.Join(t.TempDir(), "osm-test")
-	cmd := exec.Command("go", "build", "-tags=integration", "-o", binaryPath, "./cmd/osm")
+	cmd := exec.Command("go", "build", "-o", binaryPath, "./cmd/osm")
 	cmd.Dir = projectDir // Critical: set working directory to project root
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -47,6 +47,7 @@ func newTestProcessEnv(tb testing.TB) []string {
 		"OSM_SESSION=" + sessionID,
 		"OSM_STORE=memory",
 		"OSM_CLIPBOARD=cat > " + clipboardFile,
+		"OSM_SYNC_PROTOCOL=1",
 	}
 }
 

@@ -26,15 +26,6 @@ func TestExitReason_String(t *testing.T) {
 	}
 }
 
-func TestSide_iota_values(t *testing.T) {
-	if SideOsm != 0 {
-		t.Errorf("SideOsm = %d, want 0", SideOsm)
-	}
-	if SideClaude != 1 {
-		t.Errorf("SideClaude = %d, want 1", SideClaude)
-	}
-}
-
 func TestExitReason_iota_values(t *testing.T) {
 	if ExitToggle != 0 {
 		t.Errorf("ExitToggle = %d, want 0", ExitToggle)

@@ -26,7 +26,6 @@
     var renderClaudePane = prSplit._renderClaudePane;
     var renderOutputPane = prSplit._renderOutputPane;
     var renderVerifyPane = prSplit._renderVerifyPane;
-    var renderShellPane = prSplit._renderShellPane;
     var viewForState = prSplit._viewForState;
     var viewHelpOverlay = prSplit._viewHelpOverlay;
     var viewConfirmCancelOverlay = prSplit._viewConfirmCancelOverlay;
@@ -53,7 +52,7 @@
     var viewEditorDialog = prSplit._viewEditorDialog;
     var getFocusElements = prSplit._getFocusElements;
     var getInteractivePaneSession = prSplit._getInteractivePaneSession;
-    var openVerifyWorktreeShell = prSplit._openVerifyWorktreeShell;
+    // Task 8: Shell tab removed — openVerifyWorktreeShell removed entirely.
 
     // Cross-chunk imports — from chunks 16b/16c/16d.
     var startEquivCheck = prSplit._startEquivCheck;
@@ -129,10 +128,6 @@
             }
             if (zone.inBounds('split-tab-verify', msg)) {
                 s.splitViewTab = 'verify';
-                return [s, null];
-            }
-            if (zone.inBounds('split-tab-shell', msg)) {
-                s.splitViewTab = 'shell';
                 return [s, null];
             }
         }
@@ -266,18 +261,7 @@
                 }
                 return [s, null];
             }
-            // T333: Open interactive shell in the verify worktree using CaptureSession.
-            if (activeVerifySession && s.activeVerifyWorktree &&
-                zone.inBounds('verify-open-shell', msg)) {
-                var shellResult = openVerifyWorktreeShell(s);
-                if (shellResult && shellResult.opened) {
-                    return [s, tea.tick(C.TICK_INTERVAL_MS, 'shell-poll')];
-                }
-                if (shellResult && shellResult.error) {
-                    log.printf('verify: spawn shell failed: %s', shellResult.error.message || String(shellResult.error));
-                }
-                return [s, null];
-            }
+            // Task 8: Shell tab removed — verify pane IS the interactive shell.
             // Interrupt active verify session via stop button.
             // Same double-click pattern as Ctrl+C: first click sends
             // SIGINT, second click within 2s sends SIGKILL.
@@ -588,23 +572,16 @@
                         ? styles.primaryButton().render(' Verify ')
                         : styles.dim().render(' Verify ');
                 }
-                var shellTabLabel = '';
-                if (getInteractivePaneSession(s, 'shell')) {
-                    shellTabLabel = s.splitViewTab === 'shell'
-                        ? styles.primaryButton().render(' Shell ')
-                        : styles.dim().render(' Shell ');
-                }
+                // Task 8: Shell tab removed from tab bar.
                 var tabBar = zone.mark('split-tab-claude', claudeTabLabel) + ' ' +
                     zone.mark('split-tab-output', outputTabLabel) +
                     (outputCount ? ' ' + outputCount : '') +
-                    (verifyTabLabel ? ' ' + zone.mark('split-tab-verify', verifyTabLabel) : '') +
-                    (shellTabLabel ? ' ' + zone.mark('split-tab-shell', shellTabLabel) : '');
+                    (verifyTabLabel ? ' ' + zone.mark('split-tab-verify', verifyTabLabel) : '');
                 var focusLabel = s.splitViewFocus === 'wizard'
                     ? '\u25b2 Wizard'
                     : (s.splitViewTab === 'output' ? '\u25bc Output'
-                       : (s.splitViewTab === 'verify' ? '\u25bc Verify'
-                          : (s.splitViewTab === 'shell' ? '\u25bc Shell' : '\u25bc Claude')));
-                var splitHint = 'Ctrl+Tab: switch  Ctrl+O: tab  Ctrl+L: close';
+                       : (s.splitViewTab === 'verify' ? '\u25bc Verify' : '\u25bc Claude'));
+                var splitHint = 'Ctrl+Tab: cycle  Ctrl+O: tab  Ctrl+L: close';
                 // T44: labelW must include tabBar visual width + all separator decorators.
                 // Template: leftFill + '┤ ' + tabBar + ' · ' + focusLabel + ' · ' + splitHint + ' ├' + rightFill
                 // Decorators: ┤(1)+space(1) + ' · '(3) + ' · '(3) + space(1)+├(1) = 10
@@ -615,14 +592,12 @@
                 var paneDivider = styles.dim().render(
                     leftFill + '\u2524 ' + tabBar + ' \u00b7 ' + focusLabel + ' \u00b7 ' + splitHint + ' \u251c' + rightFill);
 
-                // T44: Bottom pane — switch between Claude, Output, Verify, and Shell tabs.
+                // Task 8: Bottom pane — Claude, Output, Verify tabs only.
                 var bottomPane;
                 if (s.splitViewTab === 'output') {
                     bottomPane = renderOutputPane(s, w, claudeH);
                 } else if (s.splitViewTab === 'verify') {
                     bottomPane = renderVerifyPane(s, w, claudeH);
-                } else if (s.splitViewTab === 'shell') {
-                    bottomPane = renderShellPane(s, w, claudeH);
                 } else {
                     bottomPane = renderClaudePane(s, w, claudeH);
                 }
@@ -843,12 +818,6 @@
                 verifyShellExited: false,     // true when persistent shell exited (user typed 'exit')
                 verifyHint: '',               // suggested verify command text
 
-                // Interactive shell in verify worktree (CaptureSession).
-                shellSession: null,            // CaptureSession JS object (or null)
-                shellScreen: '',               // ANSI-styled VTerm screen from shell CaptureSession
-                shellViewOffset: 0,            // scroll offset (lines from bottom)
-                shellAutoScroll: true,         // auto-scroll to bottom on output
-
                 // Fallback verification (async, when CaptureSession unavailable).
                 verifyFallbackRunning: false,  // true while async verifySplitAsync is running
                 verifyFallbackError: null,     // error string from fallback verification
@@ -857,7 +826,7 @@
                 splitViewEnabled: false,       // true when split-view is active
                 splitViewRatio: 0.6,           // wizard gets this fraction of content height
                 splitViewFocus: 'wizard',      // 'wizard' or 'claude' — which pane is focused
-                splitViewTab: 'claude',        // T44: 'claude' | 'output' | 'verify' | 'shell' — active tab
+                splitViewTab: 'claude',        // Task 8: 'claude' | 'output' | 'verify' — active tab
                 claudeScreenshot: '',          // cached plain-text screenshot from tuiMux
                 claudeScreen: '',              // cached ANSI-styled screen from tuiMux (T28)
                 claudeViewOffset: 0,           // scroll offset in Claude pane (lines from bottom)
@@ -871,6 +840,16 @@
                 // T073: Clipboard flash notification (Report overlay copy).
                 clipboardFlash: '',             // transient flash text after copy attempt
                 clipboardFlashAt: 0,            // Date.now() when flash was set
+
+                // T62: Split-view copy/paste selection state.
+                selectionActive: false,         // true when text selection is in progress
+                selectionPane: '',              // pane with active selection: 'claude' | 'output' | 'verify'
+                selectionStartRow: 0,           // selection anchor row (0-indexed)
+                selectionStartCol: 0,           // selection anchor column (0-indexed)
+                selectionEndRow: 0,             // selection end row (0-indexed, moves with keyboard/mouse)
+                selectionEndCol: 0,             // selection end column (0-indexed)
+                selectionByMouse: false,        // true if selection was initiated by mouse drag
+                selectedText: '',               // extracted plain text of current selection
 
                 // T46: Claude question detection state.
                 claudeQuestionDetected: false,  // true when question pattern detected in Claude output
@@ -893,8 +872,10 @@
                     sending: false,            // async send in flight
                     waitingForTool: null,       // MCP tool being waited on (or null)
                     lastError: null,           // last error string
-                    scrollOffset: 0            // scroll offset in history view
+                    scrollOffset: 0,           // scroll offset in history view
+                    spawnProgress: null        // T5: on-demand spawn progress message
                 },
+                claudeOnDemandSpawning: false, // T5: async Claude spawn in flight
 
                 // Auto-split pipeline state.
                 autoSplitRunning: false,
@@ -923,7 +904,11 @@
         // Model init returns a startup heartbeat command so the update loop
         // can keep draining mux events even when the TUI is otherwise idle.
         var _initModelFn = function() {
-            return [ _initStateFn(), tea.tick(C.TICK_INTERVAL_MS, 'mux-poll') ];
+            var state = _initStateFn();
+            // T10: Store current model state reference so _onToggle can
+            // access focused pane and active sessions for passthrough dispatch.
+            prSplit._toggleModelState = state;
+            return [ state, tea.tick(C.TICK_INTERVAL_MS, 'mux-poll') ];
         };
 
         // Unit tests still expect the exported wizard init helper to be
@@ -971,20 +956,48 @@
     prSplit._wizardModel = _wizardModel;
     prSplit._createWizardModel = createWizardModel;
 
-    // T394: onToggle callback for Ctrl+] passthrough. Extracted as a named
+    // T394/T10: onToggle callback for Ctrl+] passthrough. Extracted as a named
     // function so tests can exercise the guard logic independently.
+    // T10: Now dispatches to any focused interactive pane, not only mux.
     prSplit._onToggle = function() {
+        // Read current model state (stored by _initModelFn on each init).
+        var tuiState = prSplit._toggleModelState;
+        var focusTab = tuiState && tuiState.splitViewTab || 'claude';
+        var focusPane = tuiState && tuiState.splitViewFocus || 'wizard';
+
+        log.printf('ctrl+] toggle: focusPane=%s focusTab=%s', focusPane, focusTab);
+
+        // 1. If Claude pane is focused (or mux is the default), try mux passthrough.
         var muxAvail = typeof tuiMux !== 'undefined' && !!tuiMux;
-        var childAttached = muxAvail &&
+        var muxAttached = muxAvail &&
             typeof tuiMux.session === 'function' &&
             tuiMux.session().isRunning();
-        log.printf('ctrl+] toggle: muxAvail=%s childAttached=%s',
-            String(muxAvail), String(childAttached));
-        if (muxAvail &&
-            typeof tuiMux.switchTo === 'function' && childAttached) {
+        if (muxAvail && typeof tuiMux.switchTo === 'function' && muxAttached &&
+            (focusTab === 'claude' || focusPane === 'wizard')) {
+            log.printf('ctrl+] toggle: dispatching to mux.switchTo');
             return tuiMux.switchTo();
         }
-        // No child — return indicator for ToggleReturn handler.
+
+        // 2. Try verify pane passthrough (Task 48: routes through SessionManager proxy).
+        var verifySession = (typeof prSplit._getInteractivePaneSession === 'function')
+            ? prSplit._getInteractivePaneSession(tuiState, 'verify')
+            : null;
+        if (verifySession && typeof verifySession.passthrough === 'function' &&
+            typeof verifySession.isRunning === 'function' && verifySession.isRunning()) {
+            log.printf('ctrl+] toggle: dispatching to verify session passthrough');
+            // Emit focus event for consistency with mux path.
+            if (typeof tui !== 'undefined' && tui.emit) {
+                tui.emit('focus', { side: 'claude', action: 'enter' });
+            }
+            var result = verifySession.passthrough({ toggleKey: 0x1D });
+            if (typeof tui !== 'undefined' && tui.emit) {
+                tui.emit('focus', { side: 'osm', action: 'return' });
+            }
+            return result;
+        }
+
+        // No interactive session — return indicator for ToggleReturn handler.
+        log.printf('ctrl+] toggle: no child available, skipping');
         return {skipped: true, reason: 'no_child'};
     };
 

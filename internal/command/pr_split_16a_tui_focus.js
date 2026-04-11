@@ -653,7 +653,8 @@
                         {id: 'resolve-abort',  type: 'button'}
                     ];
                 }
-                if (st.claudeExecutor && !s.claudeCrashDetected) {
+                // T5: Show Ask Claude when Claude binary is available (on-demand spawn).
+                if ((st.claudeExecutor || s.claudeCheckStatus === 'available') && !s.claudeCrashDetected) {
                     elems.push({id: 'error-ask-claude', type: 'button'});
                 }
                 elems.push({id: 'nav-next', type: 'nav'});

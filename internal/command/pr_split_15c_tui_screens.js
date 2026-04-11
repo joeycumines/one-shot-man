@@ -37,17 +37,18 @@
         // Config form (non-editable display for now, wizard sets these).
         var srcBranch = (st.analysisCache && st.analysisCache.currentBranch) || '(auto-detect)';
         var srcLabel = styles.bold().render('Source Branch');
+        var indent = lipgloss.newStyle().paddingLeft(2);
         var srcField = styles.activeCard().width(
-            Math.max(20, (s.width || 80) - lipgloss.width(srcLabel) - 8)
+            Math.max(20, (s.width || 80) - lipgloss.width(srcLabel) - 6)
         ).render(styles.fieldValue().render(srcBranch));
-        lines.push('  ' + lipgloss.joinHorizontal(lipgloss.Left, srcLabel, '  ', srcField));
+        lines.push(indent.render(lipgloss.joinHorizontal(lipgloss.Left, srcLabel, '  ', srcField)));
         lines.push('');
 
         var targetLabel = styles.bold().render('Target Branch');
         var targetField = styles.activeCard().width(
-            Math.max(20, (s.width || 80) - lipgloss.width(targetLabel) - 8)
+            Math.max(20, (s.width || 80) - lipgloss.width(targetLabel) - 6)
         ).render(styles.fieldValue().render(runtime.baseBranch || 'main'));
-        lines.push('  ' + lipgloss.joinHorizontal(lipgloss.Left, targetLabel, '  ', targetField));
+        lines.push(indent.render(lipgloss.joinHorizontal(lipgloss.Left, targetLabel, '  ', targetField)));
         lines.push('');
 
         // Strategy selection.
@@ -816,18 +817,7 @@
                 footerParts.push(styles.dim().render(' p: PASS  f: FAIL  c: CONTINUE '));
             }
 
-            // Open Shell: redundant with persistent shell, but kept for cases where
-            // the user wants a SECOND shell in a separate tab for comparison.
-            if (s.activeVerifyWorktree) {
-                if (typeof prSplit.canSpawnInteractiveShell === 'function' &&
-                    !prSplit.canSpawnInteractiveShell()) {
-                    // Windows — disable
-                    footerParts.push(styles.dim().render('\ue795 Shell (Unix only)'));
-                } else {
-                    footerParts.push(zone.mark('verify-open-shell',
-                        styles.secondaryButton().render('\ue795 Shell')));
-                }
-            }
+            // Task 8: Shell tab removed — verify pane IS the interactive shell.
 
             // Interrupt and scroll hints.
             footerParts.push(zone.mark('verify-interrupt', styles.dim().render(

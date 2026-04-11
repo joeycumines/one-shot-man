@@ -258,7 +258,7 @@ func LoadFromReader(r io.Reader) (*Config, error) {
 func (c *Config) addWarning(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
 	c.Warnings = append(c.Warnings, msg)
-	slog.Warn("[Config] " + msg)
+	slog.Warn(msg, "source", "config")
 }
 
 // parseSessionOption parses a session configuration option and updates the SessionConfig.

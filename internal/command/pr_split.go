@@ -11,13 +11,16 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/dop251/goja"
 	"github.com/joeycumines/one-shot-man/internal/config"
 	"github.com/joeycumines/one-shot-man/internal/scripting"
+	"github.com/joeycumines/one-shot-man/internal/storage"
 	"github.com/joeycumines/one-shot-man/internal/termmux"
 
 	termmuxmod "github.com/joeycumines/one-shot-man/internal/builtin/termmux"
@@ -120,6 +123,9 @@ var prSplitChunk16eTUIUpdate string
 //go:embed pr_split_16f_tui_model.js
 var prSplitChunk16fTUIModel string
 
+//go:embed pr_split_16g_persistence.js
+var prSplitChunk16gPersistence string
+
 // prSplitChunks defines the ordered sequence of chunk files for the split
 // architecture. Each entry is (name, source) loaded in order.
 var prSplitChunks = []struct {
@@ -156,6 +162,7 @@ var prSplitChunks = []struct {
 	{"16d_tui_handlers_claude", &prSplitChunk16dTUIHandlersClaude},
 	{"16e_tui_update", &prSplitChunk16eTUIUpdate},
 	{"16f_tui_model", &prSplitChunk16fTUIModel},
+	{"16g_persistence", &prSplitChunk16gPersistence},
 }
 
 // loadChunkedScript loads all pr-split chunk files in order into the engine.
@@ -308,9 +315,17 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 	}
 	defer cleanup()
 
-	termFd, err := c.setupEngineGlobals(ctx, engine, stdout)
+	termFd, tuiMgr, err := c.setupEngineGlobals(ctx, engine, stdout)
 	if err != nil {
 		return err
+	}
+
+	// Clean up the persistence state file on normal exit so the next
+	// startup doesn't offer stale resume data. Crash exits leave the
+	// file in place intentionally — that's the resume case.
+	if persistPath, dirErr := storage.SessionDirectory(); dirErr == nil {
+		stateFile := filepath.Join(persistPath, "pr-split-mux.state.json")
+		defer termmux.RemoveManagerState(stateFile)
 	}
 
 	// Interactive mode: launch BubbleTea wizard with signal handling.
@@ -335,9 +350,8 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 		// escape sequences are no-ops when already in normal mode.
 		//
 		// Note on double-SIGINT (os.Exit): this defer does NOT run
-		// on os.Exit; that path has its own explicit restore above.
-		// Note on Claude process: os.Exit closes all FDs including
-		// the PTY master, which sends SIGHUP to Claude — no orphan.
+		// on os.Exit; that path has its own explicit restore + session
+		// cleanup above — see the forceCloseSessionManager call.
 		defer func() {
 			if savedTermState != nil {
 				_ = term.Restore(termFd, savedTermState)
@@ -348,9 +362,13 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 
 		// Double-SIGINT force-exit handler. After the first signal cancels
 		// ctx (triggering BubbleTea's graceful quit via context propagation),
-		// a second SIGINT force-exits with best-effort terminal restoration.
-		// This prevents the user from being stuck if graceful shutdown hangs
-		// (e.g., Claude subprocess won't terminate).
+		// a second SIGINT force-exits with best-effort terminal restoration
+		// and explicit session cleanup (SIGTERM→SIGKILL to child process
+		// groups via SessionManager.Close).
+		//
+		// tuiMgr is captured by the closure; it was returned from
+		// setupEngineGlobals above, so it is already assigned and
+		// never reassigned — no data race.
 		done := make(chan struct{})
 		defer close(done)
 		go func() {
@@ -363,7 +381,8 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 
 			select {
 			case <-sigCh:
-				// Second interrupt — force exit with terminal restore.
+				// Second interrupt — kill sessions then force exit.
+				forceCloseSessionManager(tuiMgr)
 				if savedTermState != nil {
 					_ = term.Restore(termFd, savedTermState)
 				}
@@ -423,7 +442,7 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 // This function is the sole owner of mux lifecycle initialization. All
 // session-related globals are configured here — JS chunks use them but
 // never create new mux instances.
-func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripting.Engine, stdout io.Writer) (termFd int, err error) {
+func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripting.Engine, stdout io.Writer) (termFd int, sessionMgr *termmux.SessionManager, err error) {
 	// Inject command name for state namespacing.
 	engine.SetGlobal("config", map[string]any{
 		"name": "pr-split",
@@ -431,6 +450,14 @@ func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripti
 
 	// Prompt template embedded from pr_split_template.md.
 	engine.SetGlobal("prSplitTemplate", prSplitTemplate)
+
+	// Compute the persistence state file path for session resume.
+	// Uses the same session directory as the storage backend so
+	// state files live alongside session data.
+	persistStatePath := ""
+	if dir, dirErr := storage.SessionDirectory(); dirErr == nil {
+		persistStatePath = filepath.Join(dir, "pr-split-mux.state.json")
+	}
 
 	// Expose split configuration to JS.
 	claudeArgsList := make([]string, len(c.claudeArgs))
@@ -452,6 +479,7 @@ func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripti
 		"timeoutMs":        int64(c.timeout / time.Millisecond),
 		"resumeFromPlan":   c.resume,
 		"cleanupOnFailure": c.cleanupOnFailure,
+		"persistStatePath": persistStatePath,
 	})
 
 	// ── Session lifecycle: tuiMux ────────────────────────────────────
@@ -471,17 +499,39 @@ func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripti
 	// the command-blocking model ensures go-prompt is paused during
 	// passthrough. stdout is injected for testability.
 	termFd = int(os.Stdin.Fd())
-	tuiMux := termmux.New(os.Stdin, stdout, termFd)
 
-	// Pre-configure the mux's session target so switchTo() enters with
-	// correct metadata from the start (not assigned lazily in JS chunks).
-	tuiMux.SetActiveTarget(termmux.SessionTarget{
-		Name: "claude",
-		Kind: termmux.SessionKindPTY,
-	})
+	// Create a SessionManager with default terminal dimensions. JS
+	// chunks call run() to start the worker goroutine and register/
+	// activate sessions as needed. The WrapSessionManager binding
+	// provides the same API surface (attach, switchTo, session, etc.)
+	// that JS scripts expect.
+	tuiMgr := termmux.NewSessionManager()
+	tuiMux := termmuxmod.WrapSessionManager(ctx, engine.Runtime(), tuiMgr, os.Stdin, stdout, termFd)
 
-	// Expose the mux to JS through the standardized osm:termmux interface.
-	engine.SetGlobal("tuiMux", termmuxmod.WrapMux(ctx, engine.Runtime(), tuiMux))
+	// Pre-configure session target metadata so attach() registers with
+	// the correct identity from the start (not assigned lazily in JS).
+	// Uses session().setTarget() on the wrapped object.
+	targetObj := engine.Runtime().NewObject()
+	_ = targetObj.Set("name", "claude")
+	_ = targetObj.Set("kind", string(termmux.SessionKindPTY))
+	setTargetFn, _ := goja.AssertFunction(tuiMux.ToObject(engine.Runtime()).Get("session"))
+	if setTargetFn != nil {
+		sessionObj, _ := setTargetFn(goja.Undefined())
+		if sessionObj != nil {
+			stFn, _ := goja.AssertFunction(sessionObj.ToObject(engine.Runtime()).Get("setTarget"))
+			if stFn != nil {
+				_, _ = stFn(goja.Undefined(), targetObj)
+			}
+		}
+	}
+
+	// Start the SessionManager worker goroutine so it's ready for
+	// register/activate calls from JS.
+	go func() { _ = tuiMgr.Run(ctx) }()
+	<-tuiMgr.Started()
+
+	// Expose the manager to JS through the standardized osm:termmux interface.
+	engine.SetGlobal("tuiMux", tuiMux)
 
 	// Session type constants: JS uses these to create and label sessions
 	// consistently. Defined here so the Go bootstrap and all JS chunks
@@ -499,10 +549,10 @@ func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripti
 
 	// Load the 30 chunked script files in dependency order.
 	if err := loadChunkedScript(engine); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 
-	return termFd, nil
+	return termFd, tuiMgr, nil
 }
 
 // applyConfigDefaults applies config-file values to command fields where the
@@ -626,6 +676,30 @@ func (c *PrSplitCommand) validateGitRepo() error {
 	}
 
 	return nil
+}
+
+// forceCloseSessionManager attempts to gracefully shut down the
+// SessionManager within a hard 5-second deadline. This sends
+// SIGTERM→SIGKILL to all child process groups via
+// SessionManager.Close → CaptureSession.Close → Process.Close.
+// If the deadline expires, we log a warning and return — the
+// caller then proceeds with os.Exit, which closes PTY master FDs
+// and sends SIGHUP to surviving process groups as a last resort.
+func forceCloseSessionManager(mgr *termmux.SessionManager) {
+	if mgr == nil {
+		return
+	}
+	closeDone := make(chan struct{})
+	go func() {
+		mgr.Close()
+		close(closeDone)
+	}()
+	select {
+	case <-closeDone:
+		slog.Info("pr-split: SessionManager closed before force-exit")
+	case <-time.After(5 * time.Second):
+		slog.Warn("pr-split: SessionManager.Close() timed out, proceeding with force-exit")
+	}
 }
 
 // parseClaudeEnv parses a comma-separated KEY=VALUE string into a map.

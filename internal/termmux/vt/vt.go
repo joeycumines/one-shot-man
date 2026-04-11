@@ -254,3 +254,11 @@ func (v *VTerm) String() string {
 	}
 	return string(b)
 }
+
+// CursorPosition returns the active screen's cursor row and column.
+// Thread-safe.
+func (v *VTerm) CursorPosition() (row, col int) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.active.CurRow, v.active.CurCol
+}

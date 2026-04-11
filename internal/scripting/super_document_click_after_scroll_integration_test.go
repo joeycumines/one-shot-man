@@ -39,6 +39,9 @@ func TestSuperDocument_ClickAfterAutoScrollPlacesCursorCorrectly(t *testing.T) {
 	if !isUnixPlatform() {
 		t.Skip("Unix-only integration test")
 	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
 
 	binaryPath := buildTestBinary(t)
 	env := newTestProcessEnv(t)

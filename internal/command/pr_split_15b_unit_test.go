@@ -4,7 +4,7 @@ package command
 //
 // Covers the 3 most under-tested renderers:
 //   - renderClaudeQuestionPrompt: 0 prior tests — 5 tests
-//   - renderShellPane: 1 golden test only — 5 tests
+//   - renderVerifyPane: testing
 //   - renderOutputPane: 2 tests (placeholder + content) — 3 new edge-case tests
 //
 // All functions are pure lipgloss renderers (state → string). Tests
@@ -199,136 +199,8 @@ func TestChunk15b_ClaudeQuestionPrompt_ConversationCount(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-//  renderShellPane — 5 tests (previously only 1 golden)
-// ---------------------------------------------------------------------------
-
-// TestChunk15b_ShellPane_NoSession verifies that when shellSession is falsy,
-// a placeholder message is rendered.
-func TestChunk15b_ShellPane_NoSession(t *testing.T) {
-	t.Parallel()
-	evalJS := prsplittest.NewTUIEngine(t)
-
-	val, err := evalJS(`prSplit._renderShellPane({}, 60, 12)`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := val.(string)
-	if !strings.Contains(s, "No shell session active") {
-		t.Errorf("expected placeholder, got: %q", s)
-	}
-}
-
-// TestChunk15b_ShellPane_WithContent verifies that shell content renders with
-// directory title and visible lines.
-func TestChunk15b_ShellPane_WithContent(t *testing.T) {
-	t.Parallel()
-	evalJS := prsplittest.NewTUIEngine(t)
-
-	val, err := evalJS(`(function() {
-		return prSplit._renderShellPane({
-			shellSession: true,
-			activeVerifyWorktree: '/tmp/wt',
-			shellScreen: 'line1\nline2\nline3'
-		}, 60, 12);
-	})()`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := val.(string)
-	if !strings.Contains(s, "Shell:") {
-		t.Error("expected 'Shell:' title")
-	}
-	if !strings.Contains(s, "/tmp/wt") {
-		t.Error("expected worktree path in title")
-	}
-	if !strings.Contains(s, "line1") {
-		t.Error("expected shell content line")
-	}
-}
-
-// TestChunk15b_ShellPane_FocusHint verifies that a focused shell pane shows
-// "type to interact" hint, and an unfocused one does not.
-func TestChunk15b_ShellPane_FocusHint(t *testing.T) {
-	t.Parallel()
-	evalJS := prsplittest.NewTUIEngine(t)
-
-	val, err := evalJS(`(function() {
-		var base = {
-			shellSession: true,
-			activeVerifyWorktree: '.',
-			shellScreen: 'prompt$ '
-		};
-		var unfocused = prSplit._renderShellPane(
-			Object.assign({}, base, {splitViewFocus: 'plan', splitViewTab: 'shell'}),
-			60, 12
-		);
-		var focused = prSplit._renderShellPane(
-			Object.assign({}, base, {splitViewFocus: 'claude', splitViewTab: 'shell'}),
-			60, 12
-		);
-		return JSON.stringify({
-			unfocused: unfocused.indexOf('type to interact') >= 0,
-			focused: focused.indexOf('type to interact') >= 0
-		});
-	})()`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := val.(string)
-	if !strings.Contains(s, `"unfocused":false`) {
-		t.Error("unfocused shell pane should NOT show 'type to interact'")
-	}
-	if !strings.Contains(s, `"focused":true`) {
-		t.Error("focused shell pane should show 'type to interact'")
-	}
-}
-
-// TestChunk15b_ShellPane_LongPathTruncation verifies that a worktree path
-// longer than the viewport width is truncated with '…' prefix.
-func TestChunk15b_ShellPane_LongPathTruncation(t *testing.T) {
-	t.Parallel()
-	evalJS := prsplittest.NewTUIEngine(t)
-
-	val, err := evalJS(`(function() {
-		var longPath = '/very/long/path/that/definitely/exceeds/the/narrow/viewport/width/budget';
-		return prSplit._renderShellPane({
-			shellSession: true,
-			activeVerifyWorktree: longPath,
-			shellScreen: ''
-		}, 40, 12);
-	})()`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := val.(string)
-	if !strings.Contains(s, "\u2026") {
-		t.Error("long path should be truncated with '…' prefix")
-	}
-	// Full path should NOT appear since width is only 40.
-	if strings.Contains(s, "/very/long/path/that/definitely") {
-		t.Error("full long path should not appear in narrow pane")
-	}
-}
-
-// TestChunk15b_ShellPane_NarrowTerminal verifies that the shell pane renders
-// without panicking at the minimum useful width (40 cols).
-func TestChunk15b_ShellPane_NarrowTerminal(t *testing.T) {
-	t.Parallel()
-	evalJS := prsplittest.NewTUIEngine(t)
-
-	val, err := evalJS(`prSplit._renderShellPane({shellSession: true, shellScreen: 'a b c'}, 40, 6)`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := val.(string)
-	if s == "" {
-		t.Error("narrow shell pane should produce non-empty output")
-	}
-	if !strings.Contains(s, "Shell:") {
-		t.Error("narrow pane should still have title")
-	}
-}
+// Task 8: renderShellPane tests removed — shell tab unified into verify pane.
+// The shell pane no longer exists as a separate concept.
 
 // ---------------------------------------------------------------------------
 //  renderOutputPane — 3 new edge-case tests (2 existing: placeholder, content)

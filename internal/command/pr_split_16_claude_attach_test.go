@@ -1759,7 +1759,8 @@ func TestChunk16_T393_OpenClaudeConvoWithLiveHandle(t *testing.T) {
 }
 
 // TestChunk16_T393_OpenClaudeConvoWithNullHandle verifies that the
-// conversation overlay shows an error when the executor handle is null.
+// conversation overlay triggers on-demand spawn when the executor handle
+// is null, or shows an error when Claude is unavailable.
 func TestChunk16_T393_OpenClaudeConvoWithNullHandle(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
@@ -1768,7 +1769,9 @@ func TestChunk16_T393_OpenClaudeConvoWithNullHandle(t *testing.T) {
 		// Simulate destroyed executor — handle is null.
 		globalThis.prSplit._state.claudeExecutor = { handle: null };
 
+		// T5: With Claude unavailable, shows immediate error.
 		var s = initState('PLAN_REVIEW');
+		s.claudeCheckStatus = 'unavailable';
 		var openConvo = globalThis.prSplit._openClaudeConvo;
 		var r = openConvo(s, 'plan-question');
 		s = r[0];
@@ -1778,7 +1781,7 @@ func TestChunk16_T393_OpenClaudeConvoWithNullHandle(t *testing.T) {
 		var errors = [];
 		if (!s.claudeConvo.active) errors.push('claudeConvo.active should be true (shows error)');
 		if (!s.claudeConvo.lastError) errors.push('lastError should be set');
-		if (s.claudeConvo.lastError && s.claudeConvo.lastError.indexOf('not running') < 0)
+		if (s.claudeConvo.lastError && s.claudeConvo.lastError.indexOf('not installed') < 0)
 			errors.push('wrong error: ' + s.claudeConvo.lastError);
 		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
 	})()`)

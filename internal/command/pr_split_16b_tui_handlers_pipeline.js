@@ -598,6 +598,10 @@
         // Otherwise, start the equivalence check.
         // (These set state directly; the poll handler will detect completion.)
         s.executionNextStep = prSplit.runtime.verifyCommand ? 'verify' : 'equiv';
+        // Mark execution as complete directly. The .then() callback should also
+        // set this, but in the Goja event loop the microtask may not drain
+        // before the next poll tick — so we set it here to avoid starvation.
+        s.executionRunning = false;
     }
 
     // handleExecutionPoll: Called every 100ms to check if the async

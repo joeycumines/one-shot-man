@@ -4,6 +4,7 @@ package termmux
 
 import "github.com/joeycumines/one-shot-man/internal/termmux/ptyio"
 
-func defaultBlockingGuard() ptyio.BlockingGuard {
+// DefaultBlockingGuard returns the platform-appropriate BlockingGuard.
+func DefaultBlockingGuard() ptyio.BlockingGuard {
 	return ptyio.WindowsBlockingGuard{}
 }

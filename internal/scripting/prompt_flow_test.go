@@ -110,6 +110,10 @@ func TestPromptFlow_GenerateRequiresGoal(t *testing.T) {
 // TestPromptFlow_Interactive drives a minimal happy path in interactive mode without invoking the editor.
 // It avoids commands that would open the system editor (goal without args, template, generate).
 func TestPromptFlow_Interactive(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
+
 	binaryPath := buildTestBinary(t)
 
 	wd, err := os.Getwd()
@@ -398,6 +402,10 @@ fi
 // an ambiguous removal (e.g., two tracked files end with the same name), the JS
 // UI does NOT remove the item and surfaces an error message.
 func TestPromptFlow_Remove_Ambiguous_AbortsUI(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
+
 	binaryPath := buildTestBinary(t)
 
 	// Create two files with the same basename in different directories
@@ -517,6 +525,10 @@ func TestPromptFlow_Remove_Ambiguous_AbortsUI(t *testing.T) {
 // have the file (path not found), the JS UI does not remove the item and surfaces
 // an error. This ensures we do not silently desynchronize UI from backend.
 func TestPromptFlow_Remove_NotFound_AbortsUI(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
+
 	binaryPath := buildTestBinary(t)
 
 	tmpFile := filepath.Join(t.TempDir(), "lonely.txt")

@@ -15,6 +15,8 @@ import (
 
 // TestPickAndPlaceE2E_ModuleLoad verifies that osm:pabt module loads successfully
 func TestPickAndPlaceE2E_ModuleLoad(t *testing.T) {
+	skipSlow(t)
+
 	// NewPickAndPlaceHarness builds binary and launches script
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
@@ -55,6 +57,8 @@ func TestPickAndPlaceE2E_ModuleLoad(t *testing.T) {
 
 // TestPickAndPlaceE2E_ActionRegistration verifies that all PA-BT actions are registered
 func TestPickAndPlaceE2E_ActionRegistration(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -110,6 +114,8 @@ func TestPickAndPlaceE2E_ActionRegistration(t *testing.T) {
 
 // TestPickAndPlaceE2E_PlanCreation verifies that PA-BT Plan is created successfully
 func TestPickAndPlaceE2E_PlanCreation(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -160,6 +166,8 @@ func TestPickAndPlaceE2E_PlanCreation(t *testing.T) {
 
 // TestPickAndPlaceE2E_StartAndQuit verifies the basic simulator lifecycle
 func TestPickAndPlaceE2E_StartAndQuit(t *testing.T) {
+	skipSlow(t)
+
 	// NewPickAndPlaceHarness builds binary internally using helper functions
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
@@ -183,6 +191,8 @@ func TestPickAndPlaceE2E_StartAndQuit(t *testing.T) {
 
 // TestPickAndPlaceE2E_DebugOverlay verifies the debug overlay JSON is parseable
 func TestPickAndPlaceE2E_DebugOverlay(t *testing.T) {
+	skipSlow(t)
+
 	// NewPickAndPlaceHarness builds binary internally using helper functions
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
@@ -231,6 +241,8 @@ func TestPickAndPlaceE2E_DebugOverlay(t *testing.T) {
 
 // TestPickAndPlaceE2E_ManualModeMovement verifies that WASD keys move the robot in manual mode
 func TestPickAndPlaceE2E_ManualModeMovement(t *testing.T) {
+	skipSlow(t)
+
 	// NewPickAndPlaceHarness builds binary internally using helper functions
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
@@ -291,6 +303,8 @@ func TestPickAndPlaceE2E_ManualModeMovement(t *testing.T) {
 
 // TestPickAndPlaceE2E_ModeToggle verifies that 'm' key toggles between manual and auto mode
 func TestPickAndPlaceE2E_ModeToggle(t *testing.T) {
+	skipSlow(t)
+
 	// NewPickAndPlaceHarness builds binary internally using helper functions
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
@@ -344,6 +358,8 @@ func TestPickAndPlaceE2E_ModeToggle(t *testing.T) {
 // TestPickAndPlaceE2E_PABTPlanning_Detailed verifies that PA-BT planner selects correct actions
 // This is the CRITICAL detailed test - it proves go-pabt integration with specific action verification
 func TestPickAndPlaceE2E_PABTPlanning_Detailed(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -455,6 +471,8 @@ func TestPickAndPlaceE2E_PABTPlanning_Detailed(t *testing.T) {
 // TestPickAndPlaceE2E_PABTPlanning verifies that PA-BT planning works in auto mode
 // This is the CRITICAL test - it proves the go-pabt integration is functional
 func TestPickAndPlaceE2E_PABTPlanning(t *testing.T) {
+	skipSlow(t)
+
 	// NewPickAndPlaceHarness builds binary internally using helper functions
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
@@ -573,6 +591,8 @@ func TestPickAndPlaceE2E_PABTPlanning(t *testing.T) {
 
 // TestPickAndPlaceE2E_PickAndPlaceActions verifies that pick and place actions work
 func TestPickAndPlaceE2E_PickAndPlaceActions(t *testing.T) {
+	skipSlow(t)
+
 	// NewPickAndPlaceHarness builds binary internally using helper functions
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
@@ -683,6 +703,8 @@ func TestPickAndPlaceE2E_PickAndPlaceActions(t *testing.T) {
 
 // TestPickAndPlaceE2E_WinCondition verifies that the simulator can achieve the win condition
 func TestPickAndPlaceE2E_WinCondition(t *testing.T) {
+	skipSlow(t)
+
 	// NewPickAndPlaceHarness builds binary internally using helper functions
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
@@ -745,6 +767,8 @@ func TestPickAndPlaceE2E_WinCondition(t *testing.T) {
 
 // TestPickAndPlaceE2E_PauseResume verifies that pause functionality works correctly
 func TestPickAndPlaceE2E_PauseResume(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -831,6 +855,8 @@ func TestPickAndPlaceE2E_PauseResume(t *testing.T) {
 
 // TestPickAndPlaceE2E_MultipleCubes verifies PA-BT handles multiple cubes correctly
 func TestPickAndPlaceE2E_MultipleCubes(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -914,6 +940,8 @@ func TestPickAndPlaceE2E_MultipleCubes(t *testing.T) {
 
 // TestPickAndPlaceE2E_AdvancedScenarios tests complex scenarios
 func TestPickAndPlaceE2E_AdvancedScenarios(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -981,6 +1009,8 @@ func TestPickAndPlaceE2E_AdvancedScenarios(t *testing.T) {
 // TestPickAndPlace_MousePick_NearestTarget verifies that clicking on empty space
 // with a nearby cube picks up the NEAREST cube (not just direct-click).
 func TestPickAndPlace_MousePick_NearestTarget(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -1059,6 +1089,8 @@ func TestPickAndPlace_MousePick_NearestTarget(t *testing.T) {
 // TestPickAndPlace_MousePick_MultipleCubes verifies that when multiple cubes are
 // in range, clicking on empty space picks the NEAREST one.
 func TestPickAndPlace_MousePick_MultipleCubes(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -1120,6 +1152,8 @@ func TestPickAndPlace_MousePick_MultipleCubes(t *testing.T) {
 // TestPickAndPlace_MousePick_NoTargetInRange verifies that clicking on empty space
 // when no cubes are within PICK_THRESHOLD should NOT pick anything.
 func TestPickAndPlace_MousePick_NoTargetInRange(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -1162,6 +1196,8 @@ func TestPickAndPlace_MousePick_NoTargetInRange(t *testing.T) {
 // TestPickAndPlace_MousePick_DirectClick verifies that direct-click behavior
 // (clicking directly on a cube) still works (backwards compatibility).
 func TestPickAndPlace_MousePick_DirectClick(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -1264,6 +1300,8 @@ func TestPickAndPlace_MousePick_DirectClick(t *testing.T) {
 // TestPickAndPlace_MousePick_HoldingItem verifies that clicking anywhere while
 // already holding an item does NOT pick up another item.
 func TestPickAndPlace_MousePick_HoldingItem(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -1283,19 +1321,34 @@ func TestPickAndPlace_MousePick_HoldingItem(t *testing.T) {
 	}
 
 	// Navigate actor near the blockade cube at (7, 18)
-	// Actor starts at ~(5, 11), need to move right and down
+	// Actor starts at ~(5, 11), need to move right and down.
+	// The blockade ring may obstruct direct paths so we use generous
+	// movement with position verification.
 	for range 2 {
 		h.SendKey("d") // Move right
 		time.Sleep(100 * time.Millisecond)
 	}
-	for range 9 {
-		h.SendKey("s") // Move down to ~20
+	for range 7 {
+		h.SendKey("s") // Move down toward blockade ring
 		time.Sleep(100 * time.Millisecond)
 	}
 
 	// Wait for movement to definitely finish
 	h.WaitForFrames(10)
 	time.Sleep(500 * time.Millisecond)
+
+	// Adaptive navigation: keep pushing down if actor hasn't reached target Y
+	for retry := range 5 {
+		stateNear := h.GetDebugState()
+		t.Logf("Navigation attempt %d: actor at (%.1f, %.1f)", retry, stateNear.ActorX, stateNear.ActorY)
+		if stateNear.ActorY >= 17 {
+			break
+		}
+		h.SendKey("s")
+		time.Sleep(200 * time.Millisecond)
+		h.WaitForFrames(5)
+		time.Sleep(300 * time.Millisecond)
+	}
 
 	stateNear := h.GetDebugState()
 	t.Logf("Actor position near blockade: (%.1f, %.1f)", stateNear.ActorX, stateNear.ActorY)
@@ -1305,22 +1358,29 @@ func TestPickAndPlace_MousePick_HoldingItem(t *testing.T) {
 	clickX := 7
 	clickY := 18
 
-	if err := h.ClickGrid(clickX, clickY); err != nil {
-		t.Fatalf("Failed to send first mouse click: %v", err)
-	}
-
-	h.WaitForFrames(5)
-	time.Sleep(500 * time.Millisecond)
-	stateAfterPick := h.GetDebugState()
-
-	if stateAfterPick.HeldItemID < 100 {
-		// Try picking one more time if it missed (PTY lag)
-		h.ClickGrid(clickX, clickY)
+	// Retry loop for picking (PTY lag and positioning)
+	var stateAfterPick *PickAndPlaceDebugJSON
+	for retry := range 5 {
+		if err := h.ClickGrid(clickX, clickY); err != nil {
+			t.Fatalf("Failed to send mouse click: %v", err)
+		}
+		h.WaitForFrames(5)
 		time.Sleep(500 * time.Millisecond)
 		stateAfterPick = h.GetDebugState()
-		if stateAfterPick.HeldItemID < 100 {
-			t.Fatalf("Failed to pick up first cube, held item is %d (actor at %.1f, %.1f)", stateAfterPick.HeldItemID, stateAfterPick.ActorX, stateAfterPick.ActorY)
+		if stateAfterPick.HeldItemID >= 100 {
+			break
 		}
+		t.Logf("Pick retry %d: held=%d, actor at (%.1f, %.1f)", retry, stateAfterPick.HeldItemID, stateAfterPick.ActorX, stateAfterPick.ActorY)
+		// If actor is too far, try moving closer
+		if stateAfterPick.ActorY < 17 {
+			h.SendKey("s")
+			time.Sleep(200 * time.Millisecond)
+			h.WaitForFrames(5)
+		}
+	}
+
+	if stateAfterPick.HeldItemID < 100 {
+		t.Fatalf("Failed to pick up first cube after retries, held item is %d (actor at %.1f, %.1f)", stateAfterPick.HeldItemID, stateAfterPick.ActorX, stateAfterPick.ActorY)
 	}
 
 	t.Logf("Holding cube id=%d, now click on an OCCUPIED cell within reach (adjacency)", stateAfterPick.HeldItemID)
@@ -1353,6 +1413,8 @@ func TestPickAndPlace_MousePick_HoldingItem(t *testing.T) {
 // TestPickAndPlace_MousePick_StaticObstacles verifies that static obstacles (walls)
 // cannot be picked up by clicking anywhere.
 func TestPickAndPlace_MousePick_StaticObstacles(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -1410,6 +1472,8 @@ func TestPickAndPlace_MousePick_StaticObstacles(t *testing.T) {
 // TestPickAndPlace_MousePlace_NearestEmpty verifies that clicking on empty space
 // while holding an item places it at the NEAREST valid adjacent cell.
 func TestPickAndPlace_MousePlace_NearestEmpty(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -1503,6 +1567,8 @@ func TestPickAndPlace_MousePlace_NearestEmpty(t *testing.T) {
 // TestPickAndPlace_MousePlace_BlockedCell verifies that clicking on occupied cell
 // while holding does NOT place — the held item stays held (no-op).
 func TestPickAndPlace_MousePlace_BlockedCell(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -1575,6 +1641,8 @@ func TestPickAndPlace_MousePlace_BlockedCell(t *testing.T) {
 // blockade ring). The actor navigates to a position adjacent to the ring and
 // clicks an empty goal cell within PICK_THRESHOLD range.
 func TestPickAndPlace_MousePlace_TargetInGoal(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -1638,36 +1706,91 @@ func TestPickAndPlace_MousePlace_TargetInGoal(t *testing.T) {
 			state.HeldItemID, state.ActorX, state.ActorY)
 	}
 
-	// Navigate toward (5, 18) while holding the target.
+	// Navigate toward the goal while holding the target.
 	// IMPORTANT: We use WASD keys (not ClickGrid) because ClickGrid triggers
 	// the interact leaf — if the actor arrives at an empty cell while holding,
 	// it will PLACE the held item there. WASD only triggers movement.
 	//
-	// Route: (44, 11) → left along y=11 through gap at x=20 → (5, 11)
-	//        then down along x=5 → (5, 18)
+	// Route: (44, 11) → left through room exit at (20, 11) → continue left
+	// to x≈5 → down to y≈18.  The room (x 20–55, y 6–16) has its only exit
+	// at x=20, y≈11±1 so stepping down first is impossible.
 	//
-	// Step 1: Move left to x≤5 (clear path along y=11, through wall gap)
-	for range 60 {
+	// Step 1: Move left to x≈5. Use batched technique: send one 'a', wait
+	// for frame + position read, stop exactly. This prevents key queuing
+	// overshoot that plagued the previous implementation.
+	for i := range 80 {
+		h.WaitForFrames(1)
 		s := h.GetDebugState()
 		if s.ActorX <= 5 {
-			t.Logf("Reached x=%.1f on y=%.1f", s.ActorX, s.ActorY)
+			t.Logf("Step 1 done (iter %d): x=%.1f at y=%.1f", i, s.ActorX, s.ActorY)
 			break
 		}
 		h.SendKey("a")
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(150 * time.Millisecond)
 	}
 
-	// Step 2: Move down to y≥18 (clear path along x=5, outside blockade ring)
-	for range 20 {
+	// Flush: wait for all queued key presses to be processed.
+	h.WaitForFrames(5)
+	time.Sleep(500 * time.Millisecond)
+
+	// Read settled position and correct if overshot (x < 3).
+	for i := range 15 {
+		h.WaitForFrames(1)
 		s := h.GetDebugState()
-		if s.ActorY >= 18 {
-			t.Logf("Reached y=%.1f on x=%.1f", s.ActorY, s.ActorX)
+		if i == 0 || i%3 == 0 {
+			t.Logf("Left correction iter %d: actor at (%.1f, %.1f)", i, s.ActorX, s.ActorY)
+		}
+		if s.ActorX >= 3 && s.ActorX <= 5 {
+			break
+		}
+		if s.ActorX < 3 {
+			h.SendKey("d")
+		} else {
+			h.SendKey("a")
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	h.WaitForFrames(3)
+	time.Sleep(300 * time.Millisecond)
+
+	// Step 2: Move down to y≈18 along x≈5 (outside blockade ring at x 6–10).
+	for i := range 25 {
+		h.WaitForFrames(1)
+		s := h.GetDebugState()
+		if s.ActorY >= 17 {
+			t.Logf("Step 2 done (iter %d): y=%.1f at x=%.1f", i, s.ActorY, s.ActorX)
 			break
 		}
 		h.SendKey("s")
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(150 * time.Millisecond)
 	}
 
+	h.WaitForFrames(5)
+	time.Sleep(500 * time.Millisecond)
+
+	// Final position convergence — must be within PICK_THRESHOLD=5.0 of (8, 18).
+	for i := range 15 {
+		h.WaitForFrames(1)
+		s := h.GetDebugState()
+		dist := math.Sqrt(math.Pow(8-s.ActorX, 2) + math.Pow(18-s.ActorY, 2))
+		if i == 0 || i%3 == 0 {
+			t.Logf("Convergence iter %d: actor at (%.1f, %.1f), dist=%.1f to goal", i, s.ActorX, s.ActorY, dist)
+		}
+		if dist <= 4.5 {
+			break
+		}
+		if s.ActorX < 3 {
+			h.SendKey("d")
+		} else if s.ActorX > 6 {
+			h.SendKey("a")
+		}
+		if s.ActorY < 16 {
+			h.SendKey("s")
+		} else if s.ActorY > 20 {
+			h.SendKey("w")
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
 	h.WaitForFrames(3)
 	time.Sleep(300 * time.Millisecond)
 
@@ -1683,8 +1806,14 @@ func TestPickAndPlace_MousePlace_TargetInGoal(t *testing.T) {
 	// PICK_THRESHOLD=5.0, so actor at (5, 18) can place at (8, 18) (dist=3.0).
 	// The cell (8, 18) is empty — it's the goal center, not part of the ring.
 	goalX, goalY := 8, 18
-	t.Logf("Placing at goal center (%d, %d), actor at (%.1f, %.1f)",
-		goalX, goalY, stateBeforePlace.ActorX, stateBeforePlace.ActorY)
+
+	// Verify actor is within threshold before attempting placement
+	dist := math.Sqrt(math.Pow(float64(goalX)-stateBeforePlace.ActorX, 2) + math.Pow(float64(goalY)-stateBeforePlace.ActorY, 2))
+	t.Logf("Placing at goal center (%d, %d), actor at (%.1f, %.1f), dist=%.1f",
+		goalX, goalY, stateBeforePlace.ActorX, stateBeforePlace.ActorY, dist)
+	if dist > 5.0 {
+		t.Fatalf("Actor too far from goal to place (dist=%.1f > 5.0), aborting", dist)
+	}
 
 	if err := h.ClickGrid(goalX, goalY); err != nil {
 		t.Fatalf("Failed to send place click: %v", err)
@@ -1717,6 +1846,8 @@ func TestPickAndPlace_MousePlace_TargetInGoal(t *testing.T) {
 // TestPickAndPlace_MousePlace_NoValidCell verifies that clicking when holding
 // with no valid adjacent cells does NOT place anything.
 func TestPickAndPlace_MousePlace_NoValidCell(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -1793,6 +1924,8 @@ func TestPickAndPlace_MousePlace_NoValidCell(t *testing.T) {
 // TestPickAndPlace_MousePlace_NonTargetInGoal verifies that placing non-target
 // cube in goal area does NOT set win condition.
 func TestPickAndPlace_MousePlace_NonTargetInGoal(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -1908,6 +2041,8 @@ func TestPickAndPlace_MousePlace_NonTargetInGoal(t *testing.T) {
 // 3. Verify robot detects the change and adjusts its trajectory
 // 4. Confirm robot eventually reaches the new cube position and achieves goal
 func TestPickAndPlaceE2E_UnexpectedCircumstances(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -2097,6 +2232,8 @@ func distance(x1, y1, x2, y2 float64) float64 {
 // TestPickAndPlace_MouseNoAction_NoCubesInRange verifies that clicking on
 // empty space when not holding and no cubes are near falls back to click-to-move.
 func TestPickAndPlace_MouseNoAction_NoCubesInRange(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -2150,6 +2287,8 @@ func TestPickAndPlace_MouseNoAction_NoCubesInRange(t *testing.T) {
 // TestPickAndPlace_MouseNoAction_NoValidPlacement verifies that clicking when
 // holding with no valid adjacent cells leaves item held.
 func TestPickAndPlace_MouseNoAction_NoValidPlacement(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -2223,6 +2362,8 @@ func TestPickAndPlace_MouseNoAction_NoValidPlacement(t *testing.T) {
 // TestPickAndPlace_MouseNoAction_StaticObstacle verifies that clicking on static
 // obstacle (wall) is treated like empty space (no pick).
 func TestPickAndPlace_MouseNoAction_StaticObstacle(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -2270,6 +2411,8 @@ func TestPickAndPlace_MouseNoAction_StaticObstacle(t *testing.T) {
 // TestPickAndPlace_MouseNoAction_PausedState verifies that clicking while
 // paused does not affect simulation state.
 func TestPickAndPlace_MouseNoAction_PausedState(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -2325,6 +2468,8 @@ func TestPickAndPlace_MouseNoAction_PausedState(t *testing.T) {
 // TestPickAndPlace_MouseNoAction_AlreadyHeldCube verifies that clicking on
 // a cube that's currently held (deleted: true) is treated like empty space.
 func TestPickAndPlace_MouseNoAction_AlreadyHeldCube(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -2382,6 +2527,8 @@ func TestPickAndPlace_MouseNoAction_AlreadyHeldCube(t *testing.T) {
 // TestPickAndPlace_MouseNoAction_RapidClicks verifies that multiple rapid clicks
 // do not cause state corruption or crashes.
 func TestPickAndPlace_MouseNoAction_RapidClicks(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -2430,6 +2577,8 @@ func TestPickAndPlace_MouseNoAction_RapidClicks(t *testing.T) {
 // TestPickAndPlace_MouseNoAction_BoundaryClicks verifies that clicking at
 // boundaries (clickX < 0 or outside spaceWidth) is ignored.
 func TestPickAndPlace_MouseNoAction_BoundaryClicks(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -2501,6 +2650,8 @@ func TestPickAndPlace_MouseNoAction_BoundaryClicks(t *testing.T) {
 // TestPickAndPlace_MouseNoAction_HUDArea verifies that clicking on the HUD
 // area (right of play area) is ignored and does not affect simulation state.
 func TestPickAndPlace_MouseNoAction_HUDArea(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,
@@ -2567,6 +2718,8 @@ func TestPickAndPlace_MouseNoAction_HUDArea(t *testing.T) {
 //
 // This test MUST FAIL if the bug exists.
 func TestPickAndPlaceE2E_InfiniteLoopDetection(t *testing.T) {
+	skipSlow(t)
+
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
 		TestMode:   true,

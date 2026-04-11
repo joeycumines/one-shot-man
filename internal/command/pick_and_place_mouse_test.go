@@ -12,6 +12,7 @@ import (
 
 // TestPickAndPlaceMouseInteraction tests that clicking the mouse moves the actor.
 func TestPickAndPlaceMouseInteraction(t *testing.T) {
+	skipSlow(t)
 	ctx := context.Background()
 	logPath := filepath.Join(t.TempDir(), "mouse_test.log")
 

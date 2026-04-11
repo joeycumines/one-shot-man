@@ -27,7 +27,9 @@
     "currentState": "MERGE COMPLETE. Branch one-shot-man-3 merged with wip. All v2 migration Done. All SessionManager/termmux tasks from wip Done. Post-merge cleanup in progress.",
     "goalState": "Production-ready merged codebase: zero v1 patterns, all tests green on 3 platforms, complete documentation, then STUB tasks and future features.",
     "replanLog": [
-      "2026-04-11: MERGE SESSION. Merged wip (81 commits) into one-shot-man-3 (23 commits). Resolved 8 file conflicts. Unified blueprint.json."
+      "2026-04-11: MERGE SESSION. Merged wip (81 commits) into one-shot-man-3 (23 commits). Resolved 8 file conflicts. Unified blueprint.json.",
+      "2026-04-11: MERGE COMMITTED (c619dbd7). First 5 tasks Done. Rule of Two passed. Proceeding to full test suite and cross-platform.",
+      "2026-04-12: POST-MERGE FIXES. 8 test failures fixed: int64 assertions, v2 mouse contract, lookupBinary closure late-binding, execStream→execv for stdout, skipSlow guards on 36 tests, 2 flaky PickAndPlace navigation rewrites. Full suite passes (gmake make-all-with-log exit 0). Task 6 Done."
     ]
   },
   "mandatoryDirectives": {
@@ -40,37 +42,37 @@
       "task": "Post-merge build verification",
       "description": "Run make build && make lint && make test-short. Verify no conflict markers remain.",
       "acceptance": "make build, make lint, make test-short all exit 0. grep -rn '<<<<<<<' returns zero hits.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "Sweep wip-introduced JS for remaining v1 mouse patterns",
       "description": "Scan ALL .js files for: msg.isWheel, msg.action, msg.shift/alt/ctrl booleans, msg.row/msg.col. Convert to v2.",
       "acceptance": "Zero v1 mouse patterns in any JS file under internal/command/.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Fix test failures from merge",
       "description": "Run full make test. Fix failures from merge resolution, v1 patterns in wip code, golden file mismatches.",
       "acceptance": "make test exits 0, all packages pass.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Regenerate golden test files",
       "description": "Update golden files for changed tab bar structure and lipgloss v2 rendering.",
       "acceptance": "All golden file tests pass.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Commit merge with Rule of Two verification",
       "description": "Stage all files. Two contiguous issue-free subagent reviews.",
       "acceptance": "Merge committed after Rule of Two gate passes.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Full test suite on macOS (non-short)",
-      "description": "gmake test with 30m timeout. All packages pass including slow E2E.",
+      "description": "gmake test with 30m timeout. All packages pass including slow E2E. Fixed 8 post-merge failures: int64/uint64 assertions, v2 mouse contract, lookupBinary closure bug, execStream vs execv, skipSlow guards, flaky PickAndPlace navigation.",
       "acceptance": "gmake test exits 0 on macOS.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Cross-platform: Linux via Docker",

@@ -36,9 +36,10 @@
 package textarea
 
 import (
+	"strings"
+
 	"charm.land/bubbles/v2/textarea"
 	"charm.land/lipgloss/v2"
-	"strings"
 
 	"github.com/dop251/goja"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"

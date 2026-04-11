@@ -1482,14 +1482,21 @@ func TestPickAndPlace_MousePlace_NearestEmpty(t *testing.T) {
 		t.Fatalf("Failed to send place click: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
-	stateAfter := h.GetDebugState()
-
-	// Verify cube was placed
-	if stateAfter.HeldItemID != -1 {
+	// Poll for placement to take effect (timing-resilient).
+	placed := false
+	placeDeadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(placeDeadline) {
+		stateAfter := h.GetDebugState()
+		if stateAfter.HeldItemID == -1 {
+			placed = true
+			t.Logf("✓ Successfully placed cube (heldItemId=-1)")
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !placed {
+		stateAfter := h.GetDebugState()
 		t.Errorf("Expected -1 (no held item), got %d - cube may not have been placed", stateAfter.HeldItemID)
-	} else {
-		t.Logf("✓ Successfully placed cube (heldItemId=-1)")
 	}
 }
 
@@ -1564,7 +1571,9 @@ func TestPickAndPlace_MousePlace_BlockedCell(t *testing.T) {
 }
 
 // TestPickAndPlace_MousePlace_TargetInGoal verifies that clicking while holding
-// target cube places it at nearest location which can be in goal area.
+// target cube places it at a cell inside the goal area (from outside the
+// blockade ring). The actor navigates to a position adjacent to the ring and
+// clicks an empty goal cell within PICK_THRESHOLD range.
 func TestPickAndPlace_MousePlace_TargetInGoal(t *testing.T) {
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
 		ScriptPath: getPickAndPlaceScriptPath(t),
@@ -1577,8 +1586,7 @@ func TestPickAndPlace_MousePlace_TargetInGoal(t *testing.T) {
 
 	h.WaitForFrames(3)
 
-	// Switch to manual mode - PA-BT auto-mode spends time relocating blockers first
-	// which would take too long. We'll manually navigate to Target A and pick it up.
+	// Switch to manual mode to bypass PA-BT auto planning.
 	h.SendKey("m")
 	h.WaitForMode("m", 3*time.Second)
 
@@ -1588,16 +1596,14 @@ func TestPickAndPlace_MousePlace_TargetInGoal(t *testing.T) {
 	}
 	t.Logf("Switched to manual mode at (%.1f, %.1f)", state.ActorX, state.ActorY)
 
-	// Navigate to Target A at (45, 11) using the gap at (20, 11).
-	// Starting position is (5, 11). Move right through gap.
+	// Navigate to Target A at (45, 11) using WASD (straight right on y=11).
 	for range 50 {
 		state := h.GetDebugState()
-		// Stop when we're 1 cell away from target (at x=44)
 		if state.ActorX >= 44 {
 			t.Logf("Adjacent to target at (%.1f, %.1f)", state.ActorX, state.ActorY)
 			break
 		}
-		h.SendKey("d") // Move RIGHT
+		h.SendKey("d")
 		time.Sleep(100 * time.Millisecond)
 	}
 
@@ -1608,15 +1614,14 @@ func TestPickAndPlace_MousePlace_TargetInGoal(t *testing.T) {
 	t.Logf("About to pick target at (%.1f, %.1f), current held=%d",
 		stateBefore.ActorX, stateBefore.ActorY, stateBefore.HeldItemID)
 
-	// Click on Target A at (45, 11) to pick it up
-	// Use ClickGrid which handles coordinate translation from grid to terminal
+	// Click on Target A at (45, 11) to pick it up.
 	if err := h.ClickGrid(45, 11); err != nil {
 		t.Fatalf("Failed to send click: %v", err)
 	}
 	time.Sleep(200 * time.Millisecond)
 	h.WaitForFrames(10)
 
-	// Wait for held item to become TARGET_ID=1
+	// Wait for held item to become TARGET_ID=1.
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		state = h.GetDebugState()
@@ -1633,66 +1638,37 @@ func TestPickAndPlace_MousePlace_TargetInGoal(t *testing.T) {
 			state.HeldItemID, state.ActorX, state.ActorY)
 	}
 
-	// Navigate toward goal area (x=7-9, y=17-19) using manual controls.
-	// The actor walks continuously after a key press, so positions can
-	// overshoot by several cells. We navigate in stages:
-	//   1. Move left until x <= 10
-	//   2. Move down until y >= 16
-	//   3. If overshot (y > 20), move up to correct
-	// Anti-stuck: cycle through all 4 directions when stuck for >3 iterations.
-	lastX, lastY := -1.0, -1.0
-	stuckCount := 0
-	for range 100 {
-		state := h.GetDebugState()
-
-		// Goal proximity check: x in [7,12] and y in [16,20]
-		inGoalX := state.ActorX >= 7 && state.ActorX <= 12
-		inGoalY := state.ActorY >= 16 && state.ActorY <= 20
-		if inGoalX && inGoalY {
-			t.Logf("Near goal area at (%.1f, %.1f)", state.ActorX, state.ActorY)
+	// Navigate toward (5, 18) while holding the target.
+	// IMPORTANT: We use WASD keys (not ClickGrid) because ClickGrid triggers
+	// the interact leaf — if the actor arrives at an empty cell while holding,
+	// it will PLACE the held item there. WASD only triggers movement.
+	//
+	// Route: (44, 11) → left along y=11 through gap at x=20 → (5, 11)
+	//        then down along x=5 → (5, 18)
+	//
+	// Step 1: Move left to x≤5 (clear path along y=11, through wall gap)
+	for range 60 {
+		s := h.GetDebugState()
+		if s.ActorX <= 5 {
+			t.Logf("Reached x=%.1f on y=%.1f", s.ActorX, s.ActorY)
 			break
 		}
-
-		// Detect if we're stuck (position unchanged for multiple iterations)
-		if state.ActorX == lastX && state.ActorY == lastY {
-			stuckCount++
-		} else {
-			stuckCount = 0
-		}
-		lastX, lastY = state.ActorX, state.ActorY
-
-		// If stuck, try alternate directions to get around obstacles.
-		if stuckCount > 3 {
-			switch stuckCount % 4 {
-			case 0:
-				h.SendKey("d") // right
-			case 1:
-				h.SendKey("s") // down
-			case 2:
-				h.SendKey("a") // left
-			case 3:
-				h.SendKey("w") // up
-			}
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-
-		// Prioritized movement toward goal center (x=8, y=18)
-		if state.ActorX > 12 {
-			h.SendKey("a") // Move left
-		} else if state.ActorY < 16 {
-			h.SendKey("s") // Move down
-		} else if state.ActorY > 20 {
-			h.SendKey("w") // Move up (overshot correction)
-		} else if state.ActorX < 7 {
-			h.SendKey("d") // Move right
-		} else {
-			break // Close enough
-		}
+		h.SendKey("a")
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	h.WaitForFrames(5)
+	// Step 2: Move down to y≥18 (clear path along x=5, outside blockade ring)
+	for range 20 {
+		s := h.GetDebugState()
+		if s.ActorY >= 18 {
+			t.Logf("Reached y=%.1f on x=%.1f", s.ActorY, s.ActorX)
+			break
+		}
+		h.SendKey("s")
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	h.WaitForFrames(3)
 	time.Sleep(300 * time.Millisecond)
 
 	stateBeforePlace := h.GetDebugState()
@@ -1703,43 +1679,38 @@ func TestPickAndPlace_MousePlace_TargetInGoal(t *testing.T) {
 		t.Fatalf("Lost target before placement, held=%d", stateBeforePlace.HeldItemID)
 	}
 
-	// Click to place target ADJACENT to actor's current position, within goal area.
-	// The game requires the clicked cell to be adjacent to the actor.
-	// Use actor position + offset toward goal center (8, 18).
-	actorGridX := int(stateBeforePlace.ActorX)
-	actorGridY := int(stateBeforePlace.ActorY)
-	clickX := actorGridX
-	clickY := actorGridY + 1 // Try placing one cell below actor
-	if clickY > 19 {
-		clickY = actorGridY - 1 // or above if at bottom
-	}
-	// Ensure click is in goal region if we can
-	if actorGridX >= 7 && actorGridX <= 9 && actorGridY >= 17 && actorGridY <= 19 {
-		// Actor is IN the goal — click any adjacent cell within goal
-		clickX = actorGridX
-		clickY = actorGridY
-	}
+	// Place target at goal center (8, 18) from outside the blockade ring.
+	// PICK_THRESHOLD=5.0, so actor at (5, 18) can place at (8, 18) (dist=3.0).
+	// The cell (8, 18) is empty — it's the goal center, not part of the ring.
+	goalX, goalY := 8, 18
+	t.Logf("Placing at goal center (%d, %d), actor at (%.1f, %.1f)",
+		goalX, goalY, stateBeforePlace.ActorX, stateBeforePlace.ActorY)
 
-	t.Logf("Placing at grid (%d, %d), actor at (%d, %d)", clickX, clickY, actorGridX, actorGridY)
-
-	if err := h.ClickGrid(clickX, clickY); err != nil {
+	if err := h.ClickGrid(goalX, goalY); err != nil {
 		t.Fatalf("Failed to send place click: %v", err)
 	}
 
-	h.WaitForFrames(5)
-	time.Sleep(500 * time.Millisecond)
-	stateAfter := h.GetDebugState()
-
-	// Verify target was placed
-	if stateAfter.HeldItemID != -1 {
-		t.Errorf("Expected -1 (target placed), got %d", stateAfter.HeldItemID)
-	} else {
-		t.Logf("✓ Target placed, checking win condition...")
-		if stateAfter.WinCond == 1 {
-			t.Logf("✓ Win condition met (target delivered to goal)")
-		} else {
-			t.Log("Note: Target placed but win condition not set (may be outside goal bounds)")
+	// Poll for placement to take effect (avoid timing-dependent single read).
+	placed := false
+	deadline = time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		stateAfter := h.GetDebugState()
+		if stateAfter.HeldItemID == -1 {
+			placed = true
+			t.Logf("✓ Target placed at goal center")
+			if stateAfter.WinCond == 1 {
+				t.Logf("✓ Win condition met (target delivered to goal)")
+			} else {
+				t.Log("Note: Target placed but win condition not set (may be outside goal bounds)")
+			}
+			break
 		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !placed {
+		stateAfter := h.GetDebugState()
+		t.Errorf("Expected -1 (target placed), got %d at actor (%.1f, %.1f)",
+			stateAfter.HeldItemID, stateAfter.ActorX, stateAfter.ActorY)
 	}
 }
 
@@ -1900,21 +1871,27 @@ func TestPickAndPlace_MousePlace_NonTargetInGoal(t *testing.T) {
 		t.Fatalf("Failed to send place click: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
-	stateAfter := h.GetDebugState()
-
-	// Verify cube was placed (heldItemId = -1)
-	if stateAfter.HeldItemID != -1 {
-		t.Errorf("Expected -1 (cube not placed), got %d", stateAfter.HeldItemID)
-	} else {
-		t.Logf("✓ Non-target cube placed (heldItemId=-1)")
-
-		// Verify win condition NOT set (not target)
-		if stateAfter.WinCond == 1 {
-			t.Error("Expected winCond=0 (non-target), but got 1")
-		} else {
-			t.Logf("✓ Win condition not set (correct)")
+	// Poll for placement to take effect (timing-resilient).
+	placed := false
+	placeDeadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(placeDeadline) {
+		stateAfter := h.GetDebugState()
+		if stateAfter.HeldItemID == -1 {
+			placed = true
+			t.Logf("✓ Non-target cube placed (heldItemId=-1)")
+			if stateAfter.WinCond == 1 {
+				t.Error("Expected winCond=0 (non-target), but got 1")
+			} else {
+				t.Logf("✓ Win condition not set (correct)")
+			}
+			break
 		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !placed {
+		stateAfter := h.GetDebugState()
+		t.Errorf("Expected -1 (cube placed), got %d at actor (%.1f, %.1f)",
+			stateAfter.HeldItemID, stateAfter.ActorX, stateAfter.ActorY)
 	}
 }
 

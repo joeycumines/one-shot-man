@@ -855,11 +855,21 @@ func focusNavNext(t *testing.T, ptmx *os.File, buf *threadSafeBuffer) {
 	t.Helper()
 	// Shift+Tab = ESC [ Z in BubbleTea (CSI backtab).
 	shiftTab := []byte{0x1b, '[', 'Z'}
+
 	snap := buf.String()
 	_, _ = ptmx.Write(shiftTab) // → nav-cancel (last)
+	// Allow BubbleTea to complete a full model+view cycle before
+	// snapping the buffer. Without this, waitForScreenChange may
+	// fire on an intermediate differential render (cursor update,
+	// animation frame) before the focus ring has been fully applied
+	// to the view, causing the second ShiftTab to operate on stale
+	// focus state.
+	time.Sleep(200 * time.Millisecond)
 	waitForScreenChange(t, buf, snap, 3*time.Second)
+
 	snap = buf.String()
 	_, _ = ptmx.Write(shiftTab) // → nav-next (second-to-last)
+	time.Sleep(200 * time.Millisecond)
 	waitForScreenChange(t, buf, snap, 3*time.Second)
 }
 

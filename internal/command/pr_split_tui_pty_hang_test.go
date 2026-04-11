@@ -153,6 +153,10 @@ func TestTUIHang_BinaryPTY_Interactive(t *testing.T) {
 		snap := outputBuf.String()
 		_, _ = ptmx.Write([]byte{0x1b}) // Escape
 		waitForScreenChange(t, &outputBuf, snap, 3*time.Second)
+		// Allow the TUI to fully settle after overlay dismissal.
+		// The help overlay close triggers a full re-render; without
+		// stabilization the subsequent Shift+Tab arrives mid-render.
+		time.Sleep(500 * time.Millisecond)
 	} else {
 		t.Logf("WARNING: '?' keypress might not have reached BubbleTea")
 	}

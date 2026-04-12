@@ -28,7 +28,7 @@
     }
   ],
   "statusSection": {
-    "currentState": "POST-AUTOPSY CORRECTED REPLAN. The autopsy (2026-04-12) initially claimed Enter/Tab were broken but Rule of Two Pass 2 verified this was a static analysis error: the autopsy confused Key.Code (rune) with Key.Text (string field). Ultraviolet decoder creates KeyPressEvent{Code: KeyEnter} WITHOUT setting Text, and bubbletea docs confirm 'Key.Text will be empty for special keys like KeyEnter, KeyTab'. The key pipeline is structurally correct for ALL keys (arrows, Enter, Tab, Space, etc). Focus is now on: (1) defensive hardening of msg.text resolution, (2) comprehensive runtime verification tests, (3) cross-platform testing, (4) documentation and diff audit.",
+    "currentState": "POST-AUTOPSY CORRECTED REPLAN. Cross-platform Linux Docker testing DONE (commit 24965d86): 3 Linux-only test flakes fixed (REPLTUIToggle cooked-mode race, Chunk10b 0-iteration timeout, StressBoundedMemoryGrowth poll). Proceeding to remaining blueprint tasks.",
     "goalState": "Production-ready merged codebase: zero v1 patterns, all textarea keys verified working at runtime via integration tests, all tests green on 3 platforms, complete documentation, then STUB tasks and future features expanding towards True Perfection.",
     "replanLog": [
       "2026-04-12: AUTOPSY INTEGRATION + RULE OF TWO CORRECTION. (1) Removed 6 Done tasks from prior merge work. (2) Integrated autopsy findings from scratch/textarea-navigation-autopsy-20260412/. (3) CRITICAL CORRECTION during Rule of Two Pass 2: the autopsy's core claim that Enter/Tab are broken was based on a static analysis error — it confused Key.Code (rune '\\r'/'\\t') with Key.Text (string field, which is '' for special keys per ultraviolet decoder.go:1139-1144 and bubbletea key.go:297-300). The key pipeline is structurally correct for ALL keys. (4) Refocused tasks: defensive hardening of msg.text resolution (not a bug fix but a safety guard), comprehensive runtime verification tests, cross-platform, documentation, diff audit. (5) Added stub tasks per DIRECTIVE.txt for future scope. (6) Autopsy value: mapped entire key pipeline end-to-end, confirmed arrow keys structurally reach textarea, identified PgUp/PgDown as intentionally intercepted by scroll handler."
@@ -63,7 +63,8 @@
       "task": "Cross-platform: Linux via Docker",
       "description": "Run `make make-all-in-container` (see config.mk). All tests must pass including the new textarea key tests. The container runs the full `make all` inside `golang:<version>` from go.mod.",
       "acceptance": "`make make-all-in-container` exits 0. All 43+ packages pass. Zero test failures on Linux.",
-      "status": "Not Started"
+      "status": "Done",
+      "completedNote": "6 Docker runs. 3 Linux-only flakes fixed (REPLTUIToggle cooked-mode race, Chunk10b 0-iteration timeout, StressBoundedMemoryGrowth poll loop). Committed as 24965d86. Rule of Two passed (2/2 PASS)."
     },
     {
       "task": "Cross-platform: Windows",

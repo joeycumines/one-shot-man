@@ -22,6 +22,65 @@ import (
 // Windows.
 const ptyCharDelay = 25 * time.Millisecond
 
+// sendREPLCommand types a command into the go-prompt REPL and submits it by
+// sending CR at the end.
+//
+// This helper solves a cross-platform race condition: during the TUI→REPL
+// transition (or after each REPL command execution), go-prompt briefly puts
+// the terminal in cooked (canonical) mode between reader.Close() and
+// reader.Open(). On Linux, tcsetattr(TCSANOW) discards any characters that
+// arrived in the canonical-mode line-editing buffer, so the first character
+// is silently lost.
+//
+// The strategy: send the first character, verify its echo appeared in the
+// output (proving readBuffer is running in raw mode), then send the
+// remaining characters at the normal ptyCharDelay cadence. If the first
+// character's echo doesn't appear within a short timeout, retry up to 10
+// times with 50ms delays between attempts.
+func sendREPLCommand(t *testing.T, ctx context.Context, cp *termtest.Console, cmd string) {
+	t.Helper()
+
+	if len(cmd) == 0 {
+		sendKey(t, cp, "\r")
+		return
+	}
+
+	firstChar := string([]rune(cmd)[0])
+	rest := string([]rune(cmd)[1:])
+
+	// Retry loop for the first character: send it and wait for echo.
+	const maxRetries = 10
+	const echoTimeout = 200 * time.Millisecond
+	var echoed bool
+	for attempt := range maxRetries {
+		snap := cp.Snapshot()
+		sendKey(t, cp, firstChar)
+
+		// Wait briefly for the character to be echoed by go-prompt.
+		echoCtx, echoCancel := context.WithTimeout(ctx, echoTimeout)
+		err := cp.Expect(echoCtx, snap, termtest.Contains(firstChar), "first char echo")
+		echoCancel()
+		if err == nil {
+			echoed = true
+			break
+		}
+		t.Logf("sendREPLCommand: first char %q echo attempt %d/%d failed (non-fatal)", firstChar, attempt+1, maxRetries)
+		time.Sleep(50 * time.Millisecond)
+	}
+	if !echoed {
+		t.Fatalf("sendREPLCommand: first char %q never echoed after %d attempts\nBuffer: %q", firstChar, maxRetries, cp.String())
+	}
+
+	// Remaining characters: readBuffer is now confirmed running in raw mode.
+	for _, ch := range rest {
+		sendKey(t, cp, string(ch))
+		time.Sleep(ptyCharDelay)
+	}
+
+	// Submit the command.
+	sendKey(t, cp, "\r")
+}
+
 // sendKey sends a raw key string (character or escape sequence) to the console.
 // Use this for single characters, escape sequences, and control characters.
 // For bubbletea-named keys like "ctrl+c", use cp.Send() instead.
@@ -1140,28 +1199,34 @@ func TestSuperDocument_REPLTUIToggle(t *testing.T) {
 	snap = cp.Snapshot()
 	sendKey(t, cp, "s")
 
-	// Should see the REPL prompt (shell-like)
-	expect(snap, "(super-document)", 10*time.Second)
+	// Should see the REPL prompt (shell-like).
+	// Wait for the prompt suffix "> " which is the last thing go-prompt renders
+	// before entering its input loop. This is more precise than just matching
+	// the prefix "(super-document)".
+	expect(snap, "> ", 10*time.Second)
 
-	// Type 'list' command in REPL to verify document is visible
-	// (renamed from 'doc-list' per AGENTS.md consolidation)
-	for _, ch := range "list" {
-		sendKey(t, cp, string(ch))
-		time.Sleep(ptyCharDelay)
-	}
+	// REPL command: "list"
+	//
+	// On the TUI→REPL transition, the terminal briefly enters cooked
+	// (canonical) mode between BubbleTea's exit and go-prompt's setRaw().
+	// In canonical mode the kernel line-buffers input; on Linux the canonical
+	// buffer is discarded when tcsetattr switches to raw mode, so individual
+	// characters written during this window are silently lost.
+	//
+	// The sendREPLCommand helper retries the first character until go-prompt
+	// echoes it, proving that readBuffer is running in raw mode. Subsequent
+	// characters then proceed at the normal ptyCharDelay cadence.
 	snap = cp.Snapshot()
-	sendKey(t, cp, "\r")
+	sendREPLCommand(t, ctx, cp, "list")
 
 	// Should see the document we added in TUI
-	expect(snap, "TUIDoc1", 5*time.Second)
+	expect(snap, "TUIDoc1", 10*time.Second)
 
-	// Type 'tui' command to return to TUI mode
+	// REPL command: "tui" — return to visual mode.
+	// go-prompt re-enters the Close→Open cycle after each command, so the
+	// same cooked-mode transition race applies here as well.
 	snap = cp.Snapshot()
-	for _, ch := range "tui" {
-		sendKey(t, cp, string(ch))
-		time.Sleep(ptyCharDelay)
-	}
-	sendKey(t, cp, "\r")
+	sendREPLCommand(t, ctx, cp, "tui")
 
 	// Should be back in TUI mode with document still present
 	expect(snap, "Super-Document Builder", 10*time.Second)

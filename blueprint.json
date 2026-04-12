@@ -6,7 +6,8 @@
     "sourceDocuments": [
       "scratch/bubbletea-v2-migration.md — Original v2-first migration plan (7 phases, zero shims mandate)",
       "scratch/migration-guide.md — Official Bubble Tea v2 upgrade guide",
-      "scratch/termmux-architecture.md — SessionManager architecture and implementation notes"
+      "scratch/termmux-architecture.md — SessionManager architecture and implementation notes",
+      "scratch/textarea-navigation-autopsy-20260412/ — Adversarial autopsy of textarea key handling (CORRECTED: see replanLog)"
     ]
   },
   "globalAlerts": [
@@ -21,159 +22,143 @@
     },
     {
       "warning": "BRIDGE SYMMETRY: msgToJS and JsToTeaMsg MUST agree on event shapes. Asymmetric bridges are defective."
+    },
+    {
+      "warning": "KEY RESOLUTION DEFENSIVE FIX: The JS key resolution at super_document_script.js:870 currently works because bubbletea v2 sets Key.Text='' (empty) for special keys (Enter, Tab, Esc, arrows) — confirmed by ultraviolet decoder.go:1139-1144 and bubbletea key.go:297-300. The existing `msg.text && msg.text.length === 1` check is safe for current runtime behavior but fragile against future Key.Text population changes. Apply defensive hardening: `const k = (msg.text && msg.text.length === 1 && msg.text.charCodeAt(0) >= 0x20 && msg.text.charCodeAt(0) <= 0x7E) ? msg.text : msg.key;`."
     }
   ],
   "statusSection": {
-    "currentState": "MERGE COMPLETE. Branch one-shot-man-3 merged with wip. All v2 migration Done. All SessionManager/termmux tasks from wip Done. Post-merge cleanup in progress.",
-    "goalState": "Production-ready merged codebase: zero v1 patterns, all tests green on 3 platforms, complete documentation, then STUB tasks and future features.",
+    "currentState": "POST-AUTOPSY CORRECTED REPLAN. The autopsy (2026-04-12) initially claimed Enter/Tab were broken but Rule of Two Pass 2 verified this was a static analysis error: the autopsy confused Key.Code (rune) with Key.Text (string field). Ultraviolet decoder creates KeyPressEvent{Code: KeyEnter} WITHOUT setting Text, and bubbletea docs confirm 'Key.Text will be empty for special keys like KeyEnter, KeyTab'. The key pipeline is structurally correct for ALL keys (arrows, Enter, Tab, Space, etc). Focus is now on: (1) defensive hardening of msg.text resolution, (2) comprehensive runtime verification tests, (3) cross-platform testing, (4) documentation and diff audit.",
+    "goalState": "Production-ready merged codebase: zero v1 patterns, all textarea keys verified working at runtime via integration tests, all tests green on 3 platforms, complete documentation, then STUB tasks and future features expanding towards True Perfection.",
     "replanLog": [
-      "2026-04-11: MERGE SESSION. Merged wip (81 commits) into one-shot-man-3 (23 commits). Resolved 8 file conflicts. Unified blueprint.json.",
-      "2026-04-11: MERGE COMMITTED (c619dbd7). First 5 tasks Done. Rule of Two passed. Proceeding to full test suite and cross-platform.",
-      "2026-04-12: POST-MERGE FIXES. 8 test failures fixed: int64 assertions, v2 mouse contract, lookupBinary closure late-binding, execStream→execv for stdout, skipSlow guards on 36 tests, 2 flaky PickAndPlace navigation rewrites. Full suite passes (gmake make-all-with-log exit 0). Task 6 Done."
+      "2026-04-12: AUTOPSY INTEGRATION + RULE OF TWO CORRECTION. (1) Removed 6 Done tasks from prior merge work. (2) Integrated autopsy findings from scratch/textarea-navigation-autopsy-20260412/. (3) CRITICAL CORRECTION during Rule of Two Pass 2: the autopsy's core claim that Enter/Tab are broken was based on a static analysis error — it confused Key.Code (rune '\\r'/'\\t') with Key.Text (string field, which is '' for special keys per ultraviolet decoder.go:1139-1144 and bubbletea key.go:297-300). The key pipeline is structurally correct for ALL keys. (4) Refocused tasks: defensive hardening of msg.text resolution (not a bug fix but a safety guard), comprehensive runtime verification tests, cross-platform, documentation, diff audit. (5) Added stub tasks per DIRECTIVE.txt for future scope. (6) Autopsy value: mapped entire key pipeline end-to-end, confirmed arrow keys structurally reach textarea, identified PgUp/PgDown as intentionally intercepted by scroll handler."
     ]
   },
   "mandatoryDirectives": {
     "contextManagement": "Each task covers one cohesive change. Read relevant source files before each task.",
     "shimProhibition": "If any task introduces or preserves a v1 compatibility shim, STOP and replan.",
-    "noShimPeriods": "There is NO transitional period where both v1 and v2 behaviors coexist."
+    "noShimPeriods": "There is NO transitional period where both v1 and v2 behaviors coexist.",
+    "adversarialVerification": "REGULARLY spawn fresh subagents instructed to read Skill adversarial-codebase-autopsy and exhaustively verify work believed to be Done. The executing agent has repeatedly proven lazy and inept. Do not trust self-assessment."
   },
   "sequentialTasks": [
     {
-      "task": "Post-merge build verification",
-      "description": "Run make build && make lint && make test-short. Verify no conflict markers remain.",
-      "acceptance": "make build, make lint, make test-short all exit 0. grep -rn '<<<<<<<' returns zero hits.",
-      "status": "Done"
+      "task": "Harden msg.text resolution: add printable-filter guard at super_document_script.js:870",
+      "description": "In `internal/command/super_document_script.js` line 870, the key resolution `const k = msg.text && msg.text.length === 1 ? msg.text : msg.key;` works correctly at runtime because bubbletea v2 sets `Key.Text = ''` (empty) for special keys — `msg.text` is falsy so `k` correctly falls through to `msg.key`. HOWEVER, this is a fragile assumption: if bubbletea ever populates `Key.Text` for control characters (e.g., `Key.Text = '\\r'` for Enter), the length-1 check would resolve `k` to that control character instead of the named key. Apply defensive hardening: change to `const k = (msg.text && msg.text.length === 1 && msg.text.charCodeAt(0) >= 0x20 && msg.text.charCodeAt(0) <= 0x7E) ? msg.text : msg.key;`. This guarantees only printable ASCII (0x20-0x7E) uses msg.text; everything else uses msg.key. Also update the comment at lines 866-869 to document WHY this filter exists (defensive hardening against future Key.Text changes) and the verified behavior (Key.Text is empty for special keys per ultraviolet decoder and bubbletea docs). References: ultraviolet decoder.go:1139-1144, bubbletea key.go:297-300, autopsy 03_gap_analysis.md GAP-001.",
+      "acceptance": "The JS key resolution line explicitly filters for printable ASCII (0x20-0x7E) before using msg.text. Comment documents the defensive rationale. Existing behavior is unchanged: all keys (arrows, Enter, Tab, Space, printable chars, backspace, delete, home, end) continue to work correctly. Verified by the integration tests in the next task.",
+      "status": "Not Started"
     },
     {
-      "task": "Sweep wip-introduced JS for remaining v1 mouse patterns",
-      "description": "Scan ALL .js files for: msg.isWheel, msg.action, msg.shift/alt/ctrl booleans, msg.row/msg.col. Convert to v2.",
-      "acceptance": "Zero v1 mouse patterns in any JS file under internal/command/.",
-      "status": "Done"
+      "task": "Write comprehensive runtime verification tests for textarea key handling",
+      "description": "Create integration tests that verify the full JS→Go bridge for textarea keys at runtime. Test file: `internal/command/super_document_test.go` or a new dedicated test file. Cover ALL keys from the autopsy evidence chain (02_evidence_chain.md lines 153-169): ↑, ↓, ←, →, Enter, Tab, Space, Backspace, Esc, Home, End, PgUp, PgDn, Delete, plus printable letters (a, Z, 5). For each key: (1) Verify msgToJS produces the correct JS object — specifically verify `msg.text` is empty for special keys and populated only for printable chars. (2) Verify the JS k resolution produces the correct k value. (3) Verify ValidateTextareaInput(k) returns expected result. (4) Verify the key reaches (or is correctly intercepted before) textarea.update(). Use existing test patterns from `internal/builtin/bubbletea/input_validation_test.go` and `coverage_gaps_test.go`. Tests must use skipSlow(t) if spawning JS runtimes (per AGENTS.md). Also add a specific test that verifies Key.Text is empty for Enter and Tab by directly checking msgToJS output — this serves as a regression guard against the autopsy's incorrect assumption.",
+      "acceptance": "A test suite covering all 14+ keys from the evidence chain table exists and passes. Each key has a test verifying the full pipeline. A dedicated test asserts that msgToJS produces `text: ''` for Enter and Tab (regression guard against the autopsy's mistaken claim). PgUp/PgDown tests verify they are intercepted by the scroll handler. Esc test verifies it is intercepted by the esc handler. All tests pass with `go test -v ./internal/command/... -run TestTextareaKey` and existing `go test -v ./internal/builtin/bubbletea/... -run TestValidateTextareaInput` continues to pass.",
+      "status": "Not Started"
     },
     {
-      "task": "Fix test failures from merge",
-      "description": "Run full make test. Fix failures from merge resolution, v1 patterns in wip code, golden file mismatches.",
-      "acceptance": "make test exits 0, all packages pass.",
-      "status": "Done"
-    },
-    {
-      "task": "Regenerate golden test files",
-      "description": "Update golden files for changed tab bar structure and lipgloss v2 rendering.",
-      "acceptance": "All golden file tests pass.",
-      "status": "Done"
-    },
-    {
-      "task": "Commit merge with Rule of Two verification",
-      "description": "Stage all files. Two contiguous issue-free subagent reviews.",
-      "acceptance": "Merge committed after Rule of Two gate passes.",
-      "status": "Done"
-    },
-    {
-      "task": "Full test suite on macOS (non-short)",
-      "description": "gmake test with 30m timeout. All packages pass including slow E2E. Fixed 8 post-merge failures: int64/uint64 assertions, v2 mouse contract, lookupBinary closure bug, execStream vs execv, skipSlow guards, flaky PickAndPlace navigation.",
-      "acceptance": "gmake test exits 0 on macOS.",
-      "status": "Done"
+      "task": "E2E runtime verification: arrow keys and Enter produce visible textarea behavior",
+      "description": "Write an E2E test that verifies textarea behavior at the terminal level, addressing UNCERTAIN items 6-8 from autopsy 04_honest_conclusions.md. Test in `internal/command/super_document_e2e_test.go` or `internal/scripting/super_document_unix_integration_test.go` that: (1) opens the super-document TUI, (2) enters MODE_INPUT, (3) focuses the content textarea (FOCUS_CONTENT), (4) types multi-line content including Enter for newlines, (5) presses arrow keys and verifies cursor position changes, (6) verifies the view output reflects the changes. Use existing E2E infrastructure (`internal/mouseharness/`, VT parser with WaitForContent/WaitForScreenContent). This test is the definitive proof that the key pipeline works end-to-end, not just structurally. If issues are found, document them in WIP.md with the specific failure mode and add fix tasks before the cross-platform tasks.",
+      "acceptance": "An E2E test exists that types multi-line content into the textarea (proving Enter works for newlines), then presses arrow keys and verifies visible cursor movement. The test passes on macOS. This test proves the full pipeline from terminal→bubbletea→JS→textarea→view works for the key types the autopsy investigated.",
+      "status": "Not Started"
     },
     {
       "task": "Cross-platform: Linux via Docker",
-      "description": "make make-all-in-container.",
-      "acceptance": "Exits 0, all tests pass on Linux.",
+      "description": "Run `make make-all-in-container` (see config.mk). All tests must pass including the new textarea key tests. The container runs the full `make all` inside `golang:<version>` from go.mod.",
+      "acceptance": "`make make-all-in-container` exits 0. All 43+ packages pass. Zero test failures on Linux.",
       "status": "Not Started"
     },
     {
       "task": "Cross-platform: Windows",
-      "description": "make make-all-run-windows.",
-      "acceptance": "Exits 0, all tests pass on Windows.",
+      "description": "Run `make make-all-run-windows` (see config.mk). Uses `hack/run-on-windows.sh` to execute `make all` on Windows. All tests must pass.",
+      "acceptance": "`make make-all-run-windows` exits 0. All packages pass on Windows.",
       "status": "Not Started"
     },
     {
-      "task": "Documentation sweep",
-      "description": "Verify all docs/ accuracy. No stale v1 refs, deleted types, or pre-merge APIs.",
-      "acceptance": "All docs accurate for current v2 API.",
+      "task": "Documentation sweep: verify accuracy for v2 API and key handling",
+      "description": "Verify all files under `docs/` are accurate for the current v2 API. Specifically: (1) No references to v1 mouse patterns (isWheel, action, shift/alt/ctrl booleans); (2) No references to deleted types or pre-merge APIs; (3) `docs/scripting.md` documents the key event handling pattern including msg.text resolution and the printable-filter guard; (4) Any examples showing textarea usage reflect the current implementation.",
+      "acceptance": "Every file in docs/ is accurate for the current codebase. `grep -rn 'isWheel\\|msg\\.action.*press\\|msg\\.shift\\|msg\\.alt\\|msg\\.ctrl' docs/` returns zero hits. Key event handling is documented correctly.",
       "status": "Not Started"
     },
     {
       "task": "Diff vs main audit",
-      "description": "Review every change vs main. All intentional, tested, documented.",
-      "acceptance": "Complete audit. No dead code. All changes covered by tests.",
+      "description": "Run `git diff main...HEAD` and review every changed file. Verify: (1) every change is intentional and tested; (2) no dead code introduced by the merge; (3) no v1 patterns survive; (4) all test helpers, golden files, and test data are current. Pay special attention to files that had merge conflicts (listed in WIP.md).",
+      "acceptance": "Complete diff audit documented in scratch/. Every changed file reviewed. No dead code. No untested changes. No v1 patterns. Merge conflict files specifically verified.",
       "status": "Not Started"
     },
     {
       "task": "Adversarial codebase autopsy on merged state",
-      "description": "Subagent with adversarial-codebase-autopsy skill verifies merged codebase.",
-      "acceptance": "Autopsy report produced. All issues addressed.",
+      "description": "Spawn subagent with adversarial-codebase-autopsy skill to verify the merged codebase. The subagent reads the skill, performs exhaustive analysis, and produces a structured report. All issues found must be addressed before proceeding. This is a standing quality gate — the merged codebase must survive hostile scrutiny.",
+      "acceptance": "Autopsy report produced in scratch/. All identified issues addressed or documented with explicit rationale. No critical or high-severity findings remain open.",
       "status": "Not Started"
     },
     {
       "task": "STUB: tea.View Cursor field support",
-      "description": "Expose cursor position/shape/color/blink via view() return.",
-      "acceptance": "JS controls cursor via view(). Integration test verifies.",
+      "description": "Expose cursor position/shape/color/blink via view() return object. Currently view() returns {content, altScreen, mouseMode}. Add cursor field matching bubbletea v2's tea.View cursor capabilities. Files: internal/builtin/bubbletea/bubbletea.go (view handling), internal/command/super_document_script.js (view() return).",
+      "acceptance": "JS controls cursor via view(). Integration test verifies cursor properties are set and applied.",
       "status": "Not Started"
     },
     {
       "task": "STUB: tea.View ForegroundColor/BackgroundColor",
-      "description": "Expose terminal-wide colors via view() return.",
-      "acceptance": "JS sets terminal colors. Integration test verifies.",
+      "description": "Expose terminal-wide foreground/background colors via view() return. Files: internal/builtin/bubbletea/bubbletea.go.",
+      "acceptance": "JS sets terminal colors via view() return. Integration test verifies color application.",
       "status": "Not Started"
     },
     {
       "task": "STUB: tea.View KeyboardEnhancements",
-      "description": "Expose Kitty keyboard protocol via view() return.",
-      "acceptance": "JS requests keyboard enhancements. Integration test verifies.",
+      "description": "Expose Kitty keyboard protocol via view() return. Files: internal/builtin/bubbletea/bubbletea.go.",
+      "acceptance": "JS requests keyboard enhancements. Integration test verifies protocol negotiation.",
       "status": "Not Started"
     },
     {
       "task": "STUB: tea.View OnMouse intercept",
-      "description": "Expose zone-based mouse interception via view() return.",
-      "acceptance": "JS defines mouse zones. Tests verify detection.",
+      "description": "Expose zone-based mouse interception via view() return. Files: internal/builtin/bubbletea/bubbletea.go, internal/builtin/bubbletea/zone handling.",
+      "acceptance": "JS defines mouse zones. Tests verify detection and event routing.",
       "status": "Not Started"
     },
     {
       "task": "STUB: tea.View ProgressBar",
-      "description": "Expose native terminal progress bars.",
-      "acceptance": "JS displays progress bars. Integration test verifies.",
+      "description": "Expose native terminal progress bars via view() return. Files: internal/builtin/bubbletea/bubbletea.go.",
+      "acceptance": "JS displays progress bars. Integration test verifies rendering.",
       "status": "Not Started"
     },
     {
       "task": "STUB: tea.View DisableBracketedPasteMode",
-      "description": "Expose bracketed paste control.",
-      "acceptance": "JS controls bracketed paste. Test verifies.",
+      "description": "Expose bracketed paste control via view() return. Files: internal/builtin/bubbletea/bubbletea.go.",
+      "acceptance": "JS controls bracketed paste. Test verifies mode toggling.",
       "status": "Not Started"
     },
     {
       "task": "STUB: Performance benchmarks",
-      "description": "Benchmark message throughput, view parsing, render latency.",
-      "acceptance": "Benchmark suite runs. Results documented.",
+      "description": "Benchmark message throughput (msgToJS/JsToTeaMsg), view parsing, render latency. Files: internal/builtin/bubbletea/benchmark_latency_test.go (already exists with some benchmarks).",
+      "acceptance": "Benchmark suite runs via `go test -bench=. ./internal/builtin/bubbletea/...`. Results documented in scratch/.",
       "status": "Not Started"
     },
     {
-      "task": "Termmux facade (T32-T40)",
-      "description": "Design JS API, create skeleton, implement pane CRUD/visibility/events/bubbletea integration, tests.",
-      "acceptance": "All facade functions tested. make all + integration targets pass.",
+      "task": "STUB: Termmux facade design and implementation",
+      "description": "Design JS API for termmux, create skeleton, implement pane CRUD, visibility, events, bubbletea integration. Reference: scratch/termmux-architecture.md. The termmux SessionManager exists in Go (internal/builtin/termmux/) but needs a complete JS API surface.",
+      "acceptance": "All termmux facade functions exposed to JS. Integration tests verify pane CRUD, visibility toggling, event routing, and bubbletea program embedding. `make test` passes.",
       "status": "Not Started"
     },
     {
-      "task": "Wizard state machine (T41-T55)",
-      "description": "Design states, implement transitions, port plan editor, branch pipeline, error resolution, orchestration, remove old Go TUI, E2E tests.",
-      "acceptance": "Full wizard E2E. Old Go TUI removed. All tests pass.",
+      "task": "STUB: Wizard state machine",
+      "description": "Design wizard states, implement transitions, port plan editor, branch pipeline, error resolution, orchestration, remove old Go TUI. Reference: internal/command/pr_split_*.js files for existing wizard structure.",
+      "acceptance": "Full wizard E2E flow works via JS. Old Go TUI code removed. All tests pass.",
       "status": "Not Started"
     },
     {
-      "task": "Advanced features (T56-T64)",
-      "description": "Bell interception, HUD, mouse in termmux, native IPC, worktree isolation, error handling.",
-      "acceptance": "All features implemented and tested.",
+      "task": "STUB: Advanced features — bell interception, HUD, mouse in termmux, native IPC, worktree isolation",
+      "description": "Implement advanced terminal features: bell interception, HUD overlay, mouse support within termmux panes, native IPC for inter-process communication, worktree isolation for safe concurrent operations.",
+      "acceptance": "Each feature implemented, tested, and documented. `make test` passes.",
       "status": "Not Started"
     },
     {
-      "task": "Final cross-platform validation (T65-T66)",
-      "description": "Run all targets on all platforms.",
-      "acceptance": "All GREEN on macOS, Linux, Windows.",
+      "task": "Final cross-platform validation",
+      "description": "Run all targets on all platforms (macOS native, Linux via container, Windows via run-on-windows.sh) AFTER all preceding tasks are complete.",
+      "acceptance": "ALL GREEN on macOS, Linux, Windows. Zero test failures on any platform.",
       "status": "Not Started"
     },
     {
-      "task": "Scope expansion",
-      "description": "Identify next improvements. Task list never empty.",
-      "acceptance": "New tasks added.",
+      "task": "Scope expansion: identify and add next frontier tasks",
+      "description": "After reaching stable-state (all current tasks complete, verified), ideate new improvements, refinements, and features. This task is never truly complete — it represents the perpetual expansion mandate. Areas to explore: additional textarea features (selection, cut/copy/paste), more comprehensive E2E test coverage, performance optimization, accessibility, new script examples, enhanced error messages, etc.",
+      "acceptance": "New concrete tasks added to sequentialTasks. Each task meets the Planning Depth Standard (project-specific, verifiable acceptance, context pointers).",
       "status": "Not Started"
     }
   ],
@@ -189,6 +174,10 @@
     {
       "type": "POST_EXECUTION_WARNING",
       "alert": "ALL platforms must pass. Cross-platform testing mandatory."
+    },
+    {
+      "type": "POST_EXECUTION_WARNING",
+      "alert": "Key.Text is empty ('') for special keys (Enter, Tab, Esc, arrows) per ultraviolet decoder and bubbletea v2 docs. The msg.text resolution line is a defensive guard, not a bug fix. Never assume Key.Text contains the rune value — it is populated only for printable characters."
     }
   ]
 }

@@ -251,13 +251,17 @@ func TestChunk10b_SendToHandle_MultiChunkText(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	// Set small chunk size to force multi-chunk splitting.
+	// NOTE: Timeout values must be large enough for at least one iteration
+	// of the polling loop to run, even under heavy load (Docker/CI). A value
+	// of 1ms can be elapsed by the time the while loop condition is checked,
+	// causing 0 iterations and a spurious "anchors not found" error.
 	_, err := evalJS(`
 		prSplit.SEND_TEXT_CHUNK_BYTES = 100;
 		prSplit.SEND_TEXT_CHUNK_DELAY_MS = 0;
 		prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 0;
-		prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 1;
-		prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS = 1;
-		prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 1;
+		prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 50;
+		prSplit.SEND_SUBMIT_ACK_TIMEOUT_MS = 50;
+		prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 50;
 
 		// Mock handle that records sends.
 		var __mockSends = [];

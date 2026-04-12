@@ -863,11 +863,23 @@ function configureTextarea(ta, width) {
 }
 
 function handleKeys(msg, s) {
-    // Use msg.text for printable characters (includes space bar which has text=" ")
-    // Use msg.key for special keys (enter, backspace, arrows, etc.)
-    // This is required because Bubble Tea v2 produces msg.key="space" for space bar,
-    // but validation expects the actual character " " to pass printable ASCII checks.
-    const k = msg.text && msg.text.length === 1 ? msg.text : msg.key;
+    // Resolve the effective key string for dispatch.
+    //
+    // msg.text carries the literal character for printable keys (e.g. " " for
+    // space) while msg.key carries the BubbleTea v2 named form (e.g. "space").
+    // Textarea validation expects the printable character, so we prefer
+    // msg.text when it contains exactly one printable ASCII character (0x20–
+    // 0x7E).  Everything else — special keys like enter, backspace, arrows,
+    // function keys, and control sequences — falls through to msg.key.
+    //
+    // DEFENSIVE RATIONALE: BubbleTea v2 currently sets Key.Text="" for special
+    // keys (ultraviolet decoder.go:1139–1144, bubbletea key.go:297–300).  The
+    // printable-ASCII guard protects against future changes that might populate
+    // Key.Text with control characters (e.g. "\r" for Enter, "\t" for Tab).
+    const k = (msg.text && msg.text.length === 1
+        && msg.text.charCodeAt(0) >= 0x20
+        && msg.text.charCodeAt(0) <= 0x7E)
+        ? msg.text : msg.key;
     const prevMode = s.mode; // Track mode before processing
     // Global quit from any mode if ctrl+c
     if (k === 'ctrl+c') {

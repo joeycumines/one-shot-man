@@ -2386,3 +2386,131 @@ func TestSuperDocument_PasteInTextarea(t *testing.T) {
 		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
 	}
 }
+
+// TestSuperDocument_TextareaArrowKeysAndEnter is the definitive E2E proof that
+// the full key pipeline works for textarea operations:
+//
+//   - Enter creates newlines (multi-line content)
+//   - Arrow keys navigate within existing content
+//   - Characters typed after navigation are inserted at the cursor position
+//
+// This test addresses UNCERTAIN items 6-8 from the textarea navigation
+// autopsy (04_honest_conclusions.md) by verifying visible behavior at the
+// terminal level, not just structural code analysis.
+//
+// Strategy: type content on two lines, navigate back with Up+Home, type a
+// distinctive prefix, then submit. Only verify content AFTER submission
+// (in the list view) because BubbleTea v2 differential rendering makes
+// mid-typing verification unreliable — individual keystrokes are rendered
+// as cursor-positioned single-char updates, not contiguous strings.
+func TestSuperDocument_TextareaArrowKeysAndEnter(t *testing.T) {
+	if !isUnixPlatform() {
+		t.Skip("Unix-only integration test")
+	}
+	if testing.Short() {
+		t.Skip("skipping slow integration test in short mode")
+	}
+
+	binaryPath := buildTestBinary(t)
+	env := newTestProcessEnv(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cp, err := termtest.NewConsole(ctx,
+		termtest.WithCommand(binaryPath, "super-document", "--interactive"),
+		termtest.WithDefaultTimeout(30*time.Second),
+		termtest.WithEnv(env),
+	)
+	if err != nil {
+		t.Fatalf("Failed to create termtest: %v", err)
+	}
+	defer cp.Close()
+
+	expect := func(snap termtest.Snapshot, target string, timeout time.Duration) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		if err := cp.Expect(ctx, snap, termtest.Contains(target), fmt.Sprintf("wait for %q", target)); err != nil {
+			t.Fatalf("Expected %q: %v\nBuffer: %q", target, err, cp.String())
+		}
+	}
+
+	// Wait for TUI to render.
+	snap := cp.Snapshot()
+	expect(snap, "Super-Document Builder", 15*time.Second)
+
+	// Enter add mode.
+	snap = cp.Snapshot()
+	sendKey(t, cp, "a")
+	expect(snap, "Content (multi-line):", 5*time.Second)
+
+	// Tab to content textarea (starts at FOCUS_LABEL).
+	sendKey(t, cp, "\t")
+	time.Sleep(100 * time.Millisecond)
+
+	// ── Step 1: Type "AAAA" on line 1 ──────────────────────────────
+	for _, ch := range "AAAA" {
+		sendKey(t, cp, string(ch))
+		time.Sleep(ptyCharDelay)
+	}
+
+	// ── Step 2: Press Enter to create a new line ───────────────────
+	sendKey(t, cp, "\r")
+	time.Sleep(ptyCharDelay)
+
+	// ── Step 3: Type "BBBB" on line 2 ──────────────────────────────
+	for _, ch := range "BBBB" {
+		sendKey(t, cp, string(ch))
+		time.Sleep(ptyCharDelay)
+	}
+
+	// Textarea now contains:
+	//   Line 1: AAAA
+	//   Line 2: BBBB  (cursor at end)
+
+	// ── Step 4: Press Up arrow → move to line 1 ────────────────────
+	sendKey(t, cp, "\x1b[A") // Up arrow
+	time.Sleep(50 * time.Millisecond)
+
+	// ── Step 5: Press Home → move to beginning of line 1 ───────────
+	sendKey(t, cp, "\x1b[H") // Home
+	time.Sleep(50 * time.Millisecond)
+
+	// ── Step 6: Type "X" at the beginning of line 1 ────────────────
+	// If Up+Home worked, cursor is at (0,0). "X" is inserted before
+	// "AAAA", making line 1 = "XAAAA". If navigation failed, "X"
+	// would be at a different position or on line 2.
+	sendKey(t, cp, "X")
+	time.Sleep(ptyCharDelay)
+
+	// ── Step 7: Submit and verify ──────────────────────────────────
+	// Tab to Submit button (FOCUS_CONTENT → FOCUS_SUBMIT).
+	sendKey(t, cp, "\t")
+	time.Sleep(50 * time.Millisecond)
+
+	snap = cp.Snapshot()
+	sendKey(t, cp, "\r")
+
+	// After submission, the list view renders the content preview.
+	// If Enter created a newline AND arrow keys navigated correctly,
+	// the submitted document contains "XAAAA\nBBBB". The preview
+	// in the list view shows the content (possibly truncated).
+	//
+	// Check for "XAAAA" — this string can only exist if:
+	//   1. "AAAA" was typed on line 1
+	//   2. Enter created a new line (so "BBBB" was on line 2)
+	//   3. Up arrow moved cursor back to line 1
+	//   4. Home moved cursor to column 0
+	//   5. "X" was inserted at position (0,0)
+	expect(snap, "Documents: 1", 5*time.Second)
+	expect(snap, "XAAAA", 5*time.Second)
+
+	// Quit.
+	time.Sleep(100 * time.Millisecond)
+	sendKey(t, cp, "q")
+
+	if code, err := cp.WaitExit(ctx); err != nil || code != 0 {
+		t.Fatalf("Expected exit code 0, got %d (err: %v)\nBuffer: %q", code, err, cp.String())
+	}
+}

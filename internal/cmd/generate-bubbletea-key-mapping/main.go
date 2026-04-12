@@ -394,6 +394,19 @@ func extractKeyConstants(pkg *packages.Package) ([]keyEntry, []keyEntry, error) 
 	return entries, allEntries, nil
 }
 
+// formatRuneLiteral returns a Go source code representation of a rune value.
+// For runes within valid Unicode range (U+0000 to U+10FFFF), it uses strconv.QuoteRune
+// which produces the 'X' or '\uXXXX' or '\UXXXXXXXX' syntax.
+// For runes outside valid Unicode (which the ultraviolet package uses for
+// supplementary key codes like KeyUp = 0x110001), it emits rune(0xHHHHHH)
+// since Go's rune literal syntax only supports valid Unicode code points.
+func formatRuneLiteral(r rune) string {
+	if r >= 0 && r <= 0x10FFFF {
+		return strconv.QuoteRune(r)
+	}
+	return fmt.Sprintf("rune(0x%x)", r)
+}
+
 // generateKeysOutput generates the Go source file content for keys_gen.go.
 // entries is the deduplicated list (for KeyDefs), allEntries includes all names (for KeyDefsByName).
 func generateKeysOutput(entries []keyEntry, allEntries []keyEntry) ([]byte, error) {
@@ -422,8 +435,8 @@ var KeyDefs = map[string]KeyDef{
 
 	// Write KeyDefs (one per string value, using canonical name)
 	for _, e := range entries {
-		buf.WriteString(fmt.Sprintf("\t%q: {Name: %q, String: %q, Code: %q},\n",
-			e.StringVal, e.Name, e.StringVal, e.Code))
+		buf.WriteString(fmt.Sprintf("\t%q: {Name: %q, String: %q, Code: %s},\n",
+			e.StringVal, e.Name, e.StringVal, formatRuneLiteral(e.Code)))
 	}
 
 	buf.WriteString(`}
@@ -447,7 +460,7 @@ var AllKeyCodes = []rune{
 
 	// Write all key codes (canonical names only)
 	for _, e := range entries {
-		buf.WriteString(fmt.Sprintf("\t%q, // %s\n", e.Code, e.Name))
+		buf.WriteString(fmt.Sprintf("\t%s, // %s\n", formatRuneLiteral(e.Code), e.Name))
 	}
 
 	buf.WriteString(`}

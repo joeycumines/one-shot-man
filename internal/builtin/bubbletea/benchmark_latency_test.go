@@ -26,7 +26,7 @@ import (
 // ============================================================================
 
 // BenchmarkJsToTeaMsg_KeyMsg measures the time to convert a JS key event
-// object to a Go tea.KeyMsg. This is called for EVERY key press.
+// object to a Go tea.KeyPressMsg. This is called for EVERY key press.
 func BenchmarkJsToTeaMsg_KeyMsg(b *testing.B) {
 	runtime := goja.New()
 
@@ -111,7 +111,7 @@ func BenchmarkJsToTeaMsg_WindowSizeMsg(b *testing.B) {
 	}
 }
 
-// BenchmarkMsgToJS_KeyMsg measures the time to convert a Go KeyMsg to JS.
+// BenchmarkMsgToJS_KeyMsg measures the time to convert a Go KeyPressMsg to JS.
 // This is called in jsModel.Update for every message.
 func BenchmarkMsgToJS_KeyMsg(b *testing.B) {
 	runtime := goja.New()
@@ -276,7 +276,7 @@ func BenchmarkParseKey_Modifier(b *testing.B) {
 
 // BenchmarkFullKeyPipeline simulates the full path of a key event:
 // 1. Create JS key event object
-// 2. Convert to Go tea.KeyMsg (JsToTeaMsg)
+// 2. Convert to Go tea.KeyPressMsg (JsToTeaMsg)
 // 3. Convert back to JS (msgToJS)
 // 4. Extract command from response (valueToCmd with tick)
 func BenchmarkFullKeyPipeline(b *testing.B) {

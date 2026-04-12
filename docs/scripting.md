@@ -362,6 +362,18 @@ view: function(model) {
 
 **Message types** (received in `update(msg, model)`):
 - `Key` — `{type: 'Key', key, text, mod, code, shiftedCode, baseCode, isRepeat}`
+  - `key` — Logical key name (`"a"`, `"enter"`, `"up"`, `"ctrl+c"`). Always present.
+  - `text` — Printable text the key produces (`"a"`, `"A"`, `" "`). Empty string for special/control keys.
+  - `mod` — Modifier array (e.g., `["shift"]`, `["ctrl", "alt"]`). Empty array when no modifiers.
+  - `code`, `shiftedCode`, `baseCode` — Rune codes for the key. `code` is the unmodified key, `shiftedCode` includes shift, `baseCode` is the physical key.
+  - `isRepeat` — Boolean, true when the key is auto-repeating from being held down.
+  - **Key resolution pattern**: For printable character matching, use `text`; for named key matching (navigation, function keys), use `key`:
+    ```javascript
+    // Printable-ASCII guard: resolve to text for typeable chars, key for specials
+    const k = (msg.text && msg.text.length === 1 &&
+               msg.text.charCodeAt(0) >= 0x20 &&
+               msg.text.charCodeAt(0) <= 0x7E) ? msg.text : msg.key;
+    ```
 - `MouseClick` — `{type: 'MouseClick', x, y, button, mod}` (left/right/middle click)
 - `MouseRelease` — `{type: 'MouseRelease', x, y, button, mod}`
 - `MouseMotion` — `{type: 'MouseMotion', x, y, mod}` (only when mouse mode is enabled)

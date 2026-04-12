@@ -53,7 +53,7 @@ func TestToggleModel_Update_ToggleByRune(t *testing.T) {
 	inner := &stubModel{}
 	tm := &toggleModel{inner: inner, toggleKey: 0x1D}
 
-	// Send a KeyMsg with rune 0x1D (Ctrl+])
+	// Send a KeyPressMsg with rune 0x1D (Ctrl+])
 	keyMsg := tea.KeyPressMsg{Code: 0x1D}
 	model, cmd := tm.Update(keyMsg)
 	if model != tm {

@@ -368,3 +368,94 @@ func TestMsgToJS_OtherMsgs(t *testing.T) {
 		})
 	}
 }
+
+// TestJsModToKeyMod verifies that jsModToKeyMod only accepts v2 array format
+// and rejects v1 boolean properties.
+func TestJsModToKeyMod(t *testing.T) {
+	vm := goja.New()
+
+	t.Run("nil mod returns 0", func(t *testing.T) {
+		obj := vm.NewObject()
+		assert.Equal(t, tea.KeyMod(0), jsModToKeyMod(obj))
+	})
+
+	t.Run("undefined mod returns 0", func(t *testing.T) {
+		obj := vm.NewObject()
+		obj.Set("mod", goja.Undefined())
+		assert.Equal(t, tea.KeyMod(0), jsModToKeyMod(obj))
+	})
+
+	t.Run("empty array returns 0", func(t *testing.T) {
+		obj := vm.NewObject()
+		obj.Set("mod", vm.NewArray())
+		assert.Equal(t, tea.KeyMod(0), jsModToKeyMod(obj))
+	})
+
+	t.Run("single modifier", func(t *testing.T) {
+		obj := vm.NewObject()
+		modArr := vm.NewArray()
+		modArr.Set("0", "ctrl")
+		obj.Set("mod", modArr)
+		assert.Equal(t, tea.ModCtrl, jsModToKeyMod(obj))
+	})
+
+	t.Run("multiple modifiers", func(t *testing.T) {
+		obj := vm.NewObject()
+		modArr := vm.NewArray()
+		modArr.Set("0", "ctrl")
+		modArr.Set("1", "alt")
+		modArr.Set("2", "shift")
+		obj.Set("mod", modArr)
+		assert.Equal(t, tea.ModCtrl|tea.ModAlt|tea.ModShift, jsModToKeyMod(obj))
+	})
+
+	t.Run("all v2 modifiers", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			want tea.KeyMod
+		}{
+			{"ctrl", tea.ModCtrl},
+			{"alt", tea.ModAlt},
+			{"shift", tea.ModShift},
+			{"meta", tea.ModMeta},
+			{"hyper", tea.ModHyper},
+			{"super", tea.ModSuper},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				obj := vm.NewObject()
+				modArr := vm.NewArray()
+				modArr.Set("0", tc.name)
+				obj.Set("mod", modArr)
+				assert.Equal(t, tc.want, jsModToKeyMod(obj))
+			})
+		}
+	})
+
+	t.Run("unknown modifier ignored", func(t *testing.T) {
+		obj := vm.NewObject()
+		modArr := vm.NewArray()
+		modArr.Set("0", "ctrl")
+		modArr.Set("1", "capslock")
+		obj.Set("mod", modArr)
+		assert.Equal(t, tea.ModCtrl, jsModToKeyMod(obj))
+	})
+
+	t.Run("v1 boolean properties are ignored", func(t *testing.T) {
+		// v1 used individual boolean properties: alt: true, ctrl: true, shift: true
+		// v2 requires mod: ["alt", "ctrl", "shift"]
+		// The shim that accepted booleans has been removed.
+		obj := vm.NewObject()
+		obj.Set("alt", true)
+		obj.Set("ctrl", true)
+		obj.Set("shift", true)
+		// No "mod" property set — these booleans must be ignored
+		assert.Equal(t, tea.KeyMod(0), jsModToKeyMod(obj),
+			"v1-style boolean modifiers must not be accepted; use mod array")
+	})
+
+	t.Run("non-array mod returns 0", func(t *testing.T) {
+		obj := vm.NewObject()
+		obj.Set("mod", "ctrl")
+		assert.Equal(t, tea.KeyMod(0), jsModToKeyMod(obj))
+	})
+}

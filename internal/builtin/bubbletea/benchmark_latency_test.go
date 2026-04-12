@@ -34,10 +34,12 @@ func BenchmarkJsToTeaMsg_KeyMsg(b *testing.B) {
 	keyEventJS := `({
 		type: 'Key',
 		key: 'w',
-		runes: ['w'],
-		alt: false,
-		ctrl: false,
-		paste: false
+		text: 'w',
+		mod: [],
+		code: 119,
+		shiftedCode: 0,
+		baseCode: 0,
+		isRepeat: false
 	})`
 
 	val, err := runtime.RunString(keyEventJS)
@@ -369,12 +371,10 @@ func BenchmarkGojaToValue_Map(b *testing.B) {
 	runtime := goja.New()
 
 	m := map[string]any{
-		"type":  "Key",
-		"key":   "w",
-		"runes": []string{"w"},
-		"alt":   false,
-		"ctrl":  false,
-		"paste": false,
+		"type": "Key",
+		"key":  "w",
+		"text": "w",
+		"mod":  []string{},
 	}
 
 	b.ResetTimer()
@@ -390,7 +390,7 @@ func BenchmarkGojaToValue_Map(b *testing.B) {
 // Comparative Benchmarks (Native Go vs Bridge)
 // ============================================================================
 
-// BenchmarkNativeTeaKeyMsg shows the baseline cost of creating a KeyMsg.
+// BenchmarkNativeTeaKeyMsg shows the baseline cost of creating a KeyPressMsg.
 func BenchmarkNativeTeaKeyMsg(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {

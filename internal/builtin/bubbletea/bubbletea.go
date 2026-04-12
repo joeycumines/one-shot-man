@@ -1136,6 +1136,8 @@ func jsToTeaMouseWheel(obj *goja.Object) tea.Msg {
 }
 
 // jsModToKeyMod converts a JS mod array property to a tea.KeyMod.
+// The mod field must be a JS Array of modifier name strings (e.g., ["ctrl", "alt"]).
+// If mod is absent, nil, or not an array, returns 0 (no modifiers).
 func jsModToKeyMod(obj *goja.Object) tea.KeyMod {
 	modVal := obj.Get("mod")
 	if modVal == nil || goja.IsUndefined(modVal) || goja.IsNull(modVal) {
@@ -1143,18 +1145,7 @@ func jsModToKeyMod(obj *goja.Object) tea.KeyMod {
 	}
 	modArr, ok := modVal.(*goja.Object)
 	if !ok || modArr.ClassName() != "Array" {
-		// Fallback: also check legacy individual boolean properties for backward compat
-		var mod tea.KeyMod
-		if getJSBoolProp(obj, "alt") {
-			mod |= tea.ModAlt
-		}
-		if getJSBoolProp(obj, "ctrl") {
-			mod |= tea.ModCtrl
-		}
-		if getJSBoolProp(obj, "shift") {
-			mod |= tea.ModShift
-		}
-		return mod
+		return 0
 	}
 	// Export array to Go []interface{} and iterate elements
 	arr := modArr.Export()

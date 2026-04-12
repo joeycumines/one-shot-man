@@ -96,7 +96,8 @@
       "task": "Adversarial codebase autopsy on merged state",
       "description": "Spawn subagent with adversarial-codebase-autopsy skill to verify the merged codebase. The subagent reads the skill, performs exhaustive analysis, and produces a structured report. All issues found must be addressed before proceeding. This is a standing quality gate — the merged codebase must survive hostile scrutiny.",
       "acceptance": "Autopsy report produced in scratch/. All identified issues addressed or documented with explicit rationale. No critical or high-severity findings remain open.",
-      "status": "Not Started"
+      "status": "Done",
+      "completedNote": "Autopsy found 1 CRITICAL issue: v1 backward-compat shim in jsModToKeyMod() accepting boolean modifier properties. Shim deleted, benchmarks updated to v2 format, comprehensive test added verifying v1 booleans are rejected. All findings addressed."
     },
     {
       "task": "STUB: tea.View Cursor field support",

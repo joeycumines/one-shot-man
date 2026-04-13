@@ -279,7 +279,8 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 		// Click coords: SimX=11, SimY=10
 		// Screen coords: spaceX=(80-60)/2 = 10. ClickX = 11 + 10 + 1 = 22, ClickY=10
 		msg := map[string]any{
-			"type":   "MouseClick",
+			"type":   "Mouse",
+			"action": "press",
 			"x":      22,
 			"y":      10,
 			"button": "left",
@@ -316,7 +317,8 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 
 		// Click coords: SimX=11, SimY=10. ScreenX = 11+10+1 = 22, ScreenY=10
 		msg := map[string]any{
-			"type":   "MouseClick",
+			"type":   "Mouse",
+			"action": "press",
 			"x":      22,
 			"y":      10,
 			"button": "left",
@@ -355,7 +357,8 @@ func TestPickAndPlace_MouseIntegration(t *testing.T) {
 
 		// Click Far Away: SimX=50, SimY=10. ScreenX = 50+10+1 = 61, SimY=10
 		msg := map[string]any{
-			"type":   "MouseClick",
+			"type":   "Mouse",
+			"action": "press",
 			"x":      61,
 			"y":      10,
 			"button": "left",

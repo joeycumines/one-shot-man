@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	tea "charm.land/bubbletea/v2"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 type model struct {
@@ -24,7 +24,7 @@ func (m model) Init() tea.Cmd {
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
+	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
@@ -36,22 +36,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lastY = 0
 		}
 
-	case tea.MouseClickMsg:
-		mouse := msg.Mouse()
-		m.lastX = mouse.X
-		m.lastY = mouse.Y
-		if mouse.Button == tea.MouseLeft {
-			m.clicked = true
-		}
+	case tea.MouseMsg:
+		m.lastX = msg.X
+		m.lastY = msg.Y
 
-	case tea.MouseWheelMsg:
-		mouse := msg.Mouse()
-		m.lastX = mouse.X
-		m.lastY = mouse.Y
-		switch mouse.Button {
-		case tea.MouseWheelUp:
+		switch msg.Button {
+		case tea.MouseButtonLeft:
+			if msg.Action == tea.MouseActionRelease {
+				m.clicked = true
+			}
+		case tea.MouseButtonWheelUp:
 			m.scrolled++
-		case tea.MouseWheelDown:
+		case tea.MouseButtonWheelDown:
 			m.scrolled--
 		}
 	}
@@ -59,7 +55,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) View() tea.View {
+func (m model) View() string {
 	var status string
 	if m.clicked {
 		status = "[Clicked!]"
@@ -70,7 +66,7 @@ func (m model) View() tea.View {
 	scrollStatus := fmt.Sprintf("Scroll: %d", m.scrolled)
 	posStatus := fmt.Sprintf("Last: (%d,%d)", m.lastX, m.lastY)
 
-	v := tea.NewView(fmt.Sprintf(`Dummy TUI for mouseharness tests
+	return fmt.Sprintf(`Dummy TUI for mouseharness tests
 
 %s
 
@@ -78,16 +74,12 @@ func (m model) View() tea.View {
 %s
 
 Press 'q' to quit, 'r' to reset
-`, status, scrollStatus, posStatus))
-	v.MouseMode = tea.MouseModeAllMotion
-	return v
+`, status, scrollStatus, posStatus)
 }
 
 func main() {
-	// In BubbleTea v2, programs auto-open /dev/tty for input when no
-	// explicit input is provided.  For PTY-based test harnesses that pipe
-	// input through stdin, we must tell v2 to read from stdin explicitly.
-	p := tea.NewProgram(model{}, tea.WithInput(os.Stdin))
+	// Enable mouse support
+	p := tea.NewProgram(model{}, tea.WithMouseAllMotion())
 	if _, err := p.Run(); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

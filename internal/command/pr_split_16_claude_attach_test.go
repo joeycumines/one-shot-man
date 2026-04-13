@@ -288,7 +288,7 @@ func TestChunk16_T45_ClaudeStatusBadgeOpensView(t *testing.T) {
 
 		// Click claude-status zone.
 		var restore = mockZoneHit('claude-status');
-		var r = update({type: 'MouseClick', button: 'left', x: 10, y: 10, mod: []}, s);
+		var r = update({type: 'Mouse', action: 'press', button: 'left', x: 10, y: 10}, s);
 		restore();
 		var ns = r[0];
 
@@ -1299,8 +1299,8 @@ func TestChunk16_T46_MouseClickActivatesInput(t *testing.T) {
 
 		mockZoneHit('claude-question-input');
 		var r = update({
-			type: 'MouseClick', button: 'left',
-			x: 10, y: 5, mod: []
+			type: 'Mouse', action: 'press', button: 'left',
+			x: 10, y: 5, isWheel: false
 		}, s);
 		s = r[0];
 

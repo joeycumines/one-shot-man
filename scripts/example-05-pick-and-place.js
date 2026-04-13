@@ -911,9 +911,6 @@ try {
                             if (ignoreId === TARGET_ID && isInGoalArea(clickX, clickY)) state.winConditionMet = true;
                         }
                     }
-                    // NOTE: When clicked cell is occupied, placement is intentionally
-                    // a no-op. The held item stays held until the player clicks on an
-                    // empty cell within range.
                 } else if (clickedCube && !clickedCube.isStatic && !clickedCube.deleted) {
                     clickedCube.deleted = true;
                     state.spatialGrid.remove(clickedCube.x, clickedCube.y, clickedCube.id); // Remove from grid with check
@@ -1593,7 +1590,7 @@ try {
         for (let i = 0; i < state.pendingInputs.length; i++) {
             const msg = state.pendingInputs[i];
 
-            if (msg.type === 'MouseClick' && msg.button === 'left') {
+            if (msg.type === 'Mouse' && msg.action === 'press' && msg.button === 'left') {
                 latestMouseMsg = msg; // Last writer wins
             } else if (msg.type === 'Key') {
                 switch (msg.key) {
@@ -1603,7 +1600,7 @@ try {
                     case 'm':
                         toggleMode = true;
                         break;
-                    case 'space':
+                    case ' ':
                         togglePause = true;
                         break;
                     case 'escape':
@@ -1747,7 +1744,7 @@ try {
             return [state, null];
         }
 
-        if (msg.type === 'MouseClick' && msg.button === 'left') {
+        if (msg.type === 'Mouse' && msg.action === 'press' && msg.button === 'left') {
             state.pendingInputs.push(msg);
             return [state, null];
         }
@@ -1829,21 +1826,9 @@ try {
                 iet: state.debugInteractEntry ? state.debugInteractEntry.hasTarget : -1,
                 iep: state.debugInteractEntry ? state.debugInteractEntry.pathLen : -1
             });
-            // Write full debug JSON directly to PTY via console.log every frame in test mode.
-            // Bubble Tea v2 UV renderer writes cell-level incremental ANSI diffs that corrupt
-            // the inline debug JSON in the PTY stream. console.log bypasses the renderer
-            // entirely, ensuring the test harness always gets clean, parseable state.
-            console.log(debugJSON);
-            // Also log to file every 10 ticks for the log-based fallback parser.
-            if (state.tickCount % 10 === 0) {
-                log.debug("[VIEW]" + debugJSON);
-            }
             output += '\n__place_debug_start__\n' + debugJSON + '\n__place_debug_end__';
         }
-        return {
-            content: output,
-            altScreen: true,
-        };
+        return output;
     }
 
     program = tea.newModel({
@@ -1889,7 +1874,7 @@ try {
     }
     if (shouldRun) {
         try {
-            tea.run(program);
+            tea.run(program, {altScreen: true, mouse: true});
         } catch (e) {
             printFatalError(e);
             throw e;

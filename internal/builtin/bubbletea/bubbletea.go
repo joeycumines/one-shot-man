@@ -1,6 +1,6 @@
 //go:generate go run ../../../internal/cmd/generate-bubbletea-key-mapping
 
-// Package bubbletea provides JavaScript bindings for charm.land/bubbletea/v2.
+// Package bubbletea provides JavaScript bindings for github.com/charmbracelet/bubbletea.
 //
 // The module is exposed as "osm:bubbletea" and provides TUI program capabilities.
 // All functionality is exposed to JavaScript, following the established pattern of no global state.
@@ -32,20 +32,11 @@
 //		},
 //		view: function(model) {
 //			return 'Count: ' + model.count + '\nPress q to quit';
-//			// Or return a declarative object for terminal control:
-//			return {
-//				content: 'Count: ' + model.count + '\nPress q to quit',
-//				altScreen: true,
-//				mouseMode: 'allMotion', // 'cellMotion' or 'none'
-//				reportFocus: true,
-//				windowTitle: 'My App'
-//			};
 //		}
 //	});
 //
-//	// Run the program — returns immediately (non-blocking)
-//	tea.run(model);                          // basic inline screen
-//	tea.run(model, { toggleKey: 29, onToggle: fn }); // with Termux passthrough
+//	// Run the program
+//	tea.run(model);
 //
 //	// Commands - all return opaque command objects
 //	tea.quit();                    // Quit the program
@@ -53,50 +44,53 @@
 //	tea.batch(...cmds);            // Batch multiple commands
 //	tea.sequence(...cmds);         // Execute commands in sequence
 //	tea.tick(durationMs, id);      // Timer command (returns tickMsg with id)
-//	tea.requestWindowSize();       // Query current window size
+//	tea.setWindowTitle(title);     // Set terminal window title
+//	tea.hideCursor();              // Hide the cursor
+//	tea.showCursor();              // Show the cursor
+//	tea.enterAltScreen();          // Enter alternate screen buffer
+//	tea.exitAltScreen();           // Exit alternate screen buffer
+//	tea.enableBracketedPaste();    // Enable bracketed paste mode
+//	tea.disableBracketedPaste();   // Disable bracketed paste mode
+//	tea.enableReportFocus();       // Enable focus/blur reporting
+//	tea.disableReportFocus();      // Disable focus/blur reporting
+//	tea.windowSize();              // Query current window size
 //
-//	// Key events — msg.type === 'Key'
-//	// msg.key    - key name ('q', 'enter', 'space', 'ctrl+c', etc.)
-//	// msg.text   - text value (rune or text for printable chars)
-//	// msg.mod    - modifier array (['ctrl'], ['alt', 'shift'], etc.)
-//	// msg.code   - key code rune
-//	// msg.shiftedCode - shifted key code rune
-//	// msg.baseCode    - base key code rune (US PC-101 layout)
-//	// msg.isRepeat    - true if key is auto-repeating
+//	// Key events
+//	// msg.type === 'Key'
+//	// msg.key - the key name ('q', 'enter', 'up', 'down', etc.)
+//	// msg.runes - array of runes (for unicode/IME input)
+//	// msg.alt - alt modifier
+//	// msg.ctrl - ctrl modifier
+//	// msg.paste - true if this is part of a bracketed paste
 //
-//	// KeyRelease events — msg.type === 'KeyRelease' (same fields as Key)
+//	// Mouse events (when enabled)
+//	// msg.type === 'Mouse'
+//	// msg.x, msg.y - coordinates
+//	// msg.button - button name
+//	// msg.action - 'press', 'release', 'motion'
+//	// msg.alt, msg.ctrl, msg.shift - modifiers
 //
-//	// Mouse events — msg.type is one of:
-//	// msg.type === 'MouseClick'  — button click (msg.x, msg.y, msg.button, msg.mod)
-//	// msg.type === 'MouseRelease' — button release
-//	// msg.type === 'MouseMotion' — movement (no button)
-//	// msg.type === 'MouseWheel'  — scroll event
-//
-//	// Window size events — msg.type === 'WindowSize'
+//	// Window size events
+//	// msg.type === 'WindowSize'
 //	// msg.width, msg.height - terminal dimensions
 //
-//	// Focus events — requires view() to return {reportFocus: true}
-//	// msg.type === 'Focus' - terminal gained focus
-//	// msg.type === 'Blur'  - terminal lost focus
+//	// Focus events (when reportFocus enabled)
+//	// msg.type === 'Focus'  - terminal gained focus
+//	// msg.type === 'Blur'   - terminal lost focus
 //
-//	// Tick events — from tea.tick() command
-//	// msg.type === 'Tick' with msg.id and msg.time (ms since epoch)
+//	// Tick events (from tick command)
+//	// msg.type === 'Tick'
+//	// msg.id - the id passed to tick()
+//	// msg.time - timestamp in milliseconds
 //
-//	// Paste events — bracketed paste content arrives as separate messages
-//	// msg.type === 'Paste'     with msg.content
-//	// msg.type === 'PasteStart' — paste sequence started
-//	// msg.type === 'PasteEnd'   — paste sequence ended
-//
-// # View Return Value
-//
-// The view() function can return a string or a declarative object:
-//
-//	String return:        view() returns 'content'
-//	Object return:        view() returns {content:'...', altScreen:true, ...}
-//
-// Terminal feature fields (altScreen, mouseMode, reportFocus, windowTitle) are
-// ONLY effective when returned from view() as object properties. Passing them
-// to tea.run() as options is silently ignored in v2.
+//	// Program options
+//	tea.run(model, {
+//	    altScreen: true,       // Use alternate screen buffer
+//	    mouse: true,           // Enable mouse support (all motion)
+//	    mouseCellMotion: true, // Enable mouse cell motion only
+//	    bracketedPaste: true,  // Enable bracketed paste
+//	    reportFocus: true,     // Enable focus/blur reporting
+//	});
 //
 // # Error Handling
 //
@@ -128,7 +122,6 @@ package bubbletea
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -142,7 +135,7 @@ import (
 	"syscall"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dop251/goja"
 	"golang.org/x/term"
 )
@@ -467,19 +460,31 @@ func JsToTeaMsg(runtime *goja.Runtime, obj *goja.Object) tea.Msg {
 			return nil
 		}
 		key, _ := ParseKey(keyVal.String())
-		return key
+		return tea.KeyMsg(key)
 
-	case "MouseClick":
-		return jsToTeaMouseClick(obj)
+	case "Mouse":
+		x := int(obj.Get("x").ToInteger())
+		y := int(obj.Get("y").ToInteger())
+		buttonStr := obj.Get("button").String()
+		actionStr := obj.Get("action").String()
 
-	case "MouseRelease":
-		return jsToTeaMouseRelease(obj)
+		// Modifiers
+		alt := false
+		ctrl := false
+		shift := false
 
-	case "MouseMotion":
-		return jsToTeaMouseMotion(obj)
+		if v := obj.Get("alt"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+			alt = v.ToBoolean()
+		}
+		if v := obj.Get("ctrl"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+			ctrl = v.ToBoolean()
+		}
+		if v := obj.Get("shift"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+			shift = v.ToBoolean()
+		}
 
-	case "MouseWheel":
-		return jsToTeaMouseWheel(obj)
+		// Use JSToMouseEvent which uses the generated MouseButtonDefs/MouseActionDefs
+		return JSToMouseEvent(buttonStr, actionStr, x, y, alt, ctrl, shift)
 
 	case "WindowSize":
 		w := int(obj.Get("width").ToInteger())
@@ -488,19 +493,6 @@ func JsToTeaMsg(runtime *goja.Runtime, obj *goja.Object) tea.Msg {
 			Width:  w,
 			Height: h,
 		}
-
-	case "PasteStart":
-		return tea.PasteStartMsg{}
-
-	case "PasteEnd":
-		return tea.PasteEndMsg{}
-
-	case "Paste":
-		content := ""
-		if v := obj.Get("content"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
-			content = v.String()
-		}
-		return tea.PasteMsg{Content: content}
 	}
 
 	return nil
@@ -534,14 +526,6 @@ type jsModel struct {
 	// Set when program starts, cancelled when program exits
 	throttleCtx    context.Context
 	throttleCancel context.CancelFunc
-
-	// Cached declarative view fields for throttled renders.
-	// When throttling, we must preserve the parsed tea.View fields
-	// so that cursedRenderer sees consistent mode fields on each render.
-	cachedViewAltScreen   bool
-	cachedViewMouseMode   tea.MouseMode
-	cachedViewReportFocus bool
-	cachedViewWindowTitle string
 }
 
 // registerCommand registers a command ID as valid.
@@ -650,29 +634,19 @@ func (m *jsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Check if this message type should force an immediate render.
-	// Paste events (PasteStart, Paste, PasteEnd) should always force render
-	// since the textarea needs to update immediately with pasted content.
-	if m.throttleEnabled {
-		forceRender := false
-		if m.alwaysRenderTypes != nil {
-			if msgType, ok := jsMsg["type"].(string); ok && m.alwaysRenderTypes[msgType] {
-				forceRender = true
+	// Log Update calls for debugging tick loop issues
+	if msgType, ok := jsMsg["type"].(string); ok && msgType == "Tick" {
+		slog.Debug("bubbletea: Update called with Tick message", "id", jsMsg["id"])
+	}
+
+	// Check if this message type should force an immediate render
+	if m.throttleEnabled && m.alwaysRenderTypes != nil {
+		if msgType, ok := jsMsg["type"].(string); ok {
+			if m.alwaysRenderTypes[msgType] {
+				m.throttleMu.Lock()
+				m.forceNextRender = true
+				m.throttleMu.Unlock()
 			}
-		}
-		if !forceRender {
-			// Always render for paste events
-			if msgType, ok := jsMsg["type"].(string); ok {
-				switch msgType {
-				case "Paste", "PasteStart", "PasteEnd":
-					forceRender = true
-				}
-			}
-		}
-		if forceRender {
-			m.throttleMu.Lock()
-			m.forceNextRender = true
-			m.throttleMu.Unlock()
 		}
 	}
 
@@ -708,6 +682,8 @@ func (m *jsModel) updateDirect(jsMsg map[string]any) tea.Cmd {
 		slog.Error("bubbletea: updateDirect: JS update function error", "error", err, "msgType", jsMsg["type"])
 		return nil
 	}
+	slog.Debug("bubbletea: updateDirect: JS update returned successfully", "msgType", jsMsg["type"])
+
 	// Result should be [newState, cmd] array
 	resultObj := result.ToObject(m.runtime)
 	if resultObj == nil || resultObj.ClassName() != "Array" {
@@ -738,14 +714,14 @@ func (m *jsModel) updateDirect(jsMsg map[string]any) tea.Cmd {
 // Render Throttling: When throttleEnabled is true, this method may return a cached
 // view if the minimum interval has not elapsed. A delayed renderRefreshMsg is scheduled
 // to ensure the view is eventually re-rendered.
-func (m *jsModel) View() tea.View {
+func (m *jsModel) View() string {
 	if m == nil || m.viewFn == nil || m.runtime == nil {
-		return tea.NewView("[BT] View: nil model/viewFn/runtime")
+		return "[BT] View: nil model/viewFn/runtime"
 	}
 
 	// If init had an error, show it
 	if m.initError != "" {
-		return tea.NewView("[BT] " + m.initError)
+		return "[BT] " + m.initError
 	}
 
 	// Render throttling logic
@@ -759,7 +735,6 @@ func (m *jsModel) View() tea.View {
 		shouldThrottle := !m.forceNextRender && elapsed < intervalDur && m.cachedView != ""
 
 		if shouldThrottle {
-			slog.Debug("bubbletea: View throttling", "elapsed", elapsed, "interval", intervalDur, "cachedLen", len(m.cachedView))
 			// Schedule a delayed render if not already scheduled
 			if !m.throttleTimerSet && m.program != nil && m.throttleCtx != nil {
 				m.throttleTimerSet = true
@@ -783,22 +758,8 @@ func (m *jsModel) View() tea.View {
 				}()
 			}
 			cached := m.cachedView
-			altScreen := m.cachedViewAltScreen
-			mouseMode := m.cachedViewMouseMode
-			reportFocus := m.cachedViewReportFocus
-			windowTitle := m.cachedViewWindowTitle
 			m.throttleMu.Unlock()
-			// Wire mode fields into the cached view so cursedRenderer.viewEquals
-			// sees a change from the previous view and flushes output.
-			// Without this, throttled renders return zero-valued mode fields,
-			// so viewEquals compares AltScreen=false vs AltScreen=false (no change)
-			// and flush() sends nothing to the PTY.
-			v := tea.NewView(cached)
-			v.AltScreen = altScreen
-			v.MouseMode = mouseMode
-			v.ReportFocus = reportFocus
-			v.WindowTitle = windowTitle
-			return v
+			return cached
 		}
 
 		// Will do an actual render - update state
@@ -814,136 +775,75 @@ func (m *jsModel) View() tea.View {
 	}
 
 	var viewStr string
-	var viewAltScreen bool
-	var viewMouseMode tea.MouseMode
-	var viewReportFocus bool
-	var viewWindowTitle string
-	var hasViewFields bool // true if JS returned a declarative view object
-
 	err := m.runJSSync(func(vm *goja.Runtime) error {
-		result, err := m.viewDirectResult()
-		if err != nil {
-			viewStr = fmt.Sprintf("[BT] View error: %v", err)
-			return nil
-		}
-
-		// If result is an object (not a primitive string), parse declarative fields.
-		// This is the primary v2 mechanism for controlling terminal features.
-		if result != nil && !goja.IsUndefined(result) && !goja.IsNull(result) {
-			if obj := result.ToObject(vm); obj != nil {
-				if obj != nil && obj.ClassName() == "Object" {
-					hasViewFields = true
-					viewStr = getJSStringProp(obj, "content")
-					if viewStr == "" {
-						viewStr = result.String() // fallback
-					}
-					viewAltScreen = getJSBoolProp(obj, "altScreen")
-					viewMouseMode = parseMouseModeProp(obj, "mouseMode")
-					viewReportFocus = getJSBoolProp(obj, "reportFocus")
-					viewWindowTitle = getJSStringProp(obj, "windowTitle")
-					return nil
-				}
-			}
-		}
-
-		// Plain string (or non-object): treat as content only (backward compatible).
-		viewStr = result.String()
-		if viewStr == "" {
-			viewStr = "[BT] View returned empty string"
-		}
+		viewStr = m.viewDirect()
 		return nil
 	})
 	if err != nil {
-		return tea.NewView(fmt.Sprintf("[BT] View error (event loop): %v", err))
+		return fmt.Sprintf("[BT] View error (event loop): %v", err)
 	}
 
-	// Cache the view if throttling is enabled.
-	// For declarative view objects, we cache the parsed fields so that
-	// cursedRenderer.viewEquals sees consistent mode fields on each render.
+	// Cache the view if throttling is enabled
 	if m.throttleEnabled {
 		m.throttleMu.Lock()
 		m.cachedView = viewStr
-		m.cachedViewAltScreen = viewAltScreen
-		m.cachedViewMouseMode = viewMouseMode
-		m.cachedViewReportFocus = viewReportFocus
-		m.cachedViewWindowTitle = viewWindowTitle
 		m.throttleMu.Unlock()
 	}
 
-	v := tea.NewView(viewStr)
-	if hasViewFields {
-		// v2 declarative path: fields came from JS view() return object.
-		v.AltScreen = viewAltScreen
-		v.MouseMode = viewMouseMode
-		v.ReportFocus = viewReportFocus
-		v.WindowTitle = viewWindowTitle
-	}
-	return v
+	return viewStr
 }
 
-// viewDirectResult returns the raw JS value from the view function.
-// This allows the caller to distinguish between string and object returns.
-// MUST be called from event loop goroutine.
-func (m *jsModel) viewDirectResult() (goja.Value, error) {
+// viewDirect performs the actual view call. MUST be called from event loop goroutine.
+func (m *jsModel) viewDirect() string {
 	// Ensure state is not nil before passing to JS
 	state := m.state
 	if state == nil || goja.IsUndefined(state) || goja.IsNull(state) {
-		return goja.Null(), errors.New("state is nil/undefined")
+		return "[BT] View: state is nil/undefined"
 	}
 
 	result, err := m.viewFn(goja.Undefined(), state)
 	if err != nil {
-		return goja.Null(), err
+		return fmt.Sprintf("[BT] View error: %v", err)
 	}
 	if result == nil || goja.IsUndefined(result) || goja.IsNull(result) {
-		return goja.Null(), errors.New("view returned nil/undefined")
+		return "[BT] View returned nil/undefined"
 	}
-	return result, nil
+	viewStr := result.String()
+	if viewStr == "" {
+		return "[BT] View returned empty string"
+	}
+	return viewStr
 }
 
 // msgToJS converts a tea.Msg to a JavaScript-compatible object.
 // Handles all bubbletea message types comprehensively.
 func (m *jsModel) msgToJS(msg tea.Msg) map[string]any {
 	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		key := msg.Key()
-		// v2 key contract: use msg.String() for the key field.
-		// Space bar produces "space", not " ". The text field provides
-		// the actual character (e.g., " " for printable space) via key.Text.
-		keyStr := msg.String()
-		text := key.Text
-		mod := key.Mod
-
-		return map[string]any{
-			"type":        "Key",
-			"key":         keyStr,
-			"text":        text,
-			"mod":         modToStrings(mod),
-			"code":        key.Code,
-			"shiftedCode": key.ShiftedCode,
-			"baseCode":    key.BaseCode,
-			"isRepeat":    key.IsRepeat,
+	case tea.KeyMsg:
+		// Extract runes as an array for unicode/IME support
+		runes := make([]string, len(msg.Runes))
+		for i, r := range msg.Runes {
+			runes[i] = string(r)
 		}
 
-	case tea.KeyReleaseMsg:
-		key := msg.Key()
-		text := key.Text
+		// Get the string representation
 		keyStr := msg.String()
-		mod := key.Mod
+
+		// Detect modifiers from the Key type, not from string parsing
+		// KeyMsg embeds Key which has Type, Runes, Alt, Paste
+		key := tea.Key(msg)
 
 		return map[string]any{
-			"type":        "KeyRelease",
-			"key":         keyStr,
-			"text":        text,
-			"mod":         modToStrings(mod),
-			"code":        key.Code,
-			"shiftedCode": key.ShiftedCode,
-			"baseCode":    key.BaseCode,
-			"isRepeat":    key.IsRepeat,
+			"type":  "Key",
+			"key":   keyStr,
+			"runes": runes,
+			"alt":   key.Alt,
+			"ctrl":  isCtrlKey(key.Type),
+			"paste": key.Paste, // Bracketed paste indicator
 		}
 
 	case tea.MouseMsg:
-		// Use the generated MouseEventToJS which ensures consistency with tea.Mouse.String()
+		// Use the generated MouseEventToJS which ensures consistency with tea.MouseEvent.String()
 		return MouseEventToJS(msg)
 
 	case tea.WindowSizeMsg:
@@ -987,213 +887,41 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]any {
 			"key":  msg.key,
 		}
 
-	case tea.PasteMsg:
-		return map[string]any{
-			"type":    "Paste",
-			"content": msg.Content,
-		}
-
-	case tea.PasteStartMsg:
-		return map[string]any{
-			"type": "PasteStart",
-		}
-
-	case tea.PasteEndMsg:
-		return map[string]any{
-			"type": "PasteEnd",
-		}
-
 	case renderRefreshMsg:
 		// Internal message for render throttle - returns nil to skip JS processing
 		// The Update method handles this specially to force a render
 		return nil
 
 	case toggleReturnMsg:
-		resultMap := map[string]any{
+		m := map[string]any{
 			"type": "ToggleReturn",
 		}
-		maps.Copy(resultMap, msg.Result)
-		return resultMap
+		maps.Copy(m, msg.Result)
+		return m
 
 	default:
 		return nil
 	}
 }
 
-// modToStrings converts a KeyMod to a slice of modifier name strings.
-func modToStrings(mod tea.KeyMod) []string {
-	var mods []string
-	if mod.Contains(tea.ModCtrl) {
-		mods = append(mods, "ctrl")
+// isCtrlKey checks if the key type is a control key.
+func isCtrlKey(kt tea.KeyType) bool {
+	switch kt {
+	case tea.KeyCtrlA, tea.KeyCtrlB, tea.KeyCtrlC, tea.KeyCtrlD, tea.KeyCtrlE,
+		tea.KeyCtrlF, tea.KeyCtrlG, tea.KeyCtrlH, tea.KeyCtrlI, tea.KeyCtrlJ,
+		tea.KeyCtrlK, tea.KeyCtrlL, tea.KeyCtrlM, tea.KeyCtrlN, tea.KeyCtrlO,
+		tea.KeyCtrlP, tea.KeyCtrlQ, tea.KeyCtrlR, tea.KeyCtrlS, tea.KeyCtrlT,
+		tea.KeyCtrlU, tea.KeyCtrlV, tea.KeyCtrlW, tea.KeyCtrlX, tea.KeyCtrlY,
+		tea.KeyCtrlZ, tea.KeyCtrlOpenBracket, tea.KeyCtrlBackslash,
+		tea.KeyCtrlCloseBracket, tea.KeyCtrlCaret, tea.KeyCtrlUnderscore,
+		tea.KeyCtrlQuestionMark, tea.KeyCtrlAt,
+		tea.KeyCtrlUp, tea.KeyCtrlDown, tea.KeyCtrlLeft, tea.KeyCtrlRight,
+		tea.KeyCtrlHome, tea.KeyCtrlEnd, tea.KeyCtrlPgUp, tea.KeyCtrlPgDown,
+		tea.KeyCtrlShiftUp, tea.KeyCtrlShiftDown, tea.KeyCtrlShiftLeft,
+		tea.KeyCtrlShiftRight, tea.KeyCtrlShiftHome, tea.KeyCtrlShiftEnd:
+		return true
 	}
-	if mod.Contains(tea.ModAlt) {
-		mods = append(mods, "alt")
-	}
-	if mod.Contains(tea.ModShift) {
-		mods = append(mods, "shift")
-	}
-	if mod.Contains(tea.ModMeta) {
-		mods = append(mods, "meta")
-	}
-	if mod.Contains(tea.ModHyper) {
-		mods = append(mods, "hyper")
-	}
-	if mod.Contains(tea.ModSuper) {
-		mods = append(mods, "super")
-	}
-	return mods
-}
-
-// getJSStringProp safely gets a string property from a JS object.
-func getJSStringProp(obj *goja.Object, name string) string {
-	if obj == nil {
-		return ""
-	}
-	val := obj.Get(name)
-	if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
-		return ""
-	}
-	return val.String()
-}
-
-// getJSBoolProp safely gets a boolean property from a JS object.
-func getJSBoolProp(obj *goja.Object, name string) bool {
-	if obj == nil {
-		return false
-	}
-	val := obj.Get(name)
-	if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
-		return false
-	}
-	return val.ToBoolean()
-}
-
-// parseMouseModeProp parses the mouseMode property from a JS view object.
-// Accepts: "all"/"allMotion" -> AllMotion, "cell"/"cellMotion" -> CellMotion, else None.
-// jsToTeaMouseClick converts a JS MouseClick message object to a tea.MouseClickMsg.
-func jsToTeaMouseClick(obj *goja.Object) tea.Msg {
-	if obj == nil {
-		return nil
-	}
-	x := int(obj.Get("x").ToInteger())
-	y := int(obj.Get("y").ToInteger())
-	buttonStr := getJSStringProp(obj, "button")
-	mod := jsModToKeyMod(obj)
-	var button tea.MouseButton
-	if def, ok := MouseButtonDefs[buttonStr]; ok {
-		button = def.Button
-	} else {
-		button = tea.MouseNone
-	}
-	return tea.MouseClickMsg{X: x, Y: y, Button: button, Mod: mod}
-}
-
-// jsToTeaMouseRelease converts a JS MouseRelease message object to a tea.MouseReleaseMsg.
-func jsToTeaMouseRelease(obj *goja.Object) tea.Msg {
-	if obj == nil {
-		return nil
-	}
-	x := int(obj.Get("x").ToInteger())
-	y := int(obj.Get("y").ToInteger())
-	mod := jsModToKeyMod(obj)
-	return tea.MouseReleaseMsg{X: x, Y: y, Mod: mod}
-}
-
-// jsToTeaMouseMotion converts a JS MouseMotion message object to a tea.MouseMotionMsg.
-func jsToTeaMouseMotion(obj *goja.Object) tea.Msg {
-	if obj == nil {
-		return nil
-	}
-	x := int(obj.Get("x").ToInteger())
-	y := int(obj.Get("y").ToInteger())
-	buttonStr := getJSStringProp(obj, "button")
-	mod := jsModToKeyMod(obj)
-	var button tea.MouseButton
-	if def, ok := MouseButtonDefs[buttonStr]; ok {
-		button = def.Button
-	} else {
-		button = tea.MouseNone
-	}
-	return tea.MouseMotionMsg{X: x, Y: y, Button: button, Mod: mod}
-}
-
-// jsToTeaMouseWheel converts a JS MouseWheel message object to a tea.MouseWheelMsg.
-func jsToTeaMouseWheel(obj *goja.Object) tea.Msg {
-	if obj == nil {
-		return nil
-	}
-	x := int(obj.Get("x").ToInteger())
-	y := int(obj.Get("y").ToInteger())
-	buttonStr := getJSStringProp(obj, "button")
-	mod := jsModToKeyMod(obj)
-	var button tea.MouseButton
-	if def, ok := MouseButtonDefs[buttonStr]; ok {
-		button = def.Button
-	} else {
-		button = tea.MouseNone
-	}
-	return tea.MouseWheelMsg{X: x, Y: y, Button: button, Mod: mod}
-}
-
-// jsModToKeyMod converts a JS mod array property to a tea.KeyMod.
-// The mod field must be a JS Array of modifier name strings (e.g., ["ctrl", "alt"]).
-// If mod is absent, nil, or not an array, returns 0 (no modifiers).
-func jsModToKeyMod(obj *goja.Object) tea.KeyMod {
-	modVal := obj.Get("mod")
-	if modVal == nil || goja.IsUndefined(modVal) || goja.IsNull(modVal) {
-		return 0
-	}
-	modArr, ok := modVal.(*goja.Object)
-	if !ok || modArr.ClassName() != "Array" {
-		return 0
-	}
-	// Export array to Go []interface{} and iterate elements
-	arr := modArr.Export()
-	arrSlice, ok := arr.([]interface{})
-	if !ok {
-		return 0
-	}
-	var mod tea.KeyMod
-	for _, elem := range arrSlice {
-		v, ok := elem.(string)
-		if !ok {
-			continue
-		}
-		switch v {
-		case "ctrl":
-			mod |= tea.ModCtrl
-		case "alt":
-			mod |= tea.ModAlt
-		case "shift":
-			mod |= tea.ModShift
-		case "meta":
-			mod |= tea.ModMeta
-		case "hyper":
-			mod |= tea.ModHyper
-		case "super":
-			mod |= tea.ModSuper
-		}
-	}
-	return mod
-}
-
-func parseMouseModeProp(obj *goja.Object, name string) tea.MouseMode {
-	if obj == nil {
-		return tea.MouseModeNone
-	}
-	val := obj.Get(name)
-	if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
-		return tea.MouseModeNone
-	}
-	modeStr := val.String()
-	switch modeStr {
-	case "all", "allMotion", "AllMotion":
-		return tea.MouseModeAllMotion
-	case "cell", "cellMotion", "CellMotion":
-		return tea.MouseModeCellMotion
-	default:
-		return tea.MouseModeNone
-	}
+	return false
 }
 
 // valueToCmd converts a JavaScript value to a tea.Cmd.
@@ -1251,13 +979,39 @@ func (m *jsModel) valueToCmd(val goja.Value) (ret tea.Cmd) {
 	case "tick":
 		return m.extractTickCmd(obj)
 
-	// In v2, terminal state is controlled declaratively via tea.View fields.
-	// These command types are removed. Scripts should return view objects
-	// with the appropriate fields set (altScreen, mouseMode, reportFocus, etc.)
-	// instead of using imperative commands.
+	case "setWindowTitle":
+		titleVal := obj.Get("title")
+		if titleVal == nil || goja.IsUndefined(titleVal) || goja.IsNull(titleVal) {
+			return nil
+		}
+		return tea.SetWindowTitle(titleVal.String())
 
-	case "requestWindowSize":
-		return tea.RequestWindowSize
+	case "hideCursor":
+		return tea.HideCursor
+
+	case "showCursor":
+		return tea.ShowCursor
+
+	case "enterAltScreen":
+		return tea.EnterAltScreen
+
+	case "exitAltScreen":
+		return tea.ExitAltScreen
+
+	case "enableBracketedPaste":
+		return tea.EnableBracketedPaste
+
+	case "disableBracketedPaste":
+		return tea.DisableBracketedPaste
+
+	case "enableReportFocus":
+		return tea.EnableReportFocus
+
+	case "disableReportFocus":
+		return tea.DisableReportFocus
+
+	case "windowSize":
+		return tea.WindowSize()
 	}
 
 	return nil
@@ -1389,7 +1143,7 @@ func (m *toggleModel) Init() tea.Cmd {
 }
 
 func (m *toggleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		if m.isToggleKey(keyMsg) {
 			return m, m.toggleCmd()
 		}
@@ -1399,19 +1153,19 @@ func (m *toggleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *toggleModel) View() tea.View {
+func (m *toggleModel) View() string {
 	return m.inner.View()
 }
 
 // isToggleKey checks if a BubbleTea key message matches the configured toggle key.
-func (m *toggleModel) isToggleKey(msg tea.KeyPressMsg) bool {
-	k := msg.Key()
+func (m *toggleModel) isToggleKey(msg tea.KeyMsg) bool {
+	k := tea.Key(msg)
 	// Match by rune (handles most key configurations)
-	if k.Code == rune(m.toggleKey) {
+	if len(k.Runes) == 1 && byte(k.Runes[0]) == m.toggleKey {
 		return true
 	}
-	// Match Ctrl+] specifically (0x1D) — v2 parses this with Code = ']' and Mod = ModCtrl
-	if k.Code == ']' && k.Mod.Contains(tea.ModCtrl) && m.toggleKey == 0x1D {
+	// Match Ctrl+] specifically (0x1D) — BubbleTea parses this as KeyCtrlCloseBracket
+	if k.Type == tea.KeyCtrlCloseBracket && m.toggleKey == 0x1D {
 		return true
 	}
 	return false
@@ -1587,10 +1341,34 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 		}
 		_ = exports.Set("mouseButtonsByName", mouseButtonsByNameObj)
 
+		// mouseActions exposes mouse action definitions for JS to access action metadata
+		// The keys are the string representations (e.g., "press", "release", "motion")
+		mouseActionsObj := runtime.NewObject()
+		for _, stringVal := range slices.Sorted(maps.Keys(MouseActionDefs)) {
+			actionDef := MouseActionDefs[stringVal]
+			actionDefJS := runtime.NewObject()
+			_ = actionDefJS.Set("name", actionDef.Name)
+			_ = actionDefJS.Set("string", actionDef.String)
+			_ = mouseActionsObj.Set(stringVal, actionDefJS)
+		}
+		_ = exports.Set("mouseActions", mouseActionsObj)
+
+		// mouseActionsByName exposes mouse action definitions by their Go constant name
+		// (e.g., "MouseActionPress", "MouseActionRelease", "MouseActionMotion")
+		mouseActionsByNameObj := runtime.NewObject()
+		for _, name := range slices.Sorted(maps.Keys(MouseActionDefsByName)) {
+			actionDef := MouseActionDefsByName[name]
+			actionDefJS := runtime.NewObject()
+			_ = actionDefJS.Set("name", actionDef.Name)
+			_ = actionDefJS.Set("string", actionDef.String)
+			_ = mouseActionsByNameObj.Set(name, actionDefJS)
+		}
+		_ = exports.Set("mouseActionsByName", mouseActionsByNameObj)
+
 		// isValidTextareaInput validates if a key event should be forwarded to a textarea.
 		// Uses WHITELIST approach: only explicitly allowed inputs pass through.
 		// This prevents garbage (fragmented escape sequences) from corrupting content.
-		// Parameters: keyStr (string)
+		// Parameters: keyStr (string), isPaste (boolean)
 		// Returns: { valid: boolean, reason: string }
 		_ = exports.Set("isValidTextareaInput", func(call goja.FunctionCall) goja.Value {
 			if len(call.Arguments) < 1 {
@@ -1600,7 +1378,11 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 				})
 			}
 			keyStr := call.Argument(0).String()
-			result := ValidateTextareaInput(keyStr)
+			isPaste := false
+			if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) {
+				isPaste = call.Argument(1).ToBoolean()
+			}
+			result := ValidateTextareaInput(keyStr, isPaste)
 			return runtime.ToValue(map[string]any{
 				"valid":  result.Valid,
 				"reason": result.Reason,
@@ -1609,7 +1391,7 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 
 		// isValidLabelInput validates if a key event should be accepted for a label field.
 		// More restrictive: only single printable characters and backspace.
-		// Parameters: keyStr (string)
+		// Parameters: keyStr (string), isPaste (boolean)
 		// Returns: { valid: boolean, reason: string }
 		_ = exports.Set("isValidLabelInput", func(call goja.FunctionCall) goja.Value {
 			if len(call.Arguments) < 1 {
@@ -1619,7 +1401,11 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 				})
 			}
 			keyStr := call.Argument(0).String()
-			result := ValidateLabelInput(keyStr)
+			isPaste := false
+			if len(call.Arguments) > 1 && !goja.IsUndefined(call.Argument(1)) {
+				isPaste = call.Argument(1).ToBoolean()
+			}
+			result := ValidateLabelInput(keyStr, isPaste)
 			return runtime.ToValue(map[string]any{
 				"valid":  result.Valid,
 				"reason": result.Reason,
@@ -1774,16 +1560,43 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 			// Set as current model for command registration
 			currentModel = model
 
-			// In v2, terminal features (altScreen, mouse, etc.) are declarative
-			// View fields — set via the JS view() return object, NOT tea.run()
-			// options. Only toggleKey/onToggle remain as run() options.
-			// Terminal feature options (altScreen, mouse, mouseCellMotion, reportFocus,
-			// windowTitle) are SILENTLY IGNORED here. They must be set by having
-			// the JS view() function return an object with those properties.
+			// Parse options
+			var opts []tea.ProgramOption
 			var toggleWrapper *toggleModel
 			if len(call.Arguments) > 1 {
 				optObj := call.Argument(1).ToObject(runtime)
 				if optObj != nil {
+					// Helper to safely check if a value is truthy
+					// Returns true only if value exists, is not nil/undefined/null, and is boolean true
+					isTruthy := func(v goja.Value) bool {
+						if v == nil {
+							return false
+						}
+						if goja.IsUndefined(v) || goja.IsNull(v) {
+							return false
+						}
+						return v.ToBoolean()
+					}
+
+					if isTruthy(optObj.Get("altScreen")) {
+						opts = append(opts, tea.WithAltScreen())
+					}
+					if isTruthy(optObj.Get("mouse")) {
+						opts = append(opts, tea.WithMouseAllMotion())
+					}
+					if isTruthy(optObj.Get("mouseCellMotion")) {
+						opts = append(opts, tea.WithMouseCellMotion())
+					}
+					if isTruthy(optObj.Get("reportFocus")) {
+						opts = append(opts, tea.WithReportFocus())
+					}
+					// Note: bracketedPaste is enabled by default in bubbletea
+					// Use WithoutBracketedPaste to disable (check if explicitly set to false)
+					bracketedPaste := optObj.Get("bracketedPaste")
+					if bracketedPaste != nil && !goja.IsUndefined(bracketedPaste) && !goja.IsNull(bracketedPaste) && !bracketedPaste.ToBoolean() {
+						opts = append(opts, tea.WithoutBracketedPaste())
+					}
+
 					// Toggle key support — integrates with termmux passthrough.
 					// When toggleKey and onToggle are both set, the model is wrapped
 					// in a toggleModel that intercepts the toggle key and executes
@@ -1855,7 +1668,7 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 			manager.mu.Unlock()
 
 			go func() {
-				done <- manager.runProgram(programModel)
+				done <- manager.runProgram(programModel, opts...)
 			}()
 
 			return goja.Undefined()
@@ -1915,11 +1728,59 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 			})
 		})
 
-		// NOTE: The following v1 imperative commands are REMOVED in v2.
-		// requestWindowSize queries the current window size (v2 API).
-		// Returns tea.RequestWindowSize — the program will receive a WindowSizeMsg.
-		_ = exports.Set("requestWindowSize", func(call goja.FunctionCall) goja.Value {
-			return createCommand("requestWindowSize", nil)
+		// setWindowTitle sets the terminal window title
+		_ = exports.Set("setWindowTitle", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 1 {
+				return createError(ErrCodeInvalidArgs, "setWindowTitle requires a title string")
+			}
+			return createCommand("setWindowTitle", map[string]any{
+				"title": call.Argument(0).String(),
+			})
+		})
+
+		// hideCursor hides the cursor
+		_ = exports.Set("hideCursor", func(call goja.FunctionCall) goja.Value {
+			return createCommand("hideCursor", nil)
+		})
+
+		// showCursor shows the cursor
+		_ = exports.Set("showCursor", func(call goja.FunctionCall) goja.Value {
+			return createCommand("showCursor", nil)
+		})
+
+		// enterAltScreen enters the alternate screen buffer
+		_ = exports.Set("enterAltScreen", func(call goja.FunctionCall) goja.Value {
+			return createCommand("enterAltScreen", nil)
+		})
+
+		// exitAltScreen exits the alternate screen buffer
+		_ = exports.Set("exitAltScreen", func(call goja.FunctionCall) goja.Value {
+			return createCommand("exitAltScreen", nil)
+		})
+
+		// enableBracketedPaste enables bracketed paste mode
+		_ = exports.Set("enableBracketedPaste", func(call goja.FunctionCall) goja.Value {
+			return createCommand("enableBracketedPaste", nil)
+		})
+
+		// disableBracketedPaste disables bracketed paste mode
+		_ = exports.Set("disableBracketedPaste", func(call goja.FunctionCall) goja.Value {
+			return createCommand("disableBracketedPaste", nil)
+		})
+
+		// enableReportFocus enables focus/blur reporting
+		_ = exports.Set("enableReportFocus", func(call goja.FunctionCall) goja.Value {
+			return createCommand("enableReportFocus", nil)
+		})
+
+		// disableReportFocus disables focus/blur reporting
+		_ = exports.Set("disableReportFocus", func(call goja.FunctionCall) goja.Value {
+			return createCommand("disableReportFocus", nil)
+		})
+
+		// windowSize queries the current window size
+		_ = exports.Set("windowSize", func(call goja.FunctionCall) goja.Value {
+			return createCommand("windowSize", nil)
 		})
 	}
 }
@@ -1927,41 +1788,13 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 // runProgram runs a bubbletea program with the given model.
 // Handles TTY detection, terminal state cleanup, panic recovery, and proper I/O setup.
 // If a panic occurs, the terminal is restored before printing the stack trace to stderr.
-//
-// In v2, terminal features (altScreen, mouse, etc.) are controlled declaratively
-// via tea.View fields returned by the model's View() method, not via program options.
-// unwrapOSFile extracts an *os.File from v, checking first for a direct
-// *os.File and then for the UnwrapFile() interface used by wrapper types
-// (e.g., TUIReader/TUIWriter).  Returns nil if v is nil or not unwrappable.
-func unwrapOSFile(v any) *os.File {
-	if v == nil {
-		return nil
-	}
-	if f, ok := v.(*os.File); ok {
-		return f
-	}
-	if u, ok := v.(interface{ UnwrapFile() *os.File }); ok {
-		return u.UnwrapFile()
-	}
-	return nil
-}
-
-func (m *Manager) runProgram(model tea.Model) (err error) {
+func (m *Manager) runProgram(model tea.Model, opts ...tea.ProgramOption) (err error) {
 	// Debug: check if manager is properly initialized
 	if m == nil {
 		return fmt.Errorf("runProgram: manager is nil")
 	}
 	if m.ctx == nil {
 		return fmt.Errorf("runProgram: manager.ctx is nil")
-	}
-
-	// Enable bracketed paste mode so \x1b[200~...\x1b[201~ sequences are
-	// recognized as paste events (tea.PasteStartMsg/PasteEndMsg/PasteMsg).
-	// We send this to the terminal here, before BubbleTea's read loop starts.
-	// Note: bracketed paste mode is always enabled; the jsModel-level field was
-	// removed as it was dead code (never read, only written).
-	if m.output != nil {
-		_, _ = m.output.Write([]byte("\x1b[?2004h"))
 	}
 
 	ctx, cancel := context.WithCancelCause(m.ctx)
@@ -2001,12 +1834,8 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 		}
 	}
 
-	// restoreTerminal restores the terminal state and disables bracketed paste mode.
+	// restoreTerminal restores the terminal state if we have a saved state
 	restoreTerminal := func() {
-		// Disable bracketed paste mode (DECRST 200)
-		if m.output != nil {
-			_, _ = m.output.Write([]byte("\x1b[?2004l"))
-		}
 		if origState != nil && ttyFd >= 0 {
 			_ = term.Restore(ttyFd, origState)
 		}
@@ -2038,19 +1867,17 @@ func (m *Manager) runProgram(model tea.Model) (err error) {
 		}
 	}()
 
-	// Configure input/output.
-	// In v2, BubbleTea opens /dev/tty for input when no explicit input is provided
-	// via WithInput.  We need to pass the real *os.File so BubbleTea can detect
-	// TTY capabilities (raw mode, signals, etc.).
-	//
-	// Input/output may be wrapper types (e.g., TUIReader) that aren't *os.File
-	// but wrap one.  We check for the UnwrapFile() interface to recover the
-	// underlying file in those cases.
-	var opts []tea.ProgramOption
-	if f := unwrapOSFile(input); f != nil {
+	// Configure input/output
+	if f, ok := input.(*os.File); ok {
 		opts = append(opts, tea.WithInput(f))
+	} else if input != nil {
+		// For non-file readers, try to use input TTY
+		if isTTY {
+			opts = append(opts, tea.WithInputTTY())
+		}
 	}
-	if f := unwrapOSFile(output); f != nil {
+
+	if f, ok := output.(*os.File); ok {
 		opts = append(opts, tea.WithOutput(f))
 	}
 

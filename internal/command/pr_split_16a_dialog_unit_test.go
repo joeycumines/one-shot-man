@@ -433,14 +433,14 @@ func TestChunk16a_MergeDialog_ToggleAndConfirm(t *testing.T) {
 			};
 
 			// Toggle B (space at cursor 0 → mergeables[0] = index 1).
-			var result = prSplit._updateMergeDialog({type: 'Key', key: 'space'}, s, ds);
+			var result = prSplit._updateMergeDialog({type: 'Key', key: ' '}, s, ds);
 			ds = result[0].editorDialogState;
 			var bSelected = ds.selected[1] === true;
 
 			// Move cursor down, toggle C.
 			result = prSplit._updateMergeDialog({type: 'Key', key: 'j'}, result[0], ds);
 			ds = result[0].editorDialogState;
-			result = prSplit._updateMergeDialog({type: 'Key', key: 'space'}, result[0], ds);
+			result = prSplit._updateMergeDialog({type: 'Key', key: ' '}, result[0], ds);
 			ds = result[0].editorDialogState;
 			var cSelected = ds.selected[2] === true;
 

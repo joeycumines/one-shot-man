@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
 )
@@ -44,7 +44,7 @@ func TestRenderThrottle_Disabled(t *testing.T) {
 
 	// First call
 	output := model.View()
-	assert.Equal(t, "view_output", output.Content)
+	assert.Equal(t, "view_output", output)
 	assert.Empty(t, model.cachedView, "Should not cache when disabled")
 
 	// Verify state does not have throttle-related fields set
@@ -72,7 +72,7 @@ func TestRenderThrottle_FirstRender(t *testing.T) {
 	output := model.View()
 
 	// Assert
-	assert.Equal(t, "view_output", output.Content)
+	assert.Equal(t, "view_output", output)
 	assert.Equal(t, int32(1), atomic.LoadInt32(&callCount), "Should call JS view function")
 	assert.Equal(t, "view_output", model.cachedView, "Should cache output")
 	assert.False(t, model.lastRenderTime.IsZero(), "Should update lastRenderTime")
@@ -100,13 +100,13 @@ func TestRenderThrottle_ReturnsCached(t *testing.T) {
 
 	// 1. First render
 	output1 := model.View()
-	assert.Equal(t, "first_render", output1.Content)
+	assert.Equal(t, "first_render", output1)
 
 	// 2. Second render immediately (within 1000ms)
 	output2 := model.View()
 
 	// Assert
-	assert.Equal(t, "first_render", output2.Content, "Should return cached view")
+	assert.Equal(t, "first_render", output2, "Should return cached view")
 	assert.Equal(t, int32(1), atomic.LoadInt32(&callCount), "Should NOT call JS view function again")
 }
 
@@ -144,7 +144,7 @@ func TestRenderThrottle_Expires(t *testing.T) {
 	output2 := model.View()
 
 	// Assert
-	assert.Equal(t, "second", output2.Content, "Should re-render after expiration")
+	assert.Equal(t, "second", output2, "Should re-render after expiration")
 	assert.Equal(t, int32(2), atomic.LoadInt32(&callCount), "Should call JS view function again")
 	assert.Equal(t, "second", model.cachedView, "Should update cache")
 }
@@ -181,7 +181,7 @@ func TestRenderThrottle_ForceNextRender(t *testing.T) {
 	output2 := model.View()
 
 	// Assert
-	assert.Equal(t, "second", output2.Content, "Should re-render when forced")
+	assert.Equal(t, "second", output2, "Should re-render when forced")
 	assert.Equal(t, int32(2), atomic.LoadInt32(&callCount))
 	assert.False(t, model.forceNextRender, "Flag should be cleared after render")
 }
@@ -259,7 +259,7 @@ func TestRenderThrottle_AlwaysRenderTypes(t *testing.T) {
 	}{
 		{"Tick", tickMsg{id: "1"}, true},
 		{"WindowSize", tea.WindowSizeMsg{Width: 80, Height: 24}, true},
-		{"Key", tea.KeyPressMsg{Text: "a"}, false},
+		{"Key", tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}, false},
 	}
 
 	for _, tc := range tests {
@@ -295,10 +295,10 @@ func TestRenderThrottle_ViewError(t *testing.T) {
 	model.jsRunner = &SyncJSRunner{Runtime: vm}
 
 	output := model.View()
-	assert.Contains(t, output.Content, "View error")
-	assert.Contains(t, output.Content, assert.AnError.Error())
+	assert.Contains(t, output, "View error")
+	assert.Contains(t, output, assert.AnError.Error())
 
 	// Error outputs should probably not be cached, or they should?
 	// The current impl caches whatever viewDirect returns.
-	assert.Equal(t, output.Content, model.cachedView)
+	assert.Equal(t, output, model.cachedView)
 }

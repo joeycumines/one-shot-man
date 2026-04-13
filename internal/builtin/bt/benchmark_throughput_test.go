@@ -22,8 +22,8 @@ import (
 // a key press event to the state being updated. This is what the user FEELS.
 //
 // The input path is:
-//   1. BubbleTea receives tea.KeyPressMsg (Go)
-//   2. JsToTeaMsg converts KeyPressMsg to JS object (Go → JS bridge)
+//   1. BubbleTea receives tea.KeyMsg (Go)
+//   2. JsToTeaMsg converts KeyMsg to JS object (Go → JS bridge)
 //   3. update(state, msg) called in JS (JavaScript execution)
 //   4. State is modified (JavaScript)
 //   5. valueToCmd extracts next command (JS → Go bridge)
@@ -443,7 +443,7 @@ func BenchmarkInputLatency_KeyToStateChange(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		err := bridge.RunJSSync(func(vm *goja.Runtime) error {
-			// Simulate KeyPressMsg conversion (step 2)
+			// Simulate KeyMsg conversion (step 2)
 			msg := vm.NewObject()
 			msg.Set("type", "Key")
 			msg.Set("key", "w")

@@ -22,7 +22,7 @@ const program = tea.newModel({
         return [model, null];
     },
     view: function(model) {
-        return { content: 'Count: ' + model.count + '\nPress q to quit', altScreen: true };
+        return 'Count: ' + model.count + '\nPress q to quit';
     }
 });
 
@@ -33,7 +33,7 @@ console.log('[TEST] program.update:', typeof program.update);
 console.log('[TEST] program.view:', typeof program.view);
 
 try {
-    const result = tea.run(program);
+    const result = tea.run(program, { altScreen: true });
     console.log('[TEST] tea.run() returned:', JSON.stringify(result));
 } catch (e) {
     console.log('[TEST] tea.run() threw:', e.message);

@@ -37,11 +37,6 @@ func TestMain(m *testing.M) {
 	fmt.Printf("TestMain: building dummy program to %s\n", dummyBinaryPath)
 	cmd := exec.Command("go", "build", "-o", dummyBinaryPath, ".")
 	cmd.Dir = dummySourceDir
-	// UV_TESTMODE=1 must be in the environment for the PTY test buffer to receive
-	// full-line output from the dummy binary (see third_party/github.com/charmbracelet/ultraviolet/
-	// terminal_renderer.go). Without this, UV produces smart diffs (e.g. "\x1b[6Ced!]") that the
-	// PTY buffer cannot reconstruct, breaking element-finder and click-verification tests.
-	cmd.Env = append(os.Environ(), "UV_TESTMODE=1")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to build dummy program: %v\nOutput:\n%s", err, string(output))

@@ -193,17 +193,6 @@ func (r *TUIReader) GetSize() (width, height int, err error) {
 	return term.GetSize(int(fd))
 }
 
-// UnwrapFile returns the underlying *os.File if this reader is backed by one.
-// For stdin-backed readers, returns os.Stdin directly.  This allows consumers
-// like BubbleTea v2 (which require *os.File or term.File for raw mode) to
-// bypass the wrapper and access the real file descriptor.
-func (r *TUIReader) UnwrapFile() *os.File {
-	if r.isStdin {
-		return os.Stdin
-	}
-	return nil
-}
-
 // IsTerminal returns true if the underlying reader is a terminal.
 // This does NOT trigger lazy initialization - Fd() returns os.Stdin.Fd()
 // when lazy, which is correct since NewTUIReader() implies stdin.
@@ -576,17 +565,6 @@ func (w *TUIWriter) IsTerminal() bool {
 		return false
 	}
 	return term.IsTerminal(int(fd))
-}
-
-// UnwrapFile returns the underlying *os.File if this writer is backed by one.
-// For stdout-backed writers, returns os.Stdout directly.  This allows consumers
-// like BubbleTea v2 (which require *os.File or term.File for raw mode) to
-// bypass the wrapper and access the real file descriptor.
-func (w *TUIWriter) UnwrapFile() *os.File {
-	if w.isStdout {
-		return os.Stdout
-	}
-	return nil
 }
 
 // ioWriterAdapter wraps an io.Writer to implement prompt.Writer.

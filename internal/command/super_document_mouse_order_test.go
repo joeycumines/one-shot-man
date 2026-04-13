@@ -72,7 +72,7 @@ func TestHandleMouse_CallsSetViewportContextBeforeHandleClickAtScreenCoords(t *t
 		width: 80
 	};
 
-	var msg = { type: "MouseClick", button: "left", x: 1, y: 2, mod: [] };
+	var msg = { type: "Mouse", action: "press", button: "left", x: 1, y: 2 };
 
 	// Invoke the real, embedded handleMouse implementation
 	handleMouse(msg, s);

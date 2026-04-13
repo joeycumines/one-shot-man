@@ -358,7 +358,8 @@ func TestManualMode_MouseInteraction_T9(t *testing.T) {
 		// Click on the cube position: SimX=11, SimY=10
 		// Screen coords: spaceX=(80-60)/2 = 10. ClickX = 11 + 10 + 1 = 22, ClickY=10
 		msg := map[string]any{
-			"type":   "MouseClick",
+			"type":   "Mouse",
+			"action": "press",
 			"x":      22,
 			"y":      10,
 			"button": "left",
@@ -392,7 +393,8 @@ func TestManualMode_MouseInteraction_T9(t *testing.T) {
 		// Click on the far cube: SimX=50, SimY=10
 		// Screen coords: ClickX = 50 + 10 + 1 = 61, ClickY=10
 		msg := map[string]any{
-			"type":   "MouseClick",
+			"type":   "Mouse",
+			"action": "press",
 			"x":      61,
 			"y":      10,
 			"button": "left",
@@ -425,7 +427,8 @@ func TestManualMode_MouseInteraction_T9(t *testing.T) {
 		// Click on empty adjacent cell: SimX=11, SimY=10 (distance 1.0, within 1.5)
 		// Screen coords: ClickX = 11 + 10 + 1 = 22, ClickY=10
 		msg := map[string]any{
-			"type":   "MouseClick",
+			"type":   "Mouse",
+			"action": "press",
 			"x":      22,
 			"y":      10,
 			"button": "left",
@@ -470,7 +473,8 @@ func TestManualMode_MouseInteraction_T9(t *testing.T) {
 		// Try to place on occupied cell: SimX=11, SimY=10
 		// Screen coords: ClickX = 11 + 10 + 1 = 22, ClickY=10
 		msg := map[string]any{
-			"type":   "MouseClick",
+			"type":   "Mouse",
+			"action": "press",
 			"x":      22,
 			"y":      10,
 			"button": "left",
@@ -516,7 +520,8 @@ func TestManualMode_MouseInteraction_T9(t *testing.T) {
 		// Click on (8, 18) which is within goal area
 		// Screen coords: ClickX = 8 + 10 + 1 = 19, ClickY=18
 		msg := map[string]any{
-			"type":   "MouseClick",
+			"type":   "Mouse",
+			"action": "press",
 			"x":      19,
 			"y":      18,
 			"button": "left",
@@ -557,7 +562,8 @@ func TestManualMode_MouseInteraction_T9(t *testing.T) {
 
 		// Try to pick the wall: SimX=11, SimY=10
 		msg := map[string]any{
-			"type":   "MouseClick",
+			"type":   "Mouse",
+			"action": "press",
 			"x":      22,
 			"y":      10,
 			"button": "left",
@@ -594,7 +600,8 @@ func TestManualMode_MouseInteraction_T9(t *testing.T) {
 
 		// Try to pick another cube while holding one
 		msg := map[string]any{
-			"type":   "MouseClick",
+			"type":   "Mouse",
+			"action": "press",
 			"x":      22,
 			"y":      10,
 			"button": "left",
@@ -630,9 +637,10 @@ func TestManualMode_MouseInteraction_T9(t *testing.T) {
 		// Track state before
 		heldItemBefore := actor.Get("heldItem")
 
-		// Send mouse RELEASE event (not press) — v2 uses type: "MouseRelease"
+		// Send mouse RELEASE event (not press)
 		msg := map[string]any{
-			"type":   "MouseRelease",
+			"type":   "Mouse",
+			"action": "release",
 			"x":      22,
 			"y":      10,
 			"button": "left",
@@ -855,7 +863,8 @@ func TestManualMode_ModeSwitching_T10_T12(t *testing.T) {
 
 		// Click to pick (this should initiate pick)
 		msgPick := map[string]any{
-			"type":   "MouseClick",
+			"type":   "Mouse",
+			"action": "press",
 			"x":      22,
 			"y":      10,
 			"button": "left",
@@ -920,7 +929,8 @@ func TestManualMode_ModeSwitching_T10_T12(t *testing.T) {
 
 		// Click to place
 		msgPlace := map[string]any{
-			"type":   "MouseClick",
+			"type":   "Mouse",
+			"action": "press",
 			"x":      22,
 			"y":      10,
 			"button": "left",

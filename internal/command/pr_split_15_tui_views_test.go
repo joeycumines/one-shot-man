@@ -1889,9 +1889,8 @@ func TestViews_VerificationScreen_FocusStyling(t *testing.T) {
 	}
 	afterFSB := out0[fsbIdx:]
 	// The marker precedes the bordered button: [[FSB]]╭...╮\n│ Re-verify │\n╰...╯
-	// Check within a larger window to account for the multi-line border and
-	// v2 lipgloss's longer ANSI escape sequences (up to ~400 bytes per style).
-	checkLen := min(len(afterFSB), 500)
+	// Check within a larger window to account for the multi-line border.
+	checkLen := min(len(afterFSB), 200)
 	if !strings.Contains(afterFSB[:checkLen], "Re-verify") {
 		t.Errorf("focus 0: FSB marker should be near 'Re-verify', got:\n%s", afterFSB[:checkLen])
 	}
@@ -1907,8 +1906,7 @@ func TestViews_VerificationScreen_FocusStyling(t *testing.T) {
 		t.Fatal("focus 1: focusedSecondaryButton marker not found — Revise Plan not receiving focus style")
 	}
 	afterFSB = out1[fsbIdx:]
-	// v2 lipgloss ANSI sequences can extend the distance between marker and text.
-	checkLen = min(len(afterFSB), 500)
+	checkLen = min(len(afterFSB), 200)
 	if !strings.Contains(afterFSB[:checkLen], "Revise Plan") {
 		t.Errorf("focus 1: FSB marker should be near 'Revise Plan', got:\n%s", afterFSB[:checkLen])
 	}
@@ -1927,8 +1925,7 @@ func TestViews_VerificationScreen_FocusStyling(t *testing.T) {
 		t.Fatal("focus 3: focusedButton marker not found — Continue not receiving focus style")
 	}
 	afterFB := out3[fbIdx:]
-	// v2 lipgloss ANSI sequences can extend the distance between marker and text.
-	checkLen = min(len(afterFB), 400)
+	checkLen = min(len(afterFB), 100)
 	if !strings.Contains(afterFB[:checkLen], "Continue") {
 		t.Errorf("focus 3: FB marker should be near 'Continue', got:\n%s", afterFB[:checkLen])
 	}

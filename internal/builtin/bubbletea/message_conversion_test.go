@@ -683,7 +683,7 @@ func TestMsgToJS_ModToStrings(t *testing.T) {
 			msg := tea.KeyPressMsg{Text: "a", Mod: tc.mod}
 			result := model.msgToJS(msg)
 			require.NotNil(t, result)
-		modArr, ok := result["mod"].([]string)
+			modArr, ok := result["mod"].([]string)
 			require.True(t, ok, "mod should be []string")
 			assert.Contains(t, modArr, tc.want)
 		})

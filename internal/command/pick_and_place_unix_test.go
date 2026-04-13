@@ -2263,8 +2263,18 @@ func TestPickAndPlace_MouseNoAction_NoCubesInRange(t *testing.T) {
 		t.Fatalf("Failed to send mouse click: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	deadline := time.Now().Add(3 * time.Second)
 	stateAfter := h.GetDebugState()
+	for time.Now().Before(deadline) {
+		stateAfter = h.GetDebugState()
+		dx := stateAfter.ActorX - initialX
+		dy := stateAfter.ActorY - initialY
+		moved := math.Abs(dx) > 0.5 || math.Abs(dy) > 0.5
+		if moved {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 
 	// Verify no pick occurred (heldItemId=-1)
 	if stateAfter.HeldItemID != -1 {

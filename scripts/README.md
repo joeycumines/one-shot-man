@@ -9,7 +9,7 @@ They are not intended to be useful on their own — see the builtin commands for
 
 | Script | Description | Mode |
 |--------|-------------|------|
-| `example-01-llm-prompt-builder.js` | Basic prompt builder using `tui.registerMode()` and `tui.createState()` | Interactive (`-i`) |
+| `example-01-llm-prompt-builder.js` | Basic prompt builder using `tui.registerMode()` and class-local state | Interactive (`-i`) |
 | `example-02-graphical-todo.js` | Full BubbleTea TUI: todo list with zone-based mouse support | Interactive (BubbleTea) |
 | `example-03-context-rehydration.js` | Context manager with session persistence via `osm:ctxutil` | Interactive (`-i`) |
 | `example-04-bt-shooter.js` | Behavior tree game loop with BubbleTea rendering | Interactive (BubbleTea) |
@@ -26,7 +26,7 @@ They are not intended to be useful on their own — see the builtin commands for
 | `test-03-debug-tui.js` | Self-checking API smoke test (supports `--test` flag) | Test (`--test`) |
 | `test-shooter-error.js` | Verify non-zero exit on BT errors | Non-interactive |
 | `minimal-bubbletea-test.js` | Minimal BubbleTea app skeleton | Interactive (BubbleTea) |
-| `benchmark-input-latency.js` | Measure key-event-to-render latency | Interactive (BubbleTea) |
+| `benchmark-input-latency.js` | Measure key-event-to-next-frame-tick latency | Interactive (BubbleTea) |
 
 ## Running scripts
 

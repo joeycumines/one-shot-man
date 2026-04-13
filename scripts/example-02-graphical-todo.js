@@ -104,6 +104,9 @@ const program = tea.newModel({
         // --- 2. Input Mode Handling ---
         if (model.mode === 'add') {
             if (msg.type === 'Key') {
+                if (msg.key === 'ctrl+c') {
+                    return [model, tea.quit()];
+                }
                 if (msg.key === 'esc') {
                     model.mode = 'list';
                     model.textarea.setValue("");

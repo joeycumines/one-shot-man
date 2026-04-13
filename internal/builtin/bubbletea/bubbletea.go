@@ -545,12 +545,12 @@ func JsToTeaMsg(runtime *goja.Runtime, obj *goja.Object) tea.Msg {
 
 // jsModel wraps a JavaScript model definition for bubbletea.
 type jsModel struct {
-	runtime     *goja.Runtime
-	initFn      goja.Callable
-	updateFn    goja.Callable
-	viewFn      goja.Callable
-	state       goja.Value
-	initError string // Store init error for debugging
+	runtime   *goja.Runtime
+	initFn    goja.Callable
+	updateFn  goja.Callable
+	viewFn    goja.Callable
+	state     goja.Value
+	initError string   // Store init error for debugging
 	jsRunner  JSRunner // Optional: thread-safe JS execution via event loop
 
 	// Render throttling state (optional, opt-in feature)

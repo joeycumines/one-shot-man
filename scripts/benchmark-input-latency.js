@@ -5,7 +5,7 @@
 //
 // PURPOSE: Isolate and measure the time between:
 //   1. Key pressed (message received in update)
-//   2. Screen updated (view returns)
+//   2. Next frame tick processed (the next render-driving update)
 //
 // This strips ALL game logic to focus purely on input → render latency.
 // Run with: osm script scripts/benchmark-input-latency.js
@@ -172,6 +172,8 @@ function createState() {
         ticks: createTickTracker(),
         playerX: Math.floor(SCREEN_WIDTH / 2),
         playerY: Math.floor(SCREEN_HEIGHT / 2),
+        width: SCREEN_WIDTH,
+        height: SCREEN_HEIGHT,
         lastKey: '',
         frameCount: 0,
         startTime: Date.now(),
@@ -188,10 +190,18 @@ function update(state, msg) {
         state.frameCount++;
         state.ticks.recordTick();
 
-        // End latency measurement when view is about to render
+        // End latency measurement on the next render-driving frame tick.
         state.latency.endMeasurement();
 
         return [state, tea.tick(TICK_INTERVAL_MS, 'tick')];
+    }
+
+    if (msg.type === 'WindowSize') {
+        state.width = Math.max(8, msg.width || SCREEN_WIDTH);
+        state.height = Math.max(8, msg.height || SCREEN_HEIGHT);
+        state.playerX = Math.min(Math.max(2, state.playerX), Math.max(2, state.width - 3));
+        state.playerY = Math.min(Math.max(1, state.playerY), Math.max(1, state.height - 2));
+        return [state, null];
     }
 
     if (msg.type === 'Key') {
@@ -209,15 +219,15 @@ function update(state, msg) {
                 break;
             case 's':
             case 'down':
-                state.playerY = Math.min(SCREEN_HEIGHT - 2, state.playerY + 1);
+                state.playerY = Math.min(Math.max(1, state.height - 2), state.playerY + 1);
                 break;
             case 'a':
             case 'left':
-                state.playerX = Math.max(1, state.playerX - 1);
+                state.playerX = Math.max(2, state.playerX - 1);
                 break;
             case 'd':
             case 'right':
-                state.playerX = Math.min(SCREEN_WIDTH - 2, state.playerX + 1);
+                state.playerX = Math.min(Math.max(2, state.width - 3), state.playerX + 1);
                 break;
             case 'r':
                 // Reset measurements
@@ -234,81 +244,144 @@ function update(state, msg) {
         }
     }
 
-    return [state, tea.tick(TICK_INTERVAL_MS, 'tick')];
+    return [state, null];
 }
 
 function view(state) {
+    const width = Math.max(8, state.width || SCREEN_WIDTH);
+    const height = Math.max(8, state.height || SCREEN_HEIGHT);
     const lines = [];
     const stats = state.latency.getStats();
     const tickStats = state.ticks.getTickStats();
     const elapsed = ((Date.now() - state.startTime) / 1000).toFixed(1);
+    const fitLine = function (line) {
+        if (line.length <= width) {
+            return line;
+        }
+        if (width <= 1) {
+            return line.slice(0, width);
+        }
+        return line.slice(0, width - 1) + '…';
+    };
+    const finalize = function (contentLines) {
+        return contentLines.slice(0, height).map(fitLine).join('\n');
+    };
+    const pushSection = function (section) {
+        if (lines.length + section.length <= height) {
+            lines.push(...section);
+            return true;
+        }
+        return false;
+    };
+
+    if (height < 18) {
+        lines.push('INPUT LATENCY BENCHMARK');
+        lines.push('Frame ' + state.frameCount + ' | Last ' + (state.lastKey || 'none'));
+        lines.push('Player (' + state.playerX + ', ' + state.playerY + ')');
+
+        if (stats.count === 0) {
+            if (!state.latency.warmupComplete) {
+                lines.push('Warmup ' + state.latency.totalKeyPresses + '/' + WARMUP_KEYS);
+            } else {
+                lines.push('Press keys to collect samples');
+            }
+        } else {
+            lines.push('Samples ' + stats.count + '/' + TARGET_SAMPLES);
+            lines.push('Avg ' + stats.avg + 'ms | P95 ' + stats.p95 + 'ms');
+        }
+
+        if (height >= 6) {
+            lines.push('Ticks ' + tickStats.count + ' | Keys ' + tickStats.keyCount);
+        }
+        if (height >= 7) {
+            lines.push('WASD/arrows move | q quit | r reset');
+        }
+        if (state.complete && lines.length < height) {
+            lines.push('Benchmark complete');
+        }
+
+        return { content: finalize(lines), altScreen: true };
+    }
 
     // Header
-    lines.push('═'.repeat(SCREEN_WIDTH));
-    lines.push('  INPUT LATENCY BENCHMARK - osm:bubbletea');
-    lines.push('═'.repeat(SCREEN_WIDTH));
-    lines.push('');
+    pushSection([
+        '═'.repeat(width),
+        '  INPUT LATENCY BENCHMARK - osm:bubbletea',
+        '═'.repeat(width),
+        '',
+        '  Frame: ' + state.frameCount + ' | Elapsed: ' + elapsed + 's | Last Key: ' + (state.lastKey || 'none'),
+        '  Player Position: (' + state.playerX + ', ' + state.playerY + ')'
+    ]);
 
-    // Instructions
-    lines.push('  Press WASD or Arrow keys to move. Press Q to quit. Press R to reset.');
-    lines.push('  Collecting ' + TARGET_SAMPLES + ' samples after ' + WARMUP_KEYS + ' key warmup...');
-    lines.push('');
-
-    // Current state
-    lines.push('  Frame: ' + state.frameCount + ' | Elapsed: ' + elapsed + 's | Last Key: ' + (state.lastKey || 'none'));
-    lines.push('  Player Position: (' + state.playerX + ', ' + state.playerY + ')');
-    lines.push('');
-
-    // Tick stats
-    lines.push('  ─── Tick Statistics ───');
-    lines.push('  Total Ticks: ' + tickStats.count + ' | Key Events: ' + tickStats.keyCount);
-    lines.push('  Tick:Key Ratio: ' + tickStats.ratio + ':1 | Avg Tick Interval: ' + tickStats.avgInterval + 'ms');
-    lines.push('');
-
-    // Latency stats
-    lines.push('  ─── Input Latency (Key→Render) ───');
+    const latencyLines = ['', '  ─── Input Latency (Key→Next Frame Tick) ───'];
     if (stats.count === 0) {
         if (!state.latency.warmupComplete) {
-            lines.push('  Warming up... (' + state.latency.totalKeyPresses + '/' + WARMUP_KEYS + ')');
+            latencyLines.push('  Warming up... (' + state.latency.totalKeyPresses + '/' + WARMUP_KEYS + ')');
         } else {
-            lines.push('  Press keys to collect samples...');
+            latencyLines.push('  Press keys to collect samples...');
         }
     } else {
-        lines.push('  Samples: ' + stats.count + '/' + TARGET_SAMPLES);
-        lines.push('  Min: ' + stats.min + 'ms | Max: ' + stats.max + 'ms | Avg: ' + stats.avg + 'ms');
-        lines.push('  P50: ' + stats.p50 + 'ms | P95: ' + stats.p95 + 'ms | P99: ' + stats.p99 + 'ms');
-        lines.push('');
-        lines.push('  ─── Latency Histogram ───');
-        lines.push(state.latency.getHistogram());
+        latencyLines.push('  Samples: ' + stats.count + '/' + TARGET_SAMPLES);
+        latencyLines.push('  Min: ' + stats.min + 'ms | Max: ' + stats.max + 'ms | Avg: ' + stats.avg + 'ms');
+        latencyLines.push('  P50: ' + stats.p50 + 'ms | P95: ' + stats.p95 + 'ms | P99: ' + stats.p99 + 'ms');
+    }
+    pushSection(latencyLines);
+
+    pushSection([
+        '',
+        '  ─── Tick Statistics ───',
+        '  Total Ticks: ' + tickStats.count + ' | Key Events: ' + tickStats.keyCount,
+        '  Tick:Key Ratio: ' + tickStats.ratio + ':1 | Avg Tick Interval: ' + tickStats.avgInterval + 'ms'
+    ]);
+
+    pushSection([
+        '',
+        '  Press WASD or Arrow keys to move. Press Q to quit. Press R to reset.',
+        '  Collecting ' + TARGET_SAMPLES + ' samples after ' + WARMUP_KEYS + ' key warmup...'
+    ]);
+
+    if (stats.count > 0) {
+        const histogramLines = [''];
+        histogramLines.push('  ─── Latency Histogram ───');
+        histogramLines.push(...state.latency.getHistogram().replace(/\n+$/, '').split('\n'));
+        if (!pushSection(histogramLines)) {
+            pushSection(['', '  Histogram hidden — enlarge terminal height to view']);
+        }
     }
 
     // Completion message
     if (state.complete) {
-        lines.push('');
-        lines.push('  ★★★ BENCHMARK COMPLETE ★★★');
-        lines.push('  Press R to reset and run again, or Q to quit.');
+        pushSection([
+            '',
+            '  ★★★ BENCHMARK COMPLETE ★★★',
+            '  Press R to reset and run again, or Q to quit.'
+        ]);
     }
 
     // Simple play area with player marker
-    lines.push('');
-    lines.push('  ─── Play Area ───');
+    const playAreaLines = ['', '  ─── Play Area ───'];
+    const playerRow = Math.min(4, Math.max(0, state.playerY - Math.floor((state.height || SCREEN_HEIGHT) / 2) + 2));
     for (let y = 0; y < 5; y++) {
         let row = '  ';
-        for (let x = 0; x < SCREEN_WIDTH - 4; x++) {
-            if (x === state.playerX - 2 && y === Math.min(4, Math.max(0, state.playerY - Math.floor(SCREEN_HEIGHT / 2) + 2))) {
+        for (let x = 0; x < Math.max(1, width - 4); x++) {
+            if (x === state.playerX - 2 && y === playerRow) {
                 row += '▲';
             } else if (y === 0 || y === 4) {
                 row += '─';
-            } else if (x === 0 || x === SCREEN_WIDTH - 5) {
+            } else if (x === 0 || x === width - 5) {
                 row += '│';
             } else {
                 row += ' ';
             }
         }
-        lines.push(row);
+        playAreaLines.push(row);
     }
 
-    return { content: lines.join('\n'), altScreen: true };
+    if (!pushSection(playAreaLines)) {
+        pushSection(['', '  Play area hidden — enlarge terminal height to view']);
+    }
+
+    return { content: finalize(lines), altScreen: true };
 }
 
 // ============================================================================

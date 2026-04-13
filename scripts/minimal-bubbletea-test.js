@@ -8,7 +8,7 @@ console.log('[TEST] tea module loaded');
 const program = tea.newModel({
     init: function() {
         console.log('[TEST] init() called');
-        return { count: 0 };
+        return [{ count: 0 }, tea.tick(16, 'tick')];
     },
     update: function(msg, model) {
         if (msg.type === 'Tick') {

@@ -520,9 +520,9 @@ ctx.run("register-mode", function () {
 });
 
 function help() {
-    output.print("\nCommands: goal, add, diff, note, list, view, edit, remove, template, generate, use, footer, show [meta|prompt], copy [meta|prompt], help, exit\n"
+    output.print("\nCommands: goal, add, diff, note, list, edit, remove, template, generate, use, footer, show [meta|prompt], copy [meta|prompt], help, exit\n"
         + "Tip: Use 'goal --prewritten' to see available pre-written goals\n"
-        + "Tip: Use 'view' for an interactive TUI table of context items");
+        + "Tip: Use 'list' to see current context items");
 }
 
 // Auto-switch into flow mode when this script loads

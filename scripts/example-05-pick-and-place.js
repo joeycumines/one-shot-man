@@ -1783,7 +1783,7 @@ try {
             return [state, tea.tick(16, 'tick')];
         }
 
-        return [state, tea.tick(16, 'tick')];
+        return [state, null];
     }
 
     function view(state) {

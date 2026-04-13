@@ -146,39 +146,6 @@ try {
         return particles;
     }
 
-// Seeded random number generator using sfc32 algorithm
-// DISABLED: process.env.SEED not available in osm scripting context
-    /*
-    function sfc32(seed) {
-        let a = parseInt(seed.toString());
-        let b = parseInt(seed.toString()) ^ 0x12345678;
-        let c = parseInt(seed.toString()) ^ 0xABCDEF01;
-        let d = parseInt(seed.toString()) ^ 0xFEDCBA09;
-
-        return function() {
-            a >>>= 0; b >>>= 0; c >>>= 0; d >>>= 0;
-            let t = (a + b) | 0;
-            a = b ^ b >>> 9;
-            b = c + (c << 3) | 0;
-            c = (c << 21 | c >>> 11);
-            d = d + 1 | 0;
-            t = t + d | 0;
-            c = c + t | 0;
-            return (t >>> 0) / 4294967296;
-        };
-    }
-
-    // Use SEED environment variable for reproducible random values
-    const seed = process.env.SEED;
-    let rng;
-    if (seed) {
-        rng = sfc32(seed);
-    } else {
-        rng = Math.random;
-    }
-    */
-
-// Always use Math.random for now
     let rng = Math.random;
 
 // ============================================================================
@@ -324,17 +291,6 @@ try {
             maxAge: 3000,
             sprite: owner === 'player' ? '•' : '○',
             color: owner === 'player' ? '#00FFFF' : '#FF6600'
-        };
-    }
-
-    function createParticle(x, y) {
-        return {
-            x: x,
-            y: y,
-            char: ['*', '+', '×', '·'][Math.floor(rng() * 4)],
-            color: ['#FF0000', '#FFA500', '#FFFF00'][Math.floor(rng() * 3)],
-            age: 0,
-            maxAge: EXPLOSION_MAX_AGE + rng() * 200
         };
     }
 
@@ -1238,8 +1194,8 @@ try {
             }
         });
 
-        // Render player
-        if (state.player && !state.player.invincible || Math.floor(Date.now() / 100) % 2 === 0) {
+        // Render player (flash when invincible, always show otherwise)
+        if (state.player && (!state.player.invincible || Math.floor(Date.now() / 100) % 2 === 0)) {
             const px = Math.floor(state.player.x);
             const py = Math.floor(state.player.y);
             if (py > 1 && py < height - 2 && px > 0 && px < width - 1) {
@@ -1436,8 +1392,8 @@ try {
         let output = lines.join('\n');
 
         if (state.gameMode !== 'playing') {
+            const modal = renderModal(state).split('\n');
             output = playArea.split('\n').map((line, y) => {
-                const modal = renderModal(state).split('\n');
                 if (y < modal.length) {
                     const terminalWidth = state.terminalSize && state.terminalSize.width ? state.terminalSize.width : SCREEN_WIDTH;
                     return line.substring(0, Math.floor((terminalWidth - modal[y].length) / 2)) + modal[y];
@@ -1503,7 +1459,7 @@ try {
         if (msg.type === 'Key') {
             // Defensive check: ensure state is valid
             if (!state) {
-                return [state, tea.tick(16, 'tick')];
+                return [state, null];
             }
 
             switch (state.gameMode) {
@@ -1520,7 +1476,7 @@ try {
                 case 'playing':
                     // Ensure player exists before handling input
                     if (!state.player) {
-                        return [state, tea.tick(16, 'tick')];
+                        return [state, null];
                     }
 
                     // DIRECT POSITION MOVEMENT - terminals don't reliably send key-repeat
@@ -1593,7 +1549,7 @@ try {
                 case 'gameOver':
                 case 'victory':
                     if (msg.key === 'r') {
-                        return [initializeGame(), tea.tick(16, 'tick')];
+                        return [initializeGame(), null];
                     } else if (msg.key === 'q') {
                         return [state, tea.quit()];
                     }
@@ -1609,27 +1565,12 @@ try {
             }
         }
 
-        return [state, tea.tick(16, 'tick')];
+        return [state, null];
     }
 
 // ============================================================================
 // Entry Point (Lines 1001-1020)
 // ============================================================================
-
-// Global cleanup function to ensure tickers are stopped on any error
-    function cleanupTickers(state) {
-        if (state && state.enemies) {
-            state.enemies.forEach(function (enemy, id) {
-                if (enemy.ticker) {
-                    try {
-                        enemy.ticker.stop();
-                    } catch (e) {
-                        console.error('Error stopping enemy #' + id + ' ticker: ' + e.message);
-                    }
-                }
-            });
-        }
-    }
 
     const program = tea.newModel({
         init: function () {
@@ -1665,7 +1606,7 @@ try {
         console.log('  WASD / Arrow Keys: Move player');
         console.log('  SPACE: Fire projectile');
         console.log('  P: Pause game');
-        console.log('  D: Toggle debug mode');
+        console.log('  ` / F3: Toggle debug mode');
         console.log('  Q: Quit game');
         console.log('');
         console.log('Press SPACE to begin!');
@@ -1684,13 +1625,6 @@ try {
         console.error('');
         console.error('FATAL ERROR: ' + e.message);
         console.error('Stack trace: ' + e.stack);
-
-        // Attempt to clean up tickers before re-throwing
-        try {
-            cleanupTickers(program.init()[0]);
-        } catch (cleanupError) {
-            console.error('Error during cleanup: ' + cleanupError.message);
-        }
 
         // Re-throw to trigger Go-level error handling (non-zero exit code)
         throw e;

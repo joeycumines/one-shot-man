@@ -139,7 +139,6 @@
 // - [A]dd (a): Clears input buffers, opens Input View.
 // - [L]oad (l): Triggers file loading dialog (Context dependant).
 // - [E]dit (e): Opens the currently selected document for editing.
-// - [V]iew (v): Opens the currently selected document in read-only view / Preview.
 // - [D]elete (d): Triggers delete confirmation for selected document.
 // - [C]opy (c): **Purple Style**. Copies the prompt content to clipboard.
 // - [S]hell (s): **Orange Style**. Leaves the GUI mode and "drops" to a shell-style mode.
@@ -722,7 +721,6 @@ function runVisualTui() {
         confirmDocId: null,
         statusMsg: '',
         hasError: false,
-        clipboard: '',
         width: 80,
         height: 24,
         layout: {buttons: [], docBoxes: []},
@@ -993,9 +991,6 @@ function handleKeys(msg, s) {
         if (k === 'enter' && s.focusedButtonIdx >= 0) {
             const btn = BUTTONS[s.focusedButtonIdx];
             if (btn) {
-                // Simulate the key press for the button action
-                // Re-dispatch as the button's key
-                // (use the same handling code below)
                 if (btn.key === 'q') {
                     _userRequestedShell = false;
                     return [s, tea.quit()];
@@ -1004,12 +999,6 @@ function handleKeys(msg, s) {
                     _userRequestedShell = true;
                     return [s, tea.quit()];
                 }
-                // For other buttons, set k to the button's key and fall through
-                // We need to handle them specially to avoid code duplication
-                // Note: a, l, c, r are handled below, so let's just set a marker
-                // Actually, simpler: just set k and let it fall through
-                // But k is a const! Need to refactor...
-                // For now, handle inline:
                 if (btn.key === 'a') {
                     s.mode = MODE_INPUT;
                     s.inputOperation = INPUT_ADD;
@@ -1017,20 +1006,21 @@ function handleKeys(msg, s) {
                     s.labelBuffer = '';
                     s.contentTextarea = textareaLib.new();
                     configureTextarea(s.contentTextarea, s.width);
-                    s.focusedButtonIdx = -1; // Clear button focus when entering input mode
-                    s.inputViewportUnlocked = false; // Reset viewport lock on mode entry
+                    s.focusedButtonIdx = -1;
+                    s.inputViewportUnlocked = false;
+                    return [s, null];
                 }
                 if (btn.key === 'l') {
                     s.mode = MODE_INPUT;
                     s.inputOperation = INPUT_LOAD;
                     s.inputFocus = FOCUS_LABEL;
                     s.labelBuffer = '';
-                    s.contentTextarea = null; // No textarea for load mode
-                    s.focusedButtonIdx = -1; // Clear button focus
-                    s.inputViewportUnlocked = false; // Reset viewport lock on mode entry
+                    s.contentTextarea = null;
+                    s.focusedButtonIdx = -1;
+                    s.inputViewportUnlocked = false;
+                    return [s, null];
                 }
                 if (btn.key === 'c') {
-                    // Copy final prompt (includes documents + other context)
                     const prompt = buildFinalPrompt();
                     try {
                         os.clipboardCopy(prompt);
@@ -1041,13 +1031,14 @@ function handleKeys(msg, s) {
                         s.hasError = true;
                     }
                     s.focusedButtonIdx = -1;
+                    return [s, null];
                 }
                 if (btn.key === 'r') {
-                    // Reset (archive + clear session state) - show confirmation regardless of documents
                     s.mode = MODE_CONFIRM;
                     s.confirmPrompt = 'Reset the session (archive current state and clear all persisted state)? This cannot be undone. (y/n)';
-                    s.confirmDocId = -1; // -1 means "reset all"
+                    s.confirmDocId = -1;
                     s.focusedButtonIdx = -1;
+                    return [s, null];
                 }
             }
         }
@@ -1196,7 +1187,6 @@ function handleKeys(msg, s) {
         }
         if (k === 'c') {
             const prompt = buildFinalPrompt();
-            s.clipboard = prompt;
             try {
                 // Call the system clipboard via osm:os module
                 os.clipboardCopy(prompt);
@@ -1347,7 +1337,7 @@ function handleKeys(msg, s) {
 
                 // Ctrl+End: Go to end of document
                 if (k === 'ctrl+end') {
-                    s.contentTextarea.selectAll(); // Moves to absolute end
+                    s.contentTextarea.selectAll(); // JS binding name; moves cursor to absolute end
                     s.inputViewportUnlocked = false;
                     return [s, null];
                 }

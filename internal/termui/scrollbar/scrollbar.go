@@ -4,7 +4,7 @@ package scrollbar
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // Model defines the state of the scrollbar.

@@ -26,9 +26,11 @@ import (
 
 // PickAndPlaceDebugJSON represents the compact debug JSON output by the pick-and-place simulator
 // Keys: m=mode, t=tick, x/y=actor pos, h=held, w=win, a/b=target pos, n=blockade count, g=goal blockade count
+
 type PickAndPlaceDebugJSON struct {
 	Mode              string   `json:"m"`           // 'a' = automatic, 'm' = manual
 	Tick              int64    `json:"t"`           // Tick counter
+	ViewCallCount     int64    `json:"vc"`          // Number of View() calls (increments every render)
 	ActorX            float64  `json:"x"`           // Actor X position (rounded)
 	ActorY            float64  `json:"y"`           // Actor Y position (rounded)
 	HeldItemID        int      `json:"h"`           // Held cube ID (-1 if none)
@@ -66,8 +68,15 @@ type PickAndPlaceHarness struct {
 	env        []string
 	timeout    time.Duration
 
+	// PTY dimensions (passed to termtest.WithSize)
+	ptyCols int
+	ptyRows int
+
 	// Cached state from last debug overlay parse
 	lastDebugState *PickAndPlaceDebugJSON
+	// Cached parsed log state — used as fallback when PTY parsing returns stale data.
+	// Set by parseDebugStateFromLog when PTY parsing gives an obviously wrong result.
+	lastLogState *PickAndPlaceDebugJSON
 }
 
 // NewPickAndPlaceHarness creates a new test harness for pick-and-place simulator.
@@ -126,12 +135,14 @@ func NewPickAndPlaceHarness(ctx context.Context, t *testing.T, config PickAndPla
 	args = append(args, "-log-level", h.logLevel)
 	args = append(args, "-i", h.scriptPath)
 
+	ptyRows, ptyCols := uint16(60), uint16(200)
+	h.ptyRows, h.ptyCols = int(ptyRows), int(ptyCols)
 	h.console, err = termtest.NewConsole(h.ctx,
 		termtest.WithCommand(h.binaryPath, args...),
 		termtest.WithDefaultTimeout(h.timeout),
 		termtest.WithEnv(testEnv),
-		termtest.WithDir(projectDir), // Set project directory so script paths resolve correctly
-		termtest.WithSize(24, 200),   // Wide terminal to prevent JSON line-wrapping
+		termtest.WithDir(projectDir),        // Set project directory so script paths resolve correctly
+		termtest.WithSize(ptyRows, ptyCols), // PTY dimensions used for mouse coordinate calculations
 	)
 	if err != nil {
 		cancel()
@@ -278,7 +289,7 @@ func TestPickAndPlaceInitialState(t *testing.T) {
 	}
 	defer func() {
 		// Print log contents on test completion for debugging
-		content, _ := os.ReadFile(logPath)
+		content, _ := os.ReadFile(harness.logPath)
 		if len(content) > 0 {
 			t.Logf("Script log:\n%s", string(content))
 		}
@@ -745,12 +756,14 @@ func (h *PickAndPlaceHarness) Start() error {
 	args = append(args, "-log-level", h.logLevel)
 	args = append(args, "-i", h.scriptPath)
 
+	ptyRows, ptyCols := uint16(60), uint16(200)
+	h.ptyRows, h.ptyCols = int(ptyRows), int(ptyCols)
 	h.console, err = termtest.NewConsole(h.ctx,
 		termtest.WithCommand(h.binaryPath, args...),
 		termtest.WithDefaultTimeout(h.timeout),
 		termtest.WithEnv(testEnv),
-		termtest.WithDir(projectDir), // Set project directory so script paths resolve correctly
-		termtest.WithSize(24, 200),   // Wide terminal to prevent JSON line-wrapping
+		termtest.WithDir(projectDir),        // Set project directory so script paths resolve correctly
+		termtest.WithSize(ptyRows, ptyCols), // PTY dimensions used for mouse coordinate calculations
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create termtest console: %w", err)
@@ -810,11 +823,18 @@ func (h *PickAndPlaceHarness) ClickViewport(x, y int) error {
 // It handles the mapping to 1-indexed terminal coordinates, including the side padding.
 func (h *PickAndPlaceHarness) ClickGrid(x, y int) error {
 	state := h.GetDebugState()
-	spaceX := (state.TotalWidth - state.SpaceWidth) / 2
-	// Grid (gx, gy) is rendered at buffer column (gx + spaceX + 1) and buffer row (gy)
-	// SGR mouse uses 1-indexed terminal coordinates
-	// So: terminal column = (gx + spaceX + 1) + 1 = gx + spaceX + 2
-	//     terminal row = gy + 1
+	// CRITICAL: Use the PTY width (not the debug overlay's TotalWidth).
+	// The PTY is created with WithSize(ptyRows, ptyCols) = 60×200.
+	// The JS game uses: spaceX = floor((state.width - state.spaceWidth) / 2)
+	// where state.width = PTY width and state.spaceWidth = play area width.
+	// We must use the SAME formula so clicks map to the correct grid coordinates.
+	// Grid (gx, gy) is rendered at buffer column (gx + spaceX + 1) and buffer row (gy).
+	// SGR mouse uses 1-indexed terminal coordinates.
+	// So: terminal column = (gx + spaceX + 1) + 1 = gx + spaceX + 2.
+	//     terminal row = gy + 1.
+	spaceX := (h.ptyCols - state.SpaceWidth) / 2
+	h.t.Logf("ClickGrid: clicking grid (%d,%d) → term (%d,%d) [PTYCols=%d SpaceWidth=%d spaceX=%d mode=%s tick=%d actor=(%.1f,%.1f)]",
+		x, y, x+spaceX+2, y+1, h.ptyCols, state.SpaceWidth, spaceX, state.Mode, state.Tick, state.ActorX, state.ActorY)
 	return h.Click(x+spaceX+2, y+1)
 }
 
@@ -970,23 +990,13 @@ func (h *PickAndPlaceHarness) WaitForFrames(frames int64) {
 	}
 
 	// Now wait for frames to advance
-	retries := 0
-	prevBufferLen := 0
 	for time.Now().Before(deadline) {
 		currentState := h.GetDebugState()
-		currentBufferLen := len(h.GetScreenBuffer())
-		if retries%20 == 0 {
-			h.t.Logf("WaitForFrames: checking tick, current=%d, target=%d, bufLen=%d (delta=%d)",
-				currentState.Tick, initialTick+int64(frames), currentBufferLen, currentBufferLen-prevBufferLen)
-		}
-		prevBufferLen = currentBufferLen
-		retries++
 		if currentState.Tick >= initialTick+int64(frames) {
 			return
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	h.t.Logf("WaitForFrames: timeout reached, last tick=%d", initialTick)
 }
 
 // WaitForManualPathEmptyWithMinTicks waits for the manual path to be empty (mpl=0)
@@ -1040,7 +1050,36 @@ func (h *PickAndPlaceHarness) WaitForManualPathEmptyWithMinTicks(timeout time.Du
 	return false
 }
 
-// GetDebugState returns the parsed debug state from the simulator
+// WaitForActorPosition waits for the actor to reach the target grid position.
+// It reads from the log file (authoritative source) to avoid PTY buffer staleness.
+// Returns true if actor is within threshold of (targetX, targetY).
+// Returns false on timeout (after ~5 seconds).
+func (h *PickAndPlaceHarness) WaitForActorPosition(targetX, targetY int, threshold float64) bool {
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		state := h.GetDebugStateFromLog()
+		if state != nil {
+			dx := state.ActorX - float64(targetX)
+			dy := state.ActorY - float64(targetY)
+			dist := math.Sqrt(dx*dx + dy*dy)
+			if dist <= threshold {
+				return true
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return false
+}
+
+// GetDebugStateFromLog returns the debug state parsed directly from the log file.
+// This is the authoritative source for actor position and tick count.
+func (h *PickAndPlaceHarness) GetDebugStateFromLog() *PickAndPlaceDebugJSON {
+	return h.parseDebugStateFromLog()
+}
+
+// GetDebugState returns the parsed debug state from the simulator.
+// It tries PTY buffer parsing first (fast), then falls back to log-file
+// parsing if the PTY result appears stale (e.g., tick=0 when log shows higher).
 func (h *PickAndPlaceHarness) GetDebugState() *PickAndPlaceDebugJSON {
 	if h.console == nil {
 		if err := h.Start(); err != nil {
@@ -1049,31 +1088,153 @@ func (h *PickAndPlaceHarness) GetDebugState() *PickAndPlaceDebugJSON {
 		}
 	}
 
-	// Get screen buffer and parse debug JSON
+	// Primary: parse from PTY buffer
 	buffer := h.GetScreenBuffer()
-	state, err := h.parseDebugJSON(buffer)
-	if err != nil {
-		h.t.Logf("Warning: Could not parse debug state: %v", err)
-		// Log buffer length and first/last 200 chars for debugging
-		bufLen := len(buffer)
-		if bufLen > 0 {
-			h.t.Logf("Buffer len=%d, first200=%q", bufLen, buffer[:min(200, bufLen)])
-			if bufLen > 200 {
-				h.t.Logf("Buffer last200=%q", buffer[max(0, bufLen-200):])
-			}
-		} else {
-			h.t.Logf("Buffer is empty")
+	ptyState, ptyErr := h.parseDebugJSON(buffer)
+	if ptyErr == nil && ptyState != nil {
+		// PTY parsing succeeded. Check for staleness by cross-referencing the log.
+		// Bubble Tea v2 UV renderer writes cell-level incremental ANSI diffs to the
+		// PTY. The raw byte stream accumulates overlapping writes, so the JSON at a
+		// given byte position may be stale/corrupted even though the parse succeeds.
+		// We detect this by comparing PTY tick against the log's last VIEW tick.
+		logState := h.parseDebugStateFromLog()
+		if logState != nil && ptyState.Tick < logState.Tick {
+			// PTY returned stale data (lower tick than log) — use log state instead.
+			h.lastLogState = logState
+			return logState
 		}
-		// Return cached state if available
-		if h.lastDebugState != nil {
-			return h.lastDebugState
+		// Also use log state if PTY GoalBlockadeCount is 0 but log has a non-zero value.
+		// This catches the case where PTY tick matches log tick but PTY missed a field.
+		if logState != nil && ptyState.GoalBlockadeCount == 0 && logState.GoalBlockadeCount > 0 {
+			h.lastLogState = logState
+			return logState
 		}
-		// Return zero state if nothing available
-		return &PickAndPlaceDebugJSON{}
+		h.lastDebugState = ptyState
+		return ptyState
 	}
 
-	h.lastDebugState = state
-	return state
+	// Fallback: log parsing
+	logState := h.parseDebugStateFromLog()
+	if logState != nil {
+		h.lastLogState = logState
+		return logState
+	}
+
+	// Nothing worked — return cached if available
+	if h.lastDebugState != nil {
+		return h.lastDebugState
+	}
+	if h.lastLogState != nil {
+		return h.lastLogState
+	}
+	return &PickAndPlaceDebugJSON{}
+}
+
+// logViewEntry represents the JSON structure of a VIEW log line in the log file.
+// The JS code logs: log.debug("[VIEW]" + debugJSON) where debugJSON is the full state object.
+type logViewEntry struct {
+	Level string          `json:"level"`
+	Msg   json.RawMessage `json:"msg"`
+}
+
+// parseDebugStateFromLog reads the log file and extracts the last VIEW entry,
+// parsing the full debug JSON from it. This is a reliable fallback when PTY buffer
+// parsing is unreliable (Bubble Tea v2 UV renderer writes cell-level incremental
+// ANSI overwrites that corrupt the debug JSON in the PTY stream).
+func (h *PickAndPlaceHarness) parseDebugStateFromLog() *PickAndPlaceDebugJSON {
+	if h.logPath == "" {
+		return nil
+	}
+	data, err := os.ReadFile(h.logPath)
+	if err != nil || len(data) == 0 {
+		return nil
+	}
+
+	// The log file contains two types of entries written by the JS script:
+	// 1. [VIEW] entries: log.debug("[VIEW]" + fullDebugJSON) — full state, throttled to ~5 ticks
+	//    slog output: {"level":"DEBUG","msg":"[VIEW]{\"m\":\"m\",...}"}
+	// 2. [TICK-M] entries: console.log("[TICK-M] tick=X actor=(X,Y) MPL=N target=...")
+	//    Written every tick via console.log (bypasses UV renderer, goes to stdout).
+	//    But when captured via log-file, they appear as slog INFO/DEBUG lines:
+	//    {"level":"DEBUG","msg":"[TICK-M] tick=90 actor=(10.0,11.0) MPL=0 target=null"}
+	//
+	// We parse [VIEW] entries first (most complete state), then fall back to
+	// [TICK-M] entries for tick/position when [VIEW] is not yet available.
+
+	// Strategy 1: Parse [VIEW] entries for full state.
+	var lastState *PickAndPlaceDebugJSON
+	var lastTick int64 = -1
+	const viewPrefixBytes = "[VIEW]"
+
+	// Strategy 2: Fallback — parse [TICK-M] entries for tick+actor position.
+	// Format: [TICK-M] tick=90 actor=(10.0,11.0) MPL=0 target=null
+	var lastTickMState *PickAndPlaceDebugJSON
+	var lastTickMTick int64 = -1
+
+	for line := range strings.SplitSeq(string(data), "\n") {
+		if line == "" {
+			continue
+		}
+
+		// Try to parse as VIEW entry.
+		var entry logViewEntry
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue
+		}
+
+		// entry.Msg is json.RawMessage — unmarshal to string first to strip
+		// JSON encoding (surrounding quotes and escapes).
+		var msgText string
+		if err := json.Unmarshal(entry.Msg, &msgText); err != nil {
+			continue
+		}
+
+		if strings.HasPrefix(msgText, viewPrefixBytes) {
+			// This is a VIEW entry — parse the embedded state JSON.
+			innerJSON := msgText[len(viewPrefixBytes):]
+			if !strings.HasPrefix(innerJSON, "{") {
+				continue
+			}
+			var state PickAndPlaceDebugJSON
+			if err := json.Unmarshal([]byte(innerJSON), &state); err != nil {
+				continue
+			}
+			if state.Tick > lastTick {
+				lastTick = state.Tick
+				lastState = &state
+			}
+			continue
+		}
+
+		// Try to parse as [TICK-M] entry.
+		// msgText: "[TICK-M] tick=90 actor=(10.0,11.0) MPL=0 target=null"
+		if !strings.HasPrefix(msgText, "[TICK-M]") {
+			continue
+		}
+
+		// Parse tick, actorX, actorY from "[TICK-M] tick=90 actor=(10.0,11.0) MPL=0 target=null"
+		var tick int64
+		var actorX, actorY float64
+		var mpl int
+		if n, _ := fmt.Sscanf(msgText, "[TICK-M] tick=%d actor=(%f,%f) MPL=%d", &tick, &actorX, &actorY, &mpl); n == 4 {
+			if tick > lastTickMTick {
+				lastTickMTick = tick
+				lastTickMState = &PickAndPlaceDebugJSON{
+					Tick:             tick,
+					ActorX:           actorX,
+					ActorY:           actorY,
+					ManualPathLength: mpl,
+					Mode:             "m", // TICK-M implies manual
+				}
+			}
+		}
+	}
+
+	// Prefer VIEW state (most complete), fall back to TICK-M state.
+	if lastState != nil {
+		return lastState
+	}
+	return lastTickMState
 }
 
 // GetInitialState is an alias for GetDebugState for API compatibility with tests
@@ -1094,108 +1255,216 @@ func (h *PickAndPlaceHarness) GetScreenBuffer() string {
 	return h.console.String()
 }
 
-// parseDebugJSON extracts and parses debug JSON from the screen buffer.
-// The pick-and-place simulator outputs:
-//
-//	__place_debug_start__
-//	{json}
-//	__place_debug_end__
-//
-// Note: JSON field names are ultra-short to avoid terminal line-wrapping truncation
-var pickPlaceDebugJSONRegex = regexp.MustCompile(`(?s)__place_debug_start__\s*(.+?)\s*__place_debug_end__`)
-
-// pickPlaceRawJSONRegex matches the debug JSON directly (fallback if markers are fragmented)
-// Updated to match both old format (without g) and new format (with g for goal blockade count)
+// pickPlaceRawJSONRegex matches a complete debug JSON object in the buffer.
+// Matches both old format (without g) and new format (with g for goal blockade count).
+// The LAST match in the buffer represents the most recent rendered state.
 var pickPlaceRawJSONRegex = regexp.MustCompile(`\{"m":"[^"]+","t":\d+[^}]*\}`)
 
-func (h *PickAndPlaceHarness) parseDebugJSON(buffer string) (*PickAndPlaceDebugJSON, error) {
-	// Check for debug JSON markers in full buffer first
-	hasMarkers := strings.Contains(buffer, "__place_debug_start__")
-	hasRawJSON := strings.Contains(buffer, `"m":"`)
+// pickPlaceTickRegex matches [TICK:N:m] lines written directly to PTY via console.log.
+// These are written EVERY frame (not throttled by UV) so the last match always
+// gives the current tick count and mode, regardless of whether the view was throttled.
+var pickPlaceTickRegex = regexp.MustCompile(`\[TICK:(\d+):([am])\]`)
 
-	// OPTIMIZATION: Only process the last portion of the buffer
-	// The debug JSON is always at the end of the view() output
-	const maxLen = 50000 // Increased to 50KB
+// normalizeBackspaces removes backspace-overwrite sequences from a byte stream,
+// reconstructing the terminal's visual output. When UV overwrites a character,
+// it emits the new character followed by backspace+space (or backspace+char).
+// Applying backspace logic recovers the overwritten content.
+func normalizeBackspaces(buf string) string {
+	result := make([]byte, 0, len(buf))
+	for i := 0; i < len(buf); i++ {
+		if buf[i] == '\b' {
+			// Backspace: remove the preceding character from result, if any
+			if len(result) > 0 {
+				result = result[:len(result)-1]
+			}
+			// Also skip this backspace byte itself
+		} else {
+			result = append(result, buf[i])
+		}
+	}
+	return string(result)
+}
+
+func (h *PickAndPlaceHarness) parseDebugJSON(buffer string) (*PickAndPlaceDebugJSON, error) {
+	// Debug: log last few lines of buffer for PTY reading debugging
+	if false { // set to true to debug PTY reading
+		lines := strings.Split(buffer, "\n")
+		h.t.Logf("PTY buffer debug: %d lines, last 5:", len(lines))
+		start := max(0, len(lines)-5)
+		for i := start; i < len(lines); i++ {
+			h.t.Logf("  [%d]: %q", i, lines[i])
+		}
+	}
+
+	// Bubble Tea v2 UV terminal renderer writes ANSI-coded cell-level INCREMENTAL
+	// diffs to the PTY. The raw PTY buffer accumulates all bytes ever written,
+	// including overlapping overwrites from multiple View() calls.
+	//
+	// Strategy:
+	//  1. Strip ALL ANSI sequences from the raw buffer. This reconstructs the
+	//     text that UV *intended* to display at each cell position — later writes
+	//     appear after earlier writes in the stream, so stripping gives us the
+	//     concatenation of what UV last wrote to each cell.
+	//  2. Normalize backspace sequences (UV emits '\b ' to overwrite a cell).
+	//  3. Scan the fully-stripped buffer for the [TICK:N:m] lines written via
+	//     console.log. These are written EVERY frame (bypasses UV renderer) so
+	//     the last match gives current tick+mode reliably.
+	//  4. As a secondary source, scan for the last valid JSON object from the
+	//     debug overlay. Use this for extended state (actor position, etc.).
+
+	// OPTIMIZATION: Only process the last portion of the buffer.
+	// The debug JSON is always near the end of each View() output.
+	const maxLen = 50000
 	if len(buffer) > maxLen {
 		buffer = buffer[len(buffer)-maxLen:]
 	}
 
-	// Strip ANSI codes first to improve matching
-	cleanBuffer := ansiRegex.ReplaceAllString(buffer, "")
+	// Step 1: Strip ANSI sequences from the full raw buffer.
+	clean := ansiRegex.ReplaceAllString(buffer, "")
 
-	// Remove all newlines/carriage returns BEFORE attempting to match JSON
-	// Terminal line-wrapping inserts newlines that break JSON structure
-	normalizedBuffer := strings.ReplaceAll(cleanBuffer, "\r\n", "")
-	normalizedBuffer = strings.ReplaceAll(normalizedBuffer, "\r", "")
-	normalizedBuffer = strings.ReplaceAll(normalizedBuffer, "\n", "")
+	// Step 2: Normalize backspace-overwrite sequences.
+	normalized := normalizeBackspaces(clean)
 
-	// Try raw JSON matching first (more reliable than markers)
-	rawMatches := pickPlaceRawJSONRegex.FindAllString(normalizedBuffer, -1)
-
-	// Diagnostic logging for regex matching
-	if hasRawJSON && len(rawMatches) == 0 {
-		// Find position of "m":" in normalized buffer and show context
-		idx := strings.Index(normalizedBuffer, `"m":"`)
-		if idx >= 0 {
-			start := max(0, idx-10)
-			end := min(len(normalizedBuffer), idx+100)
-			h.t.Logf("DEBUG: regex found 0 matches but buffer has 'm\":' at %d, context: %q", idx, normalizedBuffer[start:end])
+	// Step 3: Primary tick source — [TICK:N:m] written via console.log every frame.
+	// This bypasses UV renderer throttling, so the last match is always current.
+	var tickFromConsole int64 = -1
+	var modeFromConsole string
+	for _, m := range pickPlaceTickRegex.FindAllStringSubmatch(normalized, -1) {
+		if len(m) == 3 {
+			fmt.Sscanf(m[1], "%d", &tickFromConsole)
+			modeFromConsole = m[2]
 		}
 	}
 
-	var jsonStr string
-	if len(rawMatches) > 0 {
-		jsonStr = rawMatches[len(rawMatches)-1]
-		// DEBUG: log what we matched
-		if len(rawMatches) > 1 {
-			h.t.Logf("DEBUG: regex matched %d JSONs, using last one: %q (first was: %q)", len(rawMatches), jsonStr, rawMatches[0])
-		} else {
-			h.t.Logf("DEBUG: regex matched 1 JSON: %q (bufLen=%d)", jsonStr, len(normalizedBuffer))
+	// Step 4: Secondary — find last JSON object from debug overlay for extended state.
+	matches := pickPlaceRawJSONRegex.FindAllString(normalized, -1)
+	if len(matches) == 0 {
+		// No JSON found — use tick from console.log if available
+		if tickFromConsole >= 0 {
+			return &PickAndPlaceDebugJSON{
+				Mode: modeFromConsole,
+				Tick: tickFromConsole,
+			}, nil
 		}
-	} else {
-		h.t.Logf("DEBUG: regex matched 0 JSONs (bufLen=%d, hasRawJSON=%v)", len(normalizedBuffer), hasRawJSON)
+		return nil, errors.New("debug JSON not found in buffer")
 	}
 
-	// If raw didn't work, try with markers on original buffer
-	if jsonStr == "" {
-		allMatches := pickPlaceDebugJSONRegex.FindAllStringSubmatch(cleanBuffer, -1)
-		if len(allMatches) > 0 {
-			lastMatch := allMatches[len(allMatches)-1]
-			if len(lastMatch) >= 2 {
-				jsonStr = lastMatch[1]
-				// Strip embedded newlines from marker-extracted content
-				jsonStr = strings.ReplaceAll(jsonStr, "\r\n", "")
-				jsonStr = strings.ReplaceAll(jsonStr, "\r", "")
-				jsonStr = strings.ReplaceAll(jsonStr, "\n", "")
-			}
-		}
-	}
-
-	if jsonStr == "" {
-		// Return error for first parse, but this is normal for empty buffer
-		errMsg := "debug JSON not found in buffer"
-		if hasMarkers {
-			errMsg += " (markers found in full buffer but not in truncated portion)"
-		}
-		return nil, errors.New(errMsg)
-	}
-
-	// Strip any remaining ANSI codes and whitespace
-	jsonStr = ansiRegex.ReplaceAllString(jsonStr, "")
-	jsonStr = strings.TrimSpace(jsonStr)
-
-	// Parse JSON
+	jsonStr := matches[len(matches)-1]
 	var state PickAndPlaceDebugJSON
 	if err := json.Unmarshal([]byte(jsonStr), &state); err != nil {
+		// JSON parse failed — use tick from console.log if available
+		if tickFromConsole >= 0 {
+			return &PickAndPlaceDebugJSON{
+				Mode: modeFromConsole,
+				Tick: tickFromConsole,
+			}, nil
+		}
 		return nil, fmt.Errorf("failed to parse debug JSON: %w\nJSON: %s", err, jsonStr)
 	}
 
-	// Diagnostic: if we parsed successfully but tick is 0 and jsonStr contains non-zero tick, log warning
-	if state.Tick == 0 && strings.Contains(jsonStr, `"t":`) && !strings.Contains(jsonStr, `"t":0`) {
-		h.t.Logf("DEBUG: parsed tick=0 but jsonStr contains non-zero t: %q", jsonStr)
+	// Override tick/mode with the more reliable console.log source.
+	// The JSON may be stale/corrupted by UV incremental overwrites, but the
+	// [TICK:N:m] lines are written atomically every frame.
+	if tickFromConsole >= 0 {
+		state.Tick = tickFromConsole
+		state.Mode = modeFromConsole
 	}
 
 	return &state, nil
+}
+
+func TestPickAndPlacePTYBufferDebug(t *testing.T) {
+	// DEBUG test: inspect the raw PTY buffer to understand what's happening
+	ctx := context.Background()
+	logPath := filepath.Join(t.TempDir(), "pty-debug.log")
+	harness, err := NewPickAndPlaceHarness(ctx, t, PickAndPlaceConfig{
+		TestMode:    true,
+		LogFilePath: logPath,
+	})
+	if err != nil {
+		t.Fatalf("Failed to create harness: %v", err)
+	}
+	defer harness.Close()
+
+	// Print the log file content for debugging
+	logContent, err := os.ReadFile(logPath)
+	t.Logf("Script log (initial 500 chars, len=%d, err=%v):\n%s", len(logContent), err, string(logContent)[:min(500, len(logContent))])
+
+	// Wait a moment for initial render
+	time.Sleep(500 * time.Millisecond)
+
+	// Check the script log to see if 'm' was received
+	logContent, _ = os.ReadFile(logPath)
+	t.Logf("Script log (initial 500 chars, len=%d):\n%s", len(logContent), string(logContent)[:min(500, len(logContent))])
+
+	// Get initial buffer
+	buf0 := harness.GetScreenBuffer()
+	t.Logf("BUFFER[0] len=%d", len(buf0))
+
+	// Count markers in raw buffer
+	count0 := strings.Count(buf0, "__place_debug_start__")
+	t.Logf("  Raw marker count: %d", count0)
+
+	// Strip ANSI and show content
+	clean0 := ansiRegex.ReplaceAllString(buf0, "")
+	clean0 = strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(clean0, "\r\n", ""), "\r", ""), "\n", "")
+	t.Logf("  Last 200 stripped chars: %q", clean0[max(0, len(clean0)-200):])
+
+	// Send 'm' key
+	harness.SendKey("m")
+
+	// Wait a moment for the key to be processed
+	time.Sleep(200 * time.Millisecond)
+
+	// Check the raw buffer for row 51 content (where the debug overlay should be)
+	bufAfter := harness.GetScreenBuffer()
+	cleanAfter := ansiRegex.ReplaceAllString(bufAfter, "")
+	cleanAfter = strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(cleanAfter, "\r\n", ""), "\r", ""), "\n", "")
+	t.Logf("Buffer after 'm' (last 400 chars): %q", cleanAfter[max(0, len(cleanAfter)-400):])
+
+	// Also check the log file for mode switch confirmation
+	logAfter, _ := os.ReadFile(logPath)
+	t.Logf("Log file after 'm' (last 500 chars): %s", string(logAfter)[max(0, len(logAfter)-500):])
+
+	// Wait a bit for the mode switch to propagate
+	deadline := time.Now().Add(3 * time.Second)
+	var foundMode string
+	var foundTick int64
+	for time.Now().Before(deadline) {
+		state := harness.GetDebugState()
+		foundMode = state.Mode
+		foundTick = state.Tick
+		if state.Mode == "m" {
+			t.Logf("Mode switched to 'm' successfully! tick=%d", state.Tick)
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if foundMode != "m" {
+		t.Logf("Mode was NOT switched, still: %s tick=%d", foundMode, foundTick)
+	}
+
+	// Get buffer after mode switch
+	buf1 := harness.GetScreenBuffer()
+	t.Logf("BUFFER[1] len=%d (grew by %d)", len(buf1), len(buf1)-len(buf0))
+
+	// Find ALL markers in raw buffer
+	count1 := strings.Count(buf1, "__place_debug_start__")
+	t.Logf("  Raw marker count: %d", count1)
+
+	// Show last occurrence content
+	lastIdx := strings.LastIndex(buf1, "__place_debug_start__")
+	if lastIdx >= 0 {
+		after := buf1[lastIdx:]
+		// Strip ANSI from this portion
+		cleanAfter := ansiRegex.ReplaceAllString(after, "")
+		t.Logf("  Last marker stripped: %q", cleanAfter[:min(150, len(cleanAfter))])
+	}
+
+	// Strip ANSI from full buffer and show last 200 chars
+	clean1 := ansiRegex.ReplaceAllString(buf1, "")
+	clean1 = strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(clean1, "\r\n", ""), "\r", ""), "\n", "")
+	t.Logf("  Last 200 stripped chars: %q", clean1[max(0, len(clean1)-200):])
 }
 
 func TestPickAndPlaceLogging(t *testing.T) {

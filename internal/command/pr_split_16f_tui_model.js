@@ -922,7 +922,11 @@
         };
 
         var _viewFn = function(s) {
-            return wizardViewImpl(s);
+            return {
+                content: wizardViewImpl(s),
+                altScreen: true,
+                mouseMode: 'all'
+            };
         };
 
         var model = tea.newModel({
@@ -934,9 +938,11 @@
         });
 
         // Export lifecycle functions for unit testing.
+        // _wizardView exports the string-returning impl (not the v2 object
+        // wrapper) so tests can call .indexOf / .split directly.
         prSplit._wizardInit = _initFn;
         prSplit._wizardUpdate = _updateFn;
-        prSplit._wizardView = _viewFn;
+        prSplit._wizardView = wizardViewImpl;
         // NOTE: prSplit._getFocusElements is now exported by chunk 16a.
 
         return model;
@@ -1004,8 +1010,6 @@
     // data corruption from concurrent stdin readers.
     prSplit.startWizard = function() {
         return tea.run(_wizardModel, {
-            altScreen: true,
-            mouse: true,
             toggleKey: 0x1D, // Ctrl+]
             onToggle: prSplit._onToggle
         });

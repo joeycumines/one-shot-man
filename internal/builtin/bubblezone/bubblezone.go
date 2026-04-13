@@ -1,4 +1,4 @@
-// Package bubblezone provides JavaScript bindings for github.com/lrstanley/bubblezone.
+// Package bubblezone provides JavaScript bindings for github.com/lrstanley/bubblezone/v2.
 //
 // The module is exposed as "osm:bubblezone" and provides zone-based mouse hit-testing
 // for BubbleTea TUI applications. This eliminates the need for hardcoded coordinate
@@ -45,9 +45,9 @@ import (
 	"sync"
 	"sync/atomic"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/dop251/goja"
-	zone "github.com/lrstanley/bubblezone"
+	zone "github.com/lrstanley/bubblezone/v2"
 )
 
 // Manager holds bubblezone-related state per engine instance.
@@ -156,10 +156,9 @@ func Require(manager *Manager) func(runtime *goja.Runtime, module *goja.Object) 
 				return runtime.ToValue(false)
 			}
 
-			// Create a tea.MouseMsg for the InBounds check
-			mouseMsg := tea.MouseMsg{X: x, Y: y}
-			inBounds := zoneInfo.InBounds(mouseMsg)
-			return runtime.ToValue(inBounds)
+			// Use bubblezone v2's InBounds with a tea.Mouse for coordinates.
+			result := zoneInfo.InBounds(tea.MouseClickMsg{X: x, Y: y})
+			return runtime.ToValue(result)
 		})
 
 		// get returns zone information

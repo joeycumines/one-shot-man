@@ -1,4 +1,4 @@
-// Package viewport provides JavaScript bindings for github.com/charmbracelet/bubbles/viewport.
+// Package viewport provides JavaScript bindings for charm.land/bubbles/v2/viewport.
 //
 // The module is exposed as "osm:bubbles/viewport" and provides a scrollable viewport
 // component for BubbleTea TUI applications. This replaces manual scroll offset tracking
@@ -75,11 +75,9 @@ package viewport
 
 import (
 	"fmt"
-	"reflect"
-	"unsafe"
 
-	"github.com/charmbracelet/bubbles/viewport"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/viewport"
+	"charm.land/lipgloss/v2"
 	"github.com/dop251/goja"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bubbletea"
 	jslipgloss "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"
@@ -101,30 +99,13 @@ func Require() func(runtime *goja.Runtime, module *goja.Object) {
 				height = int(call.Argument(1).ToInteger())
 			}
 
-			// Instantiate the viewport model
-			vp := viewport.New(width, height)
+			// Instantiate the viewport model with v2 options API
+			vp := viewport.New(viewport.WithWidth(width), viewport.WithHeight(height))
 
 			// Pass the address of vp so closures mutate the same instance
 			return createViewportObject(runtime, &vp)
 		})
 	}
-}
-
-// getUnexportedXOffset accesses the unexported 'xOffset' field via unsafe reflection.
-// This is required to correctly re-clamp dimensions.
-func getUnexportedXOffset(m *viewport.Model) int {
-	defer func() {
-		if r := recover(); r != nil {
-			panic(fmt.Errorf("failed to access unexported xOffset: %v", r))
-		}
-	}()
-
-	rs := reflect.ValueOf(m).Elem()
-	rf := rs.FieldByName("xOffset")
-
-	// Create an accessible copy of the field
-	rf = reflect.NewAt(rf.Type(), unsafe.Pointer(rf.UnsafeAddr())).Elem()
-	return int(rf.Int())
 }
 
 // createViewportObject creates a JavaScript object wrapping a viewport model via closures.
@@ -148,12 +129,12 @@ func createViewportObject(runtime *goja.Runtime, vp *viewport.Model) goja.Value 
 			return goja.Undefined()
 		}
 		w := int(call.Argument(0).ToInteger())
-		vp.Width = w
+		vp.SetWidth(w)
 		// Re-clamp BOTH axes.
 		// Standard viewport logic only clamps Y automatically in some flows.
 		// We must manually clamp X to prevent void rendering on the right side.
-		currentX := getUnexportedXOffset(vp)
-		vp.SetYOffset(vp.YOffset)
+		currentX := vp.XOffset()
+		vp.SetYOffset(vp.YOffset())
 		vp.SetXOffset(currentX)
 		return obj
 	})
@@ -163,10 +144,10 @@ func createViewportObject(runtime *goja.Runtime, vp *viewport.Model) goja.Value 
 			return goja.Undefined()
 		}
 		h := int(call.Argument(0).ToInteger())
-		vp.Height = h
+		vp.SetHeight(h)
 		// Re-clamp BOTH axes.
-		currentX := getUnexportedXOffset(vp)
-		vp.SetYOffset(vp.YOffset)
+		currentX := vp.XOffset()
+		vp.SetYOffset(vp.YOffset())
 		vp.SetXOffset(currentX)
 		return obj
 	})
@@ -196,11 +177,11 @@ func createViewportObject(runtime *goja.Runtime, vp *viewport.Model) goja.Value 
 
 	// Getters
 	_ = obj.Set("width", func(call goja.FunctionCall) goja.Value {
-		return runtime.ToValue(vp.Width)
+		return runtime.ToValue(vp.Width())
 	})
 
 	_ = obj.Set("height", func(call goja.FunctionCall) goja.Value {
-		return runtime.ToValue(vp.Height)
+		return runtime.ToValue(vp.Height())
 	})
 
 	// Scroll control
@@ -263,7 +244,7 @@ func createViewportObject(runtime *goja.Runtime, vp *viewport.Model) goja.Value 
 	})
 
 	_ = obj.Set("xOffset", func(call goja.FunctionCall) goja.Value {
-		return runtime.ToValue(getUnexportedXOffset(vp))
+		return runtime.ToValue(vp.XOffset())
 	})
 
 	_ = obj.Set("scrollLeft", func(call goja.FunctionCall) goja.Value {
@@ -295,7 +276,7 @@ func createViewportObject(runtime *goja.Runtime, vp *viewport.Model) goja.Value 
 
 	// Offsets
 	_ = obj.Set("yOffset", func(call goja.FunctionCall) goja.Value {
-		return runtime.ToValue(vp.YOffset)
+		return runtime.ToValue(vp.YOffset())
 	})
 
 	_ = obj.Set("setYOffset", func(call goja.FunctionCall) goja.Value {

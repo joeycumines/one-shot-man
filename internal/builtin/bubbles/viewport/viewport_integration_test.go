@@ -39,7 +39,7 @@ func TestViewportIntegration_CommandPropagation(t *testing.T) {
 	res, err := vm.RunString(`(function(){
 		const vp = viewport.new(10,10);
 		vp.setMouseWheelEnabled(true);
-		const r = vp.update({ type: 'Mouse', button: 'wheel up', action: 'press', x:0, y:0, alt:false, ctrl:false, shift:false });
+		const r = vp.update({ type: 'MouseWheel', button: 'wheel up', x:0, y:0, mod:[] });
 		return r[1];
 	})()`)
 	require.NoError(t, err)
@@ -82,7 +82,7 @@ func TestViewportIntegration_BatchWithViewportCommand(t *testing.T) {
 		const vp = viewport.new(10,10);
 		vp.setMouseWheelEnabled(true);
 		const ta = textarea.new(); ta.setWidth(40); ta.focus();
-		let c1 = vp.update({ type: 'Mouse', button: 'wheel down', action: 'press', x:0, y:0, alt:false, ctrl:false, shift:false })[1];
+		let c1 = vp.update({ type: 'MouseWheel', button: 'wheel down', x:0, y:0, mod:[] })[1];
 		const c2 = ta.update({ type: 'Key', key: 'x' })[1];
 		// Ensure c1 is callable; if viewport did not return a command, fall back to a no-op function
 		if (c1 === null || typeof c1 === 'undefined') {

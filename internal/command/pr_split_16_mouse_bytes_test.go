@@ -21,10 +21,8 @@ func TestMouseToTermBytes_LeftClick(t *testing.T) {
 		var errors = [];
 
 		var result = fn({
-			x: 5, y: 10,
-			button: 'left',
-			shift: false, alt: false, ctrl: false,
-			action: 'press'
+			type: 'MouseClick', x: 5, y: 10,
+			button: 'left', mod: []
 		}, 0, 0);
 
 		// left=0, cx=5+1=6, cy=10+1=11, press='M'
@@ -54,10 +52,8 @@ func TestMouseToTermBytes_RightClick(t *testing.T) {
 		var errors = [];
 
 		var result = fn({
-			x: 0, y: 0,
-			button: 'right',
-			shift: false, alt: false, ctrl: false,
-			action: 'press'
+			type: 'MouseClick', x: 0, y: 0,
+			button: 'right', mod: []
 		}, 0, 0);
 
 		// right=2, cx=0+1=1, cy=0+1=1, press='M'
@@ -87,10 +83,8 @@ func TestMouseToTermBytes_MiddleClick(t *testing.T) {
 		var errors = [];
 
 		var result = fn({
-			x: 3, y: 7,
-			button: 'middle',
-			shift: false, alt: false, ctrl: false,
-			action: 'press'
+			type: 'MouseClick', x: 3, y: 7,
+			button: 'middle', mod: []
 		}, 0, 0);
 
 		// middle=1, cx=3+1=4, cy=7+1=8, press='M'
@@ -120,10 +114,8 @@ func TestMouseToTermBytes_Release(t *testing.T) {
 		var errors = [];
 
 		var result = fn({
-			x: 5, y: 10,
-			button: 'left',
-			shift: false, alt: false, ctrl: false,
-			action: 'release'
+			type: 'MouseRelease', x: 5, y: 10,
+			button: 'left', mod: []
 		}, 0, 0);
 
 		// left=0, cx=6, cy=11, release='m'
@@ -153,10 +145,8 @@ func TestMouseToTermBytes_WheelUp(t *testing.T) {
 		var errors = [];
 
 		var result = fn({
-			x: 2, y: 3,
-			button: 'wheel up',
-			shift: false, alt: false, ctrl: false,
-			action: 'press'
+			type: 'MouseWheel', x: 2, y: 3,
+			button: 'wheel up', mod: []
 		}, 0, 0);
 
 		// wheel_up=64, cx=2+1=3, cy=3+1=4, press='M'
@@ -185,10 +175,8 @@ func TestMouseToTermBytes_WheelDown(t *testing.T) {
 		var errors = [];
 
 		var result = fn({
-			x: 4, y: 6,
-			button: 'wheel down',
-			shift: false, alt: false, ctrl: false,
-			action: 'press'
+			type: 'MouseWheel', x: 4, y: 6,
+			button: 'wheel down', mod: []
 		}, 0, 0);
 
 		// wheel_down=65, cx=4+1=5, cy=6+1=7, press='M'
@@ -218,10 +206,8 @@ func TestMouseToTermBytes_Motion(t *testing.T) {
 		var errors = [];
 
 		var result = fn({
-			x: 5, y: 5,
-			button: 'left',
-			shift: false, alt: false, ctrl: false,
-			action: 'motion'
+			type: 'MouseMotion', x: 5, y: 5,
+			button: 'left', mod: []
 		}, 0, 0);
 
 		// left=0 + motion=32 = 32, cx=6, cy=6, motion='M'
@@ -251,10 +237,8 @@ func TestMouseToTermBytes_OffsetAdjustment(t *testing.T) {
 		var errors = [];
 
 		var result = fn({
-			x: 10, y: 20,
-			button: 'left',
-			shift: false, alt: false, ctrl: false,
-			action: 'press'
+			type: 'MouseClick', x: 10, y: 20,
+			button: 'left', mod: []
 		}, 5, 3);
 
 		// x=10-3=7, y=20-5=15, left=0, cx=7+1=8, cy=15+1=16, press='M'
@@ -285,10 +269,8 @@ func TestMouseToTermBytes_OutOfBounds(t *testing.T) {
 
 		// x=2-5=-3, y=3-5=-2 → both negative, should return null.
 		var result = fn({
-			x: 2, y: 3,
-			button: 'left',
-			shift: false, alt: false, ctrl: false,
-			action: 'press'
+			type: 'MouseClick', x: 2, y: 3,
+			button: 'left', mod: []
 		}, 5, 5);
 
 		if (result !== null) {
@@ -297,10 +279,8 @@ func TestMouseToTermBytes_OutOfBounds(t *testing.T) {
 
 		// Also test where only x is negative.
 		var result2 = fn({
-			x: 1, y: 10,
-			button: 'left',
-			shift: false, alt: false, ctrl: false,
-			action: 'press'
+			type: 'MouseClick', x: 1, y: 10,
+			button: 'left', mod: []
 		}, 0, 5);
 
 		// x=1-5=-4, y=10-0=10 → x negative, should return null.
@@ -310,10 +290,8 @@ func TestMouseToTermBytes_OutOfBounds(t *testing.T) {
 
 		// Also test where only y is negative.
 		var result3 = fn({
-			x: 10, y: 1,
-			button: 'left',
-			shift: false, alt: false, ctrl: false,
-			action: 'press'
+			type: 'MouseClick', x: 10, y: 1,
+			button: 'left', mod: []
 		}, 5, 0);
 
 		// x=10-0=10, y=1-5=-4 → y negative, should return null.
@@ -341,10 +319,10 @@ func TestMouseToTermBytes_ModifierKeys(t *testing.T) {
 		var fn = globalThis.prSplit._mouseToTermBytes;
 		var errors = [];
 
-		var base = { x: 0, y: 0, button: 'left', shift: false, alt: false, ctrl: false, action: 'press' };
+		var base = { type: 'MouseClick', x: 0, y: 0, button: 'left', mod: [] };
 
 		// Shift+left → btn = 0 + 4 = 4
-		var shiftMsg = Object.assign({}, base, { shift: true });
+		var shiftMsg = Object.assign({}, base, { mod: ['shift'] });
 		var shiftResult = fn(shiftMsg, 0, 0);
 		var shiftExpected = '\x1b[<4;1;1M';
 		if (shiftResult !== shiftExpected) {
@@ -352,7 +330,7 @@ func TestMouseToTermBytes_ModifierKeys(t *testing.T) {
 		}
 
 		// Alt+left → btn = 0 + 8 = 8
-		var altMsg = Object.assign({}, base, { alt: true });
+		var altMsg = Object.assign({}, base, { mod: ['alt'] });
 		var altResult = fn(altMsg, 0, 0);
 		var altExpected = '\x1b[<8;1;1M';
 		if (altResult !== altExpected) {
@@ -360,7 +338,7 @@ func TestMouseToTermBytes_ModifierKeys(t *testing.T) {
 		}
 
 		// Ctrl+left → btn = 0 + 16 = 16
-		var ctrlMsg = Object.assign({}, base, { ctrl: true });
+		var ctrlMsg = Object.assign({}, base, { mod: ['ctrl'] });
 		var ctrlResult = fn(ctrlMsg, 0, 0);
 		var ctrlExpected = '\x1b[<16;1;1M';
 		if (ctrlResult !== ctrlExpected) {
@@ -368,7 +346,7 @@ func TestMouseToTermBytes_ModifierKeys(t *testing.T) {
 		}
 
 		// Shift+Alt+left → btn = 0 + 4 + 8 = 12
-		var shiftAltMsg = Object.assign({}, base, { shift: true, alt: true });
+		var shiftAltMsg = Object.assign({}, base, { mod: ['shift', 'alt'] });
 		var shiftAltResult = fn(shiftAltMsg, 0, 0);
 		var shiftAltExpected = '\x1b[<12;1;1M';
 		if (shiftAltResult !== shiftAltExpected) {
@@ -376,7 +354,7 @@ func TestMouseToTermBytes_ModifierKeys(t *testing.T) {
 		}
 
 		// All modifiers: Shift+Alt+Ctrl+left → btn = 0 + 4 + 8 + 16 = 28
-		var allMsg = Object.assign({}, base, { shift: true, alt: true, ctrl: true });
+		var allMsg = Object.assign({}, base, { mod: ['shift', 'alt', 'ctrl'] });
 		var allResult = fn(allMsg, 0, 0);
 		var allExpected = '\x1b[<28;1;1M';
 		if (allResult !== allExpected) {

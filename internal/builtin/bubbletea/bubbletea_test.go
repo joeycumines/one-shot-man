@@ -742,12 +742,6 @@ func TestTickCommand_InvalidDuration(t *testing.T) {
 //
 // Tests for the above were removed per the No-Shim directive in CLAUDE.md.
 // The only window-size command remaining is tea.requestWindowSize() (returns a command).
-//
-// func TestSetWindowTitle (fully removed)
-// func TestCursorCommands (fully removed)
-// func TestAltScreenCommands (fully removed)
-// func TestReportFocusCommands (fully removed)
-// func TestWindowSizeCommand (fully removed)
 
 func TestIsTTY(t *testing.T) {
 	ctx := context.Background()

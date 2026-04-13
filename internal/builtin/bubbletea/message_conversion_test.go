@@ -122,7 +122,7 @@ func TestJsToTeaMsg_MouseEvents(t *testing.T) {
 				obj.Set("mod", modArr)
 				return obj
 			},
-			expected: tea.MouseReleaseMsg{X: 0, Y: 0, Mod: tea.ModCtrl | tea.ModAlt},
+			expected: tea.MouseReleaseMsg{X: 0, Y: 0, Button: tea.MouseRight, Mod: tea.ModCtrl | tea.ModAlt},
 		},
 	}
 
@@ -150,6 +150,7 @@ func TestJsToTeaMsg_MouseEvents(t *testing.T) {
 				require.True(t, ok, "Expected MouseReleaseMsg")
 				assert.Equal(t, expected.X, mouseMsg.X)
 				assert.Equal(t, expected.Y, mouseMsg.Y)
+				assert.Equal(t, expected.Button, mouseMsg.Button)
 				assert.Equal(t, expected.Mod, mouseMsg.Mod)
 			}
 		})
@@ -339,7 +340,7 @@ func TestMsgToJS_OtherMsgs(t *testing.T) {
 		{
 			"Quit",
 			quitMsg{},
-			func(m map[string]any) { assert.Equal(t, "Quit", m["type"]); assert.True(t, model.quitCalled) },
+			func(m map[string]any) { assert.Equal(t, "Quit", m["type"]) },
 		},
 		{
 			"ClearScreen",
@@ -458,4 +459,263 @@ func TestJsModToKeyMod(t *testing.T) {
 		obj.Set("mod", "ctrl")
 		assert.Equal(t, tea.KeyMod(0), jsModToKeyMod(obj))
 	})
+}
+
+// TestJsToTeaMsg_PasteEvents verifies JS→Go conversion of paste messages.
+func TestJsToTeaMsg_PasteEvents(t *testing.T) {
+	t.Parallel()
+	vm := goja.New()
+
+	t.Run("PasteStart", func(t *testing.T) {
+		obj := vm.NewObject()
+		_ = obj.Set("type", "PasteStart")
+		msg := JsToTeaMsg(vm, obj)
+		require.NotNil(t, msg)
+		_, ok := msg.(tea.PasteStartMsg)
+		assert.True(t, ok, "expected PasteStartMsg")
+	})
+
+	t.Run("PasteEnd", func(t *testing.T) {
+		obj := vm.NewObject()
+		_ = obj.Set("type", "PasteEnd")
+		msg := JsToTeaMsg(vm, obj)
+		require.NotNil(t, msg)
+		_, ok := msg.(tea.PasteEndMsg)
+		assert.True(t, ok, "expected PasteEndMsg")
+	})
+
+	t.Run("Paste with content", func(t *testing.T) {
+		obj := vm.NewObject()
+		_ = obj.Set("type", "Paste")
+		_ = obj.Set("content", "hello world")
+		msg := JsToTeaMsg(vm, obj)
+		require.NotNil(t, msg)
+		paste, ok := msg.(tea.PasteMsg)
+		require.True(t, ok, "expected PasteMsg")
+		assert.Equal(t, "hello world", paste.Content)
+	})
+
+	t.Run("Paste without content", func(t *testing.T) {
+		obj := vm.NewObject()
+		_ = obj.Set("type", "Paste")
+		msg := JsToTeaMsg(vm, obj)
+		require.NotNil(t, msg)
+		paste, ok := msg.(tea.PasteMsg)
+		require.True(t, ok, "expected PasteMsg")
+		assert.Equal(t, "", paste.Content)
+	})
+}
+
+// TestJsToTeaMsg_KeyRelease verifies JS→Go conversion of KeyRelease messages.
+func TestJsToTeaMsg_KeyRelease(t *testing.T) {
+	t.Parallel()
+	vm := goja.New()
+
+	t.Run("basic key release", func(t *testing.T) {
+		obj := vm.NewObject()
+		_ = obj.Set("type", "KeyRelease")
+		_ = obj.Set("key", "a")
+		msg := JsToTeaMsg(vm, obj)
+		require.NotNil(t, msg)
+		keyRelease, ok := msg.(tea.KeyReleaseMsg)
+		require.True(t, ok, "expected KeyReleaseMsg")
+		assert.Equal(t, "a", keyRelease.Text)
+	})
+
+	t.Run("named key release", func(t *testing.T) {
+		obj := vm.NewObject()
+		_ = obj.Set("type", "KeyRelease")
+		_ = obj.Set("key", "enter")
+		msg := JsToTeaMsg(vm, obj)
+		require.NotNil(t, msg)
+		keyRelease, ok := msg.(tea.KeyReleaseMsg)
+		require.True(t, ok, "expected KeyReleaseMsg")
+		assert.Equal(t, tea.KeyEnter, keyRelease.Code)
+	})
+
+	t.Run("nil key returns nil", func(t *testing.T) {
+		obj := vm.NewObject()
+		_ = obj.Set("type", "KeyRelease")
+		msg := JsToTeaMsg(vm, obj)
+		assert.Nil(t, msg)
+	})
+}
+
+// TestJsToTeaMsg_FocusBlur verifies JS→Go conversion of Focus/Blur messages.
+func TestJsToTeaMsg_FocusBlur(t *testing.T) {
+	t.Parallel()
+	vm := goja.New()
+
+	t.Run("Focus", func(t *testing.T) {
+		obj := vm.NewObject()
+		_ = obj.Set("type", "Focus")
+		msg := JsToTeaMsg(vm, obj)
+		require.NotNil(t, msg)
+		_, ok := msg.(tea.FocusMsg)
+		assert.True(t, ok, "expected FocusMsg")
+	})
+
+	t.Run("Blur", func(t *testing.T) {
+		obj := vm.NewObject()
+		_ = obj.Set("type", "Blur")
+		msg := JsToTeaMsg(vm, obj)
+		require.NotNil(t, msg)
+		_, ok := msg.(tea.BlurMsg)
+		assert.True(t, ok, "expected BlurMsg")
+	})
+}
+
+// TestJsToTeaMsg_MouseMotion verifies JS→Go conversion of MouseMotion messages.
+func TestJsToTeaMsg_MouseMotion(t *testing.T) {
+	t.Parallel()
+	vm := goja.New()
+
+	t.Run("basic motion", func(t *testing.T) {
+		obj := vm.NewObject()
+		_ = obj.Set("type", "MouseMotion")
+		_ = obj.Set("x", 15)
+		_ = obj.Set("y", 25)
+		_ = obj.Set("button", "left")
+		msg := JsToTeaMsg(vm, obj)
+		require.NotNil(t, msg)
+		motion, ok := msg.(tea.MouseMotionMsg)
+		require.True(t, ok, "expected MouseMotionMsg")
+		assert.Equal(t, 15, motion.X)
+		assert.Equal(t, 25, motion.Y)
+		assert.Equal(t, tea.MouseLeft, motion.Button)
+	})
+
+	t.Run("motion with modifiers", func(t *testing.T) {
+		obj := vm.NewObject()
+		_ = obj.Set("type", "MouseMotion")
+		_ = obj.Set("x", 0)
+		_ = obj.Set("y", 0)
+		modArr := vm.NewArray()
+		_ = modArr.Set("0", "shift")
+		_ = obj.Set("mod", modArr)
+		msg := JsToTeaMsg(vm, obj)
+		require.NotNil(t, msg)
+		motion, ok := msg.(tea.MouseMotionMsg)
+		require.True(t, ok, "expected MouseMotionMsg")
+		assert.Equal(t, tea.ModShift, motion.Mod)
+	})
+}
+
+// TestJsToTeaMsg_MouseRelease_Button verifies the Button field is preserved.
+func TestJsToTeaMsg_MouseRelease_Button(t *testing.T) {
+	t.Parallel()
+	vm := goja.New()
+
+	obj := vm.NewObject()
+	_ = obj.Set("type", "MouseRelease")
+	_ = obj.Set("x", 10)
+	_ = obj.Set("y", 20)
+	_ = obj.Set("button", "left")
+	msg := JsToTeaMsg(vm, obj)
+	require.NotNil(t, msg)
+	release, ok := msg.(tea.MouseReleaseMsg)
+	require.True(t, ok, "expected MouseReleaseMsg")
+	assert.Equal(t, 10, release.X)
+	assert.Equal(t, 20, release.Y)
+	assert.Equal(t, tea.MouseLeft, release.Button, "Button field must be populated")
+}
+
+// TestMsgToJS_KeyReleaseMsg verifies Go→JS conversion of KeyReleaseMsg.
+func TestMsgToJS_KeyReleaseMsg(t *testing.T) {
+	t.Parallel()
+	vm := goja.New()
+	model := &jsModel{runtime: vm}
+
+	msg := tea.KeyReleaseMsg{Text: "a"}
+	result := model.msgToJS(msg)
+	require.NotNil(t, result)
+	assert.Equal(t, "KeyRelease", result["type"])
+	assert.Equal(t, "a", result["key"])
+	assert.Equal(t, "a", result["text"])
+}
+
+// TestMsgToJS_PasteMessages verifies Go→JS conversion of paste messages.
+func TestMsgToJS_PasteMessages(t *testing.T) {
+	t.Parallel()
+	vm := goja.New()
+	model := &jsModel{runtime: vm}
+
+	t.Run("PasteMsg", func(t *testing.T) {
+		result := model.msgToJS(tea.PasteMsg{Content: "pasted text"})
+		require.NotNil(t, result)
+		assert.Equal(t, "Paste", result["type"])
+		assert.Equal(t, "pasted text", result["content"])
+	})
+
+	t.Run("PasteStartMsg", func(t *testing.T) {
+		result := model.msgToJS(tea.PasteStartMsg{})
+		require.NotNil(t, result)
+		assert.Equal(t, "PasteStart", result["type"])
+	})
+
+	t.Run("PasteEndMsg", func(t *testing.T) {
+		result := model.msgToJS(tea.PasteEndMsg{})
+		require.NotNil(t, result)
+		assert.Equal(t, "PasteEnd", result["type"])
+	})
+}
+
+// TestMsgToJS_ModToStrings verifies all modifier names in Go→JS direction.
+func TestMsgToJS_ModToStrings(t *testing.T) {
+	t.Parallel()
+	vm := goja.New()
+	model := &jsModel{runtime: vm}
+
+	tests := []struct {
+		mod  tea.KeyMod
+		want string
+	}{
+		{tea.ModCtrl, "ctrl"},
+		{tea.ModAlt, "alt"},
+		{tea.ModShift, "shift"},
+		{tea.ModMeta, "meta"},
+		{tea.ModHyper, "hyper"},
+		{tea.ModSuper, "super"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.want, func(t *testing.T) {
+			msg := tea.KeyPressMsg{Text: "a", Mod: tc.mod}
+			result := model.msgToJS(msg)
+			require.NotNil(t, result)
+		modArr, ok := result["mod"].([]string)
+			require.True(t, ok, "mod should be []string")
+			assert.Contains(t, modArr, tc.want)
+		})
+	}
+}
+
+// TestParseMouseModeProp_AllAliases verifies all mouse mode string aliases.
+func TestParseMouseModeProp_AllAliases(t *testing.T) {
+	t.Parallel()
+	vm := goja.New()
+
+	tests := []struct {
+		input string
+		want  tea.MouseMode
+	}{
+		{"all", tea.MouseModeAllMotion},
+		{"allMotion", tea.MouseModeAllMotion},
+		{"AllMotion", tea.MouseModeAllMotion},
+		{"cell", tea.MouseModeCellMotion},
+		{"cellMotion", tea.MouseModeCellMotion},
+		{"CellMotion", tea.MouseModeCellMotion},
+		{"", tea.MouseModeNone},
+		{"invalid", tea.MouseModeNone},
+		{"ALLMOTION", tea.MouseModeNone}, // case-sensitive
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.input, func(t *testing.T) {
+			obj := vm.NewObject()
+			_ = obj.Set("mouseMode", tc.input)
+			got := parseMouseModeProp(obj, "mouseMode")
+			assert.Equal(t, tc.want, got, "mouseMode=%q", tc.input)
+		})
+	}
 }

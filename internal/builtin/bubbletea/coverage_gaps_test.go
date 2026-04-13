@@ -562,20 +562,6 @@ func TestMsgToJS_UnknownMsg(t *testing.T) {
 }
 
 // ========================================================================
-// registerCommand — nil map initialization
-// ========================================================================
-
-func TestRegisterCommand_NilMap(t *testing.T) {
-	t.Parallel()
-	model := &jsModel{}
-	// validCmdIDs starts nil; registerCommand should initialize it
-	assert.Nil(t, model.validCmdIDs)
-	model.registerCommand(42)
-	assert.NotNil(t, model.validCmdIDs)
-	assert.True(t, model.validCmdIDs[42])
-}
-
-// ========================================================================
 // Require — JS API edge cases
 // ========================================================================
 

@@ -24,7 +24,7 @@ import (
 // - Keystroke injection (WASD, Space, etc.)
 // - Terminal buffer scraping
 // - Debug overlay JSON parsing for state verification
-// - Frame-based synchronization (NO time.Sleep)
+// - Frame-based synchronization (primary mechanism, with sleep-based polling as fallback)
 //
 // The design follows the pattern from prompt_flow_editor_test.go but adds
 // structured state verification capabilities.
@@ -280,7 +280,7 @@ func (h *TestShooterHarness) RefreshDebugState() (*ShooterDebugState, error) {
 }
 
 // WaitForFrames waits until the tick counter has advanced by at least n frames.
-// This is the PRIMARY synchronization mechanism - NOT time.Sleep.
+// This is the primary synchronization mechanism, using sleep-based polling internally.
 func (h *TestShooterHarness) WaitForFrames(n int) error {
 	startState, err := h.GetDebugState()
 	if err != nil {
@@ -336,15 +336,6 @@ func (h *TestShooterHarness) WaitForNewProjectile() error {
 	return fmt.Errorf("timeout waiting for projectile to appear")
 }
 
-// ExpectPatternInBuffer checks if the pattern exists in the terminal buffer
-func (h *TestShooterHarness) ExpectPatternInBuffer(pattern string) error {
-	buffer := h.GetScreenBuffer()
-	if !strings.Contains(buffer, pattern) {
-		return fmt.Errorf("pattern %q not found in buffer", pattern)
-	}
-	return nil
-}
-
 // WaitForScreenContent polls the VT-parsed terminal screen for a substring.
 // BubbleTea v2 uses differential rendering (cursor movement + only changed
 // characters), so raw byte checking (termtest.Contains) fails for state
@@ -366,24 +357,6 @@ func (h *TestShooterHarness) WaitForScreenContent(content string, timeout time.D
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-}
-
-// ExpectCharacterAt checks if a specific character appears at a rough position.
-// Note: Terminal buffer parsing is tricky due to escape codes. This is best-effort.
-func (h *TestShooterHarness) ExpectCharacterAt(char string, x, y int) error {
-	buffer := h.GetScreenBuffer()
-	lines := strings.Split(buffer, "\n")
-	if y >= len(lines) {
-		return fmt.Errorf("y=%d out of range (only %d lines)", y, len(lines))
-	}
-	line := lines[y]
-	if x >= len(line) {
-		return fmt.Errorf("x=%d out of range (line has %d chars)", x, len(line))
-	}
-	if !strings.Contains(line, char) {
-		return fmt.Errorf("character %q not found on line %d", char, y)
-	}
-	return nil
 }
 
 // AssertPlayerPosition verifies player is at approximate position via debug state

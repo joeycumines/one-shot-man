@@ -179,7 +179,7 @@ const (
 	ErrCodePanic           = "BT007" // Panic during program execution
 )
 
-// commandID is a unique ID for command objects to prevent forgery.
+// commandIDCounter generates unique IDs for command objects.
 var commandIDCounter uint64
 
 // generateCommandID creates a unique command ID.
@@ -524,6 +524,20 @@ func JsToTeaMsg(runtime *goja.Runtime, obj *goja.Object) tea.Msg {
 			content = v.String()
 		}
 		return tea.PasteMsg{Content: content}
+
+	case "KeyRelease":
+		keyVal := obj.Get("key")
+		if keyVal == nil || goja.IsUndefined(keyVal) || goja.IsNull(keyVal) {
+			return nil
+		}
+		key, _ := ParseKey(keyVal.String())
+		return tea.KeyReleaseMsg(key)
+
+	case "Focus":
+		return tea.FocusMsg{}
+
+	case "Blur":
+		return tea.BlurMsg{}
 	}
 
 	return nil
@@ -536,11 +550,8 @@ type jsModel struct {
 	updateFn    goja.Callable
 	viewFn      goja.Callable
 	state       goja.Value
-	quitCalled  bool
-	initError   string          // Store init error for debugging
-	validCmdIDs map[uint64]bool // Track valid command IDs to prevent forgery
-	cmdMu       sync.Mutex
-	jsRunner    JSRunner // Optional: thread-safe JS execution via event loop
+	initError string // Store init error for debugging
+	jsRunner  JSRunner // Optional: thread-safe JS execution via event loop
 
 	// Render throttling state (optional, opt-in feature)
 	throttleEnabled    bool            // Whether throttling is enabled (default: false)
@@ -571,16 +582,6 @@ type jsModel struct {
 	cachedViewKeyboardEnhancements  tea.KeyboardEnhancements
 	cachedViewDisableBracketedPaste bool
 	cachedViewProgressBar           *tea.ProgressBar
-}
-
-// registerCommand registers a command ID as valid.
-func (m *jsModel) registerCommand(id uint64) {
-	m.cmdMu.Lock()
-	defer m.cmdMu.Unlock()
-	if m.validCmdIDs == nil {
-		m.validCmdIDs = make(map[uint64]bool)
-	}
-	m.validCmdIDs[id] = true
 }
 
 // runJSSync executes fn on the JS event loop and waits for completion.
@@ -1041,7 +1042,6 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]any {
 		}
 
 	case quitMsg:
-		m.quitCalled = true
 		return map[string]any{
 			"type": "Quit",
 		}
@@ -1138,8 +1138,6 @@ func getJSBoolProp(obj *goja.Object, name string) bool {
 	return val.ToBoolean()
 }
 
-// parseMouseModeProp parses the mouseMode property from a JS view object.
-// Accepts: "all"/"allMotion" -> AllMotion, "cell"/"cellMotion" -> CellMotion, else None.
 // jsToTeaMouseClick converts a JS MouseClick message object to a tea.MouseClickMsg.
 func jsToTeaMouseClick(obj *goja.Object) tea.Msg {
 	if obj == nil {
@@ -1165,8 +1163,15 @@ func jsToTeaMouseRelease(obj *goja.Object) tea.Msg {
 	}
 	x := int(obj.Get("x").ToInteger())
 	y := int(obj.Get("y").ToInteger())
+	buttonStr := getJSStringProp(obj, "button")
 	mod := jsModToKeyMod(obj)
-	return tea.MouseReleaseMsg{X: x, Y: y, Mod: mod}
+	var button tea.MouseButton
+	if def, ok := MouseButtonDefs[buttonStr]; ok {
+		button = def.Button
+	} else {
+		button = tea.MouseNone
+	}
+	return tea.MouseReleaseMsg{X: x, Y: y, Button: button, Mod: mod}
 }
 
 // jsToTeaMouseMotion converts a JS MouseMotion message object to a tea.MouseMotionMsg.
@@ -1680,9 +1685,6 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 		exports := runtime.NewObject()
 		_ = module.Set("exports", exports)
 
-		// Track the current model for command validation
-		var currentModel *jsModel
-
 		// Model registry to store models by ID (since goja Export can be unreliable for Go pointers)
 		modelRegistry := make(map[uint64]*jsModel)
 		var modelRegistryMu sync.Mutex
@@ -1702,12 +1704,9 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 			return modelRegistry[id]
 		}
 
-		// Helper to create command with validated ID
+		// Helper to create command with unique ID
 		createCommand := func(cmdType string, props map[string]any) goja.Value {
 			cmdID := generateCommandID()
-			if currentModel != nil {
-				currentModel.registerCommand(cmdID)
-			}
 			result := map[string]any{
 				"_cmdType": cmdType,
 				"_cmdID":   cmdID,
@@ -1858,13 +1857,12 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 			}
 
 			model := &jsModel{
-				runtime:     runtime,
-				initFn:      initFn,
-				updateFn:    updateFn,
-				viewFn:      viewFn,
-				state:       runtime.NewObject(), // Initialize with empty object to avoid nil
-				validCmdIDs: make(map[uint64]bool),
-				jsRunner:    jsRunner,
+				runtime:  runtime,
+				initFn:   initFn,
+				updateFn: updateFn,
+				viewFn:   viewFn,
+				state:    runtime.NewObject(), // Initialize with empty object to avoid nil
+				jsRunner: jsRunner,
 			}
 
 			// Parse optional renderThrottle configuration
@@ -1900,9 +1898,6 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 					}
 				}
 			}
-
-			// Set as current model for command registration
-			currentModel = model
 
 			// Register model and store its ID (more reliable than storing pointer via goja)
 			modelID := registerModel(model)
@@ -1964,9 +1959,6 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 			if model == nil {
 				return createError(ErrCodeInvalidModel, "model not found in registry")
 			}
-
-			// Set as current model for command registration
-			currentModel = model
 
 			// In v2, terminal features (altScreen, mouse, etc.) are declarative
 			// View fields — set via the JS view() return object, NOT tea.run()

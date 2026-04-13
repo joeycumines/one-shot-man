@@ -1606,7 +1606,7 @@ try {
                     case 'space':
                         togglePause = true;
                         break;
-                    case 'escape':
+                    case 'esc':
                         escape = true;
                         break;
                     case 'w':
@@ -1781,11 +1781,6 @@ try {
                 }
             }
             return [state, tea.tick(16, 'tick')];
-        }
-
-        if (msg.type === 'WindowSize') {
-            state.width = msg.width;
-            state.height = msg.height;
         }
 
         return [state, tea.tick(16, 'tick')];

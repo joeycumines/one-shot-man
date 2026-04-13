@@ -165,8 +165,7 @@ func BenchmarkValueToCmd_Quit(b *testing.B) {
 	runtime := goja.New()
 
 	model := &jsModel{
-		runtime:     runtime,
-		validCmdIDs: make(map[uint64]bool),
+		runtime: runtime,
 	}
 
 	cmdJS := `({ _cmdType: 'quit', _cmdID: 1 })`
@@ -190,8 +189,7 @@ func BenchmarkValueToCmd_Tick(b *testing.B) {
 	runtime := goja.New()
 
 	model := &jsModel{
-		runtime:     runtime,
-		validCmdIDs: make(map[uint64]bool),
+		runtime: runtime,
 	}
 
 	cmdJS := `({ _cmdType: 'tick', _cmdID: 1, duration: 16, id: 'gameTick' })`
@@ -215,8 +213,7 @@ func BenchmarkValueToCmd_Batch(b *testing.B) {
 	runtime := goja.New()
 
 	model := &jsModel{
-		runtime:     runtime,
-		validCmdIDs: make(map[uint64]bool),
+		runtime: runtime,
 	}
 
 	// Batch with 3 commands (common case)
@@ -285,8 +282,7 @@ func BenchmarkFullKeyPipeline(b *testing.B) {
 	runtime := goja.New()
 
 	model := &jsModel{
-		runtime:     runtime,
-		validCmdIDs: make(map[uint64]bool),
+		runtime: runtime,
 	}
 
 	// Pre-create the key event and response command
@@ -322,8 +318,7 @@ func BenchmarkFullTickPipeline(b *testing.B) {
 	runtime := goja.New()
 
 	model := &jsModel{
-		runtime:     runtime,
-		validCmdIDs: make(map[uint64]bool),
+		runtime: runtime,
 	}
 
 	tick := tickMsg{
@@ -551,9 +546,8 @@ func BenchmarkFullUpdateCycle(b *testing.B) {
 		viewFn: func(this goja.Value, args ...goja.Value) (goja.Value, error) {
 			return runtime.ToValue("view output"), nil
 		},
-		state:       state,
-		validCmdIDs: make(map[uint64]bool),
-		jsRunner:    &SyncJSRunner{Runtime: runtime},
+		state:    state,
+		jsRunner: &SyncJSRunner{Runtime: runtime},
 	}
 
 	keyMsg := tea.KeyPressMsg{Text: "a"}

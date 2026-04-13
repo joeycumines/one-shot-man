@@ -1593,7 +1593,7 @@ try {
                 case 'gameOver':
                 case 'victory':
                     if (msg.key === 'r') {
-                        return initializeGame();
+                        return [initializeGame(), tea.tick(16, 'tick')];
                     } else if (msg.key === 'q') {
                         return [state, tea.quit()];
                     }

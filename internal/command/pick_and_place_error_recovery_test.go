@@ -339,7 +339,7 @@ func TestPickAndPlaceError_ER003_NormalExecution(t *testing.T) {
 				if (msg.type === 'Key') {
 					if (msg.key === 'q' || msg.key === 'Q') {
 						return [state, tea.quit()];
-					} else if (msg.key === ' ') {
+					} else if (msg.key === 'space') {
 						state.tick++;
 					}
 				}

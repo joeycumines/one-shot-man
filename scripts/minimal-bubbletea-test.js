@@ -11,7 +11,7 @@ const program = tea.newModel({
         return { count: 0 };
     },
     update: function(msg, model) {
-        if (msg.type === 'tick') {
+        if (msg.type === 'Tick') {
             return [{ count: model.count + 1 }, tea.tick(16, 'tick')];
         }
         if (msg.type === 'Key') {

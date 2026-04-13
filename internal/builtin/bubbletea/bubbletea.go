@@ -984,7 +984,6 @@ func (m *jsModel) msgToJS(msg tea.Msg) map[string]any {
 		keyStr := msg.String()
 		text := key.Text
 		mod := key.Mod
-
 		return map[string]any{
 			"type":        "Key",
 			"key":         keyStr,

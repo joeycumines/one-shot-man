@@ -198,7 +198,11 @@ const program = tea.newModel({
                 "",
                 lipgloss.newStyle().foreground("#666").render("Enter: Submit • Esc: Cancel")
             );
-            return lipgloss.joinVertical(lipgloss.Left, title, inputView);
+            return {
+                content: lipgloss.joinVertical(lipgloss.Left, title, inputView),
+                altScreen: true,
+                mouseMode: 'all'
+            };
         }
 
         const listContent = renderTodoList(model);

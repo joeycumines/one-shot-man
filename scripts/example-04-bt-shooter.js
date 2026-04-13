@@ -1403,16 +1403,31 @@ try {
     function view(state) {
         // Handle all menu-like modes where player may not be active
         if (state.gameMode === 'menu') {
-            return renderModal(state);
+            return {content: renderModal(state), altScreen: true};
         }
 
         // Defensive check: if player is not initialized, return modal
         if (!state || !state.player) {
-            return renderModal(state);
+            return {content: renderModal(state), altScreen: true};
+        }
+
+        // When debug mode is active, reduce the play area height to leave
+        // room for the overlay. BubbleTea v2 clips view output to the
+        // terminal height, so content beyond the last row is invisible.
+        const debugReservedRows = state.debugMode ? 15 : 0;
+        const savedHeight = state.terminalSize ? state.terminalSize.height : null;
+        if (debugReservedRows > 0 && state.terminalSize) {
+            state.terminalSize.height = Math.max(10, state.terminalSize.height - debugReservedRows);
         }
 
         const hud = renderHUD(state);
         const playArea = renderPlayArea(state);
+
+        // Restore terminal size so other logic sees the real dimensions
+        if (savedHeight !== null && state.terminalSize) {
+            state.terminalSize.height = savedHeight;
+        }
+
         const lines = playArea.split('\n');
 
         lines[0] = hud.header;
@@ -1586,7 +1601,7 @@ try {
             }
         }
 
-        if (msg.type === 'Resize') {
+        if (msg.type === 'WindowSize') {
             state.terminalSize = {width: msg.width, height: msg.height};
             if (state.player) {
                 state.player.x = Math.min(state.player.x, msg.width - 2);

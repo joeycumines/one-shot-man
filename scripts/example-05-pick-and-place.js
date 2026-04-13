@@ -1783,7 +1783,7 @@ try {
             return [state, tea.tick(16, 'tick')];
         }
 
-        if (msg.type === 'Resize') {
+        if (msg.type === 'WindowSize') {
             state.width = msg.width;
             state.height = msg.height;
         }
@@ -1843,6 +1843,7 @@ try {
         return {
             content: output,
             altScreen: true,
+            mouseMode: 'all',
         };
     }
 

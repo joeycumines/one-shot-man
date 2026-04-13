@@ -1,230 +1,177 @@
 {
   "meta": {
     "fileName": "blueprint.json",
-    "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE.",
-    "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST — ESPECIALLY NOT TIME ESTIMATES. NEVER SPECIFY A PRIORITY OF ANY KIND.",
+    "maintenanceInstruction": "KEEP THIS PLAN UP TO DATE AFTER EVERY SUB-STEP. LOG EVERY DEVIATION, DISCOVERY, AND REPLAN INSIDE THIS FILE BEFORE PROCEEDING. IF REALITY CHANGES, RE-READ THE RELEVANT CODE, THEN REWRITE THE AFFECTED TASKS IMMEDIATELY.",
+    "completionPolicy": "NO ESTIMATES. NO PRIORITIES. NO SEPARATE TESTING TASKS. NO SEPARATE COMMIT TASKS. EVERY TASK MUST INCLUDE ITS OWN REPRODUCTION, VALIDATION, STRICT-REVIEW-GATE PASSES, AND A SINGLE SELF-CONTAINED COMMIT BEFORE THE NEXT TASK BEGINS. WHEN THIS LIST IS EXHAUSTED, EXPAND IT AGAIN FROM EVIDENCE, NOT WISHFUL THINKING.",
     "sourceDocuments": [
-      "scratch/bubbletea-v2-migration.md — Original v2-first migration plan (7 phases, zero shims mandate)",
-      "scratch/migration-guide.md — Official Bubble Tea v2 upgrade guide",
-      "scratch/termmux-architecture.md — SessionManager architecture and implementation notes",
-      "scratch/textarea-navigation-autopsy-20260412/ — Adversarial autopsy of textarea key handling (CORRECTED: see replanLog)"
+      "DIRECTIVE.txt",
+      "config.mk",
+      "internal/command/pr_split.go",
+      "internal/command/pr_split_02_grouping.js",
+      "internal/command/pr_split_09_claude.js",
+      "internal/command/pr_split_13_tui.js",
+      "internal/command/pr_split_16c_tui_handlers_verify.js",
+      "internal/command/pr_split_16d_tui_handlers_claude.js",
+      "internal/command/pr_split_16e_tui_update.js",
+      "internal/command/pr_split_16f_tui_model.js",
+      "internal/command/pr_split_16g_persistence.js",
+      "internal/command/pr_split_inline_e2e_test.go",
+      "internal/command/pr_split_termmux_observation_test.go",
+      "internal/builtin/termmux/module.go",
+      "internal/termmux/manager.go",
+      "docs/architecture-pr-split-chunks.md",
+      "CHANGELOG.md"
     ]
   },
   "globalAlerts": [
     {
-      "warning": "ALL checks must pass on ALL platforms (ubuntu-latest, windows-latest, macos-latest). Never accept failing or flaky tests."
+      "warning": "MANDATORY PER-TASK COMMIT PROTOCOL: BEFORE MARKING ANY TASK DONE OR MAKING ANY COMMIT, REREAD `strict-review-gate` SKILL IN FULL, RUN THE RULE OF TWO UNTIL TWO CONTIGUOUS ISSUE-FREE REVIEWS EXAMINE THE EXACT SAME DIFF, REREAD `git-commit` SKILL IN FULL, COMMIT ONLY THAT ONE TASK'S DIFF, THEN REREAD `DIRECTIVE.txt` BEFORE STARTING THE NEXT TASK. DO NOT BATCH MULTIPLE TASKS INTO ONE COMMIT."
     },
     {
-      "warning": "GNU Make is the build system. Use make test, make lint, make build. On macOS use gmake."
+      "warning": "THE NINE-HOUR SESSION TIMER IS MANDATORY. THE `session-timer-start` / `session-timer-check` TARGETS WERE EXECUTED ON 2026-04-14 (ON MACOS THE SHELL FORM IS `gmake ...`), BUT `config.mk` CURRENTLY HARD-CODES `scratch/session_timer_20260413.txt`. TREAT THAT STALE FILENAME AS A REAL DEFECT AND FIX IT IN TASK 1 BEFORE TRUSTING ANY FUTURE TIMER OUTPUT."
     },
     {
-      "warning": "ZERO COMPATIBILITY SHIMS: v2 ONLY. No v1 mouse patterns (isWheel, action, shift/alt/ctrl booleans). v2 uses type-based dispatch and msg.mod array."
+      "warning": "THE OLD BLUEPRINT WAS STALE: IT WAS DOMINATED BY COMPLETED BUBBLETEA MIGRATION WORK, REFERENCED A MISSING `scratch/termmux-architecture.md`, AND CONTAINED STUB TASKS THAT DO NOT MATCH THE CURRENT CODEBASE. DO NOT TRUST OLD PLAN ARTIFACTS OVER FIRST-HAND CODE READING."
     },
     {
-      "warning": "BRIDGE SYMMETRY: msgToJS and JsToTeaMsg MUST agree on event shapes. Asymmetric bridges are defective."
+      "warning": "`osm pr-split` IS NOT PRIME-TIME UNTIL A USER CAN FOCUS THE CLAUDE PANE, TYPE DIRECTLY, USE MOUSE INPUT, ENTER AND EXIT CTRL+] PASSTHROUGH, RETURN TO THE SAME WIZARD CONTEXT, AND RESUME WORK WITHOUT LOSING SESSION STATE OR VERIFY CONTEXT."
     },
     {
-      "warning": "KEY RESOLUTION DEFENSIVE FIX: The JS key resolution at super_document_script.js:870 currently works because bubbletea v2 sets Key.Text='' (empty) for special keys (Enter, Tab, Esc, arrows) — confirmed by ultraviolet decoder.go:1139-1144 and bubbletea key.go:297-300. The existing `msg.text && msg.text.length === 1` check is safe for current runtime behavior but fragile against future Key.Text population changes. Apply defensive hardening: `const k = (msg.text && msg.text.length === 1 && msg.text.charCodeAt(0) >= 0x20 && msg.text.charCodeAt(0) <= 0x7E) ? msg.text : msg.key;`."
+      "warning": "CLAUDE AND VERIFY MUST CONVERGE ON A SINGLE SESSIONMANAGER-BASED MENTAL MODEL. `getClaudePaneSession()` IN `pr_split_13_tui.js` IS CURRENTLY A SPECIAL PROXY OVER `tuiMux.session()/writeToChild()/childScreen()/screenshot`, WHILE VERIFY USES `_buildVerifyProxy()` OVER `tuiMux.register()/snapshot()/input()/switchTo()`. THIS ASYMMETRY IS A CORE QUALITY PROBLEM."
+    },
+    {
+      "warning": "PUBLIC TEXT IS NOT YET TRUSTWORTHY. `CHANGELOG.md` AND `docs/architecture-pr-split-chunks.md` CURRENTLY OVERSTATE OR LAG REALITY (INCLUDING SHELL-PANE REFERENCES AND INTERACTIVITY CLAIMS). DO NOT TREAT DOCUMENTATION AS EVIDENCE UNTIL TASK 11 RECONCILES IT WITH CODE AND TRUNK DIFFS."
+    },
+    {
+      "warning": "ALL PROJECT CHECKS MUST PASS ON MACOS, LINUX, AND WINDOWS. ON MACOS USE GNU MAKE (`gmake`). FOR INTERACTIVE PR-SPLIT / TERMMUX WORK, `test-prsplit-fast`, `test-prsplit-e2e`, `test-termmux`, `make-all-in-container`, AND `make-all-run-windows` ARE THE MINIMUM SIGNAL PATHS."
+    },
+    {
+      "warning": "NO SHIMS, NO COEXISTING PATHS, NO DEAD SPECIAL-CASE WRAPPERS. WHEN A SESSIONMANAGER-BASED PATH REPLACES THE AD-HOC CLAUDE PROXY, DELETE THE OLD BRANCHES AND UPDATE EVERY CALL SITE AND TEST."
     }
   ],
   "statusSection": {
-    "currentState": "V2 MIGRATION + R6 SCRIPT HARDENING COMMITTED (1fe02e5a + 740951e1 + 6add4594 + 32cdb362). R6 adversarial autopsy found additional example-script regressions, stale docs, and missing direct repro coverage. Fixed benchmark/shooter/pick-and-place tick fan-out paths, super-document focused-button Enter fallthrough, stale prompt-flow/scripts docs, and flaky pick-and-place timing. Added `test-js-stack-full` plus direct regression tests for benchmark/example-02/minimal/super-document. Rule of Two: 2/2 PASS. Next: Windows cross-platform, remaining STUB tasks, scope expansion.",
-    "goalState": "Production-ready merged codebase: zero v1 patterns, all textarea keys verified working at runtime via integration tests, all tests green on 3 platforms, complete documentation, then STUB tasks and future features expanding towards True Perfection.",
+    "currentState": "Blueprint rewritten on 2026-04-14 after rereading DIRECTIVE.txt, blueprint-json / strict-review-gate / git-commit skills, config.mk, `pr_split` chunks, `internal/builtin/termmux/module.go`, `internal/termmux/manager.go`, `docs/architecture-pr-split-chunks.md`, `CHANGELOG.md`, and observation tests. The real frontier is `osm pr-split`: strategy quality vs trunk is under-proven, Claude still uses `getClaudePaneSession()` instead of a true SessionManager proxy, direct pane interaction is not proven end-to-end, persistence/resume is only partially truthful, and docs/changelog are ahead of reality. This checkout resolves trunk through `origin/main`, not a local `main` branch, so future audits must resolve `trunkRef` instead of guessing. The session timer targets were executed at 2026-04-14 06:31:35 and checked with `Elapsed: 0m | Remaining: 540m`, but the hard-coded timer filename in `config.mk` is stale and is now Task 1.",
+    "goalState": "`osm pr-split` is ready for prime time against trunk: representative trunk-like diffs prove strategy selection and split-plan quality; Claude and verify panes both run through SessionManager-backed interactive sessions; keyboard, mouse, passthrough, lifecycle, and resume behavior are proven end-to-end on macOS, Linux, and Windows; public docs/changelog tell the truth; and every task has been completed through the mandatory per-task Rule-of-Two review and single-task commit protocol.",
     "replanLog": [
-      "2026-04-12: AUTOPSY INTEGRATION + RULE OF TWO CORRECTION. (1) Removed 6 Done tasks from prior merge work. (2) Integrated autopsy findings from scratch/textarea-navigation-autopsy-20260412/. (3) CRITICAL CORRECTION during Rule of Two Pass 2: the autopsy's core claim that Enter/Tab are broken was based on a static analysis error — it confused Key.Code (rune '\\r'/'\\t') with Key.Text (string field, which is '' for special keys per ultraviolet decoder.go:1139-1144 and bubbletea key.go:297-300). The key pipeline is structurally correct for ALL keys. (4) Refocused tasks: defensive hardening of msg.text resolution (not a bug fix but a safety guard), comprehensive runtime verification tests, cross-platform, documentation, diff audit. (5) Added stub tasks per DIRECTIVE.txt for future scope. (6) Autopsy value: mapped entire key pipeline end-to-end, confirmed arrow keys structurally reach textarea, identified PgUp/PgDown as intentionally intercepted by scroll handler.",
-      "2026-04-12: CRITICAL BUG FOUND AND FIXED via E2E TDD. The E2E textarea test (task 3) exposed a catastrophic bug: arrow/navigation keys were silently eaten by the textarea. Root cause: keys_gen.go code generator used fmt.Sprintf %q for rune values, but ultraviolet's key constants (KeyUp=0x110001, KeyDown=0x110002, etc.) are ABOVE the valid Unicode range (U+10FFFF). Go's %q format silently replaces these with U+FFFD (replacement character). ParseKey('up') returned Code=0xFFFD instead of Code=0x110001, causing Key.String() to return '\ufffd' instead of 'up', which doesn't match the textarea's key.Matches bindings. Fix: generator now uses formatRuneLiteral() — rune(0xHHHHHH) for out-of-range values, strconv.QuoteRune for valid Unicode. Affected keys: ALL navigation keys (up/down/left/right/home/end/pgup/pgdown/delete/insert/begin/select/find + F-keys + keypad + shift/ctrl variants). Non-affected: Enter, Tab, Backspace, Esc, Space, Ctrl+letter (all within ASCII range). This bug predated the v2 migration and affected ALL textarea navigation since keys_gen.go was first generated.",
-      "2026-04-13: EXHAUSTIVE ADVERSARIAL V2 CORRECTNESS REVIEW. 4 rounds of 3-parallel-agent adversarial codebase autopsy (12 total agents). R1: 2 bugs (stale msg.key ' ' patterns in error recovery tests — Beta found, Alpha/Gamma missed). R2: 3 bugs (msg.type 'Resize' → 'WindowSize' in two scripts, msg.type 'tick' → 'Tick' in minimal test — Gamma found, Alpha/Beta missed). R3: 2 bugs (mixed view() returns in example-02-graphical-todo.js and example-04-bt-shooter.js — Alpha found + sub-agent scan). R4: CLEAN (0 bugs, 3/3 PASS). Rule of Two v1 flagged mouseMode missing in example-05-pick-and-place.js (bug #8 — mouse events silently dropped because parseMouseModeProp defaults to MouseModeNone). Rule of Two v2 after fix: 2/2 PASS, FULLY CLEAN. 8 total bug fixes committed as 1fe02e5a (101 files, 7095 ins, 4465 del). Key insight: each round of agents catches what others miss — essential pattern for exhaustive verification.",
-      "2026-04-14: SCOPE EXPANSION BUG #9 — V2 VIEW CLIPPING. During continued verification, shooter E2E tests failed on macOS and Linux Docker. Diagnosed via diagnostic footer injection: keys ARE received and debug IS toggled, but 15-row debug overlay appended below 50-row play area is clipped by v2 renderer. Fix: reserve 15 rows when debug active. Also committed remaining v1→v2 pattern fixes in scripts and test files that were found during R1-R3 but committed separately. 740951e1.",
-      "2026-04-14: R5 ADVERSARIAL AUTOPSY — 3 BUGS + DEAD CODE + BRIDGE ASYMMETRY. 3 parallel agents found: Bug #10 (shooter game restart returns plain object, bridge silently ignores non-array returns — game froze on R press), Bug #11 (pick-and-place 'escape' key literal doesn't match v2's 'esc' — Escape never cancelled movement), Bug #12 (jsToTeaMouseRelease missing Button field — all other 3 mouse handlers had it). Also found write-only validCmdIDs/quitCalled dead code (forgery prevention that never verified), asymmetric bridge (msgToJS handled KeyRelease/Focus/Blur but JsToTeaMsg didn't), dead test helpers, unreachable handlers. 34 new test subtests. Committed as 6add4594.",
-      "2026-04-14: R6 ADVERSARIAL AUTOPSY — EXAMPLE SCRIPT HARDENING + DIRECT REGRESSION COVERAGE. 3 agents targeted scripts/, command JS, bridge completeness, and deferred R5 items. Real fixes: benchmark/shooter/pick-and-place non-Tick tick fan-out, shooter restart tick duplication, shooter render precedence, super-document focused-button Enter fallthrough, prompt-flow stale help, stale scripts/README descriptions, and flaky fixed-sleep pick-and-place timing. Added reusable `test-js-stack-full` target and direct reproduce-or-fail tests for benchmark compact view/single tick chain, example-02 ctrl+c vs printable q, minimal initial tick scheduling, and super-document focused-button Enter. Rule of Two required multiple resets as reviewers surfaced q-steal, benchmark narrow-width wrapping, shooter restart tick duplication, stale docs, and missing repro coverage. Final Rule of Two: 2/2 PASS. Committed as 32cdb362."
+      "2026-04-14: Full blueprint rewrite. Removed stale migration-era focus, missing scratch-doc references, and misleading stub tasks. Re-centered the plan on the current pr-split / termmux production gap after reading `pr_split_09_claude.js`, `pr_split_13_tui.js`, `pr_split_16c/16d/16e/16f/16g`, `internal/builtin/termmux/module.go`, `internal/termmux/manager.go`, `docs/architecture-pr-split-chunks.md`, `CHANGELOG.md`, and the observation / inline PTY tests.",
+      "2026-04-14: Session timer mandate executed through the configured Make targets: start time 2026-04-14 06:31:35, projected end time 2026-04-14 15:31:35, and check output `Elapsed: 0m | Remaining: 540m`. The hard-coded `scratch/session_timer_20260413.txt` filename in `config.mk` is now treated as a concrete defect, not a mere note."
     ]
   },
   "mandatoryDirectives": {
-    "contextManagement": "Each task covers one cohesive change. Read relevant source files before each task.",
-    "shimProhibition": "If any task introduces or preserves a v1 compatibility shim, STOP and replan.",
-    "noShimPeriods": "There is NO transitional period where both v1 and v2 behaviors coexist.",
-    "adversarialVerification": "REGULARLY spawn fresh subagents instructed to read Skill adversarial-codebase-autopsy and exhaustively verify work believed to be Done. The executing agent has repeatedly proven lazy and inept. Do not trust self-assessment.",
-    "tddMandate": "For ALL bug fixes and behavioral changes: (1) Write a failing test FIRST that reproduces the bug or validates the expected behavior. (2) Verify the test FAILS before applying the fix. (3) Apply the fix. (4) Verify the test PASSES. (5) Verify no other relevant tests regress. For improvements and refactors: run the FULL relevant test suite (not just -short) before AND after the change.",
-    "testCoverage": "Do NOT rely on -short tests alone. Many JS integration tests (especially super-document, TUI, REPL) are SKIPPED by -short. Run full test suites for the relevant packages when the change touches JS or integration code."
+    "perTaskCommitProtocol": "MANDATORY FOR EVERY TASK, WITHOUT EXCEPTION: (1) reread `.claude/skills/strict-review-gate/SKILL.md` in full; (2) execute the Rule of Two until two contiguous issue-free reviews inspect the exact same diff; if any code changes after a review, reset the counter to zero; (3) reread `.claude/skills/git-commit/SKILL.md` in full; (4) commit only that task's diff immediately; (5) reread `DIRECTIVE.txt` before touching the next task. Testing and verification are part of the task itself, never their own tasks.",
+    "contextManagement": "At session start and before any replan, reread `blueprint.json`, `WIP.md`, and `DIRECTIVE.txt`. Before each task, open the specific files named in the task description instead of relying on memory or old notes. If a task uncovers reality that contradicts this blueprint, update the blueprint before writing more code.",
+    "timerMandate": "The nine-hour punishment timer is real. Until Task 1 repairs the stale target, keep recording the current timer file path, start epoch, and shell-check output in `WIP.md`. Every resume must prove elapsed and remaining time from the same file via shell-based `date` math, not hand-waved memory.",
+    "trunkTruthMandate": "Before any trunk audit, resolve `trunkRef` and write it into `WIP.md`. Use this order: `git symbolic-ref --quiet --short refs/remotes/origin/HEAD`, then fall back to `origin/main`, `origin/master`, `main`, `master`. Once resolved, use `git diff <trunkRef>...HEAD` and `git log --oneline <trunkRef>..HEAD` consistently. The branch is not ready until the diff vs that real trunk ref is explicable file-by-file and the remaining gaps are written down instead of implied.",
+    "tddMandate": "For behavior changes and bug fixes, write or update the focused reproducer first, prove the old behavior is missing or broken, then fix it and rerun the focused reproducer plus the broader package/Make targets. For strategy quality work, fixture-based acceptance must describe what plan behavior becomes trustworthy, not just that tests are green.",
+    "sessionManagerMandate": "Prefer SessionManager-backed sessions, `tuiMux.register`, `tuiMux.snapshot`, `tuiMux.input`, `tuiMux.activate`, and `tuiMux.switchTo`. Do not preserve the special Claude proxy once a real registered Claude session exists. Unify abstractions and delete the fallback paths.",
+    "documentationTruthfulness": "No doc, README, or changelog text may claim an interaction mode, shell tab, test count, or prime-time behavior that the code and black-box tests cannot prove. Documentation repair is not cosmetic here; it is part of restoring trustworthy engineering reality.",
+    "scopeExpansion": "After Task 12, do not stop. Convert the resulting evidence into the next frontier tasks immediately so the blueprint never empties. New work must come from remaining trunk gaps, reusable termmux opportunities, or production-risk evidence, not from easy filler."
   },
   "sequentialTasks": [
     {
-      "task": "Harden msg.text resolution: add printable-filter guard at super_document_script.js:870",
-      "description": "In `internal/command/super_document_script.js` line 870, the key resolution `const k = msg.text && msg.text.length === 1 ? msg.text : msg.key;` works correctly at runtime because bubbletea v2 sets `Key.Text = ''` (empty) for special keys — `msg.text` is falsy so `k` correctly falls through to `msg.key`. HOWEVER, this is a fragile assumption: if bubbletea ever populates `Key.Text` for control characters (e.g., `Key.Text = '\\r'` for Enter), the length-1 check would resolve `k` to that control character instead of the named key. Apply defensive hardening: change to `const k = (msg.text && msg.text.length === 1 && msg.text.charCodeAt(0) >= 0x20 && msg.text.charCodeAt(0) <= 0x7E) ? msg.text : msg.key;`. This guarantees only printable ASCII (0x20-0x7E) uses msg.text; everything else uses msg.key. Also update the comment at lines 866-869 to document WHY this filter exists (defensive hardening against future Key.Text changes) and the verified behavior (Key.Text is empty for special keys per ultraviolet decoder and bubbletea docs). References: ultraviolet decoder.go:1139-1144, bubbletea key.go:297-300, autopsy 03_gap_analysis.md GAP-001.",
-      "acceptance": "The JS key resolution line explicitly filters for printable ASCII (0x20-0x7E) before using msg.text. Comment documents the defensive rationale. Existing behavior is unchanged: all keys (arrows, Enter, Tab, Space, printable chars, backspace, delete, home, end) continue to work correctly. Verified by the integration tests in the next task.",
-      "status": "Done",
-      "completedNote": "Applied printable-ASCII guard (0x20-0x7E) at super_document_script.js handleKeys(). Comment documents defensive rationale with references to ultraviolet decoder and bubbletea docs."
-    },
-    {
-      "task": "Write comprehensive runtime verification tests for textarea key handling",
-      "description": "Create integration tests that verify the full JS→Go bridge for textarea keys at runtime. Test file: `internal/command/super_document_test.go` or a new dedicated test file. Cover ALL keys from the autopsy evidence chain (02_evidence_chain.md lines 153-169): ↑, ↓, ←, →, Enter, Tab, Space, Backspace, Esc, Home, End, PgUp, PgDn, Delete, plus printable letters (a, Z, 5). For each key: (1) Verify msgToJS produces the correct JS object — specifically verify `msg.text` is empty for special keys and populated only for printable chars. (2) Verify the JS k resolution produces the correct k value. (3) Verify ValidateTextareaInput(k) returns expected result. (4) Verify the key reaches (or is correctly intercepted before) textarea.update(). Use existing test patterns from `internal/builtin/bubbletea/input_validation_test.go` and `coverage_gaps_test.go`. Tests must use skipSlow(t) if spawning JS runtimes (per AGENTS.md). Also add a specific test that verifies Key.Text is empty for Enter and Tab by directly checking msgToJS output — this serves as a regression guard against the autopsy's incorrect assumption.",
-      "acceptance": "A test suite covering all 14+ keys from the evidence chain table exists and passes. Each key has a test verifying the full pipeline. A dedicated test asserts that msgToJS produces `text: ''` for Enter and Tab (regression guard against the autopsy's mistaken claim). PgUp/PgDown tests verify they are intercepted by the scroll handler. Esc test verifies it is intercepted by the esc handler. All tests pass with `go test -v ./internal/command/... -run TestTextareaKey` and existing `go test -v ./internal/builtin/bubbletea/... -run TestValidateTextareaInput` continues to pass.",
-      "status": "Done",
-      "completedNote": "4 test functions in internal/builtin/bubbletea/key_pipeline_test.go: TestKeyPipeline_FullChain (18 subtests covering Enter/Tab/Esc/Backspace/Delete/arrows/Home/End/PgUp/PgDown/Space/a/Z/5/Ctrl+C through msgToJS→resolveKeyJS→ValidateTextareaInput), TestKeyPipeline_SpecialKeysHaveEmptyText (13 special keys regression guard), TestKeyPipeline_PrintableGuardRejectsControlChars (6 control chars), TestKeyPipeline_SpaceUsesTextNotNamedKey. All 37 subtests pass."
-    },
-    {
-      "task": "E2E runtime verification: arrow keys and Enter produce visible textarea behavior",
-      "description": "Write an E2E test that verifies textarea behavior at the terminal level, addressing UNCERTAIN items 6-8 from autopsy 04_honest_conclusions.md. Test in `internal/command/super_document_e2e_test.go` or `internal/scripting/super_document_unix_integration_test.go` that: (1) opens the super-document TUI, (2) enters MODE_INPUT, (3) focuses the content textarea (FOCUS_CONTENT), (4) types multi-line content including Enter for newlines, (5) presses arrow keys and verifies cursor position changes, (6) verifies the view output reflects the changes. Use existing E2E infrastructure (`internal/mouseharness/`, VT parser with WaitForContent/WaitForScreenContent). This test is the definitive proof that the key pipeline works end-to-end, not just structurally. If issues are found, document them in WIP.md with the specific failure mode and add fix tasks before the cross-platform tasks.",
-      "acceptance": "An E2E test exists that types multi-line content into the textarea (proving Enter works for newlines), then presses arrow keys and verifies visible cursor movement. The test passes on macOS. This test proves the full pipeline from terminal→bubbletea→JS→textarea→view works for the key types the autopsy investigated.",
-      "status": "Done",
-      "completedNote": "TDD pattern: (1) Wrote TestSuperDocument_TextareaArrowKeysAndEnter in super_document_unix_integration_test.go. (2) Test FAILED exposing real bug: arrows silently eaten, output showed 'AAAA BBBBX' instead of 'XAAAA\nBBBB'. (3) Added TestKeyPipeline_ParseKeyRoundTrip which diagnosed root cause: KeyDefs['up'].Code=0xFFFD (replacement char) instead of 0x110001 (tea.KeyUp). (4) Fixed generator (formatRuneLiteral for out-of-range runes), regenerated keys_gen.go. (5) Round-trip test PASSES, E2E test PASSES (1.44s). Critical fix: all navigation keys were broken since keys_gen.go creation."
-    },
-    {
-      "task": "Cross-platform: Linux via Docker",
-      "description": "Run `make make-all-in-container` (see config.mk). All tests must pass including the new textarea key tests. The container runs the full `make all` inside `golang:<version>` from go.mod.",
-      "acceptance": "`make make-all-in-container` exits 0. All 43+ packages pass. Zero test failures on Linux.",
-      "status": "Done",
-      "completedNote": "6 Docker runs. 3 Linux-only flakes fixed (REPLTUIToggle cooked-mode race, Chunk10b 0-iteration timeout, StressBoundedMemoryGrowth poll loop). Committed as 24965d86. Rule of Two passed (2/2 PASS)."
-    },
-    {
-      "task": "Cross-platform: Windows",
-      "description": "Run `make make-all-run-windows` (see config.mk). Uses `hack/run-on-windows.sh` to execute `make all` on Windows. All tests must pass.",
-      "acceptance": "`make make-all-run-windows` exits 0. All packages pass on Windows.",
+      "task": "Repair session timer and execution scaffolding",
+      "description": "Update `config.mk` so `session-timer-start` and `session-timer-check` stop hard-coding `scratch/session_timer_20260413.txt` and instead read/write a stable current-session timer file that survives restarts. Record the chosen file path, start epoch, projected end time, and latest check output in a real `WIP.md`. Keep the shell math portable by using the existing macOS/Linux `date -v+9H` / `date -d '+9 hours'` pattern, and make the task instructions explicitly tell the next executor how to prove the nine-hour window before doing any work. Keep this as one self-contained diff that can pass the mandatory per-task commit protocol by itself.",
+      "acceptance": "A cold-start executor can resume the repo, run the timer commands, inspect `WIP.md`, and know exactly whether the nine-hour window is still active without guessing which file matters. The timer filename is no longer stale or date-specific, the same file is used for both start and check, and the resulting diff is narrow enough to be reviewed and committed alone under the mandatory per-task protocol.",
       "status": "Not Started"
     },
     {
-      "task": "Documentation sweep: verify accuracy for v2 API and key handling",
-      "description": "Verify all files under `docs/` are accurate for the current v2 API. Specifically: (1) No references to v1 mouse patterns (isWheel, action, shift/alt/ctrl booleans); (2) No references to deleted types or pre-merge APIs; (3) `docs/scripting.md` documents the key event handling pattern including msg.text resolution and the printable-filter guard; (4) Any examples showing textarea usage reflect the current implementation.",
-      "acceptance": "Every file in docs/ is accurate for the current codebase. `grep -rn 'isWheel\\|msg\\.action.*press\\|msg\\.shift\\|msg\\.alt\\|msg\\.ctrl' docs/` returns zero hits. Key event handling is documented correctly.",
-      "status": "Done",
-      "completedNote": "Scanned all 47 docs/ files. Active docs v2-clean. v1 patterns only in archived design spec (correctly marked). Added key resolution pattern with printable-filter guard to docs/scripting.md. lipgloss.newStyle() is our JS wrapper (not v1). lipgloss.NewStyle() is valid in v2."
-    },
-    {
-      "task": "Diff vs main audit",
-      "description": "Run `git diff main...HEAD` and review every changed file. Verify: (1) every change is intentional and tested; (2) no dead code introduced by the merge; (3) no v1 patterns survive; (4) all test helpers, golden files, and test data are current. Pay special attention to files that had merge conflicts (listed in WIP.md).",
-      "acceptance": "Complete diff audit documented in scratch/. Every changed file reviewed. No dead code. No untested changes. No v1 patterns. Merge conflict files specifically verified.",
-      "status": "Done",
-      "completedNote": "Full audit documented in scratch/diff-vs-main-audit.md. Zero v1 patterns in production Go code. Fixed 3 stale comments (tea.KeyMsg → tea.KeyPressMsg). lipgloss.NewStyle() confirmed valid v2. deadcode linter clean. Zero shims. All changes tested."
-    },
-    {
-      "task": "Adversarial codebase autopsy on merged state",
-      "description": "Spawn subagent with adversarial-codebase-autopsy skill to verify the merged codebase. The subagent reads the skill, performs exhaustive analysis, and produces a structured report. All issues found must be addressed before proceeding. This is a standing quality gate — the merged codebase must survive hostile scrutiny.",
-      "acceptance": "Autopsy report produced in scratch/. All identified issues addressed or documented with explicit rationale. No critical or high-severity findings remain open.",
-      "status": "Done",
-      "completedNote": "Autopsy found 1 CRITICAL issue: v1 backward-compat shim in jsModToKeyMod() accepting boolean modifier properties. Shim deleted, benchmarks updated to v2 format, comprehensive test added verifying v1 booleans are rejected. All findings addressed."
-    },
-    {
-      "task": "Exhaustive adversarial v2 correctness review (4 rounds, 12 agents)",
-      "description": "Adversarial codebase autopsy cycles targeting the complete bubbletea v2 migration diff. 3 parallel agents per round, each independently scanning ALL changed files for v1 patterns, API mismatches, missing v2 features, and behavioral regressions. Rule of Two verification after all fixes. Files: ALL 101 files in the v2 migration diff.",
-      "acceptance": "At least one CLEAN round (0 findings from all 3 agents). Rule of Two passes (2 contiguous issue-free reviews). All bugs fixed and verified. make test-short passes (52 packages). make lint clean.",
-      "status": "Done",
-      "completedNote": "R1: 2 bugs (stale key patterns ' ' → 'space' in pick_and_place_error_recovery_test.go:342, shooter_error_recovery_test.go:365). R2: 3 bugs ('Resize' → 'WindowSize' in example-05:1786, example-04:1589; 'tick' → 'Tick' in minimal-bubbletea-test.js:14). R3: 2 bugs (mixed view() returns in example-02 and example-04). R4: CLEAN (3/3 PASS). Rule of Two v1 flagged mouseMode gap → bug #8 (missing mouseMode:'all' in example-05 view()). Rule of Two v2: 2/2 PASS. Committed as 1fe02e5a."
-    },
-    {
-      "task": "Fix v2 view clipping and remaining script migration issues",
-      "description": "BubbleTea v2 renderer clips view output to terminal height. Shooter game fills 50-row PTY with play area, appends 15-row debug overlay below — all clipped. Also fix remaining v1 patterns: key names (' '→'space'), message types ('Resize'→'WindowSize', 'tick'→'Tick'), view return format (plain strings → {content, altScreen, mouseMode} objects). Files: bubbletea.go, 2 test files, 4 JS scripts.",
-      "acceptance": "All 5 shooter E2E tests pass on macOS and Linux. All 52 packages pass. All lint clean. Rule of Two passes (2/2 PASS).",
-      "status": "Done",
-      "completedNote": "Bug #9: view clipping fix — reduce terminalSize.height by 15 when debugMode active (save/mutate/restore with Math.max(10,...) safety). Also: ' '→'space' in 2 test files, 'Resize'→'WindowSize' in 2 scripts, 'tick'→'Tick' in minimal test, view return objects in 2 scripts. 7 files, 28 ins, 9 del. Rule of Two: 2/2 PASS. Committed as 740951e1."
-    },
-    {
-      "task": "R5 adversarial autopsy: fix bugs, remove dead code, add bridge tests",
-      "description": "R5 adversarial autopsy (3 agents: Alpha/Beta/Gamma) targeting bridge internals, script logic, and test hygiene. Found 3 bugs (shooter game restart returns plain object not [state,cmd] array, pick-and-place escape key matches 'escape' not 'esc', jsToTeaMouseRelease drops Button field), 7 dead code items (quitCalled, validCmdIDs, registerCommand, cmdMu, currentModel, dead test helpers, duplicate handler), 3 bridge asymmetries (KeyRelease/Focus/Blur JS→Go path missing). Files: bubbletea.go, 4 test files, 2 JS scripts.",
-      "acceptance": "All 3 bugs fixed. Dead code deleted. Bridge handlers symmetric. 34 new test subtests. make test-short passes (52 packages). make lint clean. Rule of Two passes (2/2 PASS).",
-      "status": "Done",
-      "completedNote": "Bug #10: shooter restart returns plain object → [state, cmd] array. Bug #11: 'escape' → 'esc' (v2 key name). Bug #12: MouseRelease Button field populated. Dead code: quitCalled, validCmdIDs, registerCommand, cmdMu, currentModel, ExpectPatternInBuffer, ExpectCharacterAt, duplicate WindowSize handler, 5 comment tombstones. Bridge: KeyRelease/Focus/Blur added to JsToTeaMsg. 34 new test subtests. 8 files, 305 ins, 111 del. Rule of Two: 2/2 PASS. Committed as 6add4594."
-    },
-    {
-      "task": "R6 adversarial autopsy: example script regressions and coverage hardening",
-      "description": "R6 adversarial autopsy (3 agents: Alpha/Beta/Gamma) targeted example scripts under `scripts/`, core command JS scripts, bridge completeness, deferred R5 items, and view-field coverage. Findings included benchmark/shooter/pick-and-place tick fan-out on non-Tick paths, shooter restart spawning a duplicate tick loop, super-document focused-button Enter falling into Edit mode, stale prompt-flow help and `scripts/README.md` descriptions, dead example-script scaffolding/comments, and missing repo-backed reproduce-or-fail coverage for benchmark/example-02/minimal/super-document changes. Files touched span `scripts/`, `internal/command/`, `internal/scripting/`, and `config.mk`.",
-      "acceptance": "All real R6 bugs fixed. Example script docs accurately describe current behavior. Direct regression tests cover benchmark single-tick-chain compact rendering, example-02 add-mode ctrl+c vs printable q, minimal initial tick scheduling, and super-document focused-button Enter behavior. `make test-short`, `make lint`, and `make test-js-stack-full` all pass on the final diff. Rule of Two passes (2/2 PASS).",
-      "status": "Done",
-      "completedNote": "Fixed benchmark/shooter/pick-and-place tick fan-out, shooter restart duplication, shooter modal/per-render waste, super-document focused-button fallthrough, stale prompt-flow help, stale scripts/README entries, and flaky fixed-sleep polling in pick-and-place. Added `internal/scripting/example_scripts_regression_test.go`, focused-button Enter coverage in `super_document_test.go`, and reusable `test-js-stack-full`. Rule of Two reset multiple times as reviewers caught example-02 q-steal, benchmark width wrapping, shooter restart tick duplication, and missing repro coverage; final 2/2 PASS. Committed as 32cdb362."
-    },
-    {
-      "task": "STUB: tea.View Cursor field support",
-      "description": "Expose cursor position/shape/color/blink via view() return object. Currently view() returns {content, altScreen, mouseMode}. Add cursor field matching bubbletea v2's tea.View cursor capabilities. Files: internal/builtin/bubbletea/bubbletea.go (view handling), internal/command/super_document_script.js (view() return).",
-      "acceptance": "JS controls cursor via view(). Integration test verifies cursor properties are set and applied.",
-      "status": "Done",
-      "completedNote": "parseCursorProp() parses {x, y, shape, blink, color} from JS view object. Shape: block/underline/bar (case-insensitive). Blink defaults to true (tea.NewCursor default). Color via lipgloss.Color (hex/ANSI256). Cached for throttled renders. 14 subtests in TestParseCursorProp."
-    },
-    {
-      "task": "STUB: tea.View ForegroundColor/BackgroundColor",
-      "description": "Expose terminal-wide foreground/background colors via view() return. Files: internal/builtin/bubbletea/bubbletea.go.",
-      "acceptance": "JS sets terminal colors via view() return. Integration test verifies color application.",
-      "status": "Done",
-      "completedNote": "foregroundColor and backgroundColor parsed as string props, converted via lipgloss.Color() supporting hex (#rrggbb, #rgb) and ANSI 256 index strings. Cached for throttled renders. 5 subtests in TestParseColorValue."
-    },
-    {
-      "task": "STUB: tea.View KeyboardEnhancements",
-      "description": "Expose Kitty keyboard protocol via view() return. Files: internal/builtin/bubbletea/bubbletea.go.",
-      "acceptance": "JS requests keyboard enhancements. Integration test verifies protocol negotiation.",
-      "status": "Done",
-      "completedNote": "parseKeyboardEnhancementsProp() accepts boolean shorthand (true → {reportEventTypes:true}) or object {reportEventTypes: bool}. Cached for throttled renders. 9 subtests in TestParseKeyboardEnhancementsProp."
-    },
-    {
-      "task": "STUB: tea.View OnMouse intercept",
-      "description": "Expose zone-based mouse interception via view() return. Files: internal/builtin/bubbletea/bubbletea.go, internal/builtin/bubbletea/zone handling.",
-      "acceptance": "JS defines mouse zones. Tests verify detection and event routing.",
+      "task": "Build trunk gap evidence pack and replan checkpoint",
+      "description": "Create `scratch/pr-split-trunk-gap-audit.md` from first-hand evidence after first resolving and recording `trunkRef` in `WIP.md` (this checkout currently points at `origin/main`, not a local `main`). Use `git diff <trunkRef>...HEAD`, `git log --oneline <trunkRef>..HEAD`, `CHANGELOG.md`, `docs/architecture-pr-split-chunks.md`, `internal/command/pr_split_09_claude.js`, `pr_split_13_tui.js`, `pr_split_16d_tui_handlers_claude.js`, `pr_split_16e_tui_update.js`, `pr_split_16f_tui_model.js`, `internal/builtin/termmux/module.go`, and `internal/termmux/manager.go`. The doc must explicitly record the current user-visible blockers for direct Claude-pane interaction, the strategy-quality risks vs trunk, and every stale or misleading public claim discovered. Update `statusSection.replanLog` before moving on if this audit changes scope. Keep this as one self-contained diff that can pass the mandatory per-task commit protocol by itself.",
+      "acceptance": "The repository contains a single authoritative evidence pack that tells a new executor what changed versus trunk, what `pr-split` publicly claims, what the Claude and verify panes actually do today, and which blockers are proven by reproduction rather than speculation. The plan can move to strategy and interactivity work without repeating discovery, and the audit diff is reviewable and committed alone under the mandatory protocol.",
       "status": "Not Started"
     },
     {
-      "task": "STUB: tea.View ProgressBar",
-      "description": "Expose native terminal progress bars via view() return. Files: internal/builtin/bubbletea/bubbletea.go.",
-      "acceptance": "JS displays progress bars. Integration test verifies rendering.",
-      "status": "Done",
-      "completedNote": "parseProgressBarProp() parses {state, value} with state: default/error/indeterminate/warning/none (case-insensitive). Value defaults to 0. Uses tea.NewProgressBar(). Cached for throttled renders. 13 subtests in TestParseProgressBarProp."
-    },
-    {
-      "task": "STUB: tea.View DisableBracketedPasteMode",
-      "description": "Expose bracketed paste control via view() return. Files: internal/builtin/bubbletea/bubbletea.go.",
-      "acceptance": "JS controls bracketed paste. Test verifies mode toggling.",
-      "status": "Done",
-      "completedNote": "Simple boolean prop via existing getJSBoolProp(). Wired into v.DisableBracketedPasteMode on tea.View. Cached for throttled renders. No separate test needed (existing boolean parsing is thoroughly tested)."
-    },
-    {
-      "task": "STUB: Performance benchmarks",
-      "description": "Benchmark message throughput (msgToJS/JsToTeaMsg), view parsing, render latency. Files: internal/builtin/bubbletea/benchmark_latency_test.go (already exists with some benchmarks).",
-      "acceptance": "Benchmark suite runs via `go test -bench=. ./internal/builtin/bubbletea/...`. Results documented in scratch/.",
+      "task": "Prove strategy selection and split-plan quality on trunk-like diffs",
+      "description": "Turn the trunk audit into fixture-backed tests under `internal/command/` and `testdata/` for `prSplit.analyzeDiffAsync` in `pr_split_01_analysis.js`, `selectStrategy` / `selectStrategyAsync` / `applyStrategy` / `applyStrategyAsync` in `pr_split_02_grouping.js`, plan creation in `pr_split_03_planning.js`, and orchestrator entry points in `pr_split_10d_pipeline_orchestrator.js` and `pr_split_16b_tui_handlers_pipeline.js`. Cover representative trunk-like cases: multi-directory Go changes, generated-file churn, rename-heavy diffs, mixed docs+code updates, and dependency-shaped changes that should or should not cohabit a split. Keep this as one self-contained diff that can pass the mandatory per-task commit protocol by itself.",
+      "acceptance": "On curated diffs derived from real trunk-style work, `osm pr-split` produces stable, reviewable plans whose chosen strategy is explainable from the fixture output rather than by hand-waving. Generated-file noise, risky mixed changes, and dependency-heavy edits are surfaced or separated in a way a reviewer can trust, and the strategy-quality diff is reviewable and committed alone under the mandatory protocol.",
       "status": "Not Started"
     },
     {
-      "task": "STUB: Termmux facade design and implementation",
-      "description": "Design JS API for termmux, create skeleton, implement pane CRUD, visibility, events, bubbletea integration. Reference: scratch/termmux-architecture.md. The termmux SessionManager exists in Go (internal/builtin/termmux/) but needs a complete JS API surface.",
-      "acceptance": "All termmux facade functions exposed to JS. Integration tests verify pane CRUD, visibility toggling, event routing, and bubbletea program embedding. `make test` passes.",
+      "task": "Prove Claude-pane keyboard and mouse routing end to end",
+      "description": "Expand `pr_split_inline_e2e_test.go`, `pr_split_16_input_routing_test.go`, `pr_split_16_split_mouse_test.go`, and add any focused `pr_split_16_*` tests needed to cover `keyToTermBytes`, `CLAUDE_RESERVED_KEYS`, `INTERACTIVE_RESERVED_KEYS`, `handleKeyMessage`, `handleMouseMessage`, `computeSplitPaneContentOffset`, and `writeMouseToPane` across `pr_split_16d_tui_handlers_claude.js` and `pr_split_16e_tui_update.js`. Prove focused Claude-pane behavior for printable keys, Enter, Ctrl combos, reserved pane-management keys, mouse click/release/motion/wheel, and split-view focus changes. Use at least one Go-side SessionManager-backed recorder so bytes are proven to reach the PTY path, not just mocked JS helpers. Keep this as one self-contained diff that can pass the mandatory per-task commit protocol by itself.",
+      "acceptance": "A user can be shown concrete tests proving that focusing the Claude pane sends intended keys and mouse gestures to the child session, while reserved navigation keys still belong to the wizard when they should. Failures localize to a specific routing layer instead of leaving 'direct pane interaction is broken' as an anecdote, and the routing-proof diff is reviewable and committed alone under the mandatory protocol.",
       "status": "Not Started"
     },
     {
-      "task": "STUB: Wizard state machine",
-      "description": "Design wizard states, implement transitions, port plan editor, branch pipeline, error resolution, orchestration, remove old Go TUI. Reference: internal/command/pr_split_*.js files for existing wizard structure.",
-      "acceptance": "Full wizard E2E flow works via JS. Old Go TUI code removed. All tests pass.",
+      "task": "Replace Claude special proxy with SessionManager-backed session plumbing",
+      "description": "Refactor `ClaudeCodeExecutor.spawn` in `pr_split_09_claude.js`, `getClaudePaneSession` in `pr_split_13_tui.js`, the split-view state in `pr_split_16f_tui_model.js`, and any necessary Go glue in `pr_split.go` / `internal/builtin/termmux/module.go` so Claude is registered with `tuiMux.register()` and addressed through an explicit SessionManager session ID plus a real proxy builder, not through the current ad hoc `{write, screen, output}` wrapper over `tuiMux.session()/writeToChild()/childScreen()/screenshot`. Delete the superseded special-case branches once the new path is wired everywhere. Keep this as one self-contained diff that can pass the mandatory per-task commit protocol by itself.",
+      "acceptance": "Claude and verify now use one coherent session abstraction: Claude output comes from SessionManager snapshots, Claude input and resize target a concrete registered session, active-session changes are explicit, and the codebase no longer has a split-brain model where verify is managed and Claude is a special exception. The user-visible result is a Claude pane that behaves like a real muxed session, and the unification diff is reviewable and committed alone under the mandatory protocol.",
       "status": "Not Started"
     },
     {
-      "task": "STUB: Advanced features — bell interception, HUD, mouse in termmux, native IPC, worktree isolation",
-      "description": "Implement advanced terminal features: bell interception, HUD overlay, mouse support within termmux panes, native IPC for inter-process communication, worktree isolation for safe concurrent operations.",
-      "acceptance": "Each feature implemented, tested, and documented. `make test` passes.",
+      "task": "Deliver true Claude passthrough and return-to-wizard behavior",
+      "description": "After Claude is SessionManager-backed, update `_onToggle` in `pr_split_16f_tui_model.js`, `handleToggleReturn` in `pr_split_16e_tui_update.js`, and any required termmux wrapper behavior in `internal/builtin/termmux/module.go` so Ctrl+] enters passthrough for the actually focused interactive pane, preserves the previously active session, and restores split-view focus, tab, notifications, and verify context when control returns. Expand `pr_split_16_ctrl_bracket_test.go`, `pr_split_16_keyboard_crash_test.go`, `pr_split_16_focus_nav_edge_test.go`, and `pr_split_termmux_observation_test.go` to prove the behavior with real PTY observation, not just guard checks. Keep this as one self-contained diff that can pass the mandatory per-task commit protocol by itself.",
+      "acceptance": "In a real observation test, a user can focus Claude, press Ctrl+], interact directly with the Claude terminal, press Ctrl+] again, and land back in the same wizard context without losing split-view state or verify progress. When no interactive session exists, the user receives a truthful notification instead of silent failure, and the passthrough diff is reviewable and committed alone under the mandatory protocol.",
       "status": "Not Started"
     },
     {
-      "task": "Final cross-platform validation",
-      "description": "Run all targets on all platforms (macOS native, Linux via container, Windows via run-on-windows.sh) AFTER all preceding tasks are complete.",
-      "acceptance": "ALL GREEN on macOS, Linux, Windows. Zero test failures on any platform.",
+      "task": "Harden Claude lifecycle output and backpressure handling",
+      "description": "Reduce blind dependence on `pollClaudeScreenshot` in `pr_split_16d_tui_handlers_claude.js` by wiring `tuiMux` event callbacks from `internal/builtin/termmux/module.go` (`output`, `bell`, `exit`, `closed`, `activated`) into Claude-pane status, crash/exit handling, and question detection. Add bounded write buffering or explicit retry/error propagation so temporary PTY failures do not silently drop user input. Audit `pr_split_14b_tui_commands_ext.js`, `pr_split_10b_pipeline_send.js`, and any focus/notification state that currently assumes passive polling. Keep this as one self-contained diff that can pass the mandatory per-task commit protocol by itself.",
+      "acceptance": "Long-running Claude sessions update promptly enough for a user to trust the pane, bell/exit/crash conditions are visible instead of mysterious, and transient write failures no longer eat typed input without explanation. The user can tell the difference between idle, waiting-for-input, crashed, and closed, and the reliability diff is reviewable and committed alone under the mandatory protocol.",
       "status": "Not Started"
     },
     {
-      "task": "Scope expansion: identify and add next frontier tasks",
-      "description": "After reaching stable-state (all current tasks complete, verified), ideate new improvements, refinements, and features. This task is never truly complete — it represents the perpetual expansion mandate. Areas to explore: additional textarea features (selection, cut/copy/paste), more comprehensive E2E test coverage, performance optimization, accessibility, new script examples, enhanced error messages, etc.",
-      "acceptance": "New concrete tasks added to sequentialTasks. Each task meets the Planning Depth Standard (project-specific, verifiable acceptance, context pointers).",
+      "task": "Make persistence and resume truthful for Claude and verify sessions",
+      "description": "Extend the existing mux persistence path in `pr_split_16g_persistence.js`, `pr_split.go`, `internal/builtin/termmux/module.go`, and `internal/termmux/persistence.go` so restart/resume behavior tells the truth about both Claude and verify sessions. Capture enough metadata to distinguish live sessions, dead PIDs, stale worktrees, and unrecoverable state, then surface that truth in the TUI and cleanup paths. Expand existing recovery tests such as `pr_split_autosplit_recovery_test.go` and any binary / observation tests needed to cover abnormal exit and clean exit paths. Keep this as one self-contained diff that can pass the mandatory per-task commit protocol by itself.",
+      "acceptance": "If `osm pr-split` dies mid-session, restarting produces an honest resume story: live Claude/verify sessions can be reattached, dead sessions are clearly marked dead and cleaned up safely, and stale state files do not resurrect fake work. Resume is proven by integration behavior, not merely by the existence of a JSON file, and the persistence diff is reviewable and committed alone under the mandatory protocol.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Extract a reusable JS termmux facade and demonstration script",
+      "description": "Turn the session-management patterns now embedded in `pr_split` into a reusable JS-facing facade over `osm:termmux`: register, activate, snapshot, input, resize, passthrough, event subscription, and persistence. Keep the reusable pieces outside the app-specific wizard logic, update `pr_split` to consume the same facade instead of bespoke helpers where practical, and add a demonstration script plus supporting docs under `scripts/` and `docs/reference/` showing a multi-pane interactive flow built directly on termmux. Keep this as one self-contained diff that can pass the mandatory per-task commit protocol by itself.",
+      "acceptance": "Another command or script author can build a multi-pane interactive experience without copying `pr-split` internals, and `pr-split` itself relies on the same documented facade for the shared mux semantics. This proves `internal/termmux` is a real reusable subsystem rather than a one-off sidecar, and the facade diff is reviewable and committed alone under the mandatory protocol.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Harden interactive behavior across macOS Linux and Windows",
+      "description": "Add or refine focused Make targets in `config.mk` for high-signal interactivity checks (for example, targeted `pr-split` interactive, resume, and termmux passthrough runs), then fix the platform-specific PTY, resize, signal, shell, or fallback issues they expose across macOS, Linux-in-container, and Windows. This task must explicitly cover the SessionManager / passthrough paths touched in tasks 4-8 and use `hack/run-on-windows.sh`, `make-all-in-container`, and the focused `test-prsplit-*` / `test-termmux` targets rather than only local ad hoc commands. Keep this as one self-contained diff that can pass the mandatory per-task commit protocol by itself.",
+      "acceptance": "A contributor can run a small, explicit command set and prove that direct Claude input, verify interactivity, passthrough, resize, and resume behavior are consistent on all supported platforms or are clearly documented where a platform-specific fallback is intentional. Prime-time claims are no longer macOS-only folklore, and the cross-platform hardening diff is reviewable and committed alone under the mandatory protocol.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Reconcile README architecture docs and changelog with reality",
+      "description": "Audit and update `README.md`, `CHANGELOG.md`, `docs/architecture-pr-split-chunks.md`, `docs/reference/command.md`, and any other touched docs so they stop overstating Claude interactivity, stop referring to removed shell-pane concepts, and accurately describe current strategy behavior, split-view tabs, passthrough semantics, resume behavior, and test coverage. Use the evidence pack and the finished interactive tests as the source of truth. Keep this as one self-contained diff that can pass the mandatory per-task commit protocol by itself.",
+      "acceptance": "A reader following the public docs gets an accurate picture of what `pr-split` can do today: how strategy selection behaves, how the Claude and verify panes differ or no longer differ, which keys manage the panes, how resume works, and what remains intentionally constrained. No document claims a shell tab, test scenario, or prime-time interaction path that the code cannot actually deliver, and the documentation diff is reviewable and committed alone under the mandatory protocol.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Run final trunk truth audit and repopulate the next frontier",
+      "description": "After tasks 1-11 are individually reviewed and committed, rerun the full branch-vs-trunk audit using the resolved `trunkRef` recorded in `WIP.md`, targeted and full Make checks, and a hostile reread of the evidence pack, docs, and current code. Write `scratch/pr-split-final-audit.md` summarizing what is now actually true, what still blocks 'prime time' if anything, and which high-impact next-frontier tasks follow from the evidence. Update `blueprint.json` before stopping so the task list never goes empty. Keep this as one self-contained diff that can pass the mandatory per-task commit protocol by itself.",
+      "acceptance": "The branch is explainable against trunk file-by-file, the current reality of `pr-split` is written down without spin, and `blueprint.json` is immediately repopulated with new high-impact work instead of being declared finished. The audit itself becomes a trustworthy handoff artifact, and the expansion diff is reviewable and committed alone under the mandatory protocol.",
       "status": "Not Started"
     }
   ],
   "continuousVerification": {
-    "task": "Run build and test after EVERY significant change",
-    "failPolicy": "If ANY test fails, STOP IMMEDIATELY and fix before proceeding."
+    "perTask": [
+      "Before changing code for a task, run or create the focused reproducer / fixture that proves the current gap. After the change, rerun that reproducer plus the relevant package tests for every touched file.",
+      "For `internal/command/pr_split_*` changes, run `gmake test-prsplit-fast` plus the smallest precise `go test -run ... ./internal/command/...` slices that exercise the touched handlers, screens, or orchestrator paths.",
+      "For `internal/termmux/` or `internal/builtin/termmux/` changes, run `gmake test-termmux` and the precise `go test -run ...` slices that cover the session wrapper or persistence path you changed.",
+      "For passthrough, direct pane interaction, persistence, or observation work, run `gmake test-prsplit-e2e` and any focused observation / binary tests needed to prove user-visible behavior, not just unit tests."
+    ],
+    "crossPlatform": [
+      "macOS native: use GNU Make (`gmake`) for the focused and full checks.",
+      "Linux: use `gmake make-all-in-container` once a task's focused checks are green; do not defer Linux until the very end for PTY/session work.",
+      "Windows: use `gmake make-all-run-windows` after any SessionManager, PTY, signal, or persistence change; if behavior differs, fix it or document the intentional fallback in the same task."
+    ],
+    "failPolicy": "If any reproducer, unit test, integration test, platform check, or review pass fails, the task remains In Progress. Fix the diff or replan before touching the next task.",
+    "reviewPolicy": "No task moves to Done until two contiguous strict-review-gate subagent reviews PASS on the identical diff and that exact task diff is committed by itself."
   },
   "finalEnforcementProtocol": [
     {
       "type": "POST_EXECUTION_WARNING",
-      "alert": "ZERO COMPATIBILITY SHIMS — v2 type-based dispatch ONLY. msg.mod array. msg.x/msg.y coordinates."
+      "alert": "DO NOT MARK A TASK DONE JUST BECAUSE CODE EXISTS. EACH TASK MUST DELIVER ITS USER-VISIBLE OR STRATEGY-VISIBLE EFFECT, SURVIVE THE RULE OF TWO, AND BE COMMITTED ALONE."
     },
     {
       "type": "POST_EXECUTION_WARNING",
-      "alert": "ALL platforms must pass. Cross-platform testing mandatory."
+      "alert": "IF THE TIMER FILE CANNOT BE FOUND OR VERIFIED, ASSUME THE NINE-HOUR WINDOW HAS JUST RESTARTED AND RECORD IT AGAIN BEFORE PROCEEDING."
     },
     {
       "type": "POST_EXECUTION_WARNING",
-      "alert": "Key.Text is empty ('') for special keys (Enter, Tab, Esc, arrows) per ultraviolet decoder and bubbletea v2 docs. The msg.text resolution line is a defensive guard, not a bug fix. Never assume Key.Text contains the rune value — it is populated only for printable characters."
+      "alert": "IF CLAUDE STILL RELIES ON `getClaudePaneSession()` SPECIAL-CASE BEHAVIOR OR DOCS STILL CLAIM A REMOVED SHELL TAB, THE PLAN IS NOT COMPLETE."
+    },
+    {
+      "type": "POST_EXECUTION_WARNING",
+      "alert": "AFTER THE FINAL AUDIT, EXPAND THE BLUEPRINT AGAIN. AN EMPTY TASK LIST IS A FAILURE OF IMAGINATION AND OF EVIDENCE COLLECTION."
     }
   ]
 }

@@ -113,7 +113,7 @@ func TestGracefulDegradation_NoShellOnWindows(t *testing.T) {
 		// for session existence before writing. Verify the function is safe.
 		raw, err := evalJS(`(function() {
 			var bytes = globalThis.prSplit._mouseToTermBytes(
-				{x: 10, y: 5, button: 'left', action: 'press'}, 3, 0
+				{type: 'MouseClick', x: 10, y: 5, button: 'left', mod: []}, 3, 0
 			);
 			if (typeof bytes !== 'string' || bytes.length === 0) {
 				return 'FAIL: mouseToTermBytes should return bytes even without session';

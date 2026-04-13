@@ -142,19 +142,23 @@ function update(msg, s) {
     return globalThis.prSplit._wizardUpdate(msg, s);
 }
 
-// sendKey: sends a Key message.
+// sendKey: sends a Key message with v2 named-key normalization.
+// BubbleTea v2 converts character codes to named keys (e.g. ' ' → 'space',
+// '\t' → 'tab'). The test helper must match this behaviour.
 function sendKey(s, key) {
-    return update({type: 'Key', key: key}, s);
+    var nameMap = {' ': 'space', '\t': 'tab', '\r': 'enter', '\n': 'enter'};
+    var k = nameMap[key] || key;
+    return update({type: 'Key', key: k}, s);
 }
 
-// sendClick: sends a left mouse click.
+// sendClick: sends a left mouse click (v2 split type).
 function sendClick(s) {
-    return update({type: 'Mouse', button: 'left', action: 'press', isWheel: false, x: 10, y: 10}, s);
+    return update({type: 'MouseClick', button: 'left', x: 10, y: 10, mod: []}, s);
 }
 
-// sendWheel: sends a mouse wheel event.
+// sendWheel: sends a mouse wheel event (v2 split type).
 function sendWheel(s, direction) {
-    return update({type: 'Mouse', button: 'wheel ' + direction, action: 'press', isWheel: true, x: 10, y: 10}, s);
+    return update({type: 'MouseWheel', button: 'wheel ' + direction, x: 10, y: 10, mod: []}, s);
 }
 
 // mockZoneHit: mocks zone.inBounds to match only the given zone ID.

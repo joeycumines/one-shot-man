@@ -216,14 +216,18 @@
                     return false;
                 }
                 // Last resort: use platform shell to scan for go:generate.
-                var shellSpawnSync2 = prSplit._shellSpawnSync;
+                // Use exec.execv (not shellSpawnSync) because we need stdout
+                // capture — execStream only fires callbacks.
+                var execMod = prSplit._modules.exec;
                 var isWindows2 = prSplit._isWindows;
-                if (shellSpawnSync2) {
-                    var cdLast = (isWindows2 && isWindows2()) ? 'cd /d ' : 'cd ';
+                if (execMod) {
                     var scanCmd = (isWindows2 && isWindows2())
-                        ? cdLast + shellQuote(dir) + ' && findstr /s /m "go:generate" *.go'
-                        : cdLast + shellQuote(dir) + ' && grep -rl "//go:generate" --include="*.go" . 2>/dev/null | head -1';
-                    var goGen = shellSpawnSync2(scanCmd);
+                        ? 'findstr /s /m "go:generate" *.go'
+                        : 'grep -rl "//go:generate" --include="*.go" . 2>/dev/null | head -1';
+                    var shellArgs = (isWindows2 && isWindows2())
+                        ? ['cmd.exe', '/C', 'cd /d ' + shellQuote(dir) + ' && ' + scanCmd]
+                        : ['sh', '-c', 'cd ' + shellQuote(dir) + ' && ' + scanCmd];
+                    var goGen = execMod.execv(shellArgs);
                     return goGen.code === 0 && (goGen.stdout || '').trim() !== '';
                 }
                 return false;

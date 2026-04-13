@@ -1,6 +1,7 @@
 package bubbletea
 
 import (
+	"strings"
 	"unicode"
 )
 
@@ -18,29 +19,22 @@ type InputValidationResult struct {
 // This prevents garbage (fragmented escape sequences from rapid mouse/scroll events)
 // from corrupting document content.
 //
+// In v2, paste is a separate message type (tea.PasteMsg), not a flag on key events.
+// Paste content never reaches this function — it is handled directly by the textarea.
+//
 // Parameters:
 //   - keyStr: The key string representation (from tea.Key.String())
-//   - isPaste: Whether this is a bracketed paste event (msg.paste === true)
-//
-// Paste events always pass through - they are pre-validated by the terminal's
-// bracketed paste mode and should flow without interference.
 //
 // Valid inputs:
 //   - Single printable ASCII characters (0x20-0x7E)
 //   - Single Unicode characters (non-control)
 //   - Recognized control/navigation keys from KeyDefs
-//   - Any paste event (isPaste == true)
 //
 // Invalid inputs (REJECTED):
 //   - Empty strings
 //   - Multi-character strings that aren't recognized named keys
 //   - Control characters (0x00-0x1F, 0x7F) except via named keys
-func ValidateTextareaInput(keyStr string, isPaste bool) InputValidationResult {
-	// Paste events ALWAYS pass through - terminal validated them
-	if isPaste {
-		return InputValidationResult{Valid: true, Reason: "paste event"}
-	}
-
+func ValidateTextareaInput(keyStr string) InputValidationResult {
 	// Empty string is invalid
 	if keyStr == "" {
 		return InputValidationResult{Valid: false, Reason: "empty input"}
@@ -50,6 +44,19 @@ func ValidateTextareaInput(keyStr string, isPaste bool) InputValidationResult {
 	// This includes: enter, backspace, tab, arrows, pgup/pgdown, delete, ctrl+*, etc.
 	if _, ok := KeyDefs[keyStr]; ok {
 		return InputValidationResult{Valid: true, Reason: "recognized key"}
+	}
+
+	// Handle modifier+key combinations (e.g., "ctrl+home", "shift+left", "ctrl+end")
+	// by stripping the modifier prefix and checking if the remainder is a valid key.
+	modifierPrefixes := []string{"ctrl+", "alt+", "shift+", "meta+", "hyper+", "super+"}
+	for _, prefix := range modifierPrefixes {
+		if strings.HasPrefix(keyStr, prefix) {
+			remainder := keyStr[len(prefix):]
+			// Check if the remainder (the key without modifier) is a valid named key
+			if _, ok := KeyDefs[remainder]; ok {
+				return InputValidationResult{Valid: true, Reason: "recognized modifier+key"}
+			}
+		}
 	}
 
 	// Single character validation
@@ -81,15 +88,7 @@ func ValidateTextareaInput(keyStr string, isPaste bool) InputValidationResult {
 //
 // Parameters:
 //   - keyStr: The key string representation (from tea.Key.String())
-//   - isPaste: Whether this is a bracketed paste event
-//
-// Paste events pass through for labels too.
-func ValidateLabelInput(keyStr string, isPaste bool) InputValidationResult {
-	// Paste events pass through
-	if isPaste {
-		return InputValidationResult{Valid: true, Reason: "paste event"}
-	}
-
+func ValidateLabelInput(keyStr string) InputValidationResult {
 	// Empty string is invalid
 	if keyStr == "" {
 		return InputValidationResult{Valid: false, Reason: "empty input"}

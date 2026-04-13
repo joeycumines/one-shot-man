@@ -150,7 +150,7 @@ func TestSessionManager_RegisterUnregister(t *testing.T) {
 	if err != nil {
 		t.Fatalf("activeID: %v", err)
 	}
-	if v.Export().(uint64) != uint64(id) {
+	if v.Export().(int64) != int64(id) {
 		t.Fatalf("activeID = %v, want %d", v.Export(), id)
 	}
 
@@ -165,7 +165,7 @@ func TestSessionManager_RegisterUnregister(t *testing.T) {
 	if err != nil {
 		t.Fatalf("activeID after unregister: %v", err)
 	}
-	if v.Export().(uint64) != 0 {
+	if v.Export().(int64) != 0 {
 		t.Fatalf("activeID after unregister = %v, want 0", v.Export())
 	}
 
@@ -220,7 +220,7 @@ func TestSessionManager_SessionsAndSnapshot(t *testing.T) {
 		snap !== null && typeof snap.gen === 'number' &&
 			typeof snap.plainText === 'string' &&
 			typeof snap.ansi === 'string' &&
-			typeof snap.fullScreen === 'boolean' &&
+			typeof snap.fullScreen === 'string' &&
 			typeof snap.rows === 'number' &&
 			typeof snap.cols === 'number' &&
 			typeof snap.timestamp === 'number';
@@ -285,7 +285,7 @@ func TestSessionManager_HasChild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("activeID: %v", err)
 	}
-	if v.Export().(uint64) != 0 {
+	if v.Export().(int64) != 0 {
 		t.Fatal("activeID should be 0 with no sessions")
 	}
 }

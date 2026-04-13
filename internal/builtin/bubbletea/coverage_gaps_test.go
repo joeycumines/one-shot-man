@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,7 +24,7 @@ type noopModel struct{}
 
 func (noopModel) Init() tea.Cmd                       { return nil }
 func (noopModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return noopModel{}, nil }
-func (noopModel) View() string                        { return "" }
+func (noopModel) View() tea.View                      { return tea.NewView("") }
 
 // ========================================================================
 // valueToCmd — all cmd type descriptors
@@ -41,21 +41,11 @@ func TestValueToCmd_AllCmdTypes(t *testing.T) {
 		extra     func(*goja.Object) // optional extra properties
 		expectNil bool
 	}{
+		// Commands that still exist in v2
 		{"quit", "quit", nil, false},
 		{"clearScreen", "clearScreen", nil, false},
-		{"hideCursor", "hideCursor", nil, false},
-		{"showCursor", "showCursor", nil, false},
-		{"enterAltScreen", "enterAltScreen", nil, false},
-		{"exitAltScreen", "exitAltScreen", nil, false},
-		{"enableBracketedPaste", "enableBracketedPaste", nil, false},
-		{"disableBracketedPaste", "disableBracketedPaste", nil, false},
-		{"enableReportFocus", "enableReportFocus", nil, false},
-		{"disableReportFocus", "disableReportFocus", nil, false},
-		{"windowSize", "windowSize", nil, false},
-		{"setWindowTitle with title", "setWindowTitle", func(o *goja.Object) {
-			_ = o.Set("title", "hello")
-		}, false},
-		{"setWindowTitle nil title", "setWindowTitle", nil, true},
+		{"requestWindowSize", "requestWindowSize", nil, false},
+		// Bracketed paste is always enabled (\x1b[?2004h sent in runProgram) — no JS API needed
 		{"unknown type", "nonexistent", nil, true},
 	}
 
@@ -360,14 +350,16 @@ func TestView_NilGuards(t *testing.T) {
 	t.Run("nil model", func(t *testing.T) {
 		t.Parallel()
 		var m *jsModel
-		assert.Contains(t, m.View(), "nil model/viewFn/runtime")
+		v := m.View()
+		assert.Contains(t, v.Content, "nil model/viewFn/runtime")
 	})
 
 	t.Run("nil viewFn", func(t *testing.T) {
 		t.Parallel()
 		vm := goja.New()
 		m := &jsModel{runtime: vm, viewFn: nil}
-		assert.Contains(t, m.View(), "nil model/viewFn/runtime")
+		v := m.View()
+		assert.Contains(t, v.Content, "nil model/viewFn/runtime")
 	})
 
 	t.Run("nil runtime", func(t *testing.T) {
@@ -378,7 +370,8 @@ func TestView_NilGuards(t *testing.T) {
 				return nil, nil
 			},
 		}
-		assert.Contains(t, m.View(), "nil model/viewFn/runtime")
+		v := m.View()
+		assert.Contains(t, v.Content, "nil model/viewFn/runtime")
 	})
 }
 
@@ -396,16 +389,16 @@ func TestView_InitError(t *testing.T) {
 	m.jsRunner = &SyncJSRunner{Runtime: vm}
 
 	output := m.View()
-	assert.Contains(t, output, "Init error")
-	assert.Contains(t, output, "something went wrong")
-	assert.NotContains(t, output, "should not appear")
+	assert.Contains(t, output.Content, "Init error")
+	assert.Contains(t, output.Content, "something went wrong")
+	assert.NotContains(t, output.Content, "should not appear")
 }
 
 // ========================================================================
 // viewDirect — nil/undefined return
 // ========================================================================
 
-func TestViewDirect_NilReturn(t *testing.T) {
+func TestViewDirectResult_NilReturn(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
 
@@ -417,11 +410,12 @@ func TestViewDirect_NilReturn(t *testing.T) {
 		state: vm.NewObject(),
 	}
 
-	output := model.viewDirect()
-	assert.Equal(t, "[BT] View returned nil/undefined", output)
+	_, err := model.viewDirectResult()
+	require.Error(t, err)
+	assert.Equal(t, "view returned nil/undefined", err.Error())
 }
 
-func TestViewDirect_UndefinedReturn(t *testing.T) {
+func TestViewDirectResult_UndefinedReturn(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
 
@@ -433,11 +427,12 @@ func TestViewDirect_UndefinedReturn(t *testing.T) {
 		state: vm.NewObject(),
 	}
 
-	output := model.viewDirect()
-	assert.Equal(t, "[BT] View returned nil/undefined", output)
+	_, err := model.viewDirectResult()
+	require.Error(t, err)
+	assert.Equal(t, "view returned nil/undefined", err.Error())
 }
 
-func TestViewDirect_NilState(t *testing.T) {
+func TestViewDirectResult_NilState(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
 
@@ -449,8 +444,9 @@ func TestViewDirect_NilState(t *testing.T) {
 		state: nil,
 	}
 
-	output := model.viewDirect()
-	assert.Equal(t, "[BT] View: state is nil/undefined", output)
+	_, err := model.viewDirectResult()
+	require.Error(t, err)
+	assert.Equal(t, "state is nil/undefined", err.Error())
 }
 
 // ========================================================================
@@ -463,7 +459,7 @@ func TestUpdate_NilGuards(t *testing.T) {
 	t.Run("nil model", func(t *testing.T) {
 		t.Parallel()
 		var m *jsModel
-		retModel, cmd := m.Update(tea.KeyMsg{})
+		retModel, cmd := m.Update(tea.KeyPressMsg{})
 		assert.Nil(t, retModel)
 		assert.Nil(t, cmd)
 	})
@@ -471,7 +467,7 @@ func TestUpdate_NilGuards(t *testing.T) {
 	t.Run("nil updateFn", func(t *testing.T) {
 		t.Parallel()
 		m := &jsModel{runtime: goja.New(), updateFn: nil}
-		retModel, cmd := m.Update(tea.KeyMsg{})
+		retModel, cmd := m.Update(tea.KeyPressMsg{})
 		assert.Equal(t, m, retModel)
 		assert.Nil(t, cmd)
 	})
@@ -512,37 +508,6 @@ func TestInit_NilGuards(t *testing.T) {
 }
 
 // ========================================================================
-// JSToMouseEvent — unknown button/action fallback
-// ========================================================================
-
-func TestJSToMouseEvent_UnknownInputs(t *testing.T) {
-	t.Parallel()
-
-	t.Run("unknown button → MouseButtonNone", func(t *testing.T) {
-		t.Parallel()
-		msg := JSToMouseEvent("totally_bogus_button", "press", 1, 2, false, false, false)
-		assert.Equal(t, tea.MouseButtonNone, tea.MouseEvent(msg).Button)
-		assert.Equal(t, tea.MouseActionPress, tea.MouseEvent(msg).Action)
-	})
-
-	t.Run("unknown action → MouseActionPress", func(t *testing.T) {
-		t.Parallel()
-		msg := JSToMouseEvent("left", "totally_bogus_action", 3, 4, true, false, true)
-		assert.Equal(t, tea.MouseButtonLeft, tea.MouseEvent(msg).Button)
-		assert.Equal(t, tea.MouseActionPress, tea.MouseEvent(msg).Action)
-		assert.True(t, tea.MouseEvent(msg).Alt)
-		assert.True(t, tea.MouseEvent(msg).Shift)
-	})
-
-	t.Run("both unknown", func(t *testing.T) {
-		t.Parallel()
-		msg := JSToMouseEvent("???", "???", 0, 0, false, false, false)
-		assert.Equal(t, tea.MouseButtonNone, tea.MouseEvent(msg).Button)
-		assert.Equal(t, tea.MouseActionPress, tea.MouseEvent(msg).Action)
-	})
-}
-
-// ========================================================================
 // ValidateLabelInput — unicode printable path
 // ========================================================================
 
@@ -567,7 +532,7 @@ func TestValidateLabelInput_UnicodePrintable(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			result := ValidateLabelInput(tc.input, false)
+			result := ValidateLabelInput(tc.input)
 			assert.Equal(t, tc.expected, result.Valid)
 			assert.Equal(t, tc.reason, result.Reason)
 		})
@@ -635,26 +600,6 @@ func TestRequire_TickNoArgs(t *testing.T) {
 	assert.False(t, goja.IsUndefined(errVal), "should have error property")
 }
 
-func TestRequire_SetWindowTitleNoArgs(t *testing.T) {
-	t.Parallel()
-	vm := goja.New()
-	manager := newTestManager(context.Background(), vm)
-	module := vm.NewObject()
-	_ = module.Set("exports", vm.NewObject())
-	requireFn := Require(context.Background(), manager)
-	requireFn(vm, module)
-	exports := module.Get("exports").ToObject(vm)
-
-	// setWindowTitle() with no args → error
-	fn, ok := goja.AssertFunction(exports.Get("setWindowTitle"))
-	require.True(t, ok)
-	result, err := fn(goja.Undefined())
-	require.NoError(t, err)
-	obj := result.ToObject(vm)
-	errVal := obj.Get("error")
-	assert.False(t, goja.IsUndefined(errVal), "should have error property")
-}
-
 func TestRequire_TickNegativeDuration(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
@@ -681,14 +626,14 @@ func TestRequire_TickNegativeDuration(t *testing.T) {
 func TestValidateTextareaInput_ControlCharNotNamedKey(t *testing.T) {
 	t.Parallel()
 	// Control character that's not in KeyDefs
-	result := ValidateTextareaInput("\x02", false) // ctrl+B raw
+	result := ValidateTextareaInput("\x02") // ctrl+B raw
 	assert.False(t, result.Valid)
 	assert.Equal(t, "control character", result.Reason)
 }
 
 func TestValidateTextareaInput_UnicodePrintable(t *testing.T) {
 	t.Parallel()
-	result := ValidateTextareaInput("日", false)
+	result := ValidateTextareaInput("日")
 	assert.True(t, result.Valid)
 	assert.Equal(t, "unicode printable", result.Reason)
 }
@@ -804,35 +749,8 @@ func TestRequire_NewModel_WithRenderThrottle(t *testing.T) {
 }
 
 // ========================================================================
-// Require exports — simple command functions
+// Require exports — batch and sequence
 // ========================================================================
-
-func TestRequire_SimpleCommandExports(t *testing.T) {
-	t.Parallel()
-	vm, exports := requireExports(t)
-
-	// Test each simple command export returns an object with _cmdType
-	cmds := []string{
-		"quit", "clearScreen", "hideCursor", "showCursor",
-		"enterAltScreen", "exitAltScreen",
-		"enableBracketedPaste", "disableBracketedPaste",
-		"enableReportFocus", "disableReportFocus",
-		"windowSize",
-	}
-
-	for _, name := range cmds {
-		t.Run(name, func(t *testing.T) {
-			// No t.Parallel() — shared vm
-			fn, ok := goja.AssertFunction(exports.Get(name))
-			require.True(t, ok, "export %q not found", name)
-			result, err := fn(goja.Undefined())
-			require.NoError(t, err)
-			obj := result.ToObject(vm)
-			cmdType := obj.Get("_cmdType")
-			assert.Equal(t, name, cmdType.String())
-		})
-	}
-}
 
 func TestRequire_BatchAndSequence(t *testing.T) {
 	t.Parallel()
@@ -873,18 +791,6 @@ func TestRequire_TickWithId(t *testing.T) {
 	assert.Equal(t, "timer-1", obj.Get("id").String())
 }
 
-func TestRequire_SetWindowTitleWithArg(t *testing.T) {
-	t.Parallel()
-	vm, exports := requireExports(t)
-	fn, ok := goja.AssertFunction(exports.Get("setWindowTitle"))
-	require.True(t, ok)
-	result, err := fn(goja.Undefined(), vm.ToValue("My Title"))
-	require.NoError(t, err)
-	obj := result.ToObject(vm)
-	assert.Equal(t, "setWindowTitle", obj.Get("_cmdType").String())
-	assert.Equal(t, "My Title", obj.Get("title").String())
-}
-
 func TestRequire_IsTTY(t *testing.T) {
 	t.Parallel()
 	_, exports := requireExports(t)
@@ -922,14 +828,6 @@ func TestRequire_IsValidTextareaInput(t *testing.T) {
 		assert.False(t, obj.Get("valid").ToBoolean())
 	})
 
-	t.Run("with isPaste", func(t *testing.T) {
-		fn, ok := goja.AssertFunction(exports.Get("isValidTextareaInput"))
-		require.True(t, ok)
-		result, err := fn(goja.Undefined(), vm.ToValue("a"), vm.ToValue(true))
-		require.NoError(t, err)
-		obj := result.ToObject(vm)
-		assert.True(t, obj.Get("valid").ToBoolean())
-	})
 }
 
 func TestRequire_IsValidLabelInput(t *testing.T) {
@@ -985,15 +883,6 @@ func TestRequire_MouseButtonsExport(t *testing.T) {
 	mouseButtons := exports.Get("mouseButtons").ToObject(vm)
 	assert.NotNil(t, mouseButtons)
 	assert.True(t, len(mouseButtons.Keys()) > 0, "mouseButtons should not be empty")
-}
-
-func TestRequire_MouseActionsExport(t *testing.T) {
-	t.Parallel()
-	vm, exports := requireExports(t)
-
-	mouseActions := exports.Get("mouseActions").ToObject(vm)
-	assert.NotNil(t, mouseActions)
-	assert.True(t, len(mouseActions.Keys()) > 0, "mouseActions should not be empty")
 }
 
 // ========================================================================
@@ -1057,7 +946,7 @@ func TestUpdate_RunJSSyncError(t *testing.T) {
 		state:    vm.NewObject(),
 		jsRunner: &errorJSRunner{},
 	}
-	retModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	retModel, cmd := model.Update(tea.KeyPressMsg{Text: "a"})
 	assert.Equal(t, model, retModel)
 	assert.Nil(t, cmd)
 }
@@ -1074,14 +963,14 @@ func TestView_RunJSSyncError(t *testing.T) {
 		jsRunner: &errorJSRunner{},
 	}
 	output := model.View()
-	assert.Contains(t, output, "View error (event loop)")
+	assert.Contains(t, output.Content, "View error (event loop)")
 }
 
 // ========================================================================
-// viewDirect — error and empty string paths
+// viewDirectResult — error and empty string paths
 // ========================================================================
 
-func TestViewDirect_Error(t *testing.T) {
+func TestViewDirectResult_Error(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
 	model := &jsModel{
@@ -1091,11 +980,12 @@ func TestViewDirect_Error(t *testing.T) {
 		},
 		state: vm.NewObject(),
 	}
-	output := model.viewDirect()
-	assert.Contains(t, output, "View error: view failed")
+	_, err := model.viewDirectResult()
+	require.Error(t, err)
+	assert.Equal(t, "view failed", err.Error())
 }
 
-func TestViewDirect_EmptyString(t *testing.T) {
+func TestViewDirectResult_EmptyString(t *testing.T) {
 	t.Parallel()
 	vm := goja.New()
 	model := &jsModel{
@@ -1105,8 +995,10 @@ func TestViewDirect_EmptyString(t *testing.T) {
 		},
 		state: vm.NewObject(),
 	}
-	output := model.viewDirect()
-	assert.Equal(t, "[BT] View returned empty string", output)
+	// viewDirectResult allows empty strings — View() handles them
+	val, err := model.viewDirectResult()
+	require.NoError(t, err)
+	assert.Equal(t, "", val.String())
 }
 
 // ========================================================================
@@ -1140,7 +1032,7 @@ func TestView_ThrottleSchedulesTimer(t *testing.T) {
 	// Second render should schedule timer
 	model.throttleTimerSet = false
 	output2 := model.View()
-	assert.Equal(t, "view", output2, "should return cached view")
+	assert.Equal(t, "view", output2.Content, "should return cached view")
 	assert.True(t, model.throttleTimerSet, "should have scheduled timer")
 
 	// Cancel to prevent goroutine leak
@@ -1191,7 +1083,7 @@ func TestUpdate_NilUpdateFnWithRuntime(t *testing.T) {
 		runtime:  vm,
 		updateFn: nil,
 	}
-	retModel, cmd := model.Update(tea.KeyMsg{})
+	retModel, cmd := model.Update(tea.KeyPressMsg{})
 	assert.Equal(t, model, retModel)
 	assert.Nil(t, cmd)
 }
@@ -1204,7 +1096,7 @@ func TestUpdate_NilRuntime(t *testing.T) {
 			return nil, nil
 		},
 	}
-	retModel, cmd := model.Update(tea.KeyMsg{})
+	retModel, cmd := model.Update(tea.KeyPressMsg{})
 	assert.Equal(t, model, retModel)
 	assert.Nil(t, cmd)
 }

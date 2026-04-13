@@ -4,10 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/dop251/goja"
 	termuisb "github.com/joeycumines/one-shot-man/internal/termui/scrollbar"
-	"github.com/muesli/termenv"
 	"github.com/stretchr/testify/require"
 )
 
@@ -44,9 +42,6 @@ func TestRequire_ExportsNew(t *testing.T) {
 
 func TestJS_API_Surface(t *testing.T) {
 	rt := setupRuntime(t)
-	orig := lipgloss.ColorProfile()
-	t.Cleanup(func() { lipgloss.SetColorProfile(orig) })
-	lipgloss.SetColorProfile(termenv.TrueColor)
 
 	script := `
 		const sb = require('osm:termui/scrollbar').new(8);
@@ -67,9 +62,6 @@ func TestJS_API_Surface(t *testing.T) {
 
 func TestCreateScrollbarObject_GoInterop(t *testing.T) {
 	rt := goja.New()
-	orig := lipgloss.ColorProfile()
-	t.Cleanup(func() { lipgloss.SetColorProfile(orig) })
-	lipgloss.SetColorProfile(termenv.TrueColor)
 
 	m := termuisb.New()
 	objVal := createScrollbarObject(rt, &m)
@@ -169,9 +161,6 @@ func TestNoArgsReturnUndefined_AllSetters(t *testing.T) {
 // TestStyleSetters_WithArgs covers the style setters that were untested with args.
 func TestStyleSetters_WithArgs(t *testing.T) {
 	rt := goja.New()
-	orig := lipgloss.ColorProfile()
-	t.Cleanup(func() { lipgloss.SetColorProfile(orig) })
-	lipgloss.SetColorProfile(termenv.TrueColor)
 
 	m := termuisb.New()
 	obj := createScrollbarObject(rt, &m).ToObject(rt)

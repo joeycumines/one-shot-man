@@ -349,10 +349,32 @@ view: function(model) {
         altScreen: true,
         mouseMode: 'allMotion',  // 'cellMotion', 'none'
         reportFocus: true,
-        windowTitle: 'My App'
+        windowTitle: 'My App',
+        cursor: { x: 10, y: 5, shape: 'bar', blink: true, color: '#ff0000' },
+        foregroundColor: '#ffffff',    // hex or ANSI 256 index ("196")
+        backgroundColor: '#000000',
+        keyboardEnhancements: { reportEventTypes: true }, // or just true
+        disableBracketedPasteMode: true,
+        progressBar: { state: 'default', value: 42 }
     };
 }
 ```
+
+**Declarative view fields** (all optional, only effective when returning an object from `view()`):
+
+| Field | Type | Description |
+|---|---|---|
+| `content` | string | Rendered content string (required). |
+| `altScreen` | bool | Enable alternate screen buffer (full-window mode). |
+| `mouseMode` | string | `"allMotion"`, `"cellMotion"`, or `"none"`. |
+| `reportFocus` | bool | Enable Focus/Blur events. |
+| `windowTitle` | string | Terminal window title. |
+| `cursor` | object | Show cursor: `{x, y, shape?, blink?, color?}`. Shape: `"block"` (default), `"underline"`, `"bar"`. Blink defaults to `true`. Color: hex or ANSI 256. |
+| `foregroundColor` | string | Terminal foreground color (hex `"#rrggbb"` or ANSI 256 index `"196"`). |
+| `backgroundColor` | string | Terminal background color (same format). |
+| `keyboardEnhancements` | object\|bool | `{reportEventTypes: true}` or just `true`. Enables key repeat/release events. |
+| `disableBracketedPasteMode` | bool | Disable bracketed paste mode. |
+| `progressBar` | object | `{state, value}`. State: `"default"`, `"error"`, `"indeterminate"`, `"warning"`, `"none"`. Value: 0–100. |
 
 **Commands** (returned from update as second element of `[model, cmd]`):
 - `tea.quit()`, `tea.clearScreen()`

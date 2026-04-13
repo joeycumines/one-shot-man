@@ -103,19 +103,22 @@
       "task": "STUB: tea.View Cursor field support",
       "description": "Expose cursor position/shape/color/blink via view() return object. Currently view() returns {content, altScreen, mouseMode}. Add cursor field matching bubbletea v2's tea.View cursor capabilities. Files: internal/builtin/bubbletea/bubbletea.go (view handling), internal/command/super_document_script.js (view() return).",
       "acceptance": "JS controls cursor via view(). Integration test verifies cursor properties are set and applied.",
-      "status": "Not Started"
+      "status": "Done",
+      "completedNote": "parseCursorProp() parses {x, y, shape, blink, color} from JS view object. Shape: block/underline/bar (case-insensitive). Blink defaults to true (tea.NewCursor default). Color via lipgloss.Color (hex/ANSI256). Cached for throttled renders. 14 subtests in TestParseCursorProp."
     },
     {
       "task": "STUB: tea.View ForegroundColor/BackgroundColor",
       "description": "Expose terminal-wide foreground/background colors via view() return. Files: internal/builtin/bubbletea/bubbletea.go.",
       "acceptance": "JS sets terminal colors via view() return. Integration test verifies color application.",
-      "status": "Not Started"
+      "status": "Done",
+      "completedNote": "foregroundColor and backgroundColor parsed as string props, converted via lipgloss.Color() supporting hex (#rrggbb, #rgb) and ANSI 256 index strings. Cached for throttled renders. 5 subtests in TestParseColorValue."
     },
     {
       "task": "STUB: tea.View KeyboardEnhancements",
       "description": "Expose Kitty keyboard protocol via view() return. Files: internal/builtin/bubbletea/bubbletea.go.",
       "acceptance": "JS requests keyboard enhancements. Integration test verifies protocol negotiation.",
-      "status": "Not Started"
+      "status": "Done",
+      "completedNote": "parseKeyboardEnhancementsProp() accepts boolean shorthand (true → {reportEventTypes:true}) or object {reportEventTypes: bool}. Cached for throttled renders. 9 subtests in TestParseKeyboardEnhancementsProp."
     },
     {
       "task": "STUB: tea.View OnMouse intercept",
@@ -127,13 +130,15 @@
       "task": "STUB: tea.View ProgressBar",
       "description": "Expose native terminal progress bars via view() return. Files: internal/builtin/bubbletea/bubbletea.go.",
       "acceptance": "JS displays progress bars. Integration test verifies rendering.",
-      "status": "Not Started"
+      "status": "Done",
+      "completedNote": "parseProgressBarProp() parses {state, value} with state: default/error/indeterminate/warning/none (case-insensitive). Value defaults to 0. Uses tea.NewProgressBar(). Cached for throttled renders. 13 subtests in TestParseProgressBarProp."
     },
     {
       "task": "STUB: tea.View DisableBracketedPasteMode",
       "description": "Expose bracketed paste control via view() return. Files: internal/builtin/bubbletea/bubbletea.go.",
       "acceptance": "JS controls bracketed paste. Test verifies mode toggling.",
-      "status": "Not Started"
+      "status": "Done",
+      "completedNote": "Simple boolean prop via existing getJSBoolProp(). Wired into v.DisableBracketedPasteMode on tea.View. Cached for throttled renders. No separate test needed (existing boolean parsing is thoroughly tested)."
     },
     {
       "task": "STUB: Performance benchmarks",

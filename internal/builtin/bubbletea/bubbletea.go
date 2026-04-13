@@ -38,7 +38,13 @@
 //				altScreen: true,
 //				mouseMode: 'allMotion', // 'cellMotion' or 'none'
 //				reportFocus: true,
-//				windowTitle: 'My App'
+//				windowTitle: 'My App',
+//				cursor: { x: 10, y: 5, shape: 'bar', blink: true, color: '#ff0000' },
+//				foregroundColor: '#ffffff',
+//				backgroundColor: '#000000',
+//				keyboardEnhancements: { reportEventTypes: true }, // or just true
+//				disableBracketedPasteMode: true,
+//				progressBar: { state: 'default', value: 42 }
 //			};
 //		}
 //	});
@@ -94,9 +100,23 @@
 //	String return:        view() returns 'content'
 //	Object return:        view() returns {content:'...', altScreen:true, ...}
 //
-// Terminal feature fields (altScreen, mouseMode, reportFocus, windowTitle) are
-// ONLY effective when returned from view() as object properties. Passing them
-// to tea.run() as options is silently ignored in v2.
+// All declarative view fields:
+//
+//	content        string   - rendered content string (required)
+//	altScreen      bool     - enable alternate screen buffer
+//	mouseMode      string   - "allMotion", "cellMotion", or "none"
+//	reportFocus    bool     - enable focus/blur events
+//	windowTitle    string   - terminal window title
+//	cursor         object   - {x, y, shape, blink, color} — show cursor at position
+//	foregroundColor string  - terminal foreground color (hex or ANSI 256)
+//	backgroundColor string  - terminal background color (hex or ANSI 256)
+//	keyboardEnhancements object|bool - {reportEventTypes: true} or just true
+//	disableBracketedPasteMode bool  - disable bracketed paste mode
+//	progressBar    object   - {state: "default"|"error"|"indeterminate"|"warning"|"none", value: 0-100}
+//
+// Terminal feature fields are ONLY effective when returned from view() as
+// object properties. Passing them to tea.run() as options is silently
+// ignored in v2.
 //
 // # Error Handling
 //
@@ -130,6 +150,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image/color"
 	"io"
 	"log/slog"
 	"maps"
@@ -137,12 +158,14 @@ import (
 	"os/signal"
 	"runtime/debug"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	lipgloss "charm.land/lipgloss/v2"
 	"github.com/dop251/goja"
 	"golang.org/x/term"
 )
@@ -538,10 +561,16 @@ type jsModel struct {
 	// Cached declarative view fields for throttled renders.
 	// When throttling, we must preserve the parsed tea.View fields
 	// so that cursedRenderer sees consistent mode fields on each render.
-	cachedViewAltScreen   bool
-	cachedViewMouseMode   tea.MouseMode
-	cachedViewReportFocus bool
-	cachedViewWindowTitle string
+	cachedViewAltScreen             bool
+	cachedViewMouseMode             tea.MouseMode
+	cachedViewReportFocus           bool
+	cachedViewWindowTitle           string
+	cachedViewCursor                *tea.Cursor
+	cachedViewForegroundColor       string
+	cachedViewBackgroundColor       string
+	cachedViewKeyboardEnhancements  tea.KeyboardEnhancements
+	cachedViewDisableBracketedPaste bool
+	cachedViewProgressBar           *tea.ProgressBar
 }
 
 // registerCommand registers a command ID as valid.
@@ -787,6 +816,12 @@ func (m *jsModel) View() tea.View {
 			mouseMode := m.cachedViewMouseMode
 			reportFocus := m.cachedViewReportFocus
 			windowTitle := m.cachedViewWindowTitle
+			cursor := m.cachedViewCursor
+			fgColor := m.cachedViewForegroundColor
+			bgColor := m.cachedViewBackgroundColor
+			kbEnhance := m.cachedViewKeyboardEnhancements
+			disablePaste := m.cachedViewDisableBracketedPaste
+			progressBar := m.cachedViewProgressBar
 			m.throttleMu.Unlock()
 			// Wire mode fields into the cached view so cursedRenderer.viewEquals
 			// sees a change from the previous view and flushes output.
@@ -798,6 +833,16 @@ func (m *jsModel) View() tea.View {
 			v.MouseMode = mouseMode
 			v.ReportFocus = reportFocus
 			v.WindowTitle = windowTitle
+			v.Cursor = cursor
+			v.KeyboardEnhancements = kbEnhance
+			v.DisableBracketedPasteMode = disablePaste
+			v.ProgressBar = progressBar
+			if fgColor != "" {
+				v.ForegroundColor = parseColorValue(fgColor)
+			}
+			if bgColor != "" {
+				v.BackgroundColor = parseColorValue(bgColor)
+			}
 			return v
 		}
 
@@ -818,6 +863,12 @@ func (m *jsModel) View() tea.View {
 	var viewMouseMode tea.MouseMode
 	var viewReportFocus bool
 	var viewWindowTitle string
+	var viewCursor *tea.Cursor
+	var viewForegroundColor string
+	var viewBackgroundColor string
+	var viewKeyboardEnhancements tea.KeyboardEnhancements
+	var viewDisableBracketedPaste bool
+	var viewProgressBar *tea.ProgressBar
 	var hasViewFields bool // true if JS returned a declarative view object
 
 	err := m.runJSSync(func(vm *goja.Runtime) error {
@@ -830,19 +881,23 @@ func (m *jsModel) View() tea.View {
 		// If result is an object (not a primitive string), parse declarative fields.
 		// This is the primary v2 mechanism for controlling terminal features.
 		if result != nil && !goja.IsUndefined(result) && !goja.IsNull(result) {
-			if obj := result.ToObject(vm); obj != nil {
-				if obj != nil && obj.ClassName() == "Object" {
-					hasViewFields = true
-					viewStr = getJSStringProp(obj, "content")
-					if viewStr == "" {
-						viewStr = result.String() // fallback
-					}
-					viewAltScreen = getJSBoolProp(obj, "altScreen")
-					viewMouseMode = parseMouseModeProp(obj, "mouseMode")
-					viewReportFocus = getJSBoolProp(obj, "reportFocus")
-					viewWindowTitle = getJSStringProp(obj, "windowTitle")
-					return nil
+			if obj := result.ToObject(vm); obj != nil && obj.ClassName() == "Object" {
+				hasViewFields = true
+				viewStr = getJSStringProp(obj, "content")
+				if viewStr == "" {
+					viewStr = result.String() // fallback
 				}
+				viewAltScreen = getJSBoolProp(obj, "altScreen")
+				viewMouseMode = parseMouseModeProp(obj, "mouseMode")
+				viewReportFocus = getJSBoolProp(obj, "reportFocus")
+				viewWindowTitle = getJSStringProp(obj, "windowTitle")
+				viewCursor = parseCursorProp(vm, obj)
+				viewForegroundColor = getJSStringProp(obj, "foregroundColor")
+				viewBackgroundColor = getJSStringProp(obj, "backgroundColor")
+				viewKeyboardEnhancements = parseKeyboardEnhancementsProp(vm, obj)
+				viewDisableBracketedPaste = getJSBoolProp(obj, "disableBracketedPasteMode")
+				viewProgressBar = parseProgressBarProp(vm, obj)
+				return nil
 			}
 		}
 
@@ -867,6 +922,12 @@ func (m *jsModel) View() tea.View {
 		m.cachedViewMouseMode = viewMouseMode
 		m.cachedViewReportFocus = viewReportFocus
 		m.cachedViewWindowTitle = viewWindowTitle
+		m.cachedViewCursor = viewCursor
+		m.cachedViewForegroundColor = viewForegroundColor
+		m.cachedViewBackgroundColor = viewBackgroundColor
+		m.cachedViewKeyboardEnhancements = viewKeyboardEnhancements
+		m.cachedViewDisableBracketedPaste = viewDisableBracketedPaste
+		m.cachedViewProgressBar = viewProgressBar
 		m.throttleMu.Unlock()
 	}
 
@@ -877,6 +938,16 @@ func (m *jsModel) View() tea.View {
 		v.MouseMode = viewMouseMode
 		v.ReportFocus = viewReportFocus
 		v.WindowTitle = viewWindowTitle
+		v.Cursor = viewCursor
+		v.KeyboardEnhancements = viewKeyboardEnhancements
+		v.DisableBracketedPasteMode = viewDisableBracketedPaste
+		v.ProgressBar = viewProgressBar
+		if viewForegroundColor != "" {
+			v.ForegroundColor = parseColorValue(viewForegroundColor)
+		}
+		if viewBackgroundColor != "" {
+			v.BackgroundColor = parseColorValue(viewBackgroundColor)
+		}
 	}
 	return v
 }
@@ -1194,6 +1265,130 @@ func parseMouseModeProp(obj *goja.Object, name string) tea.MouseMode {
 	default:
 		return tea.MouseModeNone
 	}
+}
+
+// parseCursorProp parses the cursor property from a JS view object.
+// Accepts: {x: int, y: int, shape: "block"|"underline"|"bar", blink: bool, color: string}
+// Returns nil if the property is absent, null, or undefined.
+func parseCursorProp(vm *goja.Runtime, obj *goja.Object) *tea.Cursor {
+	if obj == nil {
+		return nil
+	}
+	val := obj.Get("cursor")
+	if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
+		return nil
+	}
+	cursorObj := val.ToObject(vm)
+	if cursorObj == nil {
+		return nil
+	}
+
+	x := int(cursorObj.Get("x").ToInteger())
+	y := int(cursorObj.Get("y").ToInteger())
+	cursor := tea.NewCursor(x, y)
+
+	// Parse shape: "block" (default), "underline", "bar"
+	if shapeVal := cursorObj.Get("shape"); shapeVal != nil && !goja.IsUndefined(shapeVal) && !goja.IsNull(shapeVal) {
+		switch strings.ToLower(shapeVal.String()) {
+		case "underline":
+			cursor.Shape = tea.CursorUnderline
+		case "bar":
+			cursor.Shape = tea.CursorBar
+		default:
+			cursor.Shape = tea.CursorBlock
+		}
+	}
+
+	// Parse blink
+	if blinkVal := cursorObj.Get("blink"); blinkVal != nil && !goja.IsUndefined(blinkVal) && !goja.IsNull(blinkVal) {
+		cursor.Blink = blinkVal.ToBoolean()
+	}
+
+	// Parse color
+	if colorVal := cursorObj.Get("color"); colorVal != nil && !goja.IsUndefined(colorVal) && !goja.IsNull(colorVal) {
+		colorStr := colorVal.String()
+		if colorStr != "" {
+			cursor.Color = parseColorValue(colorStr)
+		}
+	}
+
+	return cursor
+}
+
+// parseColorValue parses a color string into a color.Color.
+// Accepts hex colors ("#ff0000", "#f00", "#ff000080") and ANSI 256 color
+// indices ("1", "21", "196") via lipgloss.Color.
+func parseColorValue(s string) color.Color {
+	if s == "" {
+		return nil
+	}
+	return lipgloss.Color(s)
+}
+
+// parseKeyboardEnhancementsProp parses the keyboardEnhancements property.
+// Accepts: true (shorthand for {reportEventTypes: true}) or {reportEventTypes: bool}
+func parseKeyboardEnhancementsProp(vm *goja.Runtime, obj *goja.Object) tea.KeyboardEnhancements {
+	if obj == nil {
+		return tea.KeyboardEnhancements{}
+	}
+	val := obj.Get("keyboardEnhancements")
+	if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
+		return tea.KeyboardEnhancements{}
+	}
+
+	// Accept boolean true as shorthand for {reportEventTypes: true}
+	if b, ok := val.Export().(bool); ok {
+		return tea.KeyboardEnhancements{ReportEventTypes: b}
+	}
+
+	keObj := val.ToObject(vm)
+	if keObj == nil {
+		return tea.KeyboardEnhancements{}
+	}
+	return tea.KeyboardEnhancements{
+		ReportEventTypes: getJSBoolProp(keObj, "reportEventTypes"),
+	}
+}
+
+// parseProgressBarProp parses the progressBar property from a JS view object.
+// Accepts: {state: "default"|"error"|"indeterminate"|"warning"|"none", value: int}
+// Returns nil if the property is absent, null, or undefined.
+func parseProgressBarProp(vm *goja.Runtime, obj *goja.Object) *tea.ProgressBar {
+	if obj == nil {
+		return nil
+	}
+	val := obj.Get("progressBar")
+	if val == nil || goja.IsUndefined(val) || goja.IsNull(val) {
+		return nil
+	}
+	pbObj := val.ToObject(vm)
+	if pbObj == nil {
+		return nil
+	}
+
+	stateStr := getJSStringProp(pbObj, "state")
+	var state tea.ProgressBarState
+	switch strings.ToLower(stateStr) {
+	case "default":
+		state = tea.ProgressBarDefault
+	case "error":
+		state = tea.ProgressBarError
+	case "indeterminate":
+		state = tea.ProgressBarIndeterminate
+	case "warning":
+		state = tea.ProgressBarWarning
+	case "none", "":
+		state = tea.ProgressBarNone
+	default:
+		state = tea.ProgressBarNone
+	}
+
+	value := 0
+	if valProp := pbObj.Get("value"); valProp != nil && !goja.IsUndefined(valProp) && !goja.IsNull(valProp) {
+		value = int(valProp.ToInteger())
+	}
+
+	return tea.NewProgressBar(state, value)
 }
 
 // valueToCmd converts a JavaScript value to a tea.Cmd.

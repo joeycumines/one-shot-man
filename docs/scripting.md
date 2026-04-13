@@ -213,7 +213,7 @@ All modules use the `osm:` prefix and are loaded via `require("osm:<name>")`.
 
 | Module | Description | Key exports |
 |--------|-------------|-------------|
-| `osm:bubbletea` | BubbleTea v2 TUI framework bindings | `newModel(config) → Model`, `run(model, opts?)`; `isTTY() → bool`; Commands: `quit()`, `clearScreen()`, `batch(…cmds)`, `sequence(…cmds)`, `tick(ms, id?)`, `requestWindowSize()`; Metadata: `keys`, `keysByName`, `mouseButtons`; Validation: `isValidTextareaInput(key)`, `isValidLabelInput(key)` |
+| `osm:bubbletea` | BubbleTea TUI framework bindings | `newModel(config) → Model`, `run(model, opts?)`, `isTTY() → bool`; Commands: `quit()`, `clearScreen()`, `batch(…cmds)`, `sequence(…cmds)`, `tick(ms, id?)`, `setWindowTitle(s)`, `hideCursor()`, `showCursor()`, `enterAltScreen()`, `exitAltScreen()`, `enableBracketedPaste()`, `disableBracketedPaste()`, `enableReportFocus()`, `disableReportFocus()`, `windowSize()`; Metadata: `keys`, `keysByName`, `mouseButtons`, `mouseActions`; Validation: `isValidTextareaInput(key, paste?)`, `isValidLabelInput(key, paste?)` |
 | `osm:lipgloss` | Lipgloss terminal styling | `newStyle() → Style` (chainable, immutable); Style methods: `.bold()`, `.italic()`, `.foreground(color)`, `.background(color)`, `.padding(…)`, `.margin(…)`, `.width(n)`, `.height(n)`, `.border(type)`, `.align(pos)`, `.render(…strs) → string`, `.copy()`, `.inherit(other)`; Layout: `joinHorizontal(pos, …strs)`, `joinVertical(pos, …strs)`, `place(w, h, hPos, vPos, str)`, `width(str)`, `height(str)`, `size(str)`; Borders: `normalBorder()`, `roundedBorder()`, `doubleBorder()`, etc.; Constants: `Left`, `Center`, `Right`, `Top`, `Bottom` |
 | `osm:bubblezone` | Zone-based mouse hit-testing | `mark(id, content) → string`, `scan(renderedView) → string`, `inBounds(id, mouseMsg) → bool`, `get(id) → {startX, startY, endX, endY, width, height}`, `newPrefix() → string`, `close()` |
 | `osm:bubbles/viewport` | Scrollable viewport component | `new(width?, height?) → Viewport`; Viewport: `.setContent(s)`, `.setWidth(n)`, `.setHeight(n)`, `.scrollDown(n)`, `.scrollUp(n)`, `.gotoTop()`, `.gotoBottom()`, `.pageUp()`, `.pageDown()`, `.setYOffset(n)`, `.yOffset()`, `.scrollPercent()`, `.atTop()`, `.atBottom()`, `.totalLineCount()`, `.visibleLineCount()`, `.setStyle(lipglossStyle)`, `.update(msg)`, `.view()` |
@@ -329,86 +329,33 @@ See: [planning-and-acting-using-behavior-trees.md](reference/planning-and-acting
 
 ### osm:bubbletea (TUI Framework)
 
-Terminal UI framework based on [Charm BubbleTea v2](https://github.com/charmbracelet/bubbletea).
+Terminal UI framework based on [Charm BubbleTea](https://github.com/charmbracelet/bubbletea).
 
 **Program lifecycle**:
 - `tea.newModel(config)` — Create an Elm-architecture model (`config`: `{init, update, view}` functions; optional `renderThrottle` config)
-- `tea.run(model, opts?)` — Run TUI program (returns immediately, runs asynchronously). Options: `{toggleKey, onToggle}` for termmux passthrough integration. Terminal features (`altScreen`, `mouseMode`, `reportFocus`, `windowTitle`) are NO-OP as run() options in v2 — set them via the declarative `view()` return object instead.
+- `tea.run(model, opts?)` — Run TUI program (blocks until exit); opts: `{altScreen, mouse, mouseCellMotion, bracketedPaste, reportFocus}`
 - `tea.isTTY() → bool` — Check if terminal is a TTY
-
-**View return contract**: The `view()` function can return a string or a declarative object:
-
-```javascript
-// String return — basic content only
-view: function(model) { return 'Hello, world!'; }
-
-// Object return — declarative terminal control
-view: function(model) {
-    return {
-        content: 'Hello, world!',
-        altScreen: true,
-        mouseMode: 'allMotion',  // 'cellMotion', 'none'
-        reportFocus: true,
-        windowTitle: 'My App',
-        cursor: { x: 10, y: 5, shape: 'bar', blink: true, color: '#ff0000' },
-        foregroundColor: '#ffffff',    // hex or ANSI 256 index ("196")
-        backgroundColor: '#000000',
-        keyboardEnhancements: { reportEventTypes: true }, // or just true
-        disableBracketedPasteMode: true,
-        progressBar: { state: 'default', value: 42 }
-    };
-}
-```
-
-**Declarative view fields** (all optional, only effective when returning an object from `view()`):
-
-| Field | Type | Description |
-|---|---|---|
-| `content` | string | Rendered content string (required). |
-| `altScreen` | bool | Enable alternate screen buffer (full-window mode). |
-| `mouseMode` | string | `"allMotion"`, `"cellMotion"`, or `"none"`. |
-| `reportFocus` | bool | Enable Focus/Blur events. |
-| `windowTitle` | string | Terminal window title. |
-| `cursor` | object | Show cursor: `{x, y, shape?, blink?, color?}`. Shape: `"block"` (default), `"underline"`, `"bar"`. Blink defaults to `true`. Color: hex or ANSI 256. |
-| `foregroundColor` | string | Terminal foreground color (hex `"#rrggbb"` or ANSI 256 index `"196"`). |
-| `backgroundColor` | string | Terminal background color (same format). |
-| `keyboardEnhancements` | object\|bool | `{reportEventTypes: true}` or just `true`. Enables key repeat/release events. |
-| `disableBracketedPasteMode` | bool | Disable bracketed paste mode. |
-| `progressBar` | object | `{state, value}`. State: `"default"`, `"error"`, `"indeterminate"`, `"warning"`, `"none"`. Value: 0–100. |
 
 **Commands** (returned from update as second element of `[model, cmd]`):
 - `tea.quit()`, `tea.clearScreen()`
 - `tea.batch(...cmds)`, `tea.sequence(...cmds)` — Combine commands
 - `tea.tick(ms, id?)` — Timer command (delivers `{type: 'Tick', id, time}` message)
-- `tea.requestWindowSize()` — Query current terminal size (delivers `{type: 'WindowSize', width, height}`)
+- `tea.setWindowTitle(s)`, `tea.hideCursor()`, `tea.showCursor()`
+- `tea.enterAltScreen()`, `tea.exitAltScreen()`
+- `tea.enableBracketedPaste()`, `tea.disableBracketedPaste()`
+- `tea.enableReportFocus()`, `tea.disableReportFocus()`
+- `tea.windowSize()` — Query current terminal size
 
 **Message types** (received in `update(msg, model)`):
-- `Key` — `{type: 'Key', key, text, mod, code, shiftedCode, baseCode, isRepeat}`
-  - `key` — Logical key name (`"a"`, `"enter"`, `"up"`, `"ctrl+c"`). Always present.
-  - `text` — Printable text the key produces (`"a"`, `"A"`, `" "`). Empty string for special/control keys.
-  - `mod` — Modifier array (e.g., `["shift"]`, `["ctrl", "alt"]`). Empty array when no modifiers.
-  - `code`, `shiftedCode`, `baseCode` — Rune codes for the key. `code` is the unmodified key, `shiftedCode` includes shift, `baseCode` is the physical key.
-  - `isRepeat` — Boolean, true when the key is auto-repeating from being held down.
-  - **Key resolution pattern**: For printable character matching, use `text`; for named key matching (navigation, function keys), use `key`:
-    ```javascript
-    // Printable-ASCII guard: resolve to text for typeable chars, key for specials
-    const k = (msg.text && msg.text.length === 1 &&
-               msg.text.charCodeAt(0) >= 0x20 &&
-               msg.text.charCodeAt(0) <= 0x7E) ? msg.text : msg.key;
-    ```
-- `MouseClick` — `{type: 'MouseClick', x, y, button, mod}` (left/right/middle click)
-- `MouseRelease` — `{type: 'MouseRelease', x, y, button, mod}`
-- `MouseMotion` — `{type: 'MouseMotion', x, y, mod}` (only when mouse mode is enabled)
-- `MouseWheel` — `{type: 'MouseWheel', x, y, button, mod}`
-- `Paste` — `{type: 'Paste', content}` (bracketed paste content, separate from Key events)
-- `PasteStart` / `PasteEnd` — paste sequence markers
-- `WindowSize` — `{type: 'WindowSize', width, height}`
-- `Focus` / `Blur` — `{type: 'Focus'}` / `{type: 'Blur'}` (requires `reportFocus` option)
-- `Tick` — `{type: 'Tick', id, time}` (from `tea.tick()` command)
+- `Key` — `{type, key, runes, alt, ctrl, paste}`
+- `Mouse` — `{type, x, y, button, action, alt, ctrl, shift}`
+- `WindowSize` — `{type, width, height}`
+- `Focus` / `Blur` — `{type}` (requires `reportFocus` option)
+- `Tick` — `{type, id, time}` (from `tea.tick()` command)
 
-**Metadata objects**: `tea.keys`, `tea.keysByName`, `tea.mouseButtons` — lookup tables for key/mouse definitions.
+**Metadata objects**: `tea.keys`, `tea.keysByName`, `tea.mouseButtons`, `tea.mouseActions` — lookup tables for key/mouse definitions.
 
-**Input validation**: `tea.isValidTextareaInput(key)`, `tea.isValidLabelInput(key)` — whitelist-based input validators.
+**Input validation**: `tea.isValidTextareaInput(key, paste?)`, `tea.isValidLabelInput(key, paste?)` — whitelist-based input validators.
 
 ### osm:time
 

@@ -3,7 +3,7 @@ package viewport
 import (
 	"testing"
 
-	"charm.land/bubbles/v2/viewport"
+	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/dop251/goja"
 	jslipgloss "github.com/joeycumines/one-shot-man/internal/builtin/lipgloss"
 )
@@ -12,23 +12,20 @@ import (
 // Unit Tests: Core Logic
 // -----------------------------------------------------------------------------
 
-func TestXOffset(t *testing.T) {
-	// Setup a real viewport model using v2 options pattern
-	m := viewport.New(
-		viewport.WithWidth(20),
-		viewport.WithHeight(10),
-	)
+func TestGetUnexportedXOffset(t *testing.T) {
+	// Setup a real viewport model
+	m := viewport.New(20, 10)
 
 	// Set X Offset using public API, which sets the private field
 	expectedX := 5
 	m.SetContent("This is a test content that is long enough to require horizontal scrolling. This content determines the longest line width.")
 	m.SetXOffset(expectedX)
 
-	// Use the public XOffset() method to read it back
-	got := m.XOffset()
+	// Use our reflection helper to read it back
+	got := getUnexportedXOffset(&m)
 
 	if got != expectedX {
-		t.Errorf("XOffset failed: expected %d, got %d", expectedX, got)
+		t.Errorf("reflection helper failed: expected %d, got %d", expectedX, got)
 	}
 }
 
@@ -227,8 +224,8 @@ func TestViewport_SyncCommandPropagation(t *testing.T) {
 		const vp = viewport.new(10, 10);
 		vp.setMouseWheelEnabled(true);
 
-		// Simulate mouse wheel up with v2 split type
-		const res = vp.update({ type: 'MouseWheel', button: 'wheel up', x: 0, y: 0, mod: [] });
+		// Simulate mouse wheel up with explicit modifier flags
+		const res = vp.update({ type: 'Mouse', button: 'wheel up', action: 'press', x: 0, y: 0, alt: false, ctrl: false, shift: false });
 		if (!Array.isArray(res)) throw new Error('update did not return array');
 		// Second element can be null OR an opaque function. If it's a descriptor object
 		// with _cmdType it's not a wrapped Go command.

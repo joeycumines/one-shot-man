@@ -144,78 +144,6 @@ func parseTerminalBuffer(buffer string) []string {
 						if cursorCol < 0 {
 							cursorCol = 0
 						}
-					case 'G': // Cursor Horizontal Absolute (CHA)
-						col := 1
-						if params.String() != "" {
-							if v, err := strconv.Atoi(params.String()); err == nil {
-								col = v
-							}
-						}
-						cursorCol = col - 1 // Convert to 0-indexed
-						if cursorCol < 0 {
-							cursorCol = 0
-						}
-					case 'd': // Vertical Line Position Absolute (VPA)
-						row := 1
-						if params.String() != "" {
-							if v, err := strconv.Atoi(params.String()); err == nil {
-								row = v
-							}
-						}
-						cursorRow = row - 1 // Convert to 0-indexed
-						if cursorRow < 0 {
-							cursorRow = 0
-						}
-					case 'X': // Erase Characters (ECH)
-						n := 1
-						if params.String() != "" {
-							if v, err := strconv.Atoi(params.String()); err == nil {
-								n = v
-							}
-						}
-						if cursorRow < len(screen) {
-							for c := cursorCol; c < cursorCol+n && c < len(screen[cursorRow]); c++ {
-								screen[cursorRow][c] = ' '
-							}
-						}
-					case 'E': // Cursor Next Line (CNL)
-						n := 1
-						if params.String() != "" {
-							if v, err := strconv.Atoi(params.String()); err == nil {
-								n = v
-							}
-						}
-						cursorRow += n
-						cursorCol = 0
-					case 'F': // Cursor Previous Line (CPL)
-						n := 1
-						if params.String() != "" {
-							if v, err := strconv.Atoi(params.String()); err == nil {
-								n = v
-							}
-						}
-						cursorRow -= n
-						if cursorRow < 0 {
-							cursorRow = 0
-						}
-						cursorCol = 0
-					case 'r': // Set Scroll Region (DECSTBM) - ignore for now
-					case 'p': // DECRQM response / other - ignore
-					case 'u': // Kitty keyboard / cursor restore - ignore
-					case 'Z': // Cursor Backward Tabulation (CBT)
-						n := 1
-						if params.String() != "" {
-							if v, err := strconv.Atoi(params.String()); err == nil {
-								n = v
-							}
-						}
-						for j := 0; j < n; j++ {
-							if cursorCol <= 0 {
-								cursorCol = 0
-								break
-							}
-							cursorCol = ((cursorCol - 1) / 8) * 8
-						}
 					case 'm': // SGR (colors, styles) - ignore
 					case 'h': // Set mode
 						// Handle alt screen switch: ?1049h or ?47h
@@ -249,16 +177,7 @@ func parseTerminalBuffer(buffer string) []string {
 					i++
 				}
 			} else {
-				// Other escape sequences (non-CSI, non-OSC)
-				switch buffer[i] {
-				case 'M': // Reverse Index (RI) - cursor up one line
-					if cursorRow > 0 {
-						cursorRow--
-					}
-				case '7': // Save Cursor (DECSC) - ignore
-				case '8': // Restore Cursor (DECRC) - ignore
-				case '=', '>': // Application/Normal keypad mode - ignore
-				}
+				// Other escape sequences
 				i++
 			}
 		case '\r': // Carriage return

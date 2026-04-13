@@ -338,30 +338,6 @@ func (r *InputCaptureRecorder) Expect(ctx context.Context, snap termtest.Snapsho
 	return r.console.Expect(ctx, snap, matcher, desc)
 }
 
-// ExpectFull polls the full console buffer every 100ms for the target string.
-// Unlike Expect (which uses a snapshot-relative offset), ExpectFull searches
-// the entire accumulated buffer. This is immune to PTY ring buffer wrapping
-// during long-running simulations where the buffer grows beyond the ring capacity
-// and overwrites early content (e.g., "WIN!" appears at offset 53,194 but the
-// snapshot-relative search starts from a later offset like 150,591).
-func (r *InputCaptureRecorder) ExpectFull(ctx context.Context, target string) error {
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			if strings.Contains(r.console.String(), target) {
-				return nil
-			}
-			return ctx.Err()
-		case <-ticker.C:
-			if strings.Contains(r.console.String(), target) {
-				return nil
-			}
-		}
-	}
-}
-
 // WaitExit waits for the process to exit.
 func (r *InputCaptureRecorder) WaitExit(ctx context.Context) (int, error) {
 	return r.console.WaitExit(ctx)

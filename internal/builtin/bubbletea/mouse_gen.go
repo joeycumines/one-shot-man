@@ -2,11 +2,11 @@
 
 package bubbletea
 
-import tea "charm.land/bubbletea/v2"
+import tea "github.com/charmbracelet/bubbletea"
 
 // MouseButtonDef represents metadata about a bubbletea MouseButton.
 type MouseButtonDef struct {
-	// Name is the Go constant name (e.g., "MouseLeft").
+	// Name is the Go constant name (e.g., "MouseButtonLeft").
 	Name string
 	// String is the string representation (e.g., "left").
 	String string
@@ -14,57 +14,90 @@ type MouseButtonDef struct {
 	Button tea.MouseButton
 }
 
+// MouseActionDef represents metadata about a bubbletea MouseAction.
+type MouseActionDef struct {
+	// Name is the Go constant name (e.g., "MouseActionPress").
+	Name string
+	// String is the string representation (e.g., "press").
+	String string
+	// Action is the actual tea.MouseAction value.
+	Action tea.MouseAction
+}
+
 // MouseButtonDefs contains all bubbletea MouseButton definitions.
 // The map is keyed by the String() representation for JS lookup efficiency.
 var MouseButtonDefs = map[string]MouseButtonDef{
-	"backward":    {Name: "MouseBackward", String: "backward", Button: tea.MouseBackward},
+	"backward":    {Name: "MouseButtonBackward", String: "backward", Button: tea.MouseButtonBackward},
 	"button 10":   {Name: "MouseButton10", String: "button 10", Button: tea.MouseButton10},
 	"button 11":   {Name: "MouseButton11", String: "button 11", Button: tea.MouseButton11},
-	"forward":     {Name: "MouseForward", String: "forward", Button: tea.MouseForward},
-	"left":        {Name: "MouseLeft", String: "left", Button: tea.MouseLeft},
-	"middle":      {Name: "MouseMiddle", String: "middle", Button: tea.MouseMiddle},
-	"none":        {Name: "MouseNone", String: "none", Button: tea.MouseNone},
-	"right":       {Name: "MouseRight", String: "right", Button: tea.MouseRight},
-	"wheel down":  {Name: "MouseWheelDown", String: "wheel down", Button: tea.MouseWheelDown},
-	"wheel left":  {Name: "MouseWheelLeft", String: "wheel left", Button: tea.MouseWheelLeft},
-	"wheel right": {Name: "MouseWheelRight", String: "wheel right", Button: tea.MouseWheelRight},
-	"wheel up":    {Name: "MouseWheelUp", String: "wheel up", Button: tea.MouseWheelUp},
+	"forward":     {Name: "MouseButtonForward", String: "forward", Button: tea.MouseButtonForward},
+	"left":        {Name: "MouseButtonLeft", String: "left", Button: tea.MouseButtonLeft},
+	"middle":      {Name: "MouseButtonMiddle", String: "middle", Button: tea.MouseButtonMiddle},
+	"none":        {Name: "MouseButtonNone", String: "none", Button: tea.MouseButtonNone},
+	"right":       {Name: "MouseButtonRight", String: "right", Button: tea.MouseButtonRight},
+	"wheel down":  {Name: "MouseButtonWheelDown", String: "wheel down", Button: tea.MouseButtonWheelDown},
+	"wheel left":  {Name: "MouseButtonWheelLeft", String: "wheel left", Button: tea.MouseButtonWheelLeft},
+	"wheel right": {Name: "MouseButtonWheelRight", String: "wheel right", Button: tea.MouseButtonWheelRight},
+	"wheel up":    {Name: "MouseButtonWheelUp", String: "wheel up", Button: tea.MouseButtonWheelUp},
 }
 
 // MouseButtonDefsByName contains all bubbletea MouseButton definitions keyed by constant name.
 var MouseButtonDefsByName = map[string]MouseButtonDef{
-	"MouseBackward":   MouseButtonDefs["backward"],
-	"MouseButton10":   MouseButtonDefs["button 10"],
-	"MouseButton11":   MouseButtonDefs["button 11"],
-	"MouseForward":    MouseButtonDefs["forward"],
-	"MouseLeft":       MouseButtonDefs["left"],
-	"MouseMiddle":     MouseButtonDefs["middle"],
-	"MouseNone":       MouseButtonDefs["none"],
-	"MouseRight":      MouseButtonDefs["right"],
-	"MouseWheelDown":  MouseButtonDefs["wheel down"],
-	"MouseWheelLeft":  MouseButtonDefs["wheel left"],
-	"MouseWheelRight": MouseButtonDefs["wheel right"],
-	"MouseWheelUp":    MouseButtonDefs["wheel up"],
+	"MouseButton10":         MouseButtonDefs["button 10"],
+	"MouseButton11":         MouseButtonDefs["button 11"],
+	"MouseButtonBackward":   MouseButtonDefs["backward"],
+	"MouseButtonForward":    MouseButtonDefs["forward"],
+	"MouseButtonLeft":       MouseButtonDefs["left"],
+	"MouseButtonMiddle":     MouseButtonDefs["middle"],
+	"MouseButtonNone":       MouseButtonDefs["none"],
+	"MouseButtonRight":      MouseButtonDefs["right"],
+	"MouseButtonWheelDown":  MouseButtonDefs["wheel down"],
+	"MouseButtonWheelLeft":  MouseButtonDefs["wheel left"],
+	"MouseButtonWheelRight": MouseButtonDefs["wheel right"],
+	"MouseButtonWheelUp":    MouseButtonDefs["wheel up"],
+}
+
+// MouseActionDefs contains all bubbletea MouseAction definitions.
+// The map is keyed by the String() representation for JS lookup efficiency.
+var MouseActionDefs = map[string]MouseActionDef{
+	"motion":  {Name: "MouseActionMotion", String: "motion", Action: tea.MouseActionMotion},
+	"press":   {Name: "MouseActionPress", String: "press", Action: tea.MouseActionPress},
+	"release": {Name: "MouseActionRelease", String: "release", Action: tea.MouseActionRelease},
+}
+
+// MouseActionDefsByName contains all bubbletea MouseAction definitions keyed by constant name.
+var MouseActionDefsByName = map[string]MouseActionDef{
+	"MouseActionMotion":  MouseActionDefs["motion"],
+	"MouseActionPress":   MouseActionDefs["press"],
+	"MouseActionRelease": MouseActionDefs["release"],
 }
 
 // AllMouseButtons returns all known tea.MouseButton values that have string representations.
 var AllMouseButtons = []tea.MouseButton{
-	tea.MouseBackward,
+	tea.MouseButtonBackward,
 	tea.MouseButton10,
 	tea.MouseButton11,
-	tea.MouseForward,
-	tea.MouseLeft,
-	tea.MouseMiddle,
-	tea.MouseNone,
-	tea.MouseRight,
-	tea.MouseWheelDown,
-	tea.MouseWheelLeft,
-	tea.MouseWheelRight,
-	tea.MouseWheelUp,
+	tea.MouseButtonForward,
+	tea.MouseButtonLeft,
+	tea.MouseButtonMiddle,
+	tea.MouseButtonNone,
+	tea.MouseButtonRight,
+	tea.MouseButtonWheelDown,
+	tea.MouseButtonWheelLeft,
+	tea.MouseButtonWheelRight,
+	tea.MouseButtonWheelUp,
+}
+
+// AllMouseActions returns all known tea.MouseAction values that have string representations.
+var AllMouseActions = []tea.MouseAction{
+	tea.MouseActionMotion,
+	tea.MouseActionPress,
+	tea.MouseActionRelease,
 }
 
 // IsWheelButton returns true if the button is a wheel button.
+// This mirrors tea.MouseEvent.IsWheel() for use in parsing/validation.
 func IsWheelButton(b tea.MouseButton) bool {
-	return b == tea.MouseWheelUp || b == tea.MouseWheelDown ||
-		b == tea.MouseWheelLeft || b == tea.MouseWheelRight
+	return b == tea.MouseButtonWheelUp || b == tea.MouseButtonWheelDown ||
+		b == tea.MouseButtonWheelLeft || b == tea.MouseButtonWheelRight
 }

@@ -638,7 +638,7 @@ func TestParseWhitespaceOptions_IgnoresNullWhitespaceChars(t *testing.T) {
 	obj := vm.NewObject()
 	require.NoError(t, obj.Set("whitespaceChars", goja.Null()))
 
-	opts, err := parseWhitespaceOptions(vm, obj, false)
+	opts, err := parseWhitespaceOptions(vm, obj)
 	require.NoError(t, err)
 	assert.Equal(t, 0, len(opts))
 }

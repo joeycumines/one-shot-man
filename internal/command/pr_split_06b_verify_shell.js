@@ -10,24 +10,11 @@
     // Detect whether an interactive shell can be spawned on this platform.
     // Returns false when termmux.newCaptureSession is unavailable.
     // On Windows, CaptureSession uses ConPTY; on Unix, it uses pty.
-    //
-    // Also returns false when OSM_VERIFY_ONE_SHOT=1 is set, which forces
-    // one-shot verification mode (used by automated E2E tests where no human
-    // is available to press p/f/c in the persistent shell).
     function canSpawnInteractiveShell() {
         try {
             var termmux = require('osm:termmux');
             if (typeof termmux.newCaptureSession !== 'function') return false;
         } catch (e) { log.debug('canSpawnInteractiveShell: require termmux failed: ' + (e.message || e)); return false; }
-
-        try {
-            var osmod = require('osm:os');
-            if (osmod && typeof osmod.getenv === 'function') {
-                // E2E test escape hatch: force one-shot verify mode.
-                var oneShot = osmod.getenv('OSM_VERIFY_ONE_SHOT') || '';
-                if (oneShot === '1' || oneShot === 'true') return false;
-            }
-        } catch (e) { log.debug('canSpawnInteractiveShell: os.getenv check failed: ' + (e.message || e)); }
 
         return true;
     }

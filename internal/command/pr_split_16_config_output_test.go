@@ -146,7 +146,7 @@ func TestChunk16_T42_ManualSelectSetsFlag(t *testing.T) {
 		var origInBounds = z.inBounds;
 		z.inBounds = function(id) { return id === 'strategy-directory'; };
 		try {
-			r = update({type: 'MouseClick', button: 'left', x: 10, y: 10, mod: []}, s);
+			r = update({type: 'Mouse', button: 'left', action: 'press', isWheel: false, x: 10, y: 10}, s);
 		} finally {
 			z.inBounds = origInBounds;
 		}
@@ -707,7 +707,7 @@ func TestChunk16_T44_TabClickZones(t *testing.T) {
 		// Click on output tab.
 		var restore = mockZoneHit('split-tab-output');
 		try {
-			var r = update({type: 'MouseClick', button: 'left', x: 10, y: 10, mod: []}, s);
+			var r = update({type: 'Mouse', button: 'left', action: 'press', isWheel: false, x: 10, y: 10}, s);
 			s = r[0];
 		} finally { restore(); }
 		var tab1 = s.splitViewTab;
@@ -715,7 +715,7 @@ func TestChunk16_T44_TabClickZones(t *testing.T) {
 		// Click on claude tab.
 		restore = mockZoneHit('split-tab-claude');
 		try {
-			var r2 = update({type: 'MouseClick', button: 'left', x: 10, y: 10, mod: []}, s);
+			var r2 = update({type: 'Mouse', button: 'left', action: 'press', isWheel: false, x: 10, y: 10}, s);
 			s = r2[0];
 		} finally { restore(); }
 		var tab2 = s.splitViewTab;

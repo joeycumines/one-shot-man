@@ -4,7 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 // Test-only Option constructors (moved here to avoid deadcode flagging).
@@ -158,6 +159,15 @@ func TestScrollbarZeroViewportHeight(t *testing.T) {
 }
 
 func TestScrollbarOutput(t *testing.T) {
+	{
+		colorProfile := lipgloss.ColorProfile()
+		t.Cleanup(func() {
+			lipgloss.SetColorProfile(colorProfile)
+		})
+	}
+
+	lipgloss.SetColorProfile(termenv.TrueColor)
+
 	// Test actual ANSI rendering structure
 	thumbStyle := lipgloss.NewStyle().Background(lipgloss.Color("#FF0000"))
 	trackStyle := lipgloss.NewStyle().Background(lipgloss.Color("#000000"))

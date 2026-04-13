@@ -32,7 +32,7 @@ func TestChunk16d_MouseToTermBytes_WheelLeftRight(t *testing.T) {
 
 	val, err := evalJS(`(function() {
 		var fn = prSplit._mouseToTermBytes;
-		var msg = {type:'MouseClick', x:3, y:7, mod: []};
+		var msg = {x:3, y:7, shift:false, alt:false, ctrl:false, action:'press'};
 
 		msg.button = 'wheel left';
 		var wl = fn(msg, 0, 0);
@@ -71,7 +71,7 @@ func TestChunk16d_MouseToTermBytes_BackwardForward(t *testing.T) {
 
 	val, err := evalJS(`(function() {
 		var fn = prSplit._mouseToTermBytes;
-		var msg = {type:'MouseClick', x:0, y:0, mod: []};
+		var msg = {x:0, y:0, shift:false, alt:false, ctrl:false, action:'press'};
 
 		msg.button = 'backward';
 		var bw = fn(msg, 0, 0);
@@ -109,7 +109,8 @@ func TestChunk16d_MouseToTermBytes_NoneButton(t *testing.T) {
 	val, err := evalJS(`(function() {
 		var fn = prSplit._mouseToTermBytes;
 		var result = fn({
-			type:'MouseClick', x:10, y:20, button:'none', mod: []
+			x:10, y:20, button:'none',
+			shift:false, alt:false, ctrl:false, action:'press'
 		}, 0, 0);
 		// code 3, cx=11, cy=21
 		return result === '\x1b[<3;11;21M' ? 'OK' : 'FAIL: ' + JSON.stringify(result);
@@ -130,8 +131,8 @@ func TestChunk16d_MouseToTermBytes_UnknownButton(t *testing.T) {
 
 	val, err := evalJS(`(function() {
 		var fn = prSplit._mouseToTermBytes;
-		var r1 = fn({type:'MouseClick', x:0, y:0, button:'banana', mod:[]}, 0, 0);
-		var r2 = fn({type:'MouseClick', x:0, y:0, button:'', mod:[]}, 0, 0);
+		var r1 = fn({x:0, y:0, button:'banana', action:'press'}, 0, 0);
+		var r2 = fn({x:0, y:0, button:'', action:'press'}, 0, 0);
 		return JSON.stringify({r1null: r1 === null, r2null: r2 === null});
 	})()`)
 	if err != nil {
@@ -155,7 +156,8 @@ func TestChunk16d_MouseToTermBytes_NoneRelease(t *testing.T) {
 	val, err := evalJS(`(function() {
 		var fn = prSplit._mouseToTermBytes;
 		var result = fn({
-			type:'MouseRelease', x:5, y:5, button:'none', mod: []
+			x:5, y:5, button:'none',
+			shift:false, alt:false, ctrl:false, action:'release'
 		}, 0, 0);
 		return result === '\x1b[<3;6;6m' ? 'OK' : 'FAIL: ' + JSON.stringify(result);
 	})()`)
@@ -177,8 +179,9 @@ func TestChunk16d_MouseToTermBytes_AllModifiersAndMotion(t *testing.T) {
 	val, err := evalJS(`(function() {
 		var fn = prSplit._mouseToTermBytes;
 		var result = fn({
-			type:'MouseMotion', x:2, y:3, button:'left',
-			mod: ['shift', 'alt', 'ctrl']
+			x:2, y:3, button:'left',
+			shift:true, alt:true, ctrl:true,
+			action:'motion'
 		}, 0, 0);
 		// left=0, +4(shift)+8(alt)+16(ctrl)+32(motion)=60
 		// cx=3, cy=4, motion='M'

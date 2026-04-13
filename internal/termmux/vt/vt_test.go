@@ -469,40 +469,6 @@ func TestVTerm_DECSC_DECRC(t *testing.T) {
 	}
 }
 
-// ── T124: SGR 7 (Reverse/Inverse Video) ─────────────────────────────────
-// CSI 7 m is standard SGR 7 (reverse/inverse video), used by lipgloss v2's
-// StyleRunes with Reverse(true). It sets the Reverse attribute on the cursor,
-// not to be confused with cursor save/restore sequences (ESC 7/ESC 8, CSI s/u).
-
-func TestVTerm_SGR7_ReverseVideo(t *testing.T) {
-	v := NewVTerm(5, 20)
-
-	// Write "AB" at col 0-1.
-	v.Write([]byte("AB"))
-	// Apply SGR 7 (reverse video) then write "X".
-	v.Write([]byte("\x1b[7m"))
-	v.Write([]byte("X"))
-
-	v.mu.Lock()
-	defer v.mu.Unlock()
-	// 'X' should be written at col 2 (cursor advanced past AB).
-	if v.active.Cells[0][2].Ch != 'X' {
-		t.Errorf("Cell[0][2] = %c, want 'X'", v.active.Cells[0][2].Ch)
-	}
-	// The Reverse attribute should be set.
-	if !v.active.CurAttr.Inverse {
-		t.Error("CurAttr should have Reverse set after SGR 7")
-	}
-	// Cells 0,1 should still be A,B.
-	if v.active.Cells[0][0].Ch != 'A' || v.active.Cells[0][1].Ch != 'B' {
-		t.Errorf("Cell[0][0..1] = %c%c, want 'AB'", v.active.Cells[0][0].Ch, v.active.Cells[0][1].Ch)
-	}
-	// Cursor should be at col 3 (not restored anywhere).
-	if v.active.CurCol != 3 {
-		t.Errorf("CurCol = %d, want 3", v.active.CurCol)
-	}
-}
-
 // ── T113: Concurrent VTerm.Write safety ────────────────────────────
 
 func TestVTerm_ConcurrentWrite(t *testing.T) {

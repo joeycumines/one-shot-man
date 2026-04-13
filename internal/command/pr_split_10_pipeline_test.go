@@ -1,7 +1,6 @@
 package command
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -12,26 +11,6 @@ import (
 // ---------------------------------------------------------------------------
 // Chunk 10 — Pipeline tests
 // ---------------------------------------------------------------------------
-
-// parseJSONMap parses a JSON string into a map[string]any.
-// Handles double-encoded JSON strings (waitForLogged calls JSON.stringify
-// on its return value, so the outer string must be parsed first).
-func parseJSONMap(s string) (map[string]any, error) {
-	// Try direct decode first
-	var m map[string]any
-	if err := json.Unmarshal([]byte(s), &m); err == nil {
-		return m, nil
-	}
-	// Try double-decode: parse s as a JSON string, then parse inner as map
-	var inner string
-	if err := json.Unmarshal([]byte(s), &inner); err != nil {
-		return nil, fmt.Errorf("cannot parse as JSON: %s — %w", s, err)
-	}
-	if err := json.Unmarshal([]byte(inner), &m); err != nil {
-		return nil, fmt.Errorf("cannot parse inner JSON %q: %w", inner, err)
-	}
-	return m, nil
-}
 
 // allPipelineChunks loads chunks 00-10 (the full pipeline dependency chain).
 var allPipelineChunks = []string{
@@ -148,135 +127,6 @@ func TestPipelineChunk_ClassificationToGroups_EmptyInput(t *testing.T) {
 	}
 	if val != "{}" {
 		t.Errorf("[] → expected {}, got %v", val)
-	}
-}
-
-func TestPipelineChunk_ClassificationToGroups_MalformedItems(t *testing.T) {
-	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
-
-	// Array containing null, strings, or objects without names.
-	// Should skip them gracefully instead of throwing.
-	val, err := evalJS(`JSON.stringify(prSplit.classificationToGroups([
-		null,
-		"just a string",
-		{ name: "valid", files: ["a.go"] },
-		{ files: ["b.go"] },
-		[]
-	]))`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := val.(string)
-
-	if !strings.Contains(s, `"valid":{"files":["a.go"]`) {
-		t.Errorf("expected valid group to be present, got: %s", s)
-	}
-	// It should now contain b.go group as group4.
-	if !strings.Contains(s, `"group4":{"files":["b.go"]`) {
-		t.Errorf("expected b.go group as group4, got: %s", s)
-	}
-}
-
-// TestPipelineChunk_WaitForLogged_MissingCallback verifies that waitForLogged
-// in the ACTUAL embedded code (pr_split_10c_pipeline_resolve.js) returns a
-// structured error when the MCP callback is missing or lacks waitForAsync.
-//
-// NOTE: This test uses the embedded chunks (10a, 10b, 10c, 10d) which define
-// waitForLogged as an async function that calls mcpCb.waitForAsync(). The
-// previous T71 test (receiver error) targeted pr_split_10_pipeline.js which is
-// dead code (never embedded) and used sync waitFor. The new test targets the
-// actual embedded code path.
-func TestPipelineChunk_WaitForLogged_MissingCallback(t *testing.T) {
-	t.Parallel()
-	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
-
-	// Test 1: No callback — waitForLogged returns error.
-	// Set BOTH _mcpCallbackObj and mcpCallbackObj to null so neither
-	// the explicit assignment nor the || fallback finds a valid object.
-	val, err := evalJS(`
-		(async function() {
-			prSplit._mcpCallbackObj = null;
-			globalThis.mcpCallbackObj = null;
-			var res = await prSplit.waitForLogged('test_tool', 1000, {});
-			return JSON.stringify(res);
-		})()
-	`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s, ok := val.(string)
-	if !ok {
-		t.Fatalf("expected string, got %T", val)
-	}
-	m, err2 := parseJSONMap(s)
-	if err2 != nil {
-		t.Fatalf("expected valid JSON map, got %s: %v", s, err2)
-	}
-	if m["data"] != nil {
-		t.Errorf("expected nil data for missing callback, got %v", m["data"])
-	}
-	if m["error"] == nil || m["error"] == "" {
-		t.Errorf("expected non-empty error for missing callback, got %v", m["error"])
-	}
-	if !strings.Contains(m["error"].(string), "missing waitForAsync") && !strings.Contains(m["error"].(string), "not initialized") && !strings.Contains(m["error"].(string), "MCP callback") {
-		t.Errorf("expected descriptive error about missing callback, got: %s", m["error"])
-	}
-
-	// Test 2: Callback present but lacks waitForAsync — waitForLogged returns error
-	val2, err2 := evalJS(`
-		(async function() {
-			prSplit._mcpCallbackObj = { _id: "no-async" }; // no waitForAsync method
-			var res = await prSplit.waitForLogged('test_tool', 1000, {});
-			return JSON.stringify(res);
-		})()
-	`)
-	if err2 != nil {
-		t.Fatal(err2)
-	}
-	s2, ok2 := val2.(string)
-	if !ok2 {
-		t.Fatalf("expected string, got %T", val2)
-	}
-	m2, err3 := parseJSONMap(s2)
-	if err3 != nil {
-		t.Fatalf("expected valid JSON map, got %s: %v", s2, err3)
-	}
-	if m2["data"] != nil {
-		t.Errorf("expected nil data for no-waitForAsync, got %v", m2["data"])
-	}
-	if m2["error"] == nil || m2["error"] == "" {
-		t.Errorf("expected non-empty error for no waitForAsync, got %v", m2["error"])
-	}
-
-	// Test 3: Callback with waitForAsync returns expected data.
-	// waitForLogged calls JSON.parse on the waitForAsync return value,
-	// then JSON.stringify on the parsed object.
-	val3, err3 := evalJS(`
-		(async function() {
-			prSplit._mcpCallbackObj = {
-				waitForAsync: async function(name, timeout, opts) {
-					// Return a JSON string — waitForLogged calls JSON.parse on it
-					return JSON.stringify({ data: { toolResult: 'ok' }, error: null });
-				}
-			};
-			var res = await prSplit.waitForLogged('test_tool', 5000, {});
-			return JSON.stringify(res);
-		})()
-	`)
-	if err3 != nil {
-		t.Fatal(err3)
-	}
-	s3, ok3 := val3.(string)
-	if !ok3 {
-		t.Fatalf("expected string, got %T", val3)
-	}
-	m3, err4 := parseJSONMap(s3)
-	if err4 != nil {
-		t.Fatalf("expected valid JSON map for working callback, got %s: %v", s3, err4)
-	}
-	// The embedded waitForLogged wraps the result — check it returns something valid
-	if m3["error"] != nil && m3["error"] != "null" {
-		t.Errorf("expected no error for working callback, got: %v", m3["error"])
 	}
 }
 

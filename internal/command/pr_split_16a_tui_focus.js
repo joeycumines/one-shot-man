@@ -190,7 +190,7 @@
         }
 
         // Mouse: click on target zone marks.
-        if (msg.type === 'Mouse' && msg.action === 'press' && !msg.isWheel) {
+        if (msg.type === 'MouseClick') {
             for (var ti = 0; ti < targets.length; ti++) {
                 if (zone.inBounds('move-target-' + ti, msg)) {
                     ds.targetIdx = ti;
@@ -267,7 +267,7 @@
         }
 
         // Mouse zone clicks.
-        if (msg.type === 'Mouse' && msg.action === 'press' && !msg.isWheel) {
+        if (msg.type === 'MouseClick') {
             if (zone.inBounds('rename-confirm', msg)) {
                 return updateRenameDialog({type: 'Key', key: 'enter'}, s, ds);
             }
@@ -313,7 +313,7 @@
                 return [s, null];
             }
             // Toggle selection.
-            if (k === ' ') {
+            if (k === 'space') {
                 var idx = mergeables[ds.cursorIdx || 0];
                 if (!ds.selected) ds.selected = {};
                 ds.selected[idx] = !ds.selected[idx];
@@ -369,7 +369,7 @@
         }
 
         // Mouse: toggle checkboxes, confirm/cancel.
-        if (msg.type === 'Mouse' && msg.action === 'press' && !msg.isWheel) {
+        if (msg.type === 'MouseClick') {
             for (var ci = 0; ci < mergeables.length; ci++) {
                 if (zone.inBounds('merge-item-' + ci, msg)) {
                     var idx = mergeables[ci];

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1558,9 +1558,9 @@ func TestMultiWidthHitTest(t *testing.T) {
 	}{
 		{"click on A (cell 0)", 0, 0, 0, 0},
 		{"click on left half of 你 (cell 1)", 1, 0, 0, 1},
-		{"click on right half of 你 (cell 2)", 2, 0, 0, 2}, // Should advance to next char
+		{"click on right half of 你 (cell 2)", 2, 0, 0, 1}, // stays on 你 (right half belongs to 你)
 		{"click on left half of 好 (cell 3)", 3, 0, 0, 2},
-		{"click on right half of 好 (cell 4)", 4, 0, 0, 3}, // Should advance to next char
+		{"click on right half of 好 (cell 4)", 4, 0, 0, 2}, // stays on 好 (right half belongs to 好)
 		{"click on B (cell 5)", 5, 0, 0, 3},
 		{"click beyond line (cell 6)", 6, 0, 0, 4}, // Clamp to end
 	}
@@ -2079,6 +2079,101 @@ func TestScenarioMegaChar(t *testing.T) {
 	}
 }
 
+// TestHandleClickAtScreenCoords_MutatesCursor verifies that handleClickAtScreenCoords
+// actually moves the cursor to the clicked position, not just returns coordinates.
+// This is the core contract: JS callers rely on Go to mutate cursor state on click.
+func TestHandleClickAtScreenCoords_MutatesCursor(t *testing.T) {
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require()(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Configure textarea
+	setPromptFn, _ := goja.AssertFunction(ta.Get("setPrompt"))
+	_, _ = setPromptFn(ta, runtime.ToValue(""))
+	setShowLineNumbersFn, _ := goja.AssertFunction(ta.Get("setShowLineNumbers"))
+	_, _ = setShowLineNumbersFn(ta, runtime.ToValue(false))
+	setWidthFn, _ := goja.AssertFunction(ta.Get("setWidth"))
+	_, _ = setWidthFn(ta, runtime.ToValue(40))
+
+	// Multi-line content
+	setValueFn, _ := goja.AssertFunction(ta.Get("setValue"))
+	_, _ = setValueFn(ta, runtime.ToValue("first line\nsecond line\nthird line"))
+
+	lineFn, _ := goja.AssertFunction(ta.Get("line"))
+	colFn, _ := goja.AssertFunction(ta.Get("col"))
+
+	// Move cursor to row 0 explicitly (setValue places cursor at end)
+	setPositionFn, _ := goja.AssertFunction(ta.Get("setPosition"))
+	_, _ = setPositionFn(ta, runtime.ToValue(0), runtime.ToValue(0))
+
+	// Verify cursor starts at row 0
+	lineVal, _ := lineFn(ta)
+	if lineVal.ToInteger() != 0 {
+		t.Fatalf("Initial cursor position should be row 0, got %d", lineVal.ToInteger())
+	}
+
+	// Set viewport context
+	setViewportContextFn, _ := goja.AssertFunction(ta.Get("setViewportContext"))
+	vpConfig := runtime.NewObject()
+	_ = vpConfig.Set("outerYOffset", 0)
+	_ = vpConfig.Set("textareaContentTop", 0)
+	_ = vpConfig.Set("textareaContentLeft", 0)
+	_ = vpConfig.Set("outerViewportHeight", 10)
+	_ = vpConfig.Set("preContentHeight", 0)
+	_ = vpConfig.Set("titleHeight", 0)
+	_, _ = setViewportContextFn(ta, vpConfig)
+
+	handleClickFn, _ := goja.AssertFunction(ta.Get("handleClickAtScreenCoords"))
+
+	// Click on row 2 (third line), col 5
+	res, err := handleClickFn(ta, runtime.ToValue(5), runtime.ToValue(2))
+	if err != nil {
+		t.Fatalf("handleClickAtScreenCoords failed: %v", err)
+	}
+	obj := res.ToObject(runtime)
+	if !obj.Get("hit").ToBoolean() {
+		t.Fatalf("Expected hit=true, got miss")
+	}
+	if obj.Get("row").ToInteger() != 2 {
+		t.Fatalf("Expected returned row=2, got %d", obj.Get("row").ToInteger())
+	}
+
+	// THE KEY ASSERTION: cursor must have moved to the clicked row
+	lineVal, _ = lineFn(ta)
+	if lineVal.ToInteger() != 2 {
+		t.Fatalf("CURSOR MUTATION FAILED: Expected cursor at row 2 after click, got %d", lineVal.ToInteger())
+	}
+	colVal, _ := colFn(ta)
+	if colVal.ToInteger() != 5 {
+		t.Fatalf("CURSOR MUTATION FAILED: Expected cursor at col 5 after click, got %d", colVal.ToInteger())
+	}
+
+	// Click on row 0 (first line), col 3
+	res2, err := handleClickFn(ta, runtime.ToValue(3), runtime.ToValue(0))
+	if err != nil {
+		t.Fatalf("handleClickAtScreenCoords failed: %v", err)
+	}
+	obj2 := res2.ToObject(runtime)
+	if !obj2.Get("hit").ToBoolean() {
+		t.Fatalf("Expected hit=true for second click")
+	}
+
+	lineVal, _ = lineFn(ta)
+	if lineVal.ToInteger() != 0 {
+		t.Fatalf("CURSOR MUTATION FAILED: Expected cursor at row 0 after second click, got %d", lineVal.ToInteger())
+	}
+	colVal, _ = colFn(ta)
+	if colVal.ToInteger() != 3 {
+		t.Fatalf("CURSOR MUTATION FAILED: Expected cursor at col 3 after second click, got %d", colVal.ToInteger())
+	}
+}
+
 // TestHandleClickAtScreenCoords_StaleViewportContext reproduces the "phantom scroll"
 // scenario where setViewportContext has a stale outerYOffset and a click that
 // occurs after JS auto-scroll would map incorrectly until setViewportContext is
@@ -2141,9 +2236,17 @@ func TestHandleClickAtScreenCoords_StaleViewportContext(t *testing.T) {
 		t.Fatalf("sanity: suggestedYOffset==initial offset, test setup invalid")
 	}
 
-	// Simulate the user's view: screenY where the cursor is visible after JS scrolls
+	// Simulate the user's view: screenY where the cursor is visible after JS scrolls.
+	// Formula: visualY = screenY - titleHeight - textareaContentTop + outerYOffset.
+	// We want visualY = cursorVisualLine (the cursor's position in textarea visual space),
+	// so: screenY = titleHeight + textareaContentTop + cursorVisualLine - outerYOffset.
+	// Note: cursorAbsY = preContentHeight + cursorVisualLine,
+	// so cursorVisualLine = cursorAbsY - preContentHeight.
 	titleHeight := 3
-	screenY := titleHeight + (cursorAbsY - suggested)
+	textareaContentTop := 2
+	preContentHeight := 2
+	cursorVisualLine := cursorAbsY - preContentHeight
+	screenY := titleHeight + textareaContentTop + cursorVisualLine - suggested
 	screenX := 5
 
 	// With stale vpCtx (outerYOffset still 10), JS-visible coordinate should NOT map to the right row
@@ -2323,5 +2426,65 @@ func TestHandleClickAtScreenCoords_PrefersVpCtxOverArg(t *testing.T) {
 	obj2 := res2.ToObject(runtime)
 	if !obj2.Get("hit").ToBoolean() {
 		t.Fatalf("Expected hit using vpCtx titleHeight=1 after update, got miss")
+	}
+}
+
+// TestTextareaUpdateWithKeyInsertsCharacter verifies that calling textarea.update()
+// with a Key message inserts the character into the textarea value.
+// This tests the critical path: JS update → JsToTeaMsg → textarea.Update(msg) → value changes.
+func TestTextareaUpdateWithKeyInsertsCharacter(t *testing.T) {
+	runtime := goja.New()
+
+	module := runtime.NewObject()
+	Require()(runtime, module)
+	exports := module.Get("exports").ToObject(runtime)
+	newFn, _ := goja.AssertFunction(exports.Get("new"))
+	result, _ := newFn(goja.Undefined())
+	ta := result.ToObject(runtime)
+
+	// Focus the textarea so updates are processed
+	focusFn, _ := goja.AssertFunction(ta.Get("focus"))
+	_, _ = focusFn(ta)
+
+	updateFn, _ := goja.AssertFunction(ta.Get("update"))
+	valueFn, _ := goja.AssertFunction(ta.Get("value"))
+
+	// Create a Key message object as the JS script would
+	msg := runtime.NewObject()
+	_ = msg.Set("type", "Key")
+	_ = msg.Set("key", "H") // single character 'H'
+
+	// Call update with the Key message
+	res, err := updateFn(ta, msg)
+	require.NoError(t, err, "update should not error")
+
+	// Extract the new textarea object (index 0 of result array)
+	resArr := res.ToObject(runtime)
+	newTa := resArr.Get("0").ToObject(runtime)
+
+	// Check the value
+	val, _ := valueFn(newTa)
+	value := val.ToString().String()
+	t.Logf("Textarea value after update({type:'Key', key:'H'}): %q", value)
+	if value != "H" {
+		t.Errorf("Expected 'H', got %q", value)
+	}
+
+	// Now type "ello World"
+	for _, ch := range "ello World" {
+		msg := runtime.NewObject()
+		_ = msg.Set("type", "Key")
+		_ = msg.Set("key", string(ch))
+		res, err := updateFn(newTa, msg)
+		require.NoError(t, err)
+		resArr = res.ToObject(runtime)
+		newTa = resArr.Get("0").ToObject(runtime)
+		val, _ = valueFn(newTa)
+		value = val.ToString().String()
+	}
+
+	t.Logf("Textarea value after 'Hello World': %q", value)
+	if value != "Hello World" {
+		t.Errorf("Expected 'Hello World', got %q", value)
 	}
 }

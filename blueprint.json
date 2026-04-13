@@ -1,326 +1,193 @@
 {
   "meta": {
     "fileName": "blueprint.json",
-    "purpose": "Deliver a flawless, exemplary `osm pr-split` via the SessionManager architecture: fully interactive Claude + verification + shell panes, persistent session model, cross-platform support, exhaustive test coverage. All tasks verified through Rule of Two before marking Done.",
-    "architectureReference": "scratch/termmux-architecture.md is the authoritative architectural reference. Read it BEFORE executing any SessionManager-related task.",
     "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE.",
-    "completionPolicy": "YOU WILL COMPLETE 100% OF THE BLUEPRINT. NO PRIORITIES. NO ESTIMATES. This is flat, sequential, and EXHAUSTIVE. All tasks are mandatory. Refine and expand indefinitely after reaching stable state."
+    "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST — ESPECIALLY NOT TIME ESTIMATES. NEVER SPECIFY A PRIORITY OF ANY KIND.",
+    "sourceDocuments": [
+      "scratch/bubbletea-v2-migration.md — Original v2-first migration plan (7 phases, zero shims mandate)",
+      "scratch/migration-guide.md — Official Bubble Tea v2 upgrade guide",
+      "scratch/termmux-architecture.md — SessionManager architecture and implementation notes",
+      "scratch/textarea-navigation-autopsy-20260412/ — Adversarial autopsy of textarea key handling (CORRECTED: see replanLog)"
+    ]
   },
   "globalAlerts": [
     {
-      "warning": "Use GNU Make and project custom targets in config.mk. Prefer make make-all-with-log, make test-prsplit-fast, make test-prsplit-all, make integration-test-prsplit-mcp, make integration-test-termmux, make make-all-in-container, make make-all-run-windows for verification. All checks must pass on all platforms before marking tasks Done."
+      "warning": "ALL checks must pass on ALL platforms (ubuntu-latest, windows-latest, macos-latest). Never accept failing or flaky tests."
     },
     {
-      "warning": "Acceptance criteria must describe USER VALUE and end-to-end functionality, not just architectural changes. Every task must answer: 'What can the user or system now do that it couldn't before?' A task is only Done when acceptance is fully satisfied and verified through Rule of Two."
+      "warning": "GNU Make is the build system. Use make test, make lint, make build. On macOS use gmake."
     },
     {
-      "warning": "JS and Go API parity is mandatory. Do not leave JavaScript call sites pretending termmux supports APIs that the Go binding does not actually expose. Every API surface must be honest and tested."
+      "warning": "ZERO COMPATIBILITY SHIMS: v2 ONLY. No v1 mouse patterns (isWheel, action, shift/alt/ctrl booleans). v2 uses type-based dispatch and msg.mod array."
     },
     {
-      "warning": "Cross-platform is non-negotiable. The feature must work on macOS, Linux, and Windows. Windows ConPTY is a HIGH priority requirement and must be solved, not worked around."
+      "warning": "BRIDGE SYMMETRY: msgToJS and JsToTeaMsg MUST agree on event shapes. Asymmetric bridges are defective."
     },
     {
-      "warning": "No prepositions in method or function names (e.g. prefer LoadConfig over LoadFromConfig)."
-    },
-    {
-      "warning": "The termmux package MUST be designed for extraction into a standalone Go module. Zero imports from internal/builtin, internal/command, internal/scripting, or any osm-internal package. Only stdlib, creack/pty, golang.org/x/term, golang.org/x/sys, and its own sub-packages (pty, ptyio, vt, statusbar) are allowed."
-    },
-    {
-      "warning": "ALL mutable state in the SessionManager MUST be owned by a single worker goroutine. Mutations flow through channels (request/reply ping-pong). Read-only access uses copy-on-write via atomic.Pointer. NO mutexes for session state. The ONLY acceptable mutex is EventBus.subscribers (subscriber list management)."
-    },
-    {
-      "warning": "Breaking changes are MANDATORY when the architecture requires them. No compatibility shims, no deprecated wrappers, no 'pragmatic' half-measures. Change the API, then update EVERY caller — Go code, JS shim, tests, scripts. The old code gets deleted."
-    },
-    {
-      "warning": "AUTOPSY-DRIVEN: The pr-split-autopsy-20260407 revealed a FATAL bug (GAP-C01/C02) — the session() wrapper in module.go is missing write/resize methods, making Claude inline keystroke interactivity completely non-functional. ANY 'Done' claim about interactivity MUST be verified by end-to-end testing, not just code review."
+      "warning": "KEY RESOLUTION DEFENSIVE FIX: The JS key resolution at super_document_script.js:870 currently works because bubbletea v2 sets Key.Text='' (empty) for special keys (Enter, Tab, Esc, arrows) — confirmed by ultraviolet decoder.go:1139-1144 and bubbletea key.go:297-300. The existing `msg.text && msg.text.length === 1` check is safe for current runtime behavior but fragile against future Key.Text population changes. Apply defensive hardening: `const k = (msg.text && msg.text.length === 1 && msg.text.charCodeAt(0) >= 0x20 && msg.text.charCodeAt(0) <= 0x7E) ? msg.text : msg.key;`."
     }
   ],
-  "mandatoryDirectives": {
-    "contextManagement": "Execute work in coherent vertical slices. Each task is cold-start-safe with explicit file targets, dependencies, and end-to-end acceptance. Keep the blueprint flat and sequential. Read scratch/termmux-architecture.md before any SessionManager-related task.",
-    "implementationStandard": "The goal is an exemplary, human-quality implementation with zero apparent AI slop. This means: code that reads like a human wrote it, tests that are exhaustive not approximate, error handling that is explicit not hand-waved, and end-to-end workflows that are proven to work, not speculated. Concurrency must be designed with the rigor of tmux's single-threaded event loop — translated to Go channels and goroutines, not mutexes.",
-    "reviewGate": "Every task must pass two contiguous Rule of Two reviews (subagent verification) before marking Done. Code quality is verified through make make-all-with-log and project-specific integration tests. No task is complete without Rule of Two gate.",
-    "tmuxWisdom": "tmux's architecture (single-threaded event loop, containment hierarchy, buffered event I/O, input routing via active session, delta rendering) is the reference model. The Go translation uses a single worker goroutine instead of an event loop, channels instead of callbacks, and atomic.Pointer instead of direct memory access. See scratch/termmux-architecture.md for full details."
-  },
   "statusSection": {
-    "currentState": "ALL 26 tasks (40-65) DONE. Task 54 (ConPTY Windows PTY support) was the final task — implemented full ConPTY pseudoconsole in pty_windows.go (296 lines, replacing 19-line stub). Cross-compilation verified on all 4 platforms. All linters and tests pass. Autopsy report at scratch/blueprint-autopsy-20260408/.",
-    "goalState": "Level 1 (Functional): User can run osm pr-split, interact with Claude pane, verification shell, and user shell interactively — inline and fullscreen passthrough — with seamless switching through a true multi-session manager. Windows ConPTY is fully supported. Level 2 (Quality): All interactions are responsive, rendering is pixel-perfect (no duplicate output, correct borders), focus system is reliable, error states are recoverable, code is exemplary (reads human-written), tests are exhaustive (no build tag violations). Level 3 (Validation): End-to-end tests prove workflows on all platforms; CI green on all checks; no performance regressions; no AI slop.",
-    "definitionOfDone": "The blueprint is Done when: (1) ALL tasks are marked Done, (2) each Done task has passed two contiguous Rule of Two reviews, (3) zero-uncovered-code-paths exist for the new functionality, (4) manual smoke tests confirm behavior across platforms, (5) docs are fully updated, and (6) all integration tests pass on all CI platforms.",
+    "currentState": "CRITICAL BUG FIXED: keys_gen.go rune corruption. Ultraviolet uses rune values above U+10FFFF (e.g., KeyUp=0x110001) which Go's %q format silently truncates to U+FFFD (replacement character). Regenerated keys_gen.go using rune(0xHHHHHH) format. All arrow/navigation keys now work. E2E textarea test passes. Tasks 1-3 complete, awaiting Rule of Two and commit.",
+    "goalState": "Production-ready merged codebase: zero v1 patterns, all textarea keys verified working at runtime via integration tests, all tests green on 3 platforms, complete documentation, then STUB tasks and future features expanding towards True Perfection.",
     "replanLog": [
-      {
-        "trigger": "Autopsy integration (pr-split-autopsy-20260407)",
-        "affectedTasks": "Full rewrite",
-        "summary": "Integrated findings from pr-split-autopsy-20260407. Removed all 12 ghost tasks (duplicate IDs 18-30 that were renumbered copies of already-Done tasks 2,4-15). Derived new tasks from gap analysis: GAP-C01/C02 (fatal inline keystroke bug), GAP-H01 (Windows ConPTY), GAP-H02 (verify sessions not in SessionManager), GAP-H03 (double VTerm), GAP-H04 (architecture doc inaccuracies), GAP-M01-M06 (medium/low gaps). Added forward-looking stub tasks for scope expansion towards True Perfection. Pruned all completed tasks and historical replanLog entries."
-      },
-      {
-        "trigger": "config.mk sequential-order mandate (2026-04-08)",
-        "affectedTasks": "All remaining tasks",
-        "summary": "Hana-san enforced strict sequential execution through config.mk $(error). Tasks MUST be completed in blueprint order without exception. Task 40 implemented first (write/resize on session wrapper), Task 51 also fixed in parallel but will be committed AFTER Task 40 respecting sequential order. No more cherry-picking easy tasks."
-      },
-      {
-        "trigger": "ConPTY implementation completed (2026-04-08)",
-        "affectedTasks": "Task 54",
-        "summary": "Task 54 (ConPTY Windows PTY support) implemented as a complete rewrite of pty_windows.go — from a 19-line ErrNotSupported stub to a 296-line full ConPTY implementation. Uses golang.org/x/sys/windows ConPTY APIs (CreatePseudoConsole, ResizePseudoConsole, ClosePseudoConsole, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE). Shared pty.go modified to support separate writeFile for ConPTY's unidirectional pipe model. All 26 blueprint tasks now Done."
-      }
+      "2026-04-12: AUTOPSY INTEGRATION + RULE OF TWO CORRECTION. (1) Removed 6 Done tasks from prior merge work. (2) Integrated autopsy findings from scratch/textarea-navigation-autopsy-20260412/. (3) CRITICAL CORRECTION during Rule of Two Pass 2: the autopsy's core claim that Enter/Tab are broken was based on a static analysis error — it confused Key.Code (rune '\\r'/'\\t') with Key.Text (string field, which is '' for special keys per ultraviolet decoder.go:1139-1144 and bubbletea key.go:297-300). The key pipeline is structurally correct for ALL keys. (4) Refocused tasks: defensive hardening of msg.text resolution (not a bug fix but a safety guard), comprehensive runtime verification tests, cross-platform, documentation, diff audit. (5) Added stub tasks per DIRECTIVE.txt for future scope. (6) Autopsy value: mapped entire key pipeline end-to-end, confirmed arrow keys structurally reach textarea, identified PgUp/PgDown as intentionally intercepted by scroll handler.",
+      "2026-04-12: CRITICAL BUG FOUND AND FIXED via E2E TDD. The E2E textarea test (task 3) exposed a catastrophic bug: arrow/navigation keys were silently eaten by the textarea. Root cause: keys_gen.go code generator used fmt.Sprintf %q for rune values, but ultraviolet's key constants (KeyUp=0x110001, KeyDown=0x110002, etc.) are ABOVE the valid Unicode range (U+10FFFF). Go's %q format silently replaces these with U+FFFD (replacement character). ParseKey('up') returned Code=0xFFFD instead of Code=0x110001, causing Key.String() to return '\ufffd' instead of 'up', which doesn't match the textarea's key.Matches bindings. Fix: generator now uses formatRuneLiteral() — rune(0xHHHHHH) for out-of-range values, strconv.QuoteRune for valid Unicode. Affected keys: ALL navigation keys (up/down/left/right/home/end/pgup/pgdown/delete/insert/begin/select/find + F-keys + keypad + shift/ctrl variants). Non-affected: Enter, Tab, Backspace, Esc, Space, Ctrl+letter (all within ASCII range). This bug predated the v2 migration and affected ALL textarea navigation since keys_gen.go was first generated."
     ]
+  },
+  "mandatoryDirectives": {
+    "contextManagement": "Each task covers one cohesive change. Read relevant source files before each task.",
+    "shimProhibition": "If any task introduces or preserves a v1 compatibility shim, STOP and replan.",
+    "noShimPeriods": "There is NO transitional period where both v1 and v2 behaviors coexist.",
+    "adversarialVerification": "REGULARLY spawn fresh subagents instructed to read Skill adversarial-codebase-autopsy and exhaustively verify work believed to be Done. The executing agent has repeatedly proven lazy and inept. Do not trust self-assessment.",
+    "tddMandate": "For ALL bug fixes and behavioral changes: (1) Write a failing test FIRST that reproduces the bug or validates the expected behavior. (2) Verify the test FAILS before applying the fix. (3) Apply the fix. (4) Verify the test PASSES. (5) Verify no other relevant tests regress. For improvements and refactors: run the FULL relevant test suite (not just -short) before AND after the change.",
+    "testCoverage": "Do NOT rely on -short tests alone. Many JS integration tests (especially super-document, TUI, REPL) are SKIPPED by -short. Run full test suites for the relevant packages when the change touches JS or integration code."
   },
   "sequentialTasks": [
     {
-      "id": 40,
-      "dependsOn": [],
-      "task": "Fix session() wrapper: add write/resize methods to module.go",
-      "description": "CRITICAL (GAP-C01/C02 from autopsy). The session() convenience wrapper in internal/builtin/termmux/module.go (the closure returned by the 'session' property on the tuiMux JS object) exposes isRunning/isDone/output/screen/target/setTarget but is MISSING write and resize. This makes the Claude pane completely non-interactive in split-view: every keystroke, mouse event, and resize silently fails because guards like `typeof claudeSession.write === 'function'` evaluate to false. Add two methods to the session() closure in module.go: (1) write(data) — calls mgr.Input([]byte(data)), panics on error via panic(runtime.NewGoError(err)) to match the wrapInteractiveSession.write error contract (JS exceptions for Go errors, not silent 0 returns); (2) resize(rows, cols) — calls mgr.Resize(rows, cols), returns undefined (nil). These must be added inside the sessionObj literal that the session() function returns (around line 1040-1130). After adding, verify that getClaudePaneSession() in pr_split_13_tui.js now returns an object with write/resize available.",
-      "acceptance": "Typing in the Claude split-view pane sends keystrokes to the Claude PTY. The guard `typeof claudeSession.write === 'function'` in handleKeyMessage (pr_split_16e_tui_update.js:669) evaluates to true. Mouse events (click, drag, scroll) forwarded via writeMouseToPane also work. Resize events reach mgr.Resize() from the JS resize handler. A new test verifies getClaudePaneSession() returns an object with callable write/resize/output/screen methods.",
-      "status": "Done"
+      "task": "Harden msg.text resolution: add printable-filter guard at super_document_script.js:870",
+      "description": "In `internal/command/super_document_script.js` line 870, the key resolution `const k = msg.text && msg.text.length === 1 ? msg.text : msg.key;` works correctly at runtime because bubbletea v2 sets `Key.Text = ''` (empty) for special keys — `msg.text` is falsy so `k` correctly falls through to `msg.key`. HOWEVER, this is a fragile assumption: if bubbletea ever populates `Key.Text` for control characters (e.g., `Key.Text = '\\r'` for Enter), the length-1 check would resolve `k` to that control character instead of the named key. Apply defensive hardening: change to `const k = (msg.text && msg.text.length === 1 && msg.text.charCodeAt(0) >= 0x20 && msg.text.charCodeAt(0) <= 0x7E) ? msg.text : msg.key;`. This guarantees only printable ASCII (0x20-0x7E) uses msg.text; everything else uses msg.key. Also update the comment at lines 866-869 to document WHY this filter exists (defensive hardening against future Key.Text changes) and the verified behavior (Key.Text is empty for special keys per ultraviolet decoder and bubbletea docs). References: ultraviolet decoder.go:1139-1144, bubbletea key.go:297-300, autopsy 03_gap_analysis.md GAP-001.",
+      "acceptance": "The JS key resolution line explicitly filters for printable ASCII (0x20-0x7E) before using msg.text. Comment documents the defensive rationale. Existing behavior is unchanged: all keys (arrows, Enter, Tab, Space, printable chars, backspace, delete, home, end) continue to work correctly. Verified by the integration tests in the next task.",
+      "status": "Done",
+      "completedNote": "Applied printable-ASCII guard (0x20-0x7E) at super_document_script.js handleKeys(). Comment documents defensive rationale with references to ultraviolet decoder and bubbletea docs."
     },
     {
-      "id": 41,
-      "dependsOn": [40],
-      "task": "Add E2E test: verify keystroke reaches PTY via SessionManager",
-      "description": "Create an end-to-end test proving the write path works. In internal/command/pr_split_inline_e2e_test.go: (1) Create a SessionManager with a mock InteractiveSession that records Write() calls; (2) Wrap it via WrapSessionManager to get the JS tuiMux object; (3) From JS, call tuiMux.session().write('hello') and verify the bytes arrive at the mock session's Write method via mgr.Input(); (4) Test resize: call tuiMux.session().resize(40, 120) and verify mgr.Resize(40, 120) is called. Use testing.Short() guard. This test directly addresses the autopsy finding that no E2E test exists for the JS→Go→PTY input path.",
-      "acceptance": "A test proves the full round-trip: JS code calls session().write(bytes) → Go mgr.Input() → mock session Write() receives the bytes. A second test proves resize round-trip. Both tests pass under race detector. The test safely skips when 'go test -short' is run.",
-      "status": "Done"
+      "task": "Write comprehensive runtime verification tests for textarea key handling",
+      "description": "Create integration tests that verify the full JS→Go bridge for textarea keys at runtime. Test file: `internal/command/super_document_test.go` or a new dedicated test file. Cover ALL keys from the autopsy evidence chain (02_evidence_chain.md lines 153-169): ↑, ↓, ←, →, Enter, Tab, Space, Backspace, Esc, Home, End, PgUp, PgDn, Delete, plus printable letters (a, Z, 5). For each key: (1) Verify msgToJS produces the correct JS object — specifically verify `msg.text` is empty for special keys and populated only for printable chars. (2) Verify the JS k resolution produces the correct k value. (3) Verify ValidateTextareaInput(k) returns expected result. (4) Verify the key reaches (or is correctly intercepted before) textarea.update(). Use existing test patterns from `internal/builtin/bubbletea/input_validation_test.go` and `coverage_gaps_test.go`. Tests must use skipSlow(t) if spawning JS runtimes (per AGENTS.md). Also add a specific test that verifies Key.Text is empty for Enter and Tab by directly checking msgToJS output — this serves as a regression guard against the autopsy's incorrect assumption.",
+      "acceptance": "A test suite covering all 14+ keys from the evidence chain table exists and passes. Each key has a test verifying the full pipeline. A dedicated test asserts that msgToJS produces `text: ''` for Enter and Tab (regression guard against the autopsy's mistaken claim). PgUp/PgDown tests verify they are intercepted by the scroll handler. Esc test verifies it is intercepted by the esc handler. All tests pass with `go test -v ./internal/command/... -run TestTextareaKey` and existing `go test -v ./internal/builtin/bubbletea/... -run TestValidateTextareaInput` continues to pass.",
+      "status": "Done",
+      "completedNote": "4 test functions in internal/builtin/bubbletea/key_pipeline_test.go: TestKeyPipeline_FullChain (18 subtests covering Enter/Tab/Esc/Backspace/Delete/arrows/Home/End/PgUp/PgDown/Space/a/Z/5/Ctrl+C through msgToJS→resolveKeyJS→ValidateTextareaInput), TestKeyPipeline_SpecialKeysHaveEmptyText (13 special keys regression guard), TestKeyPipeline_PrintableGuardRejectsControlChars (6 control chars), TestKeyPipeline_SpaceUsesTextNotNamedKey. All 37 subtests pass."
     },
     {
-      "id": 42,
-      "dependsOn": [],
-      "task": "Fix architecture doc inaccuracies (GAP-H04)",
-      "description": "scratch/termmux-architecture.md has 6 documented inaccuracies vs the actual implementation: (1) Method name 'SendInput()' should be 'Input()'; (2) Signature 'Close() error' — actual Close() returns nothing (void); (3) Method 'run()' lowercase — actual is exported 'Run()'; (4) Select loop described with 'sessionDone' case — no such case exists, exit detected via EOF sentinel in mergedOutput; (5) Describes 'managedSession.outputCh' field — no such field exists (removed during implementation); (6) Describes 'Start()' method triggering Created→Running — no Start() method, transition is automatic on first output. Fix all 6 inaccuracies by reading manager.go, capture.go, session.go and updating the architecture doc to match reality.",
-      "acceptance": "Every method name, type signature, select-loop case, and field name in scratch/termmux-architecture.md matches the actual Go source code. No future implementer will be misled by the architecture doc.",
-      "status": "Done"
+      "task": "E2E runtime verification: arrow keys and Enter produce visible textarea behavior",
+      "description": "Write an E2E test that verifies textarea behavior at the terminal level, addressing UNCERTAIN items 6-8 from autopsy 04_honest_conclusions.md. Test in `internal/command/super_document_e2e_test.go` or `internal/scripting/super_document_unix_integration_test.go` that: (1) opens the super-document TUI, (2) enters MODE_INPUT, (3) focuses the content textarea (FOCUS_CONTENT), (4) types multi-line content including Enter for newlines, (5) presses arrow keys and verifies cursor position changes, (6) verifies the view output reflects the changes. Use existing E2E infrastructure (`internal/mouseharness/`, VT parser with WaitForContent/WaitForScreenContent). This test is the definitive proof that the key pipeline works end-to-end, not just structurally. If issues are found, document them in WIP.md with the specific failure mode and add fix tasks before the cross-platform tasks.",
+      "acceptance": "An E2E test exists that types multi-line content into the textarea (proving Enter works for newlines), then presses arrow keys and verifies visible cursor movement. The test passes on macOS. This test proves the full pipeline from terminal→bubbletea→JS→textarea→view works for the key types the autopsy investigated.",
+      "status": "Done",
+      "completedNote": "TDD pattern: (1) Wrote TestSuperDocument_TextareaArrowKeysAndEnter in super_document_unix_integration_test.go. (2) Test FAILED exposing real bug: arrows silently eaten, output showed 'AAAA BBBBX' instead of 'XAAAA\nBBBB'. (3) Added TestKeyPipeline_ParseKeyRoundTrip which diagnosed root cause: KeyDefs['up'].Code=0xFFFD (replacement char) instead of 0x110001 (tea.KeyUp). (4) Fixed generator (formatRuneLiteral for out-of-range runes), regenerated keys_gen.go. (5) Round-trip test PASSES, E2E test PASSES (1.44s). Critical fix: all navigation keys were broken since keys_gen.go creation."
     },
     {
-      "id": 43,
-      "dependsOn": [],
-      "task": "Fix stale MuxSession doc comment in session.go (GAP-M01)",
-      "description": "internal/termmux/session.go line ~95 has a doc comment referencing '[MuxSession]' as a concrete type implementing InteractiveSession, but MuxSession was deleted in Task 37. Replace the reference with the actual surviving implementors: CaptureSession and StringIOSession.",
-      "acceptance": "The doc comment on the InteractiveSession interface references only types that actually exist in the codebase. go doc generates a valid link for each referenced type.",
-      "status": "Done"
+      "task": "Cross-platform: Linux via Docker",
+      "description": "Run `make make-all-in-container` (see config.mk). All tests must pass including the new textarea key tests. The container runs the full `make all` inside `golang:<version>` from go.mod.",
+      "acceptance": "`make make-all-in-container` exits 0. All 43+ packages pass. Zero test failures on Linux.",
+      "status": "Done",
+      "completedNote": "6 Docker runs. 3 Linux-only flakes fixed (REPLTUIToggle cooked-mode race, Chunk10b 0-iteration timeout, StressBoundedMemoryGrowth poll loop). Committed as 24965d86. Rule of Two passed (2/2 PASS)."
     },
     {
-      "id": 44,
-      "dependsOn": [40],
-      "task": "Fix resize path to call SessionManager.Resize() from JS (GAP-M04)",
-      "description": "In pr_split_16e_tui_update.js handleWindowResize: the resize handler calls session.resize() on the wrapper object but never calls tuiMux.resize() which delegates to mgr.Resize(). When the terminal is resized in split-view, the SessionManager's internal VTerm is NOT resized, causing stale dimension snapshots. Fix: add a call to tuiMux.resize(rows, cols) in the resize handler AFTER any per-session resize. This ensures the SessionManager broadcasts resize to all registered sessions and updates its internal VTerm dimensions.",
-      "acceptance": "Terminal resize in split-view causes both the per-session resize AND mgr.Resize() to fire. The SessionManager's VTerm dimensions match the terminal dimensions. childScreen() returns properly-sized ANSI output after resize.",
-      "status": "Done"
+      "task": "Cross-platform: Windows",
+      "description": "Run `make make-all-run-windows` (see config.mk). Uses `hack/run-on-windows.sh` to execute `make all` on Windows. All tests must pass.",
+      "acceptance": "`make make-all-run-windows` exits 0. All packages pass on Windows.",
+      "status": "Not Started"
     },
     {
-      "id": 45,
-      "dependsOn": [],
-      "task": "Forward all EventBus events through muxEvents bridge (GAP-M05)",
-      "description": "In internal/builtin/termmux/module.go ~line 588, the EventBus→muxEvents bridge goroutine only forwards 3 of 7 event types (EventSessionExited, EventBell, EventSessionOutput). Four event types are silently dropped: EventSessionRegistered, EventSessionActivated, EventSessionClosed, EventResize. Add forwarding for all 7 types. EXISTING JS event key names MUST be preserved — 'exit' stays EventExit, 'output' stays EventOutput, 'bell' stays EventBell. For the 4 new event types, add new constants and validEvents entries: EventRegistered='registered', EventActivated='activated', EventClosed='closed', EventTerminalResize='terminal-resize'. CRITICAL NAMING NOTE: the existing EventResize constant (value 'resize') in validEvents maps to the JS-level setResizeFunc callback path — user-initiated window resize handled entirely in JS. The NEW EventTerminalResize constant (value 'terminal-resize') maps to the EventBus Go-level resize propagation — SessionManager-level dimension changes broadcast to all sessions. These are TWO SEPARATE event streams with different sources. Do NOT merge them. Update validEvents map (lines 33-39) to include the new keys. Add cases to the bridge goroutine switch statement (~line 595) for EventSessionRegistered→EventRegistered, EventSessionActivated→EventActivated, EventSessionClosed→EventClosed, EventResize→EventTerminalResize. Also update the existing EventSessionExited case to send session metadata (SessionID, target) in the event data map. Verify that existing JS on() call sites (search for .on('exit', .on('output', .on('bell') in internal/command/*.js) are NOT broken by this change — they use the EXISTING key names which are unchanged.",
-      "acceptance": "JS callbacks registered via tuiMux.on() receive events for all 7 EventBus event kinds using the correct key names. Existing keys (exit, output, bell) are UNCHANGED. New keys (registered, activated, closed, terminal-resize) are added to both constants and validEvents map. A test subscribes to each event type and verifies delivery. Existing JS on() call sites for exit/output/bell are NOT broken.",
-      "status": "Done"
+      "task": "Documentation sweep: verify accuracy for v2 API and key handling",
+      "description": "Verify all files under `docs/` are accurate for the current v2 API. Specifically: (1) No references to v1 mouse patterns (isWheel, action, shift/alt/ctrl booleans); (2) No references to deleted types or pre-merge APIs; (3) `docs/scripting.md` documents the key event handling pattern including msg.text resolution and the printable-filter guard; (4) Any examples showing textarea usage reflect the current implementation.",
+      "acceptance": "Every file in docs/ is accurate for the current codebase. `grep -rn 'isWheel\\|msg\\.action.*press\\|msg\\.shift\\|msg\\.alt\\|msg\\.ctrl' docs/` returns zero hits. Key event handling is documented correctly.",
+      "status": "Done",
+      "completedNote": "Scanned all 47 docs/ files. Active docs v2-clean. v1 patterns only in archived design spec (correctly marked). Added key resolution pattern with printable-filter guard to docs/scripting.md. lipgloss.newStyle() is our JS wrapper (not v1). lipgloss.NewStyle() is valid in v2."
     },
     {
-      "id": 46,
-      "dependsOn": [],
-      "task": "Add passthrough StatusBar integration tests (GAP-M02)",
-      "description": "internal/termmux/passthrough.go has StatusBar integration (scroll region reservation, mouse event filtering, rendering) but zero test coverage. Add tests to internal/termmux/passthrough_test.go: (1) TestPassthroughStatusBar_ScrollRegionSetup — verify that when PassthroughConfig.StatusBar is non-nil, the scroll region is set before entering raw mode; (2) TestPassthroughStatusBar_MouseRouting — verify sgrmouse.filterMouseForStatusBar logic routes clicks on the status bar row to the StatusBar rather than the PTY; (3) TestPassthroughStatusBar_RenderRestore — verify that after passthrough exit, the terminal is restored using FullScreen from ScreenSnapshot. Use testing.Short() guards.",
-      "acceptance": "Three tests cover the StatusBar scroll region, mouse routing, and terminal restore paths in passthrough mode. All pass under race detector. The tests safely skip when 'go test -short' is run.",
-      "status": "Done"
+      "task": "Diff vs main audit",
+      "description": "Run `git diff main...HEAD` and review every changed file. Verify: (1) every change is intentional and tested; (2) no dead code introduced by the merge; (3) no v1 patterns survive; (4) all test helpers, golden files, and test data are current. Pay special attention to files that had merge conflicts (listed in WIP.md).",
+      "acceptance": "Complete diff audit documented in scratch/. Every changed file reviewed. No dead code. No untested changes. No v1 patterns. Merge conflict files specifically verified.",
+      "status": "Done",
+      "completedNote": "Full audit documented in scratch/diff-vs-main-audit.md. Zero v1 patterns in production Go code. Fixed 3 stale comments (tea.KeyMsg → tea.KeyPressMsg). lipgloss.NewStyle() confirmed valid v2. deadcode linter clean. Zero shims. All changes tested."
     },
     {
-      "id": 47,
-      "dependsOn": [],
-      "task": "Add passthrough + resize interaction tests (GAP-M03)",
-      "description": "Terminal resize during passthrough is untested. Add tests: (1) TestPassthrough_ResizeDuringPassthrough — start passthrough, send SIGWINCH-like resize event via PassthroughConfig.ResizeFn, verify session receives correct dimensions; (2) TestPassthrough_ResizeFnCallback — verify the ResizeFn field in PassthroughConfig is called during resize with correct new dimensions. Use testing.Short() guards.",
-      "acceptance": "Two tests cover the resize-during-passthrough path. ResizeFn callback fires with correct dimensions. Resize propagates to the active session's PTY. Tests pass under race detector and skip with testing.Short().",
-      "status": "Done"
+      "task": "Adversarial codebase autopsy on merged state",
+      "description": "Spawn subagent with adversarial-codebase-autopsy skill to verify the merged codebase. The subagent reads the skill, performs exhaustive analysis, and produces a structured report. All issues found must be addressed before proceeding. This is a standing quality gate — the merged codebase must survive hostile scrutiny.",
+      "acceptance": "Autopsy report produced in scratch/. All identified issues addressed or documented with explicit rationale. No critical or high-severity findings remain open.",
+      "status": "Done",
+      "completedNote": "Autopsy found 1 CRITICAL issue: v1 backward-compat shim in jsModToKeyMod() accepting boolean modifier properties. Shim deleted, benchmarks updated to v2 format, comprehensive test added verifying v1 booleans are rejected. All findings addressed."
     },
     {
-      "id": 48,
-      "dependsOn": [40, 44, 45],
-      "task": "Migrate verify sessions into SessionManager (GAP-H02)",
-      "description": "Verify sessions (created in pr_split_16c_tui_handlers_verify.js via prSplit.startVerifySession()) currently create standalone CaptureSession objects stored in s.activeVerifySession. They bypass SessionManager entirely — no COW snapshots, no typed state machine, no EventBus events. Migrate: (1) After CaptureSession creation, register it with tuiMux (which wraps SessionManager) via tuiMux.register(session, {kind:'verify', name: branchName}); (2) Use tuiMux.snapshot(sessionID) for screen reads instead of session.screen(); (3) Use tuiMux.writeToChild matching session for input instead of session.write() directly; (4) On verify branch completion, tuiMux.unregister(sessionID). Update: pollVerifySession, runVerifyBranch, clearVerifyPaneSession, _onToggle verify path (pr_split_16f_tui_model.js). The existing tuiMux event system (with GAP-M05 fix, all events forwarded) can be used for verify session lifecycle tracking.",
-      "acceptance": "Verify sessions are managed by SessionManager — registered on creation, tracked via COW snapshots, cleaned up via unregister on completion. s.activeVerifySession stores the SessionManager sessionID (number) instead of a raw CaptureSession. pr_split no longer creates any standalone CaptureSession outside SessionManager management. All existing verify-related tests pass unmodified.",
-      "status": "Done"
+      "task": "STUB: tea.View Cursor field support",
+      "description": "Expose cursor position/shape/color/blink via view() return object. Currently view() returns {content, altScreen, mouseMode}. Add cursor field matching bubbletea v2's tea.View cursor capabilities. Files: internal/builtin/bubbletea/bubbletea.go (view handling), internal/command/super_document_script.js (view() return).",
+      "acceptance": "JS controls cursor via view(). Integration test verifies cursor properties are set and applied.",
+      "status": "Not Started"
     },
     {
-      "id": 49,
-      "dependsOn": [48],
-      "task": "Remove VTerm from CaptureSession — eliminate double processing (GAP-H03)",
-      "description": "Every PTY output byte is processed by TWO VTerms: one in CaptureSession (capture.go readerLoop line 222 writes cs.term.Write(chunk) AND forwards to outputCh) and one in SessionManager's managedSession. After Task 48, all sessions are registered with SessionManager, so no JS code reads CaptureSession's VTerm directly. Remove: (1) cs.term (*vt.VTerm) field from CaptureSession struct; (2) cs.term.Write(chunk) call in readerLoop (line 222) — readerLoop becomes pure forwarder: read from PTY→outputCh; (3) Output() method (returns cs.term.String()); (4) Screen() method (returns cs.term — the VTerm instance); (5) cs.term.Resize(rows, cols) call in CaptureSession.Resize() (line 382) — after removing VTerm, Resize() only needs to call cs.proc.Resize(): the PTY resize, no VTerm resize; (6) cs.term initialization in NewCaptureSession — remove the vt.NewVTerm() call; (7) Any other cs.term references (grep capture.go for 'cs.term'). Update any remaining JS call sites that use .output()/.screen() to use tuiMux.snapshot(id) instead. Note: Target(), SetTarget(), IsRunning() are NOT deleted here — they are metadata/lifecycle methods unrelated to VTerm; their removal is an architectural decision tracked in Task 56.",
-      "acceptance": "Each PTY byte flows through exactly one VTerm.Write() call — verifiable by reading capture.go readerLoop (no cs.term.Write present). CaptureSession has zero VTerm dependency — grep capture.go for 'cs.term' returns zero results. The Output()/Screen() methods are DELETED from CaptureSession (no deprecated stubs). CaptureSession.Resize() only calls PTY resize (cs.proc.Resize), no VTerm resize. readerLoop is a pure forwarder: PTY→outputCh. All JS code uses SessionManager snapshots for screen data.",
-      "status": "Done"
+      "task": "STUB: tea.View ForegroundColor/BackgroundColor",
+      "description": "Expose terminal-wide foreground/background colors via view() return. Files: internal/builtin/bubbletea/bubbletea.go.",
+      "acceptance": "JS sets terminal colors via view() return. Integration test verifies color application.",
+      "status": "Not Started"
     },
     {
-      "id": 50,
-      "dependsOn": [45],
-      "task": "Add EventBus publish metrics for dropped events (GAP-M06)",
-      "description": "internal/termmux/eventbus.go Publish() uses non-blocking sends — if a subscriber's buffer is full, the event is silently dropped. Add: (1) A droppedEventCount atomic counter per EventBus; (2) Logging (via slog at debug level) when an event is dropped, including event kind; (3) A DroppedCount() method on EventBus that returns the total dropped count; (4) Expose via SessionManager: EventsDropped() int64. This makes event loss observable rather than invisible.",
-      "acceptance": "When a subscriber's buffer is full and an event is dropped, it is logged at debug level and counted. SessionManager.EventsDropped() returns the cumulative count. A test verifies: subscribe with buffer size 1, publish 3 events rapidly, verify EventsDropped() > 0 and that the first event was received.",
-      "status": "Done"
+      "task": "STUB: tea.View KeyboardEnhancements",
+      "description": "Expose Kitty keyboard protocol via view() return. Files: internal/builtin/bubbletea/bubbletea.go.",
+      "acceptance": "JS requests keyboard enhancements. Integration test verifies protocol negotiation.",
+      "status": "Not Started"
     },
     {
-      "id": 51,
-      "dependsOn": [],
-      "task": "Fix printf-style log.debug violations (autopsy leftover)",
-      "description": "Two log.debug calls use printf-style %s arguments, violating the jsLogDebug signature (msg string, attrs ...map[string]any). These cause TypeErrors that silently break the verify phase state machine: (1) internal/command/pr_split_13_tui.js line 120: log.debug('verify: phase %s → %s', from, toPhase) — change to log.debug('verify: phase ' + from + ' → ' + toPhase); (2) internal/command/pr_split_16c_tui_handlers_verify.js line 1264: log.debug('verify: user signal=%s for branch=%s', choice, s.activeVerifyBranch) — change to log.debug('verify: user signal=' + choice + ' for branch=' + s.activeVerifyBranch). After fixing, grep all internal/command/*.js for log.(debug|info|warn|error) calls containing %s, %d, %v to ensure zero remaining violations.",
-      "acceptance": "transitionVerifyPhase no longer throws TypeError during phase transitions. handleVerifySignal no longer throws TypeError on p/f/c keypress. A grep of all internal/command/*.js finds zero printf-style patterns in log.debug/info/warn/error calls. All existing tests pass.",
-      "status": "Done"
+      "task": "STUB: tea.View OnMouse intercept",
+      "description": "Expose zone-based mouse interception via view() return. Files: internal/builtin/bubbletea/bubbletea.go, internal/builtin/bubbletea/zone handling.",
+      "acceptance": "JS defines mouse zones. Tests verify detection and event routing.",
+      "status": "Not Started"
     },
     {
-      "id": 52,
-      "dependsOn": [49],
-      "task": "Address error-discarding patterns in SessionManager (GAP-L02)",
-      "description": "manager.go discards errors in several places: _ = ms.session.Close() (3 locations), _, _ = ms.vterm.Write(so.data), _, _ = (*w).Write(so.data). While VTerm is in-memory and unlikely to fail, the session.Close() ignores deserve attention: a failed close could leak resources. Fix: (1) Log session.Close() errors via slog at warn level with session ID; (2) For VTerm writes, log at debug level if the write returns an error (unexpected, but observable); (3) For passthrough tee writes, log at warn level (stdout write failure during passthrough is significant).",
-      "acceptance": "No error return in SessionManager is silently discarded. Every _ = ms.session.Close() is replaced with a logged error. VTerm write errors are observable via debug-level logging. Passthrough tee write errors are logged at warn level. A grep for '_ = ms.session' and '_, _ =' in manager.go returns zero results.",
-      "status": "Done"
+      "task": "STUB: tea.View ProgressBar",
+      "description": "Expose native terminal progress bars via view() return. Files: internal/builtin/bubbletea/bubbletea.go.",
+      "acceptance": "JS displays progress bars. Integration test verifies rendering.",
+      "status": "Not Started"
     },
     {
-      "id": 53,
-      "dependsOn": [],
-      "task": "Add CaptureSession.Close() configurable drain timeout (GAP-L01)",
-      "description": "capture.go Close() has a hardcoded 5-second drain timeout. The existing pattern uses CaptureConfig struct (capture.go:94 NewCaptureSession(cfg CaptureConfig)). Add DrainTimeout time.Duration field to CaptureConfig with a default of 5 seconds applied in NewCaptureSession. Update any existing CaptureConfig instantiations to use the field where appropriate. This allows tests to use shorter timeouts for faster feedback and production to use longer timeouts if needed.",
-      "acceptance": "CaptureSession.Close() drain timeout is configurable via CaptureConfig.DrainTimeout field. Default is 5 seconds. A test verifies that a custom timeout (e.g., 100ms) is respected.",
-      "status": "Done"
+      "task": "STUB: tea.View DisableBracketedPasteMode",
+      "description": "Expose bracketed paste control via view() return. Files: internal/builtin/bubbletea/bubbletea.go.",
+      "acceptance": "JS controls bracketed paste. Test verifies mode toggling.",
+      "status": "Not Started"
     },
     {
-      "id": 54,
-      "dependsOn": [],
-      "task": "Implement ConPTY Windows support (GAP-H01)",
-      "description": "Windows PTY support is absent — all Windows files are compilation stubs returning ErrNotSupported or no-ops. Implement full ConPTY support: (1) internal/termmux/pty/pty_windows.go — use windows.CreatePseudoConsole() to spawn PTY, ConPTY pipes for input/output, SetPseudoConsoleSize() for resize; (2) internal/termmux/pty/process_windows.go — Windows signal handling via TerminateProcess/GenerateConsoleCtrlEvent; (3) internal/termmux/pty/resize_windows.go — actual resize implementation; (4) internal/termmux/pty/blocking_windows.go — Console mode configuration; (5) Windows-specific tests with testing.Short() guards. Must compile and pass on windows-latest in CI.",
-      "acceptance": "pr-split verify shell, Claude pane, and user shell are fully interactive on Windows via ConPTY. All termmux integration tests pass on windows-latest. CI green on all three platforms (ubuntu-latest, macos-latest, windows-latest). Zero ErrNotSupported returns on Windows codepaths.",
-      "status": "Done"
+      "task": "STUB: Performance benchmarks",
+      "description": "Benchmark message throughput (msgToJS/JsToTeaMsg), view parsing, render latency. Files: internal/builtin/bubbletea/benchmark_latency_test.go (already exists with some benchmarks).",
+      "acceptance": "Benchmark suite runs via `go test -bench=. ./internal/builtin/bubbletea/...`. Results documented in scratch/.",
+      "status": "Not Started"
     },
     {
-      "id": 55,
-      "dependsOn": [40, 44, 48],
-      "task": "Add comprehensive TUI interaction E2E test suite",
-      "description": "The autopsy revealed ZERO end-to-end TUI interaction tests at the JS level. Create internal/command/pr_split_tui_interaction_test.go with tests exercising the full BubbleTea→SessionManager→PTY pipeline: (1) keystroke forwarding (type 'x' → verify PTY receives 'x'); (2) mouse forwarding (click at position → verify PTY receives mouse escape sequence); (3) resize propagation (window resize → verify SessionManager and PTY receive new dimensions); (4) session switching (activate session A, type, switch to B, type → verify correct session receives input); (5) split-view focus tracking (verify keystrokes go to focused pane). These are integration-level tests using mock PTY processes. Use testing.Short() guards.",
-      "acceptance": "The full JS→Go→PTY pipeline is PROVEN to work end-to-end: keystrokes typed in split-view panes are confirmed to reach their target PTY process by each test's mock PTY recording the exact bytes received. Mouse events generate correct escape sequences at the PTY. Resize events propagate through both the JS handler and SessionManager. Session switching routes input exclusively to the active session's PTY. Split-view focus tracking ensures only the focused pane's session receives keyboard input. All five paths verified by automated tests using mock PTY processes under race detector. Tests safely skip with testing.Short().",
-      "status": "Done"
+      "task": "STUB: Termmux facade design and implementation",
+      "description": "Design JS API for termmux, create skeleton, implement pane CRUD, visibility, events, bubbletea integration. Reference: scratch/termmux-architecture.md. The termmux SessionManager exists in Go (internal/builtin/termmux/) but needs a complete JS API surface.",
+      "acceptance": "All termmux facade functions exposed to JS. Integration tests verify pane CRUD, visibility toggling, event routing, and bubbletea program embedding. `make test` passes.",
+      "status": "Not Started"
     },
     {
-      "id": 56,
-      "dependsOn": [48, 49],
-      "task": "Purge transitional CaptureSession concrete methods",
-      "description": "After Task 48 migrates verify sessions to SessionManager and Task 49 removes VTerm from CaptureSession, three metadata/lifecycle methods on CaptureSession should be evaluated for removal. IMPORTANT: These are NOT VTerm-dependent (unlike Output/Screen which are removed in Task 49). Their removal is an ARCHITECTURAL DECISION to eliminate standalone CaptureSession metadata management, since after Task 48 all sessions are registered with SessionManager which provides metadata via SessionTarget and SessionState. Methods to delete: (1) Target() — returns cs.target string, now provided by SessionManager's SessionTarget; (2) SetTarget(string) — sets cs.target, now managed by SessionManager.Register()'s target parameter; (3) IsRunning() — checks proc.IsAlive(), now derived from SessionManager's SessionState (Running vs Exited/Closed). BEFORE deleting: grep all .js files for .target() , .setTarget( , .isRunning() to confirm zero call sites remain outside SessionManager wrappers. ALSO grep all .go files in termmux/ for the same. If any call sites remain that depend on standalone CaptureSession use, DO NOT DELETE — instead create a follow-up task for migration. Update tests: remove any test that exercises Target/SetTarget/IsRunning on standalone CaptureSession.",
-      "acceptance": "The three metadata/lifecycle methods (Target, SetTarget, IsRunning) are DELETED from CaptureSession — verified by a grep that finds zero remaining call sites in any .js or .go file. All other methods (Start, Wait, ExitCode, Close, Interrupt, Kill, Pause, Resume, IsPaused, Passthrough, SendEOF, Pid, WriteString, Write, Resize, Done, Reader) remain untouched and functional. 'make lint' (including deadcode) passes clean. The architectural decision to eliminate standalone CaptureSession metadata management is complete: metadata flows exclusively through SessionManager.",
-      "status": "Done"
+      "task": "STUB: Wizard state machine",
+      "description": "Design wizard states, implement transitions, port plan editor, branch pipeline, error resolution, orchestration, remove old Go TUI. Reference: internal/command/pr_split_*.js files for existing wizard structure.",
+      "acceptance": "Full wizard E2E flow works via JS. Old Go TUI code removed. All tests pass.",
+      "status": "Not Started"
     },
     {
-      "id": 57,
-      "dependsOn": [42],
-      "task": "Create module-extraction boundary test for termmux",
-      "description": "The termmux package must be extractable as a standalone Go module with zero osm-internal imports. Create internal/termmux/isolation_test.go that: (1) Imports only termmux and stdlib; (2) Verifies that 'go list -deps ./internal/termmux/...' produces no internal/ imports outside termmux itself; (3) Documents the module-extraction contract as a test assertion, not a convention. This prevents future accidental coupling to osm internals.",
-      "acceptance": "The isolation test proves termmux has zero dependency on any osm-internal package. Breaking the isolation contract (e.g., adding an import from internal/command) causes the test to fail. The test runs as part of 'make test' and enforces the module-extraction boundary.",
-      "status": "Done"
+      "task": "STUB: Advanced features — bell interception, HUD, mouse in termmux, native IPC, worktree isolation",
+      "description": "Implement advanced terminal features: bell interception, HUD overlay, mouse support within termmux panes, native IPC for inter-process communication, worktree isolation for safe concurrent operations.",
+      "acceptance": "Each feature implemented, tested, and documented. `make test` passes.",
+      "status": "Not Started"
     },
     {
-      "id": 58,
-      "dependsOn": [40, 51],
-      "task": "Audit all JS→Go boundary methods for API honesty",
-      "description": "The autopsy found that the session() wrapper was dishonest (advertised query methods but lacked write/resize). Conduct a systematic audit of EVERY method exposed by WrapSessionManager in module.go: (1) List all methods on the JS tuiMux object; (2) For each, verify it calls the correct Go method; (3) Verify the JS return type matches what the Go method returns; (4) Verify error handling: Go errors become JS exceptions or error returns, not silent failures; (5) Check that every JS method has at least one test. Produce a boundary API reference doc at docs/reference/termmux-js-api.md listing every method with its Go counterpart, parameters, return types, and test coverage status. Fix any dishonesty found during the audit.",
-      "acceptance": "A reference doc at docs/reference/termmux-js-api.md lists every JS→Go boundary method with verified parity. Every method has at least one test. Every Go error path produces an observable JS-side effect (exception, error return, or logged warning). No method silently drops data or returns wrong types.",
-      "status": "Done"
+      "task": "Final cross-platform validation",
+      "description": "Run all targets on all platforms (macOS native, Linux via container, Windows via run-on-windows.sh) AFTER all preceding tasks are complete.",
+      "acceptance": "ALL GREEN on macOS, Linux, Windows. Zero test failures on any platform.",
+      "status": "Not Started"
     },
     {
-      "id": 59,
-      "dependsOn": [55, 58],
-      "task": "Load test: SessionManager under sustained multi-session output",
-      "description": "Create internal/termmux/load_test.go with benchmarks and stress tests for sustained multi-session output: (1) BenchmarkMultiSessionOutput — 3 sessions producing output simultaneously, measure throughput and latency of snapshot updates; (2) StressTestConcurrentRegistration — 100 rapid register/unregister cycles across multiple goroutines; (3) BenchmarkSnapshotReadDuringWrite — measure COW snapshot read latency while output pipeline is active. Verify no deadlocks, no panics, bounded memory growth.",
-      "acceptance": "Three performance tests prove SessionManager handles multi-session output without deadlock, panic, or unbounded memory growth. Snapshot read latency during heavy write load remains under 1μs (COW guarantee). Registration/unregistration is safe under concurrent access.",
-      "status": "Done"
-    },
-    {
-      "id": 60,
-      "dependsOn": [49, 52, 56],
-      "task": "Comprehensive documentation refresh for termmux and pr-split",
-      "description": "After all code changes stabilize, update documentation end-to-end: (1) docs/architecture.md — update to reflect SessionManager as the core multiplexer, remove Mux references; (2) docs/scripting.md — update termmux module section to show SessionManager API (register/unregister/activate/input/resize/snapshot/subscribe); (3) scratch/termmux-architecture.md — verify Task 42 fixes are current; (4) docs/reference/tui-keymap.md — verify still accurate after any changes; (5) docs/reference/command.md — update pr-split command docs to reflect new session model; (6) Package doc comments (termmux/doc.go, capture.go) — verify accuracy. Target: zero stale references to Mux, MuxSession, WrapMux, or deleted methods.",
-      "acceptance": "All documentation accurately reflects the current codebase. Zero references to deleted types (Mux, MuxSession, WrapMux). Architecture doc matches implementation. Scripting guide shows correct JS API. Package doc comments are honest.",
-      "status": "Done"
-    },
-    {
-      "id": 61,
-      "dependsOn": [48, 55],
-      "task": "Implement tab-based session switching in split-view",
-      "description": "Currently Ctrl+Tab switches focus between wizard and Claude panes. Extend the session model to support multiple registered sessions with tab-based switching: (1) Register all panes (Claude, verify, output) with SessionManager; (2) Ctrl+Tab cycles through registered sessions; (3) The focused session receives all input; (4) Screen snapshots render the active session in the focused pane. This leverages SessionManager's multi-session architecture which was designed for exactly this use case.",
-      "acceptance": "Users can cycle through all panes (Claude, verify, output) using Ctrl+Tab. Each pane renders the correct session's output. Input is routed to the focused session. The tab order is deterministic and memorable (most-recently-used would be ideal).",
-      "status": "Done"
-    },
-    {
-      "id": 62,
-      "dependsOn": [40, 44],
-      "task": "Implement copy/paste support in split-view panes",
-      "description": "Users in split-view cannot copy/paste between panes or to/from the system clipboard. Add: (1) A selection mode activated by holding Shift+Arrow keys (or mouse drag) that highlights text in the current pane — use vt/cow.go Snapshot's PlainText() method to extract selected lines, coordinates derived from the COW snapshot's CursorRow/CursorCol fields; (2) Ctrl+Shift+C to copy selected text to system clipboard — use github.com/atotto/clipboard (already in go.sum) for cross-platform clipboard access; (3) Ctrl+Shift+V to paste from system clipboard to the active PTY via session().write(); (4) Visual feedback for selection (reverse-video highlight on the COW snapshot rows). Modify pr_split_16e_tui_update.js to add Shift+Arrow key handling in handleKeyMessage() and mouse drag handling in handleMouseMessage(). The selection state (startRow, startCol, endRow, endCol) is tracked per-session in the TUI model.",
-      "acceptance": "Users can select text in any split-view pane via keyboard or mouse, copy to system clipboard, and paste into any active PTY session. Visual selection highlighting confirms the selected region. Works on macOS and Linux (xclip/xsel/wl-clipboard).",
-      "status": "Done"
-    },
-    {
-      "id": 63,
-      "dependsOn": [48, 61],
-      "task": "Implement session persistence across pr-split restarts",
-      "description": "When pr-split is restarted (e.g., after crash or manual exit), all session state is lost. Implement session persistence: (1) SessionManager writes session metadata to JSON file via internal/storage/ backend — session ID, target string (from SessionTarget), SessionState enum value, PID, last snapshot timestamp, term dimensions; (2) On startup, check for existing state file (using osm's existing session storage paths from internal/storage/fs.go) and offer to resume previous sessions; (3) For sessions with live processes, detect if PID is still running (os.FindProcess + signal 0) and re-attach via ptyio.NewFileIO on /proc/{pid}/fd or ConPTY pipes; (4) For dead processes, offer to restart with same target. State file is written on every state transition (Registered→Running→Paused→Passthrough→Exited) using the EventBus subscription from Task 45's EventRegistered/EventActivated/EventClosed events. This depends on verify sessions being in SessionManager (Task 48) and tab-based switching (Task 61).",
-      "acceptance": "pr-split can detect a previous session on startup and offer to resume. Live processes (if still running) are re-attached and their output is visible. Dead processes are restarted if the user chooses. Session state file is cleaned up on clean exit.",
-      "status": "Done"
-    },
-    {
-      "id": 64,
-      "dependsOn": [],
-      "task": "Implement proper Unicode/emoji width handling in VTerm",
-      "description": "The VTerm implementation may incorrectly handle wide Unicode characters (CJK, emoji) that occupy 2 cells in the terminal. Audit vt/ package for: (1) Correct character width calculation (use uniseg or similar for East Asian Width); (2) Cursor movement with wide characters; (3) Line wrapping when a wide character would straddle the right margin; (4) Selection/copy that respects wide characters. This affects rendering quality in all split-view panes.",
-      "acceptance": "CJK characters, emoji, and other wide Unicode characters render correctly in split-view panes without cursor misalignment, wrapping artifacts, or truncation. A test with known wide-character sequences (cat emoji, CJK text, zero-width joiners) renders correctly.",
-      "status": "Done"
-    },
-    {
-      "id": 65,
-      "dependsOn": [],
-      "task": "Investigate tmux scrollback buffer integration for split-view",
-      "description": "Research task: investigate adding a scrollback buffer to the VTerm/session model so users can scroll up through history in split-view (currently only the visible portion of the screen is available). Analyze: (1) How tmux implements scrollback (mode-key.c, window.c); (2) Memory bounded design (configurable max lines, ring buffer); (3) Copy-on-write snapshot integration (scrollback should be queryable without blocking the worker); (4) UI for scrollback (Shift+PageUp/Down or Ctrl+Up/Down); (5) Output a design document at scratch/scrollback-design.md for review before implementation.",
-      "acceptance": "A design document at scratch/scrollback-design.md describes the scrollback architecture, memory strategy, VTerm integration, and UI controls. The design is reviewed and approved (Rule of Two) before implementation tasks are added.",
-      "status": "Done"
+      "task": "Scope expansion: identify and add next frontier tasks",
+      "description": "After reaching stable-state (all current tasks complete, verified), ideate new improvements, refinements, and features. This task is never truly complete — it represents the perpetual expansion mandate. Areas to explore: additional textarea features (selection, cut/copy/paste), more comprehensive E2E test coverage, performance optimization, accessibility, new script examples, enhanced error messages, etc.",
+      "acceptance": "New concrete tasks added to sequentialTasks. Each task meets the Planning Depth Standard (project-specific, verifiable acceptance, context pointers).",
+      "status": "Not Started"
     }
   ],
   "continuousVerification": {
-    "buildCommands": [
-      "make build",
-      "make test",
-      "make test-short",
-      "make lint",
-      "make fmt"
-    ],
-    "integrationTargets": [
-      "make integration-test-termmux",
-      "make integration-test-prsplit-mcp",
-      "make test-prsplit-fast",
-      "make test-prsplit-all"
-    ],
-    "platformTargets": [
-      "make make-all-with-log",
-      "make make-all-in-container",
-      "make make-all-run-windows"
-    ],
-    "coverageRequirement": "100% unit test coverage for SessionManager, EventBus, and all request handlers. 100% coverage for InteractiveSession interface implementations. Integration tests must exercise end-to-end workflows including session registration, activation, output pipeline, passthrough, and graceful shutdown on all supported platforms."
+    "task": "Run build and test after EVERY significant change",
+    "failPolicy": "If ANY test fails, STOP IMMEDIATELY and fix before proceeding."
   },
   "finalEnforcementProtocol": [
     {
-      "alert": "Every task marked Done must pass two contiguous Rule of Two reviews (subagent verification) before the mark is final."
+      "type": "POST_EXECUTION_WARNING",
+      "alert": "ZERO COMPATIBILITY SHIMS — v2 type-based dispatch ONLY. msg.mod array. msg.x/msg.y coordinates."
     },
     {
-      "alert": "All project-defined checks must pass on all project-defined platforms before a task is considered complete."
+      "type": "POST_EXECUTION_WARNING",
+      "alert": "ALL platforms must pass. Cross-platform testing mandatory."
     },
     {
-      "alert": "Acceptance criteria are the source of truth for 'Done', not just code existence or tests passing."
-    },
-    {
-      "alert": "Do not accept 'good enough' — the goal is exemplary, human-quality code with zero apparent AI slop."
-    },
-    {
-      "alert": "If stuck or uncertain, re-read scratch/termmux-architecture.md and this blueprint's Definition of Done section."
-    },
-    {
-      "alert": "The termmux package MUST have zero imports from osm-internal packages. Verify with: grep -rn 'internal/' internal/termmux/*.go | grep -v '_test.go' — the output must be empty."
-    },
-    {
-      "alert": "ALL mutable state mutations in SessionManager MUST go through the worker goroutine's request channel. If you find yourself adding a mutex to SessionManager, STOP — you are violating the architecture."
-    },
-    {
-      "alert": "Breaking changes are the expectation, not the exception. When the architecture requires changing an interface, change it and update ALL callers. No shims, no wrappers, no 'we'll migrate later'."
-    },
-    {
-      "alert": "AUTOPSY REMINDER: The session() wrapper disaster (GAP-C01) happened because the Rule of Two reviewers accepted 'code exists' without verifying that JS call sites could actually reach it. NEVER trust method presence — verify the full call path from JS to Go to PTY."
+      "type": "POST_EXECUTION_WARNING",
+      "alert": "Key.Text is empty ('') for special keys (Enter, Tab, Esc, arrows) per ultraviolet decoder and bubbletea v2 docs. The msg.text resolution line is a defensive guard, not a bug fix. Never assume Key.Text contains the rune value — it is populated only for printable characters."
     }
   ]
 }

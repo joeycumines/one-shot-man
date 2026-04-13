@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"github.com/joeycumines/go-prompt/termtest"
 )
 
 // ElementLocation represents the location of a UI element in the terminal buffer.
@@ -123,20 +121,60 @@ found:
 	}
 }
 
-// ClickElementAndExpect clicks an element and waits for expected content to appear.
-func (c *Console) ClickElementAndExpect(ctx context.Context, clickTarget, expectContent string, timeout time.Duration) error {
-	snap := c.cp.Snapshot()
+// WaitForContent polls the VT-parsed terminal screen for a substring.
+// BubbleTea v2 uses differential rendering (cursor movement + only changed
+// characters), so raw byte checking (termtest.Contains) fails for state
+// changes after the initial render. This method re-parses the full terminal
+// buffer on each poll to get the actual rendered screen content.
+func (c *Console) WaitForContent(ctx context.Context, content string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 
+	// Immediate check
+	if c.screenContains(content) {
+		return nil
+	}
+
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			buffer := c.cp.String()
+			screen := parseTerminalBuffer(buffer)
+			return fmt.Errorf("content %q not found on rendered screen within timeout\nScreen lines:\n%s",
+				content, strings.Join(screen, "\n"))
+		case <-ticker.C:
+			if c.screenContains(content) {
+				return nil
+			}
+		}
+	}
+}
+
+// screenContains checks whether the VT-parsed screen contains a substring.
+func (c *Console) screenContains(content string) bool {
+	buffer := c.cp.String()
+	screen := parseTerminalBuffer(buffer)
+	for _, line := range screen {
+		if strings.Contains(line, content) {
+			return true
+		}
+	}
+	return false
+}
+
+// ClickElementAndExpect clicks an element and waits for expected content to appear.
+// Uses VT-parsed screen polling (WaitForContent) instead of raw byte checking,
+// which is required for BubbleTea v2's differential rendering.
+func (c *Console) ClickElementAndExpect(ctx context.Context, clickTarget, expectContent string, timeout time.Duration) error {
 	if err := c.ClickElement(ctx, clickTarget, timeout/2); err != nil {
 		return fmt.Errorf("failed to click %q: %w", clickTarget, err)
 	}
 
-	// Wait for expected content
-	expectCtx, cancel := context.WithTimeout(ctx, timeout/2)
-	defer cancel()
-
-	if err := c.cp.Expect(expectCtx, snap, termtest.Contains(expectContent), fmt.Sprintf("wait for %q after clicking %q", expectContent, clickTarget)); err != nil {
-		return fmt.Errorf("expected %q after clicking %q: %w\nBuffer: %q", expectContent, clickTarget, err, c.cp.String())
+	if err := c.WaitForContent(ctx, expectContent, timeout/2); err != nil {
+		return fmt.Errorf("expected %q after clicking %q: %w", expectContent, clickTarget, err)
 	}
 
 	return nil

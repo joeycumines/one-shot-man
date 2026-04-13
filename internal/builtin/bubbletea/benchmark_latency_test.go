@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/dop251/goja"
 )
 
@@ -26,7 +26,7 @@ import (
 // ============================================================================
 
 // BenchmarkJsToTeaMsg_KeyMsg measures the time to convert a JS key event
-// object to a Go tea.KeyMsg. This is called for EVERY key press.
+// object to a Go tea.KeyPressMsg. This is called for EVERY key press.
 func BenchmarkJsToTeaMsg_KeyMsg(b *testing.B) {
 	runtime := goja.New()
 
@@ -34,10 +34,12 @@ func BenchmarkJsToTeaMsg_KeyMsg(b *testing.B) {
 	keyEventJS := `({
 		type: 'Key',
 		key: 'w',
-		runes: ['w'],
-		alt: false,
-		ctrl: false,
-		paste: false
+		text: 'w',
+		mod: [],
+		code: 119,
+		shiftedCode: 0,
+		baseCode: 0,
+		isRepeat: false
 	})`
 
 	val, err := runtime.RunString(keyEventJS)
@@ -64,14 +66,11 @@ func BenchmarkJsToTeaMsg_MouseMsg(b *testing.B) {
 	runtime := goja.New()
 
 	mouseEventJS := `({
-		type: 'Mouse',
+		type: 'MouseClick',
 		x: 40,
 		y: 12,
 		button: 'left',
-		action: 'press',
-		alt: false,
-		ctrl: false,
-		shift: false
+		mod: []
 	})`
 
 	val, err := runtime.RunString(mouseEventJS)
@@ -114,7 +113,7 @@ func BenchmarkJsToTeaMsg_WindowSizeMsg(b *testing.B) {
 	}
 }
 
-// BenchmarkMsgToJS_KeyMsg measures the time to convert a Go KeyMsg to JS.
+// BenchmarkMsgToJS_KeyMsg measures the time to convert a Go KeyPressMsg to JS.
 // This is called in jsModel.Update for every message.
 func BenchmarkMsgToJS_KeyMsg(b *testing.B) {
 	runtime := goja.New()
@@ -123,11 +122,8 @@ func BenchmarkMsgToJS_KeyMsg(b *testing.B) {
 		runtime: runtime,
 	}
 
-	// Create a realistic tea.KeyMsg
-	keyMsg := tea.KeyMsg{
-		Type:  tea.KeyRunes,
-		Runes: []rune{'w'},
-	}
+	// Create a realistic tea.KeyPressMsg
+	keyMsg := tea.KeyPressMsg{Text: "w"}
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -282,7 +278,7 @@ func BenchmarkParseKey_Modifier(b *testing.B) {
 
 // BenchmarkFullKeyPipeline simulates the full path of a key event:
 // 1. Create JS key event object
-// 2. Convert to Go tea.KeyMsg (JsToTeaMsg)
+// 2. Convert to Go tea.KeyPressMsg (JsToTeaMsg)
 // 3. Convert back to JS (msgToJS)
 // 4. Extract command from response (valueToCmd with tick)
 func BenchmarkFullKeyPipeline(b *testing.B) {
@@ -375,12 +371,10 @@ func BenchmarkGojaToValue_Map(b *testing.B) {
 	runtime := goja.New()
 
 	m := map[string]any{
-		"type":  "Key",
-		"key":   "w",
-		"runes": []string{"w"},
-		"alt":   false,
-		"ctrl":  false,
-		"paste": false,
+		"type": "Key",
+		"key":  "w",
+		"text": "w",
+		"mod":  []string{},
 	}
 
 	b.ResetTimer()
@@ -396,14 +390,11 @@ func BenchmarkGojaToValue_Map(b *testing.B) {
 // Comparative Benchmarks (Native Go vs Bridge)
 // ============================================================================
 
-// BenchmarkNativeTeaKeyMsg shows the baseline cost of creating a KeyMsg.
+// BenchmarkNativeTeaKeyMsg shows the baseline cost of creating a KeyPressMsg.
 func BenchmarkNativeTeaKeyMsg(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		msg := tea.KeyMsg{
-			Type:  tea.KeyRunes,
-			Runes: []rune{'w'},
-		}
+		msg := tea.KeyPressMsg{Text: "w"}
 		_ = msg
 	}
 }
@@ -505,7 +496,7 @@ func BenchmarkViewDirect(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		output := model.View()
-		if output == "" {
+		if output.Content == "" {
 			b.Fatal("View returned empty string")
 		}
 		_ = output
@@ -565,7 +556,7 @@ func BenchmarkFullUpdateCycle(b *testing.B) {
 		jsRunner:    &SyncJSRunner{Runtime: runtime},
 	}
 
-	keyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}}
+	keyMsg := tea.KeyPressMsg{Text: "a"}
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -613,14 +604,11 @@ func BenchmarkWrapCmd_Nil(b *testing.B) {
 func BenchmarkMsgToJS_MouseMsg(b *testing.B) {
 	model := &jsModel{}
 
-	mouseMsg := tea.MouseMsg{
+	mouseMsg := tea.MouseClickMsg{
 		X:      40,
 		Y:      12,
-		Button: tea.MouseButtonLeft,
-		Action: tea.MouseActionPress,
-		Alt:    false,
-		Ctrl:   true,
-		Shift:  false,
+		Button: tea.MouseLeft,
+		Mod:    tea.ModCtrl,
 	}
 
 	b.ResetTimer()
@@ -681,7 +669,7 @@ func BenchmarkValidateTextareaInput(b *testing.B) {
 	b.Run("PrintableASCII", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			r := ValidateTextareaInput("a", false)
+			r := ValidateTextareaInput("a")
 			_ = r
 		}
 	})
@@ -689,7 +677,7 @@ func BenchmarkValidateTextareaInput(b *testing.B) {
 	b.Run("NamedKey", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			r := ValidateTextareaInput("enter", false)
+			r := ValidateTextareaInput("enter")
 			_ = r
 		}
 	})
@@ -697,18 +685,11 @@ func BenchmarkValidateTextareaInput(b *testing.B) {
 	b.Run("Rejected", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			r := ValidateTextareaInput("[<65;33;12M", false)
+			r := ValidateTextareaInput("[<65;33;12M")
 			_ = r
 		}
 	})
 
-	b.Run("Paste", func(b *testing.B) {
-		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
-			r := ValidateTextareaInput("paste content", true)
-			_ = r
-		}
-	})
 }
 
 // BenchmarkValidateLabelInput measures input validation for label fields.
@@ -716,7 +697,7 @@ func BenchmarkValidateLabelInput(b *testing.B) {
 	b.Run("PrintableASCII", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			r := ValidateLabelInput("a", false)
+			r := ValidateLabelInput("a")
 			_ = r
 		}
 	})
@@ -724,7 +705,7 @@ func BenchmarkValidateLabelInput(b *testing.B) {
 	b.Run("Backspace", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			r := ValidateLabelInput("backspace", false)
+			r := ValidateLabelInput("backspace")
 			_ = r
 		}
 	})
@@ -732,7 +713,7 @@ func BenchmarkValidateLabelInput(b *testing.B) {
 	b.Run("Rejected", func(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			r := ValidateLabelInput("enter", false)
+			r := ValidateLabelInput("enter")
 			_ = r
 		}
 	})

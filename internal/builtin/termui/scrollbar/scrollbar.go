@@ -7,7 +7,7 @@
 package scrollbar
 
 import (
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/dop251/goja"
 	termuisb "github.com/joeycumines/one-shot-man/internal/termui/scrollbar"
 )

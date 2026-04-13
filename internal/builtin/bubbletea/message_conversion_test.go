@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,7 +17,7 @@ func TestJsToTeaMsg_KeyEvents(t *testing.T) {
 	tests := []struct {
 		name     string
 		jsObj    func() *goja.Object
-		expected tea.KeyPressMsg
+		expected tea.KeyMsg
 	}{
 		{
 			name: "Basic Key 'q'",
@@ -27,7 +27,7 @@ func TestJsToTeaMsg_KeyEvents(t *testing.T) {
 				obj.Set("key", "q")
 				return obj
 			},
-			expected: tea.KeyPressMsg{Text: "q"},
+			expected: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}},
 		},
 		{
 			name: "Named Key 'enter'",
@@ -37,7 +37,7 @@ func TestJsToTeaMsg_KeyEvents(t *testing.T) {
 				obj.Set("key", "enter")
 				return obj
 			},
-			expected: tea.KeyPressMsg{Code: tea.KeyEnter},
+			expected: tea.KeyMsg{Type: tea.KeyEnter},
 		},
 		{
 			name: "Named Key 'backspace'",
@@ -47,17 +47,17 @@ func TestJsToTeaMsg_KeyEvents(t *testing.T) {
 				obj.Set("key", "backspace")
 				return obj
 			},
-			expected: tea.KeyPressMsg{Code: tea.KeyBackspace},
+			expected: tea.KeyMsg{Type: tea.KeyBackspace},
 		},
 		{
-			name: "Unknown Key treated as text",
+			name: "Unknown Key treated as runes",
 			jsObj: func() *goja.Object {
 				obj := vm.NewObject()
 				obj.Set("type", "Key")
 				obj.Set("key", "some-weird-key")
 				return obj
 			},
-			expected: tea.KeyPressMsg{Text: "some-weird-key"},
+			expected: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("some-weird-key")},
 		},
 	}
 
@@ -65,11 +65,11 @@ func TestJsToTeaMsg_KeyEvents(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			msg := JsToTeaMsg(vm, tc.jsObj())
 			require.NotNil(t, msg)
-			keyMsg, ok := msg.(tea.KeyPressMsg)
-			require.True(t, ok, "Expected KeyPressMsg")
-			assert.Equal(t, tc.expected.Code, keyMsg.Code)
-			if tc.expected.Text != "" {
-				assert.Equal(t, tc.expected.Text, keyMsg.Text)
+			keyMsg, ok := msg.(tea.KeyMsg)
+			require.True(t, ok, "Expected KeyMsg")
+			assert.Equal(t, tc.expected.Type, keyMsg.Type)
+			if len(tc.expected.Runes) > 0 {
+				assert.Equal(t, tc.expected.Runes, keyMsg.Runes)
 			}
 		})
 	}
@@ -88,41 +88,42 @@ func TestJsToTeaMsg_MouseEvents(t *testing.T) {
 			name: "Left Click",
 			jsObj: func() *goja.Object {
 				obj := vm.NewObject()
-				obj.Set("type", "MouseClick")
+				obj.Set("type", "Mouse")
 				obj.Set("x", 10)
 				obj.Set("y", 20)
 				obj.Set("button", "left")
+				obj.Set("action", "press")
 				return obj
 			},
-			expected: tea.MouseClickMsg{X: 10, Y: 20, Button: tea.MouseLeft},
+			expected: tea.MouseMsg{X: 10, Y: 20, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress},
 		},
 		{
 			name: "Wheel Up",
 			jsObj: func() *goja.Object {
 				obj := vm.NewObject()
-				obj.Set("type", "MouseWheel")
+				obj.Set("type", "Mouse")
 				obj.Set("x", 5)
 				obj.Set("y", 5)
 				obj.Set("button", "wheel up")
+				obj.Set("action", "press")
 				return obj
 			},
-			expected: tea.MouseWheelMsg{X: 5, Y: 5, Button: tea.MouseWheelUp},
+			expected: tea.MouseMsg{X: 5, Y: 5, Button: tea.MouseButtonWheelUp, Action: tea.MouseActionPress},
 		},
 		{
 			name: "Right Click with Modifiers",
 			jsObj: func() *goja.Object {
 				obj := vm.NewObject()
-				obj.Set("type", "MouseRelease")
+				obj.Set("type", "Mouse")
 				obj.Set("x", 0)
 				obj.Set("y", 0)
 				obj.Set("button", "right")
-				modArr := vm.NewArray()
-				modArr.Set("0", "ctrl")
-				modArr.Set("1", "alt")
-				obj.Set("mod", modArr)
+				obj.Set("action", "release")
+				obj.Set("ctrl", true)
+				obj.Set("alt", true)
 				return obj
 			},
-			expected: tea.MouseReleaseMsg{X: 0, Y: 0, Mod: tea.ModCtrl | tea.ModAlt},
+			expected: tea.MouseMsg{X: 0, Y: 0, Button: tea.MouseButtonRight, Action: tea.MouseActionRelease, Ctrl: true, Alt: true},
 		},
 	}
 
@@ -130,28 +131,14 @@ func TestJsToTeaMsg_MouseEvents(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			msg := JsToTeaMsg(vm, tc.jsObj())
 			require.NotNil(t, msg)
-			switch expected := tc.expected.(type) {
-			case tea.MouseClickMsg:
-				mouseMsg, ok := msg.(tea.MouseClickMsg)
-				require.True(t, ok, "Expected MouseClickMsg")
-				assert.Equal(t, expected.X, mouseMsg.X)
-				assert.Equal(t, expected.Y, mouseMsg.Y)
-				assert.Equal(t, expected.Button, mouseMsg.Button)
-				assert.Equal(t, expected.Mod, mouseMsg.Mod)
-			case tea.MouseWheelMsg:
-				mouseMsg, ok := msg.(tea.MouseWheelMsg)
-				require.True(t, ok, "Expected MouseWheelMsg")
-				assert.Equal(t, expected.X, mouseMsg.X)
-				assert.Equal(t, expected.Y, mouseMsg.Y)
-				assert.Equal(t, expected.Button, mouseMsg.Button)
-				assert.Equal(t, expected.Mod, mouseMsg.Mod)
-			case tea.MouseReleaseMsg:
-				mouseMsg, ok := msg.(tea.MouseReleaseMsg)
-				require.True(t, ok, "Expected MouseReleaseMsg")
-				assert.Equal(t, expected.X, mouseMsg.X)
-				assert.Equal(t, expected.Y, mouseMsg.Y)
-				assert.Equal(t, expected.Mod, mouseMsg.Mod)
-			}
+			mouseMsg, ok := msg.(tea.MouseMsg)
+			require.True(t, ok, "Expected MouseMsg")
+			assert.Equal(t, tc.expected.X, mouseMsg.X)
+			assert.Equal(t, tc.expected.Y, mouseMsg.Y)
+			assert.Equal(t, tc.expected.Button, mouseMsg.Button)
+			assert.Equal(t, tc.expected.Action, mouseMsg.Action)
+			assert.Equal(t, tc.expected.Ctrl, mouseMsg.Ctrl)
+			assert.Equal(t, tc.expected.Alt, mouseMsg.Alt)
 		})
 	}
 }
@@ -217,43 +204,50 @@ func TestJsToTeaMsg_Invalid(t *testing.T) {
 	}
 }
 
-// TestMsgToJS_KeyMsg verifies conversion of tea.KeyPressMsg to JS object
+// TestMsgToJS_KeyMsg verifies conversion of tea.KeyMsg to JS object
 func TestMsgToJS_KeyMsg(t *testing.T) {
 	model := &jsModel{} // msgToJS is a method on jsModel
 
 	tests := []struct {
 		name  string
-		msg   tea.KeyPressMsg
+		msg   tea.KeyMsg
 		check func(*testing.T, map[string]any)
 	}{
 		{
 			name: "Simple 'a'",
-			msg:  tea.KeyPressMsg{Text: "a"},
+			msg:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}},
 			check: func(t *testing.T, res map[string]any) {
 				assert.Equal(t, "Key", res["type"])
 				assert.Equal(t, "a", res["key"])
-				// In v2, modifiers are returned as a slice of strings
-				mod, ok := res["mod"].([]string)
-				assert.True(t, ok, "mod should be a slice of strings")
-				assert.Empty(t, mod, "no modifiers expected")
+				assert.Equal(t, []string{"a"}, res["runes"])
+				assert.False(t, res["alt"].(bool))
+				assert.False(t, res["ctrl"].(bool))
 			},
 		},
 		{
 			name: "Ctrl+C",
-			msg:  tea.KeyPressMsg{Code: '\x03', Mod: tea.ModCtrl},
+			msg:  tea.KeyMsg{Type: tea.KeyCtrlC},
 			check: func(t *testing.T, res map[string]any) {
 				assert.Equal(t, "Key", res["type"])
-				mod := res["mod"].([]string)
-				assert.Contains(t, mod, "ctrl")
+				assert.Equal(t, "ctrl+c", res["key"])
+				assert.True(t, res["ctrl"].(bool))
 			},
 		},
 		{
 			name: "Alt+Runes",
-			msg:  tea.KeyPressMsg{Text: "b", Mod: tea.ModAlt},
+			msg:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}, Alt: true},
 			check: func(t *testing.T, res map[string]any) {
 				assert.Equal(t, "Key", res["type"])
-				mod := res["mod"].([]string)
-				assert.Contains(t, mod, "alt")
+				assert.Equal(t, "alt+b", res["key"])
+				assert.True(t, res["alt"].(bool))
+			},
+		},
+		{
+			name: "Bracketed Paste",
+			msg:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("paste"), Paste: true},
+			check: func(t *testing.T, res map[string]any) {
+				assert.Equal(t, "Key", res["type"])
+				assert.True(t, res["paste"].(bool))
 			},
 		},
 	}
@@ -271,23 +265,23 @@ func TestMsgToJS_KeyMsg(t *testing.T) {
 func TestMsgToJS_MouseMsg(t *testing.T) {
 	model := &jsModel{}
 
-	msg := tea.MouseClickMsg{
+	msg := tea.MouseMsg{
 		X:      10,
 		Y:      20,
-		Button: tea.MouseLeft,
-		Mod:    tea.ModCtrl,
+		Button: tea.MouseButtonLeft,
+		Action: tea.MouseActionPress,
+		Ctrl:   true,
 	}
 
 	res := model.msgToJS(msg)
 	require.NotNil(t, res)
-	assert.Equal(t, "MouseClick", res["type"])
+	assert.Equal(t, "Mouse", res["type"])
 	assert.Equal(t, 10, res["x"])
 	assert.Equal(t, 20, res["y"])
 	assert.Equal(t, "left", res["button"])
-	// In v2, modifiers are returned as a slice of strings
-	mod := res["mod"].([]string)
-	assert.Contains(t, mod, "ctrl")
-	assert.NotContains(t, mod, "alt")
+	assert.Equal(t, "press", res["action"])
+	assert.True(t, res["ctrl"].(bool))
+	assert.False(t, res["alt"].(bool))
 }
 
 // TestMsgToJS_WindowSizeMsg verifies conversion of tea.WindowSizeMsg to JS object
@@ -367,95 +361,4 @@ func TestMsgToJS_OtherMsgs(t *testing.T) {
 			tc.check(res)
 		})
 	}
-}
-
-// TestJsModToKeyMod verifies that jsModToKeyMod only accepts v2 array format
-// and rejects v1 boolean properties.
-func TestJsModToKeyMod(t *testing.T) {
-	vm := goja.New()
-
-	t.Run("nil mod returns 0", func(t *testing.T) {
-		obj := vm.NewObject()
-		assert.Equal(t, tea.KeyMod(0), jsModToKeyMod(obj))
-	})
-
-	t.Run("undefined mod returns 0", func(t *testing.T) {
-		obj := vm.NewObject()
-		obj.Set("mod", goja.Undefined())
-		assert.Equal(t, tea.KeyMod(0), jsModToKeyMod(obj))
-	})
-
-	t.Run("empty array returns 0", func(t *testing.T) {
-		obj := vm.NewObject()
-		obj.Set("mod", vm.NewArray())
-		assert.Equal(t, tea.KeyMod(0), jsModToKeyMod(obj))
-	})
-
-	t.Run("single modifier", func(t *testing.T) {
-		obj := vm.NewObject()
-		modArr := vm.NewArray()
-		modArr.Set("0", "ctrl")
-		obj.Set("mod", modArr)
-		assert.Equal(t, tea.ModCtrl, jsModToKeyMod(obj))
-	})
-
-	t.Run("multiple modifiers", func(t *testing.T) {
-		obj := vm.NewObject()
-		modArr := vm.NewArray()
-		modArr.Set("0", "ctrl")
-		modArr.Set("1", "alt")
-		modArr.Set("2", "shift")
-		obj.Set("mod", modArr)
-		assert.Equal(t, tea.ModCtrl|tea.ModAlt|tea.ModShift, jsModToKeyMod(obj))
-	})
-
-	t.Run("all v2 modifiers", func(t *testing.T) {
-		for _, tc := range []struct {
-			name string
-			want tea.KeyMod
-		}{
-			{"ctrl", tea.ModCtrl},
-			{"alt", tea.ModAlt},
-			{"shift", tea.ModShift},
-			{"meta", tea.ModMeta},
-			{"hyper", tea.ModHyper},
-			{"super", tea.ModSuper},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				obj := vm.NewObject()
-				modArr := vm.NewArray()
-				modArr.Set("0", tc.name)
-				obj.Set("mod", modArr)
-				assert.Equal(t, tc.want, jsModToKeyMod(obj))
-			})
-		}
-	})
-
-	t.Run("unknown modifier ignored", func(t *testing.T) {
-		obj := vm.NewObject()
-		modArr := vm.NewArray()
-		modArr.Set("0", "ctrl")
-		modArr.Set("1", "capslock")
-		obj.Set("mod", modArr)
-		assert.Equal(t, tea.ModCtrl, jsModToKeyMod(obj))
-	})
-
-	t.Run("v1 boolean properties are ignored", func(t *testing.T) {
-		// v1 used individual boolean properties: alt: true, ctrl: true, shift: true
-		// v2 requires mod: ["alt", "ctrl", "shift"]
-		// The shim that accepted booleans has been removed.
-		obj := vm.NewObject()
-		obj.Set("alt", true)
-		obj.Set("ctrl", true)
-		obj.Set("shift", true)
-		// No "mod" property set — these booleans must be ignored
-		assert.Equal(t, tea.KeyMod(0), jsModToKeyMod(obj),
-			"v1-style boolean modifiers must not be accepted; use mod array")
-	})
-
-	t.Run("non-array mod returns 0", func(t *testing.T) {
-		obj := vm.NewObject()
-		obj.Set("mod", "ctrl")
-		assert.Equal(t, tea.KeyMod(0), jsModToKeyMod(obj))
-	})
 }

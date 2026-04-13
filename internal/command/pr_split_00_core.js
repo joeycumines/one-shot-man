@@ -548,10 +548,7 @@
     // 'which' on Unix.
     function lookupBinary(name) {
         var cmd = isWindows() ? 'where.exe' : 'which';
-        // Late-bind exec through prSplit._modules so test compat shims
-        // that reassign the global 'exec' are visible here.
-        var e = (typeof prSplit !== 'undefined' && prSplit._modules && prSplit._modules.exec) || exec;
-        var result = e.execv([cmd, name]);
+        var result = exec.execv([cmd, name]);
         return {
             found: result.code === 0,
             path: (result.stdout || '').split('\n')[0].trim()
@@ -562,10 +559,7 @@
     // Returns a Promise<{found: bool, path: string}>.
     async function lookupBinaryAsync(name) {
         var cmd = isWindows() ? 'where.exe' : 'which';
-        // Late-bind exec through prSplit._modules so test compat shims
-        // that reassign the global 'exec' are visible here.
-        var e = (typeof prSplit !== 'undefined' && prSplit._modules && prSplit._modules.exec) || exec;
-        var child = e.spawn(cmd, [name]);
+        var child = exec.spawn(cmd, [name]);
         var stdout = '';
         while (true) {
             var chunk = await child.stdout.read();

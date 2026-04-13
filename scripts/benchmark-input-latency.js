@@ -308,7 +308,7 @@ function view(state) {
         lines.push(row);
     }
 
-    return { content: lines.join('\n'), altScreen: true };
+    return lines.join('\n');
 }
 
 // ============================================================================
@@ -326,7 +326,7 @@ console.log('Starting Input Latency Benchmark...');
 console.log('Press WASD or Arrow keys rapidly to measure input latency.');
 console.log('');
 
-tea.run(program);
+tea.run(program, { altScreen: true });
 
 console.log('');
 console.log('Benchmark complete.');

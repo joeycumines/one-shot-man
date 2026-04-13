@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	tea "charm.land/bubbletea/v2"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dop251/goja"
 	"github.com/stretchr/testify/assert"
 )
@@ -89,7 +89,7 @@ func TestJSModelLogic_Update(t *testing.T) {
 		}
 		model.jsRunner = &SyncJSRunner{Runtime: vm}
 
-		newModel, cmd := model.Update(tea.KeyPressMsg{Text: "a"})
+		newModel, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
 		assert.NotNil(t, newModel)
 		assert.NotNil(t, cmd)
 	})
@@ -128,8 +128,8 @@ func TestJSModelLogic_View(t *testing.T) {
 		model.jsRunner = &SyncJSRunner{Runtime: vm}
 
 		output := model.View()
-		assert.Contains(t, output.Content, "View error")
-		assert.Contains(t, output.Content, "view failed")
+		assert.Contains(t, output, "View error")
+		assert.Contains(t, output, "view failed")
 	})
 
 	t.Run("Empty Return", func(t *testing.T) {
@@ -144,6 +144,6 @@ func TestJSModelLogic_View(t *testing.T) {
 		model.jsRunner = &SyncJSRunner{Runtime: vm}
 
 		output := model.View()
-		assert.Equal(t, "[BT] View returned empty string", output.Content)
+		assert.Equal(t, "[BT] View returned empty string", output)
 	})
 }

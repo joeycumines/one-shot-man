@@ -1515,7 +1515,7 @@ func TestChunk16_ClaudeCheck_SwitchAwayCleansUp(t *testing.T) {
 			var origInBounds = z.inBounds;
 			z.inBounds = function(id) { return id === 'strategy-heuristic'; };
 			try {
-				r = update({type: 'MouseClick', button: 'left', x: 10, y: 10, mod: []}, s);
+				r = update({type: 'Mouse', button: 'left', action: 'press', isWheel: false, x: 10, y: 10}, s);
 			} finally {
 				z.inBounds = origInBounds;
 			}

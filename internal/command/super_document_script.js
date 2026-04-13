@@ -774,18 +774,8 @@ function runVisualTui() {
                 }
             } else if (msg.type === 'Key') {
                 return handleKeys(msg, tuiState);
-            } else if (msg.type === 'MouseClick' && msg.button === 'left') {
+            } else if (msg.type === 'Mouse' && msg.action === 'press') {
                 return handleMouse(msg, tuiState);
-            } else if (msg.type === 'MouseWheel') {
-                return handleMouse(msg, tuiState);
-            } else if (msg.type === 'Paste' && tuiState.inputFocus === FOCUS_CONTENT && tuiState.contentTextarea) {
-                // Paste events from bracketed paste mode arrive as tea.PasteMsg
-                // (converted to {type:"Paste", content:"..."} by msgToJS).
-                // Forward to the textarea's update so JsToTeaMsg converts it back
-                // to tea.PasteMsg and the textarea inserts the content.
-                const [newTa, taCmd] = tuiState.contentTextarea.update(msg);
-                tuiState.contentTextarea = newTa;
-                return [tuiState, taCmd];
             }
             return [tuiState, null];
         }, view: function (tuiState) {
@@ -793,7 +783,7 @@ function runVisualTui() {
         }
     });
 
-    return tea.run(model);
+    return tea.run(model, {altScreen: true, mouse: true});
 }
 
 function configureTextarea(ta, width) {
@@ -863,23 +853,7 @@ function configureTextarea(ta, width) {
 }
 
 function handleKeys(msg, s) {
-    // Resolve the effective key string for dispatch.
-    //
-    // msg.text carries the literal character for printable keys (e.g. " " for
-    // space) while msg.key carries the BubbleTea v2 named form (e.g. "space").
-    // Textarea validation expects the printable character, so we prefer
-    // msg.text when it contains exactly one printable ASCII character (0x20–
-    // 0x7E).  Everything else — special keys like enter, backspace, arrows,
-    // function keys, and control sequences — falls through to msg.key.
-    //
-    // DEFENSIVE RATIONALE: BubbleTea v2 currently sets Key.Text="" for special
-    // keys (ultraviolet decoder.go:1139–1144, bubbletea key.go:297–300).  The
-    // printable-ASCII guard protects against future changes that might populate
-    // Key.Text with control characters (e.g. "\r" for Enter, "\t" for Tab).
-    const k = (msg.text && msg.text.length === 1
-        && msg.text.charCodeAt(0) >= 0x20
-        && msg.text.charCodeAt(0) <= 0x7E)
-        ? msg.text : msg.key;
+    const k = msg.key;
     const prevMode = s.mode; // Track mode before processing
     // Global quit from any mode if ctrl+c
     if (k === 'ctrl+c') {
@@ -1297,13 +1271,25 @@ function handleKeys(msg, s) {
             s.inputViewportUnlocked = false; // Reset on mode exit
         } else {
             // Field input handling
+            // Extract paste flag from message (bracketed paste mode)
+            const isPaste = msg.paste === true;
 
             if (s.inputFocus === FOCUS_LABEL) {
                 // Use Go-based validation for label input
-                const validation = tea.isValidLabelInput(k);
+                const validation = tea.isValidLabelInput(k, isPaste);
                 if (validation.valid) {
                     if (k === 'backspace') {
                         s.labelBuffer = s.labelBuffer.slice(0, -1);
+                    } else if (isPaste) {
+                        // Paste event - extract content from bracketed format [content]
+                        // and append to label (stripping brackets if present)
+                        let pasteContent = k;
+                        if (k.startsWith('[') && k.endsWith(']') && k.length > 2) {
+                            pasteContent = k.slice(1, -1);
+                        }
+                        // For labels, only take first line and strip newlines
+                        pasteContent = pasteContent.split('\n')[0].replace(/\r/g, '');
+                        s.labelBuffer += pasteContent;
                     } else {
                         // Single printable character - add to label
                         s.labelBuffer += k;
@@ -1355,7 +1341,7 @@ function handleKeys(msg, s) {
                 // Use Go-based validation for textarea input
                 // This prevents garbage (fragmented escape sequences from rapid scroll)
                 // from being inserted into the document content.
-                const validation = tea.isValidTextareaInput(k);
+                const validation = tea.isValidTextareaInput(k, isPaste);
                 if (msg.type === 'Key' && validation.valid) {
                     // Delegate to native textarea component and capture returned command
                     const [newTa, taCmd] = s.contentTextarea.update(msg);
@@ -1413,9 +1399,12 @@ function handleMouse(msg, s) {
     // Guard: Only process left-button clicks for button/document activation
     // Wheel events should not trigger actions (they'll be handled as scroll if needed)
     const isLeftClick = msg.button === 'left';
+    // Use msg.isWheel property from MouseEventToJS for proper wheel detection
+    // This aligns with tea.MouseEvent.IsWheel() and handles all wheel button types
+    const isWheelEvent = msg.isWheel === true;
 
     // Handle wheel events for scrolling in list mode via viewport
-    if (msg.type === 'MouseWheel' && s.mode === MODE_LIST && s.documents.length > 0 && s.vp) {
+    if (isWheelEvent && s.mode === MODE_LIST && s.documents.length > 0 && s.vp) {
         // Mouse button strings now match tea.MouseEvent.String(): "wheel up", "wheel down", etc.
         if (msg.button === 'wheel up') {
             s.vp.scrollUp(3); // Scroll viewport up by 3 lines
@@ -1427,7 +1416,7 @@ function handleMouse(msg, s) {
     }
 
     // Handle wheel events for scrolling in input mode via inputVp
-    if (msg.type === 'MouseWheel' && s.mode === MODE_INPUT && s.inputVp) {
+    if (isWheelEvent && s.mode === MODE_INPUT && s.inputVp) {
         // PRECISE MOUSE SCROLL PROPAGATION
         // CHANGE: Removed scroll capture in textarea. Events now always bubble to outer viewport.
 
@@ -1630,7 +1619,7 @@ function handleMouse(msg, s) {
             // Uses handleClickAtScreenCoords() which does ALL coordinate translation in Go.
             // This replaces manual JS coordinate math for PERFORMANCE and CORRECTNESS.
             // The Go method handles: screen→viewport→content→textarea→visual→logical mapping.
-            if (s.contentTextarea && isLeftClick) {
+            if (s.contentTextarea && isLeftClick && !isWheelEvent) {
                 // Defensive: refresh viewport context right before asking Go to hit-test.
                 if (s.contentTextarea.setViewportContext && s.textareaBounds) {
                     s.contentTextarea.setViewportContext({
@@ -1788,11 +1777,7 @@ function renderView(s) {
     else if (s.mode === MODE_CONFIRM) content = renderConfirm(s); else content = renderList(s);
 
     // Wrap with zone.scan() to register zones and strip markers
-    return {
-        content: zone.scan(content),
-        altScreen: true,
-        mouseMode: 'all'
-    };
+    return zone.scan(content);
 }
 
 // Minimal Render Helpers (inlining logic for single-file)

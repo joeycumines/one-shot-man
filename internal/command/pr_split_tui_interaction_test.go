@@ -262,12 +262,14 @@ func TestMouseForwardingToPTY(t *testing.T) {
 	_, err = evalJS(`
 		var __ms = ` + state + `;
 		var __mmsg = {
-			type: 'MouseMotion',
+			type: 'Mouse',
+			action: 'motion',
 			button: 'left',
 			x: 5,
 			y: 30,
-			mod: [],
-			string: ''
+			row: 30, col: 5,
+			shift: false, alt: false, ctrl: false,
+			isWheel: false
 		};
 		prSplit._wizardUpdateImpl(__mmsg, __ms);
 	`)

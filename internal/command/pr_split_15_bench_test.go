@@ -54,8 +54,10 @@ func BenchmarkRender_MouseToTermBytes(b *testing.B) {
 	// Pre-build the mouse message object to avoid measuring allocation.
 	setupJS := `
 		globalThis._benchMouseMsg = {
-			type: 'MouseClick', x: 40, y: 12,
-			button: 'left', mod: []
+			x: 40, y: 12,
+			button: 'left',
+			shift: false, alt: false, ctrl: false,
+			action: 'press'
 		};
 		'ready'
 	`

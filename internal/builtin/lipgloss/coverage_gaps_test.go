@@ -89,91 +89,91 @@ func TestUnwrapStyle_ErrorState(t *testing.T) {
 
 func TestParseColor_NullReturnsNoColor(t *testing.T) {
 	vm := goja.New()
-	color, err := parseColor(vm, goja.Null())
+	color, err := parseColor(vm, goja.Null(), false)
 	require.NoError(t, err)
 	assert.NotNil(t, color) // NoColor{} is a valid color
 }
 
 func TestParseColor_UndefinedReturnsNoColor(t *testing.T) {
 	vm := goja.New()
-	color, err := parseColor(vm, goja.Undefined())
+	color, err := parseColor(vm, goja.Undefined(), false)
 	require.NoError(t, err)
 	assert.NotNil(t, color)
 }
 
 func TestParseColor_EmptyStringReturnsNoColor(t *testing.T) {
 	vm := goja.New()
-	color, err := parseColor(vm, vm.ToValue(""))
+	color, err := parseColor(vm, vm.ToValue(""), false)
 	require.NoError(t, err)
 	assert.NotNil(t, color)
 }
 
 func TestParseColor_WhitespaceOnlyReturnsNoColor(t *testing.T) {
 	vm := goja.New()
-	color, err := parseColor(vm, vm.ToValue("   "))
+	color, err := parseColor(vm, vm.ToValue("   "), false)
 	require.NoError(t, err)
 	assert.NotNil(t, color)
 }
 
 func TestParseColor_InvalidHexColor(t *testing.T) {
 	vm := goja.New()
-	_, err := parseColor(vm, vm.ToValue("#GGG"))
+	_, err := parseColor(vm, vm.ToValue("#GGG"), false)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid hex color")
 }
 
 func TestParseColor_InvalidHex6Char(t *testing.T) {
 	vm := goja.New()
-	_, err := parseColor(vm, vm.ToValue("#GGGGGG"))
+	_, err := parseColor(vm, vm.ToValue("#GGGGGG"), false)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid hex color")
 }
 
 func TestParseColor_ValidHex3(t *testing.T) {
 	vm := goja.New()
-	color, err := parseColor(vm, vm.ToValue("#F00"))
+	color, err := parseColor(vm, vm.ToValue("#F00"), false)
 	require.NoError(t, err)
 	assert.NotNil(t, color)
 }
 
 func TestParseColor_ValidHex6(t *testing.T) {
 	vm := goja.New()
-	color, err := parseColor(vm, vm.ToValue("#FF0000"))
+	color, err := parseColor(vm, vm.ToValue("#FF0000"), false)
 	require.NoError(t, err)
 	assert.NotNil(t, color)
 }
 
 func TestParseColor_ANSIMin(t *testing.T) {
 	vm := goja.New()
-	color, err := parseColor(vm, vm.ToValue("0"))
+	color, err := parseColor(vm, vm.ToValue("0"), false)
 	require.NoError(t, err)
 	assert.NotNil(t, color)
 }
 
 func TestParseColor_ANSIMax(t *testing.T) {
 	vm := goja.New()
-	color, err := parseColor(vm, vm.ToValue("255"))
+	color, err := parseColor(vm, vm.ToValue("255"), false)
 	require.NoError(t, err)
 	assert.NotNil(t, color)
 }
 
 func TestParseColor_ANSIOutOfRange(t *testing.T) {
 	vm := goja.New()
-	_, err := parseColor(vm, vm.ToValue("256"))
+	_, err := parseColor(vm, vm.ToValue("256"), false)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "ANSI color must be 0-255")
 }
 
 func TestParseColor_ANSINegative(t *testing.T) {
 	vm := goja.New()
-	_, err := parseColor(vm, vm.ToValue("-1"))
+	_, err := parseColor(vm, vm.ToValue("-1"), false)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "ANSI color must be 0-255")
 }
 
 func TestParseColor_NamedColor(t *testing.T) {
 	vm := goja.New()
-	color, err := parseColor(vm, vm.ToValue("red"))
+	color, err := parseColor(vm, vm.ToValue("red"), false)
 	require.NoError(t, err)
 	assert.NotNil(t, color)
 }
@@ -184,7 +184,7 @@ func TestParseColor_AdaptiveColor(t *testing.T) {
 	_ = obj.Set("light", "#FFFFFF")
 	_ = obj.Set("dark", "#000000")
 
-	color, err := parseColor(vm, obj)
+	color, err := parseColor(vm, obj, false)
 	require.NoError(t, err)
 	assert.NotNil(t, color)
 }
@@ -194,7 +194,7 @@ func TestParseColor_AdaptiveColor_MissingLight(t *testing.T) {
 	obj := vm.NewObject()
 	_ = obj.Set("dark", "#000000")
 
-	_, err := parseColor(vm, obj)
+	_, err := parseColor(vm, obj, false)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "missing 'light' or 'dark'")
 }
@@ -204,7 +204,7 @@ func TestParseColor_AdaptiveColor_MissingDark(t *testing.T) {
 	obj := vm.NewObject()
 	_ = obj.Set("light", "#FFFFFF")
 
-	_, err := parseColor(vm, obj)
+	_, err := parseColor(vm, obj, false)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "missing 'light' or 'dark'")
 }
@@ -215,7 +215,7 @@ func TestParseColor_AdaptiveColor_InvalidLight(t *testing.T) {
 	_ = obj.Set("light", "#GGGGGG")
 	_ = obj.Set("dark", "#000000")
 
-	_, err := parseColor(vm, obj)
+	_, err := parseColor(vm, obj, false)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid light color")
 }
@@ -226,7 +226,7 @@ func TestParseColor_AdaptiveColor_InvalidDark(t *testing.T) {
 	_ = obj.Set("light", "#FFFFFF")
 	_ = obj.Set("dark", "#GGGGGG")
 
-	_, err := parseColor(vm, obj)
+	_, err := parseColor(vm, obj, false)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid dark color")
 }
@@ -235,14 +235,14 @@ func TestParseColor_AdaptiveColor_InvalidDark(t *testing.T) {
 
 func TestParseWhitespaceOptions_NilValue(t *testing.T) {
 	vm := goja.New()
-	opts, err := parseWhitespaceOptions(vm, goja.Null())
+	opts, err := parseWhitespaceOptions(vm, goja.Null(), false)
 	require.NoError(t, err)
 	assert.Empty(t, opts)
 }
 
 func TestParseWhitespaceOptions_UndefinedValue(t *testing.T) {
 	vm := goja.New()
-	opts, err := parseWhitespaceOptions(vm, goja.Undefined())
+	opts, err := parseWhitespaceOptions(vm, goja.Undefined(), false)
 	require.NoError(t, err)
 	assert.Empty(t, opts)
 }
@@ -251,7 +251,7 @@ func TestParseWhitespaceOptions_WithForeground(t *testing.T) {
 	vm := goja.New()
 	obj := vm.NewObject()
 	_ = obj.Set("whitespaceForeground", "#FF0000")
-	opts, err := parseWhitespaceOptions(vm, obj)
+	opts, err := parseWhitespaceOptions(vm, obj, false)
 	require.NoError(t, err)
 	assert.Len(t, opts, 1)
 }
@@ -260,7 +260,7 @@ func TestParseWhitespaceOptions_WithBackground(t *testing.T) {
 	vm := goja.New()
 	obj := vm.NewObject()
 	_ = obj.Set("whitespaceBackground", "#00FF00")
-	opts, err := parseWhitespaceOptions(vm, obj)
+	opts, err := parseWhitespaceOptions(vm, obj, false)
 	require.NoError(t, err)
 	assert.Len(t, opts, 1)
 }
@@ -271,16 +271,18 @@ func TestParseWhitespaceOptions_WithAllOptions(t *testing.T) {
 	_ = obj.Set("whitespaceChars", ".")
 	_ = obj.Set("whitespaceForeground", "#FF0000")
 	_ = obj.Set("whitespaceBackground", "#00FF00")
-	opts, err := parseWhitespaceOptions(vm, obj)
+	opts, err := parseWhitespaceOptions(vm, obj, false)
 	require.NoError(t, err)
-	assert.Len(t, opts, 3)
+	// v2 lipgloss only accepts 2 options: WithWhitespaceChars + WithWhitespaceStyle.
+	// The foreground/background are combined into a single WithWhitespaceStyle.
+	assert.Len(t, opts, 2)
 }
 
 func TestParseWhitespaceOptions_ForegroundError(t *testing.T) {
 	vm := goja.New()
 	obj := vm.NewObject()
 	_ = obj.Set("whitespaceForeground", "#GGGGGG")
-	_, err := parseWhitespaceOptions(vm, obj)
+	_, err := parseWhitespaceOptions(vm, obj, false)
 	assert.Error(t, err)
 }
 
@@ -288,7 +290,7 @@ func TestParseWhitespaceOptions_BackgroundError(t *testing.T) {
 	vm := goja.New()
 	obj := vm.NewObject()
 	_ = obj.Set("whitespaceBackground", "#GGGGGG")
-	_, err := parseWhitespaceOptions(vm, obj)
+	_, err := parseWhitespaceOptions(vm, obj, false)
 	assert.Error(t, err)
 }
 
@@ -297,7 +299,7 @@ func TestParseWhitespaceOptions_UndefinedForeground(t *testing.T) {
 	obj := vm.NewObject()
 	// foreground is missing (undefined) — should skip
 	_ = obj.Set("whitespaceChars", "x")
-	opts, err := parseWhitespaceOptions(vm, obj)
+	opts, err := parseWhitespaceOptions(vm, obj, false)
 	require.NoError(t, err)
 	assert.Len(t, opts, 1) // only whitespaceChars
 }
@@ -309,7 +311,7 @@ func TestParseWhitespaceOptions_NullForeground(t *testing.T) {
 	vm := goja.New()
 	obj := vm.NewObject()
 	_ = obj.Set("whitespaceForeground", goja.Null())
-	opts, err := parseWhitespaceOptions(vm, obj)
+	opts, err := parseWhitespaceOptions(vm, obj, false)
 	require.NoError(t, err)
 	assert.Len(t, opts, 1) // null still creates a NoColor{} option
 }

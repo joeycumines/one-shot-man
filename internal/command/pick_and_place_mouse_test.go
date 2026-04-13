@@ -4,16 +4,15 @@ package command
 
 import (
 	"context"
-	"math"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
 
 // TestPickAndPlaceMouseInteraction tests that clicking the mouse moves the actor.
 func TestPickAndPlaceMouseInteraction(t *testing.T) {
+	skipSlow(t)
 	ctx := context.Background()
 	logPath := filepath.Join(t.TempDir(), "mouse_test.log")
 
@@ -26,14 +25,9 @@ func TestPickAndPlaceMouseInteraction(t *testing.T) {
 	}
 	defer func() {
 		if t.Failed() {
+			// On failure, dump VIEW entries from log file for debugging
 			content, _ := os.ReadFile(logPath)
-			t.Logf("=== Filtered Log (MOUSE|fs module|blueprint) ===")
-			lines := strings.SplitSeq(string(content), "\n")
-			for line := range lines {
-				if strings.Contains(line, "MOUSE") || strings.Contains(line, "fs module") || strings.Contains(line, "blueprint") {
-					t.Log(line)
-				}
-			}
+			t.Logf("=== Log file (last 4000 bytes) ===\n%s", truncateFromEnd(string(content), 4000))
 		}
 		harness.Close()
 	}()
@@ -72,29 +66,11 @@ func TestPickAndPlaceMouseInteraction(t *testing.T) {
 		t.Fatalf("Failed to click: %v", err)
 	}
 
-	// 4. Wait for movement
-	success := false
-	stopTick := startTick + 100 // Timeout
-
-	for {
-		harness.WaitForFrames(1)
-		currState := harness.GetDebugState()
-
-		if currState.Tick > stopTick {
-			break
-		}
-
-		if math.Abs(currState.ActorX-float64(targetX)) < 0.5 &&
-			math.Abs(currState.ActorY-float64(targetY)) < 0.5 {
-			success = true
-			t.Logf("Success! Reached (%d, %d) at tick %d", targetX, targetY, currState.Tick)
-			break
-		}
-	}
-
+	// 4. Wait for movement — use log file (authoritative) to avoid PTY buffer staleness.
+	// PTY buffer can have stale actor position even when tick is current.
+	success := harness.WaitForActorPosition(targetX, targetY, 0.5)
 	if !success {
-		finalState := harness.GetDebugState()
-		t.Fatalf("Failed to reach target (%d, %d). Ended at (%.1f, %.1f) after waiting.",
-			targetX, targetY, finalState.ActorX, finalState.ActorY)
+		t.Fatalf("Failed to reach target (%d, %d).", targetX, targetY)
 	}
+	t.Logf("Success! Actor reached (%d, %d)", targetX, targetY)
 }

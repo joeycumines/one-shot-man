@@ -759,19 +759,19 @@
         }
 
         // Modifier bits.
-        if (msg.shift) btn += 4;
-        if (msg.alt)   btn += 8;
-        if (msg.ctrl)  btn += 16;
+        if (msg.mod && msg.mod.includes('shift')) btn += 4;
+        if (msg.mod && msg.mod.includes('alt'))   btn += 8;
+        if (msg.mod && msg.mod.includes('ctrl'))  btn += 16;
 
         // Motion flag (bit 5).
-        if (msg.action === 'motion') btn += 32;
+        if (msg.type === 'MouseMotion') btn += 32;
 
         // SGR uses 1-based coordinates.
         var cx = x + 1;
         var cy = y + 1;
 
         // Press/motion → 'M', release → 'm'.
-        var suffix = (msg.action === 'release') ? 'm' : 'M';
+        var suffix = (msg.type === 'MouseRelease') ? 'm' : 'M';
         return '\x1b[<' + btn + ';' + cx + ';' + cy + suffix;
     }
 

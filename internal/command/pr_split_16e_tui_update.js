@@ -354,7 +354,7 @@
                     if (s.reportVp) { s.reportVp.scrollUp(1); syncReportScrollbar(s); }
                     return [s, null];
                 }
-                if (rk === 'pgdown' || rk === ' ') {
+                if (rk === 'pgdown' || rk === 'space') {
                     if (s.reportVp) { s.reportVp.halfPageDown(); syncReportScrollbar(s); }
                     return [s, null];
                 }
@@ -373,7 +373,7 @@
                 return [s, null];
             }
             // Mouse wheel scrolling within report overlay.
-            if (msg.type === 'Mouse' && msg.isWheel && s.reportVp) {
+            if (msg.type === 'MouseWheel' && s.reportVp) {
                 if (msg.button === 'wheel up') {
                     s.reportVp.scrollUp(3);
                     syncReportScrollbar(s);
@@ -386,7 +386,7 @@
                 }
             }
             // Clicking outside overlay closes it.
-            if (msg.type === 'Mouse' && msg.action === 'press' && !msg.isWheel) {
+            if (msg.type === 'MouseClick') {
                 s.showingReport = false;
                 return [s, null];
             }
@@ -943,6 +943,10 @@
                     return [s, null];
                 }
             }
+            // T394: Ctrl+] passthrough is now handled by toggleModel wrapper
+            // in BubbleTea (see startWizard). The wrapper properly calls
+            // ReleaseTerminal before RunPassthrough, preventing stdin
+            // contention. ToggleReturn message handled below.
         }
 
         // Help toggle.
@@ -1056,7 +1060,7 @@
             return [s, null];
         }
         // PLAN_EDITOR: Space toggles checked state on highlighted file (T17).
-        if (k === ' ' && s.wizardState === 'PLAN_EDITOR') {
+        if (k === 'space' && s.wizardState === 'PLAN_EDITOR') {
             var sidx = s.selectedSplitIdx || 0;
             var fidx = s.selectedFileIdx || 0;
             if (st.planCache && st.planCache.splits && st.planCache.splits[sidx] &&
@@ -1130,24 +1134,24 @@
     // by overlays. Covers: child terminal forwarding, verify scroll, split
     // pane scroll, main viewport scroll, click dispatch, and T62 selection.
     function handleMouseMessage(msg, s) {
-        // Wheel events must be checked BEFORE press — wheel events
-        // have action:"press" AND isWheel:true, so the press guard
-        // would intercept them and send them to handleMouseClick.
+        // v2 split mouse types: MouseClick, MouseRelease, MouseMotion, MouseWheel.
+        // Type-based dispatch replaces the v1 isWheel/action pattern.
 
         // T62: Mouse-based text selection in split-view pane.
         // Intercept Shift+Click to initiate/extend selection, and motion
         // events to extend an active mouse selection. These must be checked
         // before child forwarding to avoid sending selection gestures to PTY.
-        if (s.splitViewEnabled && msg.shift && !msg.isWheel) {
+        var hasShift = msg.mod && msg.mod.indexOf('shift') >= 0;
+        if (s.splitViewEnabled && hasShift && msg.type !== 'MouseWheel') {
             var ofs = computeSplitPaneContentOffset(s);
             var vr = getPaneVisibleRange(s);
-            var mRow = msg.row - ofs.row + vr.startLine;
-            var mCol = msg.col - ofs.col;
+            var mRow = msg.y - ofs.row + vr.startLine;
+            var mCol = msg.x - ofs.col;
             var lines = getPaneContentLines(s);
             mRow = Math.max(0, Math.min(mRow, lines.length - 1));
             mCol = Math.max(0, Math.min(mCol, (lines[mRow] || '').length));
 
-            if (msg.action === 'press') {
+            if (msg.type === 'MouseClick') {
                 if (!s.selectionActive) {
                     startSelection(s, mRow, mCol);
                 } else {
@@ -1159,7 +1163,7 @@
                 s.selectedText = extractSelectedText(s);
                 return [s, null];
             }
-            if (msg.action === 'motion' && s.selectionActive && s.selectionByMouse) {
+            if (msg.type === 'MouseMotion' && s.selectionActive && s.selectionByMouse) {
                 s.selectionEndRow = mRow;
                 s.selectionEndCol = mCol;
                 s.selectedText = extractSelectedText(s);
@@ -1168,7 +1172,7 @@
         }
 
         // T62: Release ends mouse drag selection (no-op but prevents forwarding).
-        if (s.selectionActive && s.selectionByMouse && msg.action === 'release' && !msg.isWheel) {
+        if (s.selectionActive && s.selectionByMouse && msg.type === 'MouseRelease') {
             // Selection is finalized — user can copy with Ctrl+Shift+C.
             return [s, null];
         }
@@ -1179,15 +1183,21 @@
         // handleMouseClick for zone detection first.
         if (s.splitViewEnabled &&
             s.splitViewFocus === 'claude' && s.splitViewTab !== 'output') {
-            var fwdAction = msg.action;
-            if (fwdAction === 'motion' || (fwdAction === 'release' && !msg.isWheel)) {
+            if (msg.type === 'MouseMotion') {
                 var ofs = computeSplitPaneContentOffset(s);
                 var mb = mouseToTermBytes(msg, ofs.row, ofs.col);
                 if (mb && writeMouseToPane(mb, s)) {
                     return [s, null];
                 }
             }
-            if (msg.isWheel) {
+            if (msg.type === 'MouseRelease') {
+                var ofs = computeSplitPaneContentOffset(s);
+                var mb = mouseToTermBytes(msg, ofs.row, ofs.col);
+                if (mb && writeMouseToPane(mb, s)) {
+                    return [s, null];
+                }
+            }
+            if (msg.type === 'MouseWheel') {
                 var ofs = computeSplitPaneContentOffset(s);
                 var mb = mouseToTermBytes(msg, ofs.row, ofs.col);
                 if (mb && writeMouseToPane(mb, s)) {
@@ -1199,7 +1209,7 @@
 
         // Live verify session mouse wheel → scroll output viewport.
         // Only applies when verify output is visible (non-split or verify tab active).
-        if (msg.isWheel && getInteractivePaneSession(s, 'verify') &&
+        if (msg.type === 'MouseWheel' && getInteractivePaneSession(s, 'verify') &&
             (!s.splitViewEnabled || s.splitViewTab === 'verify')) {
             if (msg.button === 'wheel up') {
                 s.verifyAutoScroll = false;
@@ -1217,7 +1227,7 @@
 
         // Split-view Claude pane mouse wheel → scroll Claude screenshot.
         // T44: Also handle Output tab scrolling.
-        if (msg.isWheel && s.splitViewEnabled &&
+        if (msg.type === 'MouseWheel' && s.splitViewEnabled &&
             s.splitViewFocus === 'claude') {
             if (s.splitViewTab === 'output') {
                 // Output tab scrolling.
@@ -1244,7 +1254,7 @@
             }
         }
 
-        if (msg.isWheel && s.vp) {
+        if (msg.type === 'MouseWheel' && s.vp) {
             if (msg.button === 'wheel up') {
                 s.vp.scrollUp(3);
                 return [s, null];
@@ -1255,7 +1265,7 @@
             }
         }
 
-        if (msg.action === 'press' && !msg.isWheel) {
+        if (msg.type === 'MouseClick') {
             return handleMouseClick(msg, s);
         }
 
@@ -1408,7 +1418,7 @@
         // Per-message-type dispatch.
         if (msg.type === 'Key') return handleKeyMessage(msg, s);
         if (msg.type === 'ToggleReturn') return handleToggleReturn(msg, s);
-        if (msg.type === 'Mouse') return handleMouseMessage(msg, s);
+        if (msg.type === 'MouseClick' || msg.type === 'MouseRelease' || msg.type === 'MouseMotion' || msg.type === 'MouseWheel') return handleMouseMessage(msg, s);
         if (msg.type === 'Tick') return handleTickMessage(msg, s);
 
         return [s, null];

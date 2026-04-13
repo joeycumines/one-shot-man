@@ -1435,7 +1435,7 @@ try {
             output += renderDebugInfo(state);
         }
 
-        return output;
+        return {content: output, altScreen: true};
     }
 
 // ============================================================================
@@ -1493,7 +1493,7 @@ try {
 
             switch (state.gameMode) {
                 case 'menu':
-                    if (msg.key === ' ') {
+                    if (msg.key === 'space') {
                         state.wave = 1;
                         spawnWave(state);
                         state.gameMode = 'playing';
@@ -1535,7 +1535,7 @@ try {
                             state.player.facing = 'right';
                             state.player.sprite = getPlayerSprite('right');
                             break;
-                        case ' ':
+                        case 'space':
                             const now = Date.now();
                             if (now - state.player.lastShotTime >= state.player.shotCooldown) {
                                 // Get projectile velocity based on player's facing direction
@@ -1657,7 +1657,7 @@ try {
         console.log('');
 
         // Run the game
-        tea.run(program, {altScreen: true});
+        tea.run(program);
 
         // Log quit confirmation when game exits cleanly
         if (!gameError) {

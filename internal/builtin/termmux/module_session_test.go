@@ -978,7 +978,7 @@ func TestSessionManager_MethodPresence(t *testing.T) {
 			'register', 'unregister', 'activate',
 			'attach', 'detach',
 			'input', 'resize',
-			'snapshot', 'activeID', 'sessions', 'eventsDropped',
+			'snapshot', 'activeID', 'isDone', 'sessions', 'eventsDropped',
 			'hasChild',
 			'screenshot', 'childScreen', 'writeToChild', 'lastActivityMs',
 			'passthrough', 'switchTo',
@@ -986,7 +986,7 @@ func TestSessionManager_MethodPresence(t *testing.T) {
 			'on', 'off', 'pollEvents',
 			'subscribe', 'unsubscribe',
 			'activeSide', 'fromModel',
-			'session'
+			'session', 'termSize'
 		];
 		var missing = [];
 		for (var i = 0; i < methods.length; i++) {
@@ -1117,5 +1117,90 @@ func TestSessionManager_PassthroughNoChild(t *testing.T) {
 	if !v.ToBoolean() {
 		raw, _ := runtime.RunString(`JSON.stringify(tuiMux.passthrough({}))`)
 		t.Fatalf("passthrough() with no child should return error result, got: %s", raw)
+	}
+}
+
+// ── Attach returns SessionID ─────────────────────────────
+
+func TestSessionManager_AttachReturnsSessionID(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	mgr := parent.NewSessionManager()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- mgr.Run(ctx) }()
+	<-mgr.Started()
+
+	runtime := goja.New()
+	tuiMux := WrapSessionManager(ctx, runtime, mgr, nil, nil, -1)
+	_ = runtime.Set("tuiMux", tuiMux)
+
+	// Create a StringIO and expose it as a Go value for attach.
+	rec := newRecordingStringIO()
+	_ = runtime.Set("testSIO", rec)
+
+	// attach(sio) should return a number > 0 (the SessionID).
+	v, err := runtime.RunString(`
+		var id = tuiMux.attach(testSIO);
+		typeof id === 'number' && id > 0 ? id : -1;
+	`)
+	if err != nil {
+		t.Fatalf("attach(sio): %v", err)
+	}
+	if v.ToInteger() <= 0 {
+		t.Fatalf("attach() should return SessionID > 0, got %v", v.Export())
+	}
+
+	// activeID() should match the returned ID.
+	v2, err := runtime.RunString(`tuiMux.activeID()`)
+	if err != nil {
+		t.Fatalf("activeID: %v", err)
+	}
+	if v.ToInteger() != v2.ToInteger() {
+		t.Fatalf("attach returned %d but activeID is %d", v.ToInteger(), v2.ToInteger())
+	}
+}
+
+// ── isDone(id) ───────────────────────────────────────────
+
+func TestSessionManager_IsDone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	runtime, cleanup := setupMgr(t, true)
+	defer cleanup()
+
+	// Get the active session ID.
+	v, err := runtime.RunString(`tuiMux.activeID()`)
+	if err != nil {
+		t.Fatalf("activeID: %v", err)
+	}
+	activeID := v.ToInteger()
+	if activeID == 0 {
+		t.Fatal("expected an active session")
+	}
+	_ = runtime.Set("sid", activeID)
+
+	// Active session should not be done (it was just started).
+	v, err = runtime.RunString(`tuiMux.isDone(sid)`)
+	if err != nil {
+		t.Fatalf("isDone(sid): %v", err)
+	}
+	if v.ToBoolean() {
+		t.Fatal("isDone should be false for a running session")
+	}
+
+	// Non-existent ID should be treated as done.
+	v, err = runtime.RunString(`tuiMux.isDone(999999)`)
+	if err != nil {
+		t.Fatalf("isDone(999999): %v", err)
+	}
+	if !v.ToBoolean() {
+		t.Fatal("isDone should be true for a non-existent session")
 	}
 }

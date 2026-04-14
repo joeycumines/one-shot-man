@@ -1056,11 +1056,19 @@ func TestChunk16_PollClaudeScreenshot_WithChild(t *testing.T) {
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 42;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = __mockCID;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
 			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			childScreen: function() { return 'ansi-content-here'; },
-			screenshot: function() { return 'plain-content-here'; }
+			screenshot: function() { return 'plain-content-here'; },
+			snapshot: function(id) { return { fullScreen: 'ansi-content-here', plainText: 'plain-content-here' }; },
+			isDone: function(id) { return false; },
+			activeID: function() { return __mockCID; },
+			activate: function(id) {},
+			input: function(data) {}
 		};
 
 		var s = initState('PLAN_REVIEW');
@@ -1074,6 +1082,7 @@ func TestChunk16_PollClaudeScreenshot_WithChild(t *testing.T) {
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
+		if (prSplit._state) prSplit._state.claudeSessionID = null;
 
 		if (state.claudeScreen !== 'ansi-content-here')
 			return 'FAIL: claudeScreen=' + JSON.stringify(state.claudeScreen);

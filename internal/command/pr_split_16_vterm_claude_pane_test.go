@@ -20,14 +20,22 @@ import (
 
 // -- renderClaudePane tests -------------------------------------------------
 
-// vtermMuxSetup returns JS code to save/set a mock tuiMux.
+// vtermMuxSetup returns JS code to save/set a mock tuiMux with pinned SessionID.
 const vtermMuxSetup = `
 var __savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+var __mockCID = 42;
+prSplit._state = prSplit._state || {};
+prSplit._state.claudeSessionID = __mockCID;
 globalThis.tuiMux = {
 	hasChild: function() { return true; },
 	session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 	childScreen: function() { return ''; },
 	screenshot: function() { return ''; },
+	snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+	isDone: function(id) { return false; },
+	activeID: function() { return __mockCID; },
+	activate: function(id) {},
+	input: function(data) {},
 	lastActivityMs: function() { return 100; }
 };
 `
@@ -36,6 +44,7 @@ globalThis.tuiMux = {
 const vtermMuxRestore = `
 if (__savedMux !== undefined) globalThis.tuiMux = __savedMux;
 else delete globalThis.tuiMux;
+if (prSplit._state) prSplit._state.claudeSessionID = null;
 `
 
 func TestChunk16_VTerm_RenderClaudePane_ANSIContent(t *testing.T) {
@@ -319,12 +328,20 @@ func TestChunk16_VTerm_PollClaudeScreenshot_DrainsMuxEvents(t *testing.T) {
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		var pollCalls = 0;
+		var __mockCID = 42;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = __mockCID;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
 			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			pollEvents: function() { pollCalls++; return 1; },
 			childScreen: function() { return 'ANSI screen'; },
 			screenshot: function() { return 'plain screen'; },
+			snapshot: function(id) { return { fullScreen: 'ANSI screen', plainText: 'plain screen' }; },
+			isDone: function(id) { return false; },
+			activeID: function() { return __mockCID; },
+			activate: function(id) {},
+			input: function(data) {},
 			lastActivityMs: function() { return 42; }
 		};
 		try {
@@ -341,6 +358,7 @@ func TestChunk16_VTerm_PollClaudeScreenshot_DrainsMuxEvents(t *testing.T) {
 		} finally {
 			if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 			else delete globalThis.tuiMux;
+			if (prSplit._state) prSplit._state.claudeSessionID = null;
 		}
 	})()`)
 	if err != nil {
@@ -361,11 +379,19 @@ func TestChunk16_VTerm_PollScreenshot_CapturesFromMux(t *testing.T) {
 	// pollClaudeScreenshot is internal — test it via update({type:'Tick', id:'claude-screenshot'}).
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 42;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = __mockCID;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
 			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			childScreen: function() { return '\x1b[33mANSI yellow\x1b[0m'; },
 			screenshot: function() { return 'plain screenshot output'; },
+			snapshot: function(id) { return { fullScreen: '\x1b[33mANSI yellow\x1b[0m', plainText: 'plain screenshot output' }; },
+			isDone: function(id) { return false; },
+			activeID: function() { return __mockCID; },
+			activate: function(id) {},
+			input: function(data) {},
 			lastActivityMs: function() { return 100; },
 			writeToChild: function() {}
 		};
@@ -393,6 +419,7 @@ func TestChunk16_VTerm_PollScreenshot_CapturesFromMux(t *testing.T) {
 		} finally {
 			if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 			else delete globalThis.tuiMux;
+			if (prSplit._state) prSplit._state.claudeSessionID = null;
 		}
 	})()`)
 	if err != nil {
@@ -492,11 +519,19 @@ func TestChunk16_VTerm_PollScreenshot_AutoCloseOnChildExit(t *testing.T) {
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 42;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = __mockCID;
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },
 			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
 			childScreen: function() { return ''; },
 			screenshot: function() { return ''; },
+			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			isDone: function(id) { return true; },
+			activeID: function() { return __mockCID; },
+			activate: function(id) {},
+			input: function(data) {},
 			lastActivityMs: function() { return 0; },
 			writeToChild: function() {}
 		};
@@ -520,6 +555,7 @@ func TestChunk16_VTerm_PollScreenshot_AutoCloseOnChildExit(t *testing.T) {
 		} finally {
 			if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 			else delete globalThis.tuiMux;
+			if (prSplit._state) prSplit._state.claudeSessionID = null;
 		}
 	})()`)
 	if err != nil {
@@ -953,11 +989,20 @@ func TestChunk16_VTerm_FullRenderPipeline_MuxToView(t *testing.T) {
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		var ansiContent = '\x1b[1;36mClaude is working...\x1b[0m\nAnalyzing repository structure\n\x1b[32mDone!\x1b[0m';
+		var plainContent = 'Claude is working...\nAnalyzing repository structure\nDone!';
+		var __mockCID = 42;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = __mockCID;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
 			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			childScreen: function() { return ansiContent; },
-			screenshot: function() { return 'Claude is working...\nAnalyzing repository structure\nDone!'; },
+			screenshot: function() { return plainContent; },
+			snapshot: function(id) { return { fullScreen: ansiContent, plainText: plainContent }; },
+			isDone: function(id) { return false; },
+			activeID: function() { return __mockCID; },
+			activate: function(id) {},
+			input: function(data) {},
 			lastActivityMs: function() { return 200; },
 			writeToChild: function() {}
 		};
@@ -1003,6 +1048,7 @@ func TestChunk16_VTerm_FullRenderPipeline_MuxToView(t *testing.T) {
 		} finally {
 			if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 			else delete globalThis.tuiMux;
+			if (prSplit._state) prSplit._state.claudeSessionID = null;
 		}
 	})()`)
 	if err != nil {

@@ -808,6 +808,20 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 		return uint64(mgr.ActiveID())
 	})
 
+	// isDone(id) → bool
+	// Returns true when the session identified by id has exited, been
+	// closed, or was never registered. Callers that hold a pinned
+	// SessionID can use this instead of session().isDone(), which reads
+	// from the mutable ActiveID.
+	_ = obj.Set("isDone", func(id uint64) bool {
+		for _, info := range mgr.Sessions() {
+			if info.ID == parent.SessionID(id) {
+				return info.State == parent.SessionExited || info.State == parent.SessionClosed
+			}
+		}
+		return true // not found → treat as done
+	})
+
 	// sessions() → [{id, target: {name, kind, id}, state, isActive}]
 	_ = obj.Set("sessions", func() goja.Value {
 		infos := mgr.Sessions()
@@ -971,7 +985,7 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 		if activateErr := mgr.Activate(id); activateErr != nil {
 			panic(runtime.NewGoError(activateErr))
 		}
-		return goja.Undefined()
+		return runtime.ToValue(uint64(id))
 	})
 
 	// ── detach() ─────────────────────────────────────────

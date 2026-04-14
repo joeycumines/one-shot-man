@@ -321,12 +321,20 @@ func TestChunk16_T45_ExitAutoClosesSplitView(t *testing.T) {
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 42;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = __mockCID;
 		// Mock tuiMux with no child (Claude exited).
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },
 			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
 			screenshot: function() { return ''; },
-			childScreen: function() { return ''; }
+			childScreen: function() { return ''; },
+			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			isDone: function(id) { return true; },
+			activeID: function() { return __mockCID; },
+			activate: function(id) {},
+			input: function(data) {}
 		};
 
 		var s = initState('PLAN_REVIEW');
@@ -341,6 +349,7 @@ func TestChunk16_T45_ExitAutoClosesSplitView(t *testing.T) {
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
+		if (prSplit._state) prSplit._state.claudeSessionID = null;
 
 		var errors = [];
 		if (ns.splitViewEnabled) errors.push('splitViewEnabled should be false');
@@ -370,11 +379,19 @@ func TestChunk16_T45_NoAutoCloseWhenPipelineRunning(t *testing.T) {
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 42;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = __mockCID;
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },
 			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
 			screenshot: function() { return ''; },
-			childScreen: function() { return ''; }
+			childScreen: function() { return ''; },
+			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			isDone: function(id) { return true; },
+			activeID: function() { return __mockCID; },
+			activate: function(id) {},
+			input: function(data) {}
 		};
 
 		var s = initState('BRANCH_BUILDING');
@@ -388,6 +405,7 @@ func TestChunk16_T45_NoAutoCloseWhenPipelineRunning(t *testing.T) {
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
+		if (prSplit._state) prSplit._state.claudeSessionID = null;
 
 		if (!ns.splitViewEnabled) return 'FAIL: splitViewEnabled should stay true while pipeline running';
 		if (cmd === null) return 'FAIL: should continue polling';
@@ -827,11 +845,20 @@ func TestChunk16_T46_PollDetectsQuestion(t *testing.T) {
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 42;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = __mockCID;
+		prSplit._state.claudeExecutor = { handle: { isAlive: function() { return true; } } };
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
 			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			screenshot: function() { return 'Do you want to continue? (y/n)'; },
 			childScreen: function() { return 'screen-data'; },
+			snapshot: function(id) { return { fullScreen: 'screen-data', plainText: 'Do you want to continue? (y/n)' }; },
+			isDone: function(id) { return false; },
+			activeID: function() { return __mockCID; },
+			activate: function(id) {},
+			input: function(data) {},
 			lastActivityMs: function() { return 5000; } // idle 5s
 		};
 
@@ -845,6 +872,7 @@ func TestChunk16_T46_PollDetectsQuestion(t *testing.T) {
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
+		if (prSplit._state) prSplit._state.claudeSessionID = null;
 
 		var errors = [];
 		if (!s.claudeQuestionDetected) errors.push('claudeQuestionDetected should be true');
@@ -946,11 +974,20 @@ func TestChunk16_T46_PollAutoDismissesOnResume(t *testing.T) {
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 42;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = __mockCID;
+		prSplit._state.claudeExecutor = { handle: { isAlive: function() { return true; } } };
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
 			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			screenshot: function() { return 'Working on it...'; },
 			childScreen: function() { return ''; },
+			snapshot: function(id) { return { fullScreen: '', plainText: 'Working on it...' }; },
+			isDone: function(id) { return false; },
+			activeID: function() { return __mockCID; },
+			activate: function(id) {},
+			input: function(data) {},
 			lastActivityMs: function() { return 100; } // Claude is streaming
 		};
 
@@ -966,6 +1003,7 @@ func TestChunk16_T46_PollAutoDismissesOnResume(t *testing.T) {
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
+		if (prSplit._state) prSplit._state.claudeSessionID = null;
 
 		if (s.claudeQuestionDetected) return 'FAIL: should auto-dismiss when Claude resumes (streaming = idle < 2s)';
 		if (s.claudeQuestionLine !== '') return 'FAIL: line not cleared: ' + s.claudeQuestionLine;
@@ -1646,11 +1684,19 @@ func TestChunk16_T393_QuestionDetectedWithLiveHandle(t *testing.T) {
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 42;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = __mockCID;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
 			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			screenshot: function() { return 'Do you want to continue? (y/n)'; },
 			childScreen: function() { return 'screen-data'; },
+			snapshot: function(id) { return { fullScreen: 'screen-data', plainText: 'Do you want to continue? (y/n)' }; },
+			isDone: function(id) { return false; },
+			activeID: function() { return __mockCID; },
+			activate: function(id) {},
+			input: function(data) {},
 			lastActivityMs: function() { return 5000; }
 		};
 		// T393: Mock a live Claude handle (pipeline completed but Claude kept alive).
@@ -1668,6 +1714,7 @@ func TestChunk16_T393_QuestionDetectedWithLiveHandle(t *testing.T) {
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
+		if (prSplit._state) prSplit._state.claudeSessionID = null;
 		delete globalThis.prSplit._state.claudeExecutor;
 
 		var errors = [];
@@ -1691,11 +1738,19 @@ func TestChunk16_T393_QuestionNotDetectedIfHandleDead(t *testing.T) {
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 42;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = __mockCID;
 		globalThis.tuiMux = {
 			hasChild: function() { return true; },
 			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 			screenshot: function() { return 'Do you want to continue? (y/n)'; },
 			childScreen: function() { return 'screen-data'; },
+			snapshot: function(id) { return { fullScreen: 'screen-data', plainText: 'Do you want to continue? (y/n)' }; },
+			isDone: function(id) { return false; },
+			activeID: function() { return __mockCID; },
+			activate: function(id) {},
+			input: function(data) {},
 			lastActivityMs: function() { return 5000; }
 		};
 		// No claudeExecutor handle — simulating destroyed executor.
@@ -1713,6 +1768,7 @@ func TestChunk16_T393_QuestionNotDetectedIfHandleDead(t *testing.T) {
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
+		if (prSplit._state) prSplit._state.claudeSessionID = null;
 
 		if (s.claudeQuestionDetected) return 'FAIL: should not detect when handle is null and not processing';
 		return 'OK';

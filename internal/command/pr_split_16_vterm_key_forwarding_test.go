@@ -18,15 +18,25 @@ import (
 // paste, and the keyToTermBytes conversion function directly.
 // ---------------------------------------------------------------------------
 
-// wtcMuxSetup creates a mock tuiMux that records all writeToChild calls.
+// wtcMuxSetup creates a mock tuiMux that records all writes (via pinned
+// Claude SessionID proxy). The proxy uses activate+input, so we track
+// __writtenBytes through tuiMux.input() — matching the production path.
 const wtcMuxSetup = `
 var __savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 var __writtenBytes = [];
+var __mockCID = 42;
+prSplit._state = prSplit._state || {};
+prSplit._state.claudeSessionID = __mockCID;
 globalThis.tuiMux = {
 	hasChild: function() { return true; },
 	session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; }, write: function(data) { __writtenBytes.push(data); }, screen: function() { return 'mock screen'; }, output: function() { return 'mock screenshot'; }, resize: function() { return null; }, target: function() { return { name: 'claude', kind: 'pty' }; }, close: function() {} }; },
 	childScreen: function() { return 'mock screen'; },
 	screenshot: function() { return 'mock screenshot'; },
+	snapshot: function(id) { return { fullScreen: 'mock screen', plainText: 'mock screenshot' }; },
+	isDone: function(id) { return false; },
+	activeID: function() { return __mockCID; },
+	activate: function(id) {},
+	input: function(data) { __writtenBytes.push(data); },
 	lastActivityMs: function() { return 100; },
 	writeToChild: function(bytes) { __writtenBytes.push(bytes); }
 };
@@ -35,6 +45,7 @@ globalThis.tuiMux = {
 const wtcMuxRestore = `
 if (__savedMux !== undefined) globalThis.tuiMux = __savedMux;
 else delete globalThis.tuiMux;
+if (prSplit._state) prSplit._state.claudeSessionID = null;
 `
 
 // -- keyToTermBytes unit tests (exported as prSplit._keyToTermBytes) ---------

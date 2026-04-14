@@ -9,13 +9,24 @@
     var TRUNCATION_WIDTH = 120;
 
     function captureScreenshot() {
-        if (typeof tuiMux === 'undefined' || !tuiMux || typeof tuiMux.screenshot !== 'function') {
+        if (typeof tuiMux === 'undefined' || !tuiMux) {
             return null;
         }
         try {
-            var shot = tuiMux.screenshot();
-            if (shot === null || shot === undefined) return '';
-            return String(shot);
+            // Prefer pinned Claude SessionID for deterministic reads.
+            var cid = prSplit._state && prSplit._state.claudeSessionID;
+            if (cid && typeof tuiMux.snapshot === 'function') {
+                var snap = tuiMux.snapshot(cid);
+                if (!snap) return '';
+                return String(snap.plainText || '');
+            }
+            // Fallback: no pinned ID yet (pre-attach or headless).
+            if (typeof tuiMux.screenshot === 'function') {
+                var shot = tuiMux.screenshot();
+                if (shot === null || shot === undefined) return '';
+                return String(shot);
+            }
+            return null;
         } catch (e) {
             log.printf('auto-split sendToHandle: screenshot read failed — %s', e.message || String(e));
             return null;

@@ -559,12 +559,19 @@
 
     // _getLastOutputLines extracts the last N non-empty lines from VTerm.
     function _getLastOutputLines(n) {
-        if (typeof tuiMux === 'undefined' || !tuiMux ||
-            typeof tuiMux.screenshot !== 'function') {
+        if (typeof tuiMux === 'undefined' || !tuiMux) {
             return [];
         }
         try {
-            var screen = tuiMux.screenshot();
+            // Prefer pinned Claude SessionID for deterministic reads.
+            var screen = '';
+            var cid = prSplit._state && prSplit._state.claudeSessionID;
+            if (cid && typeof tuiMux.snapshot === 'function') {
+                var snap = tuiMux.snapshot(cid);
+                screen = snap ? (snap.plainText || '') : '';
+            } else if (typeof tuiMux.screenshot === 'function') {
+                screen = tuiMux.screenshot() || '';
+            }
             if (!screen) return [];
             var lines = screen.split('\n');
             // Remove trailing empty lines.

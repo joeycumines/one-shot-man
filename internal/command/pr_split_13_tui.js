@@ -310,32 +310,73 @@
 
     prSplit._buildReport = buildReport;
 
-    function getClaudePaneSession() {
-        if (typeof tuiMux === 'undefined' || !tuiMux) return null;
-        if (typeof tuiMux.session === 'function') {
-            try { return tuiMux.session(); } catch (e) { log.debug('getClaudePaneSession: tuiMux.session failed: ' + (e.message || e)); }
-        }
-        if (typeof tuiMux.writeToChild !== 'function' &&
-            typeof tuiMux.childScreen !== 'function' &&
-            typeof tuiMux.screenshot !== 'function') {
-            return null;
-        }
+    // Build a pinned proxy for Claude's session, modeled after
+    // _buildVerifyProxy. Uses tuiMux.snapshot(sessionID) for reads and
+    // explicit activate/restore for writes, so no code path can confuse
+    // Claude's pane with verify's when ActiveID changes temporarily.
+    function _buildClaudeProxy(sessionID) {
         return {
-            write: function(data) {
-                if (typeof tuiMux.writeToChild !== 'function') throw new Error('Claude session is not writable');
-                return tuiMux.writeToChild(data);
-            },
             screen: function() {
-                if (typeof tuiMux.childScreen === 'function') return tuiMux.childScreen();
-                return '';
+                try {
+                    var snap = tuiMux.snapshot(sessionID);
+                    return snap ? (snap.fullScreen || '') : '';
+                } catch (e) {
+                    log.debug('claudeProxy.screen failed', { sessionID: sessionID, error: e.message || String(e) });
+                    return '';
+                }
             },
             output: function() {
-                if (typeof tuiMux.screenshot === 'function') return tuiMux.screenshot();
-                return '';
+                try {
+                    var snap = tuiMux.snapshot(sessionID);
+                    return snap ? (snap.plainText || '') : '';
+                } catch (e) {
+                    log.debug('claudeProxy.output failed', { sessionID: sessionID, error: e.message || String(e) });
+                    return '';
+                }
             },
-            resize: function() { return null; },
-            target: function() { return { name: 'claude', kind: 'pty' }; }
+            isDone: function() {
+                // Pinned liveness: check via tuiMux.isDone(id) first, then
+                // fall back to the direct handle check for headless mode.
+                if (typeof tuiMux.isDone === 'function') {
+                    return tuiMux.isDone(sessionID);
+                }
+                var exec = prSplit._state && prSplit._state.claudeExecutor;
+                if (exec && exec.handle && typeof exec.handle.isAlive === 'function') {
+                    return !exec.handle.isAlive();
+                }
+                return true;
+            },
+            isRunning: function() {
+                return !this.isDone();
+            },
+            write: function(data) {
+                var prevID = tuiMux.activeID();
+                try {
+                    tuiMux.activate(sessionID);
+                    tuiMux.input(typeof data === 'string' ? data : String(data));
+                } finally {
+                    if (prevID && prevID !== sessionID) {
+                        try { tuiMux.activate(prevID); } catch (e) {}
+                    }
+                }
+            },
+            resize: function(rows, cols) {
+                // SessionManager.Resize broadcasts to ALL managed sessions.
+                tuiMux.resize(rows, cols);
+            },
+            target: function() { return { name: 'claude', kind: 'pty' }; },
+            setTarget: function() { /* no-op: Claude target is fixed */ }
         };
+    }
+
+    function getClaudePaneSession() {
+        if (typeof tuiMux === 'undefined' || !tuiMux) return null;
+        var cid = prSplit._state && prSplit._state.claudeSessionID;
+        if (cid) {
+            return _buildClaudeProxy(cid);
+        }
+        // No pinned SessionID yet — Claude not attached.
+        return null;
     }
 
     function getInteractivePaneSession(s, tab) {
@@ -509,6 +550,7 @@
         return tabs;
     }
 
+    prSplit._buildClaudeProxy = _buildClaudeProxy;
     prSplit._getClaudePaneSession = getClaudePaneSession;
     prSplit._getInteractivePaneSession = getInteractivePaneSession;
     prSplit._closeInteractivePaneSession = closeInteractivePaneSession;

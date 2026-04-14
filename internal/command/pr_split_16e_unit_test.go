@@ -162,13 +162,25 @@ func TestChunk16e_WriteMouseToPane_ClaudeTab(t *testing.T) {
 	val, err := evalJS(`
 		(function() {
 			var written = [];
+			var __mockCID = 42;
+			prSplit._state = prSplit._state || {};
+			prSplit._state.claudeSessionID = __mockCID;
 			globalThis.tuiMux = {
 				writeToChild: function(b) { written.push(b); },
+				snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+				isDone: function(id) { return false; },
+				activeID: function() { return __mockCID; },
+				activate: function(id) {},
+				input: function(data) { written.push(data); },
 			};
-			var s = {splitViewTab: 'claude'};
-			var ok = prSplit._writeMouseToPane('test-bytes', s);
-			delete globalThis.tuiMux;
-			return JSON.stringify({ok: ok, written: written});
+			try {
+				var s = {splitViewTab: 'claude'};
+				var ok = prSplit._writeMouseToPane('test-bytes', s);
+				return JSON.stringify({ok: ok, written: written});
+			} finally {
+				delete globalThis.tuiMux;
+				if (prSplit._state) prSplit._state.claudeSessionID = null;
+			}
 		})()
 	`)
 	if err != nil {
@@ -190,17 +202,29 @@ func TestChunk16e_WriteMouseToPane_ClaudeTabSessionWrapper(t *testing.T) {
 	val, err := evalJS(`
 		(function() {
 			var written = [];
+			var __mockCID = 42;
+			prSplit._state = prSplit._state || {};
+			prSplit._state.claudeSessionID = __mockCID;
 			globalThis.tuiMux = {
 				session: function() {
 					return {
 						write: function(b) { written.push(b); }
 					};
-				}
+				},
+				snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+				isDone: function(id) { return false; },
+				activeID: function() { return __mockCID; },
+				activate: function(id) {},
+				input: function(data) { written.push(data); },
 			};
-			var s = {splitViewTab: 'claude'};
-			var ok = prSplit._writeMouseToPane('wrapped-bytes', s);
-			delete globalThis.tuiMux;
-			return JSON.stringify({ok: ok, written: written});
+			try {
+				var s = {splitViewTab: 'claude'};
+				var ok = prSplit._writeMouseToPane('wrapped-bytes', s);
+				return JSON.stringify({ok: ok, written: written});
+			} finally {
+				delete globalThis.tuiMux;
+				if (prSplit._state) prSplit._state.claudeSessionID = null;
+			}
 		})()
 	`)
 	if err != nil {

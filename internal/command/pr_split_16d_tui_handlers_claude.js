@@ -330,18 +330,16 @@
             if (!s.lastClaudeHealthCheckMs || (now - s.lastClaudeHealthCheckMs >= healthPollMs)) {
                 s.lastClaudeHealthCheckMs = now;
 
-                // Session model check: isDone() fires when the mux child's
-                // PTY output drains — event-driven, no shared mutable flag.
-                // IMPORTANT: isDone() also returns true when NO child was ever
-                // attached (pre-closed sentinel channel). Guard with executor
-                // existence to avoid false crash detection at startup.
+                // Pinned session check: use tuiMux.isDone(claudeSessionID) when
+                // available. This is channel-based (event-driven) and reads
+                // from the pinned SessionID — not the mutable ActiveID.
                 var executor = st.claudeExecutor;
                 var sessionDead = false;
+                var cid = st.claudeSessionID;
                 if (executor && executor.handle &&
-                    typeof tuiMux !== 'undefined' && tuiMux &&
-                    typeof tuiMux.session === 'function') {
-                    var sess = tuiMux.session();
-                    if (typeof sess.isDone === 'function' && sess.isDone()) {
+                    typeof tuiMux !== 'undefined' && tuiMux && cid &&
+                    typeof tuiMux.isDone === 'function') {
+                    if (tuiMux.isDone(cid)) {
                         sessionDead = true;
                     }
                 }
@@ -365,7 +363,7 @@
 
                     // Transition to error resolution with crash context.
                     // No st.claudeCrashDetected — the pipeline's aliveCheckFn
-                    // uses session().isDone() directly (event-driven).
+                    // uses tuiMux.isDone(claudeSessionID) directly (event-driven).
                     s.isProcessing = false;
                     s.autoSplitRunning = false;
                     s.claudeCrashDetected = true;
@@ -534,17 +532,21 @@
 
         // Successful restart — clear crash flags and resume pipeline.
         // Note: only s.claudeCrashDetected (view state) is cleared. The
-        // pipeline's aliveCheckFn uses session().isDone() directly — no
-        // shared module-level crash flag to reset.
+        // pipeline's aliveCheckFn uses tuiMux.isDone(claudeSessionID)
+        // directly — no shared module-level crash flag to reset.
         s.claudeCrashDetected = false;
         s.errorDetails = null; // T114: clear stale error from restart phase
         log.printf('auto-split: Claude restarted successfully, session=%s', result.sessionId || '(none)');
 
-        // Re-attach to tuiMux if available.
+        // Re-attach to tuiMux if available — capture pinned SessionID.
         var executor = st.claudeExecutor;
         if (executor && executor.handle && typeof tuiMux !== 'undefined' && tuiMux &&
             typeof tuiMux.attach === 'function') {
-            try { tuiMux.attach(executor.handle); } catch (e) { log.debug('claudeSpawn: tuiMux.attach failed: ' + (e.message || e)); }
+            try {
+                var cid = tuiMux.attach(executor.handle);
+                st.claudeSessionID = cid;
+                log.debug('claude restart re-attached', { sessionID: cid });
+            } catch (e) { log.debug('claude spawn tuiMux attach failed', { error: e.message || String(e) }); }
         }
 
         // T114: Mode-aware restart — if user was in auto mode, resume with
@@ -889,10 +891,22 @@
             return [s, null];
         }
 
-        // Guard: no tuiMux or no attached child — set empty screen so
-        // renderClaudePane shows "No Claude session attached" placeholder.
-        if (typeof tuiMux === 'undefined' || !tuiMux ||
-            (typeof tuiMux.session === 'function' && !tuiMux.session().isRunning())) {
+        // Guard: no tuiMux or Claude's pinned session is done — set empty
+        // screen so renderClaudePane shows "No Claude session attached".
+        // INVARIANT: claudeSessionID is written synchronously by the
+        // orchestrator immediately after tuiMux.attach() returns (line ~448
+        // in pr_split_10d_pipeline_orchestrator.js). JS is single-threaded,
+        // so no tick can fire between attach and the state write.
+        var cid = st.claudeSessionID;
+        if (typeof tuiMux === 'undefined' || !tuiMux || !cid) {
+            // Not yet attached — clear screen but keep polling so the pane
+            // picks up Claude once attach completes.
+            s.claudeScreen = '';
+            s.claudeScreenshot = '';
+            return [s, tea.tick(C.CLAUDE_SCREENSHOT_POLL_MS, 'claude-screenshot')];
+        }
+        var claudeExited = typeof tuiMux.isDone === 'function' && tuiMux.isDone(cid);
+        if (claudeExited) {
             s.claudeScreen = '';
             s.claudeScreenshot = '';
             // T45: If Claude was auto-attached and the child disappears,
@@ -922,19 +936,17 @@
             }
         }
 
-        // Capture ANSI screen from tuiMux if available (T28: full color rendering).
+        // Capture screen from tuiMux via pinned Claude SessionID (T28: full color rendering).
         try {
-            if (typeof tuiMux.childScreen === 'function') {
-                var screen = tuiMux.childScreen();
-                if (screen !== null && screen !== undefined) {
-                    s.claudeScreen = String(screen);
-                }
-            }
-            // Also capture plain-text for fallback and test assertions.
-            if (typeof tuiMux.screenshot === 'function') {
-                var shot = tuiMux.screenshot();
-                if (shot !== null && shot !== undefined) {
-                    s.claudeScreenshot = String(shot);
+            if (cid && typeof tuiMux.snapshot === 'function') {
+                var snap = tuiMux.snapshot(cid);
+                if (snap) {
+                    if (snap.fullScreen) {
+                        s.claudeScreen = String(snap.fullScreen);
+                    }
+                    if (snap.plainText) {
+                        s.claudeScreenshot = String(snap.plainText);
+                    }
                 }
             }
         } catch (e) {

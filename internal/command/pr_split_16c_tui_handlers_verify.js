@@ -1109,11 +1109,18 @@
                         convoState.lastError = 'Claude: ' + waitResult.error;
                     } else {
                         // No tool call received — Claude may have responded in free text.
-                        // Capture the latest screenshot as response.
+                        // Capture the latest screenshot as response via pinned SessionID.
                         var shot = '';
-                        if (typeof tuiMux !== 'undefined' && tuiMux &&
-                            typeof tuiMux.screenshot === 'function') {
-                            try { shot = String(tuiMux.screenshot() || ''); } catch (e) { log.debug('screenCapture: tuiMux.screenshot failed: ' + (e.message || e)); }
+                        if (typeof tuiMux !== 'undefined' && tuiMux) {
+                            var cid = prSplit._state && prSplit._state.claudeSessionID;
+                            try {
+                                if (cid && typeof tuiMux.snapshot === 'function') {
+                                    var snap = tuiMux.snapshot(cid);
+                                    shot = snap ? String(snap.plainText || '') : '';
+                                } else if (typeof tuiMux.screenshot === 'function') {
+                                    shot = String(tuiMux.screenshot() || '');
+                                }
+                            } catch (e) { log.debug('screenCapture: tuiMux.snapshot failed', { error: e.message || String(e) }); }
                         }
                         if (shot) {
                             convoState.history.push({

@@ -74,6 +74,7 @@
             endTime: null
         };
         state.claudeExecutor = null;
+        state.claudeSessionID = null;
         state.mcpCallbackObj = null;
         state.analysisCache = null;
         state.groupsCache = null;
@@ -417,19 +418,18 @@
         sessionId = executor.sessionId;
 
         // Heartbeat function: checks if the Claude session is still alive.
-        // Uses the session model (isDone) as the primary event-driven signal,
+        // Uses the pinned Claude SessionID for event-driven liveness checks,
         // with a direct handle.isAlive() fallback for headless mode.
         aliveCheckFn = function() {
-            // Session model: isDone() is event-driven (channel-based), replaces
-            // the old polling-based claudeCrashDetected flag. When the mux's
-            // child PTY closes, Done() fires and isDone() returns true.
-            // IMPORTANT: isDone() also returns true when no child was ever
-            // attached (pre-closed sentinel channel). Guard with executor.
+            // Pinned session check: use tuiMux.isDone(claudeSessionID) when
+            // available. This is a channel-based (event-driven) signal that
+            // fires when the PTY's Done() channel closes, independent of
+            // which session is currently active.
             if (claudeExecutor && claudeExecutor.handle &&
                 typeof tuiMux !== 'undefined' && tuiMux &&
-                typeof tuiMux.session === 'function') {
-                var sess = tuiMux.session();
-                if (typeof sess.isDone === 'function' && sess.isDone()) {
+                state.claudeSessionID &&
+                typeof tuiMux.isDone === 'function') {
+                if (tuiMux.isDone(state.claudeSessionID)) {
                     return false;
                 }
             }
@@ -447,15 +447,23 @@
         // Attach Claude's PTY handle to tuiMux so ctrl+] can forward.
         // The session target was pre-configured as sessionTypes.claude at
         // bootstrap (setupEngineGlobals) — no lazy assignment needed.
+        // attach() returns the pinned SessionID; store it in state so all
+        // Claude reads/writes use tuiMux.snapshot(cid) rather than ActiveID.
+        // SYNCHRONOUS INVARIANT: state.claudeSessionID MUST be written in the
+        // same synchronous JS turn as the attach() call. pollClaudeScreenshot
+        // depends on this — if a tick fires between attach and state write,
+        // the guard will treat Claude as "not yet attached".
         if (claudeExecutor && claudeExecutor.handle && typeof tuiMux !== 'undefined' && tuiMux) {
 	            if (typeof claudeExecutor.handle.isAlive === 'function' && !claudeExecutor.handle.isAlive()) {
 	                log.printf('auto-split: Claude process died between spawn and attach — ctrl+] will not work');
 	                emitOutput('[auto-split] Warning: Claude process exited unexpectedly. Toggle (Ctrl+]) unavailable.');
 	            } else {
 	                try {
-	                    tuiMux.attach(claudeExecutor.handle);
-	                    log.printf('auto-split: attached Claude (%s) handle to tuiMux',
-	                        typeof sessionTypes !== 'undefined' && sessionTypes.claude ? sessionTypes.claude.name : 'claude');
+	                    var cid = tuiMux.attach(claudeExecutor.handle);
+	                    state.claudeSessionID = cid;
+	                    log.printf('auto-split: attached Claude (%s) handle to tuiMux, sessionID=%d',
+	                        typeof sessionTypes !== 'undefined' && sessionTypes.claude ? sessionTypes.claude.name : 'claude',
+	                        cid || 0);
 	                } catch (e) {
 	                    log.printf('auto-split: tuiMux attach warning: %s', e.message || String(e));
 	                }
@@ -806,14 +814,13 @@
                 if (!resumeSpawn.error) {
                     sessionId = resumeSpawn.sessionId;
                     aliveCheckFn = function() {
-                        // Session model: event-driven crash detection.
-                        // Guard isDone() with executor — returns true for
-                        // never-attached sessions (pre-closed sentinel).
+                        // Pinned session check: use tuiMux.isDone(claudeSessionID)
+                        // for event-driven liveness, with handle.isAlive() fallback.
                         if (claudeExecutor && claudeExecutor.handle &&
                             typeof tuiMux !== 'undefined' && tuiMux &&
-                            typeof tuiMux.session === 'function') {
-                            var sess = tuiMux.session();
-                            if (typeof sess.isDone === 'function' && sess.isDone()) {
+                            state.claudeSessionID &&
+                            typeof tuiMux.isDone === 'function') {
+                            if (tuiMux.isDone(state.claudeSessionID)) {
                                 return false;
                             }
                         }
@@ -821,6 +828,18 @@
                                typeof claudeExecutor.handle.isAlive === 'function' &&
                                claudeExecutor.handle.isAlive();
                     };
+                    // Re-attach to tuiMux and capture pinned SessionID.
+                    if (claudeExecutor && claudeExecutor.handle &&
+                        typeof tuiMux !== 'undefined' && tuiMux &&
+                        typeof tuiMux.attach === 'function') {
+                        try {
+                            var resumeCid = tuiMux.attach(claudeExecutor.handle);
+                            state.claudeSessionID = resumeCid;
+                            log.printf('auto-split resume: attached Claude handle to tuiMux, sessionID=%d', resumeCid || 0);
+                        } catch (e) {
+                            log.printf('auto-split resume: tuiMux attach warning: %s', e.message || String(e));
+                        }
+                    }
                 } else {
                     emitOutput('[auto-split] Warning: Claude spawn failed — conflict resolution disabled.');
                 }

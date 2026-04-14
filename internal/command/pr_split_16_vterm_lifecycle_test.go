@@ -19,14 +19,22 @@ import (
 // pipeline, crash detection closes split-view.
 // ---------------------------------------------------------------------------
 
-// lifecycleMuxSetup provides a standard mock with Claude active.
+// lifecycleMuxSetup provides a standard mock with Claude active and pinned SessionID.
 const lifecycleMuxSetup = `
 var __savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+var __mockCID = 42;
+prSplit._state = prSplit._state || {};
+prSplit._state.claudeSessionID = __mockCID;
 globalThis.tuiMux = {
 	hasChild: function() { return true; },
 	session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
 	childScreen: function() { return 'claude output'; },
 	screenshot: function() { return 'claude screenshot'; },
+	snapshot: function(id) { return { fullScreen: 'claude output', plainText: 'claude screenshot' }; },
+	isDone: function(id) { return false; },
+	activeID: function() { return __mockCID; },
+	activate: function(id) {},
+	input: function(data) {},
 	lastActivityMs: function() { return 100; },
 	writeToChild: function(bytes) {}
 };
@@ -35,6 +43,7 @@ globalThis.tuiMux = {
 const lifecycleMuxRestore = `
 if (__savedMux !== undefined) globalThis.tuiMux = __savedMux;
 else delete globalThis.tuiMux;
+if (prSplit._state) prSplit._state.claudeSessionID = null;
 `
 
 // lifecycleExecutorSetup mocks claudeExecutor on prSplit._state so
@@ -386,11 +395,19 @@ func TestChunk16_VTerm_Lifecycle_AutoCloseOnChildExit(t *testing.T) {
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 42;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = __mockCID;
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },  // child exited
 			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
 			childScreen: function() { return ''; },
 			screenshot: function() { return ''; },
+			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			isDone: function(id) { return true; },
+			activeID: function() { return __mockCID; },
+			activate: function(id) {},
+			input: function(data) {},
 			lastActivityMs: function() { return -1; },
 			writeToChild: function() {}
 		};
@@ -430,6 +447,7 @@ func TestChunk16_VTerm_Lifecycle_AutoCloseOnChildExit(t *testing.T) {
 		} finally {
 			if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 			else delete globalThis.tuiMux;
+			if (prSplit._state) prSplit._state.claudeSessionID = null;
 		}
 	})()`)
 	if err != nil {
@@ -448,11 +466,19 @@ func TestChunk16_VTerm_Lifecycle_AutoCloseBlockedDuringPipeline(t *testing.T) {
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 42;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = __mockCID;
 		globalThis.tuiMux = {
 			hasChild: function() { return false; },  // child exited
 			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
 			childScreen: function() { return ''; },
 			screenshot: function() { return ''; },
+			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			isDone: function(id) { return true; },
+			activeID: function() { return __mockCID; },
+			activate: function(id) {},
+			input: function(data) {},
 			lastActivityMs: function() { return -1; },
 			writeToChild: function() {}
 		};
@@ -481,6 +507,7 @@ func TestChunk16_VTerm_Lifecycle_AutoCloseBlockedDuringPipeline(t *testing.T) {
 		} finally {
 			if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 			else delete globalThis.tuiMux;
+			if (prSplit._state) prSplit._state.claudeSessionID = null;
 		}
 	})()`)
 	if err != nil {
@@ -960,6 +987,8 @@ func TestChunk16_VTerm_Lifecycle_FullFlow(t *testing.T) {
 			s.claudeAutoAttached = true;
 			globalThis.tuiMux.hasChild = function() { return false; };
 			globalThis.tuiMux.session = function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; };
+			globalThis.tuiMux.isDone = function(id) { return true; };
+			globalThis.tuiMux.snapshot = function(id) { return { fullScreen: '', plainText: '' }; };
 
 			r = update({type: 'Tick', id: 'claude-screenshot'}, s);
 			s = r[0];

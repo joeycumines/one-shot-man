@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -171,11 +172,10 @@ func TestCommandInjectionPrevention_ShellMetacharacters(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 
-			engine, err := scripting.NewEngineDeprecated(
+			engine, err := scripting.NewEngine(
 				ctx, &stdout, &stderr,
 				testutil.NewTestSessionID("security", t.Name()),
-				"memory",
-			)
+				"memory", nil, 0, slog.LevelInfo)
 			if err != nil {
 				t.Fatalf("Failed to create engine: %v", err)
 			}
@@ -229,11 +229,10 @@ func TestCommandInjectionPrevention_CommandChaining(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 
-			engine, err := scripting.NewEngineDeprecated(
+			engine, err := scripting.NewEngine(
 				ctx, &stdout, &stderr,
 				testutil.NewTestSessionID("security", t.Name()),
-				"memory",
-			)
+				"memory", nil, 0, slog.LevelInfo)
 			if err != nil {
 				t.Fatalf("Failed to create engine: %v", err)
 			}
@@ -279,11 +278,10 @@ func TestCommandInjectionPrevention_SubshellInjection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 
-			engine, err := scripting.NewEngineDeprecated(
+			engine, err := scripting.NewEngine(
 				ctx, &stdout, &stderr,
 				testutil.NewTestSessionID("security", t.Name()),
-				"memory",
-			)
+				"memory", nil, 0, slog.LevelInfo)
 			if err != nil {
 				t.Fatalf("Failed to create engine: %v", err)
 			}
@@ -552,11 +550,10 @@ func TestInputValidation_DangerousScriptInputs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 
-			engine, err := scripting.NewEngineDeprecated(
+			engine, err := scripting.NewEngine(
 				ctx, &stdout, &stderr,
 				testutil.NewTestSessionID("security", t.Name()),
-				"memory",
-			)
+				"memory", nil, 0, slog.LevelInfo)
 			if err != nil {
 				t.Fatalf("Failed to create engine: %v", err)
 			}
@@ -608,11 +605,10 @@ func TestInputValidation_TemplateInjection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 
-			engine, err := scripting.NewEngineDeprecated(
+			engine, err := scripting.NewEngine(
 				ctx, &stdout, &stderr,
 				testutil.NewTestSessionID("security", t.Name()),
-				"memory",
-			)
+				"memory", nil, 0, slog.LevelInfo)
 			if err != nil {
 				t.Fatalf("Failed to create engine: %v", err)
 			}
@@ -649,11 +645,10 @@ func TestInputValidation_ANSIEscapeSequences(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	engine, err := scripting.NewEngineDeprecated(
+	engine, err := scripting.NewEngine(
 		ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("security", t.Name()),
-		"memory",
-	)
+		"memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -705,21 +700,19 @@ func TestSessionDataIsolation_NotLeakedBetweenSessions(t *testing.T) {
 	session1 := "session-one"
 	session2 := "session-two"
 
-	engine1, err := scripting.NewEngineDeprecated(
+	engine1, err := scripting.NewEngine(
 		ctx, &bytes.Buffer{}, &bytes.Buffer{},
 		testutil.NewTestSessionID("security", session1),
-		"memory",
-	)
+		"memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine 1: %v", err)
 	}
 	defer engine1.Close()
 
-	engine2, err := scripting.NewEngineDeprecated(
+	engine2, err := scripting.NewEngine(
 		ctx, &bytes.Buffer{}, &bytes.Buffer{},
 		testutil.NewTestSessionID("security", session2),
-		"memory",
-	)
+		"memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine 2: %v", err)
 	}
@@ -753,11 +746,10 @@ func TestSessionDataIsolation_ConcurrentAccess(t *testing.T) {
 		go func(idx int) {
 			defer func() { done <- true }()
 
-			engine, err := scripting.NewEngineDeprecated(
+			engine, err := scripting.NewEngine(
 				ctx, &bytes.Buffer{}, &bytes.Buffer{},
 				testutil.NewTestSessionID("security", "concurrent-test-"+string(rune('a'+idx))),
-				"memory",
-			)
+				"memory", nil, 0, slog.LevelInfo)
 			if err != nil {
 				t.Errorf("Engine %d creation failed: %v", idx, err)
 				return
@@ -1146,11 +1138,10 @@ func TestTUIInputSecurity_EscapeSequences(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	engine, err := scripting.NewEngineDeprecated(
+	engine, err := scripting.NewEngine(
 		ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("security", t.Name()),
-		"memory",
-	)
+		"memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}

@@ -3,6 +3,7 @@ package scripting
 import (
 	"bytes"
 	"context"
+	"log/slog"
 
 	// storage package intentionally not used to avoid clearing global store
 	"os"
@@ -35,7 +36,7 @@ func TestRehydrateNormalizesForwardSlashes(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	sessionID := testutil.NewTestSessionID("rehyd", t.Name())
-	engine, err := NewEngineDeprecated(ctx, &stdout, &stderr, sessionID, "memory")
+	engine, err := NewEngine(ctx, &stdout, &stderr, sessionID, "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
 	}
@@ -125,7 +126,7 @@ func TestRehydrateNormalizesBackslashes(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	sessionID := testutil.NewTestSessionID("rehyd-bslash", t.Name())
-	engine, err := NewEngineDeprecated(ctx, &stdout, &stderr, sessionID, "memory")
+	engine, err := NewEngine(ctx, &stdout, &stderr, sessionID, "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
 	}
@@ -204,7 +205,7 @@ func TestRehydrateNormalizesDotPrefix(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	sessionID := testutil.NewTestSessionID("rehyd-dot", t.Name())
-	engine, err := NewEngineDeprecated(ctx, &stdout, &stderr, sessionID, "memory")
+	engine, err := NewEngine(ctx, &stdout, &stderr, sessionID, "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
 	}

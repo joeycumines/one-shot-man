@@ -3,6 +3,7 @@ package scripting
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/testutil"
@@ -19,7 +20,7 @@ func TestInitCleanStdout(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	sessionID := testutil.NewTestSessionID("init-clean-stdout", t.Name())
 
-	engine, err := NewEngineDeprecated(ctx, &stdout, &stderr, sessionID, "memory")
+	engine, err := NewEngine(ctx, &stdout, &stderr, sessionID, "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngineConfig: %v", err)
 	}

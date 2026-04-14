@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -33,7 +34,7 @@ func TestContextManagerRehydration(t *testing.T) {
 	// Create engine and TUI manager
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := NewEngineDeprecated(ctx, &stdout, &stderr, "", "")
+	engine, err := NewEngine(ctx, &stdout, &stderr, "", "", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -152,7 +153,7 @@ func TestContextManagerRehydrationWithMissingFiles(t *testing.T) {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := NewEngineDeprecated(ctx, &stdout, &stderr, "", "")
+	engine, err := NewEngine(ctx, &stdout, &stderr, "", "", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -220,7 +221,7 @@ func TestContextManagerRehydrationNoItemsKey(t *testing.T) {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := NewEngineDeprecated(ctx, &stdout, &stderr, "", "")
+	engine, err := NewEngine(ctx, &stdout, &stderr, "", "", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}

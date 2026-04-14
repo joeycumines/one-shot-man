@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"flag"
+	"log/slog"
 	"runtime"
 	"strings"
 	"testing"
@@ -315,8 +316,8 @@ func TestPromptFlowCommand_UseFromInitialPhase(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
-		testutil.NewTestSessionID("prompt-flow", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr,
+		testutil.NewTestSessionID("prompt-flow", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -395,8 +396,8 @@ func TestPromptFlowCommand_Footer(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
-		testutil.NewTestSessionID("prompt-flow", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr,
+		testutil.NewTestSessionID("prompt-flow", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -473,8 +474,8 @@ func TestPromptFlowCommand_FooterClear(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
-		testutil.NewTestSessionID("prompt-flow", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr,
+		testutil.NewTestSessionID("prompt-flow", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -544,8 +545,8 @@ func TestPromptFlowCommand_NoFooter(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
-		testutil.NewTestSessionID("prompt-flow", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr,
+		testutil.NewTestSessionID("prompt-flow", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}
@@ -614,8 +615,8 @@ func newPromptFlowTestEngine(t *testing.T) (*scripting.Engine, *bytes.Buffer, *b
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
-		testutil.NewTestSessionID("prompt-flow", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr,
+		testutil.NewTestSessionID("prompt-flow", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}

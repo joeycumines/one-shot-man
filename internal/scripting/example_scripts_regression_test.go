@@ -3,6 +3,7 @@ package scripting
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +17,7 @@ func newExampleScriptEngine(t *testing.T) *Engine {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := NewEngineDeprecated(ctx, &stdout, &stderr, testutil.NewTestSessionID("example-script", t.Name()), "memory")
+	engine, err := NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("example-script", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngineConfig failed: %v", err)
 	}

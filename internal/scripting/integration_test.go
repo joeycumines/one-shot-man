@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,7 +65,7 @@ func mustNewEngine(tb testing.TB, ctx context.Context, stdout, stderr io.Writer)
 
 	// Use explicit session configuration to prevent data races from env var mutation.
 	sessionID := testutil.NewTestSessionID("test", tb.Name())
-	engine, err := NewEngineDeprecated(ctx, stdout, stderr, sessionID, "memory")
+	engine, err := NewEngine(ctx, stdout, stderr, sessionID, "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		tb.Fatalf("NewEngineConfig failed: %v", err)
 	}

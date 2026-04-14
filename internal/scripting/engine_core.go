@@ -116,14 +116,6 @@ func WithModulePaths(paths ...string) EngineOption {
 	}
 }
 
-// NewEngineDeprecated creates a new JavaScript scripting engine with explicit session configuration.
-// sessionID and store parameters override environment-based discovery and avoid data races.
-//
-// Deprecated: Only retained because I couldn't be bothered updating the tests. TODO: Remove this entirely.
-func NewEngineDeprecated(ctx context.Context, stdout, stderr io.Writer, sessionID, store string) (*Engine, error) {
-	return NewEngine(ctx, stdout, stderr, sessionID, store, nil, 0, slog.LevelInfo)
-}
-
 // NewEngine creates a new JavaScript scripting engine with full configuration options.
 // logFile: optional writer for log output (JSON).
 // logBufferSize: size of the in-memory log buffer (default 1000 if <= 0).
@@ -624,7 +616,12 @@ func (e *Engine) waitForAsyncWork() error {
 	}
 	for {
 		done := make(chan struct{})
-		if err := loop.Submit(func() { close(done) }); err != nil {
+		// Use SubmitInternal (not Submit) for FIFO ordering with timer registrations.
+		// Submit goes to auxJobs in fast path mode, which runAux() drains BEFORE
+		// the internal queue where timer registrations live. This causes the sentinel
+		// to complete before new timers are visible to Alive(), leading to premature exit.
+		// SubmitInternal puts the sentinel in the same queue, guaranteeing correct order.
+		if err := loop.SubmitInternal(func() { close(done) }); err != nil {
 			return nil
 		}
 		<-done

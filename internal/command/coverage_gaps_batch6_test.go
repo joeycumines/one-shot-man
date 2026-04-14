@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -215,8 +216,8 @@ func TestInjectConfigHotSnippets_NoWarningFlag(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
-		testutil.NewTestSessionID("hs-nowarn", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr,
+		testutil.NewTestSessionID("hs-nowarn", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("engine creation failed: %v", err)
 	}
@@ -245,8 +246,8 @@ func TestInjectConfigHotSnippets_NoWarningFalse(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
-		testutil.NewTestSessionID("hs-no-nw", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr,
+		testutil.NewTestSessionID("hs-no-nw", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("engine creation failed: %v", err)
 	}

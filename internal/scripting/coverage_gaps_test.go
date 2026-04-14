@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1277,7 +1278,7 @@ func TestNewEngineConfig(t *testing.T) {
 	t.Cleanup(cancel)
 
 	sessionID := testutil.NewTestSessionID("", t.Name())
-	engine, err := NewEngineDeprecated(ctx, &stdout, &stderr, sessionID, "memory")
+	engine, err := NewEngine(ctx, &stdout, &stderr, sessionID, "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngineConfig failed: %v", err)
 	}

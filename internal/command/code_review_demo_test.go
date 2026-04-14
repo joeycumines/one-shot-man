@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -20,7 +21,7 @@ func TestCodeReviewCommand_ShowActualDiffOutput(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	// Use an in-memory storage backend with a test-scoped session to avoid
 	// polluting the user's real session files during tests.
-	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr, testutil.NewTestSessionID("code-review", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("code-review", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}

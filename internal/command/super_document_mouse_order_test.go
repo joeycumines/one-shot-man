@@ -3,6 +3,7 @@ package command
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"testing"
 
 	"github.com/joeycumines/one-shot-man/internal/scripting"
@@ -18,7 +19,7 @@ func TestHandleMouse_CallsSetViewportContextBeforeHandleClickAtScreenCoords(t *t
 	t.Parallel()
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngineConfig failed: %v", err)
 	}

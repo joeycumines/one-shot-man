@@ -13,6 +13,7 @@ package internal_test
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -24,11 +25,10 @@ func newSandboxTestEngine(t *testing.T) (*scripting.Engine, *bytes.Buffer, *byte
 	t.Helper()
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineDeprecated(
+	engine, err := scripting.NewEngine(
 		ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("sandbox", t.Name()),
-		"memory",
-	)
+		"memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -194,20 +194,18 @@ func TestSandbox_VMIsolation(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	var stdout1, stderr1, stdout2, stderr2 bytes.Buffer
-	engine1, err := scripting.NewEngineDeprecated(
+	engine1, err := scripting.NewEngine(
 		ctx, &stdout1, &stderr1,
 		testutil.NewTestSessionID("sandbox", t.Name()+"-1"),
-		"memory",
-	)
+		"memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Engine 1 creation failed: %v", err)
 	}
 	defer engine1.Close()
-	engine2, err := scripting.NewEngineDeprecated(
+	engine2, err := scripting.NewEngine(
 		ctx, &stdout2, &stderr2,
 		testutil.NewTestSessionID("sandbox", t.Name()+"-2"),
-		"memory",
-	)
+		"memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Engine 2 creation failed: %v", err)
 	}
@@ -462,11 +460,10 @@ func TestSandbox_ContextCancellationStopsExecution(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineDeprecated(
+	engine, err := scripting.NewEngine(
 		ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("sandbox", t.Name()),
-		"memory",
-	)
+		"memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}

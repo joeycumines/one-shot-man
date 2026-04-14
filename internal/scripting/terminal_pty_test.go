@@ -4,6 +4,7 @@ package scripting
 
 import (
 	"bytes"
+	"log/slog"
 	"os"
 	"testing"
 	"time"
@@ -36,7 +37,7 @@ func TestTerminalRun_TerminalStateSaveRestore(t *testing.T) {
 	ctx := t.Context()
 	sessionID := testutil.NewTestSessionID("test", t.Name())
 
-	engine, err := NewEngineDeprecated(ctx, &engineOut, &engineOut, sessionID, "memory")
+	engine, err := NewEngine(ctx, &engineOut, &engineOut, sessionID, "memory", nil, 0, slog.LevelInfo)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = engine.Close() })
 

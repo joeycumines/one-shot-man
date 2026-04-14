@@ -18,6 +18,7 @@ package internal_test
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,11 +47,10 @@ func newTestEngine(t *testing.T) (*scripting.Engine, *bytes.Buffer, *bytes.Buffe
 	t.Helper()
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineDeprecated(
+	engine, err := scripting.NewEngine(
 		ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("security-input", t.Name()),
-		"memory",
-	)
+		"memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -555,11 +555,10 @@ func TestREPLSecurity_DeepRecursion(t *testing.T) {
 	defer cancel()
 
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineDeprecated(
+	engine, err := scripting.NewEngine(
 		ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("security-input", t.Name()),
-		"memory",
-	)
+		"memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}
@@ -583,11 +582,10 @@ func TestREPLSecurity_InfiniteLoopWithCancel(t *testing.T) {
 	defer cancel()
 
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineDeprecated(
+	engine, err := scripting.NewEngine(
 		ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("security-input", t.Name()),
-		"memory",
-	)
+		"memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}

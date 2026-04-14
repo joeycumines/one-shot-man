@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"io"
+	"log/slog"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -582,7 +583,7 @@ func BenchmarkScriptingEngine(b *testing.B) {
 		b.ReportAllocs()
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			engine, err := scripting.NewEngineDeprecated(ctx, io.Discard, io.Discard, "", "memory")
+			engine, err := scripting.NewEngine(ctx, io.Discard, io.Discard, "", "memory", nil, 0, slog.LevelInfo)
 			if err != nil {
 				b.Fatalf("failed to create engine: %v", err)
 			}

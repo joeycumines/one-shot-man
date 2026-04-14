@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -16,7 +17,7 @@ import (
 
 func newTestEngine(t *testing.T, ctx context.Context, stdout, stderr io.Writer) *Engine {
 	t.Helper()
-	engine, err := NewEngineDeprecated(ctx, stdout, stderr, testutil.NewTestSessionID("", t.Name()), "memory")
+	engine, err := NewEngine(ctx, stdout, stderr, testutil.NewTestSessionID("", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}

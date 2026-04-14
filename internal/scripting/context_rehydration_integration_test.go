@@ -3,6 +3,7 @@ package scripting
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,7 +47,7 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 		ctx := context.Background()
 		var stdout, stderr bytes.Buffer
 
-		engine, err := NewEngineDeprecated(ctx, &stdout, &stderr, sessionID, "memory")
+		engine, err := NewEngine(ctx, &stdout, &stderr, sessionID, "memory", nil, 0, slog.LevelInfo)
 		if err != nil {
 			t.Fatalf("Failed to create engine: %v", err)
 		}
@@ -149,7 +150,7 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 
 		// Create new engine with same session ID - this will load persisted state
-		engine, err := NewEngineDeprecated(ctx, &stdout, &stderr, sessionID, "memory")
+		engine, err := NewEngine(ctx, &stdout, &stderr, sessionID, "memory", nil, 0, slog.LevelInfo)
 		if err != nil {
 			t.Fatalf("Failed to create engine: %v", err)
 		}
@@ -283,7 +284,7 @@ func TestContextRehydrationWithSharedState(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 
-	engine, err := NewEngineDeprecated(ctx, &stdout, &stderr, sessionID, "memory")
+	engine, err := NewEngine(ctx, &stdout, &stderr, sessionID, "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}

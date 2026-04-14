@@ -629,7 +629,7 @@ func TestNewTerminal_StructInitialization(t *testing.T) {
 	ctx := t.Context()
 
 	sessionID := testutil.NewTestSessionID("test", t.Name())
-	engine, err := NewEngineDeprecated(ctx, &buf, &buf, sessionID, "memory")
+	engine, err := NewEngine(ctx, &buf, &buf, sessionID, "memory", nil, 0, slog.LevelInfo)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = engine.Close() })
 
@@ -652,7 +652,7 @@ func TestTerminalRun_NormalExit_WithStateManager(t *testing.T) {
 	ctx := t.Context()
 	sessionID := testutil.NewTestSessionID("test", t.Name())
 
-	engine, err := NewEngineDeprecated(ctx, &engineOut, &engineOut, sessionID, "memory")
+	engine, err := NewEngine(ctx, &engineOut, &engineOut, sessionID, "memory", nil, 0, slog.LevelInfo)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = engine.Close() })
 
@@ -695,7 +695,7 @@ func TestTerminalRun_NilStateManager(t *testing.T) {
 	ctx := t.Context()
 	sessionID := testutil.NewTestSessionID("test", t.Name())
 
-	engine, err := NewEngineDeprecated(ctx, &engineOut, &engineOut, sessionID, "memory")
+	engine, err := NewEngine(ctx, &engineOut, &engineOut, sessionID, "memory", nil, 0, slog.LevelInfo)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = engine.Close() })
 
@@ -738,7 +738,7 @@ func TestTerminalRun_PersistAndCloseErrors(t *testing.T) {
 	ctx := t.Context()
 	sessionID := testutil.NewTestSessionID("test", t.Name())
 
-	engine, err := NewEngineDeprecated(ctx, &engineOut, &engineOut, sessionID, "memory")
+	engine, err := NewEngine(ctx, &engineOut, &engineOut, sessionID, "memory", nil, 0, slog.LevelInfo)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = engine.Close() })
 

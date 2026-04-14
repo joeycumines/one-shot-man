@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -550,8 +551,8 @@ func TestScriptingCommand_DefaultTerminalFactory(t *testing.T) {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
-		testutil.NewTestSessionID("script", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr,
+		testutil.NewTestSessionID("script", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
@@ -642,8 +643,8 @@ func TestInjectConfigHotSnippets_NilConfig(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
-		testutil.NewTestSessionID("hs-nil", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr,
+		testutil.NewTestSessionID("hs-nil", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("engine creation failed: %v", err)
 	}
@@ -665,8 +666,8 @@ func TestInjectConfigHotSnippets_EmptySnippets(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
-		testutil.NewTestSessionID("hs-empty", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr,
+		testutil.NewTestSessionID("hs-empty", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("engine creation failed: %v", err)
 	}
@@ -688,8 +689,8 @@ func TestInjectConfigHotSnippets_WithSnippets(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
-		testutil.NewTestSessionID("hs-with", t.Name()), "memory")
+	engine, err := scripting.NewEngine(ctx, &stdout, &stderr,
+		testutil.NewTestSessionID("hs-with", t.Name()), "memory", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("engine creation failed: %v", err)
 	}

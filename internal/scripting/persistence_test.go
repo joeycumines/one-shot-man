@@ -3,6 +3,7 @@ package scripting
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -32,7 +33,7 @@ func TestEngine_PersistenceOnClose(t *testing.T) {
 	ctx := context.Background()
 
 	// We don't need to set XDG_DATA_HOME because we used SetTestPaths.
-	engine, err := NewEngineDeprecated(ctx, os.Stdout, os.Stderr, sessionID, "fs")
+	engine, err := NewEngine(ctx, os.Stdout, os.Stderr, sessionID, "fs", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}

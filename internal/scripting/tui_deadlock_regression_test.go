@@ -3,6 +3,7 @@ package scripting
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -46,7 +47,7 @@ func TestTUIExitFromJSCommandNoDeadlock(t *testing.T) {
 	defer cancel()
 
 	var output bytes.Buffer
-	engine, err := NewEngineDeprecated(ctx, &output, &output, "", "")
+	engine, err := NewEngine(ctx, &output, &output, "", "", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
@@ -113,7 +114,7 @@ func TestTUIExitFromJSCommandNoDeadlock(t *testing.T) {
 func TestJSMutatorsUseWriterQueue(t *testing.T) {
 	ctx := context.Background()
 	var output bytes.Buffer
-	engine, err := NewEngineDeprecated(ctx, &output, &output, "", "")
+	engine, err := NewEngine(ctx, &output, &output, "", "", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
@@ -155,7 +156,7 @@ func TestConcurrentJSMutators(t *testing.T) {
 	defer cancel()
 
 	var output bytes.Buffer
-	engine, err := NewEngineDeprecated(ctx, &output, &output, "", "")
+	engine, err := NewEngine(ctx, &output, &output, "", "", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
@@ -214,7 +215,7 @@ func TestConcurrentJSMutators(t *testing.T) {
 func TestWriterGoroutineShutdown(t *testing.T) {
 	ctx := context.Background()
 	var output bytes.Buffer
-	engine, err := NewEngineDeprecated(ctx, &output, &output, "", "")
+	engine, err := NewEngine(ctx, &output, &output, "", "", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
@@ -247,7 +248,7 @@ func TestWriterGoroutineShutdown(t *testing.T) {
 func TestReadOperationsRemainReentrant(t *testing.T) {
 	ctx := context.Background()
 	var output bytes.Buffer
-	engine, err := NewEngineDeprecated(ctx, &output, &output, "", "")
+	engine, err := NewEngine(ctx, &output, &output, "", "", nil, 0, slog.LevelInfo)
 	if err != nil {
 		t.Fatalf("NewEngineConfig failed: %v", err)
 	}

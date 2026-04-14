@@ -2,6 +2,7 @@ package claudemux
 
 import (
 	"context"
+	"errors"
 	"io"
 
 	"github.com/joeycumines/one-shot-man/internal/termmux/pty"
@@ -79,6 +80,16 @@ func (h *ptyAgentHandle) IsAlive() bool {
 
 func (h *ptyAgentHandle) Wait() (int, error) {
 	return h.proc.Wait()
+}
+
+func (h *ptyAgentHandle) Resize(rows, cols int) error {
+	if rows <= 0 || cols <= 0 {
+		return errors.New("resize: rows and cols must be positive")
+	}
+	if rows > 65535 || cols > 65535 {
+		return errors.New("resize: rows and cols must be <= 65535")
+	}
+	return h.proc.Resize(uint16(rows), uint16(cols))
 }
 
 func (h *ptyAgentHandle) Signal(sig string) error {

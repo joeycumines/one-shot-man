@@ -911,6 +911,42 @@ func TestSessionManager_Resize(t *testing.T) {
 	}
 }
 
+func TestSessionManager_TermSize_Default(t *testing.T) {
+	t.Parallel()
+	m, cleanup := startManager(t)
+	defer cleanup()
+
+	rows, cols := m.TermSize()
+	if rows != 24 || cols != 80 {
+		t.Errorf("TermSize = (%d, %d); want (24, 80)", rows, cols)
+	}
+}
+
+func TestSessionManager_TermSize_Custom(t *testing.T) {
+	t.Parallel()
+	m, cleanup := startManager(t, WithTermSize(50, 120))
+	defer cleanup()
+
+	rows, cols := m.TermSize()
+	if rows != 50 || cols != 120 {
+		t.Errorf("TermSize = (%d, %d); want (50, 120)", rows, cols)
+	}
+}
+
+func TestSessionManager_TermSize_AfterResize(t *testing.T) {
+	t.Parallel()
+	m, cleanup := startManager(t, WithTermSize(24, 80))
+	defer cleanup()
+
+	if err := m.Resize(40, 160); err != nil {
+		t.Fatalf("Resize: %v", err)
+	}
+	rows, cols := m.TermSize()
+	if rows != 40 || cols != 160 {
+		t.Errorf("TermSize after Resize = (%d, %d); want (40, 160)", rows, cols)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Public API: Snapshot
 // ---------------------------------------------------------------------------

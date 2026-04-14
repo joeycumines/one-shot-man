@@ -200,6 +200,10 @@ const (
 	// [PersistedManagerState] snapshot of all managed sessions.
 	// Payload: nil. Reply value: *PersistedManagerState.
 	reqExportState
+
+	// reqTermSize asks the worker to return the current terminal
+	// dimensions. Payload: nil. Reply value: [2]int{rows, cols}.
+	reqTermSize
 )
 
 // registerPayload carries the arguments for a reqRegister request.
@@ -539,6 +543,16 @@ func (m *SessionManager) Resize(rows, cols int) error {
 	return m.sendRequest(reqResize, &resizePayload{rows: rows, cols: cols}).err
 }
 
+// TermSize returns the current terminal dimensions known to the manager.
+func (m *SessionManager) TermSize() (rows, cols int) {
+	resp := m.sendRequest(reqTermSize, nil)
+	if resp.value == nil {
+		return 0, 0
+	}
+	size := resp.value.([2]int)
+	return size[0], size[1]
+}
+
 // Snapshot returns the latest screen snapshot for the given session, or nil
 // if the session does not exist.
 func (m *SessionManager) Snapshot(id SessionID) *ScreenSnapshot {
@@ -600,6 +614,8 @@ func (m *SessionManager) dispatch(req request) {
 		resp = m.handleDisablePassthroughTee()
 	case reqExportState:
 		resp = m.handleExportState()
+	case reqTermSize:
+		resp = response{value: [2]int{m.termRows, m.termCols}}
 	default:
 		resp = response{err: fmt.Errorf("termmux: unknown request kind %d", req.kind)}
 	}

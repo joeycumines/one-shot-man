@@ -64,6 +64,7 @@ func (h *mockHandle) Wait() (int, error) {
 	h.alive = false
 	return 0, nil
 }
+func (h *mockHandle) Resize(_, _ int) error { return nil }
 
 // --- Registry Tests ---
 

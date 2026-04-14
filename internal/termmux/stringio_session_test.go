@@ -53,13 +53,53 @@ func TestStringIOSession_Write(t *testing.T) {
 	}
 }
 
-func TestStringIOSession_Resize_NoOp(t *testing.T) {
+func TestStringIOSession_Resize_PlainStringIO(t *testing.T) {
 	t.Parallel()
 	sio := &testStringIO{}
 	sess := NewStringIOSession(sio)
 
+	// A plain StringIO has no Resize method — call should be a safe no-op.
 	if err := sess.Resize(80, 24); err != nil {
 		t.Fatalf("Resize: %v", err)
+	}
+}
+
+// testResizableStringIO embeds testStringIO and adds Resize support,
+// simulating a PTY-backed agent handle that satisfies both StringIO
+// and the local resizer interface in StringIOSession.Resize.
+type testResizableStringIO struct {
+	testStringIO
+	resizeRows int
+	resizeCols int
+	resizeErr  error
+}
+
+func (r *testResizableStringIO) Resize(rows, cols int) error {
+	r.resizeRows = rows
+	r.resizeCols = cols
+	return r.resizeErr
+}
+
+func TestStringIOSession_Resize_Delegation(t *testing.T) {
+	t.Parallel()
+	sio := &testResizableStringIO{}
+	sess := NewStringIOSession(sio)
+
+	if err := sess.Resize(50, 120); err != nil {
+		t.Fatalf("Resize: %v", err)
+	}
+	if sio.resizeRows != 50 || sio.resizeCols != 120 {
+		t.Errorf("Resize delegated (%d, %d); want (50, 120)", sio.resizeRows, sio.resizeCols)
+	}
+}
+
+func TestStringIOSession_Resize_DelegationError(t *testing.T) {
+	t.Parallel()
+	sio := &testResizableStringIO{resizeErr: io.ErrClosedPipe}
+	sess := NewStringIOSession(sio)
+
+	if err := sess.Resize(50, 120); err != io.ErrClosedPipe {
+		t.Fatalf("Resize error = %v; want io.ErrClosedPipe", err)
 	}
 }
 

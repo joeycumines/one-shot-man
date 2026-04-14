@@ -775,6 +775,15 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 		}
 	})
 
+	// termSize() → {rows, cols}
+	_ = obj.Set("termSize", func() goja.Value {
+		rows, cols := mgr.TermSize()
+		result := runtime.NewObject()
+		_ = result.Set("rows", rows)
+		_ = result.Set("cols", cols)
+		return result
+	})
+
 	// snapshot(id) → {gen, plainText, ansi, fullScreen, rows, cols, cursorRow, cursorCol, timestamp} | null
 	_ = obj.Set("snapshot", func(id uint64) goja.Value {
 		snap := mgr.Snapshot(parent.SessionID(id))

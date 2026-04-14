@@ -1162,6 +1162,19 @@ func wrapAgentHandle(runtime *goja.Runtime, h AgentHandle) goja.Value {
 		return runtime.ToValue(result)
 	})
 
+	// resize(rows, cols) changes the PTY window dimensions.
+	_ = obj.Set("resize", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 2 {
+			panic(runtime.NewTypeError("resize: rows and cols arguments are required"))
+		}
+		rows := int(call.Argument(0).ToInteger())
+		cols := int(call.Argument(1).ToInteger())
+		if err := h.Resize(rows, cols); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		return goja.Undefined()
+	})
+
 	// Optionally expose signal() for handles that support it (e.g., PTY-based).
 	// This allows JS to send signals (SIGINT, SIGTERM, SIGKILL) to the child process.
 	type signaler interface {

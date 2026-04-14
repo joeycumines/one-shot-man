@@ -825,6 +825,51 @@ func TestWrapAgentHandle_WaitWithError(t *testing.T) {
 	}
 }
 
+func TestWrapAgentHandle_Resize(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	h := &stubResizableAgentHandle{}
+	jsObj := wrapAgentHandle(rt, h).ToObject(rt)
+
+	resize, _ := goja.AssertFunction(jsObj.Get("resize"))
+	_, err := resize(goja.Undefined(), rt.ToValue(50), rt.ToValue(120))
+	if err != nil {
+		t.Fatalf("resize threw: %v", err)
+	}
+	if h.resizeRows != 50 || h.resizeCols != 120 {
+		t.Errorf("Resize(%d, %d); want (50, 120)", h.resizeRows, h.resizeCols)
+	}
+}
+
+func TestWrapAgentHandle_ResizeNoArgs(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	h := &stubResizableAgentHandle{}
+	jsObj := wrapAgentHandle(rt, h).ToObject(rt)
+
+	resize, _ := goja.AssertFunction(jsObj.Get("resize"))
+	_, err := resize(goja.Undefined())
+	if err == nil {
+		t.Fatal("expected panic for missing resize args")
+	}
+}
+
+func TestWrapAgentHandle_ResizeError(t *testing.T) {
+	t.Parallel()
+	rt := goja.New()
+	h := &stubResizableAgentHandle{resizeErr: errors.New("pty closed")}
+	jsObj := wrapAgentHandle(rt, h).ToObject(rt)
+
+	resize, _ := goja.AssertFunction(jsObj.Get("resize"))
+	_, err := resize(goja.Undefined(), rt.ToValue(50), rt.ToValue(120))
+	if err == nil {
+		t.Fatal("expected error from Resize")
+	}
+	if !strings.Contains(err.Error(), "pty closed") {
+		t.Errorf("error = %v; want to contain 'pty closed'", err)
+	}
+}
+
 // ============================================================================
 // jsToModelMenu — JS object to ModelMenu conversion
 // ============================================================================
@@ -961,6 +1006,25 @@ func (s *stubAgentHandle) IsAlive() bool {
 
 func (s *stubAgentHandle) Wait() (int, error) {
 	return s.waitCode, s.waitErr
+}
+
+func (s *stubAgentHandle) Resize(_, _ int) error { return nil }
+
+// stubResizableAgentHandle extends stubAgentHandle to track resize calls.
+type stubResizableAgentHandle struct {
+	stubAgentHandle
+	resizeRows int
+	resizeCols int
+	resizeErr  error
+}
+
+func (s *stubResizableAgentHandle) Resize(rows, cols int) error {
+	if s.resizeErr != nil {
+		return s.resizeErr
+	}
+	s.resizeRows = rows
+	s.resizeCols = cols
+	return nil
 }
 
 // ============================================================================

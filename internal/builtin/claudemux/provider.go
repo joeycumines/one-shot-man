@@ -31,6 +31,9 @@ type AgentHandle interface {
 	IsAlive() bool
 	// Wait blocks until the agent exits. Returns the exit code.
 	Wait() (int, error)
+	// Resize changes the PTY window dimensions, delivering SIGWINCH
+	// to the child process.
+	Resize(rows, cols int) error
 }
 
 // SpawnOpts configures agent spawning.

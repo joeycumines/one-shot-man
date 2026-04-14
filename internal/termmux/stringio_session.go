@@ -8,7 +8,9 @@ import "io"
 // Call [StringIOSession.Start] to spawn a background goroutine that polls
 // [StringIO.Receive] and sends chunks on the [Reader] channel.
 // [Close] closes the underlying StringIO and signals the done channel.
-// [Resize] is a no-op since string-based handles have no PTY dimensions.
+// [Resize] delegates to the underlying handle if it implements a
+// Resize(rows, cols int) error method (e.g., PTY-backed agent handles).
+// Plain string-based handles without a Resize method are silently ignored.
 type StringIOSession struct {
 	sio      StringIO
 	done     chan struct{}
@@ -36,8 +38,20 @@ func (s *StringIOSession) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// Resize is a no-op for string-based handles.
-func (s *StringIOSession) Resize(_, _ int) error { return nil }
+// Resize delegates to the underlying StringIO if it implements a
+// Resize(rows, cols int) error method. PTY-backed agent handles
+// (e.g., claudemux.ptyAgentHandle) carry a real PTY that supports
+// SIGWINCH delivery. Plain string-based handles lack Resize, so
+// the call is a safe no-op.
+func (s *StringIOSession) Resize(rows, cols int) error {
+	type resizer interface {
+		Resize(rows, cols int) error
+	}
+	if r, ok := s.sio.(resizer); ok {
+		return r.Resize(rows, cols)
+	}
+	return nil
+}
 
 // Close closes the underlying StringIO and signals done.
 func (s *StringIOSession) Close() error {

@@ -237,6 +237,16 @@
                 args: baseArgs
             };
 
+            // Pass current terminal dimensions so the PTY starts at the
+            // correct size instead of falling back to provider defaults.
+            if (typeof tuiMux !== 'undefined' && tuiMux.termSize) {
+                var sz = tuiMux.termSize();
+                if (sz && sz.rows > 0 && sz.cols > 0) {
+                    spawnOpts.rows = sz.rows;
+                    spawnOpts.cols = sz.cols;
+                }
+            }
+
             registry.register(provider);
             this.handle = registry.spawn(provider.name(), spawnOpts);
         } catch (e) {

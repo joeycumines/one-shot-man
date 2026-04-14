@@ -492,8 +492,13 @@ func (c *PrSplitCommand) setupEngineGlobals(ctx context.Context, engine *scripti
 	//   3. pr_split_16d_tui_handlers_claude.js → tuiMux.switchTo() (blocking)
 	//   4. pr_split_10a_pipeline_config.js → executor.close() / deferred detach
 	//
-	// Verification shells are standalone CaptureSession objects (see
-	// pr_split_06b_verify_shell.js) — they are NOT attached to tuiMux.
+	// Verification sessions ARE registered with tuiMux via
+	// tuiMux.register() in pr_split_16c_tui_handlers_verify.js and
+	// accessed through a pinned SessionID proxy built by
+	// _buildVerifyProxy() in pr_split_13_tui.js. The proxy uses
+	// tuiMux.snapshot(sessionID) for reads, tuiMux.activate(sessionID)
+	// + tuiMux.input() for writes, and tuiMux.unregister(sessionID)
+	// for cleanup.
 	//
 	// Uses os.Stdin directly (not go-prompt's wrapped readers) because
 	// the command-blocking model ensures go-prompt is paused during

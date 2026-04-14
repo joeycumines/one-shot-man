@@ -60,7 +60,7 @@
       "warning": "MANDATORY PER-TASK COMMIT PROTOCOL: BEFORE MARKING ANY TASK DONE OR MAKING ANY COMMIT, REREAD `strict-review-gate` SKILL IN FULL, RUN THE RULE OF TWO UNTIL TWO CONTIGUOUS ISSUE-FREE REVIEWS EXAMINE THE EXACT SAME DIFF, REREAD `git-commit` SKILL IN FULL, COMMIT ONLY THAT ONE TASK'S DIFF, THEN REREAD `DIRECTIVE.txt` BEFORE STARTING THE NEXT TASK. DO NOT BATCH MULTIPLE TASKS INTO ONE COMMIT."
     },
     {
-      "warning": "TIMER DISCIPLINE IS STILL A LIVE OPERATIONAL CONSTRAINT. `config.mk` STILL HARD-CODES `scratch/session_timer_20260413.txt`, AND THE LAST-KNOWN TIMER OBSERVATION ONLY SURVIVES IN `WIP.md`. UNTIL THE TIMER TASK REPAIRS THAT TARGET, DO NOT TREAT FUTURE TIMER OUTPUT AS AUTHORITATIVE WITHOUT RE-ESTABLISHING THE STATE IN `WIP.md`."
+      "warning": "TIMER DISCIPLINE IS STILL A LIVE OPERATIONAL CONSTRAINT. Timer file is now `scratch/session_timer.txt` (date-independent). `config.mk` is gitignored so the fix is local-only. `WIP.md` records the authoritative timer state."
     },
     {
       "warning": "CRITICAL BUG — `StringIOSession.Resize()` in `internal/termmux/stringio_session.go:40` IS A NO-OP. CLAUDE'S PTY IS NEVER RESIZED AFTER SPAWN, AND `pr_split_09_claude.js` DOES NOT PASS REAL TERMINAL ROWS/COLS INTO CLAUDEMUX SPAWN OPTS, SO CLAUDE STARTS ON PROVIDER DEFAULT GEOMETRY AND CANNOT TRACK LATER TERMINAL SIZE CHANGES. THIS CREATES A STRUCTURALLY GROUNDED RISK OF MIS-SIZED OR GARBLED CLAUDE OUTPUT FOR USERS WHO ARE NOT ALREADY AT THAT DEFAULT SIZE, EVEN THOUGH THE EXACT USER-VISIBLE SEVERITY STILL NEEDS DIRECT BLACK-BOX REPRODUCTION. THE UNDERLYING `pty.Process.Resize()` IN `internal/termmux/pty/pty.go:231` WORKS BUT IS INACCESSIBLE BECAUSE `AgentHandle` LACKS `Resize` AND `StringIOSession` SWALLOWS THE CALL. THIS IS THE CLAUDE PTY RESIZE TASK."
@@ -69,7 +69,7 @@
       "warning": "CLAUDE SESSION ID IS DISCARDED BY `tuiMux.attach()` — `internal/builtin/termmux/module.go:965` RETURNS `goja.Undefined()` AFTER REGISTER+ACTIVATE. CURRENT PRODUCTION JS DOES NOT CAPTURE A DEDICATED CLAUDE SESSIONID; IT COULD ONLY FALL BACK TO AN IMPLICIT `tuiMux.activeID()` READ IMMEDIATELY AFTER ATTACH, WHICH IS NOT A ROBUST PINNED-HANDLE API. CLAUDE PANE SCREEN / OUTPUT READS THEREFORE GO THROUGH ACTIVE-SESSION HELPERS BACKED BY `mgr.ActiveID()`. THIS CREATES ACTIVE-SESSION AMBIGUITY AND MAKES PASSTHROUGH / PANE RENDERING FRAGILE. THIS IS THE CLAUDE SESSIONID CAPTURE TASK."
     },
     {
-      "warning": "STALE COMMENT IN `internal/command/pr_split.go:496` FALSELY CLAIMS 'Verification shells are NOT attached to tuiMux.' REALITY: VERIFY IS REGISTERED VIA `tuiMux.register()` IN THE CURRENT CODE. THIS COMMENT ACTIVELY MISLEADS. THIS IS THE VERIFY COMMENT FIX TASK."
+      "warning": "VERIFY COMMENT IN `internal/command/pr_split.go:496` HAS BEEN CORRECTED. Verify sessions ARE registered with tuiMux via `tuiMux.register()` and accessed through a pinned SessionID proxy built by `_buildVerifyProxy()`. This alert is retained for continuity; the fix is in the current diff."
     },
     {
       "warning": "THE 'AD-HOC PROXY' NARRATIVE IS OVERSTATED. IN THE PRODUCTION `WrapSessionManager` PATH, THE FALLBACK IN `getClaudePaneSession()` IS EFFECTIVELY DEAD BECAUSE `session()` IS ALWAYS PRESENT. THE REAL PROBLEM IS `tuiMux.session()` RETURNS A LIVE VIEW OF ACTIVE SESSION, NOT A PINNED HANDLE. DELETING THE FALLBACK ONLY MAKES SENSE AFTER CONFIRMING NO TEST OR ALTERNATE EMBEDDING STILL RELIES ON IT. THE PRIMARY FIX IS CAPTURING CLAUDE'S SESSIONID."
@@ -96,7 +96,7 @@
   "mandatoryDirectives": {
     "perTaskCommitProtocol": "MANDATORY FOR EVERY TASK, WITHOUT EXCEPTION: (1) reread `.claude/skills/strict-review-gate/SKILL.md` in full; (2) execute the Rule of Two until two contiguous issue-free reviews inspect the exact same diff; if any code changes after a review, reset the counter to zero; (3) reread `.claude/skills/git-commit/SKILL.md` in full; (4) commit only that task's diff immediately; (5) reread `DIRECTIVE.txt` before touching the next task. Testing and verification are part of the task itself, never their own tasks.",
     "contextManagement": "At session start and before any replan, reread `blueprint.json`, `WIP.md`, and `DIRECTIVE.txt`. Before each task, open the specific files named in the task description instead of relying on memory or old notes. If a task uncovers reality that contradicts this blueprint, update the blueprint before writing more code.",
-    "timerMandate": "The timer state preserved in `WIP.md` is historical continuity, not fresh proof. Because `config.mk` still hard-codes `scratch/session_timer_20260413.txt`, do not trust any future timer output until the timer task repairs that target or you explicitly re-establish the timer state in `WIP.md` before substantive work resumes.",
+    "timerMandate": "Timer file is `scratch/session_timer.txt` (date-independent). `config.mk` is gitignored so the fix is local-only. Use `gmake session-timer-start` and `gmake session-timer-check` for session time tracking. `WIP.md` records the authoritative timer state for cross-session continuity.",
     "trunkTruthMandate": "Before any trunk audit, resolve `trunkRef` and write it into `WIP.md`. Use this order: `git symbolic-ref --quiet --short refs/remotes/origin/HEAD`, then fall back to `origin/main`, `origin/master`, `main`, `master`. Once resolved, use `git diff <trunkRef>...HEAD` and `git log --oneline <trunkRef>..HEAD` consistently.",
     "tddMandate": "For behavior changes and bug fixes, write or update the focused reproducer first, prove the old behavior is missing or broken, then fix it and rerun the focused reproducer plus the broader package/Make targets.",
     "sessionManagerMandate": "Prefer SessionManager-backed sessions with PINNED IDs: `tuiMux.register()` → capture the returned uint64 → use `tuiMux.snapshot(id)`, `tuiMux.input()` after explicit `tuiMux.activate(id)`. Do NOT depend on `tuiMux.session()` which reads from the current active session and can return any session's data.",
@@ -108,7 +108,7 @@
       "task": "Autopsy blueprint fundamentals: termmux, PTY plumbing, and pr-split architecture vs claims",
       "description": "Produce a code-first adversarial autopsy under `scratch/blueprint-fundamentals-autopsy-20260414/` that traces the real foundations blueprint.json is built on. Scope includes `internal/termmux/`, `internal/builtin/termmux/`, `internal/builtin/claudemux/`, `internal/command/pr_split*.go`, the pr-split JS chunk files under `internal/command/`, and non-autopsy docs/config that claim how termmux or pr-split works. Explicitly exclude any existing autopsy documents under `scratch/` from evidence. Focus specifically on whether the current implementation truly supports or even structurally enables: (1) first-class VT100 and Windows-console input/output translation suitable for arbitrary transformation, relayout, and movable picture-in-picture rendering in an independent `internal/termmux` module, and (2) a single full-featured PTY-integrated path for `osm pr-split` rather than overlapping simpler or lower-fidelity interaction paths. Run real checks/targeted tests instead of hand-waving, and trace both implemented and planned state to concrete files/functions.",
       "acceptance": "`scratch/blueprint-fundamentals-autopsy-20260414/` contains a numbered, evidence-backed report with a README, anatomy, inventory, gap analysis, debunking, kill conditions, evidence, and honest conclusions. Every major conclusion cites concrete code locations and any executed test output used as corroboration. The report explicitly states which claimed fundamentals are true, false, aspirational, or uncertain; whether termmux is currently a reusable transformation substrate or mostly a session multiplexer; whether pr-split relies on overlapping interaction modes; and what must be culled or built to satisfy the stated direction. The task is not complete until two contiguous issue-free review passes have inspected the same diff for the report and bookkeeping changes.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "Fix Claude PTY resize: StringIOSession silently drops terminal window size changes",
@@ -120,7 +120,7 @@
       "task": "Fix stale comment claiming verify is NOT attached to tuiMux",
       "description": "The comment block at `internal/command/pr_split.go:496` says:\n```\n// Verification shells are standalone CaptureSession objects (see\n// pr_split_06b_verify_shell.js) — they are NOT attached to tuiMux.\n```\nThis is FALSE. Verify sessions are now registered with tuiMux via `tuiMux.register()`. The `_buildVerifyProxy` in `pr_split_13_tui.js` explicitly calls `tuiMux.snapshot(sessionID)`, `tuiMux.activate(sessionID)`, `tuiMux.input()`, and `tuiMux.unregister(sessionID)`. Fix the comment to accurately describe the current architecture: verify sessions are registered with tuiMux and accessed through a pinned SessionID proxy.",
       "acceptance": "The comment at `pr_split.go:496` accurately states that verify sessions ARE registered with tuiMux via `tuiMux.register()` and accessed through a pinned SessionID. No reader of this code will form an incorrect mental model about the verify session architecture.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Capture Claude's SessionID: make tuiMux.attach() return the registered uint64",
@@ -186,7 +186,7 @@
       "task": "Fix session timer hard-coded date-specific filename in config.mk",
       "description": "`config.mk` lines 136 and 142 hard-code `scratch/session_timer_20260413.txt` for the `session-timer-start` and `session-timer-check` targets. This means the timer file is always stale after midnight. Fix to use a stable, date-independent filename (e.g., `scratch/session_timer.txt`). The timer file must survive `gmake session-timer-start` / `gmake session-timer-check` across days. Record the chosen filename in `WIP.md`. This is an operational scaffolding defect discovered while inspecting the current repo state; it is NOT one of the numbered gaps in the fresh blueprint-fundamentals autopsy.",
       "acceptance": "Running `gmake session-timer-start` then `gmake session-timer-check` produces correct elapsed/remaining output regardless of the current date. The timer file path is not date-specific. `WIP.md` records the authoritative timer file path.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Harden interactive behavior across macOS, Linux, and Windows",

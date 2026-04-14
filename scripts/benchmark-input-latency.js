@@ -1,3 +1,5 @@
+#!/usr/bin/env osm script
+
 // ============================================================================
 // benchmark-input-latency.js
 // Minimal reproduction script to measure input latency in osm:bubbletea

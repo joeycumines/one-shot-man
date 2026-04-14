@@ -1,3 +1,5 @@
+#!/usr/bin/env osm script
+
 // ============================================================================
 // test-shooter-error.js
 // Tests that example-04-bt-shooter.js exits non-zero on error

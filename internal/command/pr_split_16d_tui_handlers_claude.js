@@ -15,6 +15,7 @@
     // Cross-chunk imports — state and handlers from chunks 13-14.
     var st = prSplit._state;
     var handleConfigState = prSplit._handleConfigState;
+    var getInteractivePaneSession = prSplit._getInteractivePaneSession;
 
     // Late-bound cross-chunk references (defined in sibling 16x chunks, resolved at call time).
     function startAnalysis(s) { return prSplit._startAnalysis(s); }
@@ -392,11 +393,12 @@
             // T388: Removed !s.splitViewEnabled guard — split-view may already be
             // open on the Output tab (auto-opened by startAutoAnalysis). We still
             // need to switch to the Claude tab and mark auto-attached.
+            // Task 5: Use pinned SessionID proxy instead of raw session() check.
+            var claudeAutoPane = getInteractivePaneSession(s, 'claude');
             if (!s.claudeAutoAttached && !s.claudeManuallyDismissed &&
                 s.height >= C.INLINE_VIEW_HEIGHT &&
-                typeof tuiMux !== 'undefined' && tuiMux &&
-                typeof tuiMux.session === 'function' &&
-                tuiMux.session().isRunning()) {
+                claudeAutoPane && typeof claudeAutoPane.isRunning === 'function' &&
+                claudeAutoPane.isRunning()) {
                 s.splitViewEnabled = true;
                 s.splitViewFocus = 'wizard';   // keep wizard focused
                 s.splitViewTab = 'claude';     // show Claude tab

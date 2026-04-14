@@ -345,9 +345,10 @@
 
         // Left: termmux toggle hint + split-view hint.
         // T309: Only show Ctrl+] Claude when a Claude child is actually attached.
-        var hasMuxChild = typeof tuiMux !== 'undefined' && tuiMux &&
-            typeof tuiMux.session === 'function' &&
-            tuiMux.session().isRunning();
+        // Task 5: Use pinned SessionID proxy instead of raw session() check.
+        var claudeSession = getInteractivePaneSession(s, 'claude');
+        var hasMuxChild = claudeSession && typeof claudeSession.isRunning === 'function' &&
+            claudeSession.isRunning();
         var leftParts;
         if (hasMuxChild) {
             leftParts = veryNarrow ? 'C-]' : 'Ctrl+] Claude';
@@ -441,13 +442,11 @@
         var plainContent = s.claudeScreenshot || '';
         var content = ansiContent || plainContent;
         var isANSI = !!ansiContent;
+        // Task 5: Check for snapshot (pinned SessionID) or legacy childScreen.
         var hasMux = (typeof tuiMux !== 'undefined' && tuiMux &&
-            typeof tuiMux.childScreen === 'function');
-        // Backward-compat: also check for screenshot-only mux.
-        if (!hasMux) {
-            hasMux = (typeof tuiMux !== 'undefined' && tuiMux &&
-                typeof tuiMux.screenshot === 'function');
-        }
+            (typeof tuiMux.snapshot === 'function' ||
+             typeof tuiMux.childScreen === 'function' ||
+             typeof tuiMux.screenshot === 'function'));
 
         // Height budget: border adds 2 lines (top + bottom).
         // Content height = height - 2. First content line is the title.

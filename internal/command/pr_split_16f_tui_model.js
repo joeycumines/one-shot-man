@@ -97,10 +97,11 @@
             return handleNext(s);
         }
         // Claude status badge — T45: click to re-open split-view if closed.
+        // Task 5: Use pinned SessionID proxy instead of raw session() check.
         if (zone.inBounds('claude-status', msg)) {
-            if (typeof tuiMux !== 'undefined' && tuiMux &&
-                typeof tuiMux.session === 'function' &&
-                tuiMux.session().isRunning()) {
+            var claudePane = getInteractivePaneSession(s, 'claude');
+            if (claudePane && typeof claudePane.isRunning === 'function' &&
+                claudePane.isRunning()) {
                 // T45: If split-view is not open, open it (re-clears manual dismiss).
                 if (!s.splitViewEnabled) {
                     s.splitViewEnabled = true;
@@ -959,6 +960,8 @@
     // T394/T10: onToggle callback for Ctrl+] passthrough. Extracted as a named
     // function so tests can exercise the guard logic independently.
     // T10: Now dispatches to any focused interactive pane, not only mux.
+    // Task 5: Session-specific — uses pinned SessionID via proxy passthrough
+    // instead of raw tuiMux.switchTo() which targets the active session.
     prSplit._onToggle = function() {
         // Read current model state (stored by _initModelFn on each init).
         var tuiState = prSplit._toggleModelState;
@@ -967,33 +970,22 @@
 
         log.printf('ctrl+] toggle: focusPane=%s focusTab=%s', focusPane, focusTab);
 
-        // 1. If Claude pane is focused (or mux is the default), try mux passthrough.
-        var muxAvail = typeof tuiMux !== 'undefined' && !!tuiMux;
-        var muxAttached = muxAvail &&
-            typeof tuiMux.session === 'function' &&
-            tuiMux.session().isRunning();
-        if (muxAvail && typeof tuiMux.switchTo === 'function' && muxAttached &&
-            (focusTab === 'claude' || focusPane === 'wizard')) {
-            log.printf('ctrl+] toggle: dispatching to mux.switchTo');
-            return tuiMux.switchTo();
-        }
+        // Determine which pane to passthrough to. When wizard is focused
+        // (no split or split with wizard selected), default to Claude.
+        var targetTab = (focusPane === 'wizard') ? 'claude' : focusTab;
 
-        // 2. Try verify pane passthrough (Task 48: routes through SessionManager proxy).
-        var verifySession = (typeof prSplit._getInteractivePaneSession === 'function')
-            ? prSplit._getInteractivePaneSession(tuiState, 'verify')
+        // Obtain the proxy for the target session — returns null if no
+        // pinned SessionID or no interactive session exists.
+        var session = (typeof prSplit._getInteractivePaneSession === 'function')
+            ? prSplit._getInteractivePaneSession(tuiState, targetTab)
             : null;
-        if (verifySession && typeof verifySession.passthrough === 'function' &&
-            typeof verifySession.isRunning === 'function' && verifySession.isRunning()) {
-            log.printf('ctrl+] toggle: dispatching to verify session passthrough');
-            // Emit focus event for consistency with mux path.
-            if (typeof tui !== 'undefined' && tui.emit) {
-                tui.emit('focus', { side: 'claude', action: 'enter' });
-            }
-            var result = verifySession.passthrough({ toggleKey: 0x1D });
-            if (typeof tui !== 'undefined' && tui.emit) {
-                tui.emit('focus', { side: 'osm', action: 'return' });
-            }
-            return result;
+
+        if (session && typeof session.passthrough === 'function' &&
+            typeof session.isRunning === 'function' && session.isRunning()) {
+            log.printf('ctrl+] toggle: dispatching to %s session passthrough', targetTab);
+            // Focus events are emitted by tuiMux.switchTo() inside the proxy,
+            // so no additional tui.emit calls needed here.
+            return session.passthrough();
         }
 
         // No interactive session — return indicator for ToggleReturn handler.

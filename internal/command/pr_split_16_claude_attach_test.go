@@ -49,15 +49,21 @@ func TestChunk16_T45_AutoAttachOnAutoPoll(t *testing.T) {
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
-		// Mock tuiMux with hasChild() returning true (Claude attached).
+		// Task 5: Mock tuiMux with session-specific methods.
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 1;
 		globalThis.tuiMux = {
-			hasChild: function() { return true; },
-			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
-			screenshot: function() { return ''; },
-			childScreen: function() { return ''; },
+			isDone: function(id) { return false; },
+			activeID: function() { return __mockCID; },
+			activate: function(id) {},
+			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			switchTo: function() { return { reason: 'toggle' }; },
 			lastActivityMs: function() { return 500; }
 		};
+
+		// Set pinned Claude SessionID so getInteractivePaneSession returns proxy.
+		var savedCID = prSplit._state.claudeSessionID;
+		prSplit._state.claudeSessionID = __mockCID;
 
 		// Mock alive Claude executor — prevent crash detection.
 		globalThis.prSplit._state.claudeExecutor = {
@@ -78,6 +84,8 @@ func TestChunk16_T45_AutoAttachOnAutoPoll(t *testing.T) {
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
+		if (savedCID !== undefined) prSplit._state.claudeSessionID = savedCID;
+		else delete prSplit._state.claudeSessionID;
 
 		var errors = [];
 		if (!ns.splitViewEnabled) errors.push('splitViewEnabled should be true');
@@ -105,14 +113,19 @@ func TestChunk16_T45_AutoAttachSkippedSmallTerminal(t *testing.T) {
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
+		// Task 5: Mock with session-specific methods + pinned SessionID.
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 1;
 		globalThis.tuiMux = {
-			hasChild: function() { return true; },
-			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
-			screenshot: function() { return ''; },
-			childScreen: function() { return ''; },
+			isDone: function(id) { return false; },
+			activeID: function() { return __mockCID; },
+			activate: function(id) {},
+			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			switchTo: function() { return { reason: 'toggle' }; },
 			lastActivityMs: function() { return 500; }
 		};
+		var savedCID = prSplit._state.claudeSessionID;
+		prSplit._state.claudeSessionID = __mockCID;
 		globalThis.prSplit._state.claudeExecutor = {
 			handle: { isAlive: function() { return true; } }
 		};
@@ -128,6 +141,8 @@ func TestChunk16_T45_AutoAttachSkippedSmallTerminal(t *testing.T) {
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
+		if (savedCID !== undefined) prSplit._state.claudeSessionID = savedCID;
+		else delete prSplit._state.claudeSessionID;
 
 		if (ns.splitViewEnabled) return 'FAIL: splitViewEnabled should be false for small terminal';
 		if (ns.claudeAutoAttached) return 'FAIL: claudeAutoAttached should be false';
@@ -160,13 +175,17 @@ func TestChunk16_T45_ManualDismissPreventsAutoReopen(t *testing.T) {
 
 		// Now simulate auto-poll with Claude available — should NOT auto-open.
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 1;
 		globalThis.tuiMux = {
-			hasChild: function() { return true; },
-			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
-			screenshot: function() { return ''; },
-			childScreen: function() { return ''; },
+			isDone: function(id) { return false; },
+			activeID: function() { return __mockCID; },
+			activate: function(id) {},
+			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			switchTo: function() { return { reason: 'toggle' }; },
 			lastActivityMs: function() { return 500; }
 		};
+		var savedCID = prSplit._state.claudeSessionID;
+		prSplit._state.claudeSessionID = __mockCID;
 		globalThis.prSplit._state.claudeExecutor = {
 			handle: { isAlive: function() { return true; } }
 		};
@@ -181,6 +200,8 @@ func TestChunk16_T45_ManualDismissPreventsAutoReopen(t *testing.T) {
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
+		if (savedCID !== undefined) prSplit._state.claudeSessionID = savedCID;
+		else delete prSplit._state.claudeSessionID;
 
 		if (s.splitViewEnabled) return 'FAIL: splitViewEnabled should still be false — manual dismiss respected';
 		return 'OK';
@@ -273,14 +294,19 @@ func TestChunk16_T45_ClaudeStatusBadgeOpensView(t *testing.T) {
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
+		// Task 5: Mock with session-specific methods + pinned SessionID.
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 1;
 		globalThis.tuiMux = {
-			hasChild: function() { return true; },
-			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
-			screenshot: function() { return ''; },
-			childScreen: function() { return ''; },
+			isDone: function(id) { return false; },
+			activeID: function() { return __mockCID; },
+			activate: function(id) {},
+			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			switchTo: function() { return { reason: 'toggle' }; },
 			lastActivityMs: function() { return 500; }
 		};
+		var savedCID = prSplit._state.claudeSessionID;
+		prSplit._state.claudeSessionID = __mockCID;
 
 		var s = initState('PLAN_REVIEW');
 		s.splitViewEnabled = false;
@@ -294,6 +320,8 @@ func TestChunk16_T45_ClaudeStatusBadgeOpensView(t *testing.T) {
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
+		if (savedCID !== undefined) prSplit._state.claudeSessionID = savedCID;
+		else delete prSplit._state.claudeSessionID;
 
 		var errors = [];
 		if (!ns.splitViewEnabled) errors.push('splitViewEnabled should be true');
@@ -485,14 +513,19 @@ func TestChunk16_T45_AutoAttachFiresOnlyOnce(t *testing.T) {
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
+		// Task 5: Mock with session-specific methods + pinned SessionID.
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 1;
 		globalThis.tuiMux = {
-			hasChild: function() { return true; },
-			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
-			screenshot: function() { return ''; },
-			childScreen: function() { return ''; },
+			isDone: function(id) { return false; },
+			activeID: function() { return __mockCID; },
+			activate: function(id) {},
+			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			switchTo: function() { return { reason: 'toggle' }; },
 			lastActivityMs: function() { return 500; }
 		};
+		var savedCID = prSplit._state.claudeSessionID;
+		prSplit._state.claudeSessionID = __mockCID;
 		globalThis.prSplit._state.claudeExecutor = {
 			handle: { isAlive: function() { return true; } }
 		};
@@ -509,6 +542,8 @@ func TestChunk16_T45_AutoAttachFiresOnlyOnce(t *testing.T) {
 		if (!s.claudeAutoAttached) {
 			if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 			else delete globalThis.tuiMux;
+			if (savedCID !== undefined) prSplit._state.claudeSessionID = savedCID;
+			else delete prSplit._state.claudeSessionID;
 			return 'FAIL: first poll should auto-attach';
 		}
 
@@ -522,6 +557,8 @@ func TestChunk16_T45_AutoAttachFiresOnlyOnce(t *testing.T) {
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
+		if (savedCID !== undefined) prSplit._state.claudeSessionID = savedCID;
+		else delete prSplit._state.claudeSessionID;
 
 		if (s.splitViewEnabled) return 'FAIL: should NOT re-attach after first trigger';
 		return 'OK';

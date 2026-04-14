@@ -1291,11 +1291,12 @@
                 failedBranches: (result && result.failedBranches) ||
                     (s.wizard.data && s.wizard.data.failedBranches) || []
             };
-            if (typeof tuiMux !== 'undefined' && tuiMux &&
-                typeof tuiMux.switchTo === 'function' &&
-                typeof tuiMux.session === 'function' &&
-                tuiMux.session().isRunning()) {
-                tuiMux.switchTo();
+            // Task 5: Use pinned Claude SessionID proxy for passthrough.
+            var claudePaneSession = getInteractivePaneSession(s, 'claude');
+            if (claudePaneSession && typeof claudePaneSession.passthrough === 'function' &&
+                typeof claudePaneSession.isRunning === 'function' &&
+                claudePaneSession.isRunning()) {
+                claudePaneSession.passthrough();
             }
             return [s, null];
 

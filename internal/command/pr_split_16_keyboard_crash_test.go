@@ -1124,8 +1124,9 @@ func TestChunk16_PollClaudeScreenshot_SplitViewDisabled(t *testing.T) {
 }
 
 // TestChunk16_SwitchTo_NoChild verifies _onToggle does NOT call switchTo
-// when tuiMux.hasChild() returns false. T394 moved Ctrl+] handling from
+// when no Claude SessionID is pinned. T394 moved Ctrl+] handling from
 // JS update to Go toggleModel — this test exercises the callback directly.
+// Task 5: Updated to use session-specific passthrough pattern.
 func TestChunk16_SwitchTo_NoChild(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
@@ -1134,18 +1135,22 @@ func TestChunk16_SwitchTo_NoChild(t *testing.T) {
 		var switchCalled = false;
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
-			hasChild: function() { return false; },
-			session: function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; },
+			isDone: function(id) { return true; },
+			activeID: function() { return 0; },
+			activate: function(id) {},
 			switchTo: function() { switchCalled = true; },
-			screenshot: function() { return ''; },
-			childScreen: function() { return ''; }
+			snapshot: function(id) { return null; }
 		};
+		// No claudeSessionID — Claude not attached.
+		var savedCID = prSplit._state.claudeSessionID;
+		delete prSplit._state.claudeSessionID;
 
 		// T394: Call _onToggle directly.
 		var result = globalThis.prSplit._onToggle();
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
+		if (savedCID !== undefined) prSplit._state.claudeSessionID = savedCID;
 
 		if (switchCalled) return 'FAIL: switchTo called despite no child';
 		if (!result.skipped) return 'FAIL: should be skipped when no child';
@@ -1160,31 +1165,43 @@ func TestChunk16_SwitchTo_NoChild(t *testing.T) {
 }
 
 // TestChunk16_SwitchTo_WithChild verifies the _onToggle callback calls
-// switchTo when tuiMux.hasChild() returns true. T394 moved Ctrl+] handling
-// from JS update to Go toggleModel — this test exercises the callback directly.
+// passthrough (activate → switchTo → restore) when Claude has a pinned
+// SessionID and is running. T394 moved Ctrl+] handling from JS update to
+// Go toggleModel — this test exercises the callback directly.
+// Task 5: Updated to use session-specific passthrough pattern.
 func TestChunk16_SwitchTo_WithChild(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
+		var activateCalls = [];
 		var switchCalled = false;
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
 		globalThis.tuiMux = {
-			hasChild: function() { return true; },
-			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
+			isDone: function(id) { return false; },
+			activeID: function() { return 99; },
+			activate: function(id) { activateCalls.push(id); },
 			switchTo: function() { switchCalled = true; return {reason: 'toggle'}; },
-			screenshot: function() { return ''; },
-			childScreen: function() { return ''; }
+			snapshot: function(id) { return { fullScreen: '', plainText: '' }; }
 		};
+		// Set pinned Claude SessionID.
+		var savedCID = prSplit._state.claudeSessionID;
+		prSplit._state.claudeSessionID = 7;
 
 		// T394: Call _onToggle directly (Ctrl+] is intercepted by Go toggleModel).
 		var result = globalThis.prSplit._onToggle();
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
+		if (savedCID !== undefined) prSplit._state.claudeSessionID = savedCID;
+		else delete prSplit._state.claudeSessionID;
 
 		if (!switchCalled) return 'FAIL: switchTo not called despite child attached';
 		if (result.skipped) return 'FAIL: should not be skipped';
+		// Task 5: Verify activate was called with correct SessionID.
+		if (activateCalls[0] !== 7) return 'FAIL: activate called with wrong ID: ' + activateCalls[0];
+		// Verify previous activeID restored.
+		if (activateCalls[1] !== 99) return 'FAIL: previous activeID not restored: ' + JSON.stringify(activateCalls);
 		return 'OK';
 	})()`)
 	if err != nil {

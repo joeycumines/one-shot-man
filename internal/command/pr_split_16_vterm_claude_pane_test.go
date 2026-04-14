@@ -27,15 +27,12 @@ var __mockCID = 42;
 prSplit._state = prSplit._state || {};
 prSplit._state.claudeSessionID = __mockCID;
 globalThis.tuiMux = {
-	hasChild: function() { return true; },
-	session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
-	childScreen: function() { return ''; },
-	screenshot: function() { return ''; },
 	snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
 	isDone: function(id) { return false; },
 	activeID: function() { return __mockCID; },
 	activate: function(id) {},
 	input: function(data) {},
+	switchTo: function() { return { reason: 'toggle' }; },
 	lastActivityMs: function() { return 100; }
 };
 `

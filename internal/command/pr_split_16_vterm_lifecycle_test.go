@@ -26,17 +26,13 @@ var __mockCID = 42;
 prSplit._state = prSplit._state || {};
 prSplit._state.claudeSessionID = __mockCID;
 globalThis.tuiMux = {
-	hasChild: function() { return true; },
-	session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
-	childScreen: function() { return 'claude output'; },
-	screenshot: function() { return 'claude screenshot'; },
 	snapshot: function(id) { return { fullScreen: 'claude output', plainText: 'claude screenshot' }; },
 	isDone: function(id) { return false; },
 	activeID: function() { return __mockCID; },
 	activate: function(id) {},
 	input: function(data) {},
-	lastActivityMs: function() { return 100; },
-	writeToChild: function(bytes) {}
+	switchTo: function() { return { reason: 'toggle' }; },
+	lastActivityMs: function() { return 100; }
 };
 `
 
@@ -985,8 +981,6 @@ func TestChunk16_VTerm_Lifecycle_FullFlow(t *testing.T) {
 			// Phase 6: Pipeline ends, child exits, auto-close fires.
 			s.autoSplitRunning = false;
 			s.claudeAutoAttached = true;
-			globalThis.tuiMux.hasChild = function() { return false; };
-			globalThis.tuiMux.session = function() { return { isRunning: function() { return false; }, isDone: function() { return true; } }; };
 			globalThis.tuiMux.isDone = function(id) { return true; };
 			globalThis.tuiMux.snapshot = function(id) { return { fullScreen: '', plainText: '' }; };
 

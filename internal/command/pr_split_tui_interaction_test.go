@@ -152,6 +152,12 @@ func TestKeystrokeForwardingToPTY(t *testing.T) {
 		t.Fatalf("activate mock session: %v", err)
 	}
 
+	// Task 5: Set pinned Claude SessionID so getInteractivePaneSession works.
+	_, err = evalJS(fmt.Sprintf(`prSplit._state.claudeSessionID = %d`, id))
+	if err != nil {
+		t.Fatalf("set claudeSessionID: %v", err)
+	}
+
 	// Build state with split-view enabled, claude focused.
 	state := testState(true, "claude", "claude")
 
@@ -248,6 +254,12 @@ func TestMouseForwardingToPTY(t *testing.T) {
 		t.Fatalf("activate mock session: %v", err)
 	}
 
+	// Task 5: Set pinned Claude SessionID so getInteractivePaneSession works.
+	_, err = evalJS(fmt.Sprintf(`prSplit._state.claudeSessionID = %d`, id))
+	if err != nil {
+		t.Fatalf("set claudeSessionID: %v", err)
+	}
+
 	// Build state with split-view enabled, claude focused.
 	state := testState(true, "claude", "claude")
 
@@ -318,6 +330,12 @@ func TestResizePropagation(t *testing.T) {
 	}
 	if err := mgr.Activate(id); err != nil {
 		t.Fatalf("activate mock session: %v", err)
+	}
+
+	// Task 5: Set pinned Claude SessionID so getInteractivePaneSession works.
+	_, err = evalJS(fmt.Sprintf(`prSplit._state.claudeSessionID = %d`, id))
+	if err != nil {
+		t.Fatalf("set claudeSessionID: %v", err)
 	}
 
 	state := testState(true, "claude", "claude")
@@ -477,6 +495,12 @@ func TestSplitViewFocusTracking(t *testing.T) {
 	}
 	if err := mgr.Activate(id); err != nil {
 		t.Fatalf("activate mock session: %v", err)
+	}
+
+	// Task 5: Set pinned Claude SessionID so getInteractivePaneSession works.
+	_, err = evalJS(fmt.Sprintf(`prSplit._state.claudeSessionID = %d`, id))
+	if err != nil {
+		t.Fatalf("set claudeSessionID: %v", err)
 	}
 
 	// ── Focus on wizard: keystrokes should NOT reach PTY ─────────────

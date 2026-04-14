@@ -553,24 +553,37 @@ func TestChunk16_ViewportScroll_Keys(t *testing.T) {
 }
 
 // TestChunk16_CtrlBracketTermmux verifies that the _onToggle callback
-// (used by the toggleModel wrapper) calls tuiMux.switchTo() when a child
-// is attached. T394 moved Ctrl+] handling from JS update to Go toggleModel.
+// (used by the toggleModel wrapper) dispatches through the Claude proxy's
+// passthrough (activate → switchTo → restore) when a pinned SessionID exists.
+// Task 5: Updated to use session-specific passthrough pattern.
 func TestChunk16_CtrlBracketTermmux(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
+		var activateCalls = [];
 		var switchCalled = false;
 		globalThis.tuiMux = {
+			isDone: function(id) { return false; },
+			activeID: function() { return 99; },
+			activate: function(id) { activateCalls.push(id); },
 			switchTo: function() { switchCalled = true; return {reason: 'toggle'}; },
-			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; }
+			snapshot: function(id) { return { fullScreen: '', plainText: '' }; }
 		};
+		// Set pinned Claude SessionID.
+		var savedCID = prSplit._state.claudeSessionID;
+		prSplit._state.claudeSessionID = 5;
 
 		var result = globalThis.prSplit._onToggle();
-		if (!switchCalled) return 'FAIL: _onToggle did not call switchTo';
-		if (result.skipped) return 'FAIL: should not be skipped';
 
 		delete globalThis.tuiMux;
+		if (savedCID !== undefined) prSplit._state.claudeSessionID = savedCID;
+		else delete prSplit._state.claudeSessionID;
+
+		if (!switchCalled) return 'FAIL: _onToggle did not call switchTo';
+		if (result.skipped) return 'FAIL: should not be skipped';
+		if (activateCalls[0] !== 5) return 'FAIL: activate called with wrong ID: ' + activateCalls[0];
+
 		return 'OK';
 	})()`)
 	if err != nil {

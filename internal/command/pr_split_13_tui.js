@@ -364,6 +364,24 @@
                 // SessionManager.Resize broadcasts to ALL managed sessions.
                 tuiMux.resize(rows, cols);
             },
+            passthrough: function() {
+                // Task 5: Activate Claude session in SessionManager, enter
+                // passthrough via tuiMux.switchTo, then restore previous active.
+                var prevID = tuiMux.activeID();
+                try {
+                    tuiMux.activate(sessionID);
+                } catch (e) {
+                    log.debug('claudeProxy.passthrough: activate failed', { sessionID: sessionID, error: e.message || String(e) });
+                    return { skipped: true, reason: 'activate_failed' };
+                }
+                var result = tuiMux.switchTo();
+                if (prevID && prevID !== sessionID) {
+                    try { tuiMux.activate(prevID); } catch (e) {
+                        log.debug('claudeProxy.passthrough: restore failed', { prevID: prevID, error: e.message || String(e) });
+                    }
+                }
+                return result;
+            },
             target: function() { return { name: 'claude', kind: 'pty' }; },
             setTarget: function() { /* no-op: Claude target is fixed */ }
         };

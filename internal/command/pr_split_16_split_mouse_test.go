@@ -878,15 +878,18 @@ func TestChunk16_MouseClick_ClaudeStatusBadge(t *testing.T) {
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
-		// T45: Clicking claude-status badge now opens split-view instead of
-		// calling tuiMux.switchTo(), so we mock tuiMux with hasChild().
+		// Task 5: Claude-status badge uses pinned SessionID proxy.
+		var __mockCID = 1;
 		globalThis.tuiMux = {
-			hasChild: function() { return true; },
-			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
-			screenshot: function() { return ''; },
-			childScreen: function() { return ''; },
+			isDone: function(id) { return false; },
+			activeID: function() { return __mockCID; },
+			activate: function(id) {},
+			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			switchTo: function() { return { reason: 'toggle' }; },
 			lastActivityMs: function() { return 500; }
 		};
+		var savedCID = prSplit._state.claudeSessionID;
+		prSplit._state.claudeSessionID = __mockCID;
 
 		var s = initState('CONFIG');
 		var restore = mockZoneHit('claude-status');
@@ -898,6 +901,8 @@ func TestChunk16_MouseClick_ClaudeStatusBadge(t *testing.T) {
 		} finally {
 			restore();
 			delete globalThis.tuiMux;
+			if (savedCID !== undefined) prSplit._state.claudeSessionID = savedCID;
+			else delete prSplit._state.claudeSessionID;
 		}
 
 		return 'OK';

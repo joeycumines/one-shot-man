@@ -46,7 +46,7 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 		ctx := context.Background()
 		var stdout, stderr bytes.Buffer
 
-		engine, err := NewEngineWithConfig(ctx, &stdout, &stderr, sessionID, "memory")
+		engine, err := NewEngineDeprecated(ctx, &stdout, &stderr, sessionID, "memory")
 		if err != nil {
 			t.Fatalf("Failed to create engine: %v", err)
 		}
@@ -149,7 +149,7 @@ func TestContextRehydrationEndToEnd(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 
 		// Create new engine with same session ID - this will load persisted state
-		engine, err := NewEngineWithConfig(ctx, &stdout, &stderr, sessionID, "memory")
+		engine, err := NewEngineDeprecated(ctx, &stdout, &stderr, sessionID, "memory")
 		if err != nil {
 			t.Fatalf("Failed to create engine: %v", err)
 		}
@@ -283,7 +283,7 @@ func TestContextRehydrationWithSharedState(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 
-	engine, err := NewEngineWithConfig(ctx, &stdout, &stderr, sessionID, "memory")
+	engine, err := NewEngineDeprecated(ctx, &stdout, &stderr, sessionID, "memory")
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}

@@ -550,10 +550,10 @@ func TestScriptingCommand_DefaultTerminalFactory(t *testing.T) {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("script", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 
@@ -642,7 +642,7 @@ func TestInjectConfigHotSnippets_NilConfig(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("hs-nil", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("engine creation failed: %v", err)
@@ -665,7 +665,7 @@ func TestInjectConfigHotSnippets_EmptySnippets(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("hs-empty", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("engine creation failed: %v", err)
@@ -688,7 +688,7 @@ func TestInjectConfigHotSnippets_WithSnippets(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("hs-with", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("engine creation failed: %v", err)

@@ -502,9 +502,9 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 	t.Run("EmptyInput", func(t *testing.T) {
 		ctx := context.Background()
 		var stdout, stderr bytes.Buffer
-		engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+		engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
 		if err != nil {
-			t.Fatalf("NewEngineWithConfig failed: %v", err)
+			t.Fatalf("NewEngineConfig failed: %v", err)
 		}
 		defer engine.Close()
 		engine.SetTestMode(true)
@@ -522,9 +522,9 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 	t.Run("InputContainingOnlyWhitespace", func(t *testing.T) {
 		ctx := context.Background()
 		var stdout, stderr bytes.Buffer
-		engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+		engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
 		if err != nil {
-			t.Fatalf("NewEngineWithConfig failed: %v", err)
+			t.Fatalf("NewEngineConfig failed: %v", err)
 		}
 		defer engine.Close()
 		engine.SetTestMode(true)
@@ -542,9 +542,9 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 	t.Run("InputIsNonExistentFilePath", func(t *testing.T) {
 		ctx := context.Background()
 		var stdout, stderr bytes.Buffer
-		engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+		engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
 		if err != nil {
-			t.Fatalf("NewEngineWithConfig failed: %v", err)
+			t.Fatalf("NewEngineConfig failed: %v", err)
 		}
 		defer engine.Close()
 		engine.SetTestMode(true)
@@ -562,9 +562,9 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 	t.Run("InputIsDirectory", func(t *testing.T) {
 		ctx := context.Background()
 		var stdout, stderr bytes.Buffer
-		engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+		engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
 		if err != nil {
-			t.Fatalf("NewEngineWithConfig failed: %v", err)
+			t.Fatalf("NewEngineConfig failed: %v", err)
 		}
 		defer engine.Close()
 		engine.SetTestMode(true)
@@ -585,9 +585,9 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 	t.Run("ExtremelyLongInput", func(t *testing.T) {
 		ctx := context.Background()
 		var stdout, stderr bytes.Buffer
-		engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+		engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
 		if err != nil {
-			t.Fatalf("NewEngineWithConfig failed: %v", err)
+			t.Fatalf("NewEngineConfig failed: %v", err)
 		}
 		defer engine.Close()
 		engine.SetTestMode(true)
@@ -611,9 +611,9 @@ func TestSuperDocumentCommandEdgeCases(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 
 		ctx := context.Background()
-		engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+		engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
 		if err != nil {
-			t.Fatalf("NewEngineWithConfig failed: %v", err)
+			t.Fatalf("NewEngineConfig failed: %v", err)
 		}
 		defer engine.Close()
 		engine.SetTestMode(true)
@@ -906,9 +906,9 @@ func TestSuperDocumentCommandWithVariousFlags(t *testing.T) {
 	t.Run("ShellModeFlag", func(t *testing.T) {
 		ctx := context.Background()
 		var stdout, stderr bytes.Buffer
-		engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+		engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
 		if err != nil {
-			t.Fatalf("NewEngineWithConfig failed: %v", err)
+			t.Fatalf("NewEngineConfig failed: %v", err)
 		}
 		defer engine.Close()
 		engine.SetTestMode(true)
@@ -926,9 +926,9 @@ func TestSuperDocumentCommandWithVariousFlags(t *testing.T) {
 	t.Run("InteractiveFalseWithArgs", func(t *testing.T) {
 		ctx := context.Background()
 		var stdout, stderr bytes.Buffer
-		engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+		engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
 		if err != nil {
-			t.Fatalf("NewEngineWithConfig failed: %v", err)
+			t.Fatalf("NewEngineConfig failed: %v", err)
 		}
 		defer engine.Close()
 		engine.SetTestMode(true)

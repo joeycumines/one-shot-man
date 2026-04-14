@@ -24,7 +24,7 @@ func newSandboxTestEngine(t *testing.T) (*scripting.Engine, *bytes.Buffer, *byte
 	t.Helper()
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(
+	engine, err := scripting.NewEngineDeprecated(
 		ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("sandbox", t.Name()),
 		"memory",
@@ -194,7 +194,7 @@ func TestSandbox_VMIsolation(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	var stdout1, stderr1, stdout2, stderr2 bytes.Buffer
-	engine1, err := scripting.NewEngineWithConfig(
+	engine1, err := scripting.NewEngineDeprecated(
 		ctx, &stdout1, &stderr1,
 		testutil.NewTestSessionID("sandbox", t.Name()+"-1"),
 		"memory",
@@ -203,7 +203,7 @@ func TestSandbox_VMIsolation(t *testing.T) {
 		t.Fatalf("Engine 1 creation failed: %v", err)
 	}
 	defer engine1.Close()
-	engine2, err := scripting.NewEngineWithConfig(
+	engine2, err := scripting.NewEngineDeprecated(
 		ctx, &stdout2, &stderr2,
 		testutil.NewTestSessionID("sandbox", t.Name()+"-2"),
 		"memory",
@@ -462,7 +462,7 @@ func TestSandbox_ContextCancellationStopsExecution(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(
+	engine, err := scripting.NewEngineDeprecated(
 		ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("sandbox", t.Name()),
 		"memory",

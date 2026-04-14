@@ -16,7 +16,7 @@ import (
 
 func newTestEngine(t *testing.T, ctx context.Context, stdout, stderr io.Writer) *Engine {
 	t.Helper()
-	engine, err := NewEngineWithConfig(ctx, stdout, stderr, testutil.NewTestSessionID("", t.Name()), "memory")
+	engine, err := NewEngineDeprecated(ctx, stdout, stderr, testutil.NewTestSessionID("", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}

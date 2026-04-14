@@ -52,7 +52,7 @@ func (b *scriptCommandBase) PrepareEngine(ctx context.Context, stdout, stderr io
 	}
 
 	// Create scripting engine with explicit session/storage and logging configuration.
-	engine, err := scripting.NewEngineDetailed(ctx, stdout, stderr, b.session, b.store, lc.logFile, lc.bufferSize, lc.level, modulePathOpts(b.config)...)
+	engine, err := scripting.NewEngine(ctx, stdout, stderr, b.session, b.store, lc.logFile, lc.bufferSize, lc.level, modulePathOpts(b.config)...)
 	if err != nil {
 		if lc.logFile != nil {
 			lc.logFile.Close()

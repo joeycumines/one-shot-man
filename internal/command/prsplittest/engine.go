@@ -33,7 +33,7 @@ func NewEngine(t testing.TB, overrides map[string]any) *Engine {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	engine, err := scripting.NewEngineDetailed(
+	engine, err := scripting.NewEngine(
 		ctx, &stdout, &stderr,
 		t.Name(), // sessionID
 		"memory", // store

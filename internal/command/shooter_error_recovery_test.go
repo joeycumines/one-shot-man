@@ -21,10 +21,10 @@ func TestShooterError_ER001_ModuleLoadingError(t *testing.T) {
 	skipSlow(t)
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("shooter-error", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -76,10 +76,10 @@ func TestShooterError_ER001_ModuleLoadingError(t *testing.T) {
 			"bt = require('osm:invalid_module_xyz')",
 		)
 
-		engine2, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+		engine2, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 			testutil.NewTestSessionID("shooter-error", t.Name()+"-bt"), "memory")
 		if err != nil {
-			t.Fatalf("NewEngineWithConfig failed: %v", err)
+			t.Fatalf("NewEngineConfig failed: %v", err)
 		}
 		defer engine2.Close()
 		engine2.SetTestMode(true)
@@ -104,10 +104,10 @@ func TestShooterError_ER002_RuntimeIntentionalError(t *testing.T) {
 	skipSlow(t)
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("shooter-error", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -160,10 +160,10 @@ func TestShooterError_ER002_RuntimeIntentionalError(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+			engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 				testutil.NewTestSessionID("shooter-error", t.Name()+"-"+tc.name), "memory")
 			if err != nil {
-				t.Fatalf("NewEngineWithConfig failed: %v", err)
+				t.Fatalf("NewEngineConfig failed: %v", err)
 			}
 			defer engine.Close()
 			engine.SetTestMode(true)
@@ -216,10 +216,10 @@ thisWillCauseAnError();
 			modifiedContent = modifiedContent[:idx] + errorInsertion + modifiedContent[idx:]
 		}
 
-		engine3, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+		engine3, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 			testutil.NewTestSessionID("shooter-error", t.Name()+"-shooter"), "memory")
 		if err != nil {
-			t.Fatalf("NewEngineWithConfig failed: %v", err)
+			t.Fatalf("NewEngineConfig failed: %v", err)
 		}
 		defer engine3.Close()
 		engine3.SetTestMode(true)
@@ -251,10 +251,10 @@ func TestShooterError_ER003_NormalExecution(t *testing.T) {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("shooter-error", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -397,10 +397,10 @@ func TestShooterError_ER004_BehaviorTreeErrors(t *testing.T) {
 	skipSlow(t)
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("shooter-error", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -532,10 +532,10 @@ func TestShooterError_ER004_BehaviorTreeErrors(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+			engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 				testutil.NewTestSessionID("shooter-error", t.Name()+"-"+tc.name), "memory")
 			if err != nil {
-				t.Fatalf("NewEngineWithConfig failed: %v", err)
+				t.Fatalf("NewEngineConfig failed: %v", err)
 			}
 			defer engine.Close()
 			engine.SetTestMode(true)
@@ -649,10 +649,10 @@ func TestShooterError_PanicRecovery(t *testing.T) {
 	skipSlow(t)
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("shooter-error", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -689,10 +689,10 @@ func TestShooterError_MultipleErrors(t *testing.T) {
 	skipSlow(t)
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("shooter-error", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)

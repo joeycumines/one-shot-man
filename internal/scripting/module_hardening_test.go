@@ -508,7 +508,7 @@ func TestModuleHardening_InvalidPathsLogWarning(t *testing.T) {
 
 	// Create engine with a nonexistent path — should succeed but log warning.
 	sessionID := testutil.NewTestSessionID("", t.Name())
-	engine, err := NewEngineDetailed(ctx, &stdout, &stderr, sessionID, "memory",
+	engine, err := NewEngine(ctx, &stdout, &stderr, sessionID, "memory",
 		nil, 0, slog.LevelInfo,
 		WithModulePaths("/nonexistent/path/abc123"))
 	if err != nil {

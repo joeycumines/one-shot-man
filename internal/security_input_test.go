@@ -46,7 +46,7 @@ func newTestEngine(t *testing.T) (*scripting.Engine, *bytes.Buffer, *bytes.Buffe
 	t.Helper()
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(
+	engine, err := scripting.NewEngineDeprecated(
 		ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("security-input", t.Name()),
 		"memory",
@@ -555,7 +555,7 @@ func TestREPLSecurity_DeepRecursion(t *testing.T) {
 	defer cancel()
 
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(
+	engine, err := scripting.NewEngineDeprecated(
 		ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("security-input", t.Name()),
 		"memory",
@@ -583,7 +583,7 @@ func TestREPLSecurity_InfiniteLoopWithCancel(t *testing.T) {
 	defer cancel()
 
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(
+	engine, err := scripting.NewEngineDeprecated(
 		ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("security-input", t.Name()),
 		"memory",
@@ -744,7 +744,7 @@ func TestRequireSecurity_TraversalAllowed(t *testing.T) {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineDetailed(
+	engine, err := scripting.NewEngine(
 		ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("security-input", t.Name()),
 		"memory", nil, 0, 0,
@@ -781,7 +781,7 @@ func TestRequireSecurity_NonJSFileContent(t *testing.T) {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineDetailed(
+	engine, err := scripting.NewEngine(
 		ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("security-input", t.Name()),
 		"memory", nil, 0, 0,
@@ -842,7 +842,7 @@ func TestRequireSecurity_ShebangHandling(t *testing.T) {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineDetailed(
+	engine, err := scripting.NewEngine(
 		ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("security-input", t.Name()),
 		"memory", nil, 0, 0,
@@ -1003,7 +1003,7 @@ func TestCrossModuleIsolation_RequireCaching(t *testing.T) {
 
 	// Engine 1
 	var stdout1, stderr1 bytes.Buffer
-	engine1, err := scripting.NewEngineDetailed(
+	engine1, err := scripting.NewEngine(
 		ctx, &stdout1, &stderr1,
 		testutil.NewTestSessionID("security-input", t.Name()+"-1"),
 		"memory", nil, 0, 0,
@@ -1016,7 +1016,7 @@ func TestCrossModuleIsolation_RequireCaching(t *testing.T) {
 
 	// Engine 2
 	var stdout2, stderr2 bytes.Buffer
-	engine2, err := scripting.NewEngineDetailed(
+	engine2, err := scripting.NewEngine(
 		ctx, &stdout2, &stderr2,
 		testutil.NewTestSessionID("security-input", t.Name()+"-2"),
 		"memory", nil, 0, 0,

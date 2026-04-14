@@ -36,7 +36,7 @@ func TestTerminalRun_TerminalStateSaveRestore(t *testing.T) {
 	ctx := t.Context()
 	sessionID := testutil.NewTestSessionID("test", t.Name())
 
-	engine, err := NewEngineWithConfig(ctx, &engineOut, &engineOut, sessionID, "memory")
+	engine, err := NewEngineDeprecated(ctx, &engineOut, &engineOut, sessionID, "memory")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = engine.Close() })
 

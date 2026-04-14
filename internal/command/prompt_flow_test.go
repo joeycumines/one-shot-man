@@ -315,7 +315,7 @@ func TestPromptFlowCommand_UseFromInitialPhase(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("prompt-flow", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
@@ -395,7 +395,7 @@ func TestPromptFlowCommand_Footer(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("prompt-flow", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
@@ -473,7 +473,7 @@ func TestPromptFlowCommand_FooterClear(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("prompt-flow", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
@@ -544,7 +544,7 @@ func TestPromptFlowCommand_NoFooter(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("prompt-flow", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
@@ -614,7 +614,7 @@ func newPromptFlowTestEngine(t *testing.T) (*scripting.Engine, *bytes.Buffer, *b
 
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("prompt-flow", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)

@@ -13,9 +13,9 @@ import (
 func TestSuperDocument_FormMode_TextareaCommandPropagation(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -93,9 +93,9 @@ __result = res;
 func TestSuperDocument_ListMode_NoCommandOnKeyNav(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -164,9 +164,9 @@ __s = s;
 func TestSuperDocument_ListMode_ViewportCommandPropagation(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -220,9 +220,9 @@ __result = res;
 func TestSuperDocument_ModeTransition_TextareaToList(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -281,9 +281,9 @@ __res = res;
 func TestSuperDocument_ModeTransition_ListToForm(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -338,9 +338,9 @@ __res = res;
 func TestSuperDocument_ModeTransition_PreservesState(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -413,9 +413,9 @@ __s = s;
 func TestSuperDocument_FocusedButtonEnterDoesNotFallIntoEdit(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr, testutil.NewTestSessionID("super-document", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)

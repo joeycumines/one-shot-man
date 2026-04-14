@@ -35,7 +35,7 @@ func TestRehydrateNormalizesForwardSlashes(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	sessionID := testutil.NewTestSessionID("rehyd", t.Name())
-	engine, err := NewEngineWithConfig(ctx, &stdout, &stderr, sessionID, "memory")
+	engine, err := NewEngineDeprecated(ctx, &stdout, &stderr, sessionID, "memory")
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestRehydrateNormalizesBackslashes(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	sessionID := testutil.NewTestSessionID("rehyd-bslash", t.Name())
-	engine, err := NewEngineWithConfig(ctx, &stdout, &stderr, sessionID, "memory")
+	engine, err := NewEngineDeprecated(ctx, &stdout, &stderr, sessionID, "memory")
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestRehydrateNormalizesDotPrefix(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	sessionID := testutil.NewTestSessionID("rehyd-dot", t.Name())
-	engine, err := NewEngineWithConfig(ctx, &stdout, &stderr, sessionID, "memory")
+	engine, err := NewEngineDeprecated(ctx, &stdout, &stderr, sessionID, "memory")
 	if err != nil {
 		t.Fatalf("failed to create engine: %v", err)
 	}

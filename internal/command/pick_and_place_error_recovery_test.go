@@ -23,10 +23,10 @@ func TestPickAndPlaceError_ER001_ModuleLoadingError(t *testing.T) {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("pickplace-error", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -78,10 +78,10 @@ func TestPickAndPlaceError_ER001_ModuleLoadingError(t *testing.T) {
 			"pabt = require('osm:invalid_pabt_module_xyz')",
 		)
 
-		engine2, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+		engine2, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 			testutil.NewTestSessionID("pickplace-error", t.Name()+"-pabt"), "memory")
 		if err != nil {
-			t.Fatalf("NewEngineWithConfig failed: %v", err)
+			t.Fatalf("NewEngineConfig failed: %v", err)
 		}
 		defer engine2.Close()
 		engine2.SetTestMode(true)
@@ -107,10 +107,10 @@ func TestPickAndPlaceError_ER002_RuntimeIntentionalError(t *testing.T) {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("pickplace-error", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -173,10 +173,10 @@ func TestPickAndPlaceError_ER002_RuntimeIntentionalError(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+			engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 				testutil.NewTestSessionID("pickplace-error", t.Name()+"-"+tc.name), "memory")
 			if err != nil {
-				t.Fatalf("NewEngineWithConfig failed: %v", err)
+				t.Fatalf("NewEngineConfig failed: %v", err)
 			}
 			defer engine.Close()
 			engine.SetTestMode(true)
@@ -218,10 +218,10 @@ func TestPickAndPlaceError_ER003_NormalExecution(t *testing.T) {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("pickplace-error", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -375,10 +375,10 @@ func TestPickAndPlaceError_ER004_PA_BT_Errors(t *testing.T) {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("pickplace-error", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -490,10 +490,10 @@ func TestPickAndPlaceError_ER004_PA_BT_Errors(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+			engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 				testutil.NewTestSessionID("pickplace-error", t.Name()+"-"+tc.name), "memory")
 			if err != nil {
-				t.Fatalf("NewEngineWithConfig failed: %v", err)
+				t.Fatalf("NewEngineConfig failed: %v", err)
 			}
 			defer engine.Close()
 			engine.SetTestMode(true)
@@ -542,10 +542,10 @@ func TestPickAndPlaceError_PanicRecovery(t *testing.T) {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("pickplace-error", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -583,10 +583,10 @@ func TestPickAndPlaceError_MultipleErrors(t *testing.T) {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("pickplace-error", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -646,10 +646,10 @@ func TestPickAndPlaceError_InvalidKeyboardInput(t *testing.T) {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("pickplace-error", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)
@@ -786,10 +786,10 @@ func TestPickAndPlaceError_StateCorruption(t *testing.T) {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr,
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("pickplace-error", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	defer engine.Close()
 	engine.SetTestMode(true)

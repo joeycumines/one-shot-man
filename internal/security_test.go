@@ -171,7 +171,7 @@ func TestCommandInjectionPrevention_ShellMetacharacters(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 
-			engine, err := scripting.NewEngineWithConfig(
+			engine, err := scripting.NewEngineDeprecated(
 				ctx, &stdout, &stderr,
 				testutil.NewTestSessionID("security", t.Name()),
 				"memory",
@@ -229,7 +229,7 @@ func TestCommandInjectionPrevention_CommandChaining(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 
-			engine, err := scripting.NewEngineWithConfig(
+			engine, err := scripting.NewEngineDeprecated(
 				ctx, &stdout, &stderr,
 				testutil.NewTestSessionID("security", t.Name()),
 				"memory",
@@ -279,7 +279,7 @@ func TestCommandInjectionPrevention_SubshellInjection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 
-			engine, err := scripting.NewEngineWithConfig(
+			engine, err := scripting.NewEngineDeprecated(
 				ctx, &stdout, &stderr,
 				testutil.NewTestSessionID("security", t.Name()),
 				"memory",
@@ -552,7 +552,7 @@ func TestInputValidation_DangerousScriptInputs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 
-			engine, err := scripting.NewEngineWithConfig(
+			engine, err := scripting.NewEngineDeprecated(
 				ctx, &stdout, &stderr,
 				testutil.NewTestSessionID("security", t.Name()),
 				"memory",
@@ -608,7 +608,7 @@ func TestInputValidation_TemplateInjection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 
-			engine, err := scripting.NewEngineWithConfig(
+			engine, err := scripting.NewEngineDeprecated(
 				ctx, &stdout, &stderr,
 				testutil.NewTestSessionID("security", t.Name()),
 				"memory",
@@ -649,7 +649,7 @@ func TestInputValidation_ANSIEscapeSequences(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	engine, err := scripting.NewEngineWithConfig(
+	engine, err := scripting.NewEngineDeprecated(
 		ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("security", t.Name()),
 		"memory",
@@ -705,7 +705,7 @@ func TestSessionDataIsolation_NotLeakedBetweenSessions(t *testing.T) {
 	session1 := "session-one"
 	session2 := "session-two"
 
-	engine1, err := scripting.NewEngineWithConfig(
+	engine1, err := scripting.NewEngineDeprecated(
 		ctx, &bytes.Buffer{}, &bytes.Buffer{},
 		testutil.NewTestSessionID("security", session1),
 		"memory",
@@ -715,7 +715,7 @@ func TestSessionDataIsolation_NotLeakedBetweenSessions(t *testing.T) {
 	}
 	defer engine1.Close()
 
-	engine2, err := scripting.NewEngineWithConfig(
+	engine2, err := scripting.NewEngineDeprecated(
 		ctx, &bytes.Buffer{}, &bytes.Buffer{},
 		testutil.NewTestSessionID("security", session2),
 		"memory",
@@ -753,7 +753,7 @@ func TestSessionDataIsolation_ConcurrentAccess(t *testing.T) {
 		go func(idx int) {
 			defer func() { done <- true }()
 
-			engine, err := scripting.NewEngineWithConfig(
+			engine, err := scripting.NewEngineDeprecated(
 				ctx, &bytes.Buffer{}, &bytes.Buffer{},
 				testutil.NewTestSessionID("security", "concurrent-test-"+string(rune('a'+idx))),
 				"memory",
@@ -1146,7 +1146,7 @@ func TestTUIInputSecurity_EscapeSequences(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	engine, err := scripting.NewEngineWithConfig(
+	engine, err := scripting.NewEngineDeprecated(
 		ctx, &stdout, &stderr,
 		testutil.NewTestSessionID("security", t.Name()),
 		"memory",

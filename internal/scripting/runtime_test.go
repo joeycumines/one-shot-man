@@ -35,14 +35,14 @@ func TestNewRuntime(t *testing.T) {
 	}
 }
 
-func TestNewRuntimeWithRegistry(t *testing.T) {
+func TestNewRuntimeRegistry(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	registry := require.NewRegistry()
-	rt, err := NewRuntimeWithRegistry(ctx, registry)
+	rt, err := NewRuntimeRegistry(ctx, registry)
 	if err != nil {
-		t.Fatalf("NewRuntimeWithRegistry failed: %v", err)
+		t.Fatalf("NewRuntimeRegistry failed: %v", err)
 	}
 	defer rt.Close()
 

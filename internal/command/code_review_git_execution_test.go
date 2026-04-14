@@ -23,7 +23,7 @@ func TestCodeReviewCommand_ActualGitDiffExecution(t *testing.T) {
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
 	// Use an in-memory storage backend with unique session ID for test isolation
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("git-exec", t.Name()), "memory")
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr, testutil.NewTestSessionID("git-exec", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}

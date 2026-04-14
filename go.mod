@@ -99,3 +99,5 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	honnef.co/go/tools v0.7.0 // indirect
 )
+
+replace github.com/joeycumines/go-eventloop => /Users/joeyc/dev/go-utilpkg/eventloop

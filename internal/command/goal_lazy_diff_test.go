@@ -26,7 +26,7 @@ func TestGoalScript_DiffHeadDoesNotThrowSyntaxError(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	ctx := context.Background()
 	// Use a per-test session id with unique suffix to avoid collisions across -count=N runs
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal-lazy-diff", t.Name()), "memory")
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr, testutil.NewTestSessionID("goal-lazy-diff", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}

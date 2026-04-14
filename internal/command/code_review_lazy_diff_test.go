@@ -41,7 +41,7 @@ func TestCodeReviewCommand_LazyDiffBehavior(t *testing.T) {
 
 	ctx := context.Background()
 	// Use explicit memory-backed engine with unique session ID for test isolation
-	engine, err := scripting.NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("lazy-diff", t.Name()), "memory")
+	engine, err := scripting.NewEngineDeprecated(ctx, &stdout, &stderr, testutil.NewTestSessionID("lazy-diff", t.Name()), "memory")
 	if err != nil {
 		t.Fatalf("NewEngine failed: %v", err)
 	}

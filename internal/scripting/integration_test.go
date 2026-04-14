@@ -64,9 +64,9 @@ func mustNewEngine(tb testing.TB, ctx context.Context, stdout, stderr io.Writer)
 
 	// Use explicit session configuration to prevent data races from env var mutation.
 	sessionID := testutil.NewTestSessionID("test", tb.Name())
-	engine, err := NewEngineWithConfig(ctx, stdout, stderr, sessionID, "memory")
+	engine, err := NewEngineDeprecated(ctx, stdout, stderr, sessionID, "memory")
 	if err != nil {
-		tb.Fatalf("NewEngineWithConfig failed: %v", err)
+		tb.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	tb.Cleanup(func() {
 		_ = engine.Close()

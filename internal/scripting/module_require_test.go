@@ -15,7 +15,7 @@ import (
 // newTestEngineWithOpts creates a test engine with EngineOptions (e.g. WithModulePaths).
 func newTestEngineWithOpts(t *testing.T, ctx context.Context, stdout, stderr *bytes.Buffer, opts ...EngineOption) *Engine {
 	t.Helper()
-	engine, err := NewEngineDetailed(ctx, stdout, stderr,
+	engine, err := NewEngine(ctx, stdout, stderr,
 		testutil.NewTestSessionID("", t.Name()), "memory",
 		nil, 0, slog.LevelInfo, opts...)
 	if err != nil {

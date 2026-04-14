@@ -345,7 +345,7 @@ func TestNewEngineDetailed_WithModulePaths(t *testing.T) {
 	}
 
 	sessionID := testutil.NewTestSessionID("", t.Name())
-	engine, err := NewEngineDetailed(ctx, &stdout, &stderr, sessionID, "memory", nil, 0, 0, WithModulePaths(dir))
+	engine, err := NewEngine(ctx, &stdout, &stderr, sessionID, "memory", nil, 0, 0, WithModulePaths(dir))
 	if err != nil {
 		t.Fatalf("NewEngineDetailed failed: %v", err)
 	}
@@ -1267,19 +1267,19 @@ func TestEngine_SetTestMode(t *testing.T) {
 }
 
 // =============================================================================
-// NewEngineWithConfig — exercises the simple constructor
+// NewEngineConfig — exercises the simple constructor
 // =============================================================================
 
-func TestNewEngineWithConfig(t *testing.T) {
+func TestNewEngineConfig(t *testing.T) {
 	t.Parallel()
 	var stdout, stderr bytes.Buffer
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
 	sessionID := testutil.NewTestSessionID("", t.Name())
-	engine, err := NewEngineWithConfig(ctx, &stdout, &stderr, sessionID, "memory")
+	engine, err := NewEngineDeprecated(ctx, &stdout, &stderr, sessionID, "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	t.Cleanup(func() { _ = engine.Close() })
 

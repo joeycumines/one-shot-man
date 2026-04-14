@@ -116,18 +116,27 @@ func WithModulePaths(paths ...string) EngineOption {
 	}
 }
 
-// NewEngineWithConfig creates a new JavaScript scripting engine with explicit session configuration.
+// NewEngineDeprecated creates a new JavaScript scripting engine with explicit session configuration.
 // sessionID and store parameters override environment-based discovery and avoid data races.
-func NewEngineWithConfig(ctx context.Context, stdout, stderr io.Writer, sessionID, store string) (*Engine, error) {
-	return NewEngineDetailed(ctx, stdout, stderr, sessionID, store, nil, 0, slog.LevelInfo)
+//
+// Deprecated: Only retained because I couldn't be bothered updating the tests. TODO: Remove this entirely.
+func NewEngineDeprecated(ctx context.Context, stdout, stderr io.Writer, sessionID, store string) (*Engine, error) {
+	return NewEngine(ctx, stdout, stderr, sessionID, store, nil, 0, slog.LevelInfo)
 }
 
-// NewEngineDetailed creates a new JavaScript scripting engine with full configuration options.
+// NewEngine creates a new JavaScript scripting engine with full configuration options.
 // logFile: optional writer for log output (JSON).
 // logBufferSize: size of the in-memory log buffer (default 1000 if <= 0).
 // logLevel: minimum log level to capture (e.g. slog.LevelDebug).
 // opts: optional engine configuration (e.g., WithModulePaths).
-func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID, store string, logFile io.Writer, logBufferSize int, logLevel slog.Level, opts ...EngineOption) (*Engine, error) {
+func NewEngine(
+	ctx context.Context,
+	stdout, stderr io.Writer,
+	sessionID, store string,
+	logFile io.Writer,
+	logBufferSize int,
+	logLevel slog.Level,
+	opts ...EngineOption) (*Engine, error) {
 	// Apply options
 	var eopts engineOptions
 	for _, o := range opts {
@@ -185,7 +194,7 @@ func NewEngineDetailed(ctx context.Context, stdout, stderr io.Writer, sessionID,
 
 	// Create the shared Runtime with event loop
 	// The Runtime owns the event loop and provides thread-safe JS execution
-	runtime, err := NewRuntimeWithRegistry(ctx, registry)
+	runtime, err := NewRuntimeRegistry(ctx, registry)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create runtime: %w", err)
 	}
@@ -590,7 +599,39 @@ func (e *Engine) ExecuteScript(script *Script) error {
 		}
 	}
 
+	// Wait for async work (setTimeout, Promisify, etc.) to complete.
+	// The sentinel drain loop blocks until Alive() returns false.
+	if waitErr := e.waitForAsyncWork(); waitErr != nil {
+		return waitErr
+	}
+
 	return nil
+}
+
+// waitForAsyncWork blocks until the event loop has no ref'd pending work.
+// Uses a sentinel drain pattern: submit a no-op, wait for it to execute,
+// check Alive(). Repeats until Alive() returns false.
+//
+// This ensures setTimeout chains, Promisify goroutines, and other async
+// work completes before ExecuteScript returns.
+func (e *Engine) waitForAsyncWork() error {
+	loop := e.Loop()
+	if loop == nil {
+		return nil
+	}
+	if !loop.Alive() {
+		return nil
+	}
+	for {
+		done := make(chan struct{})
+		if err := loop.Submit(func() { close(done) }); err != nil {
+			return nil
+		}
+		<-done
+		if !loop.Alive() {
+			return nil
+		}
+	}
 }
 
 // executeOnLoop submits a function to the event loop and blocks until it

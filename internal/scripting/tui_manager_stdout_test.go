@@ -19,9 +19,9 @@ func TestInitCleanStdout(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	sessionID := testutil.NewTestSessionID("init-clean-stdout", t.Name())
 
-	engine, err := NewEngineWithConfig(ctx, &stdout, &stderr, sessionID, "memory")
+	engine, err := NewEngineDeprecated(ctx, &stdout, &stderr, sessionID, "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig: %v", err)
+		t.Fatalf("NewEngineConfig: %v", err)
 	}
 	t.Cleanup(func() { _ = engine.Close() })
 

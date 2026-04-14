@@ -79,13 +79,13 @@ const defaultSyncTimeout = 5 * time.Second
 //
 // The provided context controls lifecycle - when canceled, the runtime stops.
 func NewRuntime(ctx context.Context) (*Runtime, error) {
-	return NewRuntimeWithRegistry(ctx, nil)
+	return NewRuntimeRegistry(ctx, nil)
 }
 
-// NewRuntimeWithRegistry creates a new Runtime with an existing require.Registry.
+// NewRuntimeRegistry creates a new Runtime with an existing require.Registry.
 // If registry is nil, a new one is created.
 // This allows sharing module registrations across multiple components.
-func NewRuntimeWithRegistry(ctx context.Context, registry *require.Registry) (*Runtime, error) {
+func NewRuntimeRegistry(ctx context.Context, registry *require.Registry) (*Runtime, error) {
 	if registry == nil {
 		registry = require.NewRegistry()
 	}

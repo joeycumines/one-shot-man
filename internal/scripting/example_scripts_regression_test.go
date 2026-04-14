@@ -16,9 +16,9 @@ func newExampleScriptEngine(t *testing.T) *Engine {
 
 	ctx := context.Background()
 	var stdout, stderr bytes.Buffer
-	engine, err := NewEngineWithConfig(ctx, &stdout, &stderr, testutil.NewTestSessionID("example-script", t.Name()), "memory")
+	engine, err := NewEngineDeprecated(ctx, &stdout, &stderr, testutil.NewTestSessionID("example-script", t.Name()), "memory")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	t.Cleanup(func() {
 		_ = engine.Close()

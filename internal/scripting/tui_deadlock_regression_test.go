@@ -46,9 +46,9 @@ func TestTUIExitFromJSCommandNoDeadlock(t *testing.T) {
 	defer cancel()
 
 	var output bytes.Buffer
-	engine, err := NewEngineWithConfig(ctx, &output, &output, "", "")
+	engine, err := NewEngineDeprecated(ctx, &output, &output, "", "")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	manager := NewTUIManagerWithConfig(ctx, engine, strings.NewReader(""), &output, "test-deadlock", "memory")
 	defer manager.Close()
@@ -113,9 +113,9 @@ func TestTUIExitFromJSCommandNoDeadlock(t *testing.T) {
 func TestJSMutatorsUseWriterQueue(t *testing.T) {
 	ctx := context.Background()
 	var output bytes.Buffer
-	engine, err := NewEngineWithConfig(ctx, &output, &output, "", "")
+	engine, err := NewEngineDeprecated(ctx, &output, &output, "", "")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	manager := NewTUIManagerWithConfig(ctx, engine, strings.NewReader(""), &output, "test-mutators", "memory")
 	defer manager.Close()
@@ -155,9 +155,9 @@ func TestConcurrentJSMutators(t *testing.T) {
 	defer cancel()
 
 	var output bytes.Buffer
-	engine, err := NewEngineWithConfig(ctx, &output, &output, "", "")
+	engine, err := NewEngineDeprecated(ctx, &output, &output, "", "")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	manager := NewTUIManagerWithConfig(ctx, engine, strings.NewReader(""), &output, "test-concurrent", "memory")
 	defer manager.Close()
@@ -214,9 +214,9 @@ func TestConcurrentJSMutators(t *testing.T) {
 func TestWriterGoroutineShutdown(t *testing.T) {
 	ctx := context.Background()
 	var output bytes.Buffer
-	engine, err := NewEngineWithConfig(ctx, &output, &output, "", "")
+	engine, err := NewEngineDeprecated(ctx, &output, &output, "", "")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	manager := NewTUIManagerWithConfig(ctx, engine, strings.NewReader(""), &output, "test-shutdown", "memory")
 
@@ -247,9 +247,9 @@ func TestWriterGoroutineShutdown(t *testing.T) {
 func TestReadOperationsRemainReentrant(t *testing.T) {
 	ctx := context.Background()
 	var output bytes.Buffer
-	engine, err := NewEngineWithConfig(ctx, &output, &output, "", "")
+	engine, err := NewEngineDeprecated(ctx, &output, &output, "", "")
 	if err != nil {
-		t.Fatalf("NewEngineWithConfig failed: %v", err)
+		t.Fatalf("NewEngineConfig failed: %v", err)
 	}
 	manager := NewTUIManagerWithConfig(ctx, engine, strings.NewReader(""), &output, "test-reentrant", "memory")
 	defer manager.Close()

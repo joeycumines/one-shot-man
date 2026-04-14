@@ -32,7 +32,7 @@ func TestEngine_PersistenceOnClose(t *testing.T) {
 	ctx := context.Background()
 
 	// We don't need to set XDG_DATA_HOME because we used SetTestPaths.
-	engine, err := NewEngineWithConfig(ctx, os.Stdout, os.Stderr, sessionID, "fs")
+	engine, err := NewEngineDeprecated(ctx, os.Stdout, os.Stderr, sessionID, "fs")
 	if err != nil {
 		t.Fatalf("Failed to create engine: %v", err)
 	}

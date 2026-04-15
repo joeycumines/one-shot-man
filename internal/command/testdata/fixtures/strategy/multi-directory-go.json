@@ -1,0 +1,20 @@
+{
+  "description": "Multi-directory Go changes: typical refactor touching internal packages, cmd entry point, and docs. Five clean top-level directories → directory strategy should win with near-perfect split score (5 groups in 3-7 sweet spot).",
+  "files": [
+    "cmd/osm/main.go",
+    "cmd/osm/main_test.go",
+    "internal/config/config.go",
+    "internal/config/config_test.go",
+    "internal/config/validation.go",
+    "internal/session/session.go",
+    "internal/session/lock.go",
+    "internal/session/lock_test.go",
+    "internal/storage/fs.go",
+    "internal/storage/fs_test.go",
+    "docs/configuration.md",
+    "docs/session.md"
+  ],
+  "expectedStrategy": "directory-deep",
+  "expectedGroupCount": {"min": 3, "max": 7},
+  "rationale": "Files span 5 top-level directories but internal/ has 3 subdirectories (config, session, storage). Directory-deep at depth 2 produces 5 groups (cmd/osm, internal/config, internal/session, internal/storage, docs) — each with 2-3 files, near-perfect balance. Directory at depth 1 produces only 3 groups (cmd, internal, docs) with internal oversized at 8 files. Both directory-deep and dependency tie at 0.94; directory-deep wins by sort order."
+}

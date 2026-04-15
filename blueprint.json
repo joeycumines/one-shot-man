@@ -88,7 +88,7 @@
     }
   ],
   "statusSection": {
-    "currentState": "Tasks 1 (Autopsy), 2 (Claude PTY resize), 3 (Fix verify comment), 4 (Claude SessionID capture), 5 (Session-specific passthrough), and 14 (Session timer) are Done. Commit 9a99dab5 fixes session-specific passthrough: _onToggle unified via getInteractivePaneSession proxy, _buildClaudeProxy.passthrough with activate-switchTo-restore pattern. Commit 3c8b85f8 removes NewEngineDeprecated (123 call sites, 34 files) and fixes sentinel drain FIFO ordering (loop.SubmitInternal). Next: Task 6 (Trunk gap audit).",
+    "currentState": "Tasks 1-7 and 14 are Done. Task 7 (commit 6cd895ea) adds 7 fixture-backed strategy quality tests (27 subtests) covering selectStrategy and createSplitPlan across 5 curated diff shapes. Next: Task 8 (Claude-pane keyboard and mouse routing end-to-end with pinned SessionID).",
     "goalState": "`osm pr-split` is production-ready: Windows / ConPTY proof passes on a real Windows run, Claude PTY resizes correctly with the terminal, Claude and verify both use pinned SessionID-backed proxies, passthrough is session-specific and proven end-to-end, pane input translation and geometry live in a reusable termmux-facing layer instead of app-specific JS, verify has one canonical PTY-integrated path with any degraded fallback made explicit, persistence tells the truth about dead PIDs, the unused `osm:claudemux` Supervisor/Guard/Pool are wired into Claude lifecycle or documented as available building blocks, public docs/changelog describe only what the code actually delivers, and every task has passed two contiguous issue-free subagent reviews before commit.",
     "replanLog": [
       "2026-04-14: Fresh code-first autopsy drafted under `scratch/blueprint-fundamentals-autopsy-20260414/`. New baseline: termmux is a real PTY/VT substrate but not yet the reusable transform/compositor boundary the plan assumes; input translation and pane geometry still live in pr-split JS.",
@@ -142,13 +142,13 @@
       "task": "Build trunk gap evidence pack: authoritative file-by-file diff vs origin/main",
       "description": "Create `scratch/pr-split-trunk-gap-audit.md` from first-hand evidence. First resolve and record `trunkRef` in `WIP.md` (`git symbolic-ref --quiet --short refs/remotes/origin/HEAD`, fall back to `origin/main`). Then run `git diff <trunkRef>...HEAD` and `git log --oneline <trunkRef>..HEAD` and produce a file-by-file explanation of every changed file. Cross-reference with `CHANGELOG.md`, `docs/architecture-pr-split-chunks.md`, `pr_split_09_claude.js`, `pr_split_13_tui.js`, `pr_split_16d_tui_handlers_claude.js`, `pr_split_16e_tui_update.js`, `pr_split_16f_tui_model.js`, `pr_split_16g_persistence.js`, `internal/builtin/termmux/module.go`, `internal/termmux/manager.go`. Explicitly record: (1) every public claim that overstated reality, (2) every proven blocker for end-to-end Claude interaction, (3) strategy-quality risks, (4) which claudemux Supervisor/Guard/Pool components are unused.",
       "acceptance": "The repository contains a single authoritative evidence pack that tells a new executor exactly what changed vs trunk, what pr-split publicly claims, what Claude and verify actually do today, and which blockers are proven by reproduction. No future discovery task needs to repeat this work.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "Prove strategy selection and split-plan quality on trunk-like diffs",
       "description": "Create fixture-backed tests under `internal/command/` and `testdata/` covering: `prSplit.analyzeDiffAsync` (chunk 01), `selectStrategy` / `applyStrategy` (chunk 02), plan creation (chunk 03), and the orchestrator entry points (chunks 10d, 16b). Cover representative trunk-like cases: multi-directory Go changes, generated-file churn, rename-heavy diffs, mixed docs+code updates, dependency-shaped changes that should or should not cohabit a split. Each fixture must include the input diff, the expected strategy choice with rationale, and the expected split plan structure.",
       "acceptance": "On curated diffs derived from real trunk-style work, osm pr-split produces stable, reviewable plans whose chosen strategy is explainable from the fixture output. Generated-file noise, risky mixed changes, and dependency-heavy edits are surfaced or separated in a reviewer-trustworthy way.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Prove Claude-pane keyboard and mouse routing end-to-end with pinned SessionID",

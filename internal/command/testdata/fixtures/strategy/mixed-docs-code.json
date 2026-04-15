@@ -1,0 +1,20 @@
+{
+  "description": "Mixed docs+code update: feature work that touches implementation, tests, documentation, and configuration equally across 4 well-separated directories. Directory strategy is optimal — it creates natural reviewer-friendly splits.",
+  "files": [
+    "internal/auth/oauth.go",
+    "internal/auth/oauth_test.go",
+    "internal/auth/jwt.go",
+    "internal/auth/jwt_test.go",
+    "cmd/server/main.go",
+    "cmd/server/flags.go",
+    "docs/auth.md",
+    "docs/configuration.md",
+    "docs/security.md",
+    "config/default.yaml",
+    "config/test.yaml",
+    "scripts/setup-oauth.sh"
+  ],
+  "expectedStrategy": "directory",
+  "expectedGroupCount": {"min": 4, "max": 6},
+  "rationale": "Files span 5 top-level directories (internal, cmd, docs, config, scripts) with 2-4 files each — near-perfect balance. Directory strategy produces 5 groups, all within the 3-7 sweet spot (splitScore=1.0). Each group is thematically coherent for review. Extension would split .go from tests and mix auth+server code."
+}

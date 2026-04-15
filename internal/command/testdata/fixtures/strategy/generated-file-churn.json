@@ -1,0 +1,20 @@
+{
+  "description": "Generated-file churn: a mix of codegen output, protobuf stubs, and hand-written code. Directory-deep strategy wins because it separates api/v1, api/v2, internal/handler, cmd/server, and docs into distinct reviewable groups.",
+  "files": [
+    "api/v1/service.pb.go",
+    "api/v1/service_grpc.pb.go",
+    "api/v1/types.pb.go",
+    "api/v1/service.proto",
+    "api/v2/events.pb.go",
+    "api/v2/events_grpc.pb.go",
+    "api/v2/events.proto",
+    "internal/handler/grpc.go",
+    "internal/handler/grpc_test.go",
+    "cmd/server/main.go",
+    "Makefile",
+    "docs/api.md"
+  ],
+  "expectedStrategy": "directory-deep",
+  "expectedGroupCount": {"min": 4, "max": 7},
+  "rationale": "12 files with directory-deep producing 6 groups (api/v1, api/v2, internal/handler, cmd/server, docs, root) — 2-4 files each, well within 3-7 sweet spot. Extension produces fewer effective groups because .pb.go and _grpc.pb.go extensions differ by naming convention, not file extension (.go for both). Directory-deep and dependency tie at 0.85; directory-deep wins by sort order."
+}

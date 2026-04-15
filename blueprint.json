@@ -154,7 +154,7 @@
       "task": "Prove Claude-pane keyboard and mouse routing end-to-end with pinned SessionID",
       "description": "Expand `pr_split_inline_e2e_test.go`, `pr_split_16_input_routing_test.go`, `pr_split_16_split_mouse_test.go` and add focused tests for `keyToTermBytes`, `CLAUDE_RESERVED_KEYS`, `INTERACTIVE_RESERVED_KEYS`, `handleKeyMessage`, `handleMouseMessage`, `computeSplitPaneContentOffset`, `writeMouseToPane` across chunks 16d and 16e. Prove that with the pinned Claude SessionID, focused Claude-pane behavior works for printable keys, Enter, Ctrl combos, reserved pane-management keys, mouse click/release/motion/wheel, and split-view focus changes. Use at least one Go-side SessionManager-backed recorder so bytes are proven to reach the SessionManager / InteractiveSession write path, and pair that with at least one PTY-backed case if the test claims real PTY delivery.",
       "acceptance": "Tests prove that focusing the Claude pane sends intended keys and mouse gestures to the pinned Claude session (not just mgr.ActiveID()). Reserved navigation keys still belong to the wizard when they should. Evidence differentiates 'SessionManager-backed write path proved' from 'real PTY-backed delivery proved' instead of conflating the two. Failures localize to a specific routing layer instead of leaving 'direct pane interaction is broken' as an anecdote.",
-      "status": "Not Started"
+      "status": "In Progress"
     },
     {
       "task": "Wire Claude lifecycle output through SessionManager events instead of blind polling",

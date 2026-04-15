@@ -139,6 +139,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stale `internal/termtest/*` entries from `.deadcodeignore`
 - 4 TODO comments in tui_completion.go: documented completion logic, resolved outdated arg completer precedence note, removed speculative types, added unknown-type warning
 - Deprecated `ScrollWheel` and `ScrollWheelOnElement` string-based methods from mouseharness; use type-safe `ScrollWheelWithDirection` and `ScrollWheelOnElementWithDirection` instead
+- `NewEngineDeprecated` function from scripting package — all 123 call sites across 34 files migrated to `NewEngine` with explicit parameters (`nil, 0, slog.LevelInfo`)
 
 ### Fixed
 - `osm pr-split` fails fast on non-git directory or missing base branch: `validateGitRepo()` runs before JS engine or TUI wizard startup, producing a clear one-line error instead of cryptic downstream failures
@@ -204,6 +205,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `matchEntry` in sync.go mutated the caller's `[]fs.DirEntry` slice during sorting — now copies the slice via `make`+`copy` before `slices.SortFunc`
 - `goalNameRE` regex recompiled on every `resolveGoalScript` call — hoisted to package-level `var` for single compilation at init time
 - Flaky `FuzzMCPSessionTools`: fuzz iterations had no per-iteration timeout and blocking server cleanup, causing hangs when the fuzz engine's `-fuzztime` expired mid-iteration — added 10s `context.WithTimeout` and non-blocking `select` on server shutdown channel
+- `osm pr-split` session-specific passthrough: Ctrl+] toggle and passthrough operations used whichever session was currently active in the SessionManager instead of the specific Claude session — `_onToggle()`, `renderStatusBar`, `renderClaudePane`, `handleAutoSplitPoll`, and manual-fix passthrough now all route through `getInteractivePaneSession(s, tab)` which returns a pinned-ID proxy; `_buildClaudeProxy` gains a `passthrough()` method using activate→switchTo→restore pattern
+- `osm pr-split` event loop sentinel drain: `waitForAsyncWork` used `loop.Submit` whose fast-path auxJobs queue could execute the sentinel before pending timer registrations became visible — replaced with `loop.SubmitInternal` to guarantee FIFO ordering through the main ingress queue
 
 ## [v0.1.0] - 2026-02-10
 

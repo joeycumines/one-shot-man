@@ -263,6 +263,10 @@
         CLAUDE_CHECK_POLL_MS: 50,   // claude binary resolution fast-poll
         AUTO_SPLIT_POLL_MS: 500,    // auto-split pipeline poll interval
         CLAUDE_SCREENSHOT_POLL_MS: 500, // claude terminal screenshot poll
+        CLAUDE_ACTIVE_POLL_MS: 100,     // fast poll when Claude is outputting
+        CLAUDE_IDLE_POLL_MS: 2000,      // slow poll when idle (no recent output)
+        CLAUDE_OUTPUT_IDLE_MS: 3000,    // Claude idle threshold (no output events)
+        CLAUDE_BELL_FLASH_MS: 1500,     // bell visual indicator duration
         QUESTION_IDLE_MS: 2000,     // idle threshold before question detection
         QUESTION_SCAN_LINES: 15,    // trailing lines scanned for questions
         CONVO_POLL_MS: 200,         // claude conversation send/wait poll

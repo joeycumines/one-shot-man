@@ -894,8 +894,17 @@
                                 verifySession.write(vBytes);
                                 s.verifyViewportOffset = 0;
                                 s.verifyAutoScroll = true;
+                                if (s.verifyWriteError) {
+                                    s.verifyWriteError = '';
+                                }
                             } catch (e) {
-                                // Swallow — write may fail if session ended.
+                                // Task 9: Surface verify write errors.
+                                s.verifyWriteError = e.message || String(e);
+                                s.verifyWriteErrorAt = Date.now();
+                                log.warn('verify write failed', {
+                                    key: k,
+                                    error: e.message || String(e)
+                                });
                             }
                         }
                         return [s, null];
@@ -936,8 +945,19 @@
                             claudeSession.write(bytes);
                             // Auto-scroll to bottom on input (follow live output).
                             s.claudeViewOffset = 0;
+                            // Clear any previous write error on success.
+                            if (s.claudeWriteError) {
+                                s.claudeWriteError = '';
+                            }
                         } catch (e) {
-                            // Swallow — write may fail if child ended.
+                            // Task 9: Surface write errors instead of silently
+                            // swallowing — user sees a transient indicator.
+                            s.claudeWriteError = e.message || String(e);
+                            s.claudeWriteErrorAt = Date.now();
+                            log.warn('claude write failed', {
+                                key: k,
+                                error: e.message || String(e)
+                            });
                         }
                     }
                     return [s, null];

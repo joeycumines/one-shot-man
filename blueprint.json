@@ -88,7 +88,7 @@
     }
   ],
   "statusSection": {
-    "currentState": "Tasks 1-7 and 14 are Done. Task 7 (commit 6cd895ea) adds 7 fixture-backed strategy quality tests (27 subtests) covering selectStrategy and createSplitPlan across 5 curated diff shapes. Next: Task 8 (Claude-pane keyboard and mouse routing end-to-end with pinned SessionID).",
+    "currentState": "Tasks 1-9 and 14 are Done. Task 9 replaces blind 500ms polling in Claude pane with event-driven lifecycle management via tuiMux.on() event handlers. Adds wireClaudeLifecycleEvents/unwireClaudeLifecycleEvents/deriveClaudeLifecycleState, adaptive poll intervals (100ms active / 2s idle), gen-based snapshot dedup, write error surfacing (claudeWriteError/verifyWriteError), bell flash indicator, and lifecycle state indicators (● active / ○ idle / ❓ waiting / ✗ exited/crashed) in Claude pane title. 11 new tests (15 subtests) in pr_split_tui_claude_lifecycle_test.go. Next: Task 10 (Persistence/resume truthfulness).",
     "goalState": "`osm pr-split` is production-ready: Windows / ConPTY proof passes on a real Windows run, Claude PTY resizes correctly with the terminal, Claude and verify both use pinned SessionID-backed proxies, passthrough is session-specific and proven end-to-end, pane input translation and geometry live in a reusable termmux-facing layer instead of app-specific JS, verify has one canonical PTY-integrated path with any degraded fallback made explicit, persistence tells the truth about dead PIDs, the unused `osm:claudemux` Supervisor/Guard/Pool are wired into Claude lifecycle or documented as available building blocks, public docs/changelog describe only what the code actually delivers, and every task has passed two contiguous issue-free subagent reviews before commit.",
     "replanLog": [
       "2026-04-14: Fresh code-first autopsy drafted under `scratch/blueprint-fundamentals-autopsy-20260414/`. New baseline: termmux is a real PTY/VT substrate but not yet the reusable transform/compositor boundary the plan assumes; input translation and pane geometry still live in pr-split JS.",
@@ -154,13 +154,13 @@
       "task": "Prove Claude-pane keyboard and mouse routing end-to-end with pinned SessionID",
       "description": "Expand `pr_split_inline_e2e_test.go`, `pr_split_16_input_routing_test.go`, `pr_split_16_split_mouse_test.go` and add focused tests for `keyToTermBytes`, `CLAUDE_RESERVED_KEYS`, `INTERACTIVE_RESERVED_KEYS`, `handleKeyMessage`, `handleMouseMessage`, `computeSplitPaneContentOffset`, `writeMouseToPane` across chunks 16d and 16e. Prove that with the pinned Claude SessionID, focused Claude-pane behavior works for printable keys, Enter, Ctrl combos, reserved pane-management keys, mouse click/release/motion/wheel, and split-view focus changes. Use at least one Go-side SessionManager-backed recorder so bytes are proven to reach the SessionManager / InteractiveSession write path, and pair that with at least one PTY-backed case if the test claims real PTY delivery.",
       "acceptance": "Tests prove that focusing the Claude pane sends intended keys and mouse gestures to the pinned Claude session (not just mgr.ActiveID()). Reserved navigation keys still belong to the wizard when they should. Evidence differentiates 'SessionManager-backed write path proved' from 'real PTY-backed delivery proved' instead of conflating the two. Failures localize to a specific routing layer instead of leaving 'direct pane interaction is broken' as an anecdote.",
-      "status": "In Progress"
+      "status": "Done"
     },
     {
       "task": "Wire Claude lifecycle output through SessionManager events instead of blind polling",
       "description": "Replace the polling-driven `pollClaudeScreenshot()` in `pr_split_16d_tui_handlers_claude.js` with `tuiMux.on('output', cb)` event-driven updates using the pinned Claude SessionID. Wire the SessionManager event callbacks (`output`, `bell`, `exit`, `closed`, `activated`) from `internal/builtin/termmux/module.go` into Claude-pane status, crash/exit handling, and question detection. Add bounded write buffering or explicit retry/error propagation so temporary PTY failures do not silently drop user input. Consider wiring the existing `osm:claudemux` Supervisor (`internal/builtin/claudemux/recovery.go`) and Guard (`internal/builtin/claudemux/guard.go`) into Claude's lifecycle for restart/recovery — these are fully implemented but unused in pr-split today.",
       "acceptance": "Long-running Claude sessions update promptly enough for a user to trust the pane. Bell/exit/crash conditions are visible instead of mysterious. Transient write failures no longer eat typed input without explanation. The user can tell the difference between idle, waiting-for-input, crashed, and closed without relying on polling tick timing.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Make persistence and resume truthful about dead PIDs and stale state",

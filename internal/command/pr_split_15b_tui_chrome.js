@@ -460,9 +460,19 @@
 
         // Placeholder when no Claude session is available.
         if (!hasMux || !content) {
-            var placeholder = styles.dim().render(
-                hasMux ? 'Waiting for Claude output...'
-                       : 'No Claude session attached');
+            // Task 9: Show lifecycle-aware placeholder.
+            var phState = s.claudeLifecycleState || '';
+            var phMsg;
+            if (phState === 'crashed') {
+                phMsg = 'Claude process crashed';
+            } else if (phState === 'exited' || phState === 'closed') {
+                phMsg = 'Claude session ended';
+            } else if (hasMux) {
+                phMsg = 'Waiting for Claude output...';
+            } else {
+                phMsg = 'No Claude session attached';
+            }
+            var placeholder = styles.dim().render(phMsg);
             var hint = styles.dim().render('Ctrl+] to toggle Claude \u00b7 Ctrl+L to close split');
 
             var phLines = [];
@@ -500,10 +510,31 @@
             }
         }
 
-        // Title line: show mode indicator (T28) and input indicator (T29).
+        // Title line: show mode indicator (T28), input indicator (T29),
+        // lifecycle state (Task 9), bell flash, and write error.
         var modeTag = isANSI ? '' : ' [plain]';
         var inputTag = isFocused ? ' INPUT' : '';
-        var titleText = styles.bold().render(' Claude' + inputTag + modeTag + scrollInfo + ' ');
+        // Task 9: Lifecycle state indicator.
+        var lifecycleTag = '';
+        var lcs = s.claudeLifecycleState || '';
+        if (lcs === 'active') {
+            lifecycleTag = ' \u25cf'; // ● (filled circle — actively outputting)
+        } else if (lcs === 'idle') {
+            lifecycleTag = ' \u25cb'; // ○ (open circle — idle)
+        } else if (lcs === 'waiting') {
+            lifecycleTag = ' \u2753'; // ❓ (question mark — waiting for input)
+        } else if (lcs === 'crashed' || lcs === 'exited') {
+            lifecycleTag = ' \u2717'; // ✗ (cross — exited/crashed)
+        }
+        // Task 9: Bell flash indicator.
+        var bellTag = s.claudeBellFlash ? ' \ud83d\udd14' : ''; // 🔔
+        // Task 9: Write error indicator (transient).
+        var writeErrTag = '';
+        if (s.claudeWriteError && s.claudeWriteErrorAt &&
+            (Date.now() - s.claudeWriteErrorAt) < 3000) {
+            writeErrTag = ' [write error]';
+        }
+        var titleText = styles.bold().render(' Claude' + inputTag + lifecycleTag + bellTag + writeErrTag + modeTag + scrollInfo + ' ');
 
         // Determine visible window based on scroll offset.
         var startLine;

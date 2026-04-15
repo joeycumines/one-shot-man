@@ -32,6 +32,140 @@
         return [s, null];
     }
 
+    // --- Claude Lifecycle Event Wiring ---
+    //
+    // Registers EventBus listeners for output/exit/bell/closed filtered by
+    // Claude's pinned SessionID. Callbacks set dirty flags and lifecycle
+    // markers that pollClaudeScreenshot reads on each tick — no redundant
+    // snapshots when nothing changed, and immediate response to exit/bell.
+
+    /**
+     * wireClaudeLifecycleEvents registers event handlers for Claude's pinned
+     * session. Call once when st.claudeSessionID is first available.
+     * Stores handler IDs on st._claudeEventIDs for cleanup.
+     */
+    function wireClaudeLifecycleEvents() {
+        if (typeof tuiMux === 'undefined' || !tuiMux ||
+            typeof tuiMux.on !== 'function') {
+            return;
+        }
+        // Guard: don't double-wire.
+        if (st._claudeEventIDs && st._claudeEventIDs.length > 0) {
+            return;
+        }
+        var cid = st.claudeSessionID;
+        if (!cid) {
+            return;
+        }
+
+        var ids = [];
+
+        // Output event: set dirty flag + record timestamp for adaptive polling.
+        ids.push(tuiMux.on('output', function(data) {
+            if (data && data.sessionId === cid) {
+                st._claudeOutputDirty = true;
+                st._claudeLastOutputMs = Date.now();
+            }
+        }));
+
+        // Exit event: mark Claude as exited for immediate lifecycle response.
+        ids.push(tuiMux.on('exit', function(data) {
+            if (data && data.sessionId === cid) {
+                st._claudeExitEvent = true;
+                log.info('claude lifecycle: exit event received', { sessionId: cid });
+            }
+        }));
+
+        // Bell event: set flash flag for visual indicator.
+        ids.push(tuiMux.on('bell', function(data) {
+            if (data && data.sessionId === cid) {
+                st._claudeBellFlash = true;
+                st._claudeBellFlashAt = Date.now();
+                log.debug('claude lifecycle: bell event', { sessionId: cid });
+            }
+        }));
+
+        // Closed event: session unregistered from SessionManager.
+        ids.push(tuiMux.on('closed', function(data) {
+            if (data && data.sessionId === cid) {
+                st._claudeClosedEvent = true;
+                log.info('claude lifecycle: closed event received', { sessionId: cid });
+            }
+        }));
+
+        st._claudeEventIDs = ids;
+        log.debug('claude lifecycle: event handlers registered', {
+            sessionId: cid,
+            handlerCount: ids.length
+        });
+    }
+
+    /**
+     * unwireClaudeLifecycleEvents removes all registered event handlers
+     * and resets lifecycle tracking state.
+     */
+    function unwireClaudeLifecycleEvents() {
+        if (typeof tuiMux === 'undefined' || !tuiMux ||
+            typeof tuiMux.off !== 'function') {
+            return;
+        }
+        var ids = st._claudeEventIDs;
+        if (ids && ids.length > 0) {
+            for (var i = 0; i < ids.length; i++) {
+                tuiMux.off(ids[i]);
+            }
+            log.debug('claude lifecycle: event handlers removed', {
+                handlerCount: ids.length
+            });
+        }
+        st._claudeEventIDs = null;
+        st._claudeOutputDirty = false;
+        st._claudeLastOutputMs = 0;
+        st._claudeExitEvent = false;
+        st._claudeBellFlash = false;
+        st._claudeBellFlashAt = 0;
+        st._claudeClosedEvent = false;
+        st._claudeLastSnapshotGen = 0;
+    }
+
+    /**
+     * deriveClaudeLifecycleState computes the user-visible lifecycle state
+     * from event flags and session status.
+     *
+     * States: 'detached' | 'active' | 'idle' | 'waiting' | 'exited' | 'crashed'
+     */
+    function deriveClaudeLifecycleState(s) {
+        var cid = st.claudeSessionID;
+        if (!cid) {
+            return 'detached';
+        }
+        // Check exit/closed events first — terminal states.
+        if (st._claudeClosedEvent) {
+            return 'closed';
+        }
+        if (st._claudeExitEvent) {
+            // Distinguish crash from normal exit: if the pipeline is still
+            // running, it's a crash. If the pipeline completed, it's normal.
+            return s.autoSplitRunning ? 'crashed' : 'exited';
+        }
+        // Check if session is done (fallback for missed events).
+        if (typeof tuiMux.isDone === 'function' && tuiMux.isDone(cid)) {
+            return s.autoSplitRunning ? 'crashed' : 'exited';
+        }
+        // Question detected → waiting for input.
+        if (s.claudeQuestionDetected) {
+            return 'waiting';
+        }
+        // Recent output → active.
+        var now = Date.now();
+        if (st._claudeLastOutputMs &&
+            (now - st._claudeLastOutputMs) < C.CLAUDE_OUTPUT_IDLE_MS) {
+            return 'active';
+        }
+        // No recent output → idle.
+        return 'idle';
+    }
+
     // --- Claude Check Handlers ---
 
     function handleClaudeCheck(s) {
@@ -886,89 +1020,121 @@
         return result;
     }
 
-    // --- Split-View: Claude Screenshot Polling ---
+    // --- Split-View: Event-Aware Claude Screenshot Polling ---
+    //
+    // Task 9: Replaces blind 500ms polling with event-driven updates.
+    // Event handlers (wireClaudeLifecycleEvents) set dirty flags; this
+    // function reads them and skips redundant snapshots when nothing
+    // changed. Uses adaptive tick intervals: fast when Claude is outputting,
+    // slow when idle.
+
     function pollClaudeScreenshot(s) {
         // Stop polling if split view was disabled.
         if (!s.splitViewEnabled) {
             return [s, null];
         }
 
-        // Guard: no tuiMux or Claude's pinned session is done — set empty
-        // screen so renderClaudePane shows "No Claude session attached".
-        // INVARIANT: claudeSessionID is written synchronously by the
-        // orchestrator immediately after tuiMux.attach() returns (line ~448
-        // in pr_split_10d_pipeline_orchestrator.js). JS is single-threaded,
-        // so no tick can fire between attach and the state write.
+        // Ensure lifecycle event handlers are wired (idempotent).
+        wireClaudeLifecycleEvents();
+
+        // Guard: no tuiMux or Claude's pinned session.
         var cid = st.claudeSessionID;
         if (typeof tuiMux === 'undefined' || !tuiMux || !cid) {
-            // Not yet attached — clear screen but keep polling so the pane
-            // picks up Claude once attach completes.
             s.claudeScreen = '';
             s.claudeScreenshot = '';
+            s.claudeLifecycleState = 'detached';
             return [s, tea.tick(C.CLAUDE_SCREENSHOT_POLL_MS, 'claude-screenshot')];
         }
-        var claudeExited = typeof tuiMux.isDone === 'function' && tuiMux.isDone(cid);
+
+        // Event-driven exit detection: check event flag first, then isDone
+        // as fallback. Immediate response — no 500ms wait.
+        var claudeExited = st._claudeExitEvent || st._claudeClosedEvent ||
+            (typeof tuiMux.isDone === 'function' && tuiMux.isDone(cid));
         if (claudeExited) {
             s.claudeScreen = '';
             s.claudeScreenshot = '';
-            // T45: If Claude was auto-attached and the child disappears,
-            // auto-close split-view and show notification.
+            s.claudeLifecycleState = deriveClaudeLifecycleState(s);
+            // T45: Auto-close split-view when Claude exits (auto-attached only).
             if (s.claudeAutoAttached && !s.autoSplitRunning) {
                 s.splitViewEnabled = false;
                 s.splitViewFocus = 'wizard';
                 s.splitViewTab = 'claude';
-                syncMainViewport(s); // T120: sync dimensions after auto-close.
+                syncMainViewport(s);
                 s.claudeAutoAttachNotif = 'Claude session ended \u2014 split-view closed';
                 s.claudeAutoAttachNotifAt = Date.now();
-                // T028: Schedule tick to dismiss the notification.
-                return [s, tea.tick(C.DISMISS_NOTIF_MS, 'dismiss-attach-notif')]; // stop polling
+                unwireClaudeLifecycleEvents();
+                return [s, tea.tick(C.DISMISS_NOTIF_MS, 'dismiss-attach-notif')];
             }
-            // Continue polling — the child may attach later (e.g., during auto-split).
             return [s, tea.tick(C.CLAUDE_SCREENSHOT_POLL_MS, 'claude-screenshot')];
         }
 
+        // Bell flash management: clear expired bell indicator.
+        if (st._claudeBellFlash && st._claudeBellFlashAt &&
+            (Date.now() - st._claudeBellFlashAt) >= C.CLAUDE_BELL_FLASH_MS) {
+            st._claudeBellFlash = false;
+        }
+        s.claudeBellFlash = !!st._claudeBellFlash;
+
         // Drain mux events before snapshotting so real output/bell activity
         // can update JS state through the binding's event listeners.
+        // Note: wizardUpdateImpl also calls pollEvents() at the top of each
+        // update cycle, but some code paths call pollClaudeScreenshot
+        // directly, so this drain remains as a safety net (idempotent).
         if (typeof tuiMux.pollEvents === 'function') {
             try {
                 tuiMux.pollEvents();
             } catch (e) {
-                // Swallow — event draining is best-effort and should not
-                // prevent the pane snapshot from updating.
+                // Swallow — event draining is best-effort.
             }
         }
 
-        // Capture screen from tuiMux via pinned Claude SessionID (T28: full color rendering).
+        // Snapshot with generation tracking: skip if nothing changed.
+        // When gen is undefined/null (mock without gen field), always
+        // snapshot to maintain backward compatibility with tests.
+        var snapshotChanged = false;
         try {
-            if (cid && typeof tuiMux.snapshot === 'function') {
+            if (typeof tuiMux.snapshot === 'function') {
                 var snap = tuiMux.snapshot(cid);
                 if (snap) {
-                    if (snap.fullScreen) {
-                        s.claudeScreen = String(snap.fullScreen);
-                    }
-                    if (snap.plainText) {
-                        s.claudeScreenshot = String(snap.plainText);
+                    // Compare generation to detect actual screen changes.
+                    // If gen is absent (mocks), always update.
+                    if (snap.gen == null || snap.gen !== st._claudeLastSnapshotGen) {
+                        st._claudeLastSnapshotGen = snap.gen;
+                        snapshotChanged = true;
+                        if (snap.fullScreen) {
+                            s.claudeScreen = String(snap.fullScreen);
+                        }
+                        if (snap.plainText) {
+                            s.claudeScreenshot = String(snap.plainText);
+                        }
                     }
                 }
             }
         } catch (e) {
-            // Swallow — screen capture may fail if Claude session ended.
+            log.debug('pollClaudeScreenshot: snapshot failed', {
+                sessionId: cid,
+                error: e.message || String(e)
+            });
         }
 
-        // T46: Claude question detection — check if Claude is asking a
-        // question. T393: Detect questions whenever Claude PTY is alive (not
-        // just during isProcessing), so post-pipeline "Ask Claude" interactions
-        // can also be answered inline.
+        // Clear the dirty flag after processing.
+        st._claudeOutputDirty = false;
+
+        // Derive and store lifecycle state for the view layer.
+        s.claudeLifecycleState = deriveClaudeLifecycleState(s);
+
+        // Question detection: run when snapshot changed or on throttled
+        // timer (preserves idle-based detection semantics).
         var claudeAlive = !!(prSplit._state && prSplit._state.claudeExecutor &&
                              prSplit._state.claudeExecutor.handle);
         if ((s.isProcessing || claudeAlive) && !s.claudeQuestionInputActive) {
             var now46 = Date.now();
-            // Throttle detection to every 2s to avoid churn.
-            if (!s.claudeLastQuestionCheckMs ||
-                (now46 - s.claudeLastQuestionCheckMs >= C.QUESTION_IDLE_MS)) {
+            var shouldCheck = snapshotChanged ||
+                (!s.claudeLastQuestionCheckMs ||
+                 (now46 - s.claudeLastQuestionCheckMs >= C.QUESTION_IDLE_MS));
+            if (shouldCheck) {
                 s.claudeLastQuestionCheckMs = now46;
 
-                // Compute idle time from tuiMux.
                 var idleMs46 = 0;
                 try {
                     if (typeof tuiMux.lastActivityMs === 'function') {
@@ -980,7 +1146,6 @@
 
                 var qResult = detectClaudeQuestion(s.claudeScreenshot, idleMs46);
                 if (qResult.detected && !s.claudeQuestionDetected) {
-                    // New question detected — surface it.
                     s.claudeQuestionDetected = true;
                     s.claudeQuestionLine = qResult.line;
                     s.claudeQuestionInputText = '';
@@ -988,8 +1153,6 @@
                     log.printf('T46: Claude question detected: %s', qResult.line);
                 } else if (!qResult.detected && s.claudeQuestionDetected &&
                            !s.claudeQuestionInputActive) {
-                    // Question resolved (Claude started streaming again) —
-                    // only auto-dismiss if user isn't typing a response.
                     s.claudeQuestionDetected = false;
                     s.claudeQuestionLine = '';
                     s.claudeQuestionInputText = '';
@@ -997,8 +1160,13 @@
             }
         }
 
-        // Schedule next poll at 500ms.
-        return [s, tea.tick(C.CLAUDE_SCREENSHOT_POLL_MS, 'claude-screenshot')];
+        // Adaptive tick interval: fast when Claude is actively outputting,
+        // slower when idle. Reduces CPU when Claude is thinking.
+        var now = Date.now();
+        var recentOutput = st._claudeLastOutputMs &&
+            (now - st._claudeLastOutputMs) < C.CLAUDE_OUTPUT_IDLE_MS;
+        var tickMs = recentOutput ? C.CLAUDE_ACTIVE_POLL_MS : C.CLAUDE_IDLE_POLL_MS;
+        return [s, tea.tick(tickMs, 'claude-screenshot')];
     }
 
     // --- Cross-chunk exports ---
@@ -1014,5 +1182,8 @@
     prSplit._detectClaudeQuestion = detectClaudeQuestion;
     prSplit.QUESTION_IDLE_THRESHOLD_MS = QUESTION_IDLE_THRESHOLD_MS;
     prSplit._pollClaudeScreenshot = pollClaudeScreenshot;
+    prSplit._wireClaudeLifecycleEvents = wireClaudeLifecycleEvents;
+    prSplit._unwireClaudeLifecycleEvents = unwireClaudeLifecycleEvents;
+    prSplit._deriveClaudeLifecycleState = deriveClaudeLifecycleState;
 
 })(globalThis.prSplit);

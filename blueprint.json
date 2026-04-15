@@ -142,7 +142,7 @@
       "task": "Build trunk gap evidence pack: authoritative file-by-file diff vs origin/main",
       "description": "Create `scratch/pr-split-trunk-gap-audit.md` from first-hand evidence. First resolve and record `trunkRef` in `WIP.md` (`git symbolic-ref --quiet --short refs/remotes/origin/HEAD`, fall back to `origin/main`). Then run `git diff <trunkRef>...HEAD` and `git log --oneline <trunkRef>..HEAD` and produce a file-by-file explanation of every changed file. Cross-reference with `CHANGELOG.md`, `docs/architecture-pr-split-chunks.md`, `pr_split_09_claude.js`, `pr_split_13_tui.js`, `pr_split_16d_tui_handlers_claude.js`, `pr_split_16e_tui_update.js`, `pr_split_16f_tui_model.js`, `pr_split_16g_persistence.js`, `internal/builtin/termmux/module.go`, `internal/termmux/manager.go`. Explicitly record: (1) every public claim that overstated reality, (2) every proven blocker for end-to-end Claude interaction, (3) strategy-quality risks, (4) which claudemux Supervisor/Guard/Pool components are unused.",
       "acceptance": "The repository contains a single authoritative evidence pack that tells a new executor exactly what changed vs trunk, what pr-split publicly claims, what Claude and verify actually do today, and which blockers are proven by reproduction. No future discovery task needs to repeat this work.",
-      "status": "Not Started"
+      "status": "In Progress"
     },
     {
       "task": "Prove strategy selection and split-plan quality on trunk-like diffs",

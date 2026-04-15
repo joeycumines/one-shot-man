@@ -946,7 +946,9 @@
         };
 
         // Unit tests still expect the exported wizard init helper to be
-        // state-only, so keep a thin wrapper for that contract.
+        // state-only, so keep a thin wrapper for that contract. Export the
+        // full model init path separately for tests that need to prove
+        // startup behavior that depends on prSplit.previousState.
         var _initFn = function() {
             return _initStateFn();
         };
@@ -975,6 +977,7 @@
         // _wizardView exports the string-returning impl (not the v2 object
         // wrapper) so tests can call .indexOf / .split directly.
         prSplit._wizardInit = _initFn;
+        prSplit._wizardModelInit = _initModelFn;
         prSplit._wizardUpdate = _updateFn;
         prSplit._wizardView = wizardViewImpl;
         // NOTE: prSplit._getFocusElements is now exported by chunk 16a.

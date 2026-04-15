@@ -5,14 +5,71 @@ package command
 // about PID liveness, clean exit removes state files, resume metadata is
 // surfaced in TUI model, and placeholder rendering reflects resume state.
 //
-// Evidence tier: JS engine + mock tuiMux with persistence bindings. Proves
-// the complete lifecycle: save → load → annotate → present → cleanup.
+// Evidence tier: JS engine coverage with both mock tuiMux unit tests and
+// real termmux persistence bindings. The focused integration tests prove
+// persisted-file startup loading and clean-exit cleanup on disk.
 
 import (
+	"context"
+	"errors"
+	"io"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
+	termmuxmod "github.com/joeycumines/one-shot-man/internal/builtin/termmux"
 	"github.com/joeycumines/one-shot-man/internal/command/prsplittest"
+	"github.com/joeycumines/one-shot-man/internal/termmux"
 )
+
+func newPersistenceIntegrationEval(t *testing.T, state *termmux.PersistedManagerState) (func(string) (any, error), string) {
+	t.Helper()
+
+	tempDir := t.TempDir()
+	statePath := filepath.Join(tempDir, "pr-split-mux.state.json")
+	if state != nil {
+		if err := termmux.SaveManagerState(statePath, state); err != nil {
+			t.Fatalf("save manager state: %v", err)
+		}
+	}
+
+	eng := prsplittest.NewEngine(t, map[string]any{
+		"persistStatePath": statePath,
+		"dir":              tempDir,
+	})
+	eng.LoadChunks(t, prsplittest.ChunkNamesThrough("12")...)
+
+	evalJS := eng.EvalJS(t)
+	if _, err := evalJS(prsplittest.SetupTUIMocks); err != nil {
+		t.Fatalf("prsplittest: TUI mocks failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	mgr := termmux.NewSessionManager()
+	errCh := make(chan error, 1)
+	go func() { errCh <- mgr.Run(ctx) }()
+	<-mgr.Started()
+	t.Cleanup(func() {
+		cancel()
+		<-errCh
+	})
+
+	eng.SetGlobal("tuiMux", termmuxmod.WrapSessionManager(
+		ctx,
+		eng.ScriptingEngine().Runtime(),
+		mgr,
+		nil,
+		io.Discard,
+		-1,
+	))
+	eng.LoadChunks(t, prsplittest.ChunkNamesAfter("12")...)
+	if _, err := eng.EvalJS(t)(prsplittest.Chunk16Helpers); err != nil {
+		t.Fatalf("prsplittest: chunk16 helpers failed: %v", err)
+	}
+
+	return eng.EvalJS(t), statePath
+}
 
 // TestPersistence_TruthfulAnnotation proves that loadPreviousState
 // annotates sessions with truthful status: alive, dead, or unknown.
@@ -161,8 +218,8 @@ func TestPersistence_StaleDetection(t *testing.T) {
 	}
 }
 
-// TestPersistence_ResumeStateInTUIModel proves that the TUI model
-// initialization populates resume state fields from previousState.
+// TestPersistence_ResumeStateInTUIModel proves that the base wizard state
+// exposes the Task 10 resume fields with truthful zero defaults.
 func TestPersistence_ResumeStateInTUIModel(t *testing.T) {
 	skipSlow(t)
 	t.Parallel()
@@ -190,74 +247,72 @@ func TestPersistence_ResumeStateInTUIModel(t *testing.T) {
 	}
 }
 
-// TestPersistence_ResumeStatePopulatedByModelInit proves that _initModelFn
-// reads prSplit.previousState and populates resume fields on the TUI state.
+// TestPersistence_ResumeStatePopulatedByModelInit proves the real startup
+// path: a persisted file is loaded through the real termmux bindings,
+// prSplit.previousState is populated during chunk load, and the production
+// _initModelFn surfaces truthful resume state into the TUI model.
 func TestPersistence_ResumeStatePopulatedByModelInit(t *testing.T) {
 	skipSlow(t)
 	t.Parallel()
-	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+	evalJS, _ := newPersistenceIntegrationEval(t, &termmux.PersistedManagerState{
+		Version:  "1",
+		ActiveID: 1,
+		Sessions: []termmux.PersistedSession{
+			{
+				SessionID: 1,
+				PID:       os.Getpid(),
+				Target:    termmux.SessionTarget{Name: "claude", Kind: termmux.SessionKindCapture},
+			},
+			{
+				SessionID: 2,
+				PID:       0,
+				Target:    termmux.SessionTarget{Name: "agent"},
+			},
+		},
+		TermRows: 24,
+		TermCols: 80,
+		SavedAt:  time.Now().Add(-48 * time.Hour),
+	})
 
 	raw, err := evalJS(`(function() {
-		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
-		globalThis.tuiMux = {
-			isDone: function() { return false; },
-			activeID: function() { return 0; },
-			snapshot: function() { return null; },
-			on: function() { return 0; },
-			off: function() {},
-			pollEvents: function() { return 0; },
-			loadState: function() {
-				return {
-					version: '1',
-					sessions: [
-						{ sessionId: 1, pid: 555, target: { name: 'claude', kind: 'capture' }, state: 'running' }
-					],
-					savedAt: new Date().toISOString()
-				};
-			},
-			processAlive: function(pid) { return pid === 555; }
-		};
-
-		// Reload previousState with the mock tuiMux in place.
-		prSplit.previousState = prSplit.persistence.loadPrevious();
-
-		// Call _wizardInit which uses _initStateFn — then manually invoke
-		// the population logic that _initModelFn does.
-		var s = initState('CONFIG');
-
-		// Simulate _initModelFn's resume population (since initState uses _initStateFn).
-		if (prSplit.previousState) {
-			var prev = prSplit.previousState;
-			var meta = prev._resumeMeta || {};
-			s.resumeFound = true;
-			s.resumeStale = !!meta.stale;
-			s.resumeAgeMs = meta.ageMs || 0;
-			var sessions = prev.sessions || [];
-			s.resumeSessions = [];
-			for (var ri = 0; ri < sessions.length; ri++) {
-				var rs = sessions[ri];
-				s.resumeSessions.push({
-					name: (rs.target && rs.target.name) || 'unnamed',
-					kind: (rs.target && rs.target.kind) || 'unknown',
-					status: rs.status || 'unknown',
-					pid: rs.pid || 0
-				});
-			}
-		}
-
-		// Restore.
-		prSplit.previousState = null;
-		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
-		else delete globalThis.tuiMux;
-
 		var errors = [];
-		if (!s.resumeFound) errors.push('resumeFound should be true');
-		if (s.resumeSessions.length !== 1) errors.push('expected 1 resume session, got ' + s.resumeSessions.length);
-		if (s.resumeSessions[0] && s.resumeSessions[0].status !== 'alive') {
-			errors.push('session status should be alive, got ' + s.resumeSessions[0].status);
+		if (!prSplit.previousState) {
+			errors.push('previousState should load from the real persisted file at startup');
 		}
-		if (s.resumeSessions[0] && s.resumeSessions[0].name !== 'claude') {
-			errors.push('session name should be claude, got ' + s.resumeSessions[0].name);
+		if (typeof prSplit._wizardModelInit !== 'function') {
+			errors.push('_wizardModelInit should be exported for production-path testing');
+		}
+		var initRes = prSplit._wizardModelInit();
+		if (!initRes || initRes.length < 1) {
+			errors.push('_wizardModelInit should return [state, cmd]');
+		}
+		var s = initRes && initRes.length > 0 ? initRes[0] : null;
+		if (!s) {
+			errors.push('model init should produce state');
+		} else {
+			if (!s.resumeFound) errors.push('resumeFound should be true');
+			if (!s.resumeStale) errors.push('resumeStale should be true for a 48h-old file');
+			if (!(s.resumeAgeMs > 86400000)) errors.push('resumeAgeMs should exceed 24h, got ' + s.resumeAgeMs);
+			if (s.resumeSessions.length !== 2) errors.push('expected 2 resume sessions, got ' + s.resumeSessions.length);
+			if (s.resumeSessions[0] && s.resumeSessions[0].status !== 'alive') {
+				errors.push('session 1 status should be alive, got ' + s.resumeSessions[0].status);
+			}
+			if (s.resumeSessions[1] && s.resumeSessions[1].status !== 'unknown') {
+				errors.push('session 2 status should be unknown, got ' + s.resumeSessions[1].status);
+			}
+			s.width = 80;
+			var bar = prSplit._renderStatusBar(s);
+			if (bar.indexOf('alive') < 0) errors.push('status bar should show alive count');
+			if (bar.indexOf('unknown') < 0) errors.push('status bar should show unknown count');
+			if (bar.toLowerCase().indexOf('stale') < 0) errors.push('status bar should label stale resumes');
+		}
+		if (prSplit.previousState && prSplit.previousState._resumeMeta) {
+			var meta = prSplit.previousState._resumeMeta;
+			if (meta.aliveCount !== 1) errors.push('meta aliveCount should be 1, got ' + meta.aliveCount);
+			if (meta.deadCount !== 0) errors.push('meta deadCount should be 0, got ' + meta.deadCount);
+			if (meta.unknownCount !== 1) errors.push('meta unknownCount should be 1, got ' + meta.unknownCount);
+		} else {
+			errors.push('previousState._resumeMeta should be populated');
 		}
 		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
 	})()`)
@@ -266,6 +321,53 @@ func TestPersistence_ResumeStatePopulatedByModelInit(t *testing.T) {
 	}
 	if raw != "OK" {
 		t.Errorf("resume populated by model init: %v", raw)
+	}
+}
+
+// TestPersistence_ConfirmCancelRemovesRealStateFile proves the clean-exit
+// path removes the actual persisted state file via the real termmux binding.
+func TestPersistence_ConfirmCancelRemovesRealStateFile(t *testing.T) {
+	skipSlow(t)
+	t.Parallel()
+	evalJS, statePath := newPersistenceIntegrationEval(t, &termmux.PersistedManagerState{
+		Version:  "1",
+		ActiveID: 1,
+		Sessions: []termmux.PersistedSession{{
+			SessionID: 1,
+			PID:       os.Getpid(),
+			Target:    termmux.SessionTarget{Name: "claude", Kind: termmux.SessionKindCapture},
+		}},
+		TermRows: 24,
+		TermCols: 80,
+		SavedAt:  time.Now(),
+	})
+
+	raw, err := evalJS(`(function() {
+		var origUnwire = prSplit._unwireClaudeLifecycleEvents;
+		var unwireCalled = false;
+		prSplit._unwireClaudeLifecycleEvents = function() { unwireCalled = true; };
+
+		var s = initState('PLAN_REVIEW');
+		s.showConfirmCancel = true;
+		s.confirmCancelFocus = 0;
+
+		var r = update({ type: 'Key', key: 'enter' }, s);
+		s = r[0];
+		prSplit._unwireClaudeLifecycleEvents = origUnwire;
+
+		var errors = [];
+		if (!unwireCalled) errors.push('unwireClaudeLifecycleEvents should be called on quit');
+		if (s.wizardState !== 'CANCELLED') errors.push('wizardState should be CANCELLED, got ' + s.wizardState);
+		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Fatalf("confirmCancel real cleanup: %v", raw)
+	}
+	if _, err := os.Stat(statePath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("persisted state file should be removed on clean exit, stat err=%v", err)
 	}
 }
 

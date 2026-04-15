@@ -274,13 +274,13 @@ func TestMouseEventVariety(t *testing.T) {
 	state := testState(true, "claude", "claude")
 
 	cases := []struct {
-		name       string
-		msgType    string
-		button     string
-		x, y       int
-		endsWith   byte // 'M' for press/motion, 'm' for release
-		hasPrefix  string
-		modifiers  string // JS array literal
+		name      string
+		msgType   string
+		button    string
+		x, y      int
+		endsWith  byte // 'M' for press/motion, 'm' for release
+		hasPrefix string
+		modifiers string // JS array literal
 	}{
 		// Note: MouseClick (press) goes through zone detection, NOT to child
 		// terminal. Only MouseMotion, MouseRelease, and MouseWheel are

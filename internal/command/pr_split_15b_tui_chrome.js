@@ -418,6 +418,28 @@
             // No else — dismiss is handled by 'dismiss-attach-notif' tick.
         }
 
+        // Task 10: Resume notification — show previous session state on startup.
+        if (s.resumeFound && !s.resumeNotifDismissed) {
+            var resumeSessions = s.resumeSessions || [];
+            var alive = 0, dead = 0, unknown = 0;
+            for (var rsi = 0; rsi < resumeSessions.length; rsi++) {
+                var rss = resumeSessions[rsi].status;
+                if (rss === 'alive') alive++;
+                else if (rss === 'dead') dead++;
+                else unknown++;
+            }
+            var resumeMsg = 'Previous session: ';
+            var parts10 = [];
+            if (alive > 0) parts10.push(alive + ' alive');
+            if (dead > 0) parts10.push(dead + ' dead');
+            if (unknown > 0) parts10.push(unknown + ' unknown');
+            resumeMsg += parts10.length > 0 ? parts10.join(', ') : 'no sessions';
+            if (s.resumeStale) resumeMsg += ' (stale)';
+            notifLine = styles.dim().render(
+                ' \u26a0 ' + resumeMsg + ' '
+            ) + '\n' + notifLine;
+        }
+
         return notifLine + styles.dim().render(
             styles.divider().render(repeatStr('\u2500', w))
         ) + '\n' + statusLine;

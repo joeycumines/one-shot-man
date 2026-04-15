@@ -49,6 +49,15 @@
                 prSplit._mcpCallbackObj = null;
                 if (st) st.mcpCallbackObj = null;
             }
+            // Task 10: Clean exit removes state file so next startup
+            // doesn't offer stale resume data.
+            if (prSplit.persistence && typeof prSplit.persistence.cleanup === 'function') {
+                try { prSplit.persistence.cleanup(); } catch (e) { log.debug('cleanup: persistence.cleanup failed: ' + (e.message || e)); }
+            }
+            // Task 9: Unwire Claude lifecycle event handlers.
+            if (typeof prSplit._unwireClaudeLifecycleEvents === 'function') {
+                try { prSplit._unwireClaudeLifecycleEvents(); } catch (e) { log.debug('cleanup: unwireClaudeLifecycleEvents failed: ' + (e.message || e)); }
+            }
             s.wizard.cancel();
             s.wizardState = 'CANCELLED';
             return [s, tea.quit()];

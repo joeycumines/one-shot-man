@@ -897,6 +897,13 @@
                 prCreationProgressMsg: '',  // real-time progress message from progressFn
                 prCreationDryRun: false,    // T077: true if results are from dry-run
 
+                // Task 10: Resume awareness — truthful previous session state.
+                resumeFound: false,             // true if previous state file was found
+                resumeSessions: [],             // [{name, kind, status, pid}] from previousState
+                resumeStale: false,             // true if state is >24h old
+                resumeAgeMs: 0,                 // age of state file in ms
+                resumeNotifDismissed: false,    // true once user dismissed resume notification
+
                 // First render flag.
                 needsInitClear: true
             };
@@ -906,6 +913,32 @@
         // can keep draining mux events even when the TUI is otherwise idle.
         var _initModelFn = function() {
             var state = _initStateFn();
+
+            // Task 10: Populate resume state from previousState if available.
+            if (prSplit.previousState) {
+                var prev = prSplit.previousState;
+                var meta = prev._resumeMeta || {};
+                state.resumeFound = true;
+                state.resumeStale = !!meta.stale;
+                state.resumeAgeMs = meta.ageMs || 0;
+                var sessions = prev.sessions || [];
+                state.resumeSessions = [];
+                for (var ri = 0; ri < sessions.length; ri++) {
+                    var rs = sessions[ri];
+                    state.resumeSessions.push({
+                        name: (rs.target && rs.target.name) || 'unnamed',
+                        kind: (rs.target && rs.target.kind) || 'unknown',
+                        status: rs.status || 'unknown',
+                        pid: rs.pid || 0
+                    });
+                }
+                log.info('resume: previous state detected', {
+                    sessionCount: sessions.length,
+                    stale: state.resumeStale,
+                    ageMs: state.resumeAgeMs
+                });
+            }
+
             // T10: Store current model state reference so _onToggle can
             // access focused pane and active sessions for passthrough dispatch.
             prSplit._toggleModelState = state;

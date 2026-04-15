@@ -15,19 +15,17 @@
 (function () {
     'use strict';
 
-    // Guard: tuiMux must be available.
-    if (typeof tuiMux === 'undefined' || !tuiMux) {
-        return;
-    }
+    // Resolve dependencies. tuiMux and statePath may be absent in test
+    // environments — methods guard at call time rather than at module level
+    // so the prSplit.persistence API is always exported.
+    var hasMux = (typeof tuiMux !== 'undefined') && !!tuiMux;
 
     var statePath = '';
     if (typeof prSplitConfig !== 'undefined' && prSplitConfig && prSplitConfig.persistStatePath) {
         statePath = prSplitConfig.persistStatePath;
     }
-    if (!statePath) {
-        log.debug('persistence: no statePath configured, skipping auto-save');
-        return;
-    }
+
+    var canPersist = hasMux && !!statePath;
 
     // ── Auto-save on EventBus transitions ───────────────────────────
     //
@@ -42,6 +40,7 @@
      * to avoid disrupting the TUI.
      */
     function _persistState(reason) {
+        if (!canPersist) return;
         try {
             tuiMux.saveState(statePath);
             log.debug('persistence: saved state', { reason: reason, path: statePath });
@@ -52,7 +51,7 @@
 
     // Wire event listeners. The muxEvents API (from WrapSessionManager)
     // delivers events synchronously on the Goja goroutine when drained.
-    if (typeof tuiMux.on === 'function') {
+    if (canPersist && typeof tuiMux.on === 'function') {
         for (var i = 0; i < SAVE_EVENTS.length; i++) {
             (function (eventName) {
                 tuiMux.on(eventName, function () {
@@ -73,23 +72,61 @@
      * prSplit.loadPreviousState() → object | null
      *
      * Returns the previous persisted state with a `sessions` array where
-     * each entry has an extra `alive` boolean indicating PID liveness.
+     * each entry has truthful lifecycle status:
+     *
+     *   status: 'alive'   — PID known and process is running
+     *   status: 'dead'    — PID known but process is gone
+     *   status: 'unknown' — PID not available (e.g. StringIOSession)
+     *
      * Returns null if no state file exists.
      */
     function loadPreviousState() {
+        // Resolve tuiMux at call time so tests can inject mocks.
+        var mux = (typeof tuiMux !== 'undefined') ? tuiMux : null;
+        if (!mux) {
+            return null;
+        }
         try {
-            var state = tuiMux.loadState(statePath);
+            var state = mux.loadState(statePath);
             if (!state) {
                 return null;
             }
-            // Annotate each session with PID liveness.
+            // Annotate each session with truthful lifecycle status.
             var sessions = state.sessions || [];
+            var aliveCount = 0;
+            var deadCount = 0;
+            var unknownCount = 0;
             for (var j = 0; j < sessions.length; j++) {
                 var s = sessions[j];
-                s.alive = (s.pid > 0) ? tuiMux.processAlive(s.pid) : false;
+                if (s.pid > 0) {
+                    s.alive = mux.processAlive(s.pid);
+                    s.status = s.alive ? 'alive' : 'dead';
+                    if (s.alive) aliveCount++;
+                    else deadCount++;
+                } else {
+                    // No PID available — truthful: we cannot determine liveness.
+                    s.alive = null;
+                    s.status = 'unknown';
+                    unknownCount++;
+                }
             }
+            // Compute staleness: state older than 24 hours is likely stale.
+            var savedAt = state.savedAt ? new Date(state.savedAt).getTime() : 0;
+            var ageMs = savedAt > 0 ? (Date.now() - savedAt) : 0;
+            state._resumeMeta = {
+                sessionCount: sessions.length,
+                aliveCount: aliveCount,
+                deadCount: deadCount,
+                unknownCount: unknownCount,
+                ageMs: ageMs,
+                stale: ageMs > 86400000 // 24h
+            };
             log.info('persistence: previous state loaded', {
                 sessionCount: sessions.length,
+                aliveCount: aliveCount,
+                deadCount: deadCount,
+                unknownCount: unknownCount,
+                ageMs: ageMs,
                 path: statePath
             });
             return state;
@@ -106,8 +143,10 @@
     // on the prSplit namespace.
 
     function cleanupStateFile() {
+        var mux = (typeof tuiMux !== 'undefined') ? tuiMux : null;
+        if (!mux) return;
         try {
-            tuiMux.removeState(statePath);
+            mux.removeState(statePath);
             log.debug('persistence: state file removed on clean exit', { path: statePath });
         } catch (e) {
             log.debug('persistence: remove failed on exit', { error: e.message || String(e) });

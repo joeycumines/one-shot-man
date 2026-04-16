@@ -586,3 +586,207 @@ func TestSessionWrapper_WriteResize(t *testing.T) {
 	cancel()
 	<-errCh
 }
+
+// ── Input encoding binding tests ────────────────────────
+
+func TestModule_KeyToTermBytes(t *testing.T) {
+	runtime, exports := testRequire(t)
+	_ = runtime.Set("tm", exports)
+
+	tests := []struct {
+		name string
+		js   string
+		want string
+	}{
+		{"enter", `tm.keyToTermBytes('enter')`, "\r"},
+		{"tab", `tm.keyToTermBytes('tab')`, "\t"},
+		{"esc", `tm.keyToTermBytes('esc')`, "\x1b"},
+		{"up", `tm.keyToTermBytes('up')`, "\x1b[A"},
+		{"ctrl+c", `tm.keyToTermBytes('ctrl+c')`, "\x03"},
+		{"shift+tab", `tm.keyToTermBytes('shift+tab')`, "\x1b[Z"},
+		{"single_char", `tm.keyToTermBytes('a')`, "a"},
+		{"f5", `tm.keyToTermBytes('f5')`, "\x1b[15~"},
+		{"shift+up", `tm.keyToTermBytes('shift+up')`, "\x1b[1;2A"},
+		{"alt+a", `tm.keyToTermBytes('alt+a')`, "\x1ba"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v, err := runtime.RunString(tt.js)
+			if err != nil {
+				t.Fatalf("RunString: %v", err)
+			}
+			if v.String() != tt.want {
+				t.Errorf("got %q, want %q", v.String(), tt.want)
+			}
+		})
+	}
+}
+
+func TestModule_KeyToTermBytes_Null(t *testing.T) {
+	runtime, exports := testRequire(t)
+	_ = runtime.Set("tm", exports)
+
+	v, err := runtime.RunString(`tm.keyToTermBytes('ctrl+shift+alt+x')`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	if !goja.IsNull(v) {
+		t.Errorf("expected null for unknown key combo, got %v", v)
+	}
+}
+
+func TestModule_MouseToSGR(t *testing.T) {
+	runtime, exports := testRequire(t)
+	_ = runtime.Set("tm", exports)
+
+	// Basic left click at (10, 5) → SGR: ESC[<0;11;6M
+	v, err := runtime.RunString(`
+		tm.mouseToSGR({type: 'MouseClick', button: 'left', x: 10, y: 5})
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	want := "\x1b[<0;11;6M"
+	if v.String() != want {
+		t.Errorf("got %q, want %q", v.String(), want)
+	}
+}
+
+func TestModule_MouseToSGR_WithOffset(t *testing.T) {
+	runtime, exports := testRequire(t)
+	_ = runtime.Set("tm", exports)
+
+	v, err := runtime.RunString(`
+		tm.mouseToSGR({type: 'MouseClick', button: 'left', x: 15, y: 20}, 10, 5)
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	want := "\x1b[<0;11;11M"
+	if v.String() != want {
+		t.Errorf("got %q, want %q", v.String(), want)
+	}
+}
+
+func TestModule_MouseToSGR_Modifiers(t *testing.T) {
+	runtime, exports := testRequire(t)
+	_ = runtime.Set("tm", exports)
+
+	v, err := runtime.RunString(`
+		tm.mouseToSGR({type: 'MouseClick', button: 'left', x: 0, y: 0, shift: true, ctrl: true})
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	// 0 + 4(shift) + 16(ctrl) = 20
+	want := "\x1b[<20;1;1M"
+	if v.String() != want {
+		t.Errorf("got %q, want %q", v.String(), want)
+	}
+}
+
+func TestModule_MouseToSGR_Release(t *testing.T) {
+	runtime, exports := testRequire(t)
+	_ = runtime.Set("tm", exports)
+
+	v, err := runtime.RunString(`
+		tm.mouseToSGR({type: 'MouseRelease', button: 'left', x: 5, y: 3})
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	want := "\x1b[<0;6;4m"
+	if v.String() != want {
+		t.Errorf("got %q, want %q", v.String(), want)
+	}
+}
+
+func TestModule_MouseToSGR_Null(t *testing.T) {
+	runtime, exports := testRequire(t)
+	_ = runtime.Set("tm", exports)
+
+	// Negative coordinate after offset → null.
+	v, err := runtime.RunString(`
+		tm.mouseToSGR({type: 'MouseClick', button: 'left', x: 3, y: 2}, 10, 0)
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	if !goja.IsNull(v) {
+		t.Errorf("expected null for negative offset, got %v", v)
+	}
+}
+
+func TestModule_SplitLayout(t *testing.T) {
+	runtime, exports := testRequire(t)
+	_ = runtime.Set("tm", exports)
+
+	v, err := runtime.RunString(`
+		var layout = tm.splitLayout({
+			totalChromeRows: 8,
+			topPaneHeaderRows: 2,
+			dividerRows: 1,
+			bottomPaneHeaderRows: 2,
+			leftChromeCol: 1,
+			minPaneRows: 3
+		});
+		var result = layout.compute(40, 80, 0.6);
+		JSON.stringify({
+			topRow: result.top.row,
+			topRows: result.top.rows,
+			bottomRow: result.bottom.row,
+			bottomRows: result.bottom.rows,
+			bottomCol: result.bottom.col
+		});
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	// vpHeight=32, topH=19, bottomContentRow=2+19+1+2=24, bottomContentH=32-19-1=12
+	want := `{"topRow":2,"topRows":19,"bottomRow":24,"bottomRows":12,"bottomCol":1}`
+	if v.String() != want {
+		t.Errorf("got %s, want %s", v.String(), want)
+	}
+}
+
+func TestModule_SplitLayout_OffsetMouse(t *testing.T) {
+	runtime, exports := testRequire(t)
+	_ = runtime.Set("tm", exports)
+
+	// Inside bottom pane.
+	v, err := runtime.RunString(`
+		var layout = tm.splitLayout({
+			totalChromeRows: 8, topPaneHeaderRows: 2,
+			dividerRows: 1, bottomPaneHeaderRows: 2,
+			leftChromeCol: 1, minPaneRows: 3
+		});
+		var result = layout.compute(40, 80, 0.6);
+		var hit = result.bottom.offsetMouse(26, 5);
+		JSON.stringify(hit);
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	// bottom starts at row=24, col=1 → local = (26-24, 5-1) = (2, 4)
+	want := `{"row":2,"col":4}`
+	if v.String() != want {
+		t.Errorf("inside: got %s, want %s", v.String(), want)
+	}
+
+	// Outside bottom pane → null.
+	v, err = runtime.RunString(`
+		var layout = tm.splitLayout({
+			totalChromeRows: 8, topPaneHeaderRows: 2,
+			dividerRows: 1, bottomPaneHeaderRows: 2,
+			leftChromeCol: 1, minPaneRows: 3
+		});
+		var result = layout.compute(40, 80, 0.6);
+		result.bottom.offsetMouse(0, 0);
+	`)
+	if err != nil {
+		t.Fatalf("RunString: %v", err)
+	}
+	if !goja.IsNull(v) {
+		t.Errorf("outside: expected null, got %v", v)
+	}
+}

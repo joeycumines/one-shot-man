@@ -63,17 +63,17 @@ func TestChunk16e_ComputeOffset_NarrowTerminal(t *testing.T) {
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	// height=12, ratio=0.6.
-	// vpHeight = max(3, 12 - 8) = max(3, 4) = 4
-	// wizardH = max(3, floor(4 * 0.6)) = max(3, 2) = 3
-	// wizardH = min(3, 4 - 3 - 1) = min(3, 0) = 0
-	// row = 5 + 0 = 5
+	// Go SplitLayout enforces minPaneRows=3 for both panes:
+	// viewport = max(3, 12 - 8) = 4
+	// topH = max(3, floor(4 * 0.6)) = 3, clamped to maxTop=max(3, 4-1-3)=3
+	// bottomContentRow = 2 + 3 + 1 + 2 = 8
 	val, err := evalJS(`JSON.stringify(prSplit._computeSplitPaneContentOffset({height: 12}))`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := val.(string)
-	if !strings.Contains(s, `"row":5`) {
-		t.Errorf("height=12 offset row should be 5: %s", s)
+	if !strings.Contains(s, `"row":8`) {
+		t.Errorf("height=12 offset row should be 8: %s", s)
 	}
 }
 
@@ -82,17 +82,17 @@ func TestChunk16e_ComputeOffset_TinyTerminal(t *testing.T) {
 	evalJS := prsplittest.NewTUIEngine(t)
 
 	// height=8, ratio=0.5.
-	// vpHeight = max(3, 8 - 8) = max(3, 0) = 3
-	// wizardH = max(3, floor(3 * 0.5)) = max(3, 1) = 3
-	// wizardH = min(3, 3 - 3 - 1) = min(3, -1) = -1
-	// row = 5 + (-1) = 4
+	// Go SplitLayout enforces minPaneRows=3:
+	// viewport = max(3, 8 - 8) = 3
+	// topH = max(3, floor(3 * 0.5)) = 3, maxTop=max(3, 3-1-3)=3
+	// bottomContentRow = 2 + 3 + 1 + 2 = 8
 	val, err := evalJS(`JSON.stringify(prSplit._computeSplitPaneContentOffset({height: 8, splitViewRatio: 0.5}))`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := val.(string)
-	if !strings.Contains(s, `"row":4`) {
-		t.Errorf("height=8 offset row should be 4: %s", s)
+	if !strings.Contains(s, `"row":8`) {
+		t.Errorf("height=8 offset row should be 8: %s", s)
 	}
 }
 

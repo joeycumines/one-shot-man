@@ -57,19 +57,26 @@
     var C = prSplit._TUI_CONSTANTS;
     var getInteractivePaneSession = prSplit._getInteractivePaneSession;
     var listSplitViewTabs = prSplit._listSplitViewTabs;
+    var termmux = require('osm:termmux');
 
     // Late-bound shim — handleMouseClick is defined in chunk 16f (loaded after this).
     function handleMouseClick(msg, s) { return prSplit._handleMouseClick(msg, s); }
 
+    // T327/T328: Split layout for pane geometry (delegated to Go termmux module).
+    var _splitLayout = termmux.splitLayout({
+        totalChromeRows: CHROME_ESTIMATE,
+        topPaneHeaderRows: 2,
+        dividerRows: 1,
+        bottomPaneHeaderRows: 2,
+        leftChromeCol: 1,
+        minPaneRows: 3
+    });
+
     // T327/T328: Compute screen offset where bottom pane terminal content begins.
-    // Layout: titleBar(1) + divider(1) + wizard(wizardH) + paneDivider(1) + borderTop(1) + titleLine(1).
     function computeSplitPaneContentOffset(s) {
         var h = s.height || C.DEFAULT_ROWS;
-        var vpHeight = Math.max(3, h - CHROME_ESTIMATE);
-        var minPaneH = 3;
-        var wizardH = Math.max(minPaneH, Math.floor(vpHeight * (s.splitViewRatio || 0.6)));
-        wizardH = Math.min(wizardH, vpHeight - minPaneH - 1);
-        return { row: 5 + wizardH, col: 1 };
+        var geo = _splitLayout.compute(h, s.width || 80, s.splitViewRatio || 0.6);
+        return { row: geo.bottom.row, col: geo.bottom.col };
     }
 
     // T327/T328: Write raw bytes to the child terminal of the active tab.

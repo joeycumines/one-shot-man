@@ -177,6 +177,76 @@ func Require(ctx context.Context, input io.Reader, output io.Writer) func(*goja.
 		_ = exports.Set("newSessionManager", func(call goja.FunctionCall) goja.Value {
 			return newSessionManager(ctx, runtime, call)
 		})
+
+		// ── Input encoding utilities ────────────────────────
+		// keyToTermBytes(key) → string | null
+		_ = exports.Set("keyToTermBytes", func(key string) goja.Value {
+			if s, ok := parent.KeyToTermBytes(key); ok {
+				return runtime.ToValue(s)
+			}
+			return goja.Null()
+		})
+
+		// mouseToSGR(event, offsetRow?, offsetCol?) → string | null
+		// event: {type, button, x, y, shift?, alt?, ctrl?}
+		_ = exports.Set("mouseToSGR", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 1 {
+				panic(runtime.NewTypeError("mouseToSGR requires at least 1 argument (event)"))
+			}
+			obj := call.Argument(0).ToObject(runtime)
+			ev := parent.MouseEvent{
+				Type:   parent.MouseEventType(obj.Get("type").String()),
+				Button: parent.MouseButton(obj.Get("button").String()),
+				X:      int(obj.Get("x").ToInteger()),
+				Y:      int(obj.Get("y").ToInteger()),
+			}
+			if v := obj.Get("shift"); v != nil && !goja.IsUndefined(v) {
+				ev.Shift = v.ToBoolean()
+			}
+			if v := obj.Get("alt"); v != nil && !goja.IsUndefined(v) {
+				ev.Alt = v.ToBoolean()
+			}
+			if v := obj.Get("ctrl"); v != nil && !goja.IsUndefined(v) {
+				ev.Ctrl = v.ToBoolean()
+			}
+			var offsetRow, offsetCol int
+			if len(call.Arguments) > 1 {
+				offsetRow = int(call.Argument(1).ToInteger())
+			}
+			if len(call.Arguments) > 2 {
+				offsetCol = int(call.Argument(2).ToInteger())
+			}
+			if s, ok := parent.MouseToSGR(ev, offsetRow, offsetCol); ok {
+				return runtime.ToValue(s)
+			}
+			return goja.Null()
+		})
+
+		// ── Layout utilities ────────────────────────────────
+		// splitLayout(config) → {compute(rows, cols, ratio) → {top, bottom}}
+		_ = exports.Set("splitLayout", func(call goja.FunctionCall) goja.Value {
+			if len(call.Arguments) < 1 {
+				panic(runtime.NewTypeError("splitLayout requires 1 argument (config)"))
+			}
+			obj := call.Argument(0).ToObject(runtime)
+			layout := parent.SplitLayout{
+				TotalChromeRows:      int(obj.Get("totalChromeRows").ToInteger()),
+				TopPaneHeaderRows:    int(obj.Get("topPaneHeaderRows").ToInteger()),
+				DividerRows:          int(obj.Get("dividerRows").ToInteger()),
+				BottomPaneHeaderRows: int(obj.Get("bottomPaneHeaderRows").ToInteger()),
+				LeftChromeCol:        int(obj.Get("leftChromeCol").ToInteger()),
+				MinPaneRows:          int(obj.Get("minPaneRows").ToInteger()),
+			}
+			result := runtime.NewObject()
+			_ = result.Set("compute", func(rows, cols int, ratio float64) goja.Value {
+				top, bottom := layout.Compute(rows, cols, ratio)
+				r := runtime.NewObject()
+				_ = r.Set("top", paneGeoToJS(runtime, top))
+				_ = r.Set("bottom", paneGeoToJS(runtime, bottom))
+				return r
+			})
+			return result
+		})
 	}
 }
 
@@ -196,6 +266,27 @@ func exitReasonString(r parent.ExitReason) string {
 	default:
 		return r.String()
 	}
+}
+
+// paneGeoToJS wraps a [parent.PaneGeometry] as a JS object with row, col,
+// rows, cols fields and an offsetMouse(screenRow, screenCol) method.
+func paneGeoToJS(runtime *goja.Runtime, g parent.PaneGeometry) *goja.Object {
+	obj := runtime.NewObject()
+	_ = obj.Set("row", g.Row)
+	_ = obj.Set("col", g.Col)
+	_ = obj.Set("rows", g.Rows)
+	_ = obj.Set("cols", g.Cols)
+	_ = obj.Set("offsetMouse", func(screenRow, screenCol int) goja.Value {
+		lr, lc, inside := g.OffsetMouse(screenRow, screenCol)
+		if !inside {
+			return goja.Null()
+		}
+		r := runtime.NewObject()
+		_ = r.Set("row", lr)
+		_ = r.Set("col", lc)
+		return r
+	})
+	return obj
 }
 
 // newCaptureSession creates a [parent.CaptureSession] from JS arguments and

@@ -11,6 +11,7 @@
     // Cross-chunk imports — libraries.
     var tea = prSplit._tea;
     var C = prSplit._TUI_CONSTANTS;
+    var termmux = require('osm:termmux');
 
     // Cross-chunk imports — state and handlers from chunks 13-14.
     var st = prSplit._state;
@@ -761,156 +762,31 @@
     };
 
     // Convert BubbleTea key string to terminal byte sequence for PTY forwarding.
-    // Returns the bytes as a string, or null if the key can't be converted.
-    //
-    // Key names match BubbleTea's KeyMsg.String() output (keys_gen.go).
+    // Delegates to the Go termmux module for the actual encoding.
     function keyToTermBytes(key) {
-        // Named special keys → terminal escape sequences.
-        switch (key) {
-            case 'enter':     return '\r';
-            case 'tab':       return '\t';
-            case 'shift+tab': return '\x1b[Z'; // T386: reverse tab
-            case 'backspace': return '\x7f';
-            // Note: BubbleTea sends ' ' (literal space) for space key,
-            // which is handled by the single-char fallback below.
-            case 'esc':       return '\x1b'; // T386: fixed — was 'escape'
-            case 'delete':    return '\x1b[3~';
-            case 'up':        return '\x1b[A';
-            case 'down':      return '\x1b[B';
-            case 'right':     return '\x1b[C';
-            case 'left':      return '\x1b[D';
-            case 'home':      return '\x1b[H';
-            case 'end':       return '\x1b[F';
-            case 'pgup':      return '\x1b[5~';
-            case 'pgdown':    return '\x1b[6~';
-            case 'insert':    return '\x1b[2~';
-            case 'f1':        return '\x1bOP';
-            case 'f2':        return '\x1bOQ';
-            case 'f3':        return '\x1bOR';
-            case 'f4':        return '\x1bOS';
-            case 'f5':        return '\x1b[15~';
-            case 'f6':        return '\x1b[17~';
-            case 'f7':        return '\x1b[18~';
-            case 'f8':        return '\x1b[19~';
-            case 'f9':        return '\x1b[20~';
-            case 'f10':       return '\x1b[21~';
-            case 'f11':       return '\x1b[23~';
-            case 'f12':       return '\x1b[24~';
-        }
-
-        // Ctrl+letter → control character (0x01-0x1A for a-z).
-        if (key.length > 5 && key.substring(0, 5) === 'ctrl+') {
-            var ch = key.substring(5);
-            if (ch.length === 1) {
-                var code = ch.charCodeAt(0);
-                // a-z → 0x01-0x1A
-                if (code >= 97 && code <= 122) {
-                    return String.fromCharCode(code - 96);
-                }
-                // A-Z → 0x01-0x1A
-                if (code >= 65 && code <= 90) {
-                    return String.fromCharCode(code - 64);
-                }
-            }
-        }
-
-        // T386: Modifier+navigation keys → xterm CSI {modifier} sequences.
-        // Format: ESC[1;{mod}{letter} where mod: 2=Shift, 5=Ctrl, 6=Ctrl+Shift.
-        // For tilde-style keys: ESC[{num};{mod}~ (pgup, pgdown, delete, insert).
-        var modNavMap = {
-            'up': 'A', 'down': 'B', 'right': 'C', 'left': 'D',
-            'home': 'H', 'end': 'F'
-        };
-        var modTildeMap = {
-            'pgup': '5', 'pgdown': '6', 'delete': '3', 'insert': '2'
-        };
-        var modPrefixes = [
-            {prefix: 'ctrl+shift+', mod: '6'},
-            {prefix: 'shift+', mod: '2'},
-            {prefix: 'ctrl+', mod: '5'}
-        ];
-        for (var mi = 0; mi < modPrefixes.length; mi++) {
-            var mp = modPrefixes[mi];
-            if (key.length > mp.prefix.length && key.substring(0, mp.prefix.length) === mp.prefix) {
-                var navKey = key.substring(mp.prefix.length);
-                if (modNavMap[navKey]) {
-                    return '\x1b[1;' + mp.mod + modNavMap[navKey];
-                }
-                if (modTildeMap[navKey]) {
-                    return '\x1b[' + modTildeMap[navKey] + ';' + mp.mod + '~';
-                }
-            }
-        }
-
-        // Alt+key → ESC prefix + key bytes.
-        if (key.length > 4 && key.substring(0, 4) === 'alt+') {
-            var inner = keyToTermBytes(key.substring(4));
-            if (inner !== null) {
-                return '\x1b' + inner;
-            }
-        }
-
-        // Paste content: bracketed paste "[content]" → just the content.
-        if (key.length > 2 && key.charAt(0) === '[' && key.charAt(key.length - 1) === ']') {
-            return key.substring(1, key.length - 1);
-        }
-
-        // Single printable character → send as-is.
-        if (key.length === 1) {
-            return key;
-        }
-
-        // Multi-character unknown keys (e.g., Unicode) → send as-is.
-        if (key.length > 1 && key.indexOf('+') === -1) {
-            return key;
-        }
-
-        return null;
+        return termmux.keyToTermBytes(key);
     }
 
     // Convert a BubbleTea mouse message to SGR mouse escape sequence bytes.
-    // offsetRow/offsetCol adjust coordinates so (0,0) maps to the pane origin.
-    // Returns the escape sequence string, or null if the event can't be mapped.
-    //
-    // SGR format: ESC[<Cb;Cx;CyM (press/motion) or ESC[<Cb;Cx;Cym (release)
-    //   Cb = button code + modifier bits
-    //   Cx = 1-based column, Cy = 1-based row
+    // Adapts BubbleTea's mod-array format to the termmux Go module.
     function mouseToTermBytes(msg, offsetRow, offsetCol) {
-        var x = msg.x - (offsetCol || 0);
-        var y = msg.y - (offsetRow || 0);
-        if (x < 0 || y < 0) return null;
-
-        // Map BubbleTea button string to SGR button code base value.
-        var btn;
-        switch (msg.button) {
-            case 'left':        btn = 0; break;
-            case 'middle':      btn = 1; break;
-            case 'right':       btn = 2; break;
-            case 'wheel up':    btn = 64; break;
-            case 'wheel down':  btn = 65; break;
-            case 'wheel left':  btn = 66; break;
-            case 'wheel right': btn = 67; break;
-            case 'backward':    btn = 128; break;
-            case 'forward':     btn = 129; break;
-            case 'none':        btn = 3; break;
-            default:            return null;
+        var ev = {
+            type: msg.type === 'MouseWheel' ? 'MouseClick' : msg.type,
+            button: msg.button,
+            x: msg.x,
+            y: msg.y
+        };
+        if (msg.mod) {
+            for (var i = 0; i < msg.mod.length; i++) {
+                if (msg.mod[i] === 'shift') ev.shift = true;
+                if (msg.mod[i] === 'alt') ev.alt = true;
+                if (msg.mod[i] === 'ctrl') ev.ctrl = true;
+            }
         }
-
-        // Modifier bits.
-        if (msg.mod && msg.mod.includes('shift')) btn += 4;
-        if (msg.mod && msg.mod.includes('alt'))   btn += 8;
-        if (msg.mod && msg.mod.includes('ctrl'))  btn += 16;
-
-        // Motion flag (bit 5).
-        if (msg.type === 'MouseMotion') btn += 32;
-
-        // SGR uses 1-based coordinates.
-        var cx = x + 1;
-        var cy = y + 1;
-
-        // Press/motion → 'M', release → 'm'.
-        var suffix = (msg.type === 'MouseRelease') ? 'm' : 'M';
-        return '\x1b[<' + btn + ';' + cx + ';' + cy + suffix;
+        if (msg.type === 'MouseMotion') {
+            ev.type = 'MouseMotion';
+        }
+        return termmux.mouseToSGR(ev, offsetRow || 0, offsetCol || 0);
     }
 
     // --- T46: Claude Question Detection ---

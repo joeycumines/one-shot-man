@@ -183,7 +183,7 @@
       "task": "Move input translation and pane geometry into a reusable termmux-facing layer",
       "description": "The fresh autopsy showed that output normalization lives in `internal/termmux`, but BubbleTea-event-to-terminal-byte translation and pane geometry still live in app-specific JS: `keyToTermBytes`, `mouseToTermBytes`, `computeSplitPaneContentOffset`, and the related routing in `pr_split_16d_tui_handlers_claude.js` / `pr_split_16e_tui_update.js`. Extract a reusable layer (Go, JS facade, or both) that owns keyboard translation, mouse translation, pane-coordinate transforms, and transform-aware geometry so `pr_split` consumes it instead of open-coding VT bytes and bottom-pane offsets. The result must be reusable outside `pr_split` and must explicitly support future arbitrary relayout / movable picture-in-picture work instead of hard-coding one bottom-pane layout.",
       "acceptance": "`pr_split` no longer owns the canonical implementations of key/mouse terminal translation or pane-coordinate math. The shared layer exposes reusable APIs for terminal input encoding and pane geometry/transform handling, and `pr_split` consumes those APIs. The design is capable of representing more than one fixed bottom-pane layout, and tests distinguish SessionManager routing from UI event translation clearly.",
-      "status": "Not Started"
+      "status": "In Progress"
     },
     {
       "task": "Collapse verify interaction modes into one canonical PTY path and explicit degraded fallback",

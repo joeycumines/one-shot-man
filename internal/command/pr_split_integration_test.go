@@ -800,6 +800,8 @@ func TestIntegration_SendToHandle_ObservedSubmissionRetry(t *testing.T) {
 			var calls = [];
 			var screen = 'Claude shell\n❯ classify these files';
 			var enterCount = 0;
+			prSplit._state = prSplit._state || {};
+			prSplit._state.claudeSessionID = 42;
 
 			var mockHandle = {
 				send: function(text) {
@@ -815,7 +817,10 @@ func TestIntegration_SendToHandle_ObservedSubmissionRetry(t *testing.T) {
 				}
 			};
 			globalThis.tuiMux = {
-				screenshot: function() { return screen; }
+				snapshot: function(id) {
+					if (id !== 42) return null;
+					return { plainText: screen };
+				}
 			};
 
 			prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 0;
@@ -830,6 +835,7 @@ func TestIntegration_SendToHandle_ObservedSubmissionRetry(t *testing.T) {
 			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
 
 			delete globalThis.tuiMux;
+			if (prSplit._state) prSplit._state.claudeSessionID = null;
 
 			return JSON.stringify({
 				error: result.error,
@@ -885,6 +891,8 @@ func TestIntegration_SendToHandle_ObservedSubmissionFailure(t *testing.T) {
 		(async function() {
 			var calls = [];
 			var screen = 'Claude shell\n❯ classify these files';
+			prSplit._state = prSplit._state || {};
+			prSplit._state.claudeSessionID = 42;
 
 			var mockHandle = {
 				send: function(text) {
@@ -892,7 +900,10 @@ func TestIntegration_SendToHandle_ObservedSubmissionFailure(t *testing.T) {
 				}
 			};
 			globalThis.tuiMux = {
-				screenshot: function() { return screen; }
+				snapshot: function(id) {
+					if (id !== 42) return null;
+					return { plainText: screen };
+				}
 			};
 
 			prSplit.SEND_TEXT_NEWLINE_DELAY_MS = 0;
@@ -907,6 +918,7 @@ func TestIntegration_SendToHandle_ObservedSubmissionFailure(t *testing.T) {
 			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
 
 			delete globalThis.tuiMux;
+			if (prSplit._state) prSplit._state.claudeSessionID = null;
 
 			return JSON.stringify({
 				error: result.error,
@@ -954,6 +966,8 @@ func TestIntegration_SendToHandle_PromptReadyTimeout(t *testing.T) {
 		(async function() {
 			var calls = [];
 			var screen = 'Claude booting...';
+			prSplit._state = prSplit._state || {};
+			prSplit._state.claudeSessionID = 42;
 
 			var mockHandle = {
 				send: function(text) {
@@ -961,7 +975,10 @@ func TestIntegration_SendToHandle_PromptReadyTimeout(t *testing.T) {
 				}
 			};
 			globalThis.tuiMux = {
-				screenshot: function() { return screen; }
+				snapshot: function(id) {
+					if (id !== 42) return null;
+					return { plainText: screen };
+				}
 			};
 
 			prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 20;
@@ -971,6 +988,7 @@ func TestIntegration_SendToHandle_PromptReadyTimeout(t *testing.T) {
 			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
 
 			delete globalThis.tuiMux;
+			if (prSplit._state) prSplit._state.claudeSessionID = null;
 
 			return JSON.stringify({
 				error: result.error,
@@ -1016,6 +1034,8 @@ func TestIntegration_SendToHandle_PromptSetupBlocker(t *testing.T) {
 				"Choose the text style that looks best with your terminal",
 				"❯ 1. Dark mode"
 			].join('\n');
+			prSplit._state = prSplit._state || {};
+			prSplit._state.claudeSessionID = 42;
 
 			var mockHandle = {
 				send: function(text) {
@@ -1023,7 +1043,10 @@ func TestIntegration_SendToHandle_PromptSetupBlocker(t *testing.T) {
 				}
 			};
 			globalThis.tuiMux = {
-				screenshot: function() { return screen; }
+				snapshot: function(id) {
+					if (id !== 42) return null;
+					return { plainText: screen };
+				}
 			};
 
 			prSplit.SEND_PROMPT_READY_TIMEOUT_MS = 50;
@@ -1033,6 +1056,7 @@ func TestIntegration_SendToHandle_PromptSetupBlocker(t *testing.T) {
 			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
 
 			delete globalThis.tuiMux;
+			if (prSplit._state) prSplit._state.claudeSessionID = null;
 
 			return JSON.stringify({
 				error: result.error,
@@ -1075,6 +1099,8 @@ func TestIntegration_SendToHandle_PromptReadyDelayed(t *testing.T) {
 			var calls = [];
 			var screenshotCalls = 0;
 			var screen = 'Claude booting...';
+			prSplit._state = prSplit._state || {};
+			prSplit._state.claudeSessionID = 42;
 
 			var mockHandle = {
 				send: function(text) {
@@ -1087,12 +1113,13 @@ func TestIntegration_SendToHandle_PromptReadyDelayed(t *testing.T) {
 				}
 			};
 			globalThis.tuiMux = {
-				screenshot: function() {
+				snapshot: function(id) {
+					if (id !== 42) return null;
 					screenshotCalls++;
 					if (screenshotCalls >= 3 && screen === 'Claude booting...') {
 						screen = 'Claude shell\n❯ ';
 					}
-					return screen;
+					return { plainText: screen };
 				}
 			};
 
@@ -1110,6 +1137,7 @@ func TestIntegration_SendToHandle_PromptReadyDelayed(t *testing.T) {
 			var result = await globalThis.prSplit.sendToHandle(mockHandle, 'classify these files');
 
 			delete globalThis.tuiMux;
+			if (prSplit._state) prSplit._state.claudeSessionID = null;
 
 			return JSON.stringify({
 				error: result.error,

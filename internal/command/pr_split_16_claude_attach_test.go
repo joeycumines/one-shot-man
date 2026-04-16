@@ -925,6 +925,62 @@ func TestChunk16_T46_PollDetectsQuestion(t *testing.T) {
 	}
 }
 
+// TestChunk16_T46_PollDetectsQuestion_UsesPinnedSessionActivity verifies that
+// question detection keys idle timing off the pinned Claude session even when
+// the active session reports conflicting activity.
+func TestChunk16_T46_PollDetectsQuestion_UsesPinnedSessionActivity(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 42;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = __mockCID;
+		prSplit._state.claudeExecutor = { handle: { isAlive: function() { return true; } } };
+		globalThis.tuiMux = {
+			hasChild: function() { return true; },
+			snapshot: function(id) {
+				if (id !== __mockCID) return { fullScreen: '', plainText: '' };
+				return {
+					fullScreen: 'screen-data',
+					plainText: 'Do you want to continue? (y/n)'
+				};
+			},
+			isDone: function(id) { return false; },
+			activeID: function() { return 7; },
+			activate: function(id) {},
+			input: function(data) {},
+			lastActivityMs: function(id) {
+				if (id !== __mockCID) return 100;
+				return 5000;
+			}
+		};
+
+		var s = initState('PLAN_GENERATION');
+		s.splitViewEnabled = true;
+		s.isProcessing = true;
+		s.claudeLastQuestionCheckMs = 0;
+
+		var r = update({type: 'Tick', id: 'claude-screenshot'}, s);
+		s = r[0];
+
+		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
+		else delete globalThis.tuiMux;
+		if (prSplit._state) prSplit._state.claudeSessionID = null;
+		delete globalThis.prSplit._state.claudeExecutor;
+
+		if (!s.claudeQuestionDetected) return 'FAIL: should detect question from pinned session idle time';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("poll detects question with pinned session activity: %v", raw)
+	}
+}
+
 // TestChunk16_T46_PollThrottlesDetection verifies that detection is throttled
 // to every 2 seconds.
 func TestChunk16_T46_PollThrottlesDetection(t *testing.T) {
@@ -1221,19 +1277,26 @@ func TestChunk16_T46_CtrlUClearsInput(t *testing.T) {
 	}
 }
 
-// TestChunk16_T46_EnterSendsToClaudePTY verifies that pressing Enter sends
-// the response to Claude's PTY via writeToChild and records the conversation.
-func TestChunk16_T46_EnterSendsToClaudePTY(t *testing.T) {
+// TestChunk16_T46_EnterSendsToClaudeSession verifies that pressing Enter sends
+// the response through the pinned Claude session proxy and records the conversation.
+func TestChunk16_T46_EnterSendsToClaudeSession(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var sentData = [];
+		var activations = [];
+		var active = 7;
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 42;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = __mockCID;
 		globalThis.tuiMux = {
-			writeToChild: function(data) { sentData.push(data); },
-			hasChild: function() { return true; },
-			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; }
+			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			isDone: function(id) { return false; },
+			activeID: function() { return active; },
+			activate: function(id) { activations.push(id); active = id; },
+			input: function(data) { sentData.push(data); }
 		};
 
 		var s = initState('PLAN_GENERATION');
@@ -1247,11 +1310,14 @@ func TestChunk16_T46_EnterSendsToClaudePTY(t *testing.T) {
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
+		if (prSplit._state) prSplit._state.claudeSessionID = null;
 
 		var errors = [];
-		// Verify PTY write.
+		// Verify pinned Claude session write.
 		if (sentData.length !== 1) errors.push('sentData.length: ' + sentData.length);
 		if (sentData[0] !== 'yes\r') errors.push('sentData[0]: ' + JSON.stringify(sentData[0]));
+		if (JSON.stringify(activations) !== '[42,7]') errors.push('activations: ' + JSON.stringify(activations));
+		if (active !== 7) errors.push('active not restored: ' + active);
 		// Verify state cleared.
 		if (s.claudeQuestionDetected) errors.push('detected not cleared');
 		if (s.claudeQuestionInputActive) errors.push('inputActive not cleared');
@@ -1270,7 +1336,7 @@ func TestChunk16_T46_EnterSendsToClaudePTY(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("enter sends to Claude PTY: %v", raw)
+		t.Errorf("enter sends to Claude session: %v", raw)
 	}
 }
 
@@ -1283,10 +1349,15 @@ func TestChunk16_T46_EnterEmptyDoesNotSend(t *testing.T) {
 	raw, err := evalJS(`(function() {
 		var sentData = [];
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 42;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = __mockCID;
 		globalThis.tuiMux = {
-			writeToChild: function(data) { sentData.push(data); },
-			hasChild: function() { return true; },
-			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; }
+			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			isDone: function(id) { return false; },
+			activeID: function() { return 0; },
+			activate: function(id) {},
+			input: function(data) { sentData.push(data); }
 		};
 
 		var s = initState('PLAN_GENERATION');
@@ -1299,6 +1370,7 @@ func TestChunk16_T46_EnterEmptyDoesNotSend(t *testing.T) {
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
+		if (prSplit._state) prSplit._state.claudeSessionID = null;
 
 		if (sentData.length !== 0) return 'FAIL: should not send whitespace-only (' + sentData.length + ' sends)';
 		if (s.claudeConversations.length !== 0) return 'FAIL: should not record empty convo';
@@ -1320,10 +1392,15 @@ func TestChunk16_T46_ConversationHistoryAccumulates(t *testing.T) {
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 42;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = __mockCID;
 		globalThis.tuiMux = {
-			writeToChild: function(data) {},
-			hasChild: function() { return true; },
-			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; }
+			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			isDone: function(id) { return false; },
+			activeID: function() { return 0; },
+			activate: function(id) {},
+			input: function(data) {}
 		};
 
 		var s = initState('PLAN_GENERATION');
@@ -1346,6 +1423,7 @@ func TestChunk16_T46_ConversationHistoryAccumulates(t *testing.T) {
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
+		if (prSplit._state) prSplit._state.claudeSessionID = null;
 
 		if (s.claudeConversations.length !== 2) return 'FAIL: got ' + s.claudeConversations.length + ' conversations';
 		if (s.claudeConversations[0].question !== 'Q1?') return 'FAIL: first Q: ' + s.claudeConversations[0].question;
@@ -1485,10 +1563,15 @@ func TestChunk16_T46_EnterResetsThrottleTimestamp(t *testing.T) {
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 42;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = __mockCID;
 		globalThis.tuiMux = {
-			writeToChild: function(data) {},
-			hasChild: function() { return true; },
-			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; }
+			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			isDone: function(id) { return false; },
+			activeID: function() { return 0; },
+			activate: function(id) {},
+			input: function(data) {}
 		};
 
 		var s = initState('PLAN_GENERATION');
@@ -1504,6 +1587,7 @@ func TestChunk16_T46_EnterResetsThrottleTimestamp(t *testing.T) {
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
+		if (prSplit._state) prSplit._state.claudeSessionID = null;
 
 		if (s.claudeLastQuestionCheckMs < before) return 'FAIL: throttle not reset: ' + s.claudeLastQuestionCheckMs;
 		return 'OK';
@@ -1653,10 +1737,15 @@ func TestChunk16_T46_ConversationHistoryCap(t *testing.T) {
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 42;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = __mockCID;
 		globalThis.tuiMux = {
-			writeToChild: function(data) {},
-			hasChild: function() { return true; },
-			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; }
+			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			isDone: function(id) { return false; },
+			activeID: function() { return 0; },
+			activate: function(id) {},
+			input: function(data) {}
 		};
 
 		var s = initState('PLAN_GENERATION');
@@ -1886,18 +1975,25 @@ func TestChunk16_T393_OpenClaudeConvoWithNullHandle(t *testing.T) {
 	}
 }
 
-// TestChunk16_T393_WriteToChildErrorSurfaced verifies that writeToChild
-// failures are surfaced to the user (Bug #5).
-func TestChunk16_T393_WriteToChildErrorSurfaced(t *testing.T) {
+// TestChunk16_T393_ClaudeWriteErrorSurfaced verifies that pinned Claude
+// session write failures are surfaced to the user (Bug #5).
+func TestChunk16_T393_ClaudeWriteErrorSurfaced(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var activations = [];
+		var active = 7;
+		var __mockCID = 42;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = __mockCID;
 		globalThis.tuiMux = {
-			writeToChild: function(data) { throw new Error('PTY closed'); },
-			hasChild: function() { return true; },
-			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; }
+			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			isDone: function(id) { return false; },
+			activeID: function() { return active; },
+			activate: function(id) { activations.push(id); active = id; },
+			input: function(data) { throw new Error('PTY closed'); }
 		};
 
 		var s = initState('PLAN_GENERATION');
@@ -1912,6 +2008,7 @@ func TestChunk16_T393_WriteToChildErrorSurfaced(t *testing.T) {
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
+		if (prSplit._state) prSplit._state.claudeSessionID = null;
 
 		var errors = [];
 		// T393: Error should be surfaced via claudeQuestionLine, and
@@ -1919,28 +2016,35 @@ func TestChunk16_T393_WriteToChildErrorSurfaced(t *testing.T) {
 		if (s.claudeQuestionLine.indexOf('Error') < 0) errors.push('error not surfaced: ' + JSON.stringify(s.claudeQuestionLine));
 		if (s.claudeQuestionInputActive) errors.push('inputActive should be false after error');
 		if (!s.claudeQuestionDetected) errors.push('claudeQuestionDetected should stay true to render error');
+		if (JSON.stringify(activations) !== '[42,7]') errors.push('activations: ' + JSON.stringify(activations));
+		if (active !== 7) errors.push('active not restored: ' + active);
 		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
 	})()`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("T393 writeToChild error surfaced: %v", raw)
+		t.Errorf("T393 Claude write error surfaced: %v", raw)
 	}
 }
 
-// TestChunk16_T393_WriteToChildMissingSurfaced verifies that a missing
-// tuiMux.writeToChild is surfaced as an error (Bug #5).
-func TestChunk16_T393_WriteToChildMissingSurfaced(t *testing.T) {
+// TestChunk16_T393_ClaudeSessionMissingSurfaced verifies that a missing
+// pinned Claude session is surfaced as an error (Bug #5).
+func TestChunk16_T393_ClaudeSessionMissingSurfaced(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
-		// tuiMux exists but without writeToChild.
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = null;
+		// tuiMux exists, but Claude has no pinned session.
 		globalThis.tuiMux = {
-			hasChild: function() { return true; },
-			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; }
+			snapshot: function(id) { return { fullScreen: '', plainText: '' }; },
+			isDone: function(id) { return false; },
+			activeID: function() { return 0; },
+			activate: function(id) {},
+			input: function(data) {}
 		};
 
 		var s = initState('PLAN_GENERATION');
@@ -1954,6 +2058,7 @@ func TestChunk16_T393_WriteToChildMissingSurfaced(t *testing.T) {
 
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
+		if (prSplit._state) prSplit._state.claudeSessionID = null;
 
 		var errors = [];
 		if (s.claudeQuestionLine.indexOf('not connected') < 0) errors.push('missing error: ' + JSON.stringify(s.claudeQuestionLine));
@@ -1965,6 +2070,6 @@ func TestChunk16_T393_WriteToChildMissingSurfaced(t *testing.T) {
 		t.Fatal(err)
 	}
 	if raw != "OK" {
-		t.Errorf("T393 writeToChild missing surfaced: %v", raw)
+		t.Errorf("T393 Claude session missing surfaced: %v", raw)
 	}
 }

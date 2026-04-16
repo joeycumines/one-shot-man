@@ -185,18 +185,29 @@ func TestRunProgram_Options(t *testing.T) {
 			quit := map[string]any{"_cmdType": "quit"}
 			return vm.NewArray(args[1], vm.ToValue(quit)), nil
 		},
-		viewFn: createViewFn(vm, func(state goja.Value) string { return "" }),
+		viewFn: func(this goja.Value, args ...goja.Value) (goja.Value, error) {
+			view := vm.NewObject()
+			_ = view.Set("content", "options output")
+			_ = view.Set("altScreen", true)
+			_ = view.Set("mouseMode", "allMotion")
+			return view, nil
+		},
 		state:  vm.NewObject(),
 	}
 
 	model.jsRunner = &SyncJSRunner{Runtime: vm}
 
-	var input bytes.Buffer
-	var output bytes.Buffer
-	manager := NewManager(context.Background(), &input, &output, model.jsRunner, nil, nil)
-
 	master, slave := openPty(t)
 	defer master.Close()
+	// Use dup'd FD for bubbletea to avoid data race between Close and
+	// bubbletea's internal handleResize goroutine calling Fd().
+	slaveFd, dupErr := syscall.Dup(int(slave.Fd()))
+	require.NoError(t, dupErr)
+	slaveForBT := os.NewFile(uintptr(slaveFd), slave.Name())
+	slave.Close()
+
+	manager := NewManager(context.Background(), slaveForBT, slaveForBT, model.jsRunner, nil, nil)
+
 	// Start reading from the master end *before* running the program so we reliably capture output written while the program runs.
 	buf := &bytes.Buffer{}
 	done := make(chan struct{})
@@ -209,8 +220,10 @@ func TestRunProgram_Options(t *testing.T) {
 	err := manager.runProgram(model)
 	require.NoError(t, err)
 
-	// Close slave to signal EOF to master and allow the reader to finish
-	_ = slave.Close()
+	// Allow bubbletea's internal goroutines (handleResize) to finish before
+	// closing PTY fd, then signal EOF to master so reader can finish.
+	time.Sleep(50 * time.Millisecond)
+	_ = slaveForBT.Close()
 
 	select {
 	case <-done:

@@ -208,11 +208,12 @@
             }
         }
         // No synchronous detach. When the child PTY closes, the session
-        // model fires Done() (event-driven) and session().isDone() returns
-        // true. The pipeline and TUI poll isDone() directly — the old
+        // model fires Done() (event-driven) and tuiMux.isDone(claudeSessionID)
+        // returns true. The pipeline and TUI poll the pinned SessionManager
+        // ID directly — the old
         // st.claudeCrashDetected flag is no longer needed.
         if (typeof tuiMux !== 'undefined' && tuiMux) {
-            log.printf('auto-split cleanupExecutor: child closed — session().isDone() will signal completion');
+            log.printf('auto-split cleanupExecutor: child closed — pinned isDone() will signal completion');
         }
         log.printf('auto-split cleanupExecutor: done');
     }

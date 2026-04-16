@@ -150,7 +150,11 @@ func TestChunk14b_GetActivityInfo(t *testing.T) {
 	})
 
 	t.Run("negative ms — no output yet", func(t *testing.T) {
-		_, err := evalJS(`globalThis.tuiMux = { lastActivityMs: function() { return -1; } };`)
+		_, err := evalJS(`
+			prSplit._state = prSplit._state || {};
+			prSplit._state.claudeSessionID = 42;
+			globalThis.tuiMux = { lastActivityMs: function(id) { return -1; } };
+		`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -165,7 +169,11 @@ func TestChunk14b_GetActivityInfo(t *testing.T) {
 	})
 
 	t.Run("live — under 1s", func(t *testing.T) {
-		_, err := evalJS(`globalThis.tuiMux = { lastActivityMs: function() { return 500; } };`)
+		_, err := evalJS(`
+			prSplit._state = prSplit._state || {};
+			prSplit._state.claudeSessionID = 42;
+			globalThis.tuiMux = { lastActivityMs: function(id) { return 500; } };
+		`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -180,7 +188,11 @@ func TestChunk14b_GetActivityInfo(t *testing.T) {
 	})
 
 	t.Run("live — 1s", func(t *testing.T) {
-		_, err := evalJS(`globalThis.tuiMux = { lastActivityMs: function() { return 1500; } };`)
+		_, err := evalJS(`
+			prSplit._state = prSplit._state || {};
+			prSplit._state.claudeSessionID = 42;
+			globalThis.tuiMux = { lastActivityMs: function(id) { return 1500; } };
+		`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -196,7 +208,11 @@ func TestChunk14b_GetActivityInfo(t *testing.T) {
 	})
 
 	t.Run("idle — 5s", func(t *testing.T) {
-		_, err := evalJS(`globalThis.tuiMux = { lastActivityMs: function() { return 5000; } };`)
+		_, err := evalJS(`
+			prSplit._state = prSplit._state || {};
+			prSplit._state.claudeSessionID = 42;
+			globalThis.tuiMux = { lastActivityMs: function(id) { return 5000; } };
+		`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -211,7 +227,11 @@ func TestChunk14b_GetActivityInfo(t *testing.T) {
 	})
 
 	t.Run("quiet — 30s", func(t *testing.T) {
-		_, err := evalJS(`globalThis.tuiMux = { lastActivityMs: function() { return 30000; } };`)
+		_, err := evalJS(`
+			prSplit._state = prSplit._state || {};
+			prSplit._state.claudeSessionID = 42;
+			globalThis.tuiMux = { lastActivityMs: function(id) { return 30000; } };
+		`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -226,7 +246,11 @@ func TestChunk14b_GetActivityInfo(t *testing.T) {
 	})
 
 	t.Run("quiet — 120s in minutes", func(t *testing.T) {
-		_, err := evalJS(`globalThis.tuiMux = { lastActivityMs: function() { return 120000; } };`)
+		_, err := evalJS(`
+			prSplit._state = prSplit._state || {};
+			prSplit._state.claudeSessionID = 42;
+			globalThis.tuiMux = { lastActivityMs: function(id) { return 120000; } };
+		`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -237,6 +261,30 @@ func TestChunk14b_GetActivityInfo(t *testing.T) {
 		s, _ := val.(string)
 		if !strings.Contains(s, `"label":"quiet (2m ago)"`) {
 			t.Errorf("expected 'quiet (2m ago)', got: %s", s)
+		}
+	})
+
+	t.Run("prefers pinned session activity over active session activity", func(t *testing.T) {
+		_, err := evalJS(`
+			prSplit._state = prSplit._state || {};
+			prSplit._state.claudeSessionID = 42;
+			globalThis.tuiMux = {
+				lastActivityMs: function(id) {
+					if (id !== 42) return 30000;
+					return 500;
+				}
+			};
+		`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		val, err := evalJS(`JSON.stringify(prSplit._getActivityInfo())`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s, _ := val.(string)
+		if !strings.Contains(s, `"label":"LIVE (<1s ago)"`) {
+			t.Errorf("expected pinned session activity to win over active-session activity, got: %s", s)
 		}
 	})
 
@@ -260,8 +308,14 @@ func TestChunk14b_GetLastOutputLines(t *testing.T) {
 		}
 	})
 
-	t.Run("null screenshot returns empty", func(t *testing.T) {
-		_, err := evalJS(`globalThis.tuiMux = { screenshot: function() { return null; } };`)
+	t.Run("missing pinned Claude session returns empty", func(t *testing.T) {
+		_, err := evalJS(`
+			prSplit._state = prSplit._state || {};
+			prSplit._state.claudeSessionID = null;
+			globalThis.tuiMux = {
+				screenshot: function() { throw new Error('legacy fallback should not run'); }
+			};
+		`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -275,7 +329,13 @@ func TestChunk14b_GetLastOutputLines(t *testing.T) {
 	})
 
 	t.Run("trims trailing empty lines", func(t *testing.T) {
-		_, err := evalJS(`globalThis.tuiMux = { screenshot: function() { return 'line1\nline2\nline3\n\n\n'; } };`)
+		_, err := evalJS(`
+			prSplit._state = prSplit._state || {};
+			prSplit._state.claudeSessionID = 42;
+			globalThis.tuiMux = {
+				snapshot: function(id) { return { plainText: 'line1\nline2\nline3\n\n\n' }; }
+			};
+		`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -290,7 +350,13 @@ func TestChunk14b_GetLastOutputLines(t *testing.T) {
 	})
 
 	t.Run("slices to last N", func(t *testing.T) {
-		_, err := evalJS(`globalThis.tuiMux = { screenshot: function() { return 'a\nb\nc\nd\ne'; } };`)
+		_, err := evalJS(`
+			prSplit._state = prSplit._state || {};
+			prSplit._state.claudeSessionID = 42;
+			globalThis.tuiMux = {
+				snapshot: function(id) { return { plainText: 'a\nb\nc\nd\ne' }; }
+			};
+		`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -304,8 +370,14 @@ func TestChunk14b_GetLastOutputLines(t *testing.T) {
 		}
 	})
 
-	t.Run("screenshot error returns unavailable", func(t *testing.T) {
-		_, err := evalJS(`globalThis.tuiMux = { screenshot: function() { throw new Error('fail'); } };`)
+	t.Run("snapshot error returns unavailable", func(t *testing.T) {
+		_, err := evalJS(`
+			prSplit._state = prSplit._state || {};
+			prSplit._state.claudeSessionID = 42;
+			globalThis.tuiMux = {
+				snapshot: function(id) { throw new Error('fail'); }
+			};
+		`)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -321,6 +393,7 @@ func TestChunk14b_GetLastOutputLines(t *testing.T) {
 
 	// Clean up.
 	_, _ = evalJS(`delete globalThis.tuiMux;`)
+	_, _ = evalJS(`if (prSplit._state) prSplit._state.claudeSessionID = null;`)
 }
 
 // --- Chunk 14b: _renderHudStatusLine ---
@@ -346,9 +419,11 @@ func TestChunk14b_RenderHudStatusLine(t *testing.T) {
 
 	// With tuiMux mock providing activity and screenshot.
 	_, err = evalJS(`
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = 42;
 		globalThis.tuiMux = {
 			lastActivityMs: function() { return 500; },
-			screenshot: function() { return 'hello world\n'; }
+			snapshot: function(id) { return { plainText: 'hello world\n' }; }
 		};
 	`)
 	if err != nil {
@@ -369,6 +444,7 @@ func TestChunk14b_RenderHudStatusLine(t *testing.T) {
 
 	// Clean up.
 	_, _ = evalJS(`delete globalThis.tuiMux;`)
+	_, _ = evalJS(`if (prSplit._state) prSplit._state.claudeSessionID = null;`)
 }
 
 // --- Chunk 14b: _renderHudStatusLine truncates long output ---
@@ -379,11 +455,13 @@ func TestChunk14b_RenderHudStatusLine_Truncation(t *testing.T) {
 
 	// Create a long screenshot line (>30 chars).
 	_, err := evalJS(`
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = 42;
 		globalThis.tuiMux = {
 			lastActivityMs: function() { return 100; },
-			screenshot: function() {
+			snapshot: function(id) {
 				var s = ''; for (var i = 0; i < 50; i++) s += 'X';
-				return s;
+				return { plainText: s };
 			}
 		};
 	`)
@@ -407,4 +485,5 @@ func TestChunk14b_RenderHudStatusLine_Truncation(t *testing.T) {
 
 	// Clean up.
 	_, _ = evalJS(`delete globalThis.tuiMux;`)
+	_, _ = evalJS(`if (prSplit._state) prSplit._state.claudeSessionID = null;`)
 }

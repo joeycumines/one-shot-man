@@ -478,7 +478,7 @@
 
         // Step 2b: Dismiss Ollama launcher menu if present.
         // Ollama shows a "Run a model" launcher screen before the model
-        // selection menu.  We detect it via tuiMux.screenshot() and send
+        // selection menu.  We detect it via the pinned Claude snapshot and send
         // the appropriate dismissal keystrokes.  For non-Ollama providers
         // this block is a no-op.
         if (claudeExecutor && claudeExecutor.resolved &&

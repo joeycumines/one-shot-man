@@ -1137,8 +1137,8 @@
 
                 var idleMs46 = 0;
                 try {
-                    if (typeof tuiMux.lastActivityMs === 'function') {
-                        idleMs46 = tuiMux.lastActivityMs();
+                    if (typeof prSplit._readClaudeActivityMs === 'function') {
+                        idleMs46 = prSplit._readClaudeActivityMs();
                     }
                 } catch (e46) {
                     // Swallow — may fail if child ended.

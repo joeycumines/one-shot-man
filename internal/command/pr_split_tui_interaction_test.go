@@ -126,7 +126,7 @@ func testState(splitEnabled bool, focus, tab string) string {
 
 // ── TestKeystrokeForwardingToPTY ─────────────────────────────────────────────
 // End-to-end: BubbleTea Key message → wizardUpdateImpl → handleKeyMessage →
-// keyToTermBytes → getInteractivePaneSession → session().write → mgr.Input →
+// keyToTermBytes → getInteractivePaneSession → pinned session proxy write() → mgr.Input →
 // InteractiveSession.Write.
 //
 // Verifies that a printable key ('x') and a special key ('enter') are
@@ -229,7 +229,7 @@ func TestKeystrokeForwardingToPTY(t *testing.T) {
 
 // ── TestMouseForwardingToPTY ─────────────────────────────────────────────────
 // End-to-end: BubbleTea Mouse message → wizardUpdateImpl → handleMouseMessage
-// → mouseToTermBytes → writeMouseToPane → session.write → mgr.Input →
+// → mouseToTermBytes → writeMouseToPane → pinned session proxy write() → mgr.Input →
 // InteractiveSession.Write.
 //
 // Verifies that a mouse motion event in the Claude pane generates the
@@ -307,7 +307,7 @@ func TestMouseForwardingToPTY(t *testing.T) {
 
 // ── TestResizePropagation ────────────────────────────────────────────────────
 // End-to-end: BubbleTea WindowSize message → wizardUpdateImpl →
-// handleWindowResize → session.resize() per tab → mgr.Resize() for VTerm.
+// handleWindowResize → pinned session proxy resize() per tab → mgr.Resize() for VTerm.
 //
 // Verifies that a resize event propagates through the JS handler into
 // the SessionManager, which in turn calls InteractiveSession.Resize on
@@ -342,7 +342,7 @@ func TestResizePropagation(t *testing.T) {
 
 	// Send a WindowSize message to trigger handleWindowResize.
 	// handleWindowResize calculates pane dimensions and calls:
-	//   1. session.resize(paneRows, paneCols) for each interactive tab
+	//   1. the pinned interactive session proxy resize(paneRows, paneCols) for each interactive tab
 	//   2. tuiMux.resize(paneRows, paneCols) to sync SessionManager VTerm
 	//
 	// With width=160, height=50, CHROME_ESTIMATE=8, splitViewRatio=0.6:
@@ -360,9 +360,9 @@ func TestResizePropagation(t *testing.T) {
 		t.Fatalf("wizardUpdateImpl(WindowSize): %v", err)
 	}
 
-	// The JS handler calls session.resize(paneRows, paneCols) for the
-	// 'claude' tab via getInteractivePaneSession → tuiMux.session().
-	// tuiMux.session().resize calls mgr.Resize which propagates to all
+	// The JS handler calls resize(paneRows, paneCols) on the pinned
+	// Claude session proxy via getInteractivePaneSession.
+	// That proxy uses explicit activation + mgr.Resize, which propagates to all
 	// sessions, including our recording session.
 	resizes := rec.getResizes()
 	if len(resizes) == 0 {

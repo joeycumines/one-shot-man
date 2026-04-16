@@ -17,7 +17,7 @@ import (
 //   - Verify tab + activeVerifySession: non-reserved keys → session.write()
 //   - Verify tab (interactive): non-reserved keys → session.write()
 //   - Output tab:                       read-only, keys consumed (no forwarding)
-//   - Claude tab:                       non-reserved keys → tuiMux.writeToChild()
+//   - Claude tab:                       non-reserved keys → pinned Claude session write()
 //   - Reserved keys (ctrl+tab, ctrl+o): always handled by split-view controls
 //   - Wizard focus:                     all keys go to wizard, not terminal
 // ---------------------------------------------------------------------------

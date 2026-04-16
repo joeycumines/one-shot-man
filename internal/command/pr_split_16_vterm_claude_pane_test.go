@@ -10,7 +10,7 @@ import (
 // VTerm Integration Tests: Claude Pane Rendering
 //
 // These tests verify the Claude pane rendering pipeline:
-//   tuiMux.childScreen() → pollClaudeScreenshot → state fields →
+//   tuiMux.snapshot(claudeSessionID) → pollClaudeScreenshot → state fields →
 //   renderClaudePane → _wizardView (split-view layout)
 //
 // All tests use mock tuiMux objects at the JS layer — no real process, no

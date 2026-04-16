@@ -538,10 +538,10 @@
     // _getActivityInfo returns { icon, label, ms } describing child activity.
     function _getActivityInfo() {
         if (typeof tuiMux === 'undefined' || !tuiMux ||
-            typeof tuiMux.lastActivityMs !== 'function') {
+            typeof prSplit._readClaudeActivityMs !== 'function') {
             return { icon: '\u2753', label: 'unknown', ms: -1 }; // ❓
         }
-        var ms = tuiMux.lastActivityMs();
+        var ms = prSplit._readClaudeActivityMs();
         if (ms < 0) {
             return { icon: '\u23f8\ufe0f', label: 'no output yet', ms: ms }; // ⏸️
         }
@@ -559,19 +559,11 @@
 
     // _getLastOutputLines extracts the last N non-empty lines from VTerm.
     function _getLastOutputLines(n) {
-        if (typeof tuiMux === 'undefined' || !tuiMux) {
+        if (typeof prSplit._readClaudePlainText !== 'function') {
             return [];
         }
         try {
-            // Prefer pinned Claude SessionID for deterministic reads.
-            var screen = '';
-            var cid = prSplit._state && prSplit._state.claudeSessionID;
-            if (cid && typeof tuiMux.snapshot === 'function') {
-                var snap = tuiMux.snapshot(cid);
-                screen = snap ? (snap.plainText || '') : '';
-            } else if (typeof tuiMux.screenshot === 'function') {
-                screen = tuiMux.screenshot() || '';
-            }
+            var screen = prSplit._readClaudePlainText();
             if (!screen) return [];
             var lines = screen.split('\n');
             // Remove trailing empty lines.

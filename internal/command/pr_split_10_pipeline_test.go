@@ -608,7 +608,7 @@ func TestAnchorPipeline_FindPromptMarker(t *testing.T) {
 	})
 }
 
-// --- captureInputAnchors (with mocked tuiMux.screenshot) ---
+// --- captureInputAnchors (with mocked pinned Claude snapshots) ---
 
 func TestAnchorPipeline_CaptureInputAnchors(t *testing.T) {
 	t.Parallel()
@@ -616,9 +616,15 @@ func TestAnchorPipeline_CaptureInputAnchors(t *testing.T) {
 
 	// Install a mock tuiMux that returns controlled screenshots.
 	_, err := evalJS(`
+		globalThis.prSplit = globalThis.prSplit || {};
+		globalThis.prSplit._state = globalThis.prSplit._state || {};
+		globalThis.prSplit._state.claudeSessionID = 42;
 		globalThis.tuiMux = {
 			_screen: '',
-			screenshot: function() { return tuiMux._screen; }
+			snapshot: function(id) {
+				if (id !== 42) return null;
+				return { plainText: tuiMux._screen };
+			}
 		};
 		true
 	`)
@@ -821,9 +827,15 @@ func TestAnchorPipeline_SendToHandle_MockedTuiMux_Stable(t *testing.T) {
 	_, err := evalJS(`
 		var __sends = [];
 		var __mockHandle = { send: function(d) { __sends.push(d); } };
+		globalThis.prSplit = globalThis.prSplit || {};
+		globalThis.prSplit._state = globalThis.prSplit._state || {};
+		globalThis.prSplit._state.claudeSessionID = 42;
 		globalThis.tuiMux = {
 			_screen: '❯ ',
-			screenshot: function() { return tuiMux._screen; }
+			snapshot: function(id) {
+				if (id !== 42) return null;
+				return { plainText: tuiMux._screen };
+			}
 		};
 		// Fast timeouts for testing.
 		prSplit.SEND_PRE_SUBMIT_STABLE_TIMEOUT_MS = 200;
@@ -886,12 +898,16 @@ func TestAnchorPipeline_SendToHandle_Timeout_UnstableAnchors(t *testing.T) {
 	// Use line lengths that change every call to prevent stableKey convergence.
 	_, err := evalJS(`
 		var __jitterCount = 0;
+		globalThis.prSplit = globalThis.prSplit || {};
+		globalThis.prSplit._state = globalThis.prSplit._state || {};
+		globalThis.prSplit._state.claudeSessionID = 42;
 		globalThis.tuiMux = {
-			screenshot: function() {
+			snapshot: function(id) {
+				if (id !== 42) return null;
 				__jitterCount++;
 				// Pad to different lengths so bottom offsets never stabilize.
 				var pad = new Array(__jitterCount + 1).join('x');
-				return pad + '\n❯ prompt';
+				return { plainText: pad + '\n❯ prompt' };
 			}
 		};
 		var __mockHandle = { send: function(d) {} };
@@ -957,10 +973,16 @@ func TestAnchorPipeline_CaptureScreenshot_ThrowingMux(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
-	// When screenshot() throws, captureScreenshot returns null gracefully.
+	// When pinned snapshot() throws, captureScreenshot returns null gracefully.
 	_, err := evalJS(`
+		globalThis.prSplit = globalThis.prSplit || {};
+		globalThis.prSplit._state = globalThis.prSplit._state || {};
+		globalThis.prSplit._state.claudeSessionID = 42;
 		globalThis.tuiMux = {
-			screenshot: function() { throw new Error('PTY disconnected'); }
+			snapshot: function(id) {
+				if (id !== 42) return null;
+				throw new Error('PTY disconnected');
+			}
 		};
 		true
 	`)
@@ -982,8 +1004,14 @@ func TestAnchorPipeline_CaptureScreenshot_ValidMux(t *testing.T) {
 	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
 
 	_, err := evalJS(`
+		globalThis.prSplit = globalThis.prSplit || {};
+		globalThis.prSplit._state = globalThis.prSplit._state || {};
+		globalThis.prSplit._state.claudeSessionID = 42;
 		globalThis.tuiMux = {
-			screenshot: function() { return 'Hello\n❯ '; }
+			snapshot: function(id) {
+				if (id !== 42) return null;
+				return { plainText: 'Hello\n❯ ' };
+			}
 		};
 		true
 	`)
@@ -998,6 +1026,32 @@ func TestAnchorPipeline_CaptureScreenshot_ValidMux(t *testing.T) {
 	s := fmt.Sprintf("%v", val)
 	if s != "Hello\n❯ " {
 		t.Errorf("expected 'Hello\\n❯ ', got %q", s)
+	}
+}
+
+func TestAnchorPipeline_CaptureScreenshot_NoFallbackWithoutPinnedClaudeSession(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewChunkEngine(t, nil, allPipelineChunks...)
+
+	_, err := evalJS(`
+		globalThis.prSplit = globalThis.prSplit || {};
+		globalThis.prSplit._state = globalThis.prSplit._state || {};
+		globalThis.prSplit._state.claudeSessionID = null;
+		globalThis.tuiMux = {
+			screenshot: function() { throw new Error('legacy fallback should not be used'); }
+		};
+		true
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	val, err := evalJS(`prSplit._captureScreenshot()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if val != nil {
+		t.Errorf("expected null without pinned Claude session, got: %v", val)
 	}
 }
 
@@ -1019,19 +1073,23 @@ func TestAnchorPipeline_BestAnchorsStateFallback(t *testing.T) {
 	_, err := evalJS(`
 		var __phase = 'ready';
 		var __anchorCount = 0;
+		globalThis.prSplit = globalThis.prSplit || {};
+		globalThis.prSplit._state = globalThis.prSplit._state || {};
+		globalThis.prSplit._state.claudeSessionID = 42;
 		globalThis.tuiMux = {
-			screenshot: function() {
+			snapshot: function(id) {
+				if (id !== 42) return null;
 				if (__phase === 'ready') {
-					return 'loading...\n❯ ';
+					return { plainText: 'loading...\n❯ ' };
 				}
 				if (__phase === 'anchor') {
 					__anchorCount++;
 					// Jitter: alternate input line length so stableKey oscillates.
 					var pad = (__anchorCount % 2 === 0) ? 'xx' : 'xxxx';
-					return pad + 'test prompt tail\n❯ ';
+					return { plainText: pad + 'test prompt tail\n❯ ' };
 				}
 				// After submit: shift prompt position.
-				return '❯ working on it...';
+				return { plainText: '❯ working on it...' };
 			}
 		};
 		var __mockHandle = {
@@ -1096,12 +1154,16 @@ func TestAnchorPipeline_PromptOnlyFallback(t *testing.T) {
 	// (simulates a very long paste that scrolled past the viewport).
 	_, err := evalJS(`
 		var __phase = 'ready';
+		globalThis.prSplit = globalThis.prSplit || {};
+		globalThis.prSplit._state = globalThis.prSplit._state || {};
+		globalThis.prSplit._state.claudeSessionID = 42;
 		globalThis.tuiMux = {
-			screenshot: function() {
+			snapshot: function(id) {
+				if (id !== 42) return null;
 				if (__phase === 'ack') {
-					return '❯ thinking...';
+					return { plainText: '❯ thinking...' };
 				}
-				return 'some other content\nmore content\n❯ ';
+				return { plainText: 'some other content\nmore content\n❯ ' };
 			}
 		};
 		var __mockHandle = {
@@ -1157,9 +1219,13 @@ func TestAnchorPipeline_NoPromptMarker_HardFailure(t *testing.T) {
 
 	// Screenshot has no prompt marker at all.
 	_, err := evalJS(`
+		globalThis.prSplit = globalThis.prSplit || {};
+		globalThis.prSplit._state = globalThis.prSplit._state || {};
+		globalThis.prSplit._state.claudeSessionID = 42;
 		globalThis.tuiMux = {
-			screenshot: function() {
-				return 'Loading Claude...\nPlease wait...';
+			snapshot: function(id) {
+				if (id !== 42) return null;
+				return { plainText: 'Loading Claude...\nPlease wait...' };
 			}
 		};
 		var __mockHandle = { send: function(d) {} };

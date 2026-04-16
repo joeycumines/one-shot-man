@@ -104,7 +104,7 @@ typically available as `tuiMux` in pr-split scripts.
 | `register(session, opts?)` | `SessionManager.Register()` | `InteractiveSession, {name?,kind?,id?}` | `number` (session ID) | throws |
 | `unregister(id)` | `SessionManager.Unregister()` | `number` | `undefined` | throws |
 | `activate(id)` | `SessionManager.Activate()` | `number` | `undefined` | throws |
-| `attach(handle)` | `Register() + Activate()` | `InteractiveSession\|StringIO\|map` | `undefined` | throws |
+| `attach(handle)` | `Register() + Activate()` | `InteractiveSession\|StringIO\|map` | `number` (session ID) | throws |
 | `detach()` | `Unregister()` | — | `undefined` | silent no-op if none active |
 
 ### State Queries
@@ -114,18 +114,27 @@ typically available as `tuiMux` in pr-split scripts.
 | `activeID()` | `SessionManager.ActiveID()` | — | `number` | silent |
 | `sessions()` | `SessionManager.Sessions()` | — | `[{id,target,state,isActive}]` | silent |
 | `snapshot(id)` | `SessionManager.Snapshot()` | `number` | `{gen,plainText,...}\|null` | null if not found |
+| `lastActivityMs(id?)` | `SessionManager.Snapshot() + time.Since()` | `number?` (session ID) | `number` | `-1` if session/snapshot missing |
 | `eventsDropped()` | `SessionManager.EventsDropped()` | — | `number` | silent |
 
 ### I/O and Display
+
+The compatibility helpers below (`screenshot()`, `childScreen()`,
+`writeToChild(data)`, and `session()`) operate on the current active
+session via `SessionManager.ActiveID()`. They remain available for
+backwards compatibility and ad-hoc scripts, but production pr-split code
+should prefer pinned SessionID access: `snapshot(id)` /
+`lastActivityMs(id?)` for reads and explicit `activate(id)` +
+`input(data)` for writes.
 
 | Method | Go Function | Parameters | Return | Error Handling |
 |--------|-------------|------------|--------|----------------|
 | `input(data)` | `SessionManager.Input()` | `string` | `undefined` | throws |
 | `resize(rows, cols)` | `SessionManager.Resize()` | `number, number` | `undefined` | throws |
-| `screenshot()` | `Snapshot()` → plainText | — | `string` | empty if no session |
-| `childScreen()` | `Snapshot()` → ANSI | — | `string` | empty if no session |
-| `writeToChild(data)` | `SessionManager.Input()` | `string` | `number` (bytes) | throws |
-| `lastActivityMs()` | `time.Since(snapshot)` | — | `number` (ms, -1 if none) | silent |
+| `screenshot()` | `Snapshot()` → plainText | — | `string` | empty if no session; active-session compatibility helper |
+| `childScreen()` | `Snapshot()` → ANSI | — | `string` | empty if no session; active-session compatibility helper |
+| `writeToChild(data)` | `SessionManager.Input()` | `string` | `number` (bytes) | throws; active-session compatibility helper |
+| `lastActivityMs(id?)` | `time.Since(snapshot)` | `number?` (session ID) | `number` (ms, -1 if none) | silent |
 
 ### Passthrough
 
@@ -169,7 +178,9 @@ Valid event names: `exit`, `resize`, `focus`, `bell`, `output`,
 ## session() Wrapper
 
 Accessed via `tuiMux.session()`. Provides a convenience API
-operating on the active session.
+operating on the active session. This wrapper is retained for
+backwards compatibility and tests; production pr-split code should
+prefer pinned SessionIDs over ActiveID-backed convenience access.
 
 | Method | Go Function | Parameters | Return | Error Handling |
 |--------|-------------|------------|--------|----------------|

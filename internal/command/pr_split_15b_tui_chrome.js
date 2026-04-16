@@ -289,7 +289,7 @@
     // When Claude asks a question during automated analysis/execution, this
     // renders a compact inline prompt at the bottom of the affected screen.
     // The user can type a response and press Enter to send it directly to
-    // Claude's PTY (via tuiMux.writeToChild).
+    // Claude's pinned PTY session.
 
     function renderClaudeQuestionPrompt(s) {
         if (!s.claudeQuestionDetected) return '';
@@ -447,10 +447,10 @@
 
     function getClaudeStatusText(s) {
         if (typeof tuiMux === 'undefined' || !tuiMux ||
-            typeof tuiMux.lastActivityMs !== 'function') {
+            typeof prSplit._readClaudeActivityMs !== 'function') {
             return styles.statusIdle().render('\ud83d\udca4 Claude: N/A');
         }
-        var ms = tuiMux.lastActivityMs();
+        var ms = prSplit._readClaudeActivityMs();
         if (ms < 0) return styles.statusIdle().render('\u23f8\ufe0f Claude: no output');
         if (ms < TUI_THRESHOLDS.claudeStatusLiveMs) return styles.statusActive().render('\ud83d\udd04 Claude: LIVE');
         if (ms < TUI_THRESHOLDS.claudeStatusIdleMs) return styles.statusIdle().render('\u23f3 Claude: idle (' + Math.round(ms / 1000) + 's)');
@@ -464,11 +464,8 @@
         var plainContent = s.claudeScreenshot || '';
         var content = ansiContent || plainContent;
         var isANSI = !!ansiContent;
-        // Task 5: Check for snapshot (pinned SessionID) or legacy childScreen.
-        var hasMux = (typeof tuiMux !== 'undefined' && tuiMux &&
-            (typeof tuiMux.snapshot === 'function' ||
-             typeof tuiMux.childScreen === 'function' ||
-             typeof tuiMux.screenshot === 'function'));
+        var claudeSession = getInteractivePaneSession(s, 'claude');
+        var hasMux = !!claudeSession;
 
         // Height budget: border adds 2 lines (top + bottom).
         // Content height = height - 2. First content line is the title.

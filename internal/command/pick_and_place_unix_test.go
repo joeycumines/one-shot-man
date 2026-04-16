@@ -5,6 +5,8 @@ package command
 import (
 	"context"
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -242,26 +244,40 @@ func TestPickAndPlaceE2E_DebugOverlay(t *testing.T) {
 // TestPickAndPlaceE2E_ManualModeMovement verifies that WASD keys move the robot in manual mode
 func TestPickAndPlaceE2E_ManualModeMovement(t *testing.T) {
 	skipSlow(t)
+	logPath := filepath.Join(t.TempDir(), "manual_mode_movement.log")
 
 	// NewPickAndPlaceHarness builds binary internally using helper functions
 	h, err := NewPickAndPlaceHarness(context.Background(), t, PickAndPlaceConfig{
-		ScriptPath: getPickAndPlaceScriptPath(t),
-		TestMode:   true,
+		ScriptPath:  getPickAndPlaceScriptPath(t),
+		LogFilePath: logPath,
+		TestMode:    true,
 	})
 	if err != nil {
 		t.Fatalf("Failed to create harness: %v", err)
 	}
-	defer h.Close()
+	defer func() {
+		if t.Failed() {
+			content, _ := os.ReadFile(logPath)
+			t.Logf("=== Log file (last 4000 bytes) ===\n%s", truncateFromEnd(string(content), 4000))
+		}
+		h.Close()
+	}()
 
-	// Wait for frames to render (synchronous with TUI)
-	h.WaitForFrames(3)
+	// Wait for frames to render and enable authoritative log-backed state reads.
+	h.WaitForFrames(10)
+
+	// Enter manual mode explicitly. The simulator defaults to automatic mode.
+	if err := h.SendKey("m"); err != nil {
+		t.Fatalf("Failed to send 'm' key: %v", err)
+	}
+	if !h.WaitForMode("m", 3*time.Second) {
+		t.Fatalf("Failed to switch to manual mode")
+	}
 
 	// Get initial state
 	initialState := h.GetDebugState()
-
-	// Verify we're in manual mode
 	if initialState.Mode != "m" {
-		t.Logf("Note: Starting in mode '%s', will assume manual mode is default", initialState.Mode)
+		t.Fatalf("Expected manual mode, got %q", initialState.Mode)
 	}
 
 	initialX := initialState.ActorX
@@ -273,26 +289,25 @@ func TestPickAndPlaceE2E_ManualModeMovement(t *testing.T) {
 		t.Fatalf("Failed to send 'd' key: %v", err)
 	}
 
-	// Wait for movement to be processed
-	time.Sleep(300 * time.Millisecond)
-
-	// Wait for more ticks
-	time.Sleep(300 * time.Millisecond)
-
-	// Get new state
-	newState := h.GetDebugState()
-
-	// Robot should have moved right (X should increase)
-	if newState.ActorX > initialX {
-		movedBy := newState.ActorX - initialX
-		t.Logf("✓ Robot moved right by %.1f: (%.1f, %.1f) -> (%.1f, %.1f)",
-			movedBy, initialX, initialY, newState.ActorX, newState.ActorY)
-	} else if newState.Tick > initialState.Tick {
-		t.Log("✓ Tick counter increased, game loop is running")
-		t.Logf("  Note: Robot position unchanged at (%.1f, %.1f) - may be in auto mode", newState.ActorX, newState.ActorY)
-	} else {
-		t.Errorf("CRITICAL: Robot did not move and tick did not advance. Input not being processed.")
+	// Poll authoritative state instead of relying on fixed sleeps or PTY-only snapshots.
+	deadline := time.Now().Add(3 * time.Second)
+	newState := initialState
+	for time.Now().Before(deadline) {
+		newState = h.GetDebugState()
+		if newState.ActorX > initialX {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
+
+	// Robot should have moved right in manual mode.
+	if newState.ActorX <= initialX {
+		t.Fatalf("Robot failed to move right in manual mode: initial=(%.1f, %.1f) tick=%d final=(%.1f, %.1f) tick=%d",
+			initialX, initialY, initialState.Tick, newState.ActorX, newState.ActorY, newState.Tick)
+	}
+	movedBy := newState.ActorX - initialX
+	t.Logf("✓ Robot moved right by %.1f: (%.1f, %.1f) -> (%.1f, %.1f)",
+		movedBy, initialX, initialY, newState.ActorX, newState.ActorY)
 
 	if err := h.Quit(); err != nil {
 		t.Logf("Could not quit cleanly: %v", err)

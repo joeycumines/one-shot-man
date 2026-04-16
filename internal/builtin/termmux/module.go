@@ -922,7 +922,8 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 
 	// ── attach(handle) ───────────────────────────────────
 	// Accepts InteractiveSession wrappers, AgentHandle (map with _goHandle),
-	// StringIO, or raw InteractiveSession. Registers and activates the session.
+	// StringIO, or raw InteractiveSession. Registers and activates the session,
+	// then returns the registered SessionID.
 	// If a session is already active, unregisters it first then retries once.
 	_ = obj.Set("attach", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) == 0 {
@@ -1069,6 +1070,8 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 
 	// ── screenshot() → string ────────────────────────────
 	// Returns plain-text VTerm buffer content for the active session.
+	// Compatibility helper only: production pr-split code should prefer
+	// snapshot(sessionID) on a pinned SessionID.
 	_ = obj.Set("screenshot", func() string {
 		id := mgr.ActiveID()
 		if id == 0 {
@@ -1083,7 +1086,8 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 
 	// ── childScreen() → string ───────────────────────────
 	// Returns the VTerm buffer as ANSI escape-sequence output for the
-	// active session.
+	// active session. Compatibility helper only: production pr-split
+	// code should prefer snapshot(sessionID) on a pinned SessionID.
 	_ = obj.Set("childScreen", func() string {
 		id := mgr.ActiveID()
 		if id == 0 {
@@ -1098,6 +1102,8 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 
 	// ── writeToChild(data) → number ──────────────────────
 	// Sends raw bytes to the active session's stdin. Returns bytes written.
+	// Compatibility helper only: production pr-split code should prefer
+	// explicit activate(sessionID) + input(data) on a pinned SessionID.
 	// Throws on error (consistent with session().write()).
 	_ = obj.Set("writeToChild", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) == 0 {
@@ -1112,7 +1118,9 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 
 	// ── session() → convenience wrapper ──────────────────
 	// Returns an object with isRunning, isDone, output, screen, target,
-	// setTarget, write, and resize for the active session.
+	// setTarget, write, and resize for the active session. Compatibility
+	// helper only: production pr-split code should prefer pinned SessionID
+	// access rather than ActiveID-backed wrappers.
 	_ = obj.Set("session", func() goja.Value {
 		sessionObj := runtime.NewObject()
 
@@ -1205,19 +1213,23 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 		return sessionObj
 	})
 
-	// ── lastActivityMs() → int64 ─────────────────────────
-	// Returns milliseconds since the last snapshot update, or -1 if no
-	// active session or snapshot.
-	_ = obj.Set("lastActivityMs", func() int64 {
+	// ── lastActivityMs(sessionID?) → int64 ───────────────
+	// Returns milliseconds since the last snapshot update for the supplied
+	// SessionID. When omitted, preserves compatibility by using the active
+	// session. Returns -1 if no matching session or snapshot exists.
+	_ = obj.Set("lastActivityMs", func(call goja.FunctionCall) goja.Value {
 		id := mgr.ActiveID()
+		if len(call.Arguments) > 0 && !goja.IsUndefined(call.Argument(0)) && !goja.IsNull(call.Argument(0)) {
+			id = parent.SessionID(call.Argument(0).ToInteger())
+		}
 		if id == 0 {
-			return -1
+			return runtime.ToValue(int64(-1))
 		}
 		snap := mgr.Snapshot(id)
 		if snap == nil || snap.Timestamp.IsZero() {
-			return -1
+			return runtime.ToValue(int64(-1))
 		}
-		return time.Since(snap.Timestamp).Milliseconds()
+		return runtime.ToValue(time.Since(snap.Timestamp).Milliseconds())
 	})
 
 	// ── setStatus(text) ──────────────────────────────────

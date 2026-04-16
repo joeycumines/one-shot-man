@@ -941,22 +941,30 @@ func TestViews_ClaudePane_FocusedRendersNonEmpty(t *testing.T) {
 	}
 }
 
-func TestViews_ClaudePane_WithScreenshot(t *testing.T) {
+func TestViews_ClaudePane_WithPinnedSession(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngine(t)
 
-	// Inject a mock tuiMux with screenshot function.
+	// Inject a pinned Claude session so renderClaudePane treats the pane as attached.
 	if _, err := evalJS(`
-		globalThis.tuiMux = {screenshot: function() { return 'mock screenshot'; }};
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = 42;
+		globalThis.tuiMux = {
+			snapshot: function(id) {
+				if (id !== 42) return null;
+				return { plainText: 'mock screenshot' };
+			},
+			isDone: function(id) { return false; },
+			activeID: function() { return 0; },
+			activate: function(id) {},
+			input: function(data) {}
+		};
 	`); err != nil {
 		t.Fatal(err)
 	}
-	// Re-evaluate the views chunks so they pick up tuiMux.
-	for _, src := range []string{prSplitChunk15aTUIStyles, prSplitChunk15bTUIChrome, prSplitChunk15cTUIScreens, prSplitChunk15dTUIDialogs} {
-		if _, err := evalJS(src); err != nil {
-			t.Fatal(err)
-		}
-	}
+	t.Cleanup(func() {
+		_, _ = evalJS(`delete globalThis.tuiMux; if (prSplit._state) prSplit._state.claudeSessionID = null;`)
+	})
 
 	raw, err := evalJS(`globalThis.prSplit._renderClaudePane({
 		claudeScreenshot: 'line1\nline2\nline3', width: 60, height: 20

@@ -8,25 +8,33 @@
     var getCancellationError = prSplit._getCancellationError;
     var TRUNCATION_WIDTH = 120;
 
-    function captureScreenshot() {
-        if (typeof tuiMux === 'undefined' || !tuiMux) {
+    function readClaudePlainText() {
+        if (typeof tuiMux === 'undefined' || !tuiMux || typeof tuiMux.snapshot !== 'function') {
             return null;
         }
-        try {
-            // Prefer pinned Claude SessionID for deterministic reads.
-            var cid = prSplit._state && prSplit._state.claudeSessionID;
-            if (cid && typeof tuiMux.snapshot === 'function') {
-                var snap = tuiMux.snapshot(cid);
-                if (!snap) return '';
-                return String(snap.plainText || '');
-            }
-            // Fallback: no pinned ID yet (pre-attach or headless).
-            if (typeof tuiMux.screenshot === 'function') {
-                var shot = tuiMux.screenshot();
-                if (shot === null || shot === undefined) return '';
-                return String(shot);
-            }
+        var cid = prSplit._state && prSplit._state.claudeSessionID;
+        if (!cid) {
             return null;
+        }
+        var snap = tuiMux.snapshot(cid);
+        return snap ? String(snap.plainText || '') : null;
+    }
+
+    function readClaudeActivityMs() {
+        if (typeof tuiMux === 'undefined' || !tuiMux ||
+            typeof tuiMux.lastActivityMs !== 'function') {
+            return -1;
+        }
+        var cid = prSplit._state && prSplit._state.claudeSessionID;
+        if (!cid) {
+            return -1;
+        }
+        return tuiMux.lastActivityMs(cid);
+    }
+
+    function captureScreenshot() {
+        try {
+            return readClaudePlainText();
         } catch (e) {
             log.printf('auto-split sendToHandle: screenshot read failed — %s', e.message || String(e));
             return null;
@@ -345,7 +353,7 @@
     // sendToHandle writes prompt text and submits it with Enter. It uses:
     //  1) chunked text writes (to reduce giant single-write fragility),
     //  2) newline as a distinct write (not text+\n in one write),
-    //  3) terminal-output observation via tuiMux.screenshot() to confirm
+    //  3) terminal-output observation via the pinned Claude snapshot to confirm
     //     Claude reacted to submission, retrying newline if needed.
     //
     // Returns Promise<{ error: null }> on success,
@@ -491,5 +499,7 @@
     prSplit._detectPromptBlocker = detectPromptBlocker;
     prSplit._captureInputAnchors = captureInputAnchors;
     prSplit._captureScreenshot = captureScreenshot;
+    prSplit._readClaudePlainText = readClaudePlainText;
+    prSplit._readClaudeActivityMs = readClaudeActivityMs;
 
 })(globalThis.prSplit);

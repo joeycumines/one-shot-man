@@ -1225,7 +1225,7 @@ func TestBinaryE2E_VerifyPTYLive(t *testing.T) {
 // ---------------------------------------------------------------------------
 // T010 — TestBinaryE2E_CancelDuringVerify
 //
-// Start with -verify="sleep 30" (long verify), navigate to execution,
+// Start with -verify="sleep 5" (long enough to enter verify), navigate to execution,
 // then Ctrl+C to cancel. Verify clean exit without zombies.
 // ---------------------------------------------------------------------------
 
@@ -1236,7 +1236,7 @@ func TestBinaryE2E_CancelDuringVerify(t *testing.T) {
 	}
 
 	repoDir := setupBinaryTestRepo(t)
-	ptmx, buf, cleanup := startPTYBinary(t, repoDir, "-verify=sleep 30")
+	ptmx, buf, cleanup := startPTYBinary(t, repoDir, "-verify=sleep 5")
 	defer cleanup()
 
 	// Navigate to PLAN_REVIEW
@@ -1259,7 +1259,7 @@ func TestBinaryE2E_CancelDuringVerify(t *testing.T) {
 		t.Fatalf("never reached BRANCH_BUILDING.\nOutput:\n%s",
 			sanitizePTYTail(buf.String(), 2000))
 	}
-	t.Logf("BRANCH_BUILDING visible — verify running (sleep 30)")
+	t.Logf("BRANCH_BUILDING visible — verify running (sleep 5)")
 
 	// Intentional delay: let verify subprocess start before testing cancel flow
 	time.Sleep(2 * time.Second)
@@ -1296,7 +1296,7 @@ func TestBinaryE2E_CancelDuringVerify(t *testing.T) {
 	// Verify worktrees are cleaned up (no leftover temp directories).
 	// We can't easily check this since temp dirs are ephemeral, but we
 	// verify the binary exited without hanging (the test timeout protects).
-	t.Logf("SUCCESS: Binary exited after cancel during verify (sleep 30)")
+	t.Logf("SUCCESS: Binary exited after cancel during verify (sleep 5)")
 }
 
 // ---------------------------------------------------------------------------

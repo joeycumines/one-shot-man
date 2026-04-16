@@ -554,12 +554,17 @@ func TestChunk16_VTerm_Lifecycle_ClaudeBadgeIdle(t *testing.T) {
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 42;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = __mockCID;
 		globalThis.tuiMux = {
-			hasChild: function() { return true; },
-			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
-			childScreen: function() { return 'output'; },
-			screenshot: function() { return 'output'; },
-			lastActivityMs: function() { return 5000; }  // 5s idle
+			snapshot: function(id) { return { fullScreen: 'output', plainText: 'output' }; },
+			isDone: function(id) { return false; },
+			activeID: function() { return __mockCID; },
+			activate: function(id) {},
+			input: function(data) {},
+			switchTo: function() { return { reason: 'toggle' }; },
+			lastActivityMs: function(id) { return id === __mockCID ? 5000 : -1; }  // 5s idle
 		};
 		try {
 			var s = initState('PLAN_REVIEW');
@@ -578,6 +583,7 @@ func TestChunk16_VTerm_Lifecycle_ClaudeBadgeIdle(t *testing.T) {
 		} finally {
 			if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 			else delete globalThis.tuiMux;
+			if (prSplit._state) prSplit._state.claudeSessionID = null;
 		}
 	})()`)
 	if err != nil {
@@ -627,12 +633,17 @@ func TestChunk16_VTerm_Lifecycle_ClaudeBadgeQuiet(t *testing.T) {
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		var __mockCID = 42;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = __mockCID;
 		globalThis.tuiMux = {
-			hasChild: function() { return true; },
-			session: function() { return { isRunning: function() { return true; }, isDone: function() { return false; } }; },
-			childScreen: function() { return 'output'; },
-			screenshot: function() { return 'output'; },
-			lastActivityMs: function() { return 30000; }  // 30s quiet
+			snapshot: function(id) { return { fullScreen: 'output', plainText: 'output' }; },
+			isDone: function(id) { return false; },
+			activeID: function() { return __mockCID; },
+			activate: function(id) {},
+			input: function(data) {},
+			switchTo: function() { return { reason: 'toggle' }; },
+			lastActivityMs: function(id) { return id === __mockCID ? 30000 : -1; }  // 30s quiet
 		};
 		try {
 			var s = initState('PLAN_REVIEW');
@@ -651,6 +662,7 @@ func TestChunk16_VTerm_Lifecycle_ClaudeBadgeQuiet(t *testing.T) {
 		} finally {
 			if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 			else delete globalThis.tuiMux;
+			if (prSplit._state) prSplit._state.claudeSessionID = null;
 		}
 	})()`)
 	if err != nil {

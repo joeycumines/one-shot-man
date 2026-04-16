@@ -443,6 +443,31 @@ func TestSessionManager_LastActivityMsWithSession(t *testing.T) {
 	}
 }
 
+func TestSessionManager_LastActivityMsExplicitSessionID(t *testing.T) {
+	if testing.Short() {
+		t.Skip("slow: spawns SessionManager worker goroutine")
+	}
+
+	runtime, cleanup := setupMgr(t, true)
+	defer cleanup()
+
+	v, err := runtime.RunString(`tuiMux.lastActivityMs(tuiMux.activeID())`)
+	if err != nil {
+		t.Fatalf("lastActivityMs(activeID): %v", err)
+	}
+	if ms := v.ToInteger(); ms < -1 {
+		t.Fatalf("lastActivityMs(activeID) = %d, want >= -1", ms)
+	}
+
+	v, err = runtime.RunString(`tuiMux.lastActivityMs(999999)`)
+	if err != nil {
+		t.Fatalf("lastActivityMs(unknown): %v", err)
+	}
+	if got := v.ToInteger(); got != -1 {
+		t.Fatalf("lastActivityMs(unknown) = %d, want -1", got)
+	}
+}
+
 // ── Detach ───────────────────────────────────────────────
 
 func TestSessionManager_Detach(t *testing.T) {

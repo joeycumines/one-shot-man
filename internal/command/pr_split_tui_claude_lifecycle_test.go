@@ -610,8 +610,10 @@ func TestClaudeLifecycle_LifecycleStateInTitle(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			raw, err := evalJS(`(function() {
 				var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+					prSplit._state = prSplit._state || {};
+					prSplit._state.claudeSessionID = 42;
 				globalThis.tuiMux = {
-					snapshot: function() { return null; },
+						snapshot: function(id) { if (id !== 42) throw new Error('wrong session id: ' + id); return null; },
 					isDone: function() { return false; }
 				};
 				var s = initState('PLAN_REVIEW');
@@ -628,6 +630,7 @@ func TestClaudeLifecycle_LifecycleStateInTitle(t *testing.T) {
 				var pane = prSplit._renderClaudePane(s, 60, 12);
 				if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 				else delete globalThis.tuiMux;
+					if (prSplit._state) prSplit._state.claudeSessionID = null;
 				return pane;
 			})()`)
 			if err != nil {
@@ -654,8 +657,10 @@ func TestClaudeLifecycle_WriteErrorInTitle(t *testing.T) {
 
 	raw, err := evalJS(`(function() {
 		var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+		prSplit._state = prSplit._state || {};
+		prSplit._state.claudeSessionID = 42;
 		globalThis.tuiMux = {
-			snapshot: function() { return null; },
+			snapshot: function(id) { if (id !== 42) throw new Error('wrong session id: ' + id); return null; },
 			isDone: function() { return false; }
 		};
 		var s = initState('PLAN_REVIEW');
@@ -672,6 +677,7 @@ func TestClaudeLifecycle_WriteErrorInTitle(t *testing.T) {
 		var pane = prSplit._renderClaudePane(s, 60, 12);
 		if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 		else delete globalThis.tuiMux;
+		if (prSplit._state) prSplit._state.claudeSessionID = null;
 		if (pane.indexOf('[write error]') < 0) {
 			return 'FAIL: pane should contain [write error] indicator, got: ' + pane.substring(0, 200);
 		}
@@ -707,8 +713,10 @@ func TestClaudeLifecycle_PlaceholderStates(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			raw, err := evalJS(`(function() {
 				var savedMux = (typeof tuiMux !== 'undefined') ? tuiMux : undefined;
+					prSplit._state = prSplit._state || {};
+					prSplit._state.claudeSessionID = 42;
 				globalThis.tuiMux = {
-					snapshot: function() { return null; },
+						snapshot: function(id) { if (id !== 42) throw new Error('wrong session id: ' + id); return null; },
 					isDone: function() { return false; }
 				};
 				var s = initState('PLAN_REVIEW');
@@ -723,6 +731,7 @@ func TestClaudeLifecycle_PlaceholderStates(t *testing.T) {
 				var pane = prSplit._renderClaudePane(s, 60, 12);
 				if (savedMux !== undefined) globalThis.tuiMux = savedMux;
 				else delete globalThis.tuiMux;
+					if (prSplit._state) prSplit._state.claudeSessionID = null;
 				return pane;
 			})()`)
 			if err != nil {

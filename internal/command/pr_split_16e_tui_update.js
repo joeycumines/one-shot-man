@@ -147,9 +147,14 @@
         // Claude / verify: read cursor from snapshot.
         if (typeof tuiMux !== 'undefined' && tuiMux &&
             typeof tuiMux.snapshot === 'function') {
-            var sid = (tab === 'verify' && s.activeVerifySession)
-                ? s.activeVerifySession.id
-                : (typeof tuiMux.activeID === 'function' ? tuiMux.activeID() : 0);
+            var sid = 0;
+            if (tab === 'verify' && s.activeVerifySession) {
+                sid = (typeof s.activeVerifySession === 'number')
+                    ? s.activeVerifySession
+                    : s.activeVerifySession.id;
+            } else {
+                sid = prSplit._state && prSplit._state.claudeSessionID;
+            }
             if (sid) {
                 var snap = tuiMux.snapshot(sid);
                 if (snap && snap.cursorRow !== undefined) {
@@ -433,16 +438,16 @@
                         s.claudeConversations = s.claudeConversations.slice(-C.CONVO_HISTORY_TRIM);
                     }
 
-                    // Send to Claude PTY via tuiMux.writeToChild.
-                    if (typeof tuiMux !== 'undefined' && tuiMux &&
-                        typeof tuiMux.writeToChild === 'function') {
+                    // Send to Claude PTY via the pinned Claude pane proxy.
+                    var claudeQuestionSession = getInteractivePaneSession(s, 'claude');
+                    if (claudeQuestionSession && typeof claudeQuestionSession.write === 'function') {
                         try {
-                            tuiMux.writeToChild(responseText + '\r');
+                            claudeQuestionSession.write(responseText + '\r');
                             log.printf('T46: sent response to Claude: %s', responseText);
                         } catch (e) {
                             // T393: Surface error to user — keep claudeQuestionDetected
                             // true so renderClaudeQuestionPrompt renders the error line.
-                            log.printf('T46: writeToChild failed: %s', String(e));
+                            log.printf('T46: Claude write failed: %s', String(e));
                             s.claudeQuestionLine = 'Error sending response: ' + String(e);
                             s.claudeQuestionInputActive = false;
                             s.claudeQuestionInputText = '';
@@ -451,7 +456,7 @@
                     } else {
                         // T393: tuiMux not available — keep claudeQuestionDetected
                         // true so the error is visible to the user.
-                        log.printf('T46: tuiMux.writeToChild not available');
+                        log.printf('T46: Claude session write not available');
                         s.claudeQuestionLine = 'Error: Claude terminal not connected';
                         s.claudeQuestionInputActive = false;
                         s.claudeQuestionInputText = '';

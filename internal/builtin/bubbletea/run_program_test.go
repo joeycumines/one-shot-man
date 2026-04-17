@@ -192,7 +192,7 @@ func TestRunProgram_Options(t *testing.T) {
 			_ = view.Set("mouseMode", "allMotion")
 			return view, nil
 		},
-		state:  vm.NewObject(),
+		state: vm.NewObject(),
 	}
 
 	model.jsRunner = &SyncJSRunner{Runtime: vm}

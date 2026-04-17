@@ -552,6 +552,7 @@
             // Keep verifySignal state for the footer to remain active
             // (it will be cleared by pollVerifySession after recording result).
         } else {
+            s.verifyMode = null;
             s.verifyShellExited = false;
             s.verifyHint = '';
         }

@@ -79,7 +79,7 @@
             // (consistent with Ctrl+C) instead of opening the cancel dialog
             // to prevent session/worktree leaks from unguarded quit.
             var activeVerifySession = getInteractivePaneSession(s, 'verify');
-            if (activeVerifySession) {
+            if (activeVerifySession && !s.verifyShellExited) {
                 var now = Date.now();
                 if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < C.SIGKILL_WINDOW_MS) {
                     try { activeVerifySession.kill(); } catch (e) { log.debug('quit: verifySession.kill failed: ' + (e.message || e)); }
@@ -266,7 +266,7 @@
             // Interrupt active verify session via stop button.
             // Same double-click pattern as Ctrl+C: first click sends
             // SIGINT, second click within 2s sends SIGKILL.
-            if (activeVerifySession && zone.inBounds('verify-interrupt', msg)) {
+            if (activeVerifySession && !s.verifyShellExited && zone.inBounds('verify-interrupt', msg)) {
                 var now = Date.now();
                 if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < C.SIGKILL_WINDOW_MS) {
                     try { activeVerifySession.kill(); } catch (e) { log.debug('cancelVerify: verifySession.kill failed: ' + (e.message || e)); }
@@ -278,17 +278,17 @@
             }
             // T007 (Task 7): PASS / FAIL / CONTINUE buttons for persistent verify shell.
             // These set the user completion signal consumed by pollVerifySession.
-            if (zone.inBounds('verify-pass', msg)) {
+            if (s.verifyShellExited && zone.inBounds('verify-pass', msg)) {
                 if (typeof prSplit._handleVerifySignal === 'function') {
                     return prSplit._handleVerifySignal(s, 'pass');
                 }
             }
-            if (zone.inBounds('verify-fail', msg)) {
+            if (s.verifyShellExited && zone.inBounds('verify-fail', msg)) {
                 if (typeof prSplit._handleVerifySignal === 'function') {
                     return prSplit._handleVerifySignal(s, 'fail');
                 }
             }
-            if (zone.inBounds('verify-continue', msg)) {
+            if (s.verifyShellExited && zone.inBounds('verify-continue', msg)) {
                 if (typeof prSplit._handleVerifySignal === 'function') {
                     return prSplit._handleVerifySignal(s, 'continue');
                 }
@@ -816,6 +816,7 @@
                 verifySignal: false,           // true when user pressed p/f/c
                 verifySignalChoice: null,      // 'pass' | 'fail' | 'continue'
                 verifySignalBranch: null,      // branchName when signal was set
+                verifyMode: null,              // 'interactive' | 'oneshot' | 'textonly'
                 verifyShellExited: false,     // true when persistent shell exited (user typed 'exit')
                 verifyHint: '',               // suggested verify command text
 

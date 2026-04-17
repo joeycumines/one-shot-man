@@ -499,3 +499,137 @@ func TestChunk15c_LiveViewport_FallbackNoSession(t *testing.T) {
 		t.Error("no-session fallback should NOT show interrupt hint")
 	}
 }
+
+func TestChunk15c_LiveViewport_OneShotDegradedFooter(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	val, err := evalJS(`(function() {
+		var s = {
+			activeVerifySession: {
+				screen: function() { return 'verify output'; },
+				output: function() { return 'verify output'; },
+				isDone: function() { return false; }
+			},
+			verifyMode: 'oneshot',
+			verifyScreen: 'verify output line',
+			activeVerifyBranch: 'split/done',
+			activeVerifyStartTime: Date.now() - 2000,
+			verifyElapsedMs: 2000,
+			width: 80
+		};
+		var lines = [];
+		prSplit._renderLiveVerifyViewport(s, lines);
+		return lines.join('\n');
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	if !strings.Contains(s, "Degraded: one-shot verify") {
+		t.Fatal("one-shot verify should render an explicit degraded-mode badge")
+	}
+	if strings.Contains(s, "PASS") || strings.Contains(s, "FAIL") || strings.Contains(s, "CONTINUE") {
+		t.Fatal("one-shot verify should not render interactive PASS/FAIL/CONTINUE controls")
+	}
+	if !strings.Contains(s, "waits for command exit") {
+		t.Fatal("one-shot verify footer should explain that completion is command-driven")
+	}
+}
+
+func TestChunk15c_LiveViewport_PreservedOneShotOutputKeepsLabel(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	val, err := evalJS(`(function() {
+		var s = {
+			verifyMode: 'oneshot',
+			verifyScreen: 'verify output line',
+			activeVerifyBranch: 'split/done',
+			verifyElapsedMs: 2000,
+			width: 80
+		};
+		var lines = [];
+		prSplit._renderLiveVerifyViewport(s, lines);
+		return lines.join('\n');
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	if !strings.Contains(s, "degraded one-shot output") {
+		t.Fatal("preserved one-shot output should stay labeled as one-shot output")
+	}
+	if strings.Contains(s, "degraded text fallback") {
+		t.Fatal("preserved one-shot output should not be relabeled as text fallback")
+	}
+}
+
+func TestChunk15c_LiveViewport_LiveInteractiveHidesOutcomeButtons(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	val, err := evalJS(`(function() {
+		var s = {
+			activeVerifySession: {
+				screen: function() { return 'verify output'; },
+				output: function() { return 'verify output'; },
+				isDone: function() { return false; }
+			},
+			verifyMode: 'interactive',
+			verifyScreen: 'verify output line',
+			activeVerifyBranch: 'split/done',
+			activeVerifyStartTime: Date.now() - 2000,
+			verifyElapsedMs: 2000,
+			width: 80
+		};
+		var lines = [];
+		prSplit._renderLiveVerifyViewport(s, lines);
+		return lines.join('\n');
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	if strings.Contains(s, "PASS") || strings.Contains(s, "FAIL") || strings.Contains(s, "CONTINUE") {
+		t.Fatal("live interactive verify should not render explicit outcome controls before shell exit")
+	}
+	if !strings.Contains(s, "Pause") {
+		t.Fatal("live interactive verify should keep the pause control while the shell is live")
+	}
+}
+
+func TestChunk15c_LiveViewport_ShellExitedHidesInterruptHint(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	val, err := evalJS(`(function() {
+		var s = {
+			activeVerifySession: {
+				screen: function() { return 'verify output'; },
+				output: function() { return 'verify output'; },
+				isDone: function() { return false; }
+			},
+			verifyMode: 'interactive',
+			verifyShellExited: true,
+			verifyScreen: 'verify output line',
+			activeVerifyBranch: 'split/done',
+			activeVerifyStartTime: Date.now() - 2000,
+			verifyElapsedMs: 2000,
+			width: 80
+		};
+		var lines = [];
+		prSplit._renderLiveVerifyViewport(s, lines);
+		return lines.join('\n');
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := val.(string)
+	if !strings.Contains(s, "p: PASS  f: FAIL  c: CONTINUE") {
+		t.Fatal("shell-exited verify footer should advertise p/f/c outcome signaling")
+	}
+	if strings.Contains(s, "Ctrl+C: Stop") {
+		t.Fatal("shell-exited verify footer should not advertise interrupt controls")
+	}
+}

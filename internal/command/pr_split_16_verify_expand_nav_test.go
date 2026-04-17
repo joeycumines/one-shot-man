@@ -23,6 +23,8 @@ func TestChunk16_VerifyFallback_LaunchesAsync(t *testing.T) {
 
 		// Mock startVerifySession to fail (trigger fallback).
 		var origStartVerify = globalThis.prSplit.startVerifySession;
+		var origCanSpawn = globalThis.prSplit.canSpawnInteractiveShell;
+		globalThis.prSplit.canSpawnInteractiveShell = function() { return false; };
 		globalThis.prSplit.startVerifySession = function() {
 			return { error: 'no PTY support', session: null };
 		};
@@ -58,6 +60,7 @@ func TestChunk16_VerifyFallback_LaunchesAsync(t *testing.T) {
 			if (!r[1]) return 'FAIL: should return poll tick';
 			return 'OK';
 		} finally {
+			globalThis.prSplit.canSpawnInteractiveShell = origCanSpawn;
 			globalThis.prSplit.startVerifySession = origStartVerify;
 			globalThis.prSplit.verifySplitAsync = origVerifyAsync;
 			globalThis.prSplit.verifySplit = origSync;
@@ -131,6 +134,8 @@ func TestChunk16_VerifyFallback_AsyncHappyPath(t *testing.T) {
 		globalThis.prSplit.runtime.verifyCommand = 'make test';
 
 		var origStartVerify = globalThis.prSplit.startVerifySession;
+		var origCanSpawn = globalThis.prSplit.canSpawnInteractiveShell;
+		globalThis.prSplit.canSpawnInteractiveShell = function() { return false; };
 		globalThis.prSplit.startVerifySession = function() {
 			return { error: 'no PTY', session: null };
 		};
@@ -175,6 +180,7 @@ func TestChunk16_VerifyFallback_AsyncHappyPath(t *testing.T) {
 			}
 			return 'OK';
 		} finally {
+			globalThis.prSplit.canSpawnInteractiveShell = origCanSpawn;
 			globalThis.prSplit.startVerifySession = origStartVerify;
 			globalThis.prSplit.verifySplitAsync = origVerifyAsync;
 		}
@@ -199,6 +205,8 @@ func TestChunk16_VerifyFallback_AsyncError(t *testing.T) {
 		globalThis.prSplit.runtime.verifyCommand = 'make test';
 
 		var origStartVerify = globalThis.prSplit.startVerifySession;
+		var origCanSpawn = globalThis.prSplit.canSpawnInteractiveShell;
+		globalThis.prSplit.canSpawnInteractiveShell = function() { return false; };
 		globalThis.prSplit.startVerifySession = function() {
 			return { error: 'no PTY', session: null };
 		};
@@ -234,6 +242,7 @@ func TestChunk16_VerifyFallback_AsyncError(t *testing.T) {
 			}
 			return 'OK';
 		} finally {
+			globalThis.prSplit.canSpawnInteractiveShell = origCanSpawn;
 			globalThis.prSplit.startVerifySession = origStartVerify;
 			globalThis.prSplit.verifySplitAsync = origVerifyAsync;
 		}
@@ -258,6 +267,8 @@ func TestChunk16_VerifyFallback_AsyncThrows(t *testing.T) {
 		globalThis.prSplit.runtime.verifyCommand = 'make test';
 
 		var origStartVerify = globalThis.prSplit.startVerifySession;
+		var origCanSpawn = globalThis.prSplit.canSpawnInteractiveShell;
+		globalThis.prSplit.canSpawnInteractiveShell = function() { return false; };
 		globalThis.prSplit.startVerifySession = function() {
 			return { error: 'no PTY', session: null };
 		};
@@ -321,6 +332,8 @@ func TestChunk16_VerifyFallback_NoSyncCalls(t *testing.T) {
 		globalThis.prSplit.runtime.verifyCommand = 'make test';
 
 		var origStartVerify = globalThis.prSplit.startVerifySession;
+		var origCanSpawn = globalThis.prSplit.canSpawnInteractiveShell;
+		globalThis.prSplit.canSpawnInteractiveShell = function() { return false; };
 		globalThis.prSplit.startVerifySession = function() {
 			return { error: 'no PTY', session: null };
 		};
@@ -348,6 +361,7 @@ func TestChunk16_VerifyFallback_NoSyncCalls(t *testing.T) {
 			if (syncCalled) return 'FAIL: sync verifySplit was called';
 			return 'OK';
 		} finally {
+			globalThis.prSplit.canSpawnInteractiveShell = origCanSpawn;
 			globalThis.prSplit.startVerifySession = origStartVerify;
 			globalThis.prSplit.verifySplit = origSync;
 			globalThis.prSplit.verifySplitAsync = origAsync;
@@ -373,6 +387,8 @@ func TestChunk16_VerifyFallback_CancelDuringAsync(t *testing.T) {
 		globalThis.prSplit.runtime.verifyCommand = 'make test';
 
 		var origStartVerify = globalThis.prSplit.startVerifySession;
+		var origCanSpawn = globalThis.prSplit.canSpawnInteractiveShell;
+		globalThis.prSplit.canSpawnInteractiveShell = function() { return false; };
 		globalThis.prSplit.startVerifySession = function() {
 			return { error: 'no PTY', session: null };
 		};
@@ -415,6 +431,7 @@ func TestChunk16_VerifyFallback_CancelDuringAsync(t *testing.T) {
 			}
 			return 'OK';
 		} finally {
+			globalThis.prSplit.canSpawnInteractiveShell = origCanSpawn;
 			globalThis.prSplit.startVerifySession = origStartVerify;
 			globalThis.prSplit.verifySplitAsync = origVerifyAsync;
 		}

@@ -113,6 +113,444 @@ func TestVerifyPoll_AutoScroll(t *testing.T) {
 	}
 }
 
+func TestVerifyRunBranch_InteractivePathSkipsOneShotBootstrap(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		setupPlanCache();
+		globalThis.prSplit.runtime.dir = '.';
+		globalThis.prSplit.runtime.verifyCommand = 'make test';
+
+		var origCanSpawn = globalThis.prSplit.canSpawnInteractiveShell;
+		var origPrepare = globalThis.prSplit.prepareVerifyWorktree;
+		var origSpawn = globalThis.prSplit.spawnShellSession;
+		var origStart = globalThis.prSplit.startVerifySession;
+		var startCalled = 0;
+
+		globalThis.prSplit.canSpawnInteractiveShell = function() { return true; };
+		globalThis.prSplit.prepareVerifyWorktree = function() {
+			return { worktreeDir: '/tmp/osm-verify-test', dir: '.' };
+		};
+		globalThis.prSplit.spawnShellSession = function() {
+			return {
+				screen: function() { return ''; },
+				output: function() { return ''; },
+				isDone: function() { return false; },
+				interrupt: function() {},
+				kill: function() {},
+				pause: function() {},
+				resume: function() {}
+			};
+		};
+		globalThis.prSplit.startVerifySession = function() {
+			startCalled++;
+			return { error: 'should not be called', session: null };
+		};
+
+		try {
+			var s = initState('EXECUTING');
+			s.isProcessing = true;
+			s.verificationResults = [];
+			s.verifyingIdx = 0;
+			s.verifyOutput = {};
+			s.width = 100;
+			s.height = 30;
+
+			var result = update({type: 'Tick', id: 'verify-branch'}, s);
+			s = result[0];
+
+			return JSON.stringify({
+				startCalled: startCalled,
+				verifyMode: s.verifyMode,
+				verifyHint: s.verifyHint,
+				activeVerifyBranch: s.activeVerifyBranch,
+				hasTick: !!(result && result[1])
+			});
+		} finally {
+			globalThis.prSplit.canSpawnInteractiveShell = origCanSpawn;
+			globalThis.prSplit.prepareVerifyWorktree = origPrepare;
+			globalThis.prSplit.spawnShellSession = origSpawn;
+			globalThis.prSplit.startVerifySession = origStart;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var parsed struct {
+		StartCalled        int    `json:"startCalled"`
+		VerifyMode         string `json:"verifyMode"`
+		VerifyHint         string `json:"verifyHint"`
+		ActiveVerifyBranch string `json:"activeVerifyBranch"`
+		HasTick            bool   `json:"hasTick"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &parsed); err != nil {
+		t.Fatal(err)
+	}
+
+	if parsed.StartCalled != 0 {
+		t.Fatalf("expected interactive path to skip startVerifySession, got %d calls", parsed.StartCalled)
+	}
+	if parsed.VerifyMode != "interactive" {
+		t.Fatalf("expected verifyMode=interactive, got %q", parsed.VerifyMode)
+	}
+	if parsed.VerifyHint != "make test" {
+		t.Fatalf("expected interactive verify hint to be set, got %q", parsed.VerifyHint)
+	}
+	if parsed.ActiveVerifyBranch == "" {
+		t.Fatal("expected active verify branch to be set")
+	}
+	if !parsed.HasTick {
+		t.Fatal("expected interactive path to schedule a poll tick")
+	}
+}
+
+func TestVerifyRunBranch_InteractiveRegisterFailureUsesRawCleanup(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		setupPlanCache();
+		globalThis.prSplit.runtime.dir = '.';
+		globalThis.prSplit.runtime.verifyCommand = 'make test';
+
+		var origCanSpawn = globalThis.prSplit.canSpawnInteractiveShell;
+		var origPrepare = globalThis.prSplit.prepareVerifyWorktree;
+		var origSpawn = globalThis.prSplit.spawnShellSession;
+		var origCleanup = globalThis.prSplit.cleanupVerifyWorktree;
+		var origTuiMux = globalThis.tuiMux;
+		var origSync = globalThis.prSplit._syncMainViewport;
+		var closed = 0;
+		var cleanupArgs = [];
+
+		globalThis.prSplit.canSpawnInteractiveShell = function() { return true; };
+		globalThis.prSplit.prepareVerifyWorktree = function() {
+			return { worktreeDir: '/tmp/osm-verify-raw', dir: '/tmp/repo' };
+		};
+		globalThis.prSplit.spawnShellSession = function() {
+			return {
+				screen: function() { return ''; },
+				output: function() { return ''; },
+				isDone: function() { return false; },
+				close: function() { closed++; },
+				interrupt: function() {},
+				kill: function() {},
+				pause: function() {},
+				resume: function() {}
+			};
+		};
+		globalThis.prSplit.cleanupVerifyWorktree = function(dir, worktree) {
+			cleanupArgs.push([dir, worktree]);
+		};
+		globalThis.prSplit._syncMainViewport = function() {};
+		globalThis.tuiMux = globalThis.tuiMux || {};
+		globalThis.tuiMux.register = function() {
+			throw new Error('register failed');
+		};
+
+		try {
+			var s = initState('EXECUTING');
+			s.isProcessing = true;
+			s.verificationResults = [];
+			s.verifyingIdx = 0;
+			s.verifyOutput = {};
+			s.width = 100;
+			s.height = 30;
+
+			var result = update({type: 'Tick', id: 'verify-branch'}, s);
+			s = result[0];
+			if (s.verifyMode !== 'interactive') return 'FAIL: expected interactive mode';
+			if (!s.activeVerifySession || typeof s.activeVerifySession.close !== 'function') {
+				return 'FAIL: expected raw session fallback when register throws';
+			}
+
+			globalThis.prSplit._clearVerifyPaneSession(s, { debugPrefix: 'test', keepDisplay: false });
+
+			return JSON.stringify({
+				closed: closed,
+				cleanupCalls: cleanupArgs.length,
+				cleared: s.activeVerifySession === null && s.activeVerifyWorktree === null
+			});
+		} finally {
+			globalThis.prSplit.canSpawnInteractiveShell = origCanSpawn;
+			globalThis.prSplit.prepareVerifyWorktree = origPrepare;
+			globalThis.prSplit.spawnShellSession = origSpawn;
+			globalThis.prSplit.cleanupVerifyWorktree = origCleanup;
+			globalThis.prSplit._syncMainViewport = origSync;
+			globalThis.tuiMux = origTuiMux;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var parsed struct {
+		Closed       int  `json:"closed"`
+		CleanupCalls int  `json:"cleanupCalls"`
+		Cleared      bool `json:"cleared"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &parsed); err != nil {
+		t.Fatal(err)
+	}
+
+	if parsed.Closed != 1 {
+		t.Fatalf("expected raw interactive session fallback to close exactly once, got %d", parsed.Closed)
+	}
+	if parsed.CleanupCalls != 1 {
+		t.Fatalf("expected raw interactive session fallback to clean up worktree once, got %d", parsed.CleanupCalls)
+	}
+	if !parsed.Cleared {
+		t.Fatal("expected raw interactive session fallback state to be cleared")
+	}
+}
+
+func TestVerifyRunBranch_ShellSpawnFailureFallsBackToOneShot(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		setupPlanCache();
+		globalThis.prSplit.runtime.dir = '.';
+		globalThis.prSplit.runtime.verifyCommand = 'make test';
+
+		var origCanSpawn = globalThis.prSplit.canSpawnInteractiveShell;
+		var origPrepare = globalThis.prSplit.prepareVerifyWorktree;
+		var origSpawn = globalThis.prSplit.spawnShellSession;
+		var origStart = globalThis.prSplit.startVerifySession;
+		var origGitExec = globalThis.prSplit._gitExec;
+		var gitCalls = [];
+		var startCalled = 0;
+
+		globalThis.prSplit.canSpawnInteractiveShell = function() { return true; };
+		globalThis.prSplit.prepareVerifyWorktree = function() {
+			return { worktreeDir: '/tmp/osm-verify-interactive', dir: '/tmp/repo' };
+		};
+		globalThis.prSplit.spawnShellSession = function() {
+			throw new Error('pty spawn failed');
+		};
+		globalThis.prSplit.startVerifySession = function() {
+			startCalled++;
+			return {
+				session: {
+					screen: function() { return ''; },
+					output: function() { return ''; },
+					isDone: function() { return false; },
+					close: function() {},
+					interrupt: function() {},
+					kill: function() {},
+					pause: function() {},
+					resume: function() {}
+				},
+				worktreeDir: '/tmp/osm-verify-oneshot',
+				dir: '/tmp/repo',
+				startTime: 123
+			};
+		};
+		globalThis.prSplit._gitExec = function(dir, args) {
+			gitCalls.push([dir, args.join(' ')]);
+			return { code: 0, stdout: '', stderr: '' };
+		};
+
+		try {
+			var s = initState('EXECUTING');
+			s.isProcessing = true;
+			s.verificationResults = [];
+			s.verifyingIdx = 0;
+			s.verifyOutput = {};
+			s.width = 100;
+			s.height = 30;
+
+			var result = update({type: 'Tick', id: 'verify-branch'}, s);
+			s = result[0];
+
+			return JSON.stringify({
+				startCalled: startCalled,
+				verifyMode: s.verifyMode,
+				worktree: s.activeVerifyWorktree,
+				cleanupAttempted: gitCalls.some(function(call) {
+					return call[1] === 'worktree remove --force /tmp/osm-verify-interactive';
+				}),
+				hasTick: !!(result && result[1])
+			});
+		} finally {
+			globalThis.prSplit.canSpawnInteractiveShell = origCanSpawn;
+			globalThis.prSplit.prepareVerifyWorktree = origPrepare;
+			globalThis.prSplit.spawnShellSession = origSpawn;
+			globalThis.prSplit.startVerifySession = origStart;
+			globalThis.prSplit._gitExec = origGitExec;
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var parsed struct {
+		StartCalled      int    `json:"startCalled"`
+		VerifyMode       string `json:"verifyMode"`
+		Worktree         string `json:"worktree"`
+		CleanupAttempted bool   `json:"cleanupAttempted"`
+		HasTick          bool   `json:"hasTick"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &parsed); err != nil {
+		t.Fatal(err)
+	}
+
+	if parsed.StartCalled != 1 {
+		t.Fatalf("expected one-shot fallback to start after shell spawn failure, got %d calls", parsed.StartCalled)
+	}
+	if parsed.VerifyMode != "oneshot" {
+		t.Fatalf("expected verifyMode=oneshot after shell spawn failure, got %q", parsed.VerifyMode)
+	}
+	if parsed.Worktree != "/tmp/osm-verify-oneshot" {
+		t.Fatalf("expected one-shot fallback worktree to replace the failed interactive one, got %q", parsed.Worktree)
+	}
+	if !parsed.CleanupAttempted {
+		t.Fatal("expected failed interactive worktree to be cleaned before falling back to one-shot")
+	}
+	if !parsed.HasTick {
+		t.Fatal("expected one-shot fallback to schedule a poll tick")
+	}
+}
+
+func TestVerifyPoll_InteractiveShellExitWaitsForSignal(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = {
+			wizardState: 'BRANCH_BUILDING',
+			isProcessing: true,
+			verifyMode: 'interactive',
+			verifyAutoScroll: true,
+			verifyScreen: '',
+			verifyViewportOffset: 0,
+			spinnerFrame: 0,
+			activeVerifySession: {
+				screen: function() { return 'shell exited'; },
+				output: function() { return 'shell exited'; },
+				isDone: function() { return true; },
+				exitCode: function() { return 0; }
+			},
+			activeVerifyBranch: 'split/test',
+			activeVerifyStartTime: Date.now() - 1000,
+			verifyElapsedMs: 0,
+			verificationResults: [],
+			verifyOutput: {},
+			outputLines: [],
+			outputAutoScroll: true
+		};
+
+		var result = globalThis.prSplit._pollVerifySession(s);
+		return JSON.stringify({
+			verifyShellExited: s.verifyShellExited,
+			verifyResults: s.verificationResults.length,
+			hasTick: !!(result && result[1]),
+			verifyScreen: s.verifyScreen
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var parsed struct {
+		VerifyShellExited bool   `json:"verifyShellExited"`
+		VerifyResults     int    `json:"verifyResults"`
+		HasTick           bool   `json:"hasTick"`
+		VerifyScreen      string `json:"verifyScreen"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &parsed); err != nil {
+		t.Fatal(err)
+	}
+
+	if !parsed.VerifyShellExited {
+		t.Fatal("expected interactive shell exit to be tracked without auto-completing the branch")
+	}
+	if parsed.VerifyResults != 0 {
+		t.Fatalf("expected interactive shell exit to wait for user signal, got %d results", parsed.VerifyResults)
+	}
+	if !parsed.HasTick {
+		t.Fatal("expected interactive shell exit to keep polling")
+	}
+	if parsed.VerifyScreen == "" {
+		t.Fatal("expected final shell screen to remain visible after shell exit")
+	}
+}
+
+func TestVerifyPoll_OneShotExitRecordsResult(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngine(t)
+
+	raw, err := evalJS(`(function() {
+		var s = {
+			wizardState: 'BRANCH_BUILDING',
+			isProcessing: true,
+			verifyMode: 'oneshot',
+			verifyAutoScroll: true,
+			verifyScreen: '',
+			verifyViewportOffset: 0,
+			spinnerFrame: 0,
+			activeVerifySession: {
+				screen: function() { return 'go test'; },
+				output: function() { return 'go test\nFAIL'; },
+				isDone: function() { return true; },
+				exitCode: function() { return 1; }
+			},
+			activeVerifyBranch: 'split/test',
+			activeVerifyStartTime: Date.now() - 1000,
+			verifyElapsedMs: 0,
+			verificationResults: [],
+			verifyOutput: {},
+			outputLines: [],
+			outputAutoScroll: true
+		};
+
+		var result = globalThis.prSplit._pollVerifySession(s);
+		return JSON.stringify({
+			verifyShellExited: !!s.verifyShellExited,
+			verifyResults: s.verificationResults.length,
+			passed: s.verificationResults.length ? s.verificationResults[0].passed : null,
+			error: s.verificationResults.length ? s.verificationResults[0].error : '',
+			hasTick: !!(result && result[1]),
+			outputSaved: s.verifyOutput['split/test'] ? s.verifyOutput['split/test'].length : 0
+		});
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var parsed struct {
+		VerifyShellExited bool   `json:"verifyShellExited"`
+		VerifyResults     int    `json:"verifyResults"`
+		Passed            *bool  `json:"passed"`
+		Error             string `json:"error"`
+		HasTick           bool   `json:"hasTick"`
+		OutputSaved       int    `json:"outputSaved"`
+	}
+	if err := json.Unmarshal([]byte(raw.(string)), &parsed); err != nil {
+		t.Fatal(err)
+	}
+
+	if parsed.VerifyShellExited {
+		t.Fatal("expected one-shot mode to record exit instead of waiting for a manual signal")
+	}
+	if parsed.VerifyResults != 1 {
+		t.Fatalf("expected one-shot exit to record one result, got %d", parsed.VerifyResults)
+	}
+	if parsed.Passed == nil || *parsed.Passed {
+		t.Fatal("expected one-shot non-zero exit to record a failed result")
+	}
+	if parsed.Error == "" {
+		t.Fatal("expected one-shot non-zero exit to record an error message")
+	}
+	if !parsed.HasTick {
+		t.Fatal("expected one-shot completion to schedule the next branch tick")
+	}
+	if parsed.OutputSaved == 0 {
+		t.Fatal("expected one-shot completion to preserve captured output")
+	}
+}
+
 // ---------------------------------------------------------------------------
 //  T351: Inline verify terminal uses s.verifyScreen snapshot
 // ---------------------------------------------------------------------------

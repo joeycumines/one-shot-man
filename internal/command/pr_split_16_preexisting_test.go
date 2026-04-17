@@ -44,6 +44,7 @@ func TestChunk16_PollVerifySession_PreExisting_BaselineFailed(t *testing.T) {
 		s.activeVerifyDir = null;
 		s.activeVerifyBranch = 'split/api';
 		s.activeVerifyStartTime = Date.now() - 1000;
+		s.verifyMode = 'oneshot';
 
 		// T115: Simulate baseline check having completed — baseline FAILED.
 		s._baselineVerifyStarted = true;
@@ -97,6 +98,7 @@ func TestChunk16_PollVerifySession_PreExisting_BaselinePassed(t *testing.T) {
 		s.activeVerifyDir = null;
 		s.activeVerifyBranch = 'split/api';
 		s.activeVerifyStartTime = Date.now() - 500;
+		s.verifyMode = 'oneshot';
 
 		// Baseline check completed — baseline PASSED.
 		s._baselineVerifyStarted = true;
@@ -149,6 +151,7 @@ func TestChunk16_PollVerifySession_PreExisting_NotYetAvailable(t *testing.T) {
 		s.activeVerifyDir = null;
 		s.activeVerifyBranch = 'split/api';
 		s.activeVerifyStartTime = Date.now() - 200;
+		s.verifyMode = 'oneshot';
 
 		// Baseline started but result not yet available.
 		s._baselineVerifyStarted = true;
@@ -197,6 +200,7 @@ func TestChunk16_PollVerifySession_Passing_NoPreExisting(t *testing.T) {
 		s.activeVerifyDir = null;
 		s.activeVerifyBranch = 'split/api';
 		s.activeVerifyStartTime = Date.now() - 300;
+		s.verifyMode = 'oneshot';
 
 		// Even though baseline failed, passing branch should not be marked.
 		s._baselineVerifyStarted = true;
@@ -334,6 +338,7 @@ func TestChunk16_PreExisting_Helpers(t *testing.T) {
 		ss.activeVerifyDir = null;
 		ss.activeVerifyBranch = 'split/api';
 		ss.activeVerifyStartTime = Date.now();
+		ss.verifyMode = 'oneshot';
 		var r1 = update({type: 'Tick', id: 'verify-poll'}, ss);
 		if (r1[0].verificationResults[0].preExisting !== false) {
 			return 'FAIL: null baseline should give preExisting=false';
@@ -361,6 +366,7 @@ func TestChunk16_PreExisting_Helpers(t *testing.T) {
 		ss2.activeVerifyDir = null;
 		ss2.activeVerifyBranch = 'split/cli';
 		ss2.activeVerifyStartTime = Date.now();
+		ss2.verifyMode = 'oneshot';
 		var r2 = update({type: 'Tick', id: 'verify-poll'}, ss2);
 		var res2 = r2[0].verificationResults[0];
 		if (res2.preExisting !== true) return 'FAIL: failed baseline should give preExisting=true';
@@ -390,6 +396,7 @@ func TestChunk16_PreExisting_Helpers(t *testing.T) {
 		ss3.activeVerifyDir = null;
 		ss3.activeVerifyBranch = 'split/docs';
 		ss3.activeVerifyStartTime = Date.now();
+		ss3.verifyMode = 'oneshot';
 		var r3 = update({type: 'Tick', id: 'verify-poll'}, ss3);
 		if (r3[0].verificationResults[0].preExisting !== false) {
 			return 'FAIL: passed baseline should give preExisting=false';
@@ -426,6 +433,8 @@ func TestChunk16_RunVerifyBranch_KicksOffBaseline(t *testing.T) {
 
 		// Also mock startVerifySession to avoid real PTY.
 		var origStartSession = globalThis.prSplit.startVerifySession;
+		var origCanSpawn = globalThis.prSplit.canSpawnInteractiveShell;
+		globalThis.prSplit.canSpawnInteractiveShell = function() { return false; };
 		globalThis.prSplit.startVerifySession = function() {
 			return { skipped: true };
 		};
@@ -452,6 +461,7 @@ func TestChunk16_RunVerifyBranch_KicksOffBaseline(t *testing.T) {
 			}
 			return 'OK';
 		} finally {
+			globalThis.prSplit.canSpawnInteractiveShell = origCanSpawn;
 			globalThis.prSplit.verifySplitAsync = origAsync;
 			globalThis.prSplit.startVerifySession = origStartSession;
 		}
@@ -482,6 +492,8 @@ func TestChunk16_RunVerifyBranch_NoDoubleBaseline(t *testing.T) {
 		};
 
 		var origStartSession = globalThis.prSplit.startVerifySession;
+		var origCanSpawn = globalThis.prSplit.canSpawnInteractiveShell;
+		globalThis.prSplit.canSpawnInteractiveShell = function() { return false; };
 		globalThis.prSplit.startVerifySession = function() {
 			return { skipped: true };
 		};
@@ -506,6 +518,7 @@ func TestChunk16_RunVerifyBranch_NoDoubleBaseline(t *testing.T) {
 			}
 			return 'OK';
 		} finally {
+			globalThis.prSplit.canSpawnInteractiveShell = origCanSpawn;
 			globalThis.prSplit.verifySplitAsync = origAsync;
 			globalThis.prSplit.startVerifySession = origStartSession;
 		}

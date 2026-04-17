@@ -141,6 +141,228 @@ func TestChunk16_VerifySession_MouseWheel(t *testing.T) {
 	}
 }
 
+func TestChunk16_VerifyOneShot_MouseStaysReadOnly(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var writes = [];
+		var mockSession = {
+			write: function(v) { writes.push(v); },
+			interrupt: function() {}, kill: function() {}, close: function() {},
+			isRunning: function() { return true; },
+			output: function() { return ''; }, screen: function() { return ''; }
+		};
+
+		var s = initState('BRANCH_BUILDING');
+		s.splitViewEnabled = true;
+		s.splitViewFocus = 'claude';
+		s.splitViewTab = 'verify';
+		s.verifyMode = 'oneshot';
+		s.activeVerifySession = mockSession;
+		s.verifyAutoScroll = true;
+		s.verifyViewportOffset = 0;
+
+		var r = sendClick(s);
+		if (writes.length !== 0) return 'FAIL: one-shot click should not forward mouse input';
+
+		r = sendWheel(r[0], 'up');
+		if (writes.length !== 0) return 'FAIL: one-shot wheel should not forward mouse input';
+		if (r[0].verifyViewportOffset !== 3) return 'FAIL: one-shot wheel-up offset=' + r[0].verifyViewportOffset + ', want 3';
+		if (r[0].verifyAutoScroll) return 'FAIL: one-shot wheel-up should disable auto-scroll';
+
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify one-shot mouse read-only: %v", raw)
+	}
+}
+
+func TestChunk16_VerifyTextOnly_MouseWheelScrollsVerifyViewport(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('BRANCH_BUILDING');
+		s.splitViewEnabled = true;
+		s.splitViewFocus = 'claude';
+		s.splitViewTab = 'verify';
+		s.verifyMode = 'textonly';
+		s.verifyScreen = 'line1\nline2\nline3\nline4';
+		s.verifyAutoScroll = true;
+		s.verifyViewportOffset = 0;
+		s.claudeViewOffset = 0;
+
+		var r = sendWheel(s, 'up');
+		if (r[0].verifyViewportOffset !== 3) return 'FAIL: textonly wheel-up offset=' + r[0].verifyViewportOffset + ', want 3';
+		if (r[0].verifyAutoScroll) return 'FAIL: textonly wheel-up should disable auto-scroll';
+		if (r[0].claudeViewOffset !== 0) return 'FAIL: textonly wheel-up should not scroll claude pane';
+
+		r = sendWheel(r[0], 'down');
+		if (r[0].verifyViewportOffset !== 0) return 'FAIL: textonly wheel-down offset=' + r[0].verifyViewportOffset + ', want 0';
+		if (!r[0].verifyAutoScroll) return 'FAIL: textonly wheel-down to 0 should re-enable auto-scroll';
+		if (r[0].claudeViewOffset !== 0) return 'FAIL: textonly wheel-down should not scroll claude pane';
+
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify textonly mouse wheel: %v", raw)
+	}
+}
+
+func TestChunk16_VerifyShellExited_MouseWheelScrollsVerifyViewport(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var writes = [];
+		var s = initState('BRANCH_BUILDING');
+		s.splitViewEnabled = true;
+		s.splitViewFocus = 'claude';
+		s.splitViewTab = 'verify';
+		s.verifyMode = 'interactive';
+		s.verifyShellExited = true;
+		s.activeVerifyBranch = 'split/verify';
+		s.activeVerifySession = {
+			write: function(v) { writes.push(v); },
+			interrupt: function() {}, kill: function() {}, close: function() {},
+			isRunning: function() { return false; },
+			output: function() { return ''; }, screen: function() { return ''; }
+		};
+		s.verifyAutoScroll = true;
+		s.verifyViewportOffset = 0;
+
+		var r = sendWheel(s, 'up');
+		if (writes.length !== 0) return 'FAIL: shell-exited wheel should not forward mouse input';
+		if (r[0].verifyViewportOffset !== 3) return 'FAIL: shell-exited wheel-up offset=' + r[0].verifyViewportOffset + ', want 3';
+		if (r[0].verifyAutoScroll) return 'FAIL: shell-exited wheel-up should disable auto-scroll';
+
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify shell exited mouse wheel: %v", raw)
+	}
+}
+
+func TestChunk16_VerifyShellExited_NavCancelShowsConfirm(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var interrupted = false;
+		var restore = mockZoneHit('nav-cancel');
+		try {
+			var s = initState('BRANCH_BUILDING');
+			s.verifyMode = 'interactive';
+			s.verifyShellExited = true;
+			s.activeVerifyBranch = 'split/verify';
+			s.activeVerifySession = {
+				interrupt: function() { interrupted = true; },
+				kill: function() { interrupted = true; },
+				screen: function() { return ''; },
+				output: function() { return ''; },
+				isDone: function() { return false; }
+			};
+
+			var r = sendClick(s);
+			if (interrupted) return 'FAIL: nav-cancel should not interrupt after shell exit';
+			if (!r[0].showConfirmCancel) return 'FAIL: nav-cancel should open confirm after shell exit';
+			return 'OK';
+		} finally {
+			restore();
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify shell exited nav-cancel: %v", raw)
+	}
+}
+
+func TestChunk16_LiveVerify_MousePassIgnoredUntilShellExit(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var restore = mockZoneHit('verify-pass');
+		try {
+			setupPlanCache();
+			var s = initState('BRANCH_BUILDING');
+			s.splitViewEnabled = true;
+			s.splitViewFocus = 'claude';
+			s.splitViewTab = 'verify';
+			s.verifyMode = 'interactive';
+			s.activeVerifyBranch = 'split/verify';
+			s.activeVerifySession = {
+				screen: function() { return ''; },
+				output: function() { return ''; },
+				isDone: function() { return false; }
+			};
+
+			var r = sendClick(s);
+			if (r[0].verifySignal) return 'FAIL: verify-pass should not signal before shell exit';
+			if (r[0].verifySignalChoice) return 'FAIL: verifySignalChoice should stay unset before shell exit';
+			return 'OK';
+		} finally {
+			restore();
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("live verify mouse pass gating: %v", raw)
+	}
+}
+
+func TestChunk16_VerifyShellExited_MousePassSignals(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var restore = mockZoneHit('verify-pass');
+		try {
+			setupPlanCache();
+			var s = initState('BRANCH_BUILDING');
+			s.splitViewEnabled = true;
+			s.splitViewFocus = 'claude';
+			s.splitViewTab = 'verify';
+			s.verifyMode = 'interactive';
+			s.verifyShellExited = true;
+			s.activeVerifyBranch = 'split/verify';
+			s.activeVerifySession = {
+				screen: function() { return ''; },
+				output: function() { return ''; },
+				isDone: function() { return false; }
+			};
+
+			var r = sendClick(s);
+			if (!r[0].verifySignal || r[0].verifySignalChoice !== 'pass') {
+				return 'FAIL: verify-pass should signal pass after shell exit';
+			}
+			return 'OK';
+		} finally {
+			restore();
+		}
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify shell exited mouse pass: %v", raw)
+	}
+}
+
 // ---------------------------------------------------------------------------
 //  Split View
 // ---------------------------------------------------------------------------

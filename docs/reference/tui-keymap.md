@@ -51,16 +51,18 @@ Active in BRANCH_BUILDING and EQUIV_CHECK states.
 | `f`              | Mark branch as failed                             |
 | `c`              | Continue / skip branch                            |
 
-The `z`, `Ctrl+C`, `p`, `f`, `c` keys require an active verify session
-(BRANCH_BUILDING state only).
+The `z` and `Ctrl+C` keys require a live canonical interactive verify
+shell (BRANCH_BUILDING state only). The `p`, `f`, and `c` keys apply
+after that shell exits and the Verify footer prompts for an explicit
+outcome.
 
 ## Split View
 
 | Key              | Action                                    |
 |------------------|-------------------------------------------|
 | `Ctrl+L`         | Toggle split view on / off                |
-| `Ctrl+Tab`       | Switch focus: wizard ↔ bottom pane        |
-| `Ctrl+O`         | Cycle bottom pane tabs (Claude → Output → Verify) |
+| `Ctrl+Tab`       | Cycle focus target (wizard → Claude → Output → Verify when present → wizard) |
+| `Ctrl+O`         | Cycle visible bottom tabs (Claude ↔ Output, adding Verify when present) |
 | `Ctrl+]`         | Full passthrough (focused pane)           |
 | `Ctrl+=` / `Ctrl+-` | Resize split view ratio (±10%)         |
 
@@ -78,16 +80,31 @@ Read-only scrollback. All keys consumed (not forwarded).
 | `PgUp` / `PgDn`  | Scroll 5 lines           |
 | `Home` / `End`   | Jump to top / bottom     |
 
-### Bottom Pane — Verify Tab (PTY mode)
+### Bottom Pane — Verify Tab (interactive shell)
 
-When a live PTY verify session is active, most keys are forwarded to the
-child terminal process. Reserved keys that are NOT forwarded:
+This is the canonical verify experience. When the persistent PTY shell is
+active, most keys are forwarded to the child terminal process. Reserved
+keys that are NOT forwarded:
 
 `Ctrl+Tab`, `Ctrl+L`, `Ctrl+O`, `Ctrl+]`, `Ctrl++`, `Ctrl+=`, `Ctrl+-`, `F1`
 
-### Bottom Pane — Verify Tab (fallback mode)
+After the interactive shell exits, the Verify footer switches to explicit
+`p` / `f` / `c` outcome signaling while the pane becomes read-only for
+post-mortem scrolling.
 
-When PTY is unavailable, the verify tab shows scrollable output:
+### Bottom Pane — Verify Tab (degraded one-shot mode)
+
+When interactive shell spawn fails but a CaptureSession can still start,
+the verify tab shows a degraded one-shot PTY session. The command runs
+once, exits on its own, and the exit code decides the branch result.
+There are no PASS / FAIL / CONTINUE overrides in this mode. The pane is
+read-only while the command runs: keyboard and mouse scrolling work for
+inspection, but terminal input is not forwarded into the one-shot command.
+
+### Bottom Pane — Verify Tab (degraded text fallback)
+
+When PTY startup fails entirely, the verify tab shows scrollable text
+output from the async fallback:
 
 | Key              | Action                   |
 |------------------|--------------------------|

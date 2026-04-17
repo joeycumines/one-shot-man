@@ -33,13 +33,12 @@ func TestE2E_VerifyTabLifecycle(t *testing.T) {
 
         // ── Mock CaptureSession with phase toggle ──
         var done = false;
-        var writtenKeys = [];
         s.activeVerifySession = {
             isDone: function() { return done; },
             exitCode: function() { return 0; },
             output: function() { return 'All tests passed'; },
             screen: function() { return done ? 'All tests passed' : 'Running tests...'; },
-            write: function(v) { writtenKeys.push(v); },
+            write: function() {},
             close: function() {},
             kill: function() {},
             pause: function() {},
@@ -49,6 +48,7 @@ func TestE2E_VerifyTabLifecycle(t *testing.T) {
         s.activeVerifyDir = '/tmp/repo';
         s.activeVerifyBranch = 'split/01-types';
         s.activeVerifyStartTime = Date.now();
+        s.verifyMode = 'oneshot';
         s.verifyElapsedMs = 0;
         s.verifyScreen = '';
         s.verifyViewportOffset = 0;
@@ -69,15 +69,18 @@ func TestE2E_VerifyTabLifecycle(t *testing.T) {
             errors.push('Phase1: session should still be active');
         }
 
-        // ── Phase 2: Send key while bottom pane focused on verify tab ──
+        // ── Phase 2: Degraded one-shot verify is read-only; scroll keys move the viewport ──
         s.splitViewFocus = 'claude';  // focus bottom pane (verify tab)
-        r = sendKey(s, 'a');
+        r = sendKey(s, 'up');
         s = r[0];
         if (s.wizardState !== 'BRANCH_BUILDING') {
             errors.push('Phase2: wizard state should be unchanged, got: ' + s.wizardState);
         }
-        if (writtenKeys.length === 0) {
-            errors.push('Phase2: key should have been written to verify session');
+        if (s.verifyViewportOffset !== 1) {
+            errors.push('Phase2: verifyViewportOffset should scroll to 1, got: ' + s.verifyViewportOffset);
+        }
+        if (s.verifyAutoScroll !== false) {
+            errors.push('Phase2: verifyAutoScroll should disable while scrolling');
         }
 
         // ── Phase 3: Session completes on next poll ──

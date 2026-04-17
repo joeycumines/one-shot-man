@@ -77,8 +77,8 @@ it as an IIFE parameter and attaches its own exports:
 | 03 | `pr_split_03_planning.js` | Plan creation, persistence (`savePlan`/`loadPlan`), `DEFAULT_PLAN_PATH` |
 | 04 | `pr_split_04_validation.js` | Schema validators for classification, plan, resolution JSON |
 | 05 | `pr_split_05_execution.js` | `executeSplit` — branch creation, cherry-pick, diff application |
-| 06 | `pr_split_06_verification.js` | `verifySplit`, `verifyEquivalence`, worktree management |
-| 06b | `pr_split_06b_verify_shell.js` | Interactive shell inside verify worktree via CaptureSession |
+| 06 | `pr_split_06_verification.js` | `verifySplit`, `verifyEquivalence`, worktree management, degraded one-shot verify fallback |
+| 06b | `pr_split_06b_verify_shell.js` | Canonical interactive verify shell inside verify worktree |
 | 07 | `pr_split_07_prcreation.js` | `createPRs` — push branches, `gh pr create`, stacking support |
 | 08 | `pr_split_08_conflict.js` | `AUTO_FIX_STRATEGIES`, `resolveConflicts` |
 
@@ -202,7 +202,7 @@ Colors, styles, layout mode, shared utilities, library re-exports (16 exports).
 
 #### Chunk 15b — `pr_split_15b_tui_chrome.js`
 
-Title bar, nav bar, status bar, split-view panes (10 exports).
+Title bar, nav bar, status bar, split-view panes (9 exports).
 
 | Export | Kind | Class | Description |
 |:-------|:-----|:------|:------------|
@@ -211,8 +211,7 @@ Title bar, nav bar, status bar, split-view panes (10 exports).
 | `_renderStatusBar` | Function | lipgloss | Status bar with elapsed time, shortcuts, transient notifications |
 | `_renderClaudePane` | Function | lipgloss | Claude split-view pane (ANSI screenshot + scroll offset) |
 | `_renderOutputPane` | Function | lipgloss | Output tab pane (process output buffer) |
-| `_renderVerifyPane` | Function | lipgloss | Verify tab pane (VTerm screen) |
-| `_renderShellPane` | Function | lipgloss | Shell tab pane (interactive shell VTerm) |
+| `_renderVerifyPane` | Function | lipgloss | Verify tab pane (interactive shell or degraded verify output, depending on `verifyMode`) |
 | `_renderStepDots` | Function | lipgloss | `● ● ○ ○ ○` step progress dots |
 | `_viewClaudeConvoOverlay` | Function | lipgloss | Claude conversation overlay (history + input field) |
 | `_renderClaudeQuestionPrompt` | Function | lipgloss | Inline Claude question prompt with response input |
@@ -232,7 +231,7 @@ Wizard screen renderers for Config through Verification (11 exports).
 | `_renderSplitExecutionList` | Function | lipgloss | Per-branch execution progress list with status icons |
 | `_renderSkippedFilesWarning` | Function | lipgloss | Warning for unassigned files |
 | `_renderVerificationStatusList` | Function | lipgloss | Per-branch verification status (pass/fail/skip/pre-existing) |
-| `_renderLiveVerifyViewport` | Function | lipgloss | Inline live terminal viewport for active verify session |
+| `_renderLiveVerifyViewport` | Function | lipgloss | Inline verify viewport with explicit interactive / degraded mode chrome |
 | `_renderVerificationSummary` | Function | lipgloss | Verification summary (X passed, Y failed, Z skipped) |
 
 #### Chunk 15d — `pr_split_15d_tui_dialogs.js`
@@ -303,9 +302,9 @@ Verify handlers, confirm cancel, Claude conversation, error resolution (10 expor
 | Export | Kind | Class | Description |
 |:-------|:-----|:------|:------------|
 | `_updateConfirmCancel` | Function | stateful | Confirm-cancel overlay input (Tab, y/n/esc, zone clicks) |
-| `_runVerifyBranch` | Function | async | Per-branch verification via CaptureSession or async fallback |
-| `_pollVerifySession` | Function | stateful | Tick: VTerm screen, exit code; records results, advances |
-| `_pollShellSession` | Function | stateful | Tick: shell screen updates; cleanup on exit |
+| `_runVerifyBranch` | Function | async | Per-branch verification with explicit mode selection: interactive shell first, then degraded one-shot, then text-only fallback |
+| `_pollVerifySession` | Function | stateful | Tick: mode-aware verify updates; records results only when the active mode says the branch is complete |
+| `_handleVerifySignal` | Function | stateful | PASS / FAIL / CONTINUE handler for the canonical interactive verify pane |
 | `_handleVerifyFallbackPoll` | Function | stateful | Tick: async fallback verification |
 | `_openClaudeConvo` | Function | stateful | Opens conversation overlay (plan-review / error-resolution context) |
 | `_closeClaudeConvo` | Function | stateful | Dismisses conversation overlay, preserves history |
@@ -327,7 +326,7 @@ Claude automation, key/mouse conversion, question detection (12 exports).
 | `_keyToTermBytes` | Function | pure | BubbleTea key string → terminal byte sequence (CSI, ctrl, fn keys) |
 | `_mouseToTermBytes` | Function | pure | BubbleTea mouse → SGR mouse escape with coordinate offset |
 | `_CLAUDE_RESERVED_KEYS` | Object | constant | Reserved nav keys when Claude pane focused (17 entries) |
-| `_INTERACTIVE_RESERVED_KEYS` | Object | constant | Minimal reserved keys for Shell tab (7 entries) |
+| `_INTERACTIVE_RESERVED_KEYS` | Object | constant | Minimal reserved keys for the unified interactive verify pane (7 entries) |
 | `_detectClaudeQuestion` | Function | pure | Heuristic: scans terminal text for confirmation/question prompts |
 | `QUESTION_IDLE_THRESHOLD_MS` | Number | constant | Idle threshold for question detection |
 | `_pollClaudeScreenshot` | Function | stateful | Tick: ANSI+plaintext capture, question detection, auto-close |

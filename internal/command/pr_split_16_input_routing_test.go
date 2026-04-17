@@ -67,6 +67,316 @@ func TestInputRouting_VerifyTabConsumedKey(t *testing.T) {
 	}
 }
 
+func TestInputRouting_VerifyTabOneShotScrollsInsteadOfWriting(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+		var written = [];
+		var s = initState('BRANCH_BUILDING');
+		s.splitViewEnabled = true;
+		s.splitViewFocus = 'claude';
+		s.splitViewTab = 'verify';
+		s.verifyMode = 'oneshot';
+		s.activeVerifySession = {
+			write: function(b) { written.push(b); },
+			screen: function() { return ''; },
+			output: function() { return ''; },
+			isDone: function() { return false; }
+		};
+		s.verifyViewportOffset = 0;
+		s.verifyAutoScroll = true;
+
+		var r = sendKey(s, 'up');
+		var ns = r[0];
+
+		if (ns.verifyViewportOffset !== 1) {
+			errors.push('verifyViewportOffset=' + ns.verifyViewportOffset + ', want 1');
+		}
+		if (ns.verifyAutoScroll !== false) {
+			errors.push('verifyAutoScroll should disable while scrolling');
+		}
+		if (written.length !== 0) {
+			errors.push('one-shot mode should not forward keys, wrote ' + JSON.stringify(written));
+		}
+
+		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify tab one-shot scroll: %v", raw)
+	}
+}
+
+func TestInputRouting_VerifyTabShellExitedPFCAreSignals(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+		var written = [];
+		var s = initState('BRANCH_BUILDING');
+		s.splitViewEnabled = true;
+		s.splitViewFocus = 'claude';
+		s.splitViewTab = 'verify';
+		s.verifyMode = 'interactive';
+		s.verifyShellExited = true;
+		s.activeVerifyBranch = 'split/verify';
+		s.activeVerifySession = {
+			write: function(b) { written.push(b); },
+			screen: function() { return ''; },
+			output: function() { return ''; },
+			isDone: function() { return false; }
+		};
+
+		var r = sendKey(s, 'p');
+		var ns = r[0];
+
+		if (written.length !== 0) {
+			errors.push('p should not forward to verify PTY, wrote ' + JSON.stringify(written));
+		}
+		if (!ns.verifySignal || ns.verifySignalChoice !== 'pass') {
+			errors.push('p should set verifySignal=pass, got ' + JSON.stringify({
+				verifySignal: ns.verifySignal,
+				verifySignalChoice: ns.verifySignalChoice
+			}));
+		}
+
+		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify shell exited pfc routing: %v", raw)
+	}
+}
+
+func TestInputRouting_VerifyTabShellExitedScrollsInsteadOfWriting(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+		var written = [];
+		var s = initState('BRANCH_BUILDING');
+		s.splitViewEnabled = true;
+		s.splitViewFocus = 'claude';
+		s.splitViewTab = 'verify';
+		s.verifyMode = 'interactive';
+		s.verifyShellExited = true;
+		s.activeVerifyBranch = 'split/verify';
+		s.activeVerifySession = {
+			write: function(b) { written.push(b); },
+			screen: function() { return ''; },
+			output: function() { return ''; },
+			isDone: function() { return false; }
+		};
+		s.verifyViewportOffset = 0;
+		s.verifyAutoScroll = true;
+
+		var r = sendKey(s, 'up');
+		var ns = r[0];
+
+		if (written.length !== 0) {
+			errors.push('up should not forward to verify PTY after shell exit');
+		}
+		if (ns.verifyViewportOffset !== 1) {
+			errors.push('verifyViewportOffset=' + ns.verifyViewportOffset + ', want 1');
+		}
+		if (ns.verifyAutoScroll !== false) {
+			errors.push('verifyAutoScroll should disable while scrolling');
+		}
+
+		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify shell exited scroll routing: %v", raw)
+	}
+}
+
+func TestInputRouting_VerifyTabOneShotPasteBlocked(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+		var written = [];
+		var s = initState('BRANCH_BUILDING');
+		s.splitViewEnabled = true;
+		s.splitViewFocus = 'claude';
+		s.splitViewTab = 'verify';
+		s.verifyMode = 'oneshot';
+		s.activeVerifySession = {
+			write: function(b) { written.push(b); },
+			screen: function() { return ''; },
+			output: function() { return ''; },
+			isDone: function() { return false; }
+		};
+		output.fromClipboard = function() { return 'pasted verify text'; };
+
+		var r = sendKey(s, 'ctrl+shift+v');
+		var ns = r[0];
+
+		if (written.length !== 0) {
+			errors.push('paste should not forward to degraded one-shot verify');
+		}
+		if (ns.clipboardFlash !== 'Paste unavailable while verify output is read-only') {
+			errors.push('unexpected clipboardFlash=' + JSON.stringify(ns.clipboardFlash));
+		}
+
+		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify one-shot paste blocked: %v", raw)
+	}
+}
+
+func TestInputRouting_VerifyTabShellExitedPasteBlocked(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var errors = [];
+		var written = [];
+		var s = initState('BRANCH_BUILDING');
+		s.splitViewEnabled = true;
+		s.splitViewFocus = 'claude';
+		s.splitViewTab = 'verify';
+		s.verifyMode = 'interactive';
+		s.verifyShellExited = true;
+		s.activeVerifyBranch = 'split/verify';
+		s.activeVerifySession = {
+			write: function(b) { written.push(b); },
+			screen: function() { return ''; },
+			output: function() { return ''; },
+			isDone: function() { return false; }
+		};
+		output.fromClipboard = function() { return 'pasted verify text'; };
+
+		var r = sendKey(s, 'ctrl+shift+v');
+		var ns = r[0];
+
+		if (written.length !== 0) {
+			errors.push('paste should not forward after verify shell exit');
+		}
+		if (ns.clipboardFlash !== 'Paste unavailable while verify output is read-only') {
+			errors.push('unexpected clipboardFlash=' + JSON.stringify(ns.clipboardFlash));
+		}
+
+		return errors.length > 0 ? 'FAIL: ' + errors.join('; ') : 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify shell exited paste blocked: %v", raw)
+	}
+}
+
+func TestInputRouting_VerifyTabShellExitedCtrlCOpensCancel(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var interrupted = false;
+		var killed = false;
+		var s = initState('BRANCH_BUILDING');
+		s.splitViewEnabled = true;
+		s.splitViewFocus = 'claude';
+		s.splitViewTab = 'verify';
+		s.verifyMode = 'interactive';
+		s.verifyShellExited = true;
+		s.activeVerifyBranch = 'split/verify';
+		s.activeVerifySession = {
+			interrupt: function() { interrupted = true; },
+			kill: function() { killed = true; },
+			screen: function() { return ''; },
+			output: function() { return ''; },
+			isDone: function() { return false; }
+		};
+
+		var r = sendKey(s, 'ctrl+c');
+		if (interrupted || killed) return 'FAIL: ctrl+c should not interrupt after shell exit';
+		if (!r[0].showConfirmCancel) return 'FAIL: ctrl+c should open confirm cancel after shell exit';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify shell exited ctrl+c: %v", raw)
+	}
+}
+
+func TestInputRouting_LiveVerifyPFCAreIgnoredOutsideExitedState(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var s = initState('BRANCH_BUILDING');
+		s.verifyMode = 'interactive';
+		s.activeVerifyBranch = 'split/verify';
+		s.activeVerifySession = {
+			screen: function() { return ''; },
+			output: function() { return ''; },
+			isDone: function() { return false; }
+		};
+
+		var r = sendKey(s, 'p');
+		if (r[0].verifySignal) return 'FAIL: p should not signal before verify shell exit';
+		if (r[0].verifySignalChoice) return 'FAIL: verifySignalChoice should stay unset before shell exit';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("live verify pfc gating: %v", raw)
+	}
+}
+
+func TestInputRouting_VerifyTabShellExitedZDoesNotPause(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewTUIEngineWithHelpers(t)
+
+	raw, err := evalJS(`(function() {
+		var paused = 0;
+		var resumed = 0;
+		var s = initState('BRANCH_BUILDING');
+		s.verifyMode = 'interactive';
+		s.verifyShellExited = true;
+		s.activeVerifyBranch = 'split/verify';
+		s.activeVerifySession = {
+			pause: function() { paused += 1; },
+			resume: function() { resumed += 1; },
+			screen: function() { return ''; },
+			output: function() { return ''; },
+			isDone: function() { return false; }
+		};
+
+		var r = sendKey(s, 'z');
+		if (paused !== 0 || resumed !== 0) return 'FAIL: z should not pause or resume after shell exit';
+		if (r[0].verifyPaused) return 'FAIL: verifyPaused should remain false after shell exit';
+		return 'OK';
+	})()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != "OK" {
+		t.Errorf("verify shell exited z: %v", raw)
+	}
+}
+
 func TestInputRouting_OutputTabPassthrough(t *testing.T) {
 	t.Parallel()
 	evalJS := prsplittest.NewTUIEngineWithHelpers(t)

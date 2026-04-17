@@ -82,6 +82,11 @@
     // T327/T328: Write raw bytes to the child terminal of the active tab.
     function writeMouseToPane(bytes, s) {
         var tab = s.splitViewTab;
+        if (tab === 'verify' &&
+            (s.verifyFallbackRunning || s.verifyMode === 'oneshot' ||
+                s.verifyMode === 'textonly' || s.verifyShellExited)) {
+            return false;
+        }
         var session = getInteractivePaneSession(s, tab);
         if (session && typeof session.write === 'function') {
             try { session.write(bytes); return true; } catch (e) { log.debug('writeInput: ' + tab + ' session.write failed: ' + (e.message || e)); return false; }
@@ -635,7 +640,7 @@
         // instead of showing the cancel dialog.
         // First Ctrl+C sends SIGINT; second within 2s sends SIGKILL
         // (handles processes that ignore SIGINT).
-        if (k === 'ctrl+c' && activeVerifySession) {
+        if (k === 'ctrl+c' && activeVerifySession && !s.verifyShellExited) {
             var now = Date.now();
             if (s.lastVerifyInterruptTime > 0 && (now - s.lastVerifyInterruptTime) < C.SIGKILL_WINDOW_MS) {
                 // Double Ctrl+C — force kill.
@@ -754,6 +759,13 @@
                 var tab = s.splitViewTab;
                 // Only paste into interactive panes (Claude, verify), not output.
                 if (tab !== 'output') {
+                    if (tab === 'verify' &&
+                        (s.verifyFallbackRunning || s.verifyMode === 'oneshot' ||
+                            s.verifyMode === 'textonly' || s.verifyShellExited)) {
+                        s.clipboardFlash = 'Paste unavailable while verify output is read-only';
+                        s.clipboardFlashAt = Date.now();
+                        return [s, null];
+                    }
                     try {
                         var pastedText = output.fromClipboard();
                         if (pastedText) {
@@ -856,13 +868,25 @@
                     // Output tab is read-only — don't forward to PTY, don't scroll Claude.
                     return [s, null];
                 }
-                // Task 8: Verify tab is now a full interactive shell.
-                // With a live CaptureSession, forward ALL non-pane-management keys
-                // to the terminal (arrow keys, j/k, etc. reach the child process).
-                // In fallback mode (no PTY, verifyFallbackRunning), use scroll keys.
+                // Verify tab has one canonical interactive shell mode plus degraded
+                // one-shot and text-only fallback modes.
                 if (s.splitViewTab === 'verify') {
-                    // Fallback path: no PTY, user views text output — scroll keys apply.
-                    if (s.verifyFallbackRunning || !getInteractivePaneSession(s, 'verify')) {
+                    var verifySession = getInteractivePaneSession(s, 'verify');
+                    if (s.verifyShellExited && (k === 'p' || k === 'f' || k === 'c')) {
+                        var exitedChoice = (k === 'p') ? 'pass' : ((k === 'f') ? 'fail' : 'continue');
+                        return handleVerifySignal(s, exitedChoice);
+                    }
+                    // Degraded verify modes and the post-shell-exit interactive state
+                    // are read-only from the pane's perspective: users can scroll the
+                    // visible output here, but terminal input is not forwarded.
+                    if (s.verifyFallbackRunning || !verifySession ||
+                        s.verifyMode === 'oneshot' || s.verifyMode === 'textonly' ||
+                        s.verifyShellExited) {
+                        if (k === 'ctrl+c') {
+                            s.showConfirmCancel = true;
+                            s.confirmCancelFocus = 0;
+                            return [s, null];
+                        }
                         if (k === 'up' || k === 'k') {
                             s.verifyViewportOffset = (s.verifyViewportOffset || 0) + 1;
                             s.verifyAutoScroll = false;
@@ -899,7 +923,6 @@
                     // keys are reserved, everything else goes to the terminal.
                     if (!INTERACTIVE_RESERVED_KEYS[k]) {
                         var vBytes = keyToTermBytes(k);
-                        var verifySession = getInteractivePaneSession(s, 'verify');
                         if (vBytes !== null && verifySession &&
                             typeof verifySession.write === 'function') {
                             try {
@@ -1054,7 +1077,7 @@
         }
         // T059: BRANCH_BUILDING: 'z' toggles pause/resume on
         // the active verify session. Only when a verify is running.
-        if (k === 'z' && s.wizardState === 'BRANCH_BUILDING' && activeVerifySession) {
+        if (k === 'z' && s.wizardState === 'BRANCH_BUILDING' && activeVerifySession && !s.verifyShellExited) {
             if (s.verifyPaused) {
                 try { activeVerifySession.resume(); s.verifyPaused = false; prSplit._transitionVerifyPhase(s, prSplit._verifyPhases.RUNNING); } catch (e) {
                     log.printf('verify: resume failed: %s', e.message || String(e));
@@ -1066,12 +1089,15 @@
             }
             return [s, null];
         }
-        // T007 (Task 7): BRANCH_BUILDING: persistent verify shell — p/f/c signals.
+        // T007 (Task 7): BRANCH_BUILDING interactive verify shell — p/f/c signals.
         // 'p' — mark current branch as PASSED (verification succeeded).
         // 'f' — mark current branch as FAILED (verification failed).
         // 'c' — CONTINUE/skip this branch without marking pass or fail.
-        // Only active during active persistent verify session.
-        if (s.wizardState === 'BRANCH_BUILDING' && activeVerifySession) {
+        // Only active after the canonical interactive verify shell has exited and
+        // the UI is prompting for an explicit outcome.
+        if (s.wizardState === 'BRANCH_BUILDING' && activeVerifySession &&
+            (!s.verifyMode || s.verifyMode === 'interactive') &&
+            s.verifyShellExited) {
             if (k === 'p' || k === 'f' || k === 'c') {
                 var choice = (k === 'p') ? 'pass' : ((k === 'f') ? 'fail' : 'continue');
                 return handleVerifySignal(s, choice);
@@ -1241,7 +1267,10 @@
 
         // Live verify session mouse wheel → scroll output viewport.
         // Only applies when verify output is visible (non-split or verify tab active).
-        if (msg.type === 'MouseWheel' && getInteractivePaneSession(s, 'verify') &&
+        if (msg.type === 'MouseWheel' &&
+            (getInteractivePaneSession(s, 'verify') || s.verifyFallbackRunning ||
+                s.verifyMode === 'oneshot' || s.verifyMode === 'textonly' ||
+                (!!s.verifyScreen && (!s.splitViewEnabled || s.splitViewTab === 'verify'))) &&
             (!s.splitViewEnabled || s.splitViewTab === 'verify')) {
             if (msg.button === 'wheel up') {
                 s.verifyAutoScroll = false;

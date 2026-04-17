@@ -104,6 +104,42 @@ func TestGracefulDegradation_NoShellOnWindows(t *testing.T) {
 		}
 	})
 
+	t.Run("start_verify_session_degrades_when_termmux_require_fails", func(t *testing.T) {
+		t.Parallel()
+		evalJS := prsplittest.NewTUIEngine(t)
+
+		raw, err := evalJS(`(function() {
+			var origRequire = require;
+			require = function(name) {
+				if (name === 'osm:termmux') {
+					throw new Error('mock termmux missing');
+				}
+				return origRequire(name);
+			};
+			try {
+				var result = globalThis.prSplit.startVerifySession('split/test', {
+					dir: '.',
+					verifyCommand: 'make test'
+				});
+				if (!result || typeof result.error !== 'string') {
+					return 'FAIL: expected structured error result';
+				}
+				if (result.error.indexOf('termmux unavailable') < 0) {
+					return 'FAIL: missing degraded error prefix: ' + result.error;
+				}
+				return 'OK';
+			} finally {
+				require = origRequire;
+			}
+		})()`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw != "OK" {
+			t.Error(raw)
+		}
+	})
+
 	t.Run("mouse_forward_noop_on_null_session", func(t *testing.T) {
 		t.Parallel()
 		evalJS := prsplittest.NewTUIEngine(t)

@@ -706,6 +706,7 @@
         var verifySession = getInteractivePaneSession(s, 'verify');
         if (!verifySession && !s.verifyScreen) { return; }
         lines.push('');
+        var verifyMode = s.verifyMode || (verifySession ? 'interactive' : 'textonly');
         var liveOutput = s.verifyScreen || '';
         var liveLines = liveOutput.split('\n');
         // Remove trailing empty lines from VTerm screen output.
@@ -727,10 +728,14 @@
         } else {
             elapsedSuffix = elapsed + 's';
         }
-        var titleText = ' Verifying: ' + s.activeVerifyBranch + ' (' + elapsedSuffix + ') ';
+        var modeLabel = '';
+        if (verifyMode === 'interactive') modeLabel = 'interactive shell';
+        else if (verifyMode === 'oneshot') modeLabel = 'degraded one-shot';
+        else modeLabel = 'degraded text fallback';
+        var titleText = ' Verifying: ' + s.activeVerifyBranch + ' [' + modeLabel + '] (' + elapsedSuffix + ') ';
         // T059: Show paused indicator in viewport title.
         if (s.verifyPaused) {
-            titleText = ' \u23f8 PAUSED: ' + s.activeVerifyBranch + ' (' + elapsedSuffix + ') ';
+            titleText = ' \u23f8 PAUSED: ' + s.activeVerifyBranch + ' [' + modeLabel + '] (' + elapsedSuffix + ') ';
         }
 
         // Determine visible window (auto-scroll or manual offset).
@@ -773,14 +778,9 @@
             }
         }
 
-        // Footer with keybinding hints and controls.
-        // T351: Only show interactive controls when CaptureSession
-        // is active. Fallback (plain text) shows just scroll hint.
+        // Footer with mode-specific hints and controls.
         var footer;
-        if (verifySession) {
-            // T007 (Task 7): Verify pane is now a PERSISTENT INTERACTIVE SHELL.
-            // The footer shows PASS/FAIL/CONTINUE controls for user completion,
-            // plus hint text about the suggested verify command.
+        if (verifySession && verifyMode === 'interactive') {
             var footerParts = [];
 
             // Hint: show the suggested verify command.
@@ -788,22 +788,10 @@
                 footerParts.push(styles.dim().render('\u2318 Hint: ' + s.verifyHint));
             }
 
-            // T007: PASS / FAIL / CONTINUE buttons for explicit user completion.
-            // The old pause/resume for the one-shot command is less relevant now
-            // that the shell is persistent and user-driven. We keep pause/resume
-            // for completeness (SIGSTOP/SIGCONT still useful in some cases).
+            // Live interactive verify keeps shell controls visible; explicit
+            // PASS / FAIL / CONTINUE only appear after the shell exits.
             if (!s.verifyShellExited) {
-                // PASS button: green, marks branch as passed.
-                footerParts.push(zone.mark('verify-pass',
-                    styles.secondaryButton().render('\u2713 PASS')));
-                // FAIL button: red-ish, marks branch as failed.
-                footerParts.push(zone.mark('verify-fail',
-                    styles.secondaryButton().render('\u2717 FAIL')));
-                // CONTINUE button: skip/continue without marking pass or fail.
-                footerParts.push(zone.mark('verify-continue',
-                    styles.secondaryButton().render('\u25b6 CONTINUE')));
-
-                // Pause/Resume (less critical for persistent shell, keep for flexibility).
+                // Pause/Resume remains available while the shell is live.
                 if (s.verifyPaused) {
                     footerParts.push(zone.mark('verify-resume',
                         styles.secondaryButton().render('\u25b6 Resume')));
@@ -812,24 +800,51 @@
                         styles.secondaryButton().render('\u23f8 Pause')));
                 }
             } else {
-                // Shell exited — show a notice and re-open hint.
+                // Shell exited — show outcome controls and the keyboard hint.
                 footerParts.push(styles.warningBadge().render(' Shell exited '));
+                footerParts.push(zone.mark('verify-pass',
+                    styles.secondaryButton().render('\u2713 PASS')));
+                footerParts.push(zone.mark('verify-fail',
+                    styles.secondaryButton().render('\u2717 FAIL')));
+                footerParts.push(zone.mark('verify-continue',
+                    styles.secondaryButton().render('\u25b6 CONTINUE')));
                 footerParts.push(styles.dim().render(' p: PASS  f: FAIL  c: CONTINUE '));
             }
 
             // Task 8: Shell tab removed — verify pane IS the interactive shell.
 
-            // Interrupt and scroll hints.
-            footerParts.push(zone.mark('verify-interrupt', styles.dim().render(
-                'Ctrl+C: Stop  2\u00d7Ctrl+C: Force Kill')));
+            // Interrupt hint only while the interactive shell is still alive.
+            if (!s.verifyShellExited) {
+                footerParts.push(zone.mark('verify-interrupt', styles.dim().render(
+                    'Ctrl+C: Stop  2\u00d7Ctrl+C: Force Kill')));
+            }
             footerParts.push(styles.dim().render('\u2191\u2193: Scroll' + scrollIndicator));
 
             footer = lipgloss.joinHorizontal(lipgloss.Center,
                 footerParts.join('  '));
+        } else if (verifySession) {
+            var oneshotFooterParts = [];
+            oneshotFooterParts.push(styles.warningBadge().render(' Degraded: one-shot verify '));
+            if (s.verifyPaused) {
+                oneshotFooterParts.push(zone.mark('verify-resume',
+                    styles.secondaryButton().render('\u25b6 Resume')));
+            } else {
+                oneshotFooterParts.push(zone.mark('verify-pause',
+                    styles.secondaryButton().render('\u23f8 Pause')));
+            }
+            oneshotFooterParts.push(zone.mark('verify-interrupt', styles.dim().render(
+                'Ctrl+C: Stop  2\u00d7Ctrl+C: Force Kill')));
+            oneshotFooterParts.push(styles.dim().render(' waits for command exit  \u2191\u2193: Scroll' + scrollIndicator));
+            footer = lipgloss.joinHorizontal(lipgloss.Center,
+                oneshotFooterParts.join('  '));
         } else {
-            // Fallback path — no interactive controls, just scroll.
+            var degradedLabel = (verifyMode === 'oneshot')
+                ? 'degraded one-shot output'
+                : ((verifyMode === 'interactive')
+                    ? 'interactive shell output'
+                    : 'degraded text fallback');
             footer = styles.dim().render(
-                '\u2191\u2193: Scroll' + scrollIndicator + '  (fallback output)');
+                '\u2191\u2193: Scroll' + scrollIndicator + '  (' + degradedLabel + ')');
         }
 
         // Render bordered viewport using lipgloss.

@@ -244,26 +244,25 @@ $ osm pr-split -i --base main --claude-command claude
 
 #### Split-view terminal tabs
 
-When the split-view is open during branch building, four tabs are available:
+When the split-view is open during branch building, three tabs are available:
 
 | Tab | Description |
 |-----|-------------|
 | Claude | Claude AI assistant output |
 | Output | Raw pipeline output log |
-| Verify | Live interactive terminal showing verification process |
-| Shell | Interactive shell in the verification worktree |
+| Verify | Live interactive verify pane; canonical mode is the interactive worktree shell, with explicit degraded one-shot or text-only fallback when PTY support is unavailable |
 
 **Keyboard shortcuts (split-view):**
 
 | Shortcut | Action |
 |----------|--------|
 | `Ctrl+L` | Toggle split-view panel |
-| `Ctrl+Tab` | Switch focus between wizard and bottom pane |
-| `Ctrl+O` | Cycle through tabs (Claude → Output → Verify → Shell) |
-| `Ctrl+]` | Full Claude passthrough mode |
+| `Ctrl+Tab` | Cycle focus target (wizard → Claude → Output → Verify → wizard; Verify only when present) |
+| `Ctrl+O` | Cycle visible bottom tabs (Claude ↔ Output, adding Verify when present) |
+| `Ctrl+]` | Full passthrough for the focused interactive pane |
 | `Ctrl+= / Ctrl+-` | Resize split-view ratio |
 
-When focused on the Verify or Shell tab, keyboard input is forwarded to the terminal process. Mouse events (clicks, wheel, motion) are forwarded using SGR 1006 encoding.
+When focused on the Verify tab in canonical interactive mode, keyboard input is forwarded to the terminal process. Mouse events (clicks, wheel, motion) are forwarded using SGR 1006 encoding there as well. Degraded verify modes stay read-only and use scroll controls instead of PTY input forwarding.
 
 ### `osm log`
 

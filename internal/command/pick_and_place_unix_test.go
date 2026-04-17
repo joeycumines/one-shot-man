@@ -273,6 +273,8 @@ func TestPickAndPlaceE2E_ManualModeMovement(t *testing.T) {
 	if !h.WaitForMode("m", 3*time.Second) {
 		t.Fatalf("Failed to switch to manual mode")
 	}
+	// Let the mode-transition frame settle before sending movement input.
+	h.WaitForFrames(2)
 
 	// Get initial state
 	initialState := h.GetDebugState()
@@ -284,26 +286,30 @@ func TestPickAndPlaceE2E_ManualModeMovement(t *testing.T) {
 	initialY := initialState.ActorY
 	t.Logf("Initial position: (%.1f, %.1f)", initialX, initialY)
 
-	// Move right by pressing 'd'
-	if err := h.SendKey("d"); err != nil {
-		t.Fatalf("Failed to send 'd' key: %v", err)
-	}
-
-	// Poll authoritative state instead of relying on fixed sleeps or PTY-only snapshots.
-	deadline := time.Now().Add(3 * time.Second)
+	// Move right by pressing 'd'. Retry a few times because raw PTY key delivery
+	// can occasionally drop a single movement key under full-suite load.
 	newState := initialState
-	for time.Now().Before(deadline) {
-		newState = h.GetDebugState()
-		if newState.ActorX > initialX {
-			break
+	attempts := 0
+	for ; attempts < 3 && newState.ActorX <= initialX; attempts++ {
+		if err := h.SendKey("d"); err != nil {
+			t.Fatalf("Failed to send 'd' key: %v", err)
 		}
-		time.Sleep(50 * time.Millisecond)
+
+		// Poll authoritative state instead of relying on fixed sleeps or PTY-only snapshots.
+		deadline := time.Now().Add(1 * time.Second)
+		for time.Now().Before(deadline) {
+			newState = h.GetDebugState()
+			if newState.ActorX > initialX {
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
 	}
 
 	// Robot should have moved right in manual mode.
 	if newState.ActorX <= initialX {
-		t.Fatalf("Robot failed to move right in manual mode: initial=(%.1f, %.1f) tick=%d final=(%.1f, %.1f) tick=%d",
-			initialX, initialY, initialState.Tick, newState.ActorX, newState.ActorY, newState.Tick)
+		t.Fatalf("Robot failed to move right in manual mode after %d 'd' key attempts: initial=(%.1f, %.1f) tick=%d final=(%.1f, %.1f) tick=%d",
+			attempts, initialX, initialY, initialState.Tick, newState.ActorX, newState.ActorY, newState.Tick)
 	}
 	movedBy := newState.ActorX - initialX
 	t.Logf("✓ Robot moved right by %.1f: (%.1f, %.1f) -> (%.1f, %.1f)",

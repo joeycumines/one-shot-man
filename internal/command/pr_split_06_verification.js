@@ -337,12 +337,57 @@
         return { deleted: deleted, errors: errors };
     }
 
+    // --- prepareVerifyWorktree — create worktree without spawning a session ---
+    //
+    //  Creates a temporary git worktree for the given branch. Returns the
+    //  worktree path and resolved dir. No CaptureSession is created; the
+    //  caller decides which session model to use (interactive shell vs
+    //  one-shot command vs async fallback).
+    //
+    //  Returns:
+    //    { worktreeDir, dir }     on success
+    //    { skipped: true }        if no verify command configured
+    //    { error: string }        on failure
+    function prepareVerifyWorktree(branchName, config) {
+        config = config || {};
+        var dir = resolveDir(config.dir || '.');
+        var command = config.verifyCommand || prSplit.runtime.verifyCommand;
+
+        if (!command) {
+            return { skipped: true, worktreeDir: null };
+        }
+
+        // Eagerly load termmux to fail fast without orphaned worktree.
+        require('osm:termmux');
+
+        var worktreeDir = worktreeTmpPath('osm-verify-');
+
+        var wtAdd = gitExec(dir, ['worktree', 'add', worktreeDir, branchName]);
+        if (wtAdd.code !== 0) {
+            // Branch might be checked out elsewhere; fallback to detached HEAD.
+            gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
+            wtAdd = gitExec(dir, ['worktree', 'add', '--detach', worktreeDir, branchName]);
+            if (wtAdd.code !== 0) {
+                return {
+                    error: 'create worktree failed: ' + wtAdd.stderr.trim(),
+                    worktreeDir: null
+                };
+            }
+        }
+
+        return { worktreeDir: worktreeDir, dir: dir };
+    }
+
     // --- startVerifySession — non-blocking variant using CaptureSession ---
     //
     //  Creates a temporary git worktree and spawns the verify command in a
     //  CaptureSession (PTY + VTerm). Returns immediately so the TUI can
     //  poll output via ticks. Caller is responsible for cleanup via
     //  cleanupVerifyWorktree() after the session completes.
+    //
+    //  This is the ONE-SHOT verify model: the command runs once and exits.
+    //  For the canonical INTERACTIVE model (persistent shell), use
+    //  prepareVerifyWorktree() + spawnShellSession() directly.
     //
     //  Returns:
     //    { session, worktreeDir, dir, branchName, startTime }  on success
@@ -357,29 +402,28 @@
             return { skipped: true, session: null, worktreeDir: null };
         }
 
-        // Eagerly load termmux BEFORE creating the worktree so a missing
-        // module fails fast without leaving an orphaned worktree.
-        var termmux = require('osm:termmux');
+        var termmux;
+        try {
+            termmux = require('osm:termmux');
+        } catch (e) {
+            return {
+                error: 'termmux unavailable: ' + (e.message || e),
+                session: null,
+                worktreeDir: null
+            };
+        }
         var rows = config.rows || 24;
         var cols = config.cols || 120;
 
-        // Create a temporary worktree for this branch.
-        // T103: Use system temp dir to avoid fragile dir + '/../' pattern.
-        var worktreeDir = worktreeTmpPath('osm-verify-');
-
-        var wtAdd = gitExec(dir, ['worktree', 'add', worktreeDir, branchName]);
-        if (wtAdd.code !== 0) {
-            // Branch might be checked out elsewhere; fallback to detached HEAD.
-            gitExec(dir, ['worktree', 'remove', '--force', worktreeDir]);
-            wtAdd = gitExec(dir, ['worktree', 'add', '--detach', worktreeDir, branchName]);
-            if (wtAdd.code !== 0) {
-                return {
-                    error: 'create worktree failed: ' + wtAdd.stderr.trim(),
-                    session: null,
-                    worktreeDir: null
-                };
-            }
+        // Delegate worktree creation.
+        var wt = prepareVerifyWorktree(branchName, config);
+        if (wt.error) {
+            return { error: wt.error, session: null, worktreeDir: null };
         }
+        if (wt.skipped) {
+            return { skipped: true, session: null, worktreeDir: null };
+        }
+        var worktreeDir = wt.worktreeDir;
 
         try {
             var captureShell = isWindows() ? 'cmd.exe' : 'sh';
@@ -766,6 +810,7 @@
     prSplit.verifyEquivalence = verifyEquivalence;
     prSplit.verifyEquivalenceDetailed = verifyEquivalenceDetailed;
     prSplit.cleanupBranches = cleanupBranches;
+    prSplit.prepareVerifyWorktree = prepareVerifyWorktree;
     prSplit.startVerifySession = startVerifySession;
     prSplit.cleanupVerifyWorktree = cleanupVerifyWorktree;
     prSplit.verifySplitAsync = verifySplitAsync;

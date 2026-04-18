@@ -109,6 +109,9 @@
     },
     {
       "warning": "ACP REFERENCE: slop-funnel must support claude and other agents via ACP (Agent Communication Protocol). Reference: https://www.ibm.com/think/topics/agent-communication-protocol. This is a confirmed requirement that must be reflected in the design — particularly in agent status/interaction screens and the agent collapsible section."
+    },
+    {
+      "warning": "TUI FONT CONSTRAINT (CONFIRMED BY HANA-SAN): ALL text across ALL screens MUST use a SINGLE monospace font (Courier New) at a SINGLE uniform size (10px). No font family variation. No size variation whatsoever. This is a TERMINAL user interface — text rendering is constrained to a monospace grid where every character occupies the same cell. The previous design used 6 different sizes (7, 8, 9, 10, 11, 12, 14px) and 2 font families (Inter + Courier New) — a complete violation of TUI principles. Bold weight may be used for emphasis (terminals support bold) but SIZE must be absolutely uniform at 10px. ALL 367 text nodes must be corrected."
     }
   ],
   "mandatoryDirectives": {

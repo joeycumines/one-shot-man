@@ -121,6 +121,9 @@
     },
     {
       "warning": "HIERARCHY & STRUCTURE (CONFIRMED BY HANA-SAN): Leverage hierarchies and structures to reason about logical structure more easily. Frame nesting, layer naming, and grouping must reflect the actual logical structure of the UI. Don't flatten everything — use proper frame hierarchies that map to component structure. This makes the design navigable, reviewable, and translatable to code."
+    },
+    {
+      "warning": "ZAI MCP TOOLS FOR VISUAL VERIFICATION (CONFIRMED BY HANA-SAN): The zai-mcp-server MCP tools (analyze_image, ui_to_artifact, extract_text_from_screenshot, diagnose_error_screenshot, understand_technical_diagram, analyze_data_visualization, analyze_video, ui_diff_check) are available and MUST be used for visual verification of designs. After creating or modifying screens, export PNGs via export_image and feed them to zai analyze_image for visual QA. Do not rely solely on describe() — use actual vision analysis to catch issues the structure tools miss."
     }
   ],
   "mandatoryDirectives": {

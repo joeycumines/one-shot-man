@@ -120,7 +120,7 @@
     "foreverReminders": "On EVERY task commencement, re-read the following skills: blueprint-json, strict-review-gate, openpencil-figma-design, frontend-design:frontend-design"
   },
   "statusSection": {
-    "currentState": "SESSION 4 — DATA LOSS RECOVERY. Sessions 2-3 work lost from OpenPencil document. Screen1 (0:6) reverts to Session 1 state: original IA (Content 0:20 with ChunkStatus/ProgressSection/Actions/StatusBar), 10+ contrast errors, no design tokens (zero collections), structural issues present. Product knowledge from 5 rounds of Q&A preserved in globalAlerts. Rebuilding from scratch then expanding to multi-screen design.",
+    "currentState": "SESSION 4 — Screen1 REBUILT AND VALIDATED (node 0:226). Content (0:240) fully rebuilt with chunk list + detail split view, color-coded branch cards, grouped action buttons, statusbar with key hints. Zero describe errors. 40 design tokens in slop-funnel collection (0:357), all colored nodes bound. Courier New font throughout. File saved. NOW expanding to multi-screen design.",
     "goalState": "ALL screens for the slop-funnel TUI designed with exhaustive detail: (1) Screen1 — main dashboard with chunk list + detail split view, fully tokenized, zero errors. (2) Screen2+ — additional screens covering: branch selection/setup, chunk rejection with per-hunk granularity, agent activity/interaction, session resume/pause, conflict resolution (internal), completion/summary view. (3) Component library on Components page with reusable TUI elements. (4) Interaction patterns and keyboard navigation fully documented. (5) State transition diagrams annotated. (6) Design ready for implementation handoff.",
     "replanLog": [
       {
@@ -135,19 +135,19 @@
       "task": "Rebuild Screen1: fix contrast errors across SessionBar, Menu, StatusBar, Actions, ProgressSection (10+ dark-on-dark instances)",
       "description": "The describe tool identified contrast errors on: MenuHelp (#888 on #0D0D0D), SessionSep (#444 on #1A1A2E), SessionTime (#888 on #1A1A2E), StatusHint (#666 on #1E1E1E), StatusChunks (#888 on #1E1E1E), StatusSep (#444 on #1E1E1E), StatusWorktree (#888 on #1E1E1E), ActionCommitText (#888 on #333), ActionPauseText (#888 on #333), ActionQuitText (#888 on #333), ProgressLabel (#888 on #000), ProgressFiles (#666 on #000). Fix each by raising text color to minimum #AAAAAA for secondary/muted and #BBBBBB for readable text. Node IDs: 0:19, 0:25, 0:29, 0:60, 0:61, 0:84, 0:88, 0:95, 0:97, 0:99, 0:101, 0:102, 0:103, 0:104.",
       "acceptance": "Re-running describe on Screen1 (0:6) produces ZERO color contrast 'error' severity issues. All text legible against backgrounds — secondary/muted at minimum #AAAAAA, primary at minimum #BBBBBB.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Rebuild Screen1: fix structural issues — BottomSpacer orphan, generic Frame names, overflow in ProgressSection, inconsistent gaps, HeaderTitle text",
       "description": "Fix: (1) Delete BottomSpacer (0:105) — empty 100x0 orphan frame. (2) Rename all generic 'Frame' siblings: Content>SessionBar>Frame→SessionInfo/RepoInfo, BranchSummary>Frame→BranchRow, Content>ProgressSection>Frame→ProgressHeader/ProgressDetail, ChunkStatus>StatusRows>Row*>'Frame'→ReviewProgress/StagedProgress/CommittedProgress. (3) Fix overflow in StatusRows: RowReview/RowStaged/RowCommitted contain 100px-tall Frame children in 24px rows — resize to 8px. (4) Standardize Content gap to 8px (currently mixed 16/6/8). (5) Standardize BranchSummary gap from 6px to 8px. (6) Change HeaderTitle (0:13) from 'git-branch-merge' to 'slop-funnel'. (7) Set ChunkHeader, ProgressHeader, ProgressDetail to FILL horizontal. (8) Fix Menu padding (add px=8 py=4).",
       "acceptance": "Re-running describe on Screen1 (0:6) produces ZERO structural 'warning' or 'info' severity issues. All frames semantically named. All gaps on 8px grid. No overflow. BottomSpacer deleted. Header says 'slop-funnel'.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Rebuild Screen1: replace ChunkStatus + ProgressSection with chunk list + detail split view (ChunkPane)",
       "description": "Remove the old ChunkStatus (0:55, with StatusRows showing review/staged/committed counts) and ProgressSection (0:82, with progress bar). Replace with ChunkPane containing: (1) ChunkPaneHeader — 'CHUNKS' title + stats (total, ready, blocked counts) + hunks processed progress indicator. (2) ChunkQueue — scrollable list of 5 chunk rows, each showing: status dot (●/◌/✗ color-coded), chunk ID (#N), description title, status badge (READY/BLOCKED/REJECTED), dependency indicator, branch source color tag. Selected row gets green-tinted background (#002200). Scroll indicator at bottom ('↓ 2 more ↓'). (3) ChunkDivider — 1px separator line. (4) ChunkDetail — selected chunk detail panel with: header (status dot + ID + title + status badge), meta (source branch + dependency info), file list, hunk breakdown (line ranges + check marks), agent section (collapsible, default collapsed with status badge). This is the core interactive view for the slop-funnel workflow.",
       "acceptance": "ChunkPane exists as the main content area of Screen1 with visible chunk list and detail split. Describe tool shows no errors. The layout matches the WIP.md node map: ChunkPaneHeader, ChunkQueue with 5 chunk rows in different states (ready/blocked/rejected/selected), ChunkDivider, ChunkDetail with all subsections. Visual export confirms legible, well-structured design.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Rebuild Screen1: redesign BranchSummary with color-coded trunk + source branch cards",
@@ -159,19 +159,19 @@
       "task": "Rebuild Screen1: redesign Actions bar with chunk workflow controls",
       "description": "Replace current Actions (0:91) with two grouped action sets: (1) Left group (chunk actions): [Enter] APPROVE — primary action, green button (#00FF00 bg, #000000 text); [X] REJECT — secondary; [E] EXT DIFF — open external diff viewer. (2) Right group (session actions): [P] PAUSE — pause orchestration; [Q] QUIT — exit session. Groups separated by visual divider. All actions show keybinding in brackets. Background: #0D0D0D.",
       "acceptance": "Actions bar clearly shows two grouped action sets with keybinding labels. Approve is visually primary (green). All text has proper contrast (#CCCCCC minimum on #0D0D0D). Layout fits within 720px width.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Rebuild Screen1: redesign StatusBar with key hints, pending count, worktree info",
       "description": "Replace current StatusBar (0:100) with: (1) KeyHints — contextual key hints for current mode (e.g., 'j/k navigate • Enter approve • ? help'). (2) PendingCount — '5 pending' chunk count. (3) Separator — '│' divider. (4) WorktreeInfo — worktree path or 'no worktree'. Background: #1E1E1E. All text must be #AAAAAA minimum for contrast. Layout: horizontal, items centered, 16px gap, 8px horizontal padding.",
       "acceptance": "StatusBar shows key hints, pending count, separator, and worktree info. All text meets contrast requirements (#AAAAAA+ on #1E1E1E). Describe shows zero errors. Layout fits within 720px width.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Rebuild Screen1: update Header and Menu for slop-funnel branding",
       "description": "Update Header (0:7): change HeaderTitle (0:13) text from 'git-branch-merge' to 'slop-funnel', update color to #AAAAAA minimum. Update Menu (0:14): ensure all menu items ([File] [Session] [Chunks] [View] [?] Help) have proper contrast. Change MenuHelp (0:19) from #888888 to #AAAAAA minimum. Add proper padding to Menu (px=8).",
       "acceptance": "Header shows 'slop-funnel' title. All menu items legible. Describe shows zero contrast errors on Header and Menu.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Create design token system: `slop-funnel` variable collection with semantic COLOR tokens",
@@ -183,7 +183,7 @@
       "task": "Validate Screen1 rebuild: run describe, export PNG, verify zero errors",
       "description": "After completing all Screen1 rebuild tasks (Tasks 1-8): (1) Run describe on Screen1 (0:6) — verify zero error-severity issues. (2) Export Screen1 as PNG at 2x scale — visually verify all elements legible and well-structured. (3) Run analyze_spacing — verify all spacing on 8px grid. (4) Run analyze_colors — verify palette discipline. (5) Run analyze_typography — verify font consistency. (6) Export design tokens via design_to_tokens. (7) Update WIP.md with final Screen1 node map and token table.",
       "acceptance": "Describe shows zero errors on Screen1. PNG export shows clean, professional TUI design. All spacing on 8px grid. All colors tokenized. Typography consistent (Courier New). WIP.md updated with complete documentation.",
-      "status": "Not Started"
+      "status": "Done"
     },
     {
       "task": "Design Screen2: Branch Selection / Session Setup screen",

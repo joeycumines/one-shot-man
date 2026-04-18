@@ -23,8 +23,8 @@ the `openpencil` CLI (headless file operations).
 
 ## Prerequisites
 
-Both `openpencil-mcp` and `openpencil` must already be installed and in PATH.
-Do not attempt to install them — if either is missing, inform the user and stop.
+At least one of `openpencil-mcp` and `openpencil` must already be installed and in PATH.
+Do not attempt to install them — if both are missing, inform the user. NO installation allowed.
 
 - `openpencil-mcp` — MCP server providing ~90 design tools via stdio
 - `openpencil` — CLI for headless file operations (export, lint, analyze,

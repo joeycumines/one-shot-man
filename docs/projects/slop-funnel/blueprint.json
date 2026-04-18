@@ -124,6 +124,12 @@
     },
     {
       "warning": "ZAI MCP TOOLS FOR VISUAL VERIFICATION (CONFIRMED BY HANA-SAN): The zai-mcp-server MCP tools (analyze_image, ui_to_artifact, extract_text_from_screenshot, diagnose_error_screenshot, understand_technical_diagram, analyze_data_visualization, analyze_video, ui_diff_check) are available and MUST be used for visual verification of designs. After creating or modifying screens, export PNGs via export_image and feed them to zai analyze_image for visual QA. Do not rely solely on describe() — use actual vision analysis to catch issues the structure tools miss."
+    },
+    {
+      "warning": "TERMINAL VISUAL CONSTRAINTS (CONFIRMED BY HANA-SAN — CRITICAL): The design MUST FULLY align with the behavior of terminals. This means: (1) ZERO rounded corners — terminals use sharp 90-degree rectangular regions only. Every frame, badge, button, card, container must have cornerRadius=0. (2) NO bold text weight — OpenPencil renders Courier New Bold as 'visually obese' which does NOT match terminal bold rendering. Use regular weight exclusively; use COLOR for emphasis, not weight. (3) NO visual effects — no shadows, blur, gradients, anti-aliasing tricks. (4) NO strokes/borders with thickness — terminal regions are defined by background color changes, not borders. (5) SOLID fills only — terminal cells are solid color blocks. (6) The design must look like it could actually render in a terminal emulator — if it looks like a web app, it's wrong."
+    },
+    {
+      "warning": "TERMINAL RENDERING REALITY CHECK (AUDIT RESULTS 2026-04-19): Full audit found: 71 nodes with cornerRadius>0 (ALL badges, buttons, cards, containers across ALL 9 screens), 40 nodes with bold font weight, 0 shadows/blur, 0 strokes, 0 gradients. All 71 rounded corners and all 40 bold weights MUST be stripped to achieve terminal fidelity."
     }
   ],
   "mandatoryDirectives": {
@@ -135,7 +141,7 @@
     "foreverReminders": "On EVERY task commencement, re-read the following skills: blueprint-json, strict-review-gate, openpencil-figma-design, frontend-design:frontend-design"
   },
   "statusSection": {
-    "currentState": "SESSION 4 — Screen1 REBUILT AND VALIDATED (node 0:226). Content (0:240) fully rebuilt with chunk list + detail split view, color-coded branch cards, grouped action buttons, statusbar with key hints. Zero describe errors. 40 design tokens in slop-funnel collection (0:357), all colored nodes bound. Courier New font throughout. File saved. NOW expanding to multi-screen design.",
+    "currentState": "SESSION 4 — MULTI-SCREEN EXPANSION + TERMINAL FIDELITY FIXES. 9 screens created (Screen1-9). ALL 279+ text nodes now Courier New 10px Regular. STRIPPING 71 rounded corners and 43 bold weights to achieve terminal fidelity (agents running). Screen7-HunkDetail created with diff view. Screen2-Setup through Screen9-Help rendered. TODO: contrast fixes, screen relationships, design tokens, component library, flow diagram.",
     "goalState": "ALL screens for the slop-funnel TUI designed with exhaustive detail: (1) Screen1 — main dashboard with chunk list + detail split view, fully tokenized, zero errors. (2) Screen2+ — additional screens covering: branch selection/setup, chunk rejection with per-hunk granularity, agent activity/interaction, session resume/pause, conflict resolution (internal), completion/summary view. (3) Component library on Components page with reusable TUI elements. (4) Interaction patterns and keyboard navigation fully documented. (5) State transition diagrams annotated. (6) Design ready for implementation handoff.",
     "replanLog": [
       {

@@ -328,8 +328,14 @@
       "description": "Per confirmed requirements, chunks may have dependencies. Agent indicates dependencies. BLOCKED chunks are not shown to user until dependency resolved. Design: (1) How does the ChunkQueue show dependency status? (arrow/chain icon linking related chunks?) (2) What happens visually when a dependency resolves? (animation? status change? notification?) (3) How does ChunkDetail show dependency info? ('Depends on chunk #1 — APPROVED' or 'Blocks chunk #3') (4) Can user view the full dependency graph? (separate view or overlay?) (5) What happens to dependent chunks when a chunk is rejected? (cascade block? re-evaluation?)",
       "acceptance": "Dependency visualization designed for ChunkQueue (status indicators), ChunkDetail (dependency info section), and potentially a dependency graph view. Resolution feedback is clear — user sees blocked chunks become ready. Rejection cascade behavior is specified.",
       "status": "Not Started"
+    },
+    {
+      "task": "Design responsive behavior — show how screens adapt to terminal resize and arbitrary shapes",
+      "description": "Per Hana-san's requirement: terminals can be resized trivially and may be arbitrary shapes. Currently all screens are fixed 720x375 which does NOT reflect this reality. Design responsive variants showing: (1) WIDE terminal (120+ columns) — how does the layout expand? (more chunk detail visible? wider branch cards? side-by-side panes?) (2) NARROW terminal (40-60 columns) — what collapses? (chunk detail stacks below list? branch cards wrap? actions truncate?) (3) VERY NARROW (phone-width terminal over SSH) — minimum viable layout. (4) TALL terminal (many rows, few columns) — vertical scrolling behavior. (5) Define MINIMUM supported terminal size. (6) Show responsive breakpoints. Create Screen1 variants at different sizes (e.g., Screen1-Narrow at 480px wide, Screen1-Wide at 960px wide). Document the responsive rules as annotations. The actual TUI implementation uses Bubble Tea which supports terminal resize events natively.",
+      "acceptance": "Screen1 variants exist at multiple sizes showing responsive behavior. Minimum terminal size defined. Responsive breakpoints documented. Narrow variant shows stacked layout (list above detail). Wide variant shows expanded detail. Annotations explain which elements collapse, wrap, or truncate at each breakpoint. All variants use Courier New 10px Regular, terminal-faithful rendering.",
+      "status": "Not Started"
     }
-  ],
+  ], {
     "task": "Validate design changes after EVERY modification to any screen or component",
     "description": "After each design change in OpenPencil MCP: (1) Re-run describe on the modified node to check for errors. (2) Export the modified screen as PNG to visually verify. (3) Check spacing against 8px grid. (4) Verify color contrast. (5) Update WIP.md with what was changed and why.",
     "failPolicy": "If describe shows any 'error' severity issues, STOP and fix before proceeding. Zero tolerance for contrast failures, overflow, or broken layouts.",

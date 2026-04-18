@@ -112,6 +112,15 @@
     },
     {
       "warning": "TUI FONT CONSTRAINT (CONFIRMED BY HANA-SAN): ALL text across ALL screens MUST use a SINGLE monospace font (Courier New) at a SINGLE uniform size (10px). No font family variation. No size variation whatsoever. This is a TERMINAL user interface — text rendering is constrained to a monospace grid where every character occupies the same cell. The previous design used 6 different sizes (7, 8, 9, 10, 11, 12, 14px) and 2 font families (Inter + Courier New) — a complete violation of TUI principles. Bold weight may be used for emphasis (terminals support bold) but SIZE must be absolutely uniform at 10px. ALL 367 text nodes must be corrected."
+    },
+    {
+      "warning": "SCREEN RELATIONSHIPS (CONFIRMED BY HANA-SAN): Screens MUST be laid out in a way that makes sense. Screens need clearly defined relationships indicated VISUALLY — arrows, labels, and notes connecting related screens. The design document must show navigation flow between screens with visual connectors, not just isolated frames scattered on a canvas. Each screen's purpose and relationship to others must be immediately readable from the layout."
+    },
+    {
+      "warning": "DESIGN NOTES IN DOCUMENT (CONFIRMED BY HANA-SAN): Put notes IN the designs — show thinking. Each screen must include annotation text explaining design rationale, what the screen does, why elements are placed where they are, and what interaction patterns apply. These notes are part of the design, not external documentation. They help developers understand intent without guessing."
+    },
+    {
+      "warning": "HIERARCHY & STRUCTURE (CONFIRMED BY HANA-SAN): Leverage hierarchies and structures to reason about logical structure more easily. Frame nesting, layer naming, and grouping must reflect the actual logical structure of the UI. Don't flatten everything — use proper frame hierarchies that map to component structure. This makes the design navigable, reviewable, and translatable to code."
     }
   ],
   "mandatoryDirectives": {

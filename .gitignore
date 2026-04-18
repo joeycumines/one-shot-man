@@ -59,9 +59,9 @@ session-start.txt
 
 DIRECTIVE.txt
 .commit-msg.txt
-/.session-start
-/.session_start
-/.session-timer
+.session-start
+.session_start
+.session-timer
 /.claude/*.local.*
 /.github/copilot-instructions.md
 /.claude/agents

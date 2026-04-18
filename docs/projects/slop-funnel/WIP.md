@@ -1,60 +1,48 @@
 # WIP - Slop Funnel TUI Design
 
-## Session: 2026-04-19 (Session 4 — RECOVERY + EXPANSION)
-
-### ⚠️ DATA LOSS EVENT
-Sessions 2-3 produced design work that was LOST from the OpenPencil document. Verified at session start:
-- **Design tokens**: ZERO collections exist (claimed 37 tokens, 115 bindings — all gone)
-- **Content rebuild**: Content still at 0:20 (original), not 0:182 (claimed rebuild)
-- **Chunk pane**: Does NOT exist. No ChunkQueue, ChunkDetail, split view.
-- **Contrast errors**: 10+ dark-on-dark instances still present
-- **Structural issues**: BottomSpacer orphan, generic "Frame" names, overflow, inconsistent gaps
-- **Header title**: Still says "git-branch-merge" not "slop-funnel"
-
-**Root cause**: Unknown. Possibly document not saved, crash, or session boundary issue.
-
-**Recovery plan**: Rebuild ALL lost work (Tasks 1-8), then expand into multi-screen design (Tasks 9-24).
+## Session: 2026-04-19 (Session 5 — EXPANSION)
 
 ### Session Timer
 - **Start**: 2026-04-19 02:10:18 (epoch 1776528618)
 - **Deadline**: 2026-04-19 11:10:18 (9 hours)
 - **File**: `docs/projects/slop-funnel/.session-start`
+- **Last verified**: ~1.5h elapsed, ~7.5h remaining
 
-### Current State — VERIFIED
-Screen1 (0:6) 720x375, dark TUI mockup, ORIGINAL structure from Session 1:
+### Current State — SCREENS + FLOW MAP
+
+**Page 1 (0:3984)** — 9 screens in 3x3 flow layout + 2 additional screens + annotations
+
+**Flow Layout (3 rows x 3 columns):**
 ```
-Screen1 (0:6) 720x375
-└── Header (0:7) 720x20 — dots, divider, "git-branch-merge" title
-├── Menu (0:14) 720x18 — [File] [Session] [Chunks] [View] [?] Help
-└── Content (0:20) 720x337 — ORIGINAL, NOT rebuilt
-    ├── SessionBar (0:21) — CONTRAST ERRORS (SessionSep, SessionTime)
-    ├── BranchSummary (0:30) — 6px gap (wrong), generic "Frame" names
-    ├── ChunkStatus (0:55) — OLD status rows, NOT chunk list
-    ├── Divider1 (0:81) — separator
-    ├── ProgressSection (0:82) — OVERFLOW issues, generic names
-    ├── Divider2 (0:90) — separator
-    ├── Actions (0:91) — old action buttons, contrast errors
-    ├── StatusBar (0:100) — CONTRAST ERRORS (4 instances)
-    └── BottomSpacer (0:105) — ORPHAN, 100x0, empty
+Row 1 — PRIMARY FLOW (y=120):
+  Screen2-Setup (0:4963) at (0, 120)     | Screen1 (0:5756) at (800, 120) | Screen5-Complete (0:5214) at (1600, 120)
+  SETUP → DASHBOARD (HUB) → COMPLETE
+
+Row 2 — EXCURSIONS FROM DASHBOARD (y=595):
+  Screen3-Reject (0:5056) at (0, 595)    | Screen7-HunkDetail (0:5488) at (800, 595) | Screen4-Agent (0:5140) at (1600, 595)
+  [X] reject chunk → [H] view hunk → [A] agent monitor
+
+Row 3 — SESSION MANAGEMENT + OVERLAYS (y=1070):
+  Screen6-Pause (0:5300) at (0, 1070)    | Screen9-Help (0:5412) at (800, 1070) | Screen8-Resume (0:5348) at (1600, 1070)
+  [P] pause → [?] help → --resume (later feature)
+
+Additional screens (y=1600):
+  Screen-ConfirmQuit (0:6739) at (0, 1600) — modal overlay for destructive quit
+  Screen-Analyzing (0:6681) at (800, 1600) — loading state during initial analysis
+
+Annotations:
+  Header (0:6599) at (0, 0) — title + flow arrows
+  Gap-Row1toRow2 at (0, 497) — excursion triggers
+  Gap-Row2toRow3 at (0, 972) — overlay triggers
+  ChunkLifecycle at (0, 1450) — internal state machine
+  DesignRationale (0:6750) at (1600, 1600) — 10 design decisions explained
 ```
 
-### Verified Errors (from describe on 0:6)
-**Contrast Errors (10+)**:
-- MenuHelp #888 on #0D0D0D (0:19)
-- SessionSep #444 on #1A1A2E (0:25)
-- SessionTime #888 on #1A1A2E (0:29)
-- HintText #888 on #000 (0:60), HintSep #444 on #000 (0:61)
-- ActionCommitText #888 on #333 (0:95), ActionPauseText #888 on #333 (0:97), ActionQuitText #888 on #333 (0:99)
-- ProgressLabel #888 on #000 (0:84), ProgressFiles #666 on #000 (0:88)
-- StatusHint #666 on #1E1E1E (0:101), StatusChunks #888 on #1E1E1E (0:102), StatusSep #444 on #1E1E1E (0:103), StatusWorktree #888 on #1E1E1E (0:104)
+**Flow Diagram Page (0:4695)** — text-based state diagram with design rationale
 
-**Structural Issues**:
-- BottomSpacer (0:105) empty orphan
-- 2+ generic "Frame" siblings in SessionBar, ProgressSection
-- Content gap inconsistent (16, 6, 8)
-- BranchSummary gap 6px (off 8px grid)
-- ProgressSection children overflow (39px > 28px available)
-- StatusRows Frame children 100px tall in 24px rows
+### Node ID Instability Note
+Node IDs SHIFT after every batch of modifications (font changes, radius changes, etc).
+ALWAYS re-query with `find_nodes` or `query_nodes` before referencing IDs.
 
 ### Product Context (from Hana-san — PRESERVED)
 
@@ -71,42 +59,40 @@ Screen1 (0:6) 720x375
 - Even chunks where ALL hunks are discarded must flow through human-in-the-loop review
 - A chunk is NEVER silently skipped
 
-**All Confirmed Decisions**: See blueprint.json globalAlerts (30+ entries)
+**All Confirmed Decisions**: See blueprint.json globalAlerts (35+ entries)
 
-### Design Decisions Log (PRESERVED from Sessions 1-3)
-1. Split list + detail view chosen over tabbed/stacked approach (confirmed by Hana-san)
-2. Chunk list shows 5 rows with scroll indicator for overflow
-3. Selected row has green-tinted background (#002200) for clear focus
-4. Status dots use color-coded shapes: ● ready, ◌ blocked, ✗ rejected
-5. Detail panel shows: header+badge, meta, files, hunks, agent notes
-6. Agent section is collapsible (collapsed by default, shows status badge)
-7. Actions bar has two groups: chunk actions (left) and session actions (right)
-8. Branch cards use distinct colors for each source branch
-9. All text meets contrast requirements (min #BBBBBB secondary, #CCCCCC primary)
-
-### Rebuild Plan (Tasks 1-8)
-The WIP describes the TARGET state for Screen1 after rebuild:
-- Content (target) → SessionBar, BranchSummary (color-coded cards), ChunkPane (list+detail), Actions, StatusBar
-- ChunkPane → ChunkPaneHeader, ChunkQueue (5 rows, scroll), ChunkDivider, ChunkDetail
-- All design tokens bound, zero hardcoded colors, zero describe errors
-
-### Expansion Plan (Tasks 9-24)
-- Screen2: Branch Selection / Session Setup
-- Screen3: Chunk Rejection / Restructure (per-hunk granularity)
-- Screen4: Agent Activity Monitor (ACP integration)
-- Screen5: Session Summary / Completion
-- Screen6: Pause / Session Interrupt
-- Screen7: Hunk Detail / Raw Hunk Viewer
-- Screen8: Session Resume / History
-- Screen9: Help / Keybindings Reference
-- Flow Diagram page: state transition diagram
-- Interaction States page: micro-interaction states
-- Component library on Components page
-- Implementation handoff annotations
-- Edge case and error state designs
+### Design Decisions Log (Session 5 additions)
+10. Terminal visual constraints: ZERO rounded corners, NO bold text weight, NO visual effects
+11. Color is primary differentiator (not weight, not size, not shape)
+12. ANALYZING screen: loading state showing agent progress through phases
+13. CONFIRM_QUIT: modal overlay with warning about unresolved hunks
+14. Screen layout tells the story: primary flow across top, excursions below, overlays at bottom
+15. Chunk lifecycle: PENDING → READY → IN_REVIEW → APPROVED | REJECTED → pool return
 
 ### Session History
 - **Session 1**: Initial Screen1 creation, identified contrast + structural issues
 - **Session 2**: CLAIMED fixes — contrast, layout, naming (ALL LOST)
 - **Session 3**: CLAIMED design tokens, 37 variables, 115 bindings (ALL LOST)
-- **Session 4 (CURRENT)**: Verified data loss. Replanning. Rebuild + multi-screen expansion. 9-hour mandate.
+- **Session 4**: Verified data loss. Replanning. Rebuild + multi-screen expansion. 9-hour mandate.
+- **Session 5 (CURRENT)**: Rebuilt all 9 screens. Fixed ALL fonts to Courier New 10px Regular.
+  Stripped 71 rounded corners and 43 bold weights for terminal fidelity.
+  Created flow layout with annotations. Created Analyzing + ConfirmQuit screens.
+  Added Design Rationale annotation. Started product flow mapping.
+
+### Immediate Next Steps (Priority Order)
+1. **Deep product review**: Walk through each screen and verify content matches confirmed requirements
+2. **Screen annotations**: Add design thinking notes ON each screen (not just the overview)
+3. **Task 4 (BranchSummary)**: Still "Not Started" in blueprint — color-coded branch cards
+4. **Design tokens**: Create slop-funnel variable collection, bind all colored nodes
+5. **Component library**: Components page with reusable TUI elements
+6. **Edge cases**: Empty repo, agent crash, dirty working tree, branch deleted mid-session
+7. **Interaction states**: Focus states, hover, pressed, disabled on dedicated page
+8. **Implementation handoff**: Annotate each screen with component decomposition + data model
+
+### What Hana-san Wants (DIRECTIVE.txt)
+- Think like PM + Designer + Engineer
+- Map out ACTUAL flows, not just arrange boxes
+- Multiple screens with clear relationships
+- Annotations showing design thinking
+- Prove competence through exhaustive, detailed work
+- CONTINUOUS expansion toward True Perfection

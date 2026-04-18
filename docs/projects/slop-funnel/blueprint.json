@@ -130,6 +130,9 @@
     },
     {
       "warning": "TERMINAL RENDERING REALITY CHECK (AUDIT RESULTS 2026-04-19): Full audit found: 71 nodes with cornerRadius>0 (ALL badges, buttons, cards, containers across ALL 9 screens), 40 nodes with bold font weight, 0 shadows/blur, 0 strokes, 0 gradients. All 71 rounded corners and all 40 bold weights MUST be stripped to achieve terminal fidelity."
+    },
+    {
+      "warning": "TERMINAL RESIZE + ARBITRARY SHAPES (CONFIRMED BY HANA-SAN): Terminals can be trivially resized by the user. Terminal windows may be arbitrary shapes (not just wide rectangles). The TUI MUST implement appropriately reactive behavior — all layouts must adapt to terminal size changes gracefully. This means: (1) Fixed pixel widths (720px) are NOT realistic for all terminal sizes — the design must show how layouts respond to both WIDER and NARROWER viewports. (2) The chunk list/detail split must handle narrow terminals (stack vertically instead of side-by-side). (3) Long text must truncate or wrap appropriately. (4) Critical elements (status bar, actions) must remain visible at minimum terminal sizes. (5) The design should document MINIMUM supported terminal size and responsive breakpoints. This is a MANDATORY requirement that affects every screen design."
     }
   ],
   "mandatoryDirectives": {
@@ -141,7 +144,7 @@
     "foreverReminders": "On EVERY task commencement, re-read the following skills: blueprint-json, strict-review-gate, openpencil-figma-design, frontend-design:frontend-design"
   },
   "statusSection": {
-    "currentState": "SESSION 4 — MULTI-SCREEN EXPANSION + TERMINAL FIDELITY FIXES. 9 screens created (Screen1-9). ALL 279+ text nodes now Courier New 10px Regular. STRIPPING 71 rounded corners and 43 bold weights to achieve terminal fidelity (agents running). Screen7-HunkDetail created with diff view. Screen2-Setup through Screen9-Help rendered. TODO: contrast fixes, screen relationships, design tokens, component library, flow diagram.",
+    "currentState": "SESSION 5 — PRODUCT FLOW MAPPING + USE CASE DESIGN. 9 screens in 3x3 flow layout on Page 1 with flow annotations. Screen1-Staged variant created (approve flow intermediate state). Screen-Analyzing (loading) and Screen-ConfirmQuit (modal) created. RejectFlowUseCase annotation showing complete user journey. DesignRationale annotation with 10 design decisions. All 279+ text nodes Courier New 10px Regular. 71 rounded corners stripped, 43 bold weights stripped. ACTIVE: product flow exploration, use case scenarios, identifying UX gaps. TODO: design tokens, component library, edge cases, interaction states.",
     "goalState": "ALL screens for the slop-funnel TUI designed with exhaustive detail: (1) Screen1 — main dashboard with chunk list + detail split view, fully tokenized, zero errors. (2) Screen2+ — additional screens covering: branch selection/setup, chunk rejection with per-hunk granularity, agent activity/interaction, session resume/pause, conflict resolution (internal), completion/summary view. (3) Component library on Components page with reusable TUI elements. (4) Interaction patterns and keyboard navigation fully documented. (5) State transition diagrams annotated. (6) Design ready for implementation handoff.",
     "replanLog": [
       {
@@ -295,9 +298,38 @@
       "description": "Based on the complete design, identify missing states and screens: (1) What happens when NO branches are available (empty repo)? (2) What happens when agent crashes or becomes unresponsive? (3) What happens when trunk has uncommitted changes (dirty working tree)? (4) What happens when a source branch was deleted/force-pushed mid-session? (5) What happens when git merge conflicts occur that the agent can't resolve? (6) What is the first-run experience (no previous sessions, fresh install)? (7) What happens when the user tries to quit with unresolved hunks? Design error/edge-case states as overlays or variant screens, add them to the Flow Diagram, and document in WIP.md.",
       "acceptance": "All identified edge cases have designed states (either as overlays, modal dialogs, or screen variants). Flow Diagram updated with error transitions. WIP.md documents all edge cases and their visual treatment. No user-facing scenario is left unaddressed.",
       "status": "Not Started"
+    },
+    {
+      "task": "Design intermediate states: Screen1-Staged (post-approve, pre-confirm), Screen-Analyzing (loading), Screen-ConfirmQuit (modal overlay)",
+      "description": "Three critical UX moments that were missing from the initial screen set: (1) Screen1-Staged — AFTER user presses Enter to approve a chunk, BEFORE they confirm the commit. TUI stages diff on trunk via go-git. Dashboard transitions to show: green StagingBanner ('Chunk #1 staged on main — awaiting external review'), staged chunk detail (files, hunks, agent notes), instruction to review externally. Actions change to: [Y] CONFIRM COMMIT, [N] UNSTAGE. StatusBar shows 'staged | 1 pending commit'. (2) Screen-Analyzing — loading state during initial branch analysis. Shows agent progress: scanning each branch (with hunk counts), grouping hunks into chunks, analyzing dependencies, resolving conflicts. Progress bar. Agent notes about cross-branch hunks. (3) Screen-ConfirmQuit — modal overlay when user presses [Q] with unresolved hunks. Dimmed background. Red warning: '12 unresolved hunks across 3 branches'. Options: [S] Save + Exit, [Q] Force Quit (lose progress), [Esc] Cancel. CREATED: Screen1-Staged (0:6763), Screen-Analyzing (0:6681), Screen-ConfirmQuit (0:6739). Annotation: ApproveFlowAnnotation (0:6826) explaining the staging UX.",
+      "acceptance": "Three new screens exist on Page 1 with proper content. Screen1-Staged shows the staging state with green banner, changed actions, and external review instruction. Screen-Analyzing shows agent progress through phases with hunk counts. Screen-ConfirmQuit shows modal warning with save/quit/cancel options. All use Courier New 10px Regular, no rounded corners, terminal-faithful rendering.",
+      "status": "Done"
+    },
+    {
+      "task": "Design use case scenarios as annotation frames showing complete user journeys through complex flows",
+      "description": "Create detailed USE CASE annotations that walk through the actual user journey step by step. These are NOT screen designs — they are PRODUCT THINKING artifacts that explain WHY screens are designed the way they are. Each use case shows: what the user sees, what they do, what data changes, what the agent does in response. Priority scenarios: (1) REJECT FLOW USE CASE — Alice rejects specific hunks from Chunk #2 with per-hunk reasons, hunks return to pool, agent re-groups. Created as RejectFlowUseCase (0:7914). (2) APPROVE FLOW USE CASE — Alice approves Chunk #1, diff is staged, she reviews externally, confirms commit, dependency resolves. Created as ApproveFlowAnnotation (0:6826). (3) CROSS-BRANCH CHUNK USE CASE — how chunks containing hunks from multiple branches are visualized and reviewed. (4) AGENT FEEDBACK LOOP USE CASE — how human rejection reasons feed back into agent's re-grouping decisions. (5) FIRST-RUN EXPERIENCE — new user launches slop-funnel for the first time, no saved sessions.",
+      "acceptance": "Use case annotation frames exist on Page 1 showing complete user journeys. Each scenario is detailed enough that a developer understands the interaction sequence without ambiguity. The reject flow use case covers per-hunk selection, reasons, outcome preview, and pool return. The approve flow covers staging, external review, and confirmation. Edge cases are identified.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Explore and design cross-branch chunk handling — chunks containing hunks from multiple source branches",
+      "description": "Per the confirmed requirements, agent may group hunks from DIFFERENT branches into a single chunk. This creates a unique UX challenge: the chunk detail must show MULTIPLE branch origins. Design decisions needed: (1) How does the ChunkQueue row show multi-branch origin? (multiple color indicators?) (2) How does ChunkDetail show branch breakdown? (3) What does the reject flow look like for cross-branch chunks? (hunks from different branches may have different rejection logic) (4) How does the BranchSummary show cross-branch chunk relationships? Explore multiple approaches, show thinking in annotations, propose recommendation for Hana-san review.",
+      "acceptance": "Cross-branch chunk handling is designed with clear visual treatment. ChunkQueue rows show multi-branch origin. ChunkDetail breaks down hunks by source branch. Reject flow handles per-hunk branch attribution. Design rationale annotation explains the approach and alternatives considered.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Explore and design the agent feedback loop — how human rejection reasons improve agent re-grouping",
+      "description": "The reject flow creates a feedback loop: human rejects hunks with reasons ('wrong grouping — should be with #4', 'bad implementation — redo'). Agent receives these reasons as INPUT for re-grouping. Design how this feedback is communicated: (1) What does the agent see when hunks return to pool? (2) How does the agent status reflect 're-processing rejected hunks'? (3) What visual feedback does the user get that their rejection was acted on? (4) How are NEW chunks from re-grouped hunks presented? (marked as 'regrouped'?) (5) Can the user see the agent's reasoning for re-grouping decisions? This connects to ACP integration — the agent communication protocol must support structured rejection feedback.",
+      "acceptance": "Agent feedback loop is designed with visual treatment on DASHBOARD and AGENT screens. User can see when agent is re-processing rejected hunks. New chunks from re-grouping are visually distinct. Agent's re-grouping reasoning is accessible. ACP message structure for rejection feedback is documented.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Design chunk dependency visualization — how dependencies between chunks are shown and resolved",
+      "description": "Per confirmed requirements, chunks may have dependencies. Agent indicates dependencies. BLOCKED chunks are not shown to user until dependency resolved. Design: (1) How does the ChunkQueue show dependency status? (arrow/chain icon linking related chunks?) (2) What happens visually when a dependency resolves? (animation? status change? notification?) (3) How does ChunkDetail show dependency info? ('Depends on chunk #1 — APPROVED' or 'Blocks chunk #3') (4) Can user view the full dependency graph? (separate view or overlay?) (5) What happens to dependent chunks when a chunk is rejected? (cascade block? re-evaluation?)",
+      "acceptance": "Dependency visualization designed for ChunkQueue (status indicators), ChunkDetail (dependency info section), and potentially a dependency graph view. Resolution feedback is clear — user sees blocked chunks become ready. Rejection cascade behavior is specified.",
+      "status": "Not Started"
     }
   ],
-  "continuousVerification": {
     "task": "Validate design changes after EVERY modification to any screen or component",
     "description": "After each design change in OpenPencil MCP: (1) Re-run describe on the modified node to check for errors. (2) Export the modified screen as PNG to visually verify. (3) Check spacing against 8px grid. (4) Verify color contrast. (5) Update WIP.md with what was changed and why.",
     "failPolicy": "If describe shows any 'error' severity issues, STOP and fix before proceeding. Zero tolerance for contrast failures, overflow, or broken layouts.",

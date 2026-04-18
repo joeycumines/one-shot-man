@@ -63,6 +63,13 @@ or designs that look wrong because nobody checked.
    - `describe(id)` on existing nodes to understand context
    - `analyze_colors` + `analyze_typography` to learn existing patterns
    - If variables exist: `list_variables` to find established tokens
+   - **Identify the design context**: Look at the structure, fonts, and content
+     to understand what *kind* of interface this is — a terminal/TUI app, a
+     mobile screen, a web dashboard, a marketing page, etc. Each platform has
+     different constraints (e.g., terminal apps have limited color support,
+     fixed-width fonts, and no real shadows; mobile apps need touch targets and
+     safe areas). This context should inform every subsequent decision about
+     colors, spacing, typography, and what's technically achievable.
 2. **Plan** — Decide the approach before touching the canvas.
    Jumping straight to building wastes time on rework. Decide colors, spacing,
    and component strategy first.
@@ -96,6 +103,9 @@ Assessing an existing design for consistency and improvement opportunities.
    - `get_page_tree` → `describe` key frames
    - `design_to_component_map` to see component architecture
    - `list_variables` to see token coverage
+   - **Identify the design context** (see step 1 of Design Creation Workflow) —
+     understanding whether this is a terminal UI, mobile app, web page, etc.
+     shapes what "good" looks like in your analysis
 2. **Analyze** — Run all analysis tools.
    - `analyze_colors(show_similar=true)` → find redundant colors
    - `analyze_spacing` → find inconsistent spacing
@@ -103,10 +113,15 @@ Assessing an existing design for consistency and improvement opportunities.
    - `analyze_clusters` → find repeated patterns that should be components
 3. **Report** — Present findings as candidates, not mandates.
    Some inconsistencies are intentional. List what you found and let the user
-   decide what to fix.
+   decide what to fix. Interpret the data in context — don't just dump raw
+   numbers. For example, if `analyze_colors` shows a limited palette of
+   terminal greens and grays, explain that this is consistent with a TUI design
+   rather than flagging it as "low color variety." The analysis should tell a
+   story about the design's intent and health, not just list metrics.
    - List color, spacing, and font inconsistencies
    - Identify candidate components from clusters
    - Note missing variable bindings
+   - Contextualize findings within the design's platform and purpose
    - **Ask the user** which findings to act on
 4. **Fix** — Apply user-approved corrections.
    - Unify colors: `set_fill`/`set_stroke` for direct fixes, or `bind_variable` to link to tokens
@@ -176,6 +191,12 @@ set_opacity  set_radius  set_rotation  set_image_fill
 
 - `create_collection` → `create_variable` → `bind_variable`
 - `design_to_tokens` — export as CSS/Tailwind/JSON
+- When creating tokens, consider the target platform's capabilities. For example,
+  terminal/TUI designs may have limited color palettes (16-color, 256-color, or
+  true-color), and terminal background is often user-controlled and transparent.
+  Mobile and web platforms have fewer constraints but different accessibility
+  requirements. Name tokens semantically (e.g., `text-primary` not `gray-900`)
+  so they remain meaningful across themes and platforms.
 
 ### Icons
 

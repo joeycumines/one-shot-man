@@ -1,0 +1,133 @@
+{
+  "meta": {
+    "fileName": "blueprint.json",
+    "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE DESIGN. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE.",
+    "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST — ESPECIALLY NOT TIME ESTIMATES. NEVER SPECIFY A PRIORITY OF ANY KIND."
+  },
+  "globalAlerts": [
+    {
+      "warning": "DESIGN PHASE: This blueprint tracks UI/UX design work for the slop-funnel TUI in OpenPencil MCP. All design changes are made in the Figma/OpenPencil document via MCP tools, not in code files."
+    },
+    {
+      "warning": "PRODUCT CONTEXT: slop-funnel performs EXHAUSTIVE extraction of value from 1-N divergent git branches. Every hunk from every branch diff must be explicitly considered (merged, discarded, or marked with notes). Like an external sort — changes grouped by agentic AI, staged in a workflow loop with backpressure. Must support claude and other agents via ACP (https://www.ibm.com/think/topics/agent-communication-protocol)."
+    },
+    {
+      "warning": "TERMINOLOGY (CONFIRMED): 'Chunk' = a group of 1-N hunks from any/all source branches, reviewable as one unit by the human-in-the-loop. A chunk's 'Patch' is the diff/patch that is the mergable payload. The agent may REIMPLEMENT the patch — chunks are NOT just 'apply hunks verbatim'. Even chunks where ALL hunks are discarded must still flow through human-in-the-loop review. A chunk is never silently skipped. This is the core guarantee of 'exhaustive'."
+    },
+    {
+      "warning": "INTEGRATION (CONFIRMED): slop-funnel will be a new osm subcommand (e.g. `osm slop-funnel`), living in the one-shot-man repo, using osm's Go framework, scripting runtime, and session management."
+    },
+    {
+      "warning": "SESSION STATE (CONFIRMED): All slop-funnel state is tracked in osm sessions (`osm session id` etc). The TUI reads/writes session state. This includes: branch selections, chunk status, commit history, agent interactions, and user decisions."
+    },
+    {
+      "warning": "LAUNCH FLOW (CONFIRMED): Branches are selected entirely within the TUI — not via CLI args. May also support a go-prompt terminal mode bootstrapped like `osm super-document`, with seamless transition between 'terminal-style TUI' and 'advanced interactive user interface TUI'. The entire experience is interactive."
+    },
+    {
+      "warning": "CHUNK LIFECYCLE (CONFIRMED): Chunks are staged up by a workflow-style orchestration with backpressure. Chunks can be rejected with a reason. The orchestrator stages an appropriate number of chunks while the user works. One chunk = one commit. Agent integration details TBD (to be refined over time)."
+    },
+    {
+      "warning": "AGENT INTERACTION (CONFIRMED): There MUST be feedback and interaction. Higher-level than osm pr-split. May need to surface agent's train of thought for debugging/guidance. Details TBD — dependent on agentic tool capabilities, requiring exploration and research."
+    },
+    {
+      "warning": "DIRECTIVE: Any information Hana-san gives via answers MUST be accumulated in this blueprint immediately. Do not lose context."
+    {
+      "warning": "HANA-SAN IS THE PRODUCT MANAGER. Takumi is the designer/engineer. Product direction questions MUST be asked of Hana-san before proceeding. Do not assume product direction — ask."
+    },
+    {
+      "warning": "SCREEN1 IS IN OPENPENCIL MCP: Page 'Page 1', node ID '0:6' (720×375). It is the main dashboard view. There is also a 'Components' page (currently empty)."
+    }
+  ],
+  "mandatoryDirectives": {
+    "contextManagement": "This is a collaborative design session with Hana-san. Ask questions using AskUserQuestion tool. Iterate on Screen1 in the MCP. Update WIP.md with findings and decisions. Do not proceed past ambiguities — surface them as questions.",
+    "workingDirectory": "docs/projects/slop-funnel/ — blueprint.json and WIP.md live HERE, not in the project root.",
+    "mcpLocation": "OpenPencil MCP. Page 1 has Screen1 (node 0:6). Components page is empty and reserved for the component library."
+  },
+  "statusSection": {
+    "currentState": "Screen1 exists with 14+ contrast errors, layout overflow issues, generic node naming, and inconsistent spacing. Product direction needs clarification through Q&A with Hana-san before deeper design work.",
+    "goalState": "Screen1 is fully refined with proper contrast, layout, spacing, and naming. Product direction is clarified. All screens for the slop-funnel TUI are designed with a component library and defined interaction patterns. The design is ready for implementation handoff.",
+    "replanLog": []
+  },
+  "sequentialTasks": [
+    {
+      "task": "Fix Screen1 color contrast errors: 14 dark-on-dark text instances across SessionBar, ActionHint, ChunkStatus rows, ProgressSection, and StatusBar",
+      "description": "The describe tool identified 14 instances where text is too dark against its background: SessionLabel (#888 on #1A1A2E), SessionSep (#444 on #1A1A2E), SessionTime (#888 on #1A1A2E), RepoLabel (#888 on #1A1A2E), MenuHelp (#888 on #0D0D0D), HintText (#888 on #000), HintSep (#444 on #000), ActionCommitText (#888 on #333), ActionPauseText (#888 on #333), ActionQuitText (#888 on #333), ProgressLabel (#888 on #000), ProgressFiles (#666 on #000), StatusHint (#666 on #1E1E1E), StatusChunks (#888 on #1E1E1E), StatusSep (#444 on #1E1E1E), StatusWorktree (#888 on #1E1E1E). Fix each by raising text color to at least #AAAAAA for secondary text and #CCCCCC for primary readable text. Node IDs: 0:23, 0:25, 0:29, 0:27, 0:19, 0:60, 0:61, 0:95, 0:97, 0:99, 0:84, 0:88, 0:101, 0:102, 0:103, 0:104.",
+      "acceptance": "Re-running describe on Screen1 (node 0:6) produces zero color contrast 'error' severity issues. All text is legible against its background — secondary/muted text at minimum #999999, primary text at minimum #BBBBBB, on their respective dark backgrounds.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Fix Screen1 layout overflow: Frame children (100px tall) overflow StatusRows parent rows (24px tall) in ChunkStatus section",
+      "description": "In the StatusRows frame (node 0:62), three rows (RowReview 0:63, RowStaged 0:69, RowCommitted 0:75) are 24px tall each, but each contains a child Frame (nodes 0:66, 0:72, 0:78) that is 100px tall — overflowing the 24px parent by 76px. These 100px frames appear to be intended as progress bar containers but are massively oversized. Either resize these frames to fit within 24px rows (e.g. height 8-12px) or increase the row height to accommodate them properly. The overflow is visually breaking the layout.",
+      "acceptance": "Re-running describe on node 0:62 produces zero 'overflow' severity issues. All children fit within their parent bounds. The visual spacing in ChunkStatus StatusRows is clean and intentional.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Fix Screen1 structural issues: inconsistent gaps, generic Frame names, HUG+justify warnings, BottomSpacer orphan",
+      "description": "Multiple structural issues found by describe: (1) Content frame (0:20) uses inconsistent gaps across children (16, 6, 8px) — standardize to 8px grid. (2) Six generic 'Frame' siblings (0:22, 0:26, 0:31, 0:66, 0:72, 0:78, 0:83, 0:87) need semantic names (e.g. SessionInfo, RepoInfo, BranchRow, ReviewProgress, StagedProgress, CommittedProgress, ProgressHeader, ProgressDetail). (3) ChunkHeader (0:56) and ProgressSection Frame (0:83, 0:87) use justify=between with HUG sizing — no effect, needs w='fill'. (4) BranchSummary (0:30) uses 6px gap, off the 8px grid. (5) BottomSpacer (0:105) is 100×0 with no fill — delete it. (6) Actions (0:91) uses justify=between but all buttons are hug-sized — works by coincidence but fragile.",
+      "acceptance": "Re-running describe on Screen1 (0:6) produces zero structural 'warning' or 'info' severity issues related to naming, gaps, or layout. All frames have semantic names. All gaps are on 8px grid. HUG+justify frames are either given w='fill' or justify is removed. BottomSpacer is deleted.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Clarify product direction: ask Hana-san key questions about slop-funnel's workflow, screens, and interaction model",
+      "description": "Before designing additional screens or refining Screen1's information architecture, need answers to product questions: (1) What screens/views does the TUI need beyond the main dashboard? (e.g. chunk detail view, diff viewer, branch selection, agent status, conflict resolution) (2) What is the primary workflow? User launches tool → selects branches → tool chunks → user reviews chunks → agent processes → commit? (3) How does the agent interaction work? Does the user see agent reasoning? Can they override? (4) What does 'exhaustive' mean in practice — is there a checklist/audit trail? (5) What are the keyboard-driven interaction patterns? (6) Is Screen1 the right starting point or should we redesign from scratch? (7) What is the relationship between this and osm pr-split? Same codebase? (8) The name 'slop-funnel' — is this the actual product name or working title?",
+      "acceptance": "All product direction questions are answered and recorded in WIP.md. The answers are specific enough to drive screen design decisions. No ambiguity remains about the core workflow, the number and purpose of screens, or the interaction model.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Refine Screen1 information architecture based on product direction answers",
+      "description": "After product questions are answered, revisit Screen1's layout and information hierarchy. Currently has: Header (title), Menu (File/Session/Chunks/View/Help), SessionBar (session ID, repo, time), BranchSummary (trunk + 3 source branches with stats), ChunkStatus (review/staged/committed rows with progress bars), ProgressSection (percentage bar + file counts), Actions (Review/Commit/Pause/Quit buttons), StatusBar (key hints + pending count + worktree). The sections, their ordering, and their content may need to change based on product direction. This task may trigger a replan if Screen1 needs major restructuring.",
+      "acceptance": "Screen1's sections, labels, data displayed, and visual hierarchy accurately reflect the confirmed product direction. Every section on Screen1 has a clear purpose that maps to the confirmed workflow. Describe tool shows no structural or content issues.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Design Screen2+: identify and create additional TUI screens based on product direction",
+      "description": "Based on product direction answers, identify all screens the TUI needs beyond the main dashboard. Likely candidates: chunk detail/review screen, diff viewer, branch selection/config screen, agent activity monitor, conflict resolution screen. Create each screen as a new top-level frame on Page 1 or a new page. Each screen must follow the same design system (colors, fonts, spacing, component patterns) as the refined Screen1. Screens will be designed iteratively with Hana-san feedback.",
+      "acceptance": "All required screens exist in the OpenPencil document. Each screen has a clear purpose documented in WIP.md. Navigation between screens is defined. All screens use consistent design tokens and component patterns. Describe tool shows no errors on any screen.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Create component library on the Components page in OpenPencil",
+      "description": "The 'Components' page (0:106) is currently empty. Populate it with reusable TUI components: Header component, MenuBar, SessionBar, BranchCard (trunk + source variants), ChunkRow (review/staged/committed states), ProgressBar (with fill states), ActionButton (primary/secondary/disabled variants), StatusBar, Divider, Badge/Pill, Icon indicators. Each component should be a proper OpenPencil COMPONENT node with defined variants where applicable. All components must use the established design tokens (colors, spacing on 8px grid, Courier New font family).",
+      "acceptance": "Components page contains all reusable TUI elements as proper COMPONENT nodes. Each component has clear naming and consistent styling. Components can be instantiated and used across screens. The design tokens (colors, spacing, typography) are consistent across all components.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Define design tokens and variable system for the TUI",
+      "description": "Create OpenPencil variable collections for: (1) Colors — background levels (#000, #0D0D0D, #1A1A2E, #1E1E1E, #333), text levels (primary #FFFFFF, secondary #BBBBBB, muted #888888, disabled #666), accent colors (success/green #28C840, warning/yellow #FFBD2E, error/red #FF5F57, branch colors), structural colors (divider #333, border #3E3E3E). (2) Spacing — 8px grid with 4/8/16/24/32 variants. (3) Typography — font family (Courier New/monospace), sizes (9/10/11/12/14px for TUI scale), weights. (4) Component sizes — heights for rows, bars, buttons. Bind these variables to nodes in Screen1 and all components.",
+      "acceptance": "OpenPencil has named variable collections for colors, spacing, typography, and sizes. All nodes in Screen1 and the component library are bound to these variables (not hardcoded values). Changing a variable updates all bound nodes. The token system is documented in WIP.md.",
+      "status": "Not Started"
+    },
+    {
+      "task": "Define TUI interaction patterns and keyboard navigation model",
+      "description": "Document the keyboard-driven interaction model: (1) Global keybindings (j/k navigation, Enter select, ? help, q quit, Esc back). (2) Screen-specific keys. (3) How focus is indicated visually (highlight, cursor). (4) How the chunk review flow works (select chunk → see diff → merge/discard/note → next). (5) How agent status is displayed during processing. (6) How conflicts are surfaced and resolved. This documentation goes in WIP.md and should inform the visual design (e.g. focus indicators, key hints in StatusBar).",
+      "acceptance": "WIP.md contains a complete interaction model document covering all screens, all keybindings, focus indicators, and workflow transitions. The visual design on all screens reflects these patterns (key hints, focus states, navigation indicators).",
+      "status": "Not Started"
+    },
+    {
+      "task": "Final design review: export all screens, validate consistency, document design decisions",
+      "description": "Export all screens as PNG at 2x scale. Run describe on each screen and fix any remaining issues. Validate: (1) All colors use design tokens (no hardcoded values). (2) All spacing is on 8px grid. (3) All components use the component library. (4) Typography is consistent. (5) Navigation flows make sense. (6) All product requirements are visually represented. Document all design decisions in WIP.md with rationale.",
+      "acceptance": "All screens are exported and visually verified. Describe tool shows zero errors on any screen. WIP.md contains complete design documentation with rationale for all decisions. The design is ready for implementation handoff.",
+      "status": "Not Started"
+    }
+  ],
+  "continuousVerification": {
+    "task": "Validate design changes after EVERY modification to Screen1 or any new screen",
+    "description": "After each design change in OpenPencil MCP: (1) Re-run describe on the modified node to check for errors. (2) Export the modified screen as PNG to visually verify. (3) Check spacing against 8px grid. (4) Verify color contrast. (5) Update WIP.md with what was changed and why.",
+    "failPolicy": "If describe shows any 'error' severity issues, STOP and fix before proceeding. Zero tolerance for contrast failures, overflow, or broken layouts.",
+    "testCoverage": "N/A — design phase. Coverage means: every design element has a purpose, every color is tokenized, every component is reusable."
+  },
+  "finalEnforcementProtocol": [
+    {
+      "type": "POST_EXECUTION_WARNING",
+      "alert": "DESIGN PHASE: All changes are in OpenPencil MCP. Do not create code files. Ask Hana-san before assuming product direction. Update blueprint.json after every task."
+    },
+    {
+      "type": "POST_EXECUTION_WARNING_REPEATED",
+      "alert": "HANA-SAN IS THE PRODUCT MANAGER. You are the designer. Ask questions. Do not assume. The blueprint must reflect confirmed decisions only."
+    },
+    {
+      "type": "ACP_REFERENCE",
+      "alert": "slop-funnel must support claude and other agents via ACP (Agent Communication Protocol). Reference: https://www.ibm.com/think/topics/agent-communication-protocol. This is a confirmed requirement that must be reflected in the design."
+    }
+  ]
+}

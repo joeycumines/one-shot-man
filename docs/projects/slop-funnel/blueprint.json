@@ -1,10 +1,37 @@
 {
   "meta": {
     "fileName": "blueprint.json",
-    "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE DESIGN. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE.",
+    "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE DESIGN. DEVIATIONS TO THE PLAN MUST BE LOGGED WITHIN THE PLAN. THE PLAN MUST BE REASSESSED HOLISTICALLY AFTER ANY CHANGE OF ANY SIZE. CRITICAL: PREVENT DATA LOSS BY NEVER DELETING REQUIREMENTS OR CONTEXT WITHOUT PRESERVING THE RAW EXACT DETAILS IN THIS FILE.",
     "completionPolicy": "YOU ARE NOT DONE UNTIL YOU HAVE COMPLETED 100% OF THE BLUEPRINT. DO NOT STOP. YOU MUST REFINE AT REGULAR INTERVALS TO KEEP THE BLUEPRINT FULL. NEVER SPECIFY ANY ESTIMATE OF EFFORT OR COST — ESPECIALLY NOT TIME ESTIMATES. NEVER SPECIFY A PRIORITY OF ANY KIND."
   },
   "globalAlerts": [
+    {
+      "warning": "CRITICAL DATA PRESERVATION DIRECTIVE: NEVER truncate, over-summarize, or delete requirements, historical context, or design decisions from documentation (like WIP.md). If migrating information, you MUST preserve the raw, exhaustive details within blueprint.json. Loss of granular context destroys the conceptual tether across sessions. Do NOT remove existing alerts, directives, tasks, or documentation."
+    },
+    {
+      "warning": "RECOVERED RAW CONTEXT (CORE CONCEPT): Exhaustive extraction of value from 1-N divergent branches. Flow: Changes flow FROM source branches INTO a user-chosen trunk/base branch (NOT necessarily common base). Exhaustive: Every hunk from every branch diff must be explicitly considered. Agent Support: Must support claude + other agents via ACP (Agent Communication Protocol). External Sort Analogy: Like an external sort algorithm for changes."
+    },
+    {
+      "warning": "RECOVERED RAW CONTEXT (TERMINOLOGY): Chunk = A group of 1-N hunks from any/all source branches, reviewable as ONE UNIT by the human-in-the-loop. Patch = The diff/patch that is the mergable payload of a chunk (term TBD — Hana-san said I need to decide). The agent may REIMPLEMENT the patch — chunks are NOT just 'apply hunks verbatim'. Even chunks where ALL hunks are discarded must still flow through human-in-the-loop review. A chunk is NEVER silently skipped — this is the core guarantee of 'exhaustive'."
+    },
+    {
+      "warning": "RECOVERED RAW CONTEXT (INTEGRATION): New osm subcommand (`osm slop-funnel` or similar). Lives in one-shot-man repo. Uses osm's Go framework, scripting runtime, and session management. Session state: All slop-funnel state tracked via osm sessions (`osm session id` etc). TUI reads/writes session state."
+    },
+    {
+      "warning": "RECOVERED RAW CONTEXT (LAUNCH FLOW): Branches selected entirely WITHIN the TUI — not CLI args. May also support go-prompt terminal mode bootstrapped like `osm super-document`. Seamless transition between 'terminal-style TUI' and 'advanced interactive user interface TUI'. The entire experience is interactive."
+    },
+    {
+      "warning": "RECOVERED RAW CONTEXT (CHUNK LIFECYCLE): Chunks are STAGED UP by a workflow-style orchestration (internal, with backpressure). Chunks can be REJECTED with a reason. The orchestrator stages an appropriate number of chunks while the user works on earlier ones. One chunk = one commit. Agent integration details TBD (to be refined over time)."
+    },
+    {
+      "warning": "RECOVERED RAW CONTEXT (AGENT INTERACTION): There MUST be feedback and interaction. Higher-level than osm pr-split (less direct). May need to surface agent's train of thought for debugging/guidance. Details TBD — dependent on agentic tool capabilities, requiring exploration and research."
+    },
+    {
+      "warning": "RECOVERED RAW CONTEXT (DESIGN DECISIONS): Screen1 structure is roughly right — refine, don't redesign from scratch. Discovery phase — need proper requirements elicitation, not abstract questions. Hana-san wants me to 'throw shit at the wall' and learn through specific questions."
+    },
+    {
+      "warning": "RECOVERED RAW CONTEXT (SCREEN1 ISSUES IDENTIFIED): 1. Color contrast errors: Multiple dark-on-dark text (gray on black) - 14 instances. 2. Layout overflow: Frame children (100px) overflow parent rows (24px) in StatusRows. 3. Inconsistent gaps: Content children use mixed gaps (16, 6, 8). 4. Generic naming: Multiple 'Frame' siblings - ambiguous. 5. HUG sizing + justify=between: Won't work as expected. 6. BottomSpacer: 100px width, 0 height, empty - orphan. 7. Visual concerns from AI analysis: information density, color overload, terminology clarity."
+    },
     {
       "warning": "DESIGN PHASE: This blueprint tracks UI/UX design work for the slop-funnel TUI in OpenPencil MCP. All design changes are made in the Figma/OpenPencil document via MCP tools, not in code files."
     },
@@ -75,10 +102,11 @@
       "warning": "HANA-SAN IS THE PRODUCT MANAGER. Takumi is the designer/engineer. Product direction questions MUST be asked of Hana-san before proceeding. Do not assume product direction — ask."
     },
     {
-      "warning": "SCREEN1 IS IN OPENPENCIL MCP: Page 'Page 1', node ID '0:6' (720×375). It is the main dashboard view. There is also a 'Components' page (currently empty)."
+      "warning": "SCREEN1 IS IN OPENPENCIL MCP: Page 'Page 1', node ID '0:6' (720x375). It is the main dashboard view. There is also a 'Components' page (currently empty)."
     }
   ],
   "mandatoryDirectives": {
+    "dataPreservation": "EXCEPTIONALLY CLEAR GUIDANCE: To prevent future data loss, you must NEVER delete, discard, or over-summarize requirements, product context, or historical design decisions from files like WIP.md. If information must be migrated or restructured, it MUST be preserved in its raw, exhaustive form within blueprint.json. Do not modify or remove any existing alerts, directives, tasks, or documentation.",
     "contextManagement": "This is a collaborative design session with Hana-san. Ask questions using AskUserQuestion tool. Iterate on Screen1 in the MCP. Update WIP.md with findings and decisions. Do not proceed past ambiguities — surface them as questions.",
     "workingDirectory": "docs/projects/slop-funnel/ — blueprint.json and WIP.md live HERE, not in the project root.",
     "mcpLocation": "OpenPencil MCP. Page 1 has Screen1 (node 0:6). Components page is empty and reserved for the component library."

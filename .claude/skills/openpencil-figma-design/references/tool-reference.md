@@ -1,6 +1,7 @@
 # Figma MCP Tool Reference
 
 Complete parameter reference for all available Figma MCP tools.
+Verified against openpencil-mcp v0.11.6.
 
 ## Table of Contents
 
@@ -57,9 +58,9 @@ Complete parameter reference for all available Figma MCP tools.
 | `node-move` | Move to coordinates. | `id`, `x`, `y` |
 | `node-resize` | Resize node. | `id`, `width` (min 1), `height` (min 1) |
 | `reparent-node` | Move into different parent. | `id`, `parent-id` |
-| `group-nodes` | Group selected nodes. | — |
+| `group-nodes` | Group nodes. | `ids` (string array) |
 | `ungroup-node` | Ungroup a group. | `id` |
-| `flatten-nodes` | Flatten into single vector. | — |
+| `flatten-nodes` | Flatten into single vector. | `ids` (string array) |
 
 ---
 
@@ -113,7 +114,7 @@ Complete parameter reference for all available Figma MCP tools.
 |------|-------------|------------|
 | `create-component` | Convert frame/group to component. | `id` |
 | `create-instance` | Create instance of a component. | `component-id`, `x`, `y` |
-| `node-to-component` | Convert one or more frames/groups to components. | — |
+| `node-to-component` | Convert one or more frames/groups to components. | `ids` (string array) |
 | `get-components` | List all components, optionally filtered. | `name?`, `limit?` (default 50) |
 
 ---
@@ -163,10 +164,10 @@ Complete parameter reference for all available Figma MCP tools.
 
 | Tool | Description | Key Params |
 |------|-------------|------------|
-| `search-icons` | Search Iconify by keyword. Multiple queries searched in parallel. | `query`, `limit?` (default 5), `prefix?` (e.g. lucide, mdi) |
-| `fetch-icons` | Pre-fetch icons from Iconify into cache. Batch by prefix. Popular sets: lucide, mdi, heroicons, tabler, solar, mingcute, ri. | `query`, `size?` (default 24) |
-| `insert-icon` | Insert cached icons instantly. Batch multiple into same parent. | `name`, `size?` (default 24), `color?`, `parent-id` |
-| `stock-photo` | Search stock photos and apply to nodes. JSON array for parallel fetch. | `requests` (JSON: `[{id, query, orientation?}]`) |
+| `search-icons` | Search Iconify by keyword. Multiple queries searched in parallel. | `queries` (string array, e.g. `["heart", "arrow"]`), `limit?` (default 5), `prefix?` (e.g. lucide, mdi) |
+| `fetch-icons` | Pre-fetch icons from Iconify into cache. Batch by prefix (one HTTP request per set). Call once with all needed icons, then use insert-icon to place them instantly. Popular sets: lucide, mdi, heroicons, tabler, solar, mingcute, ri. | `names` (string array, e.g. `["lucide:heart", "mdi:star"]`), `size?` (default 24) |
+| `insert-icon` | Insert vector icons onto the canvas. Pass `name` for a single icon or `names` for batch insert into the same parent. If already cached by fetch-icons — instant. | `name?` (single icon), `names?` (string array for batch), `size?` (default 24), `color?` (hex, default #000000), `parent-id?` |
+| `stock-photo` | Search stock photos and apply to nodes. JSON array for parallel fetch. Only works on leaf shapes (Rectangle/Ellipse). | `requests` (JSON: `[{id, query, index?, orientation?}]`) |
 
 ---
 
@@ -174,8 +175,8 @@ Complete parameter reference for all available Figma MCP tools.
 
 | Tool | Description | Key Params |
 |------|-------------|------------|
-| `export-image` | Export as PNG/JPG/WEBP. Returns base64. | `format?` (PNG/JPG/WEBP), `scale?` (0.1-4, default 1) |
-| `export-svg` | Export as SVG string. | — |
+| `export-image` | Export as PNG/JPG/WEBP. Returns base64. | `ids?` (string array; omit to export all top-level nodes), `format?` (PNG/JPG/WEBP), `scale?` (0.1-4, default 1) |
+| `export-svg` | Export as SVG string. | `ids?` (string array; omit to export all top-level nodes) |
 | `design-to-tokens` | Extract design tokens as CSS, Tailwind, or JSON. Resolves aliases, handles modes. | `format` (css/tailwind/json), `collection?`, `type?` |
 
 ---
@@ -198,8 +199,8 @@ Complete parameter reference for all available Figma MCP tools.
 |------|-------------|------------|
 | `viewport-get` | Current viewport position and zoom. | — |
 | `viewport-set` | Set viewport position and zoom. | `x`, `y`, `zoom` (min 0.01) |
-| `viewport-zoom-to-fit` | Zoom to fit specified nodes. | — |
-| `arrange` | Arrange top-level nodes in grid/row/column. | `mode` (grid/row/column), `gap?` (default 40), `cols?` |
+| `viewport-zoom-to-fit` | Zoom to fit specified nodes. | `ids` (string array) |
+| `arrange` | Arrange top-level nodes in grid/row/column. | `mode?` (grid/row/column), `gap?` (default 40), `cols?`, `ids?` (string array; defaults to all top-level children) |
 
 ---
 
@@ -215,8 +216,9 @@ Complete parameter reference for all available Figma MCP tools.
 | `diff-show` | Preview property changes as unified diff. | `id`, `props` (JSON) |
 | `switch-page` | Switch to page by name or ID. | `page` |
 | `create-page` | Create new page. | `name` |
-| `select-nodes` | Select nodes by ID. | — |
+| `select-nodes` | Select nodes by ID. | `ids` (string array) |
 | `save-file` | Save current document to disk. | — |
+| `get-codegen-prompt` | Get design-to-code generation guidelines. Call before generating frontend code from a design. | — |
 
 ---
 

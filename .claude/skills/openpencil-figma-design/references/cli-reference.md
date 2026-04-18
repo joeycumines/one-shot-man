@@ -2,6 +2,7 @@
 
 Headless file operations via the `openpencil` CLI. Use when the app is not
 running, for CI/CD pipelines, or for batch operations on `.fig` / `.pen` files.
+Verified against open-pencil v0.11.6.
 
 ## Table of Contents
 
@@ -207,6 +208,20 @@ openpencil eval design.fig -c "
 | `openpencil formats` | List supported formats |
 
 All support `--json` for machine-readable output.
+
+### Additional inspection options
+
+| Command | Option | Default | Description |
+|---------|--------|---------|-------------|
+| `find` | `--name` | — | Name pattern (partial, case-insensitive) |
+| `find` | `--type` | — | Node type (FRAME, TEXT, RECTANGLE, etc.) |
+| `find` | `--page` | all pages | Page name |
+| `find` | `--limit` | `100` | Max results |
+| `variables` | `--collection` | — | Filter by collection name |
+| `variables` | `--type` | — | Filter by type: COLOR, FLOAT, STRING, BOOLEAN |
+| `tree` | `--page` | first page | Page name |
+| `tree` | `--depth` | unlimited | Max depth |
+| `node` | `--id` (required) | — | Node ID to inspect |
 
 ---
 

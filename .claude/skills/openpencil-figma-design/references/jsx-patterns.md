@@ -221,9 +221,10 @@ Icons use `insert_icon` after creating a parent frame — not inline JSX.
 
 ```text
 Workflow:
-1. search_icons(["home", "settings", "user"])  → get icon names
-2. fetch_icons(["lucide:home", "lucide:settings", "lucide:user"])  → cache
+1. search_icons(queries=["home", "settings", "user"])  → get icon names
+2. fetch_icons(names=["lucide:home", "lucide:settings", "lucide:user"])  → cache
 3. insert_icon(name="lucide:home", parent_id="<frame_id>", size=20, color="#666666")
+   — or batch: insert_icon(names=["lucide:home", "lucide:settings"], parent_id="<id>")
 ```
 
 ---

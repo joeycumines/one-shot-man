@@ -68,6 +68,7 @@ value after the reset.
 When resetting all keys with `--all`, the `--force` flag is required as a
 safety measure. All global option lines are removed from the config file;
 comments, section headers, and command-specific options are preserved.
+
 ## Prompt colors (`prompt.color.*`)
 
 Interactive flows (`osm script -i`, `osm prompt-flow`, `osm code-review`, `osm goal -i`) support optional prompt color overrides.

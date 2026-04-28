@@ -1,7 +1,7 @@
 {
   "meta": {
     "fileName": "blueprint.json",
-    "sourceReference": "Live implementation of WithAutoExit(true) registration-liveness fix",
+    "sourceReference": "Committed implementation of WithAutoExit(true) registration-liveness fix",
     "maintenanceInstruction": "KEEP THE PLAN UP TO DATE AS YOU EVOLVE THE CODE. DEVIATIONS MUST BE LOGGED.",
     "completionPolicy": "Implement all tasks. Never stop early."
   },
@@ -14,7 +14,7 @@
     }
   ],
   "statusSection": {
-    "currentState": "WithAutoExit(true) implementation complete. Rule of Two passed (2 contiguous PASS reviews). Sequential test suite: scripting passes (167s), builtin packages pass, command package fails but also fails on original code (pre-existing, unrelated to this diff). Cross-platform validation pending.",
+    "currentState": "Committed: a4af655b feat(eventloop): add WithAutoExit(true) with registration-liveness. Rule of Two passed (2 contiguous PASS reviews). Sequential test suite: scripting passes (167s), builtin packages pass, command package fails but also fails on original code (pre-existing, unrelated to this diff). Cross-platform validation pending.",
     "goalState": "All packages pass on all platforms when tests are run in sequential mode. Cross-platform validation complete."
   },
   "sequentialTasks": [
@@ -42,7 +42,8 @@
       "task": "Commit the full diff",
       "description": "Commit the changes: go.mod (deps upgraded), runtime.go (WithAutoExit + liveness timer), engine_core.go (simplified waitForAsyncWork), bubbletea.go (Promisify wired), register.go (SetPromisify), testutil/eventloop.go (WithAutoExit + liveness for tests).",
       "acceptance": "Git commit created with descriptive message. Diff is clean.",
-      "status": "Not Started"
+      "status": "Done",
+      "notes": "Committed as a4af655b. 8 files changed, 308 insertions(+), 342 deletions(-)."
     }
   ],
   "continuousVerification": {
@@ -55,5 +56,28 @@
       "type": "POST_EXECUTION_WARNING",
       "alert": "Parallel test execution produces non-deterministic failures with WithAutoExit(true). Always use -p 1 for reliable testing."
     }
-  ]
+  ],
+  "scopeExpansion": {
+    "nextFrontier": "The WithAutoExit implementation is complete and committed. The command package test failures (TestPickAndPlaceE2E_PauseResume, TestBinaryE2E_VerifyPTYLive) are pre-existing and unrelated to this diff (they also fail on original code). These are mcpcallback acceptLoop goroutine issues that block command package completion. Cross-platform validation (Linux/Windows) is the next required verification step before True Perfection can be declared.",
+    "pendingTasks": [
+      {
+        "task": "Cross-platform validation: Linux",
+        "description": "Run `make-all-in-container` to verify WithAutoExit(true) + registration-liveness works on Linux. Execute: `make -f Makefile.config make-all-in-container` or similar. Verify all packages pass with sequential execution.",
+        "acceptance": "All Linux packages pass. No WithAutoExit-related failures.",
+        "status": "Not Started"
+      },
+      {
+        "task": "Cross-platform validation: Windows",
+        "description": "Run `make-all-run-windows` to verify WithAutoExit(true) + registration-liveness works on Windows. Execute via hack/run-on-windows.sh or equivalent. Verify all packages pass with sequential execution.",
+        "acceptance": "All Windows packages pass. No WithAutoExit-related failures.",
+        "status": "Not Started"
+      },
+      {
+        "task": "Investigate command package pre-existing failures",
+        "description": "The TestPickAndPlaceE2E_PauseResume and TestBinaryE2E_VerifyPTYLive tests fail on both original and modified code. Root cause: mcpcallback acceptLoop goroutine not terminating properly (chan receive deadlock in jsInitSync). Investigate and fix the acceptLoop goroutine lifecycle in mcpcallbackmod/mcpcallback.go around line 750-751. These failures block command package completion and prevent full test suite from passing.",
+        "acceptance": "command package tests pass with sequential execution (-p 1). No more 'chan receive' deadlocks in mcpcallback acceptLoop. The fix must be verified to not regress other tests.",
+        "status": "Not Started"
+      }
+    ]
+  }
 }

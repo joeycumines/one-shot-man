@@ -65,6 +65,9 @@ type EventLoopProvider interface {
 	Registry() *require.Registry
 	// Adapter returns the goja-eventloop adapter for promise and timer support.
 	Adapter() *gojaeventloop.Adapter
+	// Promisify executes a function in a goroutine and returns a Promise.
+	// This is used to keep the event loop alive during async operations.
+	Promisify(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise
 }
 
 // BubbleteaManager returns the bubbletea manager from RegisterResult.
@@ -156,6 +159,12 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	}
 
 	bubbleteaMgr := bubbleteamod.NewManager(ctx, bubbleInput, bubbleOutput, btBridge, nil, nil)
+
+	// Wire up Promisify for WithAutoExit support.
+	// This is REQUIRED for WithAutoExit(true) on the event loop - it keeps the
+	// loop alive while a BubbleTea program runs. The Promisify is provided
+	// by the event loop provider (Runtime via Engine).
+	bubbleteaMgr.SetPromisify(eventLoopProvider.Promisify)
 
 	registry.RegisterNativeModule(prefix+"bubbletea", bubbleteamod.Require(ctx, bubbleteaMgr))
 

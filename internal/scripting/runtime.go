@@ -68,6 +68,13 @@ type Runtime struct {
 	// ctx is the lifecycle context for Done() channel
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// livenessTimerID is the ref'd timer used for registration liveness.
+	// A long-delay no-op timer is scheduled and Ref'd during initialization,
+	// keeping refedTimerCount > 0 from startup through the registration gap.
+	// This prevents WithAutoExit(true) from exiting prematurely. Unref'd by
+	// ResolveLiveness when the loop should be allowed to exit.
+	livenessTimerID goeventloop.TimerID
 }
 
 // defaultSyncTimeout is the maximum duration to wait for RunOnLoopSync operations.
@@ -98,8 +105,25 @@ func NewRuntimeRegistry(ctx context.Context, registry *require.Registry) (*Runti
 	// poll-based async pipelines to miss state mutations made by Promise
 	// resolution callbacks, leading to indefinite hangs (e.g. the pr-split
 	// "Processing…" freeze).
+	//
+	// WithAutoExit(true) makes Run() return when the loop has no ref'd pending
+	// work (no timers, no in-flight Promisify goroutines, no registered I/O,
+	// queues empty). This is analogous to libuv's UV_RUN_DEFAULT mode and is
+	// appropriate for script-style workloads: the loop exits automatically once
+	// all scheduled async work (setTimeout chains, Promisify, intervals) finishes.
+	// For long-lived interactive loops (go-prompt, pr-split), Shutdown/Close()
+	// via context cancellation still terminates the loop unconditionally.
+	//
+	// The registration-liveness promise: a Promisify is created from the loop
+	// goroutine during initialization (inside the Submit callback below). It keeps
+	// promisifyCount > 0 from startup through the registration gap, preventing
+	// WithAutoExit from exiting prematurely before any work is submitted. This
+	// promise is resolved by waitForAsyncWork (after script async work drains) or
+	// by Close() (for immediate forced exit). Per-script BubbleTea liveness is
+	// handled separately by the tea.run() Promisify in bubbletea.go.
 	loop, err := goeventloop.New(
 		goeventloop.WithStrictMicrotaskOrdering(true),
+		goeventloop.WithAutoExit(true),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create event loop: %w", err)
@@ -148,11 +172,30 @@ func NewRuntimeRegistry(ctx context.Context, registry *require.Registry) (*Runti
 		// Capture goroutine ID
 		id := getGoroutineID()
 		rt.eventLoopGoroutineID.Store(id)
+
+		// Create the registration-liveness timer from the loop goroutine.
+		// Schedule a no-op timer with a very long delay, then Ref it to keep
+		// refedTimerCount > 0 from startup through the registration gap.
+		// This prevents WithAutoExit(true) from exiting prematurely.
+		// ResolveLiveness Unref's this timer when the loop should be allowed to exit.
+		const livenessTimerDelay = 365 * 24 * time.Hour // 1 year — effectively never fires
+		timerID, timerErr := loop.ScheduleTimer(livenessTimerDelay, func() {})
+		if timerErr != nil {
+			errCh <- fmt.Errorf("failed to schedule liveness timer: %w", timerErr)
+			return
+		}
+		if refErr := loop.RefTimer(timerID); refErr != nil {
+			errCh <- fmt.Errorf("failed to ref liveness timer: %w", refErr)
+			return
+		}
+		rt.livenessTimerID = timerID
+
 		errCh <- nil
 	})
 	if submitErr != nil {
 		cancel()
 		loopCancel()
+		loop.Shutdown(context.Background())
 		return nil, fmt.Errorf("failed to initialize: %w", submitErr)
 	}
 
@@ -194,6 +237,33 @@ func (rt *Runtime) Loop() *goeventloop.Loop {
 	return rt.loop
 }
 
+// Promisify executes a function in a goroutine and returns a Promise.
+// This is the preferred way to keep the event loop alive during async operations.
+// The promise resolution/rejection happens on the event loop goroutine.
+// The returned promise is NOT exposed to JavaScript - it's for Go-level async coordination.
+func (rt *Runtime) Promisify(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise {
+	return rt.loop.Promisify(ctx, fn)
+}
+
+// ResolveLiveness releases the registration-liveness timer, allowing WithAutoExit
+// to exit the loop once all other async work has drained. Safe to call multiple
+// times (idempotent after first call). Must be called before or when closing
+// the runtime to ensure the loop exits cleanly rather than staying alive forever.
+func (rt *Runtime) ResolveLiveness() {
+	timerID := rt.livenessTimerID
+	if timerID == 0 {
+		return
+	}
+	rt.livenessTimerID = 0
+	// Unref the timer to drop refedTimerCount. If the loop is already terminated,
+	// UnrefTimer returns ErrLoopTerminated which we safely ignore. When WithAutoExit
+	// is enabled and all other work drains, the loop exits via its own auto-exit
+	// path rather than forced Shutdown. Cancel the timer to prevent it from firing
+	// later if it hasn't yet (belt-and-suspenders).
+	_ = rt.loop.UnrefTimer(timerID)
+	_ = rt.loop.CancelTimer(timerID)
+}
+
 // VM returns the Goja runtime.
 func (rt *Runtime) VM() *goja.Runtime {
 	return rt.vm
@@ -211,9 +281,13 @@ func (rt *Runtime) Close() error {
 	rt.stopped = true
 	rt.mu.Unlock()
 
-	// Cancel the lifecycle context BEFORE stopping the loop
-	// This ensures any goroutines waiting on Done() will unblock
+	// Cancel the lifecycle context FIRST
 	rt.cancel()
+
+	// Release the registration-liveness timer to allow WithAutoExit to exit cleanly.
+	// This must happen before loop.Shutdown() so the loop can terminate via auto-exit
+	// rather than forced shutdown when WithAutoExit is enabled.
+	rt.ResolveLiveness()
 
 	// Cancel the loop.Run() context and shut down the loop
 	rt.loopCancel()

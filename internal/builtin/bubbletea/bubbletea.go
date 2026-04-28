@@ -167,6 +167,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 	"github.com/dop251/goja"
+	goeventloop "github.com/joeycumines/go-eventloop"
 	"golang.org/x/term"
 )
 
@@ -283,12 +284,17 @@ type Manager struct {
 	stderr       io.Writer // Stderr for logging panics/errors
 	signalNotify func(c chan<- os.Signal, sig ...os.Signal)
 	signalStop   func(c chan<- os.Signal)
-	isTTY        bool         // Whether input is a TTY
-	ttyFd        int          // TTY file descriptor (if available)
-	program      *tea.Program // Currently running program (if any)
-	jsRunner     JSRunner     // REQUIRED: thread-safe JS execution via event loop
-	programDone  chan error   // Signals program exit; used by WaitForProgram()
+	isTTY        bool          // Whether input is a TTY
+	ttyFd        int           // TTY file descriptor (if available)
+	program      *tea.Program  // Currently running program (if any)
+	jsRunner     JSRunner      // REQUIRED: thread-safe JS execution via event loop
+	promisify    PromisifyFunc // Optional: keeps loop alive while program runs
+	programDone  chan error    // Signals program exit; used by WaitForProgram()
 }
+
+// PromisifyFunc is a function that executes work in a goroutine and returns a Promise.
+// This is used to keep the event loop alive while BubbleTea programs run.
+type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise
 
 // NewManager creates a new bubbletea manager for an engine instance.
 // Input and output can be nil to use os.Stdin and os.Stdout.
@@ -435,6 +441,16 @@ func (m *Manager) GetJSRunner() JSRunner {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.jsRunner
+}
+
+// SetPromisify configures the Manager to use Promisify for keeping the event loop alive.
+// When set, the goroutine running a BubbleTea program is wrapped in Promisify, which
+// increments promisifyCount and keeps the loop alive until the program exits.
+// This is REQUIRED when using WithAutoExit(true) on the event loop.
+func (m *Manager) SetPromisify(fn PromisifyFunc) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.promisify = fn
 }
 
 // IsTTY returns whether the manager has access to a TTY.
@@ -2040,9 +2056,26 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 			manager.programDone = done
 			manager.mu.Unlock()
 
-			go func() {
-				done <- manager.runProgram(programModel)
-			}()
+			// Run the program. If Promisify is configured (for WithAutoExit support),
+			// wrap the goroutine so the loop stays alive until the program exits.
+			if manager.promisify != nil {
+				// Promisify keeps the event loop alive while the program runs.
+				manager.promisify(context.Background(), func(ctx context.Context) (any, error) {
+					err := manager.runProgram(programModel)
+					// Also send to done channel for WaitForProgram compatibility.
+					// This is safe because done is buffered (capacity 1).
+					select {
+					case done <- err:
+					default:
+					}
+					return nil, err
+				})
+			} else {
+				// No Promisify - run in bare goroutine (legacy behavior).
+				go func() {
+					done <- manager.runProgram(programModel)
+				}()
+			}
 
 			return goja.Undefined()
 		})

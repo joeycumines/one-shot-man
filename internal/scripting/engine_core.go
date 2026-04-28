@@ -492,6 +492,7 @@ func (e *Engine) ExecuteScript(script *Script) error {
 		name:   script.Name,
 	}
 
+	// Execute the script on the event loop
 	if err := e.executeOnLoop(func(vm *goja.Runtime) (execErr error) {
 		// Always run deferred functions on exit (even if a panic occurs).
 		// Runs ON the event loop goroutine so deferred JS callbacks do not
@@ -591,8 +592,9 @@ func (e *Engine) ExecuteScript(script *Script) error {
 		}
 	}
 
-	// Wait for async work (setTimeout, Promisify, etc.) to complete.
-	// The sentinel drain loop blocks until Alive() returns false.
+	// Wait for one tick of the event loop. This ensures any pending events
+	// from the script's deferred callbacks have an opportunity to execute
+	// before the function returns.
 	if waitErr := e.waitForAsyncWork(); waitErr != nil {
 		return waitErr
 	}
@@ -600,12 +602,13 @@ func (e *Engine) ExecuteScript(script *Script) error {
 	return nil
 }
 
-// waitForAsyncWork blocks until the event loop has no ref'd pending work.
-// Uses a sentinel drain pattern: submit a no-op, wait for it to execute,
-// check Alive(). Repeats until Alive() returns false.
+// waitForAsyncWork waits for one tick after the script execution completes.
+// This ensures any pending events from the script's deferred callbacks have an
+// opportunity to execute before the function returns.
 //
-// This ensures setTimeout chains, Promisify goroutines, and other async
-// work completes before ExecuteScript returns.
+// NOTE: This function must NOT be called from within the event loop goroutine,
+// as it would deadlock (SubmitInternal + blocking wait would both need the
+// loop, which only processes one thing at a time).
 func (e *Engine) waitForAsyncWork() error {
 	loop := e.Loop()
 	if loop == nil {
@@ -614,21 +617,14 @@ func (e *Engine) waitForAsyncWork() error {
 	if !loop.Alive() {
 		return nil
 	}
-	for {
-		done := make(chan struct{})
-		// Use SubmitInternal (not Submit) for FIFO ordering with timer registrations.
-		// Submit goes to auxJobs in fast path mode, which runAux() drains BEFORE
-		// the internal queue where timer registrations live. This causes the sentinel
-		// to complete before new timers are visible to Alive(), leading to premature exit.
-		// SubmitInternal puts the sentinel in the same queue, guaranteeing correct order.
-		if err := loop.SubmitInternal(func() { close(done) }); err != nil {
-			return nil
-		}
-		<-done
-		if !loop.Alive() {
-			return nil
-		}
+	// Submit a sentinel to wait for one tick. This gives any pending events
+	// (from deferred callbacks) a chance to execute before returning.
+	done := make(chan struct{})
+	if err := loop.SubmitInternal(func() { close(done) }); err != nil {
+		return nil
 	}
+	<-done
+	return nil
 }
 
 // executeOnLoop submits a function to the event loop and blocks until it
@@ -731,6 +727,18 @@ func (e *Engine) Adapter() *gojaEventloop.Adapter {
 	return e.runtime.Adapter()
 }
 
+// Promisify executes a function in a goroutine and returns a Promise.
+// This is the preferred way to keep the event loop alive during async operations.
+// The promise resolution/rejection happens on the event loop goroutine.
+// The returned promise is NOT exposed to JavaScript - it's for Go-level async coordination.
+// This implements builtin.EventLoopProvider.
+func (e *Engine) Promisify(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise {
+	if e.runtime == nil {
+		return nil
+	}
+	return e.runtime.Promisify(ctx, fn)
+}
+
 // GetScripts returns all loaded scripts.
 func (e *Engine) GetScripts() []*Script {
 	return e.scripts
@@ -768,7 +776,7 @@ func (e *Engine) Close() error {
 	// been closed when the prompt loop exits.
 
 	// Close the runtime (this stops the event loop).
-	// We do this after stopping btBridge so any pending JS operations complete.
+	// Runtime.Close() resolves liveness and shuts down the loop cleanly.
 	if e.runtime != nil {
 		if err := e.runtime.Close(); err != nil {
 			if e.stderr != nil {

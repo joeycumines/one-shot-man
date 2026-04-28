@@ -102,8 +102,6 @@ github.com/joeycumines/go-bigbuff v1.21.0 h1:v5Vy+rPKSPSr20YWx7/Pbfb6yqfzGBO9rcH
 github.com/joeycumines/go-bigbuff v1.21.0/go.mod h1:Ftwjd8wCDJqDk5NLsCbTibX0BrbzPv/GYiHoa3fbO9E=
 github.com/joeycumines/go-catrate v0.0.0-20260331032335-1bb8bb5ab23b h1:FVHYCM+uuPMU/Qx7dcn/iRBiNeOMYfhg79Qta9bfA+E=
 github.com/joeycumines/go-catrate v0.0.0-20260331032335-1bb8bb5ab23b/go.mod h1:EIZV2sNsBWlLtE5/IsRo9nDJJIbPwv+5hxcuJi54Nw4=
-github.com/joeycumines/go-eventloop v0.0.0-20260331032339-7f0c44d4ad46 h1:SUaxAlrv+Def8f9bne+2sOWRTjBSPvjK3Bx7/uvpM5E=
-github.com/joeycumines/go-eventloop v0.0.0-20260331032339-7f0c44d4ad46/go.mod h1:qCUse+jIScRww182gNXjpM+6UnIs8YBNea+ELe0KLtQ=
 github.com/joeycumines/go-inprocgrpc v0.0.0-20260331032414-92dc1790fe75 h1:sXWhvWJxbjSoUnUPvJFdO0YSdxbqXxSPkNFRgXV1Jm8=
 github.com/joeycumines/go-inprocgrpc v0.0.0-20260331032414-92dc1790fe75/go.mod h1:Kvv94zB98GMiLwLxSPEfUnxJFjDVVu5WhnOUKBm0+gk=
 github.com/joeycumines/go-pabt v0.2.0 h1:wKlj9wY9al/tBAtWtlIirxDnpimBEZME9AFAA/RKwdk=
@@ -120,6 +118,8 @@ github.com/joeycumines/goja-protobuf v0.0.0-20260331032401-b5c5be7a30d3 h1:9RAgQ
 github.com/joeycumines/goja-protobuf v0.0.0-20260331032401-b5c5be7a30d3/go.mod h1:DQbEUVqQh3WOfWy+u3Bbw03phlyBzTXQPULjz3C9fKs=
 github.com/joeycumines/goja-protojson v0.0.0-20260306044211-0cfa2d8ed631 h1:+UusTuRU4I60cL9htiuhCPP2s2LMHwlcC1fY7uQOikI=
 github.com/joeycumines/goja-protojson v0.0.0-20260306044211-0cfa2d8ed631/go.mod h1:XOzoZubowU8uI57iT60PcwVz3kcYGjYw2Zep+5R1kkw=
+github.com/joeycumines/goroutineid v1.0.0 h1:ndJ7nSudvmNLSrBzWiSk3pD/NHb8BdJGRA6hZbkpYNc=
+github.com/joeycumines/goroutineid v1.0.0/go.mod h1:tnbQeix98R8i/E4oejMogd9GowCxPd9/uySabNi3MJE=
 github.com/joeycumines/logiface v0.5.0 h1:4fm7M1b6XLWByJ215bqUqGGbPExKBbTEG9ugUkrCZPk=
 github.com/joeycumines/logiface v0.5.0/go.mod h1:ivS8dtJp7dLyHPZjloZXdDs1AJ50ZTj9hXnwHzLFXb8=
 github.com/joeycumines/simple-command-output-filter v0.2.1 h1:JAFCaVqp6X1/eXsOeLXBijJDBRLO5mb3my7UiWzXBqo=

@@ -20,7 +20,7 @@ require (
 	github.com/go-git/go-git/v6 v6.0.0-alpha.1
 	github.com/google/uuid v1.6.0
 	github.com/joeycumines/go-behaviortree v1.11.0
-	github.com/joeycumines/go-eventloop v0.0.0-20260331032339-7f0c44d4ad46
+	github.com/joeycumines/go-eventloop v0.0.0-20260428025403-c64a0733c558
 	github.com/joeycumines/go-inprocgrpc v0.0.0-20260331032414-92dc1790fe75
 	github.com/joeycumines/go-pabt v0.2.0
 	github.com/joeycumines/go-prompt v0.0.0-20260331032446-9186991b1af7
@@ -63,6 +63,7 @@ require (
 	github.com/google/pprof v0.0.0-20260402051712-545e8a4df936 // indirect
 	github.com/joeycumines/go-bigbuff v1.21.0 // indirect
 	github.com/joeycumines/go-catrate v0.0.0-20260331032335-1bb8bb5ab23b // indirect
+	github.com/joeycumines/goroutineid v1.0.0 // indirect
 	github.com/joeycumines/logiface v0.5.0 // indirect
 	github.com/joeycumines/simple-command-output-filter v0.2.1 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect

@@ -1,0 +1,47 @@
+{
+  "skill_name": "commit-loom",
+  "evals": [
+    {
+      "id": 1,
+      "eval_name": "go-synth-commit-weave",
+      "prompt": "Use commit-loom to weave the changes from changes.patch in the go-synth project into a clean commit history. The patch contains mixed feature work (new Reverse function), refactoring (strings.Builder in ToCamelCase), and documentation improvements. Run the skill and produce maintainer-grade commits.",
+      "repo_path": "scenarios/go-synth",
+      "patch_path": "scenarios/go-synth/changes.patch",
+      "scenario_dir": "/Users/joeyc/dev/joeyc-ai/commit-loom-workspace/scenarios/go-synth",
+      "expected_output": "A sequence of 2+ maintainer-grade commits covering all hunks, with a ledger file tracking dispositions and a final summary.",
+      "expectations": [
+        "The skill produces at least 2 commits (not a single dump commit)",
+        "A ledger file exists in ./scratch/ with valid JSON",
+        "Every hunk in the original diff has an explicit disposition in the ledger",
+        "Each commit message is non-trivial (more than just 'update files' or 'changes')",
+        "The commit messages follow a consistent style (conventional commits or matching repo convention)",
+        "The ledger's hunk_registry has entries for every hunk from the original diff",
+        "The final summary is delivered to the user with commit SHAs and a hunk accounting",
+        "A backup branch was created pointing at the original HEAD",
+        "All Tier 1 checks pass (build, test, lint)",
+        "Commit sequence respects dependencies (refactor before feature)"
+      ]
+    },
+    {
+      "id": 2,
+      "eval_name": "ts-synth-commit-weave",
+      "prompt": "Use commit-loom to weave the changes from changes.patch in the ts-synth project into a clean commit history. The patch contains new timing utilities (debounce/throttle/sleep), a validators refactor, and string-utils additions. Run the skill and produce maintainer-grade commits.",
+      "repo_path": "scenarios/ts-synth",
+      "patch_path": "scenarios/ts-synth/changes.patch",
+      "scenario_dir": "/Users/joeyc/dev/joeyc-ai/commit-loom-workspace/scenarios/ts-synth",
+      "expected_output": "A sequence of 2+ maintainer-grade commits covering all hunks, with a ledger file tracking dispositions and a final summary.",
+      "expectations": [
+        "The skill produces at least 2 commits (not a single dump commit)",
+        "A ledger file exists in ./scratch/ with valid JSON",
+        "Every hunk in the original diff has an explicit disposition in the ledger",
+        "Each commit message is non-trivial (more than just 'update files' or 'changes')",
+        "The commit messages follow a consistent style (conventional commits or matching repo convention)",
+        "The ledger's hunk_registry has entries for every hunk from the original diff",
+        "The final summary is delivered to the user with commit SHAs and a hunk accounting",
+        "A backup branch was created pointing at the original HEAD",
+        "All Tier 1 checks pass (build, test, lint)",
+        "Commit sequence respects dependencies (foundational utilities before timing features)"
+      ]
+    }
+  ]
+}

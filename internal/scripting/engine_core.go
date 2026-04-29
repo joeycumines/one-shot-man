@@ -592,38 +592,6 @@ func (e *Engine) ExecuteScript(script *Script) error {
 		}
 	}
 
-	// Wait for one tick of the event loop. This ensures any pending events
-	// from the script's deferred callbacks have an opportunity to execute
-	// before the function returns.
-	if waitErr := e.waitForAsyncWork(); waitErr != nil {
-		return waitErr
-	}
-
-	return nil
-}
-
-// waitForAsyncWork waits for one tick after the script execution completes.
-// This ensures any pending events from the script's deferred callbacks have an
-// opportunity to execute before the function returns.
-//
-// NOTE: This function must NOT be called from within the event loop goroutine,
-// as it would deadlock (SubmitInternal + blocking wait would both need the
-// loop, which only processes one thing at a time).
-func (e *Engine) waitForAsyncWork() error {
-	loop := e.Loop()
-	if loop == nil {
-		return nil
-	}
-	if !loop.Alive() {
-		return nil
-	}
-	// Submit a sentinel to wait for one tick. This gives any pending events
-	// (from deferred callbacks) a chance to execute before returning.
-	done := make(chan struct{})
-	if err := loop.SubmitInternal(func() { close(done) }); err != nil {
-		return nil
-	}
-	<-done
 	return nil
 }
 
@@ -776,7 +744,7 @@ func (e *Engine) Close() error {
 	// been closed when the prompt loop exits.
 
 	// Close the runtime (this stops the event loop).
-	// Runtime.Close() resolves liveness and shuts down the loop cleanly.
+	// Runtime.Close() cancels the loop context and shuts down cleanly.
 	if e.runtime != nil {
 		if err := e.runtime.Close(); err != nil {
 			if e.stderr != nil {

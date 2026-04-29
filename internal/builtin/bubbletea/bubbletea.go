@@ -445,8 +445,8 @@ func (m *Manager) GetJSRunner() JSRunner {
 
 // SetPromisify configures the Manager to use Promisify for keeping the event loop alive.
 // When set, the goroutine running a BubbleTea program is wrapped in Promisify, which
-// increments promisifyCount and keeps the loop alive until the program exits.
-// This is REQUIRED when using WithAutoExit(true) on the event loop.
+// increments promisifyCount and keeps the loop alive while the program runs. This
+// prevents premature loop shutdown during BubbleTea program execution.
 func (m *Manager) SetPromisify(fn PromisifyFunc) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -2056,8 +2056,9 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 			manager.programDone = done
 			manager.mu.Unlock()
 
-			// Run the program. If Promisify is configured (for WithAutoExit support),
-			// wrap the goroutine so the loop stays alive until the program exits.
+			// Run the program. If Promisify is configured, wrap the goroutine so
+			// promisifyCount stays > 0 while the program runs, keeping the loop
+			// alive until the BubbleTea program exits.
 			if manager.promisify != nil {
 				// Promisify keeps the event loop alive while the program runs.
 				manager.promisify(context.Background(), func(ctx context.Context) (any, error) {

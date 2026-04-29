@@ -160,10 +160,9 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 
 	bubbleteaMgr := bubbleteamod.NewManager(ctx, bubbleInput, bubbleOutput, btBridge, nil, nil)
 
-	// Wire up Promisify for WithAutoExit support.
-	// This is REQUIRED for WithAutoExit(true) on the event loop - it keeps the
-	// loop alive while a BubbleTea program runs. The Promisify is provided
-	// by the event loop provider (Runtime via Engine).
+	// Wire up Promisify so BubbleTea programs keep the event loop alive during
+	// execution via promisifyCount. The Promisify is provided by the event loop
+	// provider (Runtime via Engine).
 	bubbleteaMgr.SetPromisify(eventLoopProvider.Promisify)
 
 	registry.RegisterNativeModule(prefix+"bubbletea", bubbleteamod.Require(ctx, bubbleteaMgr))

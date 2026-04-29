@@ -20,13 +20,14 @@ require (
 	github.com/go-git/go-git/v6 v6.0.0-alpha.2
 	github.com/google/uuid v1.6.0
 	github.com/joeycumines/go-behaviortree v1.11.0
-	github.com/joeycumines/go-eventloop v0.0.0-20260428025403-c64a0733c558
+	github.com/joeycumines/go-eventloop v0.0.0-20260429212742-80bbbe8dffe2
 	github.com/joeycumines/go-inprocgrpc v0.0.0-20260331032414-92dc1790fe75
 	github.com/joeycumines/go-pabt v0.2.0
 	github.com/joeycumines/go-prompt v0.0.0-20260331032446-9186991b1af7
 	github.com/joeycumines/goja-eventloop v0.0.0-20260331032353-b381e124657b
 	github.com/joeycumines/goja-grpc v0.0.0-20260331032357-983806976d09
 	github.com/joeycumines/goja-protobuf v0.0.0-20260331032401-b5c5be7a30d3
+	github.com/joeycumines/goroutineid v1.1.0
 	github.com/lrstanley/bubblezone/v2 v2.0.0
 	github.com/modelcontextprotocol/go-sdk v1.5.0
 	github.com/rivo/uniseg v0.4.7
@@ -43,7 +44,7 @@ require (
 	github.com/ProtonMail/go-crypto v1.4.1 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
-	github.com/charmbracelet/ultraviolet v0.0.0-20260428141027-1f4ea3e216b9 // indirect
+	github.com/charmbracelet/ultraviolet v0.0.0-20260428153724-66037269d7be // indirect
 	github.com/charmbracelet/x/ansi v0.11.7 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
@@ -62,7 +63,6 @@ require (
 	github.com/google/pprof v0.0.0-20260402051712-545e8a4df936 // indirect
 	github.com/joeycumines/go-bigbuff v1.21.0 // indirect
 	github.com/joeycumines/go-catrate v0.0.0-20260331032335-1bb8bb5ab23b // indirect
-	github.com/joeycumines/goroutineid v1.0.0 // indirect
 	github.com/joeycumines/logiface v0.5.0 // indirect
 	github.com/joeycumines/simple-command-output-filter v0.2.1 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
@@ -90,7 +90,7 @@ require (
 	golang.org/x/net v0.53.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/telemetry v0.0.0-20260423152414-329d219564b0 // indirect
+	golang.org/x/telemetry v0.0.0-20260428171046-76f71b9afea0 // indirect
 	golang.org/x/tools/cmd/godoc v0.1.0-deprecated // indirect
 	golang.org/x/tools/godoc v0.1.0-deprecated // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260427160629-7cedc36a6bc4 // indirect

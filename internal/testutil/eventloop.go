@@ -114,4 +114,3 @@ func (p *TestEventLoopProvider) Stop() {
 	p.cancel()
 	p.loop.Shutdown(context.Background())
 }
-

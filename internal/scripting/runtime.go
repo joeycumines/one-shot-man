@@ -12,7 +12,7 @@ import (
 	"github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
 	gojaEventloop "github.com/joeycumines/goja-eventloop"
-	"github.com/joeycumines/one-shot-man/internal/goroutineid"
+	"github.com/joeycumines/goroutineid"
 )
 
 // Runtime provides a shared goja runtime and event loop for JavaScript execution.

@@ -17,9 +17,9 @@ import (
 	"github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
 	gojaEventloop "github.com/joeycumines/goja-eventloop"
+	"github.com/joeycumines/goroutineid"
 	"github.com/joeycumines/one-shot-man/internal/builtin"
 	"github.com/joeycumines/one-shot-man/internal/builtin/bt"
-	"github.com/joeycumines/one-shot-man/internal/goroutineid"
 )
 
 // Engine represents a JavaScript scripting engine with deferred execution capabilities.

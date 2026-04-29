@@ -70,7 +70,7 @@
       "task": "Reconcile README, architecture docs, and CHANGELOG with the runtime lifecycle fix",
       "description": "After the runtime fix lands, update documentation that describes or implies WithAutoExit-based lifecycle.\n\nFiles to check and update:\n- `docs/architecture.md`: If it mentions async script draining, auto-exit, or quiescence-based lifecycle, update to accurately describe the persistent-loop model.\n- `docs/scripting.md`: If it describes script async behavior (e.g. 'setTimeout callbacks complete before the script exits'), update to accurately state that the persistent Runtime continues running async work in the background; the BubbleTea WaitForProgram() call is the sync point for TUI scripts.\n- `CHANGELOG.md`: Add an entry under Unreleased for the bug fix: 'fix: remove WithAutoExit(true) from persistent Runtime, eliminating startup race and false async-drain semantics'. Use the changelog-md skill to add the entry correctly.\n- `scratch/review.md` addressal: Confirm all 7 issues in scratch/review.md have been addressed or are explicitly deferred with reasoning. Write `scratch/review-response.md` mapping each issue to the task that addressed it.",
       "acceptance": "No doc claims the persistent Runtime drains async work after ExecuteScript returns. CHANGELOG.md has an Unreleased entry for the fix. scratch/review-response.md exists and maps all 7 review issues to their resolutions. `make lint` still passes (lint includes vet, not docs, but confirms no regressions).",
-      "status": "Not Started"
+      "status": "Done"
     }
   ],
   "continuousVerification": {

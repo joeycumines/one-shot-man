@@ -12,7 +12,7 @@ import (
 	"github.com/dop251/goja_nodejs/require"
 	bt "github.com/joeycumines/go-behaviortree"
 	goeventloop "github.com/joeycumines/go-eventloop"
-	"github.com/joeycumines/one-shot-man/internal/goroutineid"
+	"github.com/joeycumines/goroutineid"
 )
 
 // Bridge manages the behavior tree integration between Go and JavaScript.

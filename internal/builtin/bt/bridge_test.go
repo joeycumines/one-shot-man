@@ -14,7 +14,7 @@ import (
 	gojarequire "github.com/dop251/goja_nodejs/require"
 	goeventloop "github.com/joeycumines/go-eventloop"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
-	"github.com/joeycumines/one-shot-man/internal/goroutineid"
+	"github.com/joeycumines/goroutineid"
 	"github.com/stretchr/testify/require"
 )
 

@@ -8,7 +8,7 @@ import (
 
 	"github.com/dop251/goja"
 	bt "github.com/joeycumines/go-behaviortree"
-	"github.com/joeycumines/one-shot-man/internal/goroutineid"
+	"github.com/joeycumines/goroutineid"
 )
 
 // JS status string constants - single source of truth for status string values.

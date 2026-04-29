@@ -822,3 +822,465 @@ func TestGetDefaultGitDiffArgs_NilContext(t *testing.T) {
 		t.Fatal("expected non-empty default args")
 	}
 }
+
+// TestRunExec_NilContext verifies the nil ctx guard in runExec.
+func TestRunExec_NilContext(t *testing.T) {
+	t.Parallel()
+	// runExec with nil context should NOT panic (nil → context.Background()).
+	// Use typed nil to avoid SA1012.
+	var nilCtx context.Context
+	_, _, _ = runExec(nilCtx, []string{"echo", "test"})
+}
+
+// TestRunExec_Basic verifies basic command execution.
+func TestRunExec_Basic(t *testing.T) {
+	t.Parallel()
+	stdout, msg, hadErr := runExec(context.Background(), []string{"echo", "hello world"})
+	if hadErr {
+		t.Fatalf("unexpected error: %s", msg)
+	}
+	if stdout != "hello world\n" {
+		t.Fatalf("expected 'hello world\\n', got %q", stdout)
+	}
+}
+
+// TestRunExec_CommandNotFound verifies error handling for missing command.
+func TestRunExec_CommandNotFound(t *testing.T) {
+	t.Parallel()
+	_, msg, hadErr := runExec(context.Background(), []string{"nonexistent-command-xyz"})
+	if !hadErr {
+		t.Fatal("expected error for missing command")
+	}
+	if msg == "" {
+		t.Fatal("expected error message")
+	}
+}
+
+// TestRunExec_NoCommand verifies error handling for empty args.
+func TestRunExec_NoCommand(t *testing.T) {
+	t.Parallel()
+	_, msg, hadErr := runExec(context.Background(), []string{})
+	if !hadErr {
+		t.Fatal("expected error for empty command")
+	}
+	if msg != "exec: no command specified" {
+		t.Fatalf("expected 'exec: no command specified', got %q", msg)
+	}
+}
+
+// TestBuildContext_LazyExec tests the lazy-exec handler with various payload types.
+func TestBuildContext_LazyExec(t *testing.T) {
+	runtime := setupBuildContext(t)
+
+	originalRun := runGitDiffFn
+	originalExec := runExecFn
+	t.Cleanup(func() {
+		runGitDiffFn = originalRun
+		runExecFn = originalExec
+	})
+
+	var execCalls [][]string
+	runExecFn = func(ctx context.Context, args []string) (string, string, bool) {
+		copyArgs := slices.Clone(args)
+		execCalls = append(execCalls, copyArgs)
+		switch strings.Join(args, " ") {
+		case "echo hello":
+			return "hello\n", "", false
+		case "echo world":
+			return "world\n", "", false
+		default:
+			return "default output\n", "", false
+		}
+	}
+
+	script := `
+		const items = [
+			{ type: "lazy-exec", label: "greeting", payload: ["echo", "hello"] },
+			{ type: "lazy-exec", payload: ["echo", "world"] }
+		];
+		globalThis.__buildResult = exports.buildContext(items);
+	`
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	text := runtime.Get("__buildResult").String()
+
+	// Check Exec output with label
+	if !strings.Contains(text, "### Exec: greeting") || !strings.Contains(text, "hello") {
+		t.Fatalf("missing exec section with label: %q", text)
+	}
+	// Check Exec output without label
+	if !strings.Contains(text, "### Exec: echo world") || !strings.Contains(text, "world") {
+		t.Fatalf("missing exec section without label: %q", text)
+	}
+
+	if len(execCalls) != 2 {
+		t.Fatalf("expected two exec calls, got %d", len(execCalls))
+	}
+	if got := strings.Join(execCalls[0], " "); got != "echo hello" {
+		t.Fatalf("unexpected first exec args: %q", got)
+	}
+	if got := strings.Join(execCalls[1], " "); got != "echo world" {
+		t.Fatalf("unexpected second exec args: %q", got)
+	}
+}
+
+// TestBuildContext_LazyExecErrors tests error handling for lazy-exec.
+func TestBuildContext_LazyExecErrors(t *testing.T) {
+	runtime := setupBuildContext(t)
+
+	originalRun := runGitDiffFn
+	originalExec := runExecFn
+	t.Cleanup(func() {
+		runGitDiffFn = originalRun
+		runExecFn = originalExec
+	})
+
+	runExecFn = func(ctx context.Context, args []string) (string, string, bool) {
+		return "", "command not found", true
+	}
+
+	script := `
+		const items = [
+			{ type: "lazy-exec", payload: ["nonexistent"] },
+			{ type: "lazy-exec", payload: ["valid", undefined] },
+			{ type: "lazy-exec", payload: 123 },
+			{ type: "lazy-exec" }
+		];
+		globalThis.__errorResult = exports.buildContext(items);
+	`
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute error script: %v", err)
+	}
+
+	text := runtime.Get("__errorResult").String()
+	if !strings.Contains(text, "Error executing command: command not found") {
+		t.Fatalf("expected command error: %q", text)
+	}
+	if !strings.Contains(text, "Invalid payload: expected a string array, but found non-string element") {
+		t.Fatalf("expected array error: %q", text)
+	}
+	if !strings.Contains(text, "Invalid payload: expected a string or string array, but got type") {
+		t.Fatalf("expected type error: %q", text)
+	}
+	if !strings.Contains(text, "exec: no command specified") {
+		t.Fatalf("expected no command error: %q", text)
+	}
+}
+
+// TestBuildContext_LazyExecExportedSlice tests lazy-exec with exported Go slices.
+func TestBuildContext_LazyExecExportedSlice(t *testing.T) {
+	runtime := setupBuildContext(t)
+
+	originalRun := runGitDiffFn
+	originalExec := runExecFn
+	t.Cleanup(func() {
+		runGitDiffFn = originalRun
+		runExecFn = originalExec
+	})
+
+	var capturedArgs []string
+	runExecFn = func(ctx context.Context, args []string) (string, string, bool) {
+		capturedArgs = slices.Clone(args)
+		return "custom exec output\n", "", false
+	}
+
+	if err := runtime.Set("__payload", []any{"echo", "test"}); err != nil {
+		t.Fatalf("failed to set payload: %v", err)
+	}
+	if err := runtime.Set("__invalidPayload", []any{"echo", 42}); err != nil {
+		t.Fatalf("failed to set invalid payload: %v", err)
+	}
+
+	script := `
+		globalThis.__lazyOk = exports.buildContext([
+			{ type: "lazy-exec", payload: globalThis.__payload }
+		]);
+		globalThis.__lazyBad = exports.buildContext([
+			{ type: "lazy-exec", payload: globalThis.__invalidPayload }
+		]);
+	`
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute lazy-exec script: %v", err)
+	}
+
+	if len(capturedArgs) != 2 || capturedArgs[0] != "echo" || capturedArgs[1] != "test" {
+		t.Fatalf("expected captured args [echo test], got %v", capturedArgs)
+	}
+
+	if text := runtime.Get("__lazyOk").String(); !strings.Contains(text, "custom exec output") {
+		t.Fatalf("expected exec output to contain custom exec: %q", text)
+	}
+
+	if text := runtime.Get("__lazyBad").String(); !strings.Contains(text, "Invalid payload: expected a string array, but found non-string element at index 1") {
+		t.Fatalf("expected invalid payload error, got: %q", text)
+	}
+}
+
+// TestBuildContext_LazyExecGoStringSlice tests lazy-exec with Go []string.
+func TestBuildContext_LazyExecGoStringSlice(t *testing.T) {
+	runtime := setupBuildContext(t)
+
+	originalRun := runGitDiffFn
+	originalExec := runExecFn
+	t.Cleanup(func() {
+		runGitDiffFn = originalRun
+		runExecFn = originalExec
+	})
+
+	var capturedArgs []string
+	runExecFn = func(ctx context.Context, args []string) (string, string, bool) {
+		capturedArgs = slices.Clone(args)
+		return "go-string-slice output\n", "", false
+	}
+
+	// Set a Go []string (not []any) as payload to hit the `case []string:` path.
+	if err := runtime.Set("__goStringPayload", []string{"echo", "hello"}); err != nil {
+		t.Fatalf("failed to set payload: %v", err)
+	}
+
+	script := `
+		globalThis.__result = exports.buildContext([
+			{ type: "lazy-exec", payload: globalThis.__goStringPayload }
+		]);
+	`
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	text := runtime.Get("__result").String()
+	if !strings.Contains(text, "go-string-slice output") {
+		t.Fatalf("expected exec output, got: %q", text)
+	}
+	if len(capturedArgs) != 2 || capturedArgs[0] != "echo" || capturedArgs[1] != "hello" {
+		t.Fatalf("expected captured args [echo hello], got %v", capturedArgs)
+	}
+}
+
+// TestBuildContext_LazyExecStringPayload tests lazy-exec with a string payload (shell-like parsing).
+func TestBuildContext_LazyExecStringPayload(t *testing.T) {
+	runtime := setupBuildContext(t)
+
+	originalRun := runGitDiffFn
+	originalExec := runExecFn
+	t.Cleanup(func() {
+		runGitDiffFn = originalRun
+		runExecFn = originalExec
+	})
+
+	var capturedArgs []string
+	runExecFn = func(ctx context.Context, args []string) (string, string, bool) {
+		capturedArgs = slices.Clone(args)
+		return "string payload output\n", "", false
+	}
+
+	script := `
+		globalThis.__result = exports.buildContext([
+			{ type: "lazy-exec", label: "test cmd", payload: "echo hello world" }
+		]);
+	`
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	text := runtime.Get("__result").String()
+	if !strings.Contains(text, "### Exec: test cmd") {
+		t.Fatalf("expected '### Exec: test cmd', got: %q", text)
+	}
+	if !strings.Contains(text, "string payload output") {
+		t.Fatalf("expected exec output, got: %q", text)
+	}
+
+	// Shell-like parsing should split "echo hello world" into ["echo", "hello", "world"]
+	if len(capturedArgs) != 3 || capturedArgs[0] != "echo" || capturedArgs[1] != "hello" || capturedArgs[2] != "world" {
+		t.Fatalf("expected captured args [echo hello world], got %v", capturedArgs)
+	}
+}
+
+// TestBuildContext_LazyExecNilInSlice tests error handling for null elements in JS arrays.
+func TestBuildContext_LazyExecNilInSlice(t *testing.T) {
+	runtime := setupBuildContext(t)
+
+	originalRun := runGitDiffFn
+	originalExec := runExecFn
+	t.Cleanup(func() {
+		runGitDiffFn = originalRun
+		runExecFn = originalExec
+	})
+
+	runExecFn = func(ctx context.Context, args []string) (string, string, bool) {
+		return "", "should not be called", true
+	}
+
+	script := `
+		globalThis.__result = exports.buildContext([
+			{ type: "lazy-exec", payload: ["echo", null] }
+		]);
+	`
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+
+	text := runtime.Get("__result").String()
+	if !strings.Contains(text, "non-string element at index 1") {
+		t.Fatalf("expected error about non-string element at index 1, got: %q", text)
+	}
+}
+
+// TestBuildContext_LazyExecArrayNonString tests error handling for non-string numbers in JS arrays.
+func TestBuildContext_LazyExecArrayNonString(t *testing.T) {
+	runtime := setupBuildContext(t)
+
+	originalRun := runGitDiffFn
+	originalExec := runExecFn
+	t.Cleanup(func() {
+		runGitDiffFn = originalRun
+		runExecFn = originalExec
+	})
+
+	runExecFn = func(ctx context.Context, args []string) (string, string, bool) {
+		return "", "should not be called", true
+	}
+
+	script := `
+		globalThis.__result = exports.buildContext([
+			{ type: "lazy-exec", payload: [123] }
+		]);
+	`
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+
+	text := runtime.Get("__result").String()
+	if !strings.Contains(text, "non-string element at index 0") {
+		t.Fatalf("expected error about non-string element at index 0, got: %q", text)
+	}
+}
+
+// TestBuildContext_LazyExecEmptyLabel uses default label when label is empty.
+func TestBuildContext_LazyExecEmptyLabel(t *testing.T) {
+	runtime := setupBuildContext(t)
+
+	originalRun := runGitDiffFn
+	originalExec := runExecFn
+	t.Cleanup(func() {
+		runGitDiffFn = originalRun
+		runExecFn = originalExec
+	})
+
+	runExecFn = func(ctx context.Context, args []string) (string, string, bool) {
+		return "output\n", "", false
+	}
+
+	script := `
+		globalThis.__result = exports.buildContext([
+			{ type: "lazy-exec", label: "", payload: ["echo", "test"] },
+			{ type: "lazy-exec", payload: ["echo", "test2"] }
+		]);
+	`
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+
+	text := runtime.Get("__result").String()
+	// When label is empty, should use the command joined with spaces
+	if !strings.Contains(text, "### Exec: echo test") {
+		t.Fatalf("expected '### Exec: echo test', got: %q", text)
+	}
+	if !strings.Contains(text, "### Exec: echo test2") {
+		t.Fatalf("expected '### Exec: echo test2', got: %q", text)
+	}
+}
+
+// TestBuildContext_LazyExecStderrCapture verifies stderr is included in error messages.
+func TestBuildContext_LazyExecStderrCapture(t *testing.T) {
+	runtime := setupBuildContext(t)
+
+	originalRun := runGitDiffFn
+	originalExec := runExecFn
+	t.Cleanup(func() {
+		runGitDiffFn = originalRun
+		runExecFn = originalExec
+	})
+
+	runExecFn = func(ctx context.Context, args []string) (string, string, bool) {
+		// Simulate a command that fails with stderr
+		return "", "permission denied: ./script.sh", true
+	}
+
+	script := `
+		globalThis.__result = exports.buildContext([
+			{ type: "lazy-exec", payload: ["./script.sh"] }
+		]);
+	`
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+
+	text := runtime.Get("__result").String()
+	if !strings.Contains(text, "Exec Error") {
+		t.Fatalf("expected 'Exec Error' section, got: %q", text)
+	}
+	if !strings.Contains(text, "Error executing command: permission denied: ./script.sh") {
+		t.Fatalf("expected error message with stderr, got: %q", text)
+	}
+}
+
+// TestBuildContext_LazyExecCombinedWithLazyDiff verifies lazy-exec and lazy-diff can coexist.
+func TestBuildContext_LazyExecCombinedWithLazyDiff(t *testing.T) {
+	runtime := setupBuildContext(t)
+
+	originalRun := runGitDiffFn
+	originalDefault := getDefaultGitDiffArgsFn
+	originalExec := runExecFn
+	t.Cleanup(func() {
+		runGitDiffFn = originalRun
+		getDefaultGitDiffArgsFn = originalDefault
+		runExecFn = originalExec
+	})
+
+	var diffCalls [][]string
+	var execCalls [][]string
+
+	runGitDiffFn = func(ctx context.Context, args []string) (string, string, bool) {
+		diffCalls = append(diffCalls, slices.Clone(args))
+		return "diff output\n", "", false
+	}
+	getDefaultGitDiffArgsFn = func(ctx context.Context) []string {
+		return []string{"DEFAULT_DIFF"}
+	}
+	runExecFn = func(ctx context.Context, args []string) (string, string, bool) {
+		execCalls = append(execCalls, slices.Clone(args))
+		return "exec output\n", "", false
+	}
+
+	script := `
+		globalThis.__result = exports.buildContext([
+			{ type: "lazy-exec", label: "my cmd", payload: ["echo", "hello"] },
+			{ type: "lazy-diff", label: "my diff", payload: ["--stat"] },
+			{ type: "note", label: "a note", payload: "some note content" }
+		]);
+	`
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+
+	text := runtime.Get("__result").String()
+	if !strings.Contains(text, "### Exec: my cmd") || !strings.Contains(text, "exec output") {
+		t.Fatalf("missing exec section: %q", text)
+	}
+	if !strings.Contains(text, "### Diff: my diff") || !strings.Contains(text, "diff output") {
+		t.Fatalf("missing diff section: %q", text)
+	}
+	if !strings.Contains(text, "### Note: a note") || !strings.Contains(text, "some note content") {
+		t.Fatalf("missing note section: %q", text)
+	}
+
+	if len(execCalls) != 1 {
+		t.Fatalf("expected 1 exec call, got %d", len(execCalls))
+	}
+	if len(diffCalls) != 1 {
+		t.Fatalf("expected 1 diff call, got %d", len(diffCalls))
+	}
+}

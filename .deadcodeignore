@@ -18,6 +18,8 @@ internal/builtin/ctxutil/ctxutil.go:*: unreachable func: SetRunGitDiffFn
 internal\builtin\ctxutil\ctxutil.go:*: unreachable func: SetRunGitDiffFn
 internal/builtin/ctxutil/ctxutil.go:*: unreachable func: SetGetDefaultGitDiffArgsFn
 internal\builtin\ctxutil\ctxutil.go:*: unreachable func: SetGetDefaultGitDiffArgsFn
+internal/builtin/ctxutil/ctxutil.go:*: unreachable func: SetRunExecFn
+internal\builtin\ctxutil\ctxutil.go:*: unreachable func: SetRunExecFn
 
 # Engine creation helpers — used from security_test, integration_persistence_test, etc. (external packages).
 internal/scripting/engine_core.go:*: unreachable func: NewEngineWithConfig

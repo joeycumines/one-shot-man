@@ -527,6 +527,80 @@ func TestContextManagerIntegrationWithBuildContext(t *testing.T) {
 	}
 }
 
+func TestContextManagerLazyExecIntegration(t *testing.T) {
+	runtime := setupContextManager(t)
+
+	// Setup exec mock
+	restoreRunExec := ctxutil.SetRunExecFn(func(ctx context.Context, args []string) (string, string, bool) {
+		return "exec output line 1\nexec output line 2\n", "", false
+	})
+	t.Cleanup(restoreRunExec)
+
+	// Mock the context and output globals
+	script := `
+		const { contextManager, buildContext } = exports;
+
+		globalThis.context = {
+			addPath: (path) => null,
+			removePath: () => null,
+			toTxtar: () => ''
+		};
+
+		globalThis.output = { print: (msg) => {} };
+
+		let items = [];
+		const ctxmgr = contextManager({
+			getItems: () => items,
+			setItems: (v) => { items = v; },
+			buildPrompt: function() {
+				return buildContext(this.getItems());
+			}
+		});
+
+		// Add a lazy-exec item via the exec command
+		ctxmgr.commands.exec.handler(["echo", "hello", "world"]);
+
+		// Verify item was added correctly
+		globalThis.__itemCount = items.length;
+		globalThis.__itemType = items[0].type;
+		globalThis.__itemLabel = items[0].label;
+		globalThis.__itemPayload = JSON.stringify(items[0].payload);
+
+		// Build the prompt
+		const prompt = ctxmgr.buildPrompt();
+		globalThis.__prompt = prompt;
+	`
+
+	if _, err := runtime.RunString(script); err != nil {
+		t.Fatalf("failed to execute script: %v", err)
+	}
+
+	// Verify item was added correctly
+	if itemCount := runtime.Get("__itemCount").ToInteger(); itemCount != 1 {
+		t.Errorf("expected 1 item, got %d", itemCount)
+	}
+	if itemType := runtime.Get("__itemType").String(); itemType != "lazy-exec" {
+		t.Errorf("expected type 'lazy-exec', got %q", itemType)
+	}
+	if itemLabel := runtime.Get("__itemLabel").String(); itemLabel != "echo hello world" {
+		t.Errorf("expected label 'echo hello world', got %q", itemLabel)
+	}
+	if itemPayload := runtime.Get("__itemPayload").String(); itemPayload != `["echo","hello","world"]` {
+		t.Errorf("expected payload '[\"echo\",\"hello\",\"world\"]', got %s", itemPayload)
+	}
+
+	// Verify buildContext resolved lazy-exec and built proper prompt
+	prompt := runtime.Get("__prompt").String()
+
+	if !strings.Contains(prompt, "### Exec: echo hello world") {
+		t.Errorf("expected prompt to contain exec section header, got:\n%s", prompt)
+	}
+
+	if !strings.Contains(prompt, "exec output line 1") || !strings.Contains(prompt, "exec output line 2") {
+		t.Errorf("expected prompt to contain exec output, got:\n%s", prompt)
+	}
+}
+
 func TestContextManagerDiffHandlerPayload(t *testing.T) {
 	runtime := setupContextManager(t)
 

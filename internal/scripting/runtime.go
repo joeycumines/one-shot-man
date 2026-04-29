@@ -153,8 +153,7 @@ func NewRuntimeRegistry(ctx context.Context, registry *require.Registry) (*Runti
 			return
 		}
 		// Capture goroutine ID
-		id := getGoroutineID()
-		rt.eventLoopGoroutineID.Store(id)
+		rt.eventLoopGoroutineID.Store(goroutineid.Get())
 
 		errCh <- nil
 	})
@@ -421,9 +420,4 @@ func (rt *Runtime) GetCallable(name string) (goja.Callable, error) {
 		return nil
 	})
 	return result, err
-}
-
-// getGoroutineID captures the current goroutine ID using the shared utility.
-func getGoroutineID() int64 {
-	return goroutineid.Get()
 }

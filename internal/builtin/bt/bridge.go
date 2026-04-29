@@ -60,11 +60,6 @@ type Bridge struct {
 // DefaultTimeout is the maximum duration to wait for RunOnLoopSync operations.
 const DefaultTimeout = 5 * time.Second
 
-// getGoroutineID returns the current goroutine ID using the shared utility.
-func getGoroutineID() int64 {
-	return goroutineid.Get()
-}
-
 // NewBridgeWithEventLoop creates a Bridge that uses an external event loop.
 // The event loop must be started and managed by the caller.
 //
@@ -184,8 +179,7 @@ func (b *Bridge) initializeJS() error {
 	// MANDATORY STEP #1: Capture event loop goroutine ID (fixes GAP #2)
 	// We extract the goroutine ID from the stack trace. This parsing happens
 	// ONCE at initialization, so the overhead is acceptable.
-	id := getGoroutineID()
-	b.eventLoopGoroutineID.Store(id)
+	b.eventLoopGoroutineID.Store(goroutineid.Get())
 
 	// Set up the runLeaf helper which bridges async JS functions to callbacks
 	// Note: The status strings in jsHelpers MUST match JSStatusRunning, JSStatusSuccess, JSStatusFailure

@@ -1297,15 +1297,3 @@ func TestNewEngineConfig(t *testing.T) {
 		t.Error("tuiManager should not be nil")
 	}
 }
-
-// =============================================================================
-// getGoroutineID test
-// =============================================================================
-
-func TestGetGoroutineID(t *testing.T) {
-	t.Parallel()
-	id := getGoroutineID()
-	if id <= 0 {
-		t.Errorf("getGoroutineID() = %d, want > 0", id)
-	}
-}

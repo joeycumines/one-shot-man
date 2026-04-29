@@ -37,13 +37,23 @@
     "toolingConstraints": "Use GNU Make (gmake on macOS). Build: make build. Test fast: make test-short. Test all: make test. Lint: make lint. Format: make fmt. Single package test: go test -short ./internal/scripting/..."
   },
   "statusSection": {
-    "currentState": "Tasks 1, 2, and 3 are done (code + audit complete, tests pass, not yet committed). Task 4 in progress (docs/changelog/review-response). Sessions must commit Task 1 and Task 2 separately with Rule of Two before starting Task 4.",
-    "goalState": "The persistent Runtime in internal/scripting/runtime.go uses WithAutoExit(false). The livenessTimerID field, ResolveLiveness() method, and liveness timer scheduling are removed. waitForAsyncWork() is removed from engine_core.go. sentinel_drain_test.go is deleted. Stale WithAutoExit comments in bubbletea.go and register.go are corrected. testutil/eventloop.go is simplified. New regression tests verify: the loop stays alive across multiple ExecuteScript calls without WithAutoExit, and Close() terminates it cleanly. make test-short passes with zero failures. make lint passes clean.",
+    "currentState": "Prior runtime lifecycle fix tasks remain done. Task 5 claim-inventory work is complete. Task 6 lifecycle tracing is now complete enough to draft against: command entrypoints, Runtime startup, go-prompt, BubbleTea, bt bridge, termmux, exec/fetch/mcp/mcpcallback, and the startup-ordering contrast with internal/testutil/eventloop.go are all in first-hand notes. User explicitly redirected the work to incremental report writing before more exploration; Task 7 is now in progress and the first numbered autopsy documents are being written immediately so findings do not decay.",
+    "goalState": "scratch/eventloop-autoexit-autopsy-20260430/ exists with a README and numbered adversarial-analysis documents that trace go-eventloop auto-exit semantics, one-shot-man command/runtime/go-prompt/BubbleTea/termmux/native-async lifecycles, the exact overlap requirements between initial JS execution and outstanding async work, the gaps that currently prevent WithAutoExit from safely acting as the sole direct shutdown trigger, corroborating command/test evidence, and an honest True/Uncertain/False conclusion set.",
     "replanLog": [
       {
         "trigger": "Session start — replan from prior work on pr-split tasks",
         "affectedTasks": "All prior tasks replaced",
         "summary": "Blueprint fully replaced to address go-eventloop lifecycle bugs identified in scratch/review.md. Prior tasks (pr-split, termmux, docs) are superseded. Root cause confirmed live: make test-short shows 'loop has been terminated' startup race from WithAutoExit(true) in NewRuntimeRegistry."
+      },
+      {
+        "trigger": "User requested adversarial codebase autopsy for future WithAutoExit rearchitecture",
+        "affectedTasks": "New Tasks 5-8 added after prior runtime fix tasks",
+        "summary": "Shifted from implementation to evidence gathering. The new work product is a hostile lifecycle autopsy under scratch/, covering not only current event-loop call sites but every subsystem whose lifecycle would need to be encapsulated by an outermost event loop if WithAutoExit becomes the sole direct shutdown trigger."
+      },
+      {
+        "trigger": "User correction plus explicit order change: WRITE NOW",
+        "affectedTasks": "Tasks 6-7",
+        "summary": "Captured git-history evidence that `internal/scripting` recently had a polling/shutdown drain (`waitForAsyncWork` plus `sentinel_drain_test.go`). Reordered execution to start writing the scratch autopsy immediately, with remaining exploration backfilled into the live report instead of deferred until the end."
       }
     ]
   },
@@ -71,6 +81,30 @@
       "description": "After the runtime fix lands, update documentation that describes or implies WithAutoExit-based lifecycle.\n\nFiles to check and update:\n- `docs/architecture.md`: If it mentions async script draining, auto-exit, or quiescence-based lifecycle, update to accurately describe the persistent-loop model.\n- `docs/scripting.md`: If it describes script async behavior (e.g. 'setTimeout callbacks complete before the script exits'), update to accurately state that the persistent Runtime continues running async work in the background; the BubbleTea WaitForProgram() call is the sync point for TUI scripts.\n- `CHANGELOG.md`: Add an entry under Unreleased for the bug fix: 'fix: remove WithAutoExit(true) from persistent Runtime, eliminating startup race and false async-drain semantics'. Use the changelog-md skill to add the entry correctly.\n- `scratch/review.md` addressal: Confirm all 7 issues in scratch/review.md have been addressed or are explicitly deferred with reasoning. Write `scratch/review-response.md` mapping each issue to the task that addressed it.",
       "acceptance": "No doc claims the persistent Runtime drains async work after ExecuteScript returns. CHANGELOG.md has an Unreleased entry for the fix. scratch/review-response.md exists and maps all 7 review issues to their resolutions. `make lint` still passes (lint includes vet, not docs, but confirms no regressions).",
       "status": "Done"
+    },
+    {
+      "task": "Establish the autopsy scope and claimed state for WithAutoExit-driven outer-loop shutdown",
+      "description": "Read the authoritative upstream material first: `go doc github.com/joeycumines/go-eventloop.WithAutoExit` plus the example program at `/Users/joeyc/dev/go-utilpkg/eventloop/examples/05_autoexit/main.go`. Then read one-shot-man's claimed-state documents and comments that frame lifecycle behavior: `README.md`, `docs/architecture.md`, `docs/scripting.md`, `docs/reference/tui-api.md`, `docs/reference/tui-lifecycle.md`, `CHANGELOG.md`, and lifecycle comments in `internal/scripting/runtime.go`, `internal/scripting/engine_core.go`, `internal/scripting/tui_manager.go`, `internal/builtin/register.go`, and `internal/builtin/bubbletea/bubbletea.go`. Produce a concrete claim inventory: what upstream auto-exit actually promises, what one-shot-man currently claims about persistent runtimes, BubbleTea blocking, go-prompt blocking, and Promise support, and what the user is asking the future architecture to guarantee (event loop as the outermost lifecycle boundary with auto-exit as the sole direct shutdown trigger). Log scope assumptions and immediate next step in `WIP.md`.",
+      "acceptance": "`WIP.md` records the autopsy boundary, the scratch output directory name, and the next action. The forthcoming report has enough first-hand evidence to distinguish upstream semantics from one-shot-man claims instead of mixing them together. Every major claim to be verified later is explicitly cataloged from source files rather than inferred from memory.",
+      "status": "Done"
+    },
+    {
+      "task": "Trace the actual lifecycle graph across command entrypoints, runtime execution, go-prompt, BubbleTea, termmux, and native async modules",
+      "description": "Read the concrete lifecycle code, not just the event-loop wrapper. Start at `cmd/osm/main.go` and the relevant command implementations under `internal/command/` that create an Engine and/or enter interactive modes (`script`, `goal`, `prompt-flow`, `pr-split`, and any helper that invokes `TUIManager.Run` or `Engine.ExecuteScript`). Then trace `internal/scripting/runtime.go`, `internal/scripting/engine_core.go`, `internal/scripting/tui_manager.go`, `internal/scripting/terminal_io*.go`, `internal/builtin/register.go`, `internal/builtin/bubbletea/bubbletea.go`, `internal/builtin/bt/bridge.go`, `internal/builtin/termmux/module.go`, and native async modules that rely on the adapter or loop (`exec`, `fetch`, `grpc`, `mcp`, `mcpcallback`, plus any goroutine + loop-submit paths found by search). For each subsystem, identify: who starts it, what goroutines it owns, what keeps it alive, how JS callbacks re-enter the VM, what blocks the caller, and what currently ends it. Run targeted corroborating commands/tests/examples where needed so the report includes observed behavior, not only static reading.",
+      "acceptance": "The report can name every major lifecycle that would need guaranteed overlap with the outer event loop, including the initial script invocation, Promise-backed native async work, go-prompt REPL execution, BubbleTea program execution, BT bridge callbacks, termmux sessions, and any background writer/listener goroutines. Any subsystem not analyzed is explicitly listed as such instead of being silently omitted.",
+      "status": "Done"
+    },
+    {
+      "task": "Write the adversarial autopsy under scratch/eventloop-autoexit-autopsy-20260430",
+      "description": "Create a new directory under `scratch/` and write a README plus numbered markdown documents. The README must state the scope boundary, reading order, verdict, and caveats. The numbered docs must cover: how WithAutoExit actually works upstream; the current one-shot-man runtime anatomy; a comprehensive lifecycle inventory across command/runtime/TUI/native async layers; the gap analysis ranked by severity; red herrings and misleading current conclusions; kill conditions for a future auto-exit-driven outer-loop architecture; corroborating evidence from commands/tests/examples; and the final honest conclusions matrix (True / Uncertain / False). Every conclusion must trace back to concrete code locations and, where available, observed command/test output.",
+      "acceptance": "`scratch/eventloop-autoexit-autopsy-20260430/README.md` and the numbered markdown documents exist. The report is dense, evidence-backed, and explicitly answers what would be required to use `WithAutoExit` well as the sole direct shutdown trigger for an outermost event loop that encapsulates go-prompt, BubbleTea, and other async subsystems.",
+      "status": "In Progress"
+    },
+    {
+      "task": "Run the Rule-of-Two review gate against the exact report diff and finalize session state",
+      "description": "After the report is drafted, load the `strict-review-gate` skill and run two serial subagent reviews against the exact scratch-report diff with no intervening code/report edits unless a reviewer finds an issue. If either review finds a substantive defect, fix it, update `WIP.md` and this blueprint, and restart the counter. Only after two contiguous clean passes may the autopsy tasks be marked done. Record the review outcomes so the final user response can quote the verification evidence directly.",
+      "acceptance": "Two contiguous issue-free reviews examine the same final diff. `WIP.md` captures the completed scope, any caveats, and the final next-step note (if any). The final response can summarize the blueprint state and both review-pass logs without hand-waving.",
+      "status": "Not Started"
     }
   ],
   "continuousVerification": {

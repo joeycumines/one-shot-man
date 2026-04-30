@@ -1,3 +1,4 @@
+// Package exec provides a Goja module wrapping Go's os/exec for JS scripts.
 package exec
 
 import (
@@ -8,8 +9,12 @@ import (
 	osexec "os/exec"
 
 	"github.com/dop251/goja"
+	goeventloop "github.com/joeycumines/go-eventloop"
 	gojaeventloop "github.com/joeycumines/goja-eventloop"
 )
+
+// PromisifyFunc is the signature for the event loop's Promisify method.
+type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise
 
 // Require returns a module loader for `osm:exec` that uses the provided base context
 // (typically the TUI manager's context). Each invocation wraps the base context
@@ -19,7 +24,7 @@ import (
 // The adapter parameter is used for the spawn() function which requires
 // Promise-based streaming (goroutine → event loop → resolve). If adapter is
 // nil, spawn() will not be available (only exec/execv).
-func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(runtime *goja.Runtime, module *goja.Object) {
+func Require(ctx context.Context, adapter *gojaeventloop.Adapter, promisify PromisifyFunc) func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 
@@ -68,7 +73,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(runtime *
 		// spawn(command: string, args: string[], opts?: {cwd?, env?}): ChildHandle
 		// Returns a child process handle with streaming stdout/stderr read().
 		if adapter != nil {
-			_ = exports.Set("spawn", jsSpawn(ctx, runtime, adapter))
+			_ = exports.Set("spawn", jsSpawn(ctx, runtime, adapter, promisify))
 		}
 
 		// execStream(argv: string[], opts?: {onStdout?: fn, onStderr?: fn, cwd?: string, env?: object}): {code, error, message}
@@ -80,7 +85,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(runtime *
 }
 
 // jsSpawn creates the spawn() JS function binding.
-func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter) func(call goja.FunctionCall) goja.Value {
+func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.Adapter, promisify PromisifyFunc) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) == 0 {
 			panic(rt.NewTypeError("spawn: missing command"))
@@ -122,12 +127,12 @@ func jsSpawn(baseCtx context.Context, rt *goja.Runtime, adapter *gojaeventloop.A
 			panic(rt.NewGoError(fmt.Errorf("spawn failed: %w", err)))
 		}
 
-		return wrapChildProcess(rt, adapter, child, cancel)
+		return wrapChildProcess(rt, adapter, child, cancel, promisify)
 	}
 }
 
 // wrapChildProcess creates a JS object exposing the child process handle.
-func wrapChildProcess(rt *goja.Runtime, adapter *gojaeventloop.Adapter, child *ChildProcess, cancel context.CancelFunc) goja.Value {
+func wrapChildProcess(rt *goja.Runtime, adapter *gojaeventloop.Adapter, child *ChildProcess, cancel context.CancelFunc, promisify PromisifyFunc) goja.Value {
 	obj := rt.NewObject()
 
 	// child.pid
@@ -154,16 +159,16 @@ func wrapChildProcess(rt *goja.Runtime, adapter *gojaeventloop.Adapter, child *C
 	_ = obj.Set("stdin", stdinObj)
 
 	// child.stdout — {read(): Promise<{value: string, done: boolean}>}
-	_ = obj.Set("stdout", wrapReadableStream(rt, adapter, child.ReadStdout))
+	_ = obj.Set("stdout", wrapReadableStream(rt, adapter, child.ReadStdout, promisify))
 
 	// child.stderr — {read(): Promise<{value: string, done: boolean}>}
-	_ = obj.Set("stderr", wrapReadableStream(rt, adapter, child.ReadStderr))
+	_ = obj.Set("stderr", wrapReadableStream(rt, adapter, child.ReadStderr, promisify))
 
 	// child.wait(): Promise<{code: number, signal: string|null}>
 	_ = obj.Set("wait", func(call goja.FunctionCall) goja.Value {
 		promise, resolve, reject := adapter.JS().NewChainedPromise()
 
-		go func() {
+		promisify(context.Background(), func(ctx context.Context) (any, error) {
 			code, waitErr := child.Wait()
 			if submitErr := adapter.Loop().Submit(func() {
 				result := rt.NewObject()
@@ -175,9 +180,12 @@ func wrapChildProcess(rt *goja.Runtime, adapter *gojaeventloop.Adapter, child *C
 				}
 				resolve(result)
 			}); submitErr != nil {
-				reject(fmt.Errorf("event loop not running"))
+				_ = adapter.Loop().Submit(func() {
+					reject(fmt.Errorf("event loop not running"))
+				})
 			}
-		}()
+			return nil, nil
+		})
 
 		return adapter.GojaWrapPromise(promise)
 	})
@@ -196,16 +204,18 @@ func wrapChildProcess(rt *goja.Runtime, adapter *gojaeventloop.Adapter, child *C
 
 // wrapReadableStream creates a JS object with a read() method that returns
 // Promises, following the ReadableStream protocol: {value: string, done: bool}.
-func wrapReadableStream(rt *goja.Runtime, adapter *gojaeventloop.Adapter, readFn func() (string, bool, error)) goja.Value {
+func wrapReadableStream(rt *goja.Runtime, adapter *gojaeventloop.Adapter, readFn func() (string, bool, error), promisify PromisifyFunc) goja.Value {
 	streamObj := rt.NewObject()
 	_ = streamObj.Set("read", func(call goja.FunctionCall) goja.Value {
 		promise, resolve, reject := adapter.JS().NewChainedPromise()
 
-		go func() {
+		promisify(context.Background(), func(ctx context.Context) (any, error) {
 			data, done, err := readFn()
 			if err != nil {
-				reject(err)
-				return
+				_ = adapter.Loop().Submit(func() {
+					reject(err)
+				})
+				return nil, err
 			}
 			if submitErr := adapter.Loop().Submit(func() {
 				result := rt.NewObject()
@@ -218,9 +228,12 @@ func wrapReadableStream(rt *goja.Runtime, adapter *gojaeventloop.Adapter, readFn
 				}
 				resolve(result)
 			}); submitErr != nil {
-				reject(fmt.Errorf("event loop not running"))
+				_ = adapter.Loop().Submit(func() {
+					reject(fmt.Errorf("event loop not running"))
+				})
 			}
-		}()
+			return nil, nil
+		})
 
 		return adapter.GojaWrapPromise(promise)
 	})

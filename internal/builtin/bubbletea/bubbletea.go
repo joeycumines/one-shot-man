@@ -2056,27 +2056,22 @@ func Require(baseCtx context.Context, manager *Manager) func(runtime *goja.Runti
 			manager.programDone = done
 			manager.mu.Unlock()
 
-			// Run the program. If Promisify is configured, wrap the goroutine so
-			// promisifyCount stays > 0 while the program runs, keeping the loop
-			// alive until the BubbleTea program exits.
-			if manager.promisify != nil {
-				// Promisify keeps the event loop alive while the program runs.
-				manager.promisify(context.Background(), func(ctx context.Context) (any, error) {
-					err := manager.runProgram(programModel)
-					// Also send to done channel for WaitForProgram compatibility.
-					// This is safe because done is buffered (capacity 1).
-					select {
-					case done <- err:
-					default:
-					}
-					return nil, err
-				})
-			} else {
-				// No Promisify - run in bare goroutine (legacy behavior).
-				go func() {
-					done <- manager.runProgram(programModel)
-				}()
+			// Run the program. Promisify keeps the event loop alive while the program runs.
+			// This prevents the event loop from auto-exiting while the TUI is active.
+			if manager.promisify == nil {
+				panic("bubbletea.Manager.promisify is REQUIRED - ensure Engine.Register was called")
 			}
+
+			manager.promisify(context.Background(), func(_ context.Context) (any, error) {
+				err := manager.runProgram(programModel)
+				// Also send to done channel for WaitForProgram compatibility.
+				// This is safe because done is buffered (capacity 1).
+				select {
+				case done <- err:
+				default:
+				}
+				return nil, err
+			})
 
 			return goja.Undefined()
 		})

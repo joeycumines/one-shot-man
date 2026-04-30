@@ -114,7 +114,12 @@ func (c *jsScriptCommand) Execute(args []string, stdout, stderr io.Writer) error
 	if c.interactive {
 		terminal := c.terminalFactory(ctx, engine)
 		terminal.Run()
+		return nil
 	}
+
+	// Wait for any asynchronous work (timers, fetch, etc.) to complete naturally.
+	// This uses the WithAutoExit(true) feature of the event loop.
+	engine.Wait()
 
 	return nil
 }

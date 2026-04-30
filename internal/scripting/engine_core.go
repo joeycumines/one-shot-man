@@ -193,15 +193,7 @@ func NewEngine(
 
 	// Get a direct reference to the VM for sync operations
 	// Note: All script execution should still go through the event loop for async safety
-	var vm *goja.Runtime
-	err = runtime.RunOnLoopSync(func(r *goja.Runtime) error {
-		vm = r
-		return nil
-	})
-	if err != nil {
-		_ = runtime.Close()
-		return nil, fmt.Errorf("failed to get VM reference: %w", err)
-	}
+	vm := runtime.VM()
 
 	engine := &Engine{
 		runtime:        runtime,
@@ -593,6 +585,13 @@ func (e *Engine) ExecuteScript(script *Script) error {
 	}
 
 	return nil
+}
+
+// Wait blocks until the event loop naturally exits.
+func (e *Engine) Wait() {
+	if e.runtime != nil {
+		e.runtime.Wait()
+	}
 }
 
 // executeOnLoop submits a function to the event loop and blocks until it

@@ -198,6 +198,10 @@ func (c *ScriptingCommand) Execute(args []string, stdout, stderr io.Writer) erro
 		return &SilentError{Err: fmt.Errorf("no script specified")}
 	}
 
+	// Wait for any asynchronous work (timers, fetch, etc.) to complete naturally.
+	// This uses the WithAutoExit(true) feature of the event loop.
+	engine.Wait()
+
 	return nil
 }
 

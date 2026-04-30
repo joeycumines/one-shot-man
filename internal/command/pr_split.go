@@ -428,8 +428,13 @@ func (c *PrSplitCommand) Execute(args []string, stdout, stderr io.Writer) error 
 			// based observation tests and advanced scripting workflows.
 			terminal := scripting.NewTerminal(ctx, engine)
 			terminal.Run()
+			return nil
 		}
 	}
+
+	// Wait for any asynchronous work (timers, fetch, etc.) to complete naturally.
+	// This uses the WithAutoExit(true) feature of the event loop.
+	engine.Wait()
 
 	return nil
 }

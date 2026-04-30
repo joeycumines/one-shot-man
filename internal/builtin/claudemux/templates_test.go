@@ -50,12 +50,12 @@ func templateTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 	})
 
 	ctx := context.Background()
-	bridge := btmod.NewBridgeWithEventLoop(ctx, loop, vm, reg)
+	bridge := btmod.NewBridgeWithEventLoop(ctx, loop, vm, reg, loop.Promisify)
 	t.Cleanup(func() { bridge.Stop() })
 
 	// Register additional modules.
 	reg.RegisterNativeModule("osm:claudemux", Require(ctx))
-	reg.RegisterNativeModule("osm:exec", execmod.Require(ctx, nil))
+	reg.RegisterNativeModule("osm:exec", execmod.Require(ctx, nil, nil))
 	reg.RegisterNativeModule("osm:pabt", pabtmod.Require(ctx, bridge))
 
 	// Helper: run JS on event loop, fail test on error.

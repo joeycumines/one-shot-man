@@ -41,6 +41,6 @@ func TestBridge_NewBridgeWithEventLoop_NilVMPanic(t *testing.T) {
 	})
 
 	assert.PanicsWithValue(t, "goja runtime must not be nil", func() {
-		NewBridgeWithEventLoop(context.Background(), loop, nil, nil)
+		NewBridgeWithEventLoop(context.Background(), loop, nil, nil, nil)
 	})
 }

@@ -65,27 +65,23 @@ func (t *Terminal) Run() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigChan)
 
-	// Run TUI in a goroutine so we can handle signals
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		traceExit("tuiManager.Run() starting")
-		t.tuiManager.Run()
-		traceExit("tuiManager.Run() returned")
-	}()
+	// Start the TUI manager in the event loop.
+	// TUIManager.Run() uses Promisify to keep the loop alive.
+	traceExit("tuiManager.Run() starting")
+	t.tuiManager.Run()
 
-	// Wait for either TUI completion or a signal
-	select {
-	case <-done:
-		traceExit("TUI exited normally (done channel closed)")
-	case sig := <-sigChan:
+	// Wait for the event loop to naturally quiesce (or be canceled by signal).
+	// This replaces the manual done channel and select loop.
+	go func() {
+		sig := <-sigChan
 		// Signal received. Trigger a graceful exit of the prompt.
 		traceExit(fmt.Sprintf("signal received: %v", sig))
 		_, _ = fmt.Fprintf(t.tuiManager.writer, "\n\nReceived signal %v, shutting down...\n", sig)
 		t.tuiManager.TriggerExit()
-		<-done // Wait for the TUI goroutine to fully stop.
-		traceExit("TUI stopped after signal")
-	}
+	}()
+
+	t.engine.Wait()
+	traceExit("Engine wait complete (loop exited)")
 
 	// Persist session on ANY exit path (clean or signal-based).
 	// This centralizes the save logic.

@@ -106,11 +106,11 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	registry.RegisterNativeModule(prefix+"json", jsonmod.Require)
 	registry.RegisterNativeModule(prefix+"nextIntegerID", nextintegerid.Require)
 	registry.RegisterNativeModule(prefix+"nextIntegerId", nextintegerid.Require) // Deprecated: use osm:nextIntegerID
-	registry.RegisterNativeModule(prefix+"exec", execmod.Require(ctx, eventLoopProvider.Adapter()))
-	registry.RegisterNativeModule(prefix+"fetch", fetchmod.Require(eventLoopProvider.Adapter()))
+	registry.RegisterNativeModule(prefix+"exec", execmod.Require(ctx, eventLoopProvider.Adapter(), eventLoopProvider.Promisify))
+	registry.RegisterNativeModule(prefix+"fetch", fetchmod.Require(eventLoopProvider.Adapter(), eventLoopProvider.Promisify))
 	registry.RegisterNativeModule(prefix+"flag", flagmod.Require)
-	registry.RegisterNativeModule(prefix+"mcp", mcpmod.Require(eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
-	registry.RegisterNativeModule(prefix+"mcpcallback", mcpcallbackmod.Require(eventLoopProvider.Adapter(), eventLoopProvider.Loop()))
+	registry.RegisterNativeModule(prefix+"mcp", mcpmod.Require(eventLoopProvider.Adapter(), eventLoopProvider.Loop(), eventLoopProvider.Promisify))
+	registry.RegisterNativeModule(prefix+"mcpcallback", mcpcallbackmod.Require(eventLoopProvider.Adapter(), eventLoopProvider.Loop(), eventLoopProvider.Promisify))
 
 	// Create shared protobuf module for gRPC and osm:protobuf.
 	// The SAME Module instance is used by both so descriptors loaded via
@@ -143,7 +143,7 @@ func Register(ctx context.Context, tuiSink func(string), registry *require.Regis
 	// Register bt module FIRST for behavior tree integration with JavaScript.
 	// This must happen before bubbletea so we can wire the JSRunner for thread-safe JS calls.
 	// NewBridgeWithEventLoop registers the osm:bt module automatically.
-	btBridge := bt.NewBridgeWithEventLoop(ctx, eventLoopProvider.Loop(), eventLoopProvider.Runtime(), eventLoopProvider.Registry())
+	btBridge := bt.NewBridgeWithEventLoop(ctx, eventLoopProvider.Loop(), eventLoopProvider.Runtime(), eventLoopProvider.Registry(), eventLoopProvider.Promisify)
 
 	// Register osm:pabt module for Planning-Augmented Behavior Trees.
 	// This depends on btBridge for thread-safe goja.Runtime access.

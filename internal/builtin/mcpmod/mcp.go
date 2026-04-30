@@ -20,17 +20,20 @@ import (
 
 const toolHandlerTimeout = 30 * time.Second
 
+// PromisifyFunc is the signature for the event loop's Promisify method.
+type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise
+
 // Require returns a module loader for the osm:mcp module.
 // The adapter and loop are used for thread-safe JS callback invocation.
-func Require(adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) require.ModuleLoader {
+func Require(adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, promisify PromisifyFunc) require.ModuleLoader {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
-		_ = exports.Set("createServer", jsCreateServer(runtime, adapter, loop))
+		_ = exports.Set("createServer", jsCreateServer(runtime, adapter, loop, promisify))
 	}
 }
 
 // jsCreateServer returns the JS function: createServer(name, version) → server object
-func jsCreateServer(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) func(call goja.FunctionCall) goja.Value {
+func jsCreateServer(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, promisify PromisifyFunc) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		name := call.Argument(0).String()
 		version := ""
@@ -44,10 +47,11 @@ func jsCreateServer(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop 
 		}, nil)
 
 		s := &mcpServer{
-			server:  srv,
-			adapter: adapter,
-			loop:    loop,
-			runtime: runtime,
+			server:    srv,
+			adapter:   adapter,
+			loop:      loop,
+			runtime:   runtime,
+			promisify: promisify,
 		}
 
 		obj := runtime.NewObject()
@@ -77,10 +81,11 @@ type handlerResult struct {
 
 // mcpServer wraps a Go MCP server for JS access.
 type mcpServer struct {
-	server  *mcp.Server
-	adapter *gojaeventloop.Adapter
-	loop    *goeventloop.Loop
-	runtime *goja.Runtime
+	server    *mcp.Server
+	adapter   *gojaeventloop.Adapter
+	loop      *goeventloop.Loop
+	runtime   *goja.Runtime
+	promisify PromisifyFunc
 
 	mu      sync.Mutex
 	running bool
@@ -337,10 +342,13 @@ func (s *mcpServer) jsRun() func(call goja.FunctionCall) goja.Value {
 		// Create promise for async run
 		promise, resolve, reject := s.adapter.JS().NewChainedPromise()
 
-		go func() {
+		s.promisify(context.Background(), func(_ context.Context) (any, error) {
 			err := s.server.Run(ctx, &mcp.StdioTransport{})
 			if err != nil && !errors.Is(err, context.Canceled) {
-				reject(err)
+				_ = s.loop.Submit(func() {
+					reject(err)
+				})
+				return nil, err
 			} else {
 				if submitErr := s.loop.Submit(func() {
 					resolve(goja.Undefined())
@@ -348,7 +356,8 @@ func (s *mcpServer) jsRun() func(call goja.FunctionCall) goja.Value {
 					// Event loop gone — nothing to do
 				}
 			}
-		}()
+			return nil, nil
+		})
 
 		return s.adapter.GojaWrapPromise(promise)
 	}

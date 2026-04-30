@@ -8,6 +8,7 @@
 package fetch
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -35,10 +36,11 @@ type ReadableStream struct {
 	source    io.ReadCloser
 	chunkSize int
 
-	mu      sync.Mutex
-	locked  bool
-	started bool
-	closed  bool
+	mu        sync.Mutex
+	locked    bool
+	started   bool
+	closed    bool
+	promisify PromisifyFunc
 
 	chunks chan readResult
 	done   chan struct{} // closed when pump finishes
@@ -46,12 +48,13 @@ type ReadableStream struct {
 
 // NewReadableStream wraps src in a ReadableStream with 64 KiB chunks
 // and a 4-slot bounded channel.
-func NewReadableStream(src io.ReadCloser) *ReadableStream {
+func NewReadableStream(src io.ReadCloser, promisify PromisifyFunc) *ReadableStream {
 	return &ReadableStream{
 		source:    src,
 		chunkSize: defaultChunkSize,
 		chunks:    make(chan readResult, defaultBufferSize),
 		done:      make(chan struct{}),
+		promisify: promisify,
 	}
 }
 
@@ -79,7 +82,14 @@ func (rs *ReadableStream) GetReader() (*ReadableStreamDefaultReader, error) {
 
 	if !rs.started {
 		rs.started = true
-		go rs.pump()
+		if rs.promisify != nil {
+			rs.promisify(context.Background(), func(ctx context.Context) (any, error) {
+				rs.pump()
+				return nil, nil
+			})
+		} else {
+			go rs.pump()
+		}
 	}
 	return &ReadableStreamDefaultReader{stream: rs}, nil
 }
@@ -100,11 +110,19 @@ func (rs *ReadableStream) Cancel() error {
 
 	// Drain remaining chunks so the pump goroutine can exit.
 	if started {
-		go func() {
+		drain := func() {
 			//nolint:revive // intentional drain
 			for range rs.chunks {
 			}
-		}()
+		}
+		if rs.promisify != nil {
+			rs.promisify(context.Background(), func(ctx context.Context) (any, error) {
+				drain()
+				return nil, nil
+			})
+		} else {
+			go drain()
+		}
 	}
 	return err
 }
@@ -172,7 +190,7 @@ func (r *ReadableStreamDefaultReader) ReleaseLock() {
 
 // wrapReadableStreamJS returns a goja.Object exposing the ReadableStream
 // to JavaScript with the standard locked/getReader()/cancel() surface.
-func wrapReadableStreamJS(rt *goja.Runtime, adapter *gojaeventloop.Adapter, rs *ReadableStream) *goja.Object {
+func wrapReadableStreamJS(rt *goja.Runtime, adapter *gojaeventloop.Adapter, rs *ReadableStream, promisify PromisifyFunc) *goja.Object {
 	obj := rt.NewObject()
 
 	// Stash the Go ReadableStream for internal access (e.g., sseReader).
@@ -191,7 +209,7 @@ func wrapReadableStreamJS(rt *goja.Runtime, adapter *gojaeventloop.Adapter, rs *
 		if err != nil {
 			panic(rt.NewGoError(err))
 		}
-		return wrapReaderJS(rt, adapter, reader)
+		return wrapReaderJS(rt, adapter, reader, promisify)
 	})
 
 	// cancel() — cancels the stream.
@@ -210,17 +228,19 @@ func wrapReadableStreamJS(rt *goja.Runtime, adapter *gojaeventloop.Adapter, rs *
 //
 // read() returns Promise<{value: string, done: boolean}>.  The blocking
 // Read() call runs in a goroutine; the Promise resolves on the event loop.
-func wrapReaderJS(rt *goja.Runtime, adapter *gojaeventloop.Adapter, reader *ReadableStreamDefaultReader) *goja.Object {
+func wrapReaderJS(rt *goja.Runtime, adapter *gojaeventloop.Adapter, reader *ReadableStreamDefaultReader, promisify PromisifyFunc) *goja.Object {
 	obj := rt.NewObject()
 
 	_ = obj.Set("read", func(call goja.FunctionCall) goja.Value {
 		promise, resolve, reject := adapter.JS().NewChainedPromise()
 
-		go func() {
+		promisify(context.Background(), func(ctx context.Context) (any, error) {
 			data, done, err := reader.Read()
 			if err != nil {
-				reject(err)
-				return
+				_ = adapter.Loop().Submit(func() {
+					reject(err)
+				})
+				return nil, err
 			}
 			if submitErr := adapter.Loop().Submit(func() {
 				result := rt.NewObject()
@@ -233,9 +253,12 @@ func wrapReaderJS(rt *goja.Runtime, adapter *gojaeventloop.Adapter, reader *Read
 				}
 				resolve(result)
 			}); submitErr != nil {
-				reject(fmt.Errorf("event loop not running"))
+				_ = adapter.Loop().Submit(func() {
+					reject(fmt.Errorf("event loop not running"))
+				})
 			}
-		}()
+			return nil, nil
+		})
 
 		return adapter.GojaWrapPromise(promise)
 	})

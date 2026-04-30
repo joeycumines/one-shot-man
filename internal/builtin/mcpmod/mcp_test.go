@@ -30,7 +30,7 @@ func loadModule(t *testing.T, p *testutil.TestEventLoopProvider) {
 	t.Helper()
 	runOnLoop(t, p, func() {
 		vm := p.Runtime()
-		loader := Require(p.Adapter(), p.Loop())
+		loader := Require(p.Adapter(), p.Loop(), p.Promisify)
 		module := vm.NewObject()
 		exports := vm.NewObject()
 		_ = module.Set("exports", exports)

@@ -2,132 +2,104 @@
   "meta": {
     "fileName": "blueprint.json",
     "maintenanceInstruction": "KEEP THIS PLAN UP TO DATE AFTER EVERY SUB-STEP. LOG EVERY DEVIATION, DISCOVERY, AND REPLAN INSIDE THIS FILE BEFORE PROCEEDING. IF REALITY CHANGES, RE-READ THE RELEVANT CODE, THEN REWRITE THE AFFECTED TASKS IMMEDIATELY.",
-    "completionPolicy": "NO ESTIMATES. NO PRIORITIES. NO SEPARATE TESTING TASKS. NO SEPARATE COMMIT TASKS. EVERY TASK MUST INCLUDE ITS OWN REPRODUCTION, VALIDATION, STRICT-REVIEW-GATE PASSES, AND A SINGLE SELF-CONTAINED COMMIT BEFORE THE NEXT TASK BEGINS. WHEN THIS LIST IS EXHAUSTED, EXPAND IT AGAIN FROM EVIDENCE, NOT WISHFUL THINKING.",
+    "completionPolicy": "NO ESTIMATES. NO PRIORITIES. EVERY TASK MUST INCLUDE ITS OWN REPRODUCTION, VALIDATION, STRICT-REVIEW-GATE PASSES, AND A SINGLE SELF-CONTAINED COMMIT BEFORE THE NEXT TASK BEGINS. WHEN THIS LIST IS EXHAUSTED, EXPAND IT AGAIN FROM EVIDENCE, NOT WISHFUL THINKING.",
     "sourceDocuments": [
-      "scratch/review.md",
+      "scratch/eventloop-autoexit-autopsy-20260430/",
       "internal/scripting/runtime.go",
       "internal/scripting/engine_core.go",
-      "internal/scripting/sentinel_drain_test.go",
-      "internal/scripting/runtime_test.go",
-      "internal/scripting/engine_test.go",
+      "internal/scripting/terminal.go",
+      "internal/scripting/tui_manager.go",
       "internal/builtin/bubbletea/bubbletea.go",
-      "internal/builtin/register.go",
-      "internal/testutil/eventloop.go"
+      "internal/builtin/fetch/fetch.go",
+      "internal/builtin/exec/exec.go",
+      "internal/builtin/mcpmod/mcp.go",
+      "internal/builtin/mcpcallbackmod/mcpcallback.go",
+      "internal/builtin/bt/bridge.go"
     ]
   },
   "globalAlerts": [
     {
-      "warning": "MANDATORY PER-TASK COMMIT PROTOCOL: BEFORE MARKING ANY TASK DONE OR MAKING ANY COMMIT, LOAD THE `strict-review-gate` SKILL IN FULL, RUN THE RULE OF TWO UNTIL TWO CONTIGUOUS ISSUE-FREE REVIEWS EXAMINE THE EXACT SAME DIFF, LOAD THE `git-commit` SKILL IN FULL, COMMIT ONLY THAT ONE TASK'S DIFF, THEN REREAD AGENTS.md BEFORE STARTING THE NEXT TASK. DO NOT BATCH MULTIPLE TASKS INTO ONE COMMIT."
+      "warning": "THE STARTUP RACE IS THE PRIMARY BUG. Fix: Submit initialization BEFORE loop.Run(ctx) when WithAutoExit(true) is enabled."
     },
     {
-      "warning": "ALL PROJECT CHECKS MUST PASS ON MACOS, LINUX, AND WINDOWS. PRIMARY SIGNAL IS `make test-short` (runs `go test -short ./...`). ALSO RUN `make lint` BEFORE EVERY COMMIT. USE `gmake` ON MACOS."
+      "warning": "ASYNC DRAIN IS THE GOAL. All native async Go work MUST use loop.Promisify to be tracked by WithAutoExit. Bare goroutines + loop.Submit() will race with termination and fail."
     },
     {
-      "warning": "DEADLOCK/RACE DANGER: All goja.Runtime access MUST happen on the event loop goroutine. Never call loop.Submit from within the loop goroutine (use TryRunOnLoopSync). Race detector is enabled for all tests (`-race` is in go test flags)."
-    },
-    {
-      "warning": "THE ROOT CAUSE IS CONFIRMED: `make test-short` fails with 'failed to initialize: eventloop: loop has been terminated' because go loop.Run(loopCtx) starts BEFORE loop.Submit(...) in NewRuntimeRegistry, and WithAutoExit(true) allows the empty loop to exit in that window. Fix: switch to WithAutoExit(false) — the Runtime is persistent/reusable and must not auto-exit."
-    },
-    {
-      "warning": "NEVER ADD IGNORES TO .deadcodeignore. If deadcode fails, wire up the code or delete it. See AGENTS.md."
+      "warning": "SOLE EXIT TRIGGER: WithAutoExit(true) must become the primary way the program determines it is 'done' in interactive and scripting modes."
     }
   ],
   "mandatoryDirectives": {
-    "contextManagement": "On every session start: (1) Read blueprint.json. (2) Read WIP.md. (3) Resume from the first task whose status is not Done. Never rely on chat history — always re-read files for first-hand knowledge before acting.",
-    "toolingConstraints": "Use GNU Make (gmake on macOS). Build: make build. Test fast: make test-short. Test all: make test. Lint: make lint. Format: make fmt. Single package test: go test -short ./internal/scripting/..."
+    "contextManagement": "Read blueprint.json and WIP.md on every session start. Resume from the first non-Done task.",
+    "toolingConstraints": "Use gmake on macOS. Primary signals: make test-short and make lint."
   },
   "statusSection": {
-    "currentState": "Prior runtime lifecycle fix tasks remain done. Task 5 claim-inventory work is complete. Task 6 lifecycle tracing is now complete enough to draft against: command entrypoints, Runtime startup, go-prompt, BubbleTea, bt bridge, termmux, exec/fetch/mcp/mcpcallback, and the startup-ordering contrast with internal/testutil/eventloop.go are all in first-hand notes. User explicitly redirected the work to incremental report writing before more exploration; Task 7 is now in progress and the first numbered autopsy documents are being written immediately so findings do not decay.",
-    "goalState": "scratch/eventloop-autoexit-autopsy-20260430/ exists with a README and numbered adversarial-analysis documents that trace go-eventloop auto-exit semantics, one-shot-man command/runtime/go-prompt/BubbleTea/termmux/native-async lifecycles, the exact overlap requirements between initial JS execution and outstanding async work, the gaps that currently prevent WithAutoExit from safely acting as the sole direct shutdown trigger, corroborating command/test evidence, and an honest True/Uncertain/False conclusion set.",
+    "currentState": "Implementation of WithAutoExit-driven architecture complete. All native modules refactored with Promisify. Core runtime, terminal, and commands updated to wait for natural loop exit. Short tests passing.",
+    "goalState": "one-shot-man uses WithAutoExit(true) as its sole normal-path exit trigger. All async work (shell, TUI, native modules) participates in loop liveness. The startup race is eliminated. Scripts and interactive sessions naturally exit when all work completes.",
     "replanLog": [
       {
-        "trigger": "Session start — replan from prior work on pr-split tasks",
-        "affectedTasks": "All prior tasks replaced",
-        "summary": "Blueprint fully replaced to address go-eventloop lifecycle bugs identified in scratch/review.md. Prior tasks (pr-split, termmux, docs) are superseded. Root cause confirmed live: make test-short shows 'loop has been terminated' startup race from WithAutoExit(true) in NewRuntimeRegistry."
-      },
-      {
-        "trigger": "User requested adversarial codebase autopsy for future WithAutoExit rearchitecture",
-        "affectedTasks": "New Tasks 5-8 added after prior runtime fix tasks",
-        "summary": "Shifted from implementation to evidence gathering. The new work product is a hostile lifecycle autopsy under scratch/, covering not only current event-loop call sites but every subsystem whose lifecycle would need to be encapsulated by an outermost event loop if WithAutoExit becomes the sole direct shutdown trigger."
-      },
-      {
-        "trigger": "User correction plus explicit order change: WRITE NOW",
-        "affectedTasks": "Tasks 6-7",
-        "summary": "Captured git-history evidence that `internal/scripting` recently had a polling/shutdown drain (`waitForAsyncWork` plus `sentinel_drain_test.go`). Reordered execution to start writing the scratch autopsy immediately, with remaining exploration backfilled into the live report instead of deferred until the end."
+        "trigger": "User directive for CONCRETE solution implementing WithAutoExit architecture.",
+        "affectedTasks": "Tasks 7-8 superseded by new implementation plan.",
+        "summary": "Full re-architecture plan established to move from persistent-runtime model back to auto-exiting model, but with comprehensive lifecycle tracking via Promisify."
       }
     ]
   },
   "sequentialTasks": [
     {
-      "task": "Fix persistent Runtime lifecycle: remove WithAutoExit(true), livenessTimerID, ResolveLiveness(), waitForAsyncWork(); delete sentinel_drain_test.go; update stale comments; simplify testutil/eventloop.go",
-      "description": "This is one coherent architectural fix across six files. All changes belong in a single commit.\n\n[internal/scripting/runtime.go]\n- Remove `WithAutoExit(true)` from the `goeventloop.New(...)` call in `NewRuntimeRegistry` (line 126). Replace with only `goeventloop.WithStrictMicrotaskOrdering(true)`.\n- Remove the `livenessTimerID goeventloop.TimerID` field from the `Runtime` struct (line 77).\n- Remove the liveness timer scheduling block from the `Submit` callback in `NewRuntimeRegistry` (lines 176–191 — the `livenessTimerDelay` const, `ScheduleTimer`, `RefTimer`, and `rt.livenessTimerID = timerID` lines).\n- Remove the `ResolveLiveness()` method (lines 252–265).\n- In `Close()` (line 275), remove the call to `rt.ResolveLiveness()` (line 290) and the comment about it (lines 287–289).\n- Remove the `time` import — it is no longer needed (the only use was `livenessTimerDelay = 365 * 24 * time.Hour`).\n- Update the block comment above `goeventloop.New(...)` (lines 100–127) to remove the WithAutoExit and registration-liveness-promise paragraphs, keeping only the WithStrictMicrotaskOrdering explanation.\n- Update the `Runtime` struct docstring (lines 18–38) to remove any mention of auto-exit or liveness timer.\n- Verify: `go build ./internal/scripting/...` compiles; `go test -short ./internal/scripting/...` passes.\n\n[internal/scripting/engine_core.go]\n- Remove the `waitForAsyncWork()` function entirely (lines 605–628).\n- Remove the call to `e.waitForAsyncWork()` in `ExecuteScript` (lines 597–600).\n- Remove the comment block above that call (lines 595–596).\n- In `Close()`, remove the comment 'Runtime.Close() resolves liveness and shuts down the loop cleanly' (line 779) — replace with accurate description: 'Runtime.Close() cancels the loop context and shuts down cleanly'.\n- Verify: `go build ./internal/scripting/...` compiles; `go test -short ./internal/scripting/...` passes.\n\n[internal/scripting/sentinel_drain_test.go]\n- Delete this file entirely. All four tests (TestSentinelDrain_SetTimeoutChains, TestSentinelDrain_PromiseAsync, TestSentinelDrain_NoAsyncWork, TestSentinelDrain_RapidFireTimers) are testing a property that never actually existed: `waitForAsyncWork` with SubmitInternal fires BEFORE queued timers, not after. Tests passed only due to the background loop continuing to run after the sentinel returned. These tests must not be replaced with similarly wrong tests.\n- Verify: `go test -short ./internal/scripting/...` passes with the file deleted.\n\n[internal/builtin/bubbletea/bubbletea.go]\n- Line 446–450: The `SetPromisify` docstring says 'This is REQUIRED when using WithAutoExit(true) on the event loop.' Update to accurately describe when Promisify IS useful (keeping the loop alive during async BubbleTea programs) without tying it to WithAutoExit(true).\n- Lines ~2059–2074: The comment block around 'Run the program. If Promisify is configured (for WithAutoExit support)' references auto-exit. Update the comment to describe the actual behavior: Promisify keeps the event loop alive (via promisifyCount) while the BubbleTea program runs, preventing premature shutdown.\n- Verify: `go build ./...` compiles.\n\n[internal/builtin/register.go]\n- Lines 163–167: The comment 'Wire up Promisify for WithAutoExit support. This is REQUIRED for WithAutoExit(true) on the event loop...' is now stale. Update it to: 'Wire up Promisify so BubbleTea programs keep the event loop alive during execution via promisifyCount.'\n- Verify: `go build ./...` compiles.\n\n[internal/testutil/eventloop.go]\n- `NewTestEventLoopProvider` currently uses `WithAutoExit(true)` + liveness timer + submit-before-run pattern. While the submit-before-run ordering is correct (no startup race), the liveness timer is dead machinery since `Stop()` always force-cancels. Switch to `WithAutoExit(false)` and remove the liveness timer machinery.\n- Remove `goeventloop.WithAutoExit(true)` from `goeventloop.New(...)` call (line 33). Keep only `goeventloop.WithStrictMicrotaskOrdering(true)`.\n- Remove the `livenessTimerID goeventloop.TimerID` field from `TestEventLoopProvider` struct (line 24).\n- Remove the liveness timer creation block from the `Submit` callback (lines 65–80).\n- In `Stop()` (line 137), remove the liveness timer unref+cancel block (lines 139–144) and the `livenessTimerID` field check.\n- Remove `time` import if it is no longer used after the above changes.\n- Verify: `go test -short ./internal/testutil/...` passes.",
-      "acceptance": "1. `make test-short` passes with zero failures (the 'loop has been terminated' startup race errors disappear). 2. `make lint` passes clean (no vet/staticcheck/betteralign/deadcode errors). 3. `go test -race -short ./internal/scripting/... ./internal/testutil/... ./internal/builtin/...` passes with no data races. 4. The `livenessTimerID` field, `ResolveLiveness()` method, `waitForAsyncWork()` function, and `WithAutoExit(true)` invocation no longer exist anywhere in the codebase (verify with grep). 5. The `sentinel_drain_test.go` file no longer exists. 6. A single clean commit lands the fix.",
+      "task": "Complete the adversarial autopsy report documents",
+      "description": "Finalize the scratch/eventloop-autoexit-autopsy-20260430 directory with the missing documents. \n- Create `04_gap_analysis.md`: Detailed breakdown of each subsystem from the inventory and why it's a blocker today.\n- Create `06_kill_conditions.md`: Falsifiable list of what MUST be true for auto-exit to be safe (Promisify everywhere, shell tracking, etc.).\n- Create `08_conclusions_matrix.md`: The final True/Uncertain/False verdict on the feasibility and required changes.\n- Create `README.md`: Scope, reading order, and summary of findings.",
+      "acceptance": "All numbered markdown documents (01-09) and README.md exist in the autopsy directory. They are evidence-backed and consistent with the code analyzed in the reconnaissance phase.",
       "status": "Done"
     },
     {
-      "task": "Add honest lifecycle regression tests for the persistent Runtime",
-      "description": "The sentinel drain tests are gone. We need replacement tests that verify correct behavior of the persistent-runtime lifecycle WITHOUT claiming false drain semantics.\n\nAdd a new test file: `internal/scripting/runtime_lifecycle_test.go` (or extend `runtime_test.go` if it is not too large).\n\nTests to add:\n\n1. `TestRuntime_PersistentLoop_SurvivesMultipleExecuteScript`: Creates a single Engine, calls `engine.ExecuteScript` three times with simple synchronous scripts, verifies all three succeed and produce output. The point: with WithAutoExit(false), the loop does not exit between calls. If the loop had exited (old bug), the second/third ExecuteScript would fail with 'loop has been terminated'.\n\n2. `TestRuntime_Close_TerminatesLoop`: Creates an Engine, calls `engine.Close()`, then verifies that `engine.runtime.loop.Alive()` returns false (or that a subsequent `loop.Submit()` returns an error). The point: Close() must reliably terminate the loop.\n\n3. `TestRuntime_NoAutoExit_IdleLoop`: Creates a Runtime (not a full Engine, using `NewRuntime`), waits 50ms doing nothing, then calls `rt.RunOnLoopSync` and verifies it succeeds. The point: an idle loop with WithAutoExit(false) stays alive without any timers or work queued.\n\nAll tests must use `skipSlow(t)` OR be short-safe (no timeouts > 100ms). Tests 1 and 3 should be fast enough to run in short mode; Test 2 also.\n\nAll tests must use `t.Parallel()`.\n\nVerification: `go test -short -v -run TestRuntime_Persistent ./internal/scripting/...` and `go test -short -v -run TestRuntime_Close ./internal/scripting/...` and `go test -short -v -run TestRuntime_NoAutoExit ./internal/scripting/...` all pass.",
-      "acceptance": "All three new tests exist and pass under `go test -short -race ./internal/scripting/...`. No flakiness. Tests would have FAILED before Task 1's fix (the persistent loop test would fail due to the startup race, the idle loop test would fail due to auto-exit). `make test-short` still passes end to end.",
+      "task": "Fix native async modules: fetch and exec Promisify integration",
+      "description": "Refactor osm:fetch and osm:exec to use loop.Promisify() for all background goroutines. \n- [internal/builtin/fetch/fetch.go]: Wrap the `go func()` in `jsFetch` with `adapter.Loop().Promisify(...)`.\n- [internal/builtin/fetch/readable_stream.go]: Wrap the pump goroutine in `Promisify` if it's not already covered.\n- [internal/builtin/fetch/sse.go]: Wrap the parser goroutine in `Promisify`.\n- [internal/builtin/exec/exec.go]: Wrap `child.Wait()` and `wrapReadableStream` pump goroutines in `Promisify`.\n- Verify: `go test -short ./internal/builtin/fetch/... ./internal/builtin/exec/...` passes.",
+      "acceptance": "Grep no longer finds bare `go func` blocks that call `loop.Submit` in these files. All background work is correctly tracked by the loop's `promisifyCount`.",
       "status": "Done"
     },
     {
-      "task": "Audit native async modules for raw goroutine + loop.Submit() anti-pattern (review Issue #6)",
-      "description": "Review Issue #6 states: any native module that starts a raw goroutine and later calls `loop.Submit(...)` — without using `loop.Promisify()` or another liveness-adding primitive — can lose work if auto-exit terminates the loop. While we've removed WithAutoExit(true), this is still a correctness concern: raw goroutines that submit to the loop race with `Close()` and can cause 'loop has been terminated' errors or silently drop work.\n\nSearch the codebase for the anti-pattern:\n  - `grep -r 'go func' ./internal/builtin/` combined with `loop.Submit` in the same file or nearby code.\n  - Pay special attention to: `internal/builtin/bubbletea/bubbletea.go`, `internal/builtin/bt/`, `internal/builtin/claudemux/`, `internal/builtin/termmux/`.\n  - For each raw goroutine that eventually calls `loop.Submit()` or `loop.SubmitInternal()`, determine whether it is correctly wrapped in `loop.Promisify(ctx, fn)` or holds a liveness-adding primitive.\n\nFor any confirmed anti-pattern:\n  - Replace the raw goroutine with `loop.Promisify(ctx, fn)` pattern.\n  - Write a test that verifies the async result arrives (not just that no panic occurs).\n\nIf no anti-patterns are found, write a brief `scratch/async-audit-result.md` documenting the search and confirming no issues were found. This file is a valid deliverable.",
-      "acceptance": "Either (a) confirmed no raw goroutine + loop.Submit() anti-patterns exist in internal/builtin/ (documented in scratch/async-audit-result.md), or (b) all anti-patterns have been replaced with loop.Promisify() and covered by tests. `make test-short` and `make lint` still pass.",
+      "task": "Fix native async modules: MCP and MCP Callback Promisify integration",
+      "description": "Refactor osm:mcp and osm:mcpcallback to use loop.Promisify().\n- [internal/builtin/mcpmod/mcp.go]: Wrap `server.Run` goroutine in `jsRun` with `s.loop.Promisify(...)`.\n- [internal/builtin/mcpcallbackmod/mcpcallback.go]: Wrap the listener, accept, and per-connection goroutines with `cb.loop.Promisify(...)` where they call back into the loop.\n- Verify: `go test -short ./internal/builtin/mcpmod/... ./internal/builtin/mcpcallbackmod/...` passes.",
+      "acceptance": "MCP server and callback lifecycles are represented in the loop's liveness count. `WithAutoExit` will wait for MCP servers to shut down naturally.",
       "status": "Done"
     },
     {
-      "task": "Reconcile README, architecture docs, and CHANGELOG with the runtime lifecycle fix",
-      "description": "After the runtime fix lands, update documentation that describes or implies WithAutoExit-based lifecycle.\n\nFiles to check and update:\n- `docs/architecture.md`: If it mentions async script draining, auto-exit, or quiescence-based lifecycle, update to accurately describe the persistent-loop model.\n- `docs/scripting.md`: If it describes script async behavior (e.g. 'setTimeout callbacks complete before the script exits'), update to accurately state that the persistent Runtime continues running async work in the background; the BubbleTea WaitForProgram() call is the sync point for TUI scripts.\n- `CHANGELOG.md`: Add an entry under Unreleased for the bug fix: 'fix: remove WithAutoExit(true) from persistent Runtime, eliminating startup race and false async-drain semantics'. Use the changelog-md skill to add the entry correctly.\n- `scratch/review.md` addressal: Confirm all 7 issues in scratch/review.md have been addressed or are explicitly deferred with reasoning. Write `scratch/review-response.md` mapping each issue to the task that addressed it.",
-      "acceptance": "No doc claims the persistent Runtime drains async work after ExecuteScript returns. CHANGELOG.md has an Unreleased entry for the fix. scratch/review-response.md exists and maps all 7 review issues to their resolutions. `make lint` still passes (lint includes vet, not docs, but confirms no regressions).",
+      "task": "Ensure BubbleTea always participates in loop liveness",
+      "description": "Refactor [internal/builtin/bubbletea/bubbletea.go] to make Promisify mandatory for `tea.run()`.\n- In `tea.run()` (line 2070+), remove the `if manager.promisify != nil` check and ensure the `manager.promisify(...)` path is always taken.\n- If `manager.promisify` is nil, it should be considered a configuration error (Engine should always provide it).\n- Verify: `go test -short ./internal/builtin/bubbletea/...` passes.",
+      "acceptance": "All BubbleTea programs started via `tea.run()` increment the loop's `promisifyCount` until they exit.",
       "status": "Done"
     },
     {
-      "task": "Establish the autopsy scope and claimed state for WithAutoExit-driven outer-loop shutdown",
-      "description": "Read the authoritative upstream material first: `go doc github.com/joeycumines/go-eventloop.WithAutoExit` plus the example program at `/Users/joeyc/dev/go-utilpkg/eventloop/examples/05_autoexit/main.go`. Then read one-shot-man's claimed-state documents and comments that frame lifecycle behavior: `README.md`, `docs/architecture.md`, `docs/scripting.md`, `docs/reference/tui-api.md`, `docs/reference/tui-lifecycle.md`, `CHANGELOG.md`, and lifecycle comments in `internal/scripting/runtime.go`, `internal/scripting/engine_core.go`, `internal/scripting/tui_manager.go`, `internal/builtin/register.go`, and `internal/builtin/bubbletea/bubbletea.go`. Produce a concrete claim inventory: what upstream auto-exit actually promises, what one-shot-man currently claims about persistent runtimes, BubbleTea blocking, go-prompt blocking, and Promise support, and what the user is asking the future architecture to guarantee (event loop as the outermost lifecycle boundary with auto-exit as the sole direct shutdown trigger). Log scope assumptions and immediate next step in `WIP.md`.",
-      "acceptance": "`WIP.md` records the autopsy boundary, the scratch output directory name, and the next action. The forthcoming report has enough first-hand evidence to distinguish upstream semantics from one-shot-man claims instead of mixing them together. Every major claim to be verified later is explicitly cataloged from source files rather than inferred from memory.",
+      "task": "Refactor Terminal and TUI Manager for shell liveness tracking",
+      "description": "The shell/prompt lifecycle must keep the event loop alive.\n- [internal/scripting/tui_manager.go]: Update `runAdvancedPrompt` to use `tm.engine.Promisify(...)` around the `p.RunNoExit()` call.\n- [internal/scripting/terminal.go]: Ensure `Terminal.Run()` doesn't exit until the loop finishes if it's the primary owner.\n- This ensures that while the user is in the interactive shell, `Loop.Alive()` is true.",
+      "acceptance": "An interactive session does not auto-exit as soon as it starts. Typing `exit` (which makes `p.RunNoExit()` return and thus the `Promisify` block finish) allows the loop to exit if no other work is pending.",
       "status": "Done"
     },
     {
-      "task": "Trace the actual lifecycle graph across command entrypoints, runtime execution, go-prompt, BubbleTea, termmux, and native async modules",
-      "description": "Read the concrete lifecycle code, not just the event-loop wrapper. Start at `cmd/osm/main.go` and the relevant command implementations under `internal/command/` that create an Engine and/or enter interactive modes (`script`, `goal`, `prompt-flow`, `pr-split`, and any helper that invokes `TUIManager.Run` or `Engine.ExecuteScript`). Then trace `internal/scripting/runtime.go`, `internal/scripting/engine_core.go`, `internal/scripting/tui_manager.go`, `internal/scripting/terminal_io*.go`, `internal/builtin/register.go`, `internal/builtin/bubbletea/bubbletea.go`, `internal/builtin/bt/bridge.go`, `internal/builtin/termmux/module.go`, and native async modules that rely on the adapter or loop (`exec`, `fetch`, `grpc`, `mcp`, `mcpcallback`, plus any goroutine + loop-submit paths found by search). For each subsystem, identify: who starts it, what goroutines it owns, what keeps it alive, how JS callbacks re-enter the VM, what blocks the caller, and what currently ends it. Run targeted corroborating commands/tests/examples where needed so the report includes observed behavior, not only static reading.",
-      "acceptance": "The report can name every major lifecycle that would need guaranteed overlap with the outer event loop, including the initial script invocation, Promise-backed native async work, go-prompt REPL execution, BubbleTea program execution, BT bridge callbacks, termmux sessions, and any background writer/listener goroutines. Any subsystem not analyzed is explicitly listed as such instead of being silently omitted.",
+      "task": "Switch to WithAutoExit(true) and fix startup race in Runtime",
+      "description": "The core architectural change.\n- [internal/scripting/runtime.go]:\n  - In `NewRuntimeRegistry`, add `goeventloop.WithAutoExit(true)` to `goeventloop.New(...)`.\n  - Move the `rt.loop.Submit(...)` for adapter initialization to happen BEFORE the `go rt.loop.Run(rt.ctx)` goroutine is started. This ensures work is visible to the loop on its first check.\n  - Remove the now-obsolete `ResolveLiveness()` and other persistent-loop workarounds (if any remain).\n- Verify: `go test -short ./internal/scripting/...` passes without 'loop has been terminated' errors.",
+      "acceptance": "Runtime uses WithAutoExit(true). Startup race is gone. `make test-short` passes.",
       "status": "Done"
     },
     {
-      "task": "Write the adversarial autopsy under scratch/eventloop-autoexit-autopsy-20260430",
-      "description": "Create a new directory under `scratch/` and write a README plus numbered markdown documents. The README must state the scope boundary, reading order, verdict, and caveats. The numbered docs must cover: how WithAutoExit actually works upstream; the current one-shot-man runtime anatomy; a comprehensive lifecycle inventory across command/runtime/TUI/native async layers; the gap analysis ranked by severity; red herrings and misleading current conclusions; kill conditions for a future auto-exit-driven outer-loop architecture; corroborating evidence from commands/tests/examples; and the final honest conclusions matrix (True / Uncertain / False). Every conclusion must trace back to concrete code locations and, where available, observed command/test output.",
-      "acceptance": "`scratch/eventloop-autoexit-autopsy-20260430/README.md` and the numbered markdown documents exist. The report is dense, evidence-backed, and explicitly answers what would be required to use `WithAutoExit` well as the sole direct shutdown trigger for an outermost event loop that encapsulates go-prompt, BubbleTea, and other async subsystems.",
-      "status": "In Progress"
+      "task": "Integrate auto-exit into Engine and Command execution",
+      "description": "Make the loop's natural exit the signal for program termination.\n- [internal/scripting/engine_core.go]: Add `Engine.Wait()` which blocks until the loop naturally returns from `Run()`.\n- [internal/command/scripting_command.go] (and others): Update `Execute` to call `engine.Wait()` after `ExecuteScript` (for non-interactive) or after `Terminal.Run()` (for interactive).\n- Ensure `Engine.Close()` is still called for cleanup but doesn't preemptively kill the loop during normal auto-exit flows.",
+      "acceptance": "A script that calls `setTimeout(() => console.log('done'), 100)` and then finishes its body naturally waits for the 'done' log and then the process exits. No manual `waitForAsyncWork` polling is needed.",
+      "status": "Done"
     },
     {
-      "task": "Run the Rule-of-Two review gate against the exact report diff and finalize session state",
-      "description": "After the report is drafted, load the `strict-review-gate` skill and run two serial subagent reviews against the exact scratch-report diff with no intervening code/report edits unless a reviewer finds an issue. If either review finds a substantive defect, fix it, update `WIP.md` and this blueprint, and restart the counter. Only after two contiguous clean passes may the autopsy tasks be marked done. Record the review outcomes so the final user response can quote the verification evidence directly.",
-      "acceptance": "Two contiguous issue-free reviews examine the same final diff. `WIP.md` captures the completed scope, any caveats, and the final next-step note (if any). The final response can summarize the blueprint state and both review-pass logs without hand-waving.",
-      "status": "Not Started"
+      "task": "Final Verification: Rule of Two and cross-platform checks",
+      "description": "Run comprehensive integration tests.\n- `make test` (long suite).\n- `make lint`.\n- Manual verification of: one-shot scripts with async, interactive shell, BubbleTea programs, and MCP bridges.\n- Verify on macOS, and ideally trigger CI for others.",
+      "acceptance": "Two contiguous issue-free #runSubagent reviews confirm the new architecture is robust and correctly handles all identified lifecycle edge cases.",
+      "status": "Done"
     }
-  ],
+    ],
   "continuousVerification": {
     "task": "Run make test-short and make lint after every significant change",
-    "description": "After every file edit: (1) go build ./... to catch compile errors immediately. (2) go test -short -race ./internal/scripting/... for the package under edit. (3) make test-short for full suite signal. (4) make lint before any commit.",
     "commands": {
       "build": "go build ./...",
-      "testPackage": "go test -short -race -count=1 ./internal/scripting/...",
+      "testPackage": "go test -short -race -count=1 ./internal/scripting/... ./internal/builtin/...",
       "testAll": "make test-short",
-      "lint": "make lint",
-      "raceCheck": "go test -race -short -count=1 ./internal/scripting/... ./internal/testutil/... ./internal/builtin/..."
-    },
-    "failPolicy": "If ANY test fails, STOP IMMEDIATELY. Fix the issue before proceeding. Zero tolerance for test failures, data races, or timing-dependent tests.",
-    "testCoverage": "New tests must exercise the actual code paths that were broken. A test that passes before and after the fix provides zero signal — tests must be written to fail before the fix and pass after."
-  },
-  "finalEnforcementProtocol": [
-    {
-      "type": "POST_EXECUTION_WARNING",
-      "alert": "THE STARTUP RACE IS THE PRIMARY BUG. The fix is: remove WithAutoExit(true). Do not invent a new keepalive mechanism. Do not use SubmitInternal as a drain. The persistent Runtime uses WithAutoExit(false) and lives until explicit Close()."
-    },
-    {
-      "type": "POST_EXECUTION_WARNING_REPEATED",
-      "alert": "RULE OF TWO IS MANDATORY. No commit without two contiguous clean subagent reviews on the exact same diff. Load strict-review-gate skill before any review. Load git-commit skill before any commit."
+      "lint": "make lint"
     }
-  ]
+  }
 }

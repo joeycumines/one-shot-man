@@ -27,13 +27,16 @@ import (
 // Callers can override via the maxResponseSize option.
 const defaultMaxResponseSize int64 = 10 << 20
 
+// PromisifyFunc is the signature for the event loop's Promisify method.
+type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise
+
 // Require returns a module loader for osm:fetch backed by the event loop adapter.
 // The adapter is required for Promise-based async fetch operations.
-func Require(adapter *gojaeventloop.Adapter) require.ModuleLoader {
+func Require(adapter *gojaeventloop.Adapter, promisify PromisifyFunc) require.ModuleLoader {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
-		_ = exports.Set("fetch", jsFetch(runtime, adapter))
-		_ = exports.Set("sseReader", jsSSEReader(runtime, adapter))
+		_ = exports.Set("fetch", jsFetch(runtime, adapter, promisify))
+		_ = exports.Set("sseReader", jsSSEReader(runtime, adapter, promisify))
 	}
 }
 
@@ -58,7 +61,7 @@ func Require(adapter *gojaeventloop.Adapter) require.ModuleLoader {
 //	headers    - Headers object with get/has/entries/keys/values/forEach
 //	text()     - returns Promise<string> with body as string
 //	json()     - returns Promise<any> with body parsed as JSON
-func jsFetch(runtime *goja.Runtime, adapter *gojaeventloop.Adapter) func(call goja.FunctionCall) goja.Value {
+func jsFetch(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify PromisifyFunc) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		url := call.Argument(0).String()
 		method, timeout, bodyReader, reqHeaders, signal, maxBody := parseOptions(call)
@@ -92,32 +95,43 @@ func jsFetch(runtime *goja.Runtime, adapter *gojaeventloop.Adapter) func(call go
 		req = req.WithContext(ctx)
 		promise, resolve, reject := adapter.JS().NewChainedPromise()
 
-		go func() {
+		// Wrap the HTTP request in Promisify to keep the event loop alive.
+		promisify(context.Background(), func(_ context.Context) (any, error) {
 			defer cancel()
 			client := &http.Client{}
 			resp, doErr := client.Do(req)
 			if doErr != nil {
-				reject(doErr)
-				return
+				_ = adapter.Loop().Submit(func() {
+					reject(doErr)
+				})
+				return nil, doErr
 			}
 
 			body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 			resp.Body.Close()
 			if readErr != nil {
-				reject(readErr)
-				return
+				_ = adapter.Loop().Submit(func() {
+					reject(readErr)
+				})
+				return nil, readErr
 			}
 			if int64(len(body)) > maxBody {
-				reject(fmt.Errorf("response body exceeds maximum size of %d bytes", maxBody))
-				return
+				err := fmt.Errorf("response body exceeds maximum size of %d bytes", maxBody)
+				_ = adapter.Loop().Submit(func() {
+					reject(err)
+				})
+				return nil, err
 			}
 
 			if submitErr := adapter.Loop().Submit(func() {
-				resolve(buildResponse(runtime, adapter, resp, body))
+				resolve(buildResponse(runtime, adapter, resp, body, promisify))
 			}); submitErr != nil {
-				reject(fmt.Errorf("event loop not running"))
+				_ = adapter.Loop().Submit(func() {
+					reject(fmt.Errorf("event loop not running"))
+				})
 			}
-		}()
+			return nil, nil
+		})
 
 		return adapter.GojaWrapPromise(promise)
 	}
@@ -126,7 +140,7 @@ func jsFetch(runtime *goja.Runtime, adapter *gojaeventloop.Adapter) func(call go
 // jsSSEReader returns a factory function: sseReader(body) → SSE reader object.
 // body must be a ReadableStream JS object (response.body).  The returned reader
 // has a read() method returning Promise<{value: {event, data, id}, done: boolean}>.
-func jsSSEReader(runtime *goja.Runtime, adapter *gojaeventloop.Adapter) func(call goja.FunctionCall) goja.Value {
+func jsSSEReader(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify PromisifyFunc) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		bodyArg := call.Argument(0)
 		if bodyArg == nil || goja.IsUndefined(bodyArg) || goja.IsNull(bodyArg) {
@@ -152,7 +166,7 @@ func jsSSEReader(runtime *goja.Runtime, adapter *gojaeventloop.Adapter) func(cal
 			panic(runtime.NewGoError(err))
 		}
 		parser := NewSSEParser(reader)
-		return wrapSSEParserJS(runtime, adapter, parser)
+		return wrapSSEParserJS(runtime, adapter, parser, promisify)
 	}
 }
 
@@ -228,7 +242,7 @@ func parseOptions(call goja.FunctionCall) (method string, timeout time.Duration,
 
 // buildResponse constructs the JS Response object with the full body buffered.
 // Must be called on the event loop goroutine.
-func buildResponse(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, resp *http.Response, body []byte) *goja.Object {
+func buildResponse(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, resp *http.Response, body []byte, promisify PromisifyFunc) *goja.Object {
 	result := runtime.NewObject()
 	_ = result.Set("status", resp.StatusCode)
 	_ = result.Set("ok", resp.StatusCode >= 200 && resp.StatusCode < 300)
@@ -238,8 +252,8 @@ func buildResponse(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, resp *
 
 	// body — ReadableStream backed by the already-buffered bytes.
 	// reader.read() returns Promise<{value: string, done: boolean}>.
-	stream := NewReadableStream(io.NopCloser(bytes.NewReader(body)))
-	_ = result.Set("body", wrapReadableStreamJS(runtime, adapter, stream))
+	stream := NewReadableStream(io.NopCloser(bytes.NewReader(body)), promisify)
+	_ = result.Set("body", wrapReadableStreamJS(runtime, adapter, stream, promisify))
 
 	// text() returns a Promise<string> that resolves with the body as a string.
 	// Since the body is fully buffered, the Promise resolves immediately.

@@ -9,7 +9,7 @@ import (
 func TestSSEParser_SingleEvent(t *testing.T) {
 	t.Parallel()
 	input := "data: hello world\n\n"
-	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)))
+	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)), nil)
 	reader, err := rs.GetReader()
 	if err != nil {
 		t.Fatalf("GetReader: %v", err)
@@ -44,7 +44,7 @@ func TestSSEParser_SingleEvent(t *testing.T) {
 func TestSSEParser_MultipleEvents(t *testing.T) {
 	t.Parallel()
 	input := "data: first\n\ndata: second\n\ndata: third\n\n"
-	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)))
+	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)), nil)
 	reader, err := rs.GetReader()
 	if err != nil {
 		t.Fatalf("GetReader: %v", err)
@@ -77,7 +77,7 @@ func TestSSEParser_MultipleEvents(t *testing.T) {
 func TestSSEParser_CustomEventType(t *testing.T) {
 	t.Parallel()
 	input := "event: update\ndata: payload\n\n"
-	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)))
+	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)), nil)
 	reader, err := rs.GetReader()
 	if err != nil {
 		t.Fatalf("GetReader: %v", err)
@@ -103,7 +103,7 @@ func TestSSEParser_CustomEventType(t *testing.T) {
 func TestSSEParser_MultiLineData(t *testing.T) {
 	t.Parallel()
 	input := "data: line1\ndata: line2\ndata: line3\n\n"
-	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)))
+	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)), nil)
 	reader, err := rs.GetReader()
 	if err != nil {
 		t.Fatalf("GetReader: %v", err)
@@ -126,7 +126,7 @@ func TestSSEParser_MultiLineData(t *testing.T) {
 func TestSSEParser_IDField(t *testing.T) {
 	t.Parallel()
 	input := "id: 42\ndata: with-id\n\n"
-	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)))
+	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)), nil)
 	reader, err := rs.GetReader()
 	if err != nil {
 		t.Fatalf("GetReader: %v", err)
@@ -143,7 +143,7 @@ func TestSSEParser_IDField(t *testing.T) {
 func TestSSEParser_IDPersistsAcrossEvents(t *testing.T) {
 	t.Parallel()
 	input := "id: 1\ndata: first\n\ndata: second\n\n"
-	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)))
+	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)), nil)
 	reader, err := rs.GetReader()
 	if err != nil {
 		t.Fatalf("GetReader: %v", err)
@@ -164,7 +164,7 @@ func TestSSEParser_IDPersistsAcrossEvents(t *testing.T) {
 func TestSSEParser_CommentLines(t *testing.T) {
 	t.Parallel()
 	input := ": this is a comment\ndata: visible\n\n"
-	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)))
+	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)), nil)
 	reader, err := rs.GetReader()
 	if err != nil {
 		t.Fatalf("GetReader: %v", err)
@@ -187,7 +187,7 @@ func TestSSEParser_CommentLines(t *testing.T) {
 func TestSSEParser_CRLFDelimiters(t *testing.T) {
 	t.Parallel()
 	input := "data: crlf\r\n\r\n"
-	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)))
+	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)), nil)
 	reader, err := rs.GetReader()
 	if err != nil {
 		t.Fatalf("GetReader: %v", err)
@@ -209,7 +209,7 @@ func TestSSEParser_CRLFDelimiters(t *testing.T) {
 
 func TestSSEParser_EmptyStream(t *testing.T) {
 	t.Parallel()
-	rs := NewReadableStream(io.NopCloser(strings.NewReader("")))
+	rs := NewReadableStream(io.NopCloser(strings.NewReader("")), nil)
 	reader, err := rs.GetReader()
 	if err != nil {
 		t.Fatalf("GetReader: %v", err)
@@ -230,7 +230,7 @@ func TestSSEParser_NoTrailingNewline(t *testing.T) {
 	t.Parallel()
 	// Stream ends without a trailing blank line — should still flush.
 	input := "data: unterminated"
-	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)))
+	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)), nil)
 	reader, err := rs.GetReader()
 	if err != nil {
 		t.Fatalf("GetReader: %v", err)
@@ -253,7 +253,7 @@ func TestSSEParser_NoTrailingNewline(t *testing.T) {
 func TestSSEParser_DataWithColonInValue(t *testing.T) {
 	t.Parallel()
 	input := "data: key:value:extra\n\n"
-	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)))
+	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)), nil)
 	reader, err := rs.GetReader()
 	if err != nil {
 		t.Fatalf("GetReader: %v", err)
@@ -272,7 +272,7 @@ func TestSSEParser_FieldWithNoColon(t *testing.T) {
 	// A line with no colon is treated as a field name with empty value.
 	// "data" with no colon means empty data line.
 	input := "data\n\n"
-	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)))
+	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)), nil)
 	reader, err := rs.GetReader()
 	if err != nil {
 		t.Fatalf("GetReader: %v", err)
@@ -296,7 +296,7 @@ func TestSSEParser_LeadingSpaceStripped(t *testing.T) {
 	t.Parallel()
 	// Per spec, a single leading space after the colon is stripped.
 	input := "data: hello\ndata:  two-spaces\ndata:no-space\n\n"
-	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)))
+	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)), nil)
 	reader, err := rs.GetReader()
 	if err != nil {
 		t.Fatalf("GetReader: %v", err)
@@ -318,7 +318,7 @@ func TestSSEParser_BlankLinesWithoutData(t *testing.T) {
 	t.Parallel()
 	// Multiple blank lines should not produce events if no data was accumulated.
 	input := "\n\n\ndata: after-blanks\n\n"
-	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)))
+	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)), nil)
 	reader, err := rs.GetReader()
 	if err != nil {
 		t.Fatalf("GetReader: %v", err)
@@ -341,7 +341,7 @@ func TestSSEParser_BlankLinesWithoutData(t *testing.T) {
 func TestSSEParser_RetryField(t *testing.T) {
 	t.Parallel()
 	input := "retry: 3000\ndata: with-retry\n\n"
-	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)))
+	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)), nil)
 	reader, err := rs.GetReader()
 	if err != nil {
 		t.Fatalf("GetReader: %v", err)
@@ -368,7 +368,7 @@ func TestSSEParser_IDWithNullByte(t *testing.T) {
 	t.Parallel()
 	// Per spec, id fields containing null bytes are ignored.
 	input := "id: bad\x00id\ndata: test\n\n"
-	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)))
+	rs := NewReadableStream(io.NopCloser(strings.NewReader(input)), nil)
 	reader, err := rs.GetReader()
 	if err != nil {
 		t.Fatalf("GetReader: %v", err)
@@ -391,7 +391,7 @@ func TestSSEParser_CRLFAcrossChunkBoundary(t *testing.T) {
 	chunk2 := "\n\ndata: world\n\n"
 
 	pr, pw := io.Pipe()
-	rs := NewReadableStream(pr)
+	rs := NewReadableStream(pr, nil)
 
 	go func() {
 		_, _ = pw.Write([]byte(chunk1))

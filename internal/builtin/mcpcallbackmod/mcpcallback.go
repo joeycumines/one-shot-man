@@ -128,12 +128,15 @@ func (cb *mcpCallback) injectToolResult(toolName string, data json.RawMessage) e
 	return nil
 }
 
+// PromisifyFunc is the signature for the event loop's Promisify method.
+type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise
+
 // Require returns a module loader for the osm:mcpcallback module.
 // The adapter and loop are used for thread-safe JS callback invocation.
-func Require(adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) require.ModuleLoader {
+func Require(adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, promisify PromisifyFunc) require.ModuleLoader {
 	return func(rt *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
-		_ = exports.Set("MCPCallback", jsCallbackFactory(rt, adapter, loop))
+		_ = exports.Set("MCPCallback", jsCallbackFactory(rt, adapter, loop, promisify))
 	}
 }
 
@@ -146,7 +149,7 @@ func Require(adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) require.Mod
 //	await cb.init();
 //	// cb.address, cb.scriptPath, cb.transport, cb.mcpConfigPath available
 //	await cb.close();
-func jsCallbackFactory(rt *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop) func(call goja.FunctionCall) goja.Value {
+func jsCallbackFactory(rt *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, promisify PromisifyFunc) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		opts := call.Argument(0)
 		if opts == nil || goja.IsUndefined(opts) || goja.IsNull(opts) {
@@ -196,6 +199,7 @@ func jsCallbackFactory(rt *goja.Runtime, adapter *gojaeventloop.Adapter, loop *g
 			loop:      loop,
 			runtime:   rt,
 			parentCtx: parentCtx,
+			promisify: promisify,
 		}
 
 		// Build JS object with methods and read-only property getters
@@ -257,6 +261,7 @@ type mcpCallback struct {
 	loop      *goeventloop.Loop
 	runtime   *goja.Runtime
 	parentCtx context.Context // optional parent context; nil = context.Background()
+	promisify PromisifyFunc
 
 	mu            sync.Mutex
 	initialized   bool
@@ -294,7 +299,7 @@ func (cb *mcpCallback) jsInit() func(call goja.FunctionCall) goja.Value {
 
 		promise, resolve, reject := cb.adapter.JS().NewChainedPromise()
 
-		go func() {
+		cb.promisify(context.Background(), func(ctx context.Context) (any, error) {
 			if err := cb.startListener(); err != nil {
 				cb.cleanup()
 				cb.mu.Lock()
@@ -303,7 +308,7 @@ func (cb *mcpCallback) jsInit() func(call goja.FunctionCall) goja.Value {
 				if submitErr := cb.loop.Submit(func() { reject(err) }); submitErr != nil {
 					// Event loop gone — nothing to do
 				}
-				return
+				return nil, err
 			}
 
 			if err := cb.generateFiles(); err != nil {
@@ -314,7 +319,7 @@ func (cb *mcpCallback) jsInit() func(call goja.FunctionCall) goja.Value {
 				if submitErr := cb.loop.Submit(func() { reject(err) }); submitErr != nil {
 					// Event loop gone
 				}
-				return
+				return nil, err
 			}
 
 			// Start accept loop for MCP connections.
@@ -323,18 +328,21 @@ func (cb *mcpCallback) jsInit() func(call goja.FunctionCall) goja.Value {
 			if parent == nil {
 				parent = context.Background()
 			}
-			ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
+			nctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
 			cb.mu.Lock()
 			cb.stop = stop
-			cb.ctx = ctx
+			cb.ctx = nctx
 			listener := cb.listener
 			cb.mu.Unlock()
 
-			go cb.acceptLoop(ctx, listener)
+			cb.promisify(nctx, func(ctx context.Context) (any, error) {
+				cb.acceptLoop(ctx, listener)
+				return nil, nil
+			})
 
 			// Watch for context cancellation (signal or parent cancel) and auto-cleanup.
-			go func() {
-				<-ctx.Done()
+			cb.promisify(context.Background(), func(ctx context.Context) (any, error) {
+				<-nctx.Done()
 				cb.mu.Lock()
 				alreadyClosed := cb.closed
 				cb.closed = true
@@ -342,7 +350,8 @@ func (cb *mcpCallback) jsInit() func(call goja.FunctionCall) goja.Value {
 				if !alreadyClosed {
 					cb.cleanup()
 				}
-			}()
+				return nil, nil
+			})
 
 			// Notify test watchers that a callback is ready for injection.
 			notifyWatchers(cb)
@@ -353,7 +362,8 @@ func (cb *mcpCallback) jsInit() func(call goja.FunctionCall) goja.Value {
 			}); submitErr != nil {
 				// Event loop gone
 			}
-		}()
+			return nil, nil
+		})
 
 		return cb.adapter.GojaWrapPromise(promise)
 	}
@@ -526,7 +536,7 @@ func (cb *mcpCallback) acceptLoop(ctx context.Context, listener net.Listener) {
 
 		// Serve MCP on this connection in a dedicated goroutine.
 		// Each connection gets its own Transport (SDK requirement: one Transport per Connect call).
-		go func() {
+		cb.promisify(ctx, func(ctx context.Context) (any, error) {
 			defer conn.Close()
 			transport := &mcp.IOTransport{
 				Reader: conn,
@@ -535,12 +545,13 @@ func (cb *mcpCallback) acceptLoop(ctx context.Context, listener net.Listener) {
 			session, sErr := cb.server.Connect(ctx, transport, nil)
 			if sErr != nil {
 				mcpCallbackDebugf("MCP server.Connect error: %v", sErr)
-				return
+				return nil, sErr
 			}
 			mcpCallbackDebugf("MCP session established, waiting...")
 			waitErr := session.Wait()
 			mcpCallbackDebugf("MCP session ended: %v", waitErr)
-		}()
+			return nil, waitErr
+		})
 	}
 }
 
@@ -563,7 +574,7 @@ func (cb *mcpCallback) jsClose() func(call goja.FunctionCall) goja.Value {
 
 		promise, resolve, _ := cb.adapter.JS().NewChainedPromise()
 
-		go func() {
+		cb.promisify(context.Background(), func(ctx context.Context) (any, error) {
 			cb.cleanup()
 
 			if submitErr := cb.loop.Submit(func() {
@@ -571,7 +582,8 @@ func (cb *mcpCallback) jsClose() func(call goja.FunctionCall) goja.Value {
 			}); submitErr != nil {
 				// Event loop gone
 			}
-		}()
+			return nil, nil
+		})
 
 		return cb.adapter.GojaWrapPromise(promise)
 	}
@@ -737,18 +749,21 @@ func (cb *mcpCallback) jsInitSync() func(call goja.FunctionCall) goja.Value {
 		if parent == nil {
 			parent = context.Background()
 		}
-		ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
+		nctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
 		cb.mu.Lock()
 		cb.stop = stop
-		cb.ctx = ctx
+		cb.ctx = nctx
 		listener := cb.listener
 		cb.mu.Unlock()
 
-		go cb.acceptLoop(ctx, listener)
+		cb.promisify(nctx, func(ctx context.Context) (any, error) {
+			cb.acceptLoop(ctx, listener)
+			return nil, nil
+		})
 
 		// Auto-cleanup on context cancellation
-		go func() {
-			<-ctx.Done()
+		cb.promisify(context.Background(), func(ctx context.Context) (any, error) {
+			<-nctx.Done()
 			cb.mu.Lock()
 			alreadyClosed := cb.closed
 			cb.closed = true
@@ -756,7 +771,8 @@ func (cb *mcpCallback) jsInitSync() func(call goja.FunctionCall) goja.Value {
 			if !alreadyClosed {
 				cb.cleanup()
 			}
-		}()
+			return nil, nil
+		})
 
 		// Notify test watchers that a callback is ready for injection.
 		notifyWatchers(cb)
@@ -938,12 +954,12 @@ func (cb *mcpCallback) jsWaitForAsync() func(call goja.FunctionCall) goja.Value 
 
 		// Get cancellation context
 		cb.mu.Lock()
-		ctx := cb.ctx
+		nctx := cb.ctx
 		cb.mu.Unlock()
 
 		promise, resolve, _ := cb.adapter.JS().NewChainedPromise()
 
-		go func() {
+		cb.promisify(context.Background(), func(_ context.Context) (any, error) {
 			timeout := time.Duration(timeoutMs) * time.Millisecond
 			deadline := time.NewTimer(timeout)
 			defer deadline.Stop()
@@ -957,8 +973,8 @@ func (cb *mcpCallback) jsWaitForAsync() func(call goja.FunctionCall) goja.Value 
 
 			// Pre-compute context done channel to avoid IIFE per iteration
 			var ctxDone <-chan struct{}
-			if ctx != nil {
-				ctxDone = ctx.Done()
+			if nctx != nil {
+				ctxDone = nctx.Done()
 			} else {
 				ctxDone = make(chan struct{}) // never fires
 			}
@@ -991,11 +1007,11 @@ func (cb *mcpCallback) jsWaitForAsync() func(call goja.FunctionCall) goja.Value 
 					if len(data) > 0 {
 						if err := json.Unmarshal(data, &parsed); err != nil {
 							resolveOnLoop(nil, "waitForAsync: failed to parse tool data: "+err.Error())
-							return
+							return nil, err
 						}
 					}
 					resolveOnLoop(parsed, "")
-					return
+					return nil, nil
 
 				case <-ticker.C:
 					// Alive check — trampoline to event loop goroutine for Goja safety
@@ -1006,20 +1022,20 @@ func (cb *mcpCallback) jsWaitForAsync() func(call goja.FunctionCall) goja.Value 
 							aliveCh <- (callErr != nil || ret.ToBoolean())
 						}); submitErr != nil {
 							resolveOnLoop(nil, "event loop terminated during wait for "+name)
-							return
+							return nil, submitErr
 						}
 						select {
 						case alive := <-aliveCh:
 							if !alive {
 								resolveOnLoop(nil, "process exited during wait for "+name)
-								return
+								return nil, errors.New("process exited")
 							}
 						case <-deadline.C:
 							resolveOnLoop(nil, fmt.Sprintf("timeout waiting for %s after %dms", name, capturedTimeoutMs))
-							return
+							return nil, errors.New("timeout")
 						case <-ctxDone:
 							resolveOnLoop(nil, "MCPCallback closed during wait for "+name)
-							return
+							return nil, errors.New("closed")
 						}
 					}
 
@@ -1035,14 +1051,14 @@ func (cb *mcpCallback) jsWaitForAsync() func(call goja.FunctionCall) goja.Value 
 
 				case <-deadline.C:
 					resolveOnLoop(nil, fmt.Sprintf("timeout waiting for %s after %dms", name, capturedTimeoutMs))
-					return
+					return nil, errors.New("timeout")
 
 				case <-ctxDone:
 					resolveOnLoop(nil, "MCPCallback closed during wait for "+name)
-					return
+					return nil, errors.New("closed")
 				}
 			}
-		}()
+		})
 
 		return cb.adapter.GojaWrapPromise(promise)
 	}

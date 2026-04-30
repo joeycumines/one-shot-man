@@ -41,7 +41,7 @@ func setupRunnerTest(t *testing.T) bubbletea.JSRunner {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
 
-	bridge := bt.NewBridgeWithEventLoop(ctx, loop, vm, registry)
+	bridge := bt.NewBridgeWithEventLoop(ctx, loop, vm, registry, loop.Promisify)
 	t.Cleanup(bridge.Stop)
 
 	return bridge
@@ -300,7 +300,7 @@ func TestJSRunner_StoppedBridgeReturnsError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
 
-	bridge := bt.NewBridgeWithEventLoop(ctx, loop, vm, registry)
+	bridge := bt.NewBridgeWithEventLoop(ctx, loop, vm, registry, loop.Promisify)
 
 	var jsRunner bubbletea.JSRunner = bridge
 

@@ -745,7 +745,14 @@ func (tm *TUIManager) Run() {
 	})
 	// Flush any pending output (e.g., from onEnter) before starting prompt
 	tm.flushQueuedOutput()
-	tm.runAdvancedPrompt()
+
+	// Use Promisify to keep the event loop alive while the shell is active.
+	// This ensures that WithAutoExit(true) won't terminate the loop while
+	// the user is interacting with the prompt.
+	tm.engine.Promisify(context.Background(), func(_ context.Context) (any, error) {
+		tm.runAdvancedPrompt()
+		return nil, nil
+	})
 }
 
 // runAdvancedPrompt runs a go-prompt instance with default configuration.

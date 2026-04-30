@@ -76,7 +76,7 @@ func loadModules(t *testing.T, p *testutil.TestEventLoopProvider) {
 		_ = vm.Set("mcpMod", mcpExports)
 
 		// Load osm:mcpcallback module
-		cbLoader := Require(p.Adapter(), p.Loop())
+		cbLoader := Require(p.Adapter(), p.Loop(), p.Promisify)
 		cbModule := vm.NewObject()
 		cbExports := vm.NewObject()
 		_ = cbModule.Set("exports", cbExports)

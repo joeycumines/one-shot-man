@@ -1,4 +1,3 @@
-// Package scripting provides the core JS execution engine and TUI management.
 package scripting
 
 import (

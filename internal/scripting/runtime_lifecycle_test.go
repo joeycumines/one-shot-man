@@ -81,10 +81,13 @@ func TestRuntime_Close_TerminatesLoop(t *testing.T) {
 	}
 }
 
-// TestRuntime_NoAutoExit_IdleLoop verifies that an idle Runtime loop stays
-// alive without any timers or work queued. Under the old WithAutoExit(true)
-// design, an idle loop could exit prematurely and reject subsequent submissions.
-func TestRuntime_NoAutoExit_IdleLoop(t *testing.T) {
+// TestRuntime_AutoExitWithBootstrapToken_IdleLoopSurvives verifies that an idle
+// Runtime loop stays alive without any timers or work queued. The loop uses
+// WithAutoExit(true) but holds a bootstrap token (via Promisify) during the
+// initialization phase to prevent premature auto-exit. The token is only released
+// when Close() or Wait() is called, allowing the loop to stay alive indefinitely
+// for long-running applications.
+func TestRuntime_AutoExitWithBootstrapToken_IdleLoopSurvives(t *testing.T) {
 	t.Parallel()
 
 	rt, err := NewRuntime(context.Background())
@@ -93,14 +96,14 @@ func TestRuntime_NoAutoExit_IdleLoop(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = rt.Close() })
 
-	// Wait briefly to give the loop an opportunity to auto-exit (if it were
-	// mistakenly configured with WithAutoExit(true) and no keepalive work).
+	// Wait briefly to give the loop an opportunity to auto-exit.
+	// The bootstrap token should prevent exit even with WithAutoExit(true).
 	time.Sleep(50 * time.Millisecond)
 
 	// The loop must still be alive and accept work.
 	if err := rt.RunOnLoopSync(func(_ *goja.Runtime) error {
 		return nil
 	}); err != nil {
-		t.Errorf("RunOnLoopSync on idle loop failed: %v (loop may have auto-exited)", err)
+		t.Errorf("RunOnLoopSync on idle loop failed: %v (bootstrap token may not be working)", err)
 	}
 }

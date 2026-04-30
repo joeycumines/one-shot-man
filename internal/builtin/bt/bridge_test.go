@@ -49,7 +49,7 @@ func testBridge(t *testing.T) *Bridge {
 		loop.Shutdown(context.Background())
 	})
 
-	bridge := NewBridgeWithEventLoop(ctx, loop, vm, reg, loop.Promisify)
+	bridge := NewBridgeWithEventLoop(ctx, loop, vm, reg)
 	t.Cleanup(func() {
 		bridge.Stop()
 	})
@@ -103,7 +103,7 @@ func testBridgeWithManualShutdown(t *testing.T) (*Bridge, func()) {
 	go loop.Run(loopCtx)
 
 	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, vm, reg, loop.Promisify)
+	bridge := NewBridgeWithEventLoop(ctx, loop, vm, reg)
 
 	stopLoop := func() {
 		loopCancel()
@@ -179,7 +179,7 @@ func TestBridge_ContextCancellation(t *testing.T) {
 		loop.Shutdown(context.Background())
 	})
 
-	bridge := NewBridgeWithEventLoop(ctx, loop, vm, reg, loop.Promisify)
+	bridge := NewBridgeWithEventLoop(ctx, loop, vm, reg)
 	require.True(t, bridge.IsRunning())
 
 	// Cancel context
@@ -235,7 +235,7 @@ func TestBridge_RunOnLoopAfterStop(t *testing.T) {
 	}()
 
 	ctx := context.Background()
-	bridge := NewBridgeWithEventLoop(ctx, loop, vm, reg, loop.Promisify)
+	bridge := NewBridgeWithEventLoop(ctx, loop, vm, reg)
 
 	bridge.Stop()
 

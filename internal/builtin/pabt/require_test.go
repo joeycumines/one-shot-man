@@ -42,7 +42,7 @@ func testBridge(t *testing.T) *btmod.Bridge {
 	})
 
 	ctx := context.Background()
-	bridge := btmod.NewBridgeWithEventLoop(ctx, loop, vm, reg, loop.Promisify)
+	bridge := btmod.NewBridgeWithEventLoop(ctx, loop, vm, reg)
 	t.Cleanup(func() {
 		bridge.Stop()
 	})

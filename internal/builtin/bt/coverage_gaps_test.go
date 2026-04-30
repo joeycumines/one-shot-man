@@ -932,7 +932,7 @@ func TestBridge_NewBridgeWithEventLoop_NilLoopPanic(t *testing.T) {
 	t.Parallel()
 
 	assert.PanicsWithValue(t, "event loop must not be nil", func() {
-		NewBridgeWithEventLoop(context.Background(), nil, nil, nil, nil)
+		NewBridgeWithEventLoop(context.Background(), nil, nil, nil)
 	})
 }
 

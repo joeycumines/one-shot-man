@@ -21,19 +21,25 @@ import (
 const toolHandlerTimeout = 30 * time.Second
 
 // PromisifyFunc is the signature for the event loop's Promisify method.
+// Stored in internal data structures for easier mocking in tests.
 type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise
 
 // Require returns a module loader for the osm:mcp module.
-// The adapter and loop are used for thread-safe JS callback invocation.
-func Require(adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, promisify PromisifyFunc) require.ModuleLoader {
+// The adapter is used for thread-safe JS callback invocation and Promisify support.
+// If adapter is nil, the module loads but createServer is unavailable — matching exec.go behavior.
+func Require(adapter *gojaeventloop.Adapter) require.ModuleLoader {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
-		_ = exports.Set("createServer", jsCreateServer(runtime, adapter, loop, promisify))
+		// Guard against nil adapter to prevent segfault at module load time.
+		// exec.go uses the same pattern: the module loads but spawn is unavailable.
+		if adapter != nil {
+			_ = exports.Set("createServer", jsCreateServer(runtime, adapter, adapter.Loop().Promisify))
+		}
 	}
 }
 
 // jsCreateServer returns the JS function: createServer(name, version) → server object
-func jsCreateServer(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, promisify PromisifyFunc) func(call goja.FunctionCall) goja.Value {
+func jsCreateServer(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, promisify PromisifyFunc) func(call goja.FunctionCall) goja.Value {
 	return func(call goja.FunctionCall) goja.Value {
 		name := call.Argument(0).String()
 		version := ""
@@ -47,11 +53,9 @@ func jsCreateServer(runtime *goja.Runtime, adapter *gojaeventloop.Adapter, loop 
 		}, nil)
 
 		s := &mcpServer{
-			server:    srv,
-			adapter:   adapter,
-			loop:      loop,
-			runtime:   runtime,
-			promisify: promisify,
+			server:  srv,
+			adapter: adapter,
+			runtime: runtime,
 		}
 
 		obj := runtime.NewObject()
@@ -80,12 +84,11 @@ type handlerResult struct {
 }
 
 // mcpServer wraps a Go MCP server for JS access.
+// adapter is required; loop and promisify are derived at call time.
 type mcpServer struct {
-	server    *mcp.Server
-	adapter   *gojaeventloop.Adapter
-	loop      *goeventloop.Loop
-	runtime   *goja.Runtime
-	promisify PromisifyFunc
+	server  *mcp.Server
+	adapter *gojaeventloop.Adapter
+	runtime *goja.Runtime
 
 	mu      sync.Mutex
 	running bool
@@ -150,7 +153,7 @@ func (s *mcpServer) makeToolHandler(handler goja.Callable) mcp.ToolHandler {
 		resultCh := make(chan handlerResult, 1)
 
 		// Schedule JS callback on event loop thread (goja.Runtime is not thread-safe)
-		if err := s.loop.Submit(func() {
+		if err := s.adapter.Loop().Submit(func() {
 			// Parse raw arguments to a JS object
 			var args any
 			if req.Params.Arguments != nil {
@@ -342,15 +345,15 @@ func (s *mcpServer) jsRun() func(call goja.FunctionCall) goja.Value {
 		// Create promise for async run
 		promise, resolve, reject := s.adapter.JS().NewChainedPromise()
 
-		s.promisify(context.Background(), func(_ context.Context) (any, error) {
+		s.adapter.Loop().Promisify(context.Background(), func(_ context.Context) (any, error) {
 			err := s.server.Run(ctx, &mcp.StdioTransport{})
 			if err != nil && !errors.Is(err, context.Canceled) {
-				_ = s.loop.Submit(func() {
+				_ = s.adapter.Loop().Submit(func() {
 					reject(err)
 				})
 				return nil, err
 			} else {
-				if submitErr := s.loop.Submit(func() {
+				if submitErr := s.adapter.Loop().Submit(func() {
 					resolve(goja.Undefined())
 				}); submitErr != nil {
 					// Event loop gone — nothing to do

@@ -55,11 +55,11 @@ func prSplitTestEnv(t *testing.T) (*btmod.Bridge, func(string) goja.Value) {
 	})
 
 	ctx := context.Background()
-	bridge := btmod.NewBridgeWithEventLoop(ctx, loop, vm, reg, loop.Promisify)
+	bridge := btmod.NewBridgeWithEventLoop(ctx, loop, vm, reg)
 	t.Cleanup(func() { bridge.Stop() })
 
 	// Register exec module (bt is auto-registered by bridge).
-	reg.RegisterNativeModule("osm:exec", execmod.Require(ctx, nil, nil))
+	reg.RegisterNativeModule("osm:exec", execmod.Require(ctx, nil))
 
 	// Register claudemux module for strategy selection.
 	reg.RegisterNativeModule("osm:claudemux", Require(ctx))

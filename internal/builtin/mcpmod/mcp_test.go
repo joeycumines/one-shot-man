@@ -30,7 +30,7 @@ func loadModule(t *testing.T, p *testutil.TestEventLoopProvider) {
 	t.Helper()
 	runOnLoop(t, p, func() {
 		vm := p.Runtime()
-		loader := Require(p.Adapter(), p.Loop(), p.Promisify)
+		loader := Require(p.Adapter())
 		module := vm.NewObject()
 		exports := vm.NewObject()
 		_ = module.Set("exports", exports)
@@ -255,7 +255,6 @@ func TestConvertJSResult(t *testing.T) {
 		s := &mcpServer{
 			runtime: vm,
 			adapter: adapter,
-			loop:    p.Loop(),
 		}
 
 		tests := []struct {
@@ -350,7 +349,6 @@ func TestMakeToolHandler_SyncHandler(t *testing.T) {
 		s := &mcpServer{
 			runtime: vm,
 			adapter: p.Adapter(),
-			loop:    p.Loop(),
 		}
 
 		// Define JS function: function(input) { return { text: 'hello ' + input.name }; }
@@ -407,7 +405,6 @@ func TestMakeToolHandler_ErrorPropagation(t *testing.T) {
 		s := &mcpServer{
 			runtime: vm,
 			adapter: p.Adapter(),
-			loop:    p.Loop(),
 		}
 
 		fn, err := vm.RunString(`(function(input) { throw new Error('handler boom'); })`)
@@ -444,7 +441,6 @@ func TestMakeToolHandler_PromiseHandler(t *testing.T) {
 		s := &mcpServer{
 			runtime: vm,
 			adapter: p.Adapter(),
-			loop:    p.Loop(),
 		}
 
 		// Async handler that resolves after a microtask
@@ -499,7 +495,6 @@ func TestMakeToolHandler_ContextCancellation(t *testing.T) {
 		s := &mcpServer{
 			runtime: vm,
 			adapter: p.Adapter(),
-			loop:    p.Loop(),
 		}
 
 		// Handler that never returns (blocks forever via a pending promise)

@@ -129,14 +129,20 @@ func (cb *mcpCallback) injectToolResult(toolName string, data json.RawMessage) e
 }
 
 // PromisifyFunc is the signature for the event loop's Promisify method.
+// Stored in internal data structures for easier mocking in tests.
 type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise
 
 // Require returns a module loader for the osm:mcpcallback module.
-// The adapter and loop are used for thread-safe JS callback invocation.
-func Require(adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, promisify PromisifyFunc) require.ModuleLoader {
+// The adapter is used for thread-safe JS callback invocation and Promisify support.
+// If adapter is nil, the module loads but MCPCallback is unavailable — matching exec.go behavior.
+func Require(adapter *gojaeventloop.Adapter) require.ModuleLoader {
 	return func(rt *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
-		_ = exports.Set("MCPCallback", jsCallbackFactory(rt, adapter, loop, promisify))
+		// Guard against nil adapter to prevent segfault at module load time.
+		// exec.go uses the same pattern: the module loads but spawn is unavailable.
+		if adapter != nil {
+			_ = exports.Set("MCPCallback", jsCallbackFactory(rt, adapter))
+		}
 	}
 }
 
@@ -149,7 +155,9 @@ func Require(adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, promisify P
 //	await cb.init();
 //	// cb.address, cb.scriptPath, cb.transport, cb.mcpConfigPath available
 //	await cb.close();
-func jsCallbackFactory(rt *goja.Runtime, adapter *gojaeventloop.Adapter, loop *goeventloop.Loop, promisify PromisifyFunc) func(call goja.FunctionCall) goja.Value {
+func jsCallbackFactory(rt *goja.Runtime, adapter *gojaeventloop.Adapter) func(call goja.FunctionCall) goja.Value {
+	loop := adapter.Loop()
+	promisify := adapter.Loop().Promisify
 	return func(call goja.FunctionCall) goja.Value {
 		opts := call.Argument(0)
 		if opts == nil || goja.IsUndefined(opts) || goja.IsNull(opts) {

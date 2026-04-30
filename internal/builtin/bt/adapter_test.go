@@ -694,7 +694,7 @@ func TestBridge_InitFailure_IsRunningFalse(t *testing.T) {
 	ctx := t.Context()
 
 	// Create bridge - this should succeed
-	bridge := NewBridgeWithEventLoop(ctx, loop, vm, nil, loop.Promisify)
+	bridge := NewBridgeWithEventLoop(ctx, loop, vm, nil)
 
 	// Verify bridge is running
 	require.True(t, bridge.IsRunning(), "Bridge should be running after creation")
@@ -739,7 +739,7 @@ func TestBridge_LifecycleInvariant_DoneClosedImpliesNotRunning(t *testing.T) {
 
 	ctx := t.Context()
 
-	bridge := NewBridgeWithEventLoop(ctx, loop, vm, nil, loop.Promisify)
+	bridge := NewBridgeWithEventLoop(ctx, loop, vm, nil)
 
 	// Start multiple goroutines to stress-test the invariant
 	const numGoroutines = 20

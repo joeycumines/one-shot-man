@@ -4,28 +4,24 @@
     "maintenanceInstruction": "KEEP THIS PLAN UP TO DATE AFTER EVERY SUB-STEP. LOG EVERY DEVIATION, DISCOVERY, AND REPLAN INSIDE THIS FILE BEFORE PROCEEDING. IF REALITY CHANGES, RE-READ THE RELEVANT CODE, THEN REWRITE THE AFFECTED TASKS IMMEDIATELY.",
     "completionPolicy": "NO ESTIMATES. NO PRIORITIES. EVERY TASK MUST INCLUDE ITS OWN REPRODUCTION, VALIDATION, STRICT-REVIEW-GATE PASSES, AND A SINGLE SELF-CONTAINED COMMIT BEFORE THE NEXT TASK BEGINS. WHEN THIS LIST IS EXHAUSTED, EXPAND IT AGAIN FROM EVIDENCE, NOT WISHFUL THINKING.",
     "sourceDocuments": [
+      "scratch/review.md",
       "scratch/eventloop-autoexit-autopsy-20260430/",
-      "internal/scripting/runtime.go",
-      "internal/scripting/engine_core.go",
-      "internal/scripting/terminal.go",
-      "internal/scripting/tui_manager.go",
-      "internal/builtin/bubbletea/bubbletea.go",
       "internal/builtin/fetch/fetch.go",
       "internal/builtin/exec/exec.go",
       "internal/builtin/mcpmod/mcp.go",
       "internal/builtin/mcpcallbackmod/mcpcallback.go",
-      "internal/builtin/bt/bridge.go"
+      "internal/builtin/register.go"
     ]
   },
   "globalAlerts": [
     {
-      "warning": "THE STARTUP RACE IS THE PRIMARY BUG. Fix: Submit initialization BEFORE loop.Run(ctx) when WithAutoExit(true) is enabled."
+      "warning": "CRITICAL BUG: fetch.go, mcp.go, mcpcallback.go evaluate adapter.Loop().Promisify UNCONDITIONALLY at module load time. If adapter is nil (valid in tests), this causes immediate segfault/panic. Reference: exec.go uses correct pattern: if adapter != nil { ... adapter.Loop().Promisify ... }"
     },
     {
-      "warning": "ASYNC DRAIN IS THE GOAL. All native async Go work MUST use loop.Promisify to be tracked by WithAutoExit. Bare goroutines + loop.Submit() will race with termination and fail."
+      "warning": "Architectural inconsistency in mcpcallback.go: jsCallbackFactory receives both adapter AND promisify, but derives loop from adapter internally. The promisify parameter is redundant since adapter.Loop().Promisify is available from adapter."
     },
     {
-      "warning": "SOLE EXIT TRIGGER: WithAutoExit(true) must become the primary way the program determines it is 'done' in interactive and scripting modes."
+      "warning": "DRY violation in mcp.go: mcpServer struct stores adapter, loop, AND promisify — all three are redundant since adapter.Loop() and adapter.Loop().Promisify can be derived at call time."
     }
   ],
   "mandatoryDirectives": {
@@ -33,71 +29,71 @@
     "toolingConstraints": "Use gmake on macOS. Primary signals: make test-short and make lint."
   },
   "statusSection": {
-    "currentState": "Implementation of WithAutoExit-driven architecture complete. All native modules refactored with Promisify. Core runtime, terminal, and commands updated to wait for natural loop exit. Short tests passing.",
-    "goalState": "one-shot-man uses WithAutoExit(true) as its sole normal-path exit trigger. All async work (shell, TUI, native modules) participates in loop liveness. The startup race is eliminated. Scripts and interactive sessions naturally exit when all work completes.",
+    "currentState": "All review.md findings addressed: fetch.go, mcp.go, mcpcallback.go all use if adapter != nil guards before adapter.Loop(). mcpcallback.jsCallbackFactory refactored to derive promisify internally. mcp.go mcpServer struct simplified to store only adapter. Rule of Two: TWO CONTIGUOUS ISSUE-FREE PASSES. Tests pass. Lint clean. Build succeeds.",
+    "goalState": "All native modules handle nil adapter gracefully. fetch.go, mcp.go, mcpcallback.go use the same guard pattern as exec.go. mcpcallback.go refactored to derive promisify from adapter internally (remove redundant parameter). mcp.go struct simplified to store only adapter (derive loop and promisify at call time). Two contiguous issue-free subagent reviews confirm all fixes.",
     "replanLog": [
       {
-        "trigger": "User directive for CONCRETE solution implementing WithAutoExit architecture.",
-        "affectedTasks": "Tasks 7-8 superseded by new implementation plan.",
-        "summary": "Full re-architecture plan established to move from persistent-runtime model back to auto-exiting model, but with comprehensive lifecycle tracking via Promisify."
+        "trigger": "User directive to address scratch/review.md findings via /blueprint-json",
+        "affectedTasks": "All tasks superseded — new plan focused on review.md critical defects",
+        "summary": "replan triggered by review.md: CRITICAL nil-pointer dereference bugs in fetch.go, mcp.go, mcpcallback.go. Need to apply the if adapter != nil guard pattern from exec.go. Secondary: architectural redundancy fixes in mcpcallback.go and mcp.go."
       }
     ]
   },
   "sequentialTasks": [
     {
-      "task": "Complete the adversarial autopsy report documents",
-      "description": "Finalize the scratch/eventloop-autoexit-autopsy-20260430 directory with the missing documents. \n- Create `04_gap_analysis.md`: Detailed breakdown of each subsystem from the inventory and why it's a blocker today.\n- Create `06_kill_conditions.md`: Falsifiable list of what MUST be true for auto-exit to be safe (Promisify everywhere, shell tracking, etc.).\n- Create `08_conclusions_matrix.md`: The final True/Uncertain/False verdict on the feasibility and required changes.\n- Create `README.md`: Scope, reading order, and summary of findings.",
-      "acceptance": "All numbered markdown documents (01-09) and README.md exist in the autopsy directory. They are evidence-backed and consistent with the code analyzed in the reconnaissance phase.",
+      "task": "Fix fetch.go nil adapter panic: add guard before adapter.Loop().Promisify",
+      "description": "In [internal/builtin/fetch/fetch.go], the Require function evaluates adapter.Loop().Promisify unconditionally at module load time (lines 39-40). If adapter is nil, this causes a segfault. Fix: wrap both exports.Set calls in if adapter != nil guard, matching the exec.go pattern at internal/builtin/exec/exec.go lines 76-78:\n\nif adapter != nil {\n    _ = exports.Set(\"fetch\", jsFetch(runtime, adapter, adapter.Loop().Promisify))\n    _ = exports.Set(\"sseReader\", jsSSEReader(runtime, adapter, adapter.Loop().Promisify))\n}\n\nNote: When adapter IS nil, the module still loads (exec is available, spawn is not). This matches expected behavior from pr_split_test.go which passes nil.",
+      "acceptance": "go test -short ./internal/builtin/fetch/... passes. The test that passes nil adapter (analogous to pr_split_test.go pattern) no longer panics at module initialization — it only panics if fetch/sseReader are actually called, which is acceptable.",
       "status": "Done"
     },
     {
-      "task": "Fix native async modules: fetch and exec Promisify integration",
-      "description": "Refactor osm:fetch and osm:exec to use loop.Promisify() for all background goroutines. \n- [internal/builtin/fetch/fetch.go]: Wrap the `go func()` in `jsFetch` with `adapter.Loop().Promisify(...)`.\n- [internal/builtin/fetch/readable_stream.go]: Wrap the pump goroutine in `Promisify` if it's not already covered.\n- [internal/builtin/fetch/sse.go]: Wrap the parser goroutine in `Promisify`.\n- [internal/builtin/exec/exec.go]: Wrap `child.Wait()` and `wrapReadableStream` pump goroutines in `Promisify`.\n- Verify: `go test -short ./internal/builtin/fetch/... ./internal/builtin/exec/...` passes.",
-      "acceptance": "Grep no longer finds bare `go func` blocks that call `loop.Submit` in these files. All background work is correctly tracked by the loop's `promisifyCount`.",
+      "task": "Fix mcp.go nil adapter panic: add guard before adapter.Loop().Promisify",
+      "description": "In [internal/builtin/mcpmod/mcp.go], the Require function evaluates adapter.Loop().Promisify unconditionally at module load time (line 32). Fix: wrap the exports.Set call in if adapter != nil guard:\n\nif adapter != nil {\n    _ = exports.Set(\"createServer\", jsCreateServer(runtime, adapter, adapter.Loop().Promisify))\n}\n\nVerify: go test -short ./internal/builtin/mcpmod/... passes.",
+      "acceptance": "go test -short ./internal/builtin/mcpmod/... passes. Module loads safely with nil adapter; crashes only if createServer is called, matching exec.go behavior.",
       "status": "Done"
     },
     {
-      "task": "Fix native async modules: MCP and MCP Callback Promisify integration",
-      "description": "Refactor osm:mcp and osm:mcpcallback to use loop.Promisify().\n- [internal/builtin/mcpmod/mcp.go]: Wrap `server.Run` goroutine in `jsRun` with `s.loop.Promisify(...)`.\n- [internal/builtin/mcpcallbackmod/mcpcallback.go]: Wrap the listener, accept, and per-connection goroutines with `cb.loop.Promisify(...)` where they call back into the loop.\n- Verify: `go test -short ./internal/builtin/mcpmod/... ./internal/builtin/mcpcallbackmod/...` passes.",
-      "acceptance": "MCP server and callback lifecycles are represented in the loop's liveness count. `WithAutoExit` will wait for MCP servers to shut down naturally.",
+      "task": "Fix mcpcallback.go nil adapter panic: add guard before adapter.Loop().Promisify",
+      "description": "In [internal/builtin/mcpcallbackmod/mcpcallback.go], the Require function evaluates adapter.Loop().Promisify unconditionally at module load time (line 140). Fix: wrap the exports.Set call in if adapter != nil guard:\n\nif adapter != nil {\n    _ = exports.Set(\"MCPCallback\", jsCallbackFactory(rt, adapter, adapter.Loop().Promisify))\n}\n\nVerify: go test -short ./internal/builtin/mcpcallbackmod/... passes.",
+      "acceptance": "go test -short ./internal/builtin/mcpcallbackmod/... passes. Module loads safely with nil adapter.",
       "status": "Done"
     },
     {
-      "task": "Ensure BubbleTea always participates in loop liveness",
-      "description": "Refactor [internal/builtin/bubbletea/bubbletea.go] to make Promisify mandatory for `tea.run()`.\n- In `tea.run()` (line 2070+), remove the `if manager.promisify != nil` check and ensure the `manager.promisify(...)` path is always taken.\n- If `manager.promisify` is nil, it should be considered a configuration error (Engine should always provide it).\n- Verify: `go test -short ./internal/builtin/bubbletea/...` passes.",
-      "acceptance": "All BubbleTea programs started via `tea.run()` increment the loop's `promisifyCount` until they exit.",
+      "task": "Refactor mcpcallback.go: remove redundant promisify parameter from jsCallbackFactory",
+      "description": "In [internal/builtin/mcpcallbackmod/mcpcallback.go], jsCallbackFactory receives both adapter and promisify as parameters, but derives loop from adapter internally (line 154: loop := adapter.Loop()). Since adapter is already passed and provides adapter.Loop().Promisify, the promisify parameter is redundant.\n\nRemove the promisify parameter entirely. Update jsCallbackFactory signature from:\n  func jsCallbackFactory(rt *goja.Runtime, adapter *gojaeventloop.Adapter, promisify PromisifyFunc) func(call goja.FunctionCall) goja.Value\nTo:\n  func jsCallbackFactory(rt *goja.Runtime, adapter *gojaeventloop.Adapter) func(call goja.FunctionCall) goja.Value\n\nUpdate the mcpCallback struct to derive promisify from adapter at construction time (line 204), and update all callers (jsInit, jsInitSync, jsClose, acceptLoop) to use cb.loop.Promisify or store promisify from cb.promisify field as before. The field stays, but is set from adapter.Loop().Promisify in the constructor rather than passed as a parameter.\n\nAlso fix the Require call to remove the redundant argument:\n  _ = exports.Set(\"MCPCallback\", jsCallbackFactory(rt, adapter))",
+      "acceptance": "go test -short ./internal/builtin/mcpcallbackmod/... passes. jsCallbackFactory no longer receives promisify as a separate parameter. The struct's promisify field is set from adapter.Loop().Promisify in the constructor. No behavioral change.",
       "status": "Done"
     },
     {
-      "task": "Refactor Terminal and TUI Manager for shell liveness tracking",
-      "description": "The shell/prompt lifecycle must keep the event loop alive.\n- [internal/scripting/tui_manager.go]: Update `runAdvancedPrompt` to use `tm.engine.Promisify(...)` around the `p.RunNoExit()` call.\n- [internal/scripting/terminal.go]: Ensure `Terminal.Run()` doesn't exit until the loop finishes if it's the primary owner.\n- This ensures that while the user is in the interactive shell, `Loop.Alive()` is true.",
-      "acceptance": "An interactive session does not auto-exit as soon as it starts. Typing `exit` (which makes `p.RunNoExit()` return and thus the `Promisify` block finish) allows the loop to exit if no other work is pending.",
+      "task": "Refactor mcp.go mcpServer struct: remove redundant loop and promisify fields",
+      "description": "In [internal/builtin/mcpmod/mcp.go], the mcpServer struct stores all three: adapter, loop, and promisify. Since adapter.Loop() and adapter.Loop().Promisify can be derived at call time, loop and promisify are redundant storage.\n\nSimplify the struct to store only adapter:\n  type mcpServer struct {\n      server  *mcp.Server\n      adapter *gojaeventloop.Adapter  // ONLY this one — loop and promisify derived below\n      runtime *goja.Runtime\n      mu      sync.Mutex\n      running bool\n      cancel  context.CancelFunc\n  }\n\nRemove the loop and promisify fields entirely. Update jsCreateServer to NOT store them:\n  s := &mcpServer{\n      server:  srv,\n      adapter: adapter,\n      runtime: runtime,\n  }\n\nUpdate all internal usages:\n  - makeToolHandler: s.loop.Submit(...) → s.adapter.Loop().Submit(...)\n  - jsRun: s.promisify(...) → s.adapter.Loop().Promisify(...); s.loop.Submit(...) → s.adapter.Loop().Submit(...)",
+      "acceptance": "go test -short ./internal/builtin/mcpmod/... passes. mcpServer struct stores only adapter, loop and promisify are derived at call time. No behavioral change.",
       "status": "Done"
     },
     {
-      "task": "Switch to WithAutoExit(true) and fix startup race in Runtime",
-      "description": "The core architectural change.\n- [internal/scripting/runtime.go]:\n  - In `NewRuntimeRegistry`, add `goeventloop.WithAutoExit(true)` to `goeventloop.New(...)`.\n  - Move the `rt.loop.Submit(...)` for adapter initialization to happen BEFORE the `go rt.loop.Run(rt.ctx)` goroutine is started. This ensures work is visible to the loop on its first check.\n  - Remove the now-obsolete `ResolveLiveness()` and other persistent-loop workarounds (if any remain).\n- Verify: `go test -short ./internal/scripting/...` passes without 'loop has been terminated' errors.",
-      "acceptance": "Runtime uses WithAutoExit(true). Startup race is gone. `make test-short` passes.",
+      "task": "Rule of Two: First subagent review of all fixes",
+      "description": "Invoke a subagent to perform the first review pass on all changes made in Tasks 1-5. The subagent must verify:\n1. fetch.go, mcp.go, mcpcallback.go all use if adapter != nil guards before adapter.Loop()\n2. mcpcallback.go jsCallbackFactory signature changed (promisify parameter removed)\n3. mcp.go mcpServer struct simplified (adapter only, loop/promisify removed)\n4. All existing tests pass: go test -short -race ./internal/builtin/fetch/... ./internal/builtin/mcpmod/... ./internal/builtin/mcpcallbackmod/...\n5. No regressions introduced by the refactors\n\nThe subagent should be skeptical and hostile to errors. Report ALL findings.",
+      "acceptance": "First subagent review completes with zero blocking issues. If any issues are found, they are logged and the process resets to the relevant task.",
       "status": "Done"
     },
     {
-      "task": "Integrate auto-exit into Engine and Command execution",
-      "description": "Make the loop's natural exit the signal for program termination.\n- [internal/scripting/engine_core.go]: Add `Engine.Wait()` which blocks until the loop naturally returns from `Run()`.\n- [internal/command/scripting_command.go] (and others): Update `Execute` to call `engine.Wait()` after `ExecuteScript` (for non-interactive) or after `Terminal.Run()` (for interactive).\n- Ensure `Engine.Close()` is still called for cleanup but doesn't preemptively kill the loop during normal auto-exit flows.",
-      "acceptance": "A script that calls `setTimeout(() => console.log('done'), 100)` and then finishes its body naturally waits for the 'done' log and then the process exits. No manual `waitForAsyncWork` polling is needed.",
+      "task": "Rule of Two: Second subagent review of all fixes",
+      "description": "Invoke a NEW subagent (fresh, no memory of Pass 1) to perform the second review pass on the identical diff. Verify the same checklist as Pass 1. This pass must be independent and equally skeptical.\n\nThe subagent must verify:\n1. All nil-guard patterns are correctly implemented in fetch.go, mcp.go, mcpcallback.go\n2. mcpcallback.jsCallbackFactory refactor is complete and consistent\n3. mcp.go mcpServer struct refactor is complete and consistent\n4. All tests pass: go test -short -race ./internal/builtin/fetch/... ./internal/builtin/mcpmod/... ./internal/builtin/mcpcallbackmod/...\n5. No regressions",
+      "acceptance": "Second subagent review completes with zero blocking issues. This confirms the code is at the local maximum of quality.",
       "status": "Done"
     },
     {
-      "task": "Final Verification: Rule of Two and cross-platform checks",
-      "description": "Run comprehensive integration tests.\n- `make test` (long suite).\n- `make lint`.\n- Manual verification of: one-shot scripts with async, interactive shell, BubbleTea programs, and MCP bridges.\n- Verify on macOS, and ideally trigger CI for others.",
-      "acceptance": "Two contiguous issue-free #runSubagent reviews confirm the new architecture is robust and correctly handles all identified lifecycle edge cases.",
+      "task": "Final verification and commit",
+      "description": "Run the full verification suite:\n- go test -short -race ./internal/builtin/fetch/... ./internal/builtin/mcpmod/... ./internal/builtin/mcpcallbackmod/...\n- make lint\n- make build\n\nThen create a self-contained commit with the fix. The commit message must reference scratch/review.md and the specific defects addressed.",
+      "acceptance": "Full test suite passes, lint clean, build succeeds. Single commit created referencing the review.md findings. Blueprint updated to reflect completion.",
       "status": "Done"
     }
-    ],
+  ],
   "continuousVerification": {
     "task": "Run make test-short and make lint after every significant change",
     "commands": {
       "build": "go build ./...",
-      "testPackage": "go test -short -race -count=1 ./internal/scripting/... ./internal/builtin/...",
+      "testPackage": "go test -short -race -count=1 ./internal/builtin/fetch/... ./internal/builtin/mcpmod/... ./internal/builtin/mcpcallbackmod/...",
       "testAll": "make test-short",
       "lint": "make lint"
     }

@@ -16,6 +16,7 @@ import (
 )
 
 // PromisifyFunc is the signature for the event loop's Promisify method.
+// Stored in Bridge for easier mocking in tests.
 type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise
 
 // Bridge manages the behavior tree integration between Go and JavaScript.
@@ -76,20 +77,19 @@ const DefaultTimeout = 5 * time.Second
 //   - loop: The event loop (must already be started)
 //   - vm: The goja.Runtime
 //   - registry: The require.Registry for module registration (can be nil)
-//   - promisify: The event loop's Promisify method
 //
 // The Bridge will:
 //   - Register the osm:bt module with the registry
 //   - Initialize JavaScript helpers on the event loop
 //   - Create an internal bt.Manager for ticker aggregation
-func NewBridgeWithEventLoop(ctx context.Context, loop *goeventloop.Loop, vm *goja.Runtime, registry *require.Registry, promisify PromisifyFunc) *Bridge {
+func NewBridgeWithEventLoop(ctx context.Context, loop *goeventloop.Loop, vm *goja.Runtime, registry *require.Registry) *Bridge {
 	if loop == nil {
 		panic("event loop must not be nil")
 	}
 	if vm == nil {
 		panic("goja runtime must not be nil")
 	}
-	return newBridgeWithLoop(ctx, loop, vm, registry, promisify)
+	return newBridgeWithLoop(ctx, loop, vm, registry, loop.Promisify)
 }
 
 // newBridgeWithLoop is the internal constructor for Bridge.

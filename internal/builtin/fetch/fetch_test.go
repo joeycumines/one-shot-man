@@ -35,7 +35,7 @@ func loadModule(t *testing.T, provider *testutil.TestEventLoopProvider) {
 	runOnLoop(t, provider, func() {
 		vm := provider.Runtime()
 		adapter := provider.Adapter()
-		loader := fetchmod.Require(adapter, provider.Promisify)
+		loader := fetchmod.Require(adapter)
 		module := vm.NewObject()
 		exports := vm.NewObject()
 		_ = module.Set("exports", exports)

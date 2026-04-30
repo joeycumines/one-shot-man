@@ -14,6 +14,7 @@ import (
 )
 
 // PromisifyFunc is the signature for the event loop's Promisify method.
+// Stored in internal data structures for easier mocking in tests.
 type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise
 
 // Require returns a module loader for `osm:exec` that uses the provided base context
@@ -24,7 +25,7 @@ type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, 
 // The adapter parameter is used for the spawn() function which requires
 // Promise-based streaming (goroutine → event loop → resolve). If adapter is
 // nil, spawn() will not be available (only exec/execv).
-func Require(ctx context.Context, adapter *gojaeventloop.Adapter, promisify PromisifyFunc) func(runtime *goja.Runtime, module *goja.Object) {
+func Require(ctx context.Context, adapter *gojaeventloop.Adapter) func(runtime *goja.Runtime, module *goja.Object) {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
 
@@ -73,7 +74,7 @@ func Require(ctx context.Context, adapter *gojaeventloop.Adapter, promisify Prom
 		// spawn(command: string, args: string[], opts?: {cwd?, env?}): ChildHandle
 		// Returns a child process handle with streaming stdout/stderr read().
 		if adapter != nil {
-			_ = exports.Set("spawn", jsSpawn(ctx, runtime, adapter, promisify))
+			_ = exports.Set("spawn", jsSpawn(ctx, runtime, adapter, adapter.Loop().Promisify))
 		}
 
 		// execStream(argv: string[], opts?: {onStdout?: fn, onStderr?: fn, cwd?: string, env?: object}): {code, error, message}

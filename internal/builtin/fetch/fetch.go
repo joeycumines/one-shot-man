@@ -28,15 +28,22 @@ import (
 const defaultMaxResponseSize int64 = 10 << 20
 
 // PromisifyFunc is the signature for the event loop's Promisify method.
+// Stored in internal data structures for easier mocking in tests.
 type PromisifyFunc func(ctx context.Context, fn func(ctx context.Context) (any, error)) goeventloop.Promise
 
 // Require returns a module loader for osm:fetch backed by the event loop adapter.
 // The adapter is required for Promise-based async fetch operations.
-func Require(adapter *gojaeventloop.Adapter, promisify PromisifyFunc) require.ModuleLoader {
+// If adapter is nil (e.g., in restricted JS runtime contexts or certain tests),
+// the module loads but fetch/sseReader are unavailable — matching exec.go behavior.
+func Require(adapter *gojaeventloop.Adapter) require.ModuleLoader {
 	return func(runtime *goja.Runtime, module *goja.Object) {
 		exports := module.Get("exports").(*goja.Object)
-		_ = exports.Set("fetch", jsFetch(runtime, adapter, promisify))
-		_ = exports.Set("sseReader", jsSSEReader(runtime, adapter, promisify))
+		// Guard against nil adapter to prevent segfault at module load time.
+		// exec.go uses the same pattern: the module loads but spawn is unavailable.
+		if adapter != nil {
+			_ = exports.Set("fetch", jsFetch(runtime, adapter, adapter.Loop().Promisify))
+			_ = exports.Set("sseReader", jsSSEReader(runtime, adapter, adapter.Loop().Promisify))
+		}
 	}
 }
 

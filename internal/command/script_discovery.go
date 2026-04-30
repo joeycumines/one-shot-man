@@ -4,7 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"math"
 	"os"
 	"os/exec"
@@ -103,7 +103,7 @@ func NewScriptDiscovery(cfg *config.Config) *ScriptDiscovery {
 	if val, exists := cfg.GetGlobalOption("script.debug-discovery"); exists {
 		if parsed, _ := strconv.ParseBool(val); parsed {
 			discoveryConfig.DebugLogFunc = func(format string, args ...any) {
-				log.Printf("[script-discovery] "+format, args...)
+				slog.Debug("script-discovery: "+format, "args", args)
 			}
 		}
 	}
@@ -377,7 +377,7 @@ func (sd *ScriptDiscovery) traverseForGitRepos(startDir string) []string {
 		realDir, err := filepath.EvalSymlinks(dir)
 		if err != nil {
 			if errors.Is(err, os.ErrPermission) {
-				log.Printf("warning: permission denied resolving symlinks for %q, stopping git traversal", dir)
+				slog.Warn("permission denied resolving symlinks, stopping git traversal", "directory", dir)
 				sd.debugf("git-traversal: permission denied at %s: %v", dir, err)
 			} else {
 				sd.debugf("git-traversal: symlink resolution failed at %s: %v", dir, err)
@@ -415,7 +415,7 @@ func (sd *ScriptDiscovery) traverseForGitRepos(startDir string) []string {
 			exists, checkErr := sd.checkDirectory(scriptPath)
 			if checkErr != nil {
 				if errors.Is(checkErr, os.ErrPermission) {
-					log.Printf("warning: permission denied checking script directory %q", scriptPath)
+					slog.Warn("permission denied checking script directory", "path", scriptPath)
 					sd.debugf("git-traversal: permission denied for %s", scriptPath)
 				} else {
 					sd.debugf("git-traversal: error checking %s: %v", scriptPath, checkErr)
@@ -450,7 +450,7 @@ func (sd *ScriptDiscovery) traverseForScriptDirs(startDir string) []string {
 		realDir, err := filepath.EvalSymlinks(dir)
 		if err != nil {
 			if errors.Is(err, os.ErrPermission) {
-				log.Printf("warning: permission denied resolving symlinks for %q, stopping upward traversal", dir)
+				slog.Warn("permission denied resolving symlinks, stopping upward traversal", "directory", dir)
 				sd.debugf("traversal: permission denied at %s: %v", dir, err)
 			} else {
 				sd.debugf("traversal: symlink resolution failed at %s: %v", dir, err)
@@ -470,7 +470,7 @@ func (sd *ScriptDiscovery) traverseForScriptDirs(startDir string) []string {
 			exists, checkErr := sd.checkDirectory(scriptPath)
 			if checkErr != nil {
 				if errors.Is(checkErr, os.ErrPermission) {
-					log.Printf("warning: permission denied checking script directory %q", scriptPath)
+					slog.Warn("permission denied checking script directory", "path", scriptPath)
 					sd.debugf("traversal: permission denied for %s", scriptPath)
 				} else {
 					sd.debugf("traversal: error checking %s: %v", scriptPath, checkErr)
@@ -584,7 +584,7 @@ func (sd *ScriptDiscovery) addPath(paths *[]string, seenPaths map[string]bool, c
 
 	normalized, err := sd.normalizePath(candidate)
 	if err != nil {
-		log.Printf("warning: skipping script path %q: %v", candidate, err)
+		slog.Warn("skipping script path", "candidate", candidate, "error", err)
 		sd.debugf("addPath: normalization failed for %q: %v", candidate, err)
 		return
 	}
@@ -750,7 +750,7 @@ func parsePositiveInt(s string, defaultVal, max int) int {
 
 	value, err := strconv.Atoi(s)
 	if err != nil {
-		log.Printf("warning: invalid positive integer %q: %v", s, err)
+		slog.Warn("invalid positive integer", "input", s, "error", err)
 		return defaultVal
 	}
 

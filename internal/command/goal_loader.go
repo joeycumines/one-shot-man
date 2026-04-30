@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -131,7 +131,10 @@ func FindGoalFiles(dir string) ([]GoalFileCandidate, error) {
 
 	// Protect against extremely large directories
 	if len(entries) > maxDirEntries {
-		log.Printf("warning: goal directory %q contains %d entries (limit %d), truncating scan", dir, len(entries), maxDirEntries)
+		slog.Warn("goal directory contains excess entries, truncating scan",
+			"directory", dir,
+			"entryCount", len(entries),
+			"limit", maxDirEntries)
 		entries = entries[:maxDirEntries]
 	}
 
@@ -142,7 +145,7 @@ func FindGoalFiles(dir string) ([]GoalFileCandidate, error) {
 		if entry.Type()&os.ModeSymlink != 0 {
 			info, err := os.Stat(filepath.Join(dir, entry.Name()))
 			if err != nil {
-				log.Printf("warning: skipping broken symlink %q in %q: %v", entry.Name(), dir, err)
+				slog.Warn("skipping broken symlink", "name", entry.Name(), "directory", dir, "error", err)
 				skippedSymlinks++
 				continue
 			}
@@ -173,8 +176,12 @@ func FindGoalFiles(dir string) ([]GoalFileCandidate, error) {
 	}
 
 	if len(candidates) == 0 && len(entries) > 0 {
-		log.Printf("warning: goal directory %q exists but contains no .json goal files (%d entries: %d dirs, %d non-json, %d broken symlinks)",
-			dir, len(entries), skippedDirs, skippedNonJSON, skippedSymlinks)
+		slog.Warn("goal directory contains no goal files",
+			"directory", dir,
+			"entryCount", len(entries),
+			"dirCount", skippedDirs,
+			"nonJSONCount", skippedNonJSON,
+			"symlinkCount", skippedSymlinks)
 	}
 
 	return candidates, nil

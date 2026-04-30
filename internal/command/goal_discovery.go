@@ -4,7 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -126,7 +126,7 @@ func NewGoalDiscovery(cfg *config.Config) *GoalDiscovery {
 	if val, exists := cfg.GetGlobalOption("goal.debug-discovery"); exists {
 		if parsed, _ := strconv.ParseBool(val); parsed {
 			discoveryConfig.DebugLogFunc = func(format string, args ...any) {
-				log.Printf("[goal-discovery] "+format, args...)
+				slog.Debug("goal-discovery: "+format, "args", args)
 			}
 		}
 	}
@@ -391,7 +391,7 @@ func (gd *GoalDiscovery) traverseForGoalDirs(startDir string) []string {
 		if err != nil {
 			// If we can't resolve symlinks (e.g., permission denied), log and stop traversal
 			if errors.Is(err, os.ErrPermission) {
-				log.Printf("warning: permission denied resolving symlinks for %q, stopping upward traversal", dir)
+				slog.Warn("permission denied resolving symlinks, stopping upward traversal", "directory", dir)
 				gd.debugf("traversal: permission denied at %s: %v", dir, err)
 			} else {
 				gd.debugf("traversal: symlink resolution failed at %s: %v", dir, err)
@@ -411,7 +411,7 @@ func (gd *GoalDiscovery) traverseForGoalDirs(startDir string) []string {
 			exists, checkErr := gd.checkDirectory(goalPath)
 			if checkErr != nil {
 				if errors.Is(checkErr, os.ErrPermission) {
-					log.Printf("warning: permission denied checking goal directory %q", goalPath)
+					slog.Warn("permission denied checking goal directory", "path", goalPath)
 					gd.debugf("traversal: permission denied for %s", goalPath)
 				} else {
 					gd.debugf("traversal: error checking %s: %v", goalPath, checkErr)
@@ -520,7 +520,7 @@ func (gd *GoalDiscovery) addPath(paths *[]string, seenPaths map[string]bool, can
 
 	normalized, err := gd.normalizePath(candidate)
 	if err != nil {
-		log.Printf("warning: skipping goal path %q: %v", candidate, err)
+		slog.Warn("skipping goal path", "candidate", candidate, "error", err)
 		gd.debugf("addPath: normalization failed for %q: %v", candidate, err)
 		return
 	}
@@ -640,7 +640,7 @@ func (gd *GoalDiscovery) DiscoverPromptFilePaths() []string {
 		if containsGlobMeta(expanded) {
 			matches, err := filepath.Glob(expanded)
 			if err != nil {
-				log.Printf("warning: invalid glob pattern in prompt.file-paths %q: %v", p, err)
+				slog.Warn("invalid glob pattern in prompt.file-paths", "pattern", p, "error", err)
 				gd.debugf("prompt paths: invalid glob %q: %v", expanded, err)
 				continue
 			}
@@ -666,19 +666,19 @@ func (gd *GoalDiscovery) DiscoverPromptFilePaths() []string {
 		info, err := os.Stat(expanded)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
-				log.Printf("warning: configured prompt path does not exist: %s", expanded)
+				slog.Warn("configured prompt path does not exist", "path", expanded)
 				gd.debugf("prompt paths: configured path %q does not exist", expanded)
 			} else if errors.Is(err, os.ErrPermission) {
-				log.Printf("warning: configured prompt path is not readable: %s", expanded)
+				slog.Warn("configured prompt path is not readable", "path", expanded)
 				gd.debugf("prompt paths: configured path %q permission denied", expanded)
 			} else {
-				log.Printf("warning: cannot access configured prompt path %s: %v", expanded, err)
+				slog.Warn("cannot access configured prompt path", "path", expanded, "error", err)
 				gd.debugf("prompt paths: configured path %q error: %v", expanded, err)
 			}
 			continue
 		}
 		if !info.IsDir() {
-			log.Printf("warning: configured prompt path is not a directory: %s", expanded)
+			slog.Warn("configured prompt path is not a directory", "path", expanded)
 			gd.debugf("prompt paths: configured path %q is not a directory", expanded)
 			continue
 		}

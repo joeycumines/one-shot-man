@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -153,7 +153,7 @@ func NewRuntimeRegistry(ctx context.Context, registry *require.Registry) (*Runti
 		// Run loop on its own goroutine
 		if err := rt.loop.Run(loopCtx); err != nil && err != context.Canceled {
 			// Report unexpected loop exit
-			log.Printf("ERROR: eventloop: loop terminated unexpectedly: %v", err)
+			slog.Error("eventloop terminated unexpectedly", "error", err)
 		}
 	}()
 

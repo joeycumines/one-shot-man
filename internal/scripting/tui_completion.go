@@ -2,7 +2,7 @@ package scripting
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -521,7 +521,7 @@ func (tm *TUIManager) getDefaultCompletionSuggestionsFor(before, full string) []
 						gitRefSuggestions := getGitRefSuggestions(currentWord)
 						suggestions = append(suggestions, gitRefSuggestions...)
 					default:
-						log.Printf("warning: unknown arg completer type %q for command %q", argCompleter, cmd.Name)
+						slog.Warn("unknown arg completer type", "type", argCompleter, "command", cmd.Name)
 					}
 				}
 

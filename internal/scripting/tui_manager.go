@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -1058,7 +1058,7 @@ func (tm *TUIManager) captureHistorySnapshot(commandName string, commandArgs []s
 	// Serialize the complete state (both script and shared zones)
 	stateJSON, err := tm.stateManager.SerializeCompleteState()
 	if err != nil {
-		log.Printf("WARNING: Failed to serialize state for snapshot: %v", err)
+		slog.Warn("failed to serialize state for snapshot", "error", err)
 		stateJSON = json.RawMessage("{}")
 	}
 

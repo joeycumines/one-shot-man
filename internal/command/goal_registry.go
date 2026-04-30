@@ -3,7 +3,7 @@ package command
 import (
 	"cmp"
 	"fmt"
-	"log"
+	"log/slog"
 	"maps"
 	"slices"
 )
@@ -43,7 +43,7 @@ func NewDynamicGoalRegistry(builtInGoals []Goal, discovery *GoalDiscovery) *Dyna
 
 	// Perform initial load
 	if err := registry.Reload(); err != nil {
-		log.Printf("warning: failed to load discovered goals: %v", err)
+		slog.Warn("failed to load discovered goals", "error", err)
 	}
 
 	return registry
@@ -77,14 +77,14 @@ func (r *DynamicGoalRegistry) Reload() error {
 		// Scan for .json goal files.
 		candidates, err := FindGoalFiles(path)
 		if err != nil {
-			log.Printf("warning: failed to scan goal directory %s: %v", path, err)
+			slog.Warn("failed to scan goal directory", "path", path, "error", err)
 			continue
 		}
 
 		for _, candidate := range candidates {
 			goal, err := LoadGoalFromFile(candidate.Path)
 			if err != nil {
-				log.Printf("warning: failed to load goal from %s: %v", candidate.Path, err)
+				slog.Warn("failed to load goal", "path", candidate.Path, "error", err)
 				continue
 			}
 
@@ -99,13 +99,13 @@ func (r *DynamicGoalRegistry) Reload() error {
 		// traversal logic. Recursive scanning applies to dedicated prompt paths.
 		promptCandidates, err := FindPromptFiles(path, false)
 		if err != nil {
-			log.Printf("warning: failed to scan prompt files in %s: %v", path, err)
+			slog.Warn("failed to scan prompt files", "path", path, "error", err)
 			continue
 		}
 		for _, candidate := range promptCandidates {
 			pf, err := LoadPromptFile(candidate.Path)
 			if err != nil {
-				log.Printf("warning: failed to load prompt file %s: %v", candidate.Path, err)
+				slog.Warn("failed to load prompt file", "path", candidate.Path, "error", err)
 				continue
 			}
 			goal := PromptFileToGoal(pf)
@@ -123,13 +123,13 @@ func (r *DynamicGoalRegistry) Reload() error {
 	for _, path := range promptPaths {
 		promptCandidates, err := FindPromptFiles(path, promptRecursive)
 		if err != nil {
-			log.Printf("warning: failed to scan prompt files in %s: %v", path, err)
+			slog.Warn("failed to scan prompt files", "path", path, "error", err)
 			continue
 		}
 		for _, candidate := range promptCandidates {
 			pf, err := LoadPromptFile(candidate.Path)
 			if err != nil {
-				log.Printf("warning: failed to load prompt file %s: %v", candidate.Path, err)
+				slog.Warn("failed to load prompt file", "path", candidate.Path, "error", err)
 				continue
 			}
 			goal := PromptFileToGoal(pf)

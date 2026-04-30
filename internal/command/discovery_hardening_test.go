@@ -242,7 +242,7 @@ func TestFindGoalFiles_DirWithOnlyNonJSON(t *testing.T) {
 
 	// Should log a warning about no JSON files found
 	logOutput := buf.String()
-	if !strings.Contains(logOutput, "no .json goal files") {
+	if !strings.Contains(logOutput, "goal directory contains no goal files") {
 		t.Errorf("Expected warning about no .json files, got: %q", logOutput)
 	}
 }
@@ -275,7 +275,7 @@ func TestFindGoalFiles_DirWithSubdirs(t *testing.T) {
 
 	// Should log warning about no JSON files
 	logOutput := buf.String()
-	if !strings.Contains(logOutput, "no .json goal files") {
+	if !strings.Contains(logOutput, "goal directory contains no goal files") {
 		t.Errorf("Expected warning about no .json files, got: %q", logOutput)
 	}
 }

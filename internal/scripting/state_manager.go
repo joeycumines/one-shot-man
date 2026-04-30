@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -78,9 +78,9 @@ func NewStateManager(backend storage.StorageBackend, sessionID string) (*StateMa
 	} else {
 		// Handle schema migration if needed
 		if session.Version != storage.CurrentSchemaVersion {
-			log.Printf("WARNING: Session schema version mismatch. Expected %s, got %s. Starting fresh session.",
-				storage.CurrentSchemaVersion,
-				session.Version)
+			slog.Warn("session schema version mismatch, starting fresh session",
+				"expectedVersion", storage.CurrentSchemaVersion,
+				"gotVersion", session.Version)
 			session = &storage.Session{
 				Version:     storage.CurrentSchemaVersion,
 				ID:          sessionID,
@@ -500,7 +500,7 @@ func (sm *StateManager) Close() error {
 	// 1. Persist the session before closing
 	if sm.backend != nil {
 		if err := sm.persistSessionInternal(); err != nil {
-			log.Printf("WARNING: Failed to persist session during close: %v", err)
+			slog.Warn("failed to persist session during close", "error", err)
 			persistErr = err // Record error but continue
 		}
 	}

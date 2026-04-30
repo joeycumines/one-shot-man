@@ -100,8 +100,6 @@ github.com/joeycumines/go-bigbuff v1.21.0 h1:v5Vy+rPKSPSr20YWx7/Pbfb6yqfzGBO9rcH
 github.com/joeycumines/go-bigbuff v1.21.0/go.mod h1:Ftwjd8wCDJqDk5NLsCbTibX0BrbzPv/GYiHoa3fbO9E=
 github.com/joeycumines/go-catrate v0.0.0-20260331032335-1bb8bb5ab23b h1:FVHYCM+uuPMU/Qx7dcn/iRBiNeOMYfhg79Qta9bfA+E=
 github.com/joeycumines/go-catrate v0.0.0-20260331032335-1bb8bb5ab23b/go.mod h1:EIZV2sNsBWlLtE5/IsRo9nDJJIbPwv+5hxcuJi54Nw4=
-github.com/joeycumines/go-eventloop v0.0.0-20260428025403-c64a0733c558 h1:0sgfWPJNjrJoIINjdVSI0W+4qK+hDqCYcie+ar4K6c4=
-github.com/joeycumines/go-eventloop v0.0.0-20260428025403-c64a0733c558/go.mod h1:qCUse+jIScRww182gNXjpM+6UnIs8YBNea+ELe0KLtQ=
 github.com/joeycumines/go-eventloop v0.0.0-20260429212742-80bbbe8dffe2 h1:vanrVnc0NS+K+bYr8J5XaPzeM7by8noJuotOjctlVd8=
 github.com/joeycumines/go-eventloop v0.0.0-20260429212742-80bbbe8dffe2/go.mod h1:3y+z5NYUex7hmokSaNQCmDoSnVeHJxA2isTMl0DvqXU=
 github.com/joeycumines/go-inprocgrpc v0.0.0-20260331032414-92dc1790fe75 h1:sXWhvWJxbjSoUnUPvJFdO0YSdxbqXxSPkNFRgXV1Jm8=

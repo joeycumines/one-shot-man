@@ -57,7 +57,7 @@
       "task": "Fix stale [Claude] assertions in passthrough_test.go causing Windows failures",
       "description": "Two tests in `internal/termmux/passthrough_test.go` still assert that stdout contains '[Claude]': (1) `TestPassthroughStatusBar_ScrollRegionSetup` line 497 — change from `!strings.Contains(got, \"[Claude]\")` to assert 'switch' toggle hint appears and '[Claude]' does NOT appear; (2) `TestPassthroughStatusBar_RenderRestore` lines 597-601 — change from counting '[Claude]' occurrences to counting 'switch' toggle hint occurrences. These tests were not updated when GAP-002 was fixed (StatusBar title made configurable with no default branding).",
       "acceptance": "Both tests pass on macOS (local), Linux (container), and Windows (gmake make-all-run-windows). No test asserts '[Claude]' appears in termmux output. The statusbar package tests already verify '[Claude]' does NOT appear by default. `gmake deadcode` and `gmake lint` pass.",
-      "status": "In Progress"
+      "status": "Not Started"
     },
     {
       "task": "Wire RestoreFromState and RenderRaster to JS bindings for deadcode compliance",

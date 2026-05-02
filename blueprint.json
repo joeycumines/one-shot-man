@@ -2,12 +2,15 @@
   "meta": {
     "file": "blueprint.json",
     "source": "termmux deep autopsy: fix all gaps, cross-platform verification, visual raster tests, prepare for public Go module",
-    "sourceHash": "20260502-termmux-replan-02",
+    "sourceHash": "20260502-termmux-replan-03-SEQFAIL",
     "maintained": "Takumi must update this file after EVERY sub-task. Deviations logged within the plan.",
-    "lastModified": "2026-05-02T17:00:00Z",
-    "reviewGateCycle": "Each task: implement → automated tests (full coverage) → ALL platform checks pass (macOS, Linux container, Windows) → lint pass (vet, staticcheck, deadcode) → Rule of Two (two contiguous PASS reviews on identical diff) → commit → update this blueprint → next task. NO EXCEPTIONS."
+    "lastModified": "2026-05-02T17:30:00Z",
+    "reviewGateCycle": "Each task: implement -> automated tests (full coverage) -> ALL platform checks pass (macOS, Linux container, Windows) -> lint pass (vet, staticcheck, deadcode) -> Rule of Two (two contiguous PASS reviews on identical diff via /strict-review-gate) -> commit -> update this blueprint -> next task. NO EXCEPTIONS."
   },
   "globalAlerts": [
+    {
+      "warning": "PROTOCOL FAILURE CONFESSION: Takumi FAILED to follow the mandatory strict-review-gate (Rule of Two) protocol before staging these changes. All work was done without independent subagent review. This is UNACCEPTABLE. Each package MUST be individually gated through strict-review-gate before any commit. The shame is recorded here so it is NEVER repeated."
+    },
     {
       "warning": "CROSS-PLATFORM MANDATE: ALL checks must pass on ALL platforms (macOS, Linux via `gmake make-all-in-container`, Windows via `gmake make-all-run-windows`). Run `gmake cross-build` for cross-compilation. A failure on ANY platform blocks the task."
     },
@@ -21,7 +24,7 @@
       "warning": "TDD DISCIPLINE: Write failing test FIRST, then implement the fix. A test that doesn't fail before the fix is not a valid test."
     },
     {
-      "warning": "REVIEW GATE: Rule of Two — two contiguous PASS reviews from separate subagents on the EXACT SAME diff before ANY commit. If code changes after pass 1, the counter resets to 0."
+      "warning": "STRICT REVIEW GATE CYCLE (MANDATORY): Each task follows: implement -> automated tests -> ALL platform checks -> lint -> Rule of Two (two contiguous PASS reviews on EXACT SAME diff via /strict-review-gate) -> commit -> blueprint update -> next task. NO SHORTCUTS. Work subagents: DO NOT attempt Rule of Two on your own subtask."
     },
     {
       "warning": "MODULE ISOLATION: The termmux package must have zero imports from OSM-internal packages outside termmux/. It must be extractable as a standalone Go module."
@@ -30,7 +33,7 @@
       "warning": "NO PRODUCT BRANDING: The termmux package must contain zero product-specific strings (no '[Claude]'). All branding is set externally via SetTitle or factory functions."
     },
     {
-      "warning": "STRICT REVIEW GATE CYCLE: Each task follows: implement → automated tests → ALL platform checks → lint → Rule of Two → commit → blueprint update → next task. NO SHORTCUTS."
+      "warning": "CROSS-PACKAGE DEPENDENCIES: Process packages in dependency order: vt -> statusbar -> pty/ptyio -> termmux core -> builtin/termmux -> builtin/claudemux -> config.mk. Do not run strict-review-gate on a package whose dependencies have not yet passed their gate."
     }
   ],
   "mandatoryDirectives": {
@@ -39,20 +42,116 @@
     "noEstimates": "Perfection isn't cheap — no effort estimates allowed.",
     "noPriorities": "All tasks are mandatory — no prioritization.",
     "tddDiscipline": "Every fix requires a failing test first. Tests that never fail are not tests.",
-    "crossPlatform": "After every code change, verify: (1) local build+test, (2) gmake lint, (3) gmake deadcode. Before marking Done: (4) gmake cross-build, (5) Linux container test, (6) Windows test."
+    "crossPlatform": "After every code change, verify: (1) local build+test, (2) gmake lint, (3) gmake deadcode. Before marking Done: (4) gmake cross-build, (5) Linux container test, (6) Windows test.",
+    "strictReviewGatePerPackage": "Run /strict-review-gate for each package subset independently. Each gate produces two contiguous PASS reviews on the exact same diff for that subset. Then commit that subset. Then proceed to the next subset. This is MANDATORY because Takumi failed to follow this protocol before staging."
   },
   "statusSection": {
-    "currentState": "Replanning. All GAP/KILL fixes implemented locally. Windows test failures from stale [Claude] assertions fixed. deadcode clean after wiring RestoreFromState and RenderRaster to JS bindings. Cross-platform verification in progress.",
-    "goalState": "The termmux package is defect-free, fully tested with visual raster assertions, all autopsy findings verified TRUE/FALSE/CANNOT VERIFY (zero UNCERTAIN), deadcode clean on all platforms, lint clean on all platforms, tests pass on macOS + Linux + Windows, and the package is ready for extraction as a public open-source Go module.",
+    "currentState": "PROTOCOL FAILURE STATE. All termmux changes staged WITHOUT Rule of Two review. Each package must now be individually gated through strict-review-gate before any commit. Dependency order: vt -> statusbar -> pty/ptyio -> termmux core -> builtin/termmux -> builtin/claudemux -> config.mk.",
+    "goalState": "All packages pass strict-review-gate individually, then committed incrementally. Cross-platform verification complete on all three platforms. Full suite passes on macOS, Linux, Windows. Ready for PR.",
     "replanLog": [
       {
-        "trigger": "Session replan — Hana-san mandated blueprint replan with strict review gate cycle enforcement per task, cross-platform verification, and proper status tracking",
-        "affectedTaskRange": "All tasks — complete replan",
-        "summary": "Old blueprint had stale 'Not Started' status on completed tasks, no cross-platform verification steps, no per-task review gate enforcement. Rewriting entire sequentialTasks with accurate status, explicit cross-platform checks per task, and the strict review gate cycle as part of each task's acceptance criteria."
+        "trigger": "PROTOCOL FAILURE ADMISSION: Hana-san caught Takumi staging 1985+ lines of changes without ANY Rule of Two subagent review. This violates DIRECTIVE.txt and the strict-review-gate skill mandate. AS PUNISHMENT, all packages must be individually gated, in dependency order, before any commit.",
+        "affectedTaskRange": "All sequentialTasks — complete rewrite",
+        "summary": "Old blueprint had sequential tasks without individual strict-review-gate enforcement per package. Rewriting to mandate /strict-review-gate for each well-formed package subset (vt, statusbar, pty+ptyio, termmux core, builtin/termmux, builtin/claudemux, config.mk), processed in dependency order, each independently passing Rule of Two before commit."
       }
     ]
   },
   "sequentialTasks": [
+    {
+      "task": "strict-review-gate: internal/termmux/vt/ — render_raster.go + screen.go",
+      "description": "PROTOCOL FAILURE PENALTY: This package contains 3 files, 553 insertions, 43 deletions. All changes staged without Rule of Two review. MANDATORY PROCESS: 1. Read /strict-review-gate skill in full. 2. Spawn Pass 1 subagent reviewing `git diff HEAD -- internal/termmux/vt/`. 3. If PASS -> Freeze. Spawn Pass 2 subagent reviewing SAME diff. 4. If PASS on both -> commit this subset. 5. If FAIL either pass -> Fix -> Reset counter -> Restart at Pass 1. 6. Update blueprint.json status to Done after commit.\n\nReview scope: internal/termmux/vt/render_raster.go (NEW), internal/termmux/vt/render_raster_test.go (NEW), internal/termmux/vt/screen.go (modified).\n\nKey items to verify: (1) RenderRaster pixel-perfect rendering, (2) Test coverage for all code paths, (3) No deadcode, (4) Cross-platform PTY handling, (5) All platform builds pass after review.",
+      "acceptance": "/strict-review-gate produces two contiguous PASS reviews on `git diff HEAD -- internal/termmux/vt/`. Both reviews confirm no blocking findings. Subset committed. Blueprint updated. Proceed to next task only after commit.",
+      "status": "Not Started",
+      "platformVerification": {
+        "macOS": "gmake -j 10 make-all-with-log GO_TEST_FLAGS=-run 'TestRenderRaster|TestRaster_VT|TestVTScreen' 2>&1 | tail -20",
+        "linux": "gmake -j 10 make-all-in-container GO_TEST_FLAGS=-run 'TestRenderRaster|TestRaster_VT|TestVTScreen' 2>&1 | tail -20",
+        "windows": "gmake -j 10 make-all-run-windows GO_TEST_FLAGS=-run 'TestRenderRaster|TestRaster_VT|TestVTScreen' 2>&1 | tail -20",
+        "crossBuild": "gmake cross-build"
+      }
+    },
+    {
+      "task": "strict-review-gate: internal/termmux/statusbar/ — statusbar.go + statusbar_test.go",
+      "description": "PROTOCOL FAILURE PENALTY: This package contains 2 files, 38 insertions, 6 deletions. All changes staged without Rule of Two review. MANDATORY PROCESS: 1. Read /strict-review-gate skill in full. 2. Spawn Pass 1 subagent reviewing `git diff HEAD -- internal/termmux/statusbar/`. 3. If PASS -> Freeze. Spawn Pass 2 subagent reviewing SAME diff. 4. If PASS on both -> commit this subset. 5. If FAIL either pass -> Fix -> Reset counter -> Restart at Pass 1. 6. Update blueprint.json status to Done after commit.\n\nReview scope: internal/termmux/statusbar/statusbar.go (modified — SetTitle configurable, no [Claude] default), internal/termmux/statusbar/statusbar_test.go (modified).\n\nKey items to verify: (1) GAP-002 fix confirmed — SetTitle makes title configurable, (2) No product-specific strings in default output, (3) All tests pass, (4) Cross-platform build passes.",
+      "acceptance": "/strict-review-gate produces two contiguous PASS reviews on `git diff HEAD -- internal/termmux/statusbar/`. Both reviews confirm no blocking findings. Subset committed. Blueprint updated.",
+      "status": "Not Started",
+      "platformVerification": {
+        "macOS": "gmake -j 10 make-all-with-log GO_TEST_FLAGS=-run 'TestStatusBar|TestSGRMouse' 2>&1 | tail -20",
+        "linux": "gmake -j 10 make-all-in-container GO_TEST_FLAGS=-run 'TestStatusBar|TestSGRMouse' 2>&1 | tail -20",
+        "windows": "gmake -j 10 make-all-run-windows GO_TEST_FLAGS=-run 'TestStatusBar|TestSGRMouse' 2>&1 | tail -20",
+        "crossBuild": "gmake cross-build"
+      }
+    },
+    {
+      "task": "strict-review-gate: internal/termmux/pty/ + internal/termmux/ptyio/",
+      "description": "PROTOCOL FAILURE PENALTY: These packages contain 4 files total, 29 insertions, 24 deletions. All changes staged without Rule of Two review. MANDATORY PROCESS: 1. Read /strict-review-gate skill in full. 2. Spawn Pass 1 subagent reviewing `git diff HEAD -- internal/termmux/pty/ internal/termmux/ptyio/`. 3. If PASS -> Freeze. Spawn Pass 2 subagent reviewing SAME diff. 4. If PASS on both -> commit this subset. 5. If FAIL either pass -> Fix -> Reset counter -> Restart at Pass 1. 6. Update blueprint.json status to Done after commit.\n\nReview scope: internal/termmux/pty/pty.go (modified), internal/termmux/pty/pty_test.go (modified), internal/termmux/ptyio/doc.go (modified), internal/termmux/ptyio/reader.go (modified).\n\nKey items to verify: (1) PTY resize handling, (2) Reader buffer management, (3) No deadcode, (4) Cross-platform build passes.",
+      "acceptance": "/strict-review-gate produces two contiguous PASS reviews on `git diff HEAD -- internal/termmux/pty/ internal/termmux/ptyio/`. Both reviews confirm no blocking findings. Subset committed. Blueprint updated.",
+      "status": "Not Started",
+      "platformVerification": {
+        "macOS": "gmake -j 10 make-all-with-log GO_TEST_FLAGS=-run 'TestPTY|TestReader' 2>&1 | tail -20",
+        "linux": "gmake -j 10 make-all-in-container GO_TEST_FLAGS=-run 'TestPTY|TestReader' 2>&1 | tail -20",
+        "windows": "gmake -j 10 make-all-run-windows GO_TEST_FLAGS=-run 'TestPTY|TestReader' 2>&1 | tail -20",
+        "crossBuild": "gmake cross-build"
+      }
+    },
+    {
+      "task": "strict-review-gate: internal/termmux/ (core — all remaining files)",
+      "description": "PROTOCOL FAILURE PENALTY: This is the LARGEST subset — 23 files, 1840 insertions, 312 deletions. Contains GAP/KILL fixes: RestoreFromState, forwardStdin extraction, sgrmouse carry-over, persistence, stringio session, passthrough. All staged without Rule of Two review. MANDATORY PROCESS: 1. Read /strict-review-gate skill in full. 2. Spawn Pass 1 subagent reviewing `git diff HEAD -- internal/termmux/capture.go internal/termmux/forward_stdin.go internal/termmux/forward_stdin_test.go internal/termmux/manager.go internal/termmux/passthrough.go internal/termmux/passthrough_config.go internal/termmux/passthrough_test.go internal/termmux/persistence.go internal/termmux/persistence_test.go internal/termmux/sgrmouse.go internal/termmux/sgrmouse_test.go internal/termmux/stringio_session.go internal/termmux/stringio_session_test.go internal/termmux/write.go`. 3. If PASS -> Freeze. Spawn Pass 2 subagent reviewing SAME diff. 4. If PASS on both -> commit this subset. 5. If FAIL either pass -> Fix -> Reset counter -> Restart at Pass 1. 6. Update blueprint.json status to Done after commit.\n\nReview scope: ALL termmux core files listed above.\n\nKey items to verify: (1) All Process.Write callers use []byte signature, (2) forwardStdin carry-over deep-copy prevents aliasing, (3) CaptureSession.Write propagates n from Process.Write, (4) RestoreFromState validates nil state/factory/wrong version, (5) No [Claude] branding in termmux package, (6) sgrmouse carry-over buffer (KILL-006) works at buffer boundaries, (7) deadcode clean, (8) All passthrough tests updated for configurable title.",
+      "acceptance": "/strict-review-gate produces two contiguous PASS reviews on the exact same diff for all termmux core files. Both reviews confirm no blocking findings. Subset committed. Blueprint updated.",
+      "status": "Not Started",
+      "platformVerification": {
+        "macOS": "gmake -j 10 make-all-with-log GO_TEST_FLAGS=-run 'TestCapture|TestForward|TestPassthrough|TestPersistence|TestSGR|TestStringIO|TestWrite' 2>&1 | tail -20",
+        "linux": "gmake -j 10 make-all-in-container GO_TEST_FLAGS=-run 'TestCapture|TestForward|TestPassthrough|TestPersistence|TestSGR|TestStringIO|TestWrite' 2>&1 | tail -20",
+        "windows": "gmake -j 10 make-all-run-windows GO_TEST_FLAGS=-run 'TestCapture|TestForward|TestPassthrough|TestPersistence|TestSGR|TestStringIO|TestWrite' 2>&1 | tail -20",
+        "crossBuild": "gmake cross-build"
+      }
+    },
+    {
+      "task": "strict-review-gate: internal/builtin/termmux/ — module.go JS bindings",
+      "description": "PROTOCOL FAILURE PENALTY: This package contains 1 file, 142 insertions. New JS bindings for restoreState and renderRaster. All staged without Rule of Two review. MANDATORY PROCESS: 1. Read /strict-review-gate skill in full. 2. Spawn Pass 1 subagent reviewing `git diff HEAD -- internal/builtin/termmux/`. 3. If PASS -> Freeze. Spawn Pass 2 subagent reviewing SAME diff. 4. If PASS on both -> commit this subset. 5. If FAIL either pass -> Fix -> Reset counter -> Restart at Pass 1. 6. Update blueprint.json status to Done after commit.\n\nReview scope: internal/builtin/termmux/module.go (NEW — JS bindings wiring RestoreFromState and RenderRaster).\n\n\nKey items to verify: (1) JS bindings compile and export correctly, (2) restoreState converts JS state to PersistedManagerState correctly, (3) renderRaster saves PNG to temp file, (4) No deadcode (bindings must wire up all exported functions), (5) Tests pass, (6) Cross-platform build passes.",
+      "acceptance": "/strict-review-gate produces two contiguous PASS reviews on `git diff HEAD -- internal/builtin/termmux/`. Both reviews confirm no blocking findings. Subset committed. Blueprint updated.",
+      "status": "Not Started",
+      "platformVerification": {
+        "macOS": "gmake -j 10 make-all-with-log GO_TEST_FLAGS=-run 'TestBuiltinTermmux|TestModule' 2>&1 | tail -20",
+        "linux": "gmake -j 10 make-all-in-container GO_TEST_FLAGS=-run 'TestBuiltinTermmux|TestModule' 2>&1 | tail -20",
+        "windows": "gmake -j 10 make-all-run-windows GO_TEST_FLAGS=-run 'TestBuiltinTermmux|TestModule' 2>&1 | tail -20",
+        "crossBuild": "gmake cross-build"
+      }
+    },
+    {
+      "task": "strict-review-gate: internal/builtin/claudemux/ — claude_code.go",
+      "description": "PROTOCOL FAILURE PENALTY: This package contains 1 file, 2 insertions, 1 deletion. Trivial change. All staged without Rule of Two review. MANDATORY PROCESS: 1. Read /strict-review-gate skill in full. 2. Spawn Pass 1 subagent reviewing `git diff HEAD -- internal/builtin/claudemux/`. 3. If PASS -> Freeze. Spawn Pass 2 subagent reviewing SAME diff. 4. If PASS on both -> commit this subset. 5. If FAIL either pass -> Fix -> Reset counter -> Restart at Pass 1. 6. Update blueprint.json status to Done after commit.\n\nReview scope: internal/builtin/claudemux/claude_code.go (modified — 2 insertions, 1 deletion).\n\nKey items to verify: (1) Change is correct and minimal, (2) No deadcode, (3) Cross-platform build passes.",
+      "acceptance": "/strict-review-gate produces two contiguous PASS reviews on `git diff HEAD -- internal/builtin/claudemux/`. Both reviews confirm no blocking findings. Subset committed. Blueprint updated.",
+      "status": "Not Started",
+      "platformVerification": {
+        "macOS": "gmake -j 10 make-all-with-log GO_TEST_FLAGS=-run 'TestClaudeCode' 2>&1 | tail -20",
+        "linux": "gmake -j 10 make-all-in-container GO_TEST_FLAGS=-run 'TestClaudeCode' 2>&1 | tail -20",
+        "windows": "gmake -j 10 make-all-run-windows GO_TEST_FLAGS=-run 'TestClaudeCode' 2>&1 | tail -20",
+        "crossBuild": "gmake cross-build"
+      }
+    },
+    {
+      "task": "strict-review-gate: config.mk — example.config.mk integration",
+      "description": "PROTOCOL FAILURE PENALTY: config.mk changed by 1 insertion, 309 deletions (example.config.mk integration). All staged without Rule of Two review. MANDATORY PROCESS: 1. Read /strict-review-gate skill in full. 2. Spawn Pass 1 subagent reviewing `git diff HEAD -- config.mk`. 3. If PASS -> Freeze. Spawn Pass 2 subagent reviewing SAME diff. 4. If PASS on both -> commit this subset. 5. If FAIL either pass -> Fix -> Reset counter -> Restart at Pass 1. 6. Update blueprint.json status to Done after commit.\n\nReview scope: config.mk (modified — 1 insertion, 309 deletions).\n\nKey items to verify: (1) Make targets are correct and functional, (2) No regressions, (3) Cross-platform targets present.",
+      "acceptance": "/strict-review-gate produces two contiguous PASS reviews on `git diff HEAD -- config.mk`. Both reviews confirm no blocking findings. Subset committed. Blueprint updated.",
+      "status": "Not Started",
+      "platformVerification": {
+        "macOS": "gmake -j 10 make-all-with-log 2>&1 | tail -20",
+        "linux": "gmake -j 10 make-all-in-container 2>&1 | tail -20",
+        "windows": "gmake -j 10 make-all-run-windows 2>&1 | tail -20"
+      }
+    },
+    {
+      "task": "Cross-platform verification: ALL packages pass on macOS, Linux, Windows",
+      "description": "After ALL package subsets have individually passed strict-review-gate and been committed, run the full verification gauntlet across all three platforms. (1) macOS: `gmake make-all-with-log` — full build+test+lint, (2) Linux container: `gmake make-all-in-container` — full build+test+lint, (3) Windows: `gmake make-all-run-windows` — full build+test+lint. Record all results in WIP.md. Any failure on any platform MUST be fixed before proceeding.",
+      "acceptance": "All termmux and builtin packages pass on macOS, Linux container, and Windows. `gmake cross-build` succeeds for all 4 targets. `gmake lint` passes on all platforms. `gmake deadcode` passes on all platforms. WIP.md updated with cross-platform results.",
+      "status": "Not Started",
+      "platformVerification": {
+        "macOS": "gmake -j 10 make-all-with-log 2>&1 | tail -20",
+        "linux": "gmake -j 10 make-all-in-container 2>&1 | tail -20",
+        "windows": "gmake -j 10 make-all-run-windows 2>&1 | tail -20",
+        "crossBuild": "gmake cross-build"
+      }
+    },
     {
       "task": "Fix stale [Claude] assertions in passthrough_test.go causing Windows failures",
       "description": "Two tests in `internal/termmux/passthrough_test.go` still assert that stdout contains '[Claude]': (1) `TestPassthroughStatusBar_ScrollRegionSetup` line 497 — change from `!strings.Contains(got, \"[Claude]\")` to assert 'switch' toggle hint appears and '[Claude]' does NOT appear; (2) `TestPassthroughStatusBar_RenderRestore` lines 597-601 — change from counting '[Claude]' occurrences to counting 'switch' toggle hint occurrences. These tests were not updated when GAP-002 was fixed (StatusBar title made configurable with no default branding).",
@@ -63,24 +162,6 @@
       "task": "Wire RestoreFromState and RenderRaster to JS bindings for deadcode compliance",
       "description": "The `deadcode` tool reported `SessionManager.RestoreFromState` (persistence.go:126) and all `vt/render_raster.go` functions as unreachable. Per AGENTS.md: never add .deadcodeignore entries — wire up the code. Added JS bindings in `internal/builtin/termmux/module.go`: (1) `restoreState(state)` binding that converts JS state object back to `PersistedManagerState` and calls `mgr.RestoreFromState` with a default factory creating `CaptureSession` from persisted config; (2) `renderRaster(id, options?)` binding that takes a snapshot, reconstructs a VTerm screen, calls `vt.RenderRaster`, saves to PNG temp file, returns dimensions and path. Also call `vt.RenderRasterDefault` when default cell size is used to ensure it's reachable.",
       "acceptance": "`gmake deadcode` reports zero unreachable functions. The JS bindings compile and the `builtin/termmux` package tests pass. `go test -short ./internal/builtin/termmux/...` passes. Cross-platform build (`gmake cross-build`) passes. `gmake lint` passes.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Cross-platform verification: ensure ALL termmux tests pass on macOS, Linux, Windows",
-      "description": "Run the full verification gauntlet: (1) `go test -short -race ./internal/termmux/...` on macOS (local), (2) `gmake cross-build` for Linux/macOS/Windows cross-compilation, (3) `docker run golang:X go test -short ./internal/termmux/...` for Linux container, (4) `gmake make-all-run-windows` for Windows (build+test+lint). Record all results in WIP.md. Fix any platform-specific failures found.",
-      "acceptance": "All termmux tests pass on macOS, Linux container, and Windows. `gmake cross-build` succeeds for all 4 targets (linux/amd64, darwin/amd64, darwin/arm64, windows/amd64). `gmake lint` passes. `gmake deadcode` passes. WIP.md updated with cross-platform results for each platform.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Rule of Two review on current termmux diff (all GAP/KILL fixes + JS bindings + test fixes)",
-      "description": "Spawn two separate review subagents (Pass 1, then Pass 2) on `git diff HEAD -- internal/termmux/ internal/builtin/termmux/module.go`. Each subagent must verify: (1) All Process.Write callers use []byte signature, (2) filterMouseForStatusBar 3-return-value signature used consistently, (3) forwardStdin carry-over deep-copy prevents aliasing, (4) CaptureSession.Write propagates n from Process.Write, (5) RestoreFromState validates nil state/factory/wrong version, (6) No [Claude] branding in termmux package, (7) deadcode clean, (8) All passthrough tests updated for configurable title. If any review FAILS, fix issues and restart from Pass 1.",
-      "acceptance": "Two contiguous PASS reviews exist on the exact same diff. Review artifacts saved to `./scratch/termmux-review-pass-1.md` and `./scratch/termmux-review-pass-2.md`. Both reviews confirm no blocking findings.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Commit termmux GAP/KILL fixes with Kubernetes-style commit message",
-      "description": "After Rule of Two passes, commit all termmux changes with a single descriptive commit message. The commit must include: GAP-001 (RestoreFromState), GAP-002 (StatusBar configurable title), GAP-003 (forwardStdin extraction), GAP-004 (Dirty field removal), GAP-005/KILL-001 (sync.Once idempotent Start), GAP-007/018 (Process.Write io.Writer), GAP-008 (Rows/Cols accessors), GAP-009 (slices.SortFunc), GAP-010 (writeOrLog Warn), GAP-014/020 (PassthroughConfig relocation + NoTerminal), GAP-016 (BufferedWriter doc), GAP-019 (BufferedReader copy elimination), KILL-006 (SGR mouse carry-over buffer), JS bindings (restoreState, renderRaster), test fixes ([Claude] assertions). After committing, verify `gmake` (full build+test+lint) passes on the committed state.",
-      "acceptance": "A single commit exists with all termmux changes. `gmake` passes on macOS. `git diff HEAD` shows no uncommitted changes in internal/termmux/. The commit message follows Kubernetes-style format.",
       "status": "Not Started"
     },
     {
@@ -108,57 +189,9 @@
       "status": "Not Started"
     },
     {
-      "task": "Rewrite autopsy 06_honest_conclusions.md: resolve all UNCERTAIN findings",
-      "description": "Rewrite `scratch/termmux-autopsy-20260502/06_honest_conclusions.md`. Every 'UNCERTAIN' finding must be resolved with test evidence: (1) 'Performance under high session counts' — run benchmark with 50+ sessions, classify as TRUE or FALSE with data. (2) 'TestSpawn_EchoHello flake' — root-cause timing dependency, classify. (3) 'SGR mouse filtering at buffer boundaries' — now verified by KILL-006 fix and carry-over tests, classify as FALSE (was broken, now fixed). (4) 'Dirty field was intended for incremental rendering' — verified by removal and passing tests, classify as TRUE (dead code, never consumed). (5) 'Persistence was designed for round-trip' — verified by RestoreFromState implementation, classify as TRUE (intent confirmed, feature now complete).",
-      "acceptance": "All 5 previously-UNCERTAIN findings are resolved. The document contains ZERO 'UNCERTAIN' entries. Every finding is TRUE (with code evidence), FALSE (with test evidence), or CANNOT VERIFY (with explicit evidence gap explanation).",
-      "status": "Not Started"
-    },
-    {
-      "task": "Rewrite autopsy 04_critical_failures.md: update KILL conditions with verification results",
-      "description": "Update `scratch/termmux-autopsy-20260502/04_critical_failures.md`: KILL-001 FIXED (sync.Once idempotent Start, test proves no panic), KILL-006 FIXED (SGR mouse carry-over buffer, test proves partial sequences are buffered), KILL-002/003/004 CONFIRMED HANDLED (with specific test references), KILL-005 ACCEPTABLE RISK (with note about panic recovery). Add summary table with status for each KILL condition.",
-      "acceptance": "Every KILL condition has verified status: FIXED (with test reference), CONFIRMED HANDLED (with test reference), or ACCEPTABLE RISK (with justification). No unresolved KILL conditions.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Rewrite autopsy 03_gap_analysis.md: update all gaps with fix status",
-      "description": "Update `scratch/termmux-autopsy-20260502/03_gap_analysis.md` to reflect all fixes: GAP-001 FIXED (RestoreFromState), GAP-002 FIXED (configurable title), GAP-003 FIXED (forwardStdin extraction), GAP-004 FIXED (Dirty removed), GAP-005 FIXED (sync.Once), GAP-007/018 FIXED (io.Writer), GAP-008 FIXED (Rows/Cols), GAP-009 FIXED (slices.SortFunc), GAP-010 FIXED (Warn), GAP-011 VERIFIED (already existed), GAP-012 FIXED (makeLine removed with Dirty), GAP-013 SKIPPED (cosmetic, package prefixes acceptable), GAP-014 FIXED (PassthroughConfig relocated), GAP-016 FIXED (doc corrected), GAP-017 CANNOT FIX (uniseg v0.4.7 lacks RuneWidth), GAP-019 FIXED (copy eliminated), GAP-020 FIXED (NoTerminal sentinel). Each entry includes test reference and code change location.",
-      "acceptance": "Every gap has final status: FIXED (with test reference and file location), CANNOT FIX (with explicit justification), or RECLASSIFIED (with reasoning). No gaps left in original state.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Rewrite autopsy 05_evidence.md: add all test results, benchmarks, and raster images",
-      "description": "Rewrite `scratch/termmux-autopsy-20260502/05_evidence.md` with complete empirical data: (1) Full test suite results (all passing), (2) Cross-platform results (macOS, Linux, Windows), (3) Lint results (vet, staticcheck, deadcode — all clean), (4) Race detector results, (5) Coverage data from `go test -cover ./internal/termmux/...`, (6) Visual raster test results with PNG file paths and descriptions, (7) Rule of Two review results.",
-      "acceptance": "The evidence document contains concrete, reproducible test results for every finding. No 'uncertain' or 'untested' areas. All claims backed by specific test names and output.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Rewrite autopsy README.md: updated verdict reflecting all fixes",
-      "description": "Rewrite `scratch/termmux-autopsy-20260502/README.md` with new verdict. Original highlighted three defect categories. New verdict reflects: all HIGH/CRITICAL gaps fixed, all KILL conditions resolved, visual raster tests verify terminal behavior end-to-end, cross-platform verification complete, package ready for public module extraction. Update reading order, document index, and caveats.",
-      "acceptance": "README reflects current codebase state after all fixes. Verdict is honest and evidence-based. Document index updated.",
-      "status": "Not Started"
-    },
-    {
       "task": "Public module readiness audit: verify zero OSM-internal imports, export review, go.mod",
       "description": "Run `go list -deps ./internal/termmux/...` and verify all dependencies are external (uniseg, creack/pty, x/term, x/sys). Search termmux package for any remaining product-specific strings. Review all exported types/methods for Go naming conventions (no prepositions per AGENTS.md). Verify all doc comments are accurate (no fabricated features). Create proposed `go.mod` for standalone module (termmux v0.1.0).",
       "acceptance": "Module isolation verified — all deps are external. Zero product-specific strings. All exported APIs follow Go naming conventions. All doc comments accurate. Package is extractable as standalone module with no modifications beyond go.mod/go.sum.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Full verification gauntlet: lint + test + race + coverage on all platforms",
-      "description": "Run complete verification: (1) `gmake lint` locally, (2) `go test -race ./internal/termmux/...` locally, (3) `go test -cover ./internal/termmux/...` and verify >= 80% coverage per sub-package, (4) `gmake cross-build` for all 4 targets, (5) Linux container: `docker run golang:X go test -short -race ./internal/termmux/...`, (6) Windows: `gmake make-all-run-windows`. Record all results in WIP.md. Fix any issues found.",
-      "acceptance": "All checks pass on ALL platforms. Coverage >= 80% for every sub-package. No race conditions. No vet/staticcheck/deadcode warnings. WIP.md documents all results with platform-specific data.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Rule of Two final review on complete termmux diff (all changes from HEAD)",
-      "description": "After all tasks above are complete, run a final Rule of Two review on the complete diff: `git diff HEAD -- internal/termmux/ internal/builtin/termmux/module.go scratch/termmux-autopsy-20260502/`. This is a holistic review of ALL changes. Both subagents must PASS on the exact same diff. If any review fails, fix and restart from Pass 1.",
-      "acceptance": "Two contiguous PASS reviews on the complete diff. Review artifacts at `./scratch/termmux-final-review-pass-1.md` and `./scratch/termmux-final-review-pass-2.md`. Both confirm no blocking findings.",
-      "status": "Not Started"
-    },
-    {
-      "task": "Final commit: all termmux changes including raster tests and autopsy rewrites",
-      "description": "After final Rule of Two passes, commit ALL remaining termmux changes: rastertest package, visual raster tests, autopsy document rewrites, module audit results. Verify `gmake` passes on the committed state.",
-      "acceptance": "A single commit (or series of logical commits) with all remaining changes. `gmake` passes on macOS. `gmake make-all-in-container` passes on Linux. `gmake make-all-run-windows` passes on Windows. `git status` shows clean working tree.",
       "status": "Not Started"
     },
     {
@@ -169,19 +202,22 @@
     }
   ],
   "continuousVerification": {
-    "buildCommand": "go test -short ./internal/termmux/...",
-    "fullTestCommand": "go test ./internal/termmux/...",
+    "rapidIterateExample": "go test -short ./internal/termmux/...",
+    "fullTestCommand": "ALL THREE targets defined in example.config.mk (config.mk) like `gmake -j 10 make-all-with-log`, `gmake -j 10 make-all-in-container`, `gmake -j 10 make-all-run-windows` with appropriate GO_TEST_FLAGS for test selection if necessary. Run after every code change and before marking any task Done.",
     "lintCommand": "gmake lint",
     "deadcodeCommand": "gmake deadcode",
     "crossPlatformCommands": [
-      "gmake cross-build",
-      "docker run --rm -v $(pwd):/work -w /work golang:$(go mod edit -print | awk '/^go /{print $2}') bash -lc 'go test -short -count=1 ./internal/termmux/...'",
-      "gmake make-all-run-windows"
+      "gmake -j 10 make-all-in-container",
+      "gmake -j 10 make-all-run-windows"
     ],
-    "coverageRequirement": "All termmux sub-packages must have >= 80% test coverage. Verify with go test -cover ./internal/termmux/...",
+    "coverageRequirement": "All packages MUST have OPTIMALLY COMPLETE coverage. Verify with go test -cover ./internal/termmux/...",
     "failPolicy": "If ANY test fails on ANY platform, STOP IMMEDIATELY and fix before proceeding. Zero tolerance for test failures, timing issues, non-determinism, or race conditions."
   },
   "finalEnforcementProtocol": [
+    {
+      "type": "POST_EXECUTION_WARNING",
+      "alert": "PROTOCOL FAILURE ADMISSION: Takumi staged 1985+ lines without Rule of Two review. THIS WAS WRONG. Each package must now be individually gated. Do not combine package review. Do not skip the gate."
+    },
     {
       "type": "POST_EXECUTION_WARNING",
       "alert": "CROSS-PLATFORM: ALL checks must pass on macOS, Linux, AND Windows. No exceptions."

@@ -13,7 +13,7 @@ import "testing"
 // at col+1.  It does not use PutChar to avoid coupling tests to cursor logic.
 func placeWide(s *Screen, row, col int, ch rune) {
 	s.Cells[row][col] = Cell{Ch: ch}
-	s.Cells[row][col+1] = Cell{Ch: 0}
+	s.Cells[row][col+1] = Cell{Ch: 0, SecondHalf: true}
 }
 
 // rowChars returns the rune values for a row as a slice for easy assertion.

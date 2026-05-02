@@ -3,9 +3,15 @@ package vt
 import "github.com/rivo/uniseg"
 
 // Cell represents a single terminal cell with a character and attributes.
+// SecondHalf is true when this cell is the right half of a double-width
+// (CJK) character. The actual character lives in the preceding cell and
+// this cell acts as a placeholder. It is used by RenderRaster to correctly
+// skip placeholder cells without misinterpreting literal NUL bytes (Ch==0)
+// that are not wide-char placeholders.
 type Cell struct {
-	Ch   rune
-	Attr Attr
+	Ch         rune
+	Attr       Attr
+	SecondHalf bool
 }
 
 // DefaultCell is a blank cell with default attributes.
@@ -279,10 +285,10 @@ func (s *Screen) DeleteLines(n int) {
 // a cell range [start, end) on the given row.  It must be called BEFORE the
 // caller modifies cells in that range.
 //
-// Left edge:  if cells[start] is a NUL placeholder (second half of a wide
+// Left edge:  if cells[start] is a wide-char placeholder (SecondHalf of a wide
 // char), blank the first half at start-1.
 //
-// Right edge: if cells[end] is a NUL placeholder, it was the second half of
+// Right edge: if cells[end] is a wide-char placeholder, it was the second half of
 // a wide char whose first half lies at end-1 and is about to be destroyed.
 // Blank the orphaned placeholder.
 func (s *Screen) repairWideBoundary(row, start, end int) {
@@ -291,10 +297,10 @@ func (s *Screen) repairWideBoundary(row, start, end int) {
 	}
 	cells := s.Cells[row]
 	blank := Cell{Ch: ' ', Attr: s.CurAttr}
-	if start > 0 && start < s.Cols && cells[start].Ch == 0 {
+	if start > 0 && start < s.Cols && cells[start].SecondHalf {
 		cells[start-1] = blank
 	}
-	if end > 0 && end < s.Cols && cells[end].Ch == 0 {
+	if end > 0 && end < s.Cols && cells[end].SecondHalf {
 		cells[end] = blank
 	}
 }
@@ -341,7 +347,7 @@ func (s *Screen) PutChar(ch rune) {
 	// For wide characters, write placeholder in the next column.
 	if width == 2 && s.CurCol+1 < s.Cols {
 		if s.CurRow >= 0 && s.CurRow < s.Rows {
-			s.Cells[s.CurRow][s.CurCol+1] = Cell{Ch: 0, Attr: s.CurAttr}
+			s.Cells[s.CurRow][s.CurCol+1] = Cell{Ch: 0, Attr: s.CurAttr, SecondHalf: true}
 		}
 	}
 
@@ -401,7 +407,7 @@ func (s *Screen) InsertChars(n int) {
 	// Repair wide char split at cursor: if cursor is on a placeholder,
 	// blank the preceding wide char and the placeholder itself so the
 	// shift does not propagate an orphaned NUL.
-	if s.CurCol > 0 && row[s.CurCol].Ch == 0 {
+	if s.CurCol > 0 && row[s.CurCol].SecondHalf {
 		row[s.CurCol-1] = blank
 		row[s.CurCol] = blank
 	}
@@ -409,7 +415,7 @@ func (s *Screen) InsertChars(n int) {
 	// [Cols-n, Cols) are pushed off. If the first discarded cell is a
 	// placeholder, the surviving first half would be orphaned.
 	discard := s.Cols - n
-	if discard > 0 && discard < s.Cols && row[discard].Ch == 0 {
+	if discard > 0 && discard < s.Cols && row[discard].SecondHalf {
 		row[discard-1] = blank
 	}
 	copy(row[s.CurCol+n:], row[s.CurCol:s.Cols-n])
@@ -431,12 +437,12 @@ func (s *Screen) DeleteChars(n int) {
 	}
 	// Repair wide char split at cursor: if cursor sits on a placeholder,
 	// the wide char's first half at CurCol-1 will lose its second half.
-	if s.CurCol > 0 && row[s.CurCol].Ch == 0 {
+	if s.CurCol > 0 && row[s.CurCol].SecondHalf {
 		row[s.CurCol-1] = blank
 	}
 	// Repair wide char split at delete boundary: if the first surviving
 	// cell (CurCol+n) is a placeholder, its first half was deleted.
-	if s.CurCol+n < s.Cols && row[s.CurCol+n].Ch == 0 {
+	if s.CurCol+n < s.Cols && row[s.CurCol+n].SecondHalf {
 		row[s.CurCol+n] = blank
 	}
 	copy(row[s.CurCol:], row[s.CurCol+n:])

@@ -31,7 +31,7 @@ func RenderFullScreen(scr *Screen) string {
 		if last >= 0 {
 			for c := 0; c <= last; c++ {
 				cell := scr.Cells[r][c]
-				if cell.Ch == 0 {
+				if cell.SecondHalf {
 					continue // wide-char placeholder
 				}
 				diff := SGRDiff(prevAttr, cell.Attr)
@@ -88,7 +88,7 @@ func RenderContentANSI(scr *Screen) string {
 		if last >= 0 {
 			for c := 0; c <= last; c++ {
 				cell := scr.Cells[r][c]
-				if cell.Ch == 0 {
+				if cell.SecondHalf {
 					continue // wide-char placeholder
 				}
 				diff := SGRDiff(prevAttr, cell.Attr)

@@ -349,3 +349,92 @@ func TestRenderRaster_CustomCellSize(t *testing.T) {
 			r>>8, g>>8, b>>8)
 	}
 }
+
+// TestRaster_NULByteSentinel verifies that a literal NUL byte (Ch == 0) in a
+// screen cell does NOT trigger wide-character rendering for its predecessor.
+// Without the SecondHalf field, writing a NUL to a cell would cause the
+// preceding normal character to be rendered as 2 cells wide (corruption).
+func TestRaster_NULByteSentinel(t *testing.T) {
+	scr := NewScreen(1, 3) // 1 row, 3 cols
+	// Write 'A' in col 0. Cursor advances to col 1.
+	scr.PutChar('A')
+	// Manually place a NUL byte (Ch=0) at col 1 — NOT a SecondHalf placeholder.
+	scr.Cells[0][1] = Cell{Ch: 0}
+	// Manually advance cursor to col 2 so PutChar writes 'B' at col 2.
+	scr.CurCol = 2
+	scr.PutChar('B')
+
+	img := RenderRaster(scr, 8, 16)
+
+	// Cell 0 ('A'): should be 1 cell wide (8px), white foreground.
+	px := 4  // center of cell 0
+	py := 8
+	r, g, b, _ := img.At(px, py).RGBA()
+	if r>>8 != 255 || g>>8 != 255 || b>>8 != 255 {
+		t.Errorf("cell 0 ('A') at (%d,%d): got rgba(%d,%d,%d), want white fg", px, py, r>>8, g>>8, b>>8)
+	}
+
+	// Cell 1 (NUL): NUL bytes render as blank background (no content).
+	// Ch==0 is treated as no-content, so the pixel should be black background,
+	// NOT white (which would mean 'A' was extended as a wide char).
+	px = 12 // center of col 1 area
+	r, g, b, _ = img.At(px, py).RGBA()
+	if r>>8 > 100 || g>>8 > 100 || b>>8 > 100 {
+		t.Errorf("cell 1 (NUL) at (%d,%d): got rgba(%d,%d,%d), want dark (background, not A-extended)",
+			px, py, r>>8, g>>8, b>>8)
+	}
+
+	// Cell 2 ('B'): should be white foreground at correct position.
+	px = 20 // center of col 2 area
+	r, g, b, _ = img.At(px, py).RGBA()
+	if r>>8 != 255 || g>>8 != 255 || b>>8 != 255 {
+		t.Errorf("cell 2 ('B') at (%d,%d): got rgba(%d,%d,%d), want white fg", px, py, r>>8, g>>8, b>>8)
+	}
+}
+
+// TestRaster_CellH1_ForegroundVisible verifies that content cells render
+// visible foreground pixels even with cellH=1. The original code used
+// cellH*3/4 as the foreground threshold, which evaluated to 0 when cellH=1,
+// making content cells render entirely as background (invisible foreground).
+func TestRaster_CellH1_ForegroundVisible(t *testing.T) {
+	scr := NewScreen(1, 1) // 1 row, 1 col
+	scr.PutChar('X')
+
+	// cellH=1: the only pixel row should be foreground (not background).
+	img := RenderRaster(scr, 8, 1)
+
+	if img.Bounds().Dy() != 1 {
+		t.Fatalf("height = %d, want 1", img.Bounds().Dy())
+	}
+
+	// The single pixel at (4, 0) should be white foreground, not black background.
+	px, py := 4, 0
+	r, g, b, _ := img.At(px, py).RGBA()
+	if r>>8 != 255 || g>>8 != 255 || b>>8 != 255 {
+		t.Errorf("cellH=1 content: got rgba(%d,%d,%d), want white fg (not black bg)",
+			r>>8, g>>8, b>>8)
+	}
+}
+
+// TestRaster_CellH1_BlankBackground verifies that blank cells with cellH=1
+// correctly render background (not foreground). This is the counterpart to
+// TestRaster_CellH1_ForegroundVisible — content cells get foreground,
+// blank cells get background.
+func TestRaster_CellH1_BlankBackground(t *testing.T) {
+	scr := NewScreen(1, 1) // 1 row, 1 col
+	// Don't put any character — the cell defaults to space (blank).
+
+	img := RenderRaster(scr, 8, 1)
+
+	if img.Bounds().Dy() != 1 {
+		t.Fatalf("height = %d, want 1", img.Bounds().Dy())
+	}
+
+	// The single pixel should be black background (the cell is blank).
+	px, py := 4, 0
+	r, g, b, _ := img.At(px, py).RGBA()
+	if r>>8 != 0 || g>>8 != 0 || b>>8 != 0 {
+		t.Errorf("cellH=1 blank: got rgba(%d,%d,%d), want black bg",
+			r>>8, g>>8, b>>8)
+	}
+}

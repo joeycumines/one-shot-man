@@ -150,10 +150,10 @@ func resolveColor(c color, isFG bool) rgba {
 // RenderRaster converts a Screen to an RGBA image. Each terminal cell is
 // rendered as a cellW x cellH pixel block with the appropriate foreground
 // and background colors. Non-space characters are drawn as a filled rectangle
-// in the upper 75% of the cell (to indicate content), while space characters
+// in the upper portion of the cell (to indicate content), while space characters
 // are rendered as entirely background fill (to show background color).
-// Wide characters (Ch == 0 placeholder) are skipped — their foreground is
-// rendered by the preceding cell.
+// Wide characters are detected via the Cell.SecondHalf flag — the first cell
+// covers the full 2-cell width and the placeholder cell is skipped.
 //
 // This renderer is designed for automated testing and visual verification,
 // not for pixel-perfect terminal reproduction. For human-readable text
@@ -174,9 +174,11 @@ func RenderRaster(scr *Screen, cellW, cellH int) *image.RGBA {
 		for col := 0; col < scr.Cols; col++ {
 			cell := scr.Cells[row][col]
 
-			// Skip NUL placeholder cells (second half of wide char).
-			// The wide char's first cell already covers the full width.
-			if cell.Ch == 0 {
+			// Skip placeholder cells (second half of wide char).
+			// Uses SecondHalf flag to avoid conflating literal NUL bytes
+			// (Ch==0) with wide-char placeholders. The wide char's first
+			// cell already covers the full width.
+			if cell.SecondHalf {
 				continue
 			}
 
@@ -184,14 +186,15 @@ func RenderRaster(scr *Screen, cellW, cellH int) *image.RGBA {
 			fg := resolveFG(cell.Attr)
 
 			// Determine if this cell has visible content.
-			// Only non-space characters get the FG block treatment;
-			// space characters with colored backgrounds render as pure background fill.
-			hasContent := cell.Ch != ' '
+			// Only non-space, non-NUL characters get the FG block treatment.
+			// NUL (Ch==0) is a VT no-op and renders as blank background.
+			// Space characters with colored backgrounds render as pure background fill.
+			hasContent := cell.Ch != ' ' && cell.Ch != 0
 
 			// Determine cell width in columns.
 			cellCols := 1
-			// Check if next cell is a NUL placeholder (wide char).
-			if col+1 < scr.Cols && scr.Cells[row][col+1].Ch == 0 {
+			// Check if next cell is a wide-char placeholder.
+			if col+1 < scr.Cols && scr.Cells[row][col+1].SecondHalf {
 				cellCols = 2
 			}
 
@@ -199,18 +202,23 @@ func RenderRaster(scr *Screen, cellW, cellH int) *image.RGBA {
 			px0 := col * cellW
 			py0 := row * cellH
 
+			// Foreground threshold: upper fraction of the cell where
+			// content is drawn. Default is 75% (cellH*3/4). For very
+			// small cells (cellH=1), ensure at least 1 row of foreground
+			// pixels so content remains visible.
+			fgThreshold := cellH * 3 / 4
+			if hasContent && fgThreshold < 1 {
+				fgThreshold = 1
+			}
+
 			for dy := 0; dy < cellH; dy++ {
 				for dx := 0; dx < cellW*cellCols; dx++ {
 					px := px0 + dx
 					py := py0 + dy
-					if px >= imgW || py >= imgH {
-						continue
-					}
 
 					if hasContent {
-						// Draw content: upper 75% is foreground, lower 25% is background.
-						// This creates a visible block that distinguishes content from blank.
-						if dy < cellH*3/4 {
+						// Draw content: upper fraction is foreground, lower is background.
+						if dy < fgThreshold {
 							img.SetRGBA(px, py, fg)
 						} else {
 							img.SetRGBA(px, py, bg)
@@ -222,9 +230,9 @@ func RenderRaster(scr *Screen, cellW, cellH int) *image.RGBA {
 				}
 			}
 
-			// If this is a wide character, skip the next column (NUL placeholder).
+			// If this is a wide character, skip the next column (placeholder).
 			if cellCols == 2 {
-				col++ // skip the placeholder on next iteration
+				col++ // skip the SecondHalf placeholder on next iteration
 			}
 		}
 	}
@@ -239,6 +247,8 @@ func RenderRasterDefault(scr *Screen) *image.RGBA {
 
 // SaveRasterPNG writes the raster image to a PNG file at the given path.
 // Parent directories are created if they do not exist. Returns nil on success.
+// Errors from file close are propagated so callers can detect flush failures
+// (disk full, disconnected mount, etc.).
 func SaveRasterPNG(img *image.RGBA, path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -247,6 +257,9 @@ func SaveRasterPNG(img *image.RGBA, path string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	return png.Encode(f, img)
+	if err := png.Encode(f, img); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }

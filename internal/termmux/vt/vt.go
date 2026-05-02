@@ -239,8 +239,8 @@ func (v *VTerm) String() string {
 		}
 		for c := 0; c <= last; c++ {
 			ch := row[c].Ch
-			if ch == 0 {
-				continue // skip NUL placeholders (wide char second cell)
+			if row[c].SecondHalf {
+				continue // skip wide-char placeholder cells
 			}
 			b = utf8.AppendRune(b, ch)
 		}

@@ -38,8 +38,8 @@ func TestRender_ContainsExpectedSequences(t *testing.T) {
 	if !strings.Contains(got, "\x1b[7m") {
 		t.Error("missing reverse video")
 	}
-	// Status text.
-	if !strings.Contains(got, "[Claude] ready") {
+	// Status text (default has no title prefix).
+	if !strings.Contains(got, "ready") {
 		t.Errorf("missing status text; got %q", got)
 	}
 	// Toggle key hint.
@@ -61,8 +61,27 @@ func TestSetStatus(t *testing.T) {
 	sb := New(&buf)
 	sb.SetStatus("working")
 	sb.Render()
-	if !strings.Contains(buf.String(), "[Claude] working") {
+	if !strings.Contains(buf.String(), "working") {
 		t.Errorf("status not updated; got %q", buf.String())
+	}
+}
+
+func TestSetTitle(t *testing.T) {
+	var buf bytes.Buffer
+	sb := New(&buf)
+	sb.SetTitle("myapp")
+	sb.Render()
+	if !strings.Contains(buf.String(), "[myapp]") {
+		t.Errorf("title not set; got %q", buf.String())
+	}
+}
+
+func TestRender_NoTitleByDefault(t *testing.T) {
+	var buf bytes.Buffer
+	sb := New(&buf)
+	sb.Render()
+	if strings.Contains(buf.String(), "[Claude]") {
+		t.Errorf("default render should not contain [Claude]; got %q", buf.String())
 	}
 }
 
@@ -234,7 +253,7 @@ func TestStatusBar_ReRender_OnlyUpdatesContent(t *testing.T) {
 	}
 
 	// Second render should contain updated status.
-	if !strings.Contains(second, "[Claude] working") {
+	if !strings.Contains(second, "working") {
 		t.Errorf("re-render missing updated status; got %q", second)
 	}
 
@@ -264,7 +283,7 @@ func TestStatusBar_MultipleReRenders_Consistent(t *testing.T) {
 		sb.SetStatus(s)
 		sb.Render()
 		got := buf.String()
-		if !strings.Contains(got, "[Claude] "+s) {
+		if !strings.Contains(got, s) {
 			t.Errorf("render with status %q: missing in output %q", s, got)
 		}
 		// CUP to row 30.

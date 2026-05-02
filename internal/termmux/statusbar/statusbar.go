@@ -9,6 +9,7 @@ import (
 // StatusBar renders a persistent status line on the last terminal row.
 type StatusBar struct {
 	status        string
+	title         string // configurable title prefix; empty means no title
 	toggleKeyName string
 	w             io.Writer
 	height        int // total terminal height
@@ -23,6 +24,14 @@ func New(w io.Writer) *StatusBar {
 		toggleKeyName: "Ctrl+]",
 		height:        24,
 	}
+}
+
+// SetTitle sets the title prefix displayed before the status text.
+// Pass an empty string to remove the title prefix entirely.
+func (sb *StatusBar) SetTitle(title string) {
+	sb.mu.Lock()
+	defer sb.mu.Unlock()
+	sb.title = title
 }
 
 // SetHeight sets the total terminal height.
@@ -68,7 +77,11 @@ func (sb *StatusBar) render() {
 	// Reverse video.
 	fmt.Fprint(sb.w, "\x1b[7m")
 	// Status text.
-	fmt.Fprintf(sb.w, " [Claude] %s │ %s to switch ", sb.status, sb.toggleKeyName)
+	if sb.title != "" {
+		fmt.Fprintf(sb.w, " [%s] %s │ %s to switch ", sb.title, sb.status, sb.toggleKeyName)
+	} else {
+		fmt.Fprintf(sb.w, " %s │ %s to switch ", sb.status, sb.toggleKeyName)
+	}
 	// Reset SGR.
 	fmt.Fprint(sb.w, "\x1b[0m")
 	// Restore cursor.

@@ -63,7 +63,8 @@ type ptyAgentHandle struct {
 }
 
 func (h *ptyAgentHandle) Send(input string) error {
-	return h.proc.Write(input)
+	_, err := h.proc.Write([]byte(input))
+	return err
 }
 
 func (h *ptyAgentHandle) Receive() (string, error) {

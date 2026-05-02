@@ -47,10 +47,16 @@ func (br *BufferedReader) ReadLoop(ctx context.Context) {
 		buf := make([]byte, br.bufSize)
 		n, err := br.r.Read(buf)
 		if n > 0 {
-			// Since buf is freshly allocated each iteration, we can send
-			// buf[:n] directly without copying — the sender never reuses buf.
+			// Copy the read data to a new slice sized exactly to the
+			// read length. Sending buf[:n] directly would pin the full
+			// 32KB backing array in memory for every chunk held by the
+			// channel consumer — for many small reads (common in PTY
+			// workloads), this causes ~3.2MB of pinned memory per 100
+			// buffered chunks instead of ~100 bytes.
+			chunk := make([]byte, n)
+			copy(chunk, buf[:n])
 			select {
-			case br.out <- buf[:n]:
+			case br.out <- chunk:
 			case <-ctx.Done():
 				return
 			}

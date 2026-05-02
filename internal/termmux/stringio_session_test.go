@@ -196,3 +196,77 @@ func TestStringIOSession_InterfaceCompliance(t *testing.T) {
 	var s InteractiveSession = NewStringIOSession(sio)
 	_ = s
 }
+
+// --- GAP-005 / KILL-001: Start() idempotency ---
+
+func TestStringIOSession_DoubleStart_DoesNotPanic(t *testing.T) {
+	t.Parallel()
+	// Create a StringIO that blocks on Receive after the first message,
+	// ensuring the first goroutine is still alive when the second Start is called.
+	sio := &blockingStringIO{
+		data:   []string{"first"},
+		closed: make(chan struct{}),
+	}
+	sess := NewStringIOSession(sio)
+
+	sess.Start()
+
+	// Give the goroutine time to start and read "first".
+	ch := sess.Reader()
+	select {
+	case <-ch:
+		// First message received — goroutine is alive and waiting for more.
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for first message")
+	}
+
+	// Second Start should be a no-op, not spawn a second goroutine.
+	// With sync.Once, this is safe. Without it, a second goroutine is spawned
+	// that will eventually panic on "close of closed channel" when both
+	// goroutines try to close readerCh.
+	sess.Start()
+
+	// Signal the blockingStringIO to unblock, which causes the goroutine(s)
+	// to exit. If two goroutines were spawned, the second one will panic
+	// on close(readerCh) since the first already closed it.
+	close(sio.closed)
+
+	// Wait for the Reader channel to close. If there's a panic in a
+	// goroutine, Go's test framework will detect it and fail the test.
+	select {
+	case _, ok := <-ch:
+		if ok {
+			// More data arrived unexpectedly — means a second goroutine
+			// was spawned and sent more data.
+			t.Error("unexpected data from second goroutine")
+		}
+		// Channel closed — good.
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for reader channel to close")
+	}
+}
+
+// blockingStringIO is a test StringIO that sends initial data then blocks
+// until the closed channel is signalled.
+type blockingStringIO struct {
+	data   []string
+	idx    int
+	closed chan struct{}
+}
+
+func (s *blockingStringIO) Send(string) error { return nil }
+
+func (s *blockingStringIO) Receive() (string, error) {
+	if s.idx < len(s.data) {
+		msg := s.data[s.idx]
+		s.idx++
+		return msg, nil
+	}
+	// Block until closed.
+	<-s.closed
+	return "", io.EOF
+}
+
+func (s *blockingStringIO) Close() error {
+	return nil
+}

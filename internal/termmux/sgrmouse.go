@@ -138,12 +138,16 @@ func parseDecimal(buf []byte, start, end int) (val int, next int, ok bool) {
 //
 // Returns:
 //   - out: bytes to forward to the child (mouse events on the status bar removed)
+//   - partial: trailing bytes that form an incomplete SGR mouse prefix and must
+//     be prepended to the next buffer for correct parsing across read boundaries.
+//     The caller MUST buffer these bytes and prepend them to the next read's data
+//     before calling filterMouseForStatusBar again.
 //   - statusBarClicked: true if a left-click on the status bar was detected
 //
 // When statusBarLines is 0, the function simply returns buf unchanged.
-func filterMouseForStatusBar(buf []byte, termRows, statusBarLines int) (out []byte, statusBarClicked bool) {
+func filterMouseForStatusBar(buf []byte, termRows, statusBarLines int) (out, partial []byte, statusBarClicked bool) {
 	if statusBarLines == 0 || termRows == 0 {
-		return buf, false
+		return buf, nil, false
 	}
 
 	// Status bar occupies the last statusBarLines rows.
@@ -154,7 +158,7 @@ func filterMouseForStatusBar(buf []byte, termRows, statusBarLines int) (out []by
 	// Fast path: no ESC in buffer means no mouse sequences to filter.
 	hasEsc := slices.Contains(buf, 0x1b)
 	if !hasEsc {
-		return buf, false
+		return buf, nil, false
 	}
 
 	// Slow path: scan for SGR mouse sequences.
@@ -162,24 +166,46 @@ func filterMouseForStatusBar(buf []byte, termRows, statusBarLines int) (out []by
 	i := 0
 	for i < len(buf) {
 		// Look for ESC that could start an SGR mouse sequence.
-		if buf[i] == 0x1b && i+2 < len(buf) && buf[i+1] == '[' && buf[i+2] == '<' {
-			ev, consumed, ok := parseSGRMouse(buf, i)
-			if ok {
-				if ev.Y >= statusBarTop && ev.IsLeftClick() {
-					// Intercepted: status bar click. Don't forward.
-					statusBarClicked = true
+		if buf[i] == 0x1b {
+			// Check if this could be the start of an SGR mouse sequence.
+			// We need at least ESC [ < to identify it as a candidate.
+			if i+2 < len(buf) && buf[i+1] == '[' && buf[i+2] == '<' {
+				ev, consumed, ok := parseSGRMouse(buf, i)
+				if ok {
+					if ev.Y >= statusBarTop && ev.IsLeftClick() {
+						// Intercepted: status bar click. Don't forward.
+						statusBarClicked = true
+						i += consumed
+						continue
+					}
+					// Not on status bar — forward the sequence as-is.
+					result = append(result, buf[i:i+consumed]...)
 					i += consumed
 					continue
 				}
-				// Not on status bar — forward the sequence as-is.
-				result = append(result, buf[i:i+consumed]...)
-				i += consumed
-				continue
+				// Incomplete sequence at buffer boundary.
+				// Return the trailing bytes as partial so the caller
+				// can prepend them to the next read.
+				return result, buf[i:], statusBarClicked
 			}
-			// Partial or non-SGR sequence: forward the ESC byte and continue.
+			// ESC followed by something other than '[ <' — could be:
+			// - Another CSI sequence (ESC [ ...)
+			// - A partial escape sequence at buffer boundary
+			// If the ESC is at the very end, or ESC [ is at the end,
+			// we need to buffer these too.
+			if i+1 >= len(buf) {
+				// Just ESC at end of buffer — buffer it.
+				return result, buf[i:], statusBarClicked
+			}
+			if buf[i+1] == '[' && i+2 >= len(buf) {
+				// ESC [ at end of buffer — could become ESC [ < on next read.
+				return result, buf[i:], statusBarClicked
+			}
+			// ESC followed by something that can't start SGR mouse —
+			// forward it as-is.
 		}
 		result = append(result, buf[i])
 		i++
 	}
-	return result, statusBarClicked
+	return result, nil, statusBarClicked
 }

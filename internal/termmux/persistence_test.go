@@ -2,6 +2,7 @@ package termmux
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -318,5 +319,243 @@ func TestExportState_Integration(t *testing.T) {
 	}
 	if ps.Command != "" {
 		t.Errorf("session.command: got %q, want empty (mock has no config)", ps.Command)
+	}
+}
+
+func TestRestoreFromState_NilState(t *testing.T) {
+	mgr, cleanup := startManager(t)
+	defer cleanup()
+
+	_, err := mgr.RestoreFromState(nil, func(ps PersistedSession) (InteractiveSession, error) {
+		return newControllableSession(), nil
+	})
+	if err == nil {
+		t.Fatal("expected error for nil state")
+	}
+}
+
+func TestRestoreFromState_NilFactory(t *testing.T) {
+	mgr, cleanup := startManager(t)
+	defer cleanup()
+
+	state := &PersistedManagerState{Version: persistenceVersion}
+	_, err := mgr.RestoreFromState(state, nil)
+	if err == nil {
+		t.Fatal("expected error for nil factory")
+	}
+}
+
+func TestRestoreFromState_WrongVersion(t *testing.T) {
+	mgr, cleanup := startManager(t)
+	defer cleanup()
+
+	state := &PersistedManagerState{Version: "999"}
+	_, err := mgr.RestoreFromState(state, func(ps PersistedSession) (InteractiveSession, error) {
+		return newControllableSession(), nil
+	})
+	if err == nil {
+		t.Fatal("expected error for wrong version")
+	}
+}
+
+func TestRestoreFromState_Empty(t *testing.T) {
+	mgr, cleanup := startManager(t)
+	defer cleanup()
+
+	state := &PersistedManagerState{
+		Version:  persistenceVersion,
+		ActiveID: 0,
+		Sessions: nil,
+	}
+
+	result, err := mgr.RestoreFromState(state, func(ps PersistedSession) (InteractiveSession, error) {
+		return newControllableSession(), nil
+	})
+	if err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	if len(result.Restored) != 0 {
+		t.Errorf("restored: got %d, want 0", len(result.Restored))
+	}
+	if len(result.Failed) != 0 {
+		t.Errorf("failed: got %d, want 0", len(result.Failed))
+	}
+}
+
+func TestRestoreFromState_SingleSession(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	mgr, cleanup := startManager(t)
+	defer cleanup()
+
+	state := &PersistedManagerState{
+		Version:  persistenceVersion,
+		ActiveID: 1,
+		TermRows: 24,
+		TermCols: 80,
+		Sessions: []PersistedSession{
+			{
+				SessionID: 1,
+				Target:    SessionTarget{Name: "shell", Kind: SessionKindPTY},
+				State:     SessionCreated,
+				Command:   "bash",
+				Args:      []string{"-i"},
+				Dir:       "/tmp",
+				Rows:      24,
+				Cols:      80,
+			},
+		},
+	}
+
+	result, err := mgr.RestoreFromState(state, func(ps PersistedSession) (InteractiveSession, error) {
+		return newControllableSession(), nil
+	})
+	if err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+
+	if len(result.Restored) != 1 {
+		t.Fatalf("restored: got %d, want 1", len(result.Restored))
+	}
+	if len(result.Failed) != 0 {
+		t.Fatalf("failed: got %d, want 0", len(result.Failed))
+	}
+
+	// The restored session should be registered and visible.
+	sessions := mgr.Sessions()
+	if len(sessions) != 1 {
+		t.Fatalf("sessions after restore: got %d, want 1", len(sessions))
+	}
+	if sessions[0].Target.Name != "shell" {
+		t.Errorf("session target name: got %q, want %q", sessions[0].Target.Name, "shell")
+	}
+
+	// The persisted active ID (1) should map to the new session ID.
+	activeID := mgr.ActiveID()
+	if activeID == 0 {
+		t.Error("expected active session to be set")
+	}
+	if activeID != result.Restored[0] {
+		t.Errorf("active ID: got %d, want %d (first restored)", activeID, result.Restored[0])
+	}
+}
+
+func TestRestoreFromState_FactoryFailure(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	mgr, cleanup := startManager(t)
+	defer cleanup()
+
+	state := &PersistedManagerState{
+		Version: persistenceVersion,
+		Sessions: []PersistedSession{
+			{SessionID: 1, Target: SessionTarget{Name: "good"}, Command: "echo"},
+			{SessionID: 2, Target: SessionTarget{Name: "bad"}, Command: "nonexistent"},
+			{SessionID: 3, Target: SessionTarget{Name: "also-good"}, Command: "ls"},
+		},
+	}
+
+	result, err := mgr.RestoreFromState(state, func(ps PersistedSession) (InteractiveSession, error) {
+		if ps.Command == "nonexistent" {
+			return nil, errors.New("factory: command not found")
+		}
+		return newControllableSession(), nil
+	})
+	if err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+
+	if len(result.Restored) != 2 {
+		t.Errorf("restored: got %d, want 2", len(result.Restored))
+	}
+	if len(result.Failed) != 1 {
+		t.Fatalf("failed: got %d, want 1", len(result.Failed))
+	}
+	if result.Failed[0].SessionID != SessionID(2) {
+		t.Errorf("failed session ID: got %d, want 2", result.Failed[0].SessionID)
+	}
+
+	sessions := mgr.Sessions()
+	if len(sessions) != 2 {
+		t.Errorf("sessions after restore: got %d, want 2", len(sessions))
+	}
+}
+
+func TestRestoreFromState_ExportRoundTrip(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	// Phase 1: Create a manager, register sessions, export state.
+	mgr1, cleanup1 := startManager(t)
+
+	sess1 := newControllableSession()
+	sess2 := newControllableSession()
+	_, err := mgr1.Register(sess1, SessionTarget{Name: "alpha", Kind: SessionKindPTY})
+	if err != nil {
+		t.Fatalf("register1: %v", err)
+	}
+	id2, err := mgr1.Register(sess2, SessionTarget{Name: "beta", Kind: SessionKindCapture})
+	if err != nil {
+		t.Fatalf("register2: %v", err)
+	}
+	if err := mgr1.Activate(id2); err != nil {
+		t.Fatalf("activate: %v", err)
+	}
+
+	state, err := mgr1.ExportState()
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	cleanup1()
+
+	// Phase 2: Create a new manager, restore from state.
+	mgr2, cleanup2 := startManager(t)
+	defer cleanup2()
+
+	result, err := mgr2.RestoreFromState(state, func(ps PersistedSession) (InteractiveSession, error) {
+		return newControllableSession(), nil
+	})
+	if err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+
+	if len(result.Restored) != 2 {
+		t.Fatalf("restored: got %d, want 2", len(result.Restored))
+	}
+	if len(result.Failed) != 0 {
+		t.Fatalf("failed: got %d, want 0", len(result.Failed))
+	}
+
+	// The restored sessions should be visible in the new manager.
+	sessions := mgr2.Sessions()
+	if len(sessions) != 2 {
+		t.Fatalf("sessions: got %d, want 2", len(sessions))
+	}
+
+	// The previously-active session (id2) should be active in the new manager.
+	// Note: The new IDs won't match the old ones, but the active session
+	// should correspond to the session that was active in the persisted state.
+	activeID := mgr2.ActiveID()
+	if activeID == 0 {
+		t.Error("expected active session to be set after restore")
+	}
+
+	// The active session should be the one that maps from the persisted active ID.
+	// In the persisted state, ActiveID=2 (the "beta" session). The new active
+	// session should have target "beta".
+	sessions = mgr2.Sessions()
+	activeTarget := SessionTarget{}
+	for _, s := range sessions {
+		if s.ID == activeID {
+			activeTarget = s.Target
+		}
+	}
+	if activeTarget.Name != "beta" {
+		t.Errorf("active session target name: got %q, want %q", activeTarget.Name, "beta")
 	}
 }

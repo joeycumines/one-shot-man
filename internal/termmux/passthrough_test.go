@@ -493,9 +493,13 @@ func TestPassthroughStatusBar_ScrollRegionSetup(t *testing.T) {
 		t.Errorf("stdout missing scroll region reset; got %q", got)
 	}
 
-	// Verify that status bar content was rendered.
-	if !strings.Contains(got, "[Claude]") {
-		t.Errorf("stdout missing status bar render; got %q", got)
+	// Verify that status bar content was rendered (generic title, no product branding).
+	if strings.Contains(got, "[Claude]") {
+		t.Errorf("stdout should not contain product-specific branding; got %q", got)
+	}
+	// The status bar should contain the toggle key hint.
+	if !strings.Contains(got, "switch") {
+		t.Errorf("stdout missing status bar render (toggle hint); got %q", got)
 	}
 }
 
@@ -590,11 +594,17 @@ func TestPassthroughStatusBar_RenderRestore(t *testing.T) {
 
 	// After RestoreScreen, the status bar should be re-rendered
 	// (passthrough.go line 85-86: if cfg.StatusBar != nil && statusBarLines > 0).
-	// Count occurrences of "[Claude]" — should appear more than once
+	// After RestoreScreen, the status bar should be re-rendered
+	// (passthrough.go line 85-86: if cfg.StatusBar != nil && statusBarLines > 0).
+	// The status bar toggle hint should appear more than once
 	// (initial render + post-restore render).
-	renderCount := strings.Count(got, "[Claude]")
-	if renderCount < 2 {
-		t.Errorf("status bar render count = %d, want >= 2 (initial + post-restore); got %q", renderCount, got)
+	switchCount := strings.Count(got, "switch")
+	if switchCount < 2 {
+		t.Errorf("status bar toggle hint count = %d, want >= 2 (initial + post-restore); got %q", switchCount, got)
+	}
+	// Verify no product-specific branding leaked.
+	if strings.Contains(got, "[Claude]") {
+		t.Errorf("stdout should not contain product-specific branding; got %q", got)
 	}
 }
 

@@ -1,6 +1,9 @@
 package termmux
 
-import "io"
+import (
+	"io"
+	"sync"
+)
 
 // StringIOSession adapts a string-based I/O handle ([StringIO]) to the
 // [InteractiveSession] interface for registration with [SessionManager].
@@ -12,9 +15,10 @@ import "io"
 // Resize(rows, cols int) error method (e.g., PTY-backed agent handles).
 // Plain string-based handles without a Resize method are silently ignored.
 type StringIOSession struct {
-	sio      StringIO
-	done     chan struct{}
-	readerCh chan []byte
+	sio       StringIO
+	done      chan struct{}
+	readerCh  chan []byte
+	startOnce sync.Once
 }
 
 // NewStringIOSession creates a session adapter from a [StringIO] handle.
@@ -78,31 +82,34 @@ func (s *StringIOSession) Reader() <-chan []byte {
 }
 
 // Start begins the background reader goroutine that polls Receive() and
-// sends chunks to the Reader() channel. Must be called exactly once.
+// sends chunks to the Reader() channel. Safe to call multiple times —
+// only the first call spawns the goroutine.
 func (s *StringIOSession) Start() {
-	go func() {
-		defer close(s.readerCh)
-		for {
-			msg, err := s.sio.Receive()
-			if err != nil {
-				if err == io.EOF {
+	s.startOnce.Do(func() {
+		go func() {
+			defer close(s.readerCh)
+			for {
+				msg, err := s.sio.Receive()
+				if err != nil {
+					if err == io.EOF {
+						return
+					}
+					// Check if already closed.
+					select {
+					case <-s.done:
+						return
+					default:
+					}
 					return
 				}
-				// Check if already closed.
-				select {
-				case <-s.done:
-					return
-				default:
+				if len(msg) > 0 {
+					select {
+					case s.readerCh <- []byte(msg):
+					case <-s.done:
+						return
+					}
 				}
-				return
 			}
-			if len(msg) > 0 {
-				select {
-				case s.readerCh <- []byte(msg):
-				case <-s.done:
-					return
-				}
-			}
-		}
-	}()
+		}()
+	})
 }

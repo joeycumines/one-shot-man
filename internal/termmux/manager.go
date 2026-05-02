@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"sync/atomic"
 	"time"
 
@@ -204,6 +205,11 @@ const (
 	// reqTermSize asks the worker to return the current terminal
 	// dimensions. Payload: nil. Reply value: [2]int{rows, cols}.
 	reqTermSize
+
+	// reqRestoreState asks the worker to restore sessions from a
+	// persisted state snapshot. Payload: *restoreStatePayload.
+	// Reply value: *RestoreResult.
+	reqRestoreState
 )
 
 // registerPayload carries the arguments for a reqRegister request.
@@ -216,6 +222,30 @@ type registerPayload struct {
 type resizePayload struct {
 	rows int
 	cols int
+}
+
+// restoreStatePayload carries the arguments for a reqRestoreState request.
+type restoreStatePayload struct {
+	state   *PersistedManagerState
+	factory func(PersistedSession) (InteractiveSession, error)
+}
+
+// RestoreResult describes the outcome of a [SessionManager.RestoreFromState]
+// call. It reports how many sessions were successfully re-created and which
+// ones failed.
+type RestoreResult struct {
+	// Restored lists the session IDs that were successfully restored.
+	Restored []SessionID
+
+	// Failed lists the session IDs that could not be restored, along with
+	// the error that prevented restoration.
+	Failed []RestoreFailure
+}
+
+// RestoreFailure records why a single session could not be restored.
+type RestoreFailure struct {
+	SessionID SessionID
+	Error     error
 }
 
 // request is a typed message sent from a public API method to the worker
@@ -616,6 +646,8 @@ func (m *SessionManager) dispatch(req request) {
 		resp = m.handleExportState()
 	case reqTermSize:
 		resp = response{value: [2]int{m.termRows, m.termCols}}
+	case reqRestoreState:
+		resp = m.handleRestoreState(req.payload.(*restoreStatePayload))
 	default:
 		resp = response{err: fmt.Errorf("termmux: unknown request kind %d", req.kind)}
 	}
@@ -1018,10 +1050,5 @@ func (m *SessionManager) shutdownSessions() {
 
 // sortSessionIDs sorts a slice of SessionIDs in descending order.
 func sortSessionIDs(ids []SessionID) {
-	// Simple insertion sort — session count is always small.
-	for i := 1; i < len(ids); i++ {
-		for j := i; j > 0 && ids[j] > ids[j-1]; j-- {
-			ids[j], ids[j-1] = ids[j-1], ids[j]
-		}
-	}
+	slices.SortFunc(ids, func(a, b SessionID) int { return int(b - a) })
 }

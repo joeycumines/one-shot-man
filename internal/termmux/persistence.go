@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
 )
 
 // persistenceVersion is the schema version for the persisted state file.
@@ -90,6 +93,59 @@ func (m *SessionManager) ExportState() (*PersistedManagerState, error) {
 	return resp.value.(*PersistedManagerState), nil
 }
 
+// RestoreFromState rehydrates the SessionManager from a previously persisted
+// state snapshot. For each session in the state, the factory function is
+// called to construct an [InteractiveSession]. Successfully created sessions
+// are registered with the manager; the active session is set to the one
+// recorded in the persisted state (if it was restored).
+//
+// The factory function receives a [PersistedSession] containing the session's
+// command, args, environment, and other metadata. It returns the constructed
+// session or an error. A common factory implementation creates a
+// [*CaptureSession] from [PersistedSession.Command] and related fields:
+//
+//	mgr.RestoreFromState(state, func(ps termmux.PersistedSession) (termmux.InteractiveSession, error) {
+//	    cs := termmux.NewCaptureSession(termmux.CaptureConfig{
+//	        Command: ps.Command,
+//	        Args:    ps.Args,
+//	        Dir:     ps.Dir,
+//	        Env:     ps.Env,
+//	        Rows:    ps.Rows,
+//	        Cols:    ps.Cols,
+//	    })
+//	    return cs, nil
+//	})
+//
+// RestoreFromState must be called while the manager is running (after [Run]).
+// It must not be called concurrently with other mutating operations. If the
+// manager already has registered sessions, the restored sessions are added
+// alongside them (IDs are assigned sequentially and will NOT match the
+// persisted IDs).
+//
+// Sessions whose factory call fails are recorded in [RestoreResult.Failed].
+func (m *SessionManager) RestoreFromState(
+	state *PersistedManagerState,
+	factory func(PersistedSession) (InteractiveSession, error),
+) (*RestoreResult, error) {
+	if state == nil {
+		return nil, errors.New("termmux: nil state")
+	}
+	if factory == nil {
+		return nil, errors.New("termmux: nil factory")
+	}
+	if state.Version != persistenceVersion {
+		return nil, fmt.Errorf("termmux: unsupported persistence version %q (expected %q)", state.Version, persistenceVersion)
+	}
+	resp := m.sendRequest(reqRestoreState, &restoreStatePayload{
+		state:   state,
+		factory: factory,
+	})
+	if resp.err != nil {
+		return nil, resp.err
+	}
+	return resp.value.(*RestoreResult), nil
+}
+
 // handleExportState builds a [PersistedManagerState] snapshot from the
 // worker-owned session map. Runs exclusively on the worker goroutine.
 func (m *SessionManager) handleExportState() response {
@@ -125,6 +181,79 @@ func (m *SessionManager) handleExportState() response {
 		state.Sessions = append(state.Sessions, ps)
 	}
 	return response{value: state}
+}
+
+// handleRestoreState processes a reqRestoreState request on the worker
+// goroutine. It iterates over persisted sessions, calls the factory for each,
+// and registers the resulting InteractiveSession.
+func (m *SessionManager) handleRestoreState(p *restoreStatePayload) response {
+	result := &RestoreResult{
+		Restored: make([]SessionID, 0, len(p.state.Sessions)),
+		Failed:   nil,
+	}
+
+	// Track the mapping from persisted session ID to new SessionID
+	// so we can set the active session correctly.
+	idMap := make(map[uint64]SessionID) // persisted SessionID → new SessionID
+
+	for _, ps := range p.state.Sessions {
+		session, err := p.factory(ps)
+		if err != nil {
+			result.Failed = append(result.Failed, RestoreFailure{
+				SessionID: SessionID(ps.SessionID),
+				Error:     err,
+			})
+			continue
+		}
+
+		target := ps.Target
+		newID := m.nextID
+		m.nextID++
+		m.snapshotGen++
+
+		v := vt.NewVTerm(m.termRows, m.termCols)
+		v.BellFn = func() {
+			m.eventBus.emit(EventBell, newID)
+		}
+
+		ms := &managedSession{
+			session:    session,
+			vterm:      v,
+			state:      SessionCreated,
+			target:     target,
+			lastActive: ps.LastActive,
+		}
+
+		snap := &ScreenSnapshot{
+			Gen:       m.snapshotGen,
+			Rows:      m.termRows,
+			Cols:      m.termCols,
+			Timestamp: time.Now(),
+		}
+		ms.snapshot.Store(snap)
+		m.sessions[newID] = ms
+
+		// Spawn reader goroutine for the restored session.
+		m.startReaderGoroutine(newID, session)
+
+		idMap[ps.SessionID] = newID
+		result.Restored = append(result.Restored, newID)
+
+		slog.Info("restored session", "persistedId", ps.SessionID, "newId", newID, "target", target)
+	}
+
+	// Set the active session if the persisted active ID was restored
+	// and no session is currently active.
+	if newActiveID, ok := idMap[p.state.ActiveID]; ok && m.activeID == 0 {
+		m.activeID = newActiveID
+	}
+
+	// Emit registration events for restored sessions.
+	for _, newID := range result.Restored {
+		m.eventBus.emit(EventSessionRegistered, newID)
+	}
+
+	return response{value: result}
 }
 
 // SaveManagerState atomically writes the persisted state to path. The parent

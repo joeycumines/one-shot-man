@@ -2,9 +2,6 @@ package termmux
 
 import (
 	"context"
-	"errors"
-	"runtime"
-	"syscall"
 )
 
 // Passthrough enters direct terminal I/O mode for the active session.
@@ -133,73 +130,28 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 	fwdCtx, fwdCancel := context.WithCancel(ctx)
 	defer fwdCancel()
 
-	type fwdResult struct {
-		reason ExitReason
-		err    error
-	}
-	resultCh := make(chan fwdResult, 1)
+	resultCh := make(chan forwardResult, 1)
 
-	go func() {
-		buf := make([]byte, 4096)
-		for {
-			select {
-			case <-fwdCtx.Done():
-				return
-			default:
+	// Build pre-processor for SGR mouse filtering (status bar click interception).
+	var preProcess func(data []byte, carry []byte) (filtered []byte, newCarry []byte, clicked bool)
+	if statusBarLines > 0 && cfg.TermFd >= 0 && cfg.TermState != nil {
+		preProcess = func(data []byte, carry []byte) ([]byte, []byte, bool) {
+			// Prepend carry-over bytes from a previous partial SGR prefix.
+			if len(carry) > 0 {
+				data = append(carry, data...)
 			}
-			n, readErr := cfg.Stdin.Read(buf)
-			if readErr != nil {
-				if fwdCtx.Err() != nil {
-					return
-				}
-				// Defense-in-depth: retry on EAGAIN even after
-				// EnsureBlocking, in case another goroutine re-set
-				// O_NONBLOCK.
-				if errors.Is(readErr, syscall.EAGAIN) || errors.Is(readErr, syscall.EWOULDBLOCK) {
-					runtime.Gosched()
-					continue
-				}
-				resultCh <- fwdResult{ExitError, readErr}
-				return
-			}
-
-			data := buf[:n]
-
-			// SGR mouse filtering: intercept clicks on the status bar.
-			if statusBarLines > 0 && cfg.TermFd >= 0 && cfg.TermState != nil {
-				_, th, _ := cfg.TermState.GetSize(cfg.TermFd)
-				filtered, clicked := filterMouseForStatusBar(data, th, statusBarLines)
-				if clicked {
-					if len(filtered) > 0 {
-						writeOrLog(w, filtered, "session-pre-toggle-click")
-					}
-					resultCh <- fwdResult{ExitToggle, nil}
-					return
-				}
-				data = filtered
-			}
-
-			// Toggle key scan.
-			for i := 0; i < len(data); i++ {
-				if data[i] == cfg.ToggleKey {
-					if i > 0 {
-						writeOrLog(w, data[:i], "session-pre-toggle-key")
-					}
-					resultCh <- fwdResult{ExitToggle, nil}
-					return
-				}
-			}
-
-			// Forward all bytes to the active session.
-			if _, writeErr := w.Write(data); writeErr != nil {
-				if fwdCtx.Err() != nil {
-					return
-				}
-				resultCh <- fwdResult{ExitError, writeErr}
-				return
-			}
+			_, th, _ := cfg.TermState.GetSize(cfg.TermFd)
+			filtered, partial, clicked := filterMouseForStatusBar(data, th, statusBarLines)
+			return filtered, partial, clicked
 		}
-	}()
+	}
+
+	go forwardStdin(fwdCtx, resultCh, forwardConfig{
+		Stdin:      cfg.Stdin,
+		Writer:     w,
+		ToggleKey:  cfg.ToggleKey,
+		PreProcess: preProcess,
+	})
 
 	// ── Wait for exit signal ────────────────────────────────────────
 	for {

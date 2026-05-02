@@ -5,15 +5,12 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"runtime"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/joeycumines/one-shot-man/internal/termmux/pty"
 	"github.com/joeycumines/one-shot-man/internal/termmux/ptyio"
-	"github.com/joeycumines/one-shot-man/internal/termmux/statusbar"
 )
 
 // CaptureConfig configures a CaptureSession.
@@ -423,6 +420,20 @@ func (cs *CaptureSession) Pid() int {
 	return proc.Pid()
 }
 
+// Rows returns the current terminal row count.
+func (cs *CaptureSession) Rows() int {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	return cs.rows
+}
+
+// Cols returns the current terminal column count.
+func (cs *CaptureSession) Cols() int {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	return cs.cols
+}
+
 // ExportConfig returns a copy of the session's creation configuration.
 // This enables persistence of the command, arguments, and working directory
 // for session restart scenarios.
@@ -452,11 +463,8 @@ func (cs *CaptureSession) Write(data []byte) (int, error) {
 	if proc == nil {
 		return 0, errors.New("capture: not started")
 	}
-	err := proc.Write(string(data))
-	if err != nil {
-		return 0, err
-	}
-	return len(data), nil
+	n, err := proc.Write(data)
+	return n, err
 }
 
 // WriteString sends string data to the child process's stdin via the PTY.
@@ -468,42 +476,6 @@ func (cs *CaptureSession) WriteString(data string) error {
 // SendEOF sends EOF (Ctrl-D) to the child process via the PTY.
 func (cs *CaptureSession) SendEOF() error {
 	return cs.WriteString("\x04")
-}
-
-// PassthroughConfig configures a passthrough session.
-// Used by both CaptureSession.Passthrough() and SessionManager.Passthrough().
-type PassthroughConfig struct {
-	// Stdin is the user's terminal input (typically os.Stdin).
-	Stdin io.Reader
-	// Stdout is the user's terminal output (typically os.Stdout).
-	Stdout io.Writer
-	// TermFd is the file descriptor for the controlling terminal (-1 if unavailable).
-	TermFd int
-	// ToggleKey is the byte value of the key that exits passthrough (e.g., 0x1D for Ctrl+]).
-	ToggleKey byte
-	// TermState abstracts terminal state operations (MakeRaw, Restore, GetSize).
-	TermState ptyio.TermState
-	// BlockingGuard abstracts fd blocking mode management.
-	BlockingGuard ptyio.BlockingGuard
-
-	// --- Fields below are used only by SessionManager.Passthrough() ---
-
-	// StatusBar, when non-nil, reserves the last terminal row for a
-	// persistent status line. A scroll region is set to constrain
-	// child output, and SGR mouse events on the status bar row are
-	// intercepted (click → ExitToggle).
-	StatusBar *statusbar.StatusBar
-
-	// ResizeFn, when non-nil, is called after terminal resize events
-	// to propagate the new dimensions to the child process. The rows
-	// parameter accounts for the status bar height.
-	ResizeFn func(rows, cols uint16) error
-
-	// RestoreScreen controls the initial display when entering
-	// passthrough via SessionManager. When true, the active session's
-	// VTerm screen is restored in-place (flicker-free re-entry).
-	// When false, the screen is cleared (first swap).
-	RestoreScreen bool
 }
 
 // Passthrough enters raw terminal passthrough mode for this CaptureSession.
@@ -578,11 +550,7 @@ func (cs *CaptureSession) Passthrough(ctx context.Context, cfg PassthroughConfig
 	fwdCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	type fwdResult struct {
-		reason ExitReason
-		err    error
-	}
-	resultCh := make(chan fwdResult, 1)
+	resultCh := make(chan forwardResult, 1)
 
 	// Monitor for child exit: when the readerLoop's channel closes,
 	// the child has exited.
@@ -591,65 +559,16 @@ func (cs *CaptureSession) Passthrough(ctx context.Context, cfg PassthroughConfig
 		case <-fwdCtx.Done():
 			return
 		case <-cs.done:
-			resultCh <- fwdResult{ExitChildExit, nil}
+			resultCh <- forwardResult{ExitChildExit, nil}
 		}
 	}()
 
-	// Goroutine: stdin → session (input forwarding with toggle key detection).
-	go func() {
-		buf := make([]byte, 4096)
-		for {
-			select {
-			case <-fwdCtx.Done():
-				return
-			default:
-			}
-			n, err := cfg.Stdin.Read(buf)
-			// Process data first: io.Reader contract allows n > 0
-			// alongside a non-nil error (commonly io.EOF).
-			if n > 0 {
-				data := buf[:n]
-				// Scan for toggle key.
-				for i := 0; i < len(data); i++ {
-					if data[i] == cfg.ToggleKey {
-						if i > 0 {
-							if err := proc.Write(string(data[:i])); err != nil {
-								_ = err // best-effort before toggle exit
-							}
-						}
-						resultCh <- fwdResult{ExitToggle, nil}
-						return
-					}
-				}
-				if writeErr := proc.Write(string(data)); writeErr != nil {
-					if fwdCtx.Err() != nil {
-						return
-					}
-					resultCh <- fwdResult{ExitError, writeErr}
-					return
-				}
-			}
-			// Handle read error after processing any data returned
-			// alongside it (io.Reader contract: n > 0, err != nil).
-			if err != nil {
-				if fwdCtx.Err() != nil {
-					return
-				}
-				if errors.Is(err, syscall.EAGAIN) || errors.Is(err, syscall.EWOULDBLOCK) {
-					runtime.Gosched()
-					continue
-				}
-				// Stdin EOF is normal (reader exhausted). Stop forwarding
-				// and let other goroutines (child exit, context cancel)
-				// determine the exit reason.
-				if errors.Is(err, io.EOF) {
-					return
-				}
-				resultCh <- fwdResult{ExitError, err}
-				return
-			}
-		}
-	}()
+	// Stdin → PTY forwarding (shared with SessionManager.Passthrough).
+	go forwardStdin(fwdCtx, resultCh, forwardConfig{
+		Stdin:     cfg.Stdin,
+		Writer:    proc,
+		ToggleKey: cfg.ToggleKey,
+	})
 
 	// Wait for any goroutine to signal completion. Context cancellation
 	// takes priority: when the parent context is cancelled, the child

@@ -10,7 +10,6 @@ import (
 	"image"
 	"io"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -900,7 +899,8 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 
 	// renderRaster(id, options?) → {width, height, path} | null
 	// Renders the VTerm screen for the given session to a PNG file.
-	// Returns the image dimensions and the temp file path.
+	// Returns the image dimensions and the temp file path. The caller is
+	// responsible for deleting the temp file when no longer needed.
 	_ = obj.Set("renderRaster", func(call goja.FunctionCall) goja.Value {
 		if len(call.Arguments) < 1 {
 			panic(runtime.NewTypeError("renderRaster: session ID argument is required"))
@@ -918,6 +918,9 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 				cellH = int(v.ToInteger())
 			}
 		}
+		if cellW <= 0 || cellH <= 0 {
+			panic(runtime.NewTypeError("renderRaster: cell dimensions must be positive"))
+		}
 		snap := mgr.Snapshot(id)
 		if snap == nil {
 			return goja.Null()
@@ -925,17 +928,17 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 		// Reconstruct a VTerm screen from the snapshot dimensions.
 		scr := vt.NewScreen(snap.Rows, snap.Cols)
 		// Feed the plain text into the screen to populate cells.
-		// PlainText uses \n as row separator. We write directly to
-		// scr.Cells to avoid PutChar side effects (PendingWrap,
-		// LineFeed, cursor tracking) that cause double-row-advance
-		// and content scrolling bugs.
-		// (This is a simplified approach — a full implementation
-		// would preserve SGR attributes from the ANSI output.)
+		// PlainText uses \n as row separator. \r resets column without
+		// advancing the row (handles \r\n sequences correctly).
 		row := 0
 		col := 0
 		for _, ch := range snap.PlainText {
 			if ch == '\n' {
 				row++
+				col = 0
+				continue
+			}
+			if ch == '\r' {
 				col = 0
 				continue
 			}
@@ -953,9 +956,16 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 		} else {
 			img = vt.RenderRaster(scr, cellW, cellH)
 		}
-		// Save to a temp file.
+		// Save to a unique temp file. Use os.CreateTemp to generate a
+		// secure, unique path, then pass it to SaveRasterPNG which handles
+		// directory creation and the actual PNG write.
 		tmpDir := os.TempDir()
-		path := filepath.Join(tmpDir, fmt.Sprintf("osm-raster-%d-%d.png", id, time.Now().UnixMilli()))
+		f, err := os.CreateTemp(tmpDir, fmt.Sprintf("osm-raster-%d-*.png", id))
+		if err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		path := f.Name()
+		_ = f.Close() // SaveRasterPNG will re-create the file
 		if err := vt.SaveRasterPNG(img, path); err != nil {
 			panic(runtime.NewGoError(err))
 		}
@@ -1633,7 +1643,11 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 			TermCols: termCols,
 		}
 		for _, key := range sessionsKeys {
-			sessObj := sessionsObj.Get(key).ToObject(runtime)
+			sessVal := sessionsObj.Get(key)
+			if sessVal == nil || goja.IsUndefined(sessVal) || goja.IsNull(sessVal) {
+				continue // skip null/undefined session entries
+			}
+			sessObj := sessVal.ToObject(runtime)
 			ps := parent.PersistedSession{
 				SessionID: uint64(sessObj.Get("sessionId").ToInteger()),
 				Rows:      int(sessObj.Get("rows").ToInteger()),
@@ -1644,8 +1658,14 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 			}
 			if v := sessObj.Get("args"); v != nil && !goja.IsUndefined(v) && v != goja.Null() {
 				argsObj := v.ToObject(runtime)
-				for _, key := range argsObj.Keys() {
-					ps.Args = append(ps.Args, argsObj.Get(key).String())
+				if lenVal := argsObj.Get("length"); lenVal != nil && !goja.IsUndefined(lenVal) {
+					arrLen := lenVal.ToInteger()
+					for i := range arrLen {
+						argV := argsObj.Get(fmt.Sprintf("%d", i))
+						if argV != nil && !goja.IsUndefined(argV) && !goja.IsNull(argV) {
+							ps.Args = append(ps.Args, argV.String())
+						}
+					}
 				}
 			}
 			if v := sessObj.Get("dir"); v != nil && !goja.IsUndefined(v) && v != goja.Null() {
@@ -1663,8 +1683,9 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 			targetVal := sessObj.Get("target")
 			if targetVal != nil && !goja.IsUndefined(targetVal) && targetVal != goja.Null() {
 				targetObj := targetVal.ToObject(runtime)
-				ps.Target = parent.SessionTarget{
-					Name: targetObj.Get("name").String(),
+				ps.Target = parent.SessionTarget{}
+				if v := targetObj.Get("name"); v != nil && !goja.IsUndefined(v) {
+					ps.Target.Name = v.String()
 				}
 				if v := targetObj.Get("id"); v != nil && !goja.IsUndefined(v) {
 					ps.Target.ID = v.String()
@@ -1711,7 +1732,12 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 		for i, f := range result.Failed {
 			failed[i] = map[string]any{
 				"sessionId": uint64(f.SessionID),
-				"error":     f.Error.Error(),
+				"error": func() string {
+					if f.Error != nil {
+						return f.Error.Error()
+					}
+					return ""
+				}(),
 			}
 		}
 		return runtime.ToValue(map[string]any{

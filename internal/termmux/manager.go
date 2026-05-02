@@ -1,6 +1,7 @@
 package termmux
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -1049,6 +1050,9 @@ func (m *SessionManager) shutdownSessions() {
 }
 
 // sortSessionIDs sorts a slice of SessionIDs in descending order.
+// Uses cmp.Compare to avoid integer overflow when subtracting uint64
+// values (SessionID is uint64; subtraction overflow produces incorrect
+// ordering when the difference exceeds the maximum signed int value).
 func sortSessionIDs(ids []SessionID) {
-	slices.SortFunc(ids, func(a, b SessionID) int { return int(b - a) })
+	slices.SortFunc(ids, func(a, b SessionID) int { return cmp.Compare(b, a) })
 }

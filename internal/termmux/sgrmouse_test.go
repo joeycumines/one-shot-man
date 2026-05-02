@@ -433,3 +433,81 @@ func TestFilterMouse_NonSGREsc_NotBuffered(t *testing.T) {
 		t.Errorf("expected no partial for non-SGR escape, got %q", string(partial))
 	}
 }
+
+func TestFilterMouse_MalformedSGR_DoesNotPoisonStream(t *testing.T) {
+	// Malformed SGR mouse sequence (\x1b[<INVALID) must NOT be buffered
+	// as partial. Before the fix, any ESC [ < prefix with a failed parse
+	// was unconditionally buffered as partial, causing stream poisoning
+	// where every subsequent read was prepended with the malformed bytes.
+	buf := []byte("\x1b[<INVALID\x1b[<0;5;5M") // malformed + valid click on status bar
+	out, partial, clicked := filterMouseForStatusBar(buf, 24, 1)
+
+	// The malformed sequence should NOT appear as partial.
+	if len(partial) != 0 {
+		t.Errorf("malformed SGR should not produce partial, got %q", string(partial))
+	}
+	// The valid click (y=5, not on status bar row 24) should be forwarded.
+	// It won't be a click since y=5 < statusBarTop (24).
+	if clicked {
+		t.Error("unexpected status bar click on row 5")
+	}
+	// Both sequences (malformed + valid) should appear in output.
+	if !bytesContain(out, []byte("\x1b[<")) {
+		t.Errorf("expected output to contain ESC [ < sequences, got %q", string(out))
+	}
+}
+
+func TestFilterMouse_TruncatedSGR_Buffered(t *testing.T) {
+	// Truncated SGR mouse sequence at buffer boundary (\x1b[<1;2 — missing ;yM/m)
+	// MUST be buffered as partial for carry-over to next read.
+	buf := []byte("\x1b[<1;2")
+	out, partial, clicked := filterMouseForStatusBar(buf, 24, 1)
+
+	if len(partial) == 0 {
+		t.Error("truncated SGR should produce partial for carry-over")
+	}
+	if len(out) != 0 {
+		t.Errorf("truncated SGR should produce no output, got %q", string(out))
+	}
+	if clicked {
+		t.Error("truncated SGR should not trigger click")
+	}
+	// The partial should match the original buffer.
+	if string(partial) != string(buf) {
+		t.Errorf("partial = %q, want %q", string(partial), string(buf))
+	}
+}
+
+func TestFilterMouse_MalformedSGR_ForwardedWithoutCarry(t *testing.T) {
+	// A malformed SGR sequence followed by normal input should have
+	// the normal input forwarded correctly (not swallowed into carry).
+	// The malformed prefix starts with a letter after ESC [ < (not digits).
+	buf := []byte("hello\x1b[<BADnormal")
+	out, partial, _ := filterMouseForStatusBar(buf, 24, 1)
+
+	if len(partial) != 0 {
+		t.Errorf("malformed SGR should not produce partial, got %q", string(partial))
+	}
+	if !bytesContain(out, []byte("hello")) {
+		t.Error("preceding text missing")
+	}
+	if !bytesContain(out, []byte("normal")) {
+		t.Error("text after malformed SGR was swallowed (stream poisoning)")
+	}
+}
+
+func bytesContain(b, sub []byte) bool {
+	for i := 0; i <= len(b)-len(sub); i++ {
+		match := true
+		for j := 0; j < len(sub); j++ {
+			if b[i+j] != sub[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
+}

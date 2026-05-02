@@ -246,6 +246,12 @@ func (m *SessionManager) handleRestoreState(p *restoreStatePayload) response {
 	// and no session is currently active.
 	if newActiveID, ok := idMap[p.state.ActiveID]; ok && m.activeID == 0 {
 		m.activeID = newActiveID
+		// Mark the activated session as last active and emit the event
+		// so UI consumers (status bar, TUI) know which session is current.
+		if ms, ok := m.sessions[newActiveID]; ok {
+			ms.lastActive = time.Now()
+		}
+		m.eventBus.emit(EventSessionActivated, newActiveID)
 	}
 
 	// Emit registration events for restored sessions.

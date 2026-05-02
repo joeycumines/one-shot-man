@@ -183,10 +183,22 @@ func filterMouseForStatusBar(buf []byte, termRows, statusBarLines int) (out, par
 					i += consumed
 					continue
 				}
-				// Incomplete sequence at buffer boundary.
-				// Return the trailing bytes as partial so the caller
-				// can prepend them to the next read.
-				return result, buf[i:], statusBarClicked
+				// parseSGRMouse failed. Distinguish incomplete (truncated at
+				// buffer boundary) from malformed (garbage after prefix).
+				// If there is no fourth byte, the sequence could become a
+				// valid SGR event on the next read — buffer it as partial.
+				// If the fourth byte is a digit, the sequence started
+				// parsing correctly and was truncated — buffer it.
+				// Otherwise, the sequence is malformed — forward the ESC
+				// byte normally rather than buffering indefinitely.
+				if i+3 >= len(buf) || (buf[i+3] >= '0' && buf[i+3] <= '9') {
+					return result, buf[i:], statusBarClicked
+				}
+				// Malformed: not recognizable as an SGR mouse sequence.
+				// Forward the ESC byte rather than poisoning the stream.
+				result = append(result, buf[i])
+				i++
+				continue
 			}
 			// ESC followed by something other than '[ <' — could be:
 			// - Another CSI sequence (ESC [ ...)

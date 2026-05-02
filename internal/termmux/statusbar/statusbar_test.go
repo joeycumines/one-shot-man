@@ -71,8 +71,9 @@ func TestSetTitle(t *testing.T) {
 	sb := New(&buf)
 	sb.SetTitle("myapp")
 	sb.Render()
-	if !strings.Contains(buf.String(), "[myapp]") {
-		t.Errorf("title not set; got %q", buf.String())
+	got := buf.String()
+	if !strings.Contains(got, " [myapp] ready │ Ctrl+] to switch ") {
+		t.Errorf("title not set; got %q", got)
 	}
 }
 
@@ -80,8 +81,13 @@ func TestRender_NoTitleByDefault(t *testing.T) {
 	var buf bytes.Buffer
 	sb := New(&buf)
 	sb.Render()
-	if strings.Contains(buf.String(), "[Claude]") {
-		t.Errorf("default render should not contain [Claude]; got %q", buf.String())
+	got := buf.String()
+	if strings.Contains(got, "[Claude]") {
+		t.Errorf("default render should not contain [Claude]; got %q", got)
+	}
+	// Positive assertion: the no-title fallback should be present.
+	if !strings.Contains(got, " ready │ Ctrl+] to switch ") {
+		t.Errorf("default render missing fallback text; got %q", got)
 	}
 }
 
@@ -294,13 +300,13 @@ func TestStatusBar_MultipleReRenders_Consistent(t *testing.T) {
 }
 
 // TestStatusBar_ConcurrentAccess exercises the mutex by running SetStatus,
-// SetHeight, SetToggleKey, and Render concurrently. With -race this verifies
-// no data races exist.
+// SetHeight, SetToggleKey, SetTitle, and Render concurrently. With -race this
+// verifies no data races exist.
 func TestStatusBar_ConcurrentAccess(t *testing.T) {
 	var buf safeBuffer
 	sb := New(&buf)
 
-	const goroutines = 8
+	const goroutines = 9
 	const iterations = 100
 
 	var wg sync.WaitGroup
@@ -330,8 +336,16 @@ func TestStatusBar_ConcurrentAccess(t *testing.T) {
 		}
 	}()
 
+	// Concurrent SetTitle writers.
+	go func() {
+		defer wg.Done()
+		for i := range iterations {
+			sb.SetTitle(fmt.Sprintf("title-%d", i))
+		}
+	}()
+
 	// Concurrent Render calls.
-	for range goroutines - 3 {
+	for range goroutines - 4 {
 		go func() {
 			defer wg.Done()
 			for range iterations {

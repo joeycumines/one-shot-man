@@ -21,7 +21,7 @@ make build
 make test
 
 # Run fast tests only (skips slow integration/E2E tests via -short flag)
-make test-short
+go test -short -count=1 -timeout=5m ./...
 
 # Run all linters (vet, staticcheck, betteralign, deadcode)
 make lint
@@ -151,7 +151,7 @@ When modifying **internal code**—meaning any code that isn't depended on by ex
         - Tests must be **fully self-contained** and portable across machines
         - Rare exceptions (e.g., `vhs` for recording) MUST use TestMain flags, documented Make targets, and skip gracefully when unavailable. See `generate-tapes-and-gifs` and `-execute-vhs` for the pattern.
 - NEVER use build tags to segment tests. Prefer supporting "opting out of long tests" via the `go test -short` flag (`testing.Short()`) or use a `TestMain` with custom `flag` package parsing for to support "opt-in" test behavior (ONLY for exceptional cases).
-- **Slow tests MUST use `testing.Short()` skip guards.** Any test that spawns JS runtimes (`scripting.NewEngineWithConfig`), uses bubbletea TUI, spawns subprocesses, or takes >2 seconds must call `skipSlow(t)` (in `internal/command`) or `if testing.Short() { t.Skip(...) }` at the top of the test function. Use `make test-short` for fast feedback.
+- **Slow tests MUST use `testing.Short()` skip guards.** Any test that spawns JS runtimes (`scripting.NewEngineWithConfig`), uses bubbletea TUI, spawns subprocesses, or takes >2 seconds must call `skipSlow(t)` (in `internal/command`) or `if testing.Short() { t.Skip(...) }` at the top of the test function. Use `go test -short` for fast feedback.
 
 ### No "AI Slop"
 

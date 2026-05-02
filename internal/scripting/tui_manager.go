@@ -746,10 +746,23 @@ func (tm *TUIManager) Run() {
 	// Flush any pending output (e.g., from onEnter) before starting prompt
 	tm.flushQueuedOutput()
 
+	// Check if script wants to skip the REPL (e.g., after BubbleTea TUI exits in non-interactive mode).
+	// Scripts can set globalThis.__skipREPL = true in __postBubbleTeaExit to prevent REPL launch.
+	skipREPL := false
+	if tm.engine.vm != nil {
+		if skipVal := tm.engine.vm.Get("__skipREPL"); skipVal != nil && !goja.IsUndefined(skipVal) {
+			skipREPL = skipVal.ToBoolean()
+		}
+	}
+
 	// Use Promisify to keep the event loop alive while the shell is active.
 	// This ensures that WithAutoExit(true) won't terminate the loop while
 	// the user is interacting with the prompt.
 	tm.engine.Promisify(context.Background(), func(_ context.Context) (any, error) {
+		if skipREPL {
+			// Script requested REPL skip - just return without launching prompt.
+			return nil, nil
+		}
 		tm.runAdvancedPrompt()
 		return nil, nil
 	})

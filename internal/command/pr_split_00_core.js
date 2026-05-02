@@ -543,10 +543,40 @@
         return "'" + s.replace(/'/g, "'\\''") + "'";
     }
 
-    // lookupBinary checks whether a named binary exists on PATH.
+    function absolutePath(path) {
+        if (osmod && typeof osmod.isAbsolute === 'function') {
+            return osmod.isAbsolute(path);
+        }
+        if (typeof path !== 'string' || path === '') {
+            return false;
+        }
+        if (/^[A-Za-z]:[\\/]/.test(path) || /^\\\\/.test(path)) {
+            return true;
+        }
+        return path.charAt(0) === '/';
+    }
+
+    function fileExistsSync(path) {
+        if (osmod && typeof osmod.fileExists === 'function') {
+            return osmod.fileExists(path);
+        }
+        return isWindows()
+            ? exec.execv(['cmd.exe', '/C', 'if exist "' + path + '" (exit 0) else (exit 1)']).code === 0
+            : exec.execv(['test', '-f', path]).code === 0;
+    }
+
+    // lookupBinary checks whether a named binary exists on PATH, or whether an
+    // explicit absolute command path exists on disk.
     // Returns {found: bool, path: string} using 'where.exe' on Windows,
-    // 'which' on Unix.
+    // 'which' on Unix for PATH lookups.
     function lookupBinary(name) {
+        if (absolutePath(name)) {
+            var exists = fileExistsSync(name);
+            return {
+                found: exists,
+                path: exists ? name : ''
+            };
+        }
         var cmd = isWindows() ? 'where.exe' : 'which';
         // Late-bind exec through prSplit._modules so test compat shims
         // that reassign the global 'exec' are visible here.
@@ -561,6 +591,13 @@
     // lookupBinaryAsync is the non-blocking version of lookupBinary.
     // Returns a Promise<{found: bool, path: string}>.
     async function lookupBinaryAsync(name) {
+        if (absolutePath(name)) {
+            var exists = fileExistsSync(name);
+            return {
+                found: exists,
+                path: exists ? name : ''
+            };
+        }
         var cmd = isWindows() ? 'where.exe' : 'which';
         // Late-bind exec through prSplit._modules so test compat shims
         // that reassign the global 'exec' are visible here.

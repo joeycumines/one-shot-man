@@ -1876,6 +1876,20 @@ try {
     throw e;
 }
 
+// Register __postBubbleTeaExit callback to stop the ticker when BubbleTea exits.
+// This prevents the process from hanging after 'q' is pressed because the bt ticker
+// holds a Promisify token that keeps the event loop alive until ticker.stop() is called.
+// See docs/q-key-autopsy-20260430/ for full root cause analysis.
+__postBubbleTeaExit = function() {
+    if (typeof state !== 'undefined' && state.ticker) {
+        state.ticker.stop();
+    }
+    // Skip the REPL after BubbleTea exits so the process exits cleanly.
+    // This is the expected behavior for non-interactive runs (test mode, CI, etc.).
+    // In interactive mode, users would set this to false to get a REPL after TUI exit.
+    __skipREPL = true;
+};
+
 {
     let shouldRun = true;
     if (typeof module !== 'undefined') {

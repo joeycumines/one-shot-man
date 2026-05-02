@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -292,6 +293,12 @@ func createEnvBlock(env []string) (*uint16, error) {
 		block := []uint16{0, 0}
 		return &block[0], nil
 	}
+	env = dedupEnv(env)
+	slices.SortFunc(env, func(a, b string) int {
+		aKey, _, _ := strings.Cut(a, "=")
+		bKey, _, _ := strings.Cut(b, "=")
+		return strings.Compare(strings.ToUpper(aKey), strings.ToUpper(bKey))
+	})
 	var b []uint16
 	for _, s := range env {
 		u, err := syscall.UTF16FromString(s)
@@ -302,4 +309,20 @@ func createEnvBlock(env []string) (*uint16, error) {
 	}
 	b = append(b, 0) // double null terminator ending the block
 	return &b[0], nil
+}
+
+func dedupEnv(env []string) []string {
+	out := make([]string, 0, len(env))
+	seen := make(map[string]struct{}, len(env))
+	for i := len(env) - 1; i >= 0; i-- {
+		key, _, _ := strings.Cut(env[i], "=")
+		folded := strings.ToUpper(key)
+		if _, ok := seen[folded]; ok {
+			continue
+		}
+		seen[folded] = struct{}{}
+		out = append(out, env[i])
+	}
+	slices.Reverse(out)
+	return out
 }

@@ -1472,7 +1472,7 @@ func TestPrSplitCommand_ClaudeAutoDetect_VersionCheckFails(t *testing.T) {
 		var execProxy = {
 			execv: function(args) {
 				var cmdStr = args.join(' ');
-				if (cmdStr === 'which claude') {
+				if (cmdStr === 'which claude' || cmdStr === 'where.exe claude') {
 					return { code: 0, stdout: '/usr/local/bin/claude\n', stderr: '' };
 				}
 				if (args[0] === 'claude' && args[1] === '--version') {
@@ -1528,10 +1528,10 @@ func TestPrSplitCommand_ClaudeAutoDetect_OllamaModelMissing(t *testing.T) {
 		var execProxy = {
 			execv: function(args) {
 				var cmdStr = args.join(' ');
-				if (cmdStr === 'which claude') {
+				if (cmdStr === 'which claude' || cmdStr === 'where.exe claude') {
 					return { code: 1, stdout: '', stderr: '' };
 				}
-				if (cmdStr === 'which ollama') {
+				if (cmdStr === 'which ollama' || cmdStr === 'where.exe ollama') {
 					return { code: 0, stdout: '/usr/local/bin/ollama\n', stderr: '' };
 				}
 				if (args[0] === 'ollama' && args[1] === 'list') {

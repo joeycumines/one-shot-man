@@ -20,6 +20,38 @@ func skipIfWindows(t *testing.T) {
 	}
 }
 
+func requireConPTYRuntime(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		t.Skip("ConPTY runtime probe requires Windows")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	proc, err := Spawn(ctx, SpawnConfig{
+		Command: "powershell.exe",
+		Args:    []string{"-NoProfile", "-Command", "exit 0"},
+		Rows:    24,
+		Cols:    80,
+	})
+	if err != nil {
+		t.Fatalf("ConPTY runtime probe spawn failed: %v", err)
+	}
+	defer proc.Close()
+
+	code, waitErr := proc.Wait()
+	if waitErr != nil {
+		t.Fatalf("ConPTY runtime probe wait failed: %v", waitErr)
+	}
+	if code == 3221225794 {
+		t.Skipf("skipping ConPTY tests on this host: child console init failed with %#x", uint32(code))
+	}
+	if code != 0 {
+		t.Fatalf("ConPTY runtime probe exited with code %d", code)
+	}
+}
+
 func TestSpawn_EchoHello(t *testing.T) {
 	t.Parallel()
 	skipIfWindows(t)
@@ -875,14 +907,15 @@ func TestConPTY_Smoke(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping ConPTY smoke test in short mode")
 	}
+	requireConPTYRuntime(t)
 	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	proc, err := Spawn(ctx, SpawnConfig{
-		Command: "cmd.exe",
-		Args:    []string{"/c", "echo", "conpty-smoke-test"},
+		Command: "powershell.exe",
+		Args:    []string{"-NoProfile", "-Command", "Write-Output 'conpty-smoke-test'; Start-Sleep -Milliseconds 250; exit 0"},
 		Rows:    24,
 		Cols:    80,
 	})
@@ -893,17 +926,35 @@ func TestConPTY_Smoke(t *testing.T) {
 
 	// Read output — should contain the echo string.
 	var output strings.Builder
-	buf := make([]byte, 4096)
-	for {
-		n, readErr := proc.File().Read(buf)
-		if n > 0 {
-			output.Write(buf[:n])
-		}
-		if strings.Contains(output.String(), "conpty-smoke-test") {
-			break
-		}
-		if readErr != nil {
-			break
+	deadline := time.After(10 * time.Second)
+	done := false
+	for !done {
+		readCh := make(chan struct {
+			data string
+			err  error
+		}, 1)
+		go func() {
+			data, readErr := proc.Read()
+			readCh <- struct {
+				data string
+				err  error
+			}{data: data, err: readErr}
+		}()
+
+		select {
+		case <-deadline:
+			_ = proc.Close()
+			t.Fatalf("timed out waiting for conpty smoke output, got so far: %q", output.String())
+		case readResult := <-readCh:
+			if readResult.data != "" {
+				output.WriteString(readResult.data)
+			}
+			if strings.Contains(output.String(), "conpty-smoke-test") {
+				done = true
+			}
+			if readResult.err != nil {
+				done = true
+			}
 		}
 	}
 	if !strings.Contains(output.String(), "conpty-smoke-test") {
@@ -929,6 +980,7 @@ func TestConPTY_ContextCancel(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping ConPTY context cancel test in short mode")
 	}
+	requireConPTYRuntime(t)
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -970,6 +1022,7 @@ func TestConPTY_Resize(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping ConPTY resize test in short mode")
 	}
+	requireConPTYRuntime(t)
 	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -276,6 +276,28 @@ try {
         return enemy;
     }
 
+    function stopEnemyTicker(enemy, id, reason) {
+        if (!enemy || !enemy.ticker) {
+            return;
+        }
+        try {
+            enemy.ticker.stop();
+        } catch (e) {
+            console.error('Error stopping enemy #' + id + ' ticker during ' + reason + ': ' + e.message);
+        } finally {
+            enemy.ticker = null;
+        }
+    }
+
+    function stopAllEnemyTickers(state, reason) {
+        if (!state || !state.enemies) {
+            return;
+        }
+        state.enemies.forEach(function (enemy, id) {
+            stopEnemyTicker(enemy, id, reason);
+        });
+    }
+
     function createProjectile(id, owner, ownerId, x, y, vx, vy, damage, speed) {
         return {
             id: id,
@@ -1018,14 +1040,7 @@ try {
                 state.score += 100;
                 state.particles.push(...createExplosion(enemy.x, enemy.y, EXPLOSION_PARTICLE_COUNT));
 
-                // Stop ticker - ensure graceful cleanup on error
-                if (enemy.ticker) {
-                    try {
-                        enemy.ticker.stop();
-                    } catch (e) {
-                        console.error('Error stopping enemy #' + id + ' ticker during death handling: ' + e.message);
-                    }
-                }
+                stopEnemyTicker(enemy, id, 'death handling');
             }
         });
 
@@ -1413,12 +1428,16 @@ try {
 // Bubbletea Model (Lines 851-1000)
 // ============================================================================
 
+    let activeState = null;
+
     function init() {
         // Return [state, cmd] like update() does - the Go binding now supports this
-        return [initializeGame(), tea.tick(16, 'tick')];
+        activeState = initializeGame();
+        return [activeState, tea.tick(16, 'tick')];
     }
 
     function update(state, msg) {
+        activeState = state;
         if (msg.type === 'Tick' && msg.id === 'tick') {
             // Calculate delta time
             const now = Date.now();
@@ -1549,7 +1568,9 @@ try {
                 case 'gameOver':
                 case 'victory':
                     if (msg.key === 'r') {
-                        return [initializeGame(), null];
+                        stopAllEnemyTickers(state, 'game restart');
+                        activeState = initializeGame();
+                        return [activeState, null];
                     } else if (msg.key === 'q') {
                         return [state, tea.quit()];
                     }
@@ -1594,6 +1615,11 @@ try {
 
 // Error tracking for exit code
     var gameError = null;
+
+    __postBubbleTeaExit = function () {
+        stopAllEnemyTickers(activeState, 'post-exit cleanup');
+        activeState = null;
+    };
 
 // Wrap game execution with try/catch for runtime error handling
     try {

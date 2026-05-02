@@ -1723,6 +1723,9 @@ func TestIntegration_ClaudeCLIFlags_EndToEndToSpawn(t *testing.T) {
 
 	commandPath := filepath.Join(t.TempDir(), "claude-launcher")
 	mcpConfigPath := filepath.Join(t.TempDir(), "mcp-config.json")
+	if err := os.WriteFile(commandPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatalf("write command path: %v", err)
+	}
 
 	cmd, evalJS := newPrSplitEvalFromFlags(t,
 		"--test",
@@ -1806,9 +1809,6 @@ func TestIntegration_ClaudeCLIFlags_EndToEndToSpawn(t *testing.T) {
 		var origExecSpawn = globalThis.prSplit._modules.exec.spawn;
 		globalThis.prSplit._modules.exec.spawn = function(cmd, args) {
 			resolveSpawnCalls++;
-			if (cmd === 'which' && args && args.length === 1 && args[0] === executor.command) {
-				return makeChild(executor.command + '\n', '', 0);
-			}
 			throw new Error('unexpected exec.spawn call during resolveAsync: ' + cmd + ' ' + JSON.stringify(args || []));
 		};
 
@@ -1888,8 +1888,8 @@ func TestIntegration_ClaudeCLIFlags_EndToEndToSpawn(t *testing.T) {
 	if spawnOut.ResolvedType != "explicit" {
 		t.Fatalf("executor.resolved.type = %q, want explicit", spawnOut.ResolvedType)
 	}
-	if spawnOut.ResolveSpawnCalls < 1 {
-		t.Fatalf("resolve exec.spawn calls = %d, want at least 1", spawnOut.ResolveSpawnCalls)
+	if spawnOut.ResolveSpawnCalls != 0 {
+		t.Fatalf("resolve exec.spawn calls = %d, want 0 for explicit absolute command path", spawnOut.ResolveSpawnCalls)
 	}
 	if spawnOut.Captured.Name != "mock-claude" {
 		t.Fatalf("registry spawn provider = %q, want mock-claude", spawnOut.Captured.Name)

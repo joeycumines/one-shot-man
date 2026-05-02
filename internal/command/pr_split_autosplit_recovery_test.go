@@ -1501,10 +1501,10 @@ func TestClaudeCodeExecutor_OllamaSpawnPath(t *testing.T) {
 		var execProxy = {
 			execv: function(args) {
 				var cmdStr = args.join(' ');
-				if (cmdStr === 'which claude') {
+				if (cmdStr === 'which claude' || cmdStr === 'where.exe claude') {
 					return { code: 1, stdout: '', stderr: '' };
 				}
-				if (cmdStr === 'which ollama') {
+				if (cmdStr === 'which ollama' || cmdStr === 'where.exe ollama') {
 					return { code: 0, stdout: '/usr/bin/ollama\n', stderr: '' };
 				}
 				if (args[0] === 'ollama' && args[1] === 'list') {

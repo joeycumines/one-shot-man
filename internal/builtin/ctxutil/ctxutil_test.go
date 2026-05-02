@@ -835,12 +835,12 @@ func TestRunExec_NilContext(t *testing.T) {
 // TestRunExec_Basic verifies basic command execution.
 func TestRunExec_Basic(t *testing.T) {
 	t.Parallel()
-	stdout, msg, hadErr := runExec(context.Background(), []string{"echo", "hello world"})
+	stdout, msg, hadErr := runExec(context.Background(), []string{"go", "version"})
 	if hadErr {
 		t.Fatalf("unexpected error: %s", msg)
 	}
-	if stdout != "hello world\n" {
-		t.Fatalf("expected 'hello world\\n', got %q", stdout)
+	if !strings.HasPrefix(stdout, "go version") {
+		t.Fatalf("expected output starting with 'go version', got %q", stdout)
 	}
 }
 

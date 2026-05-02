@@ -47,11 +47,10 @@ func (br *BufferedReader) ReadLoop(ctx context.Context) {
 		buf := make([]byte, br.bufSize)
 		n, err := br.r.Read(buf)
 		if n > 0 {
-			// Make a copy of just the data read.
-			chunk := make([]byte, n)
-			copy(chunk, buf[:n])
+			// Since buf is freshly allocated each iteration, we can send
+			// buf[:n] directly without copying — the sender never reuses buf.
 			select {
-			case br.out <- chunk:
+			case br.out <- buf[:n]:
 			case <-ctx.Done():
 				return
 			}

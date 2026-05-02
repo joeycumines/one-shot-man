@@ -328,7 +328,7 @@ func TestProcess_Write_AfterClose(t *testing.T) {
 	}
 	proc.Close()
 
-	err = proc.Write("hello")
+	_, err = proc.Write([]byte("hello"))
 	if err == nil {
 		t.Fatal("expected error when writing to closed process")
 	}
@@ -441,7 +441,7 @@ func TestProcess_WriteAndReadCat(t *testing.T) {
 	}
 	defer proc.Close()
 
-	if err := proc.Write("hello from pty\n"); err != nil {
+	if _, err := proc.Write([]byte("hello from pty\n")); err != nil {
 		t.Fatalf("Write failed: %v", err)
 	}
 
@@ -667,7 +667,8 @@ func TestProcess_WriteSignalDeadlock(t *testing.T) {
 	// buffer is 4–64 KiB; 1 MiB should reliably fill it.
 	writeDone := make(chan error, 1)
 	go func() {
-		writeDone <- proc.Write(strings.Repeat("x", 1<<20))
+		_, err := proc.Write([]byte(strings.Repeat("x", 1<<20)))
+		writeDone <- err
 	}()
 
 	// Give the write time to start blocking.
@@ -724,7 +725,8 @@ func TestProcess_CloseWhileWriteBlocked(t *testing.T) {
 	// Start a large write that will block.
 	writeDone := make(chan error, 1)
 	go func() {
-		writeDone <- proc.Write(strings.Repeat("x", 1<<20))
+		_, err := proc.Write([]byte(strings.Repeat("x", 1<<20)))
+		writeDone <- err
 	}()
 
 	time.Sleep(200 * time.Millisecond)
@@ -847,7 +849,7 @@ func TestProcess_Write_WithTimeout(t *testing.T) {
 	}
 
 	// Write a small payload — should succeed instantly.
-	if err := proc.Write("hello\n"); err != nil {
+	if _, err := proc.Write([]byte("hello\n")); err != nil {
 		t.Fatalf("Write with timeout failed: %v", err)
 	}
 }
@@ -869,7 +871,7 @@ func TestProcess_Write_TimeoutDisabled(t *testing.T) {
 		t.Fatalf("expected writeTimeout=-1 (disabled), got %v", proc.writeTimeout)
 	}
 
-	if err := proc.Write("hello\n"); err != nil {
+	if _, err := proc.Write([]byte("hello\n")); err != nil {
 		t.Fatalf("Write without timeout failed: %v", err)
 	}
 }
@@ -891,7 +893,7 @@ func TestProcess_Write_CustomTimeout(t *testing.T) {
 		t.Fatalf("expected writeTimeout=5s, got %v", proc.writeTimeout)
 	}
 
-	if err := proc.Write("custom timeout\n"); err != nil {
+	if _, err := proc.Write([]byte("custom timeout\n")); err != nil {
 		t.Fatalf("Write with custom timeout failed: %v", err)
 	}
 }

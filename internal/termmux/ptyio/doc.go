@@ -3,7 +3,6 @@
 //
 // It includes a BufferedReader that runs a blocking read loop with
 // channel-based output (providing natural backpressure when the consumer
-// pauses), a BufferedWriter that handles partial writes and EAGAIN retry,
-// and platform-abstracted interfaces for terminal state management and
-// non-blocking flag control.
+// pauses), and platform-abstracted interfaces for terminal state management
+// and non-blocking flag control.
 package ptyio

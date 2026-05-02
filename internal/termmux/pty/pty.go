@@ -105,12 +105,12 @@ var ErrWriteTimeout = errors.New("pty: write timed out")
 // PTY fds (macOS), a goroutine-based timeout is used as a fallback.
 // EAGAIN is handled transparently by Go's runtime poller; the JS layer
 // also retries EAGAIN for defence-in-depth.
-func (p *Process) Write(data string) error {
+func (p *Process) Write(data []byte) (int, error) {
 	// Don't hold lock during blocking write — just check closed state.
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
-		return ErrClosed
+		return 0, ErrClosed
 	}
 	f := p.ptyFile
 	if p.writeFile != nil {
@@ -128,8 +128,7 @@ func (p *Process) Write(data string) error {
 		defer func() { _ = f.SetWriteDeadline(time.Time{}) }() // Clear deadline.
 	}
 
-	_, err := f.Write([]byte(data))
-	return err
+	return f.Write(data)
 }
 
 // writeWithGoroutineTimeout runs the write in a background goroutine and
@@ -141,18 +140,21 @@ func (p *Process) Write(data string) error {
 // This is the fallback path for platforms where SetWriteDeadline does not
 // work on PTY file descriptors (observed on macOS where PTY master fds
 // are not registered with the kqueue-based runtime poller).
-func (p *Process) writeWithGoroutineTimeout(f *os.File, data string, timeout time.Duration) error {
-	type writeResult struct{ err error }
+func (p *Process) writeWithGoroutineTimeout(f *os.File, data []byte, timeout time.Duration) (int, error) {
+	type writeResult struct {
+		n   int
+		err error
+	}
 	ch := make(chan writeResult, 1)
 	go func() {
-		_, err := f.Write([]byte(data))
-		ch <- writeResult{err: err}
+		n, err := f.Write(data)
+		ch <- writeResult{n: n, err: err}
 	}()
 	select {
 	case res := <-ch:
-		return res.err
+		return res.n, res.err
 	case <-time.After(timeout):
-		return fmt.Errorf("%w: write did not complete within %s (SetWriteDeadline not supported on this fd)", ErrWriteTimeout, timeout)
+		return 0, fmt.Errorf("%w: write did not complete within %s (SetWriteDeadline not supported on this fd)", ErrWriteTimeout, timeout)
 	}
 }
 
@@ -376,3 +378,6 @@ func parseSignal(name string) (os.Signal, error) {
 		return nil, errors.New("pty: unsupported signal: " + name)
 	}
 }
+
+// ensure Process implements io.Writer at compile time.
+var _ io.Writer = (*Process)(nil)

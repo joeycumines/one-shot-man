@@ -146,8 +146,13 @@ func (p *Process) writeWithGoroutineTimeout(f *os.File, data []byte, timeout tim
 		err error
 	}
 	ch := make(chan writeResult, 1)
+	// Clone the data slice before the background write. If the timeout
+	// fires and the caller reuses the original buffer, the goroutine
+	// must hold its own copy to avoid a data race with the kernel write.
+	bufCopy := make([]byte, len(data))
+	copy(bufCopy, data)
 	go func() {
-		n, err := f.Write(data)
+		n, err := f.Write(bufCopy)
 		ch <- writeResult{n: n, err: err}
 	}()
 	select {

@@ -7,8 +7,10 @@ package termmux
 import (
 	"context"
 	"fmt"
+	"image"
 	"io"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	parent "github.com/joeycumines/one-shot-man/internal/termmux"
 	"github.com/joeycumines/one-shot-man/internal/termmux/ptyio"
 	"github.com/joeycumines/one-shot-man/internal/termmux/statusbar"
+	"github.com/joeycumines/one-shot-man/internal/termmux/vt"
 )
 
 // Event name constants exposed to JS.
@@ -671,6 +674,7 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 	sb := statusbar.New(stdout)
 	var toggleKey byte = parent.DefaultToggleKey
 	sb.SetToggleKey(toggleKey)
+	sb.SetTitle("Claude")
 	var statusEnabled bool
 	var resizeFn func(rows, cols uint16) error
 	var activeSessionTarget parent.SessionTarget
@@ -891,6 +895,74 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 		_ = result.Set("cursorRow", snap.CursorRow)
 		_ = result.Set("cursorCol", snap.CursorCol)
 		_ = result.Set("timestamp", snap.Timestamp.UnixMilli())
+		return result
+	})
+
+	// renderRaster(id, options?) → {width, height, path} | null
+	// Renders the VTerm screen for the given session to a PNG file.
+	// Returns the image dimensions and the temp file path.
+	_ = obj.Set("renderRaster", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(runtime.NewTypeError("renderRaster: session ID argument is required"))
+		}
+		id := parent.SessionID(call.Argument(0).ToInteger())
+		cellW := 8
+		cellH := 16
+		optsVal := call.Argument(1)
+		if optsVal != nil && optsVal != goja.Undefined() && optsVal != goja.Null() {
+			opts := optsVal.ToObject(runtime)
+			if v := opts.Get("cellW"); v != nil && !goja.IsUndefined(v) {
+				cellW = int(v.ToInteger())
+			}
+			if v := opts.Get("cellH"); v != nil && !goja.IsUndefined(v) {
+				cellH = int(v.ToInteger())
+			}
+		}
+		snap := mgr.Snapshot(id)
+		if snap == nil {
+			return goja.Null()
+		}
+		// Reconstruct a VTerm screen from the snapshot dimensions.
+		scr := vt.NewScreen(snap.Rows, snap.Cols)
+		// Feed the plain text into the screen to populate cells.
+		// PlainText uses \n as row separator. We write directly to
+		// scr.Cells to avoid PutChar side effects (PendingWrap,
+		// LineFeed, cursor tracking) that cause double-row-advance
+		// and content scrolling bugs.
+		// (This is a simplified approach — a full implementation
+		// would preserve SGR attributes from the ANSI output.)
+		row := 0
+		col := 0
+		for _, ch := range snap.PlainText {
+			if ch == '\n' {
+				row++
+				col = 0
+				continue
+			}
+			if row >= snap.Rows {
+				break
+			}
+			if col < snap.Cols {
+				scr.Cells[row][col].Ch = ch
+				col++
+			}
+		}
+		var img *image.RGBA
+		if cellW == 8 && cellH == 16 {
+			img = vt.RenderRasterDefault(scr)
+		} else {
+			img = vt.RenderRaster(scr, cellW, cellH)
+		}
+		// Save to a temp file.
+		tmpDir := os.TempDir()
+		path := filepath.Join(tmpDir, fmt.Sprintf("osm-raster-%d-%d.png", id, time.Now().UnixMilli()))
+		if err := vt.SaveRasterPNG(img, path); err != nil {
+			panic(runtime.NewGoError(err))
+		}
+		result := runtime.NewObject()
+		_ = result.Set("width", img.Bounds().Dx())
+		_ = result.Set("height", img.Bounds().Dy())
+		_ = result.Set("path", path)
 		return result
 	})
 
@@ -1526,6 +1598,126 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 			return goja.Null()
 		}
 		return runtime.ToValue(persistedStateToJS(state))
+	})
+
+	// restoreState(state) → { restored: number[], failed: Array<{sessionId, error}> }
+	// Restores sessions from a previously exported state. Each persisted
+	// session with a non-empty command is recreated as a CaptureSession.
+	_ = obj.Set("restoreState", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) < 1 {
+			panic(runtime.NewTypeError("restoreState: state argument is required"))
+		}
+		stateVal := call.Argument(0)
+		if stateVal == goja.Null() || stateVal == goja.Undefined() {
+			panic(runtime.NewTypeError("restoreState: state must not be null"))
+		}
+
+		stateMap := stateVal.ToObject(runtime)
+		version := stateMap.Get("version").String()
+		activeID := uint64(stateMap.Get("activeId").ToInteger())
+		termRows := int(stateMap.Get("termRows").ToInteger())
+		termCols := int(stateMap.Get("termCols").ToInteger())
+
+		sessionsVal := stateMap.Get("sessions")
+		var sessionsKeys []string
+		var sessionsObj *goja.Object
+		if sessionsVal != nil && !goja.IsUndefined(sessionsVal) && sessionsVal != goja.Null() {
+			sessionsObj = sessionsVal.ToObject(runtime)
+			sessionsKeys = sessionsObj.Keys()
+		}
+
+		state := &parent.PersistedManagerState{
+			Version:  version,
+			ActiveID: activeID,
+			TermRows: termRows,
+			TermCols: termCols,
+		}
+		for _, key := range sessionsKeys {
+			sessObj := sessionsObj.Get(key).ToObject(runtime)
+			ps := parent.PersistedSession{
+				SessionID: uint64(sessObj.Get("sessionId").ToInteger()),
+				Rows:      int(sessObj.Get("rows").ToInteger()),
+				Cols:      int(sessObj.Get("cols").ToInteger()),
+			}
+			if v := sessObj.Get("command"); v != nil && !goja.IsUndefined(v) {
+				ps.Command = v.String()
+			}
+			if v := sessObj.Get("args"); v != nil && !goja.IsUndefined(v) && v != goja.Null() {
+				argsObj := v.ToObject(runtime)
+				for _, key := range argsObj.Keys() {
+					ps.Args = append(ps.Args, argsObj.Get(key).String())
+				}
+			}
+			if v := sessObj.Get("dir"); v != nil && !goja.IsUndefined(v) && v != goja.Null() {
+				ps.Dir = v.String()
+			}
+			if v := sessObj.Get("env"); v != nil && !goja.IsUndefined(v) && v != goja.Null() {
+				envObj := v.ToObject(runtime)
+				for _, key := range envObj.Keys() {
+					if ps.Env == nil {
+						ps.Env = make(map[string]string)
+					}
+					ps.Env[key] = envObj.Get(key).String()
+				}
+			}
+			targetVal := sessObj.Get("target")
+			if targetVal != nil && !goja.IsUndefined(targetVal) && targetVal != goja.Null() {
+				targetObj := targetVal.ToObject(runtime)
+				ps.Target = parent.SessionTarget{
+					Name: targetObj.Get("name").String(),
+				}
+				if v := targetObj.Get("id"); v != nil && !goja.IsUndefined(v) {
+					ps.Target.ID = v.String()
+				}
+				if v := targetObj.Get("kind"); v != nil && !goja.IsUndefined(v) {
+					ps.Target.Kind = parent.SessionKind(v.String())
+				}
+			}
+			state.Sessions = append(state.Sessions, ps)
+		}
+
+		result, err := mgr.RestoreFromState(state, func(ps parent.PersistedSession) (parent.InteractiveSession, error) {
+			cfg := parent.CaptureConfig{
+				Command: ps.Command,
+				Args:    ps.Args,
+				Dir:     ps.Dir,
+				Rows:    ps.Rows,
+				Cols:    ps.Cols,
+			}
+			for k, v := range ps.Env {
+				if cfg.Env == nil {
+					cfg.Env = make(map[string]string)
+				}
+				cfg.Env[k] = v
+			}
+			if ps.Target.Name != "" {
+				cfg.Name = ps.Target.Name
+			}
+			if ps.Target.Kind != "" {
+				cfg.Kind = ps.Target.Kind
+			}
+			cs := parent.NewCaptureSession(cfg)
+			return cs, nil
+		})
+		if err != nil {
+			panic(runtime.NewGoError(err))
+		}
+
+		restored := make([]any, len(result.Restored))
+		for i, id := range result.Restored {
+			restored[i] = uint64(id)
+		}
+		failed := make([]any, len(result.Failed))
+		for i, f := range result.Failed {
+			failed[i] = map[string]any{
+				"sessionId": uint64(f.SessionID),
+				"error":     f.Error.Error(),
+			}
+		}
+		return runtime.ToValue(map[string]any{
+			"restored": restored,
+			"failed":   failed,
+		})
 	})
 
 	// removeState(path) → void

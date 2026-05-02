@@ -14,7 +14,6 @@ var DefaultCell = Cell{Ch: ' '}
 // Screen represents a terminal screen buffer.
 type Screen struct {
 	Cells          [][]Cell
-	Dirty          []bool // per-row dirty flag for incremental rendering
 	CurRow, CurCol int
 	CurAttr        Attr
 	ScrollTop      int // 1-indexed, inclusive; 0 = default
@@ -43,19 +42,10 @@ func NewScreen(rows, cols int) *Screen {
 	}
 	s.Cells = make([][]Cell, rows)
 	for i := range s.Cells {
-		s.Cells[i] = makeLine(cols)
+		s.Cells[i] = makeAttrLine(cols, Attr{})
 	}
-	s.Dirty = make([]bool, rows)
 	s.TabStops = makeDefaultTabStops(cols)
 	return s
-}
-
-func makeLine(cols int) []Cell {
-	line := make([]Cell, cols)
-	for i := range line {
-		line[i].Ch = ' '
-	}
-	return line
 }
 
 func makeAttrLine(cols int, a Attr) []Cell {
@@ -64,20 +54,6 @@ func makeAttrLine(cols int, a Attr) []Cell {
 		line[i] = Cell{Ch: ' ', Attr: a}
 	}
 	return line
-}
-
-func (s *Screen) markDirty(row int) {
-	if row >= 0 && row < len(s.Dirty) {
-		s.Dirty[row] = true
-	}
-}
-
-func (s *Screen) markDirtyRange(from, to int) {
-	for r := from; r <= to && r < len(s.Dirty); r++ {
-		if r >= 0 {
-			s.Dirty[r] = true
-		}
-	}
 }
 
 func makeDefaultTabStops(cols int) []bool {
@@ -100,14 +76,9 @@ func (s *Screen) Resize(rows, cols int) {
 	s.Rows = rows
 	s.Cols = cols
 	for len(s.Cells) < rows {
-		s.Cells = append(s.Cells, makeLine(cols))
+		s.Cells = append(s.Cells, makeAttrLine(cols, Attr{}))
 	}
 	s.Cells = s.Cells[:rows]
-	// Resize dirty tracking.
-	for len(s.Dirty) < rows {
-		s.Dirty = append(s.Dirty, false)
-	}
-	s.Dirty = s.Dirty[:rows]
 	for i := range s.Cells {
 		if len(s.Cells[i]) < cols {
 			extra := make([]Cell, cols-len(s.Cells[i]))
@@ -168,14 +139,12 @@ func (s *Screen) ScrollRegion() (top, bot int) {
 func (s *Screen) ScrollUp(n int) {
 	top, bot := s.ScrollRegion()
 	s.scrollRegionUp(top, bot, n)
-	s.markDirtyRange(top, bot-1)
 }
 
 // ScrollDown scrolls the scroll region down by n lines.
 func (s *Screen) ScrollDown(n int) {
 	top, bot := s.ScrollRegion()
 	s.scrollRegionDown(top, bot, n)
-	s.markDirtyRange(top, bot-1)
 }
 
 func (s *Screen) scrollRegionUp(top, bot, n int) {
@@ -207,11 +176,9 @@ func (s *Screen) scrollRegionDown(top, bot, n int) {
 // LineFeed moves the cursor down one line, scrolling if at the bottom
 // of the scroll region.
 func (s *Screen) LineFeed() {
-	s.markDirty(s.CurRow)
 	top, bot := s.ScrollRegion()
 	if s.CurRow == bot-1 {
 		s.scrollRegionUp(top, bot, 1)
-		s.markDirtyRange(top, bot-1)
 	} else if s.CurRow < s.Rows-1 {
 		s.CurRow++
 	}
@@ -220,7 +187,6 @@ func (s *Screen) LineFeed() {
 // EraseDisplay erases part or all of the display. Mode: 0=cursor to end,
 // 1=start to cursor, 2=entire display, 3=scrollback (treated as 2).
 func (s *Screen) EraseDisplay(mode int) {
-	s.markDirtyRange(0, s.Rows-1)
 	blank := Cell{Ch: ' ', Attr: s.CurAttr}
 	switch mode {
 	case 0:
@@ -256,7 +222,6 @@ func (s *Screen) EraseLine(mode int) {
 	if s.CurRow < 0 || s.CurRow >= s.Rows {
 		return
 	}
-	s.markDirty(s.CurRow)
 	blank := Cell{Ch: ' ', Attr: s.CurAttr}
 	switch mode {
 	case 0:
@@ -292,7 +257,6 @@ func (s *Screen) InsertLines(n int) {
 		s.Cells[i] = makeAttrLine(s.Cols, s.CurAttr)
 	}
 	s.CurCol = 0
-	s.markDirtyRange(top, bot-1)
 }
 
 // DeleteLines deletes n lines at the cursor row within the scroll region.
@@ -309,7 +273,6 @@ func (s *Screen) DeleteLines(n int) {
 		s.Cells[i] = makeAttrLine(s.Cols, s.CurAttr)
 	}
 	s.CurCol = 0
-	s.markDirtyRange(top, bot-1)
 }
 
 // repairWideBoundary clears orphaned wide-character halves at the edges of
@@ -393,7 +356,6 @@ func (s *Screen) PutChar(ch rune) {
 	} else {
 		s.CurCol = newCol
 	}
-	s.markDirty(s.CurRow)
 }
 
 // ReverseIndex moves the cursor up one line. If the cursor is at the top
@@ -413,7 +375,6 @@ func (s *Screen) EraseChars(n int) {
 	if s.CurRow < 0 || s.CurRow >= s.Rows || n <= 0 {
 		return
 	}
-	s.markDirty(s.CurRow)
 	end := s.CurCol + n
 	if end > s.Cols {
 		end = s.Cols
@@ -432,7 +393,6 @@ func (s *Screen) InsertChars(n int) {
 	if s.CurRow < 0 || s.CurRow >= s.Rows || n <= 0 {
 		return
 	}
-	s.markDirty(s.CurRow)
 	row := s.Cells[s.CurRow]
 	blank := Cell{Ch: ' ', Attr: s.CurAttr}
 	if n > s.Cols-s.CurCol {
@@ -464,7 +424,6 @@ func (s *Screen) DeleteChars(n int) {
 	if s.CurRow < 0 || s.CurRow >= s.Rows || n <= 0 {
 		return
 	}
-	s.markDirty(s.CurRow)
 	row := s.Cells[s.CurRow]
 	blank := Cell{Ch: ' ', Attr: s.CurAttr}
 	if n > s.Cols-s.CurCol {

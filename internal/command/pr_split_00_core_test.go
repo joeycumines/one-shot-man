@@ -524,3 +524,39 @@ func TestChunk00_CommandNameFromConfig(t *testing.T) {
 		t.Errorf("expected 'pr-split', got %v", val)
 	}
 }
+
+// TestChunk00_ResolveDir_NeverReturnsEmpty verifies that _resolveDir
+// never returns an empty string for any input — it always falls back
+// to '.' when the input is falsy.
+func TestChunk00_ResolveDir_NeverReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
+	evalJS := prsplittest.NewChunkEngine(t, nil, "00_core")
+
+	tests := []struct {
+		name string
+		expr string
+	}{
+		{"empty string", `prSplit._resolveDir('')`},
+		{"dot", `prSplit._resolveDir('.')`},
+		{"null", `prSplit._resolveDir(null)`},
+		{"undefined", `prSplit._resolveDir(undefined)`},
+		{"no args", `prSplit._resolveDir()`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			val, err := evalJS(tt.expr)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			s, ok := val.(string)
+			if !ok {
+				t.Fatalf("expected string, got %T: %v", val, val)
+			}
+			if s == "" {
+				t.Errorf("resolveDir returned empty string for input %q — must return at least '.'", tt.expr)
+			}
+		})
+	}
+}

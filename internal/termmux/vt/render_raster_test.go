@@ -367,7 +367,7 @@ func TestRaster_NULByteSentinel(t *testing.T) {
 	img := RenderRaster(scr, 8, 16)
 
 	// Cell 0 ('A'): should be 1 cell wide (8px), white foreground.
-	px := 4  // center of cell 0
+	px := 4 // center of cell 0
 	py := 8
 	r, g, b, _ := img.At(px, py).RGBA()
 	if r>>8 != 255 || g>>8 != 255 || b>>8 != 255 {

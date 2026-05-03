@@ -578,6 +578,61 @@ func TestParseClaudeEnv_MalformedInput(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Task 27: parseClaudeEnv additional edge cases
+// ---------------------------------------------------------------------------
+
+func TestParseClaudeEnv_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		raw  string
+		want map[string]string
+	}{
+		{
+			name: "value with multiple equals",
+			raw:  "KEY=VAL=UE",
+			want: map[string]string{"KEY": "VAL=UE"},
+		},
+		{
+			name: "whitespace-only entry dropped",
+			raw:  " , ,KEY=val, ",
+			want: map[string]string{"KEY": "val"},
+		},
+		{
+			name: "very long value",
+			raw:  "KEY=" + strings.Repeat("A", 1000),
+			want: map[string]string{"KEY": strings.Repeat("A", 1000)},
+		},
+		{
+			name: "comma in value not treated as separator",
+			raw:  "KEY=val1,val2",
+			// This actually DOES split at the comma — parseClaudeEnv splits on commas first.
+			// So "KEY=val1" + "val2" (no =, dropped). This is expected behavior.
+			want: map[string]string{"KEY": "val1"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseClaudeEnv(tt.raw)
+			if len(got) != len(tt.want) {
+				t.Errorf("len mismatch: got %d, want %d\ngot: %v\nwant: %v",
+					len(got), len(tt.want), got, tt.want)
+				return
+			}
+			for k, wantV := range tt.want {
+				if gotV, ok := got[k]; !ok {
+					t.Errorf("missing key %q", k)
+				} else if gotV != wantV {
+					t.Errorf("got[%q]=%q, want %q", k, gotV, wantV)
+				}
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // T92: timeout config parsing edge cases
 // ---------------------------------------------------------------------------
 

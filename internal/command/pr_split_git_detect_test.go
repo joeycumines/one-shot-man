@@ -237,3 +237,95 @@ func setupMinimalGitRepo(t *testing.T) string {
 
 	return dir
 }
+
+// TestValidateGitRepo_BareRepo verifies that a bare git repository
+// (one without a working tree) is rejected by validateGitRepo.
+// git rev-parse --is-inside-work-tree returns "false" for bare repos.
+func TestValidateGitRepo_BareRepo(t *testing.T) {
+	dir := t.TempDir()
+	pushd(t, dir)
+
+	// Create a bare git repo.
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=Test",
+			"GIT_AUTHOR_EMAIL=test@test.com",
+			"GIT_COMMITTER_NAME=Test",
+			"GIT_COMMITTER_EMAIL=test@test.com",
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "--bare")
+	git("config", "user.email", "test@test.com")
+	git("config", "user.name", "Test User")
+
+	cmd := &PrSplitCommand{
+		baseBranch: "main",
+		strategy:   "directory",
+		maxFiles:   10,
+	}
+
+	err := cmd.validateGitRepo()
+	if err == nil {
+		t.Fatal("expected error for bare repo, got nil")
+	}
+	if !strings.Contains(err.Error(), "bare") && !strings.Contains(err.Error(), "working tree") {
+		t.Errorf("expected 'bare' or 'working tree' in error, got: %v", err)
+	}
+}
+
+// TestValidateGitRepo_RemoteBaseBranch verifies that a base branch that
+// only exists as a remote tracking ref (refs/remotes/origin/main) is
+// accepted by validateGitRepo.
+func TestValidateGitRepo_RemoteBaseBranch(t *testing.T) {
+	// Cannot use t.Parallel() — changes process working directory.
+	localDir := setupMinimalGitRepo(t)
+	pushd(t, localDir)
+
+	// Create a "remote" repo and add it as a remote.
+	remoteDir := t.TempDir()
+	git := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=Test",
+			"GIT_AUTHOR_EMAIL=test@test.com",
+			"GIT_COMMITTER_NAME=Test",
+			"GIT_COMMITTER_EMAIL=test@test.com",
+		)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, out)
+		}
+	}
+	git(remoteDir, "init", "--bare")
+	git(remoteDir, "config", "user.email", "test@test.com")
+	git(remoteDir, "config", "user.name", "Test User")
+
+	// Add remote and push.
+	git(localDir, "remote", "add", "origin", remoteDir)
+	git(localDir, "push", "-u", "origin", "main")
+
+	// Delete the local branch so only the remote tracking ref remains.
+	// First switch to a detached HEAD so we can delete main.
+	git(localDir, "checkout", "--detach")
+	git(localDir, "branch", "-D", "main")
+
+	cmd := &PrSplitCommand{
+		baseBranch: "main",
+		strategy:   "directory",
+		maxFiles:   10,
+	}
+
+	err := cmd.validateGitRepo()
+	if err != nil {
+		t.Errorf("expected remote base branch to be accepted, got: %v", err)
+	}
+}

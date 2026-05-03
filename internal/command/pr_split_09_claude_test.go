@@ -710,3 +710,47 @@ func TestChunk09_ClaudeCodeExecutor_Restart_ResolveFails(t *testing.T) {
 		t.Errorf("error should mention resolve failed, got %q", data.Error)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Task 29: ClaudeCodeExecutor.spawn edge cases
+// ---------------------------------------------------------------------------
+
+// TestChunk09_ClaudeCodeExecutor_Spawn_MissingMcpConfigPath verifies that
+// spawn returns a specific error when mcpConfigPath is not provided.
+func TestChunk09_ClaudeCodeExecutor_Spawn_MissingMcpConfigPath(t *testing.T) {
+	t.Parallel()
+	evalJS := prsplittest.NewChunkEngine(t, nil, claudeChunks...)
+
+	// Install mock resolveAsync to bypass actual Claude resolution.
+	if _, err := evalJS(`prSplit.ClaudeCodeExecutor.prototype.resolveAsync = async function() { return { error: null }; };`); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := evalJS(`
+		(async function() {
+			var ex = new prSplit.ClaudeCodeExecutor({
+				claudeCommand: 'mock-claude',
+				claudeArgs: [],
+				claudeModel: 'test'
+			});
+			// Call spawn without mcpConfigPath — should return error.
+			var r = await ex.spawn('test-session', {});
+			return JSON.stringify(r);
+		})()
+	`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var data struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(result.(string)), &data); err != nil {
+		t.Fatal(err)
+	}
+	if data.Error == "" {
+		t.Error("expected error for missing mcpConfigPath, got empty")
+	}
+	if !strings.Contains(data.Error, "mcpConfigPath") {
+		t.Errorf("error should mention mcpConfigPath, got %q", data.Error)
+	}
+}

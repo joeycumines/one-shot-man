@@ -74,6 +74,9 @@ const ChunkCompatShim = `
         'buildDependencyGraph', 'renderAsciiGraph',
         'analyzeRetrospective',
         'cleanupExecutor',
+        'resolveConflictsWithClaude',
+        'startVerifySession', 'cleanupVerifyWorktree',
+        'extractDirs', 'extractGoImports', 'extractGoPkgs',
         'analyzeDiffAsync', 'createSplitPlanAsync', 'executeSplitAsync',
         'verifySplitAsync', 'verifySplitsAsync', 'verifyEquivalenceAsync',
         'cleanupBranchesAsync'
@@ -124,6 +127,7 @@ const ChunkCompatShim = `
     if (ps.CLASSIFICATION_PROMPT_TEMPLATE) globalThis.CLASSIFICATION_PROMPT_TEMPLATE = ps.CLASSIFICATION_PROMPT_TEMPLATE;
     if (ps.SPLIT_PLAN_PROMPT_TEMPLATE) globalThis.SPLIT_PLAN_PROMPT_TEMPLATE = ps.SPLIT_PLAN_PROMPT_TEMPLATE;
     if (ps.CONFLICT_RESOLUTION_PROMPT_TEMPLATE) globalThis.CONFLICT_RESOLUTION_PROMPT_TEMPLATE = ps.CONFLICT_RESOLUTION_PROMPT_TEMPLATE;
+    if (ps.SEND_TEXT_NEWLINE_DELAY_MS) globalThis.SEND_TEXT_NEWLINE_DELAY_MS = ps.SEND_TEXT_NEWLINE_DELAY_MS;
 
     // --- runtime proxy (bare global → prSplit.runtime) ---
     try {

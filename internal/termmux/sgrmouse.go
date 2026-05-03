@@ -128,6 +128,38 @@ func parseDecimal(buf []byte, start, end int) (val int, next int, ok bool) {
 	return val, i, true
 }
 
+// isTruncatedSGR reports whether the SGR mouse sequence starting at buf[i]
+// appears genuinely truncated (all bytes from i+3 onward are still within
+// the SGR numeric grammar: digits, semicolons). Returns true when the
+// sequence COULD become valid if more data arrives. Returns false when a
+// byte that breaks the SGR grammar (e.g., a non-terminator letter like
+// 'X') is found before the buffer ends — indicating a malformed sequence
+// that should not be buffered.
+func isTruncatedSGR(buf []byte, i int) bool {
+	// Need at least ESC [ < (3 bytes) to be an SGR candidate.
+	if i+3 > len(buf) {
+		// Not enough bytes for even the prefix — could become ESC [ < on
+		// the next read. Buffer it.
+		return true
+	}
+	// Scan from the first byte after the prefix (i+3) to the end of buf.
+	// All bytes must be within the SGR numeric grammar: digits or semicolons.
+	// If we find anything else, the sequence is malformed.
+	for j := i + 3; j < len(buf); j++ {
+		b := buf[j]
+		if !((b >= '0' && b <= '9') || b == ';') {
+			// Found a byte that breaks the SGR grammar. This could be:
+			// - 'M' or 'm': a valid terminator, but parseSGRMouse already
+			//   rejected it (shouldn't happen — parseSGRMouse accepts M/m).
+			// - Any other byte: malformed. Not truncated.
+			return false
+		}
+	}
+	// All bytes from i+3 to end are digits or semicolons — the sequence
+	// is genuinely truncated and could become valid on the next read.
+	return true
+}
+
 // filterMouseForStatusBar processes a buffer of stdin bytes, intercepting
 // SGR mouse press events whose y-coordinate targets the status bar row.
 //
@@ -185,13 +217,19 @@ func filterMouseForStatusBar(buf []byte, termRows, statusBarLines int) (out, par
 				}
 				// parseSGRMouse failed. Distinguish incomplete (truncated at
 				// buffer boundary) from malformed (garbage after prefix).
-				// If there is no fourth byte, the sequence could become a
-				// valid SGR event on the next read — buffer it as partial.
-				// If the fourth byte is a digit, the sequence started
-				// parsing correctly and was truncated — buffer it.
-				// Otherwise, the sequence is malformed — forward the ESC
-				// byte normally rather than buffering indefinitely.
-				if i+3 >= len(buf) || (buf[i+3] >= '0' && buf[i+3] <= '9') {
+				//
+				// A sequence is genuinely truncated if ALL bytes from i+3
+				// to the end of buf look like they could be part of a valid
+				// SGR mouse sequence (digits, semicolons). If we find any
+				// byte that is NOT part of the SGR numeric grammar — e.g.,
+				// a non-terminator letter like 'X' — the sequence is
+				// malformed and we should forward the ESC byte rather than
+				// buffering indefinitely (which would swallow trailing data).
+				//
+				// This prevents stream poisoning: if a malformed SGR-like
+				// prefix is followed by valid data, we don't swallow that
+				// data into partial.
+				if isTruncatedSGR(buf, i) {
 					return result, buf[i:], statusBarClicked
 				}
 				// Malformed: not recognizable as an SGR mouse sequence.

@@ -237,7 +237,7 @@ func TestFilterMouse_RightClickOnStatusBar(t *testing.T) {
 }
 
 func TestFilterMouse_ReleaseOnStatusBar(t *testing.T) {
-	// Release on status bar — should be filtered but not trigger click.
+	// Release on status bar — forwarded to child, does not trigger click.
 	buf := []byte("\x1b[<0;10;24m")
 	out, partial, clicked := filterMouseForStatusBar(buf, 24, 1)
 	if clicked {
@@ -493,6 +493,51 @@ func TestFilterMouse_MalformedSGR_ForwardedWithoutCarry(t *testing.T) {
 	}
 	if !bytesContain(out, []byte("normal")) {
 		t.Error("text after malformed SGR was swallowed (stream poisoning)")
+	}
+}
+
+func TestFilterMouse_MalformedSGR_DigitPrefixBadTerminator_NoStreamPoisoning(t *testing.T) {
+	// Regression test: a malformed SGR-like prefix where parsing starts
+	// (4th byte is a digit) but the terminator is not M/m. The old
+	// heuristic checked "4th byte is digit" and buffered the entire
+	// remaining buffer as partial, swallowing trailing data.
+	//
+	// Input: ESC [ < 0 ; 10 ; 5 X more
+	//   - parseSGRMouse fails at 'X' (not M/m)
+	//   - 4th byte '0' is a digit — old code buffered entire tail
+	//   - "more" would be swallowed
+	//
+	// The fix (isTruncatedSGR) detects 'X' as breaking the SGR
+	// grammar, so the sequence is treated as malformed and "more"
+	// is forwarded.
+	buf := []byte("\x1b[<0;10;5Xmore")
+	out, partial, clicked := filterMouseForStatusBar(buf, 24, 1)
+
+	if clicked {
+		t.Error("malformed SGR should not trigger click")
+	}
+	if len(partial) != 0 {
+		t.Errorf("malformed SGR should not produce partial, got %q", string(partial))
+	}
+	if !bytesContain(out, []byte("more")) {
+		t.Errorf("text after malformed SGR was swallowed (stream poisoning); out=%q", string(out))
+	}
+}
+
+func TestFilterMouse_MalformedSGR_TrailingValidSequenceNotSwallowed(t *testing.T) {
+	// A malformed SGR prefix followed by a valid SGR click on the
+	// status bar. The valid click must not be swallowed into partial.
+	buf := []byte("\x1b[<0;10;5X\x1b[<0;10;24Mhello")
+	out, partial, clicked := filterMouseForStatusBar(buf, 24, 1)
+
+	if !clicked {
+		t.Error("valid SGR click on status bar (y=24) should trigger click")
+	}
+	if len(partial) != 0 {
+		t.Errorf("should not produce partial, got %q", string(partial))
+	}
+	if !bytesContain(out, []byte("hello")) {
+		t.Errorf("trailing text was swallowed; out=%q", string(out))
 	}
 }
 

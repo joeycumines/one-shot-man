@@ -158,6 +158,13 @@ func (m *SessionManager) Passthrough(ctx context.Context, cfg PassthroughConfig)
 		select {
 		case r := <-resultCh:
 			fwdCancel()
+			// When context cancellation and a result arrive simultaneously
+			// (e.g., context cancel kills the child, which produces a result),
+			// prioritize context cancellation for consistency with
+			// CaptureSession.Passthrough.
+			if ctx.Err() != nil {
+				return ExitContext, ctx.Err()
+			}
 			return r.reason, r.err
 		case evt := <-evtCh:
 			if evt.Kind == EventSessionExited && evt.SessionID == activeID {

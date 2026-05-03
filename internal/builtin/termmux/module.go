@@ -1084,7 +1084,7 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 
 		reason, err := mgr.Passthrough(ctx, cfg)
 		result := runtime.NewObject()
-		_ = result.Set("reason", reason.String())
+		_ = result.Set("reason", exitReasonString(reason))
 		if err != nil {
 			_ = result.Set("error", err.Error())
 		}
@@ -1652,6 +1652,15 @@ func WrapSessionManager(ctx context.Context, runtime *goja.Runtime, mgr *parent.
 				SessionID: uint64(sessObj.Get("sessionId").ToInteger()),
 				Rows:      int(sessObj.Get("rows").ToInteger()),
 				Cols:      int(sessObj.Get("cols").ToInteger()),
+			}
+			if v := sessObj.Get("lastActive"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				ps.LastActive = time.UnixMilli(v.ToInteger())
+			}
+			if v := sessObj.Get("state"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				ps.State = parent.SessionState(int(v.ToInteger()))
+			}
+			if v := sessObj.Get("pid"); v != nil && !goja.IsUndefined(v) && !goja.IsNull(v) {
+				ps.PID = int(v.ToInteger())
 			}
 			if v := sessObj.Get("command"); v != nil && !goja.IsUndefined(v) {
 				ps.Command = v.String()

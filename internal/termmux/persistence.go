@@ -242,21 +242,22 @@ func (m *SessionManager) handleRestoreState(p *restoreStatePayload) response {
 		slog.Info("restored session", "persistedId", ps.SessionID, "newId", newID, "target", target)
 	}
 
+	// Emit registration events for all restored sessions BEFORE
+	// activating any session. This preserves the ordering contract
+	// from handleRegister: EventSessionRegistered always precedes
+	// EventSessionActivated.
+	for _, newID := range result.Restored {
+		m.eventBus.emit(EventSessionRegistered, newID)
+	}
+
 	// Set the active session if the persisted active ID was restored
 	// and no session is currently active.
 	if newActiveID, ok := idMap[p.state.ActiveID]; ok && m.activeID == 0 {
 		m.activeID = newActiveID
-		// Mark the activated session as last active and emit the event
-		// so UI consumers (status bar, TUI) know which session is current.
 		if ms, ok := m.sessions[newActiveID]; ok {
 			ms.lastActive = time.Now()
 		}
 		m.eventBus.emit(EventSessionActivated, newActiveID)
-	}
-
-	// Emit registration events for restored sessions.
-	for _, newID := range result.Restored {
-		m.eventBus.emit(EventSessionRegistered, newID)
 	}
 
 	return response{value: result}

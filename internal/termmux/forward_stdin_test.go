@@ -69,8 +69,8 @@ func TestForwardStdin_WriteError(t *testing.T) {
 }
 
 func TestForwardStdin_ContextCancel(t *testing.T) {
-	// stdin that blocks forever
-	stdin := &neverReader{}
+	// stdin that blocks until done is closed
+	stdin := &neverReader{done: make(chan struct{})}
 	var written bytes.Buffer
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -92,6 +92,13 @@ func TestForwardStdin_ContextCancel(t *testing.T) {
 	case <-time.After(500 * time.Millisecond):
 		// Expected: no result sent.
 	}
+
+	// Unblock the reader so the forwardStdin goroutine can exit.
+	// forwardStdin only checks ctx.Done() at the top of its loop; once
+	// Read is entered, context cancellation goes unobserved until Read
+	// returns. Closing done causes Read to return EOF, allowing the
+	// goroutine to observe the cancelled context and exit cleanly.
+	close(stdin.done)
 }
 
 func TestForwardStdin_PreProcess(t *testing.T) {
@@ -236,9 +243,12 @@ func (w *errorWriter) Write(p []byte) (int, error) {
 	return 0, w.err
 }
 
-// neverReader is an io.Reader that blocks forever.
-type neverReader struct{}
+// neverReader is an io.Reader that blocks until its done channel is closed.
+type neverReader struct {
+	done chan struct{}
+}
 
 func (r *neverReader) Read(p []byte) (int, error) {
-	select {} // block forever
+	<-r.done
+	return 0, io.EOF
 }

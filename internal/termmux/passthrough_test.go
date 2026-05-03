@@ -594,8 +594,6 @@ func TestPassthroughStatusBar_RenderRestore(t *testing.T) {
 
 	// After RestoreScreen, the status bar should be re-rendered
 	// (passthrough.go line 85-86: if cfg.StatusBar != nil && statusBarLines > 0).
-	// After RestoreScreen, the status bar should be re-rendered
-	// (passthrough.go line 85-86: if cfg.StatusBar != nil && statusBarLines > 0).
 	// The status bar toggle hint should appear more than once
 	// (initial render + post-restore render).
 	switchCount := strings.Count(got, "switch")

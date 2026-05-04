@@ -99,6 +99,21 @@ internal\builtin\pabt\*: unreachable func: *
 internal/mouseharness/*
 internal\mouseharness\*
 
+# New builtin modules — called from JavaScript via Goja runtime (not visible to deadcode)
+# These will be registered in the builtin registry in a later commit.
+internal/builtin/crypto/*: unreachable func: *
+internal\builtin\crypto\*: unreachable func: *
+internal/builtin/encoding/*: unreachable func: *
+internal\builtin\encoding\*: unreachable func: *
+internal/builtin/flag/*: unreachable func: *
+internal\builtin\flag\*: unreachable func: *
+internal/builtin/json/*: unreachable func: *
+internal\builtin\json\*: unreachable func: *
+internal/builtin/path/*: unreachable func: *
+internal\builtin\path\*: unreachable func: *
+internal/builtin/regexp/*: unreachable func: *
+internal\builtin\regexp\*: unreachable func: *
+
 # filepathutil is new; will be wired up in later commits
 internal/filepathutil/*
 internal\filepathutil\*
